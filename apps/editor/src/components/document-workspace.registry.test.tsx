@@ -26,7 +26,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   projectDocument: { metadata: { name: "Test" } },
   assetRegistry: state.registry,
   registryEpoch: state.registry?.generation ?? 0,
-  sourceControl: { enabled: false },
+  sourceControl: { enabled: false, lockPrompt: [] },
   captureLayoutForId: () => {},
   unregisterDockviewApi: () => {},
 })));

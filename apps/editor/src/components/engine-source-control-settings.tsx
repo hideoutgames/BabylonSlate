@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PlusIcon } from "lucide-react";
 import {
   GITHUB_ORIGIN,
@@ -105,13 +105,13 @@ function TokenForm({
   );
 }
 
-function SavedHostRow({ credential, onRemove }: { credential: HostCredential; onRemove: () => void }) {
+function SavedHostRow({ credential, refused, onRemove }: { credential: HostCredential; refused: boolean; onRemove: () => void }) {
   const host = new URL(credential.origin).host;
   return (
     <Field orientation="horizontal" className="settings-field" data-testid={`settings-source-control-host-${host}`}>
       <FieldLabel>{host}</FieldLabel>
       <div className="flex min-w-0 items-center justify-end gap-2">
-        <span className="text-xs text-muted-foreground">Token Saved</span>
+        <span className={refused ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>{refused ? "Token Refused" : "Token Saved"}</span>
         <Button variant="outline" size="sm" aria-label={`Remove ${host}`} onClick={onRemove}>
           Remove
         </Button>
@@ -122,13 +122,19 @@ function SavedHostRow({ credential, onRemove }: { credential: HostCredential; on
 
 /**
  * Engine Settings → Source Control: this device's GitHub and GitLab sign-ins
- * and host tokens, one per host. Loaded on first open of the page.
+ * and host tokens, one per host. Loaded on first open of the page, which asks
+ * each host once whether its saved sign-in still works; one the host refused,
+ * or past its expiry, says so and offers Sign In Again.
  */
 export default function EngineSourceControlSettings() {
   const { accounts, credentials, error } = useSourceControlCredentials();
   const { link, dialogs } = useHostLink();
   const testMode = isTestModeEnabled();
   const remove = (origin: string) => void accounts?.remove(origin);
+  const stateOf = (credential: HostCredential) => accounts?.signInState(credential) ?? "signed-in";
+  useEffect(() => {
+    void accounts?.checkSignIns();
+  }, [accounts]);
   const accountRows = ACCOUNT_HOSTS.flatMap((entry) => {
     const credential = credentials.find((candidate) => candidate.origin === entry.origin && candidate.kind === entry.host);
     // Without a client id a host offers no Sign In, but an existing sign-in can still sign out.
@@ -139,38 +145,50 @@ export default function EngineSourceControlSettings() {
       {error ? <FieldError className="settings-row">{error}</FieldError> : null}
       {accountRows.length > 0 ? (
         <SettingsSection id="accounts" title="Accounts">
-          {accountRows.map(({ host, label, origin, credential }) => (
-            <Field key={host} orientation="horizontal" className="settings-field" data-testid={`settings-source-control-account-${host}`}>
-              <FieldLabel>{label}</FieldLabel>
-              <div className="flex min-w-0 items-center justify-end gap-2">
-                {credential ? (
-                  <>
-                    <span className="min-w-0 truncate text-xs text-muted-foreground" data-testid={`settings-source-control-account-${host}-user`}>
-                      {credential.account ?? "Signed In"}
-                    </span>
-                    <Button variant="outline" size="sm" data-testid={`settings-source-control-sign-out-${host}`} onClick={() => remove(origin)}>
-                      Sign Out
+          {accountRows.map(({ host, label, origin, credential }) => {
+            const state = credential ? stateOf(credential) : "signed-in";
+            const canSignIn = deviceClientId(host, testMode) !== null;
+            return (
+              <Field key={host} orientation="horizontal" className="settings-field" data-testid={`settings-source-control-account-${host}`}>
+                <FieldLabel>{label}</FieldLabel>
+                <div className="flex min-w-0 items-center justify-end gap-2">
+                  {credential ? (
+                    <>
+                      <span
+                        className={state === "signed-in" ? "min-w-0 truncate text-xs text-muted-foreground" : "min-w-0 truncate text-xs text-destructive"}
+                        data-testid={`settings-source-control-account-${host}-user`}
+                      >
+                        {state === "refused" ? "Sign-In Refused" : state === "expired" ? "Sign-In Expired" : credential.account ?? "Signed In"}
+                      </span>
+                      {state !== "signed-in" && canSignIn ? (
+                        <Button size="sm" data-testid={`settings-source-control-sign-in-again-${host}`} onClick={() => void link({ kind: "sign-in", host })}>
+                          Sign In Again
+                        </Button>
+                      ) : null}
+                      <Button variant="outline" size="sm" data-testid={`settings-source-control-sign-out-${host}`} onClick={() => remove(origin)}>
+                        Sign Out
+                      </Button>
+                    </>
+                  ) : (
+                    <Button size="sm" data-testid={`settings-source-control-sign-in-${host}`} onClick={() => void link({ kind: "sign-in", host })}>
+                      Sign In
                     </Button>
-                  </>
-                ) : (
-                  <Button size="sm" data-testid={`settings-source-control-sign-in-${host}`} onClick={() => void link({ kind: "sign-in", host })}>
-                    Sign In
-                  </Button>
-                )}
-              </div>
-            </Field>
-          ))}
+                  )}
+                </div>
+              </Field>
+            );
+          })}
         </SettingsSection>
       ) : null}
       <SettingsSection id="selfManagedGitLab" title="Self-Managed GitLab">
         {credentials.filter((credential) => credential.kind === "gitlab-token").map((credential) => (
-          <SavedHostRow key={credential.origin} credential={credential} onRemove={() => remove(credential.origin)} />
+          <SavedHostRow key={credential.origin} credential={credential} refused={stateOf(credential) === "refused"} onRemove={() => remove(credential.origin)} />
         ))}
         <TokenForm idPrefix="settings-source-control-gitlab" hostLabel="Instance URL" actionLabel="Save Token" credentialKind="gitlab-token" link={link} />
       </SettingsSection>
       <SettingsSection id="otherHosts" title="Other Git Hosts">
         {credentials.filter((credential) => credential.kind === "token").map((credential) => (
-          <SavedHostRow key={credential.origin} credential={credential} onRemove={() => remove(credential.origin)} />
+          <SavedHostRow key={credential.origin} credential={credential} refused={stateOf(credential) === "refused"} onRemove={() => remove(credential.origin)} />
         ))}
         <TokenForm idPrefix="settings-source-control-host" hostLabel="Host URL" actionLabel="Add Host" credentialKind="token" link={link} />
       </SettingsSection>

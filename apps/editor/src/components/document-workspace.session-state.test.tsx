@@ -29,7 +29,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     openDocuments: state.service.getOpenDocumentsOrdered(),
     projectDocument: { metadata: { name: "Test" } },
     assetRegistry: null,
-    sourceControl: { enabled: false },
+    sourceControl: { enabled: false, lockPrompt: [] },
     registerDockviewApi: () => {},
     captureLayoutForId: () => {},
     unregisterDockviewApi: () => {},

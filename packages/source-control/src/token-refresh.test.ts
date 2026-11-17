@@ -35,16 +35,40 @@ const refreshes = (host: FakeGitHost) =>
   host.requests.filter((request) => new URLSearchParams((request.body as string | undefined) ?? "").get("grant_type") === "refresh_token");
 
 describe("GitLab sign-in refresh", () => {
-  it("saves the refresh token and expiry a GitLab sign-in returns, but none for GitHub", async () => {
+  it("saves the refresh token and expiry a GitLab sign-in returns; a GitHub sign-in keeps only an expiry it is given", async () => {
     const host = new FakeGitHost();
     const time = clock();
     const { credential } = await signedInToGitLab(host, time);
     expect(credential).toMatchObject({ kind: "gitlab", token: "fake-gitlab-token", refreshToken: "fake-gitlab-refresh-1" });
     expect(credential.expiresAt).toBe(time.now() + 2 * HOUR);
-    const code = await requestDeviceCode("github", "client", host.http, time.device);
-    if (!isOk(code)) throw new Error("no code");
-    const github = await completeDeviceSignIn(code.value, "client", host.http, time.device);
-    expect(isOk(github) && [github.value.refreshToken, github.value.expiresAt]).toEqual([undefined, undefined]);
+    const signInToGitHub = async () => {
+      host.tokenReplies = [];
+      const code = await requestDeviceCode("github", "client", host.http, time.device);
+      if (!isOk(code)) throw new Error("no code");
+      const github = await completeDeviceSignIn(code.value, "client", host.http, time.device);
+      if (!isOk(github)) throw new Error("no sign-in");
+      return github.value;
+    };
+    // An OAuth App's token does not expire.
+    expect([(await signInToGitHub()).refreshToken, (await signInToGitHub()).expiresAt]).toEqual([undefined, undefined]);
+    // A GitHub App's user token may: its expiry is kept, so the device can tell it lapsed. GitHub tokens are never
+    // refreshed, so no refresh token is kept.
+    host.githubExpiresIn = 8 * 3600;
+    const expiring = await signInToGitHub();
+    expect([expiring.refreshToken, expiring.expiresAt]).toEqual([undefined, time.now() + 8 * HOUR]);
+  });
+
+  it("reports a refused credential it has no replacement for", async () => {
+    const host = new FakeGitHost();
+    const store = new CredentialStore(new MemorySecrets());
+    const github: HostCredential = { origin: "https://github.com", username: "x-access-token", token: "fake-github-token", kind: "github" };
+    await store.save(github);
+    host.refusedTokens.add(github.token);
+    const onRefused = vi.fn();
+    const credentials = new RefreshingCredentials({ store, http: host.http, now: () => 0, clientId: () => "client", onRefused });
+    const api = hostApiFor(github, host.http, credentials.source(github.origin))!;
+    expect(await api.user()).toMatchObject({ ok: false, error: { kind: "unauthorized" } });
+    expect(onRefused).toHaveBeenCalledWith(github.origin, github);
   });
 
   it("refreshes shortly before expiry, once for requests made together, and keeps the new token", async () => {

@@ -115,8 +115,8 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 
 | Group | Page | Covers |
 | --- | --- | --- |
-| Project | General | Auto-Save Interval, Compile On Save, infinite loop detection, Garbage Collection Interval, Editor Utility Objects |
-| Project | Source Control | Mode (Off, Integrated or Manual), repository, branch (the Default Branch in Integrated mode), Publish Project, whether Haptic syncs this desktop folder (Git App) and Git LFS file locking. Desktop and mobile apps only. |
+| Project | General | Auto-Save and its interval, Compile On Save, infinite loop detection, Garbage Collection Interval, Editor Utility Objects |
+| Project | Source Control | Mode (Off, Integrated or Manual), repository, branch (the Default Branch in Integrated mode), Publish Project, whether Haptic syncs this desktop folder (Git App) and Git LFS file locking (Lock On Edit, Release Locks After Push). Desktop and mobile apps only. |
 | Project | Export | What a game package includes, its App Identity (with the project version and build number) and App Icon, and Export Project |
 | Gameplay | Game | Startup Scene, Game Instance, 2D pixels per unit and sorting layers |
 | Gameplay | Save Games | Default save definition, slot and profile; preview saves |

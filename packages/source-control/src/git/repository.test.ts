@@ -367,7 +367,10 @@ describe("GitRepository", { timeout: 60_000 }, () => {
 
   it("types refused credentials, missing repositories and unreachable hosts", async () => {
     server.seed({ "assets/a.hasset": "A" });
-    expect((await rejection(clone(undefined, { token: "wrong" }))).kind).toBe("auth");
+    // The saved sign-in is refused: said so, apart from a 403 (no access) or no sign-in at all.
+    expect(await rejection(clone(undefined, { token: "wrong" }))).toMatchObject({ kind: "auth", code: "credential-refused", status: 401 });
+    const signedOut = cloneRepository({ storage: await server.storage(), http: server.http, credential: { current: async () => null, renew: async () => null }, repositoryUrl: REPOSITORY_URL, branch: "main" });
+    expect(await rejection(signedOut)).toMatchObject({ kind: "auth", code: "no-credential" });
     const missing = cloneRepository({ storage: await server.storage(), http: server.http, credential: server.credential(), repositoryUrl: `${GIT_ORIGIN}/team/none.git`, branch: "main" });
     expect((await rejection(missing)).kind).toBe("not-found");
     const offline = cloneRepository({ storage: await server.storage(), http: server.http, credential: fixedCredential({ ...CREDENTIAL, origin: "https://elsewhere.test" }), repositoryUrl: "https://elsewhere.test/a/b.git", branch: "main" });

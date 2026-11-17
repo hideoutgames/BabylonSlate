@@ -528,8 +528,9 @@ export class ProjectService {
     return this.textures.reconvertHdrEnvironment(guid, faceSize, options);
   }
 
-  async retryAllFailedTextureEncoding(): Promise<number> {
-    return this.textures.retryAllFailedTextureEncoding();
+  /** `skip`: Textures not to retry now (someone else's lock: a retry writes the file). */
+  async retryAllFailedTextureEncoding(skip?: (path: string) => boolean): Promise<number> {
+    return this.textures.retryAllFailedTextureEncoding(skip);
   }
 
   get storagePort(): ProjectStorage {
@@ -1178,8 +1179,12 @@ export class ProjectService {
     replacements: readonly ClassAssetReplacement[],
     deletingGuids: ReadonlySet<string>,
     onProgress?: (path: string) => Promise<void>,
+    options?: {
+      /** Refuses (rejects) before any file changes, given every referrer that would be rewritten. */
+      beforeWrite?: (paths: string[]) => Promise<void> | void;
+    },
   ): Promise<void> {
-    return replaceClassReferencesBeforeDelete(this.referenceRepairHost(), replacements, deletingGuids, onProgress);
+    return replaceClassReferencesBeforeDelete(this.referenceRepairHost(), replacements, deletingGuids, onProgress, options);
   }
 
   /** Rename a Class and its name-based referrers as one recoverable file operation. */
@@ -1200,6 +1205,8 @@ export class ProjectService {
     options: {
       deletedClassNames?: ReadonlySet<string>;
       onProgress?: (path: string) => Promise<void>;
+      /** Why a referrer must not be rewritten (someone else's lock); it is returned, not written. */
+      refuse?: (path: string) => string | null;
     } = {},
   ): Promise<Array<{ path: string; error: unknown }>> {
     return clearDeletedAssetReferences(this.referenceRepairHost(), deletedGuids, options);

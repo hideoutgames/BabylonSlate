@@ -18,7 +18,7 @@ Accounts belong to this device, not to a project: each person signs in once on e
 
 | Section | What it holds |
 | --- | --- |
-| Accounts | **GitHub** and **GitLab** (gitlab.com). Each row shows the signed-in user with **Sign Out**, or **Sign In**. |
+| Accounts | **GitHub** and **GitLab** (gitlab.com). Each row shows the signed-in user with **Sign Out**, or **Sign In**. A sign-in the host no longer accepts shows **Sign-In Refused** or **Sign-In Expired** with **Sign In Again**. |
 | Self-Managed GitLab | Your own GitLab instance: enter its **Instance URL** and a personal access token in **Token**, then choose **Save Token**. Saved instances are listed with **Remove**. |
 | Other Git Hosts | Any other host, such as Gitea: enter its **Host URL** and an access token, then choose **Add Host**. Each saved host shows **Token Saved** with **Remove**. |
 
@@ -44,6 +44,8 @@ GitHub asks you to let Haptic access your repositories and read your organizatio
 The dialog shows how long the code stays valid. If the code expires or you deny access, choose **Try Again** for a new code. **Cancel** stops waiting.
 
 A GitLab sign-in renews itself in the background. If GitLab no longer accepts it, Haptic signs you out of GitLab on this device and the sign-in banner returns.
+
+Your sign-ins stay on this device when the app updates. When you open a project that uses source control, or **Engine Settings > Source Control**, Haptic asks each host once whether your saved sign-in still works. A sign-in can stop working when you revoke Haptic's access on the host, when the host's sign-in app changes, or when the host gave it an expiry that has passed. Haptic renews GitLab sign-ins itself, but not GitHub ones. Haptic then shows the sign-in banner with **Sign In Again**, and **Engine Settings > Source Control** shows **Sign-In Refused** or **Sign-In Expired**. A token the host refuses shows **Token Refused**; remove it and save a new one.
 
 ## Clone a project
 
@@ -219,18 +221,19 @@ Keep the project in a folder that is a Git working copy whose top folder is the 
 | Repository | The repository's HTTPS or SSH address. Signed in to GitHub or GitLab, choose it from your repositories; **Use Typed URL** in the list takes an address on another host. Haptic always talks to the host over HTTPS; for an SSH address it uses the same host on the standard HTTPS port. In Integrated mode it shows the repository the project was cloned from or published to, and can't be changed here. |
 | Branch | The branch the locks belong to. Default `main`. Signed in to the repository's host, choose it from the host's branches. In Integrated mode it is the **Default Branch**, the team's branch, and can't be changed here; the branch you are on is your own, switched from the Source Control tab ([Branches](#branches)), and locks belong to the branch you are on. |
 | Account | Who you are signed in as on the repository's host, or **Not Signed In** with **Sign In**. |
-| Auto-Lock On First Edit | Lock a file the first time you edit it in this session. On by default. |
+| Lock On Edit | What your first edit of a file does: **Ask** whether to lock it (the default), **Always** lock it, or **Never** lock it. |
 | Release Locks After Push | Integrated mode: release your locks on the assets a push sent. On by default. |
 
 Setting **Mode** back to **Off** asks first. Your locks stay until you release them.
 
-If you open a project in Integrated or Manual mode on a device that has no account for its host, a banner says **This project uses GitHub file locking.** (or the host's name) with **Sign In**. Until you sign in, Haptic doesn't check or take any locks, and can't pull or push. For a host that takes a token, **Sign In** opens **Engine Settings > Source Control**.
+If you open a project in Integrated or Manual mode on a device that has no account for its host, a banner says **This project uses GitHub file locking.** (or the host's name) with **Sign In**. Until you sign in, Haptic doesn't check or take any locks, and can't pull or push. For a host that takes a token, **Sign In** opens **Engine Settings > Source Control**. If the host refuses your saved sign-in, or it expired, the banner says **GitHub refused the saved sign-in.** or **The GitHub sign-in expired.** with **Sign In Again**; after you sign in, Haptic reads your changes and the remote again.
 
 ## Working with locks
 
-- **Your edits:** with Auto-Lock on, the first change to a document locks its file. If locking fails, the edit still applies and an **Unlocked** banner warns you. In Integrated mode locks belong to the branch you are on, so until Haptic has opened the repository and knows that branch, locking waits: edits made meanwhile are locked once it does, and **Release** says why it waits.
+- **Your edits:** with **Lock On Edit** set to **Ask**, your first change to a file asks **Lock** and the file's name, with **Don't Lock** and **Lock**. Changes that touch several files at once ask once, listing them. The question waits until you let go of the mouse or finger, and pressing Enter or Space while it appears doesn't answer it. Haptic asks about each file once, and again after its lock is released or a pull, branch switch, revert or another app changes the file. With **Always**, the first change locks the file without asking; with **Never**, Haptic doesn't lock it. If locking fails, the edit still applies and an **Unlocked** banner warns you. In Integrated mode locks belong to the branch you are on, so until Haptic has opened the repository and knows that branch, locking waits: edits made meanwhile are locked, or asked about, once it does, and **Release** says why it waits.
 - **Switching branches:** on a host that keeps locks per branch, your locks on the branch you switched away from stay in **Locks**, marked **On** and the branch's name. **Release** releases them there, and **Release Locks After Push** releases them too when the push sent their assets.
-- **Someone else's lock:** the document opens read-only with a **Locked by** banner showing the owner and how long ago they locked it. Choose **Edit Anyway** only after talking to them; your changes may conflict.
+- **Someone else's lock:** the document opens read-only with a **Locked by** banner showing the owner and how long ago they locked it. **Edit Anyway** lets you change it, but you can't save it until they release the lock.
+- **Saving a file someone else has locked:** **Save All** saves everything else and shows **Save Failed**, naming each such file and who holds its lock. **Discard Changes** drops your changes to all of them and reloads them from disk; **Ignore** keeps your changes in the editor, still unsaved, and saving them keeps failing while the lock is theirs. Auto-save skips these files without asking. Play doesn't start while they are unsaved: discard the changes, wait until the lock is released, or choose **Play Without Saving**; Preview Build plays saved files only, so it waits for one of the first two. When you close the project or its tabs, the unsaved-documents prompt stays open for them until you discard them. Haptic also doesn't re-encode a Texture, bake a Scene, add or remove an Audio asset's clips, or remove a deleted asset's references from a file while someone else has locked it; deleting a Class that such a file uses is refused, naming the file.
 - **Content Browser:** a locked asset shows a lock badge in its tile's corner: a filled lock for yours (**Locked By You**), an outlined red badge with a person for someone else's, named in its tooltip (**Locked By** and their name). Its menu's **Source Control** submenu says who holds it and offers **Lock**, **Release Lock** or **Force Unlock…**, and in Integrated mode **Show Changes**, **Show History** and **Revert…**. See [Source Control in the Content Browser](../editor/content-browser.md#source-control-in-the-content-browser).
 - **Renaming and moving:** your locks move with the file. Haptic refuses to rename, move or delete a file someone else has locked.
 

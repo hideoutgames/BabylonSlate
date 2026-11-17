@@ -56,6 +56,7 @@ import {
 } from "../services/script-compiler";
 import { tryReparentUserClass } from "../lib/reparent-class";
 import { ProjectSaveState } from "../lib/project-save-state";
+import { refusingLockedScenes } from "../lib/locked-writes";
 import {
   AssetFormatVersionError,
 } from "@haptic/assets";
@@ -268,7 +269,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const getAuthoringLock = useCallback(() => documentService.getAuthoringLock(), [documentService]);
   const subscribeAuthoringLock = useCallback((listener: () => void) => documentService.onAuthoringLockChange(listener), [documentService]);
   const lockAuthoringWrites = useCallback<ProjectService["lockAuthoringWrites"]>(reason => projectService.lockAuthoringWrites(reason), [projectService]);
-  const withSceneWrite = useCallback<ProjectService["withSceneWrite"]>(work => projectService.withSceneWrite(work), [projectService]);
+  // A bake outside Save All never writes a Scene someone else has locked.
+  const withSceneWrite = useCallback<ProjectService["withSceneWrite"]>(
+    work => projectService.withSceneWrite(writer => work(refusingLockedScenes(writer, sourceControlRef.current))),
+    [projectService],
+  );
   useEffect(() => documentService.onAuthoringLockChange(bump), [bump, documentService]);
   /** Plugins, search index or Show Plugin Content changed: advance `registryEpoch`. */
   const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), [setRegistryTick]);
@@ -314,6 +319,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const noteRegistryReread = useCallback(() => {
     rereadEpochRef.current = projectService.registryGeneration + registryTickRef.current;
   }, [projectService]);
+  // Applied edits reach the recovery journal in short batches; every path
+  // that reads, clears or abandons the journal flushes first. One buffer for
+  // the provider's lifetime keeps each project's writes in order. Its flush
+  // on hide is attached further down, where its effect has always run.
+  const [journalBuffer] = useState(
+    () =>
+      new JournalBuffer(async (guid, lines) =>
+        appendJournalLines(await ensureDerived(), guid, lines),
+      ),
+  );
   // Effects after the history-reopen subscription, before source control's.
   const {
     externalChangePrompt,
@@ -332,6 +347,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump,
     closeDocumentsForPathsRef,
     noteRegistryReread,
+    sourceControlRef,
+    journalBuffer,
   });
   // Asset writes that are not saves (a new asset, an import, a move or delete,
   // a Texture encode) advance the registry: Integrated status follows them too.
@@ -358,15 +375,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     runForegroundRescanRef,
   });
 
-  // Applied edits reach the recovery journal in short batches; every path
-  // that reads, clears or abandons the journal flushes first. One buffer for
-  // the provider's lifetime keeps each project's writes in order.
-  const [journalBuffer] = useState(
-    () =>
-      new JournalBuffer(async (guid, lines) =>
-        appendJournalLines(await ensureDerived(), guid, lines),
-      ),
-  );
+  // Buffered journal records are written whenever the app is hidden.
   useEffect(() => attachJournalFlushOnHide(journalBuffer), [journalBuffer]);
 
   // Effects after the journal flush on hide, before the mount effect below.
@@ -459,6 +468,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const {
     autoSaveStatus,
     setAutoSaveStatus,
+    saveFailed,
+    dismissSaveFailed,
     migrationPromptRequest,
     cancelDebouncedSave,
     enqueueProjectWrite,
@@ -478,6 +489,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     playContent,
     setLastCompiledSignature,
     setMigrationPending,
+    sourceControlRef,
     bump,
   });
 
@@ -584,6 +596,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     captureMtimeSnapshot,
     resetExternalChanges,
     setAutoSaveStatus,
+    dismissSaveFailed,
     cancelDebouncedSave,
     enqueueProjectWrite,
     cancelExclusiveSceneOpen,
@@ -1049,6 +1062,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       recoveryAvailable,
       migrationPending,
       migrationPromptRequest,
+      saveFailed,
       templates,
       homepageReady,
       pendingExclusiveScene,
@@ -1057,7 +1071,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       publishNotice,
       thumbnailsEnabled,
     }),
-    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, publishNotice, thumbnailsEnabled],
+    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, saveFailed, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, publishNotice, thumbnailsEnabled],
   );
 
   return (

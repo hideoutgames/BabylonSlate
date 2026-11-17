@@ -298,9 +298,10 @@ describe("project schema", () => {
     expect(normalizeProjectSettings({ loopCount: -3 }).loopCount).toBe(1_000_000);
   });
 
-  it("defaults compile on save and a two-minute autosave interval", () => {
+  it("defaults compile on save and Auto-Save on with a two-minute interval", () => {
     const defaults = normalizeProjectSettings(undefined);
     expect(defaults.compileOnSave).toBe(true);
+    expect(defaults.autoSave).toBe(true);
     expect(defaults.autoSaveIntervalMs).toBe(120_000);
     expect(
       normalizeProjectSettings({ compileOnSave: false, autoSaveIntervalMs: 5000 })
@@ -309,6 +310,12 @@ describe("project schema", () => {
     expect(
       normalizeProjectSettings({ autoSaveIntervalMs: 0 }).autoSaveIntervalMs,
     ).toBe(120_000);
+    // Off is kept, with the interval it returns to when turned on again.
+    expect(normalizeProjectSettings({ autoSave: false, autoSaveIntervalMs: 5000 })).toMatchObject({
+      autoSave: false,
+      autoSaveIntervalMs: 5000,
+    });
+    expect(normalizeProjectSettings({ autoSave: "no" } as unknown as Partial<ProjectSettings>).autoSave).toBe(true);
   });
 
   it("normalizes a missing startup scene guid to null and keeps a stored guid", () => {
@@ -387,12 +394,12 @@ describe("project schema", () => {
     ).toEqual(["Tools", "Inspector"]);
   });
 
-  it("defaults source control to Off with auto-lock and release after push", () => {
+  it("defaults source control to Off, asking to lock on edit, with release after push", () => {
     expect(normalizeProjectSettings(undefined).sourceControl).toEqual({
       mode: "off",
       repositoryUrl: "",
       branch: "main",
-      autoLockOnEdit: true,
+      lockOnEdit: "ask",
       releaseLocksAfterPush: true,
     });
     expect(createEmptyProject("Demo").settings.sourceControl.mode).toBe("off");
@@ -402,7 +409,7 @@ describe("project schema", () => {
           mode: "manual",
           repositoryUrl: "  git@github.com:org/repo.git  ",
           branch: "  develop  ",
-          autoLockOnEdit: false,
+          lockOnEdit: "never",
           releaseLocksAfterPush: false,
         },
       }).sourceControl,
@@ -410,14 +417,29 @@ describe("project schema", () => {
       mode: "manual",
       repositoryUrl: "git@github.com:org/repo.git",
       branch: "develop",
-      autoLockOnEdit: false,
+      lockOnEdit: "never",
       releaseLocksAfterPush: false,
     });
     expect(
       normalizeProjectSettings({
         sourceControl: { mode: "integrated", branch: "" },
       } as unknown as Partial<ProjectSettings>).sourceControl,
-    ).toMatchObject({ mode: "integrated", branch: "main", autoLockOnEdit: true, releaseLocksAfterPush: true });
+    ).toMatchObject({ mode: "integrated", branch: "main", lockOnEdit: "ask", releaseLocksAfterPush: true });
+  });
+
+  it.each([
+    ["ask", "ask"],
+    ["always", "always"],
+    ["never", "never"],
+    ["sometimes", "ask"],
+    [true, "ask"],
+    [undefined, "ask"],
+  ])("reads Lock On Edit %j as %s", (stored, expected) => {
+    expect(
+      normalizeProjectSettings({
+        sourceControl: { mode: "manual", lockOnEdit: stored },
+      } as unknown as Partial<ProjectSettings>).sourceControl.lockOnEdit,
+    ).toBe(expected);
   });
 
   it("reads an unknown mode as Off and keeps only the current source control fields", () => {
@@ -427,7 +449,7 @@ describe("project schema", () => {
         enabled: true,
         repositoryUrl: "https://github.com/org/repo.git",
         branch: "main",
-        autoLockOnEdit: true,
+        lockOnEdit: "always",
         pollIntervalMs: 15_000,
         token: "secret",
       },
@@ -436,7 +458,7 @@ describe("project schema", () => {
       mode: "off",
       repositoryUrl: "https://github.com/org/repo.git",
       branch: "main",
-      autoLockOnEdit: true,
+      lockOnEdit: "always",
       releaseLocksAfterPush: true,
     });
   });

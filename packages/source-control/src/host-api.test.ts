@@ -205,6 +205,18 @@ describe("host APIs", () => {
     }
   });
 
+  it("reads who a sign-in belongs to, or that the host refuses it", async () => {
+    const host = new FakeGitHost();
+    host.account = "ada";
+    const github = hostApiFor({ origin: "https://github.com", username: "x-access-token", token: "fake-1", kind: "github" }, host.http)!;
+    const gitlab = hostApiFor({ origin: "https://gitlab.com", username: "oauth2", token: "fake-2", kind: "gitlab" }, host.http)!;
+    expect(await github.user()).toEqual({ ok: true, value: "ada" });
+    expect(await gitlab.user()).toEqual({ ok: true, value: "ada" });
+    host.refusedTokens.add("fake-1");
+    expect(await github.user()).toMatchObject({ ok: false, error: { kind: "unauthorized" } });
+    expect(host.requests.map((request) => request.url)).toEqual(["https://api.github.com/user", "https://gitlab.com/api/v4/user", "https://api.github.com/user"]);
+  });
+
   it("fails the owners when the signed-in user cannot be read", async () => {
     for (const credential of [GITHUB, GITLAB]) {
       const host = new FakeGitHost();

@@ -14,6 +14,7 @@ import {
 } from "../lib/class-asset-lookup";
 import { refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
 import type { JournalBuffer } from "../lib/journal-buffer";
+import { lockedWriteRefusal } from "../lib/locked-writes";
 import { isPluginDocumentReadOnly } from "../lib/plugin-ui";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import type { DocumentService } from "../services/document-service";
@@ -132,7 +133,15 @@ export function useAssetFileOperations({
       }
       return [{ doc, content: walked.value }];
     });
-    await projectService.replaceClassReferencesBeforeDelete(replacements, deletingGuids, onProgress);
+    await projectService.replaceClassReferencesBeforeDelete(replacements, deletingGuids, onProgress, {
+      // As a rename: a referrer someone else has locked refuses the whole replacement before any file changes.
+      beforeWrite: (paths) => {
+        for (const path of new Set([...paths, ...openChanges.map(({ doc }) => doc.ref.path)])) {
+          const error = sourceControlRef.current.refuseIfTheirs(path);
+          if (error) throw new Error(`${path}: ${error}`);
+        }
+      },
+    });
     // The referrer files now name the replacement. Open tabs follow at once,
     // from their current content, so a failed Project Settings write below
     // cannot leave a tab whose next Save writes the old reference back.
@@ -154,7 +163,7 @@ export function useAssetFileOperations({
         setProjectDocument(next);
       }
     }
-  }, [bump, collectGraphTypeSchemas, documentService, projectService, saveProjectNow, setProjectDocument, projectDocumentRef]);
+  }, [bump, collectGraphTypeSchemas, documentService, projectService, saveProjectNow, setProjectDocument, projectDocumentRef, sourceControlRef]);
 
   const renameAsset = useCallback((guid: string, newName: string) => enqueueProjectWrite(async () => {
     cancelDebouncedSave();
@@ -242,6 +251,8 @@ export function useAssetFileOperations({
       const unrepaired = await projectService.clearDeletedAssetReferences(deletedGuids, {
         deletedClassNames,
         onProgress,
+        // A referrer someone else has locked keeps its reference and is reported with the others.
+        refuse: (path) => lockedWriteRefusal(sourceControlRef.current, path),
       });
       for (const doc of documentService.getOpenDocumentsOrdered()) {
         if (isChromeDocumentKind(doc.ref.kind) || !doc.content) continue;
@@ -300,6 +311,7 @@ export function useAssetFileOperations({
       saveProjectNow,
       setProjectDocument,
       projectDocumentRef,
+      sourceControlRef,
     ],
   );
 

@@ -7,6 +7,7 @@ import {
   SOURCE_CONTROL_ID,
   PROJECT_FILE,
   createActor,
+  createMeshComponent,
   documentId,
   isProjectOpenElsewhere,
   type DataDefinitionAsset,
@@ -25,14 +26,15 @@ import {
 import { MANUAL_SOURCE_CONTROL, signedInHosts } from "../testing/source-control-hosts";
 import { FakeLockProvider } from "@haptic/source-control";
 import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
-import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@haptic/assets";
-import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload, serializeJournalLine } from "@haptic/edit";
+import { AUDIO_REVERB_CHUNK_ID, appendJournalLines, readJournalLines, sealJournalForRecovery } from "@haptic/assets";
+import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload, resolveJournalLines, serializeJournalLine } from "@haptic/edit";
 import { UndoHistoryNotice } from "../components/undo-history-notice";
 import { createProjectAsset } from "../lib/create-project-asset";
 import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { JOURNAL_FLUSH_DELAY_MS } from "../lib/journal-buffer";
 import { registerNavBakeSaveFlush } from "../lib/nav-bake-save";
+import { registerAudioReverbSaveFlush } from "../lib/audio-reverb-bake";
 import { setEditorQuiet } from "../lib/editor-quiet";
 import { subscribeEditorViewportFrameHold } from "../lib/editor-frame-hold";
 import { onEncodeQueuePause } from "../services/encode-queue-pause";
@@ -45,6 +47,7 @@ import {
   unmountDocumentProvider,
 } from "../testing/real-document-provider";
 import { useDocumentStateProbe, type DocumentStateProbe } from "../testing/document-state-probe";
+import type { SaveAllOutcome } from "./document-context-types";
 import {
   DocumentProvider,
   useActiveDocumentId,
@@ -185,6 +188,10 @@ async function saveAndSwitchScene(actions: DocumentActions, path: string) {
   expect(documents().openDocuments.some((doc) => doc.id === MAIN_SCENE_ID)).toBe(false);
 }
 
+function openSceneLabel(id = MAIN_SCENE_ID): string {
+  return documents().openDocuments.find((entry) => entry.id === id)!.ref.label;
+}
+
 function firstActorPosition(id: string) {
   return openScene(id).actors[0]!.transform.position;
 }
@@ -295,7 +302,7 @@ describe("DocumentProvider actions and route", () => {
     const jobs = vi.fn();
     const unsubscribe = subscribeModelThumbnailJobs(jobs);
     try {
-      expect(await act(() => actions.saveAll())).toBe(true);
+      expect(await act(() => actions.saveAll())).toBe("saved");
       await waitFor(() => expect(jobs.mock.calls.flat(1).flat().length).toBeGreaterThan(0));
     } finally { unsubscribe(); }
     const queued = (jobs.mock.calls.flat(1).flat() as Array<{ guid: string; type: string; cacheKey: string; projectGuid: string }>)
@@ -504,7 +511,7 @@ describe("DocumentProvider actions and route", () => {
       return original.call(this, kind, path, content, options);
     });
     try {
-      let saving!: Promise<boolean>;
+      let saving!: Promise<SaveAllOutcome>;
       act(() => { saving = actions.saveAll(); });
       await waitFor(() => expect(started).toBe(true));
       let renaming!: ReturnType<DocumentActions["renameAsset"]>;
@@ -569,7 +576,7 @@ describe("DocumentProvider actions and route", () => {
       return original.call(this, kind, path, content, options);
     });
     try {
-      let saving!: Promise<boolean>;
+      let saving!: Promise<SaveAllOutcome>;
       act(() => { saving = actions.saveAll(); });
       await waitFor(() => expect(started).toBe(true));
       // As Content Browser Delete does: close the tab, then delete the file.
@@ -612,7 +619,7 @@ describe("DocumentProvider actions and route", () => {
       return registry;
     });
     try {
-      let saving!: Promise<boolean>;
+      let saving!: Promise<SaveAllOutcome>;
       act(() => { saving = actions.saveAll(); });
       await waitFor(() => expect(started).toBe(true));
       await act(() => documents().assetRegistry!.deleteAsset(level.header.guid));
@@ -667,6 +674,47 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().tabOrder).not.toContain(SOURCE_CONTROL_ID);
   });
 
+  it("refuses to rewrite a Scene someone else has locked when a Class or Material it uses is deleted", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const hero = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    const shiny = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Material", name: "Shiny" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const mesh = createMeshComponent("mesh", "box");
+    mesh.properties.materialGuid = shiny.header.guid;
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID),
+      actors: [createActor("hero", "Hero", { classId: "Hero" }), { ...createActor("wall", "Wall"), components: [mesh] }],
+    }));
+    await act(() => actions.saveAll());
+    act(() => actions.closeDocument(MAIN_SCENE_ID));
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Stable");
+    const sceneBytes = await storage.readBinary(MAIN_SCENE_FILE);
+    const fake = new FakeLockProvider();
+    fake.addTheirs(MAIN_SCENE_FILE, "Teammate");
+    const hosts = await signedInHosts();
+    await act(() => documents().sourceControl.configure({
+      settings: MANUAL_SOURCE_CONTROL, projectKey: documents().projectGuid, platform: "electron", testMode: true, hosts, fake,
+    }));
+    await act(() => documents().sourceControl.refresh());
+    // A Class delete's replacement is refused before any file changes, as a rename is.
+    await act(async () => {
+      await expect(actions.replaceClassReferencesBeforeDelete(
+        [{ guid: hero.header.guid, classId: "Hero", replacement: null }], new Set([hero.header.guid]),
+      )).rejects.toThrow(`${MAIN_SCENE_FILE}: Locked by Teammate`);
+    });
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);
+    // After a Material delete the Scene keeps its reference and is reported.
+    await act(() => registry.deleteAsset(shiny.header.guid));
+    await act(async () => {
+      await expect(actions.repairAfterAssetDelete(new Set([shiny.header.guid])))
+        .rejects.toThrow(`References to the deleted assets remain in ${MAIN_SCENE_FILE}: Locked by Teammate`);
+    });
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);
+  });
+
   it("finishes an admitted Save All including its bake writes before a file lock and defers later saves", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
@@ -684,12 +732,12 @@ describe("DocumentProvider actions and route", () => {
     });
     let lease: ReturnType<DocumentActions["lockAuthoringWrites"]> | undefined;
     try {
-      let saving!: Promise<boolean>;
+      let saving!: Promise<SaveAllOutcome>;
       act(() => { saving = actions.saveAll(); });
       await started;
       lease = actions.lockAuthoringWrites("Simulation is preparing");
-      expect(await actions.saveAll()).toBe(false);
-      await act(async () => { finishBake(); expect(await saving).toBe(true); });
+      expect(await actions.saveAll()).toBe("authoring-locked");
+      await act(async () => { finishBake(); expect(await saving).toBe("saved"); });
       expect(await lease.ready).toBe(true);
       expect(documents().dirtyDocuments).toEqual([]);
       const stored = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
@@ -917,6 +965,37 @@ describe("DocumentProvider actions and route", () => {
       expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(pulled.actors[0]!.transform.position);
     });
 
+    it("asks Lock On Edit again for a file a pull or another app changed", async () => {
+      const actions = await openProject();
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+      const hosts = await signedInHosts();
+      await act(() => documents().sourceControl.configure({
+        settings: { ...MANUAL_SOURCE_CONTROL, lockOnEdit: "ask" }, projectKey: documents().projectGuid,
+        platform: "electron", testMode: true, hosts, fake: new FakeLockProvider(),
+      }));
+      const asked = async () => {
+        await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+        const paths = documents().sourceControl.lockPrompt;
+        await act(() => documents().sourceControl.answerLockPrompt(paths, false));
+        return paths;
+      };
+      expect(await asked()).toEqual([MAIN_SCENE_FILE]);
+      expect(await asked()).toEqual([]);
+      await act(() => actions.saveAll());
+
+      await pullChangesMain();
+      await act(() => actions.applyPulledChanges([MAIN_SCENE_FILE], holdForPull(actions)));
+      expect(await asked()).toEqual([MAIN_SCENE_FILE]);
+      await act(() => actions.saveAll());
+
+      // Another app changes it; coming back to the editor rescans the project.
+      await pullChangesMain();
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } })); });
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } })); });
+      await waitFor(() => expect(documents().externalChangePrompt?.cleanChangedPaths).toEqual([MAIN_SCENE_FILE]));
+      expect(await asked()).toEqual([MAIN_SCENE_FILE]);
+    });
+
     it("leaves a pulled change it could not reload for the next foreground rescan", async () => {
       const actions = await openProject();
       await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
@@ -1079,7 +1158,7 @@ describe("DocumentProvider actions and route", () => {
     await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 5)));
     await settleJournal();
     expect(await readJournalLines(derived, guid)).toHaveLength(2);
-    expect(await act(() => actions.saveAll())).toBe(true);
+    expect(await act(() => actions.saveAll())).toBe("saved");
     expect(documents().dirtyDocuments).toEqual([]);
     expect(documents().recoveryAvailable).toBe(true);
     expect(await readJournalLines(derived, guid)).toEqual([unsaved]);
@@ -1102,7 +1181,7 @@ describe("DocumentProvider actions and route", () => {
     // The replayed edits stay journaled until saved, each exactly once.
     await settleJournal();
     expect(await readJournalLines(derived, guid)).toHaveLength(2);
-    expect(await act(() => actions.saveAll())).toBe(true);
+    expect(await act(() => actions.saveAll())).toBe("saved");
     await settleJournal();
     expect(await readJournalLines(derived, guid)).toEqual([]);
   });
@@ -1450,7 +1529,7 @@ describe("DocumentProvider actions and route", () => {
       return original.apply(this, args);
     });
     try {
-      let saving!: Promise<boolean>;
+      let saving!: Promise<SaveAllOutcome>;
       let closing!: Promise<boolean>;
       act(() => { saving = actions.saveAll(); });
       await waitFor(() => expect(write).toHaveBeenCalled());
@@ -1459,7 +1538,7 @@ describe("DocumentProvider actions and route", () => {
       expect(documents().route).toBe("editor");
       await act(async () => {
         releaseWrite();
-        expect(await saving).toBe(true);
+        expect(await saving).toBe("saved");
         expect(await closing).toBe(true);
       });
     } finally {
@@ -1662,6 +1741,143 @@ describe("DocumentProvider actions and route", () => {
     } finally {
       delete (navigator as { locks?: unknown }).locks;
     }
+  });
+});
+
+describe("DocumentProvider Save All and files someone else has locked", () => {
+  /** Main, open and edited, with a Data Definition beside it edited too; Main is locked by a teammate. */
+  async function editsWithMainLocked() {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const stats = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "DataDefinition", name: "Stats" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.openDocument({ kind: "data-definition", path: stats.path, label: "Stats Data Definition" }));
+    await act(() => actions.saveAll());
+    const fake = new FakeLockProvider();
+    fake.addTheirs(MAIN_SCENE_FILE, "Teammate");
+    const hosts = await signedInHosts();
+    await act(() => documents().sourceControl.configure({
+      settings: MANUAL_SOURCE_CONTROL, projectKey: documents().projectGuid, platform: "electron", testMode: true, hosts, fake,
+    }));
+    await act(() => documents().sourceControl.refresh());
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Stable");
+    const stored = { scene: await storage.readBinary(MAIN_SCENE_FILE), stats: await storage.readBinary(stats.path) };
+    const statsId = documentId({ kind: "data-definition", path: stats.path });
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 3)));
+    await act(() => actions.applyAssetDocumentChange(statsId, {
+      kind: "dataDefinition", fields: [{ id: "hp", name: "HP", typeId: "number", defaultValue: 10 }],
+    }));
+    return { actions, stats, statsId, storage, stored, fake };
+  }
+
+  const dirtyIds = () => documents().dirtyDocuments.map((doc) => doc.id);
+  const settleJournal = () => act(() => new Promise((resolve) => setTimeout(resolve, JOURNAL_FLUSH_DELAY_MS * 2)));
+  /** The documents crash recovery would replay edits onto. */
+  const recoverable = async () =>
+    [...new Set(resolveJournalLines(await readJournalLines(await createDerivedStorage(), documents().projectGuid!)).map((line) => line.docId))];
+
+  it("writes everything else, keeps the locked document unsaved and out of the file, and names it in Save Failed", async () => {
+    const { actions, stats, statsId, storage, stored } = await editsWithMainLocked();
+    expect(await act(() => actions.saveAll())).toBe("locked");
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(stored.scene);
+    expect(await storage.readBinary(stats.path)).not.toEqual(stored.stats);
+    expect(dirtyIds()).toEqual([MAIN_SCENE_ID]);
+    expect(documents().saveFailed).toEqual({
+      purpose: "save",
+      documents: [{ id: MAIN_SCENE_ID, path: MAIN_SCENE_FILE, label: openSceneLabel(), holder: "Teammate" }],
+    });
+    // Recovery keeps only what is still unsaved: the saved Data Definition's edit is not replayed.
+    await settleJournal();
+    expect(await recoverable()).toEqual([MAIN_SCENE_ID]);
+    expect(statsId).not.toBe(MAIN_SCENE_ID);
+
+    // Save All stays refused while the lock is theirs; Play names itself.
+    act(() => actions.dismissSaveFailed());
+    expect(await act(() => actions.saveAll("play"))).toBe("locked");
+    expect(documents().saveFailed?.purpose).toBe("play");
+  });
+
+  it("lets Auto-Save skip the locked document quietly, with no prompt and no paused error", async () => {
+    const { actions } = await editsWithMainLocked();
+    // The edits' interval restarts under fake timers.
+    act(() => actions.setAutoSavePaused(true));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      act(() => actions.setAutoSavePaused(false));
+      await act(() => vi.advanceTimersByTimeAsync(120_000));
+      for (let i = 0; i < 1_000 && documents().autoSaveStatus?.state !== "saved"; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          await new Promise((resolve) => setImmediate(resolve));
+        });
+      }
+      expect(documents().autoSaveStatus).toEqual({ state: "saved" });
+      expect(dirtyIds()).toEqual([MAIN_SCENE_ID]);
+      expect(documents().saveFailed).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("discards the locked document's changes from disk, history and recovery, but not while documents are read-only", async () => {
+    const { actions, storage, stored } = await editsWithMainLocked();
+    expect(await act(() => actions.saveAll())).toBe("locked");
+    let release!: () => void;
+    act(() => { release = actions.lockAuthoring("Read-only during Simulation Play"); });
+    expect(await act(() => actions.discardDocumentChanges([MAIN_SCENE_FILE]))).toBe(false);
+    expect(dirtyIds()).toEqual([MAIN_SCENE_ID]);
+    act(() => release());
+
+    expect(await act(() => actions.discardDocumentChanges([MAIN_SCENE_FILE]))).toBe(true);
+    expect(dirtyIds()).toEqual([]);
+    await act(() => actions.setActiveDocument(MAIN_SCENE_ID));
+    expect(documents().canUndoActiveDocument).toBe(false);
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(stored.scene);
+    await settleJournal();
+    expect(await recoverable()).toEqual([]);
+  });
+
+  it("writes no bake into a Scene someone else has locked: skipped in Save All, refused outside it", async () => {
+    const { actions, fake } = await editsWithMainLocked();
+    const unregister = registerNavBakeSaveFlush(async (writer) => {
+      await writer!.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([7, 3, 1]), openScene(MAIN_SCENE_ID) as unknown as Record<string, unknown>);
+    });
+    // The reverb flush learns that its write did not land, so it writes again on a later save.
+    const reverbWrites: string[] = [];
+    registerAudioReverbSaveFlush(async (_scenes, writer) => {
+      await writer!.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([5]), openScene(MAIN_SCENE_ID) as unknown as Record<string, unknown>)
+        .then(() => reverbWrites.push("written"), (error: Error) => reverbWrites.push(error.message));
+      return new Map();
+    });
+    try {
+      expect(await act(() => actions.saveAll())).toBe("locked");
+      expect(reverbWrites).toEqual(["Locked by Teammate. You can't save it until they release the lock."]);
+      expect(await actions.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toBeNull();
+      expect(await actions.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toBeNull();
+
+      // Released: the next save writes both.
+      await fake.unlock(fake.snapshot().find((lock) => lock.path === MAIN_SCENE_FILE)!.id, { force: true });
+      await act(() => documents().sourceControl.refresh());
+      expect(await act(() => actions.saveAll())).toBe("saved");
+      expect(reverbWrites.at(-1)).toBe("written");
+      expect(await actions.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toEqual(new Uint8Array([7, 3, 1]));
+    } finally {
+      unregister();
+      registerAudioReverbSaveFlush(null);
+    }
+    // Locked again: a bake outside Save All is refused and the file keeps its navmesh.
+    fake.addTheirs(MAIN_SCENE_FILE, "Teammate");
+    await act(() => documents().sourceControl.refresh());
+    const payload = openScene(MAIN_SCENE_ID) as unknown as Record<string, unknown>;
+    await expect(actions.withSceneWrite((writer) => writer.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([1]), payload)))
+      .rejects.toThrow("Locked by Teammate");
+    await expect(actions.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([1]), payload)).rejects.toThrow("Locked by Teammate");
+    expect(await actions.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toEqual(new Uint8Array([7, 3, 1]));
+    // Area emission writes into the asset's file too, and is refused before it reads anything.
+    await expect(actions.prepareAreaEmission(documents().assetRegistry!.getByPath(MAIN_SCENE_FILE)!.header.guid))
+      .rejects.toThrow("Locked by Teammate");
   });
 });
 
@@ -1889,6 +2105,40 @@ describe("DocumentProvider closed document history", () => {
     }
   });
 
+  it("saves nothing on its own with Auto-Save off, and starts a new interval when it is turned back on", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // The interval this edit starts is dropped when Auto-Save is turned off.
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+      act(() => actions.updateProjectSettings({ autoSave: false }));
+      await act(() => vi.advanceTimersByTimeAsync(300_000));
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+      await act(() => vi.advanceTimersByTimeAsync(300_000));
+      expect(documents().autoSaveStatus).toBeNull();
+      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
+      expect(documents().projectDirty).toBe(true);
+
+      act(() => actions.updateProjectSettings({ autoSave: true }));
+      await act(() => vi.advanceTimersByTimeAsync(119_000));
+      expect(documents().autoSaveStatus).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(1_000));
+      for (let i = 0; i < 1_000 && documents().autoSaveStatus?.state !== "saved"; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          await new Promise((resolve) => setImmediate(resolve));
+        });
+      }
+      expect(documents().autoSaveStatus).toEqual({ state: "saved" });
+      expect(documents().dirtyDocuments).toHaveLength(0);
+      expect(documents().projectDirty).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("saves nothing while a game covers the editor, and starts a new interval once it is back", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
@@ -1931,18 +2181,18 @@ describe("DocumentProvider closed document history", () => {
       { type: "Scene", fromVersion: 0, toVersion: 4, path: "assets/Untouched.scene.hasset" },
     ]);
     try {
-      expect(await act(() => actions.saveAll())).toBe(false);
+      expect(await act(() => actions.saveAll())).toBe("migrations");
       expect(documents().migrationPromptRequest).toBe(1);
       expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
 
-      expect(await act(() => actions.approveMigrationsAndSave())).toBe(true);
+      expect(await act(() => actions.approveMigrationsAndSave())).toBe("saved");
       expect(documents().dirtyDocuments).toEqual([]);
       // Save cleared the journal its edit was written to, so no recovery remains.
       await act(() => new Promise((resolve) => setTimeout(resolve, JOURNAL_FLUSH_DELAY_MS * 2)));
       expect(await readJournalLines(derived, guid)).toEqual([]);
 
       await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
-      expect(await act(() => actions.saveAll())).toBe(true);
+      expect(await act(() => actions.saveAll())).toBe("saved");
       expect(documents().migrationPromptRequest).toBe(1);
       expect(documents().dirtyDocuments).toEqual([]);
     } finally {
@@ -1963,7 +2213,7 @@ describe("DocumentProvider closed document history", () => {
     });
     try {
       await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
-      expect(await act(() => actions.saveAll())).toBe(true);
+      expect(await act(() => actions.saveAll())).toBe("saved");
       expect(heldWhileSaving).toEqual([true]);
       expect(transitions.at(-1)).toBe(false);
 
@@ -1976,7 +2226,7 @@ describe("DocumentProvider closed document history", () => {
         { type: "Scene", fromVersion: 0, toVersion: 4, path: "assets/Untouched.scene.hasset" },
       ]);
       try {
-        expect(await act(() => actions.saveAll())).toBe(false);
+        expect(await act(() => actions.saveAll())).toBe("migrations");
       } finally {
         pending.mockRestore();
       }

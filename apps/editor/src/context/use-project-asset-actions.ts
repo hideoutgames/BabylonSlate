@@ -10,6 +10,7 @@ import { documentId } from "@haptic/core";
 import { derivedDataRoot, type AssetLoadScopeOptions, type AssetLoadState } from "@haptic/assets";
 import type { ExportArtifact } from "@haptic/exporter";
 import { requeueWithEditLock } from "../lib/document-lock-apply";
+import { assertWritableUnderLock } from "../lib/locked-writes";
 import {
   createProjectPluginAndRevealContent,
   isPluginDocumentReadOnly,
@@ -88,11 +89,12 @@ export function useProjectAssetActions({
     await (await ensureDerived()).writeText(`${derivedDataRoot(projectGuid)}/${name}`, text);
   }, [ensureDerived]);
 
+  // A retry writes the Texture's file, so one someone else has locked waits.
   const retryFailedTextureEncoding = useCallback(async () => {
-    const count = await projectService.retryAllFailedTextureEncoding();
+    const count = await projectService.retryAllFailedTextureEncoding((path) => sourceControlRef.current.lockedByOther(path) !== null);
     bump();
     return count;
-  }, [bump, projectService]);
+  }, [bump, projectService, sourceControlRef]);
 
   const retryTextureEncoding = useCallback(
     async (
@@ -115,10 +117,13 @@ export function useProjectAssetActions({
     [projectService],
   );
 
+  // Writes the Texture's emission into its file (also when a rectangular light first shows it).
   const prepareAreaEmission = useCallback<ProjectService["prepareAreaEmission"]>(async (guid, options) => {
+    const path = projectService.registry?.getByGuid(guid)?.path;
+    if (path !== undefined) assertWritableUnderLock(sourceControlRef.current, path);
     await projectService.prepareAreaEmission(guid, options);
     bump();
-  }, [bump, projectService]);
+  }, [bump, projectService, sourceControlRef]);
 
   // Rewrites the Texture file, so a written conversion locks it like a re-encode.
   const reconvertHdrEnvironment = useCallback<ProjectService["reconvertHdrEnvironment"]>(async (guid, faceSize, options) => {
@@ -186,21 +191,15 @@ export function useProjectAssetActions({
         return "The Texture is read-only.";
       }
       const sourceControl = sourceControlRef.current;
-      const open = documentService
-        .getState()
-        .openDocuments.get(documentId({ kind: "texture", path: asset.path }));
-      // An open tab follows its lock banner (Edit Anyway lifts it); a closed
-      // Texture refuses another user's lock, as Content Browser moves do.
-      if (
-        sourceControl.isDocumentReadOnly(asset.path) ||
-        (!open?.content && sourceControl.refuseIfTheirs(asset.path))
-      ) {
+      // Read-only under another user's lock, and after Edit Anyway too: a
+      // re-encode writes the file, which no edit may while their lock holds.
+      if (sourceControl.isDocumentReadOnly(asset.path) || sourceControl.lockedByOther(asset.path)) {
         const owner = sourceControl.lockForPath(asset.path)?.ownerName;
         return owner ? `The Texture is locked by ${owner}.` : "The Texture is locked.";
       }
       return null;
     },
-    [documentService, projectService, sourceControlRef],
+    [projectService, sourceControlRef],
   );
 
   // An open Texture tab's Usage may be an unsaved Details edit that already
@@ -230,33 +229,43 @@ export function useProjectAssetActions({
     [projectService],
   );
 
+  // These write the asset's file at once, so someone else's lock refuses them.
   const writeSceneNavmeshChunk = useCallback(
-    (path: string, bytes: Uint8Array, payload: Record<string, unknown>) =>
-      projectService.writeSceneNavmeshChunk(path, bytes, payload),
-    [projectService],
+    async (path: string, bytes: Uint8Array, payload: Record<string, unknown>) => {
+      assertWritableUnderLock(sourceControlRef.current, path);
+      return projectService.writeSceneNavmeshChunk(path, bytes, payload);
+    },
+    [projectService, sourceControlRef],
   );
 
   const writeSceneAudioReverbChunk = useCallback(
-    (path: string, bytes: Uint8Array, payload: Record<string, unknown>) =>
-      projectService.writeSceneAudioReverbChunk(path, bytes, payload),
-    [projectService],
+    async (path: string, bytes: Uint8Array, payload: Record<string, unknown>) => {
+      assertWritableUnderLock(sourceControlRef.current, path);
+      return projectService.writeSceneAudioReverbChunk(path, bytes, payload);
+    },
+    [projectService, sourceControlRef],
   );
 
   const writeAudioClipChunk = useCallback(
-    (
+    async (
       path: string,
       chunkId: string,
       bytes: Uint8Array,
       mime: string,
       payload: Record<string, unknown>,
-    ) => projectService.writeAudioClipChunk(path, chunkId, bytes, mime, payload),
-    [projectService],
+    ) => {
+      assertWritableUnderLock(sourceControlRef.current, path);
+      return projectService.writeAudioClipChunk(path, chunkId, bytes, mime, payload);
+    },
+    [projectService, sourceControlRef],
   );
 
   const removeAudioClipChunk = useCallback(
-    (path: string, chunkId: string, payload: Record<string, unknown>) =>
-      projectService.removeAudioClipChunk(path, chunkId, payload),
-    [projectService],
+    async (path: string, chunkId: string, payload: Record<string, unknown>) => {
+      assertWritableUnderLock(sourceControlRef.current, path);
+      return projectService.removeAudioClipChunk(path, chunkId, payload);
+    },
+    [projectService, sourceControlRef],
   );
 
   const loadAssetDocument = useCallback(

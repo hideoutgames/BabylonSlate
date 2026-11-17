@@ -20,6 +20,11 @@ function runnerModule() {
   return { runGitBenchmarkInEditor: harness.run };
 }
 vi.mock("../lib/git-benchmark-runner", () => runnerModule());
+// Test mode's GitHub and GitLab sign-in, so Sign In is offered.
+vi.mock("@haptic/vfs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/vfs")>()),
+  isTestModeEnabled: () => true,
+}));
 vi.mock("../context/document-context", async () =>
   (await import("../testing/document-context-mock")).documentContextMock(() => ({ projectName: "Game", projectDocument: harness.project })));
 
@@ -176,6 +181,33 @@ describe("GitBenchmarkDialog", () => {
 
     fireEvent.click(screen.getByTestId("git-benchmark-again"));
     expect(field("git-benchmark-repository").value).toBe("https://github.com/acme/bench.git");
+  });
+
+  it.each([
+    ["credential-refused", "Sign In Again"],
+    ["no-credential", "Sign In"],
+  ] as const)("offers the host's sign-in when a run stopped on %s", async (code, label) => {
+    const { SyncError } = await import("@haptic/source-control");
+    const cause = new SyncError("auth", "The Git server refused the saved sign-in (HTTP 401).", { code });
+    harness.run.mockRejectedValue(new Error(`Stopped during Clone: ${cause.message}`, { cause }));
+    const { GitBenchmarkDialog } = await import("./git-benchmark-dialog");
+    render(<GitBenchmarkDialog open onOpenChange={vi.fn()} />);
+    fireEvent.change(field("git-benchmark-repository"), { target: { value: "https://github.com/acme/bench.git" } });
+    fireEvent.click(screen.getByTestId("git-benchmark-run"));
+    await screen.findByTestId("git-benchmark-error");
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect((await screen.findByTestId("source-control-link-warning")).textContent).toContain("Link GitHub?");
+  });
+
+  it("offers no sign-in for a failure that is not about the sign-in, or a host that takes a token", async () => {
+    const { SyncError } = await import("@haptic/source-control");
+    harness.run.mockRejectedValue(new Error("Stopped during Clone: refused", { cause: new SyncError("auth", "refused", { code: "credential-refused" }) }));
+    const { GitBenchmarkDialog } = await import("./git-benchmark-dialog");
+    render(<GitBenchmarkDialog open onOpenChange={vi.fn()} />);
+    fireEvent.change(field("git-benchmark-repository"), { target: { value: "https://gitea.example.com/acme/bench.git" } });
+    fireEvent.click(screen.getByTestId("git-benchmark-run"));
+    await screen.findByTestId("git-benchmark-error");
+    expect(screen.queryByRole("button", { name: /^Sign In/ })).toBeNull();
   });
 
   it("refuses a URL that names no repository without loading the runner", async () => {

@@ -3,11 +3,15 @@ import type { HostCredential, HttpClient } from "@haptic/source-control";
 import { MemorySecrets } from "@haptic/source-control/fake-host";
 import { SourceControlAccounts } from "../services/source-control-accounts";
 
-/** Manual mode on a GitHub repository, which {@link signedInHosts} holds a credential for. */
+/**
+ * Manual mode on a GitHub repository, which {@link signedInHosts} holds a
+ * credential for, locking each edited file at once (Lock On Edit Always).
+ */
 export const MANUAL_SOURCE_CONTROL: SourceControlProjectSettings = {
   ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
   mode: "manual",
   repositoryUrl: "https://github.com/org/repo",
+  lockOnEdit: "always",
 };
 
 export const TEST_GITHUB_CREDENTIAL: HostCredential = {

@@ -50,6 +50,8 @@ describe("DocumentLockBanner", () => {
       "theirs",
     );
     expect(screen.getByText("Locked by Bob")).toBeTruthy();
+    // Saves are refused while their lock holds, so Edit Anyway says so.
+    expect(screen.getByTestId("document-lock-banner").textContent).toContain("you can't save it until they release the lock");
     fireEvent.click(screen.getByTestId("document-lock-edit-anyway"));
     rerender(
       <DocumentLockBanner

@@ -49,6 +49,7 @@ import {
 } from "../lib/document-working-set";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { DocumentLockBanner } from "./document-lock-banner";
+import { SourceControlLockPrompt } from "./source-control-lock-prompt";
 import { SourceControlSignInBanner } from "./source-control-sign-in-banner";
 import { SourceControlPublishNotice } from "./source-control-publish-notice";
 import { UndoHistoryNotice } from "./undo-history-notice";
@@ -275,6 +276,7 @@ export function DocumentWorkspace() {
     <AudioReverbBakeProvider>
     <div className="flex min-h-0 flex-1 flex-col">
       <SourceControlSignInBanner />
+      <SourceControlLockPrompt />
       <SourceControlPublishNotice />
       {visibleTabOrder.map((id) => {
         const doc = openDocuments.find((entry) => entry.id === id);

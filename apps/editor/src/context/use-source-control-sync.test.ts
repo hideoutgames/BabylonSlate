@@ -17,6 +17,8 @@ describe("locks on the checked-out branch", () => {
     // GitHub's locking API, recording each request's ref (test mode would use a fake that ignores refs).
     const refs: Array<[string, string]> = [];
     const http: HttpClient = async (request) => {
+      // Only the Git LFS lock requests; the sign-in check asks the host API who the token belongs to.
+      if (!request.url.includes("/info/lfs/locks")) return { status: 200, bodyText: '{"login":"ada"}' };
       const body = JSON.parse(String(request.body ?? "{}")) as { path?: string; ref?: { name?: string } };
       const endpoint = request.url.endsWith("/verify") ? "verify" : request.url.endsWith("/unlock") ? "unlock" : "create";
       refs.push([endpoint, body.ref?.name ?? ""]);
@@ -28,7 +30,7 @@ describe("locks on the checked-out branch", () => {
     locks.pausePolling();
     cleanups.push(() => locks.dispose());
     await locks.configure({
-      settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, mode: "integrated", repositoryUrl: INTEGRATED_REPOSITORY, branch: "main" },
+      settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, mode: "integrated", repositoryUrl: INTEGRATED_REPOSITORY, branch: "main", lockOnEdit: "always" },
       projectKey: "game",
       platform: "electron",
       testMode: false,
@@ -39,10 +41,10 @@ describe("locks on the checked-out branch", () => {
     cleanups.push(followCheckedOutBranch(service, locks));
 
     await service.createBranch("feature");
-    await locks.autoLock("assets/Rock.texture.hasset");
+    await locks.onEdit("assets/Rock.texture.hasset");
     await storage.writeText("assets/Rock.texture.hasset", "R2");
     await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: true });
-    // Auto-lock, the push's lock check, then Release Locks After Push.
+    // Lock On Edit (Always), the push's lock check, then Release Locks After Push.
     expect(refs).toEqual([["create", "refs/heads/feature"], ["verify", "refs/heads/feature"], ["unlock", "refs/heads/feature"]]);
   });
 });

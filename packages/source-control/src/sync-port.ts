@@ -290,7 +290,9 @@ export type SyncErrorCode =
   | "uncommitted-changes"
   | "branch-exists"
   | "invalid-branch-name"
-  | "detached-head";
+  | "detached-head"
+  | "credential-refused"
+  | "no-credential";
 
 export class SyncError extends Error {
   readonly kind: SyncErrorKind;

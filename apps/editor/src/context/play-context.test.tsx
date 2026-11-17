@@ -4,6 +4,7 @@ import { DockviewReact, type DockviewApi, type DockviewReadyEvent } from "dockvi
 import { createDefaultScene, engineCommandBus } from "@haptic/core";
 import { OutputLogPanel } from "../panels/output-log-panel";
 import { enterPhoneDockLayout } from "../shell/phone-dock-layout";
+import type { SaveAllOutcome } from "./document-context-types";
 import { DocumentWorkspaceProvider } from "./document-workspace-context";
 import {
   PlayProvider,
@@ -149,7 +150,7 @@ it("keeps Play controls stable across document edits while Play saves the newest
     dirty: false,
   };
   // Saving never finishes, so the prepare dialog stays in its Saving phase.
-  const saveAll = vi.fn(() => new Promise<boolean>(() => {}));
+  const saveAll = vi.fn(() => new Promise<SaveAllOutcome>(() => {}));
   const clean = {
     ...host.noProject,
     openDocuments: [scene, hero],
@@ -196,6 +197,47 @@ it("keeps Play controls stable across document edits while Play saves the newest
   const dialog = screen.getByTestId("play-prepare-dialog");
   expect(dialog.textContent).toContain("Saving 1 Document");
   expect(dialog.textContent).toContain("Hero Class");
+});
+
+it.each([
+  ["locked", false],
+  ["migrations", true],
+] as const)("stops Play when its save ends %s, waiting for Migrate On Save only for migrations", async (outcome, awaiting) => {
+  const scene = {
+    id: "scene:assets/Main.scene.hasset",
+    ref: { kind: "scene", path: "assets/Main.scene.hasset", label: "Main" },
+    content: createDefaultScene(),
+    dirty: true,
+  };
+  const saveAll = vi.fn(async (): Promise<SaveAllOutcome> => outcome);
+  host.documents = {
+    ...host.noProject,
+    openDocuments: [scene],
+    dirtyDocuments: [scene],
+    activeDocumentId: scene.id,
+    saveAll,
+  };
+  let controls!: ReturnType<typeof usePlay>;
+  function PlayConsumer() {
+    controls = usePlay();
+    return null;
+  }
+  render(
+    <PlayProvider>
+      <PlayConsumer />
+    </PlayProvider>,
+  );
+  await act(async () => {
+    void controls.requestPlay();
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByTestId("play-unsaved-save"));
+  });
+  // Save Failed names Play when someone else's lock kept a document unsaved.
+  expect(saveAll).toHaveBeenCalledWith("play");
+  await waitFor(() => expect(screen.queryByTestId("play-prepare-dialog")).toBeNull());
+  expect(controls.playAwaitingMigration).toBe(awaiting);
+  expect([controls.playing, controls.preparing]).toEqual([false, false]);
 });
 
 it("keeps Play stopped and the preparation error visible even with fixture injection enabled", async () => {
@@ -298,7 +340,7 @@ it("cancels or plays without saving from the Unsaved Changes prompt", async () =
     content: createDefaultScene(),
     dirty: true,
   };
-  const saveAll = vi.fn(async () => true);
+  const saveAll = vi.fn(async (): Promise<SaveAllOutcome> => "saved");
   host.documents = {
     ...host.noProject,
     openDocuments: [scene],
@@ -388,7 +430,7 @@ it("cancels Simulation before save admission drains without touching its scene o
   const ready = new Promise<boolean>((resolve) => { resolveReady = resolve; });
   const release = vi.fn(() => resolveReady(false));
   const lockAuthoring = vi.fn(() => () => {});
-  const saveAll = vi.fn(async () => true);
+  const saveAll = vi.fn(async (): Promise<SaveAllOutcome> => "saved");
   host.documents = {
     ...host.noProject, openDocuments: [scene], dirtyDocuments: [scene], activeDocumentId: scene.id,
     lockAuthoringWrites: () => ({ ready, release }), lockAuthoring, saveAll,

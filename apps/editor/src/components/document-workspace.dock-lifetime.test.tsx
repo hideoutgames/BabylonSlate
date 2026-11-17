@@ -107,7 +107,7 @@ function Editor({ initialTabs, coldTabs = [] }: { initialTabs: string[]; coldTab
     })),
     projectDocument: { metadata: { name: "Test" } },
     assetRegistry: null,
-    sourceControl: { enabled: false },
+    sourceControl: { enabled: false, lockPrompt: [] },
     registerDockviewApi,
     unregisterDockviewApi,
     captureLayoutForId,

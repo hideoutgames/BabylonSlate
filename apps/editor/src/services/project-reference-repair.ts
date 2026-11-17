@@ -96,11 +96,16 @@ export async function replaceClassReferencesBeforeDelete(
   replacements: readonly ClassAssetReplacement[],
   deletingGuids: ReadonlySet<string>,
   onProgress?: (path: string) => Promise<void>,
+  options?: {
+    /** Refuses (rejects) before any file changes, given every referrer that would be rewritten. */
+    beforeWrite?: (paths: string[]) => Promise<void> | void;
+  },
 ): Promise<void> {
   const registry = host.registry();
   if (!registry) throw new Error("The asset registry is unavailable.");
   validateClassDeletionReplacements(replacements, registry.list(), deletingGuids);
   const plans = await planClassReferenceReplacements(host, replacements, deletingGuids, onProgress);
+  await options?.beforeWrite?.(plans.map((plan) => plan.path));
   // Like a Class rename, the referrers are rewritten together or not at all.
   const backups = await backupFiles(host, plans);
   let attempted = 0;
@@ -195,6 +200,8 @@ export async function clearDeletedAssetReferences(
   options: {
     deletedClassNames?: ReadonlySet<string>;
     onProgress?: (path: string) => Promise<void>;
+    /** Why a referrer must not be rewritten (someone else's lock); it is reported, not written. */
+    refuse?: (path: string) => string | null;
   } = {},
 ): Promise<Array<{ path: string; error: unknown }>> {
   const registry = host.registry();
@@ -265,6 +272,11 @@ export async function clearDeletedAssetReferences(
       nextParent !== undefined &&
       nextParent !== (asset.header.parentClass ?? null);
     if (!walked.changed && !parentChanged) continue;
+    const refusal = options.refuse?.(asset.path);
+    if (refusal) {
+      failed.push({ path: asset.path, error: new Error(refusal) });
+      continue;
+    }
     try {
       await host.saveDocument(
         kind,

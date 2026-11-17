@@ -90,7 +90,7 @@ describe("TagDocumentsProvider persistence", () => {
       { id: 4, path: "Ability.Damage.Ice", parentId: 2 },
     ]);
     expect(seen.documents!.projectDirty).toBe(true);
-    await act(async () => { expect(await actions.saveAll()).toBe(true); });
+    await act(async () => { expect(await actions.saveAll()).toBe("saved"); });
     const saved = seen.documents!.listedProjects.find((entry) => entry.label === "Tag Persistence");
     expect(saved).toBeDefined();
 
@@ -111,7 +111,7 @@ describe("TagDocumentsProvider persistence", () => {
   it("isolates project registries when closing, creating another project, and returning", async () => {
     const actions = await openProject("First Tags");
     act(() => { expect(seen.tags!.onCreate!("First.Ready")).toBe(2); });
-    await act(async () => { expect(await actions.saveAll()).toBe(true); });
+    await act(async () => { expect(await actions.saveAll()).toBe("saved"); });
     const firstCreate = seen.tags!.onCreate!;
     const first = seen.documents!.listedProjects.find((entry) => entry.label === "First Tags");
     expect(first).toBeDefined();
@@ -124,7 +124,7 @@ describe("TagDocumentsProvider persistence", () => {
       expect(seen.tags!.onCreate!("Second.Ready")).toBe(2);
     });
     expect(seen.tags!.entries.map((entry) => entry.path)).toEqual(["Second", "Second.Ready"]);
-    await act(async () => { expect(await actions.saveAll()).toBe(true); });
+    await act(async () => { expect(await actions.saveAll()).toBe("saved"); });
     await act(() => actions.forceCloseProject());
     await act(() => actions.openListedProject(first!));
     expect(seen.tags!.entries).toEqual([

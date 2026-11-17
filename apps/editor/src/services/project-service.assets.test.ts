@@ -33,6 +33,7 @@ import {
   snapshotIndexedMtimes,
   readEnvironmentTextureInfo,
   type EncodeFn,
+  AssetRegistry,
 } from "@haptic/assets";
 import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
 import {
@@ -302,6 +303,28 @@ describe("project documents as .hasset", () => {
     expect(await storage.readBinary(childPath)).toEqual(damaged);
     expect(await storage.readBinary(sourcePath)).toEqual(sourceBytes);
     expect(service.guidForPath(sourcePath)).toBe(sourceGuid);
+  });
+
+  it("refuses a Class replacement before changing any file when its check refuses a referrer", async () => {
+    const { service, storage } = await scaffolded();
+    const sourcePath = "assets/Hero.class.hasset";
+    const childPath = "assets/Child.class.hasset";
+    await service.saveDocument("graph", sourcePath, { nodes: [], edges: [] }, { parentClass: "Actor" });
+    await service.saveDocument("graph", childPath, { nodes: [], edges: [] }, { parentClass: "Hero" });
+    const sourceGuid = service.guidForPath(sourcePath)!;
+    const before = await storage.readBinary(childPath);
+    const checked: string[][] = [];
+    await expect(service.replaceClassReferencesBeforeDelete([
+      { guid: sourceGuid, classId: "Hero", replacement: null },
+    ], new Set([sourceGuid]), undefined, {
+      beforeWrite: (paths) => {
+        checked.push(paths);
+        throw new Error(`${paths[0]}: Locked by Bob`);
+      },
+    })).rejects.toThrow("Locked by Bob");
+    expect(checked).toEqual([[childPath]]);
+    expect(await storage.readBinary(childPath)).toEqual(before);
+    expect(service.registry!.getByPath(childPath)?.header.parentClass).toBe("Hero");
   });
 
   it("restores the referrers already rewritten when a later Class replacement write fails", async () => {
@@ -2301,6 +2324,51 @@ describe("project documents as .hasset", () => {
     ]);
     expect((await service.loadDocument("sprite", "assets/hero.sprite.hasset") as { textureGuid: string | null }).textureGuid).toBeNull();
     expect((await service.loadDocument("sprite", "assets/stuck.sprite.hasset") as { textureGuid: string | null }).textureGuid).toBe("tex-1");
+  });
+
+  it("leaves a referrer its refusal names unwritten and reports it, repairing the others", async () => {
+    const { storage, service } = await scaffolded();
+    await storage.writeBinary("assets/wall.hasset", await encodeAssetDocument({
+      type: "Texture", name: "wall", guid: "tex-1", version: 1, payload: { usage: "albedo" },
+    }));
+    for (const name of ["locked", "hero"]) {
+      await storage.writeBinary(`assets/${name}.sprite.hasset`, await encodeAssetDocument(
+        { type: "Sprite", name, guid: `${name}-1`, version: 1, payload: { textureGuid: "tex-1", pixelsPerUnit: 100, frames: [], clips: [] } },
+        { dependencies: ["tex-1"] },
+      ));
+    }
+    await service.remountRegistry();
+    await service.registry!.deleteAsset("tex-1");
+    const lockedBytes = await storage.readBinary("assets/locked.sprite.hasset");
+
+    const failed = await service.clearDeletedAssetReferences(new Set(["tex-1"]), {
+      refuse: (path) => (path === "assets/locked.sprite.hasset" ? "Locked by Bob." : null),
+    });
+    expect(failed.map((entry) => [entry.path, String(entry.error)])).toEqual([
+      ["assets/locked.sprite.hasset", "Error: Locked by Bob."],
+    ]);
+    expect(await storage.readBinary("assets/locked.sprite.hasset")).toEqual(lockedBytes);
+    expect((await service.loadDocument("sprite", "assets/hero.sprite.hasset") as { textureGuid: string | null }).textureGuid).toBeNull();
+  });
+
+  it("retries every failed Texture encode but those it is told to skip", async () => {
+    const { storage, service } = await scaffolded();
+    for (const name of ["locked", "free"]) {
+      await storage.writeBinary(`assets/${name}.hasset`, await encodeHasset({
+        header: {
+          dependencyMetadataVersion: 1, requiredDependencies: [], guid: `tex-${name}`, type: "Texture", name,
+          engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [], parentClass: null,
+          payload: { usage: "albedo", compressionState: "encode_failed", encodeError: "Basis failed" },
+        },
+        chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([9]) }],
+      }));
+    }
+    await service.remountRegistry();
+    const retry = vi.spyOn(AssetRegistry.prototype, "retryTextureEncoding").mockResolvedValue(true);
+    try {
+      expect(await service.retryAllFailedTextureEncoding((path) => path === "assets/locked.hasset")).toBe(1);
+      expect(retry.mock.calls.map(([guid]) => guid)).toEqual(["tex-free"]);
+    } finally { retry.mockRestore(); }
   });
 
   it("repairs referrers one at a time in catalog order while reading their documents ahead, and skips one it cannot read", async () => {

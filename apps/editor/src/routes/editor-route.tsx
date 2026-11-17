@@ -16,6 +16,7 @@ import { EditorChromeBar } from "../components/editor-chrome-bar";
 import { EditorStatusBar } from "../components/editor-status-bar";
 import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
+import { SaveFailedDialog } from "../components/save-failed-dialog";
 import { SourceControlActionsProvider } from "../components/source-control-actions";
 import {
   useDocumentActions,
@@ -437,11 +438,12 @@ function EditorChromeAndPrompts() {
           return;
         }
         if (request !== closeRequest.current) return;
-        const saved = await saveAll();
+        const outcome = await saveAll();
         if (request !== closeRequest.current) return;
-        if (!saved) {
-          // Pending migrations refused it and opened their prompt.
-          closeAwaitingMigration.current = request;
+        if (outcome !== "saved") {
+          // Pending migrations refused it and opened their prompt. Documents someone else has
+          // locked stay listed here under Save Failed: Discard Changes there lets the close finish.
+          if (outcome === "migrations") closeAwaitingMigration.current = request;
           return;
         }
         if (pendingTabClose) {
@@ -470,7 +472,7 @@ function EditorChromeAndPrompts() {
         "editor-chrome-bar",
         <EditorChromeBar
           onCloseProject={() => void requestClose().catch(reportCloseFailure)}
-          onSaveProject={saveAll}
+          onSaveProject={() => saveAll()}
           onCloseDocument={requestCloseDocument}
           onCloseAllDocuments={requestCloseAllDocuments}
         />,
@@ -524,10 +526,11 @@ function EditorChromeAndPrompts() {
             : null;
           closeAwaitingMigration.current = null;
           void (async () => {
-            const saved = await approveMigrationsAndSave().catch((error: unknown) => {
+            const outcome = await approveMigrationsAndSave(playAwaitingMigration ? "play" : "save").catch((error: unknown) => {
               console.error("[editor] Migrate On Save failed", error);
-              return false;
+              return null;
             });
+            const saved = outcome === "saved";
             if (saved && closeRequestToResume !== null && closeRequestToResume === closeRequest.current) saveBeforeClose();
             if (!playAwaitingMigration) return;
             // Play continues only from a completed save; a refused or failed one ends the request.
@@ -536,6 +539,7 @@ function EditorChromeAndPrompts() {
           })();
         }}
       />
+      <SaveFailedDialog />
       <ExternalChangeDialogs
         prompt={externalChangePrompt}
         onReloadProject={() => {

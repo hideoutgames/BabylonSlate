@@ -1,6 +1,6 @@
 # Source Control Plan
 
-What remains of built-in Git before Integrated mode ships: the iPad benchmark rerun on the native file transfer, and reclaiming the space of [leftover staged files](#leftover-staged-files). [architecture/source-control.md](architecture/source-control.md) describes what is built: the modes (Off, Integrated, Manual), Git LFS locks (on the checked-out branch in Integrated mode), device credentials with GitHub and GitLab sign-in, the link warning, the [Git core](architecture/source-control.md#git-core) and [Integrated mode](architecture/source-control.md#integrated-mode) (Clone, Publish, the Changes and History windows, commit, pull with whole-file conflicts, push with lock verify and release, branches, Remove Unused Files, the status bar and the phone More Tools actions) and its [asset diffs](architecture/source-control.md#asset-diffs) (the Actors and Diff windows, the Base and Compare pickers over History's commit lists, Revert Asset and Revert To This Version, Compare in Pull Conflicts). Until a step of [Order](#order) is built, this file is the source of its decisions, and [engine-plan.md](engine-plan.md#source-control) points here.
+What remains of built-in Git: reclaiming the space of [leftover staged files](#leftover-staged-files). The iPad benchmark passed on the native file transfer ([evidence](#benchmark-evidence)). [architecture/source-control.md](architecture/source-control.md) describes what is built: the modes (Off, Integrated, Manual), Git LFS locks (on the checked-out branch in Integrated mode), device credentials with GitHub and GitLab sign-in, the link warning, the [Git core](architecture/source-control.md#git-core) and [Integrated mode](architecture/source-control.md#integrated-mode) (Clone, Publish, the Changes and History windows, commit, pull with whole-file conflicts, push with lock verify and release, branches, Remove Unused Files, the status bar and the phone More Tools actions) and its [asset diffs](architecture/source-control.md#asset-diffs) (the Actors and Diff windows, the Base and Compare pickers over History's commit lists, Revert Asset and Revert To This Version, Compare in Pull Conflicts). Until what remains is built, this file is the source of its decisions, and [engine-plan.md](engine-plan.md#source-control) points here.
 
 ## Scope
 
@@ -43,19 +43,24 @@ What exists today and what each part must change. Check these against the code b
 
 ## Benchmark evidence
 
-Why LFS objects stream natively: the owner's A16 iPad (TestFlight build), against a 374-file repository, on the whole-body path.
+The owner's A16 iPad (TestFlight builds). First on the whole-body path, against a 374-file repository:
 
 | Run | Result |
 | --- | --- |
 | 3 × 32 MiB LFS objects | Clone 9.5 s; unchanged status 135 ms with no file read (the gate passes); LFS upload 28 s, download 18 s; no failure. |
 | 3 × 256 MiB LFS objects | The app ran out of memory and closed, on both tries, at a stage the benchmark could not report then. Whole bodies cross the Capacitor bridge as base64 (about three copies of an object in JavaScript), and the benchmark held all its objects in memory before writing them. |
 
-The native file transfer (iOS, Android, desktop), objects made one at a time (natively on iOS and Android), the download into files and the per-stage record and memory peaks answer both.
+The native file transfer (iOS, Android, desktop), objects made one at a time (natively on iOS and Android), the download into files and the per-stage record and memory peaks answer both. On the native path, 3 × 256 MiB LFS objects, against a 47-file and a 374-file repository:
+
+| Run | Result |
+| --- | --- |
+| 47 files | Passed: **LFS Transfer** native; unchanged status 41 ms with no file read; LFS upload 33 s, download 132 s; the app process's peak 36 MB in every stage. |
+| 374 files | Passed: unchanged status 145 ms with no file read; clone 8.4 s; LFS upload 37 s, download 129 s; the app process's peak 37 MB in every stage. |
+
+- The memory peaks are the native app process's only (`appFootprintBytes`); iOS reports nothing for the WebView's content process, where JavaScript runs, but no object passes through it on this path.
+- Uploads ran about seven times faster than the whole-body path's; downloads at about the same rate per byte (5 to 6 MB/s), so the host or the network sets their pace.
+- One earlier attempt on the larger project closed the app as the run started, with no stage recorded (a later run's failure clears the record) and no report taken; it did not happen again.
 
 ## Leftover staged files
 
 A native download stages its object as `.haptic-<uuid>.tmp` beside the target (`.blobs`) and renames it when it matches. When the system kills the app mid-download, the staged file stays. Listings hide it on every host, so it never reaches the Content Browser, Changes or a commit, but its space is not reclaimed: Remove Unused Files lists blob folders through the same filtered `readdir`. Reclaiming it needs either an unfiltered listing of blob folders in Remove Unused Files, or downloads staged in one project folder (such as `.git/lfs/incoming`) that `openRepository` empties, as it empties `.git/lfs/tmp`; the second changes the native transfer's request (iOS, Android and Electron).
-
-## Order
-
-1. The owner reruns the Git benchmark on the A16 iPad with 3 × 256 MiB objects on the native path, in a build made from this change (a new TestFlight build: the native plugin code changed). From **Debug > Run Git Benchmark…** with Debug Mode on, against a repository the account can push to: set **LFS Objects** 3 and **Object Size** 256 MiB, keep the app in the foreground until it finishes, and copy the results from its dialog ([benchmark](architecture/source-control.md#benchmark)). The summary must say **LFS Transfer** native and the unchanged status must read no files; the peak memory per stage shows what each step cost. If the app closes, reopen the dialog: it names the stage the run stopped in. Delete the `haptic-benchmark-…` branch on the host afterwards.

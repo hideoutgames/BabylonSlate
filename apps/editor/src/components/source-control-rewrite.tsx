@@ -80,9 +80,12 @@ export function useRewriteFlow<Step extends { kind: string }>({ path, reason, on
   const saveFirst = async () => {
     setBusy(true);
     try {
-      // Migrations that refuse the save open their own prompt; the flow waits for another request.
-      if (await saveAll()) setStep({ kind: "confirm" });
-      else done();
+      // Documents someone else has locked stay unsaved and listed here, under Save Failed: its
+      // Discard Changes moves the flow on, Ignore leaves Discard or Cancel here. Migrations
+      // that refuse the save open their own prompt; the flow waits for another request.
+      const outcome = await saveAll();
+      if (outcome === "saved") setStep({ kind: "confirm" });
+      else if (outcome !== "locked") done();
     } finally {
       setBusy(false);
     }

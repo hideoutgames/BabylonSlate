@@ -93,6 +93,16 @@ test.describe("Source Control in Integrated mode", () => {
     await page.getByTestId("settings-menu").click();
     await page.getByTestId("project-settings").click();
     await page.getByTestId("settings-modal-category-sourceControl").click();
+    // Lock On Edit Always, published with the project: the clone's edits below lock their Scene without asking,
+    // and Release Locks After Push releases it, as this spec checks.
+    await page.getByTestId("settings-source-control-lock-on-edit-always").click();
+    await expect(page.getByTestId("settings-source-control-lock-on-edit-always")).toHaveAttribute("aria-pressed", "true");
+    // Publish asks for Save All first, so the setting is saved before it.
+    await closeSettings(page);
+    await saveAllIfEnabled(page);
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    await page.getByTestId("settings-modal-category-sourceControl").click();
     await page.getByTestId("settings-source-control-publish").click();
     const publish = page.getByTestId("publish-project-dialog");
     await publish.getByTestId("publish-account-sign-in").click();

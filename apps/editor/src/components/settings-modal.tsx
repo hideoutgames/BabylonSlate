@@ -416,7 +416,20 @@ export function SettingsModal({
         activeCategoryId === "general" ? (
         <FieldGroup>
           <SettingsSection id="project" title="Project">
-              <Field className="settings-field">
+              <Field orientation="horizontal" className="settings-field">
+              <FieldLabel htmlFor="settings-autosave">
+                  Auto-Save
+              </FieldLabel>
+              <Switch
+                id="settings-autosave"
+                checked={projectDocument.settings.autoSave}
+                onCheckedChange={(checked) =>
+                  updateProjectSettings({ autoSave: checked === true })
+                }
+                data-testid="settings-autosave"
+              />
+            </Field>
+              <Field className="settings-field settings-field-dependent" data-disabled={!projectDocument.settings.autoSave || undefined}>
               <FieldLabel htmlFor="settings-autosave-interval">
                   Auto-Save Interval (Seconds)
               </FieldLabel>
@@ -424,6 +437,7 @@ export function SettingsModal({
                 id="settings-autosave-interval"
                 min={1}
                 rejectOutOfRange
+                disabled={!projectDocument.settings.autoSave}
                 className="min-h-[var(--chrome-row,28px)]"
                 value={Math.round(
                   projectDocument.settings.autoSaveIntervalMs / 1000,
