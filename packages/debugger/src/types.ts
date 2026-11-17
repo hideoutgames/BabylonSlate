@@ -62,6 +62,8 @@ export type ConsoleCommandHost = {
   setDiscardSamples?(enabled: boolean): void;
   /** `scenelayers`: composite Play's Scene Layers (on) or hide them all (off), to measure what drawing at the device's resolution for them costs. */
   setSceneLayers?(enabled: boolean): void;
+  /** `fsrdebug output`: end Play's upscale at the output (device) or at the view's own size (view). */
+  setFsrOutput?(output: "device" | "view"): void;
   /** `renderreset`: rebuild the Play view's frame graph, reallocate its shadow maps, or render nothing for 3 s. */
   resetRendering?(what: "graph" | "shadows" | "idle"): void;
   /** Start (restart) or stop measuring GPU-busy time per frame; the Play view's diagnostics report it. */

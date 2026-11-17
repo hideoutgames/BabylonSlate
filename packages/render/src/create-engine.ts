@@ -98,7 +98,7 @@ import { engineCommandBus, markSessionTrail } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
-import { applyMaterialTextureAnisotropy, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
+import { applyMaterialTextureAnisotropy, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, setSceneFsrOutputDebug, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
 import { cookComplexCollisionMesh, environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -1217,9 +1217,8 @@ function initializeEngine(
       "msaa.discard": discardsSamples(engine) ? "on" : "off",
       // Whether Play composites its Scene Layers (`scenelayers`).
       layers: layersHidden ? "hidden" : "shown",
-      // The live context's attribute, not the stored setting: the setting applies to the next Engine.
-      "presentation.preserve":
-        String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
+      // Where the effect chain's upscale ends (`fsrdebug output`): the output (the device's resolution) or the view's size.
+      "upscale.output": sceneRenderingSettings(scene).fsrOutputAtView ? "view" : "device",
     };
   };
   // `postprocessing off` stops drawing the post-processing passes' programs and the Material variants they draw; they
@@ -3251,6 +3250,7 @@ function initializeEngine(
         const probe = engineGpuBusyProbe(engine, () => frameBackpressure.renderedThisFrame());
         if (command.enabled) probe?.start(); else probe?.stop();
       }
+      if (command.type === "setFsrDebug" && setSceneFsrOutputDebug(scene, command.output)) scheduler.invalidate("asset");
       if (command.type === "setGpuProbeDebug") {
         if (command.action === "off") existingGpuProbe(engine)?.off();
         else {

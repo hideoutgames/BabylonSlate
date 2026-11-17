@@ -165,6 +165,18 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["discard:true", "discard:false"]);
   });
 
+  it("ends Play's upscale at the output or at the view's size, in debug registries only", () => {
+    const host = recordingHost();
+    host.setFsrOutput = (output) => host.calls.push(`fsr:${output}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    for (const output of ["view", "device"]) expect(debug.execute(`fsrdebug output ${output}`, host)).toEqual({ success: true, output: `fsrdebug output ${output}` });
+    expect(debug.execute("fsrdebug output half", host).success).toBe(false);
+    expect(debug.execute("fsrdebug sharpen view", host).success).toBe(false);
+    expect(release.execute("fsrdebug output view", host).success).toBe(false);
+    expect(host.calls).toEqual(["fsr:view", "fsr:device"]);
+  });
+
   it("resets one part of Play's rendering by name, in debug registries only", () => {
     const host = recordingHost();
     host.resetRendering = (what) => host.calls.push(`reset:${what}`);

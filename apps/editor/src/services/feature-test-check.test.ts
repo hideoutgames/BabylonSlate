@@ -170,6 +170,7 @@ function fingerprintAfter(
   let framesInFlight = options.framesInFlight ?? "2";
   let discard = false;
   let layers = true;
+  let fsrOutput = "device";
   const waterOff = new Set<string>();
   const shadowOff = new Set<string>();
   for (const line of commands) {
@@ -182,6 +183,7 @@ function fingerprintAfter(
     else if (name === "framesinflight") framesInFlight = first!;
     else if (name === "discardsamples") discard = first === "on";
     else if (name === "scenelayers") layers = first === "on";
+    else if (name === "fsrdebug") fsrOutput = second!;
     else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
     else if (name === "shadowdebug") { if (second === "off") shadowOff.add(first!); else shadowOff.delete(first!); }
   }
@@ -196,6 +198,7 @@ function fingerprintAfter(
     "presentation.framesInFlight": framesInFlight,
     "msaa.discard": discard ? "on" : "off",
     layers: layers ? "shown" : "hidden",
+    "upscale.output": fsrOutput,
   };
 }
 
@@ -1116,7 +1119,7 @@ describe("Profile", () => {
     expect(FEATURE_TEST_PROFILE_SCENES).toEqual([{ name: "main", path: "assets/main.scene.hasset" }]);
     const plan = featureTestProfilePlan(SESSION);
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["MSAA off", "discard samples", "scene layers hidden"]],
+      ["light", ['possess "Profile Light Camera"'], ["MSAA off", "discard samples", "scene layers hidden", "FSR to view size"]],
       ["heavy", ['possess "Profile Heavy Camera"'], [
         "shadows off", "shadow casters off", "shadow passes off", "shadows medium", "shadows medium big atlas", "shadow filter low",
         "geometry effects off", "post off", "resolution 1.0",
@@ -1131,13 +1134,14 @@ describe("Profile", () => {
     expect(step("heavy", "shadow filter low")).toMatchObject({ commands: ["quality shadows filter low"], fields: ["shadows.filter"] });
     expect(step("light", "discard samples")).toMatchObject({ commands: ["discardsamples on"], restore: ["discardsamples off"], fields: ["msaa.discard"] });
     expect(step("light", "scene layers hidden")).toMatchObject({ commands: ["scenelayers off"], restore: ["scenelayers on"], fields: ["layers"] });
+    expect(step("light", "FSR to view size")).toMatchObject({ commands: ["fsrdebug output view"], restore: ["fsrdebug output device"], fields: ["upscale.output"] });
     // Maps not redrawn against casters not drawn, against shadows off: redrawing, drawing casters and sampling apart.
     expect([step("heavy", "shadow casters off"), step("heavy", "shadow passes off")].map((entry) => [entry.commands, entry.restore])).toEqual([
       [["shadowdebug casters off"], ["shadowdebug casters on"]], [["shadowdebug passes off"], ["shadowdebug passes on"]],
     ]);
     // Toggles come back to the session's own value.
     const other = featureTestProfilePlan({ postProcessing: false, captures: false, discard: true, layers: false, framesInFlight: 3, frameCap: 30 });
-    expect(other.views.flatMap((view) => view.steps).filter((entry) => entry.restore && !entry.restore[0]!.startsWith("shadowdebug"))
+    expect(other.views.flatMap((view) => view.steps).filter((entry) => entry.restore && !/^(shadow|fsr)debug/.test(entry.restore[0]!))
       .map((entry) => entry.restore)).toEqual([["discardsamples on"], ["scenelayers off"], ["postprocessing off"], ["rendertargets off"]]);
     const sequence = featureTestProfileSequence(SESSION);
     const probe = featureTestProfileStateSequence(SESSION);

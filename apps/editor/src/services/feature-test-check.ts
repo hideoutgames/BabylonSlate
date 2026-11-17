@@ -401,6 +401,9 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
           // Every Scene Layer hidden: the backbuffer is the world's size again, so the passes that ran at the device's
           // resolution for the layers (their draws, the upscale and sharpening to the output) go.
           { label: "scene layers hidden", commands: ["scenelayers off"], restore: [`scenelayers ${state.layers ? "on" : "off"}`], fields: ["layers"] },
+          // The effect chain ends at the view's size and one copy fills the backbuffer: what upscaling and sharpening at
+          // the device's resolution cost, with the layers still drawn there.
+          { label: "FSR to view size", commands: ["fsrdebug output view"], restore: ["fsrdebug output device"], fields: ["upscale.output"] },
         ],
       },
       {

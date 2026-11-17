@@ -1230,6 +1230,11 @@ export type CommandMessage =
   | { type: "setDiscardSamplesDebug"; enabled: boolean }
   /** Debug: composite Play's Scene Layers, or hide them all so the backbuffer is the world's size (the `scenelayers` console command). */
   | { type: "setSceneLayersDebug"; enabled: boolean }
+  /**
+   * Debug: where the Play view's effect chain ends its upscale (the `fsrdebug` console command): at the output (the
+   * device's resolution under Scene Layers), or at the view's own size with one copy filling the output.
+   */
+  | { type: "setFsrDebug"; output: "device" | "view" }
   /** Debug: rebuild the view's frame graph, reallocate its shadow maps, or render nothing for 3 s (the `renderreset` console command). */
   | { type: "resetRenderingDebug"; what: "graph" | "shadows" | "idle" }
   /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */

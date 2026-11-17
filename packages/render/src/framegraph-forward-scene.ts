@@ -1623,6 +1623,10 @@ export class ForwardSceneFrameGraph {
         // backbuffer after that blit: no resolve and no output copy.
         const outlineOnOutput = !!this.preparedOutlineView && !effectsPlan && !this.postProcessGraph && !!this.ownScene &&
           presentsByBlit(this.ownScene, waterDemand > 0);
+        // Debug (`fsrdebug output view`): a scene view whose backbuffer is larger than the view ends its chain at the
+        // view's size.
+        const chainAtView = sceneRenderingSettings(scene).fsrOutputAtView && !this.auxiliary && !output.color &&
+          (viewSize.width !== output.width || viewSize.height !== output.height);
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
@@ -1632,12 +1636,13 @@ export class ForwardSceneFrameGraph {
             authoredOutputTexture: this.postProcessGraph?.outputTexture,
             width: renderSize.width,
             height: renderSize.height,
-            outputWidth: output.width,
-            outputHeight: output.height,
+            outputWidth: chainAtView ? viewSize.width : output.width,
+            outputHeight: chainAtView ? viewSize.height : output.height,
             samples,
             geometryOverSceneDepth: this.seedsFromSceneDepth ? { authoredDepthTexture: this.postProcessGraph?.depthTexture ?? undefined } : undefined,
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
-            outputTarget: color,
+            // Ending at the view's size, the chain never writes the larger output: the output copy below fills it.
+            outputTarget: chainAtView ? undefined : color,
           });
         } else if (this.preparedOutlineView) {
           composeOutline(this.postProcessGraph?.outputTexture ?? (outlineOnOutput ? undefined : this.ownScene?.color) ?? color);

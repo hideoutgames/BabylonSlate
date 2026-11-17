@@ -46,6 +46,7 @@ export const DEBUG_COMMAND_NAMES = [
   "shadowdebug",
   "discardsamples",
   "scenelayers",
+  "fsrdebug",
   "renderreset",
   "gpubusy",
   "gpuprobe",
@@ -251,6 +252,19 @@ export function builtinCommands(): RegisteredCommand[] {
       "Discard multisampled colour and depth samples after a frame's last resolve of them (on), or keep them (off), to measure what storing them costs"),
     flagCommand("scenelayers", (host, enabled) => host.setSceneLayers?.(enabled),
       "Composite Play's Scene Layers (on) or hide them all (off), so the frame is drawn at the world's resolution alone, to measure what the layers and the device-resolution output cost"),
+    {
+      name: "fsrdebug",
+      tier: "debug",
+      category: "engine",
+      description: "Where Play's upscale ends: at the output (output device, the default: under Scene Layers the device's resolution) or at the view's own size with one copy filling the output (output view), to measure what upscaling and sharpening at the device's resolution cost",
+      parameters: [{ name: "part", type: "enum", enumValues: ["output"] }, { name: "value", type: "enum", enumValues: ["device", "view"] }],
+      run(args, host) {
+        const output = args.value as "device" | "view";
+        if (!host.setFsrOutput) return fail("fsrdebug is unavailable here");
+        host.setFsrOutput(output);
+        return ok(`fsrdebug output ${output}`);
+      },
+    },
     {
       name: "renderreset",
       tier: "debug",
