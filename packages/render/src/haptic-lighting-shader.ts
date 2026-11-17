@@ -340,24 +340,31 @@ float hapticScreenLit = 1.0;
 // The screen shadows of this draw's pass (\`hapticScreenShadowSampler\`: R the sun's lit share, G the eye distance of the
 // surface marched from; \`hapticScreenShadowTerms.x\` 0 where the pass has none, a placeholder then bound), for the surface
 // at P only: a fragment at another distance (behind glass or water, or anything the depth did not hold) keeps 1. The
-// march's per-pixel noise is filtered spatially: the lit share averages the 3 x 3 neighbours marched from the same surface.
+// march runs at half resolution (\`SCREEN_SHADOW_SCALE\`), each texel from the top-left pixel of its 2 x 2 block, and is
+// upsampled by depth: the lit share averages the 3 x 3 texels around this pixel's that marched from the same surface,
+// each compared with this surface's distance carried to the pixel it marched from along the surface's screen slope
+// (within twice the tolerance), and needs this pixel's own texel within the tolerance, so a contact shadow's edge stays
+// on the geometry's edge and a surface seen at a grazing angle still matches its texels. The average also filters the
+// march's noise.
 float hapticScreenShadowLit(vec3 P, vec3 eye) {
+  float distance = length(eye - P);
+  vec2 slope = vec2(dFdx(distance), dFdy(distance));
   if (hapticScreenShadowTerms.x < 0.5) return 1.0;
   ivec2 last = textureSize(hapticScreenShadowSampler, 0) - 1;
-  ivec2 pixel = ivec2(gl_FragCoord.xy);
-  float distance = length(eye - P);
+  ivec2 pixel = ivec2(gl_FragCoord.xy) / 2;
   float tolerance = 0.004 * distance + 0.01;
-  vec2 center = texelFetch(hapticScreenShadowSampler, clamp(pixel, ivec2(0), last), 0).rg;
-  if (abs(distance - center.y) >= tolerance) return 1.0;
   float lit = 0.0;
   float weight = 0.0;
+  bool same = false;
   for (int y = -1; y <= 1; y++) {
     for (int x = -1; x <= 1; x++) {
-      vec2 texel = texelFetch(hapticScreenShadowSampler, clamp(pixel + ivec2(x, y), ivec2(0), last), 0).rg;
-      if (abs(distance - texel.y) < 2.0 * tolerance) { lit += texel.x; weight += 1.0; }
+      ivec2 at = clamp(pixel + ivec2(x, y), ivec2(0), last);
+      vec2 texel = texelFetch(hapticScreenShadowSampler, at, 0).rg;
+      float gap = abs(distance + dot(slope, vec2(at * 2) + 0.5 - gl_FragCoord.xy) - texel.y);
+      if (gap < 2.0 * tolerance) { lit += texel.x; weight += 1.0; if (x == 0 && y == 0) same = gap < tolerance; }
     }
   }
-  return lit / weight;
+  return same ? lit / weight : 1.0;
 }
 
 // Where the sun's cascades darken to (the first cascade's darkness; a map awaiting its first draw is neutral), as far as

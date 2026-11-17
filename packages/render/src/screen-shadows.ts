@@ -17,15 +17,16 @@ import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-re
 import { AtlasCascadedShadowGenerator, shadowTileSize } from "./shadow-atlas";
 import { SHADOW_FILTER_REACH_TEXELS } from "./shadow-filter";
 import { sceneRenderingSettings } from "./render-settings";
-import { customWrapper } from "./spatial-effects";
+import { customWrapper, SCREEN_SHADOW_SCALE } from "./spatial-effects";
 
 /**
- * Screen-Space Shadows: before the objects draw, a full-resolution pass marches from each pixel of the spatial geometry
- * pass's depth toward the shadowed sun and writes RG16F (R: the sun's lit share, G: the eye distance of the surface it
- * marched from). Only pixels the geometry pass marks as a shadow caster's (its depth's G channel, `meshCastsShadows`)
- * occlude, so Cast Shadows holds for the march as for the map. The light block reads it at its own pixel for a surface at
- * that distance, so glass, water and anything the geometry pass did not see in front keep the sun's map alone, and
- * combines it with the cascades by min, on receivers only.
+ * Screen-Space Shadows: before the objects draw, a half-resolution pass (`SCREEN_SHADOW_SCALE`) marches from the top-left
+ * pixel of each 2 x 2 block of the spatial geometry pass's depth toward the shadowed sun and writes RG16F (R: the sun's
+ * lit share, G: the eye distance of the surface it marched from). Only pixels the geometry pass marks as a shadow
+ * caster's (its depth's G channel, `meshCastsShadows`) occlude, so Cast Shadows holds for the march as for the map. The
+ * light block upsamples it by depth: it averages the 3 x 3 texels around its own pixel's that marched from a surface at
+ * its distance, so a contact shadow's edge stays on the geometry's edge, and glass, water and anything the geometry pass
+ * did not see in front keep the sun's map alone. It combines the result with the cascades by min, on receivers only.
  *
  * The march only sees each surface's front, so it assumes a surface it passes behind is some thickness deep. It adds the
  * contact shadows finer than the sun's cascades resolve; a deeper occluder is the cascades' to shadow. So the assumed
@@ -49,8 +50,9 @@ const MAX_STEPS = 16;
  * The march. Uniforms: `ssProjection`, `ssInverseProjection` (the camera's projection, which the geometry pass
  * drew with), `ssSun` (the view-space direction toward the sun; w 0 writes lit: no shadowed
  * sun, an orthographic view), `ssMarch` (steps, pixel cap, world cap; w unused), `ssFade` (fade start and end, the
- * render height times the projection's y scale), `ssTexel`, `ssCascadeEnds` and `ssCascadeCaps` (`screenShadowThicknessCaps`;
- * an unused cascade ends at -1). Derivatives come first, ahead of every early return.
+ * render height times the projection's y scale: the pixel cap and the start offset stay in render pixels), `ssTexel`
+ * (one march texel, the dither's grid), `ssCascadeEnds` and `ssCascadeCaps` (`screenShadowThicknessCaps`; an unused
+ * cascade ends at -1). Derivatives come first, ahead of every early return.
  */
 function screenShadowsShader(): string {
   const { v2, v3, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax();
@@ -61,8 +63,12 @@ ${field("mat4", "ssProjection")}${field("mat4", "ssInverseProjection")}
 ${field(v4, "ssSun")}${field(v4, "ssMarch")}${field(v4, "ssFade")}${field(v2, "ssTexel")}${field(v4, "ssCascadeEnds")}${field(v4, "ssCascadeCaps")}
 `;
   const body = `
-${decl(f, "depth", `abs(${sample("depthSampler", uv)}.r)`)}
-${decl(v4, "unprojected", `${u("ssInverseProjection")} * ${v4}(${uv} * 2.0 - ${v2}(1.0), 0.5, 1.0)`)}
+// One depth texel, the block's top-left: the point, its derivatives and the eye distance written are that surface's.
+ivec2 depthSize = textureSize(depthSampler, 0);
+ivec2 depthPixel = min(ivec2(gl_FragCoord.xy) * ${SCREEN_SHADOW_SCALE}, depthSize - ivec2(1));
+${decl(v2, "origin", `(${v2}(depthPixel) + ${v2}(0.5)) / ${v2}(depthSize)`)}
+${decl(f, "depth", "abs(texelFetch(depthSampler, depthPixel, 0).r)")}
+${decl(v4, "unprojected", `${u("ssInverseProjection")} * ${v4}(origin * 2.0 - ${v2}(1.0), 0.5, 1.0)`)}
 ${decl(v3, "viewPoint", "unprojected.xyz / unprojected.w")}
 ${decl(v3, "P", "viewPoint * (depth / max(abs(viewPoint.z), 0.000001))")}
 ${decl(v3, "dx", "dFdx(P)")}
@@ -233,8 +239,9 @@ export class ScreenShadowsGraph {
     this.camera = camera;
     const wrapper = customWrapper(scene, "Screen shadows", screenShadowsShader(),
       ["ssProjection", "ssInverseProjection", "ssSun", "ssMarch", "ssFade", "ssTexel", "ssCascadeEnds", "ssCascadeCaps"], ["depthSampler"], failure);
+    const marchWidth = Math.ceil(width / SCREEN_SHADOW_SCALE), marchHeight = Math.ceil(height / SCREEN_SHADOW_SCALE);
     this.output = graph.textureManager.createRenderTargetTexture("Screen shadows", {
-      size: { width, height },
+      size: { width: marchWidth, height: marchHeight },
       sizeIsPercentage: false,
       options: {
         createMipMaps: false,
@@ -265,7 +272,7 @@ export class ScreenShadowsGraph {
       const settings = SCREEN_SHADOW_LEVELS[sceneRenderingSettings(scene).effectsPlan?.screenShadows ?? level];
       effect.setFloat4("ssMarch", settings.steps, settings.pixels, settings.length, 0);
       effect.setFloat4("ssFade", settings.fadeStart, settings.fadeEnd, height * Math.abs(projection.m[5]!), 0);
-      effect.setFloat2("ssTexel", 1 / width, 1 / height);
+      effect.setFloat2("ssTexel", 1 / marchWidth, 1 / marchHeight);
     });
     this.task.targetTexture = this.output;
   }
