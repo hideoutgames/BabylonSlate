@@ -686,7 +686,8 @@ export async function runHapticLightProof() {
     const shadow = { spot: spotShadow, sun: sunShadow, "sun far tiles": sunFarTiles, point: pointShadow };
     const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
     const lightDefines = litEffectKeys(engine).filter((key) => /#define LIGHT\d/.test(effects[key]!.defines)).length;
-    const celEffects = cel.effects.filter((key) => /#define HAPTIC_CEL/.test(effects[key]!.defines)).length;
+    // The programs still compiled, so one a later mode change released does not count.
+    const celEffects = cel.effects.filter((key) => effects[key] && /#define HAPTIC_CEL/.test(effects[key].defines)).length;
     const imageProcessing = scene.imageProcessingConfiguration;
     graph.dispose();
     return {
