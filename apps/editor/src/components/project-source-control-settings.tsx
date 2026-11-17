@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { UploadIcon } from "lucide-react";
-import type { ProjectDocument, SourceControlMode, SourceControlProjectSettings } from "@haptic/core";
+import { LOCK_ON_EDIT_CHOICES, type LockOnEdit, type ProjectDocument, type SourceControlMode, type SourceControlProjectSettings } from "@haptic/core";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +45,7 @@ const ProjectSourceControlHostFields = lazy(() => import("./project-source-contr
 const PublishProjectDialog = lazy(() => import("./publish-project-dialog"));
 
 const MODE_LABELS: Record<SourceControlMode, string> = { off: "Off", integrated: "Integrated", manual: "Manual" };
+const LOCK_ON_EDIT_LABELS: Record<LockOnEdit, string> = { ask: "Ask", always: "Always", never: "Never" };
 
 interface ProjectSourceControlSettingsProps {
   projectDocument: ProjectDocument;
@@ -330,15 +331,27 @@ export function ProjectSourceControlSettings({
       </SettingsSection>
       <SettingsSection id="locking" title="Locking">
         <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="settings-source-control-auto-lock">
-            Auto-Lock On First Edit
-          </FieldLabel>
-          <Switch
-            id="settings-source-control-auto-lock"
-            checked={settings.autoLockOnEdit}
-            onCheckedChange={(checked) => change({ autoLockOnEdit: checked === true })}
-            data-testid="settings-source-control-auto-lock"
-          />
+          <FieldLabel id="settings-source-control-lock-on-edit-label">Lock On Edit</FieldLabel>
+          <ToggleGroup
+            id="settings-source-control-lock-on-edit"
+            aria-labelledby="settings-source-control-lock-on-edit-label"
+            variant="outline"
+            size="sm"
+            spacing={0}
+            className="justify-self-end"
+            value={[settings.lockOnEdit]}
+            onValueChange={(value) => {
+              const next = value[0] as LockOnEdit | undefined;
+              if (next && next !== settings.lockOnEdit) change({ lockOnEdit: next });
+            }}
+            data-testid="settings-source-control-lock-on-edit"
+          >
+            {LOCK_ON_EDIT_CHOICES.map((choice) => (
+              <ToggleGroupItem key={choice} value={choice} data-testid={`settings-source-control-lock-on-edit-${choice}`}>
+                {LOCK_ON_EDIT_LABELS[choice]}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         </Field>
         {settings.mode === "integrated" ? (
           <Field orientation="horizontal" className="settings-field">

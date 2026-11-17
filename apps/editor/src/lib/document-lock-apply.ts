@@ -11,12 +11,12 @@ export function isMutatingApplyBlocked(
   return sourceControl.isDocumentReadOnly(path);
 }
 
-/** First-edit lock after a successful apply. Never throws; never blocks. */
+/** Lock On Edit after a successful apply (lock, ask or nothing). Never throws; never blocks. */
 export function afterMutatingApply(
   sourceControl: SourceControlService,
   path: string,
 ): Promise<void> {
-  return sourceControl.autoLock(path);
+  return sourceControl.onEdit(path);
 }
 
 /**

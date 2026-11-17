@@ -21,6 +21,7 @@ import type { ProjectSaveState } from "../lib/project-save-state";
 import { editorTabContentForKind } from "../lib/scene-layer-document";
 import type { DocumentService, OpenDocument } from "../services/document-service";
 import type { ProjectService } from "../services/project-service";
+import type { SourceControlService } from "../services/source-control-service";
 import type { AuthoringHold, DocumentActions } from "./document-context-types";
 
 /** A time no file has: the previous time of a file a pull wrote, so it always classifies as changed. */
@@ -48,6 +49,13 @@ export interface ExternalChangeDeps {
   closeDocumentsForPathsRef: RefObject<(paths: Iterable<string>) => void>;
   /** A remount here only re-read the files: the foreground refresh or the pull reads the Integrated status itself. */
   noteRegistryReread: () => void;
+  /** Lock On Edit asks or locks again on the next edit of a file changed outside the editor. */
+  sourceControlRef: RefObject<SourceControlService>;
+}
+
+/** Every path a classification found changed, added, deleted or reaching an open document. */
+function classifiedPaths(result: ExternalChangeClassification): string[] {
+  return [...result.changedPaths, ...result.dirtyChangedPaths, ...result.cleanChangedPaths];
 }
 
 /**
@@ -66,6 +74,7 @@ export function useExternalChanges({
   bump,
   closeDocumentsForPathsRef,
   noteRegistryReread,
+  sourceControlRef,
 }: ExternalChangeDeps) {
   const [externalChangePrompt, setExternalChangePrompt] =
     useState<ExternalChangeClassification | null>(null);
@@ -190,12 +199,13 @@ export function useExternalChanges({
         nextProjectJsonMtime: nextProject,
         openDocs,
       });
+      sourceControlRef.current.filesChanged(classifiedPaths(result));
       if (result.kind !== "none") {
         setExternalChangePrompt(result);
       }
     }
     next.projectJson = nextProject;
-  }, [bump, documentService, noteRegistryReread, projectService, projectDocumentRef]);
+  }, [bump, documentService, noteRegistryReread, projectService, projectDocumentRef, sourceControlRef]);
   useLayoutEffect(() => {
     runForegroundRescanRef.current = runForegroundRescan;
   }, [runForegroundRescan]);
@@ -255,6 +265,8 @@ export function useExternalChanges({
    */
   const applyPulledChanges = useCallback(async (paths: readonly string[], hold: AuthoringHold) => {
     try {
+      // Pulled, switched or reverted files: their next edit asks or locks again.
+      sourceControlRef.current.filesChanged(paths);
       const previous = mtimeSnapshotRef.current;
       if (!projectDocumentRef.current || !previous || paths.length === 0) return;
       await projectService.remountRegistry();
@@ -301,7 +313,7 @@ export function useExternalChanges({
     } finally {
       hold.release();
     }
-  }, [applyOpenDocuments, bump, documentService, noteRegistryReread, projectDocumentRef, projectSaveState, projectService, readOpenDocuments, setProjectDocument]);
+  }, [applyOpenDocuments, bump, documentService, noteRegistryReread, projectDocumentRef, projectSaveState, projectService, readOpenDocuments, setProjectDocument, sourceControlRef]);
 
   const dismissExternalChange = useCallback(() => {
     setExternalChangePrompt(null);

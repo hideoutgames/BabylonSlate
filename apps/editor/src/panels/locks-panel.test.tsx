@@ -30,7 +30,7 @@ async function serviceWithLocks(): Promise<SourceControlService> {
     hosts: await signedInHosts(),
     fake,
   });
-  await service.autoLock("assets/mine.hasset");
+  await service.onEdit("assets/mine.hasset");
   await service.refresh();
   return service;
 }
@@ -96,9 +96,9 @@ describe("LocksPanelContents", () => {
         settings: MANUAL_SOURCE_CONTROL, projectKey: "proj", platform: "electron", testMode: true,
         hosts: await signedInHosts(host.http), fake, storage, isPathDirty: (path) => path === "assets/unsaved.hasset",
       });
-      await service.autoLock("assets/mine.hasset");
-      await service.autoLock("assets/edited.hasset");
-      await service.autoLock("assets/unsaved.hasset");
+      await service.onEdit("assets/mine.hasset");
+      await service.onEdit("assets/edited.hasset");
+      await service.onEdit("assets/unsaved.hasset");
       await service.refresh();
       render(<LiveLocks service={service} />);
       // The unsaved document's file is pushed, but its lock stays, so it is not counted.
@@ -128,7 +128,7 @@ describe("LocksPanelContents", () => {
         hosts: await signedInHosts(null, tokenCredential("https://gitea.example.com", "t", "token")),
         fake: new FakeLockProvider(),
       });
-      await service.autoLock("assets/mine.hasset");
+      await service.onEdit("assets/mine.hasset");
       render(<LiveLocks service={service} />);
       expect(screen.getByTestId("locks-release-all").textContent).toBe("Release All My Locks (1)");
       expect(screen.queryByTestId("locks-release-pushed")).toBeNull();

@@ -682,7 +682,7 @@ describe("project round-trip", () => {
     it("leaves a project.json that already names the repository as it is, whichever branch was cloned", async () => {
       const storage = new MemoryStorageAdapter("documents");
       const service = new ProjectService(storage);
-      const text = manifest({ mode: "integrated", repositoryUrl: "git@github.com:team/game.git", branch: "main", autoLockOnEdit: true, releaseLocksAfterPush: true });
+      const text = manifest({ mode: "integrated", repositoryUrl: "git@github.com:team/game.git", branch: "main", lockOnEdit: "ask", releaseLocksAfterPush: true });
       // The branch in project.json is the team's default; the clone's own branch is its working copy's, so cloning another writes nothing.
       for (const branch of ["main", "art"]) {
         const handle = await service.cloneProject({ name: `Same ${branch}`, repositoryUrl: REPOSITORY, branch, clone: async (folder) => folder.writeText(PROJECT_FILE, text) });

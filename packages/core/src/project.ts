@@ -205,7 +205,9 @@ export interface ProjectSettings {
    * actor was destroyed (Play, Preview Build and exported games).
    */
   garbageCollectionIntervalTicks: number;
-  /** Idle interval before dirty documents are written. */
+  /** Editor only: write dirty documents on their own, `autoSaveIntervalMs` after the first unsaved edit. */
+  autoSave: boolean;
+  /** Idle interval before dirty documents are written while `autoSave` is on. */
   autoSaveIntervalMs: number;
   /** Play overlay letterbox; used when `render.customResolution` is off. */
   playPreview: PlayPreviewProjectSettings;
@@ -275,11 +277,19 @@ export type SourceControlMode = "off" | "integrated" | "manual";
 
 export const SOURCE_CONTROL_MODES: readonly SourceControlMode[] = ["off", "integrated", "manual"];
 
+/**
+ * What the first edit of a file does to its lock: ask whether to lock it,
+ * lock it at once, or leave it unlocked.
+ */
+export type LockOnEdit = "ask" | "always" | "never";
+
+export const LOCK_ON_EDIT_CHOICES: readonly LockOnEdit[] = ["ask", "always", "never"];
+
 export interface SourceControlProjectSettings {
   mode: SourceControlMode;
   repositoryUrl: string;
   branch: string;
-  autoLockOnEdit: boolean;
+  lockOnEdit: LockOnEdit;
   /** Integrated only: release the pushed paths' locks after a push. */
   releaseLocksAfterPush: boolean;
 }
@@ -562,7 +572,7 @@ export const DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS: SourceControlProjectSettin
     mode: "off",
     repositoryUrl: "",
     branch: DEFAULT_SOURCE_CONTROL_BRANCH,
-    autoLockOnEdit: true,
+    lockOnEdit: "ask",
     releaseLocksAfterPush: true,
   };
 
@@ -838,6 +848,7 @@ export function normalizeProjectSettings(
         ? Math.round(settings.loopCount)
         : DEFAULT_LOOP_COUNT,
     garbageCollectionIntervalTicks: normalizeGarbageCollectionIntervalTicks(settings?.garbageCollectionIntervalTicks),
+    autoSave: settings?.autoSave !== false,
     autoSaveIntervalMs:
       typeof settings?.autoSaveIntervalMs === "number" &&
       settings.autoSaveIntervalMs > 0
@@ -929,7 +940,9 @@ function normalizeSourceControl(
     repositoryUrl:
       typeof value?.repositoryUrl === "string" ? value.repositoryUrl.trim() : "",
     branch,
-    autoLockOnEdit: value?.autoLockOnEdit !== false,
+    lockOnEdit: LOCK_ON_EDIT_CHOICES.includes(value?.lockOnEdit as LockOnEdit)
+      ? (value!.lockOnEdit as LockOnEdit)
+      : "ask",
     releaseLocksAfterPush: value?.releaseLocksAfterPush !== false,
   };
 }

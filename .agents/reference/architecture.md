@@ -65,7 +65,7 @@ render: snapshot apply + command handlers on the Play Scene of the shared Engine
 - **`engineCommandBus`** ([command-bus.ts](../../packages/core/src/command-bus.ts)) carries light, synchronous UI → editor-viewport messages (logs, drop queries). It is not a Play path; Play traffic goes through the bridge.
 - **`ProjectStorage`** ([storage-port.ts](../../packages/core/src/storage-port.ts)) obtained from `createStorage()` is the only file access: binary, range-capable, adapter-agnostic. Panels never call OPFS, Electron or Capacitor directly.
 - **`getHostPlatform()`** ([platform.ts](../../packages/vfs/src/platform.ts)) is the only platform detection; Capacitor imports stay inside `vfs` adapters.
-- Document mutations go through `edit` commands (`applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange`); while the source control mode is not Off, the first mutating apply auto-locks the document.
+- Document mutations go through `edit` commands (`applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange`); while the source control mode is not Off, the first mutating apply locks the document or asks to (Lock On Edit).
 
 ## Bundle, chunk and worker rules
 

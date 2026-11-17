@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { err } from "@haptic/core";
+import { err, type SourceControlProjectSettings } from "@haptic/core";
 import { FakeLockProvider, type HostCredential, type HttpClient } from "@haptic/source-control";
 import { FakeGitHost, MemorySecrets } from "@haptic/source-control/fake-host";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -34,7 +34,7 @@ describe("SourceControlService", () => {
       for (const platform of ["electron", "ios", "web"]) {
         await service.configure({ settings: { ...manual, mode: "off" }, projectKey: "proj", platform, testMode: true, hosts, fake });
       }
-      await service.autoLock("assets/a.hasset");
+      await service.onEdit("assets/a.hasset");
       service.requestRefresh();
       await vi.runAllTimersAsync();
       expect(vi.getTimerCount()).toBe(0);
@@ -60,7 +60,7 @@ describe("SourceControlService", () => {
       await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: accounts, fake });
       expect(service.signIn).toEqual({ origin: "https://github.com", deviceHost: "github", label: "GitHub", reason: "signed-out" });
       expect(service.enabled).toBe(false);
-      await service.autoLock("assets/a.hasset");
+      await service.onEdit("assets/a.hasset");
       await vi.advanceTimersByTimeAsync(120_000);
       expect(verify).not.toHaveBeenCalled();
       expect(fake.snapshot()).toEqual([]);
@@ -134,7 +134,7 @@ describe("SourceControlService", () => {
       await vi.waitFor(() => expect(service.lockingUnsupported).toBe(true));
       expect(service.refreshState.error).toBeNull();
       expect(service.canReleasePushed).toBe(false);
-      await service.autoLock("assets/a.hasset");
+      await service.onEdit("assets/a.hasset");
       await vi.advanceTimersByTimeAsync(180_000);
       expect(verify).toHaveBeenCalledTimes(1);
       expect(create).not.toHaveBeenCalled();
@@ -240,7 +240,7 @@ describe("SourceControlService", () => {
       await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http) });
       await vi.waitFor(() => expect(service.refreshState.error).toBe("Repository Not Found Or No Access"));
       expect(service.lockingUnsupported).toBe(false);
-      await service.autoLock("assets/a.hasset");
+      await service.onEdit("assets/a.hasset");
       await vi.advanceTimersByTimeAsync(60_000);
       // The create and the next scheduled check both went out.
       expect(requests.filter((url) => url.endsWith("/locks/verify"))).toHaveLength(2);
@@ -323,7 +323,7 @@ describe("SourceControlService", () => {
       service.pausePolling();
       // Manual mode has no Git client here: the remote branch compared is always the default one.
       service.setCheckedOutBranch("feature");
-      for (const path of ["assets/pushed.hasset", "assets/dirty.hasset", "assets/changed.hasset", "assets/new.hasset"]) await service.autoLock(path);
+      for (const path of ["assets/pushed.hasset", "assets/dirty.hasset", "assets/changed.hasset", "assets/new.hasset"]) await service.onEdit(path);
       await service.refresh();
       expect(service.canReleasePushed).toBe(true);
       const checked = await service.checkPushed();
@@ -386,7 +386,7 @@ describe("SourceControlService", () => {
       service.pausePolling();
       finish(GITHUB);
       await pending;
-      await service.autoLock("assets/current.hasset");
+      await service.onEdit("assets/current.hasset");
       expect(first.snapshot()).toEqual([]);
       expect(second.snapshot().map((lock) => lock.path)).toEqual(["assets/current.hasset"]);
     } finally { service.dispose(); }
@@ -398,7 +398,7 @@ describe("SourceControlService", () => {
     try {
       await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
       service.pausePolling();
-      await service.autoLock("assets/old.hasset");
+      await service.onEdit("assets/old.hasset");
       const unlock = vi.spyOn(fake, "unlock");
       vi.spyOn(fake, "create").mockResolvedValueOnce(err({ kind: "offline", message: "Connection lost" }));
       await expect(service.transferLock("assets/old.hasset", "assets/new.hasset")).rejects.toThrow("Connection lost");
@@ -406,7 +406,7 @@ describe("SourceControlService", () => {
       expect(service.bannerFor("assets/new.hasset")?.kind).toBe("unlocked");
       expect(unlock).not.toHaveBeenCalled();
       expect(service.lockForPath("assets/old.hasset")?.ours).toBe(true);
-      await service.autoLock("assets/new.hasset");
+      await service.onEdit("assets/new.hasset");
       expect(service.lockForPath("assets/new.hasset")?.ours).toBe(true);
       expect(service.bannerFor("assets/new.hasset")).toBeNull();
     } finally { service.dispose(); }
@@ -418,7 +418,7 @@ describe("SourceControlService", () => {
     try {
       await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
       service.pausePolling();
-      await service.autoLock("assets/old.hasset");
+      await service.onEdit("assets/old.hasset");
       vi.spyOn(fake, "unlock").mockResolvedValueOnce(err({ kind: "offline", message: "Connection lost" }));
       await expect(service.transferLock("assets/old.hasset", "assets/new.hasset")).rejects.toThrow("Connection lost");
       expect(service.operationError).toContain("assets/old.hasset");
@@ -434,7 +434,7 @@ describe("SourceControlService", () => {
     try {
       await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
       service.pausePolling();
-      await service.autoLock("assets/old.hasset");
+      await service.onEdit("assets/old.hasset");
       // The server answers verify with the locks it held before the transfer.
       const beforeTransfer = await fake.verify();
       let answer!: () => void;
@@ -460,7 +460,7 @@ describe("SourceControlService", () => {
       const verify = fake.verify.bind(fake);
       vi.spyOn(fake, "verify").mockImplementation(async () => {
         const reply = await verify();
-        if (movesLeft > 0) await service.autoLock(`assets/moved-${movesLeft--}.hasset`);
+        if (movesLeft > 0) await service.onEdit(`assets/moved-${movesLeft--}.hasset`);
         return reply;
       });
 
@@ -516,7 +516,7 @@ describe("SourceControlService", () => {
     try {
       await service.configure(config);
       service.pausePolling();
-      const pending = service.autoLock(path);
+      const pending = service.onEdit(path);
       service.dispose();
       await service.configure({ ...config, projectKey: "second", fake: second });
       service.pausePolling();
@@ -524,7 +524,7 @@ describe("SourceControlService", () => {
       await pending;
       expect(service.lockForPath(path)).toBeUndefined();
       expect(service.bannerFor(path)).toBeNull();
-      await service.autoLock(path);
+      await service.onEdit(path);
       expect(service.lockForPath(path)?.ownerName).toBe("Second Project");
       expect(second.snapshot()).toMatchObject([{ path, ours: true }]);
     } finally { service.dispose(); }
@@ -611,8 +611,8 @@ describe("SourceControlService", () => {
       hosts: await signedIn(),
       fake,
     });
-    await service.autoLock("assets/hero.scene.hasset");
-    await service.autoLock("assets/hero.scene.hasset");
+    await service.onEdit("assets/hero.scene.hasset");
+    await service.onEdit("assets/hero.scene.hasset");
     expect(service.lockForPath("assets/hero.scene.hasset")?.ours).toBe(true);
     expect(fake.snapshot()).toHaveLength(1);
     expect(service.lockStateForPath("assets/hero.scene.hasset")).toBe("mine");
@@ -632,11 +632,11 @@ describe("SourceControlService", () => {
     service.pausePolling();
     try {
       await service.refresh();
-      await service.autoLock("assets/hero.scene.hasset");
+      await service.onEdit("assets/hero.scene.hasset");
       const listener = vi.fn();
       service.subscribe(listener);
-      await service.autoLock("assets/hero.scene.hasset");
-      await service.autoLock("assets/hero.scene.hasset");
+      await service.onEdit("assets/hero.scene.hasset");
+      await service.onEdit("assets/hero.scene.hasset");
       expect(listener).not.toHaveBeenCalled();
       expect(service.lockStateForPath("assets/hero.scene.hasset")).toBe("mine");
     } finally {
@@ -660,13 +660,13 @@ describe("SourceControlService", () => {
       vi.spyOn(fake, "create").mockResolvedValueOnce(
         err({ kind: "http", status: 503, message: "Offline" }),
       );
-      await service.autoLock("assets/hero.scene.hasset");
+      await service.onEdit("assets/hero.scene.hasset");
       expect(service.bannerFor("assets/hero.scene.hasset")?.kind).toBe("unlocked");
       await fake.create("assets/hero.scene.hasset");
       await service.refresh();
       const listener = vi.fn();
       service.subscribe(listener);
-      await service.autoLock("assets/hero.scene.hasset");
+      await service.onEdit("assets/hero.scene.hasset");
       expect(listener).toHaveBeenCalledOnce();
       expect(service.bannerFor("assets/hero.scene.hasset")).toBeNull();
     } finally {
@@ -731,7 +731,7 @@ describe("SourceControlService", () => {
       hosts: await signedIn(),
       fake,
     });
-    await service.autoLock("assets/a.hasset");
+    await service.onEdit("assets/a.hasset");
     expect(service.isDocumentReadOnly("assets/a.hasset")).toBe(false);
     expect(service.bannerFor("assets/a.hasset")?.kind).toBe("unlocked");
   });
@@ -768,7 +768,7 @@ describe("SourceControlService", () => {
         return { status: 500, bodyText: "{}" };
       }),
     });
-    await service.autoLock("assets/a.hasset");
+    await service.onEdit("assets/a.hasset");
     expect(service.lockForPath("assets/a.hasset")?.ours).toBe(true);
     expect(service.bannerFor("assets/a.hasset")).toBeNull();
     service.dispose();
@@ -788,7 +788,7 @@ describe("SourceControlService", () => {
     });
     await service.refresh();
     expect(service.refuseIfTheirs("assets/theirs.hasset")).toMatch(/Bob/);
-    await service.autoLock("assets/mine.hasset");
+    await service.onEdit("assets/mine.hasset");
     await service.transferLock(
       "assets/mine.hasset",
       "assets/renamed.hasset",
@@ -797,7 +797,7 @@ describe("SourceControlService", () => {
     expect(service.lockForPath("assets/renamed.hasset")?.ours).toBe(true);
   });
 
-  it("keeps held locks when only auto-lock settings change", async () => {
+  it("keeps held locks when only Lock On Edit changes", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
     const hosts = await signedIn();
@@ -809,9 +809,9 @@ describe("SourceControlService", () => {
       hosts,
       fake,
     });
-    await service.autoLock("assets/a.hasset");
+    await service.onEdit("assets/a.hasset");
     await service.configure({
-      settings: { ...manual, autoLockOnEdit: false },
+      settings: { ...manual, lockOnEdit: "never" },
       projectKey: "proj",
       platform: "electron",
       testMode: true,
@@ -819,7 +819,7 @@ describe("SourceControlService", () => {
       fake,
     });
     expect(service.lockForPath("assets/a.hasset")?.ours).toBe(true);
-    expect(service.autoLockOnEdit).toBe(false);
+    expect(service.lockOnEdit).toBe("never");
   });
 
   it("skips create when verify already holds the path as ours", async () => {
@@ -833,7 +833,7 @@ describe("SourceControlService", () => {
       hosts: await signedIn(),
       fake,
     });
-    await first.autoLock("assets/a.hasset");
+    await first.onEdit("assets/a.hasset");
     fake.createCount = 0;
 
     const second = new SourceControlService();
@@ -846,7 +846,7 @@ describe("SourceControlService", () => {
       fake,
     });
     await second.refresh();
-    await second.autoLock("assets/a.hasset");
+    await second.onEdit("assets/a.hasset");
     expect(fake.createCount).toBe(0);
     expect(second.lockForPath("assets/a.hasset")?.ours).toBe(true);
     expect(second.bannerFor("assets/a.hasset")).toBeNull();
@@ -864,7 +864,7 @@ describe("SourceControlService", () => {
       hosts: await signedIn(),
       fake,
     });
-    await service.autoLock("assets/mine.hasset");
+    await service.onEdit("assets/mine.hasset");
     await service.refresh();
     await service.releasePath("assets/mine.hasset");
     await service.releasePath("assets/theirs.hasset");
@@ -883,20 +883,20 @@ describe("SourceControlService", () => {
       hosts: await signedIn(),
       fake,
     });
-    await service.autoLock("assets/a.hasset");
-    await service.autoLock("assets/b.hasset");
+    await service.onEdit("assets/a.hasset");
+    await service.onEdit("assets/b.hasset");
     expect(service.heldCount).toBe(2);
     await service.releaseAllMine();
     expect(service.heldCount).toBe(0);
     expect(fake.snapshot()).toHaveLength(0);
   });
 
-  it("locks paths on request even with Auto-Lock off, and names the holder of one someone else locked", async () => {
+  it("locks paths on request even with Lock On Edit Never, and names the holder of one someone else locked", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
     fake.addTheirs("assets/theirs.hasset", "Bob");
     await service.configure({
-      settings: { ...manual, autoLockOnEdit: false },
+      settings: { ...manual, lockOnEdit: "never" },
       projectKey: "proj",
       platform: "electron",
       testMode: true,
@@ -948,7 +948,7 @@ describe("SourceControlService", () => {
       hosts: await signedIn(),
       fake,
     });
-    await service.autoLock("assets/hero.scene.hasset");
+    await service.onEdit("assets/hero.scene.hasset");
     expect(service.lockForPath("assets/hero.scene.hasset")?.ours).toBe(true);
 
     await service.configure({
@@ -1006,7 +1006,7 @@ describe("SourceControlService lock ref", () => {
       await vi.waitFor(() => expect(service.enabled).toBe(true));
       service.setCheckedOutBranch("feature");
       await service.refresh();
-      await service.autoLock("assets/a.hasset");
+      await service.onEdit("assets/a.hasset");
       await service.releasePath("assets/a.hasset");
       await service.locksBlockingPush(["assets/a.hasset"], "hotfix");
       expect(refs).toEqual([
@@ -1058,7 +1058,7 @@ describe("SourceControlService lock ref", () => {
         projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http),
       });
       await vi.waitFor(() => expect(service.enabled).toBe(true));
-      await service.autoLock("assets/a.hasset");
+      await service.onEdit("assets/a.hasset");
       await expect(service.transferLock("assets/a.hasset", "assets/b.hasset")).resolves.toBeUndefined();
       expect(changes()).toEqual([]);
 
@@ -1076,7 +1076,7 @@ describe("SourceControlService lock ref", () => {
 
       // A folder Haptic does not run Git in (another Git app owns HEAD) locks on the default branch, as Manual mode does.
       service.setCheckedOutBranch(null);
-      await service.autoLock("assets/d.hasset");
+      await service.onEdit("assets/d.hasset");
       expect(changes()).toEqual([["create", "refs/heads/feature"], ["create", "refs/heads/main"]]);
     } finally { service.dispose(); }
   });
@@ -1127,8 +1127,8 @@ describe("SourceControlService lock ref", () => {
       });
       await vi.waitFor(() => expect(service.enabled).toBe(true));
       service.setCheckedOutBranch("main");
-      await service.autoLock(HERO);
-      await service.autoLock(ROCK);
+      await service.onEdit(HERO);
+      await service.onEdit(ROCK);
 
       // A new branch is checked out: its own locks are listed, and those on main stay in view.
       service.setCheckedOutBranch("feature");
@@ -1167,12 +1167,12 @@ describe("SourceControlService lock ref", () => {
       await vi.waitFor(() => expect(service.enabled).toBe(true));
       // An earlier session locked Hero on main; checks list main's locks while the branch is not known.
       service.setCheckedOutBranch("main");
-      await service.autoLock(HERO);
+      await service.onEdit(HERO);
       service.setCheckedOutBranch("");
       await service.refresh();
       expect(service.lockForPath(HERO)?.ours).toBe(true);
 
-      await service.autoLock(HERO);
+      await service.onEdit(HERO);
       service.setCheckedOutBranch("feature");
       await vi.waitFor(() => expect(host.held("feature")).toEqual([HERO]));
     } finally { service.dispose(); }
@@ -1186,7 +1186,7 @@ describe("SourceControlService lock ref", () => {
       await service.configure({ settings: { ...manual, mode: "integrated", branch: "main" }, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
       await vi.waitFor(() => expect(service.enabled).toBe(true));
       service.setCheckedOutBranch("main");
-      await service.autoLock("assets/a.hasset");
+      await service.onEdit("assets/a.hasset");
       service.setCheckedOutBranch("feature");
       await service.refresh();
       expect(service.locks.map((lock) => [lock.path, lock.branch])).toEqual([["assets/a.hasset", undefined]]);
@@ -1203,7 +1203,7 @@ describe("SourceControlService lock ref", () => {
       await vi.waitFor(() => expect(service.enabled).toBe(true));
       service.setCheckedOutBranch("feature");
       await service.refresh();
-      await service.autoLock("assets/a.hasset");
+      await service.onEdit("assets/a.hasset");
       expect(refs).toEqual([["verify", "refs/heads/main"], ["create", "refs/heads/main"]]);
     } finally { service.dispose(); }
   });
@@ -1269,12 +1269,207 @@ describe("SourceControlService around an Integrated push", () => {
       await vi.waitFor(() => expect(service.enabled).toBe(true));
       // The sync's open names the checked-out branch.
       service.setCheckedOutBranch("main");
-      for (const path of ["assets/pushed.hasset", "assets/dirty.hasset", "assets/unpushed.hasset"]) await service.autoLock(path);
+      for (const path of ["assets/pushed.hasset", "assets/dirty.hasset", "assets/unpushed.hasset"]) await service.onEdit(path);
       await service.releaseOwnLocks(["assets/pushed.hasset", "assets/dirty.hasset"]);
       expect(fake.snapshot().map((lock) => lock.path).sort()).toEqual(["assets/dirty.hasset", "assets/unpushed.hasset"]);
       expect(service.lockStateForPath("assets/pushed.hasset")).toBeNull();
     } finally {
       service.dispose();
     }
+  });
+});
+
+describe("SourceControlService Lock On Edit", () => {
+  const ask = { ...manual, lockOnEdit: "ask" as const };
+
+  async function configured(settings: SourceControlProjectSettings = ask, fake = new FakeLockProvider({ selfName: "Ada" }), hosts?: SourceControlHosts) {
+    const service = new SourceControlService();
+    service.pausePolling();
+    await service.configure({ settings, projectKey: "proj", platform: "electron", testMode: true, hosts: hosts ?? await signedIn(), fake });
+    await service.refresh();
+    return { service, fake };
+  }
+
+  it("asks about each edited file once, in one prompt for several, and locks nothing until Lock", async () => {
+    const { service, fake } = await configured();
+    const listener = vi.fn();
+    service.subscribe(listener);
+    try {
+      await service.onEdit("assets/a.hasset");
+      await service.onEdit("assets/b.hasset");
+      await service.onEdit("assets/a.hasset");
+      expect(service.lockPrompt).toEqual(["assets/a.hasset", "assets/b.hasset"]);
+      expect(fake.createCount).toBe(0);
+      expect(listener).toHaveBeenCalledTimes(2);
+      // Same list, same array: a prompt re-rendering for another reason keeps it.
+      expect(service.lockPrompt).toBe(service.lockPrompt);
+
+      await service.answerLockPrompt(["assets/a.hasset", "assets/b.hasset"], true);
+      expect(service.lockPrompt).toEqual([]);
+      expect([service.lockStateForPath("assets/a.hasset"), service.lockStateForPath("assets/b.hasset")]).toEqual(["mine", "mine"]);
+    } finally { service.dispose(); }
+  });
+
+  it("leaves a file unlocked after Don't Lock and asks again only once its file or lock changes", async () => {
+    const { service, fake } = await configured();
+    try {
+      await service.onEdit("assets/a.hasset");
+      await service.answerLockPrompt(["assets/a.hasset"], false);
+      await service.onEdit("assets/a.hasset");
+      expect([service.lockPrompt, fake.createCount, service.lockStateForPath("assets/a.hasset")]).toEqual([[], 0, null]);
+
+      // A pull, branch switch, revert or another app changed the file.
+      service.filesChanged(["assets/a.hasset", "assets/other.hasset"]);
+      await service.onEdit("assets/a.hasset");
+      expect(service.lockPrompt).toEqual(["assets/a.hasset"]);
+    } finally { service.dispose(); }
+  });
+
+  it("answers only the files the prompt showed, keeping those edited since for the next prompt", async () => {
+    const { service } = await configured();
+    try {
+      await service.onEdit("assets/a.hasset");
+      const shown = service.lockPrompt;
+      await service.onEdit("assets/b.hasset");
+      await service.answerLockPrompt(shown, true);
+      expect(service.lockStateForPath("assets/a.hasset")).toBe("mine");
+      expect(service.lockStateForPath("assets/b.hasset")).toBeNull();
+      expect(service.lockPrompt).toEqual(["assets/b.hasset"]);
+    } finally { service.dispose(); }
+  });
+
+  it("asks again after the file's lock goes away: our release, or a list without someone else's lock", async () => {
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    const { service } = await configured(ask, fake);
+    try {
+      await service.onEdit("assets/mine.hasset");
+      await service.answerLockPrompt(["assets/mine.hasset"], true);
+      await service.releasePath("assets/mine.hasset");
+      await service.onEdit("assets/mine.hasset");
+      expect(service.lockPrompt).toEqual(["assets/mine.hasset"]);
+
+      // Don't Lock, then a teammate locks the file: nothing to ask while it holds, and again once a list drops it.
+      await service.answerLockPrompt(["assets/mine.hasset"], false);
+      const theirs = fake.addTheirs("assets/mine.hasset", "Bob");
+      await service.refresh();
+      await service.onEdit("assets/mine.hasset");
+      expect(service.lockPrompt).toEqual([]);
+      await fake.unlock(theirs.id, { force: true });
+      await service.refresh();
+      await service.onEdit("assets/mine.hasset");
+      expect(service.lockPrompt).toEqual(["assets/mine.hasset"]);
+    } finally { service.dispose(); }
+  });
+
+  it("drops a waiting file from the prompt once someone else locks it", async () => {
+    const { service, fake } = await configured();
+    try {
+      await service.onEdit("assets/a.hasset");
+      await service.onEdit("assets/b.hasset");
+      fake.addTheirs("assets/a.hasset", "Bob");
+      await service.refresh();
+      expect(service.lockPrompt).toEqual(["assets/b.hasset"]);
+    } finally { service.dispose(); }
+  });
+
+  it("shows no prompt while the host has no locking API or the saved sign-in was refused", async () => {
+    const unsupported = new FakeLockProvider();
+    vi.spyOn(unsupported, "verify").mockResolvedValue(err({ kind: "unsupported", message: "No locking", status: 404 }));
+    const { service: noApi } = await configured(ask, unsupported);
+    const accounts = await signedIn();
+    const refused: SourceControlHosts = {
+      credentialSource: (origin) => accounts.credentialSource(origin),
+      http: null,
+      subscribe: (listener) => accounts.subscribe(listener),
+      signInState: () => "refused",
+    };
+    const { service: signIn } = await configured(ask, new FakeLockProvider(), refused);
+    try {
+      expect(noApi.lockingUnsupported).toBe(true);
+      await noApi.onEdit("assets/a.hasset");
+      expect(noApi.lockPrompt).toEqual([]);
+
+      expect(signIn.signIn?.reason).toBe("refused");
+      await signIn.onEdit("assets/a.hasset");
+      expect(signIn.lockPrompt).toEqual([]);
+    } finally {
+      noApi.dispose();
+      signIn.dispose();
+    }
+  });
+
+  it("asks nothing without a sign-in, and asks about an edit made then once signed in", async () => {
+    const service = new SourceControlService();
+    service.pausePolling();
+    const accounts = await signedIn(null, null);
+    try {
+      await service.configure({ settings: ask, projectKey: "proj", platform: "electron", testMode: true, hosts: accounts, fake: new FakeLockProvider() });
+      await service.onEdit("assets/a.hasset");
+      expect(service.lockPrompt).toEqual([]);
+      await accounts.save(GITHUB);
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      await service.onEdit("assets/a.hasset");
+      expect(service.lockPrompt).toEqual(["assets/a.hasset"]);
+    } finally { service.dispose(); }
+  });
+
+  it("holds an Integrated edit until the checked-out branch is known, then asks", async () => {
+    const service = new SourceControlService();
+    service.pausePolling();
+    try {
+      await service.configure({ settings: { ...ask, mode: "integrated" }, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake: new FakeLockProvider() });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      await service.onEdit("assets/a.hasset");
+      expect(service.lockPrompt).toEqual([]);
+      service.setCheckedOutBranch("main");
+      await vi.waitFor(() => expect(service.lockPrompt).toEqual(["assets/a.hasset"]));
+    } finally { service.dispose(); }
+  });
+
+  it.each([
+    ["always", ["mine"], []],
+    ["never", [null], []],
+  ] as const)("Lock On Edit %s asks nothing: the edited file's lock is %j", async (choice, states, prompt) => {
+    const { service } = await configured({ ...manual, lockOnEdit: choice });
+    try {
+      await service.onEdit("assets/a.hasset");
+      expect(service.lockPrompt).toEqual(prompt);
+      expect([service.lockStateForPath("assets/a.hasset")]).toEqual(states);
+    } finally { service.dispose(); }
+  });
+
+  it("drops the waiting prompt when Lock On Edit changes, and the next edit follows the new choice", async () => {
+    const accounts = await signedIn();
+    const fake = new FakeLockProvider();
+    const { service } = await configured(ask, fake, accounts);
+    try {
+      await service.onEdit("assets/a.hasset");
+      await service.configure({ settings: { ...manual, lockOnEdit: "always" }, projectKey: "proj", platform: "electron", testMode: true, hosts: accounts, fake });
+      expect(service.lockPrompt).toEqual([]);
+      await service.onEdit("assets/a.hasset");
+      expect(service.lockStateForPath("assets/a.hasset")).toBe("mine");
+    } finally { service.dispose(); }
+  });
+
+  it("names someone else's lock for saves only from a list of the branch lock requests name now", async () => {
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    fake.addTheirs("assets/theirs.hasset", "Bob");
+    const service = new SourceControlService();
+    service.pausePolling();
+    try {
+      await service.configure({ settings: { ...manual, mode: "integrated", branch: "main" }, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      service.setCheckedOutBranch("main");
+      await service.refresh();
+      await service.onEdit("assets/mine.hasset");
+      expect(service.lockedByOther("assets/theirs.hasset")?.ownerName).toBe("Bob");
+      expect(service.lockedByOther("assets/mine.hasset")).toBeNull();
+      expect(service.lockedByOther("assets/free.hasset")).toBeNull();
+      // Another branch is checked out and its list has not landed yet.
+      service.setCheckedOutBranch("feature");
+      expect(service.lockedByOther("assets/theirs.hasset")).toBeNull();
+      await service.refresh();
+      expect(service.lockedByOther("assets/theirs.hasset")?.ownerName).toBe("Bob");
+    } finally { service.dispose(); }
   });
 });

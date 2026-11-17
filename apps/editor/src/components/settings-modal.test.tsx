@@ -986,7 +986,21 @@ describe("SettingsModal project authoring", () => {
     expect(screen.queryByText("Token")).toBeNull();
     expect(screen.queryByText(/Poll Interval/)).toBeNull();
     expect(screen.queryByText("Release Locks After Push")).toBeNull();
-    expect(screen.getByTestId("settings-source-control-auto-lock")).toBeTruthy();
+  });
+
+  it("chooses Lock On Edit from Ask, Always and Never, Ask by default", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    const lockOnEdit = screen.getByRole("group", { name: "Lock On Edit" });
+    expect(within(lockOnEdit).getAllByRole("button").map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([
+      ["Ask", "true"],
+      ["Always", "false"],
+      ["Never", "false"],
+    ]);
+    fireEvent.click(within(lockOnEdit).getByRole("button", { name: "Never" }));
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      sourceControl: expect.objectContaining({ mode: "off", lockOnEdit: "never" }),
+    });
   });
 
   it("offers Integrated on desktop for a folder with .git, only after the one-Git-app warning, recording the answer before taking its origin and branch", async () => {

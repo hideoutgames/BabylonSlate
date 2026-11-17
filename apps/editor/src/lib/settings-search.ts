@@ -48,7 +48,7 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
       ["Account Sign In", "settings-source-control-account"],
     ]],
     ["locking", "Locking", [
-      ["Auto-Lock On First Edit", "settings-source-control-auto-lock"],
+      ["Lock On Edit Ask Always Never", "settings-source-control-lock-on-edit"],
     ]],
   ]),
   ...category("export", [

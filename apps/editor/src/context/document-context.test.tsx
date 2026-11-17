@@ -917,6 +917,37 @@ describe("DocumentProvider actions and route", () => {
       expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(pulled.actors[0]!.transform.position);
     });
 
+    it("asks Lock On Edit again for a file a pull or another app changed", async () => {
+      const actions = await openProject();
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+      const hosts = await signedInHosts();
+      await act(() => documents().sourceControl.configure({
+        settings: { ...MANUAL_SOURCE_CONTROL, lockOnEdit: "ask" }, projectKey: documents().projectGuid,
+        platform: "electron", testMode: true, hosts, fake: new FakeLockProvider(),
+      }));
+      const asked = async () => {
+        await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+        const paths = documents().sourceControl.lockPrompt;
+        await act(() => documents().sourceControl.answerLockPrompt(paths, false));
+        return paths;
+      };
+      expect(await asked()).toEqual([MAIN_SCENE_FILE]);
+      expect(await asked()).toEqual([]);
+      await act(() => actions.saveAll());
+
+      await pullChangesMain();
+      await act(() => actions.applyPulledChanges([MAIN_SCENE_FILE], holdForPull(actions)));
+      expect(await asked()).toEqual([MAIN_SCENE_FILE]);
+      await act(() => actions.saveAll());
+
+      // Another app changes it; coming back to the editor rescans the project.
+      await pullChangesMain();
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } })); });
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } })); });
+      await waitFor(() => expect(documents().externalChangePrompt?.cleanChangedPaths).toEqual([MAIN_SCENE_FILE]));
+      expect(await asked()).toEqual([MAIN_SCENE_FILE]);
+    });
+
     it("leaves a pulled change it could not reload for the next foreground rescan", async () => {
       const actions = await openProject();
       await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));

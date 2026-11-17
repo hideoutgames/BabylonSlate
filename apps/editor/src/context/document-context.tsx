@@ -332,6 +332,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump,
     closeDocumentsForPathsRef,
     noteRegistryReread,
+    sourceControlRef,
   });
   // Asset writes that are not saves (a new asset, an import, a move or delete,
   // a Texture encode) advance the registry: Integrated status follows them too.

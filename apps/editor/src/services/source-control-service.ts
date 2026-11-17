@@ -1,4 +1,4 @@
-import { isOk, type ProjectStorage, type SourceControlMode, type SourceControlProjectSettings } from "@haptic/core";
+import { isOk, type LockOnEdit, type ProjectStorage, type SourceControlMode, type SourceControlProjectSettings } from "@haptic/core";
 import {
   credentialHasHostApi,
   FakeLockProvider,
@@ -84,6 +84,7 @@ export interface SourceControlConfigureInput {
 }
 
 const NO_PUSHED: ReadonlySet<string> = new Set();
+const NO_PATHS: readonly string[] = [];
 const IDLE_PUSHED: PushedCheckState = { status: "idle", error: null, pushed: NO_PUSHED };
 
 function loadDeviceHosts(testMode: boolean): Promise<SourceControlHosts> {
@@ -132,7 +133,7 @@ export class SourceControlService {
     mode: "off",
     repositoryUrl: "",
     branch: "main",
-    autoLockOnEdit: true,
+    lockOnEdit: "ask",
     releaseLocksAfterPush: true,
   };
   private hostOk = false;
@@ -143,8 +144,8 @@ export class SourceControlService {
    * not); null where Haptic runs no Git client (a blocked folder).
    */
   private checkedOut: string | null = "";
-  /** Paths edited while the checked-out branch was not known, auto-locked once it is. */
-  private heldAutoLocks = new Set<string>();
+  /** Paths edited while the checked-out branch was not known, handled as edits once it is. */
+  private heldEdits = new Set<string>();
   /** The branch the last lock requests named, so a move checks the locks again. */
   private lastLockBranch: string | null = null;
   /** The branch `locksByPath` was listed for. */
@@ -173,7 +174,14 @@ export class SourceControlService {
   private locksByPath = new Map<string, FileLock>();
   private locksSnapshot: FileLock[] | null = null;
   private editMode = new Map<string, DocumentLockEditMode>();
-  private autoLockAttempted = new Set<string>();
+  /**
+   * Paths whose first edit was handled: locked, tried to lock, or asked
+   * about. A path leaves when its lock goes away, an external update changes
+   * its file or the lock branch moves, so its next edit is handled again.
+   */
+  private editsHandled = new Set<string>();
+  /** Lock On Edit is Ask: edited paths waiting for **Lock** or **Don't Lock**, oldest first. */
+  private askPending: readonly string[] = NO_PATHS;
   private banners = new Map<string, DocumentLockBanner>();
   private listeners = new Set<() => void>();
   private providerIdentity = "";
@@ -218,8 +226,61 @@ export class SourceControlService {
     return this.active && this.provider !== null;
   }
 
-  get autoLockOnEdit(): boolean {
-    return this.settings.autoLockOnEdit;
+  get lockOnEdit(): LockOnEdit {
+    return this.settings.lockOnEdit;
+  }
+
+  /**
+   * Lock On Edit is Ask: the edited paths the Lock prompt asks about, in one
+   * prompt however many there are. Empty while there is nothing to lock with
+   * (no provider, no locking API) or the sign-in prompt is up; the paths wait
+   * for it. Keeps its identity until the list changes.
+   */
+  get lockPrompt(): readonly string[] {
+    if (!this.active || !this.provider || this.unsupported || this.signInPrompt || this.settings.lockOnEdit !== "ask") return NO_PATHS;
+    return this.askPending;
+  }
+
+  /**
+   * The Lock prompt's answer for the `paths` it showed: **Lock** locks each as
+   * Always would (a failure shows the document's Unlocked banner), **Don't
+   * Lock** leaves them unlocked. Either way they are not asked about again
+   * until their lock or file changes. Paths added since stay for the next prompt.
+   */
+  async answerLockPrompt(paths: readonly string[], lock: boolean): Promise<void> {
+    const answered = new Set(paths);
+    const remaining = this.askPending.filter((path) => !answered.has(path));
+    if (remaining.length !== this.askPending.length) {
+      this.askPending = remaining.length ? remaining : NO_PATHS;
+      this.emit();
+    }
+    if (!lock || !this.provider || !this.active || this.unsupported || this.waitForLockBranch()) return;
+    const revision = this.providerRevision;
+    for (const path of paths) {
+      if (revision !== this.providerRevision || this.unsupported) return;
+      await this.lockForEdit(path);
+    }
+  }
+
+  /**
+   * Someone else's lock on `path`, from a list of the branch lock requests
+   * name now; null when it is unlocked, ours, or only an older branch's list
+   * says otherwise. Save All, Texture re-encodes and Scene bakes refuse to
+   * write the file while it holds.
+   */
+  lockedByOther(path: string): FileLock | null {
+    if (!this.active || this.listBranch !== this.lockBranch) return null;
+    const lock = this.locksByPath.get(path);
+    return lock && !lock.ours ? lock : null;
+  }
+
+  /**
+   * An update from outside the editor (a pull, branch switch or revert, or
+   * another app) changed these files: the next edit of each asks or locks
+   * again.
+   */
+  filesChanged(paths: Iterable<string>): void {
+    for (const path of paths) this.editsHandled.delete(path);
   }
 
   /**
@@ -238,7 +299,7 @@ export class SourceControlService {
    * False in Integrated mode until the sync knows the checked-out branch (the
    * Git client opens in the seconds after the project, or could not): a lock
    * made or released then would name the default branch while HEAD may be
-   * another. Auto-lock waits for it (`heldAutoLocks`); a Release says why.
+   * another. Edits wait for it (`heldEdits`); a Release says why.
    */
   get lockBranchKnown(): boolean {
     return this.settings.mode !== "integrated" || this.checkedOut !== "";
@@ -248,7 +309,7 @@ export class SourceControlService {
    * The working copy's checked-out branch, from the Integrated sync: `""`
    * while it is not known, null where Haptic runs no Git client (a blocked
    * folder). A move checks the locks again, since a host that scopes them by
-   * ref lists another branch's, and lets auto-lock try each path again.
+   * ref lists another branch's, and lets Lock On Edit handle each path again.
    */
   setCheckedOutBranch(branch: string | null): void {
     this.checkedOut = branch;
@@ -272,15 +333,15 @@ export class SourceControlService {
         this.branchesLeft.delete(branch);
         this.branchesLeft.add(left);
         this.locksSnapshot = null;
-        this.autoLockAttempted.clear();
+        this.editsHandled.clear();
         this.emit();
         this.requestRefresh();
       }
     }
-    if (this.lockBranchKnown && this.heldAutoLocks.size > 0) {
-      const held = [...this.heldAutoLocks];
-      this.heldAutoLocks.clear();
-      for (const path of held) void this.autoLock(path);
+    if (this.lockBranchKnown && this.heldEdits.size > 0) {
+      const held = [...this.heldEdits];
+      this.heldEdits.clear();
+      for (const path of held) void this.onEdit(path);
     }
   }
 
@@ -397,6 +458,11 @@ export class SourceControlService {
     const configureRevision = ++this.configureRevision;
     const wasActive = this.active;
     this.settings = { ...input.settings };
+    if (this.settings.lockOnEdit !== "ask" && this.askPending.length > 0) {
+      // Unanswered paths follow the new choice on their next edit.
+      for (const path of this.askPending) this.editsHandled.delete(path);
+      this.askPending = NO_PATHS;
+    }
     this.hostOk = isSourceControlHost(input.platform, input.testMode);
     this.testMode = input.testMode;
     this.storage = input.storage ?? null;
@@ -544,8 +610,9 @@ export class SourceControlService {
     // The old provider's locks are gone, so their read-only tabs and banners go
     // too, even when the new provider never refreshes.
     this.reconcileDocumentLockState();
-    this.autoLockAttempted.clear();
-    this.heldAutoLocks.clear();
+    this.editsHandled.clear();
+    this.heldEdits.clear();
+    this.askPending = NO_PATHS;
   }
 
   /** A removed credential (Sign Out) stops every request until a new one is saved. */
@@ -638,8 +705,12 @@ export class SourceControlService {
           error: result.error.message || "Could not refresh locks. Check the connection and Source Control in Engine Settings.",
         };
       } else {
+        const previous = this.listBranch === branch ? this.locksByPath : null;
         this.setLocks([...result.value.ours, ...result.value.theirs]);
         this.listBranch = branch;
+        // A lock that went away on this branch (released here or elsewhere, or
+        // forced off) lets the file's next edit ask or lock again.
+        if (previous) for (const path of previous.keys()) if (!this.locksByPath.has(path)) this.editsHandled.delete(path);
         this.reconcileDocumentLockState();
         this.lockRefreshState = { status: "ready", error: null, lastSuccessAt: Date.now() };
         if (!(await this.listBranchesLeft(provider, revision))) return;
@@ -673,7 +744,7 @@ export class SourceControlService {
     return true;
   }
 
-  /** No locking API: stop polling and auto-lock; the Locks window says so instead of an error. */
+  /** No locking API: stop polling and Lock On Edit; the Locks window says so instead of an error. */
   private markUnsupported(): void {
     this.unsupported = true;
     this.scheduler?.stop();
@@ -682,19 +753,27 @@ export class SourceControlService {
     this.emit();
   }
 
-  async autoLock(path: string): Promise<void> {
-    if (!this.active || !this.settings.autoLockOnEdit || !this.provider || this.unsupported) {
+  /**
+   * Every applied edit of `path` (the first-edit hook). Lock On Edit decides
+   * what its first edit does: **Always** locks the file, **Ask** adds it to
+   * the Lock prompt (not while the sign-in prompt is up or someone else holds
+   * it), **Never** does nothing. Waits while the lock branch is not known.
+   * Never throws and never blocks the edit.
+   */
+  async onEdit(path: string): Promise<void> {
+    const choice = this.settings.lockOnEdit;
+    if (!this.active || choice === "never" || !this.provider || this.unsupported) {
       return;
     }
     // Before the branch is known the list is the default branch's, which may not be HEAD's.
     if (!this.lockBranchKnown) {
-      this.heldAutoLocks.add(path);
+      this.heldEdits.add(path);
       return;
     }
     // Only a list of the branch locks name now says the lock is held (a move's own check may not have landed).
     const held = this.listBranch === this.lockBranch ? this.locksByPath.get(path) : undefined;
     if (held?.ours) {
-      this.autoLockAttempted.add(path);
+      this.editsHandled.add(path);
       // Every applied edit lands here once the lock is ours; notify only
       // when the banner or edit mode actually changes.
       const changed =
@@ -703,11 +782,26 @@ export class SourceControlService {
       if (changed) this.emit();
       return;
     }
-    if (this.autoLockAttempted.has(path)) return;
-    this.autoLockAttempted.add(path);
+    if (this.editsHandled.has(path)) return;
+    if (choice === "ask") {
+      // Nothing to ask while someone else holds the file or the host wants a sign-in first.
+      if (held || this.signInPrompt) return;
+      this.editsHandled.add(path);
+      this.askPending = [...this.askPending, path];
+      this.emit();
+      return;
+    }
+    this.editsHandled.add(path);
+    await this.lockForEdit(path);
+  }
+
+  /** Locks an edited path (Always, or the Lock prompt's Lock); a failure shows the document's Unlocked banner. */
+  private async lockForEdit(path: string): Promise<void> {
+    const provider = this.provider;
+    if (!provider) return;
     const revision = this.providerRevision;
     let result;
-    try { result = await this.provider.create(path); }
+    try { result = await provider.create(path); }
     catch (error) {
       if (revision !== this.providerRevision) return;
       this.banners.set(path, { kind: "unlocked", message: message(error) });
@@ -735,7 +829,7 @@ export class SourceControlService {
       } else {
         this.banners.set(path, {
           kind: "unlocked",
-          message: `Locked by ${lock.ownerName}. Editing anyway.`,
+          message: `Locked by ${lock.ownerName}. You can edit, but you can't save until they release it.`,
         });
       }
       this.emit();
@@ -750,7 +844,7 @@ export class SourceControlService {
 
   /**
    * **Lock** (the Content Browser's Source Control menu): locks each path not
-   * already ours, one at a time, whatever Auto-Lock On First Edit says. A
+   * already ours, one at a time, whatever Lock On Edit says. A
    * path someone else holds is listed as theirs and named with its holder;
    * failures are joined into `operationError`, as Release All My Locks does.
    */
@@ -794,7 +888,7 @@ export class SourceControlService {
     const lock = isOk(result) ? result.value : result.error.lock!;
     this.setLock(path, lock);
     if (!lock.ours) return `Locked by ${lock.ownerName}`;
-    this.autoLockAttempted.add(path);
+    this.editsHandled.add(path);
     this.banners.delete(path);
     this.editMode.set(path, "editable");
     return null;
@@ -841,7 +935,7 @@ export class SourceControlService {
     } catch (error) {
       if (revision !== this.providerRevision) return;
       const text = `Could not transfer the lock to ${newPath}: ${message(error)}`;
-      this.autoLockAttempted.delete(newPath);
+      this.editsHandled.delete(newPath);
       this.banners.set(newPath, { kind: "unlocked", message: text });
       this.lastOperationError = text;
       this.emit();
@@ -850,7 +944,7 @@ export class SourceControlService {
     this.setLock(newPath, lock);
     this.banners.delete(newPath);
     this.editMode.set(newPath, "editable");
-    this.autoLockAttempted.add(newPath);
+    this.editsHandled.add(newPath);
     try {
       const released = await provider.unlock(existing.id);
       if (revision !== this.providerRevision) return;
@@ -864,7 +958,7 @@ export class SourceControlService {
       throw new Error(text, { cause: error });
     }
     this.deleteLock(oldPath);
-    this.autoLockAttempted.delete(oldPath);
+    this.editsHandled.delete(oldPath);
     this.banners.delete(oldPath);
     this.editMode.delete(oldPath);
     this.emit();
@@ -1026,7 +1120,7 @@ export class SourceControlService {
     for (const [path, lock] of this.locksByPath) {
       if (lock.id === id) {
         this.deleteLock(path);
-        this.autoLockAttempted.delete(path);
+        this.editsHandled.delete(path);
         this.editMode.delete(path);
         this.banners.delete(path);
       }
@@ -1042,12 +1136,21 @@ export class SourceControlService {
       return [lock.path, same ? old : lock];
     }));
     this.locksSnapshot = null;
+    this.dropLockedFromPrompt();
   }
 
   private setLock(path: string, lock: FileLock): void {
     this.locksByPath.set(path, lock);
     this.locksSnapshot = null;
     this.lockMutations += 1;
+    this.dropLockedFromPrompt();
+  }
+
+  /** A path locked meanwhile, by us or someone else, has nothing left to ask. */
+  private dropLockedFromPrompt(): void {
+    if (!this.askPending.some((path) => this.locksByPath.has(path))) return;
+    const remaining = this.askPending.filter((path) => !this.locksByPath.has(path));
+    this.askPending = remaining.length ? remaining : NO_PATHS;
   }
 
   private deleteLock(path: string): void {
