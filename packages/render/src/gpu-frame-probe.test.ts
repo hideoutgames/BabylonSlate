@@ -143,6 +143,8 @@ describe("GL call signature", () => {
     recorder.draw(); work++;
     recorder.bind(FRAMEBUFFER, null);
     recorder.clear(COLOR_BIT); work++;
+    // The backbuffer's pass goes on after the fence submitted as it started: that fence split nothing.
+    recorder.draw(); work++;
     recorder.endFrame();
     // Before the frame's first work, and before the first on the backbuffer.
     expect(starts).toEqual([0, 3]);

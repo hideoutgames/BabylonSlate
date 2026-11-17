@@ -267,6 +267,8 @@ export class GlSignatureRecorder {
       return current;
     }
     this.onPassStart?.();
+    // A fence submitted as the pass starts lies between two passes.
+    this.fenced = false;
     let id = this.ids.get(this.drawTarget);
     if (!id) {
       id = this.drawTarget === null ? "D" : `F${this.ids.size + (this.ids.has(null) ? 0 : 1)}`;
