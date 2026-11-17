@@ -839,7 +839,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   const drift = breakdownWarmupDrift(samples);
   const timed = samples.find((sample) => sample.gpuBusy);
   const lines = [
-    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 12 minutes: first a state probe at the control view (a minute held unchanged, reset actions, frames in flight and a 30 fps cap; below), then at fixed camera views (a short warm-up at the control view, then at each view a baseline before and after every step, A B A, the camera held between them; each sampled 5 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling, then probed with serialised frames before it is restored; GPU probes, below):`,
+    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 15 minutes: first a state probe at the control view (a minute held unchanged, reset actions, frames in flight and a 30 fps cap; below), then at fixed camera views (a short warm-up at the control view, then at each view a baseline before and after every step, A B A, the camera held between them; each sampled 5 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling, then probed with serialised frames before it is restored; GPU probes, below):`,
     `  Settings: ${first?.settings ? Object.entries(first.settings).map(([field, value]) => `${field} ${value}`).join(" · ") : "unknown"}`,
     `  Frames in flight: ${framesInFlightText(samples)}`,
     `  Resolution held: ${heldResolutionText(profile?.resolution ?? null)}`,

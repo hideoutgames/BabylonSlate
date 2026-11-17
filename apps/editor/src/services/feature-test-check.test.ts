@@ -1157,7 +1157,7 @@ describe("Profile", () => {
     expect(sequence.slice(0, probe.length)).toEqual(probe);
     expect(sequence.slice(probe.length, probe.length + 8).map((entry) => entry.label)).toEqual([
       "light baseline 1", "light MSAA off", "light baseline 2", "light discard samples", "light baseline 3", "light scene layers hidden",
-      "light baseline 4", "heavy baseline 1",
+      "light baseline 4", "light FSR to view size",
     ]);
     // Only a view's first baseline moves the camera; every step sits between two baselines of its own view.
     expect(sequence.filter((entry) => entry.commands.some((line) => line.startsWith("possess"))).map((entry) => entry.label))
@@ -1168,9 +1168,10 @@ describe("Profile", () => {
     });
     // Then the control view once more, unchanged, so the drift line spans the run.
     expect(sequence.at(-1)).toEqual({ label: "heavy drift", commands: ['possess "Profile Heavy Camera"'], baseline: true, view: "heavy" });
-    // Two warm-up windows, the hold's back to back 5 s windows and every other row at about 10 s: within ten minutes.
+    // Two warm-up windows, the hold's back to back 5 s windows and every other row at about 10 s: within twelve minutes
+    // before the serial probes, about a second a row.
     const rows = sequence.filter((entry) => !entry.action);
-    expect(PROFILE_WARMUP_WINDOWS * 10 + PROFILE_HOLD_WINDOWS * 5 + (rows.length - PROFILE_HOLD_WINDOWS) * 10).toBeLessThanOrEqual(600);
+    expect(PROFILE_WARMUP_WINDOWS * 10 + PROFILE_HOLD_WINDOWS * 5 + (rows.length - PROFILE_HOLD_WINDOWS) * 10).toBeLessThanOrEqual(720);
     expect(profileStep("heavy shadows off")).toMatchObject({ view: "heavy", fields: ["shadows", "shadows.filter"] });
     expect(profileStep("heavy baseline 2")).toBeUndefined();
   });
@@ -1631,11 +1632,11 @@ describe("Profile", () => {
       ["heavy shadows medium", "already shadows medium 2048, shadows.filter high, shadows.screen off, shadows.reflections false", null],
     ]);
     const labels = rows.map((sample) => sample.label);
-    expect(labels.slice(labels.indexOf("heavy shadow passes off"), labels.indexOf("heavy shadows medium big atlas") + 2)).toEqual([
-      "heavy shadow passes off", "heavy baseline 4", "heavy shadows medium", "heavy shadows medium big atlas", "heavy baseline 6",
+    expect(labels.slice(labels.indexOf("heavy far cascades alternate"), labels.indexOf("heavy shadows medium big atlas") + 2)).toEqual([
+      "heavy far cascades alternate", "heavy baseline 6", "heavy shadows medium", "heavy shadows medium big atlas", "heavy baseline 8",
     ]);
     // The step's undo failed: the baseline after it says so and fails the scene.
-    expect(main!.problems).toEqual(["heavy baseline 9: postprocessing on failed: Refused."]);
+    expect(main!.problems).toEqual(["heavy baseline 11: postprocessing on failed: Refused."]);
     expect(main!.play.profile!.endChanges).toEqual(["post.enabled=false"]);
   });
 
