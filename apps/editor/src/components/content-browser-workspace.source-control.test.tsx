@@ -76,7 +76,7 @@ function installProject() {
   const root = projectContentRoot();
   fixture.docs = {
     projectGuid: "project",
-    projectDocument: { settings: { pluginOverrides: {}, gameInstanceClass: null, editorUtilityObjects: [], startupSceneGuid: "" } },
+    projectDocument: { settings: { pluginOverrides: {}, gameInstanceClass: null, editorUtilityObjects: [], startupSceneGuid: "", twoD: { pixelPerfect: false, nearestTextures: false } } },
     assetRegistry: {
       getRoot: (id: string) => (id === "project" ? root : undefined),
       list: () => assets,

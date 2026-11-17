@@ -35,6 +35,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
       gameInstanceClass: null as string | null,
       editorUtilityObjects: [] as string[],
       startupSceneGuid: "",
+      twoD: { pixelPerfect: false, nearestTextures: false },
     } },
     assetRegistry: null as unknown,
     registryEpoch: 1,
