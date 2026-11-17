@@ -356,13 +356,18 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerPointer(control);
     },
+    onSceneLayerView: (layerId, view) => {
+      const control = { type: "sceneLayerView" as const, layerId, view: { width: view.width, height: view.height, center: [view.center[0], view.center[1]] as [number, number] } };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerView(layerId, view);
+    },
     onSceneLayerResize: (size) => {
       const control = { type: "sceneLayerResize" as const, ...size };
       if (worker) worker.postControl(control);
       else
         runtime?.applySceneLayerResize(
-          size.frustumWidth,
-          size.frustumHeight,
+          size.outputWidth,
+          size.outputHeight,
           size.canvasWidth,
           size.canvasHeight,
           size.safeAreaInsets,

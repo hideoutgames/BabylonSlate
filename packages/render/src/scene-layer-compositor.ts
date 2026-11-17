@@ -2,6 +2,7 @@ import { activeRenderFrameCapture } from "./render-frame-report";
 import { CameraShakeView, type CameraShakeViewOffset } from "./camera-shake-view";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { overlayClipAllowsPoint } from "./overlay-layout-render";
+import { openRenderChangeReader, RenderChange, type RenderChangeReader } from "./render-change-journal";
 import { pickBufferSize } from "./pick-coords";
 import type { AttachedPostProcessStack } from "./post-process-material";
 import { Camera } from "@babylonjs/core/Cameras/camera";
@@ -17,10 +18,14 @@ import { Scene } from "@babylonjs/core/scene";
 import type { CommandMessage } from "@haptic/bridge";
 import {
   parseSceneLayerHitTest,
+  normalizeSceneLayerCanvasDesign,
   sceneLayerCanvasToLayer,
-  sceneLayerOrthoBounds,
-  sceneLayerViewBounds,
+  sceneLayerFitToAspect,
+  sceneLayerView,
   DEFAULT_LAYER_CAMERA_STATE,
+  type SceneLayerCanvasDesign,
+  type SceneLayerContentBounds,
+  type SceneLayerRect,
   type OverlayPointerHit,
   type LayerCameraState,
   type SceneLayerHitTest,
@@ -57,9 +62,9 @@ export interface SceneLayerView {
   zOrder: number;
   scene: Scene;
   camera: UniversalCamera;
-  /** The ortho extent at zoom 1: Layer Width × Height widened to the output aspect. */
-  viewBounds: { width: number; height: number };
-  /** The camera centre, roll and zoom scripts set; with `viewBounds` it maps the canvas into the layer (`sceneLayerCanvasToLayer`). */
+  /** What the camera frames at zoom 1 and Camera Location (0, 0): the canvas's view (`sceneLayerView`), its size and centre. */
+  viewBounds: SceneLayerRect;
+  /** The camera location (from `viewBounds`' centre), roll and zoom scripts set; with `viewBounds` it maps the canvas into the layer (`sceneLayerCanvasToLayer`). */
   cameraState: LayerCameraState;
 }
 
@@ -72,6 +77,13 @@ export interface SceneLayerCompositorOptions {
     stack: SceneLayerPostProcessEntry[],
     renderer: SceneRenderCoordinator,
   ) => Pick<AttachedPostProcessStack, "dispose"> & Partial<Pick<AttachedPostProcessStack, "setParameter">> | null;
+  /**
+   * The output in design pixels over Pixels Per Unit, in layer units (`sceneLayerOutputDesignSize`): what Fullscreen
+   * and True Pixel Size frame. Without it a layer frames its canvas widened to the output's aspect.
+   */
+  screen?: () => { width: number; height: number } | null;
+  /** A Desired layer's view changed after its content was measured. */
+  onLayerView?: (layerId: string, view: SceneLayerRect) => void;
 }
 
 const scratchTarget = new Vector3();
@@ -84,8 +96,12 @@ interface HudCameraPose {
 }
 
 type LayerRecord = SceneLayerView & {
-  /** The authored Layer Width × Height. */
-  designBounds: { width: number; height: number };
+  /** How the asset sizes and scales its canvas. */
+  design: SceneLayerCanvasDesign;
+  /** The canvas in layer units: the command's, or for Desired the drawn content's bounds once measured. */
+  canvas: SceneLayerRect;
+  /** Desired only: hears the layer Scene's changes since its content was last measured. */
+  contentChanges: ContentWatch | null;
   /** Null until the first bind. */
   hudPose: HudCameraPose | null;
   renderer: SceneRenderCoordinator;
@@ -115,6 +131,8 @@ export class SceneLayerCompositor {
   private readonly isLayerReady: (layerId: string) => boolean;
   private readonly postProcessingEnabled: () => boolean;
   private readonly attachLayerPostProcess?: SceneLayerCompositorOptions["attachLayerPostProcess"];
+  private readonly screen: () => { width: number; height: number } | null;
+  private readonly onLayerView?: SceneLayerCompositorOptions["onLayerView"];
   private readonly byId = new Map<string, LayerRecord>();
   private readonly slotLayer = new Map<number, string>();
   private readonly slotActor = new Map<number, string>();
@@ -131,6 +149,8 @@ export class SceneLayerCompositor {
     this.isLayerReady = options.isLayerReady ?? (() => true);
     this.postProcessingEnabled = options.postProcessingEnabled ?? (() => true);
     this.attachLayerPostProcess = options.attachLayerPostProcess;
+    this.screen = options.screen ?? (() => null);
+    this.onLayerView = options.onLayerView;
   }
 
   create(command: SceneLayerCreateCommand): SceneLayerView {
@@ -163,8 +183,10 @@ export class SceneLayerCompositor {
       scene,
       camera,
       renderer: layerRenderer(scene),
-      designBounds: sceneLayerOrthoBounds(command.layerBounds),
-      viewBounds: sceneLayerViewBounds(command.layerBounds, this.outputAspect()),
+      design: normalizeSceneLayerCanvasDesign(command.canvas?.design),
+      canvas: commandCanvas(command),
+      contentChanges: null,
+      viewBounds: { width: 1, height: 1, center: [0, 0] },
       cameraState: { ...(command.camera ?? DEFAULT_LAYER_CAMERA_STATE) },
       hudPose: null,
       postProcessStack: command.postProcessStack.map((entry) => ({ ...entry })),
@@ -180,6 +202,8 @@ export class SceneLayerCompositor {
       blitReady: false,
       fallback: null,
     };
+    layer.viewBounds = this.layerView(layer);
+    if (layer.design.sizeMode === "desired") layer.contentChanges = watchContent(scene);
     this.bindHudCamera(layer);
     this.byId.set(command.layerId, layer);
     this.sortedCache = null;
@@ -208,6 +232,8 @@ export class SceneLayerCompositor {
     this.sortedCache = null;
     layer.shake?.dispose();
     layer.shake = null;
+    layer.contentChanges?.release();
+    layer.contentChanges = null;
     this.releaseFallback(layer);
     this.releasePostProcess(layer);
     // Bounded cleanup reports stay separate from actual release: the Scene is
@@ -345,12 +371,15 @@ export class SceneLayerCompositor {
     return this.sortedCache;
   }
 
-  resize(): void {
+  /** Reframes every layer after the output's size changed; `force` after its design-pixel size alone changed. */
+  resize(force = false): void {
     const width = Math.max(1, this.engine.getRenderWidth(true));
     const height = Math.max(1, this.engine.getRenderHeight(true));
-    if (width === this.outputWidth && height === this.outputHeight) return;
+    if (!force && width === this.outputWidth && height === this.outputHeight) return;
+    this.outputWidth = width;
+    this.outputHeight = height;
     for (const layer of this.byId.values()) {
-      layer.viewBounds = sceneLayerViewBounds(layer.designBounds, width / height);
+      layer.viewBounds = this.layerView(layer);
       this.bindHudCamera(layer, true);
       if (layer.rtt) {
         const previous = layer.rtt.getSize();
@@ -358,12 +387,45 @@ export class SceneLayerCompositor {
           this.rebuildPostProcess(layer);
       }
     }
-    this.outputWidth = width;
-    this.outputHeight = height;
   }
 
-  private outputAspect(): number {
-    return Math.max(1, this.engine.getRenderWidth(true)) / Math.max(1, this.engine.getRenderHeight(true));
+  /** The screen in layer units: the host's design-pixel output, else the canvas widened to the output's aspect. */
+  private layerScreen(layer: LayerRecord): { width: number; height: number } {
+    const screen = this.screen();
+    if (screen && screen.width > 0 && screen.height > 0) return screen;
+    const aspect = Math.max(1, this.engine.getRenderWidth(true)) / Math.max(1, this.engine.getRenderHeight(true));
+    return sceneLayerFitToAspect(layer.canvas, aspect);
+  }
+
+  private layerView(layer: LayerRecord): SceneLayerRect {
+    return sceneLayerView(layer.canvas, layer.design, this.layerScreen(layer));
+  }
+
+  /**
+   * A Desired layer's canvas is its drawn content's bounds: measured again only after its Scene noted a change of a
+   * mesh's transform, visibility, enabled state or geometry, or added or removed a mesh, and never for another mode.
+   * `force` (preparation) measures and computes the world matrices; a frame reads those its last render computed.
+   */
+  private measureContent(layer: LayerRecord, force = false): void {
+    const changes = layer.contentChanges;
+    if (!changes) return;
+    if (!changes.reader.drain(() => { changes.dirty = true; })) changes.dirty = true;
+    if (!changes.dirty && !force) return;
+    changes.dirty = false;
+    const bounds = sceneLayerContentBounds(layer.scene, force);
+    // Its own matrix computations are not content changes.
+    changes.reader.drain(() => {});
+    if (!bounds) return;
+    const canvas: SceneLayerRect = {
+      width: Math.max(bounds.maxX - bounds.minX, 1e-3),
+      height: Math.max(bounds.maxY - bounds.minY, 1e-3),
+      center: [(bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2],
+    };
+    if (sameRect(canvas, layer.canvas)) return;
+    layer.canvas = canvas;
+    layer.viewBounds = this.layerView(layer);
+    this.bindHudCamera(layer, true);
+    this.onLayerView?.(layer.layerId, layer.viewBounds);
   }
 
   /** Restarts every layer's preparation and clears what it latched (a restored graphics context). */
@@ -396,6 +458,7 @@ export class SceneLayerCompositor {
       if (!layer) { assertCurrent(); return; }
       if (following && performance.now() >= ceiling)
         throw new PreparationTimedOut(`SceneLayer rendering preparation timed out after its ${SCENE_PREPARATION_CEILING_MS / 1000} s limit: its renderer kept being replaced.`);
+      this.measureContent(layer, true);
       this.bindHudCamera(layer, true);
       const renderer = layer.renderer;
       try {
@@ -414,6 +477,7 @@ export class SceneLayerCompositor {
     this.resize();
     for (const record of this.orderedLayers()) {
       if (!this.isLayerReady(record.layerId) && !presentingLayers.has(record.layerId)) continue;
+      this.measureContent(record);
       this.bindHudCamera(record);
       draw(record.layerId, () => {
         let readyForPresentation: boolean;
@@ -639,8 +703,8 @@ export class SceneLayerCompositor {
 
   /**
    * Pin the camera to the layer's orthographic pose: 10 units in front of its
-   * `cameraState` centre, looking along +Z, rolled by its rotation, with the
-   * view bounds divided by its zoom. Per-frame callers leave a camera alone
+   * view's centre moved by its `cameraState` location, looking along +Z,
+   * rolled by its rotation, with the view bounds divided by its zoom. Per-frame callers leave a camera alone
    * while its parent, position, rotation, mode, active-camera status and
    * orthographic bounds still match what the last bind wrote; Babylon
    * re-derives its view and projection when anything they read changes. A
@@ -651,7 +715,8 @@ export class SceneLayerCompositor {
    */
   private bindHudCamera(layer: LayerRecord, force = false): void {
     if (!force && this.hudCameraIntact(layer)) return;
-    const { x, y } = layer.cameraState;
+    const x = layer.cameraState.x + layer.viewBounds.center[0];
+    const y = layer.cameraState.y + layer.viewBounds.center[1];
     layer.camera.parent = null;
     layer.camera.position.set(x, y, -10);
     layer.camera.rotation.set(0, 0, 0);
@@ -855,6 +920,56 @@ type OverlayMeshMetadata = {
  */
 function layerRenderer(scene: Scene): SceneRenderCoordinator {
   return new SceneRenderCoordinator(scene, { scopedStrictProbes: true });
+}
+
+/** The sceneLayerCreate command's canvas, or a 1 × 1 one centred on the origin when it has none. */
+function commandCanvas(command: SceneLayerCreateCommand): SceneLayerRect {
+  const rect = command.canvas?.rect;
+  return rect && rect.width > 0 && rect.height > 0
+    ? { width: rect.width, height: rect.height, center: [rect.center[0], rect.center[1]] }
+    : { width: 1, height: 1, center: [0, 0] };
+}
+
+function sameRect(a: SceneLayerRect, b: SceneLayerRect): boolean {
+  return a.width === b.width && a.height === b.height && a.center[0] === b.center[0] && a.center[1] === b.center[1];
+}
+
+interface ContentWatch {
+  reader: RenderChangeReader;
+  dirty: boolean;
+  release(): void;
+}
+
+/** Hears a layer Scene's content changes: mesh transform, visibility, enabled state and geometry, and added or removed meshes. */
+function watchContent(scene: Scene): ContentWatch {
+  const reader = openRenderChangeReader(scene, RenderChange.Transform | RenderChange.Visibility | RenderChange.Enabled | RenderChange.Geometry);
+  const watch: ContentWatch = { reader, dirty: true, release: () => {} };
+  const added = scene.onNewMeshAddedObservable.add(() => { watch.dirty = true; });
+  const removed = scene.onMeshRemovedObservable.add(() => { watch.dirty = true; });
+  watch.release = () => {
+    reader.dispose();
+    scene.onNewMeshAddedObservable.remove(added);
+    scene.onMeshRemovedObservable.remove(removed);
+  };
+  return watch;
+}
+
+/**
+ * The XY bounds of a layer Scene's drawn content: every enabled, visible mesh with vertices, as the editor's
+ * `visualBounds2D` measures visuals. Null without any.
+ */
+export function sceneLayerContentBounds(scene: Scene, computeMatrices = false): SceneLayerContentBounds | null {
+  let bounds: SceneLayerContentBounds | null = null;
+  for (const mesh of scene.meshes) {
+    if (!mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0) continue;
+    if (computeMatrices) mesh.computeWorldMatrix(true);
+    const { minimumWorld: min, maximumWorld: max } = mesh.getBoundingInfo().boundingBox;
+    if (!Number.isFinite(min.x) || !Number.isFinite(max.x)) continue;
+    bounds = bounds
+      ? { minX: Math.min(bounds.minX, min.x), minY: Math.min(bounds.minY, min.y), maxX: Math.max(bounds.maxX, max.x), maxY: Math.max(bounds.maxY, max.y) }
+      : { minX: min.x, minY: min.y, maxX: max.x, maxY: max.y };
+  }
+  return bounds;
 }
 
 function overlayMetadataOf(

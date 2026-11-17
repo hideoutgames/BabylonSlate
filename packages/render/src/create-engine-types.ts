@@ -543,10 +543,12 @@ export interface CreateEngineOptions {
   onSceneLayerControl?: (event: SceneLayerControlEvent) => void;
   onSceneLayerFocusNavigate?: (reverse: boolean) => void;
   onSceneLayerScroll?: (event: { layerId: string; actorId: string; componentId: string; deltaX: number; deltaY: number }) => void;
-  /** Overlay 2DAnchor frustum in world units (height 9, width 9 * aspect). */
+  /** A Desired Scene Layer's view changed after the compositor measured its content. */
+  onSceneLayerView?: (layerId: string, view: { width: number; height: number; center: readonly [number, number] }) => void;
+  /** The output in design pixels (`sceneLayerOutputDesignSize`), the pointer canvas and its safe-area insets. */
   onSceneLayerResize?: (size: {
-    frustumWidth: number;
-    frustumHeight: number;
+    outputWidth: number;
+    outputHeight: number;
     canvasWidth: number;
     canvasHeight: number;
     safeAreaInsets?: { left: number; right: number; top: number; bottom: number };
