@@ -5,6 +5,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import { painterRevision, painterTextureSize, parsePainter2DProperties, type Painter2DProperties, type PainterColor, type PainterCommand, type PainterPathSegment } from "@haptic/core";
+import { resampleMaterialTexture, trackMaterialTexture } from "./nearest-textures";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 
@@ -93,6 +94,8 @@ export function createPainter2DMesh(scene: Scene, name: string, value: unknown):
     texture.hasAlpha = true;
     texture.wrapU = Texture.CLAMP_ADDRESSMODE;
     texture.wrapV = Texture.CLAMP_ADDRESSMODE;
+    // A canvas a Material samples: Nearest Texture Filtering draws its texels square, like any other.
+    trackMaterialTexture(scene.getEngine(), texture, undefined);
     setUnlitMaterial(mesh, PAINTER_MATERIAL, {
       texture, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
     });
@@ -129,7 +132,10 @@ export function updatePainter2DMesh(mesh: Mesh, value: unknown): boolean {
   }
   const wanted = textureSizeFor(mesh.getScene(), properties);
   const current = visual.texture.getSize();
-  if (wanted.width !== current.width || wanted.height !== current.height) visual.texture.scaleTo(wanted.width, wanted.height);
+  if (wanted.width !== current.width || wanted.height !== current.height) {
+    visual.texture.scaleTo(wanted.width, wanted.height);
+    resampleMaterialTexture(mesh.getEngine(), visual.texture);
+  }
   const size = visual.texture.getSize();
   if (painted && painted.width === properties.width && painted.height === properties.height &&
     painted.textureWidth === size.width && painted.textureHeight === size.height &&

@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DynamicTexture } from "@babylonjs/core";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { parsePainter2DProperties } from "@haptic/core";
 import { unlitBinding } from "./unlit-material-blocks";
 import { createTestEngine } from "./test-support/test-engine";
 import { createPainter2DMesh, updatePainter2DMesh } from "./painter2d-mesh";
+import { setNearestTextures } from "./nearest-textures";
 import { applyAssignMesh, applyPainter2DCommand, applySnapshotToScene, createSnapshotSceneBinding } from "./snapshot-apply";
 
 /** NullEngine runs in Node: DynamicTexture needs a canvas whose 2D calls are no-ops. */
@@ -50,6 +52,20 @@ describe("Painter2D mesh", () => {
     updatePainter2DMesh(mesh, { width: 4, height: 1.5, pixelsPerUnit: 50 });
     expect(extent()).toEqual({ width: 4, height: 1.5 });
     expect(texture.getSize()).toMatchObject({ width: 200, height: 75 });
+  });
+
+  it("samples its canvas nearest under Nearest Texture Filtering, through a resize, and bilinear again once it is off", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createPainter2DMesh(handle.scene, "painter", { width: 2, height: 1, pixelsPerUnit: 100 });
+    const texture = unlitBinding(mesh).texture as DynamicTexture;
+    expect(texture.samplingMode).toBe(Texture.BILINEAR_SAMPLINGMODE);
+    setNearestTextures(handle.engine, true);
+    expect(texture.samplingMode).toBe(Texture.NEAREST_SAMPLINGMODE);
+    updatePainter2DMesh(mesh, { width: 4, height: 1, pixelsPerUnit: 100 });
+    expect(texture.getInternalTexture()?.samplingMode).toBe(Texture.NEAREST_SAMPLINGMODE);
+    setNearestTextures(handle.engine, false);
+    expect(texture.samplingMode).toBe(Texture.BILINEAR_SAMPLINGMODE);
   });
 
   it("keeps a resized painter's bounds where its actor stands in Play", () => {
