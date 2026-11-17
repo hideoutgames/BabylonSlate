@@ -357,7 +357,8 @@ float hapticScreenShadowLit(vec3 P, vec3 eye) {
   float weight = 0.0;
   for (int y = -1; y <= 1; y++) {
     for (int x = -1; x <= 1; x++) {
-      vec2 texel = texelFetch(hapticScreenShadowSampler, clamp(pixel + ivec2(x, y), ivec2(0), last), 0).rg;
+      // The centre's texel is the one read above.
+      vec2 texel = x == 0 && y == 0 ? center : texelFetch(hapticScreenShadowSampler, clamp(pixel + ivec2(x, y), ivec2(0), last), 0).rg;
       if (abs(distance - texel.y) < 2.0 * tolerance) { lit += texel.x; weight += 1.0; }
     }
   }
@@ -507,9 +508,20 @@ vec3 hapticLtcEvaluate(vec3 N, vec3 V, vec3 P, mat3 mInv, vec3 c0, vec3 c1, vec3
   return max((l * l + f.z) / (l + 1.0), 0.0) * emission;
 }
 #ifndef HAPTIC_CEL
-// Rect i's diffuse and specular form factors, and the table's Fresnel terms (x scales F0, y scales F90 - F0).
-struct hapticArea { vec3 diffuse; vec3 specular; vec2 fresnel; };
-hapticArea hapticAreaLight(vec3 P, vec3 N, vec3 V, int i, float roughness) {
+// The LTC tables' terms at the surface's roughness and N.V, the same for every rect light: the specular transform's
+// inverse and the Fresnel terms (x scales F0, y scales F90 - F0).
+struct hapticLtc { mat3 mInv; vec2 fresnel; };
+hapticLtc hapticLtcTerms(vec3 N, vec3 V, float roughness) {
+  vec2 uv = vec2(roughness, sqrt(1.0 - clamp(dot(N, V), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
+  // The two tables stacked in one texture (\`areaLightLtcTexture\`): LTC1 in the top half, LTC2 in the bottom. A half's
+  // rows end at its last texel's centre, so the bilinear tap never reaches the other table.
+  vec4 t1 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5), 0.0);
+  vec4 t2 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5 + 0.5), 0.0);
+  return hapticLtc(mat3(vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w)), t2.xy);
+}
+// Rect i's diffuse and specular form factors.
+struct hapticArea { vec3 diffuse; vec3 specular; };
+hapticArea hapticAreaLight(vec3 P, vec3 N, vec3 V, int i, mat3 mInv) {
   vec3 center = hapticRect[i * 4].xyz;
   vec3 halfWidth = hapticRect[i * 4 + 1].xyz;
   vec3 halfHeight = hapticRect[i * 4 + 2].xyz;
@@ -517,17 +529,10 @@ hapticArea hapticAreaLight(vec3 P, vec3 N, vec3 V, int i, float roughness) {
   vec3 c1 = center - halfWidth - halfHeight;
   vec3 c2 = center - halfWidth + halfHeight;
   vec3 c3 = center + halfWidth + halfHeight;
-  vec2 uv = vec2(roughness, sqrt(1.0 - clamp(dot(N, V), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
-  // The two tables stacked in one texture (\`areaLightLtcTexture\`): LTC1 in the top half, LTC2 in the bottom. A half's
-  // rows end at its last texel's centre, so the bilinear tap never reaches the other table.
-  vec4 t1 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5), 0.0);
-  vec4 t2 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5 + 0.5), 0.0);
-  mat3 mInv = mat3(vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w));
   hapticArea area;
   float layer = hapticRect[i * 4 + 3].w;
   area.diffuse = hapticLtcEvaluate(N, V, P, mat3(1.0), c0, c1, c2, c3, layer);
   area.specular = hapticLtcEvaluate(N, V, P, mInv, c0, c1, c2, c3, layer);
-  area.fresnel = t2.xy;
   return area;
 }
 
@@ -561,6 +566,9 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     float view = -1.0;
     vec3 viewDx = vec3(0.0);
     vec3 viewDy = vec3(0.0);
+    float lightDistance = 0.0;
+    vec3 L = vec3(0.0);
+    float cone = 1.0;
     if (slot < 2) {
       // The sun's cascade, then the next one where it blends into it.
       if (sun.index >= 0 && (slot == 0 || sun.blends)) {
@@ -589,6 +597,13 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
 #ifdef HAPTIC_LIGHT_LOOP_PROOF
       hapticLoopReached++;
 #endif
+      lightDistance = sqrt(distanceSquared);
+      L = offset / max(lightDistance, HAPTIC_EPSILON);
+      // A spot light outside its cone adds exactly zero: its shadow is not looked up.
+      if (spot) {
+        cone = hapticConeFalloff(hapticSpot[i * 4 + 1].xyz, L, hapticSpot[i * 4 + 1].w, hapticSpot[i * 4 + 3].y);
+        if (cone == 0.0) continue;
+      }
       view = spot ? hapticSpot[i * 4 + 3].x : hapticPointShadowView(hapticPoint[i * 3 + 2], -offset);
     }
     float lit = hapticShadow(view, P, viewDx, viewDy);
@@ -615,23 +630,27 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
       }
       continue;
     }
-    float lightDistance = sqrt(distanceSquared);
-    vec3 L = offset / max(lightDistance, HAPTIC_EPSILON);
     float NdotL = hapticSaturateEps(dot(N, L));
     vec3 radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w);
-    if (spot) radiance = radiance * hapticConeFalloff(hapticSpot[i * 4 + 1].xyz, L, hapticSpot[i * 4 + 1].w, hapticSpot[i * 4 + 3].y);
+    if (spot) radiance = radiance * cone;
     radiance = radiance * lit;
     diffuse += radiance * (NdotL / HAPTIC_PI);
     // A light's radius widens its highlight.
     float roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
     specular += hapticSpecular(surface, N, V, L, NdotL, roughness) * radiance;
   }
-  for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.rect}; i++) {
-    if (i >= int(hapticCounts.w)) break;
-    hapticArea area = hapticAreaLight(P, N, V, i, surface.roughness);
+  // The rect lights of P's cluster, in record order: a cluster wholly behind a rect's emitting side drops it, where it
+  // adds exactly zero (\`hapticLtcEvaluate\`). The tables' terms are fetched once for all of them.
+  uint rects = hapticClusterLights(clusterMask.y >> 16, int(hapticCounts.w));
+  if (rects == 0u) return;
+  hapticLtc ltc = hapticLtcTerms(N, V, surface.roughness);
+  for (int r = 0; r < ${HAPTIC_LIGHT_MAXIMUM.rect}; r++) {
+    if (rects == 0u) break;
+    int i = hapticNextLight(rects);
+    hapticArea area = hapticAreaLight(P, N, V, i, ltc.mInv);
     vec3 color = hapticRect[i * 4 + 3].rgb;
     diffuse += color * area.diffuse;
-    specular += color * (surface.F0 * area.fresnel.x + (vec3(1.0) - surface.F0) * area.fresnel.y) * area.specular;
+    specular += color * (surface.F0 * ltc.fresnel.x + (vec3(1.0) - surface.F0) * ltc.fresnel.y) * area.specular;
   }
 }
 #else
