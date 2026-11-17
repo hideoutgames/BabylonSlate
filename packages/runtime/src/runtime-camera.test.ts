@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@haptic/bridge";
-import { createDefaultScene, type PhysicsWorldKind } from "@haptic/core";
+import { createDefaultScene, type PhysicsWorldKind, type PixelMatchedContext } from "@haptic/core";
 import { ClassRegistry, World, type Actor } from "@haptic/object-model";
 import { RenderSlots } from "./render-slots";
 import { RuntimeCamera } from "./runtime-camera";
 import { RuntimeSubsystems } from "./runtime-subsystems";
 
-function fixture(options: { physicsKind?: PhysicsWorldKind; canvas?: { width: number; height: number } } = {}) {
+function fixture(options: { physicsKind?: PhysicsWorldKind; canvas?: { width: number; height: number }; pixelMatched?: PixelMatchedContext } = {}) {
   const world = new World({ seed: 1, dt: 0.1, classRegistry: new ClassRegistry() });
   const subsystems = new RuntimeSubsystems();
   const slots = new RenderSlots(subsystems, { ensureCapacity: () => {}, findActor: (guid) => world.findActor(guid) });
@@ -39,7 +39,12 @@ function fixture(options: { physicsKind?: PhysicsWorldKind; canvas?: { width: nu
     guidSlot: (guid) => slots.guidSlot(guid),
     cursor: () => ({ x: 0, y: 0, pressed: false }),
     touches: () => [],
-    overlay: () => ({ canvasSize: () => options.canvas ?? { width: 1, height: 1 }, viewBounds: () => ({ width: 32, height: 18, center: [0, 0] }) }),
+    overlay: () => ({
+      canvasSize: () => options.canvas ?? { width: 1, height: 1 },
+      viewBounds: () => ({ width: 32, height: 18, center: [0, 0] }),
+      pixelMatchContext: () => options.pixelMatched ?? { design: { width: 1920, height: 1080 }, output: { width: 1920, height: 1080 }, pixelsPerUnit: 100 },
+    }),
+    pixelMatchedCameras: options.pixelMatched !== undefined,
     physics: () => physics as never,
     traceDebugDraw: false,
     warn: (message) => warnings.push(message),
@@ -244,6 +249,30 @@ describe("RuntimeCamera cursor projection through the Layer Camera", () => {
     const result = f.camera.projectCursorToScene();
     expect(f.traces).toEqual([{ start: { x: 2, y: 6.5, z: -500 }, end: { x: 2, y: 6.5, z: 500 } }]);
     expect(result.worldDirection).toEqual({ x: 0, y: 0, z: 1 });
+  });
+
+  it("projects through the pixel-matched view the renderer draws, over the extended output", () => {
+    // 640 x 360 extended to 854 x 360 design pixels (a 21:9 window), shown at 1708 x 720 CSS pixels.
+    const pixelMatched = { design: { width: 640, height: 360 }, output: { width: 854, height: 360 }, pixelsPerUnit: 100 };
+    const f = fixture({ physicsKind: "2d", canvas: { width: 1708, height: 720 }, pixelMatched });
+    f.scene.settings.cameraBounds2D = { width: 6.4, height: 3.6 };
+    f.world.createScene({ assetGuid: "scene", sceneName: "Main", cameraLocation: [0, 0] });
+    // One texel per design pixel: the top-left corner is 4.27 units left of and 1.8 above the camera.
+    f.camera.projectCursorToScene();
+    expect(f.overlaps).toEqual([{ x: expect.closeTo(-4.27, 9), y: expect.closeTo(1.8, 9), z: 0 }]);
+    // An Orthographic Size of 1 frames two design pixels per texel: half of 3.6 units.
+    expect(f.camera.orthographicHalfHeight(1)).toBeCloseTo(0.9, 9);
+    expect(fixture().camera.orthographicHalfHeight(1)).toBe(1);
+  });
+
+  it("reports the design area's half-height for Get Orthographic Size, the same whether the output extends or not", () => {
+    // 640 x 360 Pixelated in a 1024 x 768 window extends to 1024 x 768 design pixels: taller than the design.
+    const pixelMatched = { design: { width: 640, height: 360 }, output: { width: 1024, height: 768 }, pixelsPerUnit: 100 };
+    const f = fixture({ pixelMatched });
+    expect(f.camera.orthographicHalfHeight(1.8)).toBeCloseTo(3.84, 9);
+    expect(f.camera.designHalfHeight(1.8)).toBeCloseTo(1.8, 9);
+    // Setting what Get reported keeps the ratio.
+    expect(f.camera.designHalfHeight(f.camera.designHalfHeight(1))).toBeCloseTo(0.9, 9);
   });
 
   it("answers with the colliders under the cursor in a 2D world", () => {

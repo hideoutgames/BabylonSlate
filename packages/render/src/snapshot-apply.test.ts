@@ -29,7 +29,7 @@ import { glbContainerLoadCount } from "./glb-anim";
 import { visualMeshes } from "./visual-meshes";
 import { RENDERING_GROUP, resolveSortingLayer } from "./sorting";
 import { ResourceCache } from "./resource-cache";
-import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
+import { AUTHORED_LIGHT_PREFIX, setScenePixelMatchedLens } from "./scene-illumination";
 import {
   applyAssignMaterial,
   applyAssignMesh,
@@ -1409,6 +1409,30 @@ describe("createPlayMesh", () => {
     const camera = binding.cameras.get(1) as { position: { x: number; y: number } };
     expect(camera.position.x).toBeCloseTo(0.01, 6);
     expect(camera.position.y).toBeCloseTo(0.03, 6);
+  });
+
+  it("snaps a pixel-matched camera's view edges onto the pixel grid of an odd-sized output", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.pixelPerfect = true;
+    binding.pixelsPerUnit = 100;
+    // 855 x 361 design pixels at one texel per pixel: half a pixel would sit on the centre without the edge snap.
+    setScenePixelMatchedLens(scene, { design: { width: 640, height: 360 }, pixelsPerUnit: 100, output: { width: 855, height: 361 } });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh", slotId: 1, meshAssetGuid: null, meshKind: "camera",
+      camera: { projectionMode: "orthographic", orthographicSize: 1.8 },
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1, tickIndex: 1, actorCount: 1,
+      actors: [{ slotId: 1, position: { x: 0.014, y: 0.026, z: -8 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 }, flags: 1 }],
+    });
+    const camera = binding.cameras.get(1)!;
+    // Left and bottom edges land on whole hundredths: 0.015 - 4.275 = -4.26 and 0.025 - 1.805 = -1.78.
+    expect(camera.position.x).toBeCloseTo(0.015, 9);
+    expect(camera.position.y).toBeCloseTo(0.025, 9);
+    expect(camera.position.x + camera.orthoLeft!).toBeCloseTo(-4.26, 9);
   });
 
   it("offsets tilemap parallax from the same snapshot's snapped camera", () => {

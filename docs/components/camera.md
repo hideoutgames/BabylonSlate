@@ -12,7 +12,7 @@ Select an actor, then choose **Add Component > Camera > Camera**. You can also p
 | --- | --- |
 | Projection Mode | **Perspective** or **Orthographic**. Cameras added in 2D scenes start orthographic. |
 | Field Of View | Perspective only. Vertical angle in degrees, 1 to 179. Default 60. |
-| Orthographic Size | Orthographic only. Half the view height in world units, 0.1 to 50. Default 5. |
+| Orthographic Size | Orthographic only. Half the view height in world units, 0.1 to 50. Default 5. With Pixel-Perfect Mode and Nearest Texture Filtering, Play rounds it to the nearest whole pixel scale and the row shows the result ([pixel-matched cameras](../graphics/cameras.md#pixel-matched-cameras)). |
 | Near Clip | Nothing closer is drawn. Default 0.1. Must be less than Far Clip. |
 | Far Clip | Nothing farther is drawn. Default 1000. Must be greater than Near Clip. |
 | Attempt Possess View Target | Uses this camera when Play starts if the scene has no Default Camera. Default off. |

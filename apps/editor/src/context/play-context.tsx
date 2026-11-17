@@ -24,6 +24,7 @@ import {
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   engineCommandBus,
   nearestTextureFiltering,
+  pixelMatchedCameras,
   type ExtensionGameLibrary,
 } from "@haptic/core";
 import type { SessionReportEntry } from "@haptic/runtime";
@@ -1261,6 +1262,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             }
             collisionPresets={projectDocument?.settings.physics.collisionPresets}
             pixelPerfect={projectDocument?.settings.twoD.pixelPerfect === true}
+            pixelMatchedCameras={projectDocument ? pixelMatchedCameras(projectDocument.settings.twoD) : false}
             touchMinTargetPx={
               projectDocument?.settings.touchMinTargetPx ?? 44
             }

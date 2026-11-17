@@ -13,6 +13,7 @@ import {
   sceneLayerRelativeAnchorWorldPosition,
   sceneLayerView,
   type FocusNavigationSettings,
+  type PixelMatchedContext,
   type SceneLayerRect,
   type OverlaySafeAreaInsets,
 } from "@haptic/core";
@@ -168,6 +169,16 @@ export class SceneLayerOverlay {
   }
 
   /** The output in design pixels over Pixels Per Unit, in layer units; null before the host reported a size. */
+  /**
+   * What a pixel-matched camera frames from (`pixelMatchedView`): the design resolution, the output in design pixels
+   * (the design size until the host first reports one) and Pixels Per Unit, as the renderer frames it.
+   */
+  pixelMatchContext(): PixelMatchedContext {
+    const design = this.deps.designResolution;
+    return { design: { ...design }, output: this.outputDesignSize ? { ...this.outputDesignSize } : { ...design },
+      pixelsPerUnit: this.host.pixelsPerUnit() > 0 ? this.host.pixelsPerUnit() : 100 };
+  }
+
   private screen(): { width: number; height: number } | null {
     if (!this.outputDesignSize) return null;
     const ppu = this.host.pixelsPerUnit() > 0 ? this.host.pixelsPerUnit() : 100;
