@@ -1285,7 +1285,7 @@ export type CommandMessage =
       ownerSceneGuid: string | null;
       postProcessStack: ScenePostProcessEntry[];
       /** The asset's canvas design and its rectangle in layer units (for Desired, the Fullscreen stand-in until measured). */
-      canvas?: {
+      canvas: {
         design: import("@haptic/core").SceneLayerCanvasDesign;
         rect: { width: number; height: number; center: [number, number] };
       };

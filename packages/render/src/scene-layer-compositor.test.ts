@@ -19,14 +19,7 @@ import { RenderingManager } from "@babylonjs/core/Rendering/renderingManager";
 import { layerDrawableMeshes } from "./layer-drawable-meshes";
 import { sceneShadowController } from "./shadow-controller";
 import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
-
-/** A Custom canvas of `width` × `height` layer units centred on the origin, fitted to the screen (`sceneLayerCreate.canvas`). */
-function layerCanvas(width: number, height: number) {
-  return {
-    design: { sizeMode: "custom" as const, customSizePx: { width: width * 100, height: height * 100 }, rootAnchor: "center" as const, scaling: "fitToScreen" as const },
-    rect: { width, height, center: [0, 0] as [number, number] },
-  };
-}
+import { layerCanvas } from "./scene-layer-canvas-fixtures";
 
 
 describe("SceneLayerCompositor", () => {
@@ -60,7 +53,7 @@ describe("SceneLayerCompositor", () => {
       assetGuid: "hud-asset",
       zOrder: 2,
       ownerSceneGuid: null,
-      postProcessStack: [],
+      postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     const layers = compositor.layers();
     expect(layers).toHaveLength(1);
@@ -77,7 +70,7 @@ describe("SceneLayerCompositor", () => {
   it("leaves depth and stencil uncleared before a layer drawn over the world only while its clears are switched off", () => {
     const { compositor } = world();
     const layer = compositor.create({
-      type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [],
+      type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     compositor.render();
     expect(layer.scene.autoClearDepthAndStencil).toBe(true);
@@ -93,7 +86,7 @@ describe("SceneLayerCompositor", () => {
   it("lists each layer's own renderer work in draw order, with its mesh count", () => {
     const { compositor } = world();
     const create = (layerId: string, zOrder: number) =>
-      compositor.create({ type: "sceneLayerCreate", layerId, assetGuid: `${layerId}-asset`, zOrder, ownerSceneGuid: null, postProcessStack: [] });
+      compositor.create({ type: "sceneLayerCreate", layerId, assetGuid: `${layerId}-asset`, zOrder, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
     const menu = create("menu", 5);
     create("hud", 1);
     MeshBuilder.CreateBox("button", {}, menu.scene);
@@ -113,7 +106,7 @@ describe("SceneLayerCompositor", () => {
     const compositor = new SceneLayerCompositor({ engine });
     const layer = compositor.create({
       type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0,
-      ownerSceneGuid: null,
+      ownerSceneGuid: null, canvas: layerCanvas(32, 18),
       postProcessStack: postProcess ? [{ materialGuid: "pass", enabled: true }] : [],
     });
     const checkHudUniforms = () => {
@@ -338,7 +331,7 @@ describe("SceneLayerCompositor", () => {
       assetGuid: "hud",
       zOrder: 1,
       ownerSceneGuid: null,
-      postProcessStack: [],
+      postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     compositor.create({
       type: "sceneLayerCreate",
@@ -346,7 +339,7 @@ describe("SceneLayerCompositor", () => {
       assetGuid: "hud",
       zOrder: 1,
       ownerSceneGuid: null,
-      postProcessStack: [],
+      postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     compositor.create({
       type: "sceneLayerCreate",
@@ -354,7 +347,7 @@ describe("SceneLayerCompositor", () => {
       assetGuid: "hud",
       zOrder: 4,
       ownerSceneGuid: null,
-      postProcessStack: [],
+      postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     expect(compositor.sortedLayers().map((layer) => layer.layerId)).toEqual([
       "a",
@@ -371,7 +364,7 @@ describe("SceneLayerCompositor", () => {
       assetGuid: "hud-asset",
       zOrder: 0,
       ownerSceneGuid: null,
-      postProcessStack: [],
+      postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     compositor.noteSpawn(7, "hud");
     expect(compositor.slotIdsForLayer("hud")).toEqual([7]);
@@ -399,7 +392,7 @@ describe("SceneLayerCompositor", () => {
       layerId: "hud",
       assetGuid: "hud-asset",
       zOrder: 0,
-      ownerSceneGuid: null,
+      ownerSceneGuid: null, canvas: layerCanvas(32, 18),
       postProcessStack: [{ materialGuid: "bloom", enabled: true }],
     });
     expect(disposed).toBe(0);
@@ -410,7 +403,7 @@ describe("SceneLayerCompositor", () => {
       layerId: "hud",
       assetGuid: "hud-asset",
       zOrder: 0,
-      ownerSceneGuid: null,
+      ownerSceneGuid: null, canvas: layerCanvas(32, 18),
       postProcessStack: [{ materialGuid: "bloom", enabled: true }],
     });
     compositor.remove("hud");
@@ -424,7 +417,7 @@ describe("SceneLayerCompositor", () => {
       layerId: "hud",
       assetGuid: "hud-asset",
       zOrder: 0,
-      ownerSceneGuid: null,
+      ownerSceneGuid: null, canvas: layerCanvas(32, 18),
       postProcessStack: [{ materialGuid: "bloom", enabled: true }],
     });
     const layer = compositor.layers()[0]!;
@@ -446,7 +439,7 @@ describe("SceneLayerCompositor", () => {
         return { dispose() {} };
       },
     });
-    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: [{ materialGuid: "effect", enabled: true }] });
     const first = layer.camera.outputRenderTarget!;
     // Colour only: the layer's graph draws through its chain's scene depth, so the target has no depth texture or
     // renderbuffer of the canvas's size.
@@ -501,7 +494,7 @@ describe("SceneLayerCompositor", () => {
         return { dispose() {} };
       },
     });
-    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: [{ materialGuid: "effect", enabled: true }] });
     const target = layer.camera.outputRenderTarget!;
     const disposal = vi.spyOn(target, "dispose");
     let release!: () => void;
@@ -526,7 +519,7 @@ describe("SceneLayerCompositor", () => {
   it("disposes the removed layer after actual release even when the bounded report is uncertain", async () => {
     const { engine } = world();
     const compositor = new SceneLayerCompositor({ engine });
-    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: [{ materialGuid: "effect", enabled: true }] });
     const target = layer.camera.outputRenderTarget!;
     const disposal = vi.spyOn(target, "dispose");
     let release!: () => void;
@@ -552,7 +545,7 @@ describe("SceneLayerCompositor", () => {
   it("quarantines a removed layer's target and Scene when actual release never confirms", async () => {
     const { engine } = world();
     const compositor = new SceneLayerCompositor({ engine });
-    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "effect", enabled: true }] });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: [{ materialGuid: "effect", enabled: true }] });
     const target = layer.camera.outputRenderTarget!;
     const disposal = vi.spyOn(target, "dispose");
     const whenReleased = SceneRenderCoordinator.prototype.whenReleased;
@@ -586,7 +579,7 @@ describe("SceneLayerCompositor", () => {
     const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
       renderers.push(renderer); return { dispose() {} };
     } });
-    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: [{ materialGuid: "first", enabled: true }] });
     await compositor.prepare("overlay", () => {});
     await vi.waitFor(() => { expect(compositor.isReady("overlay")).toBe(true); });
     let acknowledged = false;
@@ -638,7 +631,7 @@ describe("SceneLayerCompositor", () => {
     const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
       renderers.push(renderer); return { dispose() {} };
     } });
-    compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
+    compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: [{ materialGuid: "first", enabled: true }] });
     // A script's sceneLayerPostProcess (or a resize) replaces the renderer the pending preparation awaits.
     const assertCurrent = () => {};
     const rebuilt = compositor.prepare("overlay", assertCurrent);
@@ -661,7 +654,7 @@ describe("SceneLayerCompositor", () => {
     const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
       renderers.push(renderer); return { dispose() {} };
     } });
-    compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
+    compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: [{ materialGuid: "first", enabled: true }] });
     compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
     expect(renderers).toHaveLength(2);
     expect(renderers[1]).not.toBe(renderers[0]);
@@ -678,7 +671,7 @@ describe("SceneLayerCompositor", () => {
     const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
       renderers.push(renderer); return { dispose() {} };
     } });
-    compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
+    compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: [{ materialGuid: "first", enabled: true }] });
     const preparing = compositor.prepare("overlay", () => {});
     compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
     // Each replacement's coordinator starts fresh bounds. A script keeps replacing the graph faster than it prepares:
@@ -848,7 +841,7 @@ describe("SceneLayerCompositor", () => {
       assetGuid: "hud-asset",
       zOrder: 0,
       ownerSceneGuid: "level",
-      postProcessStack: [],
+      postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     compositor.create({
       type: "sceneLayerCreate",
@@ -856,7 +849,7 @@ describe("SceneLayerCompositor", () => {
       assetGuid: "pause-asset",
       zOrder: 1,
       ownerSceneGuid: null,
-      postProcessStack: [],
+      postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     expect(compositor.layers()).toHaveLength(2);
     const layer = compositor.layers()[0]!;
@@ -927,7 +920,7 @@ describe("SceneLayerCompositor", () => {
       assetGuid: "hud-asset",
       zOrder: 0,
       ownerSceneGuid: null,
-      postProcessStack: [],
+      postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     const layer = compositor.layers()[0]!;
     const mesh = MeshBuilder.CreatePlane("overlay-quad", { size: 1 }, layer.scene);
@@ -981,7 +974,7 @@ describe("SceneLayerCompositor", () => {
       assetGuid: "hud-asset",
       zOrder: 0,
       ownerSceneGuid: null,
-      postProcessStack: [],
+      postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     const layer = compositor.layers()[0]!;
     const mesh = MeshBuilder.CreatePlane("overlay-quad", { size: 1 }, layer.scene);
@@ -1149,7 +1142,7 @@ describe("SceneLayerCompositor", () => {
       assetGuid: "hud",
       zOrder: 0,
       ownerSceneGuid: null,
-      postProcessStack: [],
+      postProcessStack: [], canvas: layerCanvas(32, 18),
     });
     await compositor.prepare("hud", () => {});
     expect(compositor.isReady("hud")).toBe(true);

@@ -183,7 +183,7 @@ export class SceneLayerCompositor {
       scene,
       camera,
       renderer: layerRenderer(scene),
-      design: normalizeSceneLayerCanvasDesign(command.canvas?.design),
+      design: normalizeSceneLayerCanvasDesign(command.canvas.design),
       canvas: commandCanvas(command),
       contentChanges: null,
       viewBounds: { width: 1, height: 1, center: [0, 0] },
@@ -922,12 +922,14 @@ function layerRenderer(scene: Scene): SceneRenderCoordinator {
   return new SceneRenderCoordinator(scene, { scopedStrictProbes: true });
 }
 
-/** The sceneLayerCreate command's canvas, or a 1 × 1 one centred on the origin when it has none. */
+/** The sceneLayerCreate command's canvas; a degenerate one is 1 × 1 at its centre. */
 function commandCanvas(command: SceneLayerCreateCommand): SceneLayerRect {
-  const rect = command.canvas?.rect;
-  return rect && rect.width > 0 && rect.height > 0
-    ? { width: rect.width, height: rect.height, center: [rect.center[0], rect.center[1]] }
-    : { width: 1, height: 1, center: [0, 0] };
+  const { rect } = command.canvas;
+  return {
+    width: rect.width > 0 ? rect.width : 1,
+    height: rect.height > 0 ? rect.height : 1,
+    center: [rect.center[0], rect.center[1]],
+  };
 }
 
 function sameRect(a: SceneLayerRect, b: SceneLayerRect): boolean {

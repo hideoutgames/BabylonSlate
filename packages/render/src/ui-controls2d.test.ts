@@ -9,6 +9,7 @@ import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { applyAssignMesh, applyUIControl2DCommand, createSnapshotSceneBinding, type AssignMeshCommand } from "./snapshot-apply";
 import { applySceneToBabylonScene } from "./scene-loader";
 import type { TextureResources } from "./resource-cache";
+import { layerCanvas } from "./scene-layer-canvas-fixtures";
 
 describe("SceneLayer controls", () => {
   const engines: NullEngine[] = [];
@@ -18,7 +19,7 @@ describe("SceneLayer controls", () => {
     const engine = new NullEngine({ renderWidth: 800, renderHeight: 450, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 4 });
     engines.push(engine);
     const compositor = new SceneLayerCompositor({ engine });
-    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "controls", assetGuid: "controls", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "controls", assetGuid: "controls", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
     const binding = createSnapshotSceneBinding();
     binding.liveSlots.add(1);
     const command: AssignMeshCommand = {
