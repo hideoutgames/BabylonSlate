@@ -7,6 +7,7 @@ import {
   normalizeRenderEffectsSettings,
   normalizeShadowSettings,
   normalizeWaterBlendDistance,
+  pixelatedUpscaling,
   resolveRenderEffectsSettings,
   type ProjectDocument,
   type RenderProjectSettings,
@@ -120,6 +121,7 @@ export const RENDERING_SETTINGS_SECTIONS: readonly RenderingSettingsSection[] = 
     project: (context) => (
       <RenderEffectsFields
         hideTitle
+        pixelated={pixelatedUpscaling(context.render)}
         scope={projectEffectsScope(
           normalizeRenderEffectsSettings(context.render.effects),
           (effects) => context.setRender({ ...context.render, effects: normalizeRenderEffectsSettings(effects) }),
@@ -134,7 +136,7 @@ export const RENDERING_SETTINGS_SECTIONS: readonly RenderingSettingsSection[] = 
         const overrides = settings.effectsOverrides ?? {};
         const scope = sceneEffectsScope(project, resolveRenderEffectsSettings(project, overrides), overrides,
           (next) => setSettings({ ...settings, effectsOverrides: normalizeRenderEffectsOverrides(next) }));
-        return <RenderEffectsFields hideTitle scope={scope} lutControl={lutControl} lutName={lutName} />;
+        return <RenderEffectsFields hideTitle pixelated={pixelatedUpscaling(render)} scope={scope} lutControl={lutControl} lutName={lutName} />;
       },
     },
   },

@@ -40,6 +40,8 @@ type EffectRowSpec = {
   dependent?: boolean;
   /** Applies in the Scene Linear Color Pipeline only, so it is disabled in Legacy Display. */
   sceneLinear?: boolean;
+  /** Softens the frame, so it never applies under Upscaling Pixelated. */
+  smooths?: boolean;
 };
 
 const PIPELINE_LABELS = { legacyDisplay: "Legacy Display", sceneLinear: "Scene Linear" } as const;
@@ -126,7 +128,7 @@ const EFFECT_GROUPS: ReadonlyArray<{ legend?: string; rows: readonly EffectRowSp
       hint: "Remaps final colors through a lookup table, in every Color Pipeline mode." },
     { path: ["colorGrading", "lutTextureGuid"], suffix: "lut", label: "LUT Texture", control: { kind: "lut" }, shownWhen: ["colorGrading", "enabled"], dependent: true,
       hint: "A horizontal strip of square slices, such as 256×16 or 1024×32. Set the Texture's Usage to Color Grading LUT so it stays uncompressed." },
-    { path: ["upscaling", "enabled"], suffix: "upscaling", label: "FSR Upscaling", control: TOGGLE,
+    { path: ["upscaling", "enabled"], suffix: "upscaling", label: "FSR Upscaling", control: TOGGLE, smooths: true,
       hint: "Renders the scene and its effects at a lower resolution, then upscales and sharpens with AMD FSR 1." },
     { path: ["upscaling", "renderScale"], suffix: "upscaling-scale", label: "Render Scale", control: number(L.upscalingRenderScale, 0.01),
       shownWhen: ["upscaling", "enabled"], dependent: true, hint: "Fraction of the output width and height rendered. 1 disables upscaling." },
@@ -143,6 +145,8 @@ export const RENDER_EFFECTS_SEARCH_TEXT = EFFECT_GROUPS.flatMap((group) => [
 
 type Props = {
   scope: EffectsScope;
+  /** The project's Upscaling is Pixelated (`pixelatedUpscaling`): rows that soften the frame say they stay off. */
+  pixelated?: boolean;
   hideTitle?: boolean;
   /** Texture picker control for the grading LUT, owned by the host. */
   lutControl?: (control: { id: string; disabled: boolean; describedBy?: string }) => ReactNode;
@@ -151,7 +155,7 @@ type Props = {
 };
 
 /** The Post Processing group, in Project Settings or as a Scene's overrides. */
-export function RenderEffectsFields({ scope, hideTitle = false, lutControl, lutName = (guid) => guid ?? "None" }: Props) {
+export function RenderEffectsFields({ scope, hideTitle = false, pixelated = false, lutControl, lutName = (guid) => guid ?? "None" }: Props) {
   const value = scope.value;
   const sceneLinear = value.colorPipeline.mode === "sceneLinear";
   const row = (spec: EffectRowSpec) => {
@@ -165,7 +169,8 @@ export function RenderEffectsFields({ scope, hideTitle = false, lutControl, lutN
             : typeof shown === "boolean" ? (shown ? "On" : "Off") : String(shown);
     return (
       <EffectRow key={spec.suffix} scope={scope} path={spec.path} suffix={spec.suffix} label={spec.label} hint={spec.hint}
-        toggle={control.kind === "toggle"} dependent={spec.dependent} disabled={spec.sceneLinear && !sceneLinear} display={display}>
+        toggle={control.kind === "toggle"} dependent={spec.dependent} disabled={spec.sceneLinear && !sceneLinear} display={display}
+        note={spec.smooths && pixelated ? "Upscaling is Pixelated: FSR Upscaling stays off." : undefined}>
         {(field) => {
           switch (control.kind) {
             case "toggle":

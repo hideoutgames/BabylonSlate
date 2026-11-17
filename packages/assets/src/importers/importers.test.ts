@@ -73,6 +73,24 @@ describe("importers", () => {
     }
   });
 
+  it("imports images whose names name no Usage as uncompressed Pixel Art under Nearest Texture Filtering", async () => {
+    const usages: Record<string, string> = {
+      "hero.png": "pixelArt",
+      "grass_01.webp": "pixelArt",
+      "rock_normal.png": "normal",
+      "Sunset_LUT.png": "colorGrading",
+      "ok_button.png": "ui",
+    };
+    for (const [fileName, usage] of Object.entries(usages)) {
+      const [texture] = await importImage(new Uint8Array([1, 2, 3]), { fileName, existingGuids: new Set(), nearestTextures: true });
+      expect(texture!.payload.usage, fileName).toBe(usage);
+    }
+    const [hero] = await importImage(new Uint8Array([1, 2, 3]), { fileName: "hero.png", existingGuids: new Set(), nearestTextures: true });
+    expect(hero!.payload.compressionState).toBeUndefined();
+    const [rock] = await importImage(new Uint8Array([1, 2, 3]), { fileName: "rock_normal.png", existingGuids: new Set(), nearestTextures: true });
+    expect(rock!.payload.compressionState).toBe("pending");
+  });
+
   it("imports models with material/texture/animation dependents", async () => {
     const results = await importModel(buildMinimalGlbFixture({ animationName: "Walk" }), {
       fileName: "hero.glb",

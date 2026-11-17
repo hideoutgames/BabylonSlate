@@ -4764,6 +4764,32 @@ describe("Play createEngine view", () => {
     expect(sizes.at(-1)).toMatchObject({ outputWidth: 650, outputHeight: 400 });
   });
 
+  it("keeps FSR off while the session's output is Upscaling Pixelated, and follows a live output change", () => {
+    const effects = { ...DEFAULT_RENDER_EFFECTS, upscaling: { enabled: true, renderScale: 0.67, sharpness: 0.2 } };
+    const pixelated = { customResolution: true, width: 640, height: 360, blackBars: true, upscaling: "pixelated" as const, effects };
+    const upscale = (scene: Scene) => sceneRenderingSettings(scene).effectsPlan?.upscale != null;
+    const fixed = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(), playMode: true, renderSettings: pixelated,
+    });
+    handles.push(fixed);
+    expect(upscale(fixed.scene)).toBe(false);
+    const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, renderSettings: { ...pixelated, upscaling: "smooth" },
+    });
+    handles.push(handle);
+    expect(upscale(handle.scene)).toBe(true);
+    const output = (upscaling: "smooth" | "pixelated", revision: number): CommandMessage => ({
+      type: "setScalability",
+      transaction: { revision, settings: { render: normalizeRenderProjectSettings({ ...pixelated, upscaling }), frameCap: 60 }, overrides: {} },
+    });
+    // Transactions apply at the next frame boundary.
+    handle.applyCommand(output("pixelated", 1));
+    loop.mock.calls[0]![0]();
+    expect(upscale(handle.scene)).toBe(false);
+  });
+
   it("views through the Scene's Layer Camera until a camera is possessed, and moves it on sceneCamera", () => {
     const { handle } = playHandle(sharedEngine());
     const layerCamera = handle.scene.getCameraByName("playLayerCamera");
@@ -5997,6 +6023,35 @@ describe("Play createEngine view", () => {
     handles.push(plain);
     plain.setLocalQualityOverrides({ textures: { anisotropy: 2 } });
     expect(RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, plain.scene).anisotropicFilteringLevel).toBe(2);
+  });
+
+  it("draws a Pixel-Perfect 2D editor view at device pixels, at its own level, in whole device pixels per texel", () => {
+    const engine = sharedEngine();
+    // Engine Settings' level 1 maps CSS pixels to the backbuffer, as every editor view starts.
+    let hardwareScaling = 1;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
+    const setSize = vi.spyOn(engine, "setSize");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    Object.assign(canvas, { clientWidth: 400, clientHeight: 300, style: {}, ownerDocument: { defaultView: { devicePixelRatio: 2 } } });
+    const handle = createEngine(canvas, { sharedEngine: engine, editor: true, viewportMode: "2d" });
+    handles.push(handle);
+    const view = () => engine.views!.find((entry) => entry.target === canvas)!;
+    handle.resize();
+    expect(setSize).toHaveBeenLastCalledWith(400, 300);
+    expect(view().customResize).toBeUndefined();
+    handle.editor!.setPixelPerfect({ pixelsPerUnit: 100 });
+    expect(setSize).toHaveBeenLastCalledWith(800, 600);
+    expect(view().customResize).toBeTypeOf("function");
+    expect(canvas.style.imageRendering).toBe("pixelated");
+    expect(hardwareScaling).toBe(1);
+    // One texel per CSS pixel is two device pixels: 600 rows show 3 world units.
+    expect(handle.editor!.camera.pixelsPerTexel()).toBe(2);
+    expect(handle.editor!.camera.orthoHalfHeight()).toBe(1.5);
+    handle.editor!.setPixelPerfect(null);
+    expect(setSize).toHaveBeenLastCalledWith(400, 300);
+    expect(view().customResize).toBeUndefined();
+    expect(canvas.style.imageRendering).toBe("");
   });
 
   it("sizes a shared editor framebuffer from the viewport canvas instead of engine.resize", () => {

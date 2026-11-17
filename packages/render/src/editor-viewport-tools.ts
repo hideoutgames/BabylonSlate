@@ -1,7 +1,6 @@
 import { deformerBindings, sceneDefaultCameraActor } from "@haptic/core";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SceneOutlineHost } from "./scene-outline-host";
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { Scene } from "@babylonjs/core/scene";
@@ -79,7 +78,6 @@ import type { CreateEngineOptions, EditorTools } from "./create-engine-types";
 /** What the editor viewport tools read from the Engine handle being built. */
 interface EditorViewportToolsContext {
   canvas: HTMLCanvasElement;
-  engine: AbstractEngine;
   scene: Scene;
   options: CreateEngineOptions;
   editorSync: EditorSceneSync;
@@ -93,6 +91,11 @@ interface EditorViewportToolsContext {
   pointerCanvas: () => { width: number; height: number };
   syncEditorOutlines: () => void;
   onRollback: (cleanup: () => void) => void;
+  /**
+   * Draws this view at device pixels (or at the Engine's level again) and resizes it: its render rows and render
+   * pixels per CSS pixel as it now draws.
+   */
+  setDevicePixels: (enabled: boolean) => { height: number; pixelRatio: number };
 }
 
 /**
@@ -102,7 +105,6 @@ interface EditorViewportToolsContext {
  */
 export function createEditorViewportTools({
   canvas,
-  engine,
   scene,
   options,
   editorSync,
@@ -115,6 +117,7 @@ export function createEditorViewportTools({
   pointerCanvas,
   syncEditorOutlines,
   onRollback,
+  setDevicePixels,
 }: EditorViewportToolsContext): {
   editor: EditorTools;
   debugOverlay: EditorDebugOverlay;
@@ -544,8 +547,9 @@ export function createEditorViewportTools({
       scheduler.invalidate("asset");
     },
     setPixelPerfect: (settings) => {
-      cameraController.setCanvasHeight(engine.getRenderHeight());
-      cameraController.setPixelPerfect(settings);
+      const view = setDevicePixels(settings !== null);
+      cameraController.setCanvasHeight(view.height);
+      cameraController.setPixelPerfect(settings ? { ...settings, pixelRatio: view.pixelRatio } : null);
     },
     setSortingLayers: (layers) => {
       editorSync.setSortingLayers(layers);

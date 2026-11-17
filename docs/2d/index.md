@@ -36,13 +36,19 @@ Each Sprite and Tilemap has a **Shading Mode**:
 | Setting | Description |
 | --- | --- |
 | Pixels Per Unit | Texture pixels per world unit. Default 100, so a 100-pixel tile is one unit wide. Sizes tilemaps and 2D text; each Sprite has its own value. |
-| Pixel-Perfect Mode | Frames the 2D editor view 1:1. Play and exported games snap the game camera to the pixel grid. |
+| Pixel-Perfect Mode | Draws the 2D editor view at your screen's own pixels, with every texture pixel on whole screen pixels. Play and exported games snap the game camera to the pixel grid. |
 | Nearest Texture Filtering | Samples every Material texture with nearest-neighbour filtering, in 3D too. Only available while **Pixel-Perfect Mode** is on. |
 | Sorting Layers | Named draw layers, ordered back to front. Default **Background**, **Default**, **Foreground** and **UI**. |
 
 Sprites, tiles and 2D images always sample their textures with nearest-neighbour filtering, so pixel art stays crisp. Materials blend neighbouring texels unless a [Texture Sample](../scripting/material/texture-sample.md)'s **Filter** is **Nearest**.
 
 To give a whole project the pixel-art look, turn on **Pixel-Perfect Mode** and then **Nearest Texture Filtering**. Every Material texture then draws each texel as a hard-edged square, on 3D models as well, in the editor, Play and exported games. The change shows at once, so you can compare both looks and turn it off again.
+
+While **Nearest Texture Filtering** is on, images you import get the **Pixel Art** usage unless their file name names another one (such as a normal map or a LUT). Pixel Art textures keep their exact source pixels: they are never compressed or scaled down. You can change the usage in the Texture's **Inspector**. See [Importing Assets](../editor/importing.md).
+
+### The 2D editor view with Pixel-Perfect Mode
+
+While **Pixel-Perfect Mode** is on, the **Scene** viewport in 2D draws at your screen's own pixels, as a [Scene Layer](../scenes/scene-layers.md) tab does, so the browser never smooths it. At the start one texture pixel covers one screen pixel at your display scale (two on a high-density screen). Zooming steps through whole sizes: each texture pixel covers 1, 2, 3 or more screen pixels zoomed in, and zoomed out each screen pixel shows 2, 3 or more texture pixels. Pinch and the mouse wheel still move smoothly between the steps. With **Pixel-Perfect Mode** off, or in 3D, the viewport draws as before.
 
 ## Draw order
 

@@ -28,15 +28,18 @@ function fileNameWords(fileName: string): string[] {
     .filter(Boolean);
 }
 
-/** Usage from whole words of the name, so `abnormal` or `buttonhole` stay Albedo. */
-function usageFromFileName(fileName: string): string {
+/**
+ * Usage from whole words of the name, so `abnormal` or `buttonhole` stay Albedo. A name that names no Usage falls
+ * back to `fallback`: Albedo, or Pixel Art in a project with Nearest Texture Filtering.
+ */
+function usageFromFileName(fileName: string, fallback: "albedo" | "pixelArt"): string {
   const words = fileNameWords(fileName);
   const joined = ` ${words.join(" ")} `;
   if (words.some((word) => PIXEL_ART_WORDS.has(word))) return "pixelArt";
   if (words.includes("lut") || words.includes("colorgrading") || joined.includes(" color grading ")) return "colorGrading";
   if (words.some((word) => UI_WORDS.has(word))) return "ui";
   if (words.some((word) => NORMAL_WORDS.has(word))) return "normal";
-  return "albedo";
+  return fallback;
 }
 
 /** Images become a Texture asset with a pending compression state (§3.5). */
@@ -46,7 +49,7 @@ export async function importImage(
 ): Promise<ImportResult[]> {
   const extension = extensionOf(options.fileName);
   const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
-  const usage = usageFromFileName(options.fileName);
+  const usage = usageFromFileName(options.fileName, options.nearestTextures ? "pixelArt" : "albedo");
   const payload: Record<string, unknown> = { usage };
   const size = sniffSourceImageSize(bytes);
   if (size) {

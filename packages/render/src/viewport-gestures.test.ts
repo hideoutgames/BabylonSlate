@@ -506,7 +506,7 @@ describe("attachViewportGestures", () => {
     expect(controller.camera.radius).toBeLessThan(radiusBefore);
   });
 
-  it("pinch-zooms a pixel-perfect 2D camera smoothly", () => {
+  it("pinch-zooms a pixel-perfect 2D camera continuously, the view stepping in whole pixels per texel", () => {
     const { controller } = attach("2d");
     controller.setCanvasHeight(600);
     controller.setPixelPerfect({ pixelsPerUnit: 100 });
@@ -517,7 +517,10 @@ describe("attachViewportGestures", () => {
     canvas.emit("pointermove", pointer(2, 110, 100));
 
     expect(controller.pixelZoom()).toBeCloseTo(1.1, 5);
-    expect(controller.orthoHalfHeight()).toBeCloseTo(3 / 1.1, 5);
+    expect(controller.orthoHalfHeight()).toBe(3);
+    canvas.emit("pointermove", pointer(2, 160, 100));
+    expect(controller.pixelZoom()).toBeCloseTo(1.6, 5);
+    expect(controller.orthoHalfHeight()).toBe(1.5);
   });
 
   it("prevents default on touchstart and touchmove so iOS does not delay pointer events", () => {

@@ -34,6 +34,8 @@ export interface ContentBrowserImportFlowDeps extends Pick<
   existingFolderPaths: readonly string[];
   /** Its shared Engine converts OBJ and STL models. */
   play: ReturnType<typeof useOptionalPlay>;
+  /** The project draws with Nearest Texture Filtering: images whose names name no Usage import as Pixel Art. */
+  nearestTextures: boolean;
   busy: boolean;
   setBusy: (busy: boolean) => void;
 }
@@ -139,7 +141,7 @@ async function addZipImportGroups(
  * behind the cancelable Importing dialog, with the errors it reports.
  */
 export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) {
-  const { assetRegistry, selectedRoot, existingFolderPaths, play, busy, setBusy, refreshAssetRegistry } = deps;
+  const { assetRegistry, selectedRoot, existingFolderPaths, play, nearestTextures, busy, setBusy, refreshAssetRegistry } = deps;
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const importAbortRef = useRef<AbortController | null>(null);
   /** Shows import progress; once the import is cancelled it keeps reading Canceling. */
@@ -241,6 +243,7 @@ export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) 
                   {
                     modelImportScale: modelImportDefaultScale,
                     hdrFaceSize: hdrImportFaceSize,
+                    nearestTextures,
                     sidecars: file.sidecars,
                     signal,
                     onProgress: (fraction) => updateImportProgress(signal, { fraction }),
@@ -296,7 +299,7 @@ export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) 
       }
       enqueueModelThumbnailJobs(createdModels);
     },
-    [assetRegistry, existingFolderPaths, play, refreshAssetRegistry, selectedRoot, setBusy, setImportErrors, updateImportProgress],
+    [assetRegistry, existingFolderPaths, nearestTextures, play, refreshAssetRegistry, selectedRoot, setBusy, setImportErrors, updateImportProgress],
   );
 
   const handleImport = useCallback(async () => {

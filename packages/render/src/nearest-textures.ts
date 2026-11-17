@@ -83,6 +83,16 @@ export function observeNearestTextures(engine: AbstractEngine, listener: () => v
 }
 
 /**
+ * A tracked texture whose GPU texture was recreated (a resized canvas comes back with the mode it was created with)
+ * samples by the switch again.
+ */
+export function resampleMaterialTexture(engine: AbstractEngine, texture: Texture): void {
+  const state = engines.get(engine);
+  const own = state?.textures.get(texture);
+  if (state && own !== undefined) apply(texture, own, state.enabled);
+}
+
+/**
  * Puts a texture a Material samples under the Engine's Nearest Texture Filtering, once it has loaded (the upload
  * sets the mode it was created with). Idempotent: the cache hands one texture to many leases.
  */

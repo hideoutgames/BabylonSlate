@@ -59,7 +59,7 @@ Haptic picks a texture's **Usage** from whole words in its file name. Change it 
 | lut, colorgrading | Color Grading LUT |
 | ui, gui, hud, button | UI |
 | normal, normalmap | Normal |
-| anything else | Albedo |
+| anything else | Albedo, or Pixel Art when the project has **Nearest Texture Filtering** on |
 
 Other usages are **Skybox** and **Particle**.
 
