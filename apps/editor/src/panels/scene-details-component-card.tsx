@@ -36,7 +36,7 @@ import { IconActionButton } from "../components/icon-action-button";
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import { RenderTargetCaptureActorsField } from "../components/render-target-capture-actors-field";
-import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
+import { ProjectRichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 import type { NavBakeContextValue } from "../context/nav-bake-context";
 import type { classParentLookup } from "../lib/content-browser-helpers";
@@ -255,7 +255,7 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
         <div id={`component-details-${actor.id}-${component.id}`}>
           {showExtras && component.classId === "2DDropdownComponent" ? <NamedListEditor title="Options" values={parseUIControl2DProperties(component.classId, component.properties).options} addLabel="Add Option" onChange={(options) => updateActor(entry => ({ ...entry, components: entry.components.map(candidate => candidate.id === component.id ? { ...candidate, properties: { ...candidate.properties, options } } : candidate) }))} /> : null}
           {showExtras && component.classId === "2DRichTextComponent" ? (
-            <RichTextAppearModesField
+            <ProjectRichTextAppearModesField
               value={parseText2DAppearProperties(component.properties).appearModes}
               defaultValue={parseText2DAppearProperties(template?.properties ?? {}).appearModes}
               onChange={(appearModes) => updateActor((entry) => ({

@@ -49,7 +49,7 @@ import {
 } from "../lib/use-open-documents-of-kinds";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
 import { ClassCaptureActorsField } from "../components/class-capture-actors-field";
-import { RichTextAppearModesField } from "../components/rich-text-appear-modes-field";
+import { ProjectRichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { particleParameterOverrideRows } from "../lib/particle-parameter-override-rows";
 import { particleSystemGuidsOf, useParticleSystemParameters } from "../lib/use-particle-system-parameters";
@@ -237,7 +237,7 @@ export function PrefabComponentDetails({
           </span>
         </div>
         {component.classId === "2DRichTextComponent" ? (
-          <RichTextAppearModesField
+          <ProjectRichTextAppearModesField
             value={parseText2DAppearProperties(component.properties).appearModes}
             onChange={(appearModes) => onUpdate("appearModes", appearModes)}
             data-testid={`rich-text-appear-modes-${component.id}`}

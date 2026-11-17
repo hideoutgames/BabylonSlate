@@ -295,6 +295,17 @@ describe("nativeEventStubs", () => {
     );
   });
 
+  it.each([
+    ["RichText2DAppearMode", "flow.event.richTextLetterAppear", "Event On Letter Appear"],
+    ["RichText2DDecoratorEffect", "flow.event.richTextDecorateLetters", "Event On Decorate Letters"],
+  ])("offers %s its letter event alone, and no other lineage", (parentClass, eventType, name) => {
+    expect(nativeEventStubs({ parentClass })).toEqual([{ eventType, name }]);
+    expect(isScriptCatalogNodeAllowed(eventType, { parentClass })).toBe(true);
+    for (const other of ["Actor", "Object", "GameInstance", "BTService", parentClass === "RichText2DAppearMode" ? "RichText2DDecoratorEffect" : "RichText2DAppearMode"]) {
+      expect(isScriptCatalogNodeAllowed(eventType, { parentClass: other }), other).toBe(false);
+    }
+  });
+
   it("lists no Actor or BT leaf events for BTComposite", () => {
     expect(nativeEventStubs({ parentClass: "BTComposite" })).toEqual([]);
   });

@@ -204,4 +204,67 @@ describe("2D rich text appearance runtime", () => {
       expect(commands.filter((command) => command.type === "setText2DAppear").at(-1)).toMatchObject({ progress: 0 });
     } finally { runtime.stop(); }
   });
+
+  it("runs custom Appear Modes per letter as the reveal moves and Decorator Effects every tick on the tagged letters", async () => {
+    const commands: CommandMessage[] = [];
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("label", "Label", { classId: "SceneLayerActor", components: [
+      { id: "rich", classId: "2DRichTextComponent", properties: {
+        text: "A[fx=Tilt strength=3]BC[/fx]", appearModes: ["class:Rise", "class:Missing"], appearTransition: "linear",
+        appearStart: "play", appearInterval: 0.1, appearDuration: 0.2,
+      } },
+    ] })];
+    const runtime = createInProcessRuntime({ seed: 1, dt: 0.1, preferSoftwarePhysics: true,
+      playScene: createDefaultScene(), sceneLayerLibrary: { labels: layer }, onCommand: (command) => commands.push(command) });
+    try {
+      await runtime.loadScripts([
+        { assetGuid: "rise", classId: "Rise", parentClassId: "RichText2DAppearMode", anchors: [],
+          entryPoints: [{ name: "onLetterAppear", event: "onLetterAppear", isAsync: false }],
+          // Offset Y rises 10 px as the letter appears; its Index and Character are readable.
+          source: `export function onLetterAppear(ctx) {
+            const { letter, alpha } = ctx.args;
+            ctx.setVariableOn(letter, "offset", { x: ctx.getVariableFrom(letter, "index"), y: 10 * alpha });
+            ctx.setVariableOn(letter, "opacity", ctx.getVariableFrom(letter, "character") === "A" ? 0.5 : 1);
+          }` },
+        { assetGuid: "tilt", classId: "Tilt", parentClassId: "RichText2DDecoratorEffect", anchors: [],
+          entryPoints: [{ name: "onDecorateLetters", event: "onDecorateLetters", isAsync: false }],
+          // Adds to what the Appear Mode left: Rotation is the tag Strength, Scale X grows with Delta Seconds.
+          source: `export function onDecorateLetters(ctx) {
+            for (const letter of ctx.args.letters) {
+              ctx.setVariableOn(letter, "rotation", ctx.args.strength);
+              ctx.setVariableOn(letter, "scale", { x: 1 + ctx.args.deltaSeconds, y: 1 });
+            }
+          }` },
+      ]);
+      runtime.realizePlayWorld(); runtime.createSceneLayer("labels"); runtime.start();
+      const poses = () => commands.filter((command) => command.type === "setText2DLetterPoses").at(-1)?.poses.map((value) => Number(value.toFixed(6)));
+      runtime.tick();
+      // 0.1 s into a 0.4 s reveal: A is half revealed, B starts, C has not.
+      expect(poses()).toEqual([
+        0, 5, 1, 1, 0, 0.5,
+        1, 0, 1.1, 1, 3, 1,
+        2, 0, 1.1, 1, 3, 1,
+      ]);
+      runtime.tick();
+      expect(poses()).toEqual([
+        0, 10, 1, 1, 0, 0.5,
+        1, 5, 1.1, 1, 3, 1,
+        2, 0, 1.1, 1, 3, 1,
+      ]);
+      expect(isPlayEngineCommandType("setText2DLetterPoses")).toBe(true);
+      for (let i = 0; i < 4; i++) runtime.tick();
+      const sent = commands.filter((command) => command.type === "setText2DLetterPoses").length;
+      // Fully revealed and unchanged: nothing more is sent, and a rebuilt visual starts from the same poses.
+      runtime.tick();
+      expect(commands.filter((command) => command.type === "setText2DLetterPoses")).toHaveLength(sent);
+      const label = runtime.getWorld().getActors().find((actor) => actor.components.some((component) => component.guid.endsWith("rich")))!;
+      const rich = label.components.find((component) => component.classId === "2DRichTextComponent")!;
+      expect(poses()).toEqual([0, 10, 1, 1, 0, 0.5, 1, 10, 1.1, 1, 3, 1, 2, 10, 1.1, 1, 3, 1]);
+      // Text without scripted Classes returns every letter to rest.
+      rich.setVariable("appearModes", ["fade"]);
+      rich.setVariable("text", "ABC");
+      runtime.tick();
+      expect(poses()).toEqual([]);
+    } finally { runtime.stop(); }
+  });
 });

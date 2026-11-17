@@ -183,6 +183,8 @@ describe("Class kind labels", () => {
     [["IsHungry", "BTDecorator", "Object"], "Behaviour Tree Decorator"],
     [["Scan", "BTService", "Object"], "Behaviour Tree Service"],
     [["Random", "BTComposite", "Object"], "Behaviour Tree Composite"],
+    [["Bounce", "RichText2DAppearMode", "Object"], "Rich Text Appear Mode"],
+    [["Wobble", "RichText2DDecoratorEffect", "Object"], "Rich Text Decorator Effect"],
     [["GameRules", "Object"], "Object"],
     [["Orphan"], "Object"],
   ] as const)("labels a Class with ancestry %j as %s", (ancestry, label) => {

@@ -405,6 +405,14 @@ export function parseRichText(
   return spans;
 }
 
+/** The Class names the text's `[fx=ClassName]` tags apply, in first-use order. */
+export function richTextCustomEffectNames(source: string): string[] {
+  const spans = parseRichText(source, {
+    bold: false, italic: false, underline: false, color: [1, 1, 1], size: 32, outline: 0, outlineColor: [0, 0, 0],
+  });
+  return [...new Set(spans.flatMap((span) => span.effects.custom?.map((effect) => effect.name) ?? []))];
+}
+
 export function richTextImageGuids(source: string): string[] {
   const spans = parseRichText(source, {
     bold: false,

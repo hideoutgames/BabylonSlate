@@ -2,6 +2,7 @@ import {
   createActor,
   createDefaultSceneLayer,
   createTimelineClip,
+  text2DCustomAppearMode,
   type AxisBinding,
   type PainterCommand,
   type SceneLayerSpawnEntry,
@@ -11,7 +12,10 @@ import {
   type SerializedSceneLayer,
   type SerializedTransform,
 } from "@haptic/core";
-import { engineScriptApiFor, type EngineScriptFunction } from "@haptic/object-model";
+import {
+  engineScriptApiFor, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+  RICH_TEXT_2D_LETTER_CLASS_ID, type EngineScriptFunction,
+} from "@haptic/object-model";
 import {
   comp,
   requireRef,
@@ -20,7 +24,7 @@ import {
   type FeatureTestClassRef,
   type FeatureTestContext,
 } from "./context";
-import { classGraph, gChain, getVar, gNode, gWire, setVar, varMember, type GraphNode } from "./graph";
+import { classGraph, gChain, getVar, gExec, gNode, gWire, setVar, varMember, type GraphNode } from "./graph";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
 import { ownedActorProbeScript } from "./scene-scripts";
 import { featureTestCameraShakes } from "./scripting";
@@ -43,6 +47,10 @@ const FEATURE_TEST_SCENE_LAYER_NAMES = {
   clickButton: "FT_UIClickButton",
   pitCounter: "FT_UIPitCounter",
   cameraRig: "FT_UICameraRig",
+  /** Rich Text 2D Appear Mode: each letter's Opacity follows its reveal Alpha. */
+  richTextMode: "FT_RichTextRiseMode",
+  /** Rich Text 2D Decorator Effect: tilts the letters inside its `[fx]` tag by the tag's Strength. */
+  richTextEffect: "FT_RichTextTiltEffect",
 } as const;
 
 /**
@@ -93,6 +101,8 @@ interface LayerRefs {
   panelTexture: string;
   /** The optional one-shot Audio asset, which the rich text's reveal plays. */
   sound: string | null;
+  /** Class ids of the custom Appear Mode and Decorator Effect the rich text uses. */
+  richText: { mode: string; effect: string };
   icons: Record<"camera" | "audio" | "particles" | "point_light" | "spot_light" | "navmesh" | "default", string>;
   classes: Record<"listItem" | "gridItem" | "cardA" | "cardB" | "switcher" | "clickButton" | "pitCounter" | "cameraRig", PlacedClass>;
   /** FT_Timeline and its FT_HudPulse clip asset, which FT_HUD's script plays. */
@@ -151,6 +161,7 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
       cameraRig: await saveCameraRig(ctx),
     },
     timeline: { timeline: requireRef(ctx.assets.timeline, "FT_Timeline"), hudPulse: requireRef(ctx.assets.hudPulse, "FT_HudPulse") },
+    richText: await saveRichTextClasses(ctx),
   };
 
   const hud = await ctx.addSceneDocument({
@@ -299,8 +310,8 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
   ], { position: [0, 8.35], folderId }));
   add(layerActor("ft-ui-rich-text", "Rich Text", [
     ui("ft-ui-rich-text-markup", "2DRichTextComponent", {
-      ...text(refs, richTextMarkup(refs.icons.camera), 30, [1500, 44], { alignment: "center" }),
-      appearModes: ["fade", "slide"],
+      ...text(refs, richTextMarkup(refs.icons.camera, refs.richText.effect), 30, [1500, 44], { alignment: "center" }),
+      appearModes: ["fade", "slide", text2DCustomAppearMode(refs.richText.mode)],
       appearTransition: "cubicOut",
       appearInterval: 0.03,
       appearDuration: 0.25,
@@ -343,13 +354,64 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
   ], { parentId: "ft-ui-safe-area" }));
 }
 
-function richTextMarkup(imageGuid: string): string {
+function richTextMarkup(imageGuid: string, effectClassId: string): string {
   return [
     "[b]Rich[/b] [i]Text[/i] [color=orange]color[/color] [size=36]size[/size]",
     "[outline=3][outline-color=1a0a3a]outline[/outline-color][/outline] [u]under[/u]",
     `[img=${imageGuid} size=28] [wave=3 intensity=1.2]wave[/wave] [shake=1]shake[/shake]`,
     "[hover=1]hover[/hover] [rotate=10]tilt[/rotate]",
+    `[fx=${effectClassId} strength=8]custom[/fx]`,
   ].join(" ");
+}
+
+/** Get or Set of a Rich Text letter's variable; its Target is the Letter. */
+function letterVariableNode(id: string, propertyKey: string, x: number, y: number): GraphNode {
+  const variable = engineScriptApiFor(RICH_TEXT_2D_LETTER_CLASS_ID)?.variables?.find((entry) => entry.propertyKey === propertyKey);
+  if (!variable) throw new Error(`${RICH_TEXT_2D_LETTER_CLASS_ID} has no ${propertyKey} variable.`);
+  return gNode(id, "variables.set", x, y, {
+    variableName: variable.name,
+    variableId: `engine:${RICH_TEXT_2D_LETTER_CLASS_ID}:var:${variable.propertyKey}`,
+    scope: "member",
+    typeId: variable.typeId,
+    classId: RICH_TEXT_2D_LETTER_CLASS_ID,
+    propertyKey: variable.propertyKey,
+  });
+}
+
+/** The custom Appear Mode and Decorator Effect the HUD's rich text names. */
+async function saveRichTextClasses(ctx: FeatureTestContext): Promise<LayerRefs["richText"]> {
+  const mode = await ctx.saveClass({
+    folder: FOLDER, name: NAMES.richTextMode, parentClass: RICH_TEXT_2D_APPEAR_MODE_CLASS_ID,
+    graph: classGraph({
+      nodes: [
+        gNode("appear", "flow.event.richTextLetterAppear", 0, 0),
+        letterVariableNode("set-opacity", "opacity", 320, 0),
+      ],
+      edges: [
+        gExec("appear", "set-opacity"),
+        gWire("appear", "letter", "set-opacity", "target"),
+        gWire("appear", "alpha", "set-opacity", "value"),
+      ],
+    }),
+  });
+  const effect = await ctx.saveClass({
+    folder: FOLDER, name: NAMES.richTextEffect, parentClass: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+    graph: classGraph({
+      nodes: [
+        gNode("decorate", "flow.event.richTextDecorateLetters", 0, 0),
+        gNode("each", "flow.forEach", 320, 0),
+        letterVariableNode("set-rotation", "rotation", 640, 0),
+      ],
+      edges: [
+        gExec("decorate", "each"),
+        gWire("decorate", "letters", "each", "array"),
+        gWire("each", "loopBody", "set-rotation", "execIn"),
+        gWire("each", "element", "set-rotation", "target"),
+        gWire("decorate", "strength", "set-rotation", "value"),
+      ],
+    }),
+  });
+  return { mode: mode.classId, effect: effect.classId };
 }
 
 /** Left column: Vertical Box of every form control (a nested Horizontal Box holds the toggles). */
@@ -899,7 +961,7 @@ function boxCollider(id: string, half: number): SerializedComponent {
 // ---------------------------------------------------------------------------
 // Classes
 
-type ClassBase = Omit<LayerRefs, "classes" | "timeline">;
+type ClassBase = Omit<LayerRefs, "classes" | "timeline" | "richText">;
 
 /** Virtualized List row: Begin Play writes `Row <Item Index>` into its label. */
 async function saveListItem(ctx: FeatureTestContext, refs: ClassBase): Promise<PlacedClass> {

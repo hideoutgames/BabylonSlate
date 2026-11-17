@@ -6,6 +6,9 @@ import {
   sampleText2DAppearTransition,
   text2DAppearDuration,
   text2DAppearSoundPlan,
+  parseText2DLetterPoses,
+  text2DCustomAppearModeClassId,
+  text2DLetterPoseAt,
   text2DCharacterReveal,
   text2DFormattedUnits,
 } from "./text2d-appear";
@@ -169,5 +172,29 @@ describe("appear easing", () => {
     expect(plan({ appearSoundAssetGuid: null })).toBeNull();
     expect(plan({ appearModes: [] })).toBeNull();
     expect(plan({ text: "[b][/b]" })).toBeNull();
+  });
+
+  it("keeps custom Appear Mode Classes beside the built-in modes and lets Instant replace them all", () => {
+    expect(parseText2DAppearProperties({ appearModes: ["fade", "class:Rise", "class: ", "class:Rise", 7, "class:Pop"] }).appearModes)
+      .toEqual(["fade", "class:Rise", "class:Pop"]);
+    expect(parseText2DAppearProperties({ appearModes: ["class:Rise", "instant"] }).appearModes).toEqual(["instant"]);
+    expect(text2DCustomAppearModeClassId("class:Rise")).toBe("Rise");
+    expect(text2DCustomAppearModeClassId("fade")).toBeNull();
+    // A custom mode alone still gives the reveal a timeline.
+    expect(text2DAppearDuration(3, { appearModes: ["class:Rise"], appearInterval: 0.1, appearDuration: 0.3 })).toBeCloseTo(0.5);
+  });
+
+  it("reads scripted letter poses in whole strides and rests letters beyond or without them", () => {
+    const poses = [1, 2, 3, 4, 5, 0.5, -1, -2, 1, 1, 0, 7];
+    expect(parseText2DLetterPoses(poses)).toBe(poses);
+    expect({ ...text2DLetterPoseAt(poses, 0) }).toEqual({ offsetX: 1, offsetY: 2, scaleX: 3, scaleY: 4, rotation: 5, opacity: 0.5 });
+    // Opacity is clamped; a letter the list does not reach is at rest.
+    expect(text2DLetterPoseAt(poses, 1).opacity).toBe(1);
+    expect({ ...text2DLetterPoseAt(poses, 2) }).toEqual({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 });
+    for (const malformed of [[1, 2, 3], [1, 2, 3, 4, 5, Number.NaN], "poses", undefined]) {
+      expect(parseText2DLetterPoses(malformed)).toEqual([]);
+    }
+    expect(parseText2DAppearProperties({ letterPoses: poses }).letterPoses).toBe(poses);
+    expect(parseText2DAppearProperties({ letterPoses: [1] })).not.toHaveProperty("letterPoses");
   });
 });
