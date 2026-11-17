@@ -26,6 +26,7 @@ import {
   ASSET_DOCUMENT_KINDS,
   documentKindForAssetType,
   CONTENT_BROWSER_ID,
+  nearestTextureFiltering,
   type DocumentKind,
 } from "@haptic/core";
 import { Button } from "@haptic/ui/components/button";
@@ -592,6 +593,7 @@ function ContentBrowserWorkspaceBody({
     selectedRoot,
     existingFolderPaths,
     play,
+    nearestTextures: projectDocument ? nearestTextureFiltering(projectDocument.settings.twoD) : false,
     busy,
     setBusy,
     refreshAssetRegistry,

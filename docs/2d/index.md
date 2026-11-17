@@ -44,6 +44,8 @@ Sprites, tiles and 2D images always sample their textures with nearest-neighbour
 
 To give a whole project the pixel-art look, turn on **Pixel-Perfect Mode** and then **Nearest Texture Filtering**. Every Material texture then draws each texel as a hard-edged square, on 3D models as well, in the editor, Play and exported games. The change shows at once, so you can compare both looks and turn it off again.
 
+While **Nearest Texture Filtering** is on, images you import get the **Pixel Art** usage unless their file name names another one (such as a normal map or a LUT). Pixel Art textures keep their exact source pixels: they are never compressed or scaled down. You can change the usage in the Texture's **Inspector**. See [Importing Assets](../editor/importing.md).
+
 ## Draw order
 
 - **Z-Order** sets depth. An actor with a higher Z-Order is nearer the camera and draws in front.

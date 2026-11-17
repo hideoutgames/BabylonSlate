@@ -45,6 +45,11 @@ export interface ImportOptions {
    * (`Textures/colormap.png`). Keys may be the glTF URI or a basename.
    */
   sidecars?: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>;
+  /**
+   * The project draws with Nearest Texture Filtering: an image whose name names no other Usage imports as Pixel Art
+   * (exact source pixels, never compressed or downsampled) instead of Albedo.
+   */
+  nearestTextures?: boolean;
   /** Largest cube face edge for an `.hdr` panorama (128, 256 or 512; default 256). */
   hdrFaceSize?: number;
   /** Aborts a slow conversion; the importer rejects with the signal's reason. */
