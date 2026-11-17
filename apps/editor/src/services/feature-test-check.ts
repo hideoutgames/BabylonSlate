@@ -406,6 +406,8 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
           { label: "FSR to view size", commands: ["fsrdebug output view"], restore: ["fsrdebug output device"], fields: ["upscale.output"] },
           // No depth-and-stencil clear before each layer drawn over the world: what those clears cost in the backbuffer's pass.
           { label: "layer clears off", commands: ["layerdebug clears off"], restore: ["layerdebug clears on"], fields: ["layers.clears"] },
+          // No copy of each presented frame into the held image: what that device-resolution blit costs.
+          { label: "held image off", commands: ["heldimage off"], restore: ["heldimage on"], fields: ["presentation.held"] },
         ],
       },
       {

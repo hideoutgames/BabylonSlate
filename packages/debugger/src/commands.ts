@@ -48,6 +48,7 @@ export const DEBUG_COMMAND_NAMES = [
   "scenelayers",
   "fsrdebug",
   "layerdebug",
+  "heldimage",
   "renderreset",
   "gpubusy",
   "gpuprobe",
@@ -279,6 +280,8 @@ export function builtinCommands(): RegisteredCommand[] {
         return ok(`layerdebug clears ${enabled ? "on" : "off"}`);
       },
     },
+    flagCommand("heldimage", (host, enabled) => host.setHeldImage?.(enabled),
+      "Copy each frame Play presents into its held image (on, the default) or skip the copy (off), to measure what it costs; off, a frame held back shows the view's last kept picture instead of the last frame"),
     {
       name: "renderreset",
       tier: "debug",

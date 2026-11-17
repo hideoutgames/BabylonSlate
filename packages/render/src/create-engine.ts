@@ -791,6 +791,8 @@ function initializeEngine(
     if (worldLoading || pendingPresentations.size > 0 || hasPendingOwners() || performanceFeed.active || frameReportFeed.active ||
       presentedImageRequests.length > 0) scheduler.noteActivity();
   };
+  /** Debug (`heldimage`): whether each frame Play presents directly is copied into its held image. */
+  let heldImage = true;
   /** Debug (`renderreset idle`): until then the view renders nothing, so the GPU idles with no resource changed. */
   let idleUntil = 0;
   const shouldRenderFrame = (now: number, loadingFrame?: boolean) => {
@@ -839,6 +841,8 @@ function initializeEngine(
       // A session created with `presentViewsDirectly` presents directly (the editor's project Engine, the exported
       // player's and Preview Build's); an Engine this view created for itself keeps copying into its view canvas.
       allowDirect: () => directViewPresentationAllowed(engine),
+      // Debug (`heldimage off`): Play, which draws every frame, skips the copy of each presented frame.
+      holdsImage: () => heldImage || !options.playMode,
       copied: (milliseconds) => {
         presentationStats.copyMs = milliseconds;
         acknowledgeFrameCopy(undefined, pendingPerformanceReceipt, milliseconds);
@@ -1221,6 +1225,8 @@ function initializeEngine(
       "upscale.output": sceneRenderingSettings(scene).fsrOutputAtView ? "view" : "device",
       // Whether a Scene Layer drawn over the world clears depth and stencil first (`layerdebug clears`).
       "layers.clears": sceneLayerCompositor?.depthClears === false ? "off" : "on",
+      // Whether each frame Play presents directly is copied into its held image (`heldimage`).
+      "presentation.held": heldImage ? "on" : "off",
     };
   };
   // `postprocessing off` stops drawing the post-processing passes' programs and the Material variants they draw; they
@@ -3251,6 +3257,10 @@ function initializeEngine(
         // Measured per rendered frame: a capped, held or skipped Engine frame submitted nothing of its own.
         const probe = engineGpuBusyProbe(engine, () => frameBackpressure.renderedThisFrame());
         if (command.enabled) probe?.start(); else probe?.stop();
+      }
+      if (command.type === "setHeldImageDebug" && heldImage !== command.enabled) {
+        heldImage = command.enabled;
+        scheduler.invalidate("asset");
       }
       if (command.type === "setLayerDebug" && sceneLayerCompositor && sceneLayerCompositor.depthClears !== command.enabled) {
         sceneLayerCompositor.depthClears = command.enabled;

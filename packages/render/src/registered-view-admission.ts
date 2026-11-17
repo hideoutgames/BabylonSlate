@@ -21,6 +21,12 @@ type Presentation = {
   dirty?: () => boolean;
   /** Whether this view may show the Engine canvas directly while it is the sole view (absent: it may). */
   allowDirect?: () => boolean;
+  /**
+   * Whether a coherent frame shown directly is also copied into the view's held image (absent: it is). False (debug,
+   * `heldimage off`) skips the copy and drops the held image, so a later incoherent frame has nothing to put back and
+   * the view's own canvas shows through until the next coherent one.
+   */
+  holdsImage?: () => boolean;
 };
 const presenters = new WeakMap<AbstractEngine, {
   views: Map<EngineView, Presentation>;
@@ -181,7 +187,8 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
           const coherent = host.canCopy();
           const started = performance.now();
           if (coherent) {
-            direct.store.snapshot(current, source.width, source.height);
+            if (host.holdsImage?.() !== false) direct.store.snapshot(current, source.width, source.height);
+            else direct.store.release(current);
             // The view canvas keeps the presented image's dimensions; it is drawn into only when it stops being covered.
             if (canvas.width !== source.width) canvas.width = source.width;
             if (canvas.height !== source.height) canvas.height = source.height;

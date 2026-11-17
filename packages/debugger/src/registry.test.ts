@@ -177,6 +177,17 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["fsr:view", "fsr:device"]);
   });
 
+  it("switches Play's held image copy off and on, in debug registries only", () => {
+    const host = recordingHost();
+    host.setHeldImage = (enabled) => host.calls.push(`held:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    expect(debug.execute("heldimage off", host)).toEqual({ success: true, output: "heldimage off" });
+    expect(debug.execute("heldimage on", host)).toEqual({ success: true, output: "heldimage on" });
+    expect(release.execute("heldimage off", host).success).toBe(false);
+    expect(host.calls).toEqual(["held:false", "held:true"]);
+  });
+
   it("switches the Scene Layers' depth and stencil clears off and on, in debug registries only", () => {
     const host = recordingHost();
     host.setLayerDebug = (part, enabled) => host.calls.push(`layer:${part}:${enabled}`);

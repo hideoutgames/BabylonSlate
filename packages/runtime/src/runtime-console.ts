@@ -174,6 +174,7 @@ export class RuntimeConsole {
       setShadowDebug: (part, enabled) => host.emit({ type: "setShadowDebug", part, enabled: Boolean(enabled) }),
       setDiscardSamples: (enabled) => host.emit({ type: "setDiscardSamplesDebug", enabled: Boolean(enabled) }),
       setSceneLayers: (enabled) => host.emit({ type: "setSceneLayersDebug", enabled: Boolean(enabled) }),
+      setHeldImage: (enabled) => host.emit({ type: "setHeldImageDebug", enabled: Boolean(enabled) }),
       setLayerDebug: (part, enabled) => host.emit({ type: "setLayerDebug", part, enabled: Boolean(enabled) }),
       setFsrOutput: (output) => host.emit({ type: "setFsrDebug", output }),
       resetRendering: (what) => host.emit({ type: "resetRenderingDebug", what }),
