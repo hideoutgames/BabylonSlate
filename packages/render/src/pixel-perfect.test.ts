@@ -4,6 +4,7 @@ import { Scene } from "@babylonjs/core/scene";
 import {
   pixelPerfectOrthoBounds,
   pixelPerfectOrthoHalfHeight,
+  pixelZoomDetent,
   snapToPixelGrid,
 } from "./pixel-perfect";
 import { createEditorCamera } from "./editor-camera";
@@ -77,39 +78,50 @@ describe("editor camera pixel-perfect framing", () => {
     dispose();
   });
 
-  it("steps through whole pixels per texel while the zoom moves continuously", () => {
+  it("zooms smoothly by wheel steps, settling on whole levels it passes near and leaving them on the next step", () => {
     const { camera, dispose } = pixelCamera();
-    const steps: number[] = [];
+    const shown: number[] = [];
     for (let tick = 0; tick < 8; tick += 1) {
       camera.zoom(1.1);
-      steps.push(camera.pixelsPerTexel());
+      shown.push(Number(camera.pixelsPerTexel().toFixed(4)));
     }
-    // 1.1^n crosses 1.5 at n = 5 and stays under 2.5 through n = 8.
-    expect(steps).toEqual([1, 1, 1, 1, 2, 2, 2, 2]);
+    // 1.1^7 = 1.9487 is within 6% of 2 and shows as 2; every other step shows its own scale.
+    expect(shown).toEqual([1.1, 1.21, 1.331, 1.4641, 1.6105, 1.7716, 2, 2.1436]);
     expect(camera.pixelZoom()).toBeCloseTo(1.1 ** 8, 5);
+    // Back down: 1.1^7 settles on 2 again, then each step leaves.
+    camera.zoom(1 / 1.1);
+    expect(camera.pixelsPerTexel()).toBe(2);
     expect(camera.orthoHalfHeight()).toBe(1.5);
+    camera.zoom(1 / 1.1);
+    expect(camera.pixelsPerTexel()).toBeCloseTo(1.1 ** 6, 9);
     dispose();
   });
 
-  it("zooms out by whole fractions", () => {
+  it("settles on whole fractions zoomed out", () => {
     const { camera, dispose } = pixelCamera();
-    camera.zoom(1 / 1.1);
-    expect(camera.pixelsPerTexel()).toBe(1);
-    expect(camera.orthoHalfHeight()).toBe(3);
-    camera.zoom(1 / 2);
-    // 1 / (1.1 * 2) ≈ 0.45 → 1/2: two texels per pixel.
+    camera.zoom(0.51);
     expect(camera.pixelsPerTexel()).toBe(1 / 2);
     expect(camera.orthoHalfHeight()).toBe(6);
+    camera.zoom(0.9);
+    expect(camera.pixelsPerTexel()).toBeCloseTo(0.459, 9);
     dispose();
   });
 
-  it("shows one texel per CSS pixel at zoom 1, rounded to whole device pixels", () => {
+  it("shows one texel per CSS pixel at zoom 1: whole on a 2x screen, the continuous scale on a 1.25x one", () => {
     const retina = pixelCamera(2);
     expect(retina.camera.pixelsPerTexel()).toBe(2);
     expect(retina.camera.orthoHalfHeight()).toBe(1.5);
     retina.dispose();
     const scaled = pixelCamera(1.25);
-    expect(scaled.camera.pixelsPerTexel()).toBe(1);
+    expect(scaled.camera.pixelsPerTexel()).toBe(1.25);
     scaled.dispose();
+  });
+});
+
+describe("pixelZoomDetent", () => {
+  it("settles within 6% of a whole level and passes other scales through", () => {
+    expect([1.05, 0.95, 1.07, 2.1, 2.2, 1 / 3 * 1.05, 0.4].map((scale) => Number(pixelZoomDetent(scale).toFixed(4))))
+      .toEqual([1, 1, 1.07, 2, 2.2, 0.3333, 0.4]);
+    expect(pixelZoomDetent(0)).toBe(1);
   });
 });

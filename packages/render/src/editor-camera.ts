@@ -7,9 +7,9 @@ import type { RenderScheduler } from "./render-scheduler";
 import {
   pixelPerfectOrthoBounds,
   pixelPerfectOrthoHalfHeight,
+  pixelZoomDetent,
   type PixelPerfectSettings,
 } from "./pixel-perfect";
-import { wholePixelScale } from "@haptic/core";
 import { worldPositionFromCanvas } from "./editor-place";
 import { EDITOR_CAMERA_MODEL_LAYER } from "./editor-camera-model";
 
@@ -94,10 +94,13 @@ export interface EditorCameraController {
   setCanvasHeight: (heightPx: number) => void;
   /**
    * Zoom relative to the pixel-perfect framing of one texel per CSS pixel. Pinch and wheel move it continuously; the
-   * view shows it at `pixelsPerTexel`.
+   * view shows it at `pixelsPerTexel`, which settles on whole levels near them.
    */
   pixelZoom: () => number;
-  /** Whole render pixels per texel the pixel-perfect view shows (`wholePixelScale` of the zoom); 1 without it. */
+  /**
+   * Render pixels per texel the pixel-perfect view shows: the zoom times the pixel ratio, settled on a whole level near
+   * one (`pixelZoomDetent`); 1 without it.
+   */
   pixelsPerTexel: () => number;
   /**
    * When true in 3D, `look` orbits around `camera.target` instead of looking
@@ -159,7 +162,7 @@ export function createEditorCamera(
   let aspect = 1;
   let pixelPerfect: PixelPerfectSettings | null = null;
   let canvasHeightPx = 0;
-  /** Live pixel-perfect zoom; pinch and wheel move it continuously and the view snaps it (`pixelsPerTexel`). */
+  /** Live pixel-perfect zoom; pinch and wheel move it continuously and the view settles near whole levels (`pixelsPerTexel`). */
   let pixelZoom = 1;
   let pose3d: {
     target: Vector3;
@@ -175,7 +178,7 @@ export function createEditorCamera(
 
   const invalidate = () => options.scheduler?.invalidate("camera");
 
-  const pixelsPerTexel = () => pixelPerfect ? wholePixelScale(pixelZoom * (pixelPerfect.pixelRatio ?? 1)) : 1;
+  const pixelsPerTexel = () => pixelPerfect ? pixelZoomDetent(pixelZoom * (pixelPerfect.pixelRatio ?? 1)) : 1;
   const pixelFramed = () => pixelPerfect !== null && mode === "2d" && canvasHeightPx > 0;
 
   const applyOrthoBounds = () => {

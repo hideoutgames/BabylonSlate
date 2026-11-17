@@ -48,7 +48,7 @@ While **Nearest Texture Filtering** is on, images you import get the **Pixel Art
 
 ### The 2D editor view with Pixel-Perfect Mode
 
-While **Pixel-Perfect Mode** is on, the **Scene** viewport in 2D draws at your screen's own pixels, as a [Scene Layer](../scenes/scene-layers.md) tab does, so the browser never smooths it. At the start one texture pixel covers one screen pixel at your display scale (two on a high-density screen). Zooming steps through whole sizes: each texture pixel covers 1, 2, 3 or more screen pixels zoomed in, and zoomed out each screen pixel shows 2, 3 or more texture pixels. Pinch and the mouse wheel still move smoothly between the steps. With **Pixel-Perfect Mode** off, or in 3D, the viewport draws as before.
+While **Pixel-Perfect Mode** is on, the **Scene** viewport in 2D draws at your screen's own pixels, as a [Scene Layer](../scenes/scene-layers.md) tab does, so the browser never smooths it. At the start one texture pixel covers one screen pixel at your display scale (two on a high-density screen). Pinch and the mouse wheel zoom smoothly. When the zoom comes close to a whole size (each texture pixel covering 1, 2, 3 or more screen pixels, or zoomed out each screen pixel showing 2, 3 or more texture pixels), the view settles on it and every texture pixel is the same size; keep zooming to move on. Between those sizes texture pixels can differ by one screen pixel, but they stay sharp. With **Pixel-Perfect Mode** off, or in 3D, the viewport draws as before.
 
 ## Draw order
 
