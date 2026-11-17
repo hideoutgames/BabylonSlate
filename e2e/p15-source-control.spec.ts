@@ -84,7 +84,7 @@ test.describe("P15 source-control locking", () => {
     await expect(page.locator('[data-document-kind="source-control"]')).toHaveCount(0);
   });
 
-  test("signs in from the prompt, auto-locks on edit in the Source Control tab, Edit Anyway, Release All, and mtime reload", async ({
+  test("signs in from the prompt, locks on edit from the Lock prompt, Edit Anyway, Release All, and mtime reload", async ({
     page,
   }) => {
     test.setTimeout(90_000);
@@ -110,6 +110,13 @@ test.describe("P15 source-control locking", () => {
       return ok;
     });
     expect(nudged).toBe(true);
+
+    // Lock On Edit is Ask by default: the first edit of the Scene asks before locking it.
+    const lockPrompt = page.getByTestId("source-control-lock-prompt");
+    await expect(lockPrompt).toBeVisible();
+    await expect(lockPrompt.getByTestId("source-control-lock-prompt-dont-lock")).toBeVisible();
+    await lockPrompt.getByTestId("source-control-lock-prompt-lock").click();
+    await expect(lockPrompt).toHaveCount(0);
 
     await openSourceControlTab(page);
     await expect(
