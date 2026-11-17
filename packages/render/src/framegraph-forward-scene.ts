@@ -58,6 +58,7 @@ import { findSceneShadowController } from "./shadow-controller";
 import { mirrorDiagnostics } from "./mirrors";
 import { cullTaskByVisibilityIndex } from "./view-frustum-cull";
 import { visibilityDiagnostics } from "./visibility-check";
+import { visibilityIndexCounts } from "./visibility-index";
 import { sceneLightingSettledWithoutLights, syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
@@ -246,6 +247,10 @@ function countEffectRequests(engine: object, run: () => void, named?: string[]):
   }
   return { requests: count, idle };
 }
+function visibilityRows(): { reads: number; deferred: number } {
+  const counts = visibilityIndexCounts();
+  return { reads: counts.rowReads, deferred: counts.deferred };
+}
 /** What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals. */
 const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh);
 /** What a spatial geometry pass seeded from the scene's depth draws of them: the meshes that depth lacks. */
@@ -404,7 +409,7 @@ export class ForwardSceneFrameGraph {
       ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...(mirrors ? { mirrorCrop: { checks: mirrors.cropChecks, misses: mirrors.cropMisses } } : {}),
       ...(this.outlineView ? { outlineCull: this.outlineView.cullDiagnostics() } : {}),
-      ...(visibility ? { visibility } : {}),
+      ...(visibility ? { visibility, visibilityRows: visibilityRows() } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,

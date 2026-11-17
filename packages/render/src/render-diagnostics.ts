@@ -159,6 +159,12 @@ export type RenderDiagnostics = {
      * must stay 0. Absent before the first.
      */
     visibility?: Partial<Record<VisibilityView, VisibilityViewWork>>;
+    /**
+     * The visibility index's rows since the page loaded: bounds read or read again (`reads`: a mesh whose bounds do
+     * not change is read once, so reads per query is the share of meshes that moved) and tests answered by a mesh's
+     * own `isInFrustum` (`deferred`). Present with `visibility`.
+     */
+    visibilityRows?: { reads: number; deferred: number };
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is
