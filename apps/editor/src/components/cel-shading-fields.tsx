@@ -100,7 +100,11 @@ const fields: {
     label: "Specular Strength",
     hint: "Zero disables highlights.",
   },
-  { key: "specularSize", label: "Specular Size" },
+  {
+    key: "specularSize",
+    label: "Specular Size",
+    hint: "Highlight radius as a share of a sphere's radius.",
+  },
   {
     key: "lightColorInfluence",
     label: "Light Color Influence",

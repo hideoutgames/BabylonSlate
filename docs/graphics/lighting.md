@@ -103,13 +103,19 @@ When **Render Mode** is **CEL**, **Project Settings > Rendering > CEL Shading** 
 | **Shadow Bands** | 3 | Number of light and shade levels, 2 to 8. |
 | **Shadow Threshold** | 0.5 | Higher values extend the shaded region. |
 | **Shadow Strength** | 0.65 | Darkness of the deepest shade and cast shadows. |
-| **Specular**, **Specular Strength**, **Specular Size** | On, 0.2, 0.2 | Stylised highlights from point, spot, directional and area lights; a Hemispheric Fill Light gives none. Strength 0 also turns them off. |
+| **Specular**, **Specular Strength**, **Specular Size** | On, 0.2, 0.2 | Stylised highlights from point, spot, directional and area lights; a Hemispheric Fill Light gives none. Strength 0 also turns them off. **Specular Size** is roughly the highlight's radius as a share of a sphere's radius. |
 | **Light Color Influence** | 1 | How much light colour tints surfaces. 0 uses neutral light. |
 | **Light Mixing** | Strongest Light | **Strongest Light** keeps the dominant light's colour, **Additive** sums lights, **Blend** mixes colours at the strongest light's brightness. |
 | **Outlines**, **Outline Color**, **Outline Width** | On, near black, 1 px | Silhouette outlines on eligible geometry. |
 | **Outline Distance Fade**, **Outline Fade Start**, **Outline Fade End** | Off, 50, 100 | Shrinks outlines with camera distance. |
 
-Bands and shadow edges are always hard steps. **Emissive** and fog apply to CEL surfaces as they do in PBR. For per-actor outlines, use the [Outline](../components/outline.md) component; see [Geometry](geometry.md#outlines).
+Bands, cast shadow edges and highlights are hard steps, each edge anti-aliased to one pixel at any distance. Cast shadows always use the cheapest filter in CEL, whatever the shadow quality, since their edge is sharpened anyway.
+
+A highlight shows only where its own light reaches the first lit band, so it follows the light's range, a spot light's cone and cast shadows. It takes the light's colour, through **Light Color Influence**, but not its intensity: a brighter light does not give a brighter or larger highlight. The brightest highlight wins where two overlap.
+
+A Hemispheric Fill Light is ambient light in CEL: it is banded across the surface, but it is not mixed into the other lights' bands. It shows where it is brighter than their band (with **Strongest Light**) or adds to it (with **Additive** and **Blend**), so cast shadows stay visible under a fill.
+
+**Emissive** and fog apply to CEL surfaces as they do in PBR. For per-actor outlines, use the [Outline](../components/outline.md) component; see [Geometry](geometry.md#outlines).
 
 **Real-Time Reflections** in **Post Processing** is one setting for both render modes. With it on, CEL surfaces reflect as their Materials do in PBR: metal and smooth surfaces reflect, unlit surfaces never do. A Material reflects from its own **Metallic** and **Roughness** inputs, whether those come from values or textures.
 
