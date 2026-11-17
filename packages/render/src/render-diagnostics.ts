@@ -10,6 +10,7 @@ import { resolveSceneRenderingQuality, sceneEffectsQualityLimits, sceneRendering
 import { sceneViewRenderSize } from "./scene-output-scale";
 import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
+import type { VisibilityView, VisibilityViewWork } from "./visibility-check";
 import { sceneOcclusionDiagnostics } from "./view-occlusion";
 import type { RenderScheduler } from "./render-scheduler";
 import type { SceneReadinessDirtyReason } from "./scene-readiness-signal";
@@ -151,6 +152,13 @@ export type RenderDiagnostics = {
      * which must stay 0). Absent without an outline view.
      */
     outlineCull?: { splitChecks: number; healedSplits: number; checks: number; mismatches: number };
+    /**
+     * Culls answered by the visibility index, per kind of view over every Scene (`VisibilityViewWork`): how many and
+     * how long, the ones that also ran the full path (every 32nd, and all while `verifyVisibilityQueries` is on) and
+     * how long that took, and the checks whose lists differed (`mismatches`, and `heals` for the periodic ones), which
+     * must stay 0. Absent before the first.
+     */
+    visibility?: Partial<Record<VisibilityView, VisibilityViewWork>>;
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is

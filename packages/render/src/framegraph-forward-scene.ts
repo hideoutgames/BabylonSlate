@@ -56,6 +56,7 @@ import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admi
 import { layerDrawableMeshes } from "./layer-drawable-meshes";
 import { findSceneShadowController } from "./shadow-controller";
 import { mirrorDiagnostics } from "./mirrors";
+import { visibilityDiagnostics } from "./visibility-check";
 import { sceneLightingSettledWithoutLights, syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
@@ -389,12 +390,14 @@ export class ForwardSceneFrameGraph {
     const shadowJournal = findSceneShadowController(this.scene)?.journalDiagnostics();
     const mirrors = mirrorDiagnostics(this.scene);
     const captureLists = captureActorListDiagnostics(this.scene);
+    const visibility = visibilityDiagnostics();
     return {
       ...(captureLists ? { captureActorLists: { ...captureLists } } : {}),
       ...(shadowJournal ? { shadowJournal } : {}),
       ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...(mirrors ? { mirrorCrop: { checks: mirrors.cropChecks, misses: mirrors.cropMisses } } : {}),
       ...(this.outlineView ? { outlineCull: this.outlineView.cullDiagnostics() } : {}),
+      ...(visibility ? { visibility } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,

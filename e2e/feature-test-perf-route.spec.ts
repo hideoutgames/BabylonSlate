@@ -46,7 +46,9 @@ import {
  *      HAPTIC_PERF_VERIFY_MIRROR_CROP=1 (each Mirror cull cropped to its surface's footprint also culls with the whole
  *      mirrored frustum and counts the meshes the crop left out within the widened footprint: `rendererWork.mirrorCrop.misses`),
  *      HAPTIC_PERF_VERIFY_OUTLINES=1 (each strict outline cull also culls the full way, splitting its candidates afresh and
- *      walking every occluder, and counts each that disagrees: `rendererWork.outlineCull.mismatches`).
+ *      walking every occluder, and counts each that disagrees: `rendererWork.outlineCull.mismatches`),
+ *      HAPTIC_PERF_VERIFY_VISIBILITY=1 (each cull answered by the visibility index also runs the full path and counts
+ *      each whose list differs in length, members or order: `rendererWork.visibility.<view>.mismatches`).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -92,6 +94,8 @@ const VERIFY_CAPTURES = process.env.HAPTIC_PERF_VERIFY_CAPTURES === "1";
 /** Each cropped Mirror cull in Play also culls uncropped (the measured frames carry its cost). */
 const VERIFY_MIRROR_CROP = process.env.HAPTIC_PERF_VERIFY_MIRROR_CROP === "1";
 const VERIFY_OUTLINES = process.env.HAPTIC_PERF_VERIFY_OUTLINES === "1";
+/** Each cull answered by the visibility index in Play also runs the full path (the measured frames carry its cost). */
+const VERIFY_VISIBILITY = process.env.HAPTIC_PERF_VERIFY_VISIBILITY === "1";
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -112,6 +116,7 @@ type PlayHost = {
     verifyMirrorContentPolls: (enabled: boolean) => void;
     verifyCaptureActorLists: (enabled: boolean) => void;
     verifyMirrorFootprintCrops: (enabled: boolean) => void;
+    verifyVisibilityQueries: (enabled: boolean) => void;
     verifySharedOutlineCulls: (enabled: boolean) => void;
   };
 };
@@ -366,6 +371,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (VERIFY_CAPTURES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyCaptureActorLists(true));
   if (VERIFY_MIRROR_CROP) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorFootprintCrops(true));
   if (VERIFY_OUTLINES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifySharedOutlineCulls(true));
+  if (VERIFY_VISIBILITY) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyVisibilityQueries(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
