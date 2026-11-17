@@ -29,6 +29,7 @@ The **Parent Class** list shows engine classes by their class names.
 | **EditorUtilityObject**, **EditorFunctionLibrary** | Tools that run only in the editor. See [Editor Scripting](editor-scripting.md). |
 | **BTTask**, **BTDecorator**, **BTService**, **BTComposite** | Behaviour Tree nodes you script yourself. See [Behaviour Trees](../ai/behaviour-trees.md). |
 | **RichText2DAppearMode**, **RichText2DLetterEffect** | Your own ways for the letters of a 2D Rich Text to appear and to animate. See [2D Rich Text](../components/2d-rich-text.md#custom-appear-modes-and-effects). |
+| **RichText2DDecorator** | A 2D Rich Text tag of your own and the markup it turns into, such as `[player]` for the player's name. See [Custom tags](../components/2d-rich-text.md#custom-tags). |
 | **CustomEasingCurve** | Your own easing curve, listed with the built-in curves. See [Custom easing curves](curves-and-ranges.md#custom-easing-curves). |
 
 For components without any logic, a [Prefab](../assets/prefab.md) is lighter than an Actor class.

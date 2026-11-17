@@ -597,6 +597,7 @@ function addForms(refs: LayerRefs, add: AddActor): void {
     width: 2.46,
     text: "FeatureTest",
     placeholder: "Type here",
+    inputType: "email",
     maxLength: 24,
   });
   control("ft-ui-numeric-input", "Numeric Input", "2DNumericInputComponent", {
