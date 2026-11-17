@@ -18,21 +18,21 @@ describe("SceneLayer object model", () => {
       assetGuid: "hud",
       zOrder: 3,
       ownerSceneGuid: "level-1",
-      layerBounds: { width: 20, height: 10 },
+      canvas: { sizeMode: "custom", customSizePx: { width: 640, height: 360 }, rootAnchor: "topLeft", scaling: "truePixelSize" },
     });
     expect(layer).toBeInstanceOf(SceneLayer);
     expect(layer.classId).toBe("SceneLayer");
     expect(layer.assetGuid).toBe("hud");
     expect(layer.zOrder).toBe(3);
     expect(layer.ownerSceneGuid).toBe("level-1");
-    expect(layer.layerBounds).toEqual({ width: 20, height: 10 });
+    expect(layer.canvas).toEqual({ sizeMode: "custom", customSizePx: { width: 640, height: 360 }, rootAnchor: "topLeft", scaling: "truePixelSize" });
     expect(world.getSceneLayers()).toEqual([layer]);
 
     const defaultBounds = world.createSceneLayer({
       assetGuid: "fallback",
       zOrder: 0,
     });
-    expect(defaultBounds.layerBounds).toEqual({ width: 32, height: 18 });
+    expect(defaultBounds.canvas).toMatchObject({ sizeMode: "fullscreen", rootAnchor: "center", scaling: "fitToScreen" });
 
     const actor = world.createActor({
       classId: "SceneLayerActor",
