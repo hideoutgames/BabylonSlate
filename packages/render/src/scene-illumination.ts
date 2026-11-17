@@ -383,6 +383,11 @@ export type ScenePixelMatchedLens = {
 };
 const pixelMatchedLenses = new WeakMap<Scene, ScenePixelMatchedLens>();
 
+/** The Scene's pixel-matched lens (`setScenePixelMatchedLens`), or undefined. */
+export function scenePixelMatchedLens(scene: Scene): Readonly<ScenePixelMatchedLens> | undefined {
+  return pixelMatchedLenses.get(scene);
+}
+
 /** Pixel-matches the Scene's orthographic cameras, or with null returns them to their authored Orthographic Size. */
 export function setScenePixelMatchedLens(scene: Scene, lens: ScenePixelMatchedLens | null): void {
   const previous = pixelMatchedLenses.get(scene);

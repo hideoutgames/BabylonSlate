@@ -265,6 +265,16 @@ describe("RuntimeCamera cursor projection through the Layer Camera", () => {
     expect(fixture().camera.orthographicHalfHeight(1)).toBe(1);
   });
 
+  it("reports the design area's half-height for Get Orthographic Size, the same whether the output extends or not", () => {
+    // 640 x 360 Pixelated in a 1024 x 768 window extends to 1024 x 768 design pixels: taller than the design.
+    const pixelMatched = { design: { width: 640, height: 360 }, output: { width: 1024, height: 768 }, pixelsPerUnit: 100 };
+    const f = fixture({ pixelMatched });
+    expect(f.camera.orthographicHalfHeight(1.8)).toBeCloseTo(3.84, 9);
+    expect(f.camera.designHalfHeight(1.8)).toBeCloseTo(1.8, 9);
+    // Setting what Get reported keeps the ratio.
+    expect(f.camera.designHalfHeight(f.camera.designHalfHeight(1))).toBeCloseTo(0.9, 9);
+  });
+
   it("answers with the colliders under the cursor in a 2D world", () => {
     const f = fixture({ physicsKind: "2d", canvas: { width: 160, height: 90 } });
     f.scene.settings.cameraBounds2D = { width: 16, height: 9 };

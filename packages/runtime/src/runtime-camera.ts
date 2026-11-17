@@ -1,6 +1,7 @@
 import type { CommandMessage } from "@haptic/bridge";
 import {
   deprojectCursorRay,
+  pixelMatchedDesignFrame,
   pixelMatchedView,
   sceneDefaultCameraActor,
   sceneLayerCanvasToLayer,
@@ -273,6 +274,16 @@ export class RuntimeCamera implements RuntimeSubsystem {
   orthographicHalfHeight(orthographicSize: number): number {
     if (!this.host.pixelMatchedCameras) return orthographicSize;
     return pixelMatchedView(2 * orthographicSize, this.host.overlay().pixelMatchContext()).height / 2;
+  }
+
+  /**
+   * Half the height an orthographic camera with `orthographicSize` shows over the design resolution: the size itself,
+   * or with pixel-matched cameras its whole ratio's (`pixelMatchedDesignFrame`), whatever the output's extension, so
+   * Set Orthographic Size with it picks the same ratio again.
+   */
+  designHalfHeight(orthographicSize: number): number {
+    if (!this.host.pixelMatchedCameras) return orthographicSize;
+    return pixelMatchedDesignFrame(2 * orthographicSize, this.host.overlay().pixelMatchContext()).height / 2;
   }
 
   /**

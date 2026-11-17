@@ -251,8 +251,8 @@ export interface ScriptHostServices {
   sampleWater?(position: Vec3, actorId: string | null, caller?: EngineObject | null): WaterSample & { actorId: string | null };
   lineTrace?(start: Vec3, end: Vec3, options?: LineTraceOptions & { channel?: string }, caller?: EngineObject | null): HitResult;
   /**
-   * The half-height an orthographic camera with `orthographicSize` shows as it is drawn: the size itself, or with
-   * pixel-matched cameras its whole-ratio view's (`pixelMatchedView`).
+   * The half-height an orthographic camera with `orthographicSize` shows over the design resolution: the size itself,
+   * or with pixel-matched cameras its whole ratio's (`pixelMatchedDesignFrame`), stable through Set Orthographic Size.
    */
   cameraViewHalfHeight?(orthographicSize: number): number;
   projectCursorToScene?(

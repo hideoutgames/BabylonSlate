@@ -533,7 +533,7 @@ function initializePlayer(
     assetCatalog: runtimeAssetCatalogFromManifest(manifest.assets),
     focusNavigation: manifest.focusNavigation,
     pixelsPerUnit: content.pixelsPerUnit,
-    pixelMatchedCameras: content.pixelPerfect === true && content.nearestTextures === true,
+    ...(content.pixelPerfect === true && content.nearestTextures === true ? { pixelMatchedCameras: true } : {}),
     texturePixelSizes: Object.fromEntries(content.texturePixelSizes),
     gravity: scene.settings.gravity,
     collisionPresets: manifest.collisionPresets,
