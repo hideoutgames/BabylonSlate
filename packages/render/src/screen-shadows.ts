@@ -10,22 +10,23 @@ import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import type { ScreenShadowsQuality } from "@haptic/core";
-import { syntax } from "./ambient-occlusion-shader";
 import type { EffectCompileFailure } from "./effect-compile-failure";
 import { hapticShadowedSun } from "./haptic-lights";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
 import { AtlasCascadedShadowGenerator, shadowTileSize } from "./shadow-atlas";
 import { SHADOW_FILTER_REACH_TEXELS } from "./shadow-filter";
 import { sceneRenderingSettings } from "./render-settings";
-import { customWrapper } from "./spatial-effects";
+import { customWrapper, SCREEN_SHADOW_SCALE } from "./spatial-effects";
 
 /**
- * Screen-Space Shadows: before the objects draw, a full-resolution pass marches from each pixel of the spatial geometry
- * pass's depth toward the shadowed sun and writes RG16F (R: the sun's lit share, G: the eye distance of the surface it
- * marched from). Only pixels the geometry pass marks as a shadow caster's (its depth's G channel, `meshCastsShadows`)
- * occlude, so Cast Shadows holds for the march as for the map. The light block reads it at its own pixel for a surface at
- * that distance, so glass, water and anything the geometry pass did not see in front keep the sun's map alone, and
- * combines it with the cascades by min, on receivers only.
+ * Screen-Space Shadows: before the objects draw, a half-resolution pass (`SCREEN_SHADOW_SCALE`) marches once per 2 x 2
+ * block of the spatial geometry pass's depth, from the block's farthest surface pixel, toward the shadowed sun and writes
+ * RGBA16F: the lit share, that pixel's eye distance, which of the block's pixels share its surface and the distance of
+ * one that does not (`screenShadowsShader`). Only pixels the geometry pass marks as a shadow caster's (its depth's G
+ * channel, `meshCastsShadows`) occlude, so Cast Shadows holds for the march as for the map. The light block knows the
+ * surface at its own pixel from that, as at full resolution, so glass, water and anything the geometry pass did not see
+ * in front keep the sun's map alone, and blends the texels within two pixels that marched from its surface, so a contact
+ * shadow's edge stays on the geometry's edge. It combines the result with the cascades by min, on receivers only.
  *
  * The march only sees each surface's front, so it assumes a surface it passes behind is some thickness deep. It adds the
  * contact shadows finer than the sun's cascades resolve; a deeper occluder is the cascades' to shadow. So the assumed
@@ -46,75 +47,120 @@ export const SCREEN_SHADOW_LEVELS: Record<Exclude<ScreenShadowsQuality, "off">, 
 const MAX_STEPS = 16;
 
 /**
- * The march. Uniforms: `ssProjection`, `ssInverseProjection` (the camera's projection, which the geometry pass
- * drew with), `ssSun` (the view-space direction toward the sun; w 0 writes lit: no shadowed
- * sun, an orthographic view), `ssMarch` (steps, pixel cap, world cap; w unused), `ssFade` (fade start and end, the
- * render height times the projection's y scale), `ssTexel`, `ssCascadeEnds` and `ssCascadeCaps` (`screenShadowThicknessCaps`;
- * an unused cascade ends at -1). Derivatives come first, ahead of every early return.
+ * The march, one texel per 2 x 2 block of render pixels. Uniforms: `ssProjection`, `ssInverseProjection` (the camera's
+ * projection, which the geometry pass drew with), `ssSun` (the view-space direction toward the sun; w 0 writes lit: no
+ * shadowed sun, an orthographic view), `ssMarch` (steps, pixel cap, world cap; w unused), `ssFade` (fade start and
+ * end, the render height times the projection's y scale: the pixel cap and the start offset stay in render pixels),
+ * `ssTexel` (one march texel, the dither's grid), `ssCascadeEnds` and `ssCascadeCaps` (`screenShadowThicknessCaps`; an
+ * unused cascade ends at -1).
+ *
+ * It marches from the block's farthest surface pixel (a receiver, where a block straddles a caster's edge) and writes
+ * RGBA16F: R the lit share, G that pixel's eye distance, B which of the block's pixels lie on its surface (bits 0-3, by
+ * `x + 2 y`) plus 16 times its index and 64 times the index of the first pixel off it, A that pixel's eye distance (0
+ * with none). The light block then knows the surface at its own pixel (`hapticScreenShadowLit`), as at full resolution.
  */
 function screenShadowsShader(): string {
-  const { v2, v3, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax();
-  const lit = (eye: string) => output(`${v4}(1.0, ${eye}, 0.0, 1.0)`);
-  const header = `varying vec2 vUV;
-${texture("depthSampler")}
-${field("mat4", "ssProjection")}${field("mat4", "ssInverseProjection")}
-${field(v4, "ssSun")}${field(v4, "ssMarch")}${field(v4, "ssFade")}${field(v2, "ssTexel")}${field(v4, "ssCascadeEnds")}${field(v4, "ssCascadeCaps")}
-`;
-  const body = `
-${decl(f, "depth", `abs(${sample("depthSampler", uv)}.r)`)}
-${decl(v4, "unprojected", `${u("ssInverseProjection")} * ${v4}(${uv} * 2.0 - ${v2}(1.0), 0.5, 1.0)`)}
-${decl(v3, "viewPoint", "unprojected.xyz / unprojected.w")}
-${decl(v3, "P", "viewPoint * (depth / max(abs(viewPoint.z), 0.000001))")}
-${decl(v3, "dx", "dFdx(P)")}
-${decl(v3, "dy", "dFdy(P)")}
-${decl(f, "eye", "length(P)")}
-if (${u("ssSun")}.w < 0.5 || depth < 0.000001 || eye >= ${u("ssFade")}.y) { ${lit("eye")} }
-${decl(v3, "N", "cross(dx, dy)")}
-if (dot(N, N) < 1e-12) { ${lit("eye")} }
-N = normalize(N);
-if (dot(N, P) > 0.0) { N = -N; }
-${decl(v3, "L", `${u("ssSun")}.xyz`)}
-${decl(f, "NdotL", "dot(N, L)")}
-if (NdotL <= 0.0) { ${lit("eye")} }
-${decl(f, "footprint", `2.0 * depth / ${u("ssFade")}.z`)}
-${decl(f, "reach", `min(${u("ssMarch")}.z, ${u("ssMarch")}.y * footprint)`)}
-${decl(f, "bias", "(0.004 * depth + 0.01) / max(NdotL, 0.25)")}
-// The deepest a surface the ray passes behind is taken to be: 0.15 m + 0.02 z, at most the bias plus the reach of the
-// cascade filtering this depth (none beyond the last), and at least the bias plus the ray's depth change over a step.
-${decl(v4, "ends", u("ssCascadeEnds"))}
-${decl(v4, "caps", u("ssCascadeCaps"))}
-${decl(f, "cap", "1.0e4")}
-if (depth <= ends.w) { cap = caps.w; }
-if (depth <= ends.z) { cap = caps.z; }
-if (depth <= ends.y) { cap = caps.y; }
-if (depth <= ends.x) { cap = caps.x; }
-${decl(f, "stepDepth", `abs(L.z) * reach / ${u("ssMarch")}.x`)}
-${decl(f, "thickness", "min(0.15 + 0.02 * depth, bias + max(stepDepth, cap))")}
-${decl(v3, "start", "P + L * (1.5 * footprint)")}
-${decl(v2, "pixel", `floor(${uv} / ${u("ssTexel")})`)}
-${decl(f, "dither", `fract(52.9829189 * fract(dot(pixel, ${v2}(0.06711056, 0.00583715))))`)}
-${decl(f, "occlusion", "0.0")}
-${loop("i", 0, MAX_STEPS)} {
-  if (${f}(i) >= ${u("ssMarch")}.x) { break; }
-  ${decl(f, "t", `(${f}(i) + dither) / ${u("ssMarch")}.x * reach`)}
-  ${decl(v3, "q", "start + L * t")}
-  ${decl(v4, "clip", `${u("ssProjection")} * ${v4}(q, 1.0)`)}
-  if (clip.w <= 0.0) { break; }
-  ${decl(v2, "at", "clip.xy / clip.w * 0.5 + 0.5")}
-  if (at.x < 0.0 || at.y < 0.0 || at.x > 1.0 || at.y > 1.0) { break; }
-  ${decl(v2, "stored", `${sample("depthSampler", "at")}.rg`)}
-  ${decl(f, "scene", "abs(stored.x)")}
-  ${decl(f, "delta", "abs(q.z) - scene")}
-  // Only a shadow caster's pixel occludes (the geometry pass's caster mark, G).
-  if (stored.y > 0.5 && scene > 0.000001 && delta > bias && delta < thickness) {
-    ${decl(f, "edge", "min(min(at.x, 1.0 - at.x), min(at.y, 1.0 - at.y))")}
-    occlusion = max(occlusion, (1.0 - 0.5 * t / reach) * clamp(edge * 20.0, 0.0, 1.0));
-  }
+  return `varying vec2 vUV;
+uniform sampler2D depthSampler;
+uniform mat4 ssProjection;
+uniform mat4 ssInverseProjection;
+uniform vec4 ssSun;
+uniform vec4 ssMarch;
+uniform vec4 ssFade;
+uniform vec2 ssTexel;
+uniform vec4 ssCascadeEnds;
+uniform vec4 ssCascadeCaps;
+// The view-space point the depth texel at \`pixel\` shows (on the ray through its centre), and that depth.
+vec3 ssPoint(ivec2 pixel, ivec2 size, out float depth) {
+  pixel = clamp(pixel, ivec2(0), size - ivec2(1));
+  depth = abs(texelFetch(depthSampler, pixel, 0).r);
+  vec4 unprojected = ssInverseProjection * vec4((vec2(pixel) + 0.5) / vec2(size) * 2.0 - 1.0, 0.5, 1.0);
+  vec3 ray = unprojected.xyz / unprojected.w;
+  return ray * (depth / max(abs(ray.z), 0.000001));
 }
-${decl(f, "fade", `1.0 - smoothstep(${u("ssFade")}.x, ${u("ssFade")}.y, eye)`)}
-${output(`${v4}(1.0 - occlusion * fade, eye, 0.0, 1.0)`)}
+void main() {
+  ivec2 size = textureSize(depthSampler, 0);
+  ivec2 corner = ivec2(gl_FragCoord.xy) * ${SCREEN_SHADOW_SCALE};
+  vec3 points[4];
+  float depths[4];
+  int marched = -1;
+  float farthest = -1.0;
+  for (int i = 0; i < 4; i++) {
+    points[i] = ssPoint(corner + ivec2(i % 2, i / 2), size, depths[i]);
+    float eye = depths[i] > 0.000001 ? length(points[i]) : -1.0;
+    if (eye > farthest) { farthest = eye; marched = i; }
+  }
+  if (marched < 0) { gl_FragColor = vec4(1.0, 0.0, 0.0, 0.0); return; }
+  vec3 P = points[marched];
+  float depth = depths[marched];
+  float eye = length(P);
+  ivec2 origin = corner + ivec2(marched % 2, marched / 2);
+  // The surface's plane from the depth two pixels to each side, each axis toward the side nearer in depth (the same
+  // face); one pixel's difference of a coarse depth is noisy.
+  float leftDepth, rightDepth, downDepth, upDepth;
+  vec3 left = ssPoint(origin - ivec2(2, 0), size, leftDepth), right = ssPoint(origin + ivec2(2, 0), size, rightDepth);
+  vec3 down = ssPoint(origin - ivec2(0, 2), size, downDepth), up = ssPoint(origin + ivec2(0, 2), size, upDepth);
+  vec3 dx = abs(rightDepth - depth) < abs(leftDepth - depth) ? right - P : P - left;
+  vec3 dy = abs(upDepth - depth) < abs(downDepth - depth) ? up - P : P - down;
+  vec3 N = cross(dx, dy);
+  bool planeless = dot(N, N) < 1e-12;
+  N = planeless ? vec3(0.0) : normalize(N);
+  if (dot(N, P) > 0.0) { N = -N; }
+  // Which of the block's pixels lie on the marched surface's plane, and the first that does not.
+  float tolerance = 0.004 * depth + 0.01;
+  float mask = 0.0;
+  int other = marched;
+  float otherEye = 0.0;
+  for (int i = 0; i < 4; i++) {
+    bool valid = depths[i] > 0.000001;
+    bool on = valid && (i == marched || (!planeless && abs(dot(points[i] - P, N)) < tolerance));
+    if (on) mask += exp2(float(i));
+    else if (valid && otherEye == 0.0) { other = i; otherEye = length(points[i]); }
+  }
+  float info = mask + 16.0 * float(marched) + 64.0 * float(other);
+  if (ssSun.w < 0.5 || planeless || eye >= ssFade.y) { gl_FragColor = vec4(1.0, eye, info, otherEye); return; }
+  vec3 L = ssSun.xyz;
+  float NdotL = dot(N, L);
+  if (NdotL <= 0.0) { gl_FragColor = vec4(1.0, eye, info, otherEye); return; }
+  float footprint = 2.0 * depth / ssFade.z;
+  float reach = min(ssMarch.z, ssMarch.y * footprint);
+  float bias = (0.004 * depth + 0.01) / max(NdotL, 0.25);
+  // The deepest a surface the ray passes behind is taken to be: 0.15 m + 0.02 z, at most the bias plus the reach of the
+  // cascade filtering this depth (none beyond the last), and at least the bias plus the ray's depth change over a step.
+  vec4 ends = ssCascadeEnds;
+  vec4 caps = ssCascadeCaps;
+  float cap = 1.0e4;
+  if (depth <= ends.w) { cap = caps.w; }
+  if (depth <= ends.z) { cap = caps.z; }
+  if (depth <= ends.y) { cap = caps.y; }
+  if (depth <= ends.x) { cap = caps.x; }
+  float stepDepth = abs(L.z) * reach / ssMarch.x;
+  float thickness = min(0.15 + 0.02 * depth, bias + max(stepDepth, cap));
+  vec3 start = P + L * (1.5 * footprint);
+  vec2 pixel = floor(vUV / ssTexel);
+  float dither = fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
+  float occlusion = 0.0;
+  for (int i = 0; i < ${MAX_STEPS}; i++) {
+    if (float(i) >= ssMarch.x) { break; }
+    float t = (float(i) + dither) / ssMarch.x * reach;
+    vec3 q = start + L * t;
+    vec4 clip = ssProjection * vec4(q, 1.0);
+    if (clip.w <= 0.0) { break; }
+    vec2 at = clip.xy / clip.w * 0.5 + 0.5;
+    if (at.x < 0.0 || at.y < 0.0 || at.x > 1.0 || at.y > 1.0) { break; }
+    vec2 stored = texture2D(depthSampler, at).rg;
+    float scene = abs(stored.x);
+    float delta = abs(q.z) - scene;
+    // Only a shadow caster's pixel occludes (the geometry pass's caster mark, G).
+    if (stored.y > 0.5 && scene > 0.000001 && delta > bias && delta < thickness) {
+      float edge = min(min(at.x, 1.0 - at.x), min(at.y, 1.0 - at.y));
+      occlusion = max(occlusion, (1.0 - 0.5 * t / reach) * clamp(edge * 20.0, 0.0, 1.0));
+    }
+  }
+  float fade = 1.0 - smoothstep(ssFade.x, ssFade.y, eye);
+  gl_FragColor = vec4(1.0 - occlusion * fade, eye, info, otherEye);
+}
 `;
-  return header + main(body);
 }
 
 const NO_CASCADES = [-1, -1, -1, -1] as const;
@@ -209,7 +255,7 @@ class ScreenShadowsTask extends FrameGraphPostProcessTask {
 }
 
 /**
- * One view's screen shadows: the task (after the geometry pass, before the objects), its RG16F target and the objects
+ * One view's screen shadows: the task (after the geometry pass, before the objects), its RGBA16F target and the objects
  * passes that read it. With no shadowed sun or an orthographic camera the march would write lit everywhere, so it idles
  * (`sync`, each frame): the task draws nothing and the objects bind the placeholder with the read off, which the light
  * block takes as lit, as it would the march's 1. The sun starting to cast shadows creates no pipeline, only re-enables
@@ -233,14 +279,15 @@ export class ScreenShadowsGraph {
     this.camera = camera;
     const wrapper = customWrapper(scene, "Screen shadows", screenShadowsShader(),
       ["ssProjection", "ssInverseProjection", "ssSun", "ssMarch", "ssFade", "ssTexel", "ssCascadeEnds", "ssCascadeCaps"], ["depthSampler"], failure);
+    const marchWidth = Math.ceil(width / SCREEN_SHADOW_SCALE), marchHeight = Math.ceil(height / SCREEN_SHADOW_SCALE);
     this.output = graph.textureManager.createRenderTargetTexture("Screen shadows", {
-      size: { width, height },
+      size: { width: marchWidth, height: marchHeight },
       sizeIsPercentage: false,
       options: {
         createMipMaps: false,
         samples: 1,
         types: [Constants.TEXTURETYPE_HALF_FLOAT],
-        formats: [Constants.TEXTUREFORMAT_RG],
+        formats: [Constants.TEXTUREFORMAT_RGBA],
         useSRGBBuffers: [false],
       },
     });
@@ -265,7 +312,7 @@ export class ScreenShadowsGraph {
       const settings = SCREEN_SHADOW_LEVELS[sceneRenderingSettings(scene).effectsPlan?.screenShadows ?? level];
       effect.setFloat4("ssMarch", settings.steps, settings.pixels, settings.length, 0);
       effect.setFloat4("ssFade", settings.fadeStart, settings.fadeEnd, height * Math.abs(projection.m[5]!), 0);
-      effect.setFloat2("ssTexel", 1 / width, 1 / height);
+      effect.setFloat2("ssTexel", 1 / marchWidth, 1 / marchHeight);
     });
     this.task.targetTexture = this.output;
   }

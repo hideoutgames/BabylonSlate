@@ -88,6 +88,12 @@ export function spatialEffectsUnsupported(scene: Scene): string | undefined {
   return undefined;
 }
 
+/**
+ * Screen-Space Shadows march at the render size divided by this, rounded up, each texel from the top-left pixel of its
+ * block (`screen-shadows.ts`); the light block's read (`hapticScreenShadowLit`) divides its pixel by the same factor.
+ */
+export const SCREEN_SHADOW_SCALE = 2;
+
 /** The plan has at least one stage composed by the spatial geometry chain. */
 export function hasSpatialEffects(plan: SceneEffectsPlan | null): plan is SceneEffectsPlan {
   return !!plan && !!(plan.ambientOcclusion || plan.reflections || plan.volumetricLighting || plan.screenShadows);
@@ -123,8 +129,10 @@ export function reserveSpatialEffects(
   // The normal and reflectivity attachments, and the trace and its blurs.
   if (plan.reflections) bytes += pixels * 8 + scaledBytes(plan.reflections.resolutionScale) * 3;
   if (plan.volumetricLighting) bytes += scaledBytes(plan.volumetricLighting.resolutionScale);
-  // Screen-Space Shadows' RG16F target and the caster mark's second channel of the geometry Z (at most float).
-  if (plan.screenShadows) bytes += pixels * 8;
+  // Screen-Space Shadows' half-resolution RGBA16F target and the caster mark's second channel of the geometry Z (at most
+  // float).
+  if (plan.screenShadows)
+    bytes += Math.ceil(width / SCREEN_SHADOW_SCALE) * Math.ceil(height / SCREEN_SHADOW_SCALE) * 8 + pixels * 4;
   return beginManagedRenderAllocation(scene.getEngine(), bytes);
 }
 

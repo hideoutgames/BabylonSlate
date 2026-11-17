@@ -2122,8 +2122,8 @@ it.each([
 });
 
 /** A world view with Screen-Space Shadows at High and no Fog Volume: a sun (shadowed as `shadowed` says) over a plane. */
-async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFAULT_RENDER_EFFECTS> = {}) {
-  const { engine, scene, camera } = host();
+async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFAULT_RENDER_EFFECTS> = {}, nullEngine?: NullEngine) {
+  const { engine, scene, camera } = host(nullEngine);
   Object.assign(engine.getCaps(), {
     maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
     textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
@@ -2166,6 +2166,18 @@ async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFA
   return { scene, camera, graph, frame, cast };
 }
 const SCREEN_SHADOW_TASKS = ["Screen shadows", "Spatial Geometry"];
+
+it("marches Screen-Space Shadows into a half-resolution target, rounded up", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 161;
+  options.renderHeight = 127;
+  const { graph, frame } = await screenShadowsHost(true, {}, new NullEngine(options));
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  const { textureManager } = (graph as unknown as { graph: FrameGraph }).graph;
+  const [handle] = [...textureManager._textures].find(([, entry]) => entry?.name === "Screen shadows")!;
+  expect(textureManager.getTextureDescription(handle).size).toEqual({ width: 81, height: 64 });
+  graph.dispose();
+});
 
 it("idles Screen-Space Shadows and the geometry pass without a shadowed sun, reading none, and marches again once the sun casts, without rebuilding", async () => {
   const { scene, graph, frame, cast } = await screenShadowsHost(true);
