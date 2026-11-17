@@ -125,6 +125,12 @@ export class GlSignatureRecorder {
   private readonly counts = new Map<string, number>();
   /** The last frame's hash, while one has ended. */
   lastHash: string | null = null;
+  /**
+   * Called as a pass is about to start: before the frame's first clear, draw, blit or invalidate, and before the first
+   * on another draw framebuffer than the last pass's, with every call of the passes before it already made. A fence
+   * submitted from it splits none.
+   */
+  onPassStart: (() => void) | null = null;
   /** Fences submitted inside a pass that then went on (`fence`): each split one GPU render pass in two. */
   fenceSplits = 0;
   private fenced = false;
@@ -260,6 +266,7 @@ export class GlSignatureRecorder {
       if (fenced && current.target === this.drawTarget) this.fenceSplits += 1;
       return current;
     }
+    this.onPassStart?.();
     let id = this.ids.get(this.drawTarget);
     if (!id) {
       id = this.drawTarget === null ? "D" : `F${this.ids.size + (this.ids.has(null) ? 0 : 1)}`;
@@ -471,6 +478,13 @@ export interface SerialProbeHost {
   frameHash?(): string | null;
   /** Fences that have split a pass so far (`GlSignatureRecorder.fenceSplits`), where recorded. */
   fenceSplits?(): number;
+  /**
+   * Runs `submit` where a fence splits no pass: as the next pass starts (`GlSignatureRecorder.onPassStart`), or at the
+   * frame's end. A stage boundary is not always a pass boundary: a capture's own shadow maps draw into the atlas the
+   * scene's maps just drew into, and a fence and flush between the two would end the GPU's pass on it and make the
+   * next one load what the first stored. Absent, a stage is fenced where it ends.
+   */
+  deferFence?(submit: () => void): void;
 }
 
 /**
@@ -626,9 +640,11 @@ export class SerialFrameProbe {
 
   frameDrawn(): void { if (this.frame && this.state === "rendering") this.frame.drawn = true; }
 
+  /** The Engine's frame end, with every deferred fence already submitted by the host: the last stage is fenced here. */
   frameEnded(): void {
     if (this.state !== "rendering" || !this.frame) return;
-    this.fenceStage();
+    const fence = this.host.fence();
+    if (fence) this.frame.stages.push({ stage: this.stage, submitted: this.host.now(), fence, done: null });
     this.frame.ended = this.host.now();
     this.frame.hash = this.host.frameHash?.() ?? null;
     this.state = "completing";
@@ -653,10 +669,20 @@ export class SerialFrameProbe {
     this.state = "idle";
   }
 
+  /**
+   * Fences the stage that just ended. With a host that defers, the fence waits for the next pass to start, so what
+   * the new stage draws until then counts to the stage before it.
+   */
   private fenceStage(): void {
     const frame = this.frame!;
-    const fence = this.host.fence();
-    if (fence) frame.stages.push({ stage: this.stage, submitted: this.host.now(), fence, done: null });
+    const stage = this.stage;
+    const submit = () => {
+      if (this.frame !== frame || this.state !== "rendering") return;
+      const fence = this.host.fence();
+      if (fence) frame.stages.push({ stage, submitted: this.host.now(), fence, done: null });
+    };
+    if (this.host.deferFence) this.host.deferFence(submit);
+    else submit();
   }
 
   private pollDrain(now: number): void {
@@ -747,19 +773,24 @@ export class SerialFrameProbe {
  * and the end of the one before, and its time is its completion minus that. Completions are seen at polls, the first
  * one after the frame's task: a stage whose fence had already signalled then is censored. It ended somewhere between
  * its submission and that poll, so it reads as that whole span, an upper bound, and the stage after it is taken to have
- * started no earlier than its own submission.
+ * started no earlier than its own submission. A stage's censored parts count once, by the longest.
  */
 function frameStages(frame: ProbeFrame): Map<FrameStage, { ms: number; censored: boolean }> {
-  const stages = new Map<FrameStage, { ms: number; censored: boolean }>();
+  const stages = new Map<FrameStage, { measured: number; bound: number; censored: boolean }>();
   let previous = frame.started;
   for (const entry of frame.stages) {
     const censored = entry.done! <= (frame.firstPoll ?? -Infinity);
     const ms = Math.max(0, entry.done! - Math.max(previous, entry.submitted));
-    const total = stages.get(entry.stage);
-    stages.set(entry.stage, { ms: (total?.ms ?? 0) + ms, censored: (total?.censored ?? false) || censored });
+    const total = stages.get(entry.stage) ?? { measured: 0, bound: 0, censored: false };
+    // A stage fenced more than once (main, the effects, then main again): its censored parts all ended before the same
+    // poll, so together they took at most the longest of their spans, not the sum.
+    if (censored) total.bound = Math.max(total.bound, ms);
+    else total.measured += ms;
+    total.censored ||= censored;
+    stages.set(entry.stage, total);
     previous = censored ? entry.submitted : entry.done!;
   }
-  return stages;
+  return new Map([...stages].map(([stage, total]) => [stage, { ms: total.measured + total.bound, censored: total.censored }]));
 }
 
 /** The result of a probe's frames and synthetic runs (`SerialProbeResult`). */

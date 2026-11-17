@@ -42,6 +42,8 @@ export interface GpuSyntheticLoad {
   ready(): boolean;
   /** One draw of the load into its own target; the Engine's drawing state is as before afterwards. */
   draw(): void;
+  /** Releases its target, which the next `ready()` makes again; its program stays compiled. */
+  release(): void;
   dispose(): void;
 }
 
@@ -82,6 +84,10 @@ export function createGpuSyntheticLoad(engine: AbstractEngine, iterations = SYNT
       } finally {
         restoreEngineDrawingState(engine, drawingState);
       }
+    },
+    release: () => {
+      target?.dispose();
+      target = null;
     },
     dispose: () => {
       effect?.dispose();

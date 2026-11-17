@@ -47,6 +47,8 @@ export class EngineGpuProbe {
   private shadowSource: (() => ShadowProbeReading | null) | null = null;
   private shadowBefore: ShadowProbeReading | null = null;
   private listening = false;
+  /** Stage fences waiting for the next pass to start (`SerialProbeHost.deferFence`). */
+  private readonly deferred: (() => void)[] = [];
 
   constructor(engine: AbstractEngine) {
     this.engine = engine;
@@ -64,7 +66,13 @@ export class EngineGpuProbe {
       synthetic: { ready: () => this.synthetic.ready(), draw: () => this.synthetic.draw() },
       frameHash: () => this.uninstall ? this.recorder.lastHash : null,
       fenceSplits: () => this.recorder.fenceSplits,
+      // Only the recorder knows where a pass starts: without it a stage is fenced where it ends.
+      deferFence: (submit) => {
+        if (this.uninstall) this.deferred.push(submit);
+        else submit();
+      },
     });
+    this.recorder.onPassStart = () => this.submitDeferred();
     const begin = engine.onBeginFrameObservable.add(() => {
       this.serialProbe.expire();
       if (this.uninstall) this.recorder.beginFrame();
@@ -95,9 +103,14 @@ export class EngineGpuProbe {
     this.raf.start();
   }
 
-  /** `gpuprobe off`: stops everything and restores the context's own calls; the last results stay readable. */
+  /**
+   * `gpuprobe off`: stops everything, restores the context's own calls and releases the synthetic load's target; the
+   * last results stay readable.
+   */
   off(): void {
     this.serialProbe.dispose();
+    this.deferred.length = 0;
+    this.synthetic.release();
     this.listen(false);
     this.raf.stop();
     this.uninstall?.();
@@ -144,7 +157,14 @@ export class EngineGpuProbe {
       }
     }
     this.listen(false);
+    // The frame's work is all submitted: the fences still waiting for a pass to start go first, in order.
+    this.submitDeferred();
     this.serialProbe.frameEnded();
+  }
+
+  private submitDeferred(): void {
+    if (!this.deferred.length) return;
+    for (const submit of this.deferred.splice(0)) submit();
   }
 
   /** Draw pass boundaries are stage boundaries only while a serialised frame renders. */

@@ -126,6 +126,29 @@ describe("GL call signature", () => {
     recorder.endFrame();
   });
 
+  it("says when each pass is about to start, where a fence splits none", () => {
+    const recorder = new GlSignatureRecorder();
+    recorder.start();
+    const starts: number[] = [];
+    let work = 0;
+    recorder.onPassStart = () => { starts.push(work); recorder.fence(); };
+    recorder.beginFrame();
+    recorder.bind(FRAMEBUFFER, atlas);
+    recorder.viewport(0, 0, 8, 8);
+    recorder.draw(); work++;
+    recorder.draw(); work++;
+    // Bound elsewhere and back with nothing drawn there: the atlas's pass goes on.
+    recorder.bind(FRAMEBUFFER, null);
+    recorder.bind(FRAMEBUFFER, atlas);
+    recorder.draw(); work++;
+    recorder.bind(FRAMEBUFFER, null);
+    recorder.clear(COLOR_BIT); work++;
+    recorder.endFrame();
+    // Before the frame's first work, and before the first on the backbuffer.
+    expect(starts).toEqual([0, 3]);
+    expect(recorder.fenceSplits).toBe(0);
+  });
+
   it("wraps a context's calls while installed and hands the context's own back", () => {
     const calls: string[] = [];
     class Context {
@@ -449,6 +472,52 @@ describe("serialised frame probe", () => {
     lost.advance(3001);
     lost.poll();
     expect(frame.result()!.id).toBe(2);
+  });
+
+  it("fences a stage at the next pass start when its host defers, and counts a stage's censored parts once", () => {
+    const gpu = fakeHost({ synthetic: false });
+    const waiting: (() => void)[] = [];
+    const host: SerialProbeHost = { ...gpu.host, deferFence: (submit) => { waiting.push(submit); } };
+    const passStart = () => { for (const submit of waiting.splice(0)) submit(); };
+    const probe = new SerialFrameProbe(host, 2);
+    probe.request();
+    gpu.finish(0);
+    gpu.poll();
+    for (let frame = 0; frame < 2; frame++) {
+      const first = gpu.fences.length;
+      probe.frameStarted();
+      probe.stageBoundary("shadows");
+      // The boundary submits nothing by itself.
+      expect(gpu.fences).toHaveLength(first + 1);
+      gpu.advance(2);
+      passStart();
+      expect(gpu.fences).toHaveLength(first + 2);
+      probe.stageBoundary("objects");
+      gpu.advance(1);
+      // The capture-like case: the new stage goes on in the same pass for 3 ms before another pass starts.
+      gpu.advance(3);
+      passStart();
+      probe.stageBoundary("post");
+      passStart();
+      probe.stageBoundary("objects");
+      gpu.advance(4);
+      probe.frameDrawn();
+      // The host submits what still waits, then the frame's last stage is fenced.
+      passStart();
+      probe.frameEnded();
+      // Everything had finished by the first poll, 2 ms after the frame's 10 ms task.
+      gpu.advance(2);
+      gpu.finish(...gpu.fences.map((_, index) => index));
+      gpu.poll();
+    }
+    // Fences: "other" at 2 (the shadows' first pass start), shadows at 6, main at 6 (as the effects' pass starts),
+    // effects at 10, main again at 10; all seen done at 12. Main's two parts, 6 and 2 ms long, count as 6, not 8.
+    expect(probe.result()!.stages).toEqual([
+      { stage: "other", ms: 10, censored: true },
+      { stage: "shadows", ms: 6, censored: true },
+      { stage: "main", ms: 6, censored: true },
+      { stage: "effects", ms: 2, censored: true },
+    ]);
   });
 
   it("reports how many of its fences split a pass", () => {
