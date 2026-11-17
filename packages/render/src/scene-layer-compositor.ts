@@ -383,10 +383,11 @@ export class SceneLayerCompositor {
     this.outputWidth = width;
     this.outputHeight = height;
     for (const layer of this.byId.values()) {
+      const previous = layer.viewBounds;
       layer.viewBounds = this.layerView(layer);
       this.bindHudCamera(layer, true);
-      // The runtime frames a Desired layer by its reported view, which a new screen changes.
-      if (layer.contentChanges) this.onLayerView?.(layer.layerId, layer.viewBounds);
+      // The runtime frames a Desired layer by its reported view, which a new screen can change.
+      if (layer.contentChanges && !sameRect(previous, layer.viewBounds)) this.onLayerView?.(layer.layerId, layer.viewBounds);
       if (layer.rtt) {
         const previous = layer.rtt.getSize();
         if (previous.width !== width || previous.height !== height)

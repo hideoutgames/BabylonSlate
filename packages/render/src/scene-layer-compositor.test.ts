@@ -207,8 +207,9 @@ describe("SceneLayerCompositor", () => {
     const engine = new NullEngine();
     engines.push(engine);
     const views: Array<{ width: number; height: number; center: readonly [number, number] }> = [];
+    let screen = { width: 19.2, height: 10.8 };
     const compositor = new SceneLayerCompositor({
-      engine, screen: () => ({ width: 19.2, height: 10.8 }), onLayerView: (_id, view) => views.push(view),
+      engine, screen: () => screen, onLayerView: (_id, view) => views.push(view),
     });
     const layer = compositor.create({
       type: "sceneLayerCreate", layerId: "badge", assetGuid: "badge-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [],
@@ -241,13 +242,15 @@ describe("SceneLayerCompositor", () => {
     expect(views).toHaveLength(2);
 
     // A new screen reframes it, and the runtime hears the new view.
+    screen = { width: 25.2, height: 10.8 };
     compositor.resize(true);
     expect(views).toHaveLength(3);
 
-    // With nothing left to draw, it is the Fullscreen canvas again.
+    // With nothing left to draw, it is the Fullscreen canvas again, framing the whole screen.
     quad.setEnabled(false);
     compositor.render();
-    expect(layer.viewBounds.width).toBeCloseTo(19.2);
+    expect(layer.viewBounds.width).toBeCloseTo(25.2);
+    expect(layer.viewBounds.height).toBeCloseTo(10.8);
     expect(layer.viewBounds.center[0]).toBeCloseTo(0);
   });
 
