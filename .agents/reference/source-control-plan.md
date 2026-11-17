@@ -38,7 +38,7 @@ What remains of built-in Git before Integrated mode ships: the iPad benchmark re
 
 What exists today and what each part must change. Check these against the code before building; they are a starting map, not a contract.
 
-- **LFS transfer:** objects stream through the native file transfer where the host has one ([native file transfer](architecture/source-control.md#native-file-transfer)); `NativeHttp` carries Git packs and batch and lock requests whole ([binary HTTP](architecture/source-control.md#binary-http)), and LFS objects only where no native transfer exists (web).
+- **LFS transfer:** objects stream through the native file transfer where the host has one ([native file transfer](architecture/source-control.md#native-file-transfer)); `NativeHttp` carries Git packs and batch and lock requests whole ([binary HTTP](architecture/source-control.md#binary-http)), and LFS objects only where no native transfer exists (web). Revert puts missing blobs straight into their files too; only `readFile` and `readLfsObject` (Diff's base blobs, a Texture's rasters) hand an object to JavaScript, since their callers want its bytes. The Git core's pack cache is released when the app goes to the background.
 - **Docs:** `docs/projects/source-control.md` and `docs/editor/settings.md` change with each step.
 
 ## Benchmark evidence

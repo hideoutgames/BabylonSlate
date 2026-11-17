@@ -9,7 +9,7 @@ A [Material](../assets/material.md) is a node graph that decides how a surface, 
 3. Check the result in **Preview**. Pick a preview shape (**Cube**, **Sphere**, **Cylinder**, **Cone**, **Plane**) or **Custom** to preview on one of your Models.
 4. Save, then assign the Material to a [Mesh](../components/mesh.md) component's **Material** field.
 
-Simple graphs refresh the preview as you edit. Expensive graphs, Custom GLSL and post-process Materials wait until you choose **Render** in the toolbar. Problems appear in **Compiler Results**; select one to jump to its node.
+Simple graphs refresh the preview as you edit. Expensive graphs, Custom GLSL and post-process Materials wait until you choose **Render** in the toolbar. Problems appear in **Compiler Results**; select one to jump to its node. To check one step of the graph, right-click a node and choose **Preview Node** ([Preview a node](../assets/material.md#preview-a-node)).
 
 ## Domains and settings
 

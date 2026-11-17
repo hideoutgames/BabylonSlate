@@ -20,7 +20,7 @@ export function isPerInstanceParameter(type: string, properties: Readonly<Record
   return (type === "param.float" || type === "param.color") && properties.perInstance === true;
 }
 
-export function materialParameterName(node: MaterialGraphNode): string {
+export function materialParameterName(node: Pick<MaterialGraphNode, "properties">): string {
   return typeof node.properties.name === "string"
     ? node.properties.name.trim()
     : "";

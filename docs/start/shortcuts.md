@@ -110,6 +110,14 @@ Set Key, Previous Key and Next Key act in the [Timeline](../scenes/timeline.md#k
 | Import Assets | <kbd>Alt</kbd>+<kbd>I</kbd> |
 | Show References | <kbd>Alt</kbd>+<kbd>R</kbd> |
 
+### Material
+
+| Command | Shortcut |
+| --- | --- |
+| Preview Node | <kbd>P</kbd> |
+
+Preview Node acts in a Material's **Graph** when it has keyboard focus (tap or click a node first) and exactly one node is selected; with several nodes selected it does nothing. It previews the node's first output, or stops previewing when that node is already previewed, or when the output node is selected while another node is ([Preview a node](../assets/material.md#preview-a-node)).
+
 ### Tilemap Paint
 
 | Command | Shortcut |

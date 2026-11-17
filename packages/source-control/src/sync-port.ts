@@ -50,6 +50,22 @@ export interface SyncPort {
    */
   readLfsObject(path: string, size: number, options?: TransferOptions): Promise<Uint8Array>;
   /**
+   * Puts LFS objects into their working files, each named by its
+   * `.blobs/<sha256>` path and size as `readLfsObject` takes them: a file
+   * that already has the size stays as it is (never read), any other is
+   * downloaded and checked, straight into the file where the host has a
+   * native file transfer, so the bytes never enter JavaScript. Files land as
+   * they arrive. Rejects with `lfs` / `lfs-object-missing` unless every file
+   * then has its size (the server lacks one, or left it out).
+   */
+  downloadLfsObjects(files: readonly LfsFile[], options?: TransferOptions): Promise<void>;
+  /**
+   * Lets go of what the port keeps in memory between operations (Git's
+   * object and pack cache); the next operation reads it again. A running
+   * operation keeps what it holds. For when the app goes to the background.
+   */
+  releaseCaches(): void;
+  /**
    * The working tree's `.blobs` files Git can do without, sorted: untracked
    * (neither HEAD nor the index holds them) and held by no commit of any
    * local branch that the remote-tracking branches lack, the checked-out
@@ -116,6 +132,12 @@ export interface SyncPort {
  */
 export interface TransferOptions {
   signal?: AbortSignal;
+}
+
+/** An LFS object's working file: its `.blobs/<sha256>` path and the object's size. */
+export interface LfsFile {
+  path: string;
+  size: number;
 }
 
 export interface RemovableLfsOptions extends TransferOptions {

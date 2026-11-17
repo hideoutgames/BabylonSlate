@@ -245,13 +245,15 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     defines.setValue("HAPTIC_UNLIT", this.unlit || (isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "lighting")), true);
     // Water receives every shadow through low quality's four taps, without Contact Hardening: on its moving surface a
     // wider penumbra barely shows, and it would cost up to sixteen taps (more with Contact Hardening) per water pixel.
-    defines.setValue("HAPTIC_SHADOW_NARROW", isWaterSurfaceMesh(mesh), true);
+    // CEL too: it sharpens the shadow's edge to a pixel (`hapticShadow`), so a wider kernel would buy nothing.
+    defines.setValue("HAPTIC_SHADOW_NARROW", cel || isWaterSurfaceMesh(mesh), true);
     // The environment's light is part of every lit program, whatever environment lights the mesh: its presence, a
     // reflection probe's box, its handedness and its encoding are bound values (`bind`), so an environment that
     // appears, a probe's volume the mesh enters or a cube of another encoding compiles nothing, as no light does. CEL
     // lights with the cube's irradiance polynomial alone (`bindCelSettings`), so its programs have no cube.
     defines.setValue("HAPTIC_ENVIRONMENT", !cel && !this.noEnvironment, true);
-    defines.setValue("HAPTIC_BRDF_RGBD", !!GetEnvironmentBRDFTexture(scene)?.isRGBD, true);
+    // CEL reads no split-sum table.
+    defines.setValue("HAPTIC_BRDF_RGBD", !cel && !!GetEnvironmentBRDFTexture(scene)?.isRGBD, true);
     defines.setValue("HAPTIC_EXACT_SRGB", scene.getEngine().useExactSrgbConversions, true);
     defines.setValue("HAPTIC_TWO_SIDED", !nodeMaterial.backFaceCulling, true);
     defines.setValue("HAPTIC_LIGHT_LOOP_PROOF", lightLoopProofScenes.has(scene), true);
@@ -259,9 +261,11 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   }
 
   override isReady(mesh: AbstractMesh): boolean {
-    const scene = mesh.getScene(), brdf = GetEnvironmentBRDFTexture(scene);
-    // Every program binds the split-sum table; CEL and a Material without environment light ignore the cube.
-    return (!brdf || brdf.isReady()) && (celMode(scene) || this.noEnvironment || (scene.environmentTexture?.isReadyOrNotBlocking() ?? true));
+    const scene = mesh.getScene();
+    // CEL reads neither the split-sum table nor the cube; a Material without environment light ignores the cube.
+    if (celMode(scene)) return true;
+    const brdf = GetEnvironmentBRDFTexture(scene);
+    return (!brdf || brdf.isReady()) && (this.noEnvironment || (scene.environmentTexture?.isReadyOrNotBlocking() ?? true));
   }
 
   override updateUniformsAndSamples(state: NodeMaterialBuildState, material: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void {
@@ -295,18 +299,22 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   override bind(effect: Effect, _nodeMaterial: NodeMaterial, mesh?: Mesh): void {
     if (!mesh) return;
     const scene = mesh.getScene();
+    // A CEL program declares neither the split-sum table nor the atlas's plain read (Contact Hardening's).
+    const cel = celEffect(effect);
     effect.setTexture("hapticAreaLtcSampler", areaLightLtcTexture(scene));
     effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
     effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
-    plainDepthSampler(scene.getEngine());
-    effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS_DEPTH, shadowAtlasTexture(scene));
+    if (!cel) {
+      plainDepthSampler(scene.getEngine());
+      effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS_DEPTH, shadowAtlasTexture(scene));
+    }
     this.bindReceiver(effect, mesh);
-    // Every declared texture is bound: the table always, the cube where a program declares it.
-    effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
-    if (celEffect(effect)) {
+    if (cel) {
       bindCelSettings(effect, scene);
       return;
     }
+    // Every declared texture is bound: the table always, the cube where a program declares it.
+    effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
     if (this.noEnvironment) return;
     const environment = environmentCube(scene);
     if (!environment) {
@@ -355,13 +363,13 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emitUniformFromString("hapticScreenShadowTerms", NodeMaterialBlockConnectionPointTypes.Vector4, "HAPTIC_SCREEN_SHADOWS");
     state._emit2DSampler("hapticScreenShadowSampler", "defined(HAPTIC_SCREEN_SHADOWS)");
     state._emitCubeSampler("hapticEnvironmentSampler", "defined(HAPTIC_ENVIRONMENT)");
-    state._emit2DSampler("hapticEnvironmentBrdfSampler");
+    state._emit2DSampler("hapticEnvironmentBrdfSampler", "!defined(HAPTIC_CEL)");
     state._emit2DSampler("hapticAreaLtcSampler");
     state._emit2DArraySampler("hapticAreaEmissionSampler");
     // The shadow atlas compares as it samples (`shadow-atlas.ts`); the build state has no helper for a compare sampler.
-    // The program also reads it plainly for Contact Hardening's blocker search.
+    // A PBR program also reads it plainly for Contact Hardening's blocker search, which CEL never draws.
     if (!state.samplers.includes(HAPTIC_SHADOW_ATLAS)) {
-      state._samplerDeclaration += `uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\nuniform highp sampler2D ${HAPTIC_SHADOW_ATLAS_DEPTH};\n`;
+      state._samplerDeclaration += `uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\n#ifndef HAPTIC_CEL\nuniform highp sampler2D ${HAPTIC_SHADOW_ATLAS_DEPTH};\n#endif\n`;
       state.samplers.push(HAPTIC_SHADOW_ATLAS);
       state.samplers.push(HAPTIC_SHADOW_ATLAS_DEPTH);
     }

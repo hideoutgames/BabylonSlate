@@ -50,6 +50,7 @@ export type {
   CommitInput,
   CommitResult,
   FileChange,
+  LfsFile,
   LogOptions,
   LogPage,
   PullChoice,

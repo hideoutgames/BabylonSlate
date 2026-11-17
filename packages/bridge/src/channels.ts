@@ -1230,8 +1230,27 @@ export type CommandMessage =
   | { type: "setDiscardSamplesDebug"; enabled: boolean }
   /** Debug: composite Play's Scene Layers, or hide them all so the backbuffer is the world's size (the `scenelayers` console command). */
   | { type: "setSceneLayersDebug"; enabled: boolean }
+  /**
+   * Debug: where the Play view's effect chain ends its upscale (the `fsrdebug` console command): at the output (the
+   * device's resolution under Scene Layers), or at the view's own size with one copy filling the output.
+   */
+  | { type: "setFsrDebug"; output: "device" | "view" }
+  /** Debug: whether Play invalidates the backbuffer's depth and stencil after its last draw of each frame (the `backbufferdiscard` console command). */
+  | { type: "setBackbufferDiscardDebug"; enabled: boolean }
+  /** Debug: whether each frame Play presents directly is copied into its held image (the `heldimage` console command). */
+  | { type: "setHeldImageDebug"; enabled: boolean }
+  /** Debug: whether a Scene Layer drawn over the world clears depth and stencil before it draws (the `layerdebug` console command). */
+  | { type: "setLayerDebug"; part: "clears"; enabled: boolean }
+  /** Debug: rebuild the view's frame graph, reallocate its shadow maps, or render nothing for 3 s (the `renderreset` console command). */
+  | { type: "resetRenderingDebug"; what: "graph" | "shadows" | "idle" }
   /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */
   | { type: "setGpuBusyProbeDebug"; enabled: boolean }
+  /**
+   * Debug: the Feature Test Check's GPU probes (the `gpuprobe` console command): start (restart) the passive window
+   * (GL call signature, shadow map counters, `requestAnimationFrame` rate), stop it, or run the serialised frames with
+   * stage fences and the synthetic load.
+   */
+  | { type: "setGpuProbeDebug"; action: "on" | "off" | "serial" }
   /** Debug: how many rendered frames the Engine may queue on the GPU (the `framesinflight` console command; default 2). */
   | { type: "setFramesInFlightDebug"; mode: "off" | 2 | 3 }
   /** Debug: store whether the next project Engine keeps its drawing buffer (the `preservebuffer` console command). */

@@ -219,6 +219,19 @@ describe("SourceControlSyncService", () => {
     expect(service.statusPending).toBe(false);
   });
 
+  it("lets the Git client's caches go when the app goes to the background, at once and only then", async () => {
+    const { service, input, port } = await setup();
+    await service.configure(input("integrated"));
+    const release = vi.spyOn(port, "releaseCaches");
+    setEditorQuiet(true);
+    setEditorQuiet(false);
+    service.setHidden(false);
+    expect(release).not.toHaveBeenCalled();
+    service.setHidden(true);
+    expect(release).toHaveBeenCalledTimes(1);
+    service.setHidden(false);
+  });
+
   it.each([
     ["a game covers the editor", (_service: SourceControlSyncService, away: boolean) => setEditorQuiet(away)],
     ["the app is in the background", (service: SourceControlSyncService, away: boolean) => service.setHidden(away)],

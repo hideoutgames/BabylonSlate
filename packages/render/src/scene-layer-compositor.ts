@@ -162,9 +162,7 @@ export class SceneLayerCompositor {
       zOrder: command.zOrder,
       scene,
       camera,
-      // A layer draws every frame: a visual that joins or changes how it draws is probed for itself, not with every
-      // other visual of the layer.
-      renderer: new SceneRenderCoordinator(scene, { scopedStrictProbes: true }),
+      renderer: layerRenderer(scene),
       designBounds: sceneLayerOrthoBounds(command.layerBounds),
       viewBounds: sceneLayerViewBounds(command.layerBounds, this.outputAspect()),
       cameraState: { ...(command.camera ?? DEFAULT_LAYER_CAMERA_STATE) },
@@ -224,6 +222,13 @@ export class SceneLayerCompositor {
       console.warn(`[render] SceneLayer ${layer.layerId} is quarantined until actual release: ${String(error)}`);
     });
   }
+
+  /**
+   * Debug (`layerdebug clears off`): a layer composited straight over the world no longer clears depth and stencil
+   * before it draws. A layer whose meshes test or write depth then draws against what the frame left there, so its
+   * picture may differ: a measurement switch, never a default.
+   */
+  depthClears = true;
 
   clear(): void {
     for (const layerId of [...this.byId.keys()]) {
@@ -433,7 +438,7 @@ export class SceneLayerCompositor {
           }
         } else {
           record.scene.autoClear = false;
-          record.scene.autoClearDepthAndStencil = true;
+          record.scene.autoClearDepthAndStencil = this.depthClears;
           const frameCapture = activeRenderFrameCapture(this.engine);
           const result = frameCapture
             ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },
@@ -701,7 +706,7 @@ export class SceneLayerCompositor {
   private rebuildPostProcess(layer: LayerRecord, replaceRenderer = true): void {
     if (replaceRenderer) {
       this.releasePostProcess(layer, true);
-      layer.renderer = new SceneRenderCoordinator(layer.scene);
+      layer.renderer = layerRenderer(layer.scene);
     }
     const enabledStack = layer.parameters.effective(layer.postProcessStack).filter((entry) => entry.enabled);
     if (
@@ -843,6 +848,14 @@ type OverlayMeshMetadata = {
   overlayHasButton?: boolean;
   overlayButtonComponentId?: string;
 };
+
+/**
+ * A layer's renderer, the first and every one that replaces it. A layer draws every frame: a visual that joins or
+ * changes how it draws is probed for itself, not with every other visual of the layer.
+ */
+function layerRenderer(scene: Scene): SceneRenderCoordinator {
+  return new SceneRenderCoordinator(scene, { scopedStrictProbes: true });
+}
 
 function overlayMetadataOf(
   mesh: { metadata?: unknown } | null,

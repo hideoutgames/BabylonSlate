@@ -166,19 +166,21 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(material.attachedBlocks.find((block) => block instanceof HapticLightingBlock)).toBe(lighting);
   });
 
-  it("binds every texture a program declares: the split-sum table in both modes, the cube only where declared", async () => {
+  it("binds every texture a program declares: the split-sum table and the cube only where PBR declares them", async () => {
     const { scene } = host();
     const { mesh, material } = await litBox(scene);
     // Only a lit program declares the cube, and it does whether or not the Scene has an environment.
     expect(material.compiledShaders).toMatch(/#if defined\(HAPTIC_ENVIRONMENT\)\s+uniform samplerCube hapticEnvironmentSampler;/);
-    for (const [mode, cube] of [["pbr", true], ["cel", false]] as const) {
+    // CEL reads neither the split-sum table nor the cube, so its programs declare and bind neither.
+    for (const [mode, pbr] of [["pbr", true], ["cel", false]] as const) {
       setSceneRenderSettings(scene, { mode });
       await drawnDefines(scene, mesh, material);
       const effect = mesh.subMeshes[0]!.effect!, bound: string[] = [];
       vi.spyOn(effect, "setTexture").mockImplementation((name) => { bound.push(name); });
       material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
-      expect(bound, mode).toEqual(expect.arrayContaining(["hapticEnvironmentBrdfSampler", "hapticAreaLtcSampler", "hapticAreaEmissionSampler"]));
-      expect(bound.includes("hapticEnvironmentSampler"), mode).toBe(cube);
+      expect(bound, mode).toEqual(expect.arrayContaining(["hapticAreaLtcSampler", "hapticAreaEmissionSampler"]));
+      expect(bound.includes("hapticEnvironmentBrdfSampler"), mode).toBe(pbr);
+      expect(bound.includes("hapticEnvironmentSampler"), mode).toBe(pbr);
     }
   });
 

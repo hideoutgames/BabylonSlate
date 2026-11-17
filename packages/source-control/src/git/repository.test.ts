@@ -340,6 +340,21 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect(await rejection(openRepository(options))).toMatchObject({ kind: "conflict", code: "detached-head" });
   });
 
+  it("reads its packs again after releasing its caches, and not before", async () => {
+    server.seed({ "assets/a.hasset": "A" });
+    server.seed({ "assets/b.hasset": "B" });
+    const { storage, reads } = countingStorage(await server.storage());
+    const repository = await clone(storage);
+    const packReads = () => reads.filter((path) => path.startsWith(".git/objects/pack/")).length;
+    await repository.status();
+    reads.length = 0;
+    await repository.status();
+    expect(packReads()).toBe(0);
+    repository.releaseCaches();
+    await repository.status();
+    expect(packReads()).toBeGreaterThan(0);
+  });
+
   it("empties the LFS scratch folder a killed app left when it opens", async () => {
     server.seed({ "assets/a.hasset": "A" });
     const storage = await server.storage();
@@ -537,20 +552,40 @@ describe.each(["whole-body", "native"] as const)("GitRepository's LFS objects ov
     expect(existsSync(scratch) ? readdirSync(scratch) : []).toEqual([]);
   });
 
-  it("downloads a commit's missing LFS objects into their files, as a checkout does", async () => {
+  it("downloads missing LFS objects into their files, through JavaScript only without a native transfer", async () => {
     const texture = blobBytes(9, 64_000);
-    const first = server.seed({ ".gitattributes": RULE, [blobPath(texture)]: texture });
-    const storage = await server.storage();
+    const mesh = blobBytes(11, 32_000);
+    server.seed({ ".gitattributes": RULE, [blobPath(texture)]: texture, [blobPath(mesh)]: mesh });
+    const { storage, reads, writes } = countingStorage(await server.storage());
     const repository = await cloneOver(storage);
     await storage.remove(blobPath(texture));
+    // A damaged copy: another size, so it is downloaded again without being read.
+    await storage.writeBinary(blobPath(mesh), mesh.slice(0, 100));
     server.requests.length = 0;
+    reads.length = 0;
+    writes.length = 0;
 
-    await repository.downloadLfsObjects(first, [blobPath(texture)]);
+    const files = [{ path: blobPath(texture), size: texture.byteLength }, { path: blobPath(mesh), size: mesh.byteLength }];
+    await repository.downloadLfsObjects(files);
     expect(await storage.readBinary(blobPath(texture))).toEqual(texture);
+    expect(await storage.readBinary(blobPath(mesh))).toEqual(mesh);
+    expect(blobIo(reads)).toEqual([blobPath(texture), blobPath(mesh)]);
+    expect(blobIo(writes)).toEqual(native ? [] : [blobPath(texture), blobPath(mesh)]);
     expect((await repository.status()).changes).toEqual([]);
     // A present file of the object's size is never fetched again.
-    await repository.downloadLfsObjects(first, [blobPath(texture)]);
-    expect(server.requests.filter((request) => request.origin === STORAGE_ORIGIN)).toHaveLength(1);
+    await repository.downloadLfsObjects(files);
+    expect(server.requests.filter((request) => request.origin === STORAGE_ORIGIN)).toHaveLength(2);
+  });
+
+  it("reads a working copy's LFS file only when it has the object's size", async () => {
+    const texture = blobBytes(12, 20_000);
+    server.seed({ ".gitattributes": RULE, [blobPath(texture)]: texture });
+    const { storage, reads } = countingStorage(await server.storage());
+    const repository = await cloneOver(storage);
+    await storage.writeBinary(blobPath(texture), texture.slice(0, 10));
+    reads.length = 0;
+    expect(await repository.readLfsObject(blobPath(texture), texture.byteLength)).toEqual(texture);
+    expect(blobIo(reads)).toEqual([]);
   });
 });
 

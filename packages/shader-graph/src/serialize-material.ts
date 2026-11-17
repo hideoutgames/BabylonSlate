@@ -214,6 +214,25 @@ export function serializedToMaterialFunctionGraph(
   };
 }
 
+/**
+ * The title a node shows on the canvas: a parameter's name, a Global Parameter's selection, a Material
+ * Function call's function name, else its definition's title as its properties shape it (Swizzle (ZX),
+ * Component Mask (XZ)). `definition` is the node's resolved definition when the caller already has it.
+ */
+export function materialNodeTitle(
+  node: { type: string; properties: Record<string, unknown> },
+  context: Pick<MaterialPinContext, "functions" | "globalParameters"> = {},
+  definition = createTypeResolver(
+    { nodes: [{ id: "node", position: { x: 0, y: 0 }, ...node }], edges: [] },
+    { functions: context.functions },
+  ).definitionOf("node"),
+): string {
+  if (isMaterialParameterNode(node.type)) return materialParameterName(node) || definition?.title || node.type;
+  if (node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) return globalParameterNodeTitle(node.properties, context.globalParameters);
+  const functionGuid = node.type === "function.call" && typeof node.properties.functionGuid === "string" ? node.properties.functionGuid : undefined;
+  return (functionGuid ? context.functions?.[functionGuid]?.name : undefined) ?? definition?.title ?? node.type;
+}
+
 /** Inject catalog pins and titles so the canvas can draw and connect nodes. */
 export function hydrateMaterialGraphForEditor(
   graph: SerializedGraph,
@@ -238,9 +257,6 @@ export function hydrateMaterialGraphForEditor(
         pin.typeLabel = kind === "float" ? "Float" : kind === "texture" ? "Texture" : /^vec[234]$/.test(kind) ? `V${kind.slice(-1)}` : "Numeric";
       }
       const definition = resolver.definitionOf(node.id);
-      const calledFunction = functionGuid
-        ? context.functions?.[functionGuid]
-        : undefined;
       return {
         ...node,
         data: {
@@ -249,11 +265,7 @@ export function hydrateMaterialGraphForEditor(
           __material: true,
           __nodeType: node.type,
           ...(definition ? { __category: definition.category } : {}),
-          title: isMaterialParameterNode(node.type)
-            ? materialParameterName({ ...node, properties: data }) || definition?.title || node.type
-            : node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE
-              ? globalParameterNodeTitle(data, context.globalParameters)
-              : calledFunction?.name ?? definition?.title ?? node.type,
+          title: materialNodeTitle({ type: node.type, properties: data }, context, definition),
         },
       };
     }),

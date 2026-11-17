@@ -179,17 +179,14 @@ export async function runGitBenchmark(options: GitBenchmarkOptions): Promise<Git
     await storage.writeBinary(".gitattributes", new TextEncoder().encode(withLfsRule(attributes)));
     committed.push(".gitattributes");
   }
-  const [{ commit: head }, lfsCommit] = await step(() => repository!.commit({ paths: committed, message: "Haptic Git benchmark: LFS objects", author }));
+  const [, lfsCommit] = await step(() => repository!.commit({ paths: committed, message: "Haptic Git benchmark: LFS objects", author }));
   await stage("lfs-upload");
   const [pushed, lfsUpload] = await step(() => repository!.push({ remoteBranch: options.remoteBranch }));
 
   await stage("lfs-download");
   for (const path of paths) await storage.remove(path);
-  const [, lfsDownload] = await step(() => repository!.downloadLfsObjects(head, paths));
-  for (const path of paths) {
-    const stat = await storage.stat(path).catch(() => null);
-    if (stat?.size !== size) throw new Error(`LFS object ${path} did not come back.`);
-  }
+  // Rejects unless every object came back at its size.
+  const [, lfsDownload] = await step(() => repository!.downloadLfsObjects(paths.map((path) => ({ path, size }))));
 
   return {
     transfer: options.files ? "native" : "whole-body",

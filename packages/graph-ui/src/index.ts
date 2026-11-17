@@ -45,6 +45,7 @@ export { treeEdgeOptions } from "./edge-style";
 export {
   GraphEditorProvider,
   useGraphEditorContext,
+  type GraphPreviewedNode,
 } from "./graph-editor-context";
 
 export { GraphInteractionSettingsContext } from "./graph-interaction-settings";

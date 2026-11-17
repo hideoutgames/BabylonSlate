@@ -108,6 +108,12 @@ type SceneRendering = {
   effectsKey: string;
   /** Renderable chain for the live settings; null means no owned passes. */
   effectsPlan: SceneEffectsPlan | null;
+  /**
+   * Debug (`fsrdebug output view`): the effect chain ends at the view's own size and one copy fills a larger output
+   * (the backbuffer at the device's resolution under Scene Layers), instead of upscaling and sharpening to it. Baked
+   * into the prepared graph, so it is part of `effectsKey`. Never saved.
+   */
+  fsrOutputAtView: boolean;
   /** Notified when the light block's scene-level defines change (`followLightingDefines`), after the plan is current. */
   listeners: Set<(mode: RenderMode) => void>;
   /** The key of those defines as last planned. */
@@ -184,6 +190,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       colorGradingTexture: null,
       effectsKey: sceneEffectsKey(effects, "pbr", true),
       effectsPlan: planSceneEffects(effects, "pbr", true),
+      fsrOutputAtView: false,
       lightingDefines: "pbr|false",
       screenShadowsSupported: null,
       maxSamples: 1,
@@ -267,7 +274,7 @@ function replanSceneEffects(state: SceneRendering): void {
   };
   // The scene targets' sample count is baked into the prepared graph.
   const samples = multisampleCount(state);
-  state.effectsKey = `${sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs)}${samples > 1 ? `:msaa${samples}` : ""}`;
+  state.effectsKey = `${sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs)}${samples > 1 ? `:msaa${samples}` : ""}${state.fsrOutputAtView ? ":fsrview" : ""}`;
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
   // The light block's scene-level defines: the render mode and whether Screen-Space Shadows can be read at all (a
   // world view's Scene on a device that draws their depth pass). Whether a tier has them on is bound, not compiled.
@@ -346,6 +353,18 @@ export function setSceneEffectsEnabled(scene: Scene, enabled: boolean): void {
   if (state.effectsEnabled === enabled) return;
   state.effectsEnabled = enabled;
   updateSceneRenderingSettings(scene);
+}
+
+/**
+ * Debug (`fsrdebug output device|view`): where the effect chain's upscale ends (`SceneRendering.fsrOutputAtView`); true
+ * when that changed it. The view's graph is prepared again.
+ */
+export function setSceneFsrOutputDebug(scene: Scene, output: "device" | "view"): boolean {
+  const state = sceneRenderingSettings(scene);
+  if (state.fsrOutputAtView === (output === "view")) return false;
+  state.fsrOutputAtView = output === "view";
+  updateSceneRenderingSettings(scene);
+  return true;
 }
 
 /** Only presence changes rebuild the pass; bounds and density remain live uniforms. */

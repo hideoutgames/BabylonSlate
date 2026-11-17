@@ -8,6 +8,12 @@ import type { ConnectEndMode, PinCompatibilityRule } from "./graph-connect";
 import type { GraphRunTrace } from "./run-trace";
 import type { GraphBreakpoints } from "./graph-breakpoints";
 
+/** The node whose output the host previews: an eye-icon warning tag above its top-left corner and a warning ring. */
+export interface GraphPreviewedNode {
+  nodeId: string;
+  label: string;
+}
+
 export type GraphEditorContextValue = {
   renderPinDefaultEditor?: PinDefaultEditorRenderer;
   connectedInputs?: ReadonlyMap<string, readonly string[]>;
@@ -38,6 +44,8 @@ export type GraphEditorContextValue = {
   breakpoints?: GraphBreakpoints;
   /** What a node does, shown as its title's tooltip; undefined shows none. */
   describeNode?: (nodeType: string, data: Record<string, unknown>) => string | undefined;
+  /** The node whose output the host previews. */
+  previewedNode?: GraphPreviewedNode | null;
   /**
    * Context menu of script-style nodes: Copy, Paste, Duplicate, Delete and
    * Break Links plus the host's items. `resolve` first applies the selection
