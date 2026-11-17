@@ -56,6 +56,7 @@ import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admi
 import { layerDrawableMeshes } from "./layer-drawable-meshes";
 import { findSceneShadowController } from "./shadow-controller";
 import { mirrorDiagnostics } from "./mirrors";
+import { cullTaskByVisibilityIndex } from "./view-frustum-cull";
 import { visibilityDiagnostics } from "./visibility-check";
 import { sceneLightingSettledWithoutLights, syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
@@ -267,6 +268,12 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   worldOverSceneDepth = false;
   /** A world view's occlusion culling, and the colour pass whose first draws keep a mesh in the list. */
   occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
+
+  /** The frustum cull tests bounds through the visibility index, checked against Babylon's own (`view-frustum-cull.ts`). */
+  override record(): void {
+    super.record();
+    cullTaskByVisibilityIndex(this, this.camera.getScene());
+  }
 
   /** The whole cull is the `cull` pass: Babylon's frustum cull, the hidden-mesh and occlusion filters, the world list. */
   override _execute(): void {
