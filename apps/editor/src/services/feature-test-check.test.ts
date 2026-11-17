@@ -1121,7 +1121,9 @@ describe("frame pacing", () => {
   });
 });
 
-describe("Profile", () => {
+// A Profile test runs the whole Profile (about fifteen minutes on the fake clock): seconds of work, more than
+// Vitest's default timeout allows on a busy runner.
+describe("Profile", { timeout: 30_000 }, () => {
   const SESSION: FeatureTestProfileState = { postProcessing: true, captures: true, discard: false, layers: true, framesInFlight: 2, frameCap: 60 };
 
   it("measures each step at fixed camera views between two baselines of that view, revisits the control view, and keeps to today's length", () => {
