@@ -24,6 +24,7 @@ import {
 } from "@haptic/anim-graph";
 import {
   ENGINE_ENUMS,
+  enumAcceptsCustomEasingCurves,
   ENGINE_STRUCTS,
   mergeEngineTypeSchemas,
   type EnumMember,
@@ -31,9 +32,11 @@ import {
   type TypeSchemas,
 } from "@haptic/scripting";
 import { asEnumAsset, asStructureAsset } from "./type-asset-payload";
+import { projectCustomEasingCurves } from "./custom-easing-curves";
 import { walkAncestry } from "@haptic/editor-kit";
 import {
   compareClassIds,
+  engineOverridableFunctionApis,
   isLockedEngineClassId,
   subsystemBaseClassIdOf,
   type SubsystemBaseClassId,
@@ -555,6 +558,38 @@ export function collectScriptInterfacesForPalette(options: {
   return [...byGuid.values()];
 }
 
+/**
+ * One members-only graph per engine base that declares functions for its Classes to override (Get Keys on Rich Text
+ * 2D Decorator Effect), keyed by the engine class id, as a parent Class's graph would be. Never a project asset:
+ * only the views that resolve parent functions (My Class, and the graph editor's palette, symbols and validation)
+ * add them, through `withEngineClassGraphs`.
+ */
+const ENGINE_CLASS_GRAPHS: Readonly<Record<string, SerializedGraph>> = Object.fromEntries(
+  engineOverridableFunctionApis().map((api): [string, SerializedGraph] => [api.classId, {
+    nodes: [],
+    edges: [],
+    members: (api.overridableFunctions ?? []).map((fn): GraphClassMember => ({
+      id: `engine:${api.classId}:function:${fn.name}`,
+      kind: "function",
+      name: fn.name,
+      overridable: true,
+      pins: fn.pins.map((pin) => ({ ...pin })),
+    })),
+  }]),
+);
+
+/** Whether a Class graph key is an engine base's synthetic graph (`withEngineClassGraphs`), never a project asset. */
+export function isEngineClassGraphKey(classId: string): boolean {
+  return Object.hasOwn(ENGINE_CLASS_GRAPHS, classId);
+}
+
+/** `graphs` with the engine bases' overridable functions as parent graphs, as a fresh record. */
+export function withEngineClassGraphs(
+  graphs: Readonly<Record<string, SerializedGraph>>,
+): Record<string, SerializedGraph> {
+  return { ...graphs, ...ENGINE_CLASS_GRAPHS };
+}
+
 /** Closed Class header graphs keyed by class id; they depend on the registry alone. */
 export function collectClassHeaderGraphs(options: {
   assets: ReadonlyArray<LibraryAsset>;
@@ -868,7 +903,10 @@ function enumEntryFromPayload(
   return { guid: parsed.guid, name: parsed.name, members: parsed.members };
 }
 
-/** Closed Data Definition/Structure/Enum headers, open documents, and the engine registry. */
+/**
+ * Closed Data Definition/Structure/Enum headers, open documents, and the engine registry, with the project's custom
+ * easing curves (Class assets) after the members of the engine enums that accept them.
+ */
 export function collectGraphTypeAssets(options: {
   assets: ReadonlyArray<{
     path?: string;
@@ -876,6 +914,7 @@ export function collectGraphTypeAssets(options: {
       type: string;
       guid?: string;
       name: string;
+      parentClass?: string | null;
       payload?: Record<string, unknown>;
     };
   }>;
@@ -894,11 +933,16 @@ export function collectGraphTypeAssets(options: {
       fields: [...entry.fields],
     });
   }
+  // The project's custom easing curves follow the members of the enums that accept them (Make, Switch and Select).
+  const customCurves = projectCustomEasingCurves(options.assets);
   for (const entry of ENGINE_ENUMS) {
+    const custom = enumAcceptsCustomEasingCurves(entry.id)
+      ? customCurves.map((name, index) => ({ name, value: entry.members.length + index }))
+      : [];
     enums.set(entry.id, {
       guid: entry.id,
       name: entry.name,
-      members: [...entry.members],
+      members: [...entry.members, ...custom],
     });
   }
   const open = new Map(options.openDocuments.filter((doc) => doc.ref.kind === "data-definition" && doc.ref.path && doc.content != null)

@@ -16,6 +16,7 @@ import {
   type CurveExtrapolation,
 } from "./curves";
 import type { Rng } from "./math-rng";
+import { setCustomEasingCurves } from "./easing";
 
 function key(Time: number, Value: unknown, Interpolation = "linear", ArriveTangent: unknown = 0, LeaveTangent: unknown = 0) {
   return { Time, Value, Interpolation, ArriveTangent, LeaveTangent };
@@ -163,6 +164,24 @@ describe("curve extrapolation", () => {
   it("continues a Custom end key's tangent and holds a Constant segment's value", () => {
     expect(evaluateCurve("float", floatCurve([key(0, 1, "custom", 0, 3), key(1, 2, "custom")], "linear"), -1)).toBeCloseTo(-2, 6);
     expect(evaluateCurve("float", floatCurve([key(0, 1, "constant"), key(1, 2)], "constant", "linear"), 5)).toBe(2);
+  });
+});
+
+describe("custom easing curve interpolation", () => {
+  it("keeps a custom easing curve through normalisation and eases its segment from the baked table", () => {
+    const curve = normalizeCurve("float", { Keys: [key(0, 0, "class:Half"), key(2, 10, "class:Half")], Before: "constant", After: "constant" });
+    expect(curve.Keys.map((entry) => entry.Interpolation)).toEqual(["class:Half", "class:Half"]);
+    // Not baked yet: Linear, never Auto.
+    expect(evaluateCurve("float", curve, 0.5)).toBe(2.5);
+    try {
+      // Half of the Alpha everywhere, ending at 0.5: the segment ends at 5 just before the next key, which it reaches at its time.
+      setCustomEasingCurves({ Half: Array.from({ length: 129 }, (_, index) => index / 256) });
+      expect(evaluateCurve("float", curve, 1)).toBe(2.5);
+      expect(evaluateCurve("float", curve, 1.5)).toBe(3.75);
+      expect(evaluateCurve("float", curve, 2)).toBe(10);
+    } finally { setCustomEasingCurves({}); }
+    expect(normalizeCurve("float", { Keys: [key(0, 0, "class:"), key(1, 1, "class: Half")] }).Keys.map((entry) => entry.Interpolation))
+      .toEqual(["auto", "auto"]);
   });
 });
 

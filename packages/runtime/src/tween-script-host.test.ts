@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Actor, ActorComponent } from "@haptic/object-model";
-import { identityTransform } from "@haptic/core";
+import { identityTransform, setCustomEasingCurves } from "@haptic/core";
 import { compileGraph, type GraphNode, type LogicGraph } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
@@ -37,6 +37,21 @@ describe("Tween script targets", () => {
     tweens.advance(1);
     expect(await scalar).toBe(true); expect(await color).toBe(true);
     expect(ctx.variableReference(component("2DRichTextComponent"), "appearProgress")).toBeNull();
+  });
+
+  it("eases a tween and Ease along a custom easing curve's baked table, and an unbaked one as Linear", async () => {
+    const { ctx, tweens, actor } = harness();
+    try {
+      setCustomEasingCurves({ Square: Array.from({ length: 129 }, (_, index) => (index / 128) ** 2) });
+      const done = ctx.tweenValue(ctx.variableReference(null, "score", true), "float", 0, 100, 2, "class:Square");
+      tweens.advance(1);
+      expect(actor.getVariable("score")).toBe(25);
+      tweens.advance(1);
+      expect(await done).toBe(true);
+      expect(actor.getVariable("score")).toBe(100);
+      expect(ctx.easeAlpha("class:Square", 0.5)).toBe(0.25);
+      expect(ctx.easeAlpha("class:Gone", 0.5)).toBe(0.5);
+    } finally { setCustomEasingCurves({}); }
   });
 
   it("compiles explicit missing targets without falling back to the caller's variable or transform", async () => {

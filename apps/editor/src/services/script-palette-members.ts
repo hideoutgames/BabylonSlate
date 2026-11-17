@@ -17,6 +17,7 @@ import { isLatentFunctionKey, type NodeDefinition, type NodeRegistry } from "@ha
 import {
   ENGINE_CLASS_SCRIPT_APIS,
   isHiddenEngineBaseClassId,
+  isLockedEngineClassId,
   isSceneLayerAssetClassId,
   sceneAssetClassId,
   type EngineScriptPin,
@@ -349,6 +350,8 @@ export function callFunctionPaletteNodes(
     if (skipEditorOnlyLibrary(classId, undefined, options)) continue;
     const library = isPaletteLibraryClass(classId, options);
     const implicitSelf = library || callImplicitSelf(classId, options);
+    // An engine base's overridable functions (its synthetic parent graph) are Called only by its own Classes.
+    if (!implicitSelf && isLockedEngineClassId(classId)) continue;
     for (const fn of functionRows(graph)) {
       if (implicitSelf && !library && localNames.has(fn.name)) continue;
       pushRow(classId, fn, implicitSelf, library);

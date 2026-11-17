@@ -425,6 +425,23 @@ export const flowNodes: NodeDefinition[] = [
     { id: "deltaSeconds", name: "Delta Seconds", type: FLOAT },
     { id: "strength", name: "Strength", type: FLOAT },
   ]),
+  argsEvent("flow.event.richTextLetterShown", "Event On Letter Shown", [
+    { id: "index", name: "Index", type: INT },
+    { id: "character", name: "Character", type: STRING },
+  ]),
+  ...([
+    ["flow.event.richTextAppearFinished", "Event On Appear Finished"],
+    ["flow.event.richTextDisappearFinished", "Event On Disappear Finished"],
+  ] as const).map(([id, title]): NodeDefinition => ({
+    id,
+    title,
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  })),
   {
     id: "flow.event.textChanged",
     title: "Event On Text Changed",

@@ -3,7 +3,7 @@ import { createActor, createDefaultScene, createDefaultSceneLayer } from "@hapti
 import { isPlayEngineCommandType, type CommandMessage } from "@haptic/bridge";
 import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
-import { Text2DAppearRuntime, type Text2DAppearSoundEvent } from "./text2d-appear-runtime";
+import { Text2DAppearRuntime, type Text2DAppearHost, type Text2DAppearSoundEvent } from "./text2d-appear-runtime";
 
 function text(variables: Record<string, unknown> = {}) {
   const actor = new Actor({ classId: "SceneLayerActor", sceneLayerId: "layer" });
@@ -22,7 +22,94 @@ function worldOf(...actors: Actor[]): World {
   return world;
 }
 
+/** A host that handles `handled` component events and records each one the reveal runs, as `event:index+character`. */
+function eventHost(handled: readonly string[]) {
+  const fired: string[] = [];
+  const queries: string[] = [];
+  const host: Text2DAppearHost = {
+    world: () => { throw new Error("no scripted letters here"); },
+    invokeEvent: () => {},
+    callFunction: () => null,
+    handlesComponentEvent: (_component, event) => { queries.push(event); return handled.includes(event); },
+    fireComponentEvent: (_component, event, args) => {
+      fired.push(event === "onLetterShown" ? `${event}:${String(args.index)}${String(args.character)}` : event);
+    },
+  };
+  /** The events run since the last call. */
+  const take = () => fired.splice(0);
+  return { host, take, queries };
+}
+
+const ALL_EVENTS = ["onLetterShown", "onAppearFinished", "onDisappearFinished"];
+
 describe("2D rich text appearance runtime", () => {
+  it("runs Letter Shown as each letter starts on a forward reveal, and the finish events once per arrival", () => {
+    // Letters A, B and C at reveal indices 0, 1 and 3 start at 0, 0.25 and 0.75 s; the reveal lasts 1 s.
+    const runtime = new Text2DAppearRuntime(), { actor, component } = text({
+      text: "AB C", appearInterval: 0.25, appearDuration: 0.25, appearTransition: "linear",
+    }), world = worldOf(actor);
+    const { host, take } = eventHost(ALL_EVENTS);
+    runtime.bind(host);
+    const step = (seconds: number) => { runtime.advance(world, seconds, () => true); return take(); };
+    runtime.execute(component, "play");
+    expect(take()).toEqual([]);
+    expect(step(0.125)).toEqual(["onLetterShown:0A"]);
+    expect(step(0.25)).toEqual(["onLetterShown:1B"]);
+    // Never on Play Reverse.
+    runtime.execute(component, "playReverse");
+    expect(step(0.125)).toEqual([]);
+    // Resumed at 0.25 s: B starts at the resume position and shows again; A, before it, does not.
+    runtime.execute(component, "play");
+    expect(step(0.125)).toEqual(["onLetterShown:1B"]);
+    expect(step(1)).toEqual(["onLetterShown:3C", "onAppearFinished"]);
+    // Already fully revealed: Play does nothing.
+    runtime.execute(component, "play");
+    expect(step(1)).toEqual([]);
+    runtime.execute(component, "playReverse");
+    expect(step(0.5)).toEqual([]);
+    expect(step(1)).toEqual(["onDisappearFinished"]);
+    runtime.execute(component, "playReverse");
+    expect(step(1)).toEqual([]);
+    // Trigger Appear starts over from a fully revealed text too.
+    runtime.execute(component, "play");
+    step(2);
+    runtime.execute(component, "triggerAppear");
+    expect(step(2)).toEqual(["onLetterShown:0A", "onLetterShown:1B", "onLetterShown:3C", "onAppearFinished"]);
+  });
+
+  it("queues an instant finish to the next reveal step and shows no letters while Appear Modes is Off", () => {
+    const runtime = new Text2DAppearRuntime(), { actor, component } = text({ text: "AB", appearModes: [] }), world = worldOf(actor);
+    const { host, take } = eventHost(ALL_EVENTS);
+    runtime.bind(host);
+    const step = () => { runtime.advance(world, 0.1, () => true); return take(); };
+    runtime.execute(component, "play");
+    expect(runtime.progress(component)).toBe(1);
+    // Scripts call Play, so its events wait for the reveal step.
+    expect(take()).toEqual([]);
+    expect(step()).toEqual(["onAppearFinished"]);
+    expect(step()).toEqual([]);
+    runtime.execute(component, "play");
+    expect(step()).toEqual([]);
+    runtime.execute(component, "playReverse");
+    runtime.execute(component, "triggerAppear");
+    expect(step()).toEqual(["onDisappearFinished", "onAppearFinished"]);
+  });
+
+  it("runs nothing the owner does not handle, asks once per play, and never for the starting state", () => {
+    const runtime = new Text2DAppearRuntime(), revealed = text({ text: "AB", appearStart: "revealed" }), hidden = text({ text: "AB" });
+    const world = worldOf(revealed.actor, hidden.actor);
+    const { host, take, queries } = eventHost([]);
+    runtime.bind(host);
+    runtime.advance(world, 1, () => true);
+    expect(queries).toEqual([]);
+    runtime.execute(hidden.component, "play");
+    for (let tick = 0; tick < 10; tick++) runtime.advance(world, 0.1, () => true);
+    expect(runtime.progress(hidden.component)).toBe(1);
+    expect(take()).toEqual([]);
+    // One Letter Shown query when the play starts, one finish query when it ends: none per tick.
+    expect(queries).toEqual(["onLetterShown", "onAppearFinished"]);
+  });
+
   it("reverses from the current position and preserves it through text, timing, and style edits", () => {
     const runtime = new Text2DAppearRuntime(), { actor, component } = text(), world = worldOf(actor);
     expect(runtime.progress(component)).toBe(0);
@@ -241,15 +328,15 @@ describe("2D rich text appearance runtime", () => {
       runtime.tick();
       // 0.1 s into a 0.4 s reveal: A is half revealed, B starts, C has not.
       expect(poses()).toEqual([
-        0, 5, 1, 1, 0, 0.5,
-        1, 0, 1.1, 1, 3, 1,
-        2, 0, 1.1, 1, 3, 1,
+        0, 5, 1, 1, 0, 0.5, 1, 1, 1,
+        1, 0, 1.1, 1, 3, 1, 1, 1, 1,
+        2, 0, 1.1, 1, 3, 1, 1, 1, 1,
       ]);
       runtime.tick();
       expect(poses()).toEqual([
-        0, 10, 1, 1, 0, 0.5,
-        1, 5, 1.1, 1, 3, 1,
-        2, 0, 1.1, 1, 3, 1,
+        0, 10, 1, 1, 0, 0.5, 1, 1, 1,
+        1, 5, 1.1, 1, 3, 1, 1, 1, 1,
+        2, 0, 1.1, 1, 3, 1, 1, 1, 1,
       ]);
       expect(isPlayEngineCommandType("setText2DLetterPoses")).toBe(true);
       for (let i = 0; i < 4; i++) runtime.tick();
@@ -259,12 +346,101 @@ describe("2D rich text appearance runtime", () => {
       expect(commands.filter((command) => command.type === "setText2DLetterPoses")).toHaveLength(sent);
       const label = runtime.getWorld().getActors().find((actor) => actor.components.some((component) => component.guid.endsWith("rich")))!;
       const rich = label.components.find((component) => component.classId === "2DRichTextComponent")!;
-      expect(poses()).toEqual([0, 10, 1, 1, 0, 0.5, 1, 10, 1.1, 1, 3, 1, 2, 10, 1.1, 1, 3, 1]);
+      expect(poses()).toEqual([0, 10, 1, 1, 0, 0.5, 1, 1, 1, 1, 10, 1.1, 1, 3, 1, 1, 1, 1, 2, 10, 1.1, 1, 3, 1, 1, 1, 1]);
       // Text without scripted Classes returns every letter to rest.
       rich.setVariable("appearModes", ["fade"]);
       rich.setVariable("text", "ABC");
       runtime.tick();
       expect(poses()).toEqual([]);
+    } finally { runtime.stop(); }
+  });
+
+  it("runs the rich text's component events on its owner after the reveal moved", async () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors = [createActor("label", "Label", { classId: "LabelActor", components: [
+      { id: "rich", classId: "2DRichTextComponent", properties: {
+        text: "A B", appearModes: ["fade"], appearStart: "play", appearInterval: 0.25, appearDuration: 0.25,
+      } },
+    ] })];
+    const runtime = createInProcessRuntime({ seed: 1, dt: 0.125, preferSoftwarePhysics: true,
+      playScene: createDefaultScene(), sceneLayerLibrary: { labels: layer }, onCommand: () => {} });
+    try {
+      const bound = (name: string) => ({ name, event: name, isAsync: false, componentId: "rich" });
+      await runtime.loadScripts([{ assetGuid: "label-script", classId: "LabelActor", parentClassId: "SceneLayerActor", anchors: [],
+        entryPoints: [bound("onLetterShown"), bound("onAppearFinished"), bound("onDisappearFinished"),
+          { name: "Reverse", event: "Reverse", isAsync: false }],
+        source: `
+          const log = (ctx, entry) => ctx.self.setVariable("log", String(ctx.self.getVariable("log") ?? "") + entry);
+          const progress = (ctx) => ctx.getVariableFrom(ctx.getComponentById(ctx.self, "rich"), "appearProgress");
+          export function onLetterShown(ctx) { log(ctx, ctx.args.character + ctx.args.index + " "); }
+          export function onAppearFinished(ctx) { log(ctx, "appeared@" + progress(ctx) + " "); }
+          export function onDisappearFinished(ctx) { log(ctx, "hidden@" + progress(ctx)); }
+          export function Reverse(ctx) { ctx.callComponentFunction(ctx.getComponentById(ctx.self, "rich"), "playReverse", {}); }`,
+      }]);
+      runtime.realizePlayWorld(); const created = runtime.createSceneLayer("labels")!; runtime.start();
+      const actor = runtime.getWorld().findActor(`${created.guid}:label`)!;
+      const log = () => actor.getVariable("log") ?? "";
+      // A starts at 0 s and B (index 2) at 0.5 s of a 0.75 s reveal, in 0.125 s ticks.
+      runtime.tick();
+      expect(log()).toBe("A0 ");
+      for (let i = 0; i < 4; i++) runtime.tick();
+      expect(log()).toBe("A0 B2 ");
+      runtime.tick();
+      expect(log()).toBe("A0 B2 appeared@1 ");
+      runtime.invokeScriptEvent("LabelActor", "Reverse", actor);
+      for (let i = 0; i < 6; i++) runtime.tick();
+      expect(log()).toBe("A0 B2 appeared@1 hidden@0");
+    } finally { runtime.stop(); }
+  });
+
+  it("groups a Decorator Effect's letters by the values of the keys its Get Keys declares, called once per build", async () => {
+    const commands: CommandMessage[] = [];
+    const layer = createDefaultSceneLayer();
+    const markup = "[fx=Wave speed=2 height=4 mood=a]AB[/fx][fx=Wave speed=2 height=4 mood=b]C[/fx][fx=Wave speed=3 HEIGHT=4]D[/fx]";
+    layer.actors = [createActor("label", "Label", { classId: "SceneLayerActor", components: [
+      { id: "rich", classId: "2DRichTextComponent", properties: { text: markup } },
+    ] })];
+    const runtime = createInProcessRuntime({ seed: 1, dt: 0.1, preferSoftwarePhysics: true,
+      playScene: createDefaultScene(), sceneLayerLibrary: { labels: layer }, onCommand: (command) => commands.push(command) });
+    try {
+      await runtime.loadScripts([
+        { assetGuid: "wave", classId: "Wave", parentClassId: "RichText2DDecoratorEffect", anchors: [],
+          // A Class function is an entry point without an event, exported under its compiled name.
+          entryPoints: [{ name: "onDecorateLetters", event: "onDecorateLetters", isAsync: false }, { name: "Get_Keys", isAsync: false }],
+          // Declares Speed and Height (Mood is not); counts its calls; reads a tag value outside any decorate call.
+          source: `
+          export function Get_Keys(ctx) {
+            ctx.self.setVariable("calls", Number(ctx.self.getVariable("calls") ?? 0) + 1);
+            ctx.self.setVariable("outside", ctx.getRichTextTagValue("speed"));
+            return { Keys: ["Speed", "height", "speed", 7] };
+          }
+          export function onDecorateLetters(ctx) {
+            for (const letter of ctx.args.letters) {
+              ctx.setVariableOn(letter, "rotation", Number(ctx.getRichTextTagValue("SPEED")));
+              ctx.setVariableOn(letter, "offset", { x: Number(ctx.getRichTextTagValue("height")), y: ctx.args.letters.length });
+              ctx.setVariableOn(letter, "scale", { x: 1, y: ctx.self.getVariable("calls") });
+              ctx.setVariableOn(letter, "opacity", ctx.getRichTextTagValue("mood") === "" && ctx.self.getVariable("outside") === "" ? 1 : 0);
+              if (ctx.getVariableFrom(letter, "character") === "D") ctx.setVariableOn(letter, "tint", { x: 0.5, y: 2, z: -1, w: 0 });
+            }
+          }` },
+      ]);
+      runtime.realizePlayWorld(); runtime.createSceneLayer("labels"); runtime.start();
+      const poses = () => commands.filter((command) => command.type === "setText2DLetterPoses").at(-1)?.poses;
+      for (let i = 0; i < 3; i++) runtime.tick();
+      // A, B and C share Speed 2 and Height 4 (their Moods differ but Mood is not declared): one call of three letters.
+      // D has Speed 3: a call of its own, with its Tint clamped to 0..1.
+      expect(poses()).toEqual([
+        4, 3, 1, 1, 2, 1, 1, 1, 1,
+        4, 3, 1, 1, 2, 1, 1, 1, 1,
+        4, 3, 1, 1, 2, 1, 1, 1, 1,
+        4, 1, 1, 1, 3, 1, 0.5, 1, 0,
+      ]);
+      // A new text builds again, and Get Keys runs once more.
+      const label = runtime.getWorld().getActors().find((actor) => actor.components.some((component) => component.guid.endsWith("rich")))!;
+      label.components.find((component) => component.classId === "2DRichTextComponent")!.setVariable("text", `${markup}E`);
+      for (let i = 0; i < 3; i++) runtime.tick();
+      expect(poses()?.slice(0, 9)).toEqual([4, 3, 1, 2, 2, 1, 1, 1, 1]);
+      expect(poses()?.slice(36)).toEqual([0, 0, 1, 1, 0, 1, 1, 1, 1]);
     } finally { runtime.stop(); }
   });
 });

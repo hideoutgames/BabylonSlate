@@ -18,7 +18,8 @@ Runs every tick on a Rich Text 2D Decorator Effect with the letters inside its t
 ## Notes
 
 - Belongs to Classes whose parent is **RichText2DDecoratorEffect**. Apply the Class in a 2D Rich Text with `[fx=ClassName]…[/fx]`.
-- Each tick starts from what the Appear Modes left on the letters. Set each letter's **Offset**, **Scale**, **Rotation** and **Opacity**.
+- Each tick starts from what the Appear Modes left on the letters. Set each letter's **Offset**, **Scale**, **Rotation**, **Opacity** and **Tint**.
+- Read the tag's own keywords with [Get Tag Value](get-tag-value.md) after listing them in the Class's **Get Keys** function. Letters whose tags give those keywords different values run in separate calls.
 - Keep running values, such as elapsed time, in variables of your Class. One object of the Class serves every tag of that Class in a text.
 - Does not run while the game is paused, unless the text's actor ticks while paused.
-- See [2D Rich Text](../../components/2d-rich-text.md#custom-appear-modes-and-effects).
+- See [2D Rich Text](../../components/2d-rich-text.md#custom-appear-modes-and-effects) and [Tag keywords](../../components/2d-rich-text.md#tag-keywords).

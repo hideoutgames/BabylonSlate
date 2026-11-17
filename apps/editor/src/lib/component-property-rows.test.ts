@@ -1404,6 +1404,25 @@ describe("applyPrefabPropertyDefaults", () => {
     }
   });
 
+  it("lists the project's custom easing curves as Appear Transitions, keeping a stored one whose Class is gone", () => {
+    const transition = (appearTransition: string) => {
+      const rich = rowsFor({ id: "label", classId: "2DRichTextComponent", properties: { appearModes: ["fade"], appearTransition } },
+        { customEasingCurves: ["class:Snap"] });
+      const row = rich.rows.find((entry) => entry.id.endsWith("-appearTransition"));
+      if (row?.kind !== "enum") throw new Error("Expected the Appear Transition row");
+      return { rich, row };
+    };
+    const { rich, row } = transition("class:Snap");
+    expect(row.value).toBe("class:Snap");
+    expect(row.options.slice(0, 2)).toEqual([{ value: "instant", label: "Instant" }, { value: "linear", label: "Linear" }]);
+    expect(row.options.slice(-2)).toEqual([{ value: "bounceInOut", label: "Bounce In Out" }, { value: "class:Snap", label: "Snap (Custom)" }]);
+    row.onChange("class:Snap");
+    expect(rich.update).toHaveBeenCalledWith("appearTransition", "class:Snap");
+    const gone = transition("class:Deleted").row;
+    expect(gone.value).toBe("class:Deleted");
+    expect(gone.options.slice(-2)).toEqual([{ value: "class:Snap", label: "Snap (Custom)" }, { value: "class:Deleted", label: "Deleted (Custom)" }]);
+  });
+
   it("edits rich-text reveal timing without exposing it on plain text", () => {
     const rich = rowsFor({
       id: "label", classId: "2DRichTextComponent",

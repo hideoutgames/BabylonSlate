@@ -13,11 +13,13 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Event On Decorate Letters](event-on-decorate-letters.md) | Runs every tick on a Rich Text 2D Decorator Effect with the letters inside its tag. |
 | [Event On Editor Begin Play](event-on-editor-begin-play.md) | Runs when the editor loads an Editor Utility Object. |
 | [Event On Actor Destroyed](event-on-actor-destroyed.md) | Runs when the actor this graph belongs to is destroyed. |
+| [Event On Appear Finished](event-on-appear-finished.md) | Runs when a 2D Rich Text finishes revealing forwards. |
 | [Event On Audio Finished](event-on-audio-finished.md) | Runs when an Audio component finishes playing a sound. |
 | [Event On Begin Overlap](event-on-begin-overlap.md) | Runs when the actor's collider starts overlapping another actor, where one of the two is a trigger. |
 | [Event On Checked Changed](event-on-checked-changed.md) | Runs when a checkbox, radio button or toggle changes its checked state. |
 | [Event On Click](event-on-click.md) | Runs when a 2D Button is clicked or tapped. |
 | [Event On Command Run](event-on-command-run.md) | Runs when the command it defines is entered in the console. |
+| [Event On Disappear Finished](event-on-disappear-finished.md) | Runs when Play Reverse has hidden every letter of a 2D Rich Text. |
 | [Event On Editor Shutdown](event-on-editor-shutdown.md) | Runs when the project closes or its Editor Utility Objects are reloaded. |
 | [Event On Editor Startup](event-on-editor-startup.md) | Runs when the editor starts the project's Editor Utility Objects. |
 | [Event On End](event-on-end.md) | Runs once when the Game Instance or a subsystem shuts down. |
@@ -30,6 +32,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Event On Hit](event-on-hit.md) | Runs on each physics step that the actor's collider touches another solid collider. |
 | [Event On Init](event-on-init.md) | Runs once when the Game Instance or a subsystem is created. |
 | [Event On Letter Appear](event-on-letter-appear.md) | Runs on a Rich Text 2D Appear Mode for one letter of a 2D Rich Text as the text appears. |
+| [Event On Letter Shown](event-on-letter-shown.md) | Runs when a letter of a 2D Rich Text starts appearing. |
 | [Event On Mouse Enter](event-on-mouse-enter.md) | Runs when the pointer moves onto a 2D Button. |
 | [Event On Mouse Leave](event-on-mouse-leave.md) | Runs when the pointer moves off a 2D Button. |
 | [Event On Movement Jumped](event-on-movement-jumped.md) | Runs when the actor's Movement component starts a jump. |
@@ -868,6 +871,12 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Register Scene Layer Post-Processing](register-scene-layer-post-processing.md) | Adds a post-process Material to the effects applied to a Scene Layer and returns the new pass's Material Object. |
 | [Remove Scene Layer](remove-scene-layer.md) | Removes a Scene Layer and all of its actors. |
 | [Unregister Scene Layer Post-Processing](unregister-scene-layer-post-processing.md) | Removes a post-process Material from the effects applied to a Scene Layer. |
+
+## Rich Text
+
+| Node | Description |
+| --- | --- |
+| [Get Tag Value](get-tag-value.md) | Returns the value a Decorator Effect's `[fx]` tag gives one of its keywords. |
 
 ## Render
 

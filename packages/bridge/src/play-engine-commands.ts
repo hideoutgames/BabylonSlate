@@ -28,6 +28,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "setMaterialParameter",
   "setPostProcessMaterialParameter",
   "possessCamera",
+  "setCustomEasingCurves",
   "setCameraShake",
   "spawn",
   "despawn",

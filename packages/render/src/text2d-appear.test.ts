@@ -3,13 +3,14 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { installAssetBytes } from "@haptic/assets";
 import { installTextureBytes } from "./mesh-assets";
 import { afterEach, expect, it, vi } from "vitest";
-import { identityTransform, parseText2DProperties } from "@haptic/core";
+import { identityTransform, parseText2DProperties, setCustomEasingCurves } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { unlitBinding } from "./unlit-material-blocks";
 import { isUnlitMaterial } from "./unlit-material";
 import { createText2DMesh, updateText2DAppear, updateText2DLetterPoses } from "./text2d-mesh";
 import { applyAssignMaterial, applyAssignMesh, applyComponentTransformsCommand, applyOverlayVisualStyleCommand, applyText2DAppearCommand, createSnapshotSceneBinding, createPlayMesh, playComponentMeshName, retirePlaySlot, type AssignMeshPart } from "./snapshot-apply";
-import { overlayVisualStyle } from "./overlay-visual-style";
+import { applyOverlayVisualStyle, overlayVisualStyle } from "./overlay-visual-style";
+import { openRenderChangeReader, RenderChange } from "./render-change-journal";
 import type { GlyphMetricsProvider } from "./text2d-layout";
 import { ResourceCache } from "./resource-cache";
 import { encodeParentedAnimatedTriangleGlb } from "./glb-test-fixtures";
@@ -73,7 +74,7 @@ it("poses scripted letters on top of the reveal and returns them to rest when th
   const rest = (mesh: typeof a) => ({ x: mesh!.position.x, y: mesh!.position.y, scaleX: mesh!.scaling.x, scaleY: mesh!.scaling.y, rotation: mesh!.rotation.z });
   const restA = rest(a), restB = rest(b);
   // B: 50 px right and 25 px down at 100 px per unit, twice as wide, half as tall, a quarter turn, half opacity.
-  updateText2DLetterPoses(root, [0, 0, 1, 1, 0, 1, 50, -25, 2, 0.5, 90, 0.5]);
+  updateText2DLetterPoses(root, [0, 0, 1, 1, 0, 1, 1, 1, 1, 50, -25, 2, 0.5, 90, 0.5, 1, 1, 1]);
   expect(rest(a)).toEqual(restA);
   expect(a!.visibility).toBeCloseTo(0.5);
   expect(b!.position.x).toBeCloseTo(restB.x + 0.5);
@@ -87,14 +88,49 @@ it("poses scripted letters on top of the reveal and returns them to rest when th
   expect(b!.visibility).toBeCloseTo(0.5);
   expect(b!.position.x).toBeCloseTo(restB.x + 0.5);
   for (const cleared of [[1, 2, 3], []]) {
-    updateText2DLetterPoses(root, [0, 0, 1, 1, 0, 1, 50, -25, 2, 0.5, 90, 0.5]);
+    updateText2DLetterPoses(root, [0, 0, 1, 1, 0, 1, 1, 1, 1, 50, -25, 2, 0.5, 90, 0.5, 1, 1, 1]);
     updateText2DLetterPoses(root, cleared);
     expect(rest(b)).toEqual(restB);
     expect(b!.visibility).toBe(1);
   }
   // A text that only tags letters, with no Appear Modes, still poses them, and starts from the poses it is built with.
-  const tagged = createText2DMesh(scene, "tagged", { text: "A[fx=Tilt]B[/fx]", size: 32, letterPoses: [0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 90, 1] }, undefined, { rich: true, metrics });
+  const tagged = createText2DMesh(scene, "tagged", { text: "A[fx=Tilt]B[/fx]", size: 32, letterPoses: [0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 90, 1, 1, 1, 1] }, undefined, { rich: true, metrics });
   expect(tagged.getChildMeshes().map((mesh) => Number(mesh.rotation.z.toFixed(4)))).toEqual([0, Number((Math.PI / 2).toFixed(4))]);
+});
+
+it("tints a scripted letter on top of its component's style, before or after the style, and shares the style again at white", () => {
+  const { scene } = host();
+  const reader = openRenderChangeReader(scene, RenderChange.Style);
+  // B starts red-orange (Tint 1, 0.5, 0) and is built before the component's style is first applied.
+  const root = createText2DMesh(scene, "tinted", {
+    text: "A[fx=Tilt]B[/fx]", size: 32, opacity: 0.5, tint: [0.5, 1, 1, 0.8],
+    letterPoses: [0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 0.5, 0],
+  }, undefined, { rich: true, metrics });
+  const [a, b] = root.getChildMeshes();
+  expect(overlayVisualStyle(a)).toBe(overlayVisualStyle(root));
+  expect(overlayVisualStyle(b)).toEqual({ opacity: 0.5, tint: [0.5, 0.5, 0, 0.8] });
+  // A later component style composes with the letter's Tint; its opacity and alpha are the component's.
+  applyOverlayVisualStyle(root, { opacity: 0.25, tint: [1, 0.5, 1, 1] });
+  expect(overlayVisualStyle(b)).toEqual({ opacity: 0.25, tint: [1, 0.25, 0, 1] });
+  // The draw reads one combined style until either side changes.
+  expect(overlayVisualStyle(b)).toBe(overlayVisualStyle(b));
+  const restB = { x: b!.position.x, y: b!.position.y, scaleX: b!.scaling.x, rotation: b!.rotation.z, visibility: b!.visibility };
+  reader.drain(() => {});
+  const changed: unknown[] = [];
+  updateText2DLetterPoses(root, [0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1]);
+  reader.drain((node) => changed.push(node));
+  // Only B's tint changed: it is journaled as a style change, and its pose is untouched.
+  expect(changed).toEqual([b]);
+  expect(overlayVisualStyle(b)).toEqual({ opacity: 0.25, tint: [0, 0.5, 1, 1] });
+  expect({ x: b!.position.x, y: b!.position.y, scaleX: b!.scaling.x, rotation: b!.rotation.z, visibility: b!.visibility }).toEqual(restB);
+  // White returns B to the component's own binding.
+  updateText2DLetterPoses(root, []);
+  expect(overlayVisualStyle(b)).toBe(overlayVisualStyle(root));
+  applyOverlayVisualStyle(root, { opacity: 1, tint: [0.2, 0.4, 0.6, 1] });
+  expect(overlayVisualStyle(b)).toEqual({ opacity: 1, tint: [0.2, 0.4, 0.6, 1] });
+  root.dispose();
+  expect(overlayVisualStyle(b)).toEqual({ opacity: 1, tint: [1, 1, 1, 1] });
+  reader.dispose();
 });
 
 it("reveals all characters simultaneously with zero interval and reverses the same poses", () => {
@@ -110,6 +146,22 @@ it("reveals all characters simultaneously with zero interval and reverses the sa
   }
   updateText2DAppear(root, 0);
   expect(root.getChildMeshes().every((child) => child.visibility === 0)).toBe(true);
+});
+
+it("reveals along a custom Appear Transition from the curves this realm holds, and as Linear before they arrive", () => {
+  const { scene } = host();
+  const root = createText2DMesh(scene, "custom", {
+    text: "AB", appearModes: ["fade"], appearTransition: "class:Half", appearInterval: 0, appearDuration: 1,
+  }, undefined, { rich: true, metrics });
+  updateText2DAppear(root, 0.5);
+  expect(root.getChildMeshes().map((child) => child.visibility)).toEqual([0.5, 0.5]);
+  try {
+    // Half the Alpha: 0.25 half way.
+    setCustomEasingCurves({ Half: Array.from({ length: 129 }, (_, index) => index / 256) });
+    updateText2DAppear(root, 0.25);
+    updateText2DAppear(root, 0.5);
+    expect(root.getChildMeshes().map((child) => child.visibility)).toEqual([0.25, 0.25]);
+  } finally { setCustomEasingCurves({}); }
 });
 
 it("targets one text component, keeps atlas identity, and retains progress when its visual is recreated", () => {

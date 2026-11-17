@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { SerializedGraph } from "@haptic/core";
 import { useRegistryState } from "../context/document-context";
 import { classIdForGraphPath } from "../services/script-compiler";
-import { collectClassHeaderGraphs, withOpenClassGraphs } from "./logic-graph-document";
+import { collectClassHeaderGraphs, withEngineClassGraphs, withOpenClassGraphs } from "./logic-graph-document";
 import { useOpenDocumentsOfKinds } from "./use-open-documents-of-kinds";
 
 const CLASS_KINDS = ["graph"] as const;
@@ -29,4 +29,13 @@ export function useClassGraphs(): Readonly<Record<string, SerializedGraph>> {
     () => withOpenClassGraphs(headerGraphs, classDocuments, classIdForGraphPath),
     [classDocuments, headerGraphs],
   );
+}
+
+/**
+ * `useClassGraphs` plus the engine bases' overridable functions as parent graphs (`withEngineClassGraphs`), for the
+ * views that resolve parent functions: My Class and the graph editor.
+ */
+export function useClassGraphsWithEngineBases(): Readonly<Record<string, SerializedGraph>> {
+  const graphs = useClassGraphs();
+  return useMemo(() => withEngineClassGraphs(graphs), [graphs]);
 }

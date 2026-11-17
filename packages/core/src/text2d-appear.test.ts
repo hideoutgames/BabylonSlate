@@ -11,8 +11,10 @@ import {
   text2DLetterPoseAt,
   text2DCharacterReveal,
   text2DFormattedUnits,
+  text2DShownLetters,
 } from "./text2d-appear";
 import { createRichText2DComponent, createText2DComponent, parseText2DProperties } from "./text2d";
+import { setCustomEasingCurves } from "./easing";
 
 describe("rich text appear properties", () => {
   it("preserves existing visible text while authoring reveal settings only for rich text", () => {
@@ -123,6 +125,23 @@ describe("appear easing", () => {
     }
   });
 
+  it("keeps a custom easing curve and reveals each letter from its table, hidden before it starts and shown once done", () => {
+    const custom = parseText2DAppearProperties({ appearModes: ["fade"], appearTransition: "class:Raised" });
+    expect(custom.appearTransition).toBe("class:Raised");
+    expect(parseText2DAppearProperties({ appearModes: ["fade"], appearTransition: "class:" }).appearTransition).toBe("cubicOut");
+    // Not baked: Linear. Letters start at 0, 0.1 and 0.2 s of a 0.5 s reveal, each for 0.3 s.
+    expect(text2DCharacterReveal(0.5, 1, 3, custom)).toBeCloseTo(0.5);
+    try {
+      // From 0.5 at Alpha 0 to 1 at Alpha 1.
+      setCustomEasingCurves({ Raised: Array.from({ length: 129 }, (_, index) => 0.5 + index / 256) });
+      expect(text2DCharacterReveal(0.5, 1, 3, custom)).toBe(0.75);
+      expect(text2DCharacterReveal(0.5, 2, 3, custom)).toBeCloseTo(0.5 + 1 / 12);
+      expect(text2DCharacterReveal(0.2, 2, 3, custom)).toBe(0);
+      expect(text2DCharacterReveal(0.8, 0, 3, custom)).toBe(1);
+      expect(sampleText2DAppearTransition("class:Raised", 0)).toBe(0.5);
+    } finally { setCustomEasingCurves({}); }
+  });
+
   it("samples the selected curve instead of treating all transitions as linear", () => {
     expect(sampleText2DAppearTransition("cubicOut", 0.25)).toBeCloseTo(0.578125);
     expect(sampleText2DAppearTransition("cubicInOut", 0.25)).toBeCloseTo(0.0625);
@@ -184,14 +203,27 @@ describe("appear easing", () => {
     expect(text2DAppearDuration(3, { appearModes: ["class:Rise"], appearInterval: 0.1, appearDuration: 0.3 })).toBeCloseTo(0.5);
   });
 
+  it("lists the letters a reveal shows: no whitespace or line breaks, an image as a letter without a character", () => {
+    expect(text2DShownLetters({ text: "A b\n[img=icon]C", rich: true, appearModes: ["fade"] })).toEqual([
+      { index: 0, character: "A" }, { index: 2, character: "b" }, { index: 3, character: "" }, { index: 4, character: "C" },
+    ]);
+    // Appear Modes Off has no timeline, so no letter is shown.
+    expect(text2DShownLetters({ text: "Ab", rich: true, appearModes: [] })).toEqual([]);
+  });
+
   it("reads scripted letter poses in whole strides and rests letters beyond or without them", () => {
-    const poses = [1, 2, 3, 4, 5, 0.5, -1, -2, 1, 1, 0, 7];
+    const poses = [1, 2, 3, 4, 5, 0.5, 0.25, 0.5, 0.75, -1, -2, 1, 1, 0, 7, 2, -0.5, 1];
     expect(parseText2DLetterPoses(poses)).toBe(poses);
-    expect({ ...text2DLetterPoseAt(poses, 0) }).toEqual({ offsetX: 1, offsetY: 2, scaleX: 3, scaleY: 4, rotation: 5, opacity: 0.5 });
-    // Opacity is clamped; a letter the list does not reach is at rest.
-    expect(text2DLetterPoseAt(poses, 1).opacity).toBe(1);
-    expect({ ...text2DLetterPoseAt(poses, 2) }).toEqual({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 });
-    for (const malformed of [[1, 2, 3], [1, 2, 3, 4, 5, Number.NaN], "poses", undefined]) {
+    expect({ ...text2DLetterPoseAt(poses, 0) }).toEqual({
+      offsetX: 1, offsetY: 2, scaleX: 3, scaleY: 4, rotation: 5, opacity: 0.5, tintR: 0.25, tintG: 0.5, tintB: 0.75,
+    });
+    // Opacity and Tint are clamped to 0..1; a letter the list does not reach is at rest, white.
+    expect({ ...text2DLetterPoseAt(poses, 1) }).toMatchObject({ opacity: 1, tintR: 1, tintG: 0, tintB: 1 });
+    expect({ ...text2DLetterPoseAt(poses, 2) }).toEqual({
+      offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, tintR: 1, tintG: 1, tintB: 1,
+    });
+    // Six numbers per letter is the old, shorter stride: not whole poses.
+    for (const malformed of [[1, 2, 3], [0, 0, 1, 1, 0, 1], [0, 0, 1, 1, 0, 1, 1, 1, Number.NaN], "poses", undefined]) {
       expect(parseText2DLetterPoses(malformed)).toEqual([]);
     }
     expect(parseText2DAppearProperties({ letterPoses: poses }).letterPoses).toBe(poses);

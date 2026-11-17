@@ -75,6 +75,8 @@ Variables that only one function needs belong in **Local Variables**, which appe
 
 If an override's inputs, outputs or **Pure** setting no longer match the parent, **Compiler Results** reports an error. The same menu lists the methods of the class's [Script Interfaces](interfaces.md).
 
+Some engine parent classes have functions of their own to override, which the engine calls: a **RichText2DDecoratorEffect** Class overrides **Get Keys** to list its [tag keywords](../components/2d-rich-text.md#tag-keywords), and a **CustomEasingCurve** Class overrides **Evaluate** to shape its [easing curve](curves-and-ranges.md#custom-easing-curves).
+
 ## Function libraries
 
 A Function Library holds functions that every Class graph in the project can call, without a target object.

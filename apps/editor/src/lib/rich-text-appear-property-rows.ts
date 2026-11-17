@@ -1,4 +1,5 @@
 import {
+  customEasingCurveLabel,
   parseText2DAppearProperties,
   TEXT2D_APPEAR_TRANSITIONS,
   TEXT2D_APPEAR_TRANSITION_LABELS,
@@ -6,10 +7,24 @@ import {
   TEXT2D_APPEAR_START_LABELS,
   TEXT2D_APPEAR_SOUND_PLAYS,
   TEXT2D_APPEAR_SOUND_PLAY_LABELS,
+  type CustomEasingCurveRef,
   type SerializedComponent,
+  type Text2DAppearTransition,
 } from "@haptic/core";
 import type { PropertyRow } from "@haptic/editor-kit";
 import { assetRow, type ComponentPropertyContext } from "./component-property-row-helpers";
+
+/**
+ * The built-in transitions, then the project's custom easing curves as `<Class> (Custom)`; a stored curve whose Class
+ * is gone stays listed, so the row still shows what is stored.
+ */
+function appearTransitionOptions(current: Text2DAppearTransition, custom: readonly CustomEasingCurveRef[]) {
+  const curves = custom.includes(current as CustomEasingCurveRef) || !customEasingCurveLabel(current) ? custom : [...custom, current as CustomEasingCurveRef];
+  return [
+    ...TEXT2D_APPEAR_TRANSITIONS.map((value) => ({ value: value as string, label: TEXT2D_APPEAR_TRANSITION_LABELS[value] })),
+    ...curves.map((value) => ({ value: value as string, label: customEasingCurveLabel(value)! })),
+  ];
+}
 
 export function richTextAppearPropertyRows(
   actorId: string,
@@ -34,7 +49,8 @@ export function richTextAppearPropertyRows(
       kind: "enum", id: id("appearTransition"), label: "Appear Transition", value: parsed.appearTransition,
       defaultValue: defaults.appearTransition,
       disabled: off || instant,
-      options: TEXT2D_APPEAR_TRANSITIONS.map((value) => ({ value, label: TEXT2D_APPEAR_TRANSITION_LABELS[value] })),
+      // Labels are final: a custom curve shows its Class name as written.
+      options: appearTransitionOptions(parsed.appearTransition, context.customEasingCurves ?? []), verbatim: true,
       onChange: (next) => update("appearTransition", next),
     },
     {

@@ -1,4 +1,5 @@
 import { overlayContainerScriptVariables } from "./overlay-container-api";
+import type { GraphClassMemberPin } from "@haptic/core";
 import { OVERLAY_LAYOUT_CLASSES, ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID, ENGINE_TEXT2D_APPEAR_SOUND_PLAY_ENUM_ID } from "@haptic/core";
 import { UI_CONTROL_2D_SCRIPT_APIS } from "./ui-controls2d-api";
 import {
@@ -8,7 +9,7 @@ import {
   SCENE_LAYER_SWITCHER_SCRIPT_API,
 } from "./scene-layer-switcher-api";
 import { TIMELINE_CLIP_SCRIPT_API } from "./timeline-clip-api";
-import { RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, RICH_TEXT_2D_LETTER_CLASS_ID } from "./ids";
+import { CUSTOM_EASING_CURVE_CLASS_ID, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, RICH_TEXT_2D_LETTER_CLASS_ID } from "./ids";
 import { LAYER_CAMERA_SCRIPT_API, SCENE_CAMERA_MANAGER_SCRIPT_API } from "./camera-script-api";
 
 export type EngineScriptPin = {
@@ -54,6 +55,17 @@ export type EngineScriptEvent = {
   exportName: string;
 };
 
+/**
+ * A function an engine base declares for its Classes to override; the engine calls the override by name and reads its
+ * outputs (`pins` in the Class member shape, exec rows included). Never Pure, so a new override starts from an Input
+ * wired to its Output.
+ */
+export type EngineOverridableFunction = {
+  name: string;
+  description?: string;
+  pins: readonly GraphClassMemberPin[];
+};
+
 export type EngineClassScriptApi = {
   classId: string;
   variables?: readonly EngineScriptVariable[];
@@ -66,6 +78,8 @@ export type EngineClassScriptApi = {
    * component-bound, so they stay out of `engineEventTypeClassIds()`.
    */
   nativeEvents?: readonly EngineScriptEvent[];
+  /** Functions Classes of this lineage override and the engine calls (`EngineOverridableFunction`). */
+  overridableFunctions?: readonly EngineOverridableFunction[];
 };
 
 const EXEC_IN: EngineScriptPin = {
@@ -137,6 +151,45 @@ export const RICH_TEXT_LETTER_APPEAR_EVENT: EngineScriptEvent = {
 /** Runs on a Rich Text 2D Decorator Effect every tick with the letters inside its tag. */
 export const RICH_TEXT_DECORATE_LETTERS_EVENT: EngineScriptEvent = {
   name: "On Decorate Letters", eventType: "flow.event.richTextDecorateLetters", exportName: "onDecorateLetters",
+};
+
+/** Runs on the owner of a 2D Rich Text as each letter starts appearing on a forward reveal. */
+export const RICH_TEXT_LETTER_SHOWN_EVENT: EngineScriptEvent = {
+  name: "On Letter Shown", eventType: "flow.event.richTextLetterShown", exportName: "onLetterShown",
+};
+/** Runs on the owner of a 2D Rich Text when a forward reveal finishes. */
+export const RICH_TEXT_APPEAR_FINISHED_EVENT: EngineScriptEvent = {
+  name: "On Appear Finished", eventType: "flow.event.richTextAppearFinished", exportName: "onAppearFinished",
+};
+/** Runs on the owner of a 2D Rich Text when Play Reverse has hidden every letter. */
+export const RICH_TEXT_DISAPPEAR_FINISHED_EVENT: EngineScriptEvent = {
+  name: "On Disappear Finished", eventType: "flow.event.richTextDisappearFinished", exportName: "onDisappearFinished",
+};
+
+/** The Get Keys a Rich Text 2D Decorator Effect overrides: the tag keywords whose values Get Tag Value reads. */
+export const RICH_TEXT_GET_KEYS_FUNCTION: EngineOverridableFunction = {
+  name: "Get Keys",
+  description: "The tag keywords this effect reads with Get Tag Value.",
+  pins: [
+    { name: "exec", typeId: "exec", direction: "in" },
+    { name: "then", typeId: "exec", direction: "out" },
+    { name: "Keys", typeId: "string", direction: "out", container: "array" },
+  ],
+};
+
+/**
+ * The Evaluate a Custom Easing Curve overrides: Value at Alpha 0 to 1. The engine samples it when scripts load and
+ * eases from that table, so it never runs while the curve is in use.
+ */
+export const CUSTOM_EASING_CURVE_EVALUATE_FUNCTION: EngineOverridableFunction = {
+  name: "Evaluate",
+  description: "The curve's Value at Alpha 0 to 1. Sampled once when scripts load.",
+  pins: [
+    { name: "exec", typeId: "exec", direction: "in" },
+    { name: "then", typeId: "exec", direction: "out" },
+    { name: "Alpha", typeId: "float", direction: "in" },
+    { name: "Value", typeId: "float", direction: "out" },
+  ],
 };
 
 const TEXT_CHANGED: EngineScriptEvent = {
@@ -384,10 +437,16 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Scale", typeId: "vec2", propertyKey: "scale" },
       { name: "Rotation", typeId: "float", propertyKey: "rotation" },
       { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
     ],
   },
   { classId: RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, nativeEvents: [RICH_TEXT_LETTER_APPEAR_EVENT] },
-  { classId: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, nativeEvents: [RICH_TEXT_DECORATE_LETTERS_EVENT] },
+  {
+    classId: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+    nativeEvents: [RICH_TEXT_DECORATE_LETTERS_EVENT],
+    overridableFunctions: [RICH_TEXT_GET_KEYS_FUNCTION],
+  },
+  { classId: CUSTOM_EASING_CURVE_CLASS_ID, overridableFunctions: [CUSTOM_EASING_CURVE_EVALUATE_FUNCTION] },
   SCENE_CAMERA_MANAGER_SCRIPT_API,
   ...OVERLAY_LAYOUT_CLASSES.map((classId): EngineClassScriptApi => ({ classId, variables: [
     ...overlayContainerScriptVariables(classId),
@@ -594,7 +653,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Play", runtime: "play", pins: [EXEC_IN, EXEC_OUT] },
       { name: "Play Reverse", runtime: "playReverse", pins: [EXEC_IN, EXEC_OUT] },
     ],
-    events: [TEXT_CHANGED],
+    events: [TEXT_CHANGED, RICH_TEXT_LETTER_SHOWN_EVENT, RICH_TEXT_APPEAR_FINISHED_EVENT, RICH_TEXT_DISAPPEAR_FINISHED_EVENT],
   },
   {
     classId: "MeshComponent",
@@ -1192,6 +1251,13 @@ export function engineScriptEventsFor(
   classId: string,
 ): readonly EngineScriptEvent[] {
   return engineScriptApiFor(classId)?.events ?? [];
+}
+
+const OVERRIDABLE_APIS = ENGINE_CLASS_SCRIPT_APIS.filter((api) => (api.overridableFunctions?.length ?? 0) > 0);
+
+/** Engine bases that declare functions for their Classes to override, in catalog order. */
+export function engineOverridableFunctionApis(): readonly EngineClassScriptApi[] {
+  return OVERRIDABLE_APIS;
 }
 
 /**

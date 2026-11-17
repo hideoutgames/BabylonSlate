@@ -11,7 +11,7 @@ interface ComponentHostDeps {
   uiControls: Pick<UIControls2DRuntime, "invoke">;
   dynamicMeshes: Pick<DynamicRuntimeMeshSync, "invoke">;
   movement: Pick<MovementWorldSync, "invoke">;
-  textAppear: Pick<Text2DAppearRuntime, "progress" | "execute">;
+  textAppear: Pick<Text2DAppearRuntime, "progress" | "execute" | "letters">;
   /** A tick is running; its end flushes painter and text reveal changes. */
   processingTick(): boolean;
   flushPainters(): void;
@@ -21,12 +21,12 @@ interface ComponentHostDeps {
 
 /**
  * Script component function calls: 2D painters, UI controls, dynamic meshes,
- * movement, text reveal and property refreshes. Painter and reveal changes
+ * movement, text reveal, Rich Text tag values and property refreshes. Painter and reveal changes
  * made outside a tick are sent at once.
  */
 export function createComponentHostBindings(deps: ComponentHostDeps): Pick<ScriptHostServices,
   "paint2D" | "uiControlFunction" | "dynamicMeshFunction" | "movementFunction" |
-  "text2DAppearProgress" | "text2DAppear" | "refreshComponent"> {
+  "text2DAppearProgress" | "text2DAppear" | "richTextTagValue" | "refreshComponent"> {
   return {
     paint2D: (component, operation, args) => {
       const changed = deps.painters.execute(component, operation, args);
@@ -41,6 +41,7 @@ export function createComponentHostBindings(deps: ComponentHostDeps): Pick<Scrip
       deps.textAppear.execute(component, operation);
       if (!deps.processingTick()) deps.flushTextAppear();
     },
+    richTextTagValue: (self, key) => deps.textAppear.letters.tagValue(self, key),
     refreshComponent: (component, propertyName) => deps.refreshComponent(component, propertyName),
   };
 }

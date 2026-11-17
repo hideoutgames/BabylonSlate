@@ -7,6 +7,9 @@ describe("isPlayEngineCommandType", () => {
       expect(isPlayEngineCommandType(type), type).toBe(true);
     }
   });
+  it("forwards the baked custom easing curves to the renderer, which samples camera blends and text reveals", () => {
+    expect(isPlayEngineCommandType("setCustomEasingCurves")).toBe(true);
+  });
   it("forwards runtime material parameter writes to the renderer", () => {
     expect(isPlayEngineCommandType("setMaterialParameter")).toBe(true);
   });

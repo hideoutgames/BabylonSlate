@@ -97,7 +97,7 @@ import {
 } from "../lib/overridable-functions";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
-import { useClassGraphs } from "../lib/use-class-graphs";
+import { useClassGraphsWithEngineBases } from "../lib/use-class-graphs";
 import { engineScriptInterfaceAssets } from "../lib/engine-script-interfaces";
 import {
   EVENT_GRAPH_PANEL_ID,
@@ -1432,7 +1432,7 @@ export function MyClassPanel(props: MyClassPanelProps) {
   const documentActions = useDocumentActions();
   const { openDocument } = documentActions;
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const classGraphs = useClassGraphs();
+  const classGraphs = useClassGraphsWithEngineBases();
   const interfaceDocuments = useOpenDocumentsOfKinds(INTERFACE_KINDS);
   const { setFocusDiagnostic } = useValidation();
   const {

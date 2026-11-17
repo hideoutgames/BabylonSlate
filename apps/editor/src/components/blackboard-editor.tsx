@@ -115,9 +115,12 @@ export function BlackboardKeys({ payload, onChange, selected, onSelect }: Blackb
   const doc = useMemo(() => asBoard(payload), [payload]);
   const commit = commitBoard(onChange);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const { assetRegistry } = useRegistryState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const openDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
-  const typeSchemas = typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets: assetRegistry?.list() ?? [], openDocuments }));
+  const typeSchemas = useMemo(() => {
+    void registryEpoch;
+    return typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets: assetRegistry?.list() ?? [], openDocuments }));
+  }, [assetRegistry, openDocuments, registryEpoch]);
   const current = selected !== null && selected < doc.keys.length ? selected : null;
   const setType = (index: number, selectedType: string) => {
     const entry = doc.keys[index];
@@ -205,16 +208,16 @@ export function BlackboardKeys({ payload, onChange, selected, onSelect }: Blackb
 
 /** The selected key's name, type, record or enum type and default value. */
 export function BlackboardInspector({ payload, onChange, selected }: BlackboardEditorProps) {
-  const { assetRegistry } = useRegistryState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const openDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const doc = useMemo(() => asBoard(payload), [payload]);
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
   /** The default row that asked for an asset, so a Structure field pick writes only that field. */
   const [defaultAssetPick, setDefaultAssetPick] = useState<{ rowId: string; assetType: string } | null>(null);
-  const typeCatalog = collectGraphTypeAssets({
-    assets: assetRegistry?.list() ?? [],
-    openDocuments,
-  });
+  const typeCatalog = useMemo(() => {
+    void registryEpoch;
+    return collectGraphTypeAssets({ assets: assetRegistry?.list() ?? [], openDocuments });
+  }, [assetRegistry, openDocuments, registryEpoch]);
   const typeSchemas = typeSchemasFromGraphAssets(typeCatalog);
   const typeAssets = typeAssetPickerEntries(typeCatalog);
   const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
@@ -223,7 +226,10 @@ export function BlackboardInspector({ payload, onChange, selected }: BlackboardE
     type: asset.header.type,
     path: asset.path,
   }));
-  const enumMembers = collectEnumMemberNames(openDocuments, assetRegistry?.list() ?? []);
+  const enumMembers = useMemo(() => {
+    void registryEpoch;
+    return collectEnumMemberNames(openDocuments, assetRegistry?.list() ?? []);
+  }, [assetRegistry, openDocuments, registryEpoch]);
   const commit = commitBoard(onChange);
   const index = selected !== null && selected < doc.keys.length ? selected : null;
   const key = index === null ? undefined : doc.keys[index];

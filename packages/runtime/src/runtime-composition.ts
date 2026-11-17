@@ -1,4 +1,5 @@
 import type { RuntimeGlobalParameters } from "./runtime-global-parameters";
+import { isThenable } from "./tick-wait";
 import type { TimelineRuntime } from "./timeline-runtime";
 import type { CameraShakeCatalogEntry, CurveAssetCatalogEntry } from "@haptic/core";
 import type { CommandMessage, GameSessionMode, SessionPauseReason } from "@haptic/bridge";
@@ -258,9 +259,16 @@ export function registerRuntimeSubsystems(rt: RuntimeComposition): void {
   rt.subsystems.register(rt.behaviourTrees);
   rt.subsystems.register(rt.particleEffects);
   rt.subsystems.register(rt.textAppear);
-  rt.textAppear.letters.bind({
+  rt.textAppear.bind({
     world: () => rt.world,
     invokeEvent: (classId, event, self, args) => rt.scriptHost.invokeEvent(classId, event, self, args),
+    callFunction: (self, name) => {
+      const outputs = rt.scriptHost.createContext(self, rt.world.clock.dt, rt.world.clock.tickIndex).invokeFunction(self, name, {});
+      // A latent function's outputs arrive later: no result now.
+      return isThenable(outputs) ? null : outputs;
+    },
+    handlesComponentEvent: (component, event) => rt.scriptHost.handlesComponentEvent(component, event),
+    fireComponentEvent: (component, event, args) => rt.scriptHost.fireComponentEvent(component, event, args),
   });
   rt.subsystems.register(rt.renderEmitter);
   rt.subsystems.register(rt.camera);

@@ -10,7 +10,7 @@ import {
 } from "react";
 import { ClipboardPasteIcon, CopyIcon, Link2Icon, Link2OffIcon } from "lucide-react";
 import { useEditorReadOnly } from "./editor-read-only";
-import type { Tag, TagContainer } from "@haptic/core";
+import type { CustomEasingCurveRef, Tag, TagContainer } from "@haptic/core";
 import { TagPicker } from "./tag-picker";
 import { Button } from "@haptic/ui/components/button";
 import { Checkbox } from "@haptic/ui/components/checkbox";
@@ -277,6 +277,8 @@ export type PropertyRow =
       curveKind: CurveEditorKind;
       value: CurveEditorValue;
       defaultValue?: CurveEditorValue;
+      /** The project's custom easing curves, offered as key interpolations. */
+      customEasingCurves?: readonly CustomEasingCurveRef[];
       onChange: (value: CurveEditorValue) => void;
     })
   | (PropertyRowBase & {
@@ -872,6 +874,7 @@ function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: s
           aria-label={name}
           value={row.value}
           disabled={row.disabled}
+          customEasingCurves={row.customEasingCurves}
           onChange={row.onChange}
           data-testid={`property-${row.id}`}
         />

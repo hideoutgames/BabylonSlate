@@ -8,6 +8,7 @@ import {
   type SerializedGraph,
 } from "@haptic/core";
 import {
+  isCustomEasingCurveEnumValue,
   snapshotDataFields,
   reconcileDataEntry,
   type NodeRegistry,
@@ -426,7 +427,7 @@ export function applyStructEnumSchema(
       if (typeId === "enum.make") {
         const current =
           typeof properties.value === "string" ? properties.value : "";
-        if (!schema.members.some((member) => member.name === current)) {
+        if (!schema.members.some((member) => member.name === current) && !isCustomEasingCurveEnumValue(guid, current)) {
           properties.value = schema.members[0]?.name ?? "";
         }
       }
@@ -435,7 +436,7 @@ export function applyStructEnumSchema(
           typeof properties["default:index"] === "string"
             ? properties["default:index"]
             : "";
-        if (!schema.members.some((member) => member.name === current)) {
+        if (!schema.members.some((member) => member.name === current) && !isCustomEasingCurveEnumValue(guid, current)) {
           properties["default:index"] = schema.members[0]?.name ?? "";
         }
       }

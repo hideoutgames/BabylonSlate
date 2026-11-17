@@ -30,6 +30,14 @@ describe("applyPlayerEngineCommand", () => {
     expect(applied).toEqual([{ type: "setVoiceGain", voiceId: "audio-1", volume: 0.25 }]);
   });
 
+  it("forwards the baked custom easing curves onto the exported game's Engine handle", () => {
+    const applied: unknown[] = [];
+    const handle = { applyCommand: (command: unknown) => { applied.push(command); } };
+    const command = { type: "setCustomEasingCurves", curves: { Snap: [0, 1] } };
+    expect(applyPlayerEngineCommand(handle, command)).toBe(true);
+    expect(applied).toEqual([command]);
+  });
+
   it("ignores commands the Engine does not apply", () => {
     const applied: string[] = [];
     const handle = {

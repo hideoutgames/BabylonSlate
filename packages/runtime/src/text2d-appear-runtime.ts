@@ -1,15 +1,36 @@
 import {
-  countText2DRevealCharacters, parseText2DProperties, text2DAppearDuration, text2DAppearSoundPlan,
-  type Text2DAppearSoundPlan,
+  countText2DRevealCharacters, parseText2DProperties, text2DAppearDuration, text2DAppearSoundPlan, text2DLetterStart,
+  text2DShownLetters, type Text2DAppearSoundPlan, type Text2DProperties, type Text2DShownLetter,
 } from "@haptic/core";
-import type { Actor, ActorComponent, World } from "@haptic/object-model";
+import {
+  RICH_TEXT_APPEAR_FINISHED_EVENT, RICH_TEXT_DISAPPEAR_FINISHED_EVENT, RICH_TEXT_LETTER_SHOWN_EVENT,
+  type Actor, type ActorComponent, type World,
+} from "@haptic/object-model";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
-import { Text2DLetterScripts } from "./text2d-letter-scripts";
+import { Text2DLetterScripts, type Text2DLetterScriptsHost } from "./text2d-letter-scripts";
 import { componentOwners } from "./world-component-index";
+
+/** What the reveal needs from the session: letter scripting, and the owner's component events. */
+export interface Text2DAppearHost extends Text2DLetterScriptsHost {
+  /** Whether `component`'s owner handles component event `event` (an export name) for it. */
+  handlesComponentEvent(component: ActorComponent, event: string): boolean;
+  fireComponentEvent(component: ActorComponent, event: string, args: Record<string, unknown>): void;
+}
 
 /** A forward reveal's sound clock in timeline seconds; it outlives the reveal by the sound offset. */
 type AppearSound = { plan: Text2DAppearSoundPlan; clock: number; looping: boolean };
-type AppearState = { progress: number; direction: -1 | 0 | 1; duration: number; sound: AppearSound | null };
+/**
+ * A forward reveal's On Letter Shown schedule, only while the owner handles it: `letters` ascend by start time and
+ * those from `cursor` on are still to show; `clock` is the reveal position in timeline seconds.
+ */
+type ShownSchedule = { text: string; interval: number; letters: readonly Text2DShownLetter[]; cursor: number; clock: number };
+type QueuedEvent = { event: string; args: Record<string, unknown> };
+type AppearState = {
+  progress: number; direction: -1 | 0 | 1; duration: number; sound: AppearSound | null;
+  shown: ShownSchedule | null;
+  /** Component events that occurred and run at this component's next reveal step, in order; null until the first. */
+  events: QueuedEvent[] | null;
+};
 export type Text2DAppearOperation = "triggerAppear" | "play" | "playReverse";
 export type Text2DAppearSoundEvent =
   | { type: "play"; component: ActorComponent; assetGuid: string; loop: boolean; voiceId?: string }
@@ -19,11 +40,17 @@ const loopVoiceId = (component: ActorComponent) => `${component.guid}:appearSoun
 
 /** Simulation-owned reveal timing; renderers only consume its normalized position. */
 export class Text2DAppearRuntime implements RuntimeSubsystem {
+  private host: Text2DAppearHost | null = null;
   private readonly states = new WeakMap<ActorComponent, AppearState>();
   private readonly dirty = new Set<ActorComponent>();
   private sounds: Text2DAppearSoundEvent[] = [];
   /** Scripted Appear Modes and Decorator Effects, which follow the reveal this runtime owns. */
   readonly letters = new Text2DLetterScripts();
+
+  bind(host: Text2DAppearHost): void {
+    this.host = host;
+    this.letters.bind(host);
+  }
 
   progress(component: ActorComponent): number {
     return this.state(component).progress;
@@ -37,6 +64,7 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
   refresh(component: ActorComponent): void {
     const state = this.state(component);
     state.duration = this.duration(component);
+    if (state.shown) this.refreshShown(component, state);
     this.finishInstant(component, state);
     if (state.sound) {
       const clock = state.direction === 1 ? state.progress * state.duration : state.sound.clock;
@@ -50,8 +78,13 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
     if (operation === "triggerAppear") state.progress = 0;
     state.direction = operation === "playReverse" ? -1 : 1;
     state.duration = this.duration(component);
-    if (state.direction === 1) this.startSound(component, state);
-    else this.stopSound(component, state);
+    if (state.direction === 1) {
+      this.startSound(component, state);
+      this.startShown(component, state);
+    } else {
+      this.stopSound(component, state);
+      state.shown = null;
+    }
     this.finishInstant(component, state);
     this.dirty.add(component);
   }
@@ -70,10 +103,13 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
           const remaining = Math.abs(target - state.progress);
           state.progress = step >= remaining - Number.EPSILON * 4
             ? target : state.progress + state.direction * step;
-          if (state.progress === target) state.direction = 0;
+          if (state.shown) this.advanceShown(state, deltaSeconds);
+          if (state.progress === target) this.finish(component, state, remaining > 0);
           this.dirty.add(component);
         }
         this.letters.advance(component, state.progress, deltaSeconds);
+        // After the reveal and the letter poses moved, so handlers read where the text is now.
+        if (state.events?.length) this.dispatchEvents(component, state.events);
       }
     }
   }
@@ -97,7 +133,11 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
 
   remove(component: ActorComponent): void {
     const state = this.states.get(component);
-    if (state) this.stopSound(component, state);
+    if (state) {
+      this.stopSound(component, state);
+      state.shown = null;
+      state.events = null;
+    }
     this.letters.remove(component);
     this.states.delete(component);
     this.dirty.delete(component);
@@ -113,9 +153,14 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
     if (!state) {
       const properties = parseText2DProperties(Object.fromEntries(component.variables), { rich: true });
       state = { progress: properties.appearStart === "revealed" ? 1 : 0,
-        direction: properties.appearStart === "play" ? 1 : 0, duration: this.duration(component), sound: null };
+        direction: properties.appearStart === "play" ? 1 : 0, duration: this.duration(component), sound: null,
+        shown: null, events: null };
       this.states.set(component, state);
-      if (state.direction === 1) this.startSound(component, state);
+      // Play On Start is a forward play from hidden.
+      if (state.direction === 1) {
+        this.startSound(component, state);
+        this.startShown(component, state);
+      }
       this.finishInstant(component, state);
     }
     return state;
@@ -167,9 +212,87 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
 
   private finishInstant(component: ActorComponent, state: AppearState): void {
     if (state.direction && state.duration === 0) {
-      state.progress = state.direction === 1 ? 1 : 0;
-      state.direction = 0;
+      const target = state.direction === 1 ? 1 : 0;
+      const moved = state.progress !== target;
+      state.progress = target;
+      this.finish(component, state, moved);
       this.dirty.add(component);
     }
+  }
+
+  /**
+   * The reveal reached the end it was playing towards. The letters still to show have started; Appear or Disappear
+   * Finished runs only when this play moved the reveal there.
+   */
+  private finish(component: ActorComponent, state: AppearState, moved: boolean): void {
+    const forward = state.direction === 1;
+    state.direction = 0;
+    if (state.shown) this.showLetters(state, Number.POSITIVE_INFINITY);
+    if (!moved) return;
+    const event = forward ? RICH_TEXT_APPEAR_FINISHED_EVENT : RICH_TEXT_DISAPPEAR_FINISHED_EVENT;
+    if (this.host?.handlesComponentEvent(component, event.exportName)) this.queue(state, event.exportName, {});
+  }
+
+  /** A forward play's On Letter Shown schedule from where the reveal is, when the owner handles it. */
+  private startShown(component: ActorComponent, state: AppearState, properties?: Text2DProperties): void {
+    state.shown = null;
+    if (state.progress >= 1 || !this.host?.handlesComponentEvent(component, RICH_TEXT_LETTER_SHOWN_EVENT.exportName)) return;
+    const parsed = properties ?? parseText2DProperties(Object.fromEntries(component.variables), { rich: true });
+    const letters = text2DShownLetters(parsed);
+    if (letters.length === 0) return;
+    const clock = state.progress * state.duration;
+    let cursor = 0;
+    // Letters that started before a resumed reveal's position have been shown.
+    while (cursor < letters.length && text2DLetterStart(letters[cursor]!.index, parsed) < clock) cursor += 1;
+    state.shown = { text: parsed.text, interval: text2DLetterStart(1, parsed), letters, cursor, clock };
+  }
+
+  /** An edit during a forward reveal keeps its schedule unless the text or its letter timing changed. */
+  private refreshShown(component: ActorComponent, state: AppearState): void {
+    const shown = state.shown!;
+    const properties = parseText2DProperties(Object.fromEntries(component.variables), { rich: true });
+    if (properties.text === shown.text && text2DLetterStart(1, properties) === shown.interval && properties.appearModes.length > 0) {
+      shown.clock = state.progress * state.duration;
+    } else {
+      this.startShown(component, state, properties);
+    }
+  }
+
+  private advanceShown(state: AppearState, deltaSeconds: number): void {
+    const shown = state.shown!;
+    shown.clock += deltaSeconds;
+    this.showLetters(state, shown.clock);
+  }
+
+  /** Queues On Letter Shown for each scheduled letter that starts before `clock`, in text order. */
+  private showLetters(state: AppearState, clock: number): void {
+    const shown = state.shown!;
+    const { letters, interval } = shown;
+    let cursor = shown.cursor;
+    while (cursor < letters.length && letters[cursor]!.index * interval < clock) {
+      const letter = letters[cursor++]!;
+      this.queue(state, RICH_TEXT_LETTER_SHOWN_EVENT.exportName, { index: letter.index, character: letter.character });
+    }
+    shown.cursor = cursor;
+    if (cursor >= letters.length) state.shown = null;
+  }
+
+  private queue(state: AppearState, event: string, args: Record<string, unknown>): void {
+    (state.events ??= []).push({ event, args });
+  }
+
+  /**
+   * Runs the events queued before this step, in the order they occurred. One a handler causes (an instant finish
+   * of a Play it calls) waits for the next step, so handlers that restart the reveal cannot loop within a tick.
+   */
+  private dispatchEvents(component: ActorComponent, events: QueuedEvent[]): void {
+    const count = events.length;
+    for (let index = 0; index < count; index++) {
+      const { event, args } = events[index]!;
+      if (component.destroyed || !component.owner || component.owner.destroyed) break;
+      this.host?.fireComponentEvent(component, event, args);
+    }
+    events.copyWithin(0, count);
+    events.length -= count;
   }
 }

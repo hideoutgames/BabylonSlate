@@ -113,14 +113,24 @@ describe("custom effect tags", () => {
     const spans = parseRichText("a[fx=Bounce]b[fx=Wobble strength=2.5]c[fx=Bounce strength=x]d[/fx][/fx][shake=2]e[/shake][/fx]f[fx]g[/fx]", defaults);
     expect(spans.map((span) => span.kind === "text" ? [span.text, span.effects.custom ?? null, span.effects.shake] : null)).toEqual([
       ["a", null, 0],
-      ["b", [{ name: "Bounce", strength: 1 }], 0],
-      // A repeated name keeps its place and a strength that is not a number is 1, so "d" continues the run of "c".
-      ["cd", [{ name: "Bounce", strength: 1 }, { name: "Wobble", strength: 2.5 }], 0],
-      ["e", [{ name: "Bounce", strength: 1 }], 2],
+      ["b", [{ name: "Bounce", strength: 1, attrs: {} }], 0],
+      ["c", [{ name: "Bounce", strength: 1, attrs: {} }, { name: "Wobble", strength: 2.5, attrs: { strength: "2.5" } }], 0],
+      // A repeated name keeps its place and takes the inner tag's values; a strength that is not a number is 1.
+      ["d", [{ name: "Bounce", strength: 1, attrs: { strength: "x" } }, { name: "Wobble", strength: 2.5, attrs: { strength: "2.5" } }], 0],
+      ["e", [{ name: "Bounce", strength: 1, attrs: {} }], 2],
       // A tag without a Class name applies nothing.
       ["fg", null, 0],
     ]);
     expect(richTextCustomEffectNames("[fx=Wobble]a[/fx][fx=Bounce]b[fx=Wobble]c[/fx][/fx]")).toEqual(["Wobble", "Bounce"]);
+  });
+
+  it("keeps every keyword of an fx tag as text, keys lower-cased, and splits runs only where the values differ", () => {
+    const spans = parseRichText("[fx=Wave Speed=2 height=4.5 mood=calm]ab[/fx][fx=Wave height=4.5 speed=2 mood=calm]c[/fx][fx=Wave speed=3]d[/fx]", defaults);
+    expect(spans.map((span) => span.kind === "text" ? [span.text, span.effects.custom ?? null] : null)).toEqual([
+      // The same keywords in another order continue the run.
+      ["abc", [{ name: "Wave", strength: 1, attrs: { speed: "2", height: "4.5", mood: "calm" } }]],
+      ["d", [{ name: "Wave", strength: 1, attrs: { speed: "3" } }]],
+    ]);
   });
 });
 

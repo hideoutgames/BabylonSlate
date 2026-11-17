@@ -605,6 +605,20 @@ export class ScriptHost {
     this.dispatchEvent(loaded, event, self, 0, 0, args, undefined, componentId);
   }
 
+  /**
+   * Whether `component`'s owner has a handler for component event `event` bound to that component (the lookup
+   * `fireComponentEvent` dispatches through), so an engine system can skip work nothing would hear.
+   */
+  handlesComponentEvent(component: ActorComponent, event: string): boolean {
+    const owner = component.owner;
+    return owner ? this.eventScriptsFor(owner.classId, event, owner, component.guid) !== undefined : false;
+  }
+
+  /** Runs component event `event` on `component`'s owner, as that component's event. */
+  fireComponentEvent(component: ActorComponent, event: string, args: Record<string, unknown>): void {
+    this.fireComponentOwnerEvent(component, event, args);
+  }
+
   hasClass(classId: string): boolean {
     return (this.byClassId.get(classId)?.length ?? 0) > 0;
   }
@@ -694,6 +708,35 @@ export class ScriptHost {
       if (isInfiniteLoopError(error)) throw error;
       return undefined;
     }
+  }
+
+  /**
+   * Runs function `exportName` of the nearest Class in `self`'s lineage that exports it, with `args` as its inputs, and
+   * returns its outputs by output pin name. The engine calls it while scripts load (custom easing curves are baked
+   * there), which may be while Play is paused, so `self`'s own admission is not asked; calls it makes are. Null when
+   * no Class exports it, it throws (reported) or it waits (a latent function: its outputs come too late to read).
+   */
+  invokeEngineFunction(self: EngineObject, exportName: string, args: Record<string, unknown>): Record<string, unknown> | null {
+    const loaded = this.functionScriptsFor(self.classId, exportName);
+    if (!loaded) return null;
+    let result: Record<string, unknown> | null = null;
+    for (const entry of loaded) {
+      const fn = entry.exports[exportName];
+      if (typeof fn !== "function") continue;
+      const ctx = this.createContext(self, 0, 0, args, undefined, entry.script.assetGuid);
+      try {
+        const value = this.invokeEntry(self, entry.script, exportName, fn as (context: ScriptContext) => unknown, ctx);
+        if (isThenable(value)) {
+          value.then(undefined, (error) => this.reportLatentError(error, self));
+          return null;
+        }
+        result = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+      } catch (error) {
+        this.services.reportError(error);
+        return null;
+      }
+    }
+    return result;
   }
 
   /**

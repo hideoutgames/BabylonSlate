@@ -221,6 +221,17 @@ describe("pinDefaultPreview", () => {
     expect(pinDefaultPreview(enumPin, { "default:mode-id": "Idle" }, true)).toBeNull();
   });
 
+  it("names a custom easing curve after its Class on the three curve enums, and on no other enum", () => {
+    const curve = (guid: string): SerializedPin => ({ id: "curve", name: "Curve", kind: "data", direction: "in", type: { kind: "enumRef", guid } });
+    for (const guid of ["engine:EasingCurve", "engine:CurveInterpolation", "engine:Text2DAppearTransition"]) {
+      expect(pinDefaultPreview(curve(guid), { "default:curve": "class:Smooth Step" }, false), guid)
+        .toEqual({ kind: "enumRef", text: "Smooth Step (Custom)" });
+    }
+    expect(pinDefaultPreview(curve("engine:EasingCurve"), { "default:curve": "quadInOut" }, false))
+      .toEqual({ kind: "enumRef", text: "Quad In Out" });
+    expect(pinDefaultPreview(curve("e1"), { "default:curve": "class:Smooth" }, false)).not.toEqual({ kind: "enumRef", text: "Smooth (Custom)" });
+  });
+
   it.each([
     {
       properties: { "default:classId": "Mannequin", classId: "Actor" },

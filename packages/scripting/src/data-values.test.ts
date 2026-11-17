@@ -208,6 +208,22 @@ describe("authored Data Tree entries", () => {
     ]));
   });
 
+  it("accepts a custom easing curve only in a curve enum field, registered or not", () => {
+    const fields: StructField[] = [
+      { name: "Ease", typeId: "enum", typeClassId: "engine:EasingCurve" },
+      { name: "Team", typeId: "enum", typeClassId: "team" },
+    ];
+    const schemas = schemasFor(fields);
+    schemas.enums = {
+      "engine:EasingCurve": { name: "Easing Curve", members: [{ name: "linear", value: 0 }] },
+      team: { name: "Team", members: [{ name: "Blue", value: 1 }] },
+    };
+    const issues = (values: Record<string, unknown>) =>
+      validateDataEntry(createEntry("Entry", values), "stats", schemas).map(({ path, code }) => [path, code]);
+    expect(issues({ Ease: "class:Snap", Team: "Blue" })).toEqual([]);
+    expect(issues({ Ease: "class:", Team: "class:Snap" })).toEqual([["Ease", "type-mismatch"], ["Team", "type-mismatch"]]);
+  });
+
   it("rejects malformed schemas and non-JSON values without mutating them", () => {
     const cycle: Record<string, unknown> = {};
     cycle.self = cycle;

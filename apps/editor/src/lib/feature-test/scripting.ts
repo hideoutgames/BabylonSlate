@@ -20,6 +20,7 @@ import {
   createDefaultCameraShakePayload,
   type CameraShakePayload,
 } from "@haptic/core";
+import { CUSTOM_EASING_CURVE_CLASS_ID, CUSTOM_EASING_CURVE_EVALUATE_FUNCTION } from "@haptic/object-model";
 import { newAssetFileName } from "../content-browser-helpers";
 import { instanceOverrideKeys } from "../prefab-instance-sync";
 import {
@@ -53,7 +54,7 @@ import { FEATURE_TEST_TAGS } from "./settings";
  * Visual scripting and object model area: every scripting engine base class
  * (Object, Actor, ActorComponent, Game Instance, both subsystems, Function
  * Library, Editor Function Library, Debug Command, Editor Utility Object,
- * Scene Streaming Actor), Enum / Structure / Script Interface / Data
+ * Scene Streaming Actor, Custom Easing Curve), Enum / Structure / Script Interface / Data
  * Definition / Data Tree / Save Game / Input assets, a Prefab and the
  * `FT_StreamedRoom` sub-scene. Placed in the Scripting and Scene Streaming
  * zones of the main scene.
@@ -113,6 +114,12 @@ const CLASS = {
   editorProbe: "FT_EditorProbe",
   editorMath: "FT_EditorMath",
 } as const;
+
+/**
+ * The custom easing curve (Evaluate: Alpha × Alpha). The camera rig's Zoom tween, the FT_HUD rich text's Appear
+ * Transition and a Door Loop key ease along it as `class:FT_ScriptEaseSquare`.
+ */
+export const FEATURE_TEST_EASING_CURVE_CLASS = "FT_ScriptEaseSquare";
 
 const STREAMED_ROOM_NAME = "FT_StreamedRoom";
 const ZERO_ROTATOR = { pitch: 0, yaw: 0, roll: 0 };
@@ -389,6 +396,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
 
   // Referenced Classes first so header dependencies resolve.
   await saveMathLibrary(ctx);
+  await saveEasingCurve(ctx);
   await saveScoreSubsystem(ctx);
   await saveDataObject(ctx);
   await saveTicker(ctx);
@@ -694,6 +702,29 @@ async function saveClass(
 // Classes
 
 /** Function Library: static `Wave(Time, Amplitude)`, called from every Spinner tick. */
+/** Overrides the engine's Evaluate: Value is Alpha × Alpha, sampled once when scripts load. */
+async function saveEasingCurve(ctx: FeatureTestContext): Promise<void> {
+  const evaluate: GraphClassMember = {
+    id: "ft-script-fn-evaluate", kind: "function", name: CUSTOM_EASING_CURVE_EVALUATE_FUNCTION.name,
+    pins: CUSTOM_EASING_CURVE_EVALUATE_FUNCTION.pins.map((pin) => ({ ...pin })),
+    overrides: { classId: CUSTOM_EASING_CURVE_CLASS_ID, name: CUSTOM_EASING_CURVE_EVALUATE_FUNCTION.name },
+  };
+  const graph = classGraph({
+    members: [evaluate],
+    functionGraphs: {
+      [evaluate.id]: fnGraph(evaluate, {
+        nodes: [gNode("ease-square", "math.mul", 400, 240)],
+        edges: [
+          gWire(inputId(evaluate), "Alpha", "ease-square", "a"),
+          gWire(inputId(evaluate), "Alpha", "ease-square", "b"),
+          gWire("ease-square", "out", outputId(evaluate), "Value"),
+        ],
+      }),
+    },
+  });
+  await saveClass(ctx, FEATURE_TEST_EASING_CURVE_CLASS, CUSTOM_EASING_CURVE_CLASS_ID, graph);
+}
+
 async function saveMathLibrary(ctx: FeatureTestContext): Promise<void> {
   const graph = classGraph({
     members: [LIB_WAVE],

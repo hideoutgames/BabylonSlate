@@ -230,6 +230,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   BTComposite: "Object",
   RichText2DAppearMode: "Object",
   RichText2DDecoratorEffect: "Object",
+  CustomEasingCurve: "Object",
   BTTask_Wait: "BTTask",
   BTTask_MoveTo: "BTTask",
   BTTask_MoveToBlackboardKey: "BTTask",
@@ -338,6 +339,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   BTComposite: OBJECT_ICON,
   RichText2DAppearMode: OBJECT_ICON,
   RichText2DDecoratorEffect: OBJECT_ICON,
+  CustomEasingCurve: OBJECT_ICON,
   ActorComponent: FileCogIcon,
   Actor: ACTOR_ICON,
   SceneLayer: Layers2Icon,
@@ -634,6 +636,7 @@ const CLASS_KIND_LABEL: Record<string, string> = {
   BTComposite: "Behaviour Tree Composite",
   RichText2DAppearMode: "Rich Text Appear Mode",
   RichText2DDecoratorEffect: "Rich Text Decorator Effect",
+  CustomEasingCurve: "Easing Curve",
 };
 
 /** The kind label for a Class ancestry, most specific first. */

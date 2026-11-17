@@ -56,6 +56,7 @@ import {
   type RenderSettingsPatch,
   resetSessionTrail,
   sessionTrail,
+  setCustomEasingCurves,
 } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createEngine, COMPILE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
@@ -4588,6 +4589,41 @@ describe("Play createEngine view", () => {
       expect(handle.scene.getCameraByName("playViewBlend")).toBeNull();
     } finally {
       clock.mockRestore();
+    }
+  });
+
+  it("blends the view along a custom easing curve the runtime's command sent", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    let now = 1000;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    try {
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+      handles.push(handle);
+      const frame = runRenderLoop.mock.calls[0]?.[0];
+      const buf = new Float32Array(snapshotFloatCount(8));
+      writeSnapshotHeader(buf, { frameId: 1, tickIndex: 1, actorCount: 2, scriptMs: 0, physicsMs: 0 });
+      for (const [index, slotId] of [1, 2].entries()) {
+        handle.applyCommand({ type: "assignMesh", slotId, meshKind: "camera", meshAssetGuid: null, camera: { projectionMode: "perspective" } });
+        writeActorSlot(buf, index, { slotId, position: { x: slotId * 4, y: 3, z: -6 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 }, flags: 1 });
+      }
+      handle.pushSnapshot(buf);
+      frame?.();
+      handle.applyCommand({ type: "possessCamera", slotId: 1 });
+      // Holds at the start until the very end: the view stays at camera 1 (x 4) part way, where Linear would have moved.
+      handle.applyCommand({ type: "setCustomEasingCurves", curves: { Hold: Array.from({ length: 129 }, () => 0) } });
+      handle.applyCommand({ type: "possessCamera", slotId: 2, blend: { seconds: 0.5, curve: "class:Hold" } });
+      expect(handle.scene.activeCamera?.name).toBe("playViewBlend");
+      frame?.();
+      now += 250;
+      frame?.();
+      expect(handle.scene.activeCamera!.position.x).toBeCloseTo(4, 6);
+      now += 300;
+      frame?.();
+      expect(handle.scene.activeCamera?.name).toBe("authoredCamera:2");
+    } finally {
+      clock.mockRestore();
+      setCustomEasingCurves({});
     }
   });
 

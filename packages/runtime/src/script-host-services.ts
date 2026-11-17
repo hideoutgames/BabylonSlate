@@ -146,6 +146,8 @@ export interface ScriptHostServices {
   getWorld?(): World;
   /** Live Scene instance for the active Play scene, if any. */
   getSceneReference?(owner?: EngineObject | null): Scene | null;
+  /** Get Tag Value: the tag value `key` has for Decorator Effect `self`'s current `onDecorateLetters` call, or "". */
+  richTextTagValue?(self: EngineObject | null, key: string): string;
   /**
    * `Get <Subsystem>`: the live (never ended) GameSubsystem, or the current
    * main Scene's SceneSubsystem, whose class isA `classId`. Compiled graphs

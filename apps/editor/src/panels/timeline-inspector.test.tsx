@@ -22,6 +22,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     return [{ id: "scene:main", ref: { kind: "scene" }, content: harness.scene }];
   },
   applySceneChange: harness.applySceneChange,
+  // One custom easing curve Class in the project.
+  assetRegistry: { list: () => [{ path: "assets/Snap.class.hasset", header: { guid: "snap", type: "Class", name: "Snap", parentClass: "CustomEasingCurve" } }] },
 })));
 
 const clip = (): SerializedTimelineClip => ({
@@ -86,6 +88,29 @@ describe("TimelineInspector", () => {
     fireEvent.change(within(grid).getByLabelText("Time"), { target: { value: "3.01" } });
     // Committed on the nearest frame.
     expect(lastClip().objects[0]!.tracks[0]!.keys.map((entry) => entry.Time)).toEqual([0, 3]);
+  });
+
+  it("offers the project's custom easing curves for one key or several, and names a stored one whose Class is gone", () => {
+    renderInspector({ keys: [["t-loc", "k2"]] });
+    let grid = screen.getByTestId("timeline-inspector-key");
+    fireEvent.click(within(grid).getByRole("combobox", { name: "Interpolation" }));
+    choose("Snap (Custom)");
+    expect(lastClip().objects[0]!.tracks[0]!.keys[1]!.Interpolation).toBe("class:Snap");
+    cleanup();
+
+    renderInspector({ keys: [["t-loc", "k0"], ["t-loc", "k2"]] });
+    grid = screen.getByTestId("timeline-inspector-keys");
+    fireEvent.click(within(grid).getByRole("combobox", { name: "Interpolation" }));
+    choose("Snap (Custom)");
+    expect(lastClip().objects[0]!.tracks[0]!.keys.map((entry) => entry.Interpolation)).toEqual(["class:Snap", "class:Snap"]);
+    cleanup();
+
+    const gone = clip();
+    gone.objects[0]!.tracks[0]!.keys[1]!.Interpolation = "class:Deleted";
+    harness.scene = { actors: [createActor("door", "Door")], settings: {}, timelineClips: [gone] } as unknown as SerializedScene;
+    render(<SceneToolsProvider><Select keys={[["t-loc", "k2"]]} /><TimelineInspector /></SceneToolsProvider>);
+    grid = screen.getByTestId("timeline-inspector-key");
+    expect(within(grid).getByRole("combobox", { name: "Interpolation" }).textContent).toContain("Deleted (Custom)");
   });
 
   it("edits a Boolean key's value", () => {

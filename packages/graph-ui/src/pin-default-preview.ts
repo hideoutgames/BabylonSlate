@@ -1,5 +1,6 @@
 import { normalizeTag, normalizeTagContainer, type TagContainer } from "@haptic/core";
 import {
+  customEasingCurveEnumLabel,
   defaultJsValue,
   pinAcceptsLiteralDefault,
   pinDefaultAsBoolean,
@@ -178,9 +179,10 @@ export function pinDefaultPreview(
     return { kind: "tag-container", value: normalizeTagContainer(readPinDefaultValue(pin, properties)) };
   }
   if (pin.type.kind === "enumRef") {
+    const value = pinDefaultAsString(readPinDefaultValue(pin, properties));
     return {
       kind: "enumRef",
-      text: humanizePropertyLabel(pinDefaultAsString(readPinDefaultValue(pin, properties))),
+      text: customEasingCurveEnumLabel(String(pin.type.guid), value) ?? humanizePropertyLabel(value),
     };
   }
   if (pin.type.kind === "structRef" && pin.type.guid === "engine:InputType") {

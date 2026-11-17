@@ -17,6 +17,7 @@ import {
   graphNodesBounds,
 } from "@haptic/graph-ui";
 import {
+  isLockedEngineClassId,
   isSceneLayerAllowedComponent,
   isSceneLayerExclusiveComponent,
 } from "@haptic/object-model";
@@ -115,6 +116,8 @@ function collectClassMembers(
   const clip: ClassMemberClipboard = { variables: [], functions: [], events: [] };
   for (const row of rows) {
     if (row.kind === "interface") return null;
+    // An engine base's overridable function has no graph to copy; override it from Functions + instead.
+    if (row.inheritedFrom && isLockedEngineClassId(row.inheritedFrom)) return null;
     const owner = row.inheritedFrom ? source.parentGraphs?.[row.inheritedFrom] : source.graph;
     const sourceClassId = row.inheritedFrom ?? source.classId;
     if (!owner) return null;

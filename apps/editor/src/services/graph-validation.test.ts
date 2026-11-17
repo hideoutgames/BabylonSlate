@@ -6,6 +6,8 @@ import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@h
 import { engineParentOf } from "@haptic/editor-kit";
 import { filterPaletteForPin, type SerializedPin } from "@haptic/graph-ui";
 import { ownedTimelineClipDispatcherSymbols } from "../lib/owned-actor-gets";
+import { withEngineClassGraphs } from "../lib/logic-graph-document";
+import { collectParentFunctionSignatures } from "../lib/overridable-functions";
 import { timelineScriptClassIds, timelineScriptSymbols, type TimelineScriptAsset } from "../lib/timeline-script-catalog";
 import {
   classHierarchyFromParentOf,
@@ -1325,6 +1327,39 @@ describe("scriptPinCompatibility", () => {
   });
 });
 
+describe("engine overridable functions", () => {
+  const parentOf = (id: string) => id === "Wave" ? "RichText2DDecoratorEffect" : engineParentOf(id) ?? null;
+  const otherClassGraphs = withEngineClassGraphs({});
+
+  it("offers Get Keys and Get Tag Value only to Decorator Effect Classes", () => {
+    const ids = (parentClass: string, classId: string) =>
+      scriptPaletteNodes(registry, { parentClass, classId, parentOf, otherClassGraphs }).map((node) => node.id);
+    expect(ids("RichText2DDecoratorEffect", "Wave")).toEqual(expect.arrayContaining([
+      "functions.call:RichText2DDecoratorEffect:Get Keys", "richText.getTagValue",
+    ]));
+    for (const [parentClass, classId] of [["Actor", "Hero"], ["RichText2DAppearMode", "Rise"], ["Object", "Thing"]] as const) {
+      const offered = ids(parentClass, classId);
+      expect(offered, parentClass).not.toContain("functions.call:RichText2DDecoratorEffect:Get Keys");
+      expect(offered, parentClass).not.toContain("richText.getTagValue");
+    }
+  });
+
+  it("checks a Get Keys override against the engine's signature", () => {
+    const override = (pins: NonNullable<SerializedGraph["members"]>[number]["pins"]): Pick<SerializedGraph, "members"> => ({ members: [{
+      id: "get-keys", kind: "function", name: "Get Keys", pins,
+      overrides: { classId: "RichText2DDecoratorEffect", name: "Get Keys" },
+    }] });
+    const diagnostics = (graph: Pick<SerializedGraph, "members">) => validateSerializedGraph({ nodes: [], edges: [], ...graph }, {
+      assetGuid: "wave", graphId: "wave", classId: "Wave", parentOf,
+      members: classMemberSymbolsFromGraphs({ Wave: { nodes: [], edges: [], ...graph } }, { parentOf }),
+      parentFunctionSignatures: collectParentFunctionSignatures({ classId: "Wave", parentOf, parentGraphs: otherClassGraphs }),
+    }).filter((diagnostic) => diagnostic.code === "member.override_signature");
+    const exec = [{ name: "exec", typeId: "exec", direction: "in" as const }, { name: "then", typeId: "exec", direction: "out" as const }];
+    expect(diagnostics(override([...exec, { name: "Keys", typeId: "string", direction: "out", container: "array" }]))).toEqual([]);
+    expect(diagnostics(override([...exec, { name: "Keys", typeId: "string", direction: "out" }]))).toHaveLength(1);
+  });
+});
+
 describe("scriptPaletteNodes", () => {
   it("keeps operator and formula aliases on typed arithmetic palette choices", () => {
     const nodes = scriptPaletteNodes(registry);
@@ -2573,6 +2608,26 @@ describe("scriptPaletteNodes", () => {
       "case:Blue",
       "default",
     ]);
+  });
+
+  it("keeps a custom easing curve on Make and Select of a curve enum, even once its Class is gone, and resets other non-members", () => {
+    const curves = { name: "Easing Curve", members: [{ name: "linear", value: 0 }, { name: "class:Snap", value: 31 }] };
+    const team = { name: "Team", members: [{ name: "Red", value: 1 }] };
+    const node = (id: string, type: string, data: Record<string, unknown>) => ({ id, type, position: { x: 0, y: 0 }, data });
+    const hydrated = hydrateSerializedGraphForEditor({
+      nodes: [
+        node("make", "enum.make", { enumGuid: "engine:EasingCurve", value: "class:Deleted" }),
+        node("select", "enum.select", { enumGuid: "engine:EasingCurve", "default:index": "class:Deleted" }),
+        node("sw", "enum.switch", { enumGuid: "engine:EasingCurve" }),
+        node("team", "enum.make", { enumGuid: "enum-team", value: "class:Deleted" }),
+      ],
+      edges: [],
+    }, registry, { enums: { "engine:EasingCurve": curves, "enum-team": team } });
+    expect(hydrated.nodes[0]?.data.value).toBe("class:Deleted");
+    expect(hydrated.nodes[1]?.data["default:index"]).toBe("class:Deleted");
+    expect((hydrated.nodes[2]?.data.__pins as Array<{ id: string; name: string }>).map((pin) => pin.name))
+      .toEqual(["exec", "value", "Linear", "Snap (Custom)", "Default"]);
+    expect(hydrated.nodes[3]?.data.value).toBe("Red");
   });
 
   it("keeps the last Switch enum guid after disconnect", () => {

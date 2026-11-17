@@ -673,6 +673,9 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const scene = services.getSceneReference?.(self) ?? null;
           return scene && !scene.destroyed ? scene : null;
         },
+        getRichTextTagValue(key) {
+          return typeof key === "string" && key ? services.richTextTagValue?.(this.self, key) ?? "" : "";
+        },
         invokeCustomEvent(target, eventName, eventArgs) {
           const { deltaSeconds, tickIndex } = this;
           const receiver = target as EngineObject | null | undefined;

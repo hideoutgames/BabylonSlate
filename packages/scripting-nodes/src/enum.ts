@@ -6,6 +6,7 @@ import {
   BOOL,
   EXEC,
   STRING,
+  customEasingCurveEnumLabel,
   enumRef,
   enumSwitchCasePinId,
 } from "@haptic/scripting";
@@ -66,6 +67,11 @@ export function titleCaseEnumMember(name: string): string {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+}
+
+/** A member's pin name on Switch and Select: `<Class> (Custom)` for a custom easing curve, else `titleCaseEnumMember`. */
+export function enumMemberPinName(enumGuid: string, name: string): string {
+  return customEasingCurveEnumLabel(enumGuid, name) ?? titleCaseEnumMember(name);
 }
 
 export const enumNodes: NodeDefinition[] = [
@@ -140,7 +146,7 @@ export const enumNodes: NodeDefinition[] = [
       ...enumMembersOf(properties).map((member) =>
         pin(
           enumSwitchCasePinId(member.name),
-          titleCaseEnumMember(member.name),
+          enumMemberPinName(enumGuidOf(properties), member.name),
           "out",
           EXEC,
         ),

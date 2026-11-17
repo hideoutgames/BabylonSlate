@@ -2,6 +2,7 @@ import {
   createActor,
   createDefaultSceneLayer,
   createTimelineClip,
+  customEasingCurve,
   text2DCustomAppearMode,
   type AxisBinding,
   type PainterCommand,
@@ -14,7 +15,7 @@ import {
 } from "@haptic/core";
 import {
   engineScriptApiFor, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
-  RICH_TEXT_2D_LETTER_CLASS_ID, type EngineScriptFunction,
+  RICH_TEXT_2D_LETTER_CLASS_ID, RICH_TEXT_GET_KEYS_FUNCTION, type EngineScriptFunction,
 } from "@haptic/object-model";
 import {
   comp,
@@ -24,10 +25,10 @@ import {
   type FeatureTestClassRef,
   type FeatureTestContext,
 } from "./context";
-import { classGraph, gChain, getVar, gExec, gNode, gWire, setVar, varMember, type GraphNode } from "./graph";
+import { classGraph, fnGraph, gChain, getVar, gExec, gNode, gWire, printString, setVar, varMember, type GraphNode } from "./graph";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
 import { ownedActorProbeScript } from "./scene-scripts";
-import { featureTestCameraShakes } from "./scripting";
+import { FEATURE_TEST_EASING_CURVE_CLASS, featureTestCameraShakes } from "./scripting";
 import { withFeatureTestHudPulse } from "./timeline";
 
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
@@ -49,10 +50,12 @@ const FEATURE_TEST_SCENE_LAYER_NAMES = {
   clickButton: "FT_UIClickButton",
   pitCounter: "FT_UIPitCounter",
   cameraRig: "FT_UICameraRig",
-  /** Rich Text 2D Appear Mode: each letter's Opacity follows its reveal Alpha. */
+  /** Rich Text 2D Appear Mode: each letter's Opacity and Tint follow its reveal Alpha. */
   richTextMode: "FT_RichTextRiseMode",
-  /** Rich Text 2D Decorator Effect: tilts the letters inside its `[fx]` tag by the tag's Strength. */
+  /** Rich Text 2D Decorator Effect: tilts the letters inside its `[fx]` tag by the tag's own `tilt` keyword. */
   richTextEffect: "FT_RichTextTiltEffect",
+  /** The HUD's rich text: notes when its reveal finishes (Event On Appear Finished). */
+  richTextLabel: "FT_UIRichText",
 } as const;
 
 /**
@@ -107,8 +110,8 @@ interface LayerRefs {
   panelTexture: string;
   /** The optional one-shot Audio asset, which the rich text's reveal plays. */
   sound: string | null;
-  /** Class ids of the custom Appear Mode and Decorator Effect the rich text uses. */
-  richText: { mode: string; effect: string };
+  /** Class ids of the custom Appear Mode and Decorator Effect the rich text uses, and the rich text's own Class. */
+  richText: { mode: string; effect: string; label: PlacedClass };
   icons: Record<"camera" | "audio" | "particles" | "point_light" | "spot_light" | "navmesh" | "default", string>;
   classes: Record<"listItem" | "gridItem" | "cardA" | "cardB" | "switcher" | "clickButton" | "pitCounter" | "cameraRig", PlacedClass>;
   /** FT_Timeline and its FT_HudPulse clip asset, which FT_HUD's script plays. */
@@ -167,7 +170,7 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
       cameraRig: await saveCameraRig(ctx),
     },
     timeline: { timeline: requireRef(ctx.assets.timeline, "FT_Timeline"), hudPulse: requireRef(ctx.assets.hudPulse, "FT_HudPulse") },
-    richText: await saveRichTextClasses(ctx),
+    richText: await saveRichTextClasses(ctx, base),
   };
 
   const hud = await ctx.addSceneDocument({
@@ -321,20 +324,7 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
     })),
     ui("ft-ui-title-anchor", "2DAnchorComponent", { anchor: "topCenter", offsetX: 0, offsetY: -0.06 }),
   ], { position: [0, 5.01], folderId }));
-  add(layerActor("ft-ui-rich-text", "Rich Text", [
-    ui("ft-ui-rich-text-markup", "2DRichTextComponent", {
-      ...text(refs, richTextMarkup(refs.icons.camera, refs.richText.effect), 18, [900, 26.4], { alignment: "center" }),
-      appearModes: ["fade", "slide", text2DCustomAppearMode(refs.richText.mode)],
-      appearTransition: "cubicOut",
-      appearInterval: 0.03,
-      appearDuration: 0.25,
-      appearStart: "play",
-      appearSound: true,
-      appearSoundAssetGuid: refs.sound,
-      appearSoundPlay: "everyFourthLetter",
-      appearSoundOffset: 0.02,
-    }),
-  ], { position: [0, 4.53], folderId }));
+  add(classInstance(refs.richText.label, "ft-ui-rich-text", "Rich Text", { position: [0, 4.53], folderId }));
   // Root Safe Area over the whole canvas: its label lands top-left inside the insets.
   add(layerActor("ft-ui-safe-area", "Safe Area", [
     ui("ft-ui-safe-area-box", "2DSafeAreaComponent", {
@@ -367,13 +357,16 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
   ], { parentId: "ft-ui-safe-area" }));
 }
 
+/** The `tilt` keyword the Decorator Effect declares with Get Keys and reads with Get Tag Value. */
+const TILT_KEY = "tilt";
+
 function richTextMarkup(imageGuid: string, effectClassId: string): string {
   return [
     "[b]Rich[/b] [i]Text[/i] [color=orange]color[/color] [size=21.6]size[/size]",
     "[outline=1.8][outline-color=1a0a3a]outline[/outline-color][/outline] [u]under[/u]",
     `[img=${imageGuid} size=16.8] [wave=3 intensity=1.2]wave[/wave] [shake=1]shake[/shake]`,
     "[hover=1]hover[/hover] [rotate=10]tilt[/rotate]",
-    `[fx=${effectClassId} strength=8]custom[/fx]`,
+    `[fx=${effectClassId} ${TILT_KEY}=8]custom[/fx]`,
   ].join(" ");
 }
 
@@ -391,40 +384,112 @@ function letterVariableNode(id: string, propertyKey: string, x: number, y: numbe
   });
 }
 
-/** The custom Appear Mode and Decorator Effect the HUD's rich text names. */
-async function saveRichTextClasses(ctx: FeatureTestContext): Promise<LayerRefs["richText"]> {
+/**
+ * The custom Appear Mode and Decorator Effect the HUD's rich text names, and the rich text's own Class, whose
+ * Event On Appear Finished sets Revealed once its reveal (Play On Start) ends.
+ */
+async function saveRichTextClasses(ctx: FeatureTestContext, refs: ClassBase): Promise<LayerRefs["richText"]> {
+  // Each letter fades in from red: Opacity and the Tint's green and blue follow its Alpha.
   const mode = await ctx.saveClass({
     folder: FOLDER, name: NAMES.richTextMode, parentClass: RICH_TEXT_2D_APPEAR_MODE_CLASS_ID,
     graph: classGraph({
       nodes: [
         gNode("appear", "flow.event.richTextLetterAppear", 0, 0),
         letterVariableNode("set-opacity", "opacity", 320, 0),
+        gNode("tint", "struct.makeColor", 320, 200, { "default:r": 1, "default:a": 1 }),
+        letterVariableNode("set-tint", "tint", 640, 0),
       ],
       edges: [
         gExec("appear", "set-opacity"),
         gWire("appear", "letter", "set-opacity", "target"),
         gWire("appear", "alpha", "set-opacity", "value"),
+        gExec("set-opacity", "set-tint"),
+        gWire("appear", "letter", "set-tint", "target"),
+        gWire("appear", "alpha", "tint", "g"),
+        gWire("appear", "alpha", "tint", "b"),
+        gWire("tint", "out", "set-tint", "value"),
       ],
     }),
   });
+  // Get Keys declares `tilt`; each tagged letter's Rotation is that tag value as a number.
+  const getKeys = {
+    id: "ft-ui-fn-get-keys", kind: "function" as const, name: RICH_TEXT_GET_KEYS_FUNCTION.name,
+    pins: RICH_TEXT_GET_KEYS_FUNCTION.pins.map((pin) => ({ ...pin })),
+    overrides: { classId: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, name: RICH_TEXT_GET_KEYS_FUNCTION.name },
+  };
+  const keysPin = RICH_TEXT_GET_KEYS_FUNCTION.pins.find((pin) => pin.direction === "out" && pin.typeId !== "exec")!.name;
   const effect = await ctx.saveClass({
     folder: FOLDER, name: NAMES.richTextEffect, parentClass: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
     graph: classGraph({
+      members: [getKeys],
       nodes: [
         gNode("decorate", "flow.event.richTextDecorateLetters", 0, 0),
         gNode("each", "flow.forEach", 320, 0),
-        letterVariableNode("set-rotation", "rotation", 640, 0),
+        gNode("tilt-value", "richText.getTagValue", 320, 200, { "default:key": TILT_KEY }),
+        gNode("tilt-number", "string.parseFloat", 560, 200),
+        letterVariableNode("set-rotation", "rotation", 800, 0),
       ],
       edges: [
         gExec("decorate", "each"),
         gWire("decorate", "letters", "each", "array"),
         gWire("each", "loopBody", "set-rotation", "execIn"),
         gWire("each", "element", "set-rotation", "target"),
-        gWire("decorate", "strength", "set-rotation", "value"),
+        gWire("tilt-value", "value", "tilt-number", "in"),
+        gWire("tilt-number", "out", "set-rotation", "value"),
       ],
+      functionGraphs: {
+        [getKeys.id]: fnGraph(getKeys, {
+          nodes: [gNode("keys", "array.make", 400, 240, { count: 1, "default:item0": TILT_KEY })],
+          edges: [gWire("keys", "out", `${getKeys.id}-output`, keysPin)],
+        }),
+      },
     }),
   });
-  return { mode: mode.classId, effect: effect.classId };
+  const revealed = varMember("ft-ui-var-revealed", "Revealed", "bool", false, { category: "Rich Text" });
+  const lastLetter = varMember("ft-ui-var-last-letter", "Last Letter", "int", -1, { category: "Rich Text" });
+  const components = [
+    ui("prefab-markup", "2DRichTextComponent", {
+      ...text(refs, richTextMarkup(refs.icons.camera, effect.classId), 18, [900, 26.4], { alignment: "center" }),
+      appearModes: ["fade", "slide", text2DCustomAppearMode(mode.classId)],
+      appearTransition: customEasingCurve(FEATURE_TEST_EASING_CURVE_CLASS),
+      appearInterval: 0.03,
+      appearDuration: 0.25,
+      appearStart: "play",
+      appearSound: true,
+      appearSoundAssetGuid: refs.sound,
+      appearSoundPlay: "everyFourthLetter",
+      appearSoundOffset: 0.02,
+    }),
+  ];
+  const markupEvent = (id: string, type: string, title: string, y: number) => gNode(id, type, 0, y, {
+    componentId: "prefab-markup",
+    eventQualifier: "Markup",
+    title: `${title} (Markup)`,
+  });
+  const label = await saveOverlayClass(ctx, NAMES.richTextLabel, "SceneLayerActor", components, classGraph({
+    members: [revealed, lastLetter],
+    nodes: [
+      // Each letter's Index as it starts appearing; the reveal ends on the last one.
+      markupEvent("letter-shown", "flow.event.richTextLetterShown", "Event On Letter Shown", 0),
+      setVar("set-last-letter", lastLetter, 320, 0),
+      markupEvent("appear-finished", "flow.event.richTextAppearFinished", "Event On Appear Finished", 300),
+      setVar("set-revealed", revealed, 320, 300, true),
+      getVar("get-last-letter", lastLetter, 320, 500),
+      gNode("letters-shown", "math.greaterEqual", 560, 500, { "default:b": 1 }),
+      gNode("assert-letters-shown", "debug.assert", 800, 300, { "default:message": "FT_UIRichText finished its reveal before On Letter Shown ran" }),
+      printString("print-appear-finished", 1040, 300, "FT_UIRichText heard On Appear Finished (Markup)"),
+    ],
+    edges: [
+      gWire("letter-shown", "execOut", "set-last-letter", "execIn"),
+      gWire("letter-shown", "index", "set-last-letter", "value"),
+      gWire("appear-finished", "execOut", "set-revealed", "execIn"),
+      gWire("get-last-letter", "value", "letters-shown", "a"),
+      gWire("letters-shown", "out", "assert-letters-shown", "condition"),
+      ...gChain("set-revealed", "assert-letters-shown", "print-appear-finished"),
+    ],
+    actorDefaults: { eventTick: "disabled" },
+  }));
+  return { mode: mode.classId, effect: effect.classId, label };
 }
 
 /** Left column: Vertical Box of every form control (a nested Horizontal Box holds the toggles). */
@@ -920,7 +985,8 @@ async function saveCameraRig(ctx: FeatureTestContext): Promise<PlacedClass> {
       cameraVariableNode("zoom", "get", "zoom", 480, 300),
       cameraVariableNode("rotation", "get", "rotation", 720, 300),
       gNode("pan", "tween.layerCameraLocation", 240, 0, { ...seconds, "default:b": { x: 0, y: -0.6 } }),
-      gNode("zoom-in", "tween.layerCameraZoom", 480, 0, { ...seconds, "default:b": 1.15 }),
+      // Zoom eases along the project's custom easing curve.
+      gNode("zoom-in", "tween.layerCameraZoom", 480, 0, { ...seconds, "default:curve": customEasingCurve(FEATURE_TEST_EASING_CURVE_CLASS), "default:b": 1.15 }),
       gNode("turn", "tween.layerCameraRotation", 720, 0, { ...seconds, "default:b": 4 }),
       cameraVariableNode("reset-rotation", "set", "rotation", 960, 0, { "default:value": 0 }),
       cameraVariableNode("reset-zoom", "set", "zoom", 1200, 0, { "default:value": 1 }),

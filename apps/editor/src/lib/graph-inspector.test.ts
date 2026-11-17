@@ -638,6 +638,63 @@ describe("collectEnumMemberNames", () => {
   });
 });
 
+describe("custom easing curves in enum lists", () => {
+  const assets = [
+    { path: "assets/Curves/Snap.class.hasset", header: { guid: "snap", type: "Class", name: "Snap", parentClass: "CustomEasingCurve" } },
+    { path: "assets/Curves/Overshoot.class.hasset", header: { guid: "over", type: "Class", name: "Overshoot", parentClass: "Snap" } },
+    { path: "assets/Hero.class.hasset", header: { guid: "hero", type: "Class", name: "Hero", parentClass: "Actor" } },
+  ];
+
+  it("lists the project's curve Classes after the members of exactly the three curve enums", () => {
+    const members = collectEnumMemberNames([], assets);
+    for (const guid of ["engine:EasingCurve", "engine:CurveInterpolation", "engine:Text2DAppearTransition"]) {
+      expect(members[guid]!.slice(-2), guid).toEqual(["class:Overshoot", "class:Snap"]);
+    }
+    expect(members["engine:EasingCurve"]![0]).toBe("linear");
+    expect(members["engine:TweenSpace"]).not.toContain("class:Snap");
+    expect(Object.values(members).flat().filter((name) => name === "class:Hero")).toEqual([]);
+  });
+
+  it("labels a stored curve after its Class, keeping one whose Class is gone", () => {
+    const enumMembers = collectEnumMemberNames([], assets);
+    const options = (value: string) => {
+      const [row] = variableDefaultPropertyRows("enum", value, vi.fn(), { typeClassId: "engine:EasingCurve", enumMembers });
+      if (row?.kind !== "enum") throw new Error("Expected an enum row");
+      return { value: row.value, options: row.options.slice(-3) };
+    };
+    expect(options("class:Snap")).toEqual({ value: "class:Snap", options: [
+      { value: "bounceInOut", label: "Bounce In Out" },
+      { value: "class:Overshoot", label: "Overshoot (Custom)" },
+      { value: "class:Snap", label: "Snap (Custom)" },
+    ] });
+    expect(options("class:Deleted")).toEqual({ value: "class:Deleted", options: [
+      { value: "class:Overshoot", label: "Overshoot (Custom)" },
+      { value: "class:Snap", label: "Snap (Custom)" },
+      { value: "class:Deleted", label: "Deleted (Custom)" },
+    ] });
+  });
+
+  it("offers the curves to Make Enum and keeps a stored one whose Class is gone", () => {
+    const rows = enumNodePropertyRows("enum.make", { enumGuid: "engine:EasingCurve", value: "class:Deleted" }, vi.fn(), {
+      enums: [{ guid: "engine:EasingCurve", name: "Easing Curve", members: [{ name: "linear" }, { name: "class:Snap" }] }],
+    });
+    const value = rows.find((row) => row.id === "value");
+    expect(value).toMatchObject({ kind: "enum", value: "class:Deleted", options: [
+      { value: "linear", label: "Linear" },
+      { value: "class:Snap", label: "Snap (Custom)" },
+      { value: "class:Deleted", label: "Deleted (Custom)" },
+    ] });
+  });
+
+  it("offers the curves as key interpolations in a curve value's editor", () => {
+    const enumMembers = collectEnumMemberNames([], assets);
+    const [row] = variableDefaultPropertyRows("struct", { Keys: [], Before: "constant", After: "constant" }, vi.fn(), {
+      typeClassId: "engine:FloatCurve", enumMembers,
+    });
+    expect(row).toMatchObject({ kind: "value-curve", customEasingCurves: ["class:Overshoot", "class:Snap"] });
+  });
+});
+
 describe("variableDefaultPropertyRows structs and enums", () => {
   it("expands nested Structure fields as Title Case rows", () => {
     const onChange = vi.fn();

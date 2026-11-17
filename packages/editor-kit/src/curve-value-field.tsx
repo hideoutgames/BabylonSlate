@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import type { CustomEasingCurveRef } from "@haptic/core";
 import { ChevronDownIcon } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
 import { cn } from "@haptic/ui/lib/utils";
@@ -55,6 +56,8 @@ export interface CurveValueFieldProps {
   "aria-label": string;
   disabled?: boolean;
   defaultExpanded?: boolean;
+  /** Passed to the curve editor's Interpolation picker (`CurveEditorProps.customEasingCurves`). */
+  customEasingCurves?: readonly CustomEasingCurveRef[];
   "data-testid"?: string;
 }
 
@@ -64,7 +67,8 @@ export interface CurveValueFieldProps {
  * the per-channel curves.
  */
 export function CurveValueField({
-  kind, value, onChange, "aria-label": ariaLabel, disabled = false, defaultExpanded = false, "data-testid": testId = "curve-value",
+  kind, value, onChange, "aria-label": ariaLabel, disabled = false, defaultExpanded = false, customEasingCurves,
+  "data-testid": testId = "curve-value",
 }: CurveValueFieldProps) {
   const editorId = useId();
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -98,7 +102,8 @@ export function CurveValueField({
           {kind === "color" && !channelsView ? (
             <GradientEditor aria-label={ariaLabel} value={value} disabled={disabled} onChange={onChange} data-testid={`${testId}-gradient`} />
           ) : (
-            <CurveEditor kind={kind} aria-label={ariaLabel} value={value} disabled={disabled} onChange={onChange} data-testid={`${testId}-editor`} />
+            <CurveEditor kind={kind} aria-label={ariaLabel} value={value} disabled={disabled} onChange={onChange}
+              customEasingCurves={customEasingCurves} data-testid={`${testId}-editor`} />
           )}
         </div>
       ) : null}

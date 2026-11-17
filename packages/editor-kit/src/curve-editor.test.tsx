@@ -406,6 +406,23 @@ describe("CurveEditor Vector axes", () => {
     ]);
   });
 
+  it("offers the host's custom easing curves as interpolations and names a selected one whose Class is gone", () => {
+    const onChange = vi.fn();
+    render(<CurveEditor kind="float" aria-label="Falloff" value={curve(key(0, 0, "class:Gone"), key(1, 10))} constraints={FIXED}
+      customEasingCurves={["class:Snap"]} onChange={onChange} data-testid="curve" />);
+    act(() => {
+      dispatchPointerEvent(screen.getByTestId("curve-key-0"), "pointerdown", { pointerType: "mouse", clientX: 0, clientY: 100 });
+      dispatchPointerEvent(screen.getByTestId("curve-key-0"), "pointerup", { pointerType: "mouse", clientX: 0, clientY: 100 });
+    });
+    expect(screen.getByTestId("curve-interpolation").textContent).toContain("Gone (Custom)");
+    fireEvent.click(screen.getByTestId("curve-interpolation"));
+    expect(screen.getByRole("option", { name: "Gone (Custom)" })).toBeTruthy();
+    const snap = screen.getByRole("option", { name: "Snap (Custom)" });
+    fireEvent.pointerDown(snap);
+    fireEvent.click(snap);
+    expect(keysOf(onChange.mock.lastCall![0]).map((entry) => entry.Interpolation)).toEqual(["class:Snap", "linear"]);
+  });
+
   it("adds keys for the visible axes only", () => {
     const onChange = vi.fn();
     render(<CurveEditor kind="vec3" aria-label="Sway" value={vector()} constraints={FIXED} channels={[true, false, false]}

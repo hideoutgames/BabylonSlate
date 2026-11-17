@@ -82,7 +82,7 @@ import type { EngineOptions } from "@babylonjs/core/Engines/thinEngine";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import type { Material } from "@babylonjs/core/Materials/material";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
-import { parseEasingCurve, qualitySettingsFingerprint, qualityValuesKey, resolveRenderingQuality } from "@haptic/core";
+import { parseEasingCurve, setCustomEasingCurves, qualitySettingsFingerprint, qualityValuesKey, resolveRenderingQuality } from "@haptic/core";
 import { captureView, ViewBlend } from "./view-blend";
 import { CameraShakeView } from "./camera-shake-view";
 import { isEnvironmentLightingReady } from "./environment-lighting";
@@ -2969,6 +2969,12 @@ function initializeEngine(
         snapshots.installLayout(command.capacity, command.generation);
         appliedSnapshotIdentity = null;
         scheduler.invalidate("snapshot");
+        return;
+      }
+      if (command.type === "setCustomEasingCurves") {
+        // This realm's copy of the curves the runtime baked: camera blends and text reveals sample them here.
+        setCustomEasingCurves(command.curves);
+        scheduler.invalidate("asset");
         return;
       }
       if (!simulationEditMode || (command.type !== "possessCamera" && command.type !== "setFreeCam"))
