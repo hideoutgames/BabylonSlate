@@ -165,6 +165,11 @@ export type RenderDiagnostics = {
      * own `isInFrustum` (`deferred`). Present with `visibility`.
      */
     visibilityRows?: { reads: number; deferred: number };
+    /**
+     * The view's cull pass by step, in ms summed over `culls` (`CullSteps`): `settleMs`, `layerMs`, `frustumMs`,
+     * `hiddenMs`, `occludeMs` and `worldMs`. Divide by `culls` for a frame's share.
+     */
+    cullSteps?: { culls: number; settleMs: number; layerMs: number; frustumMs: number; hiddenMs: number; occludeMs: number; worldMs: number };
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is

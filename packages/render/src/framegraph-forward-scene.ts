@@ -257,6 +257,16 @@ const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh);
 const isWorldMeshSceneDepthLacks = (mesh: AbstractMesh): boolean => isWorldMesh(mesh) && !writesSceneDepth(mesh);
 const isShown = (mesh: AbstractMesh): boolean => !isRevealPending(mesh);
 
+/**
+ * A view's cull pass by step, in ms summed over `culls`: settling new meshes' always-drawn mark, bringing a Scene
+ * Layer's drawable list up to date, the frustum cull itself (the bound target and camera matrices included), leaving
+ * out meshes whose first variant still compiles, occlusion, and writing the spatial pass's world list.
+ */
+export interface CullSteps {
+  culls: number; settleMs: number; layerMs: number; frustumMs: number; hiddenMs: number; occludeMs: number; worldMs: number;
+}
+const newCullSteps = (): CullSteps => ({ culls: 0, settleMs: 0, layerMs: 0, frustumMs: 0, hiddenMs: 0, occludeMs: 0, worldMs: 0 });
+
 /** Native camera frustum calculation reads the currently bound target's aspect. */
 class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   /** The output list without hidden meshes when culling is off (its output is then the input list itself). */
@@ -273,6 +283,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   worldOverSceneDepth = false;
   /** A world view's occlusion culling, and the colour pass whose first draws keep a mesh in the list. */
   occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
+  /** Where the cull pass's time went, summed over culls; the view's own record, which outlives a rebuilt task. */
+  steps: CullSteps = newCullSteps();
 
   /** The frustum cull tests bounds through the visibility index, checked against Babylon's own (`view-frustum-cull.ts`). */
   override record(): void {
@@ -293,32 +305,42 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 
   private cullFrame(): void {
     const scene = this.camera.getScene();
+    const steps = this.steps;
+    const started = performance.now();
     // Play: the meshes added since the last cull leave Intermediate's always-drawn mark first (`play-view-culling.ts`).
     settlePlayViewCulling(scene);
+    const settled = performance.now();
     // A Scene Layer's drawable meshes, which its scene objects hold, brought up to date in place as the cull reads them.
     layerDrawableMeshes(scene);
+    const listed = performance.now();
     const target = this.camera.outputRenderTarget?.renderTarget;
-    if (!target) {
-      super._execute();
-      this.leaveOutHidden();
-      this.occlude();
-      this.publishWorld();
-      return;
+    if (!target) super._execute();
+    else {
+      const engine = this.camera.getEngine();
+      // Every preceding graph render pass restores the backbuffer. Bind only for
+      // the official cull task, without clearing or invoking RTT render observers.
+      try {
+        engine.bindFramebuffer(target);
+        this.camera.getViewMatrix();
+        this.camera.getProjectionMatrix(true);
+        super._execute();
+      } finally {
+        engine.restoreDefaultFramebuffer();
+      }
     }
-    const engine = this.camera.getEngine();
-    // Every preceding graph render pass restores the backbuffer. Bind only for
-    // the official cull task, without clearing or invoking RTT render observers.
-    try {
-      engine.bindFramebuffer(target);
-      this.camera.getViewMatrix();
-      this.camera.getProjectionMatrix(true);
-      super._execute();
-    } finally {
-      engine.restoreDefaultFramebuffer();
-    }
+    const culled = performance.now();
     this.leaveOutHidden();
+    const shown = performance.now();
     this.occlude();
+    const occluded = performance.now();
     this.publishWorld();
+    steps.culls++;
+    steps.settleMs += settled - started;
+    steps.layerMs += listed - settled;
+    steps.frustumMs += culled - listed;
+    steps.hiddenMs += shown - culled;
+    steps.occludeMs += occluded - shown;
+    steps.worldMs += performance.now() - occluded;
   }
 
   /** Leaves out the meshes hidden behind occluders, into the view's own list (the frustum's output stays as it was). */
@@ -410,6 +432,7 @@ export class ForwardSceneFrameGraph {
       ...(mirrors ? { mirrorCrop: { checks: mirrors.cropChecks, misses: mirrors.cropMisses } } : {}),
       ...(this.outlineView ? { outlineCull: this.outlineView.cullDiagnostics() } : {}),
       ...(visibility ? { visibility, visibilityRows: visibilityRows() } : {}),
+      cullSteps: { ...this.cullSteps },
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
@@ -445,6 +468,7 @@ export class ForwardSceneFrameGraph {
   private objects: ManagedShadowObjectRendererTask | undefined;
   private shadows: ManagedShadowsTask | undefined;
   private cull: CameraOutputCullTask | undefined;
+  private readonly cullSteps = newCullSteps();
   /** A world view's occlusion culling; kept across graph rebuilds. */
   private readonly occlusion: ViewOcclusion | undefined;
   private readonly seedsFromSceneDepth: boolean;
@@ -1668,6 +1692,7 @@ export class ForwardSceneFrameGraph {
           scene,
         );
         const occlusion = this.occlusion;
+        this.cull.steps = this.cullSteps;
         if (occlusion) this.cull.occlusion = { view: occlusion, colourPass: () => this.objects!.objectRenderer.renderPassId };
         // Babylon updates cameras, animations and world matrices after render()
         // begins, so the spatial stages' demand follows them from inside the
