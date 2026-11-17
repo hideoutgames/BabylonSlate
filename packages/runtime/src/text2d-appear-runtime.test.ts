@@ -3,7 +3,7 @@ import { createActor, createDefaultScene, createDefaultSceneLayer } from "@hapti
 import { isPlayEngineCommandType, type CommandMessage } from "@haptic/bridge";
 import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
-import { Text2DAppearRuntime } from "./text2d-appear-runtime";
+import { Text2DAppearRuntime, type Text2DAppearSoundEvent } from "./text2d-appear-runtime";
 
 function text(variables: Record<string, unknown> = {}) {
   const actor = new Actor({ classId: "SceneLayerActor", sceneLayerId: "layer" });
@@ -73,6 +73,78 @@ describe("2D rich text appearance runtime", () => {
       expect(runtime.progress(component)).toBe(0);
       runtime.execute(component, "triggerAppear");
       expect(runtime.progress(component)).toBe(1);
+    }
+  });
+
+  it("plays the appear sound per letter on a forward reveal only, without replaying earlier letters", () => {
+    // Four letters at 0.1 s steps, each sounding 0.05 s after it starts appearing.
+    const runtime = new Text2DAppearRuntime(), { actor, component } = text({
+      text: "ABCD", appearSound: true, appearSoundAssetGuid: "beep", appearSoundOffset: 0.05,
+    }), world = worldOf(actor);
+    const plays = () => {
+      const events: Text2DAppearSoundEvent[] = [];
+      runtime.flush(() => {}, (event) => events.push(event));
+      return events.map((event) => event.type === "play" ? `${event.assetGuid}${event.loop ? ":loop" : ""}` : "stop");
+    };
+    runtime.execute(component, "play");
+    runtime.advance(world, 0.04, () => true);
+    expect(plays()).toEqual([]);
+    runtime.advance(world, 0.12, () => true);
+    expect(plays()).toEqual(["beep", "beep"]);
+    runtime.execute(component, "playReverse");
+    runtime.advance(world, 0.06, () => true);
+    expect(plays()).toEqual([]);
+    // Resumes at 0.1 s: A (0.05 s) is not replayed; B, C and D (0.15, 0.25 and 0.35 s) sound as they reappear.
+    runtime.execute(component, "play");
+    runtime.advance(world, 0.3, () => true);
+    expect(plays()).toEqual(["beep", "beep", "beep"]);
+    runtime.advance(world, 1, () => true);
+    expect(plays()).toEqual([]);
+    // A fully revealed text has nothing left to sound.
+    runtime.execute(component, "play");
+    runtime.advance(world, 1, () => true);
+    expect(plays()).toEqual([]);
+    component.setVariable("appearSoundPlay", "once");
+    component.setVariable("appearSoundOffset", 0.7);
+    runtime.execute(component, "triggerAppear");
+    // The offset outlasts the 0.6 s reveal: the sound still plays after the text is fully revealed.
+    runtime.advance(world, 0.65, () => true);
+    expect(runtime.progress(component)).toBe(1);
+    expect(plays()).toEqual([]);
+    runtime.advance(world, 0.1, () => true);
+    expect(plays()).toEqual(["beep"]);
+  });
+
+  it("loops the appear sound until the reveal finishes and stops it on reverse, edits and removal", () => {
+    const runtime = new Text2DAppearRuntime(), { actor, component } = text({
+      text: "ABCD", appearSound: true, appearSoundAssetGuid: "hum", appearSoundPlay: "loop",
+    }), world = worldOf(actor);
+    const events = () => {
+      const seen: Text2DAppearSoundEvent[] = [];
+      runtime.flush(() => {}, (event) => seen.push(event));
+      return seen.map((event) => event.type === "play" ? { play: event.assetGuid, loop: event.loop, voiceId: event.voiceId } : { stop: event.voiceId });
+    };
+    const voiceId = `${component.guid}:appearSound`;
+    runtime.execute(component, "play");
+    runtime.advance(world, 0.1, () => true);
+    expect(events()).toEqual([{ play: "hum", loop: true, voiceId }]);
+    runtime.advance(world, 0.3, () => true);
+    expect(events()).toEqual([]);
+    runtime.advance(world, 0.3, () => true);
+    expect(runtime.progress(component)).toBe(1);
+    expect(events()).toEqual([{ stop: voiceId }]);
+    for (const interrupt of [
+      () => runtime.execute(component, "playReverse"),
+      () => { component.setVariable("appearSound", false); runtime.refresh(component); component.setVariable("appearSound", true); },
+      () => runtime.remove(component),
+    ]) {
+      runtime.execute(component, "triggerAppear");
+      runtime.advance(world, 0.1, () => true);
+      expect(events()).toEqual([{ play: "hum", loop: true, voiceId }]);
+      interrupt();
+      expect(events()).toEqual([{ stop: voiceId }]);
+      runtime.advance(world, 1, () => true);
+      expect(events()).toEqual([]);
     }
   });
 

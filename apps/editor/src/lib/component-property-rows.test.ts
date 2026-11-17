@@ -1423,6 +1423,34 @@ describe("applyPrefabPropertyDefaults", () => {
     expect(plain.rows.some((row) => row.id.includes("-appear"))).toBe(false);
   });
 
+  it("shows the appear sound options only while Appear Sound is on", () => {
+    const soundRows = (properties: Record<string, unknown>) => {
+      const rich = rowsFor({ id: "label", classId: "2DRichTextComponent", properties: { appearModes: ["fade"], ...properties } });
+      return { ...rich, sound: rich.rows.filter((row) => row.id.includes("-appearSound")) };
+    };
+    const off = soundRows({ appearSoundAssetGuid: "beep", appearSoundPlay: "once", appearSoundOffset: 0.2 });
+    expect(off.sound.map((row) => row.label)).toEqual(["Appear Sound"]);
+    const toggle = off.sound[0];
+    if (toggle?.kind !== "boolean") throw new Error("Missing Appear Sound toggle");
+    expect(toggle.value).toBe(false);
+    toggle.onChange(true);
+    expect(off.update).toHaveBeenCalledWith("appearSound", true);
+    const on = soundRows({ appearSound: true, appearSoundAssetGuid: "beep", appearSoundPlay: "once", appearSoundOffset: 0.2 });
+    expect(on.sound.map((row) => row.label)).toEqual(["Appear Sound", "Sound", "Sound Play", "Sound Offset"]);
+    const [, asset, play, offset] = on.sound;
+    expect(asset).toMatchObject({ kind: "asset", value: "beep", assetTypes: ["Audio"] });
+    if (play?.kind !== "enum" || offset?.kind !== "number") throw new Error("Missing appear sound controls");
+    expect(play.value).toBe("once");
+    expect(play.options.map((option) => option.label)).toEqual([
+      "Every Letter", "Every Other Letter", "Every Third Letter", "Every Fourth Letter", "Once", "Loop Until Finished",
+    ]);
+    play.onChange("loop");
+    expect(on.update).toHaveBeenCalledWith("appearSoundPlay", "loop");
+    expect(offset.value).toBe(0.2);
+    offset.onChange(-1);
+    expect(on.update).toHaveBeenCalledWith("appearSoundOffset", 0);
+  });
+
   it.each([
     { modes: [], transition: "bounceOut", disabled: [true, true, true] },
     { modes: ["instant"], transition: "bounceOut", disabled: [true, false, true] },

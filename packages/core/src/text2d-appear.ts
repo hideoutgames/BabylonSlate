@@ -9,6 +9,7 @@ import { EASING_CURVES, EASING_CURVE_LABELS, sampleEasingCurve } from "./easing"
 export const ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID = "engine:Text2DAppearMode";
 export const ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID = "engine:Text2DAppearTransition";
 export const ENGINE_TEXT2D_APPEAR_START_ENUM_ID = "engine:Text2DAppearStart";
+export const ENGINE_TEXT2D_APPEAR_SOUND_PLAY_ENUM_ID = "engine:Text2DAppearSoundPlay";
 
 export const TEXT2D_APPEAR_MODES = ["fade", "scale", "slide", "instant"] as const;
 export type Text2DAppearMode = (typeof TEXT2D_APPEAR_MODES)[number];
@@ -30,6 +31,18 @@ export const TEXT2D_APPEAR_START_LABELS: Record<Text2DAppearStart, string> = {
   revealed: "Fully Revealed", hidden: "Hidden", play: "Play On Start",
 };
 
+export const TEXT2D_APPEAR_SOUND_PLAYS = [
+  "everyLetter", "everyOtherLetter", "everyThirdLetter", "everyFourthLetter", "once", "loop",
+] as const;
+export type Text2DAppearSoundPlay = (typeof TEXT2D_APPEAR_SOUND_PLAYS)[number];
+export const TEXT2D_APPEAR_SOUND_PLAY_LABELS: Record<Text2DAppearSoundPlay, string> = {
+  everyLetter: "Every Letter", everyOtherLetter: "Every Other Letter", everyThirdLetter: "Every Third Letter",
+  everyFourthLetter: "Every Fourth Letter", once: "Once", loop: "Loop Until Finished",
+};
+const APPEAR_SOUND_LETTER_STEPS: Partial<Record<Text2DAppearSoundPlay, number>> = {
+  everyLetter: 1, everyOtherLetter: 2, everyThirdLetter: 3, everyFourthLetter: 4,
+};
+
 const DEFAULT_TEXT2D_APPEAR_INTERVAL = 0.1;
 const DEFAULT_TEXT2D_APPEAR_DURATION = 0.3;
 
@@ -39,6 +52,12 @@ export type Text2DAppearProperties = {
   appearInterval: number;
   appearDuration: number;
   appearStart: Text2DAppearStart;
+  /** Plays `appearSoundAssetGuid` while the text reveals forwards. */
+  appearSound: boolean;
+  appearSoundAssetGuid: string | null;
+  appearSoundPlay: Text2DAppearSoundPlay;
+  /** Seconds after a letter starts appearing (or the reveal starts) that its sound plays. */
+  appearSoundOffset: number;
   /** Live normalized timeline position, independent of transition overshoot. */
   appearProgress?: number;
 };
@@ -73,6 +92,12 @@ export function parseText2DAppearProperties(value: unknown): Text2DAppearPropert
     appearDuration: nonnegative(source.appearDuration, DEFAULT_TEXT2D_APPEAR_DURATION),
     appearStart: TEXT2D_APPEAR_STARTS.includes(source.appearStart as Text2DAppearStart)
       ? source.appearStart as Text2DAppearStart : "revealed",
+    appearSound: source.appearSound === true,
+    appearSoundAssetGuid: typeof source.appearSoundAssetGuid === "string" && source.appearSoundAssetGuid.trim()
+      ? source.appearSoundAssetGuid.trim() : null,
+    appearSoundPlay: TEXT2D_APPEAR_SOUND_PLAYS.includes(source.appearSoundPlay as Text2DAppearSoundPlay)
+      ? source.appearSoundPlay as Text2DAppearSoundPlay : "everyLetter",
+    appearSoundOffset: nonnegative(source.appearSoundOffset, 0),
     ...(typeof source.appearProgress === "number" && Number.isFinite(source.appearProgress)
       ? { appearProgress: normalized(source.appearProgress) } : {}),
   };
@@ -163,4 +188,42 @@ export function countText2DRevealCharacters(properties: { text: string; rich?: b
     if (unit.kind !== "lineBreak") count += 1;
   }
   return count;
+}
+
+export type Text2DAppearSoundPlan = {
+  assetGuid: string;
+  /** Timeline seconds at which a one-shot plays, ascending and distinct. */
+  times: number[];
+  /** Loop Until Finished: the looping voice's start and stop in timeline seconds. */
+  loop: { start: number; stop: number } | null;
+};
+
+/**
+ * When the appear sound plays along a forward reveal. Letters count visible characters only (inline
+ * images included, whitespace skipped); characters that start together share one sound.
+ */
+export function text2DAppearSoundPlan(
+  properties: { text: string; rich?: boolean } & Partial<Text2DAppearProperties>,
+): Text2DAppearSoundPlan | null {
+  const assetGuid = properties.appearSoundAssetGuid;
+  if (properties.appearSound !== true || !assetGuid || !properties.appearModes?.length) return null;
+  const units = text2DFormattedUnits(properties.text, countDefaults, properties)
+    .filter((unit): unit is Exclude<Text2DFormattedUnit, { kind: "lineBreak" }> => unit.kind !== "lineBreak");
+  if (!units.length) return null;
+  const offset = nonnegative(properties.appearSoundOffset, 0);
+  const play = properties.appearSoundPlay ?? "everyLetter";
+  if (play === "loop") {
+    const stop = text2DAppearDuration(units.length, properties);
+    return stop > offset ? { assetGuid, times: [], loop: { start: offset, stop } } : null;
+  }
+  if (play === "once") return { assetGuid, times: [offset], loop: null };
+  const step = APPEAR_SOUND_LETTER_STEPS[play] ?? 1;
+  const interval = nonnegative(properties.appearInterval, DEFAULT_TEXT2D_APPEAR_INTERVAL);
+  const times = new Set<number>();
+  let letter = 0;
+  for (const unit of units) {
+    if (unit.kind === "glyph" && !unit.ch.trim()) continue;
+    if (letter++ % step === 0) times.add(unit.index * interval + offset);
+  }
+  return times.size ? { assetGuid, times: [...times], loop: null } : null;
 }

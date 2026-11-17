@@ -1,5 +1,5 @@
 import { overlayContainerScriptVariables } from "./overlay-container-api";
-import { OVERLAY_LAYOUT_CLASSES, ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID } from "@haptic/core";
+import { OVERLAY_LAYOUT_CLASSES, ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID, ENGINE_TEXT2D_APPEAR_SOUND_PLAY_ENUM_ID } from "@haptic/core";
 import { UI_CONTROL_2D_SCRIPT_APIS } from "./ui-controls2d-api";
 import {
   SCALABILITY_CHANGED_EVENT,
@@ -559,6 +559,10 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Appear Interval", typeId: "float", propertyKey: "appearInterval" },
       { name: "Appear Duration", typeId: "float", propertyKey: "appearDuration" },
       { name: "Appear Start", typeId: "enum", typeClassId: ENGINE_TEXT2D_APPEAR_START_ENUM_ID, propertyKey: "appearStart" },
+      { name: "Appear Sound", typeId: "bool", propertyKey: "appearSound" },
+      { name: "Appear Sound Asset", typeId: "asset", typeClassId: "Audio", propertyKey: "appearSoundAssetGuid" },
+      { name: "Appear Sound Play", typeId: "enum", typeClassId: ENGINE_TEXT2D_APPEAR_SOUND_PLAY_ENUM_ID, propertyKey: "appearSoundPlay" },
+      { name: "Appear Sound Offset", typeId: "float", propertyKey: "appearSoundOffset" },
       { name: "Appear Progress", typeId: "float", propertyKey: "appearProgress", getOnly: true },
       { name: "Is Revealed", typeId: "bool", propertyKey: "isRevealed", getOnly: true },
     ],

@@ -19,8 +19,20 @@ Rich Text has every setting of [2D Text](2d-text.md), plus the settings that rev
 | Appear Transition | The curve each character follows, such as Linear, Cubic Out (default) or Bounce Out, or Instant. |
 | Time Between Characters | Seconds between one character starting and the next. 0 starts them together. Default 0.1. |
 | Character Reveal Duration | Seconds each character takes to appear. Default 0.3. |
+| Appear Sound | Plays a sound while the text appears. Off by default. The three settings below show only while it is on. |
+| Sound | The [Audio](../assets/audio.md) asset to play. |
+| Sound Play | When the sound plays: Every Letter (default), Every Other Letter, Every Third Letter, Every Fourth Letter, Once or Loop Until Finished. |
+| Sound Offset | Seconds to wait after a letter starts appearing before its sound plays, for syncing the sound with the letter. Default 0. |
 
-The transition and timing settings are greyed out when they do not apply, such as with Appear Modes Off. They keep their values.
+The transition, timing and sound settings are greyed out when they do not apply, such as with Appear Modes Off. They keep their values.
+
+## Appear sound
+
+- The letter options count visible characters and inline images, and skip spaces. Letters that start at the same moment share one sound.
+- **Once** plays the sound a single time when the reveal starts, after **Sound Offset**.
+- **Loop Until Finished** starts the sound after **Sound Offset** and stops it when the last character has appeared.
+- The sound plays when the text reveals forwards, from **Play On Start**, **Trigger Appear** or **Play**. **Play Reverse** is silent and stops a looping sound.
+- A reveal that continues from part-way plays only the sounds of the letters still to appear.
 
 ## Tags
 

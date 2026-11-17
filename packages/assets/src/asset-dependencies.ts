@@ -143,7 +143,7 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "2DTextureComponent": ["textureGuid", "assetGuid"],
   "2DPanelComponent": ["textureGuid", "materialGuid"],
   "2DTextComponent": ["fontAssetGuid", "materialGuid"],
-  "2DRichTextComponent": ["fontAssetGuid", "materialGuid"],
+  "2DRichTextComponent": ["fontAssetGuid", "materialGuid", "appearSoundAssetGuid"],
   "2DJoystickComponent": ["backgroundMaterialGuid", "joystickMaterialGuid", "backgroundTextureGuid", "joystickTextureGuid"],
 };
 

@@ -91,6 +91,8 @@ interface LayerRefs {
   textMaterial: string;
   overlayMaterial: string;
   panelTexture: string;
+  /** The optional one-shot Audio asset, which the rich text's reveal plays. */
+  sound: string | null;
   icons: Record<"camera" | "audio" | "particles" | "point_light" | "spot_light" | "navmesh" | "default", string>;
   classes: Record<"listItem" | "gridItem" | "cardA" | "cardB" | "switcher" | "clickButton" | "pitCounter" | "cameraRig", PlacedClass>;
   /** FT_Timeline and its FT_HudPulse clip asset, which FT_HUD's script plays. */
@@ -122,6 +124,7 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     textMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.text),
     overlayMaterial,
     panelTexture: requireRef(ctx.assets.textures.colormapPixelArt, "the pixel art colormap Texture"),
+    sound: ctx.assets.audio.oneShot,
     icons: {
       camera: icon("camera"),
       audio: icon("audio"),
@@ -302,6 +305,10 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
       appearInterval: 0.03,
       appearDuration: 0.25,
       appearStart: "play",
+      appearSound: true,
+      appearSoundAssetGuid: refs.sound,
+      appearSoundPlay: "everyFourthLetter",
+      appearSoundOffset: 0.02,
     }),
   ], { position: [0, 7.55], folderId }));
   // Root Safe Area over the whole canvas: its label lands top-left inside the insets.
