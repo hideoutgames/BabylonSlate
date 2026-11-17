@@ -19,7 +19,7 @@ import {
   flushNavBakeForSave,
 } from "../lib/nav-bake-save";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
-import { skippingRefusedScenes } from "../lib/locked-writes";
+import { saveAllSceneWriter } from "../lib/locked-writes";
 import { refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import {
@@ -174,7 +174,7 @@ export function useProjectSave({
         if (!lockChecks.has(path)) lockChecks.set(path, sourceControl.lockedByOther(path));
         return lockChecks.get(path)!;
       };
-      const writer = skippingRefusedScenes(admitted, lockedByOther);
+      const writer = saveAllSceneWriter(admitted, lockedByOther);
       try {
         progress.phase("audio-reverb");
         await flushAudioReverbForSave(undefined, writer);

@@ -38,16 +38,22 @@ export function refusingLockedScenes<T extends ProjectSceneWriter>(writer: T, so
 }
 
 /**
- * Save All's Scene chunk writes (Auto Bake On Save, the audio reverb flush):
- * a path `refused` names is skipped without a word, as its document is, so an
- * Auto-Save never reports it.
+ * Save All's Scene chunk writer, which never writes a Scene someone else has
+ * locked (`lockedByOther` is the save's own lookup). Auto Bake On Save's
+ * navmesh write is skipped without a word, as the Scene's document is, so an
+ * Auto-Save opens no bake error. The audio reverb write rejects: the reverb
+ * flush reports it unsaved instead of taking it as written, so the save after
+ * the lock is released writes it.
  */
-export function skippingRefusedScenes<T extends ProjectSceneWriter>(writer: T, refused: (path: string) => unknown): T {
+export function saveAllSceneWriter<T extends ProjectSceneWriter>(writer: T, lockedByOther: LockLookup["lockedByOther"]): T {
+  const lookup: LockLookup = { lockedByOther };
   return {
     ...writer,
     writeSceneNavmeshChunk: (path, bytes, payload) =>
-      refused(path) ? Promise.resolve() : writer.writeSceneNavmeshChunk(path, bytes, payload),
-    writeSceneAudioReverbChunk: (path, bytes, payload) =>
-      refused(path) ? Promise.resolve() : writer.writeSceneAudioReverbChunk(path, bytes, payload),
+      lockedByOther(path) ? Promise.resolve() : writer.writeSceneNavmeshChunk(path, bytes, payload),
+    writeSceneAudioReverbChunk: async (path, bytes, payload) => {
+      assertWritableUnderLock(lookup, path);
+      return writer.writeSceneAudioReverbChunk(path, bytes, payload);
+    },
   };
 }

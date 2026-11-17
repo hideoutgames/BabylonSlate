@@ -89,11 +89,12 @@ export function useProjectAssetActions({
     await (await ensureDerived()).writeText(`${derivedDataRoot(projectGuid)}/${name}`, text);
   }, [ensureDerived]);
 
+  // A retry writes the Texture's file, so one someone else has locked waits.
   const retryFailedTextureEncoding = useCallback(async () => {
-    const count = await projectService.retryAllFailedTextureEncoding();
+    const count = await projectService.retryAllFailedTextureEncoding((path) => sourceControlRef.current.lockedByOther(path) !== null);
     bump();
     return count;
-  }, [bump, projectService]);
+  }, [bump, projectService, sourceControlRef]);
 
   const retryTextureEncoding = useCallback(
     async (
@@ -116,10 +117,13 @@ export function useProjectAssetActions({
     [projectService],
   );
 
+  // Writes the Texture's emission into its file (also when a rectangular light first shows it).
   const prepareAreaEmission = useCallback<ProjectService["prepareAreaEmission"]>(async (guid, options) => {
+    const path = projectService.registry?.getByGuid(guid)?.path;
+    if (path !== undefined) assertWritableUnderLock(sourceControlRef.current, path);
     await projectService.prepareAreaEmission(guid, options);
     bump();
-  }, [bump, projectService]);
+  }, [bump, projectService, sourceControlRef]);
 
   // Rewrites the Texture file, so a written conversion locks it like a re-encode.
   const reconvertHdrEnvironment = useCallback<ProjectService["reconvertHdrEnvironment"]>(async (guid, faceSize, options) => {

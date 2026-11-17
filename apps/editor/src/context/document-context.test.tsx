@@ -7,6 +7,7 @@ import {
   SOURCE_CONTROL_ID,
   PROJECT_FILE,
   createActor,
+  createMeshComponent,
   documentId,
   isProjectOpenElsewhere,
   type DataDefinitionAsset,
@@ -25,7 +26,7 @@ import {
 import { MANUAL_SOURCE_CONTROL, signedInHosts } from "../testing/source-control-hosts";
 import { FakeLockProvider } from "@haptic/source-control";
 import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
-import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@haptic/assets";
+import { AUDIO_REVERB_CHUNK_ID, appendJournalLines, readJournalLines, sealJournalForRecovery } from "@haptic/assets";
 import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload, resolveJournalLines, serializeJournalLine } from "@haptic/edit";
 import { UndoHistoryNotice } from "../components/undo-history-notice";
 import { createProjectAsset } from "../lib/create-project-asset";
@@ -33,6 +34,7 @@ import { subscribeModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { JOURNAL_FLUSH_DELAY_MS } from "../lib/journal-buffer";
 import { registerNavBakeSaveFlush } from "../lib/nav-bake-save";
+import { registerAudioReverbSaveFlush } from "../lib/audio-reverb-bake";
 import { setEditorQuiet } from "../lib/editor-quiet";
 import { subscribeEditorViewportFrameHold } from "../lib/editor-frame-hold";
 import { onEncodeQueuePause } from "../services/encode-queue-pause";
@@ -670,6 +672,47 @@ describe("DocumentProvider actions and route", () => {
       platform: "electron", testMode: true, hosts, fake,
     }));
     expect(documents().tabOrder).not.toContain(SOURCE_CONTROL_ID);
+  });
+
+  it("refuses to rewrite a Scene someone else has locked when a Class or Material it uses is deleted", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const hero = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    const shiny = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Material", name: "Shiny" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const mesh = createMeshComponent("mesh", "box");
+    mesh.properties.materialGuid = shiny.header.guid;
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, {
+      ...openScene(MAIN_SCENE_ID),
+      actors: [createActor("hero", "Hero", { classId: "Hero" }), { ...createActor("wall", "Wall"), components: [mesh] }],
+    }));
+    await act(() => actions.saveAll());
+    act(() => actions.closeDocument(MAIN_SCENE_ID));
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Stable");
+    const sceneBytes = await storage.readBinary(MAIN_SCENE_FILE);
+    const fake = new FakeLockProvider();
+    fake.addTheirs(MAIN_SCENE_FILE, "Teammate");
+    const hosts = await signedInHosts();
+    await act(() => documents().sourceControl.configure({
+      settings: MANUAL_SOURCE_CONTROL, projectKey: documents().projectGuid, platform: "electron", testMode: true, hosts, fake,
+    }));
+    await act(() => documents().sourceControl.refresh());
+    // A Class delete's replacement is refused before any file changes, as a rename is.
+    await act(async () => {
+      await expect(actions.replaceClassReferencesBeforeDelete(
+        [{ guid: hero.header.guid, classId: "Hero", replacement: null }], new Set([hero.header.guid]),
+      )).rejects.toThrow(`${MAIN_SCENE_FILE}: Locked by Teammate`);
+    });
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);
+    // After a Material delete the Scene keeps its reference and is reported.
+    await act(() => registry.deleteAsset(shiny.header.guid));
+    await act(async () => {
+      await expect(actions.repairAfterAssetDelete(new Set([shiny.header.guid])))
+        .rejects.toThrow(`References to the deleted assets remain in ${MAIN_SCENE_FILE}: Locked by Teammate`);
+    });
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);
   });
 
   it("finishes an admitted Save All including its bake writes before a file lock and defers later saves", async () => {
@@ -1726,7 +1769,7 @@ describe("DocumentProvider Save All and files someone else has locked", () => {
     await act(() => actions.applyAssetDocumentChange(statsId, {
       kind: "dataDefinition", fields: [{ id: "hp", name: "HP", typeId: "number", defaultValue: 10 }],
     }));
-    return { actions, stats, statsId, storage, stored };
+    return { actions, stats, statsId, storage, stored, fake };
   }
 
   const dirtyIds = () => documents().dirtyDocuments.map((doc) => doc.id);
@@ -1797,19 +1840,44 @@ describe("DocumentProvider Save All and files someone else has locked", () => {
   });
 
   it("writes no bake into a Scene someone else has locked: skipped in Save All, refused outside it", async () => {
-    const { actions } = await editsWithMainLocked();
+    const { actions, fake } = await editsWithMainLocked();
     const unregister = registerNavBakeSaveFlush(async (writer) => {
       await writer!.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([7, 3, 1]), openScene(MAIN_SCENE_ID) as unknown as Record<string, unknown>);
     });
+    // The reverb flush learns that its write did not land, so it writes again on a later save.
+    const reverbWrites: string[] = [];
+    registerAudioReverbSaveFlush(async (_scenes, writer) => {
+      await writer!.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([5]), openScene(MAIN_SCENE_ID) as unknown as Record<string, unknown>)
+        .then(() => reverbWrites.push("written"), (error: Error) => reverbWrites.push(error.message));
+      return new Map();
+    });
     try {
       expect(await act(() => actions.saveAll())).toBe("locked");
-    } finally { unregister(); }
-    expect(await actions.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toBeNull();
+      expect(reverbWrites).toEqual(["Locked by Teammate. You can't save it until they release the lock."]);
+      expect(await actions.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toBeNull();
+      expect(await actions.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toBeNull();
+
+      // Released: the next save writes both.
+      await fake.unlock(fake.snapshot().find((lock) => lock.path === MAIN_SCENE_FILE)!.id, { force: true });
+      await act(() => documents().sourceControl.refresh());
+      expect(await act(() => actions.saveAll())).toBe("saved");
+      expect(reverbWrites.at(-1)).toBe("written");
+      expect(await actions.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toEqual(new Uint8Array([7, 3, 1]));
+    } finally {
+      unregister();
+      registerAudioReverbSaveFlush(null);
+    }
+    // Locked again: a bake outside Save All is refused and the file keeps its navmesh.
+    fake.addTheirs(MAIN_SCENE_FILE, "Teammate");
+    await act(() => documents().sourceControl.refresh());
     const payload = openScene(MAIN_SCENE_ID) as unknown as Record<string, unknown>;
     await expect(actions.withSceneWrite((writer) => writer.writeSceneNavmeshChunk(MAIN_SCENE_FILE, new Uint8Array([1]), payload)))
       .rejects.toThrow("Locked by Teammate");
     await expect(actions.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, new Uint8Array([1]), payload)).rejects.toThrow("Locked by Teammate");
-    expect(await actions.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toBeNull();
+    expect(await actions.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toEqual(new Uint8Array([7, 3, 1]));
+    // Area emission writes into the asset's file too, and is refused before it reads anything.
+    await expect(actions.prepareAreaEmission(documents().assetRegistry!.getByPath(MAIN_SCENE_FILE)!.header.guid))
+      .rejects.toThrow("Locked by Teammate");
   });
 });
 

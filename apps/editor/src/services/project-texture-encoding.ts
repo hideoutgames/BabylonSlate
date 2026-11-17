@@ -486,7 +486,7 @@ export class ProjectTextureEncoding {
     this.emissionJobs.clear();
   }
 
-  async retryAllFailedTextureEncoding(): Promise<number> {
+  async retryAllFailedTextureEncoding(skip?: (path: string) => boolean): Promise<number> {
     const host = this.host;
     if (!host.registry()) return 0;
     const session = host.sourceSession();
@@ -496,7 +496,7 @@ export class ProjectTextureEncoding {
       const registry = host.registry();
       if (session !== host.sourceSession() || !registry) break;
       const state = asset.header.payload.compressionState;
-      if (state === "encode_failed" || state === "pending") {
+      if ((state === "encode_failed" || state === "pending") && !skip?.(asset.path)) {
         if (await this.trackTextureStateWrite(registry.retryTextureEncoding(asset.header.guid))) {
           count += 1;
         }
