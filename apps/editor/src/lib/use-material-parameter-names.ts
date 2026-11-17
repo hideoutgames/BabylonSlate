@@ -32,8 +32,7 @@ export function materialParameterNames(document: unknown): MaterialParameterName
     ? (document as { nodes: { type?: unknown; properties?: unknown }[] }).nodes : [];
   return nodes.flatMap((node): MaterialParameterName[] => {
     const type = typeof node.type === "string" && isMaterialParameterNode(node.type) ? materialParameterValueType(node.type) : null;
-    const name = type ? materialParameterName({ id: "", type: String(node.type), position: { x: 0, y: 0 },
-      properties: (node.properties ?? {}) as Record<string, unknown> }) : "";
+    const name = type ? materialParameterName({ properties: (node.properties ?? {}) as Record<string, unknown> }) : "";
     return type && name ? [{ name, type }] : [];
   });
 }

@@ -12,7 +12,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { RefreshCwIcon } from "lucide-react";
 import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { ActionFeedbackButton } from "../components/action-feedback-button";
-import { createDefaultMaterialDocument } from "@haptic/shader-graph";
+import { createDefaultMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import {
   MaterialEditingProvider,
   MANUAL_RENDER_COOLDOWN_MS,
@@ -111,6 +111,8 @@ const harness = vi.hoisted(() => ({
     onTextureError?: (diagnostic: { code: string; message: string; severity: "error" }) => void;
   } | null,
   acquireCalls: 0,
+  /** The documents the preview compiled, in order. */
+  acquiredDocuments: [] as MaterialDocument[],
   invalidateCalls: 0,
   cacheDisposeCalls: 0,
   content: null as ReturnType<typeof createDefaultMaterialDocument> | null,
@@ -198,8 +200,9 @@ vi.mock("@haptic/render", async (importOriginal) => {
       }) {
         harness.libraryOptions = options;
       }
-      acquire() {
+      acquire(_scene: unknown, _guid: string, document: MaterialDocument) {
         harness.acquireCalls += 1;
+        harness.acquiredDocuments.push(document);
         return harness.acquireResult.ok
           ? { ...harness.acquireResult, ready: Promise.resolve([]) }
           : harness.acquireResult;
@@ -308,6 +311,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.gestures.dispose.mockReset();
     harness.libraryOptions = null;
     harness.acquireCalls = 0;
+    harness.acquiredDocuments = [];
     harness.invalidateCalls = 0;
     harness.cacheDisposeCalls = 0;
     harness.contextRestored = null;
@@ -463,6 +467,46 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.content = broken;
     view.rerender(tree());
     expect(screen.getByTestId("lowering").textContent).toBe("invalid");
+  });
+
+  it("compiles a previewed node's output alone, keeps the panels on the Material, and stops when the node goes", async () => {
+    function PreviewProbe() {
+      const { lowering, previewNode, setPreviewNode } = useMaterialEditing();
+      return (
+        <>
+          <output data-testid="material-shading">{lowering?.ok ? lowering.plan.shadingModel : "none"}</output>
+          <output data-testid="previewed">{previewNode ? `${previewNode.nodeId}.${previewNode.pinId}` : "none"}</output>
+          <button type="button" data-testid="preview-color" onClick={() => setPreviewNode({ nodeId: "baseColor", pinId: "out" })} />
+        </>
+      );
+    }
+    const tree = () => materialTree(true, <><AttachCanvas /><PreviewProbe /></>);
+    const view = render(tree());
+    await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(0));
+    expect(harness.acquiredDocuments.at(-1)!.shadingModel).toBe("pbr");
+
+    fireEvent.click(screen.getByTestId("preview-color"));
+    await waitFor(() => expect(harness.acquiredDocuments.at(-1)!.shadingModel).toBe("unlit"));
+    const previewed = harness.acquiredDocuments.at(-1)!;
+    expect(previewed.edges.filter((edge) => edge.targetNodeId === "output").map((edge) => edge.sourceNodeId)).toEqual(["__previewCombine"]);
+    expect(previewed.edges.find((edge) => edge.targetNodeId === "__previewSplit")?.sourceNodeId).toBe("baseColor");
+    expect(screen.getByTestId("previewed").textContent).toBe("baseColor.out");
+    // Details and the cost line still describe the Material, not the previewed node.
+    expect(screen.getByTestId("material-shading").textContent).toBe("pbr");
+
+    const withoutNode = createDefaultMaterialDocument("Rock");
+    withoutNode.nodes = withoutNode.nodes.filter((node) => node.id !== "baseColor");
+    withoutNode.edges = [];
+    harness.content = withoutNode;
+    view.rerender(tree());
+    await waitFor(() => expect(screen.getByTestId("previewed").textContent).toBe("none"));
+    await waitFor(() => expect(harness.acquiredDocuments.at(-1)!.shadingModel).toBe("pbr"));
+    // Undoing the delete does not bring the preview back.
+    harness.content = createDefaultMaterialDocument("Rock");
+    view.rerender(tree());
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    expect(screen.getByTestId("previewed").textContent).toBe("none");
+    expect(harness.acquiredDocuments.at(-1)!.shadingModel).toBe("pbr");
   });
 
   it("presents a plain Material only on change", async () => {

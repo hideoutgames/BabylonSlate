@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { ReactNode } from "react";
 import { GraphInteractionSettingsContext } from "@haptic/graph-ui";
@@ -14,6 +14,7 @@ import {
   newCustomGlslProperties,
   normalizeMaterialDocument,
   type MaterialDocument,
+  type MaterialNodePreviewTarget,
   type MaterialPreviewState,
 } from "@haptic/shader-graph";
 
@@ -28,6 +29,8 @@ const harness: {
   /** Several selected nodes; otherwise `selectedNodeId` alone. */
   selectedNodeIds: string[] | null;
   registryEpoch: number;
+  previewNode: MaterialNodePreviewTarget | null;
+  setPreviewNode: ReturnType<typeof vi.fn>;
 } = {
   content: createDefaultMaterialDocument("Rock") as unknown as Record<
     string,
@@ -41,6 +44,8 @@ const harness: {
   selectedNodeId: null,
   selectedNodeIds: null,
   registryEpoch: 0,
+  previewNode: null,
+  setPreviewNode: vi.fn(),
 };
 let assetRegistry: AssetRegistry;
 
@@ -77,9 +82,12 @@ vi.mock("../context/material-editing-context", () => ({
     requestRender: harness.requestRender,
     attachPreviewCanvas: vi.fn(),
     frameBudgetMs: 1000 / 60,
+    previewNode: harness.previewNode,
+    setPreviewNode: harness.setPreviewNode,
   }),
 }));
 
+const { KeybindProvider } = await import("../context/keybind-context");
 const {
   MaterialCompilerResultsPanel,
   MaterialDetailsPanel,
@@ -126,6 +134,8 @@ beforeEach(async () => {
   harness.applyAssetDocumentChange = vi.fn();
   harness.requestRender = vi.fn();
   harness.focusNode = vi.fn();
+  harness.previewNode = null;
+  harness.setPreviewNode = vi.fn();
 });
 
 afterEach(() => {
@@ -197,6 +207,22 @@ describe("Material preview panel", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("material-preview-mesh-picker")).toBeNull(),
     );
+    expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
+  });
+
+  it("names the previewed node and output in an amber banner over a framed canvas, and stops from it", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "tint", type: "param.color", position: { x: 0, y: 0 }, properties: { name: "Tint", value: [1, 1, 1, 1] } });
+    harness.content = doc as unknown as Record<string, unknown>;
+    const view = render(<MaterialPreviewPanel {...panelProps} />);
+    expect(screen.queryByTestId("material-preview-node-banner")).toBeNull();
+
+    harness.previewNode = { nodeId: "tint", pinId: "rgb" };
+    view.rerender(<MaterialPreviewPanel {...panelProps} />);
+    // The node as the canvas titles it (its parameter name), and which of its outputs.
+    expect(screen.getByTestId("material-preview-node-banner").textContent).toContain("Previewing Node: Tint · RGB");
+    fireEvent.click(screen.getByRole("button", { name: "Stop Previewing" }));
+    expect(harness.setPreviewNode).toHaveBeenCalledWith(null);
     expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
   });
 
@@ -731,6 +757,98 @@ describe("Material graph panel", () => {
     expect(lastCommit().nodes.find((node) => node.id === "baseColor")?.type).toBe("const.color");
     expect(lastCommit().edges.find((edge) => edge.sourceNodeId === "baseColor")?.sourcePinId).toBe("out");
   });
+  it("previews a node from its menu without editing the Material, and stops from that node or the output node", async () => {
+    harness.content = createDefaultMaterialDocument() as unknown as Record<string, unknown>;
+    const { container, rerender } = render(<MaterialGraphPanel {...panelProps} />);
+    const node = (id: string) => container.querySelector<HTMLElement>(`[data-id="${id}"]`)!;
+    await waitFor(() => expect(node("baseColor")).not.toBeNull());
+    expect(container.querySelector('[data-testid="graph-node-preview-tag"]')).toBeNull();
+    fireEvent.contextMenu(node("baseColor").firstElementChild!);
+    fireEvent.click(await screen.findByTestId("material-preview-node"));
+    expect(harness.setPreviewNode).toHaveBeenLastCalledWith({ nodeId: "baseColor", pinId: "out" });
+    expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
+
+    harness.previewNode = { nodeId: "baseColor", pinId: "out" };
+    rerender(<MaterialGraphPanel {...panelProps} />);
+    expect(within(node("baseColor")).getByTestId("graph-node-preview-tag").textContent).toBe("Previewing");
+    expect(within(node("output")).queryByTestId("graph-node-preview-tag")).toBeNull();
+    fireEvent.contextMenu(node("baseColor").firstElementChild!);
+    fireEvent.click(await screen.findByTestId("material-stop-previewing-node"));
+    expect(harness.setPreviewNode).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByTestId("material-preview-node")).toBeNull();
+
+    fireEvent.contextMenu(node("output").firstElementChild!);
+    fireEvent.click(await screen.findByTestId("material-stop-previewing-node"));
+    expect(harness.setPreviewNode).toHaveBeenCalledTimes(3);
+    expect(harness.setPreviewNode).toHaveBeenLastCalledWith(null);
+  });
+
+  it("lists each output of a node with several, marks the previewed one, and offers no preview of a Texture", async () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "sample", type: "texture.sample", position: { x: 0, y: 300 }, properties: { textureGuid: "tex-1" } },
+      { id: "albedo", type: "param.texture", position: { x: 0, y: 600 }, properties: { name: "Albedo" } },
+    );
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.previewNode = { nodeId: "sample", pinId: "rgba" };
+    const { container } = render(<MaterialGraphPanel {...panelProps} />);
+    const node = (id: string) => container.querySelector<HTMLElement>(`[data-id="${id}"]`)!;
+    await waitFor(() => expect(node("sample")).not.toBeNull());
+    expect(within(node("sample")).getByTestId("graph-node-preview-tag").textContent).toBe("Previewing RGBA");
+
+    fireEvent.contextMenu(node("sample").firstElementChild!);
+    expect(await screen.findByTestId("material-stop-previewing-node")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("material-preview-node"));
+    const outputs = screen.getAllByRole("menuitemradio");
+    expect(outputs.map((item) => `${item.textContent}${item.getAttribute("aria-checked") === "true" ? " (previewed)" : ""}`))
+      .toEqual(["RGBA (previewed)", "RGB", "R", "G", "B", "A"]);
+    fireEvent.click(screen.getByTestId("material-preview-node-rgb"));
+    expect(harness.setPreviewNode).toHaveBeenLastCalledWith({ nodeId: "sample", pinId: "rgb" });
+
+    fireEvent.contextMenu(node("albedo").firstElementChild!);
+    expect(await screen.findByRole("menuitem", { name: /Copy/ })).toBeTruthy();
+    expect(screen.queryByTestId("material-preview-node")).toBeNull();
+  });
+
+  it("previews the one selected node with its key, stops with it again, and ignores it with several nodes selected", async () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 300 }, properties: { textureGuid: "tex-1" } });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "sample";
+    const tree = () => <KeybindProvider><MaterialGraphPanel {...panelProps} /></KeybindProvider>;
+    const { container, rerender } = render(tree());
+    const node = (id: string) => container.querySelector<HTMLElement>(`[data-id="${id}"]`)!;
+    await waitFor(() => expect(node("sample")).not.toBeNull());
+    const pressP = () => fireEvent.keyDown(document.activeElement!, { key: "p", code: "KeyP" });
+
+    // Without focus in the graph, the key belongs to whatever has it.
+    pressP();
+    expect(harness.setPreviewNode).not.toHaveBeenCalled();
+    node("sample").focus();
+    pressP();
+    expect(harness.setPreviewNode).toHaveBeenLastCalledWith({ nodeId: "sample", pinId: "rgba" });
+
+    harness.previewNode = { nodeId: "sample", pinId: "rgb" };
+    rerender(tree());
+    pressP();
+    expect(harness.setPreviewNode).toHaveBeenLastCalledWith(null);
+
+    harness.selectedNodeId = null;
+    harness.selectedNodeIds = ["sample", "baseColor"];
+    rerender(tree());
+    pressP();
+    expect(harness.setPreviewNode).toHaveBeenCalledTimes(2);
+
+    // The menu shows the key on the entry it runs: the first output, or Stop on the previewed node.
+    harness.previewNode = null;
+    harness.selectedNodeIds = null;
+    harness.selectedNodeId = "sample";
+    rerender(tree());
+    fireEvent.contextMenu(node("sample").firstElementChild!);
+    fireEvent.click(await screen.findByTestId("material-preview-node"));
+    expect(screen.getAllByRole("menuitemradio").map((item) => item.getAttribute("aria-keyshortcuts"))).toEqual(["P", null, null, null, null, null]);
+  });
+
   it("offers no second output node in Add Node", () => {
     render(<MaterialGraphPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("graph-add-node"));

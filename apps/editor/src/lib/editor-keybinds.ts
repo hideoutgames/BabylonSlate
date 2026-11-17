@@ -8,6 +8,7 @@ export type EditorCommandCategory =
   | "Editing"
   | "Timeline"
   | "Content Browser"
+  | "Material"
   | "Tilemap Paint";
 
 export interface EditorCommandDefinition {
@@ -83,6 +84,7 @@ const COMMAND_LIST = [
   { id: "browser.newAsset", label: "New Asset", category: "Content Browser", defaultChords: ["Alt+N"] },
   { id: "browser.import", label: "Import Assets", category: "Content Browser", defaultChords: ["Alt+I"] },
   { id: "browser.references", label: "Show References", category: "Content Browser", defaultChords: ["Alt+R"] },
+  { id: "material.previewNode", label: "Preview Node", category: "Material", defaultChords: ["P"] },
   { id: "tilemapPaint.move", label: "Move Tool", category: "Tilemap Paint", defaultChords: ["M"] },
   { id: "tilemapPaint.select", label: "Select Tool", category: "Tilemap Paint", defaultChords: ["S"] },
   { id: "tilemapPaint.brush", label: "Brush Tool", category: "Tilemap Paint", defaultChords: ["B"] },
@@ -105,6 +107,7 @@ export const EDITOR_COMMAND_CATEGORIES: readonly EditorCommandCategory[] = [
   "Editing",
   "Timeline",
   "Content Browser",
+  "Material",
   "Tilemap Paint",
 ];
 

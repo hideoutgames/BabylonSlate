@@ -51,6 +51,7 @@ export {
   hydrateMaterialGraphForEditor,
   materialGraphToSerialized,
   materialAddNodePalette,
+  materialNodeTitle,
   materialPaletteNodes,
   materialPinsAreCompatible,
   pinsForMaterialNode,
@@ -124,3 +125,9 @@ export {
   type MaterialInstanceResolution,
   type MaterialSource,
 } from "./material-instance";
+export {
+  materialNodePreviewDocument,
+  materialNodePreviewOutputs,
+  type MaterialNodePreviewOutput,
+  type MaterialNodePreviewTarget,
+} from "./node-preview";

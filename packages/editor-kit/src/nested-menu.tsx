@@ -399,6 +399,7 @@ function OverlayMenuItems({
                   type="button"
                   role="menuitemradio"
                   aria-checked={item.value === option.value}
+                  aria-keyshortcuts={option.shortcut ? ariaKeyShortcuts(option.shortcut) : undefined}
                   disabled={item.disabled || option.disabled}
                   className="context-menu-item"
                   data-testid={itemTestId(option)}
@@ -417,6 +418,7 @@ function OverlayMenuItems({
                       ) : null
                     }
                     label={option.label}
+                    shortcut={option.shortcut}
                   />
                 </button>
               ))}
