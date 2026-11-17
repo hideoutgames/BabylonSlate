@@ -5,7 +5,6 @@ import {
   pixelPerfectOrthoBounds,
   pixelPerfectOrthoHalfHeight,
   snapToPixelGrid,
-  wholePixelScale,
 } from "./pixel-perfect";
 import { createEditorCamera } from "./editor-camera";
 
@@ -20,15 +19,6 @@ describe("pixelPerfectOrthoHalfHeight", () => {
   it("rejects non-positive inputs", () => {
     expect(pixelPerfectOrthoHalfHeight(0, 100)).toBe(1);
     expect(pixelPerfectOrthoHalfHeight(600, 0)).toBe(1);
-  });
-});
-
-describe("wholePixelScale", () => {
-  it("rounds to whole multiples from 1 up and to whole fractions below 1", () => {
-    expect([1, 1.2, 1.49, 1.5, 2.6, 3].map(wholePixelScale)).toEqual([1, 1, 1, 2, 3, 3]);
-    // 1/0.8 = 1.25 → 1; 1/0.6 ≈ 1.67 → 1/2; 1/0.3 ≈ 3.33 → 1/3.
-    expect([0.8, 0.6, 0.3].map(wholePixelScale)).toEqual([1, 1 / 2, 1 / 3]);
-    expect([0, -1, Number.NaN, Number.POSITIVE_INFINITY].map(wholePixelScale)).toEqual([1, 1, 1, 1]);
   });
 });
 

@@ -32,6 +32,8 @@ import {
   MIRROR_CLASS_ID,
   REFLECTION_PROBE_CLASS_ID,
   reflectionProbeStaticActors,
+  pixelMatchedView,
+  sceneLayerFitToAspect,
 } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { sceneShadowController } from "./shadow-controller";
@@ -370,6 +372,50 @@ const authoredLenses = new WeakMap<Camera, { fieldOfView: number; orthographicSi
 const lensExtents = new WeakMap<Scene, number>();
 
 /**
+ * A Scene whose orthographic cameras are pixel-matched (`pixel-matched-camera.ts`): the design resolution, Pixels Per
+ * Unit and, in Play, the output in design pixels (`sceneLayerOutputDesignSize`). Without an output (editor previews)
+ * the design size widened to the lens's aspect stands for it.
+ */
+export type ScenePixelMatchedLens = {
+  design: { width: number; height: number };
+  pixelsPerUnit: number;
+  output?: { width: number; height: number };
+};
+const pixelMatchedLenses = new WeakMap<Scene, ScenePixelMatchedLens>();
+
+/** Pixel-matches the Scene's orthographic cameras, or with null returns them to their authored Orthographic Size. */
+export function setScenePixelMatchedLens(scene: Scene, lens: ScenePixelMatchedLens | null): void {
+  const previous = pixelMatchedLenses.get(scene);
+  if (JSON.stringify(previous ?? null) === JSON.stringify(lens)) return;
+  if (lens) pixelMatchedLenses.set(scene, { design: { ...lens.design }, pixelsPerUnit: lens.pixelsPerUnit, ...(lens.output ? { output: { ...lens.output } } : {}) });
+  else pixelMatchedLenses.delete(scene);
+  refreshAuthoredCameraLenses(scene);
+}
+
+/**
+ * Half the width and height an orthographic lens with `orthographicSize` frames on `scene` at `aspect`: the authored
+ * size widened by the lens extent, or the pixel-matched view while the Scene has one.
+ */
+export function authoredOrthoHalfSize(
+  scene: Scene,
+  orthographicSize: number,
+  aspect: number,
+  extent = 1,
+): { halfWidth: number; halfHeight: number } {
+  const matched = pixelMatchedLenses.get(scene);
+  if (matched) {
+    const view = pixelMatchedView(2 * orthographicSize, {
+      design: matched.design,
+      pixelsPerUnit: matched.pixelsPerUnit,
+      output: matched.output ?? sceneLayerFitToAspect(matched.design, aspect),
+    });
+    return { halfWidth: view.width / 2, halfHeight: view.height / 2 };
+  }
+  const widen = Number.isFinite(extent) && extent > 1 ? extent : 1;
+  return { halfWidth: orthographicSize * widen * aspect, halfHeight: orthographicSize * widen };
+}
+
+/**
  * Sets how much more world a Scene's cameras show vertically than the authored lens frames: a pixelated framebuffer
  * extended past the design size keeps the design size's scale and shows more of the scene in the extra rows.
  */
@@ -406,14 +452,14 @@ export function applyAuthoredCameraLens(
   camera.fov = 2 * Math.atan(Math.tan((fovDeg * Math.PI) / 360) * widen);
   const safeAspect =
     Number.isFinite(aspect) && aspect > 0 ? aspect : CAMERA_LENS_FALLBACK_ASPECT;
-  const ortho = authoredOrtho * widen;
-  authoredLenses.set(camera, { fieldOfView: fovDeg, orthographicSize: authoredOrtho, fov: camera.fov, ortho });
+  const { halfWidth, halfHeight } = authoredOrthoHalfSize(camera.getScene(), authoredOrtho, safeAspect, widen);
+  authoredLenses.set(camera, { fieldOfView: fovDeg, orthographicSize: authoredOrtho, fov: camera.fov, ortho: halfHeight });
   if (properties.projectionMode === "orthographic") {
     camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-    camera.orthoTop = ortho;
-    camera.orthoBottom = -ortho;
-    camera.orthoLeft = -ortho * safeAspect;
-    camera.orthoRight = ortho * safeAspect;
+    camera.orthoTop = halfHeight;
+    camera.orthoBottom = -halfHeight;
+    camera.orthoLeft = -halfWidth;
+    camera.orthoRight = halfWidth;
     return;
   }
   camera.mode = Camera.PERSPECTIVE_CAMERA;

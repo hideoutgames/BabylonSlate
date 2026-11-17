@@ -7,9 +7,9 @@ import type { RenderScheduler } from "./render-scheduler";
 import {
   pixelPerfectOrthoBounds,
   pixelPerfectOrthoHalfHeight,
-  wholePixelScale,
   type PixelPerfectSettings,
 } from "./pixel-perfect";
+import { wholePixelScale } from "@haptic/core";
 import { worldPositionFromCanvas } from "./editor-place";
 import { EDITOR_CAMERA_MODEL_LAYER } from "./editor-camera-model";
 

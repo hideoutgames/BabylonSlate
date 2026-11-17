@@ -632,6 +632,14 @@ export function nearestTextureFiltering(twoD: Pick<TwoDProjectSettings, "pixelPe
   return twoD.pixelPerfect && twoD.nearestTextures;
 }
 
+/**
+ * Whether orthographic game cameras are pixel-matched (`pixel-matched-camera.ts`): Pixel-Perfect Mode with Nearest
+ * Texture Filtering, the pixel-art look.
+ */
+export function pixelMatchedCameras(twoD: Pick<TwoDProjectSettings, "pixelPerfect" | "nearestTextures">): boolean {
+  return nearestTextureFiltering(twoD);
+}
+
 /** Trimmed, unique, non-empty sorting layer names in order; the defaults when none remain. */
 export function normalizeSortingLayers(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_SORTING_LAYERS];

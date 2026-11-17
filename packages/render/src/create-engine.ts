@@ -145,6 +145,7 @@ import {
   refreshAuthoredCameraLenses,
   sceneCameraLensExtent,
   setSceneCameraLensExtent,
+  setScenePixelMatchedLens,
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { createWorldLayerCamera } from "./world-layer-camera";
@@ -212,7 +213,7 @@ import {
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
-import { observeNearestTextures, setNearestTextures } from "./nearest-textures";
+import { nearestTexturesEnabled, observeNearestTextures, setNearestTextures } from "./nearest-textures";
 import { FontRegistry } from "./font-registry";
 import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { AnimVisibilityGate } from "./anim-visibility";
@@ -954,7 +955,10 @@ function initializeEngine(
   fitWorldLayerCamera();
   if (options.nearestTextures !== undefined) setNearestTextures(engine, options.nearestTextures);
   // The Engine's other views (the editor's settings) switch it too: this view redraws with the new sampling.
-  const releaseNearestTextures = observeNearestTextures(engine, () => scheduler.invalidate("asset"));
+  const releaseNearestTextures = observeNearestTextures(engine, () => {
+    syncPixelMatchedCameras();
+    scheduler.invalidate("asset");
+  });
   onRollback(releaseNearestTextures);
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
@@ -1369,6 +1373,20 @@ function initializeEngine(
       })
     : null;
   onRollback(() => sceneLayerCompositor?.dispose());
+  /**
+   * Play's orthographic cameras are pixel-matched with Pixel-Perfect Mode and Nearest Texture Filtering
+   * (`pixel-matched-camera.ts`), over the same output in design pixels the Scene Layers fill, so world and layers agree.
+   */
+  const syncPixelMatchedCameras = () => {
+    if (!options.playMode) return;
+    const ppu = binding.pixelsPerUnit && binding.pixelsPerUnit > 0 ? binding.pixelsPerUnit : 100;
+    const lens = binding.pixelPerfect && nearestTexturesEnabled(engine)
+      ? { design: sceneLayerDesignResolution(playOutput), output: sceneLayerOutput(), pixelsPerUnit: ppu }
+      : null;
+    worldLayerCamera?.pixelMatch(lens);
+    setScenePixelMatchedLens(scene, lens);
+  };
+  syncPixelMatchedCameras();
   binding.sceneForSlot = (slotId) =>
     sceneLayerCompositor?.sceneForSlot(slotId) ?? null;
   binding.isOverlaySlot = (slotId) =>
@@ -1890,6 +1908,7 @@ function initializeEngine(
     setSceneCameraLensExtent(scene, 1);
     refreshAuthoredCameraLenses(scene);
     fitWorldLayerCamera();
+    syncPixelMatchedCameras();
     notifyOverlayResize();
   };
 
@@ -1930,6 +1949,7 @@ function initializeEngine(
       setSceneCameraLensExtent(scene, playOutput ? pixelatedLensExtent(playOutput, lockedViewSize) : 1);
       refreshAuthoredCameraLenses(scene);
       fitWorldLayerCamera();
+      syncPixelMatchedCameras();
       notifyOverlayResize();
     };
 

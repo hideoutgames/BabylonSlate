@@ -12,13 +12,6 @@ export interface PixelPerfectSettings {
   pixelRatio?: number;
 }
 
-/** The whole scale nearest `scale`: an integer from 1 up, or a whole fraction 1/n below 1 (1 when not positive). */
-export function wholePixelScale(scale: number): number {
-  if (!(scale > 0) || !Number.isFinite(scale)) return 1;
-  if (scale >= 1) return Math.max(1, Math.round(scale));
-  return 1 / Math.max(1, Math.round(1 / scale));
-}
-
 /**
  * Half-height of the orthographic frustum that makes one texture pixel cover `pixelsPerTexel` canvas pixels: the
  * canvas height in pixels divided by the authoring scale and that ratio, halved.
