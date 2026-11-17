@@ -83,9 +83,11 @@ export function hapticShadowGlsl(surface: boolean): string {
 // the world, so the softness holds across cascades and tiles),
 // each tap kept a texel inside the view's tile so a neighbouring tile never bleeds in. A sun cascade
 // with automatic bias compares each tap against the receiver's plane, from the position's change across the pixel
-// (\`dPdx\`, \`dPdy\`, taken where control flow is uniform).
-float hapticShadowTap(vec4 tile, vec2 texel, float depth) {
-  return textureLod(hapticShadowAtlas, vec3(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), depth), 0.0);
+// (\`dPdx\`, \`dPdy\`, taken where control flow is uniform). ESSL 3.00 has no \`textureLod\` for an array compare sampler:
+// zero gradients ask for level 0 explicitly, as \`textureLod\` did. An implicit level (\`texture\`) would leave it to
+// derivatives, which the light loop's divergent branches leave undefined.
+float hapticShadowTap(vec4 tile, float layer, vec2 texel, float depth) {
+  return textureGrad(hapticShadowAtlas, vec4(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), layer, depth), vec2(0.0), vec2(0.0));
 }
 
 ${surface ? `// The receiver plane's depth change per texel of a \`size\`-texel tile of the orthographic \`view\`, or none where a
@@ -105,10 +107,10 @@ vec2 hapticReceiverGradient(mat4 view, vec3 dPdx, vec3 dPdy, float size) {
 
 // A bilinear tap at \`tap\` texels compared at the receiver plane's depth there (\`gradient\` per texel from \`origin\`),
 // lowered by the plane's rise across the tap's footprint.
-float hapticPlaneTap(vec4 tile, vec2 tap, vec2 origin, float depth, vec2 gradient, float maximum) {
+float hapticPlaneTap(vec4 tile, float layer, vec2 tap, vec2 origin, float depth, vec2 gradient, float maximum) {
   vec2 phase = fract(tap - 0.5);
   float bound = dot(max(gradient, 0.0), phase) + dot(max(-gradient, 0.0), 1.0 - phase);
-  return hapticShadowTap(tile, tap, clamp(depth + dot(gradient, tap - origin) - bound, 0.0, maximum));
+  return hapticShadowTap(tile, layer, tap, clamp(depth + dot(gradient, tap - origin) - bound, 0.0, maximum));
 }
 
 // Contact Hardening (Babylon's computeShadowWithPCSS and computeShadowWithCSMPCSS) on a view's tile: the depth around the
@@ -124,8 +126,8 @@ float hapticPlaneTap(vec4 tile, vec2 tap, vec2 origin, float depth, vec2 gradien
 #ifndef HAPTIC_CEL
 ${poissonGlsl("hapticPoisson32", POISSON_32)}${poissonGlsl("hapticPoisson64", POISSON_64)}
 // The atlas's depth at a texel of the tile, read without compare (\`hapticShadowAtlasDepth\`).
-float hapticShadowDepth(vec4 tile, vec2 texel, float size) {
-  return texelFetch(hapticShadowAtlasDepth, ivec2(tile.xy / tile.w + clamp(floor(texel), vec2(0.0), vec2(size - 1.0)) + 0.5), 0).r;
+float hapticShadowDepth(vec4 tile, float layer, vec2 texel, float size) {
+  return texelFetch(hapticShadowAtlasDepth, ivec3(ivec2(tile.xy / tile.w + clamp(floor(texel), vec2(0.0), vec2(size - 1.0)) + 0.5), int(layer)), 0).r;
 }
 
 // Babylon's depth metric, (clip z + near) / (near + far), of a perspective view with planes \`range\` at an NDC depth,
@@ -135,7 +137,7 @@ float hapticDepthMetric(vec2 range, float ndc) {
   return (ndc * z + range.x) / (range.x + range.y);
 }
 
-float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float depth, vec2 texels, float size, vec2 gradient, float maximum) {
+float hapticContactLit(vec4 tile, float layer, vec4 shading, vec4 contact, vec4 clip, float depth, vec2 texels, float size, vec2 gradient, float maximum) {
   bool cascade = shading.z > 0.5;
   int quality = int(shading.y - 2.5);
   int searches = quality == 2 ? 32 : 16;
@@ -148,7 +150,7 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
   for (int i = 0; i < 32; i++) {
     if (i >= searches) break;
     vec2 tap = texels + search * hapticPoisson32[i];
-    float stored = hapticShadowDepth(tile, tap, size);
+    float stored = hapticShadowDepth(tile, layer, tap, size);
     float blocker = cascade ? stored : hapticDepthMetric(contact.xy, stored * 2.0 - 1.0);
     float surface = receiver + dot(gradient, clamp(floor(tap), vec2(0.0), vec2(size - 1.0)) + 0.5 - texels);
     if (blocker < surface) {
@@ -166,7 +168,7 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
     if (i >= taps) break;
     vec2 offset = quality == 2 ? hapticPoisson64[i] : hapticPoisson32[min(i, 31)];
     offset = vec2(offset.x * turn.x - offset.y * turn.y, offset.y * turn.x + offset.x * turn.y);
-    lit += hapticPlaneTap(tile, texels + offset * radius, texels, depth, gradient, maximum);
+    lit += hapticPlaneTap(tile, layer, texels + offset * radius, texels, depth, gradient, maximum);
   }
   return mix(lit / float(taps), 1.0, min(distance, 1.0));
 }
@@ -182,6 +184,8 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
   vec2 uv = ndc.xy * 0.5 + 0.5;
   float depth = ndc.z * 0.5 + 0.5;
   vec4 tile = hapticShadowViews[base + 4];
+  // The atlas page (the depth texture layer) the tile is in.
+  float layer = hapticShadowViews[base + 7].y;
   vec4 shading = hapticShadowViews[base + 5];
   // A cascade clamps its depth, as Babylon's cascaded PCF does.
   float maximum = shading.z > 0.5 ? 0.99999994 : 1.0;
@@ -191,7 +195,7 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
   vec2 texels = uv * size;
 ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dPdx, dPdy, size) : vec2(0.0);
 #ifndef HAPTIC_SHADOW_NARROW
-  if (shading.y > 2.5) return mix(shading.x, 1.0, hapticContactLit(tile, shading, hapticShadowViews[base + 6], clip, depth, texels, size, gradient, maximum));
+  if (shading.y > 2.5) return mix(shading.x, 1.0, hapticContactLit(tile, layer, shading, hapticShadowViews[base + 6], clip, depth, texels, size, gradient, maximum));
 #endif
   // Water and CEL (\`HAPTIC_SHADOW_NARROW\`) draw every filter, Contact Hardening's too, as low quality's four taps.
   float lit;
@@ -213,10 +217,10 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
     vec2 w1 = 1.0 + 2.0 * st;
     vec2 a = corner + (2.0 - st) / w0 - 1.0;
     vec2 b = corner + st / w1 + 1.0;
-    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2(a.x, a.y), texels, depth, gradient, maximum)
-      + w1.x * w0.y * hapticPlaneTap(tile, vec2(b.x, a.y), texels, depth, gradient, maximum)
-      + w0.x * w1.y * hapticPlaneTap(tile, vec2(a.x, b.y), texels, depth, gradient, maximum)
-      + w1.x * w1.y * hapticPlaneTap(tile, vec2(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
+    lit = (w0.x * w0.y * hapticPlaneTap(tile, layer, vec2(a.x, a.y), texels, depth, gradient, maximum)
+      + w1.x * w0.y * hapticPlaneTap(tile, layer, vec2(b.x, a.y), texels, depth, gradient, maximum)
+      + w0.x * w1.y * hapticPlaneTap(tile, layer, vec2(a.x, b.y), texels, depth, gradient, maximum)
+      + w1.x * w1.y * hapticPlaneTap(tile, layer, vec2(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
   }
 #ifndef HAPTIC_SHADOW_NARROW
   else if (texelsWide < 6.0) {
@@ -225,22 +229,22 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
     vec2 a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
     vec2 b = corner + (3.0 + st) / 7.0;
     vec2 c = corner + st / w2 + 2.0;
-    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2(a.x, a.y), texels, depth, gradient, maximum)
-      + 7.0 * w0.y * hapticPlaneTap(tile, vec2(b.x, a.y), texels, depth, gradient, maximum)
-      + w2.x * w0.y * hapticPlaneTap(tile, vec2(c.x, a.y), texels, depth, gradient, maximum)
-      + w0.x * 7.0 * hapticPlaneTap(tile, vec2(a.x, b.y), texels, depth, gradient, maximum)
-      + 49.0 * hapticPlaneTap(tile, vec2(b.x, b.y), texels, depth, gradient, maximum)
-      + w2.x * 7.0 * hapticPlaneTap(tile, vec2(c.x, b.y), texels, depth, gradient, maximum)
-      + w0.x * w2.y * hapticPlaneTap(tile, vec2(a.x, c.y), texels, depth, gradient, maximum)
-      + 7.0 * w2.y * hapticPlaneTap(tile, vec2(b.x, c.y), texels, depth, gradient, maximum)
-      + w2.x * w2.y * hapticPlaneTap(tile, vec2(c.x, c.y), texels, depth, gradient, maximum)) / 144.0;
+    lit = (w0.x * w0.y * hapticPlaneTap(tile, layer, vec2(a.x, a.y), texels, depth, gradient, maximum)
+      + 7.0 * w0.y * hapticPlaneTap(tile, layer, vec2(b.x, a.y), texels, depth, gradient, maximum)
+      + w2.x * w0.y * hapticPlaneTap(tile, layer, vec2(c.x, a.y), texels, depth, gradient, maximum)
+      + w0.x * 7.0 * hapticPlaneTap(tile, layer, vec2(a.x, b.y), texels, depth, gradient, maximum)
+      + 49.0 * hapticPlaneTap(tile, layer, vec2(b.x, b.y), texels, depth, gradient, maximum)
+      + w2.x * 7.0 * hapticPlaneTap(tile, layer, vec2(c.x, b.y), texels, depth, gradient, maximum)
+      + w0.x * w2.y * hapticPlaneTap(tile, layer, vec2(a.x, c.y), texels, depth, gradient, maximum)
+      + 7.0 * w2.y * hapticPlaneTap(tile, layer, vec2(b.x, c.y), texels, depth, gradient, maximum)
+      + w2.x * w2.y * hapticPlaneTap(tile, layer, vec2(c.x, c.y), texels, depth, gradient, maximum)) / 144.0;
   } else {
     vec2 w[4] = vec2[4](5.0 * st - 6.0, 11.0 * st - 28.0, -(11.0 * st + 17.0), -(5.0 * st + 1.0));
     vec2 o[4] = vec2[4]((4.0 * st - 5.0) / w[0] - 3.0, (4.0 * st - 16.0) / w[1] - 1.0, -(7.0 * st + 5.0) / w[2] + 1.0, -st / w[3] + 3.0);
     lit = 0.0;
     for (int j = 0; j < 4; j++)
       for (int i = 0; i < 4; i++)
-        lit += w[i].x * w[j].y * hapticPlaneTap(tile, corner + vec2(o[i].x, o[j].y), texels, depth, gradient, maximum);
+        lit += w[i].x * w[j].y * hapticPlaneTap(tile, layer, corner + vec2(o[i].x, o[j].y), texels, depth, gradient, maximum);
     lit /= 2704.0;
   }
 #endif
@@ -258,7 +262,7 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
   lit = clamp((lit - 0.5) * clamp(${CEL_SHADOW_EDGE_TEXELS.toFixed(1)} / max(footprint, 1e-6), ${CEL_SHADOW_MINIMUM_GAIN.toFixed(1)}, 64.0) + 1.0, 0.0, 1.0);
 #endif
   return mix(shading.x, 1.0, lit);
-` : "  return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));\n"}}
+` : "  return mix(shading.x, 1.0, hapticShadowTap(tile, layer, texels, depth));\n"}}
 
 // A point light's shadow (its record's \`shadow\`: first view, faces): the view of the cube face the position lies in,
 // in Babylon's order (+X, -X, -Y, +Y, +Z, -Z); the one view of a point light with a direction.
@@ -510,9 +514,20 @@ vec3 hapticLtcEvaluate(vec3 N, vec3 V, vec3 P, mat3 mInv, vec3 c0, vec3 c1, vec3
   return max((l * l + f.z) / (l + 1.0), 0.0) * emission;
 }
 #ifndef HAPTIC_CEL
-// Rect i's diffuse and specular form factors, and the table's Fresnel terms (x scales F0, y scales F90 - F0).
-struct hapticArea { vec3 diffuse; vec3 specular; vec2 fresnel; };
-hapticArea hapticAreaLight(vec3 P, vec3 N, vec3 V, int i, float roughness) {
+// The LTC tables' terms at the surface's roughness and N.V, the same for every rect light: the specular transform's
+// inverse and the Fresnel terms (x scales F0, y scales F90 - F0).
+struct hapticLtc { mat3 mInv; vec2 fresnel; };
+hapticLtc hapticLtcTerms(vec3 N, vec3 V, float roughness) {
+  vec2 uv = vec2(roughness, sqrt(1.0 - clamp(dot(N, V), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
+  // The two tables stacked in one texture (\`areaLightLtcTexture\`): LTC1 in the top half, LTC2 in the bottom. A half's
+  // rows end at its last texel's centre, so the bilinear tap never reaches the other table.
+  vec4 t1 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5), 0.0);
+  vec4 t2 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5 + 0.5), 0.0);
+  return hapticLtc(mat3(vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w)), t2.xy);
+}
+// Rect i's diffuse and specular form factors.
+struct hapticArea { vec3 diffuse; vec3 specular; };
+hapticArea hapticAreaLight(vec3 P, vec3 N, vec3 V, int i, mat3 mInv) {
   vec3 center = hapticRect[i * 4].xyz;
   vec3 halfWidth = hapticRect[i * 4 + 1].xyz;
   vec3 halfHeight = hapticRect[i * 4 + 2].xyz;
@@ -520,17 +535,10 @@ hapticArea hapticAreaLight(vec3 P, vec3 N, vec3 V, int i, float roughness) {
   vec3 c1 = center - halfWidth - halfHeight;
   vec3 c2 = center - halfWidth + halfHeight;
   vec3 c3 = center + halfWidth + halfHeight;
-  vec2 uv = vec2(roughness, sqrt(1.0 - clamp(dot(N, V), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
-  // The two tables stacked in one texture (\`areaLightLtcTexture\`): LTC1 in the top half, LTC2 in the bottom. A half's
-  // rows end at its last texel's centre, so the bilinear tap never reaches the other table.
-  vec4 t1 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5), 0.0);
-  vec4 t2 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5 + 0.5), 0.0);
-  mat3 mInv = mat3(vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w));
   hapticArea area;
   float layer = hapticRect[i * 4 + 3].w;
   area.diffuse = hapticLtcEvaluate(N, V, P, mat3(1.0), c0, c1, c2, c3, layer);
   area.specular = hapticLtcEvaluate(N, V, P, mInv, c0, c1, c2, c3, layer);
-  area.fresnel = t2.xy;
   return area;
 }
 
@@ -564,6 +572,9 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     float view = -1.0;
     vec3 viewDx = vec3(0.0);
     vec3 viewDy = vec3(0.0);
+    float lightDistance = 0.0;
+    vec3 L = vec3(0.0);
+    float cone = 1.0;
     if (slot < 2) {
       // The sun's cascade, then the next one where it blends into it.
       if (sun.index >= 0 && (slot == 0 || sun.blends)) {
@@ -592,6 +603,13 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
 #ifdef HAPTIC_LIGHT_LOOP_PROOF
       hapticLoopReached++;
 #endif
+      lightDistance = sqrt(distanceSquared);
+      L = offset / max(lightDistance, HAPTIC_EPSILON);
+      // A spot light outside its cone adds exactly zero: its shadow is not looked up.
+      if (spot) {
+        cone = hapticConeFalloff(hapticSpot[i * 4 + 1].xyz, L, hapticSpot[i * 4 + 1].w, hapticSpot[i * 4 + 3].y);
+        if (cone == 0.0) continue;
+      }
       view = spot ? hapticSpot[i * 4 + 3].x : hapticPointShadowView(hapticPoint[i * 3 + 2], -offset);
     }
     float lit = hapticShadow(view, P, viewDx, viewDy);
@@ -618,23 +636,27 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
       }
       continue;
     }
-    float lightDistance = sqrt(distanceSquared);
-    vec3 L = offset / max(lightDistance, HAPTIC_EPSILON);
     float NdotL = hapticSaturateEps(dot(N, L));
     vec3 radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w);
-    if (spot) radiance = radiance * hapticConeFalloff(hapticSpot[i * 4 + 1].xyz, L, hapticSpot[i * 4 + 1].w, hapticSpot[i * 4 + 3].y);
+    if (spot) radiance = radiance * cone;
     radiance = radiance * lit;
     diffuse += radiance * (NdotL / HAPTIC_PI);
     // A light's radius widens its highlight.
     float roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
     specular += hapticSpecular(surface, N, V, L, NdotL, roughness) * radiance;
   }
-  for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.rect}; i++) {
-    if (i >= int(hapticCounts.w)) break;
-    hapticArea area = hapticAreaLight(P, N, V, i, surface.roughness);
+  // The rect lights of P's cluster, in record order: a cluster wholly behind a rect's emitting side drops it, where it
+  // adds exactly zero (\`hapticLtcEvaluate\`). The tables' terms are fetched once for all of them.
+  uint rects = hapticClusterLights(clusterMask.y >> 16, int(hapticCounts.w));
+  if (rects == 0u) return;
+  hapticLtc ltc = hapticLtcTerms(N, V, surface.roughness);
+  for (int r = 0; r < ${HAPTIC_LIGHT_MAXIMUM.rect}; r++) {
+    if (rects == 0u) break;
+    int i = hapticNextLight(rects);
+    hapticArea area = hapticAreaLight(P, N, V, i, ltc.mInv);
     vec3 color = hapticRect[i * 4 + 3].rgb;
     diffuse += color * area.diffuse;
-    specular += color * (surface.F0 * area.fresnel.x + (vec3(1.0) - surface.F0) * area.fresnel.y) * area.specular;
+    specular += color * (surface.F0 * ltc.fresnel.x + (vec3(1.0) - surface.F0) * ltc.fresnel.y) * area.specular;
   }
 }
 #else

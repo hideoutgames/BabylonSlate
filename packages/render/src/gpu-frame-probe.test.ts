@@ -60,6 +60,28 @@ describe("GL call signature", () => {
     expect(recorder.lastHash).toBe(cleared);
   });
 
+  it("starts a pass for each layer attached to the draw framebuffer, as a GPU starts a render pass per attachment", () => {
+    const recorder = new GlSignatureRecorder();
+    recorder.start();
+    recorder.beginFrame();
+    // The atlas's first page cleared whole, then two tiles of its second page, the binding left in between.
+    for (const [layer, tiles] of [[0, [[0, 0, 4096]]], [1, [[0, 0, 2048], [2048, 0, 2048]]]] as const) {
+      for (const [x, y, size] of tiles) {
+        recorder.bind(FRAMEBUFFER, atlas);
+        recorder.attachLayer(FRAMEBUFFER, layer);
+        recorder.viewport(x, y, size, size);
+        recorder.clear(DEPTH_BIT);
+        recorder.draw();
+        recorder.bind(FRAMEBUFFER, null);
+      }
+    }
+    expect(recorder.endFrame()).toMatchObject({ passes: 2, clears: 3, draws: 3 });
+    expect(recorder.stats()!.structures[0]!.passes).toEqual([
+      "F1:0 v0,0,4096x4096 d@0,0,4096x4096 x1",
+      "F1:1 v0,0,2048x2048 2048,0,2048x2048 d@0,0,2048x2048 d@2048,0,2048x2048 x2",
+    ]);
+  });
+
   it("starts no pass at a read framebuffer binding", () => {
     const recorder = new GlSignatureRecorder();
     recorder.start();

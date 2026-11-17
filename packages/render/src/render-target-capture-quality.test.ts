@@ -383,8 +383,8 @@ function passes(generator: ShadowGenerator): () => number {
   return () => count;
 }
 
-it("draws a Full Quality capture's own sun maps, fitted to its camera, and leaves the scene view's maps as they were", async () => {
-  const { scene, camera, sun, spot, controller, view, captures, captureCamera } = shadowedHost();
+it("draws a Full Quality capture's own sun maps, fitted to its camera, when they change, and leaves the scene view's maps as they were", async () => {
+  const { scene, camera, sun, spot, controller, view, captures, lens, captureCamera } = shadowedHost();
   const main = controller.generator(sun) as AtlasCascadedShadowGenerator;
   expect(main).toBeInstanceOf(AtlasCascadedShadowGenerator);
   const local = controller.generator(spot)!;
@@ -402,7 +402,7 @@ it("draws a Full Quality capture's own sun maps, fitted to its camera, and leave
   expect(own.camera).toBe(capture);
   expect(own.numCascades).toBe(main.numCascades);
   expect(own.getShadowMap()!.getSize()).toEqual(main.getShadowMap()!.getSize());
-  expect(own.tiles.some((tile) => main.tiles.some((held) => held.x === tile.x && held.y === tile.y))).toBe(false);
+  expect(own.tiles.some((tile) => main.tiles.some((held) => held.layer === tile.layer && held.x === tile.x && held.y === tile.y))).toBe(false);
   // The scene view keeps binding its own map; the spot map is shared.
   expect(sun.getShadowGenerator()).toBe(main);
   expect(spot.getShadowGenerators()?.size).toBe(1);
@@ -413,10 +413,20 @@ it("draws a Full Quality capture's own sun maps, fitted to its camera, and leave
   const before = { main: mainPasses(), local: localPasses(), executes: executes.mock.calls.length };
   for (let frame = 0; frame < 4; frame++) expect(view.render()).toMatchObject({ rendered: true });
   expect(executes.mock.calls.length - before.executes).toBe(8);
-  // The scene view's maps stay cached and keep their cascade fit; the capture redraws its own each captured frame.
+  // The scene view's maps stay cached and keep their cascade fit, and so do the capture's own: a still capture of still
+  // casters draws no depth.
   expect(mainPasses() - before.main).toBe(0);
   expect(localPasses() - before.local).toBe(0);
-  expect(ownPasses()).toBe(4 * own.numCascades);
+  expect(ownPasses()).toBe(0);
+  // A capture camera that moves refits its own maps, which draw again once, and the scene view's do not.
+  lens.position.x += 2;
+  expect(view.render()).toMatchObject({ rendered: true });
+  expect(ownPasses()).toBe(own.numCascades);
+  for (let frame = 0; frame < 3; frame++) view.render();
+  const settled = ownPasses();
+  for (let frame = 0; frame < 3; frame++) view.render();
+  expect(ownPasses()).toBe(settled);
+  expect(mainPasses() - before.main).toBe(0);
   expect(Array.from({ length: main.numCascades }, (_, layer) => [...main.getCascadeTransformMatrix(layer)!.m])).toEqual(mainFit);
   expect(sun.getShadowGenerator()).toBe(main);
   // The capture's cascades follow its own camera, far from the scene camera's.
@@ -438,7 +448,8 @@ it("draws one sun cascade of its own for a capture no larger than 512 × 512, be
   for (let frame = 0; frame < 5; frame++) view.render();
   const ownPasses = passes(own);
   for (let frame = 0; frame < 3; frame++) expect(view.render()).toMatchObject({ rendered: true });
-  expect(ownPasses()).toBe(3);
+  // Still: drawn once, then kept.
+  expect(ownPasses()).toBe(0);
   view.dispose();
 });
 
