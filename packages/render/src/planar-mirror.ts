@@ -36,6 +36,8 @@ import { ReflectionSunShadows } from "./reflection-sun-shadows";
 import { isRenderTargetCaptureCandidate, renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { admittedSceneMeshes } from "./scene-stream-admission";
+import { VisibilityCheck } from "./visibility-check";
+import { PlaneQuery } from "./visibility-index";
 
 /** A world plane `n·x + d = 0` with unit normal n; the reflective side is `n·x + d > 0`. */
 export interface MirrorPlane {
@@ -454,6 +456,13 @@ export function collectPlanarMirrorMeshes(
   note = true,
 ): void {
   const meshes = admittedSceneMeshes(scene) ?? scene.meshes;
+  // The bounds test is the visibility index's (`PlaneQuery.holds`: `mesh.isInFrustum` on the same doubles). On a
+  // check (every 32nd list, or all while verifying) each mesh is also asked itself, and its own answer stands.
+  const query = (mirrorQuery ??= new PlaneQuery()).set(planes);
+  const check = mirrorCheck ??= new VisibilityCheck("mirror");
+  const checking = check.due();
+  let same = true;
+  const started = performance.now();
   let count = 0;
   for (let i = 0; i < meshes.length; i++) {
     const mesh = meshes[i]!;
@@ -469,13 +478,30 @@ export function collectPlanarMirrorMeshes(
       } else opaque = !material.needAlphaBlendingForMesh(mesh);
       if (!opaque) continue;
     }
-    if (!drawsInsidePlanes(mesh, planes)) continue;
+    // As `drawsInsidePlanes`.
+    if (!mesh.infiniteDistance && !mesh.alwaysSelectAsActiveMesh) {
+      mesh.computeWorldMatrix();
+      let inside = query.holds(mesh);
+      if (checking) {
+        const own = mesh.isInFrustum(planes);
+        if (own !== inside) same = false;
+        inside = own;
+      }
+      if (!inside) continue;
+    }
     list[count++] = mesh;
   }
   list.length = count;
+  // A check's time holds both tests of every mesh, so it is the full path's share that is recorded for it.
+  const elapsed = performance.now() - started;
+  if (checking) check.checked(same, elapsed);
+  else check.queried(elapsed);
   // A capture whose image one of these shows keeps drawing while a reflection shows it.
   if (note) notePassListed(scene, list);
 }
+
+let mirrorQuery: PlaneQuery | null = null;
+let mirrorCheck: VisibilityCheck | null = null;
 
 const floatingOriginScenes = new WeakMap<Scene, () => Scene | undefined>();
 
