@@ -8,7 +8,6 @@ import { Matrix, Vector2 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import { ThinSSRPostProcess } from "@babylonjs/core/PostProcesses/thinSSRPostProcess";
 import { ThinSSRBlurPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlurPostProcess";
-import { ThinSSRBlurCombinerPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlurCombinerPostProcess";
 // The stages' vertex shader, from the shader store.
 import "@babylonjs/core/Shaders/postprocess.vertex";
 import type { SceneEffectsPlan } from "./scene-effects";
@@ -22,15 +21,9 @@ import {
   fillVolumetricSlots,
   type VolumeShadow,
 } from "./volumetric-lights";
-import {
-  volumetricShader,
-  volumetricCompositeShader,
-} from "./volumetric-shader";
-import {
-  ambientOcclusionBlurShader,
-  ambientOcclusionCompositeShader,
-  ambientOcclusionShader,
-} from "./ambient-occlusion-shader";
+import { volumetricShader } from "./volumetric-shader";
+import { ambientOcclusionBlurShader, ambientOcclusionShader } from "./ambient-occlusion-shader";
+import { spatialComposeShader } from "./spatial-compose-shader";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
 import { bindFogVolumes, hasFogVolumes, selectFogVolumes } from "./fog-volumes";
@@ -54,35 +47,6 @@ class PreparedSSR extends ThinSSRPostProcess {
     pendingDefines.delete(this);
   }
 }
-/**
- * Babylon's combiner takes its Fresnel's view direction from the view position even for an orthographic camera, whose
- * view rays are parallel, while its ray trace uses the parallel direction there: under `ORTHOGRAPHIC_CAMERA` the
- * combiner takes the parallel direction too.
- */
-function parallelOrthographicView(_name: string, shaderType: string, code: string): string {
-  if (shaderType !== "fragment") return code;
-  return code.replace(/(var csViewDirection: vec3f|vec3 csViewDirection)\s*=\s*normalize\(csPosition\);/, (line, declaration: string) =>
-    `\n#ifdef ORTHOGRAPHIC_CAMERA\n${declaration}=normalize(${declaration.startsWith("var") ? "vec3f" : "vec3"}(0.0, 0.0, csPosition.z));\n#else\n${line}\n#endif\n`);
-}
-class PreparedSSRCombine extends ThinSSRBlurCombinerPostProcess {
-  override updateEffect(
-    ...args: Parameters<EffectWrapper["updateEffect"]>
-  ): void {
-    pendingDefines.set(this, args);
-  }
-  compile(): void {
-    const args = pendingDefines.get(this) ?? [];
-    // Babylon's combiner omits the orthographic define used by its view-position helper.
-    if (this.camera?.mode === Camera.ORTHOGRAPHIC_CAMERA)
-      args[0] = `${args[0] ?? ""}\n#define ORTHOGRAPHIC_CAMERA\n`;
-    EffectWrapper.RegisterShaderCodeProcessing(this.name, { processCodeAfterIncludes: parallelOrthographicView });
-    if (this.camera?.getScene().useRightHandedSystem)
-      args[0] = `${args[0] ?? ""}\n#define SSRAYTRACE_RIGHT_HANDED_SCENE\n`;
-    super.updateEffect(...args);
-    pendingDefines.delete(this);
-  }
-}
-
 export interface SpatialStage {
   wrapper: EffectWrapper;
   scale: number;
@@ -91,16 +55,20 @@ export interface SpatialStage {
    * occlusion march and blurs, whose single-channel targets sample as (value, 0, 0, 1).
    */
   format?: number;
-  /** Index of the stage whose input is the full-resolution color to compose. */
-  mainInput?: number;
+  /** What it reads as `textureSampler`: the previous stage's output, or with "scene" the chain's input colour. */
+  source?: "scene";
+  /** Earlier stages' outputs it also samples, bilinear: sampler name to stage index. */
+  reads?: Record<string, number>;
+  /** It writes the chain's colour (the compose): skipped, it passes its source through. */
+  color?: boolean;
   geometry: boolean;
   /**
    * Evaluated before each frame: true when running this stage would leave the
-   * chain's color unchanged. The graph then skips it (a stage with `mainInput`
-   * passes that color through; one without draws nothing, so only its
-   * idle-capable successor may read its output), and skips the geometry pass
-   * once no running stage reads it. Stages that share a condition share one
-   * function, which the graph evaluates once per frame.
+   * chain's color unchanged. The graph then skips it (a `color` stage passes its
+   * source through; another draws nothing, so only an idle-capable reader may
+   * read its output), and skips the geometry pass once no running stage reads
+   * it. Stages that share a condition share one function, which the graph
+   * evaluates once per frame.
    */
   idle?: () => boolean;
   bind(effect: Effect): void;
@@ -148,13 +116,13 @@ export function reserveSpatialEffects(
   if (sceneSamples > 1) bytes += pixels * sceneSamples * (8 + 4);
   // Reflections and occlusion share the encoded world-normal attachment.
   if (plan.ambientOcclusion && !plan.reflections) bytes += pixels * 4;
-  // Its R16F march and blurs, and the RGBA16F compose.
-  if (plan.ambientOcclusion)
-    bytes += pixels * 8 + scaledBytes(plan.ambientOcclusion.resolutionScale, 2) * 3;
-  if (plan.reflections)
-    bytes += pixels * 16 + scaledBytes(plan.reflections.resolutionScale) * 3;
-  if (plan.volumetricLighting)
-    bytes += pixels * 8 + scaledBytes(plan.volumetricLighting.resolutionScale);
+  // The one RGBA16F compose of them all.
+  if (plan.ambientOcclusion || plan.reflections || plan.volumetricLighting) bytes += pixels * 8;
+  // Occlusion's R16F march and blurs.
+  if (plan.ambientOcclusion) bytes += scaledBytes(plan.ambientOcclusion.resolutionScale, 2) * 3;
+  // The normal and reflectivity attachments, and the trace and its blurs.
+  if (plan.reflections) bytes += pixels * 8 + scaledBytes(plan.reflections.resolutionScale) * 3;
+  if (plan.volumetricLighting) bytes += scaledBytes(plan.volumetricLighting.resolutionScale);
   // Screen-Space Shadows' RG16F target and the caster mark's second channel of the geometry Z (at most float).
   if (plan.screenShadows) bytes += pixels * 8;
   return beginManagedRenderAllocation(scene.getEngine(), bytes);
@@ -268,13 +236,18 @@ export function createSpatialStages(
   const quality =
     resolveSceneRenderingQuality(scene).postprocessing.resolutionScale;
   const reflections = plan.reflections;
+  // The one compose's inputs, which each effect adds: earlier stages' outputs, samplers, uniforms and their binding.
+  const reads: Record<string, number> = {};
+  const composeSamplers = ["depthSampler"];
+  const composeUniforms: string[] = [];
+  const composeBinds: ((effect: Effect) => void)[] = [];
+  let fogIdle: (() => boolean) | undefined;
   try {
     const occlusion = plan.ambientOcclusion;
     if (occlusion) {
       const scale = Math.max(0.25, occlusion.resolutionScale * quality);
       const texelWidth = 1 / Math.max(1, Math.round(width * scale)),
         texelHeight = 1 / Math.max(1, Math.round(height * scale));
-      const mainInput = stages.length;
       const march = own(
         customWrapper(
           scene,
@@ -333,28 +306,12 @@ export function createSpatialStages(
           bind: (effect) => effect.setFloat2("aoBlurStep", x, y),
         });
       }
-      const compose = own(
-        customWrapper(
-          scene,
-          "Scene Ambient Occlusion Compose",
-          ambientOcclusionCompositeShader(plan.sceneLinear),
-          ["aoTexelSize"],
-          ["mainSampler", "depthSampler"],
-          failure,
-        ),
-      );
-      stages.push({
-        wrapper: compose,
-        scale: 1,
-        mainInput,
-        geometry: true,
-        bind: (effect) => effect.setFloat2("aoTexelSize", texelWidth, texelHeight),
-      });
+      reads.aoSampler = stages.length - 1;
+      composeUniforms.push("aoTexelSize");
+      composeBinds.push((effect) => effect.setFloat2("aoTexelSize", texelWidth, texelHeight));
     }
     if (reflections) {
       const scale = Math.max(0.25, reflections.resolutionScale * quality);
-      // Compose onto the color reflections read, which already carries occlusion.
-      const mainInput = stages.length;
       const ssr = own(
         new PreparedSSR("Scene Reflections", scene, {
           blockCompilation: true,
@@ -376,7 +333,8 @@ export function createSpatialStages(
       ssr.textureWidth = width;
       ssr.textureHeight = height;
       ssr.compile();
-      stages.push({ wrapper: ssr, scale, geometry: true, bind: () => {} });
+      // It traces the scene colour before occlusion: the compose applies both at once.
+      stages.push({ wrapper: ssr, scale, source: "scene", geometry: true, bind: () => {} });
       for (const [axis, direction] of [
         ["X", new Vector2(1, 0)],
         ["Y", new Vector2(0, 1)],
@@ -394,26 +352,18 @@ export function createSpatialStages(
         blur.textureHeight = Math.max(1, Math.round(height * scale));
         stages.push({ wrapper: blur, scale, geometry: false, bind: () => {} });
       }
-      const combine = own(
-        new PreparedSSRCombine("Scene Reflections Compose", engine, {
-          blockCompilation: true,
-          onError: failure?.for("Scene Reflections Compose"),
-        }),
-      );
-      combine.camera = camera;
-      combine.useFresnel = true;
-      combine.normalsAreInWorldSpace = true;
-      combine.normalsAreUnsigned = true;
-      combine.strength = reflections.strength;
-      combine.inputTextureColorIsInGammaSpace = !plan.sceneLinear;
-      combine.generateOutputInGammaSpace = !plan.sceneLinear;
-      combine.compile();
-      stages.push({
-        wrapper: combine,
-        scale: 1,
-        mainInput,
-        geometry: true,
-        bind: () => {},
+      reads.reflectionSampler = stages.length - 1;
+      composeSamplers.push("normalSampler", "reflectivitySampler");
+      composeUniforms.push("reflectionTerms", "projection", "invProjectionMatrix", "view");
+      const inverseProjection = Matrix.Identity();
+      composeBinds.push((effect) => {
+        // Babylon's combiner's: no specular falloff, and its reflectivity threshold.
+        effect.setFloat4("reflectionTerms", reflections.strength, 1, 0.04, 0);
+        const projection = camera.getProjectionMatrix();
+        projection.invertToRef(inverseProjection);
+        effect.setMatrix("projection", projection);
+        effect.setMatrix("invProjectionMatrix", inverseProjection);
+        effect.setMatrix("view", camera.getViewMatrix());
       });
     }
     const volume = plan.volumetricLighting;
@@ -461,15 +411,18 @@ export function createSpatialStages(
       );
       const inverseProjection = Matrix.Identity(),
         inverseView = Matrix.Identity();
-      const mainInput = stages.length;
       const slots = createVolumetricSlots();
       const scratch: VolumeShadow = { kind: "none", cascades: 0, first: 0 };
-      const idle = () => volumetricMarchIdle(scene, camera, volume, localVolumes);
+      // The compose reads this frame's answer, which the graph's idle sync evaluated before the frame.
+      let marchIdle = false;
+      fogIdle = () => (marchIdle = volumetricMarchIdle(scene, camera, volume, localVolumes));
       stages.push({
         wrapper: march,
         scale: Math.max(0.25, volume.resolutionScale * quality),
+        // It reads no colour: the scene's keeps no other stage's output alive until it draws.
+        source: "scene",
         geometry: true,
-        idle,
+        idle: fogIdle,
         bind: (effect) => {
           camera.getProjectionMatrix().invertToRef(inverseProjection);
           camera.getViewMatrix().invertToRef(inverseView);
@@ -509,30 +462,46 @@ export function createSpatialStages(
         },
       });
       const scale = Math.max(0.25, volume.resolutionScale * quality);
+      reads.fogSampler = stages.length - 1;
+      composeUniforms.push("fogTexelSize", "cameraFar", "fogActive");
+      composeBinds.push((effect) => {
+        effect.setFloat2(
+          "fogTexelSize",
+          1 / Math.max(1, Math.round(width * scale)),
+          1 / Math.max(1, Math.round(height * scale)),
+        );
+        effect.setFloat("cameraFar", Math.min(65000, camera.maxZ || 65000));
+        effect.setFloat("fogActive", marchIdle ? 0 : 1);
+      });
+    }
+    if (plan.ambientOcclusion || reflections || volume) {
       const compose = own(
         customWrapper(
           scene,
-          "Scene Volumetric Compose",
-          volumetricCompositeShader(plan.sceneLinear),
-          ["fogTexelSize", "cameraFar"],
-          ["mainSampler", "depthSampler"],
+          "Scene Effects Compose",
+          spatialComposeShader({
+            ambientOcclusion: !!plan.ambientOcclusion,
+            reflections: reflections
+              ? { orthographic: camera.mode === Camera.ORTHOGRAPHIC_CAMERA, rightHanded: scene.useRightHandedSystem }
+              : null,
+            volumetricLighting: !!volume,
+            linear: plan.sceneLinear,
+          }),
+          composeUniforms,
+          [...composeSamplers, ...Object.keys(reads)],
           failure,
         ),
       );
       stages.push({
         wrapper: compose,
         scale: 1,
-        mainInput,
+        source: "scene",
+        reads,
+        color: true,
         geometry: true,
-        idle,
-        bind: (effect) => {
-          effect.setFloat2(
-            "fogTexelSize",
-            1 / Math.max(1, Math.round(width * scale)),
-            1 / Math.max(1, Math.round(height * scale)),
-          );
-          effect.setFloat("cameraFar", Math.min(65000, camera.maxZ || 65000));
-        },
+        // Fog alone composes nothing while its march idles; with another effect the compose skips only the fog's term.
+        idle: plan.ambientOcclusion || reflections ? undefined : fogIdle,
+        bind: (effect) => { for (const bind of composeBinds) bind(effect); },
       });
     }
     return stages;

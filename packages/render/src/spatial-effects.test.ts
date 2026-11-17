@@ -48,16 +48,61 @@ function spatialChain(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, mode = Ca
 
 const named = (stages: SpatialStage[], name: string) => stages.findIndex((stage) => stage.wrapper.name === name);
 
-it("composes reflections onto the occlusion-composed color they traced, not the color before occlusion", () => {
-  const stages = stagesFor({
-    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
-    reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+const OCCLUSION = { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } };
+const REFLECTIONS = { reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
+const FOG = { volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true } };
+
+/** The chain's compose and what it samples, by the names of the stages that write them. */
+function compose(stages: SpatialStage[]) {
+  const composes = stages.filter((stage) => stage.scale === 1);
+  const stage = composes[0]!;
+  return {
+    stage,
+    full: composes.map((each) => each.wrapper.name),
+    reads: Object.fromEntries(Object.entries(stage.reads ?? {}).map(([sampler, index]) => [sampler, stages[index]!.wrapper.name])),
+  };
+}
+
+it("composes occlusion, reflections and fog onto the scene colour in one full-resolution stage, after every effect's own stages", () => {
+  const stages = stagesFor({ ...OCCLUSION, ...REFLECTIONS, ...FOG });
+  const { stage, full, reads } = compose(stages);
+  expect(full).toEqual(["Scene Effects Compose"]);
+  expect(stages[stages.length - 1]).toBe(stage);
+  expect(stage).toMatchObject({ source: "scene", color: true, idle: undefined });
+  expect(reads).toEqual({
+    aoSampler: "Scene Ambient Occlusion Blur Y",
+    reflectionSampler: "Scene Reflections Blur Y",
+    fogSampler: "Scene Volumetric Lighting",
   });
-  // The graph binds the color entering stage `mainInput` as the compose's main sampler.
-  const occlusion = named(stages, "Scene Ambient Occlusion Compose"), reflections = named(stages, "Scene Reflections");
-  expect(occlusion).toBeGreaterThanOrEqual(0);
-  expect(reflections).toBeGreaterThan(occlusion);
-  expect(stages[named(stages, "Scene Reflections Compose")]!.mainInput).toBe(reflections);
+  // Reflections trace the scene colour before occlusion: the compose applies both at once.
+  expect(stages[named(stages, "Scene Reflections")]!.source).toBe("scene");
+});
+
+it.each([
+  ["occlusion", OCCLUSION, { aoSampler: "Scene Ambient Occlusion Blur Y" }],
+  ["reflections", REFLECTIONS, { reflectionSampler: "Scene Reflections Blur Y" }],
+  ["fog", FOG, { fogSampler: "Scene Volumetric Lighting" }],
+  ["occlusion and fog", { ...OCCLUSION, ...FOG }, { aoSampler: "Scene Ambient Occlusion Blur Y", fogSampler: "Scene Volumetric Lighting" }],
+] as const)("composes %s alone in the same one stage, sampling only its own results", (_name, effects, expected) => {
+  const stages = stagesFor(effects);
+  const { stage, full, reads } = compose(stages);
+  expect(full).toEqual(["Scene Effects Compose"]);
+  expect(reads).toEqual(expected);
+  // Fog alone composes nothing while its march idles, so the compose skips with it (one condition, evaluated once);
+  // beside another effect it runs and leaves the fog out.
+  const march = stages[named(stages, "Scene Volumetric Lighting")];
+  expect(stage.idle).toBe("aoSampler" in expected || "reflectionSampler" in expected ? undefined : march?.idle);
+});
+
+it("declares in the compose exactly the uniforms and samplers its Effect binds", () => {
+  const stages = stagesFor({ ...OCCLUSION, ...REFLECTIONS, ...FOG });
+  const wrapper = compose(stages).stage.wrapper;
+  const uniforms = wrapper.options.uniforms.filter((name) => name !== "scale").sort();
+  const samplers = wrapper.options.samplers.sort();
+  const fragment = ShaderStore.ShadersStore[`${wrapper.options.fragmentShader}FragmentShader`]!;
+  const glsl = [...fragment.matchAll(/uniform\s+(?:highp\s+)?(\w+)\s+(\w+)/g)];
+  expect(glsl.filter(([, type]) => !type!.startsWith("sampler")).map(([, , name]) => name).sort()).toEqual(uniforms);
+  expect(glsl.filter(([, type]) => type!.startsWith("sampler")).map(([, , name]) => name).sort()).toEqual(samplers);
 });
 
 it("links each stage's program once: a chain built again draws the same Effects, and stages of one code share one", () => {
@@ -69,8 +114,8 @@ it("links each stage's program once: a chain built again draws the same Effects,
   // A load builds its view's graph more than once; each build creates the chain's stages again.
   const again = chain.build();
   const effect = (stages: SpatialStage[], name: string) => stages[named(stages, name)]!.wrapper.effect;
-  for (const name of ["Scene Ambient Occlusion", "Scene Ambient Occlusion Blur X", "Scene Ambient Occlusion Compose",
-    "Scene Volumetric Lighting", "Scene Volumetric Compose"]) {
+  for (const name of ["Scene Ambient Occlusion", "Scene Ambient Occlusion Blur X", "Scene Volumetric Lighting",
+    "Scene Effects Compose"]) {
     expect(effect(again, name)).toBe(effect(first, name));
   }
   // The two blur directions differ only in a uniform.
@@ -131,14 +176,17 @@ it("declares in the volumetric march exactly the uniforms and samplers its Effec
   expect(fragment).toContain("uniform HapticLights {");
 });
 
-it("gives the orthographic reflection compose the parallel view direction its trace uses", async () => {
-  const reflections = { reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
-  const compose = async (mode: number) => {
-    const stages = stagesFor(reflections, undefined, mode);
-    const effect = stages[named(stages, "Scene Reflections Compose")]!.wrapper.effect;
+it("gives the orthographic reflection compose the parallel view direction and the orthographic view position its trace uses", async () => {
+  const source = async (mode: number) => {
+    const stages = stagesFor(REFLECTIONS, undefined, mode);
+    const effect = stages[named(stages, "Scene Effects Compose")]!.wrapper.effect;
     await new Promise<void>((resolve) => effect.executeWhenCompiled(() => resolve()));
     return effect.fragmentSourceCode;
   };
-  expect(await compose(Camera.ORTHOGRAPHIC_CAMERA)).toMatch(/csViewDirection\s*=\s*normalize\(vec3\(0\.0, 0\.0, csPosition\.z\)\)/);
-  expect(await compose(Camera.PERSPECTIVE_CAMERA)).toMatch(/csViewDirection\s*=\s*normalize\(csPosition\)/);
+  const orthographic = await source(Camera.ORTHOGRAPHIC_CAMERA), perspective = await source(Camera.PERSPECTIVE_CAMERA);
+  expect(orthographic).toMatch(/csViewDirection\s*=\s*normalize\(vec3\(0\.0, 0\.0, csPosition\.z\)\)/);
+  expect(perspective).toMatch(/csViewDirection\s*=\s*normalize\(csPosition\)/);
+  // Babylon's view-position helper (`computeViewPosFromUVDepth`): depth is linear in an orthographic projection.
+  expect(orthographic).toMatch(/ndc\.z\s*=\s*projection\[2\]\.z\s*\*\s*depth\s*\+\s*projection\[3\]\.z/);
+  expect(perspective).toMatch(/ndc\.z\s*=\s*projection\[2\]\.z\s*\+\s*projection\[3\]\.z\s*\/\s*depth/);
 });

@@ -31,22 +31,22 @@ class SpatialTask extends FrameGraphPostProcessTask {
   private retirement: OwnedEffectRetirement | undefined;
   readonly stage: SpatialStage;
   private readonly buffers: Record<string, FrameGraphTextureHandle>;
-  private readonly main?: FrameGraphTextureHandle;
+  /** Earlier stages' outputs it samples, by sampler name. */
+  private readonly reads: Record<string, FrameGraphTextureHandle>;
   constructor(
     graph: FrameGraph,
     stage: SpatialStage,
     buffers: Record<string, FrameGraphTextureHandle>,
-    main?: FrameGraphTextureHandle,
+    reads: Record<string, FrameGraphTextureHandle>,
   ) {
     super(stage.wrapper.name, graph, stage.wrapper);
     this.stage = stage;
     this.buffers = buffers;
-    this.main = main;
+    this.reads = reads;
     this.depthTest = false;
   }
   override record() {
-    // Babylon's own disabled pass copies the previous stage's output, which for
-    // an idle-capable stage is not the color to pass through.
+    // Babylon's own disabled pass copies the source, which only a colour stage passes through.
     const idleCapable = this.stage.idle !== undefined;
     const pass = super.record(idleCapable, undefined, (context) => {
       const effect = this.drawWrapper.effect!;
@@ -58,20 +58,22 @@ class SpatialTask extends FrameGraphPostProcessTask {
           );
           context.bindTextureHandle(effect, name, handle);
         }
-      if (this.main !== undefined)
-        context.bindTextureHandle(effect, "mainSampler", this.main);
+      for (const [name, handle] of Object.entries(this.reads)) {
+        context.setTextureSamplingMode(handle, Constants.TEXTURE_BILINEAR_SAMPLINGMODE);
+        context.bindTextureHandle(effect, name, handle);
+      }
       this.stage.bind(effect);
     });
     if (this.stage.geometry) pass.addDependencies(Object.values(this.buffers));
-    if (this.main !== undefined) pass.addDependencies(this.main);
+    pass.addDependencies(Object.values(this.reads));
     if (idleCapable) {
       const skipped = this._frameGraph.addRenderPass(`${this.name}_disabled`, true);
       skipped.setRenderTarget(this.outputTexture);
-      if (this.main === undefined) skipped.setExecuteFunc(() => {});
+      const source = this.sourceTexture;
+      if (!this.stage.color || source === undefined) skipped.setExecuteFunc(() => {});
       else {
-        const main = this.main;
-        skipped.addDependencies(main);
-        skipped.setExecuteFunc((context) => context.copyTexture(main));
+        skipped.addDependencies(source);
+        skipped.setExecuteFunc((context) => context.copyTexture(source));
       }
     }
     return pass;
@@ -229,18 +231,14 @@ export class SpatialEffectsGraph {
           width, height, this.compileFailure);
         this.handles.push({ handle: this.screenShadows.output, category: "geometry" });
       }
-      const inputs: FrameGraphTextureHandle[] = [];
+      const sceneColor = source;
       for (const stage of stages) {
-        inputs.push(source);
-        const task = new SpatialTask(
-          graph,
-          stage,
-          buffers,
-          stage.mainInput === undefined ? undefined : inputs[stage.mainInput],
-        );
+        const reads: Record<string, FrameGraphTextureHandle> = {};
+        for (const [name, index] of Object.entries(stage.reads ?? {})) reads[name] = this.tasks[index]!.outputTexture;
+        const task = new SpatialTask(graph, stage, buffers, reads);
         this.tasks.push(task);
         unattached.delete(stage);
-        task.sourceTexture = source;
+        task.sourceTexture = stage.source === "scene" ? sceneColor : source;
         task.targetTexture = target(stage.wrapper.name, stage.scale, false, stage.format);
         source = task.outputTexture;
       }
