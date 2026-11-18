@@ -10,7 +10,7 @@ import {
   GraphEditor,
   type GraphNodeDrag,
 } from "./graph-editor";
-import type { GraphDocument } from "./graph-types";
+import type { GraphDocument, PaletteNode, PinConversion, SerializedPin } from "./graph-types";
 import { isAssignable, type PinType } from "@haptic/scripting";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
 import type { PinCompatibilityRule } from "./graph-connect";
@@ -6335,5 +6335,217 @@ describe("Add Node history", () => {
     } finally {
       restoreLayout();
     }
+  });
+});
+
+describe("pin conversion", () => {
+  const actorOut = {
+    id: "self",
+    name: "Self",
+    kind: "data" as const,
+    direction: "out" as const,
+    type: { kind: "objectRef", classId: "Actor" },
+  };
+  const vectorOut = { ...actorOut, id: "vector", name: "Vector", type: { kind: "vec3" } };
+  const locationIn = {
+    id: "location",
+    name: "Location",
+    kind: "data" as const,
+    direction: "in" as const,
+    type: { kind: "vec3" },
+  };
+  const getLocation: PaletteNode = {
+    id: "test.getLocation",
+    title: "Get Location",
+    category: "transform",
+    pure: true,
+    pins: [
+      { id: "target", name: "Target", kind: "data", direction: "in", type: { kind: "objectRef", classId: "Actor" } },
+      { id: "out", name: "Out", kind: "data", direction: "out", type: { kind: "vec3" } },
+    ],
+  };
+  const toVector: PinConversion = { label: "Convert to Vector3", paletteNode: getLocation, inPinId: "target", outPinId: "out" };
+  const conversion = () =>
+    vi.fn((source: SerializedPin, target: SerializedPin) =>
+      source.type.kind === "objectRef" && target.type.kind === "vec3" ? toVector : null);
+
+  function conversionGraph(edges: GraphDocument["edges"] = []): GraphDocument {
+    return {
+      nodes: [
+        { id: "actor", type: "test.actor", position: { x: 0, y: 0 }, data: { __pins: [actorOut] } },
+        { id: "vector", type: "test.vector", position: { x: 0, y: 200 }, data: { __pins: [vectorOut] } },
+        { id: "mover", type: "test.mover", position: { x: 600, y: 0 }, data: { __pins: [locationIn] } },
+      ],
+      edges,
+    };
+  }
+
+  type End = { node: string; pin: string; side: "left" | "right" };
+  const handleOf = (container: HTMLElement, end: End) =>
+    container.querySelector(`[data-id="${end.node}"] [data-handleid="${end.pin}"][data-handlepos="${end.side}"]`)!;
+
+  /** Drags a wire between two handles on a measured layout, from `from` to `to`. */
+  function dragBetween(container: HTMLElement, from: End, to: End) {
+    const flow = container.querySelector(".react-flow");
+    mockHandleRect(flow!, { left: 0, top: 0, width: 1000, height: 600 });
+    const start = handleOf(container, from);
+    const end = handleOf(container, to);
+    expect(start).not.toBeNull();
+    expect(end).not.toBeNull();
+    mockHandleRect(start, { left: from.side === "right" ? 0 : 600, top: 0, width: 44, height: 44 });
+    mockHandleRect(end, { left: to.side === "right" ? 0 : 600, top: 0, width: 44, height: 44 });
+    const centre = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    };
+    // XYFlow takes the handle under the pointer as the drop target.
+    document.elementFromPoint = () => end;
+    try {
+      act(() => {
+        dragHandle(start, centre(start), centre(end));
+      });
+    } finally {
+      delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+    }
+  }
+
+  function tapBetween(container: HTMLElement, from: End, to: End) {
+    fireEvent.click(handleOf(container, from));
+    fireEvent.click(handleOf(container, to));
+  }
+
+  const actorEnd: End = { node: "actor", pin: "self", side: "right" };
+  const vectorEnd: End = { node: "vector", pin: "vector", side: "right" };
+  const moverEnd: End = { node: "mover", pin: "location", side: "left" };
+
+  function expectConverted(graph: GraphDocument) {
+    const added = graph.nodes.filter((node) => !["actor", "vector", "mover"].includes(node.id));
+    expect(added).toEqual([
+      expect.objectContaining({
+        type: "test.getLocation",
+        data: expect.objectContaining({ title: "Get Location", __pure: true, __pins: getLocation.pins }),
+      }),
+    ]);
+    const converter = added[0]!.id;
+    expect(graph.edges).toEqual([
+      expect.objectContaining({ source: "actor", sourceHandle: "self", target: converter, targetHandle: "target" }),
+      expect.objectContaining({ source: converter, sourceHandle: "out", target: "mover", targetHandle: "location" }),
+    ]);
+  }
+
+  function expectUnchanged(onChange: ReturnType<typeof vi.fn>) {
+    const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument | undefined;
+    expect(last?.nodes.length ?? 3).toBe(3);
+    expect(last?.edges ?? []).toEqual([]);
+  }
+
+  it("inserts the host's converter node, wired on both sides, in one change when a wire is dropped on a pin it does not fit", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container } = render(
+        <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={conversion()} />,
+      );
+      onChange.mockClear();
+      dragBetween(container, actorEnd, moverEnd);
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expectConverted(onChange.mock.calls[0]![0] as GraphDocument);
+      // The selection stays as it was: the inserted node is not selected.
+      expect(container.querySelectorAll(".react-flow__node.selected")).toHaveLength(0);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("inserts the converter when the wire is dragged from the input", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container } = render(
+        <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={conversion()} />,
+      );
+      dragBetween(container, moverEnd, actorEnd);
+      expectConverted(onChange.mock.calls.at(-1)![0] as GraphDocument);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("replaces the wire already on an exclusive input", () => {
+    const onChange = vi.fn();
+    const { container } = renderTapToConnect(
+      <GraphEditor
+        initialGraph={conversionGraph([
+          { id: "old", source: "vector", sourceHandle: "vector", target: "mover", targetHandle: "location" },
+        ])}
+        onChange={onChange}
+        pinConversion={conversion()}
+      />,
+    );
+    tapBetween(container, actorEnd, moverEnd);
+    expectConverted(onChange.mock.calls.at(-1)![0] as GraphDocument);
+  });
+
+  it("converts with Tap To Connect, from either end", () => {
+    const onChange = vi.fn();
+    const { container } = renderTapToConnect(
+      <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={conversion()} />,
+    );
+    tapBetween(container, moverEnd, actorEnd);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expectConverted(onChange.mock.calls[0]![0] as GraphDocument);
+  });
+
+  it("refuses the drop as before without a host conversion", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container } = render(<GraphEditor initialGraph={conversionGraph()} onChange={onChange} />);
+      dragBetween(container, actorEnd, moverEnd);
+      expectUnchanged(onChange);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("creates nothing on a read-only canvas", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const pinConversion = conversion();
+      const { container } = render(
+        <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={pinConversion} readOnly />,
+      );
+      dragBetween(container, actorEnd, moverEnd);
+      expect(onChange).not.toHaveBeenCalled();
+      expect(pinConversion).not.toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("wires a directly compatible pair without consulting the conversion", () => {
+    const onChange = vi.fn();
+    const pinConversion = conversion();
+    const { container } = renderTapToConnect(
+      <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={pinConversion} />,
+    );
+    tapBetween(container, vectorEnd, moverEnd);
+    const last = onChange.mock.calls.at(-1)![0] as GraphDocument;
+    expect(last.nodes).toHaveLength(3);
+    expect(last.edges).toEqual([
+      expect.objectContaining({ source: "vector", sourceHandle: "vector", target: "mover", targetHandle: "location" }),
+    ]);
+    expect(pinConversion).not.toHaveBeenCalled();
+  });
+
+  it("creates nothing when the converter's pins would not carry the wire", () => {
+    const onChange = vi.fn();
+    const mismatched: PinConversion = { ...toVector, inPinId: "out", outPinId: "target" };
+    const { container } = renderTapToConnect(
+      <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={() => mismatched} />,
+    );
+    tapBetween(container, actorEnd, moverEnd);
+    expectUnchanged(onChange);
   });
 });

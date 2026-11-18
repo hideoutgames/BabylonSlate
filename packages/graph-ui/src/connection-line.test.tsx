@@ -257,6 +257,7 @@ describe("GraphConnectionLine refusal lookup", () => {
   function renderContainer(
     connectionRefusal: GraphEditorContextValue["connectionRefusal"],
     overrides: Partial<ConnectionLineComponentProps> = {},
+    context: Partial<GraphEditorContextValue> = {},
   ) {
     const props = {
       connectionLineStyle: {},
@@ -277,7 +278,7 @@ describe("GraphConnectionLine refusal lookup", () => {
     } as unknown as ConnectionLineComponentProps;
     const tree = (next: ConnectionLineComponentProps) => (
       <ReactFlowProvider>
-        <GraphEditorProvider value={{ ...baseContext, connectionRefusal }}>
+        <GraphEditorProvider value={{ ...baseContext, connectionRefusal, ...context }}>
           <svg>
             <GraphConnectionLine {...next} />
           </svg>
@@ -311,5 +312,48 @@ describe("GraphConnectionLine refusal lookup", () => {
     const open = renderContainer(connectionRefusal, { toHandle: null, toNode: null });
     expect(open.queryByTestId("connection-refusal")).toBeNull();
     expect(connectionRefusal).not.toHaveBeenCalled();
+  });
+
+  it("shows the conversion a release on the hovered pin makes, asking once per pin", () => {
+    const pinConversionLabel = vi.fn(() => "Convert to Vector3");
+    const { getByTestId, queryByTestId, move } = renderContainer(
+      undefined,
+      { connectionStatus: "valid", fromHandle: { id: "value" } },
+      { pinConversionLabel },
+    );
+    expect(getByTestId("convert-hint").textContent).toBe("Convert to Vector3");
+    expect(queryByTestId("connection-refusal")).toBeNull();
+    expect(pinConversionLabel).toHaveBeenCalledWith(
+      { nodeId: "source", pinId: "value" },
+      { nodeId: "log", pinId: "message" },
+    );
+    move();
+    move();
+    expect(pinConversionLabel).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows no conversion over a pin that connects directly, or off any pin", () => {
+    const pinConversionLabel = vi.fn(() => null);
+    const direct = renderContainer(undefined, { connectionStatus: "valid" }, { pinConversionLabel });
+    expect(direct.queryByTestId("convert-hint")).toBeNull();
+    direct.unmount();
+    const offPin = vi.fn(() => "Convert to Vector3");
+    const open = renderContainer(undefined, { toHandle: null, toNode: null, connectionStatus: null }, { pinConversionLabel: offPin });
+    expect(open.queryByTestId("convert-hint")).toBeNull();
+    expect(offPin).not.toHaveBeenCalled();
+  });
+});
+
+describe("GraphConnectionLineView conversion", () => {
+  it("replaces the refusal and the other hints with the conversion badge", () => {
+    const { getByTestId, queryByTestId } = renderLine({
+      toHandle: { id: "message" },
+      refusal: "String does not connect to Vector3",
+      conversion: "Convert to Vector3",
+    });
+    expect(getByTestId("convert-hint").textContent).toBe("Convert to Vector3");
+    expect(queryByTestId("connection-refusal")).toBeNull();
+    expect(queryByTestId("add-node-hint")).toBeNull();
+    expect(queryByTestId("add-pin-hint")).toBeNull();
   });
 });

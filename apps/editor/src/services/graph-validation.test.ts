@@ -1169,6 +1169,39 @@ describe("validateSerializedGraph", () => {
     expect(diags.some((d) => d.code === "pure.cycle")).toBe(false);
   });
 
+  it("accepts the getter a Convert to Vector3 connection inserts between an Actor and a Vector3 input", () => {
+    const node = (id: string, type: string, x: number) => ({
+      id,
+      type,
+      position: { x, y: 0 },
+      data: { __pins: registry.get(type)!.pins({}) },
+    });
+    const wire = (source: string, sourceHandle: string, target: string, targetHandle: string) => ({
+      id: `${source}:${sourceHandle}:${target}:${targetHandle}`,
+      source,
+      sourceHandle,
+      target,
+      targetHandle,
+    });
+    const diags = validateSerializedGraph(
+      {
+        nodes: [
+          node("begin", "flow.event.beginPlay", 0),
+          node("self", "actor.getSelf", 0),
+          node("location", "transform.getLocation", 200),
+          node("move", "transform.setLocation", 400),
+        ],
+        edges: [
+          wire("begin", "execOut", "move", "execIn"),
+          wire("self", "out", "location", "target"),
+          wire("location", "out", "move", "location"),
+        ],
+      },
+      { assetGuid: "g1", graphId: "event-graph", classId: "Hero", parentOf: (id) => (id === "Hero" ? "Actor" : engineParentOf(id)) },
+    );
+    expect(diags).toEqual([]);
+  });
+
   it("flags a stale Call Function when the class symbol table is supplied", () => {
     const diags = validateSerializedGraph(
       {
