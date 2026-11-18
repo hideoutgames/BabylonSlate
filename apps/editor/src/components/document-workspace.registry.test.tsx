@@ -57,6 +57,7 @@ vi.mock("../context/nav-bake-context", () => ({
 }));
 vi.mock("../context/prefab-editing-context", () => ({
   PrefabEditingProvider: state.passthrough,
+  usePrefabEditing: () => ({ setSelectedId: () => {} }),
 }));
 vi.mock("../context/graph-editing-context", () => ({
   GraphEditingProvider: state.passthrough,
@@ -76,6 +77,7 @@ vi.mock("../context/scene-editing-context", () => ({
       {props.children}
     </div>
   ),
+  useOptionalSceneEditing: () => null,
 }));
 vi.mock("../shell/dockview-shell", () => ({
   DockviewShell: ({ actorPrefab, documentKind }: { actorPrefab?: boolean; documentKind: string }) => (

@@ -36,6 +36,7 @@ import { createFrameFlush } from "../lib/use-debug-console-logs";
 import { PlayFailedDialog, PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayUnsavedDialog } from "../components/play-unsaved-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
+import { describePlayAssetForMessage, playRequiredAssetErrorOf } from "../services/play-asset-problems";
 import { SimulationControlsProvider } from "./simulation-controls-context";
 import { GraphDebugProvider } from "./graph-debug-context";
 import { PlayOverlay, type PlayOverlayProps } from "../components/play-overlay";
@@ -272,6 +273,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [playBlockedOpen, setPlayBlockedOpen] = useState(false);
   const [blockedDiagnostics, setBlockedDiagnostics] = useState<Diagnostic[]>([]);
   const [playFailure, setPlayFailure] = useState<{ simulating: boolean; reason: string } | null>(null);
+  /** Required assets Play could not resolve: rows that go to what uses each one. Play cannot run past them. */
+  const [assetProblems, setAssetProblems] = useState<{ simulating: boolean; diagnostics: Diagnostic[] } | null>(null);
   const [injectThrow, setInjectThrow] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportEntries, setReportEntries] = useState<SessionReportEntry[]>([]);
@@ -907,13 +910,13 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
         const prepared = await acquirePlayAssetSources(sourceHost,
           [effectiveGuid, ...projectAssets],
-          { consumer: `Play Scene ${effectiveGuid}`, signal: sourceSignal, allowCompileErrors: true });
+          { consumer: `Play ${describePlayAssetForMessage(assetRegistry, effectiveGuid)}`, signal: sourceSignal, allowCompileErrors: true });
         if (!sessionOwner.isCurrent(ticket) || playSourceHostRef.current !== sourceHost) { prepared.release(); throw new DOMException("Session changed during Play preparation", "AbortError"); }
         playSourceSetsRef.current.add(prepared);
         initialPlaySourceRef.current = prepared;
         const { game } = prepared;
         const scene = game.scenes.get(effectiveGuid);
-        if (!scene) throw new Error(`Scene ${effectiveGuid} did not produce a document.`);
+        if (!scene) throw new Error(`${describePlayAssetForMessage(assetRegistry, effectiveGuid)} did not produce a Scene document.`);
         preloadPrewarmedGameWorkerPhysics(playPhysicsFromSceneSettings(scene.settings).physicsWorld, editorHavokWasmUrl());
         const resolvedScene = { sceneAssetGuid: effectiveGuid, scene, path: assetRegistry.getByGuid(effectiveGuid)?.path };
         setSessionPlayScene(resolvedScene);
@@ -942,7 +945,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             const bytes = entry.audioChunks.get(assetGuid)?.get(chunkId);
             if (bytes) return bytes;
           }
-          throw new Error(`Audio ${assetGuid} (${chunkId}) is not prepared for an active consumer.`);
+          throw new Error(`${describePlayAssetForMessage(assetRegistry, assetGuid)} (${chunkId}) is not prepared for an active consumer.`);
         });
         setPlaySaveGame(await current(prepareSaveGameConfiguration({
           storage: simulating ? simulationRef.current?.storage : undefined,
@@ -972,10 +975,20 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         launchPlay({ injectFixtureThrow: inject, scripts: nextScripts });
       } catch (error) {
         if (!sessionOwner.isCurrent(ticket)) return;
-        const reason = error instanceof Error ? error.message : String(error);
-        appendLog(`Play preparation failed: ${reason}`);
-        // With no Output Log window visible, the log line alone would go unseen.
-        if (!outputLogWindowVisible()) setPlayFailure({ simulating, reason });
+        const failure = `${simulating ? "Simulation" : "Play"} preparation failed`;
+        const assets = playRequiredAssetErrorOf(error);
+        if (assets) {
+          // Each problem names its asset and what uses it; Compiler Results and the dialog go to it.
+          const { diagnostics } = assets;
+          for (const problem of diagnostics) appendLog(`${failure}: ${problem.message}`);
+          setDiagnostics(diagnostics);
+          setAssetProblems({ simulating, diagnostics });
+        } else {
+          const reason = error instanceof Error ? error.message : String(error);
+          appendLog(`${failure}: ${reason}`);
+          // With no Output Log window visible, the log line alone would go unseen.
+          if (!outputLogWindowVisible()) setPlayFailure({ simulating, reason });
+        }
         setPrepareState(null);
         setScripts([]);
         setExtensionLibraries([]);
@@ -1370,8 +1383,21 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           />
         ) : null}
         <PlayBlockedDialog
+          open={assetProblems !== null}
+          diagnostics={assetProblems?.diagnostics ?? []}
+          title={assetProblems?.simulating ? "Simulation Could Not Start" : "Play Could Not Start"}
+          description="Required assets are missing or cannot be read. Choose a row to go to what uses it."
+          onOpenChange={(open) => { if (!open) setAssetProblems(null); }}
+          onNavigate={(d) => {
+            setAssetProblems(null);
+            void openSessionSource(d);
+          }}
+        />
+        <PlayBlockedDialog
           open={playBlockedOpen}
           diagnostics={blockedDiagnostics}
+          title="Compile Errors"
+          description="Fix errors before Play, or play anyway. Choose a row to go to it."
           onOpenChange={(open) => {
             setPlayBlockedOpen(open);
             if (!open && pendingScriptsRef.current) {

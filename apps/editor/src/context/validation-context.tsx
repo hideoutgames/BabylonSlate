@@ -144,6 +144,12 @@ export function ValidationProvider({
   return <ValidationContext.Provider value={value}>{children}</ValidationContext.Provider>;
 }
 
+/** The Compiler Results state, or null outside a ValidationProvider. */
+// eslint-disable-next-line react-refresh/only-export-components -- context module hook, like useValidation
+export function useOptionalValidation(): ValidationContextValue | null {
+  return useContext(ValidationContext);
+}
+
 export function useValidation(): ValidationContextValue {
   const ctx = useContext(ValidationContext);
   if (!ctx) {

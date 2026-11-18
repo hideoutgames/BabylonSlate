@@ -43,8 +43,9 @@ export type RichTextSpan =
       effects: RichTextEffects;
     };
 
+/** A new 2D Rich Text's text: formatting tags and letter effects, naming no asset (an `[img]` needs a real Texture). */
 export const DEFAULT_RICH_TEXT_EXAMPLE =
-  "[color=green]Hello [b]this [img=PASTE_TEXTURE_GUID size=14] image[/b] has a [rotate=45]custom [b][shake=1]size[/shake][/rotate] and this one does [/color][color=FFFF]not[/color]";
+  "[color=green]Hello [b]bold[/b] and [i]italic[/i] text with [rotate=45]rotated[/rotate], [shake=1]shaking[/shake] and [wave]waving[/wave] letters[/color] in [color=FFFF]another color[/color]";
 
 const NAMED_COLORS: Record<string, Rgb> = {
   aqua: [0, 1, 1],

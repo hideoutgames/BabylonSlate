@@ -243,6 +243,21 @@ describe("CompilerResultsPanel", () => {
     });
   });
 
+  it("opens a missing-asset row Play reported at the Actor and component that use the asset", () => {
+    diagnostics.current = [{
+      severity: "error", code: "play.missing_asset",
+      message: "2D Rich Text on \"Dialogue\" in Scene Layer \"HUD\" uses an asset that does not exist: X (Text).",
+      assetGuid: "hud", graphId: "scene-layer:assets/HUD.hasset", actorId: "dialogue", componentId: "rich",
+    }];
+    render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("compiler-result-row"), { detail: 2 });
+    expect(openSessionSource).toHaveBeenCalledWith(expect.objectContaining({
+      code: "play.missing_asset", assetGuid: "hud", graphId: "scene-layer:assets/HUD.hasset", actorId: "dialogue", componentId: "rich",
+    }));
+    // The Scene open here does not hold that Actor.
+    expect(selectActor).not.toHaveBeenCalled();
+  });
+
   it("opens a row that names its asset only in its graph id", () => {
     diagnostics.current = [{ ...graphDiagnostic, assetGuid: "", graphId: "graph:assets/Arena.class.hasset" }];
     render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);

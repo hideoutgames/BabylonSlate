@@ -269,6 +269,8 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
           graphId: d.graphId,
           nodeId: d.nodeId,
           bodyLine: d.bodyLine,
+          actorId: d.actorId,
+          componentId: d.componentId,
         });
       } else {
         void focusDiagnosticNode(focusHost, d);

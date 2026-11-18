@@ -4,7 +4,7 @@ import {
   type CollisionTriangleMesh, type ProjectDocument, type SerializedScene,
 } from "@haptic/core";
 import {
-  isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
+  AssetFormatVersionError, AssetLoadError, isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
   compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID,
   normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload, normalizeSkeletonPayload, withSkeletonSockets,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
@@ -31,6 +31,10 @@ const NAMED_BY_STRING_BASES: readonly string[] = [
   CUSTOM_EASING_CURVE_CLASS_ID,
 ];
 import { assetHeaderDependencyMetadata, classIdFromClassAsset } from "../lib/content-browser-helpers";
+import {
+  PLAY_MISSING_ASSET_CODE, PLAY_UNREADABLE_ASSET_CODE, PLAY_UNSUPPORTED_ASSET_FORMAT_CODE, describePlayAssetForMessage,
+  playRequiredAssetError, playRequiredAssetErrorOf, type PlayAssetFailure, type PlayAssetProblemContext,
+} from "./play-asset-problems";
 import { ownedActorsOfScene, ownedTimelineClipsOfScene } from "../lib/owned-actor-gets";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import type { OpenDocument } from "./document-service";
@@ -124,11 +128,23 @@ const assetFormats = createDefaultMigrationRegistry();
  * Resolve mutable catalogs before using their dependency edges for a cold load.
  * Play reads stored payloads without migrating them, so every required asset
  * not open as a working document must be at its type's current version.
+ *
+ * `referrers` records, for each id the walk discovers, the first asset that named it (roots have none), so a
+ * failure can say what uses an asset Play cannot resolve. An id that does not exist, or a stored format Play
+ * cannot read, is collected and the walk goes on, so one failure reports all of them; an unreadable or changed
+ * asset fails at once. Either way the failure is a `PlayRequiredAssetError`, built only then.
  */
 async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: readonly string[], signal: AbortSignal,
-  known?: ReadonlyMap<string, string>, trust = false): Promise<Map<string, string>> {
+  known?: ReadonlyMap<string, string>, trust = false, referrers = new Map<string, string>()): Promise<Map<string, string>> {
   const { registry } = host;
   const revisions = new Map<string, string>();
+  const failures: PlayAssetFailure[] = [];
+  const failed = new Set<string>();
+  const rootSet = new Set(roots);
+  const fail = async (failure: PlayAssetFailure): Promise<never> => {
+    failures.push(failure);
+    throw await playRequiredAssetError(problemContext(host, referrers, signal), failures);
+  };
   // Assets this preparation already resolved, with their dependencies, are not read again.
   const resolved = (guid: string) => revisions.has(guid) || known?.has(guid) === true;
   const pending = [...roots];
@@ -169,23 +185,49 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
     while (pending.length) {
       signal.throwIfAborted();
       const guid = pending.pop()!;
-      if (resolved(guid)) continue;
-      const locator = await startRead(guid);
+      if (resolved(guid) || failed.has(guid)) continue;
+      let locator: AssetSourceLocator;
+      try { locator = await startRead(guid); }
+      catch (error) {
+        signal.throwIfAborted();
+        const indexed = registry.getByGuid(guid);
+        if (indexed && !indexed.placeholder) await fail({ guid, code: PLAY_UNREADABLE_ASSET_CODE, cause: error });
+        failures.push({ guid, code: PLAY_MISSING_ASSET_CODE });
+        failed.add(guid);
+        continue;
+      }
       signal.throwIfAborted();
       const asset = registry.getByGuid(guid);
-      if (!asset || asset.placeholder || asset.locator !== locator) throw new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`);
-      if (!host.documentOverrides?.has(guid)) assetFormats.requireCurrent(asset.header.type, asset.header.version);
+      if (!asset || asset.placeholder || asset.locator !== locator) {
+        await fail({ guid, code: PLAY_UNREADABLE_ASSET_CODE, cause: new SourceRevisionChangedError(`Required asset changed while resolving: ${guid}`) });
+      }
+      if (!host.documentOverrides?.has(guid)) {
+        try { assetFormats.requireCurrent(asset!.header.type, asset!.header.version); }
+        catch (error) {
+          if (!(error instanceof AssetFormatVersionError)) throw error;
+          failures.push({ guid, code: PLAY_UNSUPPORTED_ASSET_FORMAT_CODE, cause: error });
+          failed.add(guid);
+          continue;
+        }
+      }
       revisions.set(guid, locator.revision);
       host.verifiedRevisions?.set(guid, locator.revision);
-      const dependencies = host.documentOverrides?.get(guid)?.requiredDependencies ?? registry.requiredDependenciesFor(guid, asset.header);
+      const dependencies = host.documentOverrides?.get(guid)?.requiredDependencies ?? registry.requiredDependenciesFor(guid, asset!.header);
+      for (const dependency of dependencies) if (!referrers.has(dependency) && !rootSet.has(dependency)) referrers.set(dependency, guid);
       pending.push(...dependencies);
       prefetch(dependencies);
     }
+    if (failures.length) throw await playRequiredAssetError(problemContext(host, referrers, signal), failures);
     return revisions;
   } finally {
     signal.removeEventListener("abort", abortWalk);
     walk.abort();
   }
+}
+
+function problemContext(host: PlayAssetSourceHost, referrers: ReadonlyMap<string, string>, signal: AbortSignal): PlayAssetProblemContext {
+  return { registry: host.registry, project: host.project, referrers, signal,
+    workingPayload: (guid) => host.documentOverrides?.get(guid)?.payload };
 }
 
 /** The registry's locator for an asset when it is still at the revision this session verified against storage. */
@@ -233,6 +275,8 @@ export function requiredProjectAssets(registry: AssetRegistry, project: ProjectD
   const classId = settings.gameInstanceClass;
   const asset = classId ? byId.get(classId) : undefined;
   if (asset) roots.push(asset.header.guid);
+  // A Game Instance Class the project names that no Class asset defines fails preparation, naming the setting.
+  else if (classId && classId !== "GameInstance") roots.push(classId);
   const derivesFrom = (asset: (typeof classes)[number], bases: readonly string[]) => {
     const seen = new Set<string>();
     let parent = asset.header.parentClass;
@@ -259,7 +303,7 @@ function selectedChunks(asset: IndexedAsset, payload: Record<string, unknown>, f
     const chunks = [selectTextureChunk(header).chunk.id];
     if (emissions.has(header.guid)) {
       const emission = currentAreaEmissionChunk(header);
-      if (!emission) throw new Error(`Texture ${header.name} needs Prepare Emission before its rectangular light can load`);
+      if (!emission) throw new Error(`Texture "${header.name}" (${asset.path}) needs Prepare Emission before its rectangular light can load`);
       chunks.push(emission.id);
     }
     return chunks;
@@ -308,7 +352,8 @@ async function acquirePlayAssetSourcesAttempt(
   options: PlayAssetSourceOptions,
   trust: boolean,
 ) {
-  const catalogRevisions = await currentRequiredPlayAssets(host, roots, options.signal, undefined, trust);
+  const referrers = new Map<string, string>();
+  const catalogRevisions = await currentRequiredPlayAssets(host, roots, options.signal, undefined, trust, referrers);
   const required = new Set(catalogRevisions.keys());
   const scope = host.createScope(options.consumer);
   const project = host.project;
@@ -348,6 +393,8 @@ async function acquirePlayAssetSourcesAttempt(
     },
   }, { signal, priority: options.priority, dependencies: "none", refresh: false });
   let released = false;
+  // While documents and source chunks are read, a loader failure is a required asset Play cannot read.
+  let readingSources = true;
   const release = () => {
     if (released) return;
     released = true;
@@ -369,14 +416,15 @@ async function acquirePlayAssetSourcesAttempt(
     // `required` in insertion order. Fonts discovered while reading documents append to it,
     // so the document pass below walks it by index rather than iterating a snapshot.
     const order = [...required];
-    const requireFont = async (guid: string | null | undefined, chunks: readonly string[]) => {
+    const requireFont = async (guid: string | null | undefined, chunks: readonly string[], referrer?: string) => {
       if (!guid) return;
+      if (referrer && !referrers.has(guid) && !catalogRevisions.has(guid)) referrers.set(guid, referrer);
       const modes = fontModes.get(guid) ?? new Set<string>();
       for (const chunk of chunks) modes.add(chunk);
       fontModes.set(guid, modes);
-      for (const [dependency, revision] of await currentRequiredPlayAssets(host, [guid], options.signal, catalogRevisions, trust)) {
+      for (const [dependency, revision] of await currentRequiredPlayAssets(host, [guid], options.signal, catalogRevisions, trust, referrers)) {
         const previous = catalogRevisions.get(dependency);
-        if (previous && previous !== revision) throw new SourceRevisionChangedError(`Asset ${dependency} changed while resolving font dependencies; retry`);
+        if (previous && previous !== revision) throw new SourceRevisionChangedError(`${describePlayAssetForMessage(host.registry, dependency)} changed while resolving font dependencies; retry`);
         catalogRevisions.set(dependency, revision);
         if (!required.has(dependency)) { required.add(dependency); order.push(dependency); }
       }
@@ -401,7 +449,7 @@ async function acquirePlayAssetSourcesAttempt(
     for (let index = 0; index < order.length; index++) {
       const guid = order[index]!;
       const value = await readDocument(order, index);
-      if (value.revision !== catalogRevisions.get(guid)) throw new SourceRevisionChangedError(`Asset ${guid} changed after resolving its dependencies; retry`);
+      if (value.revision !== catalogRevisions.get(guid)) throw new SourceRevisionChangedError(`${describePlayAssetForMessage(host.registry, guid)} changed after resolving its dependencies; retry`);
       documents.set(guid, value);
       const payload = value.document.payload;
       const actors = Array.isArray(payload.actors) ? payload.actors as Array<{ components?: unknown[] }> : [];
@@ -412,11 +460,11 @@ async function acquirePlayAssetSourcesAttempt(
       for (const component of components) {
         if (component.classId === "Text3DComponent") {
           const guid = component.properties?.fontAssetGuid;
-          if (typeof guid === "string") await requireFont(guid, [FONT_FACETYPE_CHUNK_ID]);
+          if (typeof guid === "string") await requireFont(guid, [FONT_FACETYPE_CHUNK_ID], value.document.guid);
         } else if (component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent") {
           const text = parseText2DProperties(component.properties);
           await requireFont(text.fontAssetGuid ?? project.settings.fonts.defaultFontGuid,
-            text.renderer === "msdf" ? [FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID] : ["source"]);
+            text.renderer === "msdf" ? [FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID] : ["source"], value.document.guid);
         }
       }
     }
@@ -450,7 +498,7 @@ async function acquirePlayAssetSourcesAttempt(
     const readChunks = createReadAhead(READ_AHEAD, async (guid: string): Promise<Map<string, Uint8Array>> => {
       const asset = host.registry.getByGuid(guid)!;
       const preparedDocument = documents.get(guid)!;
-      if (asset.locator?.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed after its document loaded; retry`);
+      if (asset.locator?.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`${describePlayAssetForMessage(host.registry, guid)} changed after its document loaded; retry`);
       const chunkIds = selectedChunks(asset, preparedDocument.document.payload, fontModes, emissions);
       // A chunk stays compatible when another consumer asks for additional
       // variants (for example the same Texture used by a material and a light).
@@ -468,7 +516,7 @@ async function acquirePlayAssetSourcesAttempt(
       const chunks = new Map<string, Uint8Array>();
       for (const [position, request] of requests.entries()) {
         const loaded = await request;
-        if (loaded.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed while selecting source data; retry`);
+        if (loaded.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`${describePlayAssetForMessage(host.registry, guid)} changed while selecting source data; retry`);
         chunks.set(chunkIds[position]!, loaded.chunks.get(chunkIds[position]!)!);
       }
       return chunks;
@@ -480,7 +528,7 @@ async function acquirePlayAssetSourcesAttempt(
       const preparedDocument = documents.get(guid)!;
       const document = preparedDocument.document;
       // Storage is validated again before the prepared content is published.
-      if (asset.locator?.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`Asset ${guid} changed after its document loaded; retry`);
+      if (asset.locator?.revision !== preparedDocument.revision) throw new SourceRevisionChangedError(`${describePlayAssetForMessage(host.registry, guid)} changed after its document loaded; retry`);
       const chunks = await readChunks(order, index);
       const value = { ...preparedDocument, chunks };
       sourceBytes += [...value.chunks.values()].reduce((total, bytes) => total + bytes.byteLength, 0);
@@ -539,6 +587,7 @@ async function acquirePlayAssetSourcesAttempt(
       const skeleton = model.skeletonGuid ? game.decodedPayloads?.get(model.skeletonGuid) : undefined;
       if (skeleton) game.modelPayloads.set(guid, withSkeletonSockets(model, normalizeSkeletonPayload(skeleton).sockets));
     }
+    readingSources = false;
     const root = roots[0] ?? required.values().next().value;
     const compileInputs = revisions.filter(([guid]) => COMPILE_INPUT_TYPES.has(host.registry.getByGuid(guid)!.header.type))
       .sort(([a], [b]) => a.localeCompare(b));
@@ -578,7 +627,7 @@ async function acquirePlayAssetSourcesAttempt(
         signal.throwIfAborted();
         // Prepared content validates every input against storage before publication.
         for (const [guid, revision] of compileInputs) {
-          if (host.registry.getByGuid(guid)?.locator?.revision !== revision) throw new SourceRevisionChangedError(`Class compilation input ${guid} changed; retry`);
+          if (host.registry.getByGuid(guid)?.locator?.revision !== revision) throw new SourceRevisionChangedError(`Class compilation input ${describePlayAssetForMessage(host.registry, guid)} changed; retry`);
         }
         const byPath = new Map(host.registry.list().map(asset => [asset.path, asset]));
         const bundles = result.bundles.map(script => {
@@ -618,7 +667,7 @@ async function acquirePlayAssetSourcesAttempt(
     // since shows here without reading storage again; the first in `revisions` order is reported.
     for (const [guid, revision] of revisions) {
       const current = host.registry.getByGuid(guid)?.locator?.revision;
-      if (current !== revision) throw new SourceRevisionChangedError(`Asset ${guid} changed during runtime preparation; retry. Expected source revision ${revision}; found ${current ?? "none"}`);
+      if (current !== revision) throw new SourceRevisionChangedError(`${describePlayAssetForMessage(host.registry, guid)} changed during runtime preparation; retry. Expected source revision ${revision}; found ${current ?? "none"}`);
     }
     const content = copyContainers(cachedContent);
     content.audioLibrary = copyContainers(cachedContent.audioLibrary);
@@ -630,7 +679,7 @@ async function acquirePlayAssetSourcesAttempt(
     content.complexMeshes = complexMeshes;
     ownedContent = content;
     for (const [guid, bytes] of game.fontBytes) {
-      if (!(bytes.buffer instanceof ArrayBuffer)) throw new Error(`Font ${guid}: storage returned an unsupported shared source buffer`);
+      if (!(bytes.buffer instanceof ArrayBuffer)) throw new Error(`${describePlayAssetForMessage(host.registry, guid)}: storage returned an unsupported shared source buffer`);
       fonts.push({ guid, family: game.fontFamilies.get(guid) ?? guid,
         bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) });
     }
@@ -666,6 +715,12 @@ async function acquirePlayAssetSourcesAttempt(
     return { game, content, sources, controls, required, audioChunks, diagnostics: compiled.diagnostics, release, cookComplexCollision };
   } catch (error) {
     release();
+    // A required asset whose document or source data could not be loaded is reported like one the walk could not
+    // resolve; the problem's message names the asset and what uses it, and its cause is the loader's error.
+    if (readingSources && error instanceof AssetLoadError && (error.code === "missing" || error.code === "load") && required.has(error.assetId)
+      && !options.signal.aborted && !playRequiredAssetErrorOf(error)) {
+      throw await playRequiredAssetError(problemContext(host, referrers, options.signal), [{ guid: error.assetId, code: PLAY_UNREADABLE_ASSET_CODE, cause: error }]);
+    }
     throw new Error(`Asset preparation for ${options.consumer} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
