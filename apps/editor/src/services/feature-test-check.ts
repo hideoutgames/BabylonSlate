@@ -320,9 +320,9 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  *   with the captures and Mirrors' live reflection at once (`world drawn once`).
  *
  * `light` (few draws) takes them all and the Scene Layers hidden (the device-resolution tail). `heavy` (many draws, no
- * Mirror on screen; the control view) takes what follows the draws rather than the pixels: the world hidden, flat and
- * unlit, the shadow map passes alone, the geometry effects and the world drawn once; the per-pixel steps answer the
- * same there as at the light view. `mirror` (both Mirrors and the capture monitors on screen) takes the captures, the
+ * Mirror on screen; the control view) takes what follows the draws rather than the pixels: the world hidden, the shadow
+ * map passes alone, the geometry effects and the world drawn once; the per-pixel steps answer the same there as at the
+ * light view. `mirror` (both Mirrors and the capture monitors on screen) takes the captures, the
  * Mirrors' reflection and the world drawn once.
  */
 export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureTestBreakdownPlan {
@@ -374,7 +374,7 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
       },
       {
         name: "heavy", enter: [possessProfileView("heavy")], steps: [
-          worldHidden, flat, unlit,
+          worldHidden,
           // No map redrawn, the last maps still sampled: what redrawing the maps costs.
           { label: "shadow passes off", commands: ["shadowdebug passes off"], restore: ["shadowdebug passes on"], fields: ["shadows.debug"], overlaps: true },
           geometryOff, once,
@@ -630,6 +630,8 @@ export interface ProfileComparison {
   normalised: { before: number; step: number; after: number | null; change: BaselineDelta } | null;
   /** The step's repeats compared (`PROFILE_STEP_REPEATS`), averaged in `profileRanking`; 1 for a single comparison. */
   repeats: number;
+  /** Its baselines ran at its own GPU speed (`PROFILE_SPEED_BIN`); false where none did and the nearest were taken. */
+  speedMatched: boolean;
 }
 
 export type ProfileBasis = "burst" | "serial" | "gpu" | "frame";
@@ -738,13 +740,20 @@ export function profileComparison(samples: readonly FeatureTestBenchmarkSample[]
     const value = (entry: FeatureTestBenchmarkSample) => profileValue(entry, basis);
     const step = value(sample);
     if (step === null) continue;
-    // Only baselines at the step's own GPU speed count.
-    let { before, after } = baselinesAround(samples, sample,
-      (entry) => (probe ? entry.frames !== null : value(entry) !== null) && sameSpeed(entry, sample));
-    // Only a baseline after it at its speed: that one alone.
-    if (!before) [before, after] = [after, undefined];
-    if (!before) continue;
-    if (probe && (value(before) === null || !after || value(after) === null)) continue;
+    // Baselines at the step's own GPU speed; where there are none, the nearest at any speed (`speedMatched` false: a step
+    // that lightens the GPU's load can lower its clock, and so its synthetic load's speed, by itself).
+    const pick = (matched: boolean) => {
+      let { before, after } = baselinesAround(samples, sample,
+        (entry) => (probe ? entry.frames !== null : value(entry) !== null) && (!matched || sameSpeed(entry, sample)));
+      // Only a baseline after it: that one alone.
+      if (!before) [before, after] = [after, undefined];
+      if (!before || (probe && (value(before) === null || !after || value(after) === null))) return null;
+      return { before, after };
+    };
+    const pair = pick(true) ?? pick(false);
+    if (!pair) continue;
+    const { before, after } = pair;
+    const speedMatched = sameSpeed(before, sample) && (!after || sameSpeed(after, sample));
     // Both baselines, or the one before alone where the sweep measured none after: never a gpu basis on one side only.
     const afterValue = after ? value(after) : null;
     const base = afterValue === null ? value(before)! : (value(before)! + afterValue) / 2;
@@ -771,7 +780,7 @@ export function profileComparison(samples: readonly FeatureTestBenchmarkSample[]
       unsettled: spread !== null && spread > Math.max(Math.abs(ms), base * PROFILE_SETTLED_SPREAD),
       cpu: deltaAroundBaselines(samples, sample, (entry) => entry.cpuMs),
       overlaps: profileStep(sample.label)?.overlaps === true,
-      state: straddles ? null : beforeState, straddles, normalised, repeats: 1,
+      state: straddles ? null : beforeState, straddles, normalised, repeats: 1, speedMatched,
     };
   }
   return null;
@@ -820,6 +829,7 @@ function mergeRepeats(a: ProfileComparison, b: ProfileComparison): ProfileCompar
       after: mixNullable(a.normalised.after, b.normalised.after), change: delta(a.normalised.change, b.normalised.change),
     } : a.normalised ?? b.normalised,
     repeats: total,
+    speedMatched: a.speedMatched && b.speedMatched,
   };
 }
 

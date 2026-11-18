@@ -1135,12 +1135,12 @@ describe("Profile", { timeout: 30_000 }, () => {
     const switches = ["world hidden", "flat world", "main pass unlit", "shadow taps off", "local lights off", "resolution 0.5"];
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
       ["light", ['possess "Profile Light Camera"'], [...switches, "scene layers hidden", "geometry effects off", "post off", "shadows off", "world drawn once"]],
-      ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "flat world", "main pass unlit", "shadow passes off", "geometry effects off", "world drawn once"]],
+      ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "world drawn once"]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["captures off", "mirrors environment", "world drawn once"]],
     ]);
     const step = (view: string, label: string) => plan.views.find((entry) => entry.name === view)!.steps.find((entry) => entry.label === label)!;
     // The whole-frame switches, each undone by its own switch.
-    expect(step("heavy", "main pass unlit")).toMatchObject({ commands: ["worlddebug lighting off"], restore: ["worlddebug lighting on"], fields: ["world.debug"] });
+    expect(step("light", "main pass unlit")).toMatchObject({ commands: ["worlddebug lighting off"], restore: ["worlddebug lighting on"], fields: ["world.debug"] });
     expect(step("light", "flat world")).toMatchObject({ commands: ["worlddebug shading off"], restore: ["worlddebug shading on"] });
     expect(step("light", "world hidden")).toMatchObject({
       commands: ["worlddebug world off", "shadowdebug passes off", "rendertargets off", "postprocessing off"],
@@ -1207,6 +1207,10 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(profileComparison(samples, samples[1]!)!.normalised).toMatchObject({ before: 30, step: 25, change: { ms: -5 } });
     // Its two repeats are one ranked entry, their changes averaged.
     expect(profileRanking(samples)[0]!.steps).toMatchObject([{ label: "heavy shadows off", repeats: 2, change: { ms: -8 }, normalised: { change: { ms: -5.5 } } }]);
+    expect(profileComparison(samples, samples[3]!)).toMatchObject({ speedMatched: true });
+    // A step that lightens the load clocks the GPU down by itself: with no baseline at its speed, the nearest are taken.
+    const lighter = [row("heavy baseline 1", 30, 2), row("heavy world hidden", 10, 3), row("heavy baseline 2", 30, 2)];
+    expect(profileComparison(lighter, lighter[1]!)).toMatchObject({ before: 30, step: 10, after: 30, change: { ms: -20 }, speedMatched: false });
   });
 
   it("ranks in the burst period where every row is GPU-bound, else in the serial frame, leaving out a serial frame submitted slower than the window", () => {
@@ -1456,7 +1460,7 @@ describe("Profile", { timeout: 30_000 }, () => {
   it("probes every Profile row's GPU work: the window's counters on each, and serialised frames after each but the warm-up and the hold windows before the last", async () => {
     const { editor, deps } = profileEditor({ tier: "high" });
     // An Engine with GPU probes: each `gpuprobe serial` reports a new result, except the one after `silent`.
-    const silent = "heavy flat world";
+    const silent = "heavy shadow passes off";
     let asked = 0;
     let answered = 0;
     let silentRow = false;
