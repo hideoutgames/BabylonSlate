@@ -1,9 +1,9 @@
 import type { GraphAddPin, SerializedPin } from "./graph-types";
 import { pinWithDisplayType } from "./graph-connect";
+import { sampleGraphWire } from "./graph-wire-path";
 import {
   estimateGraphNodeSize,
   GRAPH_NODE_CHROME_HEIGHT,
-  GRAPH_NODE_FALLBACK_WIDTH,
   GRAPH_PIN_ROW_HEIGHT,
   REROUTE_KNOT_SIZE,
 } from "./graph-virtualize";
@@ -22,16 +22,10 @@ const WIRE_CLEARANCE = 8;
 const WIRE_CROWDING = FORMAT_GAP_Y / 2;
 /** Parallel runs of different wires, and a wire and another wire's knot, keep this apart. */
 const WIRE_SPACING = FORMAT_GAP_Y * 0.625;
-/** Longer than two columns: a wire this long runs level with short transitions. */
-const LONG_WIRE = 2 * (GRAPH_NODE_FALLBACK_WIDTH + FORMAT_GAP_X);
-/** The longest stretch, across, of a knotted wire's change of height. */
-const MAX_TRANSITION = 2 * FORMAT_GAP_X;
 /** The free lanes nearest a wire's middle height that a two-knot route tries. */
 const LANE_CANDIDATES = 24;
 // Points sampled along a wire's curve when testing it against node boxes.
 const WIRE_SAMPLES = 24;
-// XYFlow `getBezierPath`'s default curvature.
-const WIRE_CURVATURE = 0.25;
 
 export type FormatNode = {
   id: string;
@@ -538,20 +532,57 @@ function straightWireClear(layout: Layout, fromX: number, toX: number, y: number
   return true;
 }
 
+/** Heights a block's members may take: level from `level` down, else no higher than `rest`. */
+type Floors = { level: number; rest: number };
+
+/** The top that puts a member's wire into its tree parent level with the parent's pin. */
+function levelWithParent(layout: Layout, block: ParameterBlock, id: string): { top: number; y: number; edge: FormatEdge } | undefined {
+  const { graph } = layout;
+  const parentId = block.parent.get(id)!;
+  const parentAt = located(layout, parentId)!;
+  const edge = (graph.dataEdgesIn.get(parentId) ?? []).find((entry) => entry.source === id);
+  if (!edge) return undefined;
+  const y = parentAt.y + pinY(graph.byId.get(parentId)!, "in", edge.targetHandle);
+  return { top: y - pinY(graph.byId.get(id)!, "out", edge.sourceHandle), y, edge };
+}
+
+/**
+ * Tops for the members of one column that feed one node, when their level spots would overlap
+ * (three Make Ints into Item 0..2): stacked `FORMAT_GAP_Y` apart and centred on the pins they
+ * feed, the middle one level, so their wires fan out evenly.
+ */
+function fanTops(layout: Layout, block: ParameterBlock, group: readonly string[]): Map<string, number> | undefined {
+  const { graph } = layout;
+  const levels = group.map((id) => levelWithParent(layout, block, id)?.top);
+  if (levels.some((top) => top === undefined)) return undefined;
+  const heights = group.map((id) => nodeSize(graph.byId.get(id)!).height);
+  const crowded = group.some((_, index) => index > 0 && levels[index]! < levels[index - 1]! + heights[index - 1]! + FORMAT_GAP_Y);
+  if (!crowded) return undefined;
+  const middle = Math.floor((group.length - 1) / 2);
+  const tops: number[] = [];
+  tops[middle] = levels[middle]!;
+  for (let index = middle - 1; index >= 0; index--) tops[index] = tops[index + 1]! - FORMAT_GAP_Y - heights[index]!;
+  for (let index = middle + 1; index < group.length; index++) tops[index] = tops[index - 1]! + heights[index - 1]! + FORMAT_GAP_Y;
+  return new Map(group.map((id, index) => [id, tops[index]!]));
+}
+
 /**
  * Places one parameter block member. Its top is level with the first clear straight wire from an
  * already placed source outside the block on its left, else with a clear straight wire into its
- * tree parent, else the owner's lane floor; never above the floor. It then moves down only as far
- * as it must to keep `FORMAT_GAP_Y` from every box and straight wire, and, when it also feeds a
- * node outside its block, to keep that output's wire `WIRE_CROWDING` clear of the nodes between it
- * and its tree parent, so the wire can leave under them.
+ * tree parent (or its place in a centred fan), wherever its box keeps clear of the owner's exec
+ * wire (`floors.level`); otherwise it starts no higher than the owner's lane floor
+ * (`floors.rest`). It then moves down only as far as it must to keep `FORMAT_GAP_Y` from every
+ * box and twice the wire clearance from every straight wire. A member that also feeds a node
+ * outside its block keeps its level wire; the far wire takes a knot (`routeWires`).
  */
 function placeMember(
   layout: Layout,
   owner: string,
   block: ParameterBlock,
   id: string,
-  floor: number,
+  floors: Floors,
+  fans: Map<string, number>,
+  shortfall: { by: number },
 ): void {
   const { graph } = layout;
   const node = graph.byId.get(id)!;
@@ -570,26 +601,48 @@ function placeMember(
     if (sourceRight > columnLeft) continue;
     const y = at.y + pinY(source, "out", edge.sourceHandle);
     const aligned = y - pinY(node, "in", edge.targetHandle);
-    if (aligned < floor || !straightWireClear(layout, sourceRight, x, y, [edge.source, id])) continue;
+    if (aligned < floors.level || !straightWireClear(layout, sourceRight, x, y, [edge.source, id])) continue;
     top = aligned;
     level = { x: sourceRight, y, width: x - sourceRight, height: 0 };
     break;
   }
   const parentId = block.parent.get(id)!;
-  const parent = graph.byId.get(parentId)!;
   const parentAt = located(layout, parentId)!;
   if (top === undefined) {
-    const edge = (graph.dataEdgesIn.get(parentId) ?? []).find((entry) => entry.source === id);
-    if (edge) {
-      const y = parentAt.y + pinY(parent, "in", edge.targetHandle);
-      const aligned = y - pinY(node, "out", edge.sourceHandle);
-      if (aligned >= floor && straightWireClear(layout, x + size.width, parentAt.x, y, [id, parentId])) {
-        top = aligned;
-        level = { x: x + size.width, y, width: parentAt.x - x - size.width, height: 0 };
-      }
+    // Siblings in one column whose level spots overlap share a centred fan.
+    if (!fans.has(id)) {
+      const column = block.columnLeft.get(id);
+      const group = block.order.filter((other) => block.parent.get(other) === parentId && block.columnLeft.get(other) === column);
+      for (const [member, fanTop] of (group.length > 1 ? fanTops(layout, block, group) : undefined) ?? []) fans.set(member, fanTop);
+    }
+    const wire = levelWithParent(layout, block, id);
+    // A member rises above the lane floor only if no input above the one it feeds is wired from
+    // further left: that wire has to pass over this column (Line Trace's Start over Add).
+    const ownerLeft = ownerAt.x;
+    const xOfSource = (source: string) => {
+      if (block.members.has(source)) return ownerLeft + block.x.get(source)!;
+      return located(layout, source)?.x;
+    };
+    const parent = graph.byId.get(parentId)!;
+    const passedOver = wire !== undefined && (graph.dataEdgesIn.get(parentId) ?? []).some((edge) => {
+      if (edge.source === id || pinY(parent, "in", edge.targetHandle) >= wire.y - parentAt.y) return false;
+      const sourceX = xOfSource(edge.source);
+      return sourceX !== undefined && sourceX < x;
+    });
+    const levelFloor = passedOver ? floors.rest : floors.level;
+    const fan = fans.get(id);
+    // A fan under a member that would rise above the floor asks for the block's lower rows to start
+    // lower, taking the member down with them (a fan under the owner cannot move it).
+    if (fan !== undefined && fan < levelFloor && parentId !== owner) shortfall.by = Math.max(shortfall.by, levelFloor - fan);
+    if (fan !== undefined && fan >= levelFloor) {
+      top = fan;
+      if (wire && fan === wire.top) level = { x: x + size.width, y: wire.y, width: parentAt.x - x - size.width, height: 0 };
+    } else if (wire && wire.top >= levelFloor && straightWireClear(layout, x + size.width, parentAt.x, wire.y, [id, parentId])) {
+      top = wire.top;
+      level = { x: x + size.width, y: wire.y, width: parentAt.x - x - size.width, height: 0 };
     }
   }
-  top ??= floor;
+  top ??= floors.rest;
   const box = { x, y: top, ...size };
   const intervals: Interval[] = [];
   overlapIntervals(box, layout.boxes, intervals);
@@ -597,37 +650,42 @@ function placeMember(
   // yet a level wire beside it (Break Hit Result's Location over Get Actor Location) can stay level.
   overlapIntervals(box, layout.lanes, intervals, 2 * WIRE_CLEARANCE);
   overlapIntervals(box, layout.earlier, intervals);
-  // Outputs that also feed nodes outside the block leave under the nodes up to the tree parent.
-  const escapes = new Set<number>();
-  for (const edge of graph.dataEdgesOut.get(id) ?? []) {
-    if (block.members.has(edge.target) || edge.target === owner) continue;
-    escapes.add(pinY(node, "out", edge.sourceHandle));
-  }
-  const escapeFrom = x + size.width;
-  const escapeTo = parentAt.x + nodeSize(parent).width;
-  for (const offset of escapes) {
-    for (const list of [layout.boxes, layout.earlier]) {
-      for (const other of list) {
-        if (other.x >= escapeTo || other.x + other.width <= escapeFrom) continue;
-        intervals.push({
-          from: other.y - WIRE_CROWDING - offset,
-          to: other.y + other.height + WIRE_CROWDING - offset,
-        });
-      }
-    }
-  }
   box.y = firstFree(top, intervals);
   addBox(layout, id, { x, y: box.y });
   if (level && box.y === top) layout.lanes.push(level);
-  for (const offset of escapes) {
-    layout.lanes.push({ x: escapeFrom, y: box.y + offset, width: escapeTo - escapeFrom, height: 0 });
-  }
 }
 
+/**
+ * The heights a block may take below its owner: level wires wherever a member keeps
+ * `2 × WIRE_CLEARANCE` below the owner's exec input wire, otherwise from the owner's lane floor.
+ */
+function blockFloors(node: FormatNode, top: number): Floors {
+  const rest = top + laneFloor(node);
+  const execIn = (node.pins ?? []).filter((pin) => pin.kind === "exec" && pin.direction === "in" && pin.placement !== "header");
+  if (execIn.length === 0) return { level: rest, rest };
+  return { level: top + Math.max(...execIn.map((pin) => pinY(node, "in", pin.id))) + 2 * WIRE_CLEARANCE, rest };
+}
+
+/**
+ * Places a block's members in tree preorder. When a centred fan would rise above the floor, the
+ * block is placed once more, lowered by that much, so the fan stays centred on its pins and the
+ * members above it keep their level wires.
+ */
 function placeBlock(layout: Layout, owner: string, block: ParameterBlock): void {
   const anchor = layout.positions.get(owner)!;
-  const floor = anchor.y + laneFloor(layout.graph.byId.get(owner)!);
-  for (const id of block.order) placeMember(layout, owner, block, id, floor);
+  const floors = blockFloors(layout.graph.byId.get(owner)!, anchor.y);
+  const boxes = layout.boxes.length;
+  const lanes = layout.lanes.length;
+  const shortfall = { by: 0 };
+  const fans = new Map<string, number>();
+  for (const id of block.order) placeMember(layout, owner, block, id, floors, fans, shortfall);
+  if (shortfall.by <= 0) return;
+  layout.boxes.length = boxes;
+  layout.lanes.length = lanes;
+  for (const id of block.order) layout.positions.delete(id);
+  const lowered = { level: floors.level, rest: floors.rest + shortfall.by };
+  const loweredFans = new Map<string, number>();
+  for (const id of block.order) placeMember(layout, owner, block, id, lowered, loweredFans, { by: 0 });
 }
 
 /**
@@ -661,7 +719,7 @@ function layoutChain(
   startIds: readonly string[],
   graph: GraphIndex,
   placed: Map<string, Position>,
-  knotWidth: number,
+  knot: { width: number; height: number },
 ): void {
   const startId = startIds[0]!;
   const start = graph.byId.get(startId)!;
@@ -706,7 +764,7 @@ function layoutChain(
     earlier: [...placed].map(([id, position]) => ({ id, ...boxAt(graph, id, position) })),
   };
   if (walk === "exec") {
-    layoutExecChain(layout, tree, blocks, ownerOf, chainOrder, origin, knotWidth);
+    layoutExecChain(layout, tree, blocks, ownerOf, chainOrder, origin, knot);
   } else {
     layoutDataWalk(layout, tree, blocks, chainOrder, origin, startId);
   }
@@ -776,7 +834,7 @@ function layoutExecChain(
   ownerOf: ReadonlyMap<string, string>,
   chainOrder: readonly string[],
   origin: Position,
-  knotWidth: number,
+  knot: { width: number; height: number },
 ): void {
   const { graph, placed } = layout;
   const width = (id: string) => nodeSize(graph.byId.get(id)!).width;
@@ -793,7 +851,7 @@ function layoutExecChain(
     const children = tree.children.get(id) ?? [];
     const lower = children.length - 1;
     return lower > 0 && children.some((child) => blocks.get(child)!.left > 0)
-      ? lower * knotWidth + (lower - 1) * WIRE_SPACING + FORMAT_GAP_X
+      ? knot.width + (lower - 1) * WIRE_SPACING + FORMAT_GAP_X
       : 0;
   };
   const xs = new Map<string, number>();
@@ -854,19 +912,28 @@ function layoutExecChain(
       }
       if (Number.isFinite(bottom)) y = Math.max(y, bottom + ROW_GAP);
     }
-    for (const id of row.nodes) addBox(layout, id, placed.get(id) ?? { x: xs.get(id)!, y });
+    // Along a row each node's exec input is level with the exec output before it, so the exec wire
+    // runs straight even where pins sit at different heights (a custom event's lower Then).
+    let rowY = y;
+    row.nodes.forEach((id, index) => {
+      if (index > 0) {
+        const previous = row.nodes[index - 1]!;
+        const edge = graph.execEdges.find((entry) => entry.source === previous && entry.target === id);
+        const previousAt = layout.positions.get(previous)!;
+        rowY = edge
+          ? previousAt.y + pinY(graph.byId.get(previous)!, "out", edge.sourceHandle) - pinY(graph.byId.get(id)!, "in", edge.targetHandle)
+          : previousAt.y;
+      }
+      addBox(layout, id, placed.get(id) ?? { x: xs.get(id)!, y: rowY });
+    });
     // The exec wire into a branch row runs level from beside its parent: later rows keep clear.
     if (row.parent !== undefined) {
       const first = row.nodes[0]!;
       const edge = graph.execEdges.find((entry) => entry.source === row.parent && entry.target === first);
       const at = layout.positions.get(first)!;
       const from = xs.get(row.parent)! + width(row.parent);
-      layout.lanes.push({
-        x: from,
-        y: at.y + pinY(graph.byId.get(first)!, "in", edge?.targetHandle),
-        width: at.x - from,
-        height: 0,
-      });
+      const y = at.y + pinY(graph.byId.get(first)!, "in", edge?.targetHandle);
+      layout.lanes.push({ x: from, y, width: at.x - from, height: 0 });
     }
     for (const id of row.nodes) placeBlock(layout, id, blocks.get(id)!);
   }
@@ -965,14 +1032,32 @@ function boxesAcross(obstacles: Obstacles, minX: number, maxX: number): Obstacle
   return found;
 }
 
-/** XYFlow `calculateControlOffset`. */
-function controlOffset(distance: number): number {
-  return distance >= 0 ? 0.5 * distance : WIRE_CURVATURE * 25 * Math.sqrt(-distance);
+/** Whether segment a–b comes within `clearance` of a box (the box grown by it, clipped). */
+function segmentMeetsBox(a: Point, b: Point, box: Box, clearance: number): boolean {
+  const minX = box.x - clearance;
+  const maxX = box.x + box.width + clearance;
+  const minY = box.y - clearance;
+  const maxY = box.y + box.height + clearance;
+  let low = 0;
+  let high = 1;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  for (const [p, q] of [[-dx, a.x - minX], [dx, maxX - a.x], [-dy, a.y - minY], [dy, maxY - a.y]] as const) {
+    if (p === 0) {
+      if (q <= 0) return false;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) low = Math.max(low, r);
+    else high = Math.min(high, r);
+    if (low >= high) return false;
+  }
+  return true;
 }
 
 /**
- * The first box (from source to target) that the wire the editor draws between two pins runs
- * through: XYFlow's bezier from a right-facing source to a left-facing target, sampled.
+ * The first box (from source to target) that the wire the editor draws between two pins
+ * (`graphWirePath`: level stubs and one symmetric ease) runs within `clearance` of.
  */
 function firstObstruction(
   from: Point,
@@ -981,35 +1066,20 @@ function firstObstruction(
   obstacles: Obstacles,
   clearance = WIRE_CLEARANCE,
 ): Obstacle | undefined {
-  const offset = controlOffset(to.x - from.x);
-  const first = { x: from.x + offset, y: from.y };
-  const second = { x: to.x - offset, y: to.y };
-  // The curve stays inside its control points' bounds.
-  const minX = Math.min(from.x, second.x) - clearance;
-  const maxX = Math.max(first.x, to.x) + clearance;
+  const points = sampleGraphWire(from.x, from.y, to.x, to.y, WIRE_SAMPLES);
+  let minX = Infinity, maxX = -Infinity;
+  for (const point of points) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+  }
   const minY = Math.min(from.y, to.y) - clearance;
   const maxY = Math.max(from.y, to.y) + clearance;
-  const near = boxesAcross(obstacles, minX, maxX).filter(
+  const near = boxesAcross(obstacles, minX - clearance, maxX + clearance).filter(
     (box) => !ends.includes(box.id) && box.y <= maxY && box.y + box.height >= minY,
   );
   if (near.length === 0) return undefined;
-  for (let sample = 1; sample <= WIRE_SAMPLES; sample++) {
-    const t = sample / (WIRE_SAMPLES + 1);
-    const u = 1 - t;
-    const a = u * u * u;
-    const b = 3 * u * u * t;
-    const c = 3 * u * t * t;
-    const d = t * t * t;
-    const x = a * from.x + b * first.x + c * second.x + d * to.x;
-    // first.y is from.y and second.y is to.y: written this way a level wire stays exactly level.
-    const y = from.y + (to.y - from.y) * (c + d);
-    const hit = near.find(
-      (box) =>
-        x > box.x - clearance &&
-        x < box.x + box.width + clearance &&
-        y > box.y - clearance &&
-        y < box.y + box.height + clearance,
-    );
+  for (let index = 1; index < points.length; index++) {
+    const hit = near.find((box) => segmentMeetsBox(points[index - 1]!, points[index]!, box, clearance));
     if (hit) return hit;
   }
   return undefined;
@@ -1066,18 +1136,40 @@ function knotBesideTarget(
 
 /** One stretch of a routed wire: level (a run) or a bezier between two heights, sampled. */
 type Piece = { from: Point; to: Point; level: boolean; points: Point[] };
-type Committed = { wire: string; node: string; source: string; target: string; pieces: Piece[]; knots: Box[] };
+type Committed = {
+  wire: string;
+  node: string;
+  targetNode: string;
+  source: string;
+  target: string;
+  /** Pin heights at each end, and the height of the wire's main (longest level) run. */
+  fromY: number;
+  toY: number;
+  lane: number;
+  pieces: Piece[];
+  knots: Box[];
+};
+
+/** The height of a route's longest level run, or its middle height when it has none. */
+function mainLane(pieces: readonly Piece[], from: Point, to: Point): number {
+  let best: Piece | undefined;
+  for (const piece of pieces) {
+    if (piece.level && (!best || Math.abs(piece.to.x - piece.from.x) > Math.abs(best.to.x - best.from.x))) best = piece;
+  }
+  return best ? best.from.y : (from.y + to.y) / 2;
+}
 
 function curvePoints(from: Point, to: Point): Point[] {
-  const offset = controlOffset(to.x - from.x);
   const points: Point[] = [];
-  for (let sample = 0; sample <= WIRE_SAMPLES; sample++) {
-    const t = sample / WIRE_SAMPLES;
-    const u = 1 - t;
-    points.push({
-      x: u * u * u * from.x + 3 * u * u * t * (from.x + offset) + 3 * u * t * t * (to.x - offset) + t * t * t * to.x,
-      y: from.y + (to.y - from.y) * (3 * u * t * t + t * t * t),
-    });
+  for (const point of sampleGraphWire(from.x, from.y, to.x, to.y, WIRE_SAMPLES)) {
+    const last = points[points.length - 1];
+    if (last) {
+      const steps = Math.floor(Math.hypot(point.x - last.x, point.y - last.y) / WIRE_SPACING);
+      for (let step = 1; step < steps; step++) {
+        points.push({ x: last.x + ((point.x - last.x) * step) / steps, y: last.y + ((point.y - last.y) * step) / steps });
+      }
+    }
+    points.push(point);
   }
   return points;
 }
@@ -1160,6 +1252,7 @@ function routeFits(
   direct: boolean,
   node: string,
   spaced: boolean,
+  keepsOrder: (other: Committed) => boolean,
 ): boolean {
   for (const knot of knots) {
     if (boxInTheWay(knot, obstacles, placedKnots)) return false;
@@ -1167,7 +1260,7 @@ function routeFits(
     // Wires from one node drop into knot lanes of their own.
     for (const other of others) {
       if (other.node !== node) continue;
-      if (other.knots.some((box) => box.x < knot.x + knot.width + WIRE_SPACING && knot.x < box.x + box.width + WIRE_SPACING)) return false;
+      if (other.knots.some((box) => Math.abs(box.x - knot.x) < WIRE_SPACING)) return false;
     }
   }
   for (const piece of pieces) {
@@ -1185,6 +1278,7 @@ function routeFits(
   }
   if (!spaced) return true;
   for (const other of others) {
+    if (!keepsOrder(other)) return false;
     if (sharesPin(other)) continue;
     for (const piece of pieces) {
       for (const otherPiece of other.pieces) {
@@ -1242,13 +1336,12 @@ function routeCandidates(
 ): Position[][] {
   const routes: Position[][] = [[]];
   const knot = (x: number, lane: number): Position => ({ x, y: lane - size.height / 2 });
-  // Lanes beside the source, `WIRE_SPACING` apart, so drops from one node can keep apart.
-  const near = (index: number) => from.x + FORMAT_GAP_X + index * (size.width + WIRE_SPACING);
+  // Lanes beside the source, `WIRE_SPACING` apart, so drops from one node nest without meeting.
+  const near = (index: number) => from.x + FORMAT_GAP_X + index * WIRE_SPACING;
   const far = to.x - FORMAT_GAP_X - size.width;
   for (let index = 0; index < 3; index++) {
     if (near(index) + size.width <= to.x - FORMAT_GAP_X / 2) routes.push([knot(near(index), to.y)]);
   }
-  if (far >= from.x + FORMAT_GAP_X / 2) routes.push([knot(far, from.y)]);
   if (near(0) + size.width + FORMAT_GAP_X <= far) {
     const lanes = new Set<number>();
     const half = size.height / 2;
@@ -1287,10 +1380,12 @@ function routeCandidates(
       }
     }
   }
+  // Last: level from the source to a knot before the target (an exec drop prefers its lanes).
+  if (far >= from.x + FORMAT_GAP_X / 2) routes.push([knot(far, from.y)]);
   return routes;
 }
 
-/** Lexicographic: fewer knots, then fewer crossings, then shorter. */
+/** Lexicographic: fewer knots, then fewer crossings, then candidate order (exec) or length (data). */
 function cheaper(cost: readonly number[], than: readonly number[]): boolean {
   for (let index = 0; index < cost.length; index++) {
     if (cost[index] !== than[index]) return cost[index]! < than[index]!;
@@ -1299,11 +1394,11 @@ function cheaper(cost: readonly number[], than: readonly number[]): boolean {
 }
 
 /**
- * Lays every data and exec wire between two formatted nodes as level runs joined by short
- * transitions. A wire that is level and clear stays direct; a short wire stays direct while it
- * keeps clear of nodes and other wires; a long or steep one, and one that runs into a node, takes
- * the best route of `routeCandidates` that fits (`routeFits`): fewest knots, then fewest crossings
- * with the wires already laid, then the shortest. Exec wires go first, each node's lowest branch
+ * Lays every data and exec wire between two formatted nodes. A wire that is level and clear stays
+ * direct; any other wire takes the best route of `routeCandidates` that fits (`routeFits`), direct
+ * included, so a wire whose own ease keeps clear of nodes and other wires takes no knot: fewest
+ * knots, then fewest crossings with the wires already laid, then candidate order for exec wires
+ * (nearest lane first) and the shortest for data wires. Exec wires go first, each node's lowest branch
  * first so its drop sits nearest the node; then data wires; each in a fixed order, so a second
  * Format lays every wire the same way. Placed knots and wires are obstacles for later wires.
  * Cost per wire: O(C · (W + R + P²)) for C candidates (at most 10 + 6 × `LANE_CANDIDATES`), W boxes in
@@ -1349,7 +1444,18 @@ function routeWires(
     if (from.y !== to.y || from.x > to.x || lanes.knotOf.has(edge)) continue;
     if (firstObstruction(from, to, [edge.source, edge.target], obstacles, WIRE_CLEARANCE)) continue;
     settled.add(edge);
-    committed.push({ wire: edgeKey(edge), node: edge.source, source: `${edge.source}\n${edge.sourceHandle}`, target: `${edge.target}\n${edge.targetHandle}`, pieces: piecesOf(from, [], knotSize, to), knots: [] });
+    committed.push({
+      wire: edgeKey(edge),
+      node: edge.source,
+      targetNode: edge.target,
+      source: `${edge.source}\n${edge.sourceHandle}`,
+      target: `${edge.target}\n${edge.targetHandle}`,
+      fromY: from.y,
+      toY: to.y,
+      lane: from.y,
+      pieces: piecesOf(from, [], knotSize, to),
+      knots: [],
+    });
   }
   for (const edge of wires) {
     if (settled.has(edge)) continue;
@@ -1361,11 +1467,6 @@ function routeWires(
     const source = `${edge.source}\n${edge.sourceHandle}`;
     const target = `${edge.target}\n${edge.targetHandle}`;
     const sharesPin = (other: Committed) => other.source === source || other.target === target;
-    const dx = to.x - from.x;
-    const dy = Math.abs(to.y - from.y);
-    // A long wire, or a steep one past the next column, runs level with short transitions; pins a
-    // few units apart (a custom event's lower exec pin) already read as level.
-    const needsLevel = dy > WIRE_CLEARANCE && (dx > LONG_WIRE || (dx > 2 * FORMAT_GAP_X && dy > dx));
     let best: { route: Position[]; pieces: Piece[]; cost: number[] } | undefined;
     // Wires keep apart where they can; where no route can, they still keep clear of every node.
     // An exec drop takes the first lane that fits, nearest its node, so a node's lowest branch
@@ -1376,15 +1477,20 @@ function routeWires(
       const candidates = routeCandidates(from, to, endIds, size, obstacles, committed);
       for (const [order, route] of candidates.entries()) {
         if (route.length > limit) continue;
-        if (route.length === 0 && needsLevel && limit > 0 && spaced) continue;
         const pieces = piecesOf(from, route, size, to);
-        // Transitions stay short; the first may reach past the knot lanes of the source's other wires.
-        const reach = (index: number) => MAX_TRANSITION + (index === 0 ? 2 * (size.width + WIRE_SPACING) : 0);
-        if (route.length > 0 && pieces.some((piece, index) => !piece.level && Math.abs(piece.to.x - piece.from.x) > reach(index))) continue;
         const boxes = route.map((at) => ({ ...at, ...size }));
         const direct = route.length === 0;
         const clearance = direct ? (from.y === to.y ? WIRE_CLEARANCE : WIRE_CROWDING) : WIRE_CLEARANCE;
-        if (!routeFits(pieces, boxes, endIds, clearance, obstacles, placedKnots, committed, sharesPin, direct, edge.source, spaced)) continue;
+        // Wires between the same two nodes keep their pins' order across their lanes, so they never
+        // cross each other (Element over Index into A over B).
+        const lane = mainLane(pieces, from, to);
+        const keepsOrder = (other: Committed) => {
+          if (other.node !== edge.source || other.targetNode !== edge.target) return true;
+          const atSource = Math.sign(from.y - other.fromY);
+          if (atSource === 0 || atSource !== Math.sign(to.y - other.toY)) return true;
+          return Math.sign(lane - other.lane) === atSource;
+        };
+        if (!routeFits(pieces, boxes, endIds, clearance, obstacles, placedKnots, committed, sharesPin, direct, edge.source, spaced, keepsOrder)) continue;
         let crossed = 0;
         for (const other of committed) if (!sharesPin(other)) crossed += crossings(pieces, other.pieces);
         const cost = [route.length, crossed, isExec ? order : routeLength(pieces)];
@@ -1411,7 +1517,18 @@ function routeWires(
       placedKnots.push(box);
       insertObstacle(obstacles, { id: `\u0000knot${placedKnots.length}`, ...box });
     }
-    committed.push({ wire: edgeKey(edge), node: edge.source, source, target, pieces, knots: boxes });
+    committed.push({
+      wire: edgeKey(edge),
+      node: edge.source,
+      targetNode: edge.target,
+      source,
+      target,
+      fromY: from.y,
+      toY: to.y,
+      lane: mainLane(pieces, from, to),
+      pieces,
+      knots: boxes,
+    });
   }
   return { moved, knots };
 }
@@ -1498,7 +1615,7 @@ export function formatGraphNodes(
     }
     // Selected roots which meet at a join share ranks and lanes. Disconnected
     // roots remain separate blocks, anchored at their own original positions.
-    layoutChain(group, graph, positions, knotSize.width);
+    layoutChain(group, graph, positions, knotSize);
   }
   const routed = routeWires(
     graph,

@@ -1695,7 +1695,7 @@ describe("GraphEditor", () => {
       expect(getByTestId("node-palette-body")).toBeTruthy();
       const wire = getByTestId("pending-connection-wire").querySelector("path");
       // A curve from the pin to the release point, in the dragged pin's colour.
-      expect(wire?.getAttribute("d")).toMatch(/^M[\d.-]+,[\d.-]+ C/);
+      expect(wire?.getAttribute("d")).toMatch(/^M[\d.-]+,[\d.-]+ (L[\d.-]+,[\d.-]+ )?C/);
       expect(wire?.getAttribute("class")).toContain("react-flow__connection-path");
       expect(wire?.style.stroke).not.toBe("");
 

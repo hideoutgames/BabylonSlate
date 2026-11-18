@@ -1,10 +1,10 @@
 import {
-  getBezierPath,
   useStore,
   type ConnectionLineComponentProps,
   type Position,
 } from "@xyflow/react";
 import { useMemo, type CSSProperties } from "react";
+import { graphWirePathBetween } from "./graph-wire-between";
 import { Badge } from "@haptic/ui/components/badge";
 import {
   collectDisplayConnectPins,
@@ -141,7 +141,7 @@ export function GraphConnectionLineView({
           targetY: toY,
           targetPosition: toPosition,
         }).path
-      : getBezierPath({
+      : graphWirePathBetween({
           sourceX: fromX,
           sourceY: fromY,
           sourcePosition: fromPosition,
