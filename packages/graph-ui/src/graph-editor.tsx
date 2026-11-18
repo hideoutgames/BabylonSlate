@@ -3324,14 +3324,21 @@ function GraphEditorCanvas({
         edgeType: defaultEdgeOptions.type,
         taken: new Set(currentNodes.map((node) => node.id)),
       };
-      for (const { edge, position } of formatted.knots) {
+      for (const { edge, positions } of formatted.knots) {
         const wire = edge.id === undefined ? undefined : edgesById.get(edge.id);
         if (!wire || replaced.has(wire.id)) continue;
-        const built = rerouteKnotOnEdge(wire, position, false, setup);
-        if (!built) continue;
-        replaced.add(wire.id);
-        knots.push(built.knot);
-        wires.push(...built.wires);
+        // Chain the knots source to target: each splits the wire left from the knot before it.
+        let rest: Edge = wire;
+        for (const position of positions) {
+          const built = rerouteKnotOnEdge(rest, position, false, setup);
+          if (!built) break;
+          replaced.add(wire.id);
+          knots.push(built.knot);
+          setup.nodes = [...setup.nodes, built.knot];
+          wires.push(built.wires[0]);
+          rest = built.wires[1];
+        }
+        if (rest !== wire) wires.push(rest);
       }
     }
     if (!changed && knots.length === 0) return;

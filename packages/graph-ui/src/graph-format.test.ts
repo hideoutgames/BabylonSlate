@@ -164,8 +164,10 @@ const BLOCK = NODE_W + FORMAT_GAP_X;
 // The lane after a node that branches to a lower row past parameter blocks: a knot and a gap.
 const KNOT_LANE = REROUTE_KNOT_SIZE.width + FORMAT_GAP_X;
 // A block's top below a consumer whose first data input is on the second pin row (after the
-// exec row): that row's estimated bottom (50 + 2 × 44) plus the 40 gap.
-const LANE = 178;
+// exec row): that row's estimated bottom (50 + 2 × 44) plus the 64 gap.
+const LANE = 202;
+// Branch rows sit one and a half gaps apart, a little further than nodes within a block.
+const ROW_GAP = 96;
 
 /** The formatted nodes, for layouts that request no knots. */
 function layout(
@@ -263,7 +265,7 @@ describe("formatGraphNodes", () => {
     expect(yes.position.x).toBe(100 + FORMAT_GAP_X);
     expect(no.position.x).toBe(100 + FORMAT_GAP_X);
     expect(yes.position.y).toBe(0);
-    expect(no.position.y).toBe(40 + FORMAT_GAP_Y);
+    expect(no.position.y).toBe(40 + ROW_GAP);
   });
 
   it("leaves disconnected selected nodes at their origins instead of merging them onto one row", () => {
@@ -542,7 +544,7 @@ describe("formatGraphNodes", () => {
       expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + KNOT_LANE + BLOCK, y: 0 });
       expect(pos(next, "get")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: LANE });
       // False's row starts below the data hanging between the branch and True.
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: LANE + HANG_Y });
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: LANE + NODE_H + ROW_GAP });
       expectNoOverlaps(next);
     });
 
@@ -560,8 +562,8 @@ describe("formatGraphNodes", () => {
       ];
       const next = layout(nodes, edges, ["branch"]);
       expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: 0 });
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: HANG_Y });
-      expect(pos(next, "get")).toEqual({ x: EXEC_STEP + KNOT_LANE - BLOCK, y: HANG_Y + LANE });
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: NODE_H + ROW_GAP });
+      expect(pos(next, "get")).toEqual({ x: EXEC_STEP + KNOT_LANE - BLOCK, y: NODE_H + ROW_GAP + LANE });
       expectNoOverlaps(next);
     });
 
@@ -582,8 +584,8 @@ describe("formatGraphNodes", () => {
       const next = layout(nodes, edges, ["branch"]);
       expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + KNOT_LANE + BLOCK, y: 0 });
       expect(pos(next, "getYes")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: LANE });
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: LANE + HANG_Y });
-      expect(pos(next, "getNo")).toEqual({ x: EXEC_STEP + KNOT_LANE - BLOCK, y: LANE + HANG_Y + LANE });
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: LANE + NODE_H + ROW_GAP });
+      expect(pos(next, "getNo")).toEqual({ x: EXEC_STEP + KNOT_LANE - BLOCK, y: LANE + NODE_H + ROW_GAP + LANE });
       expectNoOverlaps(next);
     });
 
@@ -605,7 +607,7 @@ describe("formatGraphNodes", () => {
       ];
       const next = layout(nodes, edges, ["branch"]);
       expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + KNOT_LANE + BLOCK, y: 0 });
-      expect(pos(next, "no").y).toBe(pos(next, "getYes").y + HANG_Y);
+      expect(pos(next, "no").y).toBe(pos(next, "getYes").y + NODE_H + ROW_GAP);
       expect(pos(next, "getSecond").y).toBe(pos(next, "getFirst").y + HANG_Y);
       expectNoOverlaps(next);
       expect(layout(next, edges, ["branch"])).toEqual(next);
@@ -740,7 +742,7 @@ describe("formatGraphNodes", () => {
     expect(pos(next, "consumer0").y).toBe(0);
     for (let index = 0; index < 72; index++) {
       if (index > 0) {
-        expect(pos(next, `consumer${index}`).y).toBe(pos(next, `second${index - 1}`).y + HANG_Y);
+        expect(pos(next, `consumer${index}`).y).toBe(pos(next, `second${index - 1}`).y + NODE_H + ROW_GAP);
       }
       expect(pos(next, `first${index}`).y).toBe(pos(next, `consumer${index}`).y + LANE);
       expect(pos(next, `second${index}`).y - pos(next, `first${index}`).y).toBe(HANG_Y);
@@ -945,6 +947,32 @@ describe("formatGraphNodes with Reroute knots", () => {
     expect(result.knots).toEqual([]);
   });
 
+  it("reads a chain of knots as one wire, keeping and placing every knot", () => {
+    const nodes = [
+      node("a", 10, 20),
+      node("b", 12, 90, execWithValueIn),
+      knotNode("first", 5, 200),
+      knotNode("second", 300, 400),
+      node("get", 1, 300, dataOutPins),
+    ];
+    const edges = [
+      execEdge("a", "b"),
+      dataEdge("get", "first", "in"),
+      dataEdge("first", "second", "in", "out"),
+      dataEdge("second", "b", "value", "out"),
+    ];
+    const result = formatGraphNodes(nodes, edges, ["a"], { displayType: bound("string"), insertKnots: true });
+    const direct = layout(nodes.filter((entry) => !entry.reroute), [execEdge("a", "b"), dataEdge("get", "b")], ["a"]);
+    for (const id of ["a", "b", "get"]) expect(pos(result.nodes, id)).toEqual(pos(direct, id));
+    expect(result.knots).toEqual([]);
+    const first = pos(result.nodes, "first");
+    const second = pos(result.nodes, "second");
+    expect(first).not.toEqual(second);
+    expect(boxesOverlap({ ...first, ...REROUTE_KNOT_SIZE }, { ...second, ...REROUTE_KNOT_SIZE })).toBe(false);
+    const again = formatGraphNodes(result.nodes, edges, ["a"], { displayType: bound("string"), insertKnots: true });
+    expect(again.nodes).toEqual(result.nodes);
+  });
+
   it("lays out a knot that feeds several inputs like a pure node", () => {
     const nodes = [
       node("a", 10, 20),
@@ -978,7 +1006,7 @@ describe("formatGraphNodes with Reroute knots", () => {
       node("c", 14, 160, execWithValueIn),
       node("get", 1, 300, dataOutPins),
       // An unrelated selected wall across every route from get to c: it stays where it is.
-      node("wall", 480, -2000, [], { width: 40, height: 4000 }),
+      node("wall", 370, -2000, [], { width: 40, height: 4000 }),
     ];
     const edges = [
       execEdge("a", "b"),
@@ -987,7 +1015,7 @@ describe("formatGraphNodes with Reroute knots", () => {
       dataEdge("get", "c"),
     ];
     const result = formatGraphNodes(nodes, edges, ["a", "wall"], { insertKnots: true });
-    expect(pos(result.nodes, "wall")).toEqual({ x: 480, y: -2000 });
+    expect(pos(result.nodes, "wall")).toEqual({ x: 370, y: -2000 });
     expect(pos(result.nodes, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
     expect(pos(result.nodes, "c")).toEqual({ x: 10 + EXEC_STEP * 2 + BLOCK, y: 20 });
     expect(result.knots).toEqual([]);
@@ -995,9 +1023,9 @@ describe("formatGraphNodes with Reroute knots", () => {
 
   describe("a wire that passes close to a node", () => {
     // a → b → c. get (in b's block) feeds b.Value and c.Value, which is 400 below c's top, so
-    // get's wire into c, leaving under b, drops from (290, 144) to (550, 420). An isolated node o sits
-    // above the right half of that curve: with its bottom at 322 the curve passes about 20 units
-    // from its box, at 262 about 40.
+    // get's wire into c, leaving under b, drops from (330, 156) to (670, 420). An isolated node o
+    // sits just right of b, above that curve: with its bottom at 340 the curve passes about 20
+    // units from its box, at 305 about 40.
     function crowdedGraph(obstacleBottom: number): { nodes: FormatNode[]; edges: FormatEdge[]; cWire: FormatEdge } {
       const cWire = { id: "get-c", ...dataEdge("get", "c") };
       return {
@@ -1006,43 +1034,45 @@ describe("formatGraphNodes with Reroute knots", () => {
           { ...node("b", 0, 0, execWithValueIn, { width: 100, height: 92 }), pinOffsets: { [formatPinOffsetKey("in", "value")]: 30 } },
           { ...node("c", 0, 0, execWithValueIn, { width: 100, height: 450 }), pinOffsets: { [formatPinOffsetKey("in", "value")]: 400 } },
           { ...node("get", 0, 0, dataOutPins), pinOffsets: { [formatPinOffsetKey("out", "value")]: 20 } },
-          node("o", 470, obstacleBottom - 40, [], { width: 60, height: 40 }),
+          node("o", 560, obstacleBottom - 40, [], { width: 60, height: 40 }),
         ],
         edges: [execEdge("a", "b"), execEdge("b", "c"), dataEdge("get", "b"), cWire],
         cWire,
       };
     }
+    // How close get's wire into c (through any knots) comes to o.
+    const distanceToO = (nodes: FormatNode[], edges: FormatEdge[]) => {
+      const toC = edges.filter((edge) => edge.targetHandle !== "execIn" && (edge.target === "c" || edge.target.startsWith("knot")));
+      return Math.min(...wireClearances(nodes, toC).filter((entry) => entry.node === "o").map((entry) => entry.distance));
+    };
 
-    it("gets a knot level with the target pin when it passes 20 units from the node", () => {
-      const { nodes, edges, cWire } = crowdedGraph(322);
+    it("takes a knot around the node when it passes 20 units from it", () => {
+      const { nodes, edges, cWire } = crowdedGraph(340);
       const result = formatGraphNodes(nodes, edges, ["a", "o"], { insertKnots: true });
-      expect(pos(result.nodes, "o")).toEqual({ x: 470, y: 282 });
-      expect(pos(result.nodes, "get")).toEqual({ x: 190, y: 124 });
-      expect(pos(result.nodes, "c")).toEqual({ x: 550, y: 20 });
-      // As far right as the gaps allow (550 − 80 − 80), centred on c.Value at 420.
-      expect(result.knots).toEqual([{ edge: cWire, position: { x: 390, y: 420 - REROUTE_KNOT_SIZE.height / 2 } }]);
+      expect(pos(result.nodes, "o")).toEqual({ x: 560, y: 300 });
+      expect(pos(result.nodes, "get")).toEqual({ x: 230, y: 136 });
+      expect(pos(result.nodes, "c")).toEqual({ x: 670, y: 20 });
+      expect(result.knots.map((knot) => [knot.edge, knot.positions.length])).toEqual([[cWire, 1]]);
+      const knotted = withKnots(result, edges);
+      expect(distanceToO(knotted.nodes, knotted.edges)).toBeGreaterThanOrEqual(32);
     });
 
     it("stays direct when it passes 40 units from the node", () => {
-      const { nodes, edges } = crowdedGraph(262);
+      const { nodes, edges } = crowdedGraph(305);
       const result = formatGraphNodes(nodes, edges, ["a", "o"], { insertKnots: true });
-      expect(pos(result.nodes, "get")).toEqual({ x: 190, y: 124 });
+      expect(pos(result.nodes, "get")).toEqual({ x: 230, y: 136 });
       expect(result.knots).toEqual([]);
+      expect(distanceToO(result.nodes, edges)).toBeGreaterThanOrEqual(32);
     });
 
     it("changes nothing when formatted again with its knot in place", () => {
-      const { nodes, edges, cWire } = crowdedGraph(322);
+      const { nodes, edges } = crowdedGraph(340);
       const first = formatGraphNodes(nodes, edges, ["a", "o"], { insertKnots: true });
       expect(first.knots).toHaveLength(1);
-      const knotted = [...first.nodes, { id: "k", position: first.knots[0]!.position, pins: knotPins, reroute: true }];
-      const rewired = [
-        ...edges.filter((edge) => edge !== cWire),
-        dataEdge("get", "k", "in"),
-        dataEdge("k", "c", "value", "out"),
-      ];
-      const second = formatGraphNodes(knotted, rewired, ["a", "o"], { insertKnots: true });
+      const knotted = withKnots(first, edges);
+      const second = formatGraphNodes(knotted.nodes, knotted.edges, ["a", "o"], { insertKnots: true });
       expect(second.knots).toEqual([]);
-      expect(second.nodes).toEqual(knotted);
+      expect(second.nodes).toEqual(knotted.nodes);
     });
   });
 });
@@ -1088,9 +1118,9 @@ describe("formatGraphNodes parameter rows", () => {
       dataEdge("getSecond", "b", "second"),
     ];
     const next = layout(nodes, edges, ["a"]);
-    expect(pos(next, "getFirst").y).toBe(92);
+    expect(pos(next, "getFirst").y).toBe(116);
     // Level would be 130, which is within FORMAT_GAP_Y of getFirst (92 to 132).
-    expect(pos(next, "getSecond").y).toBe(92 + NODE_H + FORMAT_GAP_Y);
+    expect(pos(next, "getSecond").y).toBe(116 + NODE_H + FORMAT_GAP_Y);
     expect(pos(next, "getSecond").x).toBe(pos(next, "getFirst").x);
     expectNoOverlaps(next);
   });
@@ -1201,11 +1231,11 @@ describe("formatGraphNodes on a Line Trace graph", () => {
   it("shares pure rows by column and keeps listed wires level", () => {
     const { nodes: next } = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
     // The block starts just under the exec lane: the Start row ends at 116 + 22, plus the gap.
-    expect(pos(next, "self").y).toBe(178);
-    expect(pos(next, "location").y).toBe(178);
-    expect(pos(next, "add").y).toBe(178);
+    expect(pos(next, "self").y).toBe(202);
+    expect(pos(next, "location").y).toBe(202);
+    expect(pos(next, "add").y).toBe(202);
     expect(pos(next, "multiply").y).toBe(pos(next, "forward").y);
-    expect(pos(next, "multiply").y).toBeGreaterThan(178);
+    expect(pos(next, "multiply").y).toBeGreaterThan(202);
     expect(pos(next, "array").x).toBe(pos(next, "add").x);
     expect(pos(next, "array").y).toBe(pos(next, "add").y + byId(next, "add").height! + FORMAT_GAP_Y);
     expect(pinAt(next, "self", "out", "self")).toBe(pinAt(next, "location", "in", "target"));
@@ -1217,21 +1247,20 @@ describe("formatGraphNodes on a Line Trace graph", () => {
     expectNoOverlaps(next);
   });
 
-  it("asks for a knot level with the target pin on each wire that runs through a node", () => {
-    const { nodes: next, knots } = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
-    expect(knots).toHaveLength(2);
-    expect(new Set(knots.map((knot) => knot.edge))).toEqual(new Set([startWire, targetWire]));
-    for (const knot of knots) {
-      const edge = knot.edge;
-      expect(knot.position.y + REROUTE_KNOT_SIZE.height / 2).toBe(pinAt(next, edge.target, "in", edge.targetHandle!));
-      expect(knot.position.x).toBeGreaterThanOrEqual(pos(next, edge.source).x + byId(next, edge.source).width! + FORMAT_GAP_X);
-      expect(knot.position.x + REROUTE_KNOT_SIZE.width + FORMAT_GAP_X).toBeLessThanOrEqual(pos(next, edge.target).x);
-      const box = { ...knot.position, ...REROUTE_KNOT_SIZE };
-      for (const entry of next) expect(boxesOverlap(box, boxOf(entry))).toBe(false);
+  it("routes Start and Target around the block on level runs, clear of the exec wire", () => {
+    const result = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
+    expect(new Set(result.knots.map((knot) => knot.edge))).toEqual(new Set([startWire, targetWire]));
+    const knotted = withKnots(result, edges);
+    expectWiresClear(knotted.nodes, knotted.edges);
+    expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges, ["event.then", "trace.then", "branch.true"]);
+    // Every knot keeps the wire spacing from the exec row's wire (its handles 72 below the row).
+    for (const knot of result.knots.flatMap((entry) => entry.positions)) {
+      expect(knot.y).toBeGreaterThanOrEqual(72 + 40);
     }
+    expect(wireCrossings(knotted.nodes, knotted.edges)).toBe(1);
     const plain = formatGraphNodes(nodes, edges, ["event"], { insertKnots: false });
     expect(plain.knots).toEqual([]);
-    expect(plain.nodes).toEqual(next);
+    expect(plain.nodes).toEqual(result.nodes);
   });
 
   it("runs no wire through a node it does not connect once its knots are in place", () => {
@@ -1240,40 +1269,34 @@ describe("formatGraphNodes on a Line Trace graph", () => {
     expectNoBoxOverlaps(knotted.nodes);
   });
 
-  it("changes nothing when formatted again with its knots in place", () => {
+  it("changes nothing when formatted again with its knots, single and chained, in place", () => {
     const first = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
-    const knotted = [...first.nodes];
-    let rewired = [...edges];
-    first.knots.forEach((knot, index) => {
-      const id = `knot${index}`;
-      knotted.push({ id, position: knot.position, pins: knotPins, reroute: true });
-      rewired = [
-        ...rewired.filter((edge) => edge !== knot.edge),
-        wire(knot.edge.source, knot.edge.sourceHandle!, id, "in"),
-        wire(id, "out", knot.edge.target, knot.edge.targetHandle!),
-      ];
-    });
-    const second = formatGraphNodes(knotted, rewired, ["event"], { insertKnots: true });
+    expect(first.knots.some((knot) => knot.positions.length === 2)).toBe(true);
+    const knotted = withKnots(first, edges);
+    const second = formatGraphNodes(knotted.nodes, knotted.edges, ["event"], { insertKnots: true });
     expect(second.knots).toEqual([]);
-    expect(second.nodes).toEqual(knotted);
+    expect(second.nodes).toEqual(knotted.nodes);
   });
 });
 
 // ---- Whole-graph checks, written independently of the layout code ----
 
-/** Every knot Format asked for, added as a node with the two wires that replace its wire. */
+/** Every knot chain Format asked for, added as nodes with the wires that replace its wire. */
 function withKnots(result: FormatResult, edges: readonly FormatEdge[]): { nodes: FormatNode[]; edges: FormatEdge[] } {
   const nodes = [...result.nodes];
   let wires = [...edges];
-  result.knots.forEach((knot, index) => {
-    const id = `knot${index}`;
-    nodes.push({ id, position: knot.position, pins: knotPins, reroute: true });
-    wires = [
-      ...wires.filter((edge) => edge !== knot.edge),
-      { id: `${knot.edge.id}:in`, source: knot.edge.source, sourceHandle: knot.edge.sourceHandle, target: id, targetHandle: "in" },
-      { id: `${knot.edge.id}:out`, source: id, sourceHandle: "out", target: knot.edge.target, targetHandle: knot.edge.targetHandle },
-    ];
-  });
+  let count = 0;
+  for (const knot of result.knots) {
+    wires = wires.filter((edge) => edge !== knot.edge);
+    let from = { node: knot.edge.source, pin: knot.edge.sourceHandle };
+    for (const position of knot.positions) {
+      const id = `knot${count++}`;
+      nodes.push({ id, position, pins: knotPins, reroute: true });
+      wires.push({ id: `${from.node}>${id}`, source: from.node, sourceHandle: from.pin, target: id, targetHandle: "in" });
+      from = { node: id, pin: "out" };
+    }
+    wires.push({ id: `${from.node}>${knot.edge.target}`, source: from.node, sourceHandle: from.pin, target: knot.edge.target, targetHandle: knot.edge.targetHandle });
+  }
   return { nodes, edges: wires };
 }
 
@@ -1386,10 +1409,103 @@ function expectExecKnotsInLane(nodes: readonly FormatNode[], result: FormatResul
     const pin = source.pins!.find((entry) => entry.id === knot.edge.sourceHandle)!;
     if (pin.kind !== "exec") continue;
     const target = byId.get(knot.edge.target)!;
-    // Level with the child's exec pin, in the lane just right of the parent.
-    expect(knot.position.y + REROUTE_KNOT_SIZE.height / 2).toBe(handleY(target, "in", knot.edge.targetHandle));
-    expect(knot.position.x).toBe(source.position.x + source.width! + FORMAT_GAP_X);
+    // One knot per drop, level with the child's exec pin, in its own lane beside the parent:
+    // a gap, then lanes a knot and the 40-unit wire spacing apart.
+    expect(knot.positions).toHaveLength(1);
+    const [first] = knot.positions;
+    expect(first!.y + REROUTE_KNOT_SIZE.height / 2).toBe(handleY(target, "in", knot.edge.targetHandle));
+    const lane = (first!.x - source.position.x - source.width! - FORMAT_GAP_X) / (REROUTE_KNOT_SIZE.width + 40);
+    expect(Number.isInteger(lane) && lane >= 0).toBe(true);
   }
+}
+
+/** The wires as the editor draws them, sampled at 200 points each. */
+function sampledWires(nodes: readonly FormatNode[], edges: readonly FormatEdge[]): { edge: FormatEdge; from: { x: number; y: number }; to: { x: number; y: number }; points: { x: number; y: number }[] }[] {
+  const byId = new Map(nodes.map((entry) => [entry.id, entry]));
+  return edges.map((edge) => {
+    const source = byId.get(edge.source)!;
+    const target = byId.get(edge.target)!;
+    const from = { x: source.position.x + sizeOf(source).width, y: handleY(source, "out", edge.sourceHandle) };
+    const to = { x: target.position.x, y: handleY(target, "in", edge.targetHandle) };
+    const dx = to.x - from.x;
+    const pull = dx >= 0 ? dx / 2 : 6.25 * Math.sqrt(-dx);
+    const points = [];
+    for (let step = 0; step <= 200; step++) {
+      const t = step / 200;
+      const u = 1 - t;
+      points.push({
+        x: u ** 3 * from.x + 3 * u * u * t * (from.x + pull) + 3 * u * t * t * (to.x - pull) + t ** 3 * to.x,
+        y: from.y + (to.y - from.y) * (3 * u * t * t + t ** 3),
+      });
+    }
+    return { edge, from, to, points };
+  });
+}
+
+/**
+ * Wires are level runs joined by short transitions: a piece between knots, or between a node and a
+ * knot, changes height over at most 480 across (240, plus two knot lanes beside a node with
+ * several drops); a direct wire that changes height spans at most two columns (880) and, past the
+ * next column (240), is no steeper than 45 degrees.
+ */
+function expectWiresLevelWithShortTransitions(nodes: readonly FormatNode[], edges: readonly FormatEdge[]): void {
+  const knots = new Set(nodes.filter((entry) => entry.reroute).map((entry) => entry.id));
+  for (const { edge, from, to } of sampledWires(nodes, edges)) {
+    const dx = Math.abs(to.x - from.x);
+    const dy = Math.abs(to.y - from.y);
+    if (dy <= 8) continue;
+    const label = `${edge.source}.${edge.sourceHandle} → ${edge.target}.${edge.targetHandle}`;
+    if (knots.has(edge.source) || knots.has(edge.target)) {
+      expect(dx, label).toBeLessThanOrEqual(480);
+    } else {
+      expect(dx, label).toBeLessThanOrEqual(880);
+      if (dx > 240) expect(dy, label).toBeLessThanOrEqual(dx);
+    }
+  }
+}
+
+/** Crossings between wires that share no pin and do not continue one another through a knot. */
+function wireCrossings(nodes: readonly FormatNode[], edges: readonly FormatEdge[]): number {
+  const wires = sampledWires(nodes, edges);
+  const side = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  let count = 0;
+  for (let i = 0; i < wires.length; i++) {
+    for (let j = i + 1; j < wires.length; j++) {
+      const a = wires[i]!;
+      const b = wires[j]!;
+      if (a.edge.source === b.edge.source && a.edge.sourceHandle === b.edge.sourceHandle) continue;
+      if (a.edge.target === b.edge.target && a.edge.targetHandle === b.edge.targetHandle) continue;
+      if (a.edge.target === b.edge.source || b.edge.target === a.edge.source) continue;
+      for (let m = 1; m < a.points.length; m++) {
+        for (let n = 1; n < b.points.length; n++) {
+          const [p, q, r, t] = [a.points[m - 1]!, a.points[m]!, b.points[n - 1]!, b.points[n]!];
+          const d1 = side(r, t, p);
+          const d2 = side(r, t, q);
+          const d3 = side(p, q, r);
+          const d4 = side(p, q, t);
+          if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) count++;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+/** The closest two level runs of different wires come where they run side by side. */
+function closestParallelRuns(nodes: readonly FormatNode[], edges: readonly FormatEdge[]): number {
+  const level = sampledWires(nodes, edges).filter(({ from, to }) => Math.abs(to.y - from.y) <= 8);
+  let closest = Infinity;
+  for (let i = 0; i < level.length; i++) {
+    for (let j = i + 1; j < level.length; j++) {
+      const a = level[i]!;
+      const b = level[j]!;
+      if (a.edge.source === b.edge.source && a.edge.sourceHandle === b.edge.sourceHandle) continue;
+      if (a.edge.target === b.edge.target && a.edge.targetHandle === b.edge.targetHandle) continue;
+      const overlap = Math.min(a.to.x, b.to.x) - Math.max(a.from.x, b.from.x);
+      if (overlap > 0) closest = Math.min(closest, Math.abs(a.from.y - b.from.y));
+    }
+  }
+  return closest;
 }
 
 describe("formatGraphNodes on a branching graph", () => {
@@ -1437,6 +1553,16 @@ describe("formatGraphNodes on a branching graph", () => {
     expectWiresClear(knotted.nodes, knotted.edges);
     expectNoBoxOverlaps(knotted.nodes);
     expectExecKnotsInLane(result.nodes, result);
+  });
+
+  it("lays wires level with short transitions, apart, crossing only where the branch must", () => {
+    expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
+    expect(closestParallelRuns(knotted.nodes, knotted.edges)).toBeGreaterThanOrEqual(40);
+    // False drops from Branch to its row below while Length's wire runs under Branch to To String,
+    // right of Branch: the two cannot both stay on their sides.
+    expect(wireCrossings(knotted.nodes, knotted.edges)).toBe(1);
+    // Get Actor Location's long wire to Add runs level, then drops beside Add through a knot.
+    expect(result.knots.find((knot) => knot.edge.target === "add")?.positions).toHaveLength(1);
   });
 
   it("takes Length's wire to To String under Greater Than instead of level through it", () => {
@@ -1528,6 +1654,17 @@ describe("formatGraphNodes on a Sequence graph", () => {
     expect(pos(result.nodes, "setLocation").y).toBeGreaterThan(pos(result.nodes, "forEach").y);
   });
 
+  it("gives each lower Then its own lane, nearest the Sequence for the lowest row", () => {
+    const then1 = result.knots.find((knot) => knot.edge.sourceHandle === "then1")!.positions[0]!;
+    const then2 = result.knots.find((knot) => knot.edge.sourceHandle === "then2")!.positions[0]!;
+    expect(then1.x - then2.x).toBe(REROUTE_KNOT_SIZE.width + 40);
+    expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
+    expect(closestParallelRuns(knotted.nodes, knotted.edges)).toBeGreaterThanOrEqual(40);
+    // Make Array (in the Then 0 block, above) feeds For Each's Array, below the level run into
+    // For Each's Exec: that wire has to cross the run.
+    expect(wireCrossings(knotted.nodes, knotted.edges)).toBe(1);
+  });
+
   it("brings the lower rows left of Then 0's block instead of past it", () => {
     expect(pos(result.nodes, "forEach").x).toBeLessThan(pos(result.nodes, "print").x);
     expect(pos(result.nodes, "setLocation").x).toBeLessThan(pos(result.nodes, "forEach").x);
@@ -1545,3 +1682,69 @@ describe("formatGraphNodes on a Sequence graph", () => {
 function byIdOf(list: readonly FormatNode[], id: string): FormatNode {
   return list.find((entry) => entry.id === id)!;
 }
+
+describe("formatGraphNodes on a loop with branches sharing inputs", () => {
+  // Custom Event → For Each (Array ← Make Array ← two Make Int). Loop Body → Branch (Condition ←
+  // Greater Than ← Element). True and False print one To String (← Add ← Element, Index);
+  // Completed prints the array's length (← the same Make Array).
+  const nodes: FormatNode[] = [
+    customEvent("event"),
+    editorCard("forEach", 500, 400, [["execIn", "loopBody"], ["array", "completed"], [null, "element"], [null, "index"]], {
+      exec: ["execIn", "loopBody", "completed"],
+    }),
+    editorCard("array", 300, 300, [["item0", "out"], ["item1", null]]),
+    getter("int0", 50, 50, "in"),
+    getter("int1", 60, 450, "in"),
+    editorCard("branch", 900, 300, [["execIn", "true"], ["condition", "false"]], { exec: ["execIn", "true", "false"] }),
+    binary("greater", 50, 600),
+    printString("printTrue", 1200, 100),
+    printString("printFalse", 1250, 600),
+    printString("printDone", 1300, 900),
+    getter("toString", 300, 900, "in"),
+    binary("add", 100, 1200),
+    getter("lengthString", 700, 1300, "in"),
+    getter("length", 800, 1400, "array"),
+  ];
+  const edges: FormatEdge[] = [
+    link("event", "execOut", "forEach", "execIn"),
+    link("int0", "out", "array", "item0"),
+    link("int1", "out", "array", "item1"),
+    link("array", "out", "forEach", "array"),
+    link("forEach", "loopBody", "branch", "execIn"),
+    link("forEach", "element", "greater", "a"),
+    link("greater", "out", "branch", "condition"),
+    link("branch", "true", "printTrue", "execIn"),
+    link("branch", "false", "printFalse", "execIn"),
+    link("forEach", "element", "add", "a"),
+    link("forEach", "index", "add", "b"),
+    link("add", "out", "toString", "in"),
+    link("toString", "out", "printTrue", "inString"),
+    link("toString", "out", "printFalse", "inString"),
+    link("forEach", "completed", "printDone", "execIn"),
+    link("array", "out", "length", "array"),
+    link("length", "out", "lengthString", "in"),
+    link("lengthString", "out", "printDone", "inString"),
+  ];
+  const result = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
+  const knotted = withKnots(result, edges);
+
+  it("routes Element and Index to Add in lanes of their own with two knots each, clear of every node", () => {
+    for (const handle of ["element", "index"]) {
+      expect(result.knots.find((knot) => knot.edge.sourceHandle === handle && knot.edge.target === "add")?.positions).toHaveLength(2);
+    }
+    expectWiresClear(knotted.nodes, knotted.edges);
+    expectNoBoxOverlaps(knotted.nodes);
+    expectExecKnotsInLane(result.nodes, result);
+    expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
+    expect(closestParallelRuns(knotted.nodes, knotted.edges)).toBeGreaterThanOrEqual(40);
+    // For Each's three right-bound outputs fan past each other and the branch rows: a bound, not
+    // a target; the editor capture reports the count.
+    expect(wireCrossings(knotted.nodes, knotted.edges)).toBeLessThanOrEqual(10);
+  });
+
+  it("changes nothing when formatted again with its chained knots in place", () => {
+    const again = formatGraphNodes(knotted.nodes, knotted.edges, ["event"], { insertKnots: true });
+    expect(again.knots).toEqual([]);
+    expect(again.nodes).toEqual(knotted.nodes);
+  });
+});

@@ -3,12 +3,15 @@ import { pinWithDisplayType } from "./graph-connect";
 import {
   estimateGraphNodeSize,
   GRAPH_NODE_CHROME_HEIGHT,
+  GRAPH_NODE_FALLBACK_WIDTH,
   GRAPH_PIN_ROW_HEIGHT,
   REROUTE_KNOT_SIZE,
 } from "./graph-virtualize";
 
-export const FORMAT_GAP_X = 80;
-export const FORMAT_GAP_Y = 40;
+export const FORMAT_GAP_X = 120;
+export const FORMAT_GAP_Y = 64;
+/** Branch rows sit a little further apart than nodes within a block. */
+const ROW_GAP = FORMAT_GAP_Y * 1.5;
 
 // A selected pure root's forward data walk keeps its compact diagonal while it
 // is small; taller walks use rows.
@@ -16,7 +19,15 @@ const HELIX_MAX_HEIGHT = 320;
 // Clearance between a wire or a knot and the box of another node.
 const WIRE_CLEARANCE = 8;
 /** A direct wire this close to another node is crowding it: Format routes it around with a knot. */
-const WIRE_CROWDING = 32;
+const WIRE_CROWDING = FORMAT_GAP_Y / 2;
+/** Parallel runs of different wires, and a wire and another wire's knot, keep this apart. */
+const WIRE_SPACING = FORMAT_GAP_Y * 0.625;
+/** Longer than two columns: a wire this long runs level with short transitions. */
+const LONG_WIRE = 2 * (GRAPH_NODE_FALLBACK_WIDTH + FORMAT_GAP_X);
+/** The longest stretch, across, of a knotted wire's change of height. */
+const MAX_TRANSITION = 2 * FORMAT_GAP_X;
+/** The free lanes nearest a wire's middle height that a two-knot route tries. */
+const LANE_CANDIDATES = 24;
 // Points sampled along a wire's curve when testing it against node boxes.
 const WIRE_SAMPLES = 24;
 // XYFlow `getBezierPath`'s default curvature.
@@ -56,8 +67,8 @@ export type FormatEdge = {
   targetHandle?: string;
 };
 
-/** A Reroute knot Format asks the host to add on `edge`, its top-left corner at `position`. */
-export type FormatKnot = { edge: FormatEdge; position: { x: number; y: number } };
+/** Reroute knots Format asks the host to chain into `edge`, source to target, by top-left corner. */
+export type FormatKnot = { edge: FormatEdge; positions: { x: number; y: number }[] };
 
 export type FormatOptions = {
   displayType?: FormatPinDisplayType;
@@ -777,10 +788,12 @@ function layoutExecChain(
   for (const [id, targets] of tree.forward) {
     for (const target of targets) predecessors.set(target, [...(predecessors.get(target) ?? []), id]);
   }
+  // Each lower branch drops into its own knot lane beside the node, `WIRE_SPACING` apart.
   const lane = (id: string): number => {
     const children = tree.children.get(id) ?? [];
-    return children.length > 1 && children.some((child) => blocks.get(child)!.left > 0)
-      ? knotWidth + FORMAT_GAP_X
+    const lower = children.length - 1;
+    return lower > 0 && children.some((child) => blocks.get(child)!.left > 0)
+      ? lower * knotWidth + (lower - 1) * WIRE_SPACING + FORMAT_GAP_X
       : 0;
   };
   const xs = new Map<string, number>();
@@ -839,7 +852,7 @@ function layoutExecChain(
           bottom = Math.max(bottom, box.y + box.height);
         }
       }
-      if (Number.isFinite(bottom)) y = Math.max(y, bottom + FORMAT_GAP_Y);
+      if (Number.isFinite(bottom)) y = Math.max(y, bottom + ROW_GAP);
     }
     for (const id of row.nodes) addBox(layout, id, placed.get(id) ?? { x: xs.get(id)!, y });
     // The exec wire into a branch row runs level from beside its parent: later rows keep clear.
@@ -862,14 +875,14 @@ function layoutExecChain(
 type LaneGraph = {
   nodes: FormatNode[];
   edges: FormatEdge[];
-  /** The knot each direct wire stands for. */
-  knotOf: Map<FormatEdge, string>;
+  /** The knots, source to target, that each direct wire stands for. */
+  knotOf: Map<FormatEdge, string[]>;
 };
 
 /**
- * A lane knot is a Reroute (data or exec) with one wire in and one out, into a node that is not a knot.
- * Layout reads `S → knot → T` as the direct wire `S → T`, so a graph lays out the same with and
- * without the knots Format adds.
+ * Lane knots are Reroutes (data or exec) with one wire in and one out, chained from a node that is
+ * not a knot into a node that is not a knot. Layout reads `S → K1 → … → Kn → T` as the direct wire
+ * `S → T`, so a graph lays out the same with and without the knots Format adds.
  */
 function collapseLaneKnots(
   nodes: readonly FormatNode[],
@@ -883,23 +896,25 @@ function collapseLaneKnots(
     incoming.set(edge.target, [...(incoming.get(edge.target) ?? []), edge]);
     outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge]);
   }
-  const knotOf = new Map<FormatEdge, string>();
+  const simple = (id: string) =>
+    byId.get(id)!.reroute === true && incoming.get(id)?.length === 1 && outgoing.get(id)?.length === 1;
+  const knotOf = new Map<FormatEdge, string[]>();
   const lanes = new Set<string>();
-  for (const node of nodes) {
-    if (!node.reroute) continue;
-    const into = incoming.get(node.id);
-    const out = outgoing.get(node.id);
-    if (into?.length !== 1 || out?.length !== 1) continue;
-    if (into[0]!.source === node.id || byId.get(out[0]!.target)!.reroute) continue;
-    lanes.add(node.id);
+  for (const edge of edges) {
+    if (!byId.has(edge.source) || !byId.has(edge.target)) continue;
+    if (simple(edge.source) || !simple(edge.target)) continue;
+    const chain: string[] = [];
+    let last = edge;
+    while (simple(last.target) && !chain.includes(last.target)) {
+      chain.push(last.target);
+      last = outgoing.get(last.target)![0]!;
+    }
+    // A chain ends in a node that is not a knot; one ending in a branching knot stays as it is.
+    if (byId.get(last.target)!.reroute || chain.includes(last.target)) continue;
+    for (const id of chain) lanes.add(id);
     knotOf.set(
-      {
-        source: into[0]!.source,
-        sourceHandle: into[0]!.sourceHandle,
-        target: out[0]!.target,
-        targetHandle: out[0]!.targetHandle,
-      },
-      node.id,
+      { source: edge.source, sourceHandle: edge.sourceHandle, target: last.target, targetHandle: last.targetHandle },
+      chain,
     );
   }
   if (lanes.size === 0) return { nodes: [...nodes], edges: [...edges], knotOf };
@@ -1021,60 +1036,6 @@ function boxInTheWay(box: Box, obstacles: Obstacles, knots: readonly Box[]): Box
 type Size = { width: number; height: number };
 
 /**
- * A knot that carries the wire around the nodes in its way. Spots are tried level with the target
- * pin, then just above and just below the first box in the way; along each, at the preferred X
- * (an exec branch's lane beside its parent), the left edge of the first box in the way, the left
- * edges of later boxes, and last as near the target as the gaps allow. A spot is taken only if both
- * halves of the wire keep `WIRE_CLEARANCE` from every other box and the knot fits there. At most
- * 3 × (boxes in the wire's X range + 2) spots, each two wire tests.
- */
-function knotAround(
-  blocked: Box,
-  from: Point,
-  to: Point,
-  ends: readonly string[],
-  size: Size,
-  obstacles: Obstacles,
-  knots: readonly Box[],
-  preferred: readonly number[] = [],
-): Position | undefined {
-  const lowest = from.x + FORMAT_GAP_X;
-  const highest = to.x - FORMAT_GAP_X - size.width;
-  if (lowest > highest) return undefined;
-  const lefts = [
-    ...preferred,
-    blocked.x,
-    ...boxesAcross(obstacles, blocked.x, highest)
-      .filter((box) => box.x > blocked.x && !ends.includes(box.id))
-      .map((box) => box.x),
-    highest,
-  ];
-  const clearance = 2 * WIRE_CLEARANCE;
-  const lanes = [
-    to.y,
-    blocked.y - clearance - size.height / 2,
-    blocked.y + blocked.height + clearance + size.height / 2,
-  ];
-  for (const lane of lanes) {
-    const tried = new Set<number>();
-    for (const left of lefts) {
-      const x = Math.min(Math.max(left, lowest), highest);
-      if (tried.has(x)) continue;
-      tried.add(x);
-      const at = { x, y: lane - size.height / 2 };
-      if (
-        !firstObstruction(from, { x, y: lane }, ends, obstacles) &&
-        !firstObstruction({ x: x + size.width, y: lane }, to, ends, obstacles) &&
-        !boxInTheWay({ ...at, ...size }, obstacles, knots)
-      ) {
-        return at;
-      }
-    }
-  }
-  return undefined;
-}
-
-/**
  * Where an existing knot goes when its wire needs no detour: level with the target pin just
  * before the target (not left of the source's right edge while it fits), then left past any box
  * other than the wire's own ends it would come near.
@@ -1103,12 +1064,250 @@ function knotBesideTarget(
   }
 }
 
+/** One stretch of a routed wire: level (a run) or a bezier between two heights, sampled. */
+type Piece = { from: Point; to: Point; level: boolean; points: Point[] };
+type Committed = { wire: string; node: string; source: string; target: string; pieces: Piece[]; knots: Box[] };
+
+function curvePoints(from: Point, to: Point): Point[] {
+  const offset = controlOffset(to.x - from.x);
+  const points: Point[] = [];
+  for (let sample = 0; sample <= WIRE_SAMPLES; sample++) {
+    const t = sample / WIRE_SAMPLES;
+    const u = 1 - t;
+    points.push({
+      x: u * u * u * from.x + 3 * u * u * t * (from.x + offset) + 3 * u * t * t * (to.x - offset) + t * t * t * to.x,
+      y: from.y + (to.y - from.y) * (3 * u * t * t + t * t * t),
+    });
+  }
+  return points;
+}
+
+/** The pieces of a wire from `from` through knots (top-left corners) to `to`. */
+function piecesOf(from: Point, knots: readonly Position[], size: Size, to: Point): Piece[] {
+  const stops: Point[] = [from];
+  for (const knot of knots) {
+    stops.push({ x: knot.x, y: knot.y + size.height / 2 }, { x: knot.x + size.width, y: knot.y + size.height / 2 });
+  }
+  stops.push(to);
+  const pieces: Piece[] = [];
+  for (let index = 0; index < stops.length; index += 2) {
+    const a = stops[index]!;
+    const b = stops[index + 1]!;
+    const level = a.y === b.y;
+    pieces.push({ from: a, to: b, level, points: level ? [a, b] : curvePoints(a, b) });
+  }
+  return pieces;
+}
+
+function pieceBounds(piece: Piece): { minX: number; maxX: number; minY: number; maxY: number } {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const point of piece.points) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+  return { minX, maxX, minY, maxY };
+}
+
+function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
+  const cross = (p: Point, q: Point, r: Point) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const d1 = cross(c, d, a);
+  const d2 = cross(c, d, b);
+  const d3 = cross(a, b, c);
+  const d4 = cross(a, b, d);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+/** Crossings between two wires' pieces (bounding boxes first, then their segments). */
+function crossings(pieces: readonly Piece[], others: readonly Piece[]): number {
+  let count = 0;
+  for (const piece of pieces) {
+    const a = pieceBounds(piece);
+    for (const other of others) {
+      const b = pieceBounds(other);
+      if (a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY) continue;
+      for (let i = 1; i < piece.points.length; i++) {
+        for (let j = 1; j < other.points.length; j++) {
+          if (segmentsCross(piece.points[i - 1]!, piece.points[i]!, other.points[j - 1]!, other.points[j]!)) count++;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+function distanceToBox(point: Point, box: Box): number {
+  const dx = Math.max(box.x - point.x, 0, point.x - box.x - box.width);
+  const dy = Math.max(box.y - point.y, 0, point.y - box.y - box.height);
+  return Math.hypot(dx, dy);
+}
+
 /**
- * Carries each data or exec wire between two formatted nodes that runs through or crowds another
- * node around it with a knot (`knotAround`). Wires go in a fixed order (by their ends), so a second Format
- * places every knot where the first one did. Testing a wire costs O(log N + W + S·K): a binary
- * search, the boxes W in its X range and S samples against the K boxes also in its Y range. Only
- * a blocked wire tries knot spots, at most one per box in its X range, each two such tests.
+ * Whether a route keeps its distances. Pieces stay `clearance` from every node and knot but the
+ * wire's ends (a run in a lane `WIRE_CROWDING`); its knots fit; its runs keep `WIRE_SPACING` from
+ * other wires' runs, and its knots and pieces keep `WIRE_SPACING` from other wires' knots and runs.
+ */
+function routeFits(
+  pieces: readonly Piece[],
+  knots: readonly Box[],
+  ends: readonly string[],
+  curveClearance: number,
+  obstacles: Obstacles,
+  placedKnots: readonly Box[],
+  others: readonly Committed[],
+  sharesPin: (other: Committed) => boolean,
+  direct: boolean,
+  node: string,
+  spaced: boolean,
+): boolean {
+  for (const knot of knots) {
+    if (boxInTheWay(knot, obstacles, placedKnots)) return false;
+    if (!spaced) continue;
+    // Wires from one node drop into knot lanes of their own.
+    for (const other of others) {
+      if (other.node !== node) continue;
+      if (other.knots.some((box) => box.x < knot.x + knot.width + WIRE_SPACING && knot.x < box.x + box.width + WIRE_SPACING)) return false;
+    }
+  }
+  for (const piece of pieces) {
+    if (piece.level) {
+      const runClearance = direct ? WIRE_CLEARANCE : WIRE_CROWDING;
+      const minX = Math.min(piece.from.x, piece.to.x);
+      const maxX = Math.max(piece.from.x, piece.to.x);
+      for (const box of boxesAcross(obstacles, minX - runClearance, maxX + runClearance)) {
+        if (ends.includes(box.id) || box.x >= maxX || box.x + box.width <= minX) continue;
+        if (piece.from.y > box.y - runClearance && piece.from.y < box.y + box.height + runClearance) return false;
+      }
+    } else if (firstObstruction(piece.from, piece.to, ends, obstacles, curveClearance)) {
+      return false;
+    }
+  }
+  if (!spaced) return true;
+  for (const other of others) {
+    if (sharesPin(other)) continue;
+    for (const piece of pieces) {
+      for (const otherPiece of other.pieces) {
+        if (piece.level && otherPiece.level) {
+          const overlap =
+            Math.min(Math.max(piece.from.x, piece.to.x), Math.max(otherPiece.from.x, otherPiece.to.x)) -
+            Math.max(Math.min(piece.from.x, piece.to.x), Math.min(otherPiece.from.x, otherPiece.to.x));
+          if (overlap > 0 && Math.abs(piece.from.y - otherPiece.from.y) < WIRE_SPACING) return false;
+        }
+      }
+      for (const knot of other.knots) {
+        if (piece.points.some((point) => distanceToBox(point, knot) < WIRE_SPACING)) return false;
+      }
+    }
+    for (const knot of knots) {
+      for (const otherPiece of other.pieces) {
+        if (otherPiece.points.some((point) => distanceToBox(point, knot) < WIRE_SPACING)) return false;
+        if (otherPiece.level) {
+          const minX = Math.min(otherPiece.from.x, otherPiece.to.x);
+          const maxX = Math.max(otherPiece.from.x, otherPiece.to.x);
+          if (maxX > knot.x && minX < knot.x + knot.width && distanceToBox({ x: Math.max(minX, Math.min(maxX, knot.x)), y: otherPiece.from.y }, knot) < WIRE_SPACING) {
+            return false;
+          }
+        }
+      }
+    }
+  }
+  return true;
+}
+
+function routeLength(pieces: readonly Piece[]): number {
+  let length = 0;
+  for (const piece of pieces) {
+    for (let i = 1; i < piece.points.length; i++) {
+      length += Math.hypot(piece.points[i]!.x - piece.points[i - 1]!.x, piece.points[i]!.y - piece.points[i - 1]!.y);
+    }
+  }
+  return length;
+}
+
+/**
+ * Knot spots for a wire, as routes of 0, 1 or 2 knots (top-left corners), source to target:
+ * direct; a drop beside the source to the target's height (an exec branch's lane, or a few lanes
+ * further out so drops from one node keep apart); level from the source to a knot beside the
+ * target; two knots with the long run in a free lane, between or beyond the boxes and runs on the
+ * way; and the round-two spots around the first box in the way.
+ */
+function routeCandidates(
+  from: Point,
+  to: Point,
+  ends: readonly string[],
+  size: Size,
+  obstacles: Obstacles,
+  others: readonly Committed[],
+): Position[][] {
+  const routes: Position[][] = [[]];
+  const knot = (x: number, lane: number): Position => ({ x, y: lane - size.height / 2 });
+  // Lanes beside the source, `WIRE_SPACING` apart, so drops from one node can keep apart.
+  const near = (index: number) => from.x + FORMAT_GAP_X + index * (size.width + WIRE_SPACING);
+  const far = to.x - FORMAT_GAP_X - size.width;
+  for (let index = 0; index < 3; index++) {
+    if (near(index) + size.width <= to.x - FORMAT_GAP_X / 2) routes.push([knot(near(index), to.y)]);
+  }
+  if (far >= from.x + FORMAT_GAP_X / 2) routes.push([knot(far, from.y)]);
+  if (near(0) + size.width + FORMAT_GAP_X <= far) {
+    const lanes = new Set<number>();
+    const half = size.height / 2;
+    for (const box of boxesAcross(obstacles, from.x, to.x)) {
+      if (ends.includes(box.id)) continue;
+      lanes.add(box.y - WIRE_CROWDING - half);
+      lanes.add(box.y + box.height + WIRE_CROWDING + half);
+    }
+    for (const other of others) {
+      for (const piece of other.pieces) {
+        if (!piece.level) continue;
+        if (Math.max(piece.from.x, piece.to.x) < from.x || Math.min(piece.from.x, piece.to.x) > to.x) continue;
+        lanes.add(piece.from.y - WIRE_SPACING - half);
+        lanes.add(piece.from.y + WIRE_SPACING + half);
+      }
+    }
+    const middle = (from.y + to.y) / 2;
+    const ordered = [...lanes].sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle) || a - b);
+    // Knot lanes beside each end, `WIRE_SPACING` apart, so wires sharing an end keep apart.
+    const before = (index: number) => far - index * (size.width + WIRE_SPACING);
+    for (const lane of ordered.slice(0, LANE_CANDIDATES)) {
+      for (let last = 0; last < 2; last++) {
+        for (let first = 0; first < 3; first++) {
+          if (near(first) + size.width + FORMAT_GAP_X <= before(last)) routes.push([knot(near(first), lane), knot(before(last), lane)]);
+        }
+      }
+    }
+  }
+  const blocked = firstObstruction(from, to, ends, obstacles, WIRE_CROWDING);
+  if (blocked) {
+    const lowest = from.x + FORMAT_GAP_X;
+    const highest = to.x - FORMAT_GAP_X - size.width;
+    if (lowest <= highest) {
+      for (const lane of [to.y, blocked.y - 2 * WIRE_CLEARANCE - size.height / 2, blocked.y + blocked.height + 2 * WIRE_CLEARANCE + size.height / 2]) {
+        for (const left of [blocked.x, highest]) routes.push([knot(Math.min(Math.max(left, lowest), highest), lane)]);
+      }
+    }
+  }
+  return routes;
+}
+
+/** Lexicographic: fewer knots, then fewer crossings, then shorter. */
+function cheaper(cost: readonly number[], than: readonly number[]): boolean {
+  for (let index = 0; index < cost.length; index++) {
+    if (cost[index] !== than[index]) return cost[index]! < than[index]!;
+  }
+  return false;
+}
+
+/**
+ * Lays every data and exec wire between two formatted nodes as level runs joined by short
+ * transitions. A wire that is level and clear stays direct; a short wire stays direct while it
+ * keeps clear of nodes and other wires; a long or steep one, and one that runs into a node, takes
+ * the best route of `routeCandidates` that fits (`routeFits`): fewest knots, then fewest crossings
+ * with the wires already laid, then the shortest. Exec wires go first, each node's lowest branch
+ * first so its drop sits nearest the node; then data wires; each in a fixed order, so a second
+ * Format lays every wire the same way. Placed knots and wires are obstacles for later wires.
+ * Cost per wire: O(C · (W + R + P²)) for C candidates (at most 10 + 6 × `LANE_CANDIDATES`), W boxes in
+ * its X range, R runs and P sampled points of the wires its bounds meet.
  */
 function routeWires(
   graph: GraphIndex,
@@ -1122,42 +1321,97 @@ function routeWires(
   const knots: FormatKnot[] = [];
   const obstacles = obstaclesOf(graph, positions);
   const placedKnots: Box[] = [];
-  const exec = new Set(graph.execEdges);
-  const wires = [...graph.dataEdges, ...graph.execEdges]
-    .filter((edge) => positions.has(edge.source) && positions.has(edge.target))
-    .sort((a, b) => compareKeys(edgeKey(a), edgeKey(b)));
-  for (const edge of wires) {
+  const committed: Committed[] = [];
+  const ends = (edge: FormatEdge) => {
     const source = graph.byId.get(edge.source)!;
     const target = graph.byId.get(edge.target)!;
     const sourceAt = positions.get(edge.source)!;
     const targetAt = positions.get(edge.target)!;
-    const from = {
-      x: sourceAt.x + nodeSize(source).width,
-      y: sourceAt.y + pinY(source, "out", edge.sourceHandle),
+    return {
+      from: { x: sourceAt.x + nodeSize(source).width, y: sourceAt.y + pinY(source, "out", edge.sourceHandle) },
+      to: { x: targetAt.x, y: targetAt.y + pinY(target, "in", edge.targetHandle) },
     };
-    const to = { x: targetAt.x, y: targetAt.y + pinY(target, "in", edge.targetHandle) };
-    const ends = [edge.source, edge.target];
-    const knotId = lanes.knotOf.get(edge);
-    if (!knotId && !insertKnots) continue;
-    const size = knotId ? nodeSize(knotNodes.get(knotId)!) : knotSize;
-    // A curve that crowds a node reads as running into it; a level wire only needs to clear it,
-    // and a knot could not make it any straighter.
-    const crowding = from.y === to.y ? WIRE_CLEARANCE : WIRE_CROWDING;
-    const blocked = firstObstruction(from, to, ends, obstacles, crowding);
-    // An exec wire to a lower row drops in the lane beside its parent.
-    const preferred = exec.has(edge) ? [from.x + FORMAT_GAP_X] : [];
-    let at = blocked ? knotAround(blocked, from, to, ends, size, obstacles, placedKnots, preferred) : undefined;
-    if (knotId) {
-      at ??= knotBesideTarget(from, to, ends, size, obstacles, placedKnots);
-      moved.set(knotId, at);
-    } else if (at) {
-      knots.push({ edge, position: at });
-    } else {
-      continue;
+  };
+  const exec = new Set(graph.execEdges);
+  const wires = [...graph.dataEdges, ...graph.execEdges]
+    .filter((edge) => positions.has(edge.source) && positions.has(edge.target))
+    .sort((a, b) => {
+      const kind = Number(!exec.has(a)) - Number(!exec.has(b));
+      if (kind !== 0) return kind;
+      if (!exec.has(a)) return compareKeys(edgeKey(a), edgeKey(b));
+      // Exec wires by node, each node's lowest branch first.
+      return compareKeys(a.source, b.source) || ends(b).to.y - ends(a).to.y || compareKeys(edgeKey(a), edgeKey(b));
+    });
+  // Level wires that run clear are fixed first: everything else keeps its distance from them.
+  const settled = new Set<FormatEdge>();
+  for (const edge of wires) {
+    const { from, to } = ends(edge);
+    if (from.y !== to.y || from.x > to.x || lanes.knotOf.has(edge)) continue;
+    if (firstObstruction(from, to, [edge.source, edge.target], obstacles, WIRE_CLEARANCE)) continue;
+    settled.add(edge);
+    committed.push({ wire: edgeKey(edge), node: edge.source, source: `${edge.source}\n${edge.sourceHandle}`, target: `${edge.target}\n${edge.targetHandle}`, pieces: piecesOf(from, [], knotSize, to), knots: [] });
+  }
+  for (const edge of wires) {
+    if (settled.has(edge)) continue;
+    const { from, to } = ends(edge);
+    const endIds = [edge.source, edge.target];
+    const existing = lanes.knotOf.get(edge) ?? [];
+    const size = existing.length > 0 ? nodeSize(knotNodes.get(existing[0]!)!) : knotSize;
+    const limit = existing.length > 0 ? existing.length : insertKnots ? 2 : 0;
+    const source = `${edge.source}\n${edge.sourceHandle}`;
+    const target = `${edge.target}\n${edge.targetHandle}`;
+    const sharesPin = (other: Committed) => other.source === source || other.target === target;
+    const dx = to.x - from.x;
+    const dy = Math.abs(to.y - from.y);
+    // A long wire, or a steep one past the next column, runs level with short transitions; pins a
+    // few units apart (a custom event's lower exec pin) already read as level.
+    const needsLevel = dy > WIRE_CLEARANCE && (dx > LONG_WIRE || (dx > 2 * FORMAT_GAP_X && dy > dx));
+    let best: { route: Position[]; pieces: Piece[]; cost: number[] } | undefined;
+    // Wires keep apart where they can; where no route can, they still keep clear of every node.
+    // An exec drop takes the first lane that fits, nearest its node, so a node's lowest branch
+    // (routed first) drops nearest it and the rows above keep clear of its drop.
+    const isExec = exec.has(edge);
+    for (const spaced of [true, false]) {
+      if (best) break;
+      const candidates = routeCandidates(from, to, endIds, size, obstacles, committed);
+      for (const [order, route] of candidates.entries()) {
+        if (route.length > limit) continue;
+        if (route.length === 0 && needsLevel && limit > 0 && spaced) continue;
+        const pieces = piecesOf(from, route, size, to);
+        // Transitions stay short; the first may reach past the knot lanes of the source's other wires.
+        const reach = (index: number) => MAX_TRANSITION + (index === 0 ? 2 * (size.width + WIRE_SPACING) : 0);
+        if (route.length > 0 && pieces.some((piece, index) => !piece.level && Math.abs(piece.to.x - piece.from.x) > reach(index))) continue;
+        const boxes = route.map((at) => ({ ...at, ...size }));
+        const direct = route.length === 0;
+        const clearance = direct ? (from.y === to.y ? WIRE_CLEARANCE : WIRE_CROWDING) : WIRE_CLEARANCE;
+        if (!routeFits(pieces, boxes, endIds, clearance, obstacles, placedKnots, committed, sharesPin, direct, edge.source, spaced)) continue;
+        let crossed = 0;
+        for (const other of committed) if (!sharesPin(other)) crossed += crossings(pieces, other.pieces);
+        const cost = [route.length, crossed, isExec ? order : routeLength(pieces)];
+        if (!best || cheaper(cost, best.cost)) best = { route, pieces, cost };
+      }
     }
-    placedKnots.push({ ...at, ...size });
-    // Later wires route around this knot like around a node.
-    insertObstacle(obstacles, { id: `\u0000knot${placedKnots.length}`, ...at, ...size });
+    const route = best?.route ?? [];
+    const pieces = best?.pieces ?? piecesOf(from, [], size, to);
+    const boxes: Box[] = route.map((at) => ({ ...at, ...size }));
+    if (existing.length > 0) {
+      existing.forEach((id, index) => {
+        let at = route[index];
+        if (!at) {
+          // A knot the route does not need waits beside the target, left of the ones after it.
+          at = knotBesideTarget(from, to, endIds, size, obstacles, [...placedKnots, ...boxes]);
+          boxes.push({ ...at, ...size });
+        }
+        moved.set(id, at);
+      });
+    } else if (route.length > 0) {
+      knots.push({ edge, positions: route });
+    }
+    for (const box of boxes) {
+      placedKnots.push(box);
+      insertObstacle(obstacles, { id: `\u0000knot${placedKnots.length}`, ...box });
+    }
+    committed.push({ wire: edgeKey(edge), node: edge.source, source, target, pieces, knots: boxes });
   }
   return { moved, knots };
 }
