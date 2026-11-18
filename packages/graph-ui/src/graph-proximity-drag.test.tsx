@@ -487,4 +487,22 @@ describe("GraphEditor proximity dragging", () => {
     graph.stop();
     expect(graph.emitted).toEqual([]);
   });
+
+  it("never proposes or makes a connection the host would convert", () => {
+    const document = graphWithFreePins();
+    document.nodes[0]!.data.__pins = [{ ...floatOutput, type: { kind: "objectRef", classId: "Actor" } }];
+    const pinConversion = vi.fn(() => ({
+      label: "Convert to Float",
+      paletteNode: { id: "test.convert", title: "Convert", category: "test", pins: [] },
+      inPinId: "in",
+      outPinId: "out",
+    }));
+    const graph = renderDragGraph(document, { pinConversion });
+    graph.start();
+    graph.move();
+    expect(graph.previews()).toHaveLength(0);
+    graph.stop();
+    expect(graph.emitted).toEqual([]);
+    expect(pinConversion).not.toHaveBeenCalled();
+  });
 });

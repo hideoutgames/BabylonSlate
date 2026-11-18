@@ -84,6 +84,19 @@ type DescriptorFor<Placement extends EngineComponentPlacement> = Extract<
   { placement: Placement }
 >;
 
+/** Engine components with no local transform: their Details show no Transform and no transform getter reads them. */
+export const TRANSFORMLESS_COMPONENT_CLASS_IDS: ReadonlySet<EngineComponentClassId> = new Set<EngineComponentClassId>([
+  "2DAnchorComponent",
+  "MovementComponent",
+  "DeformerComponent",
+  "SaveGameComponent",
+]);
+
+/** Whether an engine component class has a local transform. A user subclass inherits the answer of its engine base. */
+export function componentHasTransform(classId: string): boolean {
+  return !(TRANSFORMLESS_COMPONENT_CLASS_IDS as ReadonlySet<string>).has(classId);
+}
+
 export const ENGINE_COMPONENT_CLASS_IDS: readonly EngineComponentClassId[] =
   ENGINE_COMPONENT_DESCRIPTORS.map((descriptor) => descriptor.classId);
 export const SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS: readonly DescriptorFor<"world">["classId"][] =

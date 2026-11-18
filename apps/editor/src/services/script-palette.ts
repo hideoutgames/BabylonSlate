@@ -382,6 +382,50 @@ export function scriptReroutePaletteNode(nodeRegistry: NodeRegistry = defaultNod
   return def ? reroutePaletteRow(def) : undefined;
 }
 
+/** The Add Node row of an ordinary catalog node, the node the palette adds for it. */
+function catalogPaletteRow(def: NodeDefinition): PaletteNode {
+  if (def.id === REROUTE_NODE_TYPE) return reroutePaletteRow(def);
+  const defaultData: Record<string, unknown> = {};
+  if (def.id === "debug.log") {
+    defaultData.message = "";
+    defaultData.severity = "log";
+    defaultData.category = "Script";
+  }
+  if (def.developmentOnlyByDefault) {
+    defaultData.developmentOnly = true;
+  }
+  if (def.id === "string.format") {
+    defaultData["default:format"] = "{input}";
+  }
+  const pins = def.pins(defaultData);
+  if (def.editorOnly) defaultData.__editorOnly = true;
+  return {
+    id: def.id,
+    title: def.title,
+    description: def.description,
+    category: def.category,
+    searchAliases: def.searchAliases,
+    pins,
+    pure: def.pure,
+    latent: def.latent,
+    editorOnly: def.editorOnly,
+    defaultData:
+      Object.keys(defaultData).length > 0 ? defaultData : undefined,
+  };
+}
+
+/**
+ * The Add Node row of one catalog node, as the palette builds it, or undefined for an unknown type. A new row
+ * each call: hosts that need a stable object keep their own.
+ */
+export function scriptCatalogPaletteNode(
+  typeId: string,
+  nodeRegistry: NodeRegistry = defaultNodeRegistry(),
+): PaletteNode | undefined {
+  const def = nodeRegistry.get(typeId);
+  return def ? catalogPaletteRow(def) : undefined;
+}
+
 function scriptPaletteCatalogNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
@@ -410,36 +454,7 @@ function scriptPaletteCatalogNodes(
       }
       return isScriptCatalogNodeAllowed(def.id, options);
     })
-    .map((def) => {
-      if (def.id === REROUTE_NODE_TYPE) return reroutePaletteRow(def);
-      const defaultData: Record<string, unknown> = {};
-      if (def.id === "debug.log") {
-        defaultData.message = "";
-        defaultData.severity = "log";
-        defaultData.category = "Script";
-      }
-      if (def.developmentOnlyByDefault) {
-        defaultData.developmentOnly = true;
-      }
-      if (def.id === "string.format") {
-        defaultData["default:format"] = "{input}";
-      }
-      const pins = def.pins(defaultData);
-      if (def.editorOnly) defaultData.__editorOnly = true;
-      return {
-        id: def.id,
-        title: def.title,
-        description: def.description,
-        category: def.category,
-        searchAliases: def.searchAliases,
-        pins,
-        pure: def.pure,
-        latent: def.latent,
-        editorOnly: def.editorOnly,
-        defaultData:
-          Object.keys(defaultData).length > 0 ? defaultData : undefined,
-      };
-    });
+    .map(catalogPaletteRow);
   // Wherever custom events can go, Create New Custom Event… leads the rows it
   // ties with: first in its category, in a search tier and among pin suggestions.
   const index = rows.findIndex((row) => row.id === "flow.event.custom");

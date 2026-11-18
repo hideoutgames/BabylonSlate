@@ -66,6 +66,7 @@ import {
   type GraphPinDrop,
   type NavigateRequest,
   type PaletteNode,
+  type PinConversion,
   type SerializedPin,
 } from "./graph-types";
 import type { PinTypeNames } from "./pin-default-preview";
@@ -145,8 +146,10 @@ import { formatGraphNodes, formatPinOffsetKey } from "./graph-format";
 import { freeNodePosition } from "./graph-placement";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
+  GRAPH_FIRST_PIN_ROW_CENTER_Y,
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
   estimateGraphNodeSize,
+  graphNodeSize,
   graphNodesBounds,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
@@ -382,6 +385,14 @@ export interface GraphEditorProps {
   onAttachmentDoubleClick?: (nodeId: string, attachmentId: string) => void;
   /** Host connection rule (material numeric conversion). Defaults to exact kinds. */
   pinCompatibility?: PinCompatibilityRule;
+  /**
+   * A node to insert between a data output and a data input that `pinCompatibility` refuses (Script graphs: an
+   * Actor reference into a Vector3 input inserts Get Actor Location). The wire is then accepted, its live end shows
+   * the conversion's `label`, and connecting adds the node wired on both sides as one change. `source` is the output
+   * and `target` the input, with wildcard-resolved types. Called while a wire hovers a pin, so return quickly and
+   * keep each `paletteNode` the same object between calls. Node Connection Assistant and Add Node never convert.
+   */
+  pinConversion?: (source: SerializedPin, target: SerializedPin) => PinConversion | null;
   /**
    * Learn Add Node picks made from a dragged pin and rank them first next time
    * (Engine Settings **Add Node History**). Unset keeps the default order.
@@ -1038,6 +1049,7 @@ function GraphEditorCanvas({
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
   pinCompatibility,
+  pinConversion,
   addNodeHistoryScope,
   pinTypeNames,
   onCanvasApi,
@@ -1461,6 +1473,142 @@ function GraphEditorCanvas({
     [emitChange],
   );
 
+  // A data output and input `pinCompatibility` refuses but the host bridges with a converter node: the oriented
+  // ends, their pins as they connect, and the host's conversion. Null for anything else, before the host is asked.
+  const conversionFor = useCallback(
+    (connection: Connection | Edge) => {
+      if (!pinConversion || readOnly) return null;
+      const current = graphStateRef.current.nodes;
+      const next = orientThenNormalize(asConnection(connection), current, normalizeConnection);
+      if (!next?.source || !next.target || !next.sourceHandle || !next.targetHandle) return null;
+      const storedSource = pinOnNode(current, next.source, next.sourceHandle);
+      const storedTarget = pinOnNode(current, next.target, next.targetHandle);
+      if (!storedSource || !storedTarget) return null;
+      const displayTypes = pinDisplayTypesRef.current;
+      const sourcePin = overlayPin(storedSource, next.source, displayTypes);
+      const targetPin = overlayPin(storedTarget, next.target, displayTypes);
+      if (
+        sourcePin.kind !== "data" ||
+        targetPin.kind !== "data" ||
+        sourcePin.direction !== "out" ||
+        targetPin.direction !== "in" ||
+        pinsAreCompatible(sourcePin, targetPin, pinCompatibility)
+      ) {
+        return null;
+      }
+      const disabled = (nodeId: string) => {
+        const node = current.find((entry) => entry.id === nodeId);
+        return node !== undefined && isDisabledNode(node);
+      };
+      if (disabled(next.source) || disabled(next.target)) return null;
+      const ends = {
+        source: next.source,
+        sourceHandle: next.sourceHandle,
+        target: next.target,
+        targetHandle: next.targetHandle,
+      };
+      if (canConnect && !canConnect(ends)) return null;
+      const conversion = pinConversion(sourcePin, targetPin);
+      return conversion ? { ...ends, sourcePin, targetPin, conversion } : null;
+    },
+    [canConnect, normalizeConnection, pinCompatibility, pinConversion, readOnly],
+  );
+
+  // A pin's centre in flow coordinates: its measured handle, else the middle of its node's side.
+  const pinFlowPoint = useCallback(
+    (nodeId: string, pinId: string, direction: "in" | "out") => {
+      const internal = storeApi.getState().nodeLookup.get(nodeId);
+      const handles = direction === "out"
+        ? internal?.internals.handleBounds?.source
+        : internal?.internals.handleBounds?.target;
+      const handle = handles?.find((entry) => entry.id === pinId);
+      if (internal && handle) {
+        const origin = internal.internals.positionAbsolute;
+        return { x: origin.x + handle.x + handle.width / 2, y: origin.y + handle.y + handle.height / 2 };
+      }
+      const node = graphStateRef.current.nodes.find((entry) => entry.id === nodeId);
+      if (!node) return null;
+      const size = graphNodeSize(node);
+      return {
+        x: node.position.x + (direction === "out" ? size.width : 0),
+        y: node.position.y + size.height / 2,
+      };
+    },
+    [storeApi],
+  );
+
+  // Connects two pins through the host's converter node, placed between them with its pin row on the wire:
+  // one graph change, the selection unchanged. Nothing changes when either half would not connect.
+  const insertConversion = useCallback(
+    (found: NonNullable<ReturnType<typeof conversionFor>>) => {
+      const { paletteNode, inPinId, outPinId } = found.conversion;
+      const inPin = paletteNode.pins?.find((pin) => pin.id === inPinId && pin.direction === "in");
+      const outPin = paletteNode.pins?.find((pin) => pin.id === outPinId && pin.direction === "out");
+      if (
+        !inPin ||
+        !outPin ||
+        !pinsAreCompatible(found.sourcePin, inPin, pinCompatibility) ||
+        !pinsAreCompatible(outPin, found.targetPin, pinCompatibility)
+      ) {
+        return;
+      }
+      const from = pinFlowPoint(found.source, found.sourceHandle, "out");
+      const to = pinFlowPoint(found.target, found.targetHandle, "in");
+      if (!from || !to) return;
+      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const size = estimateGraphNodeSize(paletteNode.pins, paletteNode.defaultData);
+      const center = {
+        x: (from.x + to.x) / 2,
+        y: (from.y + to.y) / 2 - GRAPH_FIRST_PIN_ROW_CENTER_Y + size.height / 2,
+      };
+      const position = snapPositionToGrid(freeNodePosition(center, size, currentNodes), nodeSnapGrid);
+      const converter = paletteCanvasNode(
+        paletteNode,
+        uniqueNodeId(`${paletteNode.id}-${Date.now()}`, new Set(currentNodes.map((node) => node.id))),
+        position,
+        false,
+        knownTypes,
+        nodeDragHandle,
+      );
+      const nextNodes = [...currentNodes, converter];
+      const pinFor = (nodeId: string, pinId: string) =>
+        connectPinOnNode(nextNodes, pinDisplayTypesRef.current, nodeId, pinId);
+      const options = {
+        replaceIncoming: replaceIncomingOnConnect,
+        uniqueDirectedPair: uniqueDirectedPairOnConnect,
+        singleExecOutput: singleExecOutputOnConnect,
+      };
+      const edgeType = defaultEdgeOptions.type ? { type: defaultEdgeOptions.type } : {};
+      const wire = (source: string, sourceHandle: string, target: string, targetHandle: string): Edge => ({
+        id: createEdgeId(source, sourceHandle, target, targetHandle),
+        source,
+        sourceHandle,
+        target,
+        targetHandle,
+        ...edgeType,
+      });
+      const nextEdges = edgesAfterConnect(
+        edgesAfterConnect(currentEdges, wire(found.source, found.sourceHandle, converter.id, inPinId), pinFor, options),
+        wire(converter.id, outPinId, found.target, found.targetHandle),
+        pinFor,
+        options,
+      );
+      commitGraph(nextNodes, nextEdges);
+    },
+    [
+      commitGraph,
+      defaultEdgeOptions.type,
+      knownTypes,
+      nodeDragHandle,
+      nodeSnapGrid,
+      pinCompatibility,
+      pinFlowPoint,
+      replaceIncomingOnConnect,
+      singleExecOutputOnConnect,
+      uniqueDirectedPairOnConnect,
+    ],
+  );
+
   const addEdge = useCallback(
     (
       source: string,
@@ -1468,6 +1616,11 @@ function GraphEditorCanvas({
       target: string,
       targetHandle: string,
     ) => {
+      const converted = conversionFor({ source, sourceHandle, target, targetHandle });
+      if (converted) {
+        insertConversion(converted);
+        return;
+      }
       const sourceNode = graphStateRef.current.nodes.find(
         (node) => node.id === source,
       );
@@ -1528,8 +1681,10 @@ function GraphEditorCanvas({
       });
     },
     [
+      conversionFor,
       defaultEdgeOptions.type,
       emitChange,
+      insertConversion,
       noteReplacedWire,
       replaceIncomingOnConnect,
       uniqueDirectedPairOnConnect,
@@ -1537,7 +1692,8 @@ function GraphEditorCanvas({
     ],
   );
 
-  const isValidConnection = useCallback(
+  // Whether two pins connect with a plain wire. Node Connection Assistant uses only this: it never converts.
+  const isDirectConnection = useCallback(
     (connection: Connection | Edge) => {
       const incoming = asConnection(connection);
       const next = orientThenNormalize(
@@ -1595,6 +1751,28 @@ function GraphEditorCanvas({
       });
     },
     [canConnect, normalizeConnection, pinCompatibility],
+  );
+
+  // A dragged or tapped connection: a plain wire, or one the host bridges with a converter node.
+  const isValidConnection = useCallback(
+    (connection: Connection | Edge) =>
+      isDirectConnection(connection) || conversionFor(connection) !== null,
+    [conversionFor, isDirectConnection],
+  );
+
+  // The conversion label for a wire dragged from one pin over another (either may be the output), or null.
+  const pinConversionLabel = useCallback(
+    (
+      from: { nodeId: string; pinId: string },
+      to: { nodeId: string; pinId: string },
+    ): string | null =>
+      conversionFor({
+        source: from.nodeId,
+        sourceHandle: from.pinId,
+        target: to.nodeId,
+        targetHandle: to.pinId,
+      })?.conversion.label ?? null,
+    [conversionFor],
   );
 
   // Read while a dragged wire hovers a pin XYFlow reports as invalid; it names
@@ -1701,7 +1879,7 @@ function GraphEditorCanvas({
             )
           )
             return false;
-          return isValidConnection(connection);
+          return isDirectConnection(connection);
         },
       });
       // Resolve the whole proposed batch, so two unused pins in one wildcard
@@ -1725,7 +1903,7 @@ function GraphEditorCanvas({
                   );
             resolvedEdges = proposedEdges;
           }
-          if (!isValidConnection(connection)) continue;
+          if (!isDirectConnection(connection)) continue;
           if (
             proposedEdges.some(
               (edge) =>
@@ -1780,7 +1958,7 @@ function GraphEditorCanvas({
       });
     },
     [
-      isValidConnection,
+      isDirectConnection,
       interactions,
       nodesDraggable,
       normalizeConnection,
@@ -1938,7 +2116,7 @@ function GraphEditorCanvas({
           );
           resolvedEdges = nextEdges;
         }
-        if (!isValidConnection(connection)) continue;
+        if (!isDirectConnection(connection)) continue;
         if (
           nextEdges.some(
             (edge) =>
@@ -1987,7 +2165,7 @@ function GraphEditorCanvas({
       nodeSnapGrid,
       nodesDraggable,
       readOnly,
-      isValidConnection,
+      isDirectConnection,
       replaceIncomingOnConnect,
       uniqueDirectedPairOnConnect,
     ],
@@ -3723,6 +3901,7 @@ function GraphEditorCanvas({
       renderNodeBody,
       nodeMenu,
       connectionRefusal,
+      pinConversionLabel: pinConversion ? pinConversionLabel : undefined,
       acceptsPinDrop: pinDrop?.accepts,
       onAddPin: addPinEnabled ? addPin : undefined,
       runTrace,
@@ -3763,6 +3942,8 @@ function GraphEditorCanvas({
       renderNodeBody,
       nodeMenu,
       connectionRefusal,
+      pinConversion,
+      pinConversionLabel,
       pinDrop,
       addPinEnabled,
       addPin,
