@@ -57,6 +57,7 @@ export * from "./gizmo-multi-select";
 export * from "./overlay-transform-box";
 export * from "./viewport-gestures";
 export * from "./viewport-fly-keys";
+export * from "./viewport-zoom-drive";
 export * from "./two-d";
 export * from "./sorting";
 export * from "./pixel-perfect";

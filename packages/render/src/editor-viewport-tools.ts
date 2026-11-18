@@ -48,6 +48,7 @@ import {
 import { linkedAxisScale, linkedScaleFromChange, type ScaleVector } from "./linked-axis-scale";
 import { attachViewportGestures } from "./viewport-gestures";
 import { attachViewportFlyKeys, DEFAULT_FLY_SPEED } from "./viewport-fly-keys";
+import { createViewportZoomDrive } from "./viewport-zoom-drive";
 import { createGameCameraPilot, type GameCameraPilotFraming } from "./game-camera-pilot";
 import {
   editorComponentMeshName,
@@ -510,11 +511,18 @@ export function createEditorViewportTools({
             navigationActive() && options.editorFlyEnabled?.() !== false,
         });
   onRollback(() => flyKeys?.dispose());
+  const zoomDrive = createViewportZoomDrive(navigation, {
+    scheduler,
+    isEnabled: navigationActive,
+    instantStep: () => options.editorZoomInstant?.() === true,
+  });
+  onRollback(() => zoomDrive.dispose());
   // A handle being disposed takes no more input: a piloted move still waiting
   // for its commit lands now, and a tap pick still reading back is dropped.
   const disposeInput = () => {
     gestures.dispose();
     flyKeys?.dispose();
+    zoomDrive.dispose();
     pilot.flush();
     pilot.dispose();
     tapPickSequence += 1;
@@ -523,6 +531,7 @@ export function createEditorViewportTools({
   const editor: EditorTools = {
     camera: cameraController,
     navigation,
+    zoomDrive,
     gizmos,
     grid,
     selection,
