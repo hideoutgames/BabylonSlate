@@ -20,6 +20,7 @@ import type { GpuProbeSnapshot } from "./gpu-probe-engine";
 import type { DrawPassCounts } from "./draw-passes";
 import type { OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
 import type { LayerDrawableMeshWork } from "./layer-drawable-meshes";
+import type { LeanPreparationWork } from "./lean-render-preparation";
 import type { RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
 
@@ -158,6 +159,12 @@ export type RenderDiagnostics = {
      * which must stay 0). Absent without an outline view.
      */
     outlineCull?: { splitChecks: number; healedSplits: number; checks: number; mismatches: number };
+    /**
+     * The lean preparation of Play's object and geometry passes (`LeanPreparationWork`): the rotating self-check's heals
+     * and the fields it healed, and while `verifyLeanPreparation` is on, the passes compared with Babylon's preparation
+     * and those that queued differently (`mismatches`, which must stay 0). Absent outside Play.
+     */
+    leanPreparation?: LeanPreparationWork;
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is

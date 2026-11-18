@@ -15,6 +15,7 @@ import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-sc
 import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
   verifyCaptureActorLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
+  verifyLeanPreparation,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1274,6 +1275,8 @@ function PlayOverlayView({
         verifyMirrorFootprintCrops: (enabled: boolean) => void;
         /** Has each strict outline cull also cull the full way, which must agree (`rendererWork.outlineCull.mismatches`). */
         verifySharedOutlineCulls: (enabled: boolean) => void;
+        /** Has each lean object and geometry pass also run Babylon's preparation, whose queues it must match (`rendererWork.leanPreparation.mismatches`). */
+        verifyLeanPreparation: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1302,6 +1305,7 @@ function PlayOverlayView({
       verifyCaptureActorLists,
       verifyMirrorFootprintCrops,
       verifySharedOutlineCulls,
+      verifyLeanPreparation,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,

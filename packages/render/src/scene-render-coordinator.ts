@@ -95,6 +95,8 @@ export type SceneRenderCoordinatorOptions = {
   seedsFromSceneDepth?: boolean;
   /** A Scene Layer's view: its strict probes ask only the meshes the changes named (`ForwardSceneFrameGraphOptions.scopedStrictProbes`). */
   scopedStrictProbes?: boolean;
+  /** A game's world view: its object and geometry passes prepare the lean way (`ForwardSceneFrameGraphOptions.leanPreparation`). */
+  leanPreparation?: boolean;
 };
 
 /** Scene-owned graph lifetime; the host still owns scheduling and presentation. */
@@ -131,7 +133,8 @@ export class SceneRenderCoordinator {
     this.compileHolds = options.compileHolds === true;
     this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary
       ? { auxiliary: { objects: options.auxiliary.objects, screenEffects: options.auxiliary.screenEffects } }
-      : { occlusion: options.occlusion === true, seedsFromSceneDepth: options.seedsFromSceneDepth === true, scopedStrictProbes: options.scopedStrictProbes === true });
+      : { occlusion: options.occlusion === true, seedsFromSceneDepth: options.seedsFromSceneDepth === true, scopedStrictProbes: options.scopedStrictProbes === true,
+        leanPreparation: options.leanPreparation === true });
     this.detachReadinessDirty = onSceneReadinessDirty(scene, (reason, scope) =>
       this.graph.markReadinessDirty(reason, scope),
     );
