@@ -45,6 +45,7 @@ import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { applyDataGraphAssetPicks } from "../lib/data-graph";
 import { prepareClassGraphPaste } from "../lib/graph-paste";
 import { acceptsFunctionPinDrop, addFunctionPinFromDrop } from "../lib/function-pin-drop";
+import { addPinPatch } from "../lib/graph-pin-lists";
 import {
   DEFAULT_FUNCTION_PINS,
   addClassMember,
@@ -642,6 +643,20 @@ export function GraphPanel(
     },
     [activeFunctionId, doc, documentActions, documentId],
   );
+  // + Add Pin raises the count its Inspector row edits, as one change; hydration regenerates the pins.
+  const onAddPin = useCallback(
+    (nodeId: string) => {
+      const current = graphContentRef.current;
+      if (!current) return;
+      const nodes = activeFunctionId ? current.functionGraphs?.[activeFunctionId]?.nodes : current.nodes;
+      const node = nodes?.find((candidate) => candidate.id === nodeId);
+      if (!node) return;
+      const data = node.data as Record<string, unknown>;
+      const patch = addPinPatch(typeof data.__nodeType === "string" ? data.__nodeType : node.type, data);
+      if (patch) commitNodeData(current, nodeId, patch);
+    },
+    [activeFunctionId, commitNodeData],
+  );
   const renderCreateEventBody = useCallback(
     (nodeId: string, data: Record<string, unknown>) => {
       if (!graphContent) return null;
@@ -938,6 +953,7 @@ export function GraphPanel(
             onPaletteOpenChange={setPaletteOpen}
             pinCompatibility={pinCompatibility}
             pinDrop={pinDrop}
+            onAddPin={onAddPin}
             reroute={reroute}
             renamingNodeId={renamingNodeId}
             renamingNodeValue={renamingNodeValue}

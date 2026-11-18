@@ -28,6 +28,7 @@ import { engineEventTypeClassIds } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { isDataGraphNode } from "../lib/data-graph";
+import { addPinControlFor } from "../lib/graph-pin-lists";
 import {
   classHierarchyFromParentOf,
   editorLatentFunctions,
@@ -409,6 +410,10 @@ function withVisualMeta(
   if (typeId === REROUTE_NODE_TYPE) {
     next.__reroute = true;
   }
+  // Below its maximum, a growable pin list shows the node's Add Pin control.
+  const addPin = addPinControlFor(typeId, data);
+  if (addPin) next.__addPin = addPin;
+  else delete next.__addPin;
   return next;
 }
 

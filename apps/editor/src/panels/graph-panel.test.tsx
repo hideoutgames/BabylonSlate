@@ -409,6 +409,45 @@ describe("Graph panel", () => {
     expect(seen.selection?.nodeIds).toEqual([]);
   });
 
+  it.each([
+    { type: "array.make", data: {}, count: 2, pins: ["item0", "item1"] },
+    { type: "map.make", data: {}, count: 2, pins: ["key1", "value1"] },
+    { type: "flow.sequence", data: {}, count: 3, pins: ["then2"] },
+    { type: "array.make", data: { count: 31 }, count: 32, pins: ["item31"] },
+  ])("adds one pin to a $type from its Add Pin control as one graph change", async ({ type, data, count, pins }) => {
+    render(
+      <DocumentProvider>
+        <MainClassGraph />
+      </DocumentProvider>,
+    );
+    await waitFor(() => expect(seen.documents?.homepageReady).toBe(true));
+    const actions = seen.actions!;
+    await act(() => actions.createEmptyProject("Add Pin", { kind: "2d" }));
+    await act(() => actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }));
+    await act(() => actions.applyGraphChange(MAIN_CLASS_ID, {
+      ...openContent<SerializedGraph>(MAIN_CLASS_ID),
+      nodes: [{ id: "grow", type, position: { x: 0, y: 0 }, data }],
+      edges: [],
+    }));
+    const node = () => document.querySelector<HTMLElement>('.react-flow__node[data-id="grow"]');
+    const button = () => node()?.querySelector<HTMLElement>('[data-testid="graph-node-add-pin"]') ?? null;
+    await waitFor(() => expect(button()).toBeTruthy());
+
+    const change = vi.spyOn(actions, "applyGraphChange");
+    fireEvent.click(button()!);
+    await waitFor(() => {
+      const stored = openContent<SerializedGraph>(MAIN_CLASS_ID).nodes.find((entry) => entry.id === "grow");
+      expect(stored?.data.count).toBe(count);
+    });
+    expect(change).toHaveBeenCalledTimes(1);
+    for (const pin of pins) {
+      await waitFor(() => expect(node()!.querySelector(`[data-pin-id="${pin}"]`)).toBeTruthy());
+    }
+    // At its maximum the node offers no more.
+    if (count === 32) await waitFor(() => expect(button()).toBeNull());
+    else expect(button()).toBeTruthy();
+  });
+
   it("selects its function when the empty canvas of a function tab is clicked", async () => {
     render(
       <DocumentProvider>

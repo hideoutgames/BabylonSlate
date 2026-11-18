@@ -324,6 +324,11 @@ export interface GraphEditorProps {
   edgeBreaksAtPin?: (edge: { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }, nodeId: string, pinId: string) => boolean;
   /** Node bodies that take a dragged wire as a new pin (function Input and Output nodes). */
   pinDrop?: GraphPinDrop;
+  /**
+   * A node's **+ Add Pin** control was pressed: the host adds one pin to that node's growable list.
+   * The control shows on nodes whose data carries `__addPin` (`addPinOf`), never read-only.
+   */
+  onAddPin?: (nodeId: string) => void;
   /** Replace existing edges into the same target handle (tree parent pin). */
   replaceIncomingOnConnect?: boolean;
   /** One visual edge per source→target pair (Animation Graph transitions). */
@@ -923,6 +928,7 @@ function GraphEditorCanvas({
   connectEndMode = "default",
   edgeBreaksAtPin,
   pinDrop,
+  onAddPin,
   replaceIncomingOnConnect = false,
   uniqueDirectedPairOnConnect = false,
   singleExecOutputOnConnect = false,
@@ -1282,6 +1288,13 @@ function GraphEditorCanvas({
     return true;
   }, []);
   const hasTitleRename = Boolean(onNodeTitleDoubleClick);
+  // Add Pin reads the host's latest callback, so a new callback each render hands nodes no new context.
+  const onAddPinRef = useRef(onAddPin);
+  useLayoutEffect(() => {
+    onAddPinRef.current = onAddPin;
+  });
+  const addPin = useCallback((nodeId: string) => onAddPinRef.current?.(nodeId), []);
+  const addPinEnabled = Boolean(onAddPin) && !readOnly;
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
@@ -3556,6 +3569,7 @@ function GraphEditorCanvas({
       nodeMenu,
       connectionRefusal,
       acceptsPinDrop: pinDrop?.accepts,
+      onAddPin: addPinEnabled ? addPin : undefined,
       runTrace,
       breakpoints,
       describeNode,
@@ -3595,6 +3609,8 @@ function GraphEditorCanvas({
       nodeMenu,
       connectionRefusal,
       pinDrop,
+      addPinEnabled,
+      addPin,
       runTrace,
       breakpoints,
       describeNode,

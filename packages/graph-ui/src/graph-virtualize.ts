@@ -1,4 +1,4 @@
-import { isRerouteNodeData } from "./graph-types";
+import { addPinOf, isRerouteNodeData } from "./graph-types";
 
 export const GRAPH_VIRTUALIZE_OVERSCAN_PX = 400;
 /** A Reroute knot at Large Pins 1 with a mouse (`.graph-reroute-knot` in graph-editor.css). */
@@ -36,7 +36,8 @@ export type GraphVirtualizeEdge = {
 
 /**
  * Size of a node that has never been measured (never mounted). Input and
- * output pins share rows, so the longer of the two columns sets the height.
+ * output pins share rows, so the longer of the two columns sets the height;
+ * an Add Pin control (`__addPin`) is one more row below them.
  */
 export function estimateGraphNodeSize(
   pins?: ReadonlyArray<{ direction?: string }>,
@@ -53,7 +54,8 @@ export function estimateGraphNodeSize(
     width: GRAPH_NODE_FALLBACK_WIDTH,
     height: Math.max(
       GRAPH_NODE_FALLBACK_HEIGHT,
-      GRAPH_NODE_CHROME_HEIGHT + Math.max(inputs, outputs) * GRAPH_PIN_ROW_HEIGHT,
+      GRAPH_NODE_CHROME_HEIGHT +
+        (Math.max(inputs, outputs) + (addPinOf(data) ? 1 : 0)) * GRAPH_PIN_ROW_HEIGHT,
     ),
   };
 }

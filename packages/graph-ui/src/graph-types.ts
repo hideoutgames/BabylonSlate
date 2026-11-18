@@ -141,3 +141,21 @@ export function hasSerializedPins(
 export function isRerouteNodeData(data: Record<string, unknown> | undefined | null): boolean {
   return data?.__reroute === true;
 }
+
+/**
+ * A node's **+ Add Pin** control, from the editor-only `__addPin` key that hosts stamp (as they
+ * stamp `__pure`) on a node whose pin list can grow; absent at its maximum. `side` puts it under
+ * the inputs (`in`) or outputs (`out`); `label` is the host's wording.
+ */
+export interface GraphAddPin {
+  side: "in" | "out";
+  label: string;
+}
+
+/** The node's Add Pin control, or undefined when its data declares none. */
+export function addPinOf(data: Record<string, unknown> | undefined | null): GraphAddPin | undefined {
+  const value = data?.__addPin;
+  if (!value || typeof value !== "object") return undefined;
+  const { side, label } = value as Partial<GraphAddPin>;
+  return (side === "in" || side === "out") && typeof label === "string" && label ? { side, label } : undefined;
+}

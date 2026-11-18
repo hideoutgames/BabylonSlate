@@ -51,6 +51,7 @@ import { NodeRenameField, useNodeTitleGestures, useRenameValue } from "./node-ti
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
 import { PinDefaultEditor } from "./pin-default-editor";
+import { NodeAddPinButton } from "./node-add-pin-button";
 import { isPinWired, passesReference } from "./pin-connections";
 
 export type CanvasNode = Node<Record<string, unknown>>;
@@ -768,6 +769,7 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
             />
             </div>
           ))}
+          <NodeAddPinButton nodeId={id} data={data} />
         </div>
         {renderNodeBody?.(id, data)}
       </BlueprintNodeShell>
