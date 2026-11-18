@@ -399,7 +399,7 @@ describe("snapshot publishing", () => {
 });
 
 describe("snapshot removal pass", () => {
-  function publisher() {
+  function publisher(now: () => number = () => 0) {
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     const slots = new RenderSlots(new RuntimeSubsystems(), {
       ensureCapacity: () => {},
@@ -422,7 +422,7 @@ describe("snapshot removal pass", () => {
       reportLog: () => {},
       reportError: (error) => { throw error; },
       emit: (command) => { if (command.type === "despawn") despawns.push(command.actorGuid); },
-    }, () => 0);
+    }, now);
     const actor = (guid: string) => {
       const created = world.createActor({ classId: "Actor", guid });
       slots.allocate(created);
@@ -450,6 +450,18 @@ describe("snapshot removal pass", () => {
     lookups.mockClear();
     snapshots.publish();
     expect(lookups).not.toHaveBeenCalled();
+  });
+
+  it("reports the mean publish time since it was last read, and the last publish's when none happened since", () => {
+    // Each publish reads the clock as it starts and ends: 1 ms, 0 ms, then 2 ms.
+    const readings = [0, 1, 10, 10, 20, 22];
+    const { snapshots } = publisher(() => readings.shift() ?? 22);
+    snapshots.publish();
+    snapshots.publish();
+    snapshots.publish();
+    expect(snapshots.lastPublishMs).toBe(2);
+    expect(snapshots.takeMeanPublishMs()).toBe(1);
+    expect(snapshots.takeMeanPublishMs()).toBe(2);
   });
 
   it("keeps checking a spawn-queued actor's slot, so a cancelled spawn despawns without a structural change", () => {
