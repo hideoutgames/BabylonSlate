@@ -108,7 +108,7 @@ function installSortedRender(): void {
     // A list of one needs no sort, so no copy either: the batcher reads `count` entries.
     const sorted = count === 1 || count === subMeshes.data.length ? subMeshes.data : subMeshes.data.slice(0, count);
     if (sortCompareFn && count > 1 && !presorted.has(subMeshes)) sorted.sort(sortCompareFn);
-    noteSortedPass(scene, subMeshes, sorted, count);
+    noteSortedPass(scene!, subMeshes, sorted, count);
     batcher.draw(sorted, count, false, renderOpaque);
   };
 }

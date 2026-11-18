@@ -117,7 +117,9 @@ type GroupInternals = {
   _empty: boolean;
   disableDepthPrePass: boolean;
 };
-type ManagerInternals = RenderingManager & { _renderingGroups: Array<RenderingGroup | undefined>; maintainStateBetweenFrames: boolean };
+type ManagerInternals = Pick<RenderingManager, "getRenderingGroup" | "reset" | "maintainStateBetweenFrames"> & {
+  _renderingGroups: Array<RenderingGroup | undefined>;
+};
 type RendererInternals = {
   _renderingManager: ManagerInternals;
   _activeMeshes: SmartArray<AbstractMesh>;
@@ -349,8 +351,10 @@ export class LayerDrawList {
     if (scene._activeMeshesFrozen) return "frozen";
     if (renderer.renderParticles && scene.particlesEnabled && scene.particleSystems.length > 0) return "particles";
     const manager = (renderer as unknown as RendererInternals)._renderingManager;
-    if (renderer.customRenderFunction || !renderer.renderMeshes || renderer.getCustomRenderList || renderer.enableBoundingBoxRendering ||
-      renderer.options.numPasses !== 1 || manager.maintainStateBetweenFrames || scene.useOrderIndependentTransparency || scene.customLODSelector)
+    // Babylon types these hooks as always set; they are unset until someone sets one.
+    const hooks = renderer as unknown as { customRenderFunction?: unknown }, lod = scene as unknown as { customLODSelector?: unknown };
+    if (hooks.customRenderFunction || !renderer.renderMeshes || renderer.getCustomRenderList || renderer.enableBoundingBoxRendering ||
+      renderer.options.numPasses !== 1 || manager.maintainStateBetweenFrames || scene.useOrderIndependentTransparency || lod.customLODSelector)
       return "renderer";
     if (!this.camera()) return "camera";
     return null;
