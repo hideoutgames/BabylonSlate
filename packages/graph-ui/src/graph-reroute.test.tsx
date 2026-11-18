@@ -244,6 +244,95 @@ describe("Reroute insertion", () => {
   });
 });
 
+describe("Format with Reroute knots", () => {
+  /**
+   * Event → Log; Get.Value feeds Log.First and Add.A, Add.Sum feeds Log.Second. Format puts Get
+   * and Add on one row, so Get's wire into Log.First would run through Add.
+   */
+  function detourGraph(): GraphDocument {
+    const pin = (id: string, kind: "exec" | "data", direction: "in" | "out"): SerializedPin => ({
+      id,
+      name: id,
+      kind,
+      direction,
+      type: kind === "exec" ? { kind: "exec" } : { kind: "float" },
+    });
+    return {
+      nodes: [
+        { id: "event", type: "event.begin", position: { x: 0, y: 0 }, data: { title: "Event", __pins: [pin("then", "exec", "out")] } },
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 400, y: 300 },
+          data: { title: "Log", __pins: [pin("exec", "exec", "in"), pin("first", "data", "in"), pin("second", "data", "in"), pin("then", "exec", "out")] },
+        },
+        { id: "get", type: "math.get", position: { x: 50, y: 500 }, data: { title: "Get", __pure: true, __pins: [pin("value", "data", "out")] } },
+        {
+          id: "add",
+          type: "math.add",
+          position: { x: 900, y: 700 },
+          data: { title: "Add", __pure: true, __pins: [pin("a", "data", "in"), pin("sum", "data", "out")] },
+        },
+      ],
+      edges: [
+        wire("event", "then", "log", "exec"),
+        wire("get", "value", "log", "first"),
+        wire("get", "value", "add", "a"),
+        wire("add", "sum", "log", "second"),
+      ],
+    };
+  }
+
+  function formatFromEvent(container: HTMLElement, getByTestId: (id: string) => HTMLElement): void {
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="event"]')!);
+    fireEvent.click(getByTestId("graph-format"));
+  }
+
+  it("moves the nodes and carries a blocked wire around with a knot in one change, then changes nothing", () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = renderGraph({ initialGraph: detourGraph(), reroute, onChange });
+    formatFromEvent(container, getByTestId);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const graph = lastGraph(onChange);
+    const knots = graph.nodes.filter((node) => node.type === "flow.reroute");
+    expect(knots).toHaveLength(1);
+    const knot = knots[0]!;
+    expect(knot.data).toMatchObject({ __reroute: true, __pins: reroutePins });
+    expect(edgeEnds(graph)).toEqual([
+      "add.sum>log.second",
+      "event.then>log.exec",
+      "get.value>add.a",
+      `get.value>${knot.id}.in`,
+      `${knot.id}.out>log.first`,
+    ].sort());
+    const at = (id: string) => graph.nodes.find((node) => node.id === id)!.position;
+    // Get and Add share the first parameter row, which starts under Log's First lane.
+    expect(at("get").y).toBe(at("add").y);
+    expect(at("add").x).toBeGreaterThan(at("get").x);
+    // Level with Log.First (the second pin row, 50 + 44 + 22 below Log's top), above Add.
+    expect(knot.position.y + 35 / 2).toBe(at("log").y + 116);
+    expect(knot.position.x).toBe(at("add").x);
+    const selected = Array.from(container.querySelectorAll(".react-flow__node.selected")).map((element) => element.getAttribute("data-id"));
+    expect(selected).toEqual(["event"]);
+
+    fireEvent.click(getByTestId("graph-format"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("only moves the nodes without a reroute row", () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = renderGraph({ initialGraph: detourGraph(), onChange });
+    formatFromEvent(container, getByTestId);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const graph = lastGraph(onChange);
+    expect(graph.nodes.map((node) => node.id)).toEqual(["event", "log", "get", "add"]);
+    expect(edgeEnds(graph)).toEqual(edgeEnds(detourGraph()));
+    expect(graph.nodes.find((node) => node.id === "get")!.position).not.toEqual({ x: 50, y: 500 });
+  });
+});
+
 describe("Reroute knot connections", () => {
   it("refuses tapping an exec output onto a knot that already feeds a data-only pin", async () => {
     const restore = stubMeasuredGraphLayout();

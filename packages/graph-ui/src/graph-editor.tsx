@@ -141,7 +141,7 @@ import {
   resolveGraphViewport,
   type GraphViewport,
 } from "./graph-viewport";
-import { formatGraphNodes } from "./graph-format";
+import { formatGraphNodes, formatPinOffsetKey } from "./graph-format";
 import { freeNodePosition } from "./graph-placement";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
@@ -497,6 +497,78 @@ function paletteCanvasNode(
     },
     dragHandle,
   );
+}
+
+type RerouteKnotSetup = {
+  paletteNode: PaletteNode;
+  nodes: CanvasNode[];
+  displayTypes: PinDisplayLookup;
+  pinCompatibility: PinCompatibilityRule | undefined;
+  knownTypes: NodeTypes;
+  dragHandle: string | undefined;
+  edgeType: string | undefined;
+  /** Node ids in use; the knot's id is added. */
+  taken: Set<string>;
+};
+
+/**
+ * A Reroute knot with its top-left corner at `position` and the two wires that replace `edge`
+ * through it, or null for a wire the knot cannot carry.
+ */
+function rerouteKnotOnEdge(
+  edge: Edge,
+  position: { x: number; y: number },
+  selected: boolean,
+  setup: RerouteKnotSetup,
+): { knot: CanvasNode; wires: [Edge, Edge] } | null {
+  const { paletteNode, nodes, displayTypes, pinCompatibility } = setup;
+  if (!edge.sourceHandle || !edge.targetHandle) return null;
+  const inPin = paletteNode.pins?.find((pin) => pin.direction === "in");
+  const outPin = paletteNode.pins?.find((pin) => pin.direction === "out");
+  const sourcePin = pinOnNode(nodes, edge.source, edge.sourceHandle);
+  const targetPin = pinOnNode(nodes, edge.target, edge.targetHandle);
+  if (!inPin || !outPin || !sourcePin || !targetPin) return null;
+  if (
+    !pinsAreCompatible(overlayPin(sourcePin, edge.source, displayTypes), inPin, pinCompatibility) ||
+    !pinsAreCompatible(outPin, overlayPin(targetPin, edge.target, displayTypes), pinCompatibility)
+  ) {
+    return null;
+  }
+  const id = uniqueNodeId(`${paletteNode.id}-${Date.now()}`, setup.taken);
+  setup.taken.add(id);
+  const knot = paletteCanvasNode(paletteNode, id, position, selected, setup.knownTypes, setup.dragHandle);
+  const wire = (source: string, sourceHandle: string, target: string, targetHandle: string): Edge => ({
+    id: createEdgeId(source, sourceHandle, target, targetHandle),
+    source,
+    sourceHandle,
+    target,
+    targetHandle,
+    ...(setup.edgeType ? { type: setup.edgeType } : {}),
+  });
+  return {
+    knot,
+    wires: [
+      wire(edge.source, edge.sourceHandle, knot.id, inPin.id),
+      wire(knot.id, outPin.id, edge.target, edge.targetHandle),
+    ],
+  };
+}
+
+/** Measured handle centres of a mounted node, as `FormatNode.pinOffsets`. */
+function measuredPinOffsets(
+  bounds: InternalNode["internals"]["handleBounds"] | undefined,
+): Record<string, number> | undefined {
+  if (!bounds) return undefined;
+  const offsets: Record<string, number> = {};
+  for (const [direction, handles] of [
+    ["out", bounds.source],
+    ["in", bounds.target],
+  ] as const) {
+    for (const handle of handles ?? []) {
+      if (handle.id) offsets[formatPinOffsetKey(direction, handle.id)] = handle.y + handle.height / 2;
+    }
+  }
+  return offsets;
 }
 
 /** What a Cut Links click lands on: a wire, a pin, or a node (only a Reroute knot is cut). */
@@ -2455,52 +2527,32 @@ function GraphEditorCanvas({
       if (!paletteNode || readOnly || cutToolRef.current) return false;
       const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
       const edge = currentEdges.find((entry) => entry.id === edgeId);
-      if (!edge?.sourceHandle || !edge.targetHandle) return false;
-      const inPin = paletteNode.pins?.find((pin) => pin.direction === "in");
-      const outPin = paletteNode.pins?.find((pin) => pin.direction === "out");
-      const sourcePin = pinOnNode(currentNodes, edge.source, edge.sourceHandle);
-      const targetPin = pinOnNode(currentNodes, edge.target, edge.targetHandle);
-      if (!inPin || !outPin || !sourcePin || !targetPin) return false;
-      const displayTypes = pinDisplayTypesRef.current;
-      if (
-        !pinsAreCompatible(overlayPin(sourcePin, edge.source, displayTypes), inPin, pinCompatibility) ||
-        !pinsAreCompatible(outPin, overlayPin(targetPin, edge.target, displayTypes), pinCompatibility)
-      ) {
-        return false;
-      }
+      if (!edge) return false;
       const size = estimateGraphNodeSize(paletteNode.pins, { __reroute: true });
       const point = screenToFlowPosition(client);
       const position = snapPositionToGrid(
         { x: point.x - size.width / 2, y: point.y - size.height / 2 },
         nodeSnapGrid,
       );
-      const taken = new Set(currentNodes.map((node) => node.id));
-      const knot = paletteCanvasNode(
+      const built = rerouteKnotOnEdge(edge, position, true, {
         paletteNode,
-        uniqueNodeId(`${paletteNode.id}-${Date.now()}`, taken),
-        position,
-        true,
+        nodes: currentNodes,
+        displayTypes: pinDisplayTypesRef.current,
+        pinCompatibility,
         knownTypes,
-        nodeDragHandle,
-      );
-      const edgeType = defaultEdgeOptions.type ? { type: defaultEdgeOptions.type } : {};
-      const wire = (source: string, sourceHandle: string, target: string, targetHandle: string): Edge => ({
-        id: createEdgeId(source, sourceHandle, target, targetHandle),
-        source,
-        sourceHandle,
-        target,
-        targetHandle,
-        ...edgeType,
+        dragHandle: nodeDragHandle,
+        edgeType: defaultEdgeOptions.type,
+        taken: new Set(currentNodes.map((node) => node.id)),
       });
+      if (!built) return false;
       commitGraph(
         [
           ...currentNodes.map((node) => (node.selected ? { ...node, selected: false } : node)),
-          knot,
+          built.knot,
         ],
         [
           ...withoutEdgeSelection(currentEdges.filter((entry) => entry.id !== edgeId)),
-          wire(edge.source, edge.sourceHandle, knot.id, inPin.id),
-          wire(knot.id, outPin.id, edge.target, edge.targetHandle),
+          ...built.wires,
         ],
       );
       return true;
@@ -3006,12 +3058,17 @@ function GraphEditorCanvas({
   }, []);
 
 
+  // Moves the nodes and adds the knots Format asks for as one graph change (one undo step); the
+  // selection stays as it was. A Format that changes nothing emits nothing.
   const formatSelection = useCallback(() => {
-    const selected = graphStateRef.current.nodes
+    const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    const selected = currentNodes
       .filter((node) => node.selected)
       .map((node) => node.id);
     if (selected.length === 0) return;
-    const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    const paletteNode = readOnly ? undefined : rerouteRef.current?.paletteNode;
+    const displayTypes = pinDisplayTypesRef.current;
+    const lookup = storeApi.getState().nodeLookup;
     const formatted = formatGraphNodes(
       currentNodes.map((node) => ({
         id: node.id,
@@ -3020,37 +3077,70 @@ function GraphEditorCanvas({
         height: node.measured?.height ?? node.height,
         pins: hasSerializedPins(node.data) ? node.data.__pins : undefined,
         reroute: isRerouteNodeData(node.data),
+        pinOffsets: measuredPinOffsets(lookup.get(node.id)?.internals.handleBounds),
       })),
       currentEdges.map((edge) => ({
+        id: edge.id,
         source: edge.source,
         target: edge.target,
         sourceHandle: edge.sourceHandle ?? undefined,
         targetHandle: edge.targetHandle ?? undefined,
       })),
       selected,
-      displayTypeLookup(pinDisplayTypesRef.current),
+      {
+        displayType: displayTypeLookup(displayTypes),
+        insertKnots: Boolean(paletteNode),
+        ...(paletteNode ? { knotSize: estimateGraphNodeSize(paletteNode.pins, { __reroute: true }) } : {}),
+      },
     );
     const positions = new Map(
-      formatted.map((node) => [node.id, node.position]),
+      formatted.nodes.map((node) => [node.id, node.position]),
     );
-    setNodes((current) => {
-      let changed = false;
-      const next = current.map((node) => {
-        const position = positions.get(node.id);
-        if (
-          !position ||
-          (position.x === node.position.x && position.y === node.position.y)
-        ) {
-          return node;
-        }
-        changed = true;
-        return { ...node, position };
-      });
-      if (!changed) return current;
-      emitChange(next, graphStateRef.current.edges);
-      return next;
+    let changed = false;
+    const nextNodes = currentNodes.map((node) => {
+      const position = positions.get(node.id);
+      if (
+        !position ||
+        (position.x === node.position.x && position.y === node.position.y)
+      ) {
+        return node;
+      }
+      changed = true;
+      return { ...node, position };
     });
-  }, [emitChange]);
+    const knots: CanvasNode[] = [];
+    const wires: Edge[] = [];
+    const replaced = new Set<string>();
+    if (paletteNode && formatted.knots.length > 0) {
+      const edgesById = new Map(currentEdges.map((edge) => [edge.id, edge]));
+      const setup: RerouteKnotSetup = {
+        paletteNode,
+        nodes: currentNodes,
+        displayTypes,
+        pinCompatibility,
+        knownTypes,
+        dragHandle: nodeDragHandle,
+        edgeType: defaultEdgeOptions.type,
+        taken: new Set(currentNodes.map((node) => node.id)),
+      };
+      for (const { edge, position } of formatted.knots) {
+        const wire = edge.id === undefined ? undefined : edgesById.get(edge.id);
+        if (!wire || replaced.has(wire.id)) continue;
+        const built = rerouteKnotOnEdge(wire, position, false, setup);
+        if (!built) continue;
+        replaced.add(wire.id);
+        knots.push(built.knot);
+        wires.push(...built.wires);
+      }
+    }
+    if (!changed && knots.length === 0) return;
+    commitGraph(
+      [...nextNodes, ...knots],
+      replaced.size > 0
+        ? [...currentEdges.filter((edge) => !replaced.has(edge.id)), ...wires]
+        : currentEdges,
+    );
+  }, [commitGraph, defaultEdgeOptions.type, knownTypes, nodeDragHandle, pinCompatibility, readOnly, storeApi]);
 
   // Copy, Paste, Duplicate, Delete and Break Links for the selection, with their keys.
   const graphItems = useCallback(
