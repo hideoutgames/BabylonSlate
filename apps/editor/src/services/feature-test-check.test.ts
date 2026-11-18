@@ -1134,7 +1134,7 @@ describe("Profile", { timeout: 30_000 }, () => {
     const plan = featureTestProfilePlan(SESSION);
     const switches = ["world hidden", "flat world", "main pass unlit", "shadow taps off", "local lights off", "resolution 0.5"];
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], [...switches, "scene layers hidden", "shadow passes off", "geometry effects off", "post off", "world drawn once"]],
+      ["light", ['possess "Profile Light Camera"'], [...switches, "scene layers hidden", "shadow passes off", "geometry effects off", "post off", "world drawn once", "shadow filter low"]],
       ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "world drawn once"]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["captures off", "mirrors environment", "world drawn once"]],
     ]);

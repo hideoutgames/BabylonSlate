@@ -316,6 +316,8 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  *   off`: vertex, raster and attachment cost without shading), the main pass unlit (all per-pixel lighting and shadow
  *   sampling), its shadow lookups lit with the maps still drawn, no local lights, and half resolution (per-pixel against
  *   fixed cost);
+ * - the shadow filter low with the maps unchanged (four compare taps a lookup in place of the level's): against
+ *   `shadow taps off` it tells the taps themselves from the rest of a lookup;
  * - the passes that draw the world again: the shadow map passes off (the maps stay allocated and sampled), every
  *   geometry effect off, post-processing off, and all of them with the captures and Mirrors' live reflection at once
  *   (`world drawn once`).
@@ -344,6 +346,8 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
   const unlit = world("main pass unlit", "lighting");
   const taps = world("shadow taps off", "shadowtaps");
   const local = world("local lights off", "locallights");
+  // Four compare taps a lookup, the maps and their atlas unchanged: what the taps cost, apart from the lookup around them.
+  const filterLow: FeatureTestBreakdownStep = { label: "shadow filter low", commands: ["quality shadows filter low"], fields: ["shadows.filter"], overlaps: true };
   // No map redrawn, the last maps still sampled: what redrawing the maps costs.
   const shadowPassesOff = shadowPartOff("passes", "shadow passes off");
   const half: FeatureTestBreakdownStep = { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale", "resolution.dynamic"], overlaps: true };
@@ -376,7 +380,7 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
           // Every Scene Layer hidden: the backbuffer is the world's size again, so the passes that ran at the device's
           // resolution for the layers (their draws, the upscale and sharpening to the output) go.
           { label: "scene layers hidden", commands: ["scenelayers off"], restore: [`scenelayers ${state.layers ? "on" : "off"}`], fields: ["layers"] },
-          shadowPassesOff, geometryOff, postOff, once,
+          shadowPassesOff, geometryOff, postOff, once, filterLow,
         ],
       },
       {
