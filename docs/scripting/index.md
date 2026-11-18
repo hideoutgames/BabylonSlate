@@ -68,7 +68,7 @@ Select one or more nodes and press **Format** in the graph toolbar to lay out th
 
 - Execution runs left to right on rows; each branch gets its own row, and a node where branches join sits after all of them.
 - The nodes that feed an execution node's inputs sit in columns to its left, starting just below its execution wire. Nodes in different columns share a row, and each is placed so its wire runs straight where it can.
-- Where a value wire would run through another node, Format adds a Reroute knot level with the input it feeds, so the wire goes around the node and then straight in. A knot that carries one value wire into one input moves to that wire's new route; Format never deletes a knot. Graphs without Reroute nodes, such as Material graphs, get no knots.
+- Where a value wire would run through or close past another node, Format adds a Reroute knot level with the input it feeds, so the wire goes around the node and then straight in. A knot that carries one value wire into one input moves to that wire's new route; Format never deletes a knot. Graphs without Reroute nodes, such as Material graphs, get no knots.
 - The whole layout, knots included, is one change, so one **Undo** reverts it. Pressing **Format** again with the same selection changes nothing.
 
 ## Cut Links

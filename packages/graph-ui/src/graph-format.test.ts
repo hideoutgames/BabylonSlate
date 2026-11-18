@@ -989,6 +989,59 @@ describe("formatGraphNodes with Reroute knots", () => {
     expect(pos(result.nodes, "c")).toEqual({ x: 10 + EXEC_STEP * 2 + BLOCK, y: 20 });
     expect(result.knots).toEqual([]);
   });
+
+  describe("a wire that passes close to a node", () => {
+    // a → b → c. get (in b's block) feeds b.Value and c.Value, which is 400 below c's top, so
+    // get's wire into c drops from (290, 132) to (550, 420). An isolated selected node o sits
+    // above the right half of that curve: with its bottom at 320 the curve passes about 20 units
+    // from its box, at 258 about 40.
+    function crowdedGraph(obstacleBottom: number): { nodes: FormatNode[]; edges: FormatEdge[]; cWire: FormatEdge } {
+      const cWire = { id: "get-c", ...dataEdge("get", "c") };
+      return {
+        nodes: [
+          node("a", 10, 20, [execPins[1]!]),
+          { ...node("b", 0, 0, execWithValueIn, { width: 100, height: 92 }), pinOffsets: { [formatPinOffsetKey("in", "value")]: 30 } },
+          { ...node("c", 0, 0, execWithValueIn, { width: 100, height: 450 }), pinOffsets: { [formatPinOffsetKey("in", "value")]: 400 } },
+          { ...node("get", 0, 0, dataOutPins), pinOffsets: { [formatPinOffsetKey("out", "value")]: 20 } },
+          node("o", 470, obstacleBottom - 40, [], { width: 60, height: 40 }),
+        ],
+        edges: [execEdge("a", "b"), execEdge("b", "c"), dataEdge("get", "b"), cWire],
+        cWire,
+      };
+    }
+
+    it("gets a knot level with the target pin when it passes 20 units from the node", () => {
+      const { nodes, edges, cWire } = crowdedGraph(320);
+      const result = formatGraphNodes(nodes, edges, ["a", "o"], { insertKnots: true });
+      expect(pos(result.nodes, "o")).toEqual({ x: 470, y: 280 });
+      expect(pos(result.nodes, "get")).toEqual({ x: 190, y: 112 });
+      expect(pos(result.nodes, "c")).toEqual({ x: 550, y: 20 });
+      // As far right as the gaps allow (550 − 80 − 80), centred on c.Value at 420.
+      expect(result.knots).toEqual([{ edge: cWire, position: { x: 390, y: 420 - REROUTE_KNOT_SIZE.height / 2 } }]);
+    });
+
+    it("stays direct when it passes 40 units from the node", () => {
+      const { nodes, edges } = crowdedGraph(258);
+      const result = formatGraphNodes(nodes, edges, ["a", "o"], { insertKnots: true });
+      expect(pos(result.nodes, "get")).toEqual({ x: 190, y: 112 });
+      expect(result.knots).toEqual([]);
+    });
+
+    it("changes nothing when formatted again with its knot in place", () => {
+      const { nodes, edges, cWire } = crowdedGraph(320);
+      const first = formatGraphNodes(nodes, edges, ["a", "o"], { insertKnots: true });
+      expect(first.knots).toHaveLength(1);
+      const knotted = [...first.nodes, { id: "k", position: first.knots[0]!.position, pins: knotPins, reroute: true }];
+      const rewired = [
+        ...edges.filter((edge) => edge !== cWire),
+        dataEdge("get", "k", "in"),
+        dataEdge("k", "c", "value", "out"),
+      ];
+      const second = formatGraphNodes(knotted, rewired, ["a", "o"], { insertKnots: true });
+      expect(second.knots).toEqual([]);
+      expect(second.nodes).toEqual(knotted);
+    });
+  });
 });
 
 describe("formatGraphNodes parameter rows", () => {
