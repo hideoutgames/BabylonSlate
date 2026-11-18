@@ -141,10 +141,11 @@ export const PARKED_SHADOW_ATLAS_MS = 10_000;
 /**
  * An atlas whose Scene was disposed while it held no tile, kept for the next Scene of its Engine whose first atlas has
  * its edge and pages (`sceneAtlas`): one Engine-wide hand-over instead of a release and an allocation of the same size
- * (256 MiB at High) at every Play start and stop, which also spares the driver initialising a fresh texture on its first
- * use (a transient of about its size on ANGLE D3D11). It is the render target wrapper (framebuffer and depth texture
+ * (256 MiB at High) at every Play start and stop, and no fresh texture's first use, which on ANGLE D3D11 showed a
+ * transient of about its size. It is the render target wrapper (framebuffer and depth texture
  * array), not the Scene's texture object. At most one is kept per Engine. It is freed by `discardParkedShadowAtlas`, after
- * `PARKED_SHADOW_ATLAS_MS`, on a context loss and with the Engine; no ledger counts it, as no Scene holds it.
+ * `PARKED_SHADOW_ATLAS_MS`, on a context loss and with the Engine (a Scene without lights runs no shadow sync, so after
+ * one only the timer frees it); no ledger counts it, as no Scene holds it.
  */
 type ParkedAtlas = { wrapper: RenderTargetWrapper; edge: number; page: number; release: () => void };
 const parked = new WeakMap<AbstractEngine, ParkedAtlas>();
