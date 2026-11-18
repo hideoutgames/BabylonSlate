@@ -61,7 +61,7 @@ describe("Named Reroute names", () => {
 
   it("wraps the default colours after eight declarations", () => {
     const previous = Array.from({ length: 8 }, (_, index) => declaration(`d${index}`, `R${index}`));
-    const added = { id: "ninth", type: "reroute.declaration", position: { x: 0, y: 0 }, properties: {} };
+    const added: MaterialGraphNode = { id: "ninth", type: "reroute.declaration", position: { x: 0, y: 0 }, properties: {} };
     expect(nameNewNamedReroutes(previous, [...previous, added]).at(-1)?.properties.color).toEqual([0.9, 0.3, 0.3]);
   });
 
@@ -77,7 +77,8 @@ describe("Named Reroute names", () => {
 });
 
 describe("pasting Named Reroutes", () => {
-  const canvas = (node: MaterialGraphNode) => ({ id: node.id, type: "pinNode", data: { ...node.properties, __nodeType: node.type } });
+  const canvas = (node: MaterialGraphNode): { id: string; type: string; data: Record<string, unknown> } =>
+    ({ id: node.id, type: "pinNode", data: { ...node.properties, __nodeType: node.type } });
 
   it("points pasted usages at the declaration pasted with them and leaves the rest", () => {
     const pasted = [

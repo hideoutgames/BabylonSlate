@@ -1,7 +1,13 @@
 import { titleForBtClassId } from "@haptic/behaviour-tree/catalog";
 import { displayNodeTitle, humanizePropertyLabel, type GraphClassMember } from "@haptic/core";
 import { particleNodeDefinitionFor, PARTICLE_PARAMETER_NODE_TYPE, PARTICLE_UNSUPPORTED_V1_TYPES } from "@haptic/particle-graph/catalog";
-import { materialNodeDefinition } from "@haptic/shader-graph/catalog";
+import {
+  isNamedRerouteDeclarationType,
+  isNamedRerouteUsageType,
+  materialNodeDefinition,
+  namedRerouteDeclarationId,
+  namedRerouteName,
+} from "@haptic/shader-graph/catalog";
 import { isMaterialParameterNode } from "@haptic/shader-graph/parameters";
 import {
   diffGraphSources,
@@ -134,11 +140,24 @@ function pinNames(pins: ReadonlyArray<{ id: string; name: string }> | undefined)
   return pins ? new Map(pins.map((pin) => [pin.id, pin.name])) : undefined;
 }
 
-function materialNode(node: Plain): ComparedNode {
+/** Each Named Reroute declaration's name by node id, so a usage is titled as on the canvas. */
+function namedRerouteNames(nodes: readonly Plain[]): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const node of nodes) {
+    if (!isNamedRerouteDeclarationType(String(node.type ?? "")) || !isPlainObject(node.properties)) continue;
+    const name = namedRerouteName({ properties: node.properties });
+    if (name) names.set(String(node.id), name);
+  }
+  return names;
+}
+
+function materialNode(node: Plain, reroutes: ReadonlyMap<string, string>): ComparedNode {
   const type = String(node.type ?? "");
   const data = isPlainObject(node.properties) ? node.properties : {};
   const definition = materialNodeDefinition(type);
-  const named = isMaterialParameterNode(type) ? text(data.name) : undefined;
+  const named = isMaterialParameterNode(type) || isNamedRerouteDeclarationType(type)
+    ? text(data.name)
+    : isNamedRerouteUsageType(type) ? reroutes.get(namedRerouteDeclarationId({ properties: data })) : undefined;
   const entry: ComparedNode = { id: String(node.id), type, position: position(node.position), data, title: named ?? definition?.title ?? type };
   const names = pinNames(definition?.inputs);
   if (names) entry.pinNames = names;
@@ -154,7 +173,9 @@ function functionPinMember(pin: Plain, group: "inputs" | "outputs"): GraphSource
 /** A Material or Material Function: its graph, a function's Inputs and Outputs, and its settings. */
 export function materialGraphSource(document: Plain): GraphSource | null {
   if (!Array.isArray(document.nodes)) return null;
-  const section: GraphSourceSection = { id: MAIN_GRAPH, title: "Graph", canvas: "material", nodes: list(document.nodes).map(materialNode), edges: pinGraphWires(document.edges), stored: document };
+  const nodes = list(document.nodes);
+  const reroutes = namedRerouteNames(nodes);
+  const section: GraphSourceSection = { id: MAIN_GRAPH, title: "Graph", canvas: "material", nodes: nodes.map((node) => materialNode(node, reroutes)), edges: pinGraphWires(document.edges), stored: document };
   const members = [...list(document.inputs).map((pin) => functionPinMember(pin, "inputs")), ...list(document.outputs).map((pin) => functionPinMember(pin, "outputs"))];
   return { sections: [section], members, items: [], fields: fieldsOf(document, new Set(["nodes", "edges", "inputs", "outputs"])) };
 }

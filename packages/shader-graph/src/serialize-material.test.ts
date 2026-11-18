@@ -14,6 +14,7 @@ import {
   pinsForMaterialNode,
   serializedToMaterialFunctionGraph,
   serializedToMaterialGraph,
+  type MaterialGraphPin,
 } from "./serialize-material";
 
 describe("material graph serialization", () => {
@@ -319,7 +320,7 @@ describe("Named Reroutes on the canvas", () => {
 
   it("connects any output to a declaration's input and a usage as the type it carries", () => {
     const pins = new Map(hydrateMaterialGraphForEditor(materialGraphToSerialized(rerouted())).nodes.flatMap((node) =>
-      (node.data.__pins as Parameters<typeof materialPinsAreCompatible>[0][]).map((pin) => [`${node.id}.${pin.id}`, pin] as const)));
+      (node.data.__pins as MaterialGraphPin[]).map((pin): [string, MaterialGraphPin] => [`${node.id}.${pin.id}`, pin])));
     const connects = (from: string, to: string) => materialPinsAreCompatible(pins.get(from)!, pins.get(to)!);
     expect(connects("albedo.out", "empty.in")).toBe(true);
     // A wired declaration shows its type yet still takes another.
