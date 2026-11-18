@@ -1254,7 +1254,7 @@ async function saveClickButton(ctx: FeatureTestContext, refs: ClassBase): Promis
         title: "Event On Click (Button)",
       }),
       getVar("get-clicks", clicks, 0, 200),
-      gNode("plus-one", "math.add_int", 220, 200, { "default:b": 1 }),
+      gNode("plus-one", "math.add", 220, 200, { aType: "int", bType: "int", "default:b": 1 }),
       setVar("set-clicks", clicks, 420, 0),
       gNode("format", "string.format", 640, 200, { "default:format": "Clicked {count}" }),
       ...setTextNodes(900, 0),

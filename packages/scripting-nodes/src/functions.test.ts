@@ -572,7 +572,7 @@ describe("functions.call of a Pure function", () => {
         node(registry, "range", "functions.call", {
           classId: "Hero", functionName: "Range", implicitSelf: true, pure: true, pins: SIGNATURE, "default:Amount": 4,
         }),
-        node(registry, "sum", "math.add_int"),
+        node(registry, "sum", "math.add", { aType: "int", bType: "int" }),
         node(registry, "logSum", "debug.log"),
         node(registry, "logLow", "debug.log"),
       ],

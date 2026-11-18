@@ -405,7 +405,7 @@ async function saveCameraTour(ctx: FeatureTestContext): Promise<{ tourPath: Plac
       gNode("wrap", "math.mod", 1100, 200),
       setVar("set-distance", distance, 1300, 0),
       at(splineFunction("Get Location At Distance Along Spline"), 1540, 0),
-      gNode("ahead", "vector.add3", 1800, 240),
+      gNode("ahead", "math.add", 1800, 240, { aType: "vec3", bType: "vec3" }),
       gNode("face", "rotator.lookAt", 2020, 200),
       gNode("self", "actor.getSelf", 2020, 360),
       gNode("move", "transform.setLocation", 1800, 0),
