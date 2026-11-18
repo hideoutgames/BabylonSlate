@@ -58,6 +58,8 @@ vi.mock("@haptic/render", () => ({
   createMaterialPreviewScene: () => null,
   createMaterialPreviewPresenter: () => null,
   createSkyboxMeshForFaces: () => null,
+  // The net's zoom buttons are off here; their drive is never pressed.
+  createViewportZoomDrive: () => ({ start: () => {}, stop: () => {}, step: () => {}, dispose: () => {} }),
   ResourceCache: class {},
 }));
 
