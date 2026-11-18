@@ -2953,6 +2953,7 @@ function GraphEditorCanvas({
         width: node.measured?.width ?? node.width,
         height: node.measured?.height ?? node.height,
         pins: hasSerializedPins(node.data) ? node.data.__pins : undefined,
+        reroute: isRerouteNodeData(node.data),
       })),
       currentEdges.map((edge) => ({
         source: edge.source,
@@ -2961,6 +2962,7 @@ function GraphEditorCanvas({
         targetHandle: edge.targetHandle ?? undefined,
       })),
       selected,
+      displayTypeLookup(pinDisplayTypesRef.current),
     );
     const positions = new Map(
       formatted.map((node) => [node.id, node.position]),

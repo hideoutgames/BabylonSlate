@@ -2,7 +2,7 @@ import { isRerouteNodeData } from "./graph-types";
 
 export const GRAPH_VIRTUALIZE_OVERSCAN_PX = 400;
 /** A Reroute knot at Large Pins 1 with a mouse (`.graph-reroute-knot` in graph-editor.css). */
-export const REROUTE_KNOT_SIZE = { width: 42, height: 20 } as const;
+export const REROUTE_KNOT_SIZE = { width: 70, height: 30 } as const;
 /** Blueprint node shells are at least `min-w-80` wide. */
 export const GRAPH_NODE_FALLBACK_WIDTH = 320;
 export const GRAPH_NODE_FALLBACK_HEIGHT = 120;

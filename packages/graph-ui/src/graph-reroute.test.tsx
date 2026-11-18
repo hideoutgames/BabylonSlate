@@ -153,7 +153,7 @@ describe("Reroute insertion", () => {
       expect(onChange).toHaveBeenCalledTimes(1);
       const graph = lastGraph(onChange);
       const knot = graph.nodes.find((node) => node.type === "flow.reroute")!;
-      expect(knot.position).toEqual({ x: 279, y: 190 });
+      expect(knot.position).toEqual({ x: 265, y: 185 });
       expect(knot.data).toMatchObject({ __reroute: true, __pins: reroutePins });
       expect(edgeEnds(graph)).toEqual([
         `${knot.id}.out>log.message`,

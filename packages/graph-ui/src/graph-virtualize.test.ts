@@ -146,8 +146,8 @@ describe("selectVisibleGraphElements", () => {
 describe("Reroute knot size", () => {
   it("estimates an unmeasured knot at its small size, not a node's", () => {
     const pins = [{ direction: "in" }, { direction: "out" }];
-    expect(estimateGraphNodeSize(pins, { __reroute: true })).toEqual({ width: 42, height: 20 });
+    expect(estimateGraphNodeSize(pins, { __reroute: true })).toEqual({ width: 70, height: 30 });
     expect(graphNodesBounds([{ id: "knot", position: { x: 100, y: 50 }, data: { __reroute: true, __pins: pins } }]))
-      .toEqual({ x: 100, y: 50, width: 42, height: 20 });
+      .toEqual({ x: 100, y: 50, width: 70, height: 30 });
   });
 });

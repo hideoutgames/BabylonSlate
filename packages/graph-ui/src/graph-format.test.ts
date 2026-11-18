@@ -858,3 +858,42 @@ describe("formatGraphNodes", () => {
     expect(formatGraphNodes(next, edges, ["consumer", "pure"])).toEqual(next);
   });
 });
+
+describe("formatGraphNodes with Reroute knots", () => {
+  const wildcard = { kind: "resolvingWildcard" };
+  const knotPins: SerializedPin[] = [
+    { id: "in", name: "In", kind: "data", direction: "in", type: wildcard, anyKind: true },
+    { id: "out", name: "Out", kind: "data", direction: "out", type: wildcard, anyKind: true },
+  ];
+  const bound = (kind: string) => (nodeId: string) => (nodeId === "knot" ? { kind } : undefined);
+
+  it("lays an exec knot on the exec row like an exec node", () => {
+    const nodes = [node("a", 10, 20), node("knot", 40, 300, knotPins), node("b", 12, 90)];
+    const edges = [
+      { source: "a", sourceHandle: "execOut", target: "knot", targetHandle: "in" },
+      { source: "knot", sourceHandle: "out", target: "b", targetHandle: "execIn" },
+    ];
+    const next = formatGraphNodes(nodes, edges, ["a"], bound("exec"));
+    expect(pos(next, "knot")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP * 2, y: 20 });
+  });
+
+  it("hangs a data knot below-left of its consumer like a pure node", () => {
+    const nodes = [
+      node("a", 10, 20),
+      node("b", 12, 90, execWithValueIn),
+      node("knot", 5, 200, knotPins),
+      node("get", 1, 300, dataOutPins),
+    ];
+    const edges = [
+      execEdge("a", "b"),
+      dataEdge("knot", "b", "value", "out"),
+      dataEdge("get", "knot", "in"),
+    ];
+    const next = formatGraphNodes(nodes, edges, ["a"], bound("string"));
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    expect(pos(next, "knot")).toEqual({ x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X, y: 20 + HANG_Y });
+    expect(pos(next, "get")).toEqual({ x: 10 + EXEC_STEP - (NODE_W + FORMAT_GAP_X) * 2, y: 20 + HANG_Y * 2 });
+    expectNoOverlaps(next);
+  });
+});
