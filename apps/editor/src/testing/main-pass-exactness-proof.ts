@@ -3,9 +3,9 @@
  * drawn through the production scene view with a Fast and a High Quality Render Target Capture and a Mirror, under a
  * shadowed sun, shadowed spot and point lights, two rect lights (one facing away from most of the view) and
  * Screen-Space Shadows. `reference` draws it as before the savings: the light block's rect loop visits every rect light
- * and fetches the LTC tables per light, a spot light's shadow is looked up outside its cone, and a capture's own sun
- * maps redraw every time. The spec compares the two runs' frames and
- * capture images byte for byte, after a still stretch and after a caster moves.
+ * and fetches the LTC tables per light, a spot light's shadow is looked up outside its cone, a light behind the surface
+ * is shadowed and shaded at its epsilon N.L, and a capture's own sun maps redraw every time. The spec compares the two
+ * runs' frames and capture images byte for byte, after a still stretch and after a caster moves.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
@@ -61,6 +61,10 @@ const REFERENCE_GLSL: readonly (readonly [string, string])[] = [
       "    float NdotL = hapticSaturateEps(dot(N, L));\n    vec3 radiance = color.rgb * hapticRangeFalloff(distanceSquared, color.w);\n" +
       "    if (spot) radiance = radiance * hapticConeFalloff(hapticSpot[i * 4 + 1].xyz, L, hapticSpot[i * 4 + 1].w, hapticSpot[i * 4 + 3].y);\n",
   ],
+  // A light behind the surface: its shadow looked up and its light summed at the epsilon N.L.
+  ["      if (sunFaces && sun.index >= 0 && (slot == 0 || sun.blends)) {\n", "      if (sun.index >= 0 && (slot == 0 || sun.blends)) {\n"],
+  ["      // Nor is a light's behind the surface, which adds nothing.\n      if (dot(N, L) <= 0.0) continue;\n", ""],
+  ["        // A directional light behind the surface adds nothing.\n        if (dot(N, L) <= 0.0) continue;\n", ""],
   // Every rect light, in record order, the LTC tables fetched for each.
   ["  uint rects = hapticClusterLights(clusterMask.y >> 16, int(hapticCounts.w));\n", "  uint rects = hapticClusterLights(0xffffu, int(hapticCounts.w));\n"],
   ["  if (rects == 0u) return;\n  hapticLtc ltc = hapticLtcTerms(N, V, surface.roughness);\n", ""],

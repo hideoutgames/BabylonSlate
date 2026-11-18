@@ -580,6 +580,13 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
   // filter adds over a second to the program's link. A slot's contribution is summed where its own loop summed it.
   hapticSunLookup sun = hapticSunCascade(P);
   float sunShadow = 1.0;
+  // A light behind the surface (its N.L not positive) adds nothing: its shadow is not looked up and its highlight is
+  // not evaluated. The sun's cascades are looked up where a shadowed directional light faces the surface.
+  bool sunFaces = false;
+  for (int d = 0; d < ${HAPTIC_LIGHT_MAXIMUM.directional}; d++) {
+    if (d >= int(hapticCounts.x)) break;
+    if (hapticDirectional[d * 2 + 1].w > 0.5 && dot(N, normalize(-hapticDirectional[d * 2].xyz)) > 0.0) sunFaces = true;
+  }
   uvec2 clusterMask = hapticClusterMask(P);
 #ifdef HAPTIC_DEBUG_NO_LOCAL_LIGHTS
   // \`worlddebug locallights off\`: no point, spot or rect light.
@@ -603,7 +610,7 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     float cone = 1.0;
     if (slot < 2) {
       // The sun's cascade, then the next one where it blends into it.
-      if (sun.index >= 0 && (slot == 0 || sun.blends)) {
+      if (sunFaces && sun.index >= 0 && (slot == 0 || sun.blends)) {
         view = sun.first + float(sun.index + slot);
         viewDx = dPdx;
         viewDy = dPdy;
@@ -636,6 +643,8 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
         cone = hapticConeFalloff(hapticSpot[i * 4 + 1].xyz, L, hapticSpot[i * 4 + 1].w, hapticSpot[i * 4 + 3].y);
         if (cone == 0.0) continue;
       }
+      // Nor is a light's behind the surface, which adds nothing.
+      if (dot(N, L) <= 0.0) continue;
       view = spot ? hapticSpot[i * 4 + 3].x : hapticPointShadowView(hapticPoint[i * 3 + 2], -offset);
     }
     float lit = hapticShadow(view, P, viewDx, viewDy);
@@ -649,6 +658,8 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
       for (int d = 0; d < ${HAPTIC_LIGHT_MAXIMUM.directional}; d++) {
         if (d >= int(hapticCounts.x)) break;
         vec3 L = normalize(-hapticDirectional[d * 2].xyz);
+        // A directional light behind the surface adds nothing.
+        if (dot(N, L) <= 0.0) continue;
         float NdotL = hapticSaturateEps(dot(N, L));
         vec4 record = hapticDirectional[d * 2 + 1];
 #ifdef HAPTIC_SCREEN_SHADOWS
@@ -801,6 +812,13 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
   // loop with one shadow lookup, as \`hapticDirectLights\` has.
   hapticSunLookup sun = hapticSunCascade(P);
   float sunShadow = 1.0;
+  // A light whose diffuse light is zero at the surface (behind it, or outside its cone) takes no shadow lookup: its
+  // shadow changes nothing. The sun's cascades are looked up where a shadowed directional light faces the surface.
+  bool sunFaces = false;
+  for (int d = 0; d < ${HAPTIC_LIGHT_MAXIMUM.directional}; d++) {
+    if (d >= int(hapticCounts.x)) break;
+    if (hapticDirectional[d * 2 + 1].w > 0.5 && dot(N, normalize(-hapticDirectional[d * 2].xyz)) > 0.0) sunFaces = true;
+  }
   uvec2 clusterMask = hapticClusterMask(P);
 #ifdef HAPTIC_DEBUG_NO_LOCAL_LIGHTS
   // \`worlddebug locallights off\`: no point, spot or rect light.
@@ -815,8 +833,11 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     vec3 offset = vec3(0.0);
     float distanceSquared = 0.0;
     float view = -1.0;
+    vec3 L = vec3(0.0);
+    // The light's N.L, range and cone at the surface: its diffuse light before its colour and shadow.
+    float reach = 0.0;
     if (slot < 2) {
-      if (sun.index >= 0 && (slot == 0 || sun.blends)) view = sun.first + float(sun.index + slot);
+      if (sunFaces && sun.index >= 0 && (slot == 0 || sun.blends)) view = sun.first + float(sun.index + slot);
     } else {
       spot = points == 0u;
       if (spot && spots == 0u) break;
@@ -837,7 +858,14 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
 #ifdef HAPTIC_LIGHT_LOOP_PROOF
       hapticLoopReached++;
 #endif
-      view = spot ? hapticSpot[i * 4 + 3].x : hapticPointShadowView(hapticPoint[i * 3 + 2], -offset);
+      L = normalize(offset);
+      reach = hapticRangeFalloff(distanceSquared, color.w);
+      if (spot) {
+        vec4 direction = hapticSpot[i * 4 + 1];
+        reach = reach * hapticConeFalloff(direction.xyz, L, direction.w, hapticSpot[i * 4 + 3].y);
+      }
+      reach = max(dot(N, L), 0.0) * reach;
+      if (reach > 0.0) view = spot ? hapticSpot[i * 4 + 3].x : hapticPointShadowView(hapticPoint[i * 3 + 2], -offset);
     }
     // Every view takes the pixel's footprint, for CEL's one-pixel shadow edge; only a cascade's receiver plane reads it.
     float lit = hapticShadow(view, P, dPdx, dPdy);
@@ -860,13 +888,7 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
       }
       continue;
     }
-    vec3 L = normalize(offset);
-    float falloff = hapticRangeFalloff(distanceSquared, color.w);
-    if (spot) {
-      vec4 direction = hapticSpot[i * 4 + 1];
-      falloff = falloff * hapticConeFalloff(direction.xyz, L, direction.w, hapticSpot[i * 4 + 3].y);
-    }
-    vec3 diffuse = color.rgb * (max(dot(N, L), 0.0) * falloff);
+    vec3 diffuse = color.rgb * reach;
     hapticCelAdd(result, diffuse, lit);
     diffuse *= lit;
     if (highlights) hapticCelHighlight(result, min(dot(N, normalize(V + L)) - slateCelSpecular.y, slateCelStrength(diffuse) - slateCelBands.w), color.rgb);
