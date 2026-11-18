@@ -71,9 +71,9 @@ function blended(lists: Array<{ transparent: boolean; names: string[] }>): strin
 function batchedX(scene: Scene): number[] {
   const xs = new Set<number>();
   for (const mesh of sceneDrawBatcher(scene)!.outputs()) {
-    const rows = (mesh as Mesh).getVertexBuffer("batchWorld0")?.getData() as Float32Array | undefined;
+    // Each vertex's first world row (four floats, the last its translation), for the vertices in use: the buffers keep spare room.
+    const rows = (mesh as Mesh).getVerticesData("batchWorld0");
     if (!rows) continue;
-    // Only the vertices in use: the buffers keep spare room.
     const used = (mesh as Mesh).subMeshes[0]!.verticesCount * 4;
     for (let at = 3; at < used; at += 4) xs.add(Math.round(rows[at]! * 1000) / 1000);
   }

@@ -157,6 +157,8 @@ interface Entry {
   parts: Part[];
   /** What the list cannot represent about it (as a member), or null. */
   blocker: LayerDrawListFallback | null;
+  /** The part of `blocker` that is the mesh's own (`meshBlocker`), polled: no write point notes it. */
+  own: LayerDrawListFallback | null;
   /** Read again every frame: the journal cannot hear its writes. */
   polled: boolean;
   alphaIndex: number;
@@ -489,7 +491,7 @@ export class LayerDrawList {
 
   private create(renderer: ObjectRenderer, mesh: AbstractMesh): Entry {
     const entry: Entry = {
-      mesh, ready: false, member: false, subMeshes: [], parts: [], blocker: null, polled: !journalFollows(mesh),
+      mesh, ready: false, member: false, subMeshes: [], parts: [], blocker: null, own: null, polled: !journalFollows(mesh),
       alphaIndex: 0, group: 0, layerMask: 0, always: false, sortGroup: undefined, sortLayer: undefined, ordinal: undefined, name: "",
       seen: this.stamp,
     };
@@ -552,9 +554,9 @@ export class LayerDrawList {
       (this.scene.skipFrustumClipping || mesh.alwaysSelectAsActiveMesh || mesh.isInFrustum(this.frustum())) &&
       !isRevealPending(mesh) && !!subMeshes;
     entry.parts.length = 0;
-    entry.blocker = null;
+    entry.blocker = entry.own = null;
     if (!entry.member) return;
-    entry.blocker = meshBlocker(mesh);
+    entry.blocker = entry.own = meshBlocker(mesh);
     const manager = (renderer as unknown as RendererInternals)._renderingManager;
     for (const subMesh of subMeshes) {
       const material = subMesh.getMaterial();
@@ -591,6 +593,8 @@ export class LayerDrawList {
       entry.sortLayer !== metadata?.sortingLayerKey || entry.ordinal !== metadata?.tilemapLayer?.ordinal;
     if (entry.member) {
       const subMeshes = mesh.subMeshes, kept = entry.subMeshes;
+      // Instances, LOD levels, a skeleton, edges or a shown box: work Babylon's preparation does, set unheard.
+      if (meshBlocker(mesh) !== entry.own) changed = true;
       if (!subMeshes || subMeshes.length !== kept.length) changed = true;
       else for (let index = 0; !changed && index < kept.length; index += 1) if (subMeshes[index] !== kept[index]) changed = true;
       // Which list each Material puts its submesh in: a Material's own state (alpha, transparency mode, its graph's
