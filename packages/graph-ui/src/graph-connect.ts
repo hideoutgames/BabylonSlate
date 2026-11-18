@@ -984,6 +984,30 @@ export function connectEndAction(
   return "none";
 }
 
+/**
+ * The decision a connect drag from `source` would take if released at `pointer` (client coordinates), from the
+ * mounted canvas under `root`: `located` holds the screen centres of the pins the dragged pin may connect to.
+ * The release and a second pointer during the drag both read it, so they agree on where Add Node opens.
+ */
+export function connectEndDecisionAt(
+  root: ParentNode,
+  pointer: { x: number; y: number },
+  source: { nodeId: string; pinId: string },
+  hasTargetHandle: boolean,
+  located: readonly SnapConnectPin[],
+): ConnectEndBreakDecision {
+  return {
+    hasTargetHandle,
+    pointerOverNode: isClientPointOverGraphNode(pointer, root),
+    pointerOverSourceHandle: isClientPointOverHandle(pointer, source.nodeId, source.pinId, root),
+    pointer,
+    safePins: located.map((entry) => ({ x: entry.x, y: entry.y })),
+    snapPins: located
+      .filter((entry) => entry.nodeId !== source.nodeId)
+      .map((entry) => ({ x: entry.x, y: entry.y })),
+  };
+}
+
 export function shouldBreakPinConnectionsOnConnectEnd(
   decision: ConnectEndBreakDecision,
 ): boolean {

@@ -303,6 +303,28 @@ describe("formatGraphNodes", () => {
     expectNoOverlaps(next);
   });
 
+  it("counts an unmeasured node's Add Pin control as one more pin row when stacking below it", () => {
+    // `upper` is unmeasured with one pin row per side: 120 tall (the fallback minimum), 138 with
+    // the Add Pin row (50 + 2 × 44). `lower` feeds the next input and clears it by the gap.
+    const stacked = (addPin: FormatNode["addPin"]) => {
+      const nodes: FormatNode[] = [
+        node("a", 0, 0),
+        node("b", 0, 0, twoDataInPins),
+        { id: "upper", position: { x: 0, y: 0 }, pins: dataThruPins, addPin },
+        node("lower", 0, 0, dataOutPins),
+      ];
+      const edges = [
+        execEdge("a", "b"),
+        dataEdge("upper", "b", "first"),
+        dataEdge("lower", "b", "second"),
+      ];
+      const next = layout(nodes, edges, ["a"]);
+      return pos(next, "lower").y - pos(next, "upper").y;
+    };
+    expect(stacked(undefined)).toBe(120 + FORMAT_GAP_Y);
+    expect(stacked({ side: "in", label: "Add Pin" })).toBe(138 + FORMAT_GAP_Y);
+  });
+
   it("places a nested data input further left on its consumer's row, its wire level", () => {
     const nodes = [
       node("a", 10, 20),

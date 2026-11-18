@@ -1988,6 +1988,43 @@ describe("GraphEditor", () => {
     }
   });
 
+  it.each([
+    // Between the nodes, 62px from log-b's exec input (302, 22): a release there snap-connects, so the wire stays.
+    { at: { x: 240, y: 22 }, cancels: false },
+    // Far from every pin: a release there opens Add Node, so a second pointer cancels.
+    { at: farDrop, cancels: true },
+  ])("cancels on a second pointer in zone-add-node mode only where a release would open Add Node ($at.x)", ({ at, cancels }) => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          connectEndMode="zone-add-node"
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      const pane = container.querySelector(".react-flow__pane");
+      expect(pane).not.toBeNull();
+      onChange.mockClear();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, at, () => {
+          dispatchPointerEvent(pane!, "pointerdown", { clientX: 600, clientY: 300, pointerId: 2 });
+          dispatchPointerEvent(pane!, "pointerup", { clientX: 600, clientY: 300, pointerId: 2 });
+        });
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+      const edges = (onChange.mock.calls.at(-1)?.[0] as GraphDocument | undefined)?.edges ?? [];
+      expect(edges).toEqual(cancels ? [] : [
+        expect.objectContaining({ source: "log-a", sourceHandle: "execOut", target: "log-b", targetHandle: "execIn" }),
+      ]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("does not open Add Node or break wires after a second-pointer cancel", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
