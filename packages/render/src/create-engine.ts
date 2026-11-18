@@ -67,6 +67,7 @@ import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import { engineFrameBackpressure } from "./frame-backpressure";
 import { invalidateBackbufferDepthStencil } from "./backbuffer-invalidate";
 import { engineGpuProbe, existingGpuProbe } from "./gpu-probe-engine";
+import { TrailingMean } from "./trailing-mean";
 import { liveShadowAtlasEdge, shadowAtlasDrawCounts, shadowAtlasGeneration } from "./shadow-atlas";
 import { HELD_FRAME_LABELS, HELD_FRAME_OTHER, HeldFrameReasons } from "./held-frames";
 import { spawnsLights2D, type SpawnableLight } from "./spawnable-lights";
@@ -359,6 +360,8 @@ export function createEngine(
   }
 }
 
+/** Rendered frames `RenderDiagnostics.cpuMeanMs` averages: half a second at 60 fps. */
+const RENDER_CPU_MEAN_FRAMES = 30;
 /** How long `renderreset idle` renders nothing. */
 const RENDER_RESET_IDLE_MS = 3000;
 /** Snapshot slots before the game runtime installs its layout (`SnapshotSampler.installLayout`). */
@@ -1997,6 +2000,8 @@ function initializeEngine(
   /** `showocclusion`: hosts draw the world view's occlusion buffer over the view. */
   let occlusionOverlay = false;
   let lastRenderCpuMs = 0;
+  /** `RenderDiagnostics.cpuMeanMs`: the mean of the last rendered frames' CPU time. */
+  const renderCpuMean = new TrailingMean(RENDER_CPU_MEAN_FRAMES);
   // Dynamic scaling input: whether this view presented the current and previous
   // engine frames (non-loading), when the last presentation happened, and the
   // most recent pressure sample surfaced through diagnostics.
@@ -2046,6 +2051,7 @@ function initializeEngine(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: pressureSampled ? { ...lastPressureSample } : null, gpuAttribution: gpuAttribution() }),
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}),
+      cpuMeanMs: renderCpuMean.mean(),
       backbuffer: { width: engine.getRenderWidth(true), height: engine.getRenderHeight(true) }, firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
       drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last),
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, gpuProbe: existingGpuProbe(engine)?.snapshot() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
@@ -2527,6 +2533,7 @@ function initializeEngine(
     // After `noteRendered`, so camera motion counts as activity (Half Rate When Idle) though the frame drew it.
     if (cameraMoved?.(scene.frameGraph?.findMainCamera() ?? scene.activeCamera)) scheduler.noteActivity();
     lastRenderCpuMs = performance.now() - renderStart;
+    renderCpuMean.add(lastRenderCpuMs);
     if (profileReceipt) {
       profileReceipt.sample.submissionMs = lastRenderCpuMs;
       profileReceipt.sample.drawCalls = lastDrawCalls;
