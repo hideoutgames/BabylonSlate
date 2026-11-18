@@ -99,6 +99,7 @@ describe("Playwright iPad project filter", () => {
     expect(filesOf(landscape)).toEqual([
       "compiler-results-open.spec.ts",
       "component-gallery.spec.ts",
+      "graph-reroute.spec.ts",
       "p10-tilemap.spec.ts",
       "scene-layer-joystick.spec.ts",
       "scene-modes.spec.ts",
