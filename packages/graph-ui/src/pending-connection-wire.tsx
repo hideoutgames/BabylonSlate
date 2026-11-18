@@ -1,5 +1,4 @@
-import { Position, useInternalNode, ViewportPortal } from "@xyflow/react";
-import { graphWirePathBetween } from "./graph-wire-between";
+import { getBezierPath, Position, useInternalNode, ViewportPortal } from "@xyflow/react";
 import type { CSSProperties } from "react";
 
 const OPPOSITE: Record<Position, Position> = {
@@ -36,7 +35,7 @@ export function PendingConnectionWire({
   // The pin's centre, where the dragged wire started.
   const fromX = node.internals.positionAbsolute.x + handle.x + handle.width / 2;
   const fromY = node.internals.positionAbsolute.y + handle.y + handle.height / 2;
-  const [path] = graphWirePathBetween({
+  const [path] = getBezierPath({
     sourceX: fromX,
     sourceY: fromY,
     sourcePosition: handle.position,

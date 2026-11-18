@@ -1,9 +1,9 @@
 import type { GraphAddPin, SerializedPin } from "./graph-types";
 import { pinWithDisplayType } from "./graph-connect";
-import { sampleGraphWire } from "./graph-wire-path";
 import {
   estimateGraphNodeSize,
   GRAPH_NODE_CHROME_HEIGHT,
+  GRAPH_NODE_FALLBACK_WIDTH,
   GRAPH_PIN_ROW_HEIGHT,
   REROUTE_KNOT_SIZE,
 } from "./graph-virtualize";
@@ -28,6 +28,12 @@ const LANE_CANDIDATES = 24;
 const PAST_CANDIDATES = 8;
 // Points sampled along a wire's curve when testing it against node boxes.
 const WIRE_SAMPLES = 24;
+// XYFlow `getBezierPath`'s default curvature.
+const WIRE_CURVATURE = 0.25;
+/** Longer than two columns: a wire this long runs level with short transitions. */
+const LONG_WIRE = 2 * (GRAPH_NODE_FALLBACK_WIDTH + FORMAT_GAP_X);
+/** The longest stretch, across, of a knotted wire's change of height. */
+const MAX_TRANSITION = 2 * FORMAT_GAP_X;
 
 export type FormatNode = {
   id: string;
@@ -1144,33 +1150,33 @@ function boxesAcross(obstacles: Obstacles, minX: number, maxX: number): Obstacle
   return found;
 }
 
-/** Whether segment a–b comes within `clearance` of a box (the box grown by it, clipped). */
-function segmentMeetsBox(a: Point, b: Point, box: Box, clearance: number): boolean {
-  if (work) work.tests++;
-  const minX = box.x - clearance;
-  const maxX = box.x + box.width + clearance;
-  const minY = box.y - clearance;
-  const maxY = box.y + box.height + clearance;
-  let low = 0;
-  let high = 1;
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  for (const [p, q] of [[-dx, a.x - minX], [dx, maxX - a.x], [-dy, a.y - minY], [dy, maxY - a.y]] as const) {
-    if (p === 0) {
-      if (q <= 0) return false;
-      continue;
-    }
-    const r = q / p;
-    if (p < 0) low = Math.max(low, r);
-    else high = Math.min(high, r);
-    if (low >= high) return false;
+/** XYFlow `calculateControlOffset`. */
+function controlOffset(distance: number): number {
+  return distance >= 0 ? 0.5 * distance : WIRE_CURVATURE * 25 * Math.sqrt(-distance);
+}
+
+/**
+ * The wire the editor draws between two pins, sampled: XYFlow's bezier from a right-facing source
+ * to a left-facing target (`getBezierPath`, default curvature), `WIRE_SAMPLES` + 1 points.
+ */
+function bezierPoints(from: Point, to: Point): Point[] {
+  const offset = controlOffset(to.x - from.x);
+  const points: Point[] = [];
+  for (let sample = 0; sample <= WIRE_SAMPLES; sample++) {
+    const t = sample / WIRE_SAMPLES;
+    const u = 1 - t;
+    points.push({
+      x: u * u * u * from.x + 3 * u * u * t * (from.x + offset) + 3 * u * t * t * (to.x - offset) + t * t * t * to.x,
+      // The controls sit level with each end: written this way a level wire stays exactly level.
+      y: from.y + (to.y - from.y) * (3 * u * t * t + t * t * t),
+    });
   }
-  return true;
+  return points;
 }
 
 /**
  * The first box (from source to target) that the wire the editor draws between two pins
- * (`graphWirePath`: level stubs and one symmetric ease) runs within `clearance` of.
+ * (`bezierPoints`) runs within `clearance` of.
  */
 function firstObstruction(
   from: Point,
@@ -1178,21 +1184,29 @@ function firstObstruction(
   ends: readonly string[],
   obstacles: Obstacles,
   clearance = WIRE_CLEARANCE,
-  points: readonly Point[] = sampleGraphWire(from.x, from.y, to.x, to.y, WIRE_SAMPLES),
 ): Obstacle | undefined {
-  let minX = Infinity, maxX = -Infinity;
-  for (const point of points) {
-    minX = Math.min(minX, point.x);
-    maxX = Math.max(maxX, point.x);
-  }
+  const offset = controlOffset(to.x - from.x);
+  const first = { x: from.x + offset, y: from.y };
+  const second = { x: to.x - offset, y: to.y };
+  // The curve stays inside its control points' bounds.
+  const minX = Math.min(from.x, second.x) - clearance;
+  const maxX = Math.max(first.x, to.x) + clearance;
   const minY = Math.min(from.y, to.y) - clearance;
   const maxY = Math.max(from.y, to.y) + clearance;
-  const near = boxesAcross(obstacles, minX - clearance, maxX + clearance).filter(
+  const near = boxesAcross(obstacles, minX, maxX).filter(
     (box) => !ends.includes(box.id) && box.y <= maxY && box.y + box.height >= minY,
   );
   if (near.length === 0) return undefined;
-  for (let index = 1; index < points.length; index++) {
-    const hit = near.find((box) => segmentMeetsBox(points[index - 1]!, points[index]!, box, clearance));
+  for (let sample = 1; sample <= WIRE_SAMPLES; sample++) {
+    const t = sample / (WIRE_SAMPLES + 1);
+    const u = 1 - t;
+    const x = u * u * u * from.x + 3 * u * u * t * first.x + 3 * u * t * t * second.x + t * t * t * to.x;
+    // first.y is from.y and second.y is to.y: written this way a level wire stays exactly level.
+    const y = from.y + (to.y - from.y) * (3 * u * t * t + t * t * t);
+    const hit = near.find((box) => {
+      if (work) work.tests++;
+      return x > box.x - clearance && x < box.x + box.width + clearance && y > box.y - clearance && y < box.y + box.height + clearance;
+    });
     if (hit) return hit;
   }
   return undefined;
@@ -1247,7 +1261,7 @@ function knotBesideTarget(
 }
 
 type Bounds = { minX: number; maxX: number; minY: number; maxY: number };
-/** One stretch of a routed wire: level (a run) or an ease between two heights, sampled. */
+/** One stretch of a routed wire: level (a run) or a bezier between two heights, sampled. */
 type Piece = {
   from: Point;
   to: Point;
@@ -1410,7 +1424,7 @@ function piecesOf(from: Point, knots: readonly Position[], size: Size, to: Point
     const a = stops[index]!;
     const b = stops[index + 1]!;
     const level = a.y === b.y;
-    const path = level ? [a, b] : sampleGraphWire(a.x, a.y, b.x, b.y, WIRE_SAMPLES);
+    const path = level ? [a, b] : bezierPoints(a, b);
     pieces.push({ from: a, to: b, level, path, bounds: pointBounds(path) });
   }
   return pieces;
@@ -1517,7 +1531,7 @@ function routeFits(
         if (ends.includes(box.id) || box.x >= maxX || box.x + box.width <= minX) continue;
         if (piece.from.y > box.y - runClearance && piece.from.y < box.y + box.height + runClearance) return false;
       }
-    } else if (firstObstruction(piece.from, piece.to, ends, obstacles, curveClearance, piece.path)) {
+    } else if (firstObstruction(piece.from, piece.to, ends, obstacles, curveClearance)) {
       return false;
     }
   }
@@ -1634,7 +1648,7 @@ function routeCandidates(
         for (const left of [blocked.x, highest]) routes.push([knot(Math.min(Math.max(left, lowest), highest), lane)]);
       }
       // Level with the target pin just past a box on the way, nearest the target first, so the wire
-      // eases once past the boxes and runs level into the pin (Line Trace's Target).
+      // turns once past the boxes and runs level into the pin (Line Trace's Target).
       const past = new Set<number>();
       for (const box of boxesAcross(obstacles, from.x, to.x)) {
         if (ends.includes(box.id)) continue;
@@ -1658,11 +1672,13 @@ function cheaper(cost: readonly number[], than: readonly number[]): boolean {
 }
 
 /**
- * Lays every data and exec wire between two formatted nodes. A wire that is level and clear stays
- * direct; any other wire takes the best route of `routeCandidates` that fits (`routeFits`), direct
- * included, so a wire whose own ease keeps clear of nodes and other wires takes no knot: fewest
- * knots, then fewest crossings with the wires already laid, then candidate order for exec wires
- * (nearest lane first) and the shortest for data wires. Exec wires go first, each node's lowest branch
+ * Lays every data and exec wire between two formatted nodes as level runs joined by short
+ * transitions. A wire that is level and clear stays direct; a short wire stays direct while it
+ * keeps clear of nodes and other wires; a long or steep one (`LONG_WIRE`), and one that runs into
+ * a node, takes the best route of `routeCandidates` that fits (`routeFits`) and whose transitions
+ * span at most `MAX_TRANSITION` across: fewest knots, then fewest crossings with the wires already
+ * laid, then candidate order for exec wires (nearest lane first) and the shortest for data wires.
+ * Exec wires go first, each node's lowest branch
  * first so its drop sits nearest the node; then data wires; each in a fixed order, so a second
  * Format lays every wire the same way. Placed knots and wires are obstacles for later wires.
  * Cost per wire: O(C · (W + R + P²)) for C candidates (at most 10 + 6 × `LANE_CANDIDATES`), W boxes in
@@ -1739,6 +1755,14 @@ function routeWires(
     const source = `${edge.source}\n${edge.sourceHandle}`;
     const target = `${edge.target}\n${edge.targetHandle}`;
     const sharesPin = (other: Committed) => other.source === source || other.target === target;
+    const dx = to.x - from.x;
+    const dy = Math.abs(to.y - from.y);
+    // A long wire, or a steep one past the next column, runs level with short transitions: under
+    // XYFlow's bezier it would otherwise be a long diagonal. Pins a few units apart (a custom
+    // event's lower exec pin) already read as level.
+    const needsLevel = dy > WIRE_CLEARANCE && (dx > LONG_WIRE || (dx > 2 * FORMAT_GAP_X && dy > dx));
+    // Transitions stay short; the first may reach past the knot lanes of the source's other wires.
+    const reach = (index: number) => MAX_TRANSITION + (index === 0 ? 2 * (size.width + WIRE_SPACING) : 0);
     let best: { route: Position[]; pieces: Piece[]; cost: number[] } | undefined;
     // Wires keep apart where they can; where no route can, they still keep clear of every node.
     // An exec drop takes the first lane that fits, nearest its node, so a node's lowest branch
@@ -1755,7 +1779,9 @@ function routeWires(
         const group = count === 0 ? [[] as Position[]] : candidates!;
         for (const [order, route] of group.entries()) {
           if (route.length !== count) continue;
+          if (count === 0 && needsLevel && limit > 0 && spaced) continue;
           const pieces = piecesOf(from, route, size, to);
+          if (count > 0 && pieces.some((piece, at) => !piece.level && Math.abs(piece.to.x - piece.from.x) > reach(at))) continue;
           const boxes = route.map((at) => ({ ...at, ...size }));
           const direct = route.length === 0;
           const clearance = direct ? (from.y === to.y ? WIRE_CLEARANCE : WIRE_CROWDING) : WIRE_CLEARANCE;

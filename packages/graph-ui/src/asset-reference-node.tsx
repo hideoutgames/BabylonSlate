@@ -2,11 +2,11 @@ import {
   BaseEdge,
   Handle,
   Position,
+  getBezierPath,
   type EdgeProps,
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { graphWirePathBetween } from "./graph-wire-between";
 import {
   TypeVisualIcon,
   humanizePropertyLabel,
@@ -95,7 +95,7 @@ function AssetMutualReferenceEdge({
   markerEnd,
   style,
 }: EdgeProps) {
-  const [path] = graphWirePathBetween({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
   return <BaseEdge id={id} path={path} markerStart={markerEnd} markerEnd={markerEnd} style={style} />;
 }
 

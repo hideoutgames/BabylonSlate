@@ -11,7 +11,6 @@ import {
   formatPinOffsetKey,
 } from "./graph-format";
 import { REROUTE_KNOT_SIZE } from "./graph-virtualize";
-import { sampleGraphWire } from "./graph-wire-path";
 
 const execPins: SerializedPin[] = [
   {
@@ -1326,6 +1325,7 @@ describe("formatGraphNodes on a Line Trace graph", () => {
     expect(new Set(result.knots.map((knot) => knot.edge))).toEqual(new Set([startWire, targetWire]));
     const knotted = withKnots(result, edges);
     expectWiresClear(knotted.nodes, knotted.edges);
+    expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
     // The last knot sits level with its target pin (one pin row under the exec wire) and the wire
     // runs level from it into the pin.
     for (const knot of result.knots) {
@@ -1482,6 +1482,28 @@ function expectExecKnotsInLane(nodes: readonly FormatNode[], result: FormatResul
   }
 }
 
+/**
+ * Wires are level runs joined by short transitions: a piece between knots, or between a node and a
+ * knot, changes height over at most 480 across (240, plus two knot lanes beside a node with
+ * several drops); a direct wire that changes height spans at most two columns (880) and, past the
+ * next column (240), is no steeper than 45 degrees.
+ */
+function expectWiresLevelWithShortTransitions(nodes: readonly FormatNode[], edges: readonly FormatEdge[]): void {
+  const knots = new Set(nodes.filter((entry) => entry.reroute).map((entry) => entry.id));
+  for (const { edge, from, to } of sampledWires(nodes, edges)) {
+    const dx = Math.abs(to.x - from.x);
+    const dy = Math.abs(to.y - from.y);
+    if (dy <= 8) continue;
+    const label = `${edge.source}.${edge.sourceHandle} → ${edge.target}.${edge.targetHandle}`;
+    if (knots.has(edge.source) || knots.has(edge.target)) {
+      expect(dx, label).toBeLessThanOrEqual(480);
+    } else {
+      expect(dx, label).toBeLessThanOrEqual(880);
+      if (dx > 240) expect(dy, label).toBeLessThanOrEqual(dx);
+    }
+  }
+}
+
 /** Points along a polyline at most 10 apart. */
 function densely(points: readonly { x: number; y: number }[]): { x: number; y: number }[] {
   const out: { x: number; y: number }[] = [];
@@ -1498,7 +1520,7 @@ function densely(points: readonly { x: number; y: number }[]): { x: number; y: n
   return out;
 }
 
-/** The wires as the editor draws them (the shared wire shape), sampled densely. */
+/** The wires as the editor draws them (XYFlow's bezier, right-facing source, left-facing target), sampled densely. */
 function sampledWires(nodes: readonly FormatNode[], edges: readonly FormatEdge[]): { edge: FormatEdge; from: { x: number; y: number }; to: { x: number; y: number }; points: { x: number; y: number }[] }[] {
   const byId = new Map(nodes.map((entry) => [entry.id, entry]));
   return edges.map((edge) => {
@@ -1506,7 +1528,18 @@ function sampledWires(nodes: readonly FormatNode[], edges: readonly FormatEdge[]
     const target = byId.get(edge.target)!;
     const from = { x: source.position.x + sizeOf(source).width, y: handleY(source, "out", edge.sourceHandle) };
     const to = { x: target.position.x, y: handleY(target, "in", edge.targetHandle) };
-    return { edge, from, to, points: densely(sampleGraphWire(from.x, from.y, to.x, to.y, 100)) };
+    const dx = to.x - from.x;
+    const pull = dx >= 0 ? dx / 2 : 6.25 * Math.sqrt(-dx);
+    const points = [];
+    for (let step = 0; step <= 200; step++) {
+      const t = step / 200;
+      const u = 1 - t;
+      points.push({
+        x: u ** 3 * from.x + 3 * u * u * t * (from.x + pull) + 3 * u * t * t * (to.x - pull) + t ** 3 * to.x,
+        y: from.y + (to.y - from.y) * (3 * u * t * t + t ** 3),
+      });
+    }
+    return { edge, from, to, points: densely(points) };
   });
 }
 
@@ -1602,6 +1635,7 @@ describe("formatGraphNodes on a branching graph", () => {
   });
 
   it("keeps wires apart, crossing only where the branch and Length's far wire must", () => {
+    expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
     expect(closestParallelRuns(knotted.nodes, knotted.edges)).toBeGreaterThanOrEqual(40);
     // False drops from Branch to its row below while Length's wire runs past Branch to To String:
     // the two cannot both stay on their sides.
@@ -1693,6 +1727,7 @@ describe("formatGraphNodes on a Sequence graph", () => {
   });
 
   it("drops Then 1 and Then 2 nested below the Then 0 block, the lowest nearest the Sequence", () => {
+    expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
     expectExecKnotsInLane(result.nodes, result);
     const blockBottom = Math.max(...["array", "int0", "int1", "int2", "length", "add", "toString"].map((id) => {
       const entry = byIdOf(result.nodes, id);
@@ -1700,15 +1735,17 @@ describe("formatGraphNodes on a Sequence graph", () => {
     }));
     expect(pos(result.nodes, "forEach").y).toBeGreaterThanOrEqual(blockBottom + FORMAT_GAP_Y);
     expect(pos(result.nodes, "setLocation").y).toBeGreaterThan(pos(result.nodes, "forEach").y);
-    // Then 2 (the lowest row) drops nearest the Sequence on its own ease, needing no knot: Set
-    // Location's block keeps left of the knot lane. Then 1 drops further out into a knot level
-    // with For Each's Exec.
-    expect(result.knots.map((knot) => knot.edge.sourceHandle)).toEqual(["then1"]);
-    const [drop] = result.knots;
-    const knotY = drop!.positions[drop!.positions.length - 1]!.y + REROUTE_KNOT_SIZE.height / 2;
-    expect(knotY).toBe(handleY(byIdOf(result.nodes, "forEach"), "in", "execIn"));
+    // Then 2 (the lowest row) drops in the lane nearest the Sequence, Then 1 one spacing further
+    // out; each knot sits exactly level with its row's exec pin, as Set Location's block keeps left
+    // of the knot lane.
+    const drop = (handle: string) => result.knots.find((knot) => knot.edge.sourceHandle === handle)!;
+    expect(drop("then1").positions[0]!.x - drop("then2").positions[0]!.x).toBe(40);
+    for (const [handle, target] of [["then1", "forEach"], ["then2", "setLocation"]] as const) {
+      const knot = drop(handle).positions[0]!;
+      expect(knot.y + REROUTE_KNOT_SIZE.height / 2).toBe(handleY(byIdOf(result.nodes, target), "in", "execIn"));
+    }
     const divide = byIdOf(result.nodes, "divide");
-    expect(divide.position.x + divide.width! + 8).toBeLessThanOrEqual(drop!.positions[0]!.x);
+    expect(divide.position.x + divide.width! + 8).toBeLessThanOrEqual(drop("then2").positions[0]!.x);
     expect(closestParallelRuns(knotted.nodes, knotted.edges)).toBeGreaterThanOrEqual(40);
     // Make Array (in the Then 0 block, above) feeds For Each's Array, below the level run into
     // For Each's Exec: that wire has to cross the run. The drops never cross.
@@ -1806,6 +1843,7 @@ describe("formatGraphNodes on a loop with branches sharing inputs", () => {
     };
     expect(wireCrossings(knotted.nodes, [...chain("element"), ...chain("index")])).toBe(0);
     expectWiresClear(knotted.nodes, knotted.edges);
+    expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
     expectNoBoxOverlaps(knotted.nodes);
     expectExecKnotsInLane(result.nodes, result);
     expect(closestParallelRuns(knotted.nodes, knotted.edges)).toBeGreaterThanOrEqual(40);
