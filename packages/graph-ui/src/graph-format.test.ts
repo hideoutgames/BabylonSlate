@@ -7,6 +7,7 @@ import {
   type FormatEdge,
   type FormatNode,
   type FormatOptions,
+  type FormatResult,
   formatPinOffsetKey,
 } from "./graph-format";
 import { REROUTE_KNOT_SIZE } from "./graph-virtualize";
@@ -1233,6 +1234,12 @@ describe("formatGraphNodes on a Line Trace graph", () => {
     expect(plain.nodes).toEqual(next);
   });
 
+  it("runs no wire through a node it does not connect once its knots are in place", () => {
+    const knotted = withKnots(formatGraphNodes(nodes, edges, ["event"], { insertKnots: true }), edges);
+    expectWiresClear(knotted.nodes, knotted.edges);
+    expectNoBoxOverlaps(knotted.nodes);
+  });
+
   it("changes nothing when formatted again with its knots in place", () => {
     const first = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
     const knotted = [...first.nodes];
@@ -1251,3 +1258,290 @@ describe("formatGraphNodes on a Line Trace graph", () => {
     expect(second.nodes).toEqual(knotted);
   });
 });
+
+// ---- Whole-graph checks, written independently of the layout code ----
+
+/** Every knot Format asked for, added as a node with the two wires that replace its wire. */
+function withKnots(result: FormatResult, edges: readonly FormatEdge[]): { nodes: FormatNode[]; edges: FormatEdge[] } {
+  const nodes = [...result.nodes];
+  let wires = [...edges];
+  result.knots.forEach((knot, index) => {
+    const id = `knot${index}`;
+    nodes.push({ id, position: knot.position, pins: knotPins, reroute: true });
+    wires = [
+      ...wires.filter((edge) => edge !== knot.edge),
+      { id: `${knot.edge.id}:in`, source: knot.edge.source, sourceHandle: knot.edge.sourceHandle, target: id, targetHandle: "in" },
+      { id: `${knot.edge.id}:out`, source: id, sourceHandle: "out", target: knot.edge.target, targetHandle: knot.edge.targetHandle },
+    ];
+  });
+  return { nodes, edges: wires };
+}
+
+function sizeOf(entry: FormatNode): { width: number; height: number } {
+  return entry.reroute && entry.width === undefined ? REROUTE_KNOT_SIZE : { width: entry.width!, height: entry.height! };
+}
+
+function handleY(entry: FormatNode, direction: "in" | "out", pinId: string | undefined): number {
+  if (entry.reroute) return entry.position.y + sizeOf(entry).height / 2;
+  return entry.position.y + entry.pinOffsets![formatPinOffsetKey(direction, pinId!)]!;
+}
+
+/**
+ * The nearest any wire comes to a node it does not connect: the wire as the editor draws it
+ * (a bezier leaving right and entering left, control points half the horizontal distance out, or
+ * 25 × 0.25 × √distance when it runs backwards), sampled at 200 points.
+ */
+function wireClearances(nodes: readonly FormatNode[], edges: readonly FormatEdge[]): { wire: string; node: string; distance: number }[] {
+  const byId = new Map(nodes.map((entry) => [entry.id, entry]));
+  const found: { wire: string; node: string; distance: number }[] = [];
+  for (const edge of edges) {
+    const source = byId.get(edge.source)!;
+    const target = byId.get(edge.target)!;
+    const from = { x: source.position.x + sizeOf(source).width, y: handleY(source, "out", edge.sourceHandle) };
+    const to = { x: target.position.x, y: handleY(target, "in", edge.targetHandle) };
+    const dx = to.x - from.x;
+    const pull = dx >= 0 ? dx / 2 : 6.25 * Math.sqrt(-dx);
+    let nearest = { node: "", distance: Infinity };
+    for (let step = 1; step < 200; step++) {
+      const t = step / 200;
+      const u = 1 - t;
+      const x = u ** 3 * from.x + 3 * u * u * t * (from.x + pull) + 3 * u * t * t * (to.x - pull) + t ** 3 * to.x;
+      const y = from.y + (to.y - from.y) * (3 * u * t * t + t ** 3);
+      for (const other of nodes) {
+        if (other.id === edge.source || other.id === edge.target) continue;
+        const size = sizeOf(other);
+        const gapX = Math.max(other.position.x - x, 0, x - other.position.x - size.width);
+        const gapY = Math.max(other.position.y - y, 0, y - other.position.y - size.height);
+        const distance = Math.hypot(gapX, gapY);
+        if (distance < nearest.distance) nearest = { node: other.id, distance };
+      }
+    }
+    found.push({ wire: `${edge.source}.${edge.sourceHandle} → ${edge.target}.${edge.targetHandle}`, ...nearest });
+  }
+  return found;
+}
+
+/** No wire runs through, or within the 8-unit clearance of, a node it does not connect. */
+function expectWiresClear(nodes: readonly FormatNode[], edges: readonly FormatEdge[]): void {
+  const close = wireClearances(nodes, edges).filter((entry) => entry.distance < 8);
+  expect(close).toEqual([]);
+}
+
+function expectNoBoxOverlaps(nodes: readonly FormatNode[]): void {
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = { ...nodes[i]!.position, ...sizeOf(nodes[i]!) };
+      const b = { ...nodes[j]!.position, ...sizeOf(nodes[j]!) };
+      expect(boxesOverlap(a, b), `${nodes[i]!.id} overlaps ${nodes[j]!.id}`).toBe(false);
+    }
+  }
+}
+
+// Cards as the editor measures them: a 52px title and padding, 44px pin rows with handle centres
+// 69 + 44 × row below the top, 320 wide; Print String carries a 20px Development Only footer.
+type Row = [string | null, string | null];
+function editorCard(id: string, x: number, y: number, rows: Row[], options: { exec?: string[]; width?: number; footer?: number } = {}): FormatNode {
+  const pins: SerializedPin[] = [];
+  const pinOffsets: Record<string, number> = {};
+  rows.forEach(([input, output], index) => {
+    for (const [pinId, direction] of [[input, "in"], [output, "out"]] as const) {
+      if (pinId === null) continue;
+      const kind = options.exec?.includes(pinId) ? "exec" : "data";
+      pins.push({ id: pinId, name: pinId, kind, direction, type: { kind: kind === "exec" ? "exec" : "float" } });
+      pinOffsets[formatPinOffsetKey(direction, pinId)] = 69 + 44 * index;
+    }
+  });
+  return { id, position: { x, y }, width: options.width ?? 320, height: 52 + 44 * rows.length + (options.footer ?? 0), pins, pinOffsets };
+}
+
+function customEvent(id: string): FormatNode {
+  return {
+    id,
+    position: { x: 0, y: 0 },
+    width: 328,
+    height: 102,
+    pins: [
+      { id: "OutputDelegate", name: "Output Delegate", kind: "data", direction: "out", type: { kind: "delegate" }, placement: "header" },
+      { id: "execOut", name: "then", kind: "exec", direction: "out", type: { kind: "exec" } },
+    ],
+    pinOffsets: { [formatPinOffsetKey("out", "OutputDelegate")]: 25, [formatPinOffsetKey("out", "execOut")]: 75 },
+  };
+}
+
+const printString = (id: string, x: number, y: number) =>
+  editorCard(id, x, y, [["execIn", "execOut"], ["inString", null], ["key", null], ["duration", null], ["color", null]], { exec: ["execIn", "execOut"], footer: 20 });
+const getter = (id: string, x: number, y: number, input: string | null, output = "out") => editorCard(id, x, y, [[input, output]]);
+const binary = (id: string, x: number, y: number) => editorCard(id, x, y, [["a", "out"], ["b", null]]);
+const setter = (id: string, x: number, y: number, pin: string) =>
+  editorCard(id, x, y, [["execIn", "execOut"], ["target", null], [pin, null]], { exec: ["execIn", "execOut"] });
+
+function link(source: string, sourceHandle: string, target: string, targetHandle: string): FormatEdge {
+  return { id: `${source}.${sourceHandle}>${target}.${targetHandle}`, source, sourceHandle, target, targetHandle };
+}
+
+function expectExecKnotsInLane(nodes: readonly FormatNode[], result: FormatResult): void {
+  const byId = new Map(nodes.map((entry) => [entry.id, entry]));
+  for (const knot of result.knots) {
+    const source = byId.get(knot.edge.source)!;
+    const pin = source.pins!.find((entry) => entry.id === knot.edge.sourceHandle)!;
+    if (pin.kind !== "exec") continue;
+    const target = byId.get(knot.edge.target)!;
+    // Level with the child's exec pin, in the lane just right of the parent.
+    expect(knot.position.y + REROUTE_KNOT_SIZE.height / 2).toBe(handleY(target, "in", knot.edge.targetHandle));
+    expect(knot.position.x).toBe(source.position.x + source.width! + FORMAT_GAP_X);
+  }
+}
+
+describe("formatGraphNodes on a branching graph", () => {
+  // Custom Event → Branch. Condition ← Greater Than ← Length Vector3 ← Get Actor Location. True →
+  // Print String (In String ← To String ← the same Length) → Set Actor Rotation (← Get Actor
+  // Rotation). False → Set Actor Location (Location ← Add; A ← the same Get Actor Location;
+  // B ← Multiply ← Get Actor Forward Vector, Get Delta Seconds).
+  const nodes: FormatNode[] = [
+    customEvent("event"),
+    editorCard("branch", 400, 300, [["execIn", "true"], ["condition", "false"]], { exec: ["execIn", "true", "false"] }),
+    binary("greater", 50, 600),
+    getter("length", 900, 40, "v"),
+    getter("location", 700, 700, "target"),
+    printString("print", 1200, 100),
+    getter("toString", 300, 900, "in"),
+    setter("setRotation", 1500, 500, "rotation"),
+    getter("rotation", 1700, 900, "target"),
+    setter("setLocation", 1000, 1100, "location"),
+    binary("add", 100, 1200),
+    binary("multiply", 600, 1300),
+    getter("forward", 1300, 1400, "target"),
+    getter("delta", 1800, 1500, null, "deltaSeconds"),
+  ];
+  const edges: FormatEdge[] = [
+    link("event", "execOut", "branch", "execIn"),
+    link("greater", "out", "branch", "condition"),
+    link("length", "out", "greater", "a"),
+    link("location", "out", "length", "v"),
+    link("branch", "true", "print", "execIn"),
+    link("toString", "out", "print", "inString"),
+    link("length", "out", "toString", "in"),
+    link("print", "execOut", "setRotation", "execIn"),
+    link("rotation", "out", "setRotation", "rotation"),
+    link("branch", "false", "setLocation", "execIn"),
+    link("add", "out", "setLocation", "location"),
+    link("location", "out", "add", "a"),
+    link("multiply", "out", "add", "b"),
+    link("forward", "out", "multiply", "a"),
+    link("delta", "deltaSeconds", "multiply", "b"),
+  ];
+  const result = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
+  const knotted = withKnots(result, edges);
+
+  it("runs no wire through a node it does not connect, and overlaps nothing", () => {
+    expectWiresClear(knotted.nodes, knotted.edges);
+    expectNoBoxOverlaps(knotted.nodes);
+    expectExecKnotsInLane(result.nodes, result);
+  });
+
+  it("takes Length's wire to To String under Greater Than instead of level through it", () => {
+    const next = result.nodes;
+    expect(handleY(byIdOf(next, "length"), "out", "out")).toBe(handleY(byIdOf(next, "toString"), "in", "in"));
+    const greater = byIdOf(next, "greater");
+    expect(handleY(byIdOf(next, "length"), "out", "out")).toBeGreaterThanOrEqual(greater.position.y + greater.height! + 32);
+  });
+
+  it("lets the False row's block use the space under Branch instead of widening the True row", () => {
+    const next = result.nodes;
+    const branch = byIdOf(next, "branch");
+    // Branch → Print String: a gap, a knot lane, and To String's column only.
+    expect(pos(next, "print").x).toBe(branch.position.x + 320 + FORMAT_GAP_X + KNOT_LANE + 320 + FORMAT_GAP_X);
+    expect(pos(next, "add").x).toBeLessThan(pos(next, "print").x);
+    expect(pos(next, "setLocation").y).toBeGreaterThan(pos(next, "print").y);
+  });
+
+  it("changes nothing when formatted again with its knots in place", () => {
+    const again = formatGraphNodes(knotted.nodes, knotted.edges, ["event"], { insertKnots: true });
+    expect(again.knots).toEqual([]);
+    expect(again.nodes).toEqual(knotted.nodes);
+  });
+});
+
+describe("formatGraphNodes on a Sequence graph", () => {
+  // Custom Event → Sequence. Then 0 → Print String (In String ← To String ← Add ← Get Array
+  // Length ← Make Array ← three Make Int). Then 1 → For Each (Array ← the same Make Array; Loop
+  // Body → Print String ← To String ← Index). Then 2 → Set Actor Location (Location ← Divide ←
+  // Get Actor Location, Make Float).
+  const nodes: FormatNode[] = [
+    customEvent("event"),
+    editorCard("sequence", 400, 300, [["execIn", "then0"], [null, "then1"], [null, "then2"]], { exec: ["execIn", "then0", "then1", "then2"] }),
+    printString("print", 900, 50),
+    getter("toString", 100, 800, "in"),
+    binary("add", 500, 900),
+    getter("length", 800, 600, "array"),
+    editorCard("array", 300, 300, [["item0", "out"], ["item1", null], ["item2", null]]),
+    getter("int0", 50, 50, "in"),
+    getter("int1", 60, 450, "in"),
+    getter("int2", 70, 650, "in"),
+    editorCard("forEach", 1300, 400, [["execIn", "loopBody"], ["array", "completed"], [null, "element"], [null, "index"]], {
+      exec: ["execIn", "loopBody", "completed"],
+    }),
+    printString("printIndex", 1700, 300),
+    getter("indexString", 1600, 900, "in"),
+    setter("setLocation", 1200, 1200, "location"),
+    binary("divide", 900, 1300),
+    getter("location", 400, 1400, "target"),
+    getter("float", 300, 1500, "in"),
+  ];
+  const edges: FormatEdge[] = [
+    link("event", "execOut", "sequence", "execIn"),
+    link("sequence", "then0", "print", "execIn"),
+    link("int0", "out", "array", "item0"),
+    link("int1", "out", "array", "item1"),
+    link("int2", "out", "array", "item2"),
+    link("array", "out", "length", "array"),
+    link("length", "out", "add", "a"),
+    link("add", "out", "toString", "in"),
+    link("toString", "out", "print", "inString"),
+    link("sequence", "then1", "forEach", "execIn"),
+    link("array", "out", "forEach", "array"),
+    link("forEach", "loopBody", "printIndex", "execIn"),
+    link("forEach", "index", "indexString", "in"),
+    link("indexString", "out", "printIndex", "inString"),
+    link("sequence", "then2", "setLocation", "execIn"),
+    link("location", "out", "divide", "a"),
+    link("float", "out", "divide", "b"),
+    link("divide", "out", "setLocation", "location"),
+  ];
+  const result = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
+  const knotted = withKnots(result, edges);
+
+  it("runs no wire through a node it does not connect, and overlaps nothing", () => {
+    expectWiresClear(knotted.nodes, knotted.edges);
+    expectNoBoxOverlaps(knotted.nodes);
+  });
+
+  it("drops each lower Then into a knot beside the Sequence and runs it level below the Then 0 block", () => {
+    expectExecKnotsInLane(result.nodes, result);
+    const lower = result.knots.filter((knot) => knot.edge.source === "sequence").map((knot) => knot.edge.sourceHandle);
+    expect(lower).toEqual(expect.arrayContaining(["then1", "then2"]));
+    const blockBottom = Math.max(...["array", "int0", "int1", "int2", "length", "add", "toString"].map((id) => {
+      const entry = byIdOf(result.nodes, id);
+      return entry.position.y + entry.height!;
+    }));
+    expect(pos(result.nodes, "forEach").y).toBeGreaterThanOrEqual(blockBottom + FORMAT_GAP_Y);
+    expect(pos(result.nodes, "setLocation").y).toBeGreaterThan(pos(result.nodes, "forEach").y);
+  });
+
+  it("brings the lower rows left of Then 0's block instead of past it", () => {
+    expect(pos(result.nodes, "forEach").x).toBeLessThan(pos(result.nodes, "print").x);
+    expect(pos(result.nodes, "setLocation").x).toBeLessThan(pos(result.nodes, "forEach").x);
+    // For Each still sits right of the Make Array it reads.
+    expect(pos(result.nodes, "forEach").x).toBeGreaterThanOrEqual(pos(result.nodes, "array").x + 320 + FORMAT_GAP_X);
+  });
+
+  it("changes nothing when formatted again with its knots in place", () => {
+    const again = formatGraphNodes(knotted.nodes, knotted.edges, ["event"], { insertKnots: true });
+    expect(again.knots).toEqual([]);
+    expect(again.nodes).toEqual(knotted.nodes);
+  });
+});
+
+function byIdOf(list: readonly FormatNode[], id: string): FormatNode {
+  return list.find((entry) => entry.id === id)!;
+}

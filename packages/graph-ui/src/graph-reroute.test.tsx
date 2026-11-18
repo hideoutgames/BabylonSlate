@@ -320,6 +320,70 @@ describe("Format with Reroute knots", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
+  it("drops a lower exec branch into a knot beside its parent when the direct wire would cross a block", () => {
+    const pin = (id: string, kind: "exec" | "data", direction: "in" | "out"): SerializedPin => ({
+      id,
+      name: id,
+      kind,
+      direction,
+      type: kind === "exec" ? { kind: "exec" } : { kind: "float" },
+    });
+    // Sequence: Then 0 → Print (Message ← Mid ← Source), Then 1 → Log (Value ← the same Source).
+    // Log must sit right of Source, so a direct Then 1 wire would cross Source's column.
+    const graph: GraphDocument = {
+      nodes: [
+        { id: "event", type: "event.begin", position: { x: 0, y: 0 }, data: { title: "Event", __pins: [pin("then", "exec", "out")] } },
+        {
+          id: "sequence",
+          type: "flow.sequence",
+          position: { x: 300, y: 300 },
+          data: { title: "Sequence", __pins: [pin("exec", "exec", "in"), pin("then0", "exec", "out"), pin("then1", "exec", "out")] },
+        },
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 900, y: 0 },
+          data: { title: "Print", __pins: [pin("exec", "exec", "in"), pin("message", "data", "in")] },
+        },
+        { id: "mid", type: "math.mid", position: { x: 40, y: 700 }, data: { title: "Mid", __pure: true, __pins: [pin("v", "data", "in"), pin("out", "data", "out")] } },
+        { id: "source", type: "math.source", position: { x: 80, y: 900 }, data: { title: "Source", __pure: true, __pins: [pin("out", "data", "out")] } },
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 600, y: 600 },
+          data: { title: "Log", __pins: [pin("exec", "exec", "in"), pin("value", "data", "in")] },
+        },
+      ],
+      edges: [
+        wire("event", "then", "sequence", "exec"),
+        wire("sequence", "then0", "print", "exec"),
+        wire("sequence", "then1", "log", "exec"),
+        wire("mid", "out", "print", "message"),
+        wire("source", "out", "mid", "v"),
+        wire("source", "out", "log", "value"),
+      ],
+    };
+    const onChange = vi.fn();
+    const { container, getByTestId } = renderGraph({ initialGraph: graph, reroute, onChange });
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="event"]')!);
+    fireEvent.click(getByTestId("graph-format"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const formatted = lastGraph(onChange);
+    const knots = formatted.nodes.filter((node) => node.type === "flow.reroute");
+    expect(knots).toHaveLength(1);
+    const knot = knots[0]!;
+    expect(edgeEnds(formatted)).toEqual(expect.arrayContaining([`sequence.then1>${knot.id}.in`, `${knot.id}.out>log.exec`]));
+    expect(edgeEnds(formatted)).not.toContain("sequence.then1>log.exec");
+    const at = (id: string) => formatted.nodes.find((node) => node.id === id)!.position;
+    // In the lane just right of the Sequence (320 wide when unmeasured), level with Log's exec pin.
+    expect(knot.position.x).toBe(at("sequence").x + 320 + 80);
+    expect(knot.position.y + 35 / 2).toBe(at("log").y + 72);
+
+    fireEvent.click(getByTestId("graph-format"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
   it("only moves the nodes without a reroute row", () => {
     const onChange = vi.fn();
     const { container, getByTestId } = renderGraph({ initialGraph: detourGraph(), onChange });
