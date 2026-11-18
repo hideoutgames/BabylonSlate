@@ -1252,7 +1252,7 @@ describe("formatGraphNodes on a Line Trace graph", () => {
     expect(new Set(result.knots.map((knot) => knot.edge))).toEqual(new Set([startWire, targetWire]));
     const knotted = withKnots(result, edges);
     expectWiresClear(knotted.nodes, knotted.edges);
-    expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges, ["event.then", "trace.then", "branch.true"]);
+    expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
     // Every knot keeps the wire spacing from the exec row's wire (its handles 72 below the row).
     for (const knot of result.knots.flatMap((entry) => entry.positions)) {
       expect(knot.y).toBeGreaterThanOrEqual(72 + 40);
