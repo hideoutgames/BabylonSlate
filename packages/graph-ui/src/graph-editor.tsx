@@ -606,13 +606,25 @@ function cutTargetOf(target: EventTarget | null): CutTarget | null {
   return nodeId ? { kind: "node", nodeId } : null;
 }
 
-/** The script-style pin (`PinHandle`) an event landed on, anywhere in its hit area. */
-function graphPinOf(target: EventTarget | null): { nodeId: string; pinId: string } | null {
+/**
+ * The script-style pin (`PinHandle`) a menu gesture began on: anywhere in its hit area, or its
+ * name in a pin row. `cell` is what its highlight is drawn behind: the row's half for the pin
+ * (`data-pin-cell`), else the hit area. The inline default editor is not a pin target.
+ */
+function pinMenuTargetOf(target: EventTarget | null): { nodeId: string; pinId: string; cell: Element } | null {
   if (!(target instanceof Element)) return null;
-  const handle = target.closest(".react-flow__handle[data-graph-pin]");
+  let handle = target.closest(".react-flow__handle[data-graph-pin]");
+  if (!handle) {
+    const cell = target.closest("[data-pin-label]")?.closest("[data-pin-cell]");
+    const pinId = cell?.getAttribute("data-pin-id");
+    handle = pinId
+      ? [...cell!.querySelectorAll(".react-flow__handle[data-graph-pin]")].find((entry) => entry.getAttribute("data-handleid") === pinId) ?? null
+      : null;
+  }
   const nodeId = handle?.getAttribute("data-nodeid");
   const pinId = handle?.getAttribute("data-handleid");
-  return nodeId && pinId ? { nodeId, pinId } : null;
+  if (!handle || !nodeId || !pinId) return null;
+  return { nodeId, pinId, cell: handle.closest("[data-pin-cell]") ?? handle };
 }
 
 /** Menu groups in order, empty ones left out, with a separator between each. */
@@ -1141,6 +1153,8 @@ function GraphEditorCanvas({
   } | null>(null);
   const [paletteAnchor, setPaletteAnchor] = useState<{ x: number; y: number } | null>(null);
   const [paletteModal, setPaletteModal] = useState(false);
+  // True from opening a pin's menu until the next press (`claimPinMenuGesture`).
+  const pinMenuGestureRef = useRef(false);
   const connectDragRef = useRef<{
     pointerId: number;
     pointer: { x: number; y: number };
@@ -1206,8 +1220,10 @@ function GraphEditorCanvas({
     pinDisplayTypesRef.current = pinDisplayTypes;
     pinDisplaySourceRef.current = { nodes, edges, types: pinDisplayTypes };
   });
-  // The pane's and the pins' menus; each caller decides whether its menu applies.
-  const paneMenu = useContextMenu({ items: [] });
+  const paneMenu = useContextMenu({
+    items: [],
+    enabled: Boolean(contextMenuItemsForNode) && !readOnly,
+  });
 
   const errorDiagnostics = useMemo(
     () =>
@@ -2311,12 +2327,24 @@ function GraphEditorCanvas({
     [addEdge, connectDraggedToNode, normalizeConnection, readOnly],
   );
 
+  // The gesture ends with no action: a later release only lets XYFlow tidy
+  // up, and the next move ends its drag because the connection is gone.
+  const endConnectSession = useCallback(
+    (session: NonNullable<typeof connectDragRef.current>) => {
+      session.connectEndHandled = true;
+      pendingPinRef.current = null;
+      setPendingPin(null);
+      storeApi.getState().cancelConnection();
+    },
+    [storeApi],
+  );
+
   const handleConnectStart = useCallback(
     (event: MouseEvent | TouchEvent, params: OnConnectStartParams) => {
       if (readOnly) return;
       if (!params.nodeId || !params.handleId) return;
       const point = clientPoint(event);
-      connectDragRef.current = {
+      const session = {
         pointerId: connectEventPointerId(event),
         pointer: point ?? { x: 0, y: 0 },
         nodeId: params.nodeId,
@@ -2324,8 +2352,11 @@ function GraphEditorCanvas({
         connectEndHandled: false,
         connectCommitted: false,
       };
+      connectDragRef.current = session;
+      // The press already opened this pin's menu (`claimPinMenuGesture`): no wire.
+      if (pinMenuGestureRef.current) endConnectSession(session);
     },
-    [readOnly],
+    [endConnectSession, readOnly],
   );
 
   const handleConnectEnd = useCallback(
@@ -3439,14 +3470,6 @@ function GraphEditorCanvas({
       readOnly,
     ],
   );
-  const nodeMenu = useMemo(
-    () => ({
-      enabled: !readOnly || Boolean(contextMenuItemsForNode) || Boolean(breakpoints),
-      resolve: resolveNodeMenu,
-    }),
-    [breakpoints, contextMenuItemsForNode, readOnly, resolveNodeMenu],
-  );
-
   // The menu of a script-style pin: Break Links (when it has wires and the graph is editable),
   // then the host's items. It leaves the selection alone.
   const resolvePinMenu = useCallback(
@@ -3463,33 +3486,55 @@ function GraphEditorCanvas({
     },
     [contextMenuItemsForPin, hiddenToolbar, pinLinkIds, readOnly, removeGraphElements],
   );
-  const resolvePinMenuRef = useRef(resolvePinMenu);
-  const openCanvasMenuRef = useRef(paneMenu.openMenuAt);
-  useLayoutEffect(() => {
-    resolvePinMenuRef.current = resolvePinMenu;
-    openCanvasMenuRef.current = paneMenu.openMenuAt;
-  });
 
-  // A right-click anywhere in a pin's hit area opens the pin's menu, when it has items, in place of
-  // the node's or the pane's; it neither selects nor starts a wire. One capture listener serves
-  // every pin. A touch hold is left to the node menu, since on a pin it is also the start of a wire.
+  // A pin's menu, opened by a right-click or a touch hold on its glyph or name, claims the gesture
+  // that opened it: a wire XYFlow began for that press ends with no action, one it has yet to begin
+  // never starts, and the release click neither picks a tap-to-connect pin nor selects the node.
+  // The claim lasts until the next press (`pinMenuGestureRef`).
+  const claimPinMenuGesture = useCallback(() => {
+    pinMenuGestureRef.current = true;
+    const session = connectDragRef.current;
+    if (session && !session.connectEndHandled) endConnectSession(session);
+  }, [endConnectSession]);
   useEffect(() => {
     const root = wrapperRef.current;
     if (!root) return;
-    const onContextMenu = (event: MouseEvent) => {
-      const pointerType = "pointerType" in event ? (event as PointerEvent).pointerType : "";
-      if (pointerType === "touch" || pointerType === "pen") return;
-      const pin = graphPinOf(event.target);
-      if (!pin) return;
-      const items = resolvePinMenuRef.current(pin.nodeId, pin.pinId);
-      if (items.length === 0) return;
-      event.preventDefault();
+    const onPointerDown = () => { pinMenuGestureRef.current = false; };
+    const onClick = (event: MouseEvent) => {
+      if (!pinMenuGestureRef.current) return;
+      pinMenuGestureRef.current = false;
       event.stopPropagation();
-      openCanvasMenuRef.current(event.clientX, event.clientY, items);
+      event.preventDefault();
     };
-    root.addEventListener("contextmenu", onContextMenu, true);
-    return () => root.removeEventListener("contextmenu", onContextMenu, true);
+    root.addEventListener("pointerdown", onPointerDown, true);
+    root.addEventListener("click", onClick, true);
+    return () => {
+      root.removeEventListener("pointerdown", onPointerDown, true);
+      root.removeEventListener("click", onClick, true);
+    };
   }, []);
+
+  const resolveMenuAt = useCallback(
+    (nodeId: string, target: EventTarget | null): { items: NestedMenuItem[]; pinCell?: Element } => {
+      const pin = pinMenuTargetOf(target);
+      if (pin && pin.nodeId === nodeId) {
+        const items = resolvePinMenu(nodeId, pin.pinId);
+        if (items.length > 0) {
+          claimPinMenuGesture();
+          return { items, pinCell: pin.cell };
+        }
+      }
+      return { items: resolveNodeMenu(nodeId) };
+    },
+    [claimPinMenuGesture, resolveNodeMenu, resolvePinMenu],
+  );
+  const nodeMenu = useMemo(
+    () => ({
+      enabled: !readOnly || Boolean(contextMenuItemsForNode) || Boolean(contextMenuItemsForPin) || Boolean(breakpoints),
+      resolve: resolveMenuAt,
+    }),
+    [breakpoints, contextMenuItemsForNode, contextMenuItemsForPin, readOnly, resolveMenuAt],
+  );
 
 
   const clearSelection = useCallback(() => {
@@ -3620,17 +3665,6 @@ function GraphEditorCanvas({
   }, []);
 
   useEffect(() => {
-    // The gesture ends with no action: a later release only lets XYFlow tidy
-    // up, and the next move ends its drag because the connection is gone.
-    const endConnectSession = (
-      session: NonNullable<typeof connectDragRef.current>,
-    ) => {
-      session.connectEndHandled = true;
-      pendingPinRef.current = null;
-      setPendingPin(null);
-      storeApi.getState().cancelConnection();
-    };
-
     const onMove = (event: Event) => {
       const session = connectDragRef.current;
       if (!session) return;
@@ -3745,7 +3779,7 @@ function GraphEditorCanvas({
       document.removeEventListener("touchstart", onSecondaryPointerDown, true);
       document.removeEventListener("touchcancel", onTouchCancel, true);
     };
-  }, [storeApi]);
+  }, [endConnectSession, storeApi]);
 
   const pinDisplayType = useCallback(
     (nodeId: string, pinId: string) =>

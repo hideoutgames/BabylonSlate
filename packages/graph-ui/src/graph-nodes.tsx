@@ -11,7 +11,6 @@ import {
   useContext,
   useEffect,
   useRef,
-  type CSSProperties,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
@@ -259,9 +258,7 @@ function PinHandle({
         height: "var(--graph-pin-hit, 44px)",
         background: "transparent",
         border: "none",
-        // The glyph's colour, for its mouse hover glow (graph-editor.css).
-        "--graph-pin-color": pinCssVar(displayType),
-      } as CSSProperties}
+      }}
       isConnectable={!disabled}
       onClick={(event) => {
         event.stopPropagation();
@@ -384,6 +381,7 @@ function PinRow({
       <div
         className="flex shrink-0 items-center gap-1"
         data-pin-side={incoming ? "in" : undefined}
+        data-pin-cell={incoming ? "" : undefined}
         data-pin-id={incoming?.id}
       >
         {incoming ? (
@@ -421,6 +419,7 @@ function PinRow({
       <div
         className="flex shrink-0 items-center justify-end gap-1"
         data-pin-side={outgoing ? "out" : undefined}
+        data-pin-cell={outgoing ? "" : undefined}
         data-pin-id={outgoing?.id}
       >
         {outgoing ? (

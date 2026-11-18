@@ -5,10 +5,12 @@ import type { GraphDocument, PaletteNode, SerializedPin } from "./graph-types";
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 const execIn: SerializedPin = { id: "execIn", name: "exec", kind: "exec", direction: "in", type: { kind: "exec" } };
 const execOut: SerializedPin = { id: "execOut", name: "then", kind: "exec", direction: "out", type: { kind: "exec" } };
+const valueIn: SerializedPin = { id: "value", name: "value", kind: "data", direction: "in", type: { kind: "float" } };
 
 function logNode(id: string, x: number) {
   return { id, type: "debug.log", position: { x, y: 0 }, data: { __pins: [execIn, execOut] } };
@@ -50,8 +52,28 @@ function menuEntries(): string[] {
 const item = (id: string) => screen.queryByTestId(`context-menu-item-${id}`) as HTMLButtonElement | null;
 const lastGraph = (onChange: ReturnType<typeof vi.fn>) => onChange.mock.calls.at(-1)?.[0] as GraphDocument;
 
-/** A `contextmenu` from a touch hold: jsdom has no PointerEvent, so the field is defined on a MouseEvent. */
-function touchContextMenu(target: Element): void {
+const OPEN = "data-pin-menu-open";
+
+/** The row half (glyph, inline default and name) of a pin. */
+function cell(container: HTMLElement, nodeId: string, pinId: string): HTMLElement {
+  return pin(container, nodeId, pinId).closest<HTMLElement>("[data-pin-cell]")!;
+}
+
+function heldCells(container: HTMLElement): Element[] {
+  return [...container.querySelectorAll(`[${OPEN}]`)];
+}
+
+/** A touch press: jsdom has no PointerEvent, so the pointer fields are defined on a MouseEvent. */
+function touchPress(target: Element): void {
+  const event = new MouseEvent("pointerdown", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 });
+  Object.defineProperty(event, "pointerId", { value: 7 });
+  Object.defineProperty(event, "pointerType", { value: "touch" });
+  Object.defineProperty(event, "isPrimary", { value: true });
+  target.dispatchEvent(event);
+}
+
+/** The `contextmenu` Android sends at the end of a touch hold. */
+function androidContextMenu(target: Element): void {
   const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 });
   Object.defineProperty(event, "pointerType", { value: "touch" });
   act(() => {
@@ -151,13 +173,99 @@ describe("pin context menu", () => {
     expect(screen.queryByTestId("node-palette")).toBeNull();
   });
 
-  it("keeps the node menu for a right-click on the pin's label and for a touch hold on the pin", () => {
-    const { container } = render(<GraphEditor initialGraph={wiredGraph()} />);
+  it("opens from the pin's name, and keeps the node menu for its inline default", () => {
+    const graph = wiredGraph();
+    graph.nodes.push({ id: "log-e", type: "debug.log", position: { x: 1120, y: 0 }, data: { __pins: [valueIn] } });
+    const { container } = render(
+      <GraphEditor
+        initialGraph={graph}
+        contextMenuItemsForPin={(_, pinId) => [{ id: `about-${pinId}`, label: "About Pin", onSelect: () => undefined }]}
+      />,
+    );
     fireEvent.contextMenu(nodeEl(container, "log-a").querySelector('[data-pin-label="then"]')!);
-    expect(menuEntries()).toContain("copy");
+    expect(menuEntries()).toEqual(["break-pin-links", "about-execOut"]);
+    expect(selectedIds(container)).toEqual([]);
     fireEvent.click(screen.getByTestId("context-menu-backdrop"));
-    touchContextMenu(pin(container, "log-a", "execOut"));
+    const defaultEditor = nodeEl(container, "log-e").querySelector(".graph-pin-default-editor");
+    expect(defaultEditor).not.toBeNull();
+    fireEvent.contextMenu(defaultEditor!);
+    expect(item("about-value")).toBeNull();
     expect(menuEntries()).toContain("copy");
-    expect(item("break-pin-links")).toBeNull();
+  });
+
+  it("marks the pin's cell while its menu is open and clears it on every way it closes", () => {
+    const onChange = vi.fn();
+    const { container, rerender } = render(<GraphEditor initialGraph={wiredGraph()} onChange={onChange} />);
+    const open = (nodeId: string, pinId: string) => {
+      fireEvent.contextMenu(pin(container, nodeId, pinId));
+      expect(heldCells(container)).toEqual([cell(container, nodeId, pinId)]);
+    };
+    // Only the pin's own half of its row.
+    open("log-b", "execOut");
+    expect(cell(container, "log-b", "execIn").hasAttribute(OPEN)).toBe(false);
+    fireEvent.click(item("break-pin-links")!);
+    expect(heldCells(container)).toEqual([]);
+
+    open("log-a", "execOut");
+    fireEvent.keyDown(screen.getByTestId("context-menu-panel"), { key: "Escape" });
+    expect(screen.queryByTestId("context-menu-panel")).toBeNull();
+    expect(heldCells(container)).toEqual([]);
+
+    open("log-a", "execOut");
+    fireEvent.pointerDown(screen.getByTestId("context-menu-backdrop"));
+    expect(heldCells(container)).toEqual([]);
+
+    open("log-a", "execOut");
+    fireEvent.scroll(document);
+    expect(heldCells(container)).toEqual([]);
+
+    // The node goes away (undo, virtualisation) with the menu still open.
+    open("log-a", "execOut");
+    const held = cell(container, "log-a", "execOut");
+    rerender(<GraphEditor initialGraph={{ nodes: wiredGraph().nodes.slice(1), edges: [] }} onChange={onChange} />);
+    expect(nodeEl(container, "log-a")).toBeNull();
+    expect(held.hasAttribute(OPEN)).toBe(false);
+  });
+
+  it("marks nothing when the node menu opens", () => {
+    const { container } = render(<GraphEditor initialGraph={wiredGraph()} />);
+    fireEvent.contextMenu(pin(container, "log-d", "execIn"));
+    expect(menuEntries()).toContain("copy");
+    expect(heldCells(container)).toEqual([]);
+  });
+
+  it("opens the pin menu once for a touch hold, even when Android follows it with contextmenu", () => {
+    vi.useFakeTimers();
+    const itemsForPin = vi.fn(() => [{ id: "about-pin", label: "About Pin", onSelect: () => undefined }]);
+    const { container } = render(<GraphEditor initialGraph={wiredGraph()} contextMenuItemsForPin={itemsForPin} />);
+    const handle = pin(container, "log-a", "execOut");
+    touchPress(handle);
+    act(() => {
+      vi.advanceTimersByTime(499);
+    });
+    expect(menuEntries()).toEqual([]);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(menuEntries()).toEqual(["break-pin-links", "about-pin"]);
+    expect(heldCells(container)).toEqual([cell(container, "log-a", "execOut")]);
+    androidContextMenu(handle);
+    expect(itemsForPin).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByTestId("context-menu-panel")).toHaveLength(1);
+    expect(selectedIds(container)).toEqual([]);
+  });
+
+  it("opens the pin menu from Android's contextmenu alone, and the node menu for a pin with nothing to offer", () => {
+    const { container } = render(<GraphEditor initialGraph={wiredGraph()} />);
+    androidContextMenu(pin(container, "log-a", "execOut"));
+    expect(menuEntries()).toEqual(["break-pin-links"]);
+    fireEvent.click(screen.getByTestId("context-menu-backdrop"));
+    vi.useFakeTimers();
+    touchPress(pin(container, "log-d", "execIn"));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(menuEntries()).toContain("copy");
+    expect(selectedIds(container)).toEqual(["log-d"]);
   });
 });
