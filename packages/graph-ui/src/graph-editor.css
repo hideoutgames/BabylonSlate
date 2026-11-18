@@ -544,9 +544,9 @@
 /*
  * A Reroute knot: a pill whose two pin hit areas sit flush with its ends, so wires meet its left and
  * right edges at its vertical centre, with a drag area between them. Its glyphs are the size of every
- * other pin's (`--graph-pin-glyph`, Large Pins included); each hit area is 1.5 × the glyph, which holds
- * an exec pin's diamond (33px at Large Pins 1, so 80 × 35px with a mouse: `REROUTE_KNOT_SIZE`). The
- * touch layout widens both.
+ * other pin's (`--graph-pin-glyph`, Large Pins included) and always round, exec included; each hit area
+ * is 1.5 × the glyph (33px at Large Pins 1, so 80 × 35px with a mouse: `REROUTE_KNOT_SIZE`). The touch
+ * layout widens both.
  */
 .graph-reroute-knot {
   --graph-pin-hit: calc(var(--graph-pin-glyph, 22px) * 1.5);

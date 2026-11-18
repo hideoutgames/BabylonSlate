@@ -292,9 +292,14 @@ describe("Reroute knot", () => {
       expect((container.querySelector('.react-flow__node[data-id="knot-x"] [aria-label="Reroute"]') as HTMLElement).style.borderColor)
         .toBe("var(--pin-exec)");
 
-      // The exec knot draws exec diamonds, and its outgoing wire the exec stroke and width.
+      // The exec knot draws round pins in the exec colour (no diamonds), and its outgoing wire the exec stroke and width.
       const knotX = container.querySelector('.react-flow__node[data-id="knot-x"]')!;
-      expect(knotX.querySelector('.react-flow__handle[data-handleid="out"] [data-pin-shape]')?.getAttribute("data-pin-shape")).toBe("diamond");
+      const execGlyph = knotX.querySelector('.react-flow__handle[data-handleid="out"] [data-pin-shape]')!;
+      expect(execGlyph.getAttribute("data-pin-shape")).toBe("circle");
+      expect(execGlyph.getAttribute("style")).toMatch(/color: var\(--pin-exec\)/);
+      // Ordinary exec pins keep their diamond.
+      expect(container.querySelector('.react-flow__node[data-id="log"] .react-flow__handle[data-handleid="exec"] [data-pin-shape]')?.getAttribute("data-pin-shape"))
+        .toBe("diamond");
       const execPath = (await findWire(container, "e:knot-x:out:log:exec")).querySelector(".react-flow__edge-path") as SVGPathElement;
       expect(execPath.style.stroke).toBe("var(--pin-exec)");
       expect(execPath.style.strokeWidth).toBe("var(--graph-wire-exec, 5px)");

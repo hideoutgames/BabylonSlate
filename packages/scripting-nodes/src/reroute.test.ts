@@ -92,6 +92,21 @@ describe("Reroute", () => {
     expect(runPrinted(compile(rerouted))).toEqual(["2.5"]);
   });
 
+  it("runs the target of a diamond of exec Reroutes once, as one direct wire", () => {
+    const diamond = graph([...printNodes(), reroute("split"), reroute("left"), reroute("right"), reroute("join")], [
+      wire("x1", "begin.execOut", "split.in"),
+      wire("x2", "split.out", "left.in"),
+      wire("x3", "split.out", "right.in"),
+      wire("x4", "left.out", "join.in"),
+      wire("x5", "right.out", "join.in"),
+      wire("x6", "join.out", "print.execIn"),
+      wire("d", "number.out", "print.value"),
+    ]);
+    expect(compile(diamond)).toBe(compile(directPrint));
+    expect(runPrinted(compile(diamond))).toEqual(["2.5"]);
+    expect(validate(diamond)).toEqual([]);
+  });
+
   it("merges two exec wires through one Reroute as two direct wires", () => {
     const nodes = () => [...printNodes(), node("tick", "flow.event.tick")];
     const direct = graph(nodes(), [
