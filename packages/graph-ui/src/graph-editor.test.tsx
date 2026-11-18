@@ -4425,12 +4425,15 @@ describe("GraphEditor", () => {
 
     expect(onChange).toHaveBeenCalled();
     const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    // Both cards are estimated at the same width; the getter's column sits between Log A and Log B.
+    const step = estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X;
     expect(lastGraph.nodes.find((node) => node.id === "get")?.position).toEqual({
-      x: 0,
-      y: 40 + estimateGraphNodeSize(debugLogPins).height + FORMAT_GAP_Y,
+      x: step,
+      // Under Message, Log B's second pin row: its bottom at 50 + 2 × 44, then the gap.
+      y: 40 + 138 + FORMAT_GAP_Y,
     });
     expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
-      x: estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X,
+      x: step * 2,
       y: 40,
     });
   });
