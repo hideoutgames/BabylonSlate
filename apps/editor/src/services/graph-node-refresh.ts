@@ -15,6 +15,7 @@ import {
   type PinType,
   type TypeSchemas,
   isDevelopmentOnlyByDefaultTypeId,
+  REROUTE_NODE_TYPE,
 } from "@haptic/scripting";
 import { ENGINE_CLASS_SCRIPT_APIS } from "@haptic/object-model";
 import {
@@ -50,6 +51,7 @@ import {
   isDataGraphNode,
   type DataGraphAssetEntry,
 } from "../lib/data-graph";
+import { wiredSource } from "../lib/reroute-wires";
 
 export function catalogTypeId(node: {
   type: string;
@@ -103,6 +105,8 @@ export function shouldRegeneratePins(typeId: string): boolean {
   if (SELF_ACTOR_NODE_IDS.has(typeId)) return true;
   // Signature pins of Event Dispatcher nodes and Create Event follow their `pins` rows.
   if (isDispatcherNodeType(typeId) || typeId === CREATE_EVENT_NODE_TYPE_ID) return true;
+  // A knot's pins are always the catalog's, `anyKind` included.
+  if (typeId === REROUTE_NODE_TYPE) return true;
   return (
     // A custom event's parameter pins and Output Delegate type follow its signature.
     typeId === "flow.event.custom" ||
@@ -170,11 +174,9 @@ function connectedDataPinType(
   targetHandle: string,
   nodeRegistry: NodeRegistry,
 ): PinType | undefined {
-  const edge = graph.edges.find(
-    (entry) => entry.target === nodeId && entry.targetHandle === targetHandle,
-  );
+  const edge = wiredSource(graph, nodeId, targetHandle);
   if (!edge) return undefined;
-  const source = graph.nodes.find((node) => node.id === edge.source);
+  const source = graph.nodes.find((node) => node.id === edge.nodeId);
   if (!source) return undefined;
   const rawData = { ...(source.data as Record<string, unknown>) };
   const typeId = catalogTypeId({ type: source.type, data: rawData });
@@ -185,7 +187,7 @@ function connectedDataPinType(
   delete properties.title;
   const pins = def ? def.pins(properties) : [];
   const sourcePin = pins.find(
-    (pin) => pin.id === edge.sourceHandle || pin.name === edge.sourceHandle,
+    (pin) => pin.id === edge.pinId || pin.name === edge.pinId,
   );
   return sourcePin?.type;
 }
@@ -225,11 +227,9 @@ function connectedCastClassId(
   nodeId: string,
   nodeRegistry: NodeRegistry,
 ): string | undefined {
-  const edge = graph.edges.find(
-    (entry) => entry.target === nodeId && entry.targetHandle === "class",
-  );
+  const edge = wiredSource(graph, nodeId, "class");
   if (!edge) return undefined;
-  const source = graph.nodes.find((node) => node.id === edge.source);
+  const source = graph.nodes.find((node) => node.id === edge.nodeId);
   if (!source) return "Object";
   const rawData = { ...(source.data as Record<string, unknown>) };
   const typeId = catalogTypeId({ type: source.type, data: rawData });
@@ -240,7 +240,7 @@ function connectedCastClassId(
   delete properties.title;
   const pins = def ? def.pins(properties) : [];
   const sourcePin = pins.find(
-    (pin) => pin.id === edge.sourceHandle || pin.name === edge.sourceHandle,
+    (pin) => pin.id === edge.pinId || pin.name === edge.pinId,
   );
   return pinClassId(sourcePin?.type) ?? "Object";
 }
@@ -301,9 +301,9 @@ function timelineFromAssetPinProperties(
   graph: SerializedGraph,
   nodeId: string,
 ): Record<string, unknown> {
-  const edge = graph.edges.find((entry) => entry.target === nodeId && entry.targetHandle === "timelineAsset");
+  const edge = wiredSource(graph, nodeId, "timelineAsset");
   if (!edge) return properties;
-  const source = graph.nodes.find((node) => node.id === edge.source);
+  const source = graph.nodes.find((node) => node.id === edge.nodeId);
   const data = (source?.data ?? {}) as Record<string, unknown>;
   const type = typeof data.__nodeType === "string" ? data.__nodeType : source?.type;
   // Only this Class's own variables have their default here.
