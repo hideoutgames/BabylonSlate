@@ -16,6 +16,7 @@ import {
   hydrateParticleGraphForEditor,
   particleGraphToSerialized,
   particlePinsAreCompatible,
+  validateParticleGraphDocument,
   newParticleNodeProperties,
   normalizeParticleGraphDocument,
   type ParticleGraphDocument,
@@ -545,6 +546,33 @@ describe("Particle Graph Reroute knots on the canvas", () => {
     }
     expect(pinOf("s", "in").type).toEqual({ kind: "float" });
     expect(pinOf("loose", "out").type).toEqual({ kind: "resolvingWildcard" });
+  });
+
+  it("take a Float wired into a knot that feeds a Vector3 input, and still build", () => {
+    // Float constant → knot → Update Direction's Direction (Vector3), and the same through two knots.
+    const doc = createDefaultParticleGraphDocument("Embers");
+    const at = { x: 0, y: 0 };
+    doc.nodes.push(
+      { id: "one", type: "const.float", position: at, properties: { value: [1] } },
+      { id: "k1", type: "utility.reroute", position: at, properties: {} },
+      { id: "k2", type: "utility.reroute", position: at, properties: {} },
+      { id: "dir", type: "update.direction", position: at, properties: {} },
+      { id: "k3", type: "utility.reroute", position: at, properties: {} },
+      { id: "add", type: "math.add", position: at, properties: {} },
+    );
+    doc.edges.push(
+      { id: "w1", sourceNodeId: "k1", sourcePinId: "out", targetNodeId: "k2", targetPinId: "in" },
+      { id: "w2", sourceNodeId: "k2", sourcePinId: "out", targetNodeId: "dir", targetPinId: "direction" },
+      { id: "w3", sourceNodeId: "one", sourcePinId: "out", targetNodeId: "k1", targetPinId: "in" },
+      { id: "w4", sourceNodeId: "one", sourcePinId: "out", targetNodeId: "k3", targetPinId: "in" },
+      { id: "w5", sourceNodeId: "k3", sourcePinId: "out", targetNodeId: "add", targetPinId: "a" },
+    );
+    const graph = hydrateParticleGraphForEditor(particleGraphToSerialized(doc));
+    const display = displayPinTypesForGraph(graph.nodes, graph.edges);
+    for (const key of ["k1\0in", "k1\0out", "k2\0in", "k2\0out", "k3\0in", "k3\0out"]) {
+      expect(display.get(key), key).toEqual({ kind: "float" });
+    }
+    expect(validateParticleGraphDocument(doc).filter((entry) => entry.severity === "error")).toEqual([]);
   });
 
   it("carry one type at a time: a loose knot takes any pin, a typed one only what that type connects to", () => {
