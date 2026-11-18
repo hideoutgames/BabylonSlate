@@ -679,8 +679,8 @@ function gpuProbeLines(samples: readonly FeatureTestBenchmarkSample[]): string[]
   const rows = samples.filter((sample) => sample.gpuProbe);
   if (!rows.length) return ["  GPU probes: none (the Engine reports none)"];
   const lines = [
-    "  GPU probes. Serial (after each row's window, rendering held until the GPU finished, then frames one at a time, median of the warm ones, ms): frame = first fence submitted to last done · cold = the first frame after the drain · sub = CPU submission · other, shadows, captures (with mirrors and probes), main (objects, water, outlines), effects (geometry and post), tail (from the output's upscale or copy on: Scene Layers, the held image) = each stage's completion less the later of its submission and the stage before, <= where it was done before the frame's first poll (an upper bound) · synth = the fixed synthetic load, warm (cold). Window (medians per frame): structure = hash of the ordered passes without draw counts, its share of the frames / distinct structures · passes, clears, blits, draws = GL calls · cleared, covered = texels cleared and texels of every pass's viewports · maps = shadow maps redrawn/kept/redrawing every frame · sh texels = shadow texels redrawn (tiles) · atlas = edge and generation (how many atlases the Scene has made) · rAF = animation frames per second, rendered or not",
-    `    ${pad("Step", 28)}${pad("frame", 7)}${pad("cold", 7)}${pad("sub", 6)}${PROBE_STAGES.map((stage) => pad(stage, 9)).join("")}${pad("synth", 12)}${pad("structure", 20)}${pad("passes", 7)}${pad("clears", 7)}${pad("blits", 6)}${pad("draws", 6)}${pad("cleared", 8)}${pad("covered", 8)}${pad("maps", 9)}${pad("sh texels", 12)}${pad("atlas", 11)}${pad("rAF", 5)}notes`,
+    "  GPU probes. Serial (after each row's window, rendering held until the GPU finished, then frames one at a time, median of the warm ones, ms): frame = first fence submitted to last done · cold = the first frame after the drain · sub = CPU submission (the frame cannot read below it) · f-sub = frame less sub · burst = then frames submitted unpaced, frames in flight unlimited: the median time between consecutive frames' GPU completions, max(GPU frame, CPU submission) unrounded to display intervals but floored by the animation frame rate · other, shadows, captures (with mirrors and probes), main (objects, water, outlines), effects (geometry and post), tail (from the output's upscale or copy on: Scene Layers, the held image) = each stage's completion less the later of its submission and the stage before, <= where it was done before the frame's first poll (an upper bound) · synth = the fixed synthetic load, warm (cold). Window (medians per frame): structure = hash of the ordered passes without draw counts, its share of the frames / distinct structures · passes, clears, blits, draws = GL calls · cleared, covered = texels cleared and texels of every pass's viewports · maps = shadow maps redrawn/kept/redrawing every frame · sh texels = shadow texels redrawn (tiles) · atlas = edge and generation (how many atlases the Scene has made) · rAF = animation frames per second, rendered or not",
+    `    ${pad("Step", 28)}${pad("frame", 7)}${pad("cold", 7)}${pad("sub", 6)}${pad("f-sub", 7)}${pad("burst", 7)}${PROBE_STAGES.map((stage) => pad(stage, 9)).join("")}${pad("synth", 12)}${pad("structure", 20)}${pad("passes", 7)}${pad("clears", 7)}${pad("blits", 6)}${pad("draws", 6)}${pad("cleared", 8)}${pad("covered", 8)}${pad("maps", 9)}${pad("sh texels", 12)}${pad("atlas", 11)}${pad("rAF", 5)}notes`,
   ];
   const one = (value: number | null | undefined) => value === null || value === undefined ? "-" : value.toFixed(1);
   for (const sample of rows) {
@@ -693,7 +693,34 @@ function gpuProbeLines(samples: readonly FeatureTestBenchmarkSample[]): string[]
       serial?.splits ? `${serial.splits} fences split a pass` : "",
       strangers.length ? `serial frames drew ${strangers.join(", ")}` : "",
     ].filter(Boolean).join(" · ");
-    lines.push(`    ${pad(sample.label, 28)}${pad(one(serial?.frameMs), 7)}${pad(one(serial?.coldMs), 7)}${pad(one(serial?.cpuMs), 6)}${PROBE_STAGES.map((stage) => pad(stageText(probe, stage), 9)).join("")}${pad(serial && serial.syntheticMs !== null ? `${serial.syntheticMs.toFixed(1)} (${one(serial.syntheticColdMs)})` : "-", 12)}${pad(signature ? `${signature.modal} ${Math.round(signature.modalShare * 100)}%/${signature.distinct}` : "-", 20)}${pad(signature ? String(signature.passes) : "-", 7)}${pad(signature ? String(signature.clears) : "-", 7)}${pad(signature ? String(signature.blits) : "-", 6)}${pad(signature ? String(signature.draws) : "-", 6)}${pad(signature ? texelsText(signature.texelsCleared) : "-", 8)}${pad(signature ? texelsText(signature.texelsCovered) : "-", 8)}${pad(shadows ? `${shadows.redrawn}/${shadows.cached}/${shadows.continuous}` : "-", 9)}${pad(shadows ? `${texelsText(shadows.texels)} (${shadows.tiles})` : "-", 12)}${pad(shadows ? `${shadows.atlasEdge} ${generation}` : "-", 11)}${pad(probe.raf ? probe.raf.perSecond.toFixed(0) : "-", 5)}${notes}`.trimEnd());
+    lines.push(`    ${pad(sample.label, 28)}${pad(one(serial?.frameMs), 7)}${pad(one(serial?.coldMs), 7)}${pad(one(serial?.cpuMs), 6)}${pad(serial && serial.frameMs !== null && serial.cpuMs !== null ? one(serial.frameMs - serial.cpuMs) : "-", 7)}${pad(one(probe.burst?.periodMs), 7)}${PROBE_STAGES.map((stage) => pad(stageText(probe, stage), 9)).join("")}${pad(serial && serial.syntheticMs !== null ? `${serial.syntheticMs.toFixed(1)} (${one(serial.syntheticColdMs)})` : "-", 12)}${pad(signature ? `${signature.modal} ${Math.round(signature.modalShare * 100)}%/${signature.distinct}` : "-", 20)}${pad(signature ? String(signature.passes) : "-", 7)}${pad(signature ? String(signature.clears) : "-", 7)}${pad(signature ? String(signature.blits) : "-", 6)}${pad(signature ? String(signature.draws) : "-", 6)}${pad(signature ? texelsText(signature.texelsCleared) : "-", 8)}${pad(signature ? texelsText(signature.texelsCovered) : "-", 8)}${pad(shadows ? `${shadows.redrawn}/${shadows.cached}/${shadows.continuous}` : "-", 9)}${pad(shadows ? `${texelsText(shadows.texels)} (${shadows.tiles})` : "-", 12)}${pad(shadows ? `${shadows.atlasEdge} ${generation}` : "-", 11)}${pad(probe.raf ? probe.raf.perSecond.toFixed(0) : "-", 5)}${notes}`.trimEnd());
+  }
+  return lines;
+}
+
+/** Passes a row lists in its pass timers: those over this many ms, largest first. */
+const TIMER_PASS_MS = 0.1;
+
+/**
+ * Each row's pass timers (`gpuprobe timers`): its GPU frame, each stage and the passes over `TIMER_PASS_MS`; one line
+ * where the context had no timer queries.
+ */
+function passTimerLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
+  const rows = samples.filter((sample) => sample.gpuProbe?.timers);
+  if (!rows.length) return [];
+  if (rows.every((sample) => !sample.gpuProbe!.timers!.available)) return ["  GPU pass timers: absent (the context has no timer queries, EXT_disjoint_timer_query_webgl2)"];
+  const one = (value: number | null | undefined) => value === null || value === undefined ? "-" : value.toFixed(1);
+  const lines = [
+    `  GPU pass timers (timer queries after each row's window, each frame given a GPU head start outlasting its CPU submission so a pass holds GPU work alone; median ms per frame): frame = every pass · stages as the serial probe's · head = the head start's GPU ms / frames dropped as it ended too soon · passes = each frame graph task or owner pass over ${TIMER_PASS_MS} ms, largest first`,
+    `    ${pad("Step", 28)}${pad("frame", 7)}${PROBE_STAGES.map((stage) => pad(stage, 9)).join("")}${pad("head", 10)}passes`,
+  ];
+  for (const sample of rows) {
+    const timers = sample.gpuProbe!.timers!;
+    const stage = (name: ProbeStage) => timers.stages.find((entry) => entry.stage === name)?.ms;
+    const passes = timers.passes.filter((entry) => entry.ms >= TIMER_PASS_MS).sort((a, b) => b.ms - a.ms)
+      .map((entry) => `${entry.label} ${entry.ms.toFixed(2)}`).join(", ");
+    const note = timers.failed ? ` (stopped: ${timers.failed}, ${timers.frames} frames)` : "";
+    lines.push(`    ${pad(sample.label, 28)}${pad(one(timers.frameMs), 7)}${PROBE_STAGES.map((name) => pad(one(stage(name)), 9)).join("")}${pad(timers.headStart ? `${one(timers.headStart.ms)}/${timers.headStart.starved}` : "-", 10)}${passes}${note}`.trimEnd());
   }
   return lines;
 }
@@ -839,7 +866,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   const drift = breakdownWarmupDrift(samples);
   const timed = samples.find((sample) => sample.gpuBusy);
   const lines = [
-    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 15 minutes: first a state probe at the control view (a minute held unchanged, reset actions, frames in flight and a 30 fps cap; below), then at fixed camera views (a short warm-up at the control view, then at each view a baseline before and after every step, A B A, the camera held between them; each sampled 5 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling, then probed with serialised frames before it is restored; GPU probes, below):`,
+    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 15 to 20 minutes: first a state probe at the control view (a minute held unchanged, reset actions and frames in flight off; below), then at fixed camera views (a short warm-up at the control view, then at each view every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling, then probed with serialised frames, a burst and the pass timers before it is restored; GPU probes, below):`,
     `  Settings: ${first?.settings ? Object.entries(first.settings).map(([field, value]) => `${field} ${value}`).join(" · ") : "unknown"}`,
     `  Frames in flight: ${framesInFlightText(samples)}`,
     `  Resolution held: ${heldResolutionText(profile?.resolution ?? null)}`,
@@ -866,13 +893,13 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   }
   lines.push(...drawPassTable(samples, "Step", 28), ...cpuPassTable(samples, "Step", 28));
   lines.push(...stateProbeLines(samples));
-  lines.push(...gpuProbeLines(samples), ...frameStructureLines(samples), ...stateComparisonLines(samples));
-  lines.push("  Ranked by change at each view, within one state (baseline > step > baseline), in the serial probe's frame time where the step and both its baselines have one (marked s), else in gpu busy (* = mean frame time where gpu busy is missing):");
+  lines.push(...gpuProbeLines(samples), ...passTimerLines(samples), ...frameStructureLines(samples), ...stateComparisonLines(samples));
+  lines.push("  Ranked by change at each view against baselines at its own GPU speed (synthetic load within 15%), the mean of its repeats (baseline > step > baseline), in the serial probe's frame time where the step and both its baselines have one (marked s), else in gpu busy (* = mean frame time where gpu busy is missing); norm = the same with every row scaled to the run's fastest synthetic load:");
   const ranking = profileRanking(samples);
   for (const group of ranking) {
     lines.push(`    ${group.view ?? "scene camera"}:`);
     group.steps.forEach((entry, index) => lines.push(
-      `      ${index + 1}. ${entry.state ? `[${entry.state}] ` : ""}${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : entry.basis === "serial" ? " s" : ""} (${abaText(entry)}) · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
+      `      ${index + 1}. ${entry.state ? `[${entry.state}] ` : ""}${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : entry.basis === "serial" ? " s" : ""} (${abaText(entry)}${entry.repeats > 1 ? `, mean of ${entry.repeats}` : ""})${entry.normalised ? ` · norm ${deltaText(entry.normalised.change)}` : ""} · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
     ));
   }
   if (!ranking.length) lines.push("    none measured");
@@ -885,7 +912,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
 function stateSequenceLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
   const views = [...new Set(samples.map((sample) => sample.view))];
   return [
-    `  States (SLOW past ${PROFILE_SLOW_RATIO}x the best baseline of the view, in gpu busy; F FAST, S SLOW, every row in run order):`,
+    `  States (SLOW past ${PROFILE_SLOW_RATIO}x the run's fastest synthetic load, or where rows have none past ${PROFILE_SLOW_RATIO}x the best baseline of the view in gpu busy; F FAST, S SLOW, every row in run order):`,
     ...views.map((view) => `    ${view ?? "scene camera"}: ${samples.filter((sample) => sample.view === view)
       .map((sample) => profileFrameState(samples, sample)?.[0] ?? "-").join(" ")}`),
   ];

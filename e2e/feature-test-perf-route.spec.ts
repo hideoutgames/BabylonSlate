@@ -551,6 +551,8 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
         }
         step = `Play ${index + 1}`;
         plays.push(await measurePlay(page, cdp, scene));
+        // What was measured survives a later step's failure.
+        if (process.env.HAPTIC_PERF_OUT) writeFileSync(`${process.env.HAPTIC_PERF_OUT}.partial.json`, JSON.stringify({ scenes, [scene]: { plays } }, null, 2));
       }
       // The next scene opens over the editor's reloaded view.
       step = "the editor's reload after the last Play";

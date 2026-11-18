@@ -140,12 +140,14 @@ export class GpuPassTimers<Q> {
     return true;
   }
 
-  /** An Engine frame begins: reads what earlier frames' queries returned, then opens this frame's first segment. */
+  /**
+   * A frame to time begins (an Engine frame a view renders in, as it starts): reads what earlier frames' queries
+   * returned, then opens this frame's first segment.
+   */
   frameBegin(): void {
     if (!this.recording) return;
     this.poll();
     if (!this.recording) return;
-    if (this.host.now() - this.started > PASS_TIMER_TIMEOUT_MS) return this.finish("the view drew too few frames");
     if (this.frame || this.measured.length + this.pending.length >= this.framesWanted || this.pending.length >= MAX_PENDING) return;
     const head = this.host.headStart !== undefined;
     this.frame = { segments: [], times: [], started: 0, cpuMs: 0, head };
@@ -206,8 +208,9 @@ export class GpuPassTimers<Q> {
     this.recording = false;
   }
 
-  /** Reads finished queries without blocking; exposed for tests. */
+  /** Reads finished queries without blocking, and ends a run past its time bound; run as each Engine frame begins. */
   poll(): void {
+    if (this.recording && !this.frame && this.host.now() - this.started > PASS_TIMER_TIMEOUT_MS) return this.finish("the view drew too few frames");
     if (this.host.disjoint()) {
       for (const frame of this.pending.splice(0)) this.discard(frame);
     }

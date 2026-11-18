@@ -63,6 +63,8 @@ export class EngineGpuProbe {
   private readonly timers: GpuPassTimers<unknown>;
   private readonly timersAvailable: boolean;
   private readonly headLoad: GpuSyntheticLoad;
+  /** The head start's target is held: released as the run ends, so no target outlives it. */
+  private headLoaded = false;
   /** Babylon's frame-wide GPU timer was on as the pass timers started: it is off while they record, back on after. */
   private captureSuspended = false;
   private uninstall: (() => void) | null = null;
@@ -114,7 +116,10 @@ export class EngineGpuProbe {
     // The head start: the synthetic load's program in a load of its own, which the timers draw before each frame.
     this.headLoad = createGpuSyntheticLoad(engine);
     const timerHost = gl && (engine as unknown as { webGLVersion?: number }).webGLVersion === 2
-      ? webglPassTimerHost(gl, () => { if (this.headLoad.ready()) this.headLoad.draw(); })
+      ? webglPassTimerHost(gl, () => {
+        this.headLoaded = true;
+        if (this.headLoad.ready()) this.headLoad.draw();
+      })
       : null;
     this.timersAvailable = timerHost !== null;
     this.timers = new GpuPassTimers<unknown>((timerHost ?? NO_TIMER_QUERIES) as PassTimerHost<unknown>);
@@ -126,8 +131,8 @@ export class EngineGpuProbe {
     const timerBegin = engine.onBeginFrameObservable.add(() => {
       if (!this.timers.running) return;
       this.suspendFrameCapture();
-      this.timers.frameBegin();
-      if (this.timers.inFrame) this.listen(true);
+      // Results of earlier frames, and the run's time bound, while no view renders.
+      this.timers.poll();
     }, undefined, true);
     const end = engine.onEndFrameObservable.add(() => this.frameEnd());
     engine.onDisposeObservable.addOnce(() => {
@@ -198,8 +203,10 @@ export class EngineGpuProbe {
 
   /** A view is about to render in this Engine frame. */
   frameStarted(): void {
-    if (!this.serialProbe.running) return;
-    this.serialProbe.frameStarted();
+    // The pass timers time only Engine frames a view renders in, from its start: a frame the backpressure or the
+    // scheduler skipped submits nothing to time, and its head start would only slow the frames that render.
+    if (this.timers.running && !this.timers.inFrame) this.timers.frameBegin();
+    if (this.serialProbe.running) this.serialProbe.frameStarted();
     this.listen(this.serialProbe.inFrame || this.timers.inFrame);
   }
 
@@ -218,7 +225,13 @@ export class EngineGpuProbe {
 
   private frameEnd(): void {
     this.timers.frameEnd();
-    if (!this.timers.running) this.restoreFrameCapture();
+    if (!this.timers.running) {
+      this.restoreFrameCapture();
+      if (this.headLoaded) {
+        this.headLoaded = false;
+        this.headLoad.release();
+      }
+    }
     if (this.uninstall && this.recorder.endFrame()) {
       const now = this.shadowSource?.() ?? null;
       const before = this.shadowBefore;

@@ -478,7 +478,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("heavy shadows medium big atlas")).toMatch(/-5\.0ms -12% .*shadows\.debug=atlasfit · overlaps · \+2\.0ms beyond shadows medium · atlas 8192 · maps 2048x3, 1024x6$/);
     // A baseline's change is against its view's first: drift.
     expect(row("heavy drift")).toMatch(/\+6\.0ms \+15% {5}\+2\.0ms \+20%/);
-    const ranking = lines.findIndex((line) => line.startsWith("  Ranked by change at each view, within one state (baseline > step > baseline)"));
+    const ranking = lines.findIndex((line) => line.startsWith("  Ranked by change at each view against baselines at its own GPU speed"));
     // No row has GPU probes: their sections say so once.
     expect(lines).toContain("  GPU probes: none (the Engine reports none)");
     expect(lines.some((line) => line.startsWith("  State comparison") || line.startsWith("  Frame structures"))).toBe(false);
@@ -547,8 +547,8 @@ describe("formatFeatureTestCheckReport", () => {
         session: null,
       }],
     });
-    // The view is FAST at 33 ms and SLOW at 66 ms of gpu busy. Rendered alone, a SLOW frame takes 20 ms more, all of it
-    // in the shadows stage, in an atlas made a second time; the synthetic load is unchanged.
+    // The view is FAST at 33 ms and SLOW at 66 ms of gpu busy, its synthetic load slower. Rendered alone, a SLOW frame
+    // takes 20 ms more, all of it in the shadows stage, in an atlas made a second time.
     const lines = formatFeatureTestCheckReport(report([
       row("heavy baseline 1", 33, { shadows: 6, main: 14, synthetic: 2 }),
       row("heavy shadows off", 33, { shadows: 0.5, main: 14, synthetic: 2, censored: true }, { modal: OTHER, texels: 0 }),
@@ -556,19 +556,20 @@ describe("formatFeatureTestCheckReport", () => {
       // No serial probe on this step: it is ranked in gpu busy.
       row("heavy post off", 32, null),
       row("heavy baseline 3", 33, { shadows: 6, main: 14, synthetic: 2 }),
-      row("heavy baseline 4", 66, { shadows: 26, main: 14, synthetic: 2.1 }, { generation: 2 }),
-      row("heavy baseline 5", 66, { shadows: 26, main: 14, synthetic: 2.1 }, { generation: 2 }),
+      row("heavy baseline 4", 66, { shadows: 26, main: 14, synthetic: 4.2 }, { generation: 2 }),
+      row("heavy baseline 5", 66, { shadows: 26, main: 14, synthetic: 4.2 }, { generation: 2 }),
     ]), environment).split("\n");
     const line = (start: string) => lines.find((entry) => entry.startsWith(start))!;
     // The main table's serial column, and a note on the row whose frames had another structure than its view's first baseline.
     expect(line("    heavy baseline 1 ")).toMatch(/33\.0 \(35\) {5}20\.0 {4}/);
     expect(line("    heavy shadows off ")).toContain(`STRUCTURE ${OTHER}, not its view's first baseline's ${USUAL}`);
     expect(line("    heavy baseline 2 ")).not.toContain("STRUCTURE");
-    // The probes table: frame, cold, submission, the stages (an upper bound marked), synthetic, structure, counters.
+    // The probes table: frame, cold, submission, frame less submission, burst, the stages (an upper bound marked),
+    // synthetic, structure, counters.
     const table = lines.slice(lines.findIndex((entry) => entry.startsWith("  GPU probes. Serial")) + 2);
-    expect(table[0]).toMatch(/^ {4}heavy baseline 1 +20\.0 +29\.0 +4\.0 +<=0\.4 +6\.0 +- +14\.0 +- +- +2\.0 \(3\.0\) +a1b2c3d4 98%\/2 +2 +2 +0 +340 +7\.9M +7\.9M +2\/3\/2 +21M \(5\) +8192 g1 +60$/);
+    expect(table[0]).toMatch(/^ {4}heavy baseline 1 +20\.0 +29\.0 +4\.0 +16\.0 +- +<=0\.4 +6\.0 +- +14\.0 +- +- +2\.0 \(3\.0\) +a1b2c3d4 98%\/2 +2 +2 +0 +340 +7\.9M +7\.9M +2\/3\/2 +21M \(5\) +8192 g1 +60$/);
     expect(table[1]).toMatch(/^ {4}heavy shadows off +14\.5 .* <=0\.5 +- +14\.0 .* ffff0000 98%\/2 .* 0\.0M \(5\) +8192 g1 +60 +serial frames drew a1b2c3d4$/);
-    expect(table[3]).toMatch(/^ {4}heavy post off +- +- +- +- +- +- +- +- +- +- +a1b2c3d4/);
+    expect(table[3]).toMatch(/^ {4}heavy post off +- +- +- +- +- +- +- +- +- +- +- +- +a1b2c3d4/);
     expect(table[5]).toMatch(/8192 g1>2 +60$/);
     // Each distinct structure once, with the rows it was usual in and its passes.
     const structures = lines.indexOf(line("  Frame structures"));
@@ -592,15 +593,15 @@ describe("formatFeatureTestCheckReport", () => {
       "        A frame rendered alone costs x2.00 in the SLOW state: the GPU work per frame itself is slower there.",
       "      stages: other 0.4 > 0.4 · shadows 6.0 > 26.0 (x4.33) · main 14.0 > 14.0",
       "        100% of the extra time is in the shadows stage: the shadow atlas's passes cost more there (see atlas generation and shadow texels for what differs).",
-      "      synthetic: 2.00 > 2.10 (x1.05) ms",
-      "        The synthetic load holds: the GPU's own speed is the same in both states.",
-      "  Ranked by change at each view, within one state (baseline > step > baseline), in the serial probe's frame time where the step and both its baselines have one (marked s), else in gpu busy (* = mean frame time where gpu busy is missing):",
+      "      synthetic: 2.00 > 4.20 (x2.10) ms",
+      "        The synthetic load, which touches nothing of the scene, slows by x2.10: the GPU itself runs slower (its clock or thermal state).",
+      "  Ranked by change at each view against baselines at its own GPU speed (synthetic load within 15%), the mean of its repeats (baseline > step > baseline), in the serial probe's frame time where the step and both its baselines have one (marked s), else in gpu busy (* = mean frame time where gpu busy is missing); norm = the same with every row scaled to the run's fastest synthetic load:",
     ]);
     // Ranked in serial frame time where the step and both baselines have it: gpu busy did not move with shadows off.
     const ranking = lines.findIndex((entry) => entry.startsWith("  Ranked by change"));
     expect(lines.slice(ranking + 1, ranking + 4)).toEqual([
       "    heavy:",
-      "      1. [FAST] heavy shadows off: -5.5ms -28% s (20.0 > 14.5 > 20.0) · cpu +0.0ms +0%",
+      "      1. [FAST] heavy shadows off: -5.5ms -28% s (20.0 > 14.5 > 20.0) · norm -5.5ms -28% · cpu +0.0ms +0%",
       "      2. [FAST] heavy post off: -1.0ms -3% (33.0 > 32.0 > 33.0) · cpu +0.0ms +0%",
     ]);
 
@@ -615,11 +616,8 @@ describe("formatFeatureTestCheckReport", () => {
       "        Every stage slows by about the same factor: the slowdown is device-wide, not one pass's.",
       "        The synthetic load, which touches nothing of the scene, slows by x2.00: the GPU itself runs slower (its clock or thermal state).",
     ]);
-    expect(reading({ shadows: 6.5, main: 14, synthetic: 2 })).toEqual([
-      "        The same passes are submitted in both states: the engine's frame does not differ.",
-      "        A frame rendered alone costs the same in both states: the difference exists only with frames queued, so it is pacing, not GPU work per frame.",
-      "        The synthetic load holds: the GPU's own speed is the same in both states.",
-    ]);
+    // A row at the run's own GPU speed is FAST whatever its gpu busy: there is no SLOW row to compare with.
+    expect(reading({ shadows: 6.5, main: 14, synthetic: 2 })).toEqual([]);
     // A view with one state has nothing to compare.
     expect(formatFeatureTestCheckReport(report([row("heavy baseline 1", 33, null)]), environment)).toContain("    heavy: 1 FAST, 0 SLOW: nothing to compare");
   });
