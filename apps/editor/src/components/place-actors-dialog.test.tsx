@@ -168,6 +168,49 @@ describe("PlaceActorsDialog", () => {
     expect(onSelect).toHaveBeenCalledWith(hero);
   });
 
+  it("lists everything under All above Featured: engine entries by category, then Project and Models by name", () => {
+    const asset = (id: string, category: string, assetType: string) => ({
+      id: `asset-${id}`,
+      title: id,
+      category,
+      kind: { type: "asset" as const, name: id, guid: id, assetType },
+    });
+    render(
+      <PlaceActorsDialog
+        open
+        onOpenChange={() => {}}
+        onSelect={() => {}}
+        projectItems={[
+          asset("Tree", "Models", "Model"),
+          asset("Rock", "Models", "Model"),
+          asset("Hero", "Project", "Class"),
+          asset("Door", "Project", "Prefab"),
+        ]}
+      />,
+    );
+    const nav = screen.getByTestId("place-actors-catalog-categories");
+    const categoryIds = [...nav.querySelectorAll("button")].map((button) =>
+      button.getAttribute("data-testid")!.replace("place-actors-catalog-category-", ""),
+    );
+    expect(categoryIds.slice(0, 4)).toEqual(["Models", "Project", "all", "featured"]);
+    expect(screen.getByRole("group", { name: "Featured" })).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("place-actors-catalog-category-all"));
+    const sections = [...screen.getByRole("group", { name: "All" }).querySelectorAll("[role=group]")];
+    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["Engine", "Project", "Models"]);
+    const ids = (section: Element) =>
+      [...section.querySelectorAll("[data-testid^=place-actors-item-]")].map((row) =>
+        row.getAttribute("data-testid")!.replace("place-actors-item-", ""),
+      );
+    // Tilemap is declared last but lists with the other Rendering entries.
+    expect(ids(sections[0]!).slice(0, 4)).toEqual(["sprite", "mirror", "tilemap", "cable"]);
+    expect(ids(sections[0]!)).toContain("empty");
+    expect(ids(sections[1]!)).toEqual(["asset-Door", "asset-Hero"]);
+    expect(ids(sections[2]!)).toEqual(["asset-Rock", "asset-Tree"]);
+    expect(screen.getByTestId("place-actors-item-tilemap").textContent).toContain("Rendering");
+    expect(screen.getByTestId("place-actors-item-asset-Door").textContent).toContain("Prefab");
+  });
+
   it("filters Project assets by type from the Filter menu", async () => {
     const asset = (id: string, assetType: string, path: string) => ({
       id: `asset-${id}`,
