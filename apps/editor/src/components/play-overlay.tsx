@@ -14,7 +14,7 @@ import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
-  verifyCaptureActorLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
+  verifyCaptureActorLists, verifyLayerDrawLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1264,6 +1264,11 @@ function PlayOverlayView({
          * and each layer's drawable mesh list against a full filter (`layerWork[].drawable.mismatches`).
          */
         verifyRetainedOverlayBatches: (enabled: boolean) => void;
+        /**
+         * Has every fourth frame of each Scene Layer take Babylon's full path and compare its sorted lists with the
+         * layer's retained draw list (`layerWork[].drawList.mismatches`).
+         */
+        verifyLayerDrawLists: (enabled: boolean) => void;
         /** Follows every shadow caster walk of the change journal with the full walk, which must find nothing more (`rendererWork.shadowJournal.mismatches`). */
         verifyRenderChangeJournal: (enabled: boolean) => void;
         /** Has Mirror surfaces also ask what changed on every render, as before a moved view skipped it (`rendererWork.mirrorPolls.mismatches`). */
@@ -1297,6 +1302,7 @@ function PlayOverlayView({
       spawnableWarm: () => sessionRef.current?.handle.spawnableWarmStats() ?? null,
       verifyScopedReadinessProbes,
       verifyRetainedOverlayBatches,
+      verifyLayerDrawLists,
       verifyRenderChangeJournal,
       verifyMirrorContentPolls,
       verifyCaptureActorLists,

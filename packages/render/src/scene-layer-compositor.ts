@@ -36,6 +36,7 @@ import {
 import { installEngineDefaultMaterial } from "./default-material";
 import { sceneDrawBatchWork, setSceneDrawBatching, type OverlayBatchWork } from "./overlay-draw-batcher";
 import { keepLayerDrawableMeshes, layerDrawableMeshWork, type LayerDrawableMeshWork } from "./layer-drawable-meshes";
+import { keepLayerDrawList, layerDrawListWork, type LayerDrawListWork } from "./layer-draw-list";
 import { isSceneFrameReady } from "./scene-perf";
 import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
@@ -166,6 +167,9 @@ export class SceneLayerCompositor {
     // Most of a HUD's meshes are hidden actor roots and disabled control parts: the mesh loop and the cull read only
     // those that can draw (`layer-drawable-meshes.ts`).
     keepLayerDrawableMeshes(scene);
+    // Babylon's per-frame mesh loop, cull, list preparation and sorts see only what the batcher draws; the objects pass
+    // draws a retained list kept from what changed (`layer-draw-list.ts`).
+    keepLayerDrawList(scene);
     scene.lightsEnabled = false;
     scene.skipPointerMovePicking = false;
     scene.autoClear = false;
@@ -349,16 +353,16 @@ export class SceneLayerCompositor {
   /**
    * Each layer's renderer work in draw order (`ForwardSceneFrameGraph.diagnostics`: its graph builds, strict readiness
    * checks with their reasons and time, and what the last failed one waited for) with its mesh count, how its draw
-   * batcher kept its work (`sceneDrawBatchWork`) and how its drawable mesh list was kept (`layerDrawableMeshWork`).
-   * Reading starts the measuring, as a view's own does.
+   * batcher kept its work (`sceneDrawBatchWork`), how its drawable mesh list was kept (`layerDrawableMeshWork`) and how
+   * its retained draw list was kept and checked (`layerDrawListWork`). Reading starts the measuring, as a view's own does.
    */
   diagnostics(): Array<{
     layerId: string; meshes: number; work: ReturnType<SceneRenderCoordinator["diagnostics"]>; batching: OverlayBatchWork | null;
-    drawable: LayerDrawableMeshWork | null;
+    drawable: LayerDrawableMeshWork | null; drawList: LayerDrawListWork | null;
   }> {
     return this.orderedLayers().map((layer) => ({
       layerId: layer.layerId, meshes: layer.scene.meshes.length, work: layer.renderer.diagnostics(), batching: sceneDrawBatchWork(layer.scene),
-      drawable: layerDrawableMeshWork(layer.scene),
+      drawable: layerDrawableMeshWork(layer.scene), drawList: layerDrawListWork(layer.scene),
     }));
   }
 

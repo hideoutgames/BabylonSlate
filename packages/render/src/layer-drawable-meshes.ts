@@ -185,6 +185,11 @@ export function layerDrawableMeshes(scene: Scene): AbstractMesh[] | undefined {
   return kept.list;
 }
 
+/** A number that moves whenever `scene`'s list is rebuilt or healed (its members or order may differ); -1 without one. */
+export function layerDrawableMeshRevision(scene: Scene): number {
+  return lists.get(scene)?.work.rebuilds ?? -1;
+}
+
 /** How `scene`'s list was kept (`LayerDrawableMeshWork`), as a copy; null for a Scene that keeps none. */
 export function layerDrawableMeshWork(scene: Scene): LayerDrawableMeshWork | null {
   const kept = lists.get(scene);

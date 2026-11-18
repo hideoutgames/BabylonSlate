@@ -1,4 +1,5 @@
 import type { Camera } from "@babylonjs/core/Cameras/camera";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { SmartArray } from "@babylonjs/core/Misc/smartArray";
 import { RenderingGroup } from "@babylonjs/core/Rendering/renderingGroup";
@@ -15,6 +16,11 @@ export interface SceneDrawBatcher {
    * differ from drawing them one by one.
    */
   draw(sorted: readonly SubMesh[], count: number, transparent: boolean, drawOne: (subMesh: SubMesh) => void): void;
+  /**
+   * The meshes the last Engine frame that drew any pass drew with: each batch's mesh and each draw made on its own (a
+   * mesh once per draw). Read before this frame's first pass, it is the previous frame's.
+   */
+  outputs(): readonly AbstractMesh[];
   dispose(): void;
 }
 
@@ -38,6 +44,38 @@ export function setSceneDrawBatcher(scene: Scene, batcher: SceneDrawBatcher | nu
   }
 }
 
+/**
+ * Sorted lists put in place already in draw order (a Scene Layer's retained draw list, `layer-draw-list.ts`): their pass
+ * draws them as they are, without sorting again.
+ */
+const presorted = new WeakSet<object>();
+
+/** Marks or unmarks `list` (a rendering group's `SmartArray`) as already in draw order. */
+export function setPresortedPass(list: object, sorted: boolean): void {
+  if (sorted) presorted.add(list);
+  else presorted.delete(list);
+}
+
+/** Whether `list` was put in place already in draw order (`setPresortedPass`). */
+export function isPresortedPass(list: object): boolean {
+  return presorted.has(list);
+}
+
+/** Hears each sorted list a batching Scene's passes hand its batcher, by the rendering group array it came from. */
+export type SortedPassObserver = (list: object, sorted: readonly SubMesh[], count: number) => void;
+const sortedObservers = new WeakMap<Scene, SortedPassObserver>();
+
+/** Sets or clears what hears `scene`'s sorted lists (`noteSortedPass`). */
+export function observeSortedPasses(scene: Scene, observer: SortedPassObserver | null): void {
+  if (observer) sortedObservers.set(scene, observer);
+  else sortedObservers.delete(scene);
+}
+
+/** A batching Scene's pass is about to hand `count` entries of `sorted`, from the group array `list`, to its batcher. */
+export function noteSortedPass(scene: Scene, list: object, sorted: readonly SubMesh[], count: number): void {
+  sortedObservers.get(scene)?.(list, sorted, count);
+}
+
 type SortCompare = (a: SubMesh, b: SubMesh) => number;
 /** Babylon 9.29's `RenderingGroup._RenderSorted`, which every sorted opaque and alpha-tested list of a group draws through. */
 type RenderSorted = (
@@ -49,8 +87,8 @@ let installed = false;
 
 /**
  * Routes the opaque and alpha-tested lists of a batching Scene through its batcher (a list of one too, which the
- * batcher counts): the same sort as Babylon's (`_RenderSorted`, in place when the list fills its array), then the
- * batcher draws them. Blended lists draw through
+ * batcher counts): the same sort as Babylon's (`_RenderSorted`, in place when the list fills its array), unless the list
+ * was put in place in draw order (`setPresortedPass`), then the batcher draws them. Blended lists draw through
  * the objects pass's own sorted loop (`TransparentDepthPrePass`), which asks the batcher itself; every other Scene, a
  * blended list and a Scene whose active meshes are frozen keep Babylon's loop.
  */
@@ -69,7 +107,8 @@ function installSortedRender(): void {
     }
     // A list of one needs no sort, so no copy either: the batcher reads `count` entries.
     const sorted = count === 1 || count === subMeshes.data.length ? subMeshes.data : subMeshes.data.slice(0, count);
-    if (sortCompareFn && count > 1) sorted.sort(sortCompareFn);
+    if (sortCompareFn && count > 1 && !presorted.has(subMeshes)) sorted.sort(sortCompareFn);
+    noteSortedPass(scene, subMeshes, sorted, count);
     batcher.draw(sorted, count, false, renderOpaque);
   };
 }

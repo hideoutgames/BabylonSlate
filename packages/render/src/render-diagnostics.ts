@@ -20,6 +20,7 @@ import type { GpuProbeSnapshot } from "./gpu-probe-engine";
 import type { DrawPassCounts } from "./draw-passes";
 import type { OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
 import type { LayerDrawableMeshWork } from "./layer-drawable-meshes";
+import type { LayerDrawListWork } from "./layer-draw-list";
 import type { RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
 
@@ -165,11 +166,13 @@ export type RenderDiagnostics = {
    * marking its readiness each frame. Empty where the view composites no layer. `batching` is how its draw batcher kept
    * its work between frames, and what its verifier found (`OverlayBatchWork`); null where the layer does not batch.
    * `drawable` is how the list of its meshes that can draw was kept, and what its checks against a full filter found
-   * and healed (`LayerDrawableMeshWork`: `mismatches` must stay 0).
+   * and healed (`LayerDrawableMeshWork`: `mismatches` must stay 0). `drawList` is how its retained draw list was kept,
+   * which frames took Babylon's full path and why, and what its checks against that path found (`LayerDrawListWork`:
+   * `mismatches` must stay 0).
    */
   layerWork?: Array<{
     layerId: string; meshes: number; work: NonNullable<RenderDiagnostics["rendererWork"]>; batching?: OverlayBatchWork | null;
-    drawable?: LayerDrawableMeshWork | null;
+    drawable?: LayerDrawableMeshWork | null; drawList?: LayerDrawListWork | null;
   }>;
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;
