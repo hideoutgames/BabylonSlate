@@ -95,7 +95,7 @@
 
 /*
  * Pin highlight: a rounded rectangle under a pin's cell, a little brighter than the node body (the
- * foreground laid thinly over it, so it also reads on a title bar or a Reroute knot). A pin row's half
+ * body colour with a little foreground mixed in, so it also stands out on a title bar). A pin row's half
  * (`data-pin-cell`: glyph, inline default and name) is the cell; a pin without one (title-bar pins,
  * Get Variable, Reroute knots) uses its hit area. The pseudo-element sits behind the cell's content and
  * outside layout, so nothing moves or resizes. Shown while the pin's menu is open (`data-pin-menu-open`,
@@ -111,13 +111,13 @@
   isolation: isolate;
 }
 
-.graph-editor-canvas :is([data-pin-cell], .react-flow__handle[data-graph-pin]:not([data-pin-cell] *))::before {
+.graph-editor-canvas :where([data-pin-cell], .react-flow__handle[data-graph-pin]:not([data-pin-cell] *))::before {
   content: "";
   position: absolute;
   z-index: -1;
   inset: 4px;
   border-radius: var(--radius-sm);
-  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  background: color-mix(in oklch, var(--graph-node) 92%, var(--foreground));
   pointer-events: none;
   visibility: hidden;
 }
@@ -129,6 +129,12 @@
 
 .graph-editor-canvas [data-pin-cell][data-pin-side="out"]::before {
   inset: 3px 2px 3px -8px;
+}
+
+/* A knot's pins fill its ends, so theirs is a disc behind the glyph, inside the pill. */
+.graph-editor-canvas .graph-reroute-knot .react-flow__handle[data-graph-pin]::before {
+  inset: 0;
+  border-radius: 9999px;
 }
 
 .graph-editor-canvas [data-pin-menu-open]::before {

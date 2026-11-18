@@ -3,7 +3,7 @@ import { ContextMenuOverlay, useContextMenu } from "@haptic/editor-kit";
 import { useGraphEditorContext } from "./graph-editor-context";
 
 /** Set on a pin's cell (or its hit area) while that pin's menu is open; graph-editor.css draws its highlight. */
-export const PIN_MENU_OPEN_ATTRIBUTE = "data-pin-menu-open";
+const PIN_MENU_OPEN_ATTRIBUTE = "data-pin-menu-open";
 
 /**
  * Right-click and long-press menu of a script-style node or a state. The items are built
