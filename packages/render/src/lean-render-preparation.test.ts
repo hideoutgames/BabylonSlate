@@ -108,12 +108,12 @@ describe("lean render preparation", () => {
     const w = world();
     const a = w.box("a");
     const b = w.box("b");
-    let skip: AbstractMesh | undefined;
-    w.renderer.customIsReadyFunction = (mesh) => mesh !== skip;
+    const unready = new Set<AbstractMesh>();
+    w.renderer.customIsReadyFunction = (mesh) => !unready.has(mesh);
     a.showBoundingBox = true;
     w.prepare();
     expect(w.opaque()).toEqual(["a", "b"]);
-    skip = b;
+    unready.add(b);
     w.prepare();
     expect(w.opaque()).toEqual(["a"]);
     expect(w.scene.getBoundingBoxRenderer().renderList.length).toBe(1);
