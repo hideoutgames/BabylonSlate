@@ -841,6 +841,124 @@ export function summariseSerialProbe(
   };
 }
 
+/** What the burst probe runs on (`BurstFrameProbe`). */
+export interface BurstProbeHost {
+  /** Submits a fence and flushes; null without fences. */
+  fence(): ProbeFence | null;
+  now(): number;
+  schedule(callback: () => void): void;
+  /** Lifts (true) or restores (false) the Engine's frames-in-flight limit, so frames are submitted without waiting. */
+  unpace(on: boolean): void;
+}
+
+export interface BurstProbeResult {
+  /** Increments with every run. */
+  id: number;
+  frames: number;
+  /**
+   * Median time between consecutive frames' GPU completions, the first `BURST_SKIPPED_INTERVALS` left out while the
+   * queue fills: the frame period with frames queued, max(GPU frame time, CPU submission interval), unrounded to
+   * display intervals but floored by the animation frame rate.
+   */
+  periodMs: number | null;
+  /** Median time between consecutive frames' submissions (their Engine frame ends): what the CPU and the display allow. */
+  submitMs: number | null;
+  failed: string | null;
+  ms: number;
+}
+
+/** Frames a burst fences, and the first completion intervals it leaves out. */
+export const BURST_PROBE_FRAMES = 12;
+const BURST_SKIPPED_INTERVALS = 2;
+const BURST_PROBE_TIMEOUT_MS = 5000;
+
+/**
+ * The burst probe (`gpuprobe burst`): `BURST_PROBE_FRAMES` frames rendered as the frame loop renders them, with the
+ * frames-in-flight limit lifted and a fence at each frame's end, and the time between consecutive fences' completions
+ * as polls first see them. A GPU-bound device keeps its queue full, so the completions are its GPU frame time apart.
+ */
+export class BurstFrameProbe {
+  private readonly host: BurstProbeHost;
+  private readonly framesWanted: number;
+  private running = false;
+  private started = 0;
+  private runs = 0;
+  private last: BurstProbeResult | null = null;
+  private readonly fences: { fence: ProbeFence; submitted: number; done: number | null }[] = [];
+  private pollScheduled = false;
+
+  constructor(host: BurstProbeHost, frames = BURST_PROBE_FRAMES) {
+    this.host = host;
+    this.framesWanted = frames;
+  }
+
+  get active(): boolean { return this.running; }
+  result(): BurstProbeResult | null { return this.last; }
+
+  request(): boolean {
+    if (this.running) return false;
+    this.running = true;
+    this.started = this.host.now();
+    this.host.unpace(true);
+    return true;
+  }
+
+  /** The Engine's frame end; `drawn`: a view rendered in it. */
+  frameEnded(drawn: boolean): void {
+    if (!this.running) return;
+    if (this.host.now() - this.started > BURST_PROBE_TIMEOUT_MS) return this.finish("the view drew too few frames");
+    if (!drawn || this.fences.length >= this.framesWanted) return;
+    const fence = this.host.fence();
+    if (!fence) return this.finish("no fences");
+    this.fences.push({ fence, submitted: this.host.now(), done: null });
+    if (this.fences.length >= this.framesWanted) this.host.unpace(false);
+    // Polled only while a fence is unfinished: between frames with none the probe costs nothing.
+    this.requestPoll();
+  }
+
+  /** Reads fences without blocking; run by the probe's own loop, exposed for tests. */
+  poll(): void {
+    this.pollScheduled = false;
+    if (!this.running) return;
+    const now = this.host.now();
+    for (const entry of this.fences) {
+      if (entry.done !== null) continue;
+      const done = entry.fence.done();
+      if (done === null) return this.finish("lost context");
+      if (!done) break;
+      entry.done = now;
+    }
+    const pending = this.fences.some((entry) => entry.done === null);
+    if (this.fences.length >= this.framesWanted && !pending) return this.finish(null);
+    if (now - this.started > BURST_PROBE_TIMEOUT_MS) return this.finish("the GPU did not finish the frames");
+    if (pending) this.requestPoll();
+  }
+
+  dispose(): void {
+    if (this.running) this.host.unpace(false);
+    for (const entry of this.fences.splice(0)) entry.fence.dispose();
+    this.running = false;
+  }
+
+  private finish(failed: string | null): void {
+    const done = this.fences.filter((entry) => entry.done !== null);
+    const gaps = (read: (entry: (typeof done)[number]) => number) =>
+      done.slice(1).map((entry, index) => read(entry) - read(done[index]!)).slice(BURST_SKIPPED_INTERVALS);
+    this.runs += 1;
+    this.last = {
+      id: this.runs, frames: this.fences.length, periodMs: median(gaps((entry) => entry.done!)), submitMs: median(gaps((entry) => entry.submitted)),
+      failed, ms: this.host.now() - this.started,
+    };
+    this.dispose();
+  }
+
+  private requestPoll(): void {
+    if (this.pollScheduled) return;
+    this.pollScheduled = true;
+    this.host.schedule(() => this.poll());
+  }
+}
+
 /** Schedules callbacks as MessageChannel messages: a polling loop at well under a millisecond, with no timer clamp. */
 export function messageChannelScheduler(): { schedule: (callback: () => void) => void; dispose: () => void } {
   const channel = new MessageChannel();

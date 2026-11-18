@@ -1,4 +1,4 @@
-import { POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, SHADOW_DEBUG_PARTS, WATER_DEBUG_PARTS, WATER_QUALITY_FIELDS, type QualityGroup, type ShadowDebugPart, type WaterDebugPart } from "@haptic/core";
+import { POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, SHADOW_DEBUG_PARTS, WATER_DEBUG_PARTS, WATER_QUALITY_FIELDS, type QualityGroup, type ShadowDebugPart, type WaterDebugPart, WORLD_DEBUG_PARTS, type WorldDebugPart } from "@haptic/core";
 import { fail, ok } from "./parser";
 import type {
   CommandParameter,
@@ -43,6 +43,7 @@ export const DEBUG_COMMAND_NAMES = [
   "postprocessing",
   "rendertargets",
   "waterdebug",
+  "worlddebug",
   "shadowdebug",
   "discardsamples",
   "scenelayers",
@@ -239,6 +240,19 @@ export function builtinCommands(): RegisteredCommand[] {
       },
     },
     {
+      name: "worlddebug",
+      tier: "debug",
+      category: "engine",
+      description: "Switch one share of the world's drawing off or back on, to size it: every world mesh of the view's passes (world), lighting (lit surfaces draw their base colour), shadow lookups (shadowtaps; maps still drawn, every lookup lit), point, spot and rect lights (locallights), or all shading (every surface one constant colour)",
+      parameters: [{ name: "part", type: "enum", enumValues: [...WORLD_DEBUG_PARTS] }, FLAG],
+      run(args, host) {
+        const part = args.part as WorldDebugPart, enabled = Boolean(args.enabled);
+        if (!host.setWorldDebug) return fail("worlddebug is unavailable here");
+        host.setWorldDebug(part, enabled);
+        return ok(`worlddebug ${part} ${enabled ? "on" : "off"}`);
+      },
+    },
+    {
       name: "shadowdebug",
       tier: "debug",
       category: "engine",
@@ -304,10 +318,10 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "gpuprobe",
       tier: "debug",
       category: "engine",
-      description: "Probe what the GPU is given each frame: record every frame's passes, clears, blits and shadow map draws (on, restarting), stop and take the recorder off (off), or render a few frames one at a time with a fence after each stage and then a fixed synthetic load (serial)",
-      parameters: [{ name: "action", type: "enum", enumValues: ["on", "off", "serial"] }],
+      description: "Probe what the GPU is given each frame: record every frame's passes, clears, blits and shadow map draws (on, restarting), stop and take the recorder off (off), render a few frames one at a time with a fence after each stage and then a fixed synthetic load (serial), time each stage and pass on the GPU with timer queries over the next frames (timers), or fence a burst of frames submitted without waiting and report the time between their completions (burst)",
+      parameters: [{ name: "action", type: "enum", enumValues: ["on", "off", "serial", "timers", "burst"] }],
       run(args, host) {
-        const action = args.action as "on" | "off" | "serial";
+        const action = args.action as "on" | "off" | "serial" | "timers" | "burst";
         if (!host.setGpuProbe) return fail("gpuprobe is unavailable here");
         host.setGpuProbe(action);
         return ok(`gpuprobe ${action}`);

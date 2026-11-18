@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@haptic/runtime";
 import {
-  antiAliasingSamples, QUALITY_GROUPS, qualitySettingsFingerprint, RENDER_QUALITY_PROFILES, RenderingQualitySession, SHADOW_DEBUG_PARTS, SHADOW_PROFILES, WATER_DEBUG_PARTS,
+  antiAliasingSamples, QUALITY_GROUPS, qualitySettingsFingerprint, RENDER_QUALITY_PROFILES, RenderingQualitySession, SHADOW_DEBUG_PARTS, SHADOW_PROFILES, WATER_DEBUG_PARTS, WORLD_DEBUG_PARTS,
   type QualityGroup, type QualityLevel,
 } from "@haptic/core";
 import {
@@ -10,7 +10,7 @@ import {
   FEATURE_TEST_BREAKDOWN_BASES, FEATURE_TEST_BREAKDOWN_METHODS, FEATURE_TEST_BREAKDOWN_STEPS, featureTestBreakdownPlan, frameBound,
   frameStats, isBreakdownBaseline, runFeatureTestCheck, SATURATED_SHARE, settingsChanges, vsyncShares, warmDeviceMinutes,
   FEATURE_TEST_PROFILE_SCENES, featureTestBreakdownScenes, featureTestProfilePlan, featureTestProfileSequence, profileComparison, profileDrift,
-  profileRanking, profileResolutionPin, profileState, profileStep, PROFILE_WARMUP_WINDOWS, featureTestProfileStateSequence, PROFILE_HOLD_WINDOWS,
+  profileRanking, profileResolutionPin, profileState, profileStep, PROFILE_WARMUP_WINDOWS,
   profileFrameState,
   type FeatureTestBenchmarkSample, type FeatureTestBreakdownInfo, type FeatureTestCheckDeps, type FeatureTestProfileState,
 } from "./feature-test-check";
@@ -176,6 +176,7 @@ function fingerprintAfter(
   let backbufferDepth = "kept";
   const waterOff = new Set<string>();
   const shadowOff = new Set<string>();
+  const worldOff = new Set<string>();
   for (const line of commands) {
     const [name, first, second, third] = line.split(" ");
     if (name === "quality") {
@@ -192,6 +193,7 @@ function fingerprintAfter(
     else if (name === "backbufferdiscard") backbufferDepth = first === "on" ? "discarded" : "kept";
     else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
     else if (name === "shadowdebug") { if (second === "off") shadowOff.add(first!); else shadowOff.delete(first!); }
+    else if (name === "worlddebug") { if (second === "off") worldOff.add(first!); else worldOff.delete(first!); }
   }
   const quality = session.effective();
   return {
@@ -201,6 +203,7 @@ function fingerprintAfter(
     captures: captures ? "on" : "suspended",
     "water.debug": WATER_DEBUG_PARTS.filter((part) => waterOff.has(part)).join(",") || "none",
     "shadows.debug": SHADOW_DEBUG_PARTS.filter((part) => shadowOff.has(part)).join(",") || "none",
+    "world.debug": WORLD_DEBUG_PARTS.filter((part) => worldOff.has(part)).join(",") || "none",
     "presentation.framesInFlight": framesInFlight,
     "msaa.discard": discard ? "on" : "off",
     layers: layers ? "shown" : "hidden",
@@ -1121,88 +1124,122 @@ describe("frame pacing", () => {
   });
 });
 
-// A Profile test runs the whole Profile (about fifteen minutes on the fake clock): seconds of work, more than
+// A Profile test runs the whole Profile (about ten minutes on the fake clock): seconds of work, more than
 // Vitest's default timeout allows on a busy runner.
 describe("Profile", { timeout: 30_000 }, () => {
-  const SESSION: FeatureTestProfileState = { postProcessing: true, captures: true, discard: false, layers: true, framesInFlight: 2, frameCap: 60 };
+  const SESSION: FeatureTestProfileState = { postProcessing: true, captures: true, layers: true };
 
-  it("measures each step at fixed camera views between two baselines of that view, revisits the control view, and keeps to today's length", () => {
+  it("measures each step twice at fixed camera views, each between two baselines of that view, revisits the control view, and keeps to about twelve minutes", () => {
     expect(FEATURE_TEST_PROFILE_SCENES).toEqual([{ name: "main", path: "assets/main.scene.hasset" }]);
     const plan = featureTestProfilePlan(SESSION);
+    const switches = ["world hidden", "flat world", "main pass unlit", "shadow taps off", "local lights off", "resolution 0.5"];
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["MSAA off", "discard samples", "scene layers hidden", "FSR to device size", "layer clears off", "held image off", "backbuffer depth discarded"]],
-      ["heavy", ['possess "Profile Heavy Camera"'], [
-        "shadows off", "shadow casters off", "shadow passes off", "shadow vertex clamp", "far cascades alternate", "shadows medium", "shadows medium big atlas", "shadow filter low",
-        "geometry effects off", "post off", "resolution 1.0",
-      ]],
-      ["mirror", ['possess "Profile Mirror Camera"'], ["mirrors environment", "captures off"]],
+      ["light", ['possess "Profile Light Camera"'], [...switches, "scene layers hidden", "geometry effects off", "post off", "shadows off", "world drawn once"]],
+      ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "world drawn once"]],
+      ["mirror", ['possess "Profile Mirror Camera"'], ["captures off", "mirrors environment", "world drawn once"]],
     ]);
     const step = (view: string, label: string) => plan.views.find((entry) => entry.name === view)!.steps.find((entry) => entry.label === label)!;
-    // The same Medium shadows in an atlas one size larger: its change beyond `shadows medium` is the atlas's size.
-    expect(step("heavy", "shadows medium big atlas")).toMatchObject({
-      commands: ["quality shadows medium", "shadowdebug atlasfit off"], restore: ["shadowdebug atlasfit on"], includes: "shadows medium", overlaps: true,
+    // The whole-frame switches, each undone by its own switch.
+    expect(step("light", "main pass unlit")).toMatchObject({ commands: ["worlddebug lighting off"], restore: ["worlddebug lighting on"], fields: ["world.debug"] });
+    expect(step("light", "flat world")).toMatchObject({ commands: ["worlddebug shading off"], restore: ["worlddebug shading on"] });
+    expect(step("light", "world hidden")).toMatchObject({
+      commands: ["worlddebug world off", "shadowdebug passes off", "rendertargets off", "postprocessing off"],
+      restore: ["worlddebug world on", "shadowdebug passes on", "rendertargets on", "postprocessing on"],
     });
-    expect(step("heavy", "shadow filter low")).toMatchObject({ commands: ["quality shadows filter low"], fields: ["shadows.filter"] });
-    expect(step("light", "discard samples")).toMatchObject({ commands: ["discardsamples on"], restore: ["discardsamples off"], fields: ["msaa.discard"] });
     expect(step("light", "scene layers hidden")).toMatchObject({ commands: ["scenelayers off"], restore: ["scenelayers on"], fields: ["layers"] });
-    expect(step("light", "FSR to device size")).toMatchObject({ commands: ["fsrdebug output device"], restore: ["fsrdebug output view"], fields: ["upscale.output"] });
-    // Maps not redrawn against casters not drawn, against shadows off: redrawing, drawing casters and sampling apart.
-    expect([step("heavy", "shadow casters off"), step("heavy", "shadow passes off")].map((entry) => [entry.commands, entry.restore])).toEqual([
-      [["shadowdebug casters off"], ["shadowdebug casters on"]], [["shadowdebug passes off"], ["shadowdebug passes on"]],
-    ]);
+    expect(step("heavy", "shadow passes off")).toMatchObject({ commands: ["shadowdebug passes off"], restore: ["shadowdebug passes on"] });
     // Toggles come back to the session's own value.
-    const other = featureTestProfilePlan({ postProcessing: false, captures: false, discard: true, layers: false, framesInFlight: 3, frameCap: 30 });
-    expect(other.views.flatMap((view) => view.steps).filter((entry) => entry.restore && !/^((shadow|fsr|layer)debug|heldimage|backbufferdiscard)/.test(entry.restore[0]!))
-      .map((entry) => entry.restore)).toEqual([["discardsamples on"], ["scenelayers off"], ["postprocessing off"], ["rendertargets off"]]);
+    const other = featureTestProfilePlan({ postProcessing: false, captures: false, layers: false });
+    expect(other.views.flatMap((view) => view.steps).filter((entry) => entry.restore && !/^(shadow|world)debug/.test(entry.restore[0]!))
+      .map((entry) => [entry.label, entry.restore])).toEqual([
+      ["scene layers hidden", ["scenelayers off"]], ["post off", ["postprocessing off"]], ["world drawn once", ["rendertargets off"]],
+      ["world drawn once", ["rendertargets off"]],
+      ["captures off", ["rendertargets off"]], ["world drawn once", ["rendertargets off"]],
+    ]);
+    expect(other.views[0]!.steps.find((entry) => entry.label === "world hidden")!.restore)
+      .toEqual(["worlddebug world on", "shadowdebug passes on", "rendertargets off", "postprocessing off"]);
     const sequence = featureTestProfileSequence(SESSION);
-    const probe = featureTestProfileStateSequence(SESSION);
-    expect(sequence.slice(0, probe.length)).toEqual(probe);
-    expect(sequence.slice(probe.length, probe.length + 8).map((entry) => entry.label)).toEqual([
-      "light baseline 1", "light MSAA off", "light baseline 2", "light discard samples", "light baseline 3", "light scene layers hidden",
-      "light baseline 4", "light FSR to device size",
+    // Each step twice, each time between two baselines: A B A B A C A C A.
+    expect(sequence.slice(0, 9).map((entry) => entry.label)).toEqual([
+      "light baseline 1", "light world hidden", "light baseline 2", "light world hidden", "light baseline 3", "light flat world",
+      "light baseline 4", "light flat world", "light baseline 5",
     ]);
     // Only a view's first baseline moves the camera; every step sits between two baselines of its own view.
     expect(sequence.filter((entry) => entry.commands.some((line) => line.startsWith("possess"))).map((entry) => entry.label))
-      .toEqual(["state hold 1", "light baseline 1", "heavy baseline 1", "mirror baseline 1", "heavy drift"]);
+      .toEqual(["light baseline 1", "heavy baseline 1", "mirror baseline 1", "heavy drift"]);
     sequence.forEach((entry, index) => {
-      if (entry.baseline || entry.action) return;
+      if (entry.baseline) return;
       expect([sequence[index - 1], sequence[index + 1]], entry.label).toMatchObject([{ baseline: true, view: entry.view }, { baseline: true, view: entry.view }]);
     });
     // Then the control view once more, unchanged, so the drift line spans the run.
     expect(sequence.at(-1)).toEqual({ label: "heavy drift", commands: ['possess "Profile Heavy Camera"'], baseline: true, view: "heavy" });
-    // Two warm-up windows, the hold's back to back 5 s windows and every other row at about 10 s: within twelve minutes
-    // before the serial probes, about a second a row.
-    const rows = sequence.filter((entry) => !entry.action);
-    expect(PROFILE_WARMUP_WINDOWS * 10 + PROFILE_HOLD_WINDOWS * 5 + (rows.length - PROFILE_HOLD_WINDOWS) * 10).toBeLessThanOrEqual(720);
-    expect(profileStep("heavy shadows off")).toMatchObject({ view: "heavy", fields: ["shadows", "shadows.filter"] });
+    // Two 5 s warm-up windows at about 10 s, then the 3 s rows at about 8 s with their settle and probes: within twelve minutes.
+    expect(PROFILE_WARMUP_WINDOWS * 10 + sequence.length * 8).toBeLessThanOrEqual(720);
+    expect(profileStep("light shadows off")).toMatchObject({ view: "light", fields: ["shadows", "shadows.filter"] });
     expect(profileStep("heavy baseline 2")).toBeUndefined();
   });
 
   it("reads the session's state from a baseline's fingerprint, with Play's defaults for what it lacks", () => {
-    expect(profileState({ "post.enabled": "false", captures: "suspended", "msaa.discard": "on", layers: "hidden", "presentation.framesInFlight": "off" }, 30))
-      .toEqual({ postProcessing: false, captures: false, discard: true, layers: false, framesInFlight: "off", frameCap: 30 });
+    expect(profileState({ "post.enabled": "false", captures: "suspended", layers: "hidden" })).toEqual({ postProcessing: false, captures: false, layers: false });
     expect(profileState(undefined)).toEqual(SESSION);
   });
 
-  it("probes the frame state first: a minute held unchanged, reset actions each followed by two baselines, then frames in flight and a 30 fps cap between baselines", () => {
-    const probe = featureTestProfileStateSequence({ ...SESSION, framesInFlight: 3, frameCap: 50 });
-    expect(probe.every((entry) => entry.view === "heavy")).toBe(true);
-    expect(probe.slice(0, PROFILE_HOLD_WINDOWS).map((entry) => [entry.label, entry.hold, entry.baseline]))
-      .toEqual(Array.from({ length: 12 }, (_, index) => [`state hold ${index + 1}`, true, true]));
-    expect(probe[0]!.commands).toEqual(['possess "Profile Heavy Camera"']);
-    expect(probe.slice(PROFILE_HOLD_WINDOWS).map((entry) => [entry.label, entry.action ? entry.commands : entry.baseline ? "baseline" : [...entry.commands, "|", ...entry.restore ?? []]])).toEqual([
-      ["state graph rebuilt", ["renderreset graph"]], ["state after graph rebuilt 1", "baseline"], ["state after graph rebuilt 2", "baseline"],
-      ["state shadow maps reallocated", ["renderreset shadows"]], ["state after shadow maps reallocated 1", "baseline"], ["state after shadow maps reallocated 2", "baseline"],
-      ["state backbuffer resized", ["scenelayers off"]], ["state backbuffer resized back", ["scenelayers on"]],
-      ["state after backbuffer resized back 1", "baseline"], ["state after backbuffer resized back 2", "baseline"],
-      ["state 3 s idle", ["renderreset idle"]], ["state after 3 s idle 1", "baseline"], ["state after 3 s idle 2", "baseline"],
-      ["state frames in flight off", ["framesinflight off", "|", "framesinflight 3"]], ["state baseline 1", "baseline"],
-      ["state frames in flight 3", ["framesinflight 3", "|", "framesinflight 3"]], ["state baseline 2", "baseline"],
-      ["state frame cap 30", ["framecap 30", "|", "framecap 50"]], ["state baseline 3", "baseline"],
-    ]);
-    // A session without Scene Layers resizes the other way.
-    expect(featureTestProfileStateSequence({ ...SESSION, layers: false }).filter((entry) => entry.action && entry.commands[0]!.startsWith("scenelayers"))
-      .map((entry) => entry.commands)).toEqual([["scenelayers on"], ["scenelayers off"]]);
+  it("compares a step only with baselines at its own GPU speed, scales them to the fastest, averages its repeats, and gives such rows no FAST or SLOW label", () => {
+    const row = (label: string, gpu: number, synthetic: number): FeatureTestBenchmarkSample => ({
+      label, baseline: label.includes("baseline"), view: "heavy", runtimeFps: null, cpuMs: 10, gpuMs: null,
+      frames: { frames: 100, durationMs: 3000, fps: 30, medianMs: 33, meanMs: 33, vsync: [0, 1, 0, 0], p95Ms: 40, maxMs: 50, stalls: 0 },
+      drawCalls: 100, resolution: null, failed: [], gpuBusy: { medianMs: gpu, p95Ms: gpu + 5, frames: 100, pollMs: 4 },
+      gpuProbe: { signature: null, shadows: null, raf: null, serial: { syntheticMs: synthetic } },
+    } as unknown as FeatureTestBenchmarkSample);
+    const samples = [
+      row("heavy baseline 1", 30, 2),
+      // The device halves its speed during the step's first window: the baseline after it is at the step's speed.
+      row("heavy shadows off", 50, 4),
+      row("heavy baseline 2", 60, 4),
+      row("heavy shadows off", 24, 2),
+      row("heavy baseline 3", 30, 2),
+    ];
+    // The slow window is compared with the slow baseline alone, the fast one with the fast baselines, never across speeds.
+    expect(samples.map((sample) => profileFrameState(samples, sample))).toEqual([null, null, null, null, null]);
+    expect(profileComparison(samples, samples[1]!)).toMatchObject({ before: 60, step: 50, after: null, change: { ms: -10 }, straddles: false });
+    expect(profileComparison(samples, samples[3]!)).toMatchObject({ before: 30, step: 24, after: 30, change: { ms: -6 } });
+    // Scaled to the fastest synthetic load (2 ms), the slow window's 50 against 60 reads 25 against 30.
+    expect(profileComparison(samples, samples[1]!)!.normalised).toMatchObject({ before: 30, step: 25, change: { ms: -5 } });
+    // Its two repeats are one ranked entry, their changes averaged.
+    expect(profileRanking(samples)[0]!.steps).toMatchObject([{ label: "heavy shadows off", repeats: 2, change: { ms: -8 }, normalised: { change: { ms: -5.5 } } }]);
+    expect(profileComparison(samples, samples[3]!)).toMatchObject({ speedMatched: true });
+    // A step that lightens the load clocks the GPU down by itself: with no baseline at its speed, the nearest are taken.
+    const lighter = [row("heavy baseline 1", 30, 2), row("heavy world hidden", 10, 3), row("heavy baseline 2", 30, 2)];
+    expect(profileComparison(lighter, lighter[1]!)).toMatchObject({ before: 30, step: 10, after: 30, change: { ms: -20 }, speedMatched: false });
+  });
+
+  it("ranks in the burst period where every row is GPU-bound, else in the serial frame, leaving out a serial frame submitted slower than the window", () => {
+    /** A row: its window's CPU cost, its serial frame and submission, and its burst period. */
+    const row = (label: string, cpu: number, serial: { frame: number; sub: number }, burst: number): FeatureTestBenchmarkSample => ({
+      label, baseline: label.includes("baseline"), view: "light", runtimeFps: null, cpuMs: cpu, gpuMs: null,
+      frames: { frames: 100, durationMs: 3000, fps: 30, medianMs: 33, meanMs: 33, vsync: [0, 1, 0, 0], p95Ms: 40, maxMs: 50, stalls: 0 },
+      drawCalls: 100, resolution: null, failed: [], gpuBusy: { medianMs: 33, p95Ms: 35, frames: 100, pollMs: 4 },
+      gpuProbe: {
+        signature: null, shadows: null, raf: { callbacks: 180, ms: 3000, perSecond: 60 },
+        serial: { frameMs: serial.frame, cpuMs: serial.sub, syntheticMs: 2 }, burst: { id: 1, frames: 12, periodMs: burst, submitMs: 16, failed: null, ms: 300 },
+      },
+    } as unknown as FeatureTestBenchmarkSample);
+    // A burst at the display's interval (60 Hz) is display-bound, however far past the submission: not the burst.
+    const paced = [row("light baseline 1", 10, { frame: 30, sub: 10 }, 16.6), row("light flat world", 10, { frame: 20, sub: 10 }, 16.7), row("light baseline 2", 10, { frame: 30, sub: 10 }, 16.6)];
+    expect(profileComparison(paced, paced[1]!)).toMatchObject({ basis: "serial" });
+    // GPU-bound: each burst well past its serial submission (10 ms) and the display's interval.
+    const bound = [row("light baseline 1", 10, { frame: 30, sub: 10 }, 40), row("light flat world", 10, { frame: 20, sub: 10 }, 28), row("light baseline 2", 10, { frame: 30, sub: 10 }, 42)];
+    expect(profileComparison(bound, bound[1]!)).toMatchObject({ basis: "burst", before: 40, step: 28, after: 42, change: { ms: -13 } });
+    // CPU-bound (bursts at the submission): the serial frame. One repeat's serial frames were submitted at 28.6 ms against
+    // a window at 13.8: that repeat stalled and is left out of the ranking, which keeps the other's change.
+    const cpu = [
+      row("light baseline 1", 13, { frame: 14, sub: 13 }, 15), row("light local lights off", 13.8, { frame: 33.6, sub: 28.6 }, 15),
+      row("light baseline 2", 13, { frame: 14.4, sub: 13 }, 15), row("light local lights off", 13, { frame: 14.2, sub: 13 }, 15),
+      row("light baseline 3", 13, { frame: 14.6, sub: 13 }, 15),
+    ];
+    expect(profileComparison(cpu, cpu[1]!)).toMatchObject({ basis: "gpu" });
+    expect(profileComparison(cpu, cpu[3]!)).toMatchObject({ basis: "serial", change: { ms: expect.closeTo(-0.3) } });
+    expect(profileRanking(cpu)[0]!.steps).toMatchObject([{ label: "light local lights off", basis: "serial", repeats: 1 }]);
   });
 
   it("holds Dynamic Resolution's floor where it is on, else the session's scale", () => {
@@ -1212,13 +1249,12 @@ describe("Profile", { timeout: 30_000 }, () => {
   });
 
   it("changes, with every step at every tier, only its own fields, or nothing where the tier already holds its value", () => {
-    // Low already has the low shadow filter and no geometry effects; Medium has Medium's shadows; Ultra is at full
-    // resolution without Dynamic Resolution.
+    // Low is already at half resolution, with no geometry effects.
     const expectedSkips: Record<QualityLevel, string[]> = {
-      low: ["shadow filter low", "geometry effects off"],
-      medium: ["shadows medium"],
+      low: ["resolution 0.5", "geometry effects off"],
+      medium: [],
       high: [],
-      ultra: ["resolution 1.0"],
+      ultra: [],
     };
     for (const tier of ["low", "medium", "high", "ultra"] as const) {
       const project = projectAt(tier);
@@ -1227,10 +1263,7 @@ describe("Profile", { timeout: 30_000 }, () => {
       const reference = fingerprintAfter([pin], { project });
       const skipped: string[] = [];
       const state = profileState(reference);
-      const steps = [...new Map([
-        ...featureTestProfilePlan(state).views.flatMap((view) => view.steps),
-        ...featureTestProfileStateSequence(state).filter((step) => !step.baseline && !step.action),
-      ].map((step) => [step.label, step])).values()];
+      const steps = [...new Map(featureTestProfilePlan(state).views.flatMap((view) => view.steps).map((step) => [step.label, step])).values()];
       for (const step of steps) {
         const after = fingerprintAfter([pin, ...step.commands], { project });
         const changed = settingsChanges(reference, after).map((change) => change.slice(0, change.indexOf("=")));
@@ -1343,45 +1376,37 @@ describe("Profile", { timeout: 30_000 }, () => {
     const samples = main!.play.benchmark;
     // The warm-up windows are the control view's first visits.
     expect(samples.slice(0, 2).map((sample) => [sample.label, sample.warmup, sample.view])).toEqual([["warm-up 1", true, "heavy"], ["warm-up 2", true, "heavy"]]);
-    // The editor viewport's 3 s, Play's 5 s, two 5 s warm-up windows, then 5 s per row.
+    // The editor viewport's 3 s, Play's 5 s, two 5 s warm-up windows, then 3 s per row.
     expect(windows.slice(0, 4)).toEqual([3_000, 5_000, 5_000, 5_000]);
-    expect(windows.slice(4).every((ms) => ms === 5_000)).toBe(true);
+    expect(windows.slice(4)).toEqual(featureTestProfileSequence(SESSION).map(() => 3_000));
     // At High nothing is skipped; each row keeps its view and when it began.
     const rows = samples.slice(2);
-    // Reset actions are run, not sampled.
-    expect(rows.map((sample) => [sample.label, sample.view])).toEqual(featureTestProfileSequence(SESSION).filter((step) => !step.action).map((step) => [step.label, step.view]));
+    expect(rows.map((sample) => [sample.label, sample.view])).toEqual(featureTestProfileSequence(SESSION).map((step) => [step.label, step.view]));
     expect(rows.filter((sample) => sample.skipped)).toEqual([]);
     expect(samples.every((sample, index) => index === 0 || sample.atMs! > samples[index - 1]!.atMs!)).toBe(true);
     // Every row's window is recorded by the GPU probes, which come off before its restore. This Engine reports none, so
     // no serial probe is asked for.
     expect(editor.commands.filter((line) => line.startsWith("gpuprobe"))).toEqual(samples.flatMap(() => ["gpuprobe on", "gpuprobe off"]));
-    expect(editor.commands.slice(editor.commands.indexOf("discardsamples on"), editor.commands.indexOf("discardsamples on") + 5))
-      .toEqual(["discardsamples on", "gpuprobe on", "gpubusy on", "gpuprobe off", "quality reset"]);
+    expect(editor.commands.slice(editor.commands.indexOf("scenelayers off"), editor.commands.indexOf("scenelayers off") + 5))
+      .toEqual(["scenelayers off", "gpuprobe on", "gpubusy on", "gpuprobe off", "quality reset"]);
     const commands = editor.commands.filter((line) => !line.startsWith("gpuprobe"));
     const at = (line: string) => commands.indexOf(line);
     // No tier and no frame cap: the session's own. High's Dynamic Resolution held at its floor, then the camera at the
     // control view, before the warm-up.
-    // The cap is only read, and changed by the state probe's own step, which puts it back.
-    expect(commands.filter((line) => line.startsWith("framecap") || /^quality (low|medium|high|ultra)$/.test(line))).toEqual(["framecap", "framecap 30", "framecap 30"]);
-    expect(commands.slice(0, 5)).toEqual(["framecap", "quality resolution scale 0.75", 'possess "Profile Heavy Camera"', "gpubusy on", "gpubusy on"]);
-    // The hold: twelve windows back to back, with no restore between them.
-    expect(commands.slice(at("gpubusy on") + 2, at("gpubusy on") + 2 + 13)).toEqual(['possess "Profile Heavy Camera"', ...Array(12).fill("gpubusy on")]);
-    // A reset action, then its baselines; the 30 fps cap back to the session's own (the fake's 30).
-    expect(commands.slice(at("renderreset graph"), at("renderreset graph") + 2)).toEqual(["renderreset graph", "gpubusy on"]);
-    expect(commands.slice(at("framecap 30"), at("framecap 30") + 5)).toEqual(["framecap 30", "gpubusy on", "quality reset", "quality resolution scale 0.75", "framecap 30"]);
-    expect(samples.every((sample) => sample.settings!["resolution.scale"] === "0.75" || sample.label === "heavy resolution 1.0")).toBe(true);
+    // The cap is only read.
+    expect(commands.filter((line) => line.startsWith("framecap") || /^quality (low|medium|high|ultra)$/.test(line))).toEqual(["framecap"]);
+    expect(commands.slice(0, 6)).toEqual(["framecap", "quality resolution scale 0.75", 'possess "Profile Heavy Camera"', "gpubusy on", "gpubusy on", 'possess "Profile Light Camera"']);
+    expect(samples.every((sample) => sample.settings!["resolution.scale"] === "0.75" || /resolution (1\.0|0\.5)$/.test(sample.label))).toBe(true);
     // Each step's commands, its sample, then `quality reset`, the held resolution and its own restore before the next baseline.
-    expect(commands.slice(at("discardsamples on"), at("discardsamples off") + 1))
-      .toEqual(["discardsamples on", "gpubusy on", "quality reset", "quality resolution scale 0.75", "discardsamples off"]);
-    expect(commands.slice(at("shadowdebug atlasfit off") - 1, at("shadowdebug atlasfit on") + 1))
-      .toEqual(["quality shadows medium", "shadowdebug atlasfit off", "gpubusy on", "quality reset", "quality resolution scale 0.75", "shadowdebug atlasfit on"]);
+    expect(commands.slice(at("scenelayers off"), at("scenelayers on") + 1))
+      .toEqual(["scenelayers off", "gpubusy on", "quality reset", "quality resolution scale 0.75", "scenelayers on"]);
     expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length);
     // Back to the session's quality, its Dynamic Resolution included, and the tour camera.
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", 'possess "Main Camera"']);
     // Each row's draws per pass and shadow atlas, as the step left them.
     const row = (label: string) => rows.find((sample) => sample.label === label)!;
-    expect(row("heavy shadows off").drawPasses).toEqual({ objects: 520, shadows: 0, captures: 44, post: 12 });
-    expect(row("heavy shadows off").shadowAtlas).toEqual({ edge: 0, maps: [] });
+    expect(row("light shadows off").drawPasses).toEqual({ objects: 520, shadows: 0, captures: 44, post: 12 });
+    expect(row("light shadows off").shadowAtlas).toEqual({ edge: 0, maps: [] });
     expect(row("mirror captures off").drawPasses).toEqual({ objects: 520, shadows: 140, captures: 0, post: 12 });
     expect(main!.play.profile).toEqual({
       instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 },
@@ -1435,7 +1460,7 @@ describe("Profile", { timeout: 30_000 }, () => {
   it("probes every Profile row's GPU work: the window's counters on each, and serialised frames after each but the warm-up and the hold windows before the last", async () => {
     const { editor, deps } = profileEditor({ tier: "high" });
     // An Engine with GPU probes: each `gpuprobe serial` reports a new result, except the one after `silent`.
-    const silent = "heavy post off";
+    const silent = "heavy shadow passes off";
     let asked = 0;
     let answered = 0;
     let silentRow = false;
@@ -1458,6 +1483,14 @@ describe("Profile", { timeout: 30_000 }, () => {
             raf: { callbacks: 300, ms: 5000, perSecond: 60 },
             serial: answered > 0 ? { id: answered, frames: 8, frameMs: 21, coldMs: 30, cpuMs: 8, stages: [], syntheticMs: 2, syntheticColdMs: 3, hashes: [], splits: 0, failed: null, ms: 400 } : null,
             serialRunning: false,
+            burst: { id: editor.commands.filter((line) => line === "gpuprobe burst").length, frames: 12, periodMs: 20, submitMs: 16, failed: null, ms: 300 },
+            burstRunning: false,
+            // A context without timer queries: each run ends at once, saying so.
+            timers: {
+              id: editor.commands.filter((line) => line === "gpuprobe timers").length, available: false, frames: 0, discarded: 0, frameMs: null, cpuMs: null,
+              headStart: null, stages: [], passes: [], failed: "no timer queries",
+            },
+            timersRunning: false,
           } } as unknown as RenderDiagnostics };
         } };
       },
@@ -1466,16 +1499,20 @@ describe("Profile", { timeout: 30_000 }, () => {
     const samples = report.scenes[0]!.play.benchmark;
     // Every row carries the window's probes.
     expect(samples.every((sample) => sample.gpuProbe?.signature?.modal === "a1b2c3d4" && sample.gpuProbe.shadows?.atlasEdge === 8192 && sample.gpuProbe.raf?.perSecond === 60)).toBe(true);
-    // Serialised frames follow every row but the warm-up windows and hold windows 1 to 11, which run back to back.
+    // Serialised frames follow every row but the warm-up windows.
     const unprobed = samples.filter((sample) => !sample.gpuProbe?.serial).map((sample) => sample.label);
-    expect(unprobed).toEqual(["warm-up 1", "warm-up 2", ...Array.from({ length: 11 }, (_, index) => `state hold ${index + 1}`), silent]);
-    expect(editor.commands.filter((line) => line === "gpuprobe serial")).toHaveLength(samples.length - 13);
+    expect(unprobed).toEqual(["warm-up 1", "warm-up 2", silent, silent]);
+    expect(editor.commands.filter((line) => line === "gpuprobe serial")).toHaveLength(samples.length - 2);
     // Each result is its own row's: the id it was given grows row by row.
     const ids = samples.flatMap((sample) => sample.gpuProbe?.serial ? [sample.gpuProbe.serial.id] : []);
     expect(ids.every((id, index) => index === 0 || id > ids[index - 1]!)).toBe(true);
-    // The serial probe runs after the window and before the recorder comes off and the row is restored.
+    // The serial probe, the burst and the pass timers run after the window, each once the one before reported, and
+    // before the recorder comes off and the row is restored.
     const post = editor.commands.indexOf("postprocessing off");
-    expect(editor.commands.slice(post, post + 6)).toEqual(["postprocessing off", "gpuprobe on", "gpubusy on", "gpuprobe serial", "gpuprobe off", "quality reset"]);
+    expect(editor.commands.slice(post, post + 8)).toEqual([
+      "postprocessing off", "gpuprobe on", "gpubusy on", "gpuprobe serial", "gpuprobe burst", "gpuprobe timers", "gpuprobe off", "quality reset",
+    ]);
+    expect(samples.find((sample) => sample.label === "heavy baseline 2")!.gpuProbe).toMatchObject({ burst: { periodMs: 20 }, timers: { available: false } });
     // A probe that never reports is said so on its row, and the Profile goes on.
     expect(samples.find((sample) => sample.label === silent)!.failed).toEqual(["The serial GPU probe did not report within 6 s."]);
     expect(samples.at(-1)!.label).toBe("heavy drift");
@@ -1487,18 +1524,17 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(main!.problems).toEqual([]);
     const samples = main!.play.benchmark;
     expect(samples.slice(0, 2).map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2"]);
-    expect(samples.slice(2).map((sample) => sample.label)).toEqual(featureTestProfileSequence(SESSION).filter((step) => !step.action).map((step) => step.label));
+    expect(samples.slice(2).map((sample) => sample.label)).toEqual(featureTestProfileSequence(SESSION).map((step) => step.label));
     // 10 of its 40 attempts a second held.
     expect(main!.play.profile!.holdRate).toEqual({ heldPerSecond: 10, share: 0.25 });
     // Every window and row keeps the frames it drew and held while sampled, and why it held them.
     expect(samples.map((sample) => sample.presentation!.held / (sample.presentation!.drawn + sample.presentation!.held)))
       .toEqual(samples.map(() => 0.25));
     expect(samples.every((sample) => sample.presentation!.heldReasons["Scene is not ready to render."] === sample.presentation!.held)).toBe(true);
-    // From each step to its sample: the first window waits 10 s with no rate yet, then 3 s of quiet shaders; every
-    // later one a 2 s window within 25% + 15 points, then the 3 s.
+    // From each step to its sample: the first window waits 10 s with no rate yet, then 1 s of quiet shaders; every
+    // later one a 2 s window within 25% + 15 points, then the 1 s.
     const profileWaits = waits.filter((wait) => /: (warming up|measuring (?!Play|the editor))/.test(wait.step));
-    // The hold's windows follow each other with no wait.
-    expect(profileWaits.map((wait) => wait.ms)).toEqual([13_000, ...samples.slice(1).map((sample) => /^state hold/.test(sample.label) ? 0 : 5_000)]);
+    expect(profileWaits.map((wait) => wait.ms)).toEqual([11_000, ...samples.slice(1).map(() => 3_000)]);
   });
 
   it("records the world renderer's work each row did while sampled, and the native memory as it ended", async () => {
@@ -1534,16 +1570,16 @@ describe("Profile", { timeout: 30_000 }, () => {
     });
     const row = (label: string) => report.scenes[0]!.play.benchmark.find((sample) => sample.label === label)!;
     // Each row keeps the memory as its sample ended, before the step is undone.
-    expect([row("heavy baseline 1").memory, row("heavy shadows off").memory]).toEqual([
+    expect([row("light baseline 19").memory, row("light shadows off").memory]).toEqual([
       { deviceAvailableBytes: 1024 * MIB, appAvailableBytes: null }, { deviceAvailableBytes: 2048 * MIB, appAvailableBytes: null },
     ]);
     const perDrawn = (label: string) => {
       const { work: sampled, presentation } = row(label);
       return { readiness: sampled!.strictReadinessChecks / presentation!.drawn, admissions: sampled!.shadowAdmissions / presentation!.drawn };
     };
-    expect(perDrawn("heavy baseline 1")).toEqual({ readiness: 2, admissions: 1 });
-    expect(perDrawn("heavy shadows off")).toEqual({ readiness: 6, admissions: 3 });
-    expect(perDrawn("heavy baseline 2")).toEqual({ readiness: 2, admissions: 1 });
+    expect(perDrawn("light baseline 19")).toEqual({ readiness: 2, admissions: 1 });
+    expect(perDrawn("light shadows off")).toEqual({ readiness: 6, admissions: 3 });
+    expect(perDrawn("light baseline 20")).toEqual({ readiness: 2, admissions: 1 });
     // What an earlier failure waited for is not a row's: no check failed while it was sampled.
     expect(row("heavy baseline 1").work!.readinessBlockers).toEqual([]);
   });
@@ -1553,14 +1589,18 @@ describe("Profile", { timeout: 30_000 }, () => {
     const { deps, waits, timeouts } = holdingView((attempt, commands) => shadowsOff(commands) ? attempt % 4 !== 0 : ONE_IN_FOUR(attempt));
     const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts, signal: new AbortController().signal });
     const samples = report.scenes[0]!.play.benchmark;
-    const shadows = samples.find((sample) => sample.label === "heavy shadows off")!;
+    const shadows = samples.find((sample) => sample.label === "light shadows off")!;
     expect(shadows.failed).toEqual([
       "The view still held 75% of its frames over the last 2 s after 90 s, past the 40% its warm-up allows (25% plus 15 points); these frames include them.",
     ]);
-    // 90 s of waiting, then the 3 s settle.
-    expect(waits.find((wait) => wait.step === "main: measuring heavy shadows off")!.ms).toBe(93_000);
+    // 90 s of waiting, then the 1 s settle.
+    expect(waits.find((wait) => wait.step === "main: measuring light shadows off")!.ms).toBe(91_000);
     expect(samples.at(-1)!.label).toBe("heavy drift");
-    expect(report.scenes[0]!.problems).toEqual([`heavy shadows off: ${shadows.failed[0]}`]);
+    // Every window of a step that turns shadows off: shadows off and the world drawn once, each twice at each view.
+    expect(report.scenes[0]!.problems).toEqual([
+      "light shadows off", "light shadows off", "light world drawn once", "light world drawn once",
+      "heavy world drawn once", "heavy world drawn once", "mirror world drawn once", "mirror world drawn once",
+    ].map((label) => `${label}: ${shadows.failed[0]}`));
   });
 
   it("records the readiness checks of the frames drawn while Play is measured, and what Play first drew before a sweep", async () => {
@@ -1607,11 +1647,11 @@ describe("Profile", { timeout: 30_000 }, () => {
     const { editor, deps, waits, timeouts } = holdingView((attempt, commands) => shadowsOff(commands) || ONE_IN_FOUR(attempt));
     const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts, signal: new AbortController().signal });
     const samples = report.scenes[0]!.play.benchmark;
-    const rowsUntil = featureTestProfileSequence(SESSION).filter((step) => !step.action).map((step) => step.label);
-    expect(samples.map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2", ...rowsUntil.slice(0, rowsUntil.indexOf("heavy shadows off") + 1)]);
+    const rowsUntil = featureTestProfileSequence(SESSION).map((step) => step.label);
+    expect(samples.map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2", ...rowsUntil.slice(0, rowsUntil.indexOf("light shadows off") + 1)]);
     expect(samples.at(-1)!.failed).toEqual(["The view drew no frame in the last 2 s of 90 s; the remaining profiles were skipped."]);
-    expect(waits.at(-1)).toEqual({ step: "main: measuring heavy shadows off", ms: 90_000 });
-    expect(editor.commands).not.toContain("quality shadows medium");
+    expect(waits.at(-1)).toEqual({ step: "main: measuring light shadows off", ms: 90_000 });
+    expect(editor.commands).not.toContain('possess "Profile Mirror Camera"');
     expect(editor.commands.slice(-3)).toEqual(["gpubusy off", "quality reset", 'possess "Main Camera"']);
   });
 
@@ -1630,15 +1670,17 @@ describe("Profile", { timeout: 30_000 }, () => {
     const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, signal: new AbortController().signal });
     const [main] = report.scenes;
     const rows = main!.play.benchmark.filter((sample) => !sample.warmup);
+    // Post-processing, which the light view's world hidden step could not turn back on: both windows.
     expect(rows.filter((sample) => sample.skipped).map((sample) => [sample.label, sample.skipped, sample.frames])).toEqual([
-      ["heavy shadows medium", "already shadows medium 2048, shadows.filter high, shadows.screen off, shadows.reflections false", null],
+      ["light post off", "already post.enabled false", null], ["light post off", "already post.enabled false", null],
     ]);
+    // Neither baseline after a skipped window is measured.
     const labels = rows.map((sample) => sample.label);
-    expect(labels.slice(labels.indexOf("heavy far cascades alternate"), labels.indexOf("heavy shadows medium big atlas") + 2)).toEqual([
-      "heavy far cascades alternate", "heavy baseline 6", "heavy shadows medium", "heavy shadows medium big atlas", "heavy baseline 8",
+    expect(labels.slice(labels.indexOf("light post off") - 2, labels.lastIndexOf("light post off") + 3)).toEqual([
+      "light geometry effects off", "light baseline 17", "light post off", "light post off", "light shadows off", "light baseline 20",
     ]);
     // The step's undo failed: the baseline after it says so and fails the scene.
-    expect(main!.problems).toEqual(["heavy baseline 11: postprocessing on failed: Refused."]);
+    expect(main!.problems[0]).toBe("light baseline 2: postprocessing on failed: Refused.");
     expect(main!.play.profile!.endChanges).toEqual(["post.enabled=false"]);
   });
 

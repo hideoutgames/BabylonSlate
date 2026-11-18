@@ -111,6 +111,7 @@ export * from "./water";
 export * from "./water-spectrum";
 export * from "./water-blend";
 export * from "./water-settings";
+export * from "./world-debug";
 export * from "./water-removal";
 export * from "./landscape";
 export * from "./collision-mesh";

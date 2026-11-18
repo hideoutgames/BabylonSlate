@@ -118,10 +118,6 @@ export interface FeatureTestBreakdownStep {
   overlaps?: boolean;
   /** Add-one: the label of another step whose cost this one includes (AO and SSR run in the post-processing stack). */
   includes?: string;
-  /** A Profile's reset action: its commands run and the view draws again, and nothing is sampled for it. */
-  action?: boolean;
-  /** A Profile's hold window: sampled straight after the previous one, with no wait, no settle and no restore. */
-  hold?: boolean;
 }
 
 const POST_FIELDS = [
@@ -268,78 +264,17 @@ export interface FeatureTestProfileState {
   /** Whether post-processing runs and every-frame captures draw: their steps turn them off, then back. */
   postProcessing: boolean;
   captures: boolean;
-  /** Whether multisampled samples are discarded after their last resolve (`discardsamples`, Engine-wide). */
-  discard: boolean;
   /** Whether Play composites its Scene Layers (`scenelayers`). */
   layers: boolean;
-  /** The Engine's frames in flight (`framesinflight`, Engine-wide): the state probe's steps change them, then back. */
-  framesInFlight: "off" | 2 | 3;
-  /** Play's frame cap (`framecap`): the state probe's 30 fps step goes back to it. */
-  frameCap: number;
 }
 
-/** The session's state from a baseline's settings fingerprint and its frame cap; a missing field reads as Play's default. */
-export function profileState(settings: Readonly<Record<string, string>> | undefined, frameCap = 60): FeatureTestProfileState {
-  const inFlight = settings?.["presentation.framesInFlight"];
+/** The session's state from a baseline's settings fingerprint; a missing field reads as Play's default. */
+export function profileState(settings: Readonly<Record<string, string>> | undefined): FeatureTestProfileState {
   return {
     postProcessing: settings?.["post.enabled"] !== "false",
     captures: settings?.captures !== "suspended",
-    discard: settings?.["msaa.discard"] === "on",
     layers: settings?.layers !== "hidden",
-    framesInFlight: inFlight === "off" ? "off" : inFlight === "3" ? 3 : 2,
-    frameCap,
   };
-}
-
-/** The state probe's hold test: consecutive windows at the control view with nothing changing (a minute at 5 s). */
-export const PROFILE_HOLD_WINDOWS = 12;
-
-/**
- * The state probe (`featureTestProfileStateSequence`), at the control view right after the warm-up: whether the device
- * moves between two frame cadences by itself, and what moves it.
- *
- * - Hold: `PROFILE_HOLD_WINDOWS` windows sampled back to back with nothing changing.
- * - Reset actions, each followed by two baselines (the hold's last window, or the previous action's last baseline, is
- *   the one before it): the frame graph rebuilt with nothing changed (`renderreset graph`), the shadow maps reallocated
- *   (`renderreset shadows`), the backbuffer resized and back (Scene Layers hidden, then shown), and 3 s with no frame
- *   rendered (`renderreset idle`).
- * - Steps, each between two baselines: frames in flight off, frames in flight 3, and a 30 fps frame cap (every second
- *   display interval at 60 Hz).
- */
-export function featureTestProfileStateSequence(state: FeatureTestProfileState): FeatureTestBreakdownSequenceStep[] {
-  const view = PROFILE_CONTROL_VIEW;
-  const baseline = (label: string, extra: Partial<FeatureTestBreakdownSequenceStep> = {}): FeatureTestBreakdownSequenceStep =>
-    ({ label: `state ${label}`, commands: [], baseline: true, view, ...extra });
-  const sequence: FeatureTestBreakdownSequenceStep[] = [];
-  for (let window = 1; window <= PROFILE_HOLD_WINDOWS; window++) {
-    sequence.push(baseline(`hold ${window}`, { hold: true, ...(window === 1 ? { commands: [possessProfileView(view)] } : {}) }));
-  }
-  const actions: [string, string[]][] = [
-    ["graph rebuilt", ["renderreset graph"]],
-    ["shadow maps reallocated", ["renderreset shadows"]],
-    ["backbuffer resized", [`scenelayers ${state.layers ? "off" : "on"}`]],
-    ["backbuffer resized back", [`scenelayers ${state.layers ? "on" : "off"}`]],
-    ["3 s idle", ["renderreset idle"]],
-  ];
-  for (const [label, commands] of actions) {
-    sequence.push({ label: `state ${label}`, commands, action: true, view });
-    // The resize is one action of two: the baselines follow the resize back.
-    if (label !== "backbuffer resized") sequence.push(baseline(`after ${label} 1`), baseline(`after ${label} 2`));
-  }
-  const steps: FeatureTestBreakdownStep[] = [
-    {
-      label: "frames in flight off", commands: ["framesinflight off"], restore: [`framesinflight ${state.framesInFlight}`],
-      fields: ["presentation.framesInFlight"],
-    },
-    {
-      label: "frames in flight 3", commands: ["framesinflight 3"], restore: [`framesinflight ${state.framesInFlight}`],
-      fields: ["presentation.framesInFlight"],
-    },
-    // Not in the fingerprint: never skipped.
-    { label: "frame cap 30", commands: ["framecap 30"], restore: [`framecap ${state.frameCap}`] },
-  ];
-  steps.forEach((step, index) => sequence.push({ ...step, label: `state ${step.label}`, view }, baseline(`baseline ${index + 1}`)));
-  return sequence;
 }
 
 /**
@@ -355,8 +290,6 @@ export function profileResolutionPin(settings: Readonly<Record<string, string>> 
 }
 
 const GEOMETRY_EFFECT_FIELDS = ["post.ambientOcclusion", "post.reflections", "post.volumetricLighting", "shadows.screen"] as const;
-/** What a shadow level changes: its map size, cascades and filter, Screen-Space Shadows and Reflection Shadows. */
-const SHADOW_LEVEL_FIELDS = ["shadows", "shadows.filter", "shadows.screen", "shadows.reflections"] as const;
 
 /** A Profile view's name in its labels (`light shadows off`), by `FEATURE_TEST_PROFILE_VIEWS`. */
 export type FeatureTestProfileViewName = keyof typeof FEATURE_TEST_PROFILE_VIEWS;
@@ -373,80 +306,85 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
 
 /**
  * A Profile's plan (`featureTestProfileSequence`): each step on top of the session's own quality tier and undone by
- * `quality reset` and its `restore` before the next, measured at fixed camera views between two baselines of the same
- * view (A B A C A …), so its change against them is what it saves there. A step at two views shows whether its cost
- * follows the pixels (the same at both) or what the view draws. Steps marked `overlaps` save part of another step's
- * saving (a lower setting of a feature another step turns off, an effect the post-processing or geometry step turns
- * off too, a resolution that shrinks every pass).
+ * `quality reset` and its `restore` before the next, measured at fixed camera views between baselines of the same view,
+ * so its change against them is what it saves there. A step at two views shows whether its cost follows the pixels (the
+ * same at both) or what the view draws. Steps marked `overlaps` save part of another step's saving. Every step sizes an
+ * architecture option:
  *
- * - `light` (few draws): the per-pixel suspects, MSAA off and discarding the samples after their resolve.
- * - `heavy` (many draws, no Mirror on screen; the control view): shadows off, Medium's shadow level, the same in an
- *   atlas one size larger (`shadowdebug atlasfit off`: the same tiles, so its change beyond `shadows medium` is the
- *   atlas's size alone; High's tiles fill a whole 8192 atlas, so they cannot be compared in a smaller one), the shadow
- *   filter low with the maps unchanged, AO off, every geometry effect off, post-processing off, MSAA off, the samples
- *   discarded, and half resolution.
- * - `mirror` (both Mirrors and the capture monitors on screen): Mirrors drawing no reflection, then captures off.
+ * - the whole-frame switches: the world hidden (no world mesh, no shadow map redrawn, no capture, no post-processing:
+ *   clears, Scene Layers and presentation, the pipeline's floor), every surface one constant colour (`worlddebug shading
+ *   off`: vertex, raster and attachment cost without shading), the main pass unlit (all per-pixel lighting and shadow
+ *   sampling), its shadow lookups lit with the maps still drawn, no local lights, and half resolution (per-pixel against
+ *   fixed cost);
+ * - the passes that draw the world again: shadows off, every geometry effect off, post-processing off, and all of them
+ *   with the captures and Mirrors' live reflection at once (`world drawn once`).
+ *
+ * `light` (few draws) takes them all and the Scene Layers hidden (the device-resolution tail). `heavy` (many draws, no
+ * Mirror on screen; the control view) takes what follows the draws rather than the pixels: the world hidden, the shadow
+ * map passes alone, the geometry effects and the world drawn once; the per-pixel steps answer the same there as at the
+ * light view. `mirror` (both Mirrors and the capture monitors on screen) takes the captures, the
+ * Mirrors' reflection and the world drawn once.
  */
 export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureTestBreakdownPlan {
-  const msaaOff: FeatureTestBreakdownStep = { label: "MSAA off", commands: ["quality postprocessing antialiasing off"], fields: ANTI_ALIASING_FIELDS };
-  // Engine-wide and outside `quality`: back to the session's own.
-  const discard: FeatureTestBreakdownStep = {
-    label: "discard samples", commands: ["discardsamples on"], restore: [`discardsamples ${state.discard ? "on" : "off"}`], fields: ["msaa.discard"],
+  const world = (label: string, part: string): FeatureTestBreakdownStep =>
+    ({ label, commands: [`worlddebug ${part} off`], restore: [`worlddebug ${part} on`], fields: ["world.debug"], overlaps: true });
+  const captures = `rendertargets ${state.captures ? "on" : "off"}`;
+  const post = `postprocessing ${state.postProcessing ? "on" : "off"}`;
+  const worldHidden: FeatureTestBreakdownStep = {
+    label: "world hidden", commands: ["worlddebug world off", "shadowdebug passes off", "rendertargets off", "postprocessing off"],
+    restore: ["worlddebug world on", "shadowdebug passes on", captures, post],
+    fields: ["world.debug", "shadows.debug", "captures", "post.enabled"], overlaps: true,
+  };
+  const flat = world("flat world", "shading");
+  const unlit = world("main pass unlit", "lighting");
+  const taps = world("shadow taps off", "shadowtaps");
+  const local = world("local lights off", "locallights");
+  const half: FeatureTestBreakdownStep = { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale", "resolution.dynamic"], overlaps: true };
+  const shadowsOff: FeatureTestBreakdownStep = { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows", "shadows.filter"], overlaps: true };
+  // Every effect that reads the geometry pass, so the pass itself goes too.
+  const geometryOff: FeatureTestBreakdownStep = {
+    label: "geometry effects off",
+    commands: [
+      "quality postprocessing ambientOcclusion off", "quality postprocessing reflections off",
+      "quality postprocessing volumetricLighting off", "quality shadows screen off",
+    ],
+    fields: GEOMETRY_EFFECT_FIELDS, overlaps: true,
+  };
+  const postOff: FeatureTestBreakdownStep = { label: "post off", commands: ["postprocessing off"], restore: [post], fields: ["post.enabled"], overlaps: true };
+  // Every pass that draws the world again besides the main one off together: what drawing it once would save.
+  const once: FeatureTestBreakdownStep = {
+    label: "world drawn once",
+    commands: [
+      "quality shadows enabled off", "quality postprocessing ambientOcclusion off", "quality postprocessing reflections off",
+      "quality postprocessing volumetricLighting off", "quality shadows screen off", "rendertargets off", "quality geometry mirrors environment",
+    ],
+    restore: [captures],
+    fields: ["shadows", "shadows.filter", ...GEOMETRY_EFFECT_FIELDS, "captures", "geometry.mirrors"], overlaps: true,
   };
   return {
     views: [
       {
         name: "light", enter: [possessProfileView("light")], steps: [
-          msaaOff, discard,
+          worldHidden, flat, unlit, taps, local, half,
           // Every Scene Layer hidden: the backbuffer is the world's size again, so the passes that ran at the device's
           // resolution for the layers (their draws, the upscale and sharpening to the output) go.
           { label: "scene layers hidden", commands: ["scenelayers off"], restore: [`scenelayers ${state.layers ? "on" : "off"}`], fields: ["layers"] },
-          // The effect chain ends at the backbuffer's size instead of the view's: what upscaling and sharpening at the
-          // device's resolution would cost, with the layers drawn there either way.
-          { label: "FSR to device size", commands: ["fsrdebug output device"], restore: ["fsrdebug output view"], fields: ["upscale.output"] },
-          // No depth-and-stencil clear before each layer drawn over the world: what those clears cost in the backbuffer's pass.
-          { label: "layer clears off", commands: ["layerdebug clears off"], restore: ["layerdebug clears on"], fields: ["layers.clears"] },
-          // No copy of each presented frame into the held image: what that device-resolution blit costs.
-          { label: "held image off", commands: ["heldimage off"], restore: ["heldimage on"], fields: ["presentation.held"] },
-          // The backbuffer's depth and stencil invalidated after the frame's last draw: what storing them costs.
-          { label: "backbuffer depth discarded", commands: ["backbufferdiscard on"], restore: ["backbufferdiscard off"], fields: ["backbuffer.depth"] },
+          geometryOff, postOff, shadowsOff, once,
         ],
       },
       {
         name: "heavy", enter: [possessProfileView("heavy")], steps: [
-          { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows", "shadows.filter"] },
-          // Every map pass bound and cleared, no caster drawn: what drawing the casters costs.
-          { label: "shadow casters off", commands: ["shadowdebug casters off"], restore: ["shadowdebug casters on"], fields: ["shadows.debug"], overlaps: true },
-          // No map redrawn, the last maps still sampled: what redrawing the maps costs; beyond it, `shadows off` saves the sampling.
+          worldHidden,
+          // No map redrawn, the last maps still sampled: what redrawing the maps costs.
           { label: "shadow passes off", commands: ["shadowdebug passes off"], restore: ["shadowdebug passes on"], fields: ["shadows.debug"], overlaps: true },
-          // The cascades' casters clamped to the near plane in the vertex stage, so no caster fragment writes its depth.
-          { label: "shadow vertex clamp", commands: ["shadowdebug depthclamp off"], restore: ["shadowdebug depthclamp on"], fields: ["shadows.debug"] },
-          // The cascades after the first two cleared and drawn in every second frame only.
-          { label: "far cascades alternate", commands: ["shadowdebug farcascades off"], restore: ["shadowdebug farcascades on"], fields: ["shadows.debug"] },
-          { label: "shadows medium", commands: ["quality shadows medium"], fields: SHADOW_LEVEL_FIELDS, overlaps: true },
-          {
-            label: "shadows medium big atlas", commands: ["quality shadows medium", "shadowdebug atlasfit off"], restore: ["shadowdebug atlasfit on"],
-            fields: [...SHADOW_LEVEL_FIELDS, "shadows.debug"], overlaps: true, includes: "shadows medium",
-          },
-          { label: "shadow filter low", commands: ["quality shadows filter low"], fields: ["shadows.filter"], overlaps: true },
-          // Every effect that reads the geometry pass, so the pass itself goes too.
-          {
-            label: "geometry effects off",
-            commands: [
-              "quality postprocessing ambientOcclusion off", "quality postprocessing reflections off",
-              "quality postprocessing volumetricLighting off", "quality shadows screen off",
-            ],
-            fields: GEOMETRY_EFFECT_FIELDS, overlaps: true,
-          },
-          { label: "post off", commands: ["postprocessing off"], restore: [`postprocessing ${state.postProcessing ? "on" : "off"}`], fields: ["post.enabled"] },
-          // Full resolution (level 1) against the held one: what no resolution drop costs.
-          { label: "resolution 1.0", commands: ["quality resolution scale 1"], fields: ["resolution.scale", "resolution.dynamic"] },
+          geometryOff, once,
         ],
       },
       {
         name: "mirror", enter: [possessProfileView("mirror")], steps: [
+          { label: "captures off", commands: ["rendertargets off"], restore: [captures], fields: ["captures"] },
           { label: "mirrors environment", commands: ["quality geometry mirrors environment"], fields: ["geometry.mirrors"] },
-          { label: "captures off", commands: ["rendertargets off"], restore: [`rendertargets ${state.captures ? "on" : "off"}`], fields: ["captures"] },
+          once,
         ],
       },
     ],
@@ -454,21 +392,20 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
 }
 
 /**
- * A Profile's run order after its warm-up at the control view: each view's A B A C … A (`breakdownSequence`), then the
- * control view once more, unchanged (`heavy drift`), so the drift line spans the whole run.
+ * A Profile's run order after its warm-up at the control view: each view's steps interleaved with its baselines in
+ * short windows, A B A B A C A C A … (`interleavedSequence`), so a change of the device's speed during a step falls on
+ * its baselines alike; then the control view once more, unchanged (`heavy drift`), so the drift line spans the whole run.
  */
 export function featureTestProfileSequence(state: FeatureTestProfileState): FeatureTestBreakdownSequenceStep[] {
   return [
-    ...featureTestProfileStateSequence(state),
-    ...breakdownSequence(featureTestProfilePlan(state).views),
+    ...interleavedSequence(featureTestProfilePlan(state).views),
     { label: `${PROFILE_CONTROL_VIEW} drift`, commands: [possessProfileView(PROFILE_CONTROL_VIEW)], baseline: true, view: PROFILE_CONTROL_VIEW },
   ];
 }
 
 /** The Profile step a sample measured, by its label (`heavy shadows off`); undefined for baselines and warm-up windows. */
 export function profileStep(label: string): FeatureTestBreakdownSequenceStep | undefined {
-  const step = featureTestProfileSequence({ postProcessing: true, captures: true, discard: false, layers: true, framesInFlight: 2, frameCap: 60 })
-    .find((entry) => entry.label === label);
+  const step = featureTestProfileSequence({ postProcessing: true, captures: true, layers: true }).find((entry) => entry.label === label);
   return step?.baseline ? undefined : step;
 }
 
@@ -538,6 +475,31 @@ export function breakdownSequence(
     });
     view.steps.forEach((step, index) => sequence.push(baseline(index + 1), { ...step, label: `${prefix}${step.label}`, ...tag }));
     sequence.push(baseline(view.steps.length + 1));
+  }
+  return sequence;
+}
+
+/** Windows each Profile step is measured in, each between two baselines (A B A B A). */
+export const PROFILE_STEP_REPEATS = 2;
+
+/**
+ * A Profile's order per view: a baseline, then each step `PROFILE_STEP_REPEATS` times with a baseline after each
+ * (A B A B A C A C A …). The repeats carry the step's label, and its comparison is their mean (`profileRanking`).
+ */
+export function interleavedSequence(views: readonly FeatureTestBreakdownView[]): FeatureTestBreakdownSequenceStep[] {
+  const sequence: FeatureTestBreakdownSequenceStep[] = [];
+  for (const view of views) {
+    const prefix = view.name ? `${view.name} ` : "";
+    const tag = view.name ? { view: view.name } : {};
+    let baselines = 0;
+    const baseline = (): FeatureTestBreakdownSequenceStep => {
+      baselines += 1;
+      return { label: `${prefix}baseline ${baselines}`, commands: baselines === 1 ? view.enter ?? [] : [], baseline: true, ...tag };
+    };
+    sequence.push(baseline());
+    for (const step of view.steps) {
+      for (let repeat = 0; repeat < PROFILE_STEP_REPEATS; repeat++) sequence.push({ ...step, label: `${prefix}${step.label}`, ...tag }, baseline());
+    }
   }
   return sequence;
 }
@@ -644,8 +606,9 @@ export interface ProfileComparison {
   label: string;
   view: string | undefined;
   /**
-   * What the change is in: `serial`, the serial probe's whole-frame GPU time (`SerialProbeResult.frameMs`), only where
-   * the step and both baselines around it have one; else `gpu`, GPU busy; else `frame`, mean frame time.
+   * What the change is in (`profileValue`), the first that the step and both baselines around it have: `burst`, the
+   * burst probe's frame period where every row is GPU-bound; `serial`, the serial probe's whole-frame time; else `gpu`,
+   * GPU busy; else `frame`, mean frame time.
    */
   basis: ProfileBasis;
   before: number;
@@ -660,26 +623,88 @@ export interface ProfileComparison {
   state: ProfileFrameState | null;
   /** Its two baselines are in different states: the device changed cadence across it, so its change is not ranked. */
   straddles: boolean;
+  /**
+   * The same comparison with each row scaled to the run's fastest synthetic load (`profileReferenceSpeed`): what the
+   * change would be at that speed; null where a row has no synthetic load.
+   */
+  normalised: { before: number; step: number; after: number | null; change: BaselineDelta } | null;
+  /** The step's repeats compared (`PROFILE_STEP_REPEATS`), averaged in `profileRanking`; 1 for a single comparison. */
+  repeats: number;
+  /** Its baselines ran at its own GPU speed (`PROFILE_SPEED_BIN`); false where none did and the nearest were taken. */
+  speedMatched: boolean;
 }
 
-export type ProfileBasis = "serial" | "gpu" | "frame";
+export type ProfileBasis = "burst" | "serial" | "gpu" | "frame";
+export const PROFILE_BASES: readonly ProfileBasis[] = ["burst", "serial", "gpu", "frame"];
 
-/** A row's value in `basis`; null where it has none. */
+/**
+ * A row is GPU-bound where its burst period (`BurstProbeResult.periodMs`, the unquantised frame period with frames
+ * queued) is past this multiple of both its serial frames' CPU submission and the display interval (from the window's
+ * animation frame rate, at least 60 Hz): the GPU, not the CPU or the display, sets the period.
+ */
+export const PROFILE_GPU_BOUND_RATIO = 1.2;
+/**
+ * A serial frame whose CPU submission is past this multiple of the window's median CPU frame cost (plus
+ * `PROFILE_SERIAL_STALL_MS`) caught other work on the main thread while it rendered (a compile, a collection, another
+ * process): its frame time is not the row's.
+ */
+export const PROFILE_SERIAL_STALL_RATIO = 1.5;
+export const PROFILE_SERIAL_STALL_MS = 2;
+
+/** Whether a row's serial frames were submitted as fast as its window's frames (`PROFILE_SERIAL_STALL_RATIO`). */
+export function serialUnstalled(sample: FeatureTestBenchmarkSample): boolean {
+  const sub = sample.gpuProbe?.serial?.cpuMs;
+  return sub === null || sub === undefined || sample.cpuMs === null || sub <= sample.cpuMs * PROFILE_SERIAL_STALL_RATIO + PROFILE_SERIAL_STALL_MS;
+}
+
+/** A row's value in `basis`; null where it has none (`burst` where the row is not GPU-bound, `serial` where it stalled). */
 function profileValue(sample: FeatureTestBenchmarkSample, basis: ProfileBasis): number | null {
-  return basis === "serial" ? sample.gpuProbe?.serial?.frameMs ?? null : breakdownValue(sample, basis === "gpu");
+  if (basis === "burst") {
+    const period = sample.gpuProbe?.burst?.periodMs, sub = sample.gpuProbe?.serial?.cpuMs;
+    if (period === null || period === undefined || sub === null || sub === undefined) return null;
+    const display = 1000 / Math.max(sample.gpuProbe?.raf?.perSecond ?? 60, 60);
+    return period > Math.max(sub, display) * PROFILE_GPU_BOUND_RATIO ? period : null;
+  }
+  if (basis === "serial") return serialUnstalled(sample) ? sample.gpuProbe?.serial?.frameMs ?? null : null;
+  return breakdownValue(sample, basis === "gpu");
+}
+
+/** A row's synthetic load time (`SerialProbeResult.syntheticMs`): the GPU's own speed as it was measured; null unmeasured. */
+export function syntheticMs(sample: FeatureTestBenchmarkSample): number | null {
+  const value = sample.gpuProbe?.serial?.syntheticMs;
+  return value === null || value === undefined || !(value > 0) ? null : value;
 }
 
 /**
- * A row's frame state (`profileFrameState`): FAST within `PROFILE_SLOW_RATIO` of the best baseline or warm-up window of
- * its view, else SLOW. An iPad was seen to hold one view at about two display intervals a frame or at four, with the
- * same settings, CPU and draws, and to move between them at some steps.
+ * Rows whose synthetic loads are within this share of each other ran at the same GPU speed: a Profile step is compared
+ * only with baselines at its own speed.
+ */
+export const PROFILE_SPEED_BIN = 0.15;
+
+/** The run's fastest synthetic load: the speed a normalised value is scaled to; null where none was measured. */
+export function profileReferenceSpeed(samples: readonly FeatureTestBenchmarkSample[]): number | null {
+  const loads = samples.flatMap((sample) => syntheticMs(sample) ?? []);
+  return loads.length ? Math.min(...loads) : null;
+}
+
+/** Whether two rows ran at the same GPU speed; true where either has no synthetic load (nothing to tell them apart). */
+function sameSpeed(a: FeatureTestBenchmarkSample, b: FeatureTestBenchmarkSample): boolean {
+  const first = syntheticMs(a), second = syntheticMs(b);
+  return first === null || second === null || Math.abs(second - first) <= Math.min(first, second) * PROFILE_SPEED_BIN;
+}
+
+/**
+ * A row's frame state (`profileFrameState`), for rows without a synthetic load only: FAST within `PROFILE_SLOW_RATIO` of
+ * the best baseline or warm-up window of its view in gpu busy, else SLOW. A row with a synthetic load has none: its speed
+ * is the load itself, which bins the comparisons (`PROFILE_SPEED_BIN`) and scales the normalised values; a label from
+ * it flipped with the noise of a small load on a CPU-bound desktop.
  */
 export type ProfileFrameState = "FAST" | "SLOW";
 export const PROFILE_SLOW_RATIO = 1.5;
 
 /** A measured row's state against its view's best baseline, in GPU busy where it has it, else mean frame time; null unmeasured. */
 export function profileFrameState(samples: readonly FeatureTestBenchmarkSample[], sample: FeatureTestBenchmarkSample): ProfileFrameState | null {
-  if (sample.skipped || !sample.frames) return null;
+  if (sample.skipped || !sample.frames || syntheticMs(sample) !== null) return null;
   const gpu = sample.gpuBusy !== undefined;
   const value = breakdownValue(sample, gpu);
   const references = samples.flatMap((entry) => {
@@ -709,14 +734,26 @@ function baselinesAround(
 /** A measured Profile step's comparison with the baselines around it (`ProfileComparison`); null for baselines, warm-up windows and unmeasured steps. */
 export function profileComparison(samples: readonly FeatureTestBenchmarkSample[], sample: FeatureTestBenchmarkSample): ProfileComparison | null {
   if (sample.warmup || sample.skipped || isBreakdownBaseline(sample) || !samples.includes(sample)) return null;
-  for (const basis of ["serial", "gpu", "frame"] as const) {
+  for (const basis of PROFILE_BASES) {
+    // A probe's basis (burst, serial) takes the measured baselines right around the step, and both must have it.
+    const probe = basis === "burst" || basis === "serial";
     const value = (entry: FeatureTestBenchmarkSample) => profileValue(entry, basis);
     const step = value(sample);
     if (step === null) continue;
-    // Serial: the measured baselines right around the step, and both must have a serial frame time.
-    const { before, after } = baselinesAround(samples, sample, (entry) => basis === "serial" ? entry.frames !== null : value(entry) !== null);
-    if (!before) continue;
-    if (basis === "serial" && (value(before) === null || !after || value(after) === null)) continue;
+    // Baselines at the step's own GPU speed; where there are none, the nearest at any speed (`speedMatched` false: a step
+    // that lightens the GPU's load can lower its clock, and so its synthetic load's speed, by itself).
+    const pick = (matched: boolean) => {
+      let { before, after } = baselinesAround(samples, sample,
+        (entry) => (probe ? entry.frames !== null : value(entry) !== null) && (!matched || sameSpeed(entry, sample)));
+      // Only a baseline after it: that one alone.
+      if (!before) [before, after] = [after, undefined];
+      if (!before || (probe && (value(before) === null || !after || value(after) === null))) return null;
+      return { before, after };
+    };
+    const pair = pick(true) ?? pick(false);
+    if (!pair) continue;
+    const { before, after } = pair;
+    const speedMatched = sameSpeed(before, sample) && (!after || sameSpeed(after, sample));
     // Both baselines, or the one before alone where the sweep measured none after: never a gpu basis on one side only.
     const afterValue = after ? value(after) : null;
     const base = afterValue === null ? value(before)! : (value(before)! + afterValue) / 2;
@@ -725,13 +762,25 @@ export function profileComparison(samples: readonly FeatureTestBenchmarkSample[]
     const beforeState = profileFrameState(samples, before);
     const afterState = after ? profileFrameState(samples, after) : beforeState;
     const straddles = beforeState !== null && afterState !== null && beforeState !== afterState;
+    const reference = profileReferenceSpeed(samples);
+    const scaled = (entry: FeatureTestBenchmarkSample) => {
+      const load = syntheticMs(entry), own = value(entry);
+      return reference === null || load === null || own === null ? null : own * (reference / load);
+    };
+    const normalisedRows = { before: scaled(before), step: scaled(sample), after: after && afterValue !== null ? scaled(after) : null };
+    const normalisedBase = normalisedRows.before === null ? null
+      : afterValue === null ? normalisedRows.before : normalisedRows.after === null ? null : (normalisedRows.before + normalisedRows.after) / 2;
+    const normalised = normalisedRows.step === null || normalisedRows.before === null || normalisedBase === null ? null : {
+      before: normalisedRows.before, step: normalisedRows.step, after: normalisedRows.after,
+      change: { ms: normalisedRows.step - normalisedBase, percent: ((normalisedRows.step - normalisedBase) / normalisedBase) * 100 },
+    };
     return {
       label: sample.label, view: sample.view, basis, before: value(before)!, step, after: afterValue,
       change: { ms, percent: (ms / base) * 100 }, spread,
       unsettled: spread !== null && spread > Math.max(Math.abs(ms), base * PROFILE_SETTLED_SPREAD),
       cpu: deltaAroundBaselines(samples, sample, (entry) => entry.cpuMs),
       overlaps: profileStep(sample.label)?.overlaps === true,
-      state: straddles ? null : beforeState, straddles,
+      state: straddles ? null : beforeState, straddles, normalised, repeats: 1, speedMatched,
     };
   }
   return null;
@@ -739,7 +788,9 @@ export function profileComparison(samples: readonly FeatureTestBenchmarkSample[]
 
 /**
  * A Profile's measured steps per view, in the order the views ran, each view's ranked by its change (the largest
- * saving first, a step that cost time last); unmeasured steps and steps that straddle a state change left out.
+ * saving first, a step that cost time last); unmeasured steps and steps that straddle a state change left out. A step's
+ * repeats (`PROFILE_STEP_REPEATS`) are one entry in the first basis any of them has (`PROFILE_BASES`), their changes in
+ * it averaged; a repeat with only a later basis (its serial frames stalled) is left out.
  */
 export function profileRanking(samples: readonly FeatureTestBenchmarkSample[]): { view: string | undefined; steps: ProfileComparison[] }[] {
   const views: { view: string | undefined; steps: ProfileComparison[] }[] = [];
@@ -748,10 +799,38 @@ export function profileRanking(samples: readonly FeatureTestBenchmarkSample[]): 
     if (!comparison || comparison.straddles) continue;
     let group = views.find((entry) => entry.view === comparison.view);
     if (!group) views.push(group = { view: comparison.view, steps: [] });
-    group.steps.push(comparison);
+    const earlier = group.steps.findIndex((entry) => entry.label === comparison.label && entry.basis === comparison.basis);
+    if (earlier < 0) group.steps.push(comparison);
+    else group.steps[earlier] = mergeRepeats(group.steps[earlier]!, comparison);
   }
-  for (const group of views) group.steps.sort((a, b) => a.change.ms - b.change.ms);
+  for (const group of views) {
+    const best = new Map<string, number>();
+    for (const entry of group.steps) best.set(entry.label, Math.min(best.get(entry.label) ?? Infinity, PROFILE_BASES.indexOf(entry.basis)));
+    group.steps = group.steps.filter((entry) => PROFILE_BASES.indexOf(entry.basis) === best.get(entry.label));
+    group.steps.sort((a, b) => a.change.ms - b.change.ms);
+  }
   return views;
+}
+
+/** Two repeats of one step as one comparison: their values and changes averaged by how many each holds. */
+function mergeRepeats(a: ProfileComparison, b: ProfileComparison): ProfileComparison {
+  const n = a.repeats, total = n + 1;
+  const mix = (x: number, y: number) => (x * n + y) / total;
+  const mixNullable = (x: number | null, y: number | null) => x === null ? y : y === null ? x : mix(x, y);
+  const delta = (x: BaselineDelta, y: BaselineDelta): BaselineDelta => ({ ms: mix(x.ms, y.ms), percent: mix(x.percent, y.percent) });
+  return {
+    ...a,
+    before: mix(a.before, b.before), step: mix(a.step, b.step), after: mixNullable(a.after, b.after), change: delta(a.change, b.change),
+    spread: mixNullable(a.spread, b.spread), unsettled: a.unsettled || b.unsettled,
+    cpu: a.cpu && b.cpu ? delta(a.cpu, b.cpu) : a.cpu ?? b.cpu,
+    state: a.state === b.state ? a.state : null,
+    normalised: a.normalised && b.normalised ? {
+      before: mix(a.normalised.before, b.normalised.before), step: mix(a.normalised.step, b.normalised.step),
+      after: mixNullable(a.normalised.after, b.normalised.after), change: delta(a.normalised.change, b.normalised.change),
+    } : a.normalised ?? b.normalised,
+    repeats: total,
+    speedMatched: a.speedMatched && b.speedMatched,
+  };
 }
 
 /** A visit of a Profile's control view: unchanged, so its change over the run is the device's drift. */
@@ -979,13 +1058,17 @@ type GpuProbeDiagnostics = NonNullable<RenderDiagnostics["gpuProbe"]>;
  * A Profile row's GPU probes (`gpuprobe`, `RenderDiagnostics.gpuProbe`). Passive, over the sample window: the GL call
  * signature, the shadow map counters and the `requestAnimationFrame` rate. Perturbing, right after the window and
  * before the row's restore: `serial`, frames rendered one at a time with a fence after each stage, then the synthetic
- * load; absent where it was not run (a hold window before the last) or did not finish.
+ * load; absent where it was not run (a hold window before the last) or did not finish. Then `burst`, the frame period
+ * with frames queued and unpaced, and `timers`, GPU time per stage and pass from timer queries (reporting them absent
+ * where the context has none).
  */
 export interface SampledGpuProbe {
   signature: GpuProbeDiagnostics["signature"];
   shadows: GpuProbeDiagnostics["shadows"];
   raf: GpuProbeDiagnostics["raf"];
   serial?: NonNullable<GpuProbeDiagnostics["serial"]>;
+  burst?: NonNullable<GpuProbeDiagnostics["burst"]>;
+  timers?: NonNullable<GpuProbeDiagnostics["timers"]>;
 }
 
 /** The world renderer's work over a sample window: how much each `RenderDiagnostics.rendererWork` counter grew. */
@@ -1287,8 +1370,14 @@ export interface FeatureTestCheckTimeouts {
   breakdownWarmupMs: number;
   /** A Profile's warm-up window; it warms up for at most `PROFILE_WARMUP_WINDOWS` of them. */
   profileWarmupWindowMs: number;
-  /** Most a Profile row waits for its serial GPU probe (`gpuprobe serial`) to report. */
+  /** Most a Profile row waits for its serial GPU probe (`gpuprobe serial`) to report, and its burst probe. */
   profileSerialMs: number;
+  /** Most a Profile row waits for its pass timers (`gpuprobe timers`), which give each frame a GPU head start. */
+  profileTimersMs: number;
+  /** A Profile step's and its baselines' window, short so a step alternates with its baselines (A B A B A). */
+  profileStepSampleMs: number;
+  /** A Profile's quiet time before it samples (in place of `profileSettleMs`): its probes carry the measurement. */
+  profileStepSettleMs: number;
 }
 
 const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
@@ -1307,6 +1396,9 @@ const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
   breakdownWarmupMs: 90_000,
   profileWarmupWindowMs: 5_000,
   profileSerialMs: 6_000,
+  profileTimersMs: 25_000,
+  profileStepSampleMs: 3_000,
+  profileStepSettleMs: 1_000,
 };
 
 /** A Profile warms up for at most this many windows (fewer when the first two agree within 3%): a short run on a tablet. */
@@ -1953,7 +2045,7 @@ async function benchmarkProfiles(
     : `The view did not draw steadily within ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`;
   // A Profile bounds the wait for quiet shaders more tightly: a tablet's steady scene may never go quiet for long.
   const settleBoundMs = profileMode ? limits.profileSettleBoundMs : limits.profileCompileMs;
-  const settle = () => settleView(play, deps, signal, limits.profileSettleMs, settleBoundMs);
+  const settle = () => settleView(play, deps, signal, profileMode ? limits.profileStepSettleMs : limits.profileSettleMs, settleBoundMs);
   const unsettledNote = (what: string) =>
     `Shaders were still first drawn or compiling after ${seconds(settleBoundMs)}; this ${what}'s frames include them.`;
   // GPU-busy time per frame from fences, which display pacing does not quantise; restarted per sample.
@@ -1971,15 +2063,24 @@ async function benchmarkProfiles(
       if (!probe) return sample;
       sample.gpuProbe = { signature: probe.signature, shadows: probe.shadows, raf: probe.raf };
       if (serial) {
-        const before = probe.serial?.id ?? 0;
-        if ((await run("gpuprobe serial")).success) {
-          const result = await waitFor(deps, signal, limits.profileSerialMs, () => {
-            const latest = play.snapshot().rendering?.gpuProbe?.serial;
+        // Each perturbing probe in turn, once the one before reported: serial, burst, timers.
+        const perturb = async <K extends "serial" | "burst" | "timers">(action: K, name: string) => {
+          const before = play.snapshot().rendering?.gpuProbe?.[action]?.id ?? 0;
+          if (!(await run(`gpuprobe ${action}`)).success) return null;
+          const bound = action === "timers" ? limits.profileTimersMs : limits.profileSerialMs;
+          const result = await waitFor(deps, signal, bound, () => {
+            const latest = play.snapshot().rendering?.gpuProbe?.[action];
             return latest && latest.id !== before ? latest : null;
           });
-          if (result) sample.gpuProbe.serial = { ...result };
-          else sample.failed.push(`The serial GPU probe did not report within ${seconds(limits.profileSerialMs)}.`);
-        }
+          if (!result) sample.failed.push(`The ${name} GPU probe did not report within ${seconds(bound)}.`);
+          return result as NonNullable<GpuProbeDiagnostics[K]> | null;
+        };
+        const serialResult = await perturb("serial", "serial");
+        if (serialResult) sample.gpuProbe.serial = { ...serialResult };
+        const burst = await perturb("burst", "burst");
+        if (burst) sample.gpuProbe.burst = { ...burst };
+        const timers = await perturb("timers", "timer");
+        if (timers) sample.gpuProbe.timers = { ...timers };
       }
       return sample;
     } finally {
@@ -2089,7 +2190,7 @@ async function benchmarkProfiles(
       }
       const frameCap = Number(cap ?? 60) || 60;
       if (profile) profile.frameCap = frameCap;
-      steps = featureTestProfileSequence(profileState(samples.find((sample) => sample.warmup)?.settings, frameCap));
+      steps = featureTestProfileSequence(profileState(samples.find((sample) => sample.warmup)?.settings));
     }
     for (const [index, step] of steps.entries()) {
       // The baseline after a skipped step would repeat the one before it; one that enters a view does not.
@@ -2103,27 +2204,6 @@ async function benchmarkProfiles(
         if (profile || follows) await restore();
       };
       deps.onProgress?.(`${sceneName}: ${interleaved ? "measuring" : "benchmarking"} ${step.label}`);
-      if (step.action) {
-        // A reset: its commands, then the view draws again; the baselines after it are its samples.
-        await runAll(step.commands, carried);
-        if ((await waitForDraws()).outcome === "stopped") {
-          samples.push({ label: step.label, frames: null, runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null,
-            failed: [...carried.splice(0), stoppedNote], baseline: false, ...(step.view ? { view: step.view } : {}) });
-          break;
-        }
-        continue;
-      }
-      if (step.hold) {
-        // Back to back, nothing changing: the first follows the warm-up, which already waited for the view.
-        const holdFailed: string[] = [];
-        await runAll(step.commands, holdFailed);
-        // Only the last hold window is followed by the serial probe: the minute held unchanged stays unbroken.
-        const sample = await measure(step.label, holdFailed, limits.playSampleMs, { quiet: true, ms: 0 }, !steps[index + 1]?.hold);
-        sample.baseline = true;
-        if (step.view) sample.view = step.view;
-        samples.push(sample);
-        continue;
-      }
       const failed: string[] = [];
       if (step.restore) pendingRestore.push(...step.restore);
       await runAll(step.commands, failed);
@@ -2151,7 +2231,7 @@ async function benchmarkProfiles(
       // them would measure their compiles, not the step.
       const settled = steady ? await settle() : { quiet: true, ms: 0 };
       if (!settled.quiet) failed.push(unsettledNote("step"));
-      const sample = await measure(step.label, failed, limits.playSampleMs, settled);
+      const sample = await measure(step.label, failed, mode === "profile" ? limits.profileStepSampleMs : limits.playSampleMs, settled);
       if (interleaved) {
         sample.baseline = step.baseline === true;
         if (step.view) sample.view = step.view;

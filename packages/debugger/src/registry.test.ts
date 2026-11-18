@@ -138,6 +138,21 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["water", "prepass", "lighting", "shadows", "waves", "foam"].flatMap((part) => [`${part}:false`, `${part}:true`]));
   });
 
+  it("switches each share of the world's drawing off and on again, in debug registries only", () => {
+    const host = recordingHost();
+    host.setWorldDebug = (part, enabled) => host.calls.push(`${part}:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    const parts = ["world", "lighting", "shadowtaps", "locallights", "shading"];
+    for (const part of parts) {
+      expect(debug.execute(`worlddebug ${part} off`, host)).toEqual({ success: true, output: `worlddebug ${part} off` });
+      expect(debug.execute(`worlddebug ${part} on`, host)).toEqual({ success: true, output: `worlddebug ${part} on` });
+    }
+    expect(debug.execute("worlddebug sky off", host).success).toBe(false);
+    expect(release.execute("worlddebug world off", host).success).toBe(false);
+    expect(host.calls).toEqual(parts.flatMap((part) => [`${part}:false`, `${part}:true`]));
+  });
+
   it("switches each part of shadow drawing off and on again, in debug registries only", () => {
     const host = recordingHost();
     host.setShadowDebug = (part, enabled) => host.calls.push(`${part}:${enabled}`);
@@ -222,15 +237,15 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["reset:graph", "reset:shadows", "reset:idle"]);
   });
 
-  it("starts, stops and serialises the GPU probes by name, in debug registries only", () => {
+  it("starts, stops, serialises and times the GPU probes by name, in debug registries only", () => {
     const host = recordingHost();
     host.setGpuProbe = (action) => host.calls.push(`probe:${action}`);
     const debug = createCommandRegistry({ includeDebug: true });
     const release = createCommandRegistry({ includeDebug: false });
-    for (const action of ["on", "serial", "off"]) expect(debug.execute(`gpuprobe ${action}`, host)).toEqual({ success: true, output: `gpuprobe ${action}` });
+    for (const action of ["on", "serial", "timers", "burst", "off"]) expect(debug.execute(`gpuprobe ${action}`, host)).toEqual({ success: true, output: `gpuprobe ${action}` });
     expect(debug.execute("gpuprobe fences", host).success).toBe(false);
     expect(release.execute("gpuprobe on", host).success).toBe(false);
-    expect(host.calls).toEqual(["probe:on", "probe:serial", "probe:off"]);
+    expect(host.calls).toEqual(["probe:on", "probe:serial", "probe:timers", "probe:burst", "probe:off"]);
   });
 
   it("hides Play's Scene Layers and shows them again, in debug registries only", () => {

@@ -430,7 +430,7 @@ describe("formatFeatureTestCheckReport", () => {
       presentation: { drawn: 40, held: 0, ms: 5000, heldReasons: {} },
       shadowAtlas: { edge: 8192, maps: [{ mapSize: 2048, passes: 4 }, { mapSize: 2048, passes: 6 }] }, ...extra,
     } as FeatureTestBenchmarkSample);
-    const medium = { ...settings, shadows: "medium 2048", "shadows.screen": "off" };
+    const noShadows = { ...settings, shadows: "off" };
     const report: FeatureTestCheckReport = {
       mode: "profile", startedAt: 0, durationMs: 360_000, cancelled: false, pageErrors: [],
       scenes: [{
@@ -446,14 +446,12 @@ describe("formatFeatureTestCheckReport", () => {
             { ...sample("heavy warm-up 2", 42, 10, { drawPasses: undefined, atMs: 10_000 }), label: "warm-up 2", baseline: false, warmup: true, view: "heavy" },
             sample("light baseline 1", 20, 6),
             // Its two baselines differ by 4 ms, more than its own 3 ms change.
-            sample("light MSAA off", 19, 6, { settings: { ...settings, "post.antiAliasing": "off" } }),
+            sample("light post off", 19, 6, { settings: { ...settings, "post.enabled": "false" } }),
             sample("light baseline 2", 24, 6),
             sample("heavy baseline 1", 40, 10, { atMs: 60_000 }),
-            sample("heavy shadows medium", 34, 9, { settings: medium, shadowAtlas: { edge: 4096, maps: [{ mapSize: 2048, passes: 3 }, { mapSize: 1024, passes: 6 }] } }),
+            sample("heavy world drawn once", 34, 9, { settings: noShadows, shadowAtlas: { edge: 0, maps: [] } }),
             sample("heavy baseline 2", 42, 11, { atMs: 80_000 }),
-            sample("heavy shadows medium big atlas", 36, 9, {
-              settings: { ...medium, "shadows.debug": "atlasfit" }, shadowAtlas: { edge: 8192, maps: [{ mapSize: 2048, passes: 3 }, { mapSize: 1024, passes: 6 }] },
-            }),
+            sample("heavy shadow passes off", 36, 9, { settings: { ...settings, "shadows.debug": "passes" } }),
             sample("heavy baseline 3", 40, 10, { atMs: 100_000 }),
             sample("heavy drift", 46, 12, { atMs: 300_000 }),
           ] },
@@ -472,29 +470,27 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Drift first to last visit: gpu busy +2.0ms +5% · cpu +1.0ms +9%; discount a step's change by the drift around it");
     // Against (20 + 24) / 2 in gpu busy; the baselines' spread is past the change.
     // Each row's world size and level beside the backbuffer the layers and the output draw into.
-    expect(row("light MSAA off")).toMatch(/-3\.0ms -14% {5}\+0\.0ms \+0% {6}885x591@1\.33 \/ 2360x1576 {2}post\.antiAliasing=off · UNSETTLED: its baselines differ by 4\.0 ms, more than its change$/);
-    // A shadow step's atlas and maps; the big atlas's change beyond Medium's shadows is the atlas's size alone.
-    expect(row("heavy shadows medium")).toMatch(/-7\.0ms -17% .*shadows=medium 2048, shadows\.screen=off · overlaps · atlas 4096 · maps 2048x3, 1024x6$/);
-    expect(row("heavy shadows medium big atlas")).toMatch(/-5\.0ms -12% .*shadows\.debug=atlasfit · overlaps · \+2\.0ms beyond shadows medium · atlas 8192 · maps 2048x3, 1024x6$/);
+    expect(row("light post off")).toMatch(/-3\.0ms -14% {5}\+0\.0ms \+0% {6}885x591@1\.33 \/ 2360x1576 {2}post\.enabled=false · overlaps · UNSETTLED: its baselines differ by 4\.0 ms, more than its change$/);
+    // A shadow step's atlas and maps.
+    expect(row("heavy world drawn once")).toMatch(/-7\.0ms -17% .*shadows=off · overlaps · no shadow atlas$/);
+    expect(row("heavy shadow passes off")).toMatch(/-5\.0ms -12% .*shadows\.debug=passes · overlaps · atlas 8192 · maps 2048x4, 2048x6$/);
     // A baseline's change is against its view's first: drift.
     expect(row("heavy drift")).toMatch(/\+6\.0ms \+15% {5}\+2\.0ms \+20%/);
-    const ranking = lines.findIndex((line) => line.startsWith("  Ranked by change at each view, within one state (baseline > step > baseline)"));
+    const ranking = lines.findIndex((line) => line.startsWith("  Ranked by change at each view against baselines at its own GPU speed"));
     // No row has GPU probes: their sections say so once.
     expect(lines).toContain("  GPU probes: none (the Engine reports none)");
     expect(lines.some((line) => line.startsWith("  State comparison") || line.startsWith("  Frame structures"))).toBe(false);
-    // Every row of the view in run order: the warm-up, baselines and steps, all within 1.5x its best baseline.
-    expect(lines).toContain("    heavy: F F F F F F F F");
     expect(lines).toContain("  Not ranked, straddling a state change: none");
     expect(lines.slice(ranking + 1, ranking + 6)).toEqual([
       "    light:",
-      "      1. [FAST] light MSAA off: -3.0ms -14% (20.0 > 19.0 > 24.0) · cpu +0.0ms +0% · UNSETTLED",
+      "      1. [FAST] light post off: -3.0ms -14% (20.0 > 19.0 > 24.0) · cpu +0.0ms +0% · overlaps · UNSETTLED",
       "    heavy:",
-      "      1. [FAST] heavy shadows medium: -7.0ms -17% (40.0 > 34.0 > 42.0) · cpu -1.5ms -14% · overlaps",
-      "      2. [FAST] heavy shadows medium big atlas: -5.0ms -12% (42.0 > 36.0 > 40.0) · cpu -1.5ms -14% · overlaps",
+      "      1. [FAST] heavy world drawn once: -7.0ms -17% (40.0 > 34.0 > 42.0) · cpu -1.5ms -14% · overlaps",
+      "      2. [FAST] heavy shadow passes off: -5.0ms -12% (42.0 > 36.0 > 40.0) · cpu -1.5ms -14% · overlaps",
     ]);
   });
 
-  it("reports a Profile's GPU probes: each row's serial stages and window counters, the distinct frame structures, FAST against SLOW per view, and steps ranked in serial frame time", () => {
+  it("reports a Profile's GPU probes: each row's serial stages and window counters, the distinct frame structures, and steps ranked in serial frame time", () => {
     const settings = { shadows: "high 2048", "resolution.scale": "1" };
     const USUAL = "a1b2c3d4", OTHER = "ffff0000";
     const usualPasses = ["F1 v0,0,2048x2048 d@0,0,2048x2048 x40", "D v0,0,2360x1576 cds@0,0,2360x1576 x300"];
@@ -547,81 +543,48 @@ describe("formatFeatureTestCheckReport", () => {
         session: null,
       }],
     });
-    // The view is FAST at 33 ms and SLOW at 66 ms of gpu busy. Rendered alone, a SLOW frame takes 20 ms more, all of it
-    // in the shadows stage, in an atlas made a second time; the synthetic load is unchanged.
+    // The last two baselines run at half the GPU's speed (their synthetic load), 20 ms more in the shadows stage.
     const lines = formatFeatureTestCheckReport(report([
       row("heavy baseline 1", 33, { shadows: 6, main: 14, synthetic: 2 }),
-      row("heavy shadows off", 33, { shadows: 0.5, main: 14, synthetic: 2, censored: true }, { modal: OTHER, texels: 0 }),
+      row("heavy world drawn once", 33, { shadows: 0.5, main: 14, synthetic: 2, censored: true }, { modal: OTHER, texels: 0 }),
       row("heavy baseline 2", 33, { shadows: 6, main: 14, synthetic: 2 }),
       // No serial probe on this step: it is ranked in gpu busy.
-      row("heavy post off", 32, null),
+      row("heavy geometry effects off", 32, null),
       row("heavy baseline 3", 33, { shadows: 6, main: 14, synthetic: 2 }),
-      row("heavy baseline 4", 66, { shadows: 26, main: 14, synthetic: 2.1 }, { generation: 2 }),
-      row("heavy baseline 5", 66, { shadows: 26, main: 14, synthetic: 2.1 }, { generation: 2 }),
+      row("heavy baseline 4", 66, { shadows: 26, main: 14, synthetic: 4.2 }, { generation: 2 }),
+      row("heavy baseline 5", 66, { shadows: 26, main: 14, synthetic: 4.2 }, { generation: 2 }),
     ]), environment).split("\n");
     const line = (start: string) => lines.find((entry) => entry.startsWith(start))!;
     // The main table's serial column, and a note on the row whose frames had another structure than its view's first baseline.
     expect(line("    heavy baseline 1 ")).toMatch(/33\.0 \(35\) {5}20\.0 {4}/);
-    expect(line("    heavy shadows off ")).toContain(`STRUCTURE ${OTHER}, not its view's first baseline's ${USUAL}`);
+    expect(line("    heavy world drawn once ")).toContain(`STRUCTURE ${OTHER}, not its view's first baseline's ${USUAL}`);
     expect(line("    heavy baseline 2 ")).not.toContain("STRUCTURE");
-    // The probes table: frame, cold, submission, the stages (an upper bound marked), synthetic, structure, counters.
+    // The probes table: frame, cold, submission, frame less submission, burst, the stages (an upper bound marked),
+    // synthetic, structure, counters.
     const table = lines.slice(lines.findIndex((entry) => entry.startsWith("  GPU probes. Serial")) + 2);
-    expect(table[0]).toMatch(/^ {4}heavy baseline 1 +20\.0 +29\.0 +4\.0 +<=0\.4 +6\.0 +- +14\.0 +- +- +2\.0 \(3\.0\) +a1b2c3d4 98%\/2 +2 +2 +0 +340 +7\.9M +7\.9M +2\/3\/2 +21M \(5\) +8192 g1 +60$/);
-    expect(table[1]).toMatch(/^ {4}heavy shadows off +14\.5 .* <=0\.5 +- +14\.0 .* ffff0000 98%\/2 .* 0\.0M \(5\) +8192 g1 +60 +serial frames drew a1b2c3d4$/);
-    expect(table[3]).toMatch(/^ {4}heavy post off +- +- +- +- +- +- +- +- +- +- +a1b2c3d4/);
+    expect(table[0]).toMatch(/^ {4}heavy baseline 1 +20\.0 +29\.0 +4\.0 +16\.0 +- +<=0\.4 +6\.0 +- +14\.0 +- +- +2\.0 \(3\.0\) +a1b2c3d4 98%\/2 +2 +2 +0 +340 +7\.9M +7\.9M +2\/3\/2 +21M \(5\) +8192 g1 +60$/);
+    expect(table[1]).toMatch(/^ {4}heavy world drawn once +14\.5 .* <=0\.5 +- +14\.0 .* ffff0000 98%\/2 .* 0\.0M \(5\) +8192 g1 +60 +serial frames drew a1b2c3d4$/);
+    expect(table[3]).toMatch(/^ {4}heavy geometry effects off +- +- +- +- +- +- +- +- +- +- +- +- +a1b2c3d4/);
     expect(table[5]).toMatch(/8192 g1>2 +60$/);
     // Each distinct structure once, with the rows it was usual in and its passes.
     const structures = lines.indexOf(line("  Frame structures"));
     expect(lines.slice(structures + 1, structures + 10)).toEqual([
-      `    ${USUAL}: 882 frames, usual in 6 rows (heavy baseline 1, heavy baseline 2, heavy post off, heavy baseline 3 and 2 more)`,
+      `    ${USUAL}: 882 frames, usual in 6 rows (heavy baseline 1, heavy baseline 2, heavy geometry effects off, heavy baseline 3 and 2 more)`,
       ...usualPasses.map((pass) => `      ${pass}`),
       "    0000beef: 18 frames, never the usual one",
       "      D v0,0,2360x1576 x1",
-      `    ${OTHER}: 147 frames, usual in 1 rows (heavy shadows off)`,
+      `    ${OTHER}: 147 frames, usual in 1 rows (heavy world drawn once)`,
       ...usualPasses.map((pass) => `      ${pass}`),
       "      F2 v0,0,256x256 c@0,0,256x256 x1",
-    ]);
-    // FAST against SLOW over the view's baselines, with what each difference means.
-    const comparison = lines.indexOf(line("  State comparison"));
-    expect(lines.slice(comparison + 1, comparison + 12)).toEqual([
-      "    heavy: 3 FAST, 2 SLOW",
-      `      structure: FAST ${USUAL} · SLOW ${USUAL}`,
-      "        The same passes are submitted in both states: the engine's frame does not differ.",
-      "      counters: passes 2 > 2 · clears 2 > 2 · blits 0 > 0 · draws 340 > 340 · cleared 7.9M > 7.9M · covered 7.9M > 7.9M · maps redrawn 2 > 2 · shadow texels 21M > 21M · atlas 8192 > 8192 · atlas generation 1 > 2 (x2.00) · rAF 60 > 60",
-      "      serial frame: 20.0 > 40.0 (x2.00) ms · cold 29.0 > 49.0 (x1.69) ms",
-      "        A frame rendered alone costs x2.00 in the SLOW state: the GPU work per frame itself is slower there.",
-      "      stages: other 0.4 > 0.4 · shadows 6.0 > 26.0 (x4.33) · main 14.0 > 14.0",
-      "        100% of the extra time is in the shadows stage: the shadow atlas's passes cost more there (see atlas generation and shadow texels for what differs).",
-      "      synthetic: 2.00 > 2.10 (x1.05) ms",
-      "        The synthetic load holds: the GPU's own speed is the same in both states.",
-      "  Ranked by change at each view, within one state (baseline > step > baseline), in the serial probe's frame time where the step and both its baselines have one (marked s), else in gpu busy (* = mean frame time where gpu busy is missing):",
     ]);
     // Ranked in serial frame time where the step and both baselines have it: gpu busy did not move with shadows off.
     const ranking = lines.findIndex((entry) => entry.startsWith("  Ranked by change"));
     expect(lines.slice(ranking + 1, ranking + 4)).toEqual([
       "    heavy:",
-      "      1. [FAST] heavy shadows off: -5.5ms -28% s (20.0 > 14.5 > 20.0) · cpu +0.0ms +0%",
-      "      2. [FAST] heavy post off: -1.0ms -3% (33.0 > 32.0 > 33.0) · cpu +0.0ms +0%",
+      "      1. heavy world drawn once: -5.5ms -28% s (20.0 > 14.5 > 20.0) · norm -5.5ms -28% · cpu +0.0ms +0% · overlaps",
+      "      2. heavy geometry effects off: -1.0ms -3% (33.0 > 32.0 > 33.0) · cpu +0.0ms +0% · overlaps",
     ]);
 
-    // Other readings: a slower synthetic load is the GPU's own speed, every stage slower by one factor is device-wide,
-    // frames that cost the same alone differ only in pacing, and other structures mean other passes.
-    const reading = (slow: Parameters<typeof row>[2], window: Parameters<typeof row>[3] = {}) => formatFeatureTestCheckReport(report([
-      row("heavy baseline 1", 33, { shadows: 6, main: 14, synthetic: 2 }), row("heavy baseline 2", 66, slow, window),
-    ]), environment).split("\n").filter((entry) => entry.startsWith("        "));
-    expect(reading({ shadows: 12, main: 28, synthetic: 4 }, { modal: OTHER })).toEqual([
-      "        The structure differs: the engine submits different passes in the two states (see Frame structures).",
-      "        A frame rendered alone costs x2.00 in the SLOW state: the GPU work per frame itself is slower there.",
-      "        Every stage slows by about the same factor: the slowdown is device-wide, not one pass's.",
-      "        The synthetic load, which touches nothing of the scene, slows by x2.00: the GPU itself runs slower (its clock or thermal state).",
-    ]);
-    expect(reading({ shadows: 6.5, main: 14, synthetic: 2 })).toEqual([
-      "        The same passes are submitted in both states: the engine's frame does not differ.",
-      "        A frame rendered alone costs the same in both states: the difference exists only with frames queued, so it is pacing, not GPU work per frame.",
-      "        The synthetic load holds: the GPU's own speed is the same in both states.",
-    ]);
-    // A view with one state has nothing to compare.
-    expect(formatFeatureTestCheckReport(report([row("heavy baseline 1", 33, null)]), environment)).toContain("    heavy: 1 FAST, 0 SLOW: nothing to compare");
   });
 
   it("shows the counters' medians with their ranges when frames differ", () => {

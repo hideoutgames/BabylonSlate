@@ -1,4 +1,4 @@
-import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, LayerCameraState, ShadowDebugPart, WaterDebugPart } from "@haptic/core";
+import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, LayerCameraState, ShadowDebugPart, WaterDebugPart, WorldDebugPart } from "@haptic/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ActorDefaults, CollisionTriangleMesh, GameInstanceDefaults, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@haptic/core";
@@ -1244,6 +1244,8 @@ export type CommandMessage =
   | { type: "setRenderTargetCapturesDebug"; enabled: boolean }
   /** Debug: switch one part of water off or back on (the `waterdebug` console command). */
   | { type: "setWaterDebug"; part: WaterDebugPart; enabled: boolean }
+  /** Debug: switch one share of the world's main colour pass off or back on (the `worlddebug` console command). */
+  | { type: "setWorldDebug"; part: WorldDebugPart; enabled: boolean }
   /** Debug: switch one part of shadow drawing off or back on (the `shadowdebug` console command). */
   | { type: "setShadowDebug"; part: ShadowDebugPart; enabled: boolean }
   /** Debug: discard multisampled samples after a frame's last resolve of them, or keep them (the `discardsamples` console command). */
@@ -1267,10 +1269,11 @@ export type CommandMessage =
   | { type: "setGpuBusyProbeDebug"; enabled: boolean }
   /**
    * Debug: the Feature Test Check's GPU probes (the `gpuprobe` console command): start (restart) the passive window
-   * (GL call signature, shadow map counters, `requestAnimationFrame` rate), stop it, or run the serialised frames with
-   * stage fences and the synthetic load.
+   * (GL call signature, shadow map counters, `requestAnimationFrame` rate), stop it, run the serialised frames with
+   * stage fences and the synthetic load, time each stage and pass on the GPU with timer queries over a few frames, or
+   * fence a burst of frames submitted without waiting for their unquantised period.
    */
-  | { type: "setGpuProbeDebug"; action: "on" | "off" | "serial" }
+  | { type: "setGpuProbeDebug"; action: "on" | "off" | "serial" | "timers" | "burst" }
   /** Debug: how many rendered frames the Engine may queue on the GPU (the `framesinflight` console command; default 2). */
   | { type: "setFramesInFlightDebug"; mode: "off" | 2 | 3 }
   /** Debug: store whether the next project Engine keeps its drawing buffer (the `preservebuffer` console command). */

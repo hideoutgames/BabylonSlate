@@ -4,7 +4,8 @@ import {
   NodeMaterialBlockConnectionPointTypes as Types,
 } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
 import { NodeMaterialSystemValues } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialSystemValues";
-import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
 import type { Effect } from "@babylonjs/core/Materials/effect";
@@ -12,6 +13,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { meshCastsShadows } from "./instance-pool";
+import { WORLD_DEBUG_FLAT_DEFINE, worldDebugOff } from "./world-debug";
 import type { MaterialPlumbing } from "./material-block-registry";
 
 /**
@@ -42,6 +44,11 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
   get geometryRoughness() { return this.getInputByName("geometryRoughness")!; }
   get geometrySpecular() { return this.getInputByName("geometrySpecular")!; }
   override getClassName(): string { return "GeometrySurfaceOutputBlock"; }
+  override prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial, mesh?: AbstractMesh): void {
+    super.prepareDefines(defines, nodeMaterial);
+    // `worlddebug shading off`: one constant colour, so the compiler drops the surface's shading and texture reads.
+    if (mesh) defines.setValue(WORLD_DEBUG_FLAT_DEFINE, worldDebugOff(mesh.getScene(), "shading"), true);
+  }
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
     super.bind(effect, material, mesh);
     effect.setFloat(this.casterUniform, mesh && meshCastsShadows(mesh) ? 1 : 0);
@@ -66,6 +73,7 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
     state.sharedData.forcedBindableBlocks.push(this);
     const caster = this.casterUniform;
     const color = "gl_FragColor";
+    state.compilationString += `#ifdef ${WORLD_DEBUG_FLAT_DEFINE}\n${color} = ${vec4}(0.5, 0.5, 0.5, ${color}.a);\n#endif\n`;
     const savedColor = state._getFreeVariableName("geometrySurfaceColor");
     state.compilationString += `#ifdef PREPASS\n${state._declareLocalVar(savedColor, Types.Vector4)} = ${color};\n#endif\n`;
     // FragmentOutputBlock assumes attachment zero is color. Geometry tasks can

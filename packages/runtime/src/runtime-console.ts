@@ -171,6 +171,7 @@ export class RuntimeConsole {
       setPostProcessing: (enabled) => host.emit({ type: "setPostProcessingDebug", enabled: Boolean(enabled) }),
       setRenderTargetCaptures: (enabled) => host.emit({ type: "setRenderTargetCapturesDebug", enabled: Boolean(enabled) }),
       setWaterDebug: (part, enabled) => host.emit({ type: "setWaterDebug", part, enabled: Boolean(enabled) }),
+      setWorldDebug: (part, enabled) => host.emit({ type: "setWorldDebug", part, enabled: Boolean(enabled) }),
       setShadowDebug: (part, enabled) => host.emit({ type: "setShadowDebug", part, enabled: Boolean(enabled) }),
       setDiscardSamples: (enabled) => host.emit({ type: "setDiscardSamplesDebug", enabled: Boolean(enabled) }),
       setSceneLayers: (enabled) => host.emit({ type: "setSceneLayersDebug", enabled: Boolean(enabled) }),

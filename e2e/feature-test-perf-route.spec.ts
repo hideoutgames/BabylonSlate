@@ -1,5 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
+import { FEATURE_TEST_PROFILE_VIEWS } from "../apps/editor/src/lib/feature-test/layout";
 import { clickPlayAndWaitForOverlay, runConsoleCommand } from "./play";
 import { distribution, graphicsAdapter } from "./play-performance-fixture";
 import {
@@ -46,7 +47,13 @@ import {
  *      HAPTIC_PERF_VERIFY_MIRROR_CROP=1 (each Mirror cull cropped to its surface's footprint also culls with the whole
  *      mirrored frustum and counts the meshes the crop left out within the widened footprint: `rendererWork.mirrorCrop.misses`),
  *      HAPTIC_PERF_VERIFY_OUTLINES=1 (each strict outline cull also culls the full way, splitting its candidates afresh and
- *      walking every occluder, and counts each that disagrees: `rendererWork.outlineCull.mismatches`).
+ *      walking every occluder, and counts each that disagrees: `rendererWork.outlineCull.mismatches`),
+ *      HAPTIC_PERF_DEVICE (`<width>x<height>@<scale>`, e.g. `1180x788@2`: the page's CSS viewport and device scale factor),
+ *      HAPTIC_PERF_VIEWS (comma list of the Feature Test Check's Profile views, light|heavy|mirror: Play holds each in
+ *      turn with `possess` instead of sampling the camera tour, and each view reports its GL pass structure and, with
+ *      HAPTIC_PERF_GPU_PASSES=1, its GPU time per stage and pass from timer queries, `gpuprobe timers`),
+ *      HAPTIC_PERF_VARIANTS (with HAPTIC_PERF_VIEWS: a JSON list of `{ label, commands, restore? }`; each view measures
+ *      its baseline, then each variant followed by its restore and the baseline again, A B A C A).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -92,6 +99,14 @@ const VERIFY_CAPTURES = process.env.HAPTIC_PERF_VERIFY_CAPTURES === "1";
 /** Each cropped Mirror cull in Play also culls uncropped (the measured frames carry its cost). */
 const VERIFY_MIRROR_CROP = process.env.HAPTIC_PERF_VERIFY_MIRROR_CROP === "1";
 const VERIFY_OUTLINES = process.env.HAPTIC_PERF_VERIFY_OUTLINES === "1";
+const DEVICE = /^(\d+)x(\d+)@(\d+(?:\.\d+)?)$/.exec(process.env.HAPTIC_PERF_DEVICE ?? "");
+type ProfileViewName = keyof typeof FEATURE_TEST_PROFILE_VIEWS;
+const VIEWS = (process.env.HAPTIC_PERF_VIEWS ?? "").split(",").map((view) => view.trim())
+  .filter((view): view is ProfileViewName => view in FEATURE_TEST_PROFILE_VIEWS);
+const GPU_PASSES = process.env.HAPTIC_PERF_GPU_PASSES === "1";
+type Variant = { label: string; commands: string[]; restore?: string[] };
+const VARIANTS = JSON.parse(process.env.HAPTIC_PERF_VARIANTS ?? "[]") as Variant[];
+if (DEVICE) test.use({ viewport: { width: Number(DEVICE[1]), height: Number(DEVICE[2]) }, deviceScaleFactor: Number(DEVICE[3]) });
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -381,8 +396,9 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
     await cdp.send("Profiler.setSamplingInterval", { interval: 500 });
     await cdp.send("Profiler.start");
   }
+  const views = VIEWS.length ? await measureViews(page) : null;
   const windows = [];
-  for (let index = 0; index < SAMPLES; index += 1) {
+  for (let index = 0; index < (views ? 0 : SAMPLES); index += 1) {
     if (GPU_BUSY) await runConsoleCommand(page, "gpubusy on");
     const since = await pageNow(page);
     const { result, busy } = await busyFraction(cdp, () => samplePlay(page, SAMPLE_MS));
@@ -400,7 +416,60 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
-  return { playBootMs, settingsHoldMs, spawnableWarm, programs, windows, liveObjects };
+  return { playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects };
+}
+
+type GpuProbeReading = {
+  signature?: unknown; timers?: { id: number } & Record<string, unknown> | null; burst?: { id: number } & Record<string, unknown> | null;
+} | null;
+const gpuProbeReading = (page: Page) =>
+  page.evaluate(() => ((globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.gpuProbe ?? null) as GpuProbeReading);
+
+/** One `gpuprobe timers` or `burst` run, once it reports. */
+async function probeRun(page: Page, action: "timers" | "burst") {
+  const before = (await gpuProbeReading(page))?.[action]?.id ?? 0;
+  await runConsoleCommand(page, `gpuprobe ${action}`);
+  let result: GpuProbeReading = null;
+  await expect.poll(async () => {
+    result = await gpuProbeReading(page);
+    return result?.[action]?.id ?? 0;
+  }, { timeout: 60_000, intervals: [250] }).toBeGreaterThan(before);
+  return (result as GpuProbeReading)?.[action] ?? null;
+}
+
+/** The view as it is now: its frame rate, the GL pass structure, and with GPU_PASSES its GPU time per pass. */
+async function measureHeld(page: Page) {
+  await waitForViewDrawing(page);
+  await page.waitForTimeout(SETTLE_MS);
+  const window = await samplePlay(page, Math.min(SAMPLE_MS, 3_000));
+  await runConsoleCommand(page, "gpuprobe on");
+  await page.waitForTimeout(1_000);
+  const signature = (await gpuProbeReading(page))?.signature ?? null;
+  await runConsoleCommand(page, "gpuprobe off");
+  const timers = GPU_PASSES ? [await probeRun(page, "timers"), await probeRun(page, "timers")] : null;
+  const burst = GPU_PASSES ? await probeRun(page, "burst") : null;
+  return {
+    drawnFps: window.drawnFps, frameCpu: window.frameCpu.medianMs, frameDraws: window.frameDraws, drawsPerPass: window.drawsPerPass,
+    cpuMsPerPass: window.cpuMsPerPass,
+    width: window.rendering.width, height: window.rendering.height, settings: window.rendering.settings, signature, timers, burst,
+  };
+}
+
+/** Each Profile view held in turn, its baseline and each variant between baselines (A B A C A). */
+async function measureViews(page: Page) {
+  const results: Record<string, unknown> = {};
+  for (const view of VIEWS) {
+    await runConsoleCommand(page, `possess "${FEATURE_TEST_PROFILE_VIEWS[view].name}"`);
+    const steps: Array<{ label: string } & Record<string, unknown>> = [{ label: "baseline", ...await measureHeld(page) }];
+    for (const variant of VARIANTS) {
+      for (const command of variant.commands) await runConsoleCommand(page, command);
+      steps.push({ label: variant.label, ...await measureHeld(page) });
+      for (const command of variant.restore ?? []) await runConsoleCommand(page, command);
+      steps.push({ label: "baseline", ...await measureHeld(page) });
+    }
+    results[view] = steps;
+  }
+  return results;
 }
 
 /** Waits until Play's view draws frames again, and returns how long that took. */
@@ -482,6 +551,8 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
         }
         step = `Play ${index + 1}`;
         plays.push(await measurePlay(page, cdp, scene));
+        // What was measured survives a later step's failure.
+        if (process.env.HAPTIC_PERF_OUT) writeFileSync(`${process.env.HAPTIC_PERF_OUT}.partial.json`, JSON.stringify({ scenes, [scene]: { plays } }, null, 2));
       }
       // The next scene opens over the editor's reloaded view.
       step = "the editor's reload after the last Play";
@@ -502,7 +573,10 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     browserVersion: page.context().browser()?.version() ?? null,
     viewportCss: page.viewportSize(),
     adapter,
-    env: { SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED },
+    env: {
+      SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED,
+      DEVICE: DEVICE?.[0] ?? null, VIEWS, GPU_PASSES, VARIANTS,
+    },
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },
     scenes,
     pageErrors,

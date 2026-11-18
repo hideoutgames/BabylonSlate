@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  frameStageOf, GlSignatureRecorder, installGlSignature, RafCadence, SerialFrameProbe, ShadowFrameWindow, SYNTHETIC_RUNS,
+  BurstFrameProbe, frameStageOf, GlSignatureRecorder, installGlSignature, RafCadence, SerialFrameProbe, ShadowFrameWindow, SYNTHETIC_RUNS,
   type ProbeFence, type SerialProbeHost,
 } from "./gpu-frame-probe";
 
@@ -560,5 +560,58 @@ describe("serialised frame probe", () => {
     gpu.poll();
     // The split before the probe started is not its own.
     expect(probe.result()!.splits).toBe(2);
+  });
+});
+
+describe("burst frame probe", () => {
+  function burstHost() {
+    const fences: { done: boolean }[] = [];
+    const state = { now: 0, paced: [] as boolean[], polls: [] as (() => void)[] };
+    const host = {
+      fence: () => {
+        const fence = { done: false };
+        fences.push(fence);
+        return { done: () => fence.done, dispose: () => {} };
+      },
+      now: () => state.now,
+      schedule: (callback: () => void) => state.polls.push(callback),
+      unpace: (on: boolean) => state.paced.push(on),
+    };
+    const poll = () => { for (const callback of state.polls.splice(0)) callback(); };
+    return { host, fences, state, poll };
+  }
+
+  it("fences the frames drawn with frames in flight unlimited, and reports the median gap between completions once the queue filled", () => {
+    const { host, fences, state, poll } = burstHost();
+    const probe = new BurstFrameProbe(host, 6);
+    expect(probe.request()).toBe(true);
+    expect(state.paced).toEqual([true]);
+    // Frames submitted every 16 ms; an Engine frame in which no view drew submits nothing.
+    probe.frameEnded(false);
+    expect(fences).toHaveLength(0);
+    for (let frame = 0; frame < 6; frame++) {
+      state.now = frame * 16;
+      probe.frameEnded(true);
+    }
+    expect(state.paced).toEqual([true, false]);
+    // The GPU completes them 30 ms apart, as polls see them; the first two gaps (the queue filling) are left out.
+    [10, 20, 50, 80, 112, 140].forEach((at, index) => {
+      state.now = at;
+      fences[index]!.done = true;
+      poll();
+    });
+    expect(probe.result()).toMatchObject({ id: 1, frames: 6, periodMs: 30, submitMs: 16, failed: null });
+    expect(probe.active).toBe(false);
+  });
+
+  it("gives up and restores the frames-in-flight limit when the view stops drawing", () => {
+    const { host, state } = burstHost();
+    const probe = new BurstFrameProbe(host, 6);
+    probe.request();
+    probe.frameEnded(true);
+    state.now = 6000;
+    probe.frameEnded(true);
+    expect(probe.result()).toMatchObject({ frames: 1, periodMs: null, failed: "the view drew too few frames" });
+    expect(state.paced).toEqual([true, false]);
   });
 });

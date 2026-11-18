@@ -1,4 +1,4 @@
-import type { QualityGroup, ShadowDebugPart, WaterDebugPart } from "@haptic/core";
+import type { QualityGroup, ShadowDebugPart, WaterDebugPart, WorldDebugPart } from "@haptic/core";
 export type CommandTier = "core" | "debug";
 
 export type CommandParamType = "string" | "float" | "int" | "bool" | "enum";
@@ -56,6 +56,8 @@ export type ConsoleCommandHost = {
   setRenderTargetCaptures?(enabled: boolean): void;
   /** `waterdebug`: switch one part of water off or back on for the session, to measure what it costs. */
   setWaterDebug?(part: WaterDebugPart, enabled: boolean): void;
+  /** `worlddebug`: switch one share of the world's main colour pass off (to measure it) or back on. */
+  setWorldDebug?(part: WorldDebugPart, enabled: boolean): void;
   /** `shadowdebug`: switch one part of shadow drawing off or back on for the session, to measure what it costs. */
   setShadowDebug?(part: ShadowDebugPart, enabled: boolean): void;
   /** `discardsamples`: discard multisampled samples after a frame's last resolve of them, to measure what storing them costs. */
@@ -74,8 +76,11 @@ export type ConsoleCommandHost = {
   resetRendering?(what: "graph" | "shadows" | "idle"): void;
   /** Start (restart) or stop measuring GPU-busy time per frame; the Play view's diagnostics report it. */
   setGpuBusyProbe?(enabled: boolean): void;
-  /** `gpuprobe`: start (restart) or stop recording each frame's GL passes and shadow map draws, or run the serialised stage-fence frames. */
-  setGpuProbe?(action: "on" | "off" | "serial"): void;
+  /**
+   * `gpuprobe`: start (restart) or stop recording each frame's GL passes and shadow map draws, run the serialised
+   * stage-fence frames, time each stage and pass with GPU timer queries, or fence a burst of frames for their period.
+   */
+  setGpuProbe?(action: "on" | "off" | "serial" | "timers" | "burst"): void;
   /** How many rendered frames the Engine may queue on the GPU; "off" lifts the limit (`framesinflight`). */
   setFramesInFlight?(mode: "off" | 2 | 3): void;
   /** Store whether the next project Engine keeps its drawing buffer (applies after an editor reload). */
