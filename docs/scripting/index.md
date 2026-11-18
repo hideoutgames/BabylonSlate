@@ -44,6 +44,7 @@ In Class, Material and Particle graphs, Add Node learns from the nodes you add f
 - While you drag a wire over a pin it cannot connect to, a label gives the reason, such as **Float does not connect to Vector3**.
 - Most unconnected data inputs show an inline value you can edit on the node or in the **Inspector**. Object and actor inputs must be wired, unless the node's page says an unconnected one uses the actor running the graph.
 - Shake a node while dragging it to disconnect all its wires.
+- With a mouse, a pin glows in its type colour while the pointer is over it. Right-click a pin for its own menu: **Break Links** removes every wire on that pin, and some nodes add actions for the pin. A pin with nothing to offer opens the node menu instead.
 
 The graph toolbar also has icon buttons for **Copy**, **Paste**, **Delete**, **Break Links** (removes the wires of the selected nodes), **Cut Links** (see [Cut Links](#cut-links)) and **Format** (tidies the selected chains); hover or long-press one to see its name. The zoom controls at the bottom left show the zoom level; tap it to return to 100%.
 
