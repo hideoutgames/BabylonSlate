@@ -24,5 +24,5 @@ Passes one wire through a point you can move, to tidy the graph.
 - A Reroute carries one type at a time: execution or a value, whichever you connect first. Its pins take that type's colour.
 - An execution Reroute can merge several wires into its In. A value Reroute can feed several inputs from its Out.
 - Reroutes are removed when the graph compiles, so they cost nothing when the game runs. The debugger never stops on one, and a run lights every part of the wire.
-- **Format** adds a Reroute where a value or execution wire would run through or close past another node, and moves a Reroute that carries one wire into one input to that wire's new route ([Format](../index.md#format)).
+- **Format** adds Reroutes so long or blocked value and execution wires run level, around other nodes, and moves a chain of Reroutes that carries one wire into one input to that wire's new route ([Format](../index.md#format)).
 - Reroutes also work in Scene scripts and in Animation Graph rule and state graphs. Particle Graphs have their own [Reroute](../particle/reroute.md).

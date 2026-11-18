@@ -67,10 +67,11 @@ A **Reroute** node is a small knot that bends a wire around other nodes. Double-
 Select one or more nodes and press **Format** in the graph toolbar to lay out the chains they start. Nodes that are not part of those chains stay where they are.
 
 - Execution runs left to right on rows. Outputs keep their order: on a **Branch**, **True** stays on the row and **False** starts the next one; on a **Sequence**, **Then 0** stays and each later output starts its own row. A node where branches join sits after all of them.
-- A branch's row starts below everything between it and the node it branches from, so its execution wire drops right beside that node and then runs level into the row.
+- A branch's row starts below everything between it and the node it branches from, so its execution wire drops right beside that node and then runs level into the row. Each lower branch drops in a lane of its own, the lowest nearest the node, so the drops never run on top of each other.
 - The nodes that feed an execution node's inputs sit in columns to its left, starting just below its execution wire. Nodes in different columns share a row, and each is placed so its wire runs straight when no node is in the way. A lower branch row's inputs may use the free space under earlier columns.
 - A value that also feeds a node farther away sits below its neighbour, so that wire can leave underneath.
-- Where a wire, value or execution, would still run through or close past another node, Format adds a Reroute knot that takes it around: level with the input it feeds, or just above or below the node in the way. A knot that carries one wire into one input moves to that wire's new route; Format never deletes a knot. Graphs without Reroute nodes, such as Material graphs, get no knots.
+- Wires run level and change height only over a short stretch. A long or steep wire, or one that would run through or close past another node, gets Reroute knots: one where it can run level from its output or into its input, else two with the long run in a free lane between rows. Format picks the route with the fewest knots, then the fewest crossings, then the shortest, and keeps wires, and knots, apart from each other's level runs. A chain of knots that carries one wire into one input moves to that wire's new route; Format never deletes a knot. Graphs without Reroute nodes, such as Material graphs, get no knots.
+- Nodes keep some room between them: wider gaps between columns, and branch rows a little further apart than the nodes inside a row.
 - The whole layout, knots included, is one change, so one **Undo** reverts it. Pressing **Format** again with the same selection changes nothing.
 
 ## Cut Links
