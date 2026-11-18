@@ -60,15 +60,17 @@ A **Reroute** node is a small knot that bends a wire around other nodes. Double-
 - A knot takes the type of the wire it carries: any data type, or execution in Class graphs. Its pins show that type's colour and shape.
 - Knots are available in Class, Scene, Animation Object, transition rule and state pose graphs, and in Particle Graphs. Material graphs use Named Reroutes instead ([Material](../assets/material.md#named-reroutes)).
 - Knots change only how the graph looks. They cost nothing when the game runs and the debugger never stops on one; hovering a pin or wire next to one shows the value of the wire's real source.
-- **Format** adds knots of its own to carry value wires around nodes, and moves the knots already on a value wire it lays out ([Format](#format)).
+- **Format** adds knots of its own to carry wires around nodes, and moves the knots already on a wire it lays out ([Format](#format)).
 
 ## Format
 
 Select one or more nodes and press **Format** in the graph toolbar to lay out the chains they start. Nodes that are not part of those chains stay where they are.
 
-- Execution runs left to right on rows; each branch gets its own row, and a node where branches join sits after all of them.
-- The nodes that feed an execution node's inputs sit in columns to its left, starting just below its execution wire. Nodes in different columns share a row, and each is placed so its wire runs straight where it can.
-- Where a value wire would run through or close past another node, Format adds a Reroute knot level with the input it feeds, so the wire goes around the node and then straight in. A knot that carries one value wire into one input moves to that wire's new route; Format never deletes a knot. Graphs without Reroute nodes, such as Material graphs, get no knots.
+- Execution runs left to right on rows. Outputs keep their order: on a **Branch**, **True** stays on the row and **False** starts the next one; on a **Sequence**, **Then 0** stays and each later output starts its own row. A node where branches join sits after all of them.
+- A branch's row starts below everything between it and the node it branches from, so its execution wire drops right beside that node and then runs level into the row.
+- The nodes that feed an execution node's inputs sit in columns to its left, starting just below its execution wire. Nodes in different columns share a row, and each is placed so its wire runs straight when no node is in the way. A lower branch row's inputs may use the free space under earlier columns.
+- A value that also feeds a node farther away sits below its neighbour, so that wire can leave underneath.
+- Where a wire, value or execution, would still run through or close past another node, Format adds a Reroute knot that takes it around: level with the input it feeds, or just above or below the node in the way. A knot that carries one wire into one input moves to that wire's new route; Format never deletes a knot. Graphs without Reroute nodes, such as Material graphs, get no knots.
 - The whole layout, knots included, is one change, so one **Undo** reverts it. Pressing **Format** again with the same selection changes nothing.
 
 ## Cut Links
