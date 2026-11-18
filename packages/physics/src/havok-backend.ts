@@ -1,5 +1,5 @@
 import "@babylonjs/core/Physics/physicsEngineComponent";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
@@ -162,7 +162,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     options: PhysicsBackendOptions,
   ): Promise<HavokPhysicsBackend> {
     const havok = await loadHavokModule(options.havokWasmUrl);
-    const engine = new NullEngine();
+    // Matrix precision is page-global and every Engine constructor sets it: a backend on the main thread keeps the
+    // render Engine's 64-bit matrices (`PAGE_MATRIX_PRECISION` in @haptic/render).
+    const engineOptions = new NullEngineOptions();
+    engineOptions.useHighPrecisionMatrix = true;
+    const engine = new NullEngine(engineOptions);
     const scene = new Scene(engine);
     const plugin = new HavokPlugin(true, havok);
     const gravity = new Vector3(

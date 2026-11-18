@@ -26,6 +26,7 @@ import type { RenderingProjectContext } from "./rendering-settings-sections";
 // Label tooltips that also stay their control's screen-reader description.
 const CUSTOM_RESOLUTION_HINT = "Sets the design size for Play and exported games. Overrides Follow System.";
 const BLACK_BARS_HINT = "Adds bars to preserve the design size. Off fills the window without stretching.";
+const LARGE_WORLD_HINT = "Keeps worlds that reach kilometres from the origin steady, at a small cost every frame; changing it restarts rendering.";
 const UPSCALING_HINT = "Pixelated enlarges the design size by the largest whole multiple that fits, with sharp square pixels, at full resolution. Without Black Bars the view extends to fill the window.";
 
 export function RenderModeField({ render, setRender }: RenderingProjectContext) {
@@ -46,6 +47,24 @@ export function RenderModeField({ render, setRender }: RenderingProjectContext) 
           <SelectItem value="cel">CEL</SelectItem>
         </SelectGroup></SelectContent>
       </Select>
+    </Field>
+  );
+}
+
+export function LargeWorldRenderingField({ render, setRender }: RenderingProjectContext) {
+  return (
+    <Field orientation="horizontal" className="settings-field">
+      <LabelHint hint={LARGE_WORLD_HINT}>
+        <FieldLabel htmlFor="setting-render-large-world">Large World Rendering</FieldLabel>
+      </LabelHint>
+      <Switch
+        id="setting-render-large-world"
+        aria-describedby="setting-render-large-world-description"
+        checked={render.largeWorldRendering === true}
+        onCheckedChange={(checked) => setRender({ ...render, largeWorldRendering: checked === true })}
+        data-testid="setting-render-large-world"
+      />
+      <FieldDescription id="setting-render-large-world-description" className="sr-only">{LARGE_WORLD_HINT}</FieldDescription>
     </Field>
   );
 }

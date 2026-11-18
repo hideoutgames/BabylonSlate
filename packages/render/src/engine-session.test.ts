@@ -39,7 +39,7 @@ describe("Engine session", () => {
     const decoders = { ktx2BasePath: "/basis/" };
     const session = await createEngineSession({ ...h.options, decoders });
     expect(session.engine).toBe(h.engine);
-    expect(createGl).toHaveBeenCalledWith(h.canvases[0], decoders);
+    expect(createGl).toHaveBeenCalledWith(h.canvases[0], decoders, false);
     expect(h.canvases).toHaveLength(1);
     expect(h.released).toEqual([]);
     session.dispose();
@@ -48,6 +48,13 @@ describe("Engine session", () => {
     expect(releaseCache).toHaveBeenCalledTimes(1);
     expect(releaseCache).toHaveBeenCalledWith(h.engine);
     expect(h.engine.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("builds the Engine with the project's Large World Rendering, off unless asked", async () => {
+    const h = host();
+    await createEngineSession(h.options);
+    await createEngineSession({ ...h.options, largeWorldRendering: true });
+    expect(createGl.mock.calls.map((call) => call[2])).toEqual([false, true]);
   });
 
   it("lets views present directly only on a session that asks for it; others keep receiving copies", async () => {
