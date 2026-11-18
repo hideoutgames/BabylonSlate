@@ -590,6 +590,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   } = useProjectRendering({
     projectOpen,
     projectGuid,
+    largeWorldRendering: projectDocument?.settings.render.largeWorldRendering === true,
     sessionOwner,
     sessionState,
     appendLog,

@@ -23,7 +23,7 @@ import { RenderEffectsFields, RENDER_EFFECTS_SEARCH_TEXT } from "./render-effect
 import { projectEffectsScope, sceneEffectsScope } from "./render-effects-scope";
 import { RenderQualityFields } from "./render-quality-fields";
 import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "./shadow-settings-fields";
-import { ProjectLutControl, RenderModeField, ResolutionFields } from "./rendering-project-fields";
+import { LargeWorldRenderingField, ProjectLutControl, RenderModeField, ResolutionFields } from "./rendering-project-fields";
 
 /** What a section edits in Project Settings → Rendering. */
 export interface RenderingProjectContext {
@@ -75,7 +75,12 @@ export const RENDERING_SETTINGS_SECTIONS: readonly RenderingSettingsSection[] = 
   {
     id: "pipeline",
     title: "Pipeline",
-    project: (context) => <RenderModeField {...context} />,
+    project: (context) => (
+      <FieldGroup className="gap-2">
+        <RenderModeField {...context} />
+        <LargeWorldRenderingField {...context} />
+      </FieldGroup>
+    ),
   },
   {
     id: "scalability",

@@ -26,12 +26,15 @@ import type { PlaySessionResult } from "../services/play-session";
 export function useProjectRendering({
   projectOpen,
   projectGuid,
+  largeWorldRendering,
   sessionOwner,
   sessionState,
   appendLog,
 }: {
   projectOpen: boolean;
   projectGuid: string | null;
+  /** The open project's Large World Rendering: a change replaces the Engine once no game runs. */
+  largeWorldRendering: boolean;
   sessionOwner: GameSessionOwner<PlaySessionResult>;
   sessionState: GameSessionState;
   appendLog: (line: string) => void;
@@ -62,11 +65,12 @@ export function useProjectRendering({
 
   const renderingRequest = useMemo(() => projectOpen && projectGuid ? {
     projectGuid,
+    largeWorldRendering,
     async prepare(signal: AbortSignal) {
       await waitForSceneLoadingPaint(signal);
       signal.throwIfAborted();
     },
-  } : null, [projectOpen, projectGuid]);
+  } : null, [projectOpen, projectGuid, largeWorldRendering]);
 
   useEffect(() => {
     // A running simulation keeps its Engine. Apply the authored change after Stop.

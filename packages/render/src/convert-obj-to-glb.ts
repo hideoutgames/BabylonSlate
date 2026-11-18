@@ -1,6 +1,6 @@
+import { createHeadlessEngine } from "./large-world";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { ModelBatchConversionOptions } from "./convert-fbx-to-glb";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { FilesInputStore } from "@babylonjs/core/Misc/filesInputStore";
 import { Scene } from "@babylonjs/core/scene";
 import { OBJFileLoader } from "@babylonjs/loaders/OBJ/objFileLoader";
@@ -77,7 +77,7 @@ export async function convertObjToGlb(
   objBytes: Uint8Array,
   options: ConvertObjToGlbOptions = {},
 ): Promise<Uint8Array> {
-  const engine = options.engine ?? new NullEngine();
+  const engine = options.engine ?? createHeadlessEngine();
   const ownsEngine = !options.engine;
   const scene = new Scene(engine);
   const fileName = fileNameOf(options.fileName ?? "import.obj");

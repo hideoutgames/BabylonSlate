@@ -26,6 +26,8 @@ import {
  *      HAPTIC_PERF_WARMUP_MS (default 10000), HAPTIC_PERF_SETTLE_MS (default 5000),
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra, applied with the Play console),
  *      HAPTIC_PERF_FRAMECAP (Play console `framecap`), HAPTIC_PERF_VIEWPORT_CAP (Engine Settings),
+ *      HAPTIC_PERF_LARGE_WORLD=1 (turns the project's Large World Rendering on in Project Settings after creation,
+ *      which rebuilds the project Engine before the first scene opens; the starter has it off),
  *      HAPTIC_PERF_COMMANDS (further Play console commands after the quality, separated by `;`),
  *      HAPTIC_PERF_PLAYS (default 1: Plays per scene, each after the editor's view is ready again),
  *      HAPTIC_PERF_REOPEN (default 1: also time reload + reopen), HAPTIC_PERF_LABEL,
@@ -81,6 +83,7 @@ const WARMUP_MS = number("HAPTIC_PERF_WARMUP_MS", 10_000);
 const SETTLE_MS = number("HAPTIC_PERF_SETTLE_MS", 5_000);
 const QUALITY = process.env.HAPTIC_PERF_QUALITY ?? null;
 const FRAMECAP = process.env.HAPTIC_PERF_FRAMECAP ?? null;
+const LARGE_WORLD = process.env.HAPTIC_PERF_LARGE_WORLD === "1";
 const COMMANDS = (process.env.HAPTIC_PERF_COMMANDS ?? "").split(";").map((command) => command.trim()).filter(Boolean);
 const REOPEN = process.env.HAPTIC_PERF_REOPEN !== "0";
 const PLAYS = number("HAPTIC_PERF_PLAYS", 1, 1);
@@ -505,6 +508,20 @@ async function waitForSceneView(page: Page): Promise<void> {
 
 test.skip(!ENABLED, "FeatureTest performance route; set HAPTIC_PERF_FEATURE_TEST=1 to run it.");
 
+
+/** Project Settings > Rendering > Pipeline: Large World Rendering on, staged until Done. */
+async function turnOnLargeWorldRendering(page: Page): Promise<void> {
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("project-settings").click();
+  await page.getByTestId("settings-modal-category-rendering").click();
+  const pipeline = page.getByTestId("settings-modal").getByRole("button", { name: "Pipeline", exact: true });
+  if ((await pipeline.getAttribute("aria-expanded")) !== "true") await pipeline.click();
+  const toggle = page.getByTestId("setting-render-large-world");
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Project Settings" })).toBeHidden();
+}
 test("FeatureTest performance route", async ({ page }, testInfo) => {
   test.setTimeout(20 * 60_000 + SCENES.length * PLAYS * (SAMPLES * SAMPLE_MS * 2 + WARMUP_MS + SETTLE_MS + 5 * 60_000));
   const pageErrors: string[] = [];
@@ -534,6 +551,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   await cdp.send("Performance.enable");
 
   const createToInteractiveMs = await createFeatureTestProject(page);
+  if (LARGE_WORLD) await turnOnLargeWorldRendering(page);
   // The editor document starts at Homepage boot, so this covers boot plus creation.
   const bootAndCreateLongTasks = await longTasksSince(page, 0);
   const encodeWaitMs = await waitForTextureEncodes(page);
@@ -583,7 +601,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     viewportCss: page.viewportSize(),
     adapter,
     env: {
-      SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED,
+      SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, LARGE_WORLD, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED,
       DEVICE: DEVICE?.[0] ?? null, VIEWS, GPU_PASSES, VARIANTS,
     },
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },
