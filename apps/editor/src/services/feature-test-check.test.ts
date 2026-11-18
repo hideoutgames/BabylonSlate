@@ -1272,7 +1272,8 @@ describe("Profile", { timeout: 30_000 }, () => {
     // Low has no geometry effects.
     const expectedSkips: Record<QualityLevel, string[]> = {
       low: ["geometry effects off", "ambient occlusion off", "reflections off", "volumetrics off", "screen shadows off"],
-      medium: [],
+      // Medium has no volumetric lighting and no Screen-Space Shadows.
+      medium: ["volumetrics off", "screen shadows off"],
       high: [],
       ultra: [],
     };
@@ -1407,8 +1408,8 @@ describe("Profile", { timeout: 30_000 }, () => {
     // Every row's window is recorded by the GPU probes, which come off before its restore. This Engine reports none, so
     // no serial probe is asked for.
     expect(editor.commands.filter((line) => line.startsWith("gpuprobe"))).toEqual(samples.flatMap(() => ["gpuprobe on", "gpuprobe off"]));
-    expect(editor.commands.slice(editor.commands.indexOf("scenelayers off"), editor.commands.indexOf("scenelayers off") + 5))
-      .toEqual(["scenelayers off", "gpuprobe on", "gpubusy on", "gpuprobe off", "quality reset"]);
+    expect(editor.commands.slice(editor.commands.indexOf("worlddebug locallights off"), editor.commands.indexOf("worlddebug locallights off") + 5))
+      .toEqual(["worlddebug locallights off", "gpuprobe on", "gpubusy on", "gpuprobe off", "quality reset"]);
     const commands = editor.commands.filter((line) => !line.startsWith("gpuprobe"));
     const at = (line: string) => commands.indexOf(line);
     // No tier and no frame cap: the session's own. High's Dynamic Resolution held at its floor, then the camera at the
@@ -1418,8 +1419,8 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(commands.slice(0, 6)).toEqual(["framecap", "quality resolution scale 0.75", 'possess "Profile Heavy Camera"', "gpubusy on", "gpubusy on", 'possess "Profile Light Camera"']);
     expect(samples.every((sample) => sample.settings!["resolution.scale"] === "0.75" || /resolution (1\.0|0\.5)$/.test(sample.label))).toBe(true);
     // Each step's commands, its sample, then `quality reset`, the held resolution and its own restore before the next baseline.
-    expect(commands.slice(at("scenelayers off"), at("scenelayers on") + 1))
-      .toEqual(["scenelayers off", "gpubusy on", "quality reset", "quality resolution scale 0.75", "scenelayers on"]);
+    expect(commands.slice(at("worlddebug locallights off"), at("worlddebug locallights on") + 1))
+      .toEqual(["worlddebug locallights off", "gpubusy on", "quality reset", "quality resolution scale 0.75", "worlddebug locallights on"]);
     expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length);
     // Back to the session's quality, its Dynamic Resolution included, and the tour camera.
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", 'possess "Main Camera"']);
@@ -1595,16 +1596,16 @@ describe("Profile", { timeout: 30_000 }, () => {
     });
     const row = (label: string) => report.scenes[0]!.play.benchmark.find((sample) => sample.label === label)!;
     // Each row keeps the memory as its sample ended, before the step is undone.
-    expect([row("light baseline 15").memory, row("light shadow passes off").memory]).toEqual([
+    expect([row("light baseline 9").memory, row("light shadow passes off").memory]).toEqual([
       { deviceAvailableBytes: 1024 * MIB, appAvailableBytes: null }, { deviceAvailableBytes: 2048 * MIB, appAvailableBytes: null },
     ]);
     const perDrawn = (label: string) => {
       const { work: sampled, presentation } = row(label);
       return { readiness: sampled!.strictReadinessChecks / presentation!.drawn, admissions: sampled!.shadowAdmissions / presentation!.drawn };
     };
-    expect(perDrawn("light baseline 15")).toEqual({ readiness: 2, admissions: 1 });
+    expect(perDrawn("light baseline 9")).toEqual({ readiness: 2, admissions: 1 });
     expect(perDrawn("light shadow passes off")).toEqual({ readiness: 6, admissions: 3 });
-    expect(perDrawn("light baseline 16")).toEqual({ readiness: 2, admissions: 1 });
+    expect(perDrawn("light baseline 10")).toEqual({ readiness: 2, admissions: 1 });
     // What an earlier failure waited for is not a row's: no check failed while it was sampled.
     expect(row("heavy baseline 1").work!.readinessBlockers).toEqual([]);
   });
@@ -1706,7 +1707,10 @@ describe("Profile", { timeout: 30_000 }, () => {
     // Neither baseline after a skipped window is measured.
     const labels = rows.map((sample) => sample.label);
     expect(labels.slice(labels.indexOf("heavy geometry effects off") - 2, labels.lastIndexOf("heavy screen shadows off") + 3)).toEqual([
-      "heavy shadow passes off", "heavy baseline X", "heavy world drawn once", "heavy baseline Y",
+      "heavy shadow passes off", "heavy baseline 5", "heavy geometry effects off", "heavy geometry effects off",
+      "heavy ambient occlusion off", "heavy ambient occlusion off", "heavy reflections off", "heavy reflections off",
+      "heavy volumetrics off", "heavy volumetrics off", "heavy screen shadows off", "heavy screen shadows off",
+      "heavy world drawn once", "heavy baseline 16",
     ]);
     // The step's undo failed: the baseline after it says so and fails the scene.
     expect(main!.problems[0]).toBe("light baseline 2: postprocessing on failed: Refused.");
