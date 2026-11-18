@@ -1216,11 +1216,14 @@ describe("Profile", { timeout: 30_000 }, () => {
       frames: { frames: 100, durationMs: 3000, fps: 30, medianMs: 33, meanMs: 33, vsync: [0, 1, 0, 0], p95Ms: 40, maxMs: 50, stalls: 0 },
       drawCalls: 100, resolution: null, failed: [], gpuBusy: { medianMs: 33, p95Ms: 35, frames: 100, pollMs: 4 },
       gpuProbe: {
-        signature: null, shadows: null, raf: null,
+        signature: null, shadows: null, raf: { callbacks: 180, ms: 3000, perSecond: 60 },
         serial: { frameMs: serial.frame, cpuMs: serial.sub, syntheticMs: 2 }, burst: { id: 1, frames: 12, periodMs: burst, submitMs: 16, failed: null, ms: 300 },
       },
     } as unknown as FeatureTestBenchmarkSample);
-    // GPU-bound: each burst well past its serial submission (10 ms).
+    // A burst at the display's interval (60 Hz) is display-bound, however far past the submission: not the burst.
+    const paced = [row("light baseline 1", 10, { frame: 30, sub: 10 }, 16.6), row("light flat world", 10, { frame: 20, sub: 10 }, 16.7), row("light baseline 2", 10, { frame: 30, sub: 10 }, 16.6)];
+    expect(profileComparison(paced, paced[1]!)).toMatchObject({ basis: "serial" });
+    // GPU-bound: each burst well past its serial submission (10 ms) and the display's interval.
     const bound = [row("light baseline 1", 10, { frame: 30, sub: 10 }, 40), row("light flat world", 10, { frame: 20, sub: 10 }, 28), row("light baseline 2", 10, { frame: 30, sub: 10 }, 42)];
     expect(profileComparison(bound, bound[1]!)).toMatchObject({ basis: "burst", before: 40, step: 28, after: 42, change: { ms: -13 } });
     // CPU-bound (bursts at the submission): the serial frame. One repeat's serial frames were submitted at 28.6 ms against
@@ -1524,10 +1527,10 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(samples.map((sample) => sample.presentation!.held / (sample.presentation!.drawn + sample.presentation!.held)))
       .toEqual(samples.map(() => 0.25));
     expect(samples.every((sample) => sample.presentation!.heldReasons["Scene is not ready to render."] === sample.presentation!.held)).toBe(true);
-    // From each step to its sample: the first window waits 10 s with no rate yet, then 1.5 s of quiet shaders; every
-    // later one a 2 s window within 25% + 15 points, then the 1.5 s.
+    // From each step to its sample: the first window waits 10 s with no rate yet, then 1 s of quiet shaders; every
+    // later one a 2 s window within 25% + 15 points, then the 1 s.
     const profileWaits = waits.filter((wait) => /: (warming up|measuring (?!Play|the editor))/.test(wait.step));
-    expect(profileWaits.map((wait) => wait.ms)).toEqual([11_500, ...samples.slice(1).map(() => 3_500)]);
+    expect(profileWaits.map((wait) => wait.ms)).toEqual([11_000, ...samples.slice(1).map(() => 3_000)]);
   });
 
   it("records the world renderer's work each row did while sampled, and the native memory as it ended", async () => {
@@ -1586,8 +1589,8 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(shadows.failed).toEqual([
       "The view still held 75% of its frames over the last 2 s after 90 s, past the 40% its warm-up allows (25% plus 15 points); these frames include them.",
     ]);
-    // 90 s of waiting, then the 1.5 s settle.
-    expect(waits.find((wait) => wait.step === "main: measuring light shadows off")!.ms).toBe(91_500);
+    // 90 s of waiting, then the 1 s settle.
+    expect(waits.find((wait) => wait.step === "main: measuring light shadows off")!.ms).toBe(91_000);
     expect(samples.at(-1)!.label).toBe("heavy drift");
     // Every window of a step that turns shadows off: shadows off and the world drawn once, each twice at each view.
     expect(report.scenes[0]!.problems).toEqual([

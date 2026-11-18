@@ -67,7 +67,7 @@ export interface PassTimerResult {
 }
 
 /** Frames a run measures. */
-export const PASS_TIMER_FRAMES = 30;
+export const PASS_TIMER_FRAMES = 20;
 /** Segments per frame; boundaries past it count to the last segment. */
 const MAX_SEGMENTS = 512;
 /** Longest a run waits for its frames, from its start. */

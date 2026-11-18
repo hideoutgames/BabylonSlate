@@ -754,7 +754,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   const drift = breakdownWarmupDrift(samples);
   const timed = samples.find((sample) => sample.gpuBusy);
   const lines = [
-    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 12 minutes: a short warm-up at the control view, then at fixed camera views every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling for 1.5 s, then probed with serialised frames, a burst and the pass timers before it is restored (GPU probes, below):`,
+    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 12 minutes: a short warm-up at the control view, then at fixed camera views every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling for 1 s, then probed with serialised frames, a burst and the pass timers before it is restored (GPU probes, below):`,
     `  Settings: ${first?.settings ? Object.entries(first.settings).map(([field, value]) => `${field} ${value}`).join(" · ") : "unknown"}`,
     `  Frames in flight: ${framesInFlightText(samples)}`,
     `  Resolution held: ${heldResolutionText(profile?.resolution ?? null)}`,
@@ -780,7 +780,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   }
   lines.push(...drawPassTable(samples, "Step", 28), ...cpuPassTable(samples, "Step", 28));
   lines.push(...gpuProbeLines(samples), ...passTimerLines(samples), ...frameStructureLines(samples));
-  lines.push("  Ranked by change at each view against baselines at its own GPU speed (synthetic load within 15%), the mean of its repeats (baseline > step > baseline), in the burst period where every row is GPU-bound (burst over 1.2x its serial submission; marked b), else the serial probe's frame time where the step and both its baselines have one and no serial frame stalled (submitted past 1.5x the window's CPU cost plus 2 ms; marked s), else gpu busy (* = mean frame time where gpu busy is missing); norm = the same with every row scaled to the run's fastest synthetic load:");
+  lines.push("  Ranked by change at each view against baselines at its own GPU speed (synthetic load within 15%), the mean of its repeats (baseline > step > baseline), in the burst period where every row is GPU-bound (burst over 1.2x both its serial submission and the display interval; marked b), else the serial probe's frame time where the step and both its baselines have one and no serial frame stalled (submitted past 1.5x the window's CPU cost plus 2 ms; marked s), else gpu busy (* = mean frame time where gpu busy is missing); norm = the same with every row scaled to the run's fastest synthetic load:");
   const ranking = profileRanking(samples);
   for (const group of ranking) {
     lines.push(`    ${group.view ?? "scene camera"}:`);

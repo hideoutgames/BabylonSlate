@@ -637,7 +637,8 @@ export const PROFILE_BASES: readonly ProfileBasis[] = ["burst", "serial", "gpu",
 
 /**
  * A row is GPU-bound where its burst period (`BurstProbeResult.periodMs`, the unquantised frame period with frames
- * queued) is past this multiple of its serial frames' CPU submission: the GPU, not the CPU, sets the period.
+ * queued) is past this multiple of both its serial frames' CPU submission and the display interval (from the window's
+ * animation frame rate, at least 60 Hz): the GPU, not the CPU or the display, sets the period.
  */
 export const PROFILE_GPU_BOUND_RATIO = 1.2;
 /**
@@ -658,7 +659,9 @@ export function serialUnstalled(sample: FeatureTestBenchmarkSample): boolean {
 function profileValue(sample: FeatureTestBenchmarkSample, basis: ProfileBasis): number | null {
   if (basis === "burst") {
     const period = sample.gpuProbe?.burst?.periodMs, sub = sample.gpuProbe?.serial?.cpuMs;
-    return period !== null && period !== undefined && sub !== null && sub !== undefined && period > sub * PROFILE_GPU_BOUND_RATIO ? period : null;
+    if (period === null || period === undefined || sub === null || sub === undefined) return null;
+    const display = 1000 / Math.max(sample.gpuProbe?.raf?.perSecond ?? 60, 60);
+    return period > Math.max(sub, display) * PROFILE_GPU_BOUND_RATIO ? period : null;
   }
   if (basis === "serial") return serialUnstalled(sample) ? sample.gpuProbe?.serial?.frameMs ?? null : null;
   return breakdownValue(sample, basis === "gpu");
@@ -1385,7 +1388,7 @@ const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
   profileSerialMs: 6_000,
   profileTimersMs: 25_000,
   profileStepSampleMs: 3_000,
-  profileStepSettleMs: 1_500,
+  profileStepSettleMs: 1_000,
 };
 
 /** A Profile warms up for at most this many windows (fewer when the first two agree within 3%): a short run on a tablet. */
