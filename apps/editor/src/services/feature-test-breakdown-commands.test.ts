@@ -54,11 +54,10 @@ describe("Feature Test measurement commands", () => {
     const registry = createCommandRegistry({ includeDebug: true });
     const commands = measuredCommands();
     expect(commands.some(({ line }) => line.startsWith("quality postprocessing antialiasing"))).toBe(true);
-    expect(commands.some(({ line }) => line === "discardsamples on")).toBe(true);
     expect(commands.some(({ line }) => line === "scenelayers off")).toBe(true);
-    expect(commands.filter(({ line }) => line.startsWith("renderreset")).map(({ line }) => line)).toContain("renderreset idle");
-    expect(commands.some(({ line }) => line === "framecap 30")).toBe(true);
-    expect(commands.some(({ line }) => line === "shadowdebug atlasfit off")).toBe(true);
+    expect(commands.some(({ line }) => line === "worlddebug world off")).toBe(true);
+    expect(commands.some(({ line }) => line === "shadowdebug passes off")).toBe(true);
+    expect(commands.filter(({ line }) => line.startsWith("worlddebug ")).length).toBeGreaterThan(4);
     expect(commands.some(({ line }) => line === 'possess "Profile Mirror Camera"')).toBe(true);
     for (const { source, line } of commands) {
       const session = new RenderingQualitySession();
