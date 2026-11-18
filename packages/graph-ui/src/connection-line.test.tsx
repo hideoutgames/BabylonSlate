@@ -347,7 +347,7 @@ describe("GraphConnectionLine refusal lookup", () => {
     const pinConversionLabel = vi.fn(() => "Convert to Vector3");
     const { getByTestId, queryByTestId, move } = renderContainer(
       undefined,
-      { connectionStatus: "valid", fromHandle: { id: "value" } },
+      { connectionStatus: "valid", fromHandle: { id: "value" } as ConnectionLineComponentProps["fromHandle"] },
       { pinConversionLabel },
     );
     expect(getByTestId("convert-hint").textContent).toBe("Convert to Vector3");
