@@ -235,7 +235,7 @@ export function AccessibilitySettingsFields({
         <SwitchField
           id="setting-viewport-zoom-buttons"
           label="Viewport Zoom Buttons"
-          hint="Adds Zoom In and Zoom Out buttons to Scene, Scene Layer and Actor Prefab viewports, for zooming without a pinch."
+          hint="Adds Zoom In and Zoom Out buttons to Scene, Scene Layer and Prefab viewports, for zooming without a pinch."
           checked={settings.viewportZoomButtons}
           onChange={(viewportZoomButtons) => void onChange({ viewportZoomButtons })}
         />

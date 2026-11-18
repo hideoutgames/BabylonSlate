@@ -98,6 +98,19 @@ describe("ViewportZoomControls", () => {
     expect(drive.start).not.toHaveBeenCalled();
   });
 
+  it("still zooms for a later activation after a press whose click never reached the button", async () => {
+    const { drive } = await renderControls();
+    dispatchPointerEvent(zoomIn(), "pointerdown", { pointerId: 3, pointerType: "mouse" });
+    dispatchPointerEvent(zoomIn(), "pointerup", { pointerId: 3, pointerType: "mouse" });
+    expect(drive.start).toHaveBeenCalledOnce();
+    // A screen reader or switch activation a second later: a click with no keydown before it.
+    const later = new MouseEvent("click", { bubbles: true, cancelable: true });
+    // jsdom stamps events with Date.now(), so this is one second after the release.
+    Object.defineProperty(later, "timeStamp", { value: Date.now() + 1000 });
+    zoomIn().dispatchEvent(later);
+    expect(drive.step).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
   it("stops on pointer cancel and on lost capture, but only for the pointer that pressed", async () => {
     const { drive } = await renderControls();
     dispatchPointerEvent(zoomIn(), "pointerdown", { pointerId: 4 });

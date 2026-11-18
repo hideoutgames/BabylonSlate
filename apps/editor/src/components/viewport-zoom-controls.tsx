@@ -22,6 +22,12 @@ export const ViewportZoomControls = memo(function ViewportZoomControls(props: Vi
   return enabled ? <ZoomIsland {...props} /> : null;
 });
 
+/**
+ * How long after a pointer release on a button its click still counts as that press's trailing click. Browsers send
+ * the click right after the release; an activation later than this (screen reader, switch or voice control) zooms.
+ */
+const TRAILING_CLICK_MS = 400;
+
 interface ActivePress {
   pointerId: number;
   /** The drive the press started, so release reaches it even if the Engine changed meanwhile. */
@@ -35,8 +41,8 @@ function ZoomIsland({ drive, disabled = false, testId = "viewport-zoom-controls"
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
   const pressRef = useRef<ActivePress | null>(null);
-  // Set by a pointer press so its trailing click does not zoom a second time.
-  const pointerClickRef = useRef(false);
+  // When a primary pointer was last released on a button: its trailing click must not zoom a second time.
+  const releasedAtRef = useRef<number | null>(null);
 
   const release = useCallback(() => {
     const press = pressRef.current;
@@ -63,7 +69,6 @@ function ZoomIsland({ drive, disabled = false, testId = "viewport-zoom-controls"
         // The viewport root opens its context menu on a long press; a held button must not reach it.
         event.stopPropagation();
         if (event.button !== 0) return;
-        pointerClickRef.current = true;
         if (disabledRef.current || pressRef.current) return;
         try {
           event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -75,18 +80,17 @@ function ZoomIsland({ drive, disabled = false, testId = "viewport-zoom-controls"
         current?.start(direction);
       },
       onPointerEnd: (event: PointerEvent<HTMLButtonElement>) => {
-        if (event.type === "pointercancel") pointerClickRef.current = false;
+        if (event.type === "pointerup" && event.button === 0) releasedAtRef.current = event.timeStamp;
         if (pressRef.current?.pointerId === event.pointerId) release();
       },
       onKeyDown: () => {
-        pointerClickRef.current = false;
+        releasedAtRef.current = null;
       },
       onClick: (event: MouseEvent<HTMLButtonElement>) => {
         event.stopPropagation();
-        if (pointerClickRef.current) {
-          pointerClickRef.current = false;
-          return;
-        }
+        const releasedAt = releasedAtRef.current;
+        releasedAtRef.current = null;
+        if (releasedAt !== null && event.timeStamp - releasedAt >= 0 && event.timeStamp - releasedAt < TRAILING_CLICK_MS) return;
         // Keyboard or assistive-technology activation: one whole step.
         if (disabledRef.current) return;
         driveRef.current()?.step(direction);

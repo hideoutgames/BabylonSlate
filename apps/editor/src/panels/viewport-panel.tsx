@@ -698,7 +698,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       ) : null}
       {/* Zoom buttons rest in the corner and sit above the Game Camera preview while it shows. */}
       <div className="pointer-events-none absolute bottom-3 right-3 z-10 flex flex-col items-end gap-2">
-        <ViewportZoomControls drive={zoomDrive} disabled={!sceneReady || playing || preparing} />
+        {/* The failed-load placeholder covers the viewport; the buttons would sit on top of it. */}
+        {sceneLoad.failed && !sceneLoad.open ? null : (
+          <ViewportZoomControls drive={zoomDrive} disabled={!sceneReady || playing || preparing} />
+        )}
         <canvas
           ref={previewCanvasRef}
           hidden
