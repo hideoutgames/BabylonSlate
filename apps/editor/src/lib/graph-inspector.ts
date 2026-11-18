@@ -56,6 +56,12 @@ import {
   type StructField,
 } from "@haptic/scripting";
 import { growablePinList } from "./graph-pin-lists";
+import {
+  numericOperandChoices,
+  numericOperands,
+  numericOperandType,
+  numericOperandTypeName,
+} from "@haptic/scripting-nodes";
 
 export function connectedInputPinIds(
   edges: ReadonlyArray<{ target: string; targetHandle?: string }>,
@@ -900,6 +906,36 @@ export function containerConstructorPropertyRows(
 ): PropertyRow[] {
   if (typeId !== "array.make" && typeId !== "map.make") return [];
   return pinListCountRows(typeId, data, typeId === "array.make" ? "Items" : "Pairs", onPatch);
+}
+
+/**
+ * A numeric operator's **A Type** and **B Type** rows (**Value Type** on Negate), for each unwired
+ * operand: a wired one takes its wire's type. Each lists only the types valid against the other
+ * operand. A pick drops the operand's stored value, which was of the old type.
+ */
+export function numericOperandPropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+  wired: (pinId: string) => boolean,
+): PropertyRow[] {
+  const operands = numericOperands(typeId);
+  return operands.flatMap((operand, index): PropertyRow[] => {
+    if (wired(operand.pinId)) return [];
+    const other = operands.length === 2 ? operands[1 - index] : undefined;
+    const current = numericOperandType(data, operand.property);
+    return [{
+      kind: "enum",
+      id: operand.property,
+      label: other ? `${operand.pinId.toUpperCase()} Type` : "Value Type",
+      value: current,
+      options: numericOperandChoices(typeId, other ? numericOperandType(data, other.property) : undefined)
+        .map((type) => ({ value: type, label: numericOperandTypeName(type) })),
+      onChange: (value) => {
+        if (value !== current) onPatch({ [operand.property]: value, [pinDefaultPropertyKey(operand.pinId)]: undefined });
+      },
+    }];
+  });
 }
 
 /** The Sequence node's **Outputs** row: how many Then outputs it runs, in order. */

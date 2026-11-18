@@ -174,8 +174,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Abs Int](abs-int.md) | Returns a whole number with any negative sign removed. |
 | [Acos (Degrees)](acos-degrees.md) | Returns the arccosine of the input as an angle in degrees. |
 | [Acos (Radians)](acos.md) | Returns the arccosine of the input as an angle in radians. |
-| [Add](add.md) | Returns the sum of two numbers. |
-| [Add Int](add-int.md) | Returns the sum of two whole numbers. |
+| [Add](add.md) | Returns the sum of two numbers or vectors. |
 | [Asin (Degrees)](asin-degrees.md) | Returns the arcsine of the input as an angle in degrees. |
 | [Asin (Radians)](asin.md) | Returns the arcsine of the input as an angle in radians. |
 | [Atan (Degrees)](atan-degrees.md) | Returns the arctangent of the input as an angle in degrees. |
@@ -197,8 +196,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Cos (Degrees)](cos-degrees.md) | Returns the cosine of an angle in degrees. |
 | [Cos (Radians)](cos.md) | Returns the cosine of an angle in radians. |
 | [Degrees To Radians](degrees-to-radians.md) | Converts the input from degrees to radians. |
-| [Divide](divide.md) | Returns the first number divided by the second. |
-| [Divide Int](divide-int.md) | Returns the first whole number divided by the second, rounded toward zero. |
+| [Divide](divide.md) | Returns the first number or vector divided by the second. |
 | [Ease](ease.md) | Blends between two numbers along an easing curve. |
 | [Equal](equal.md) | Returns true when two numbers are exactly equal. |
 | [Exp](exp.md) | Returns e raised to a power. |
@@ -216,13 +214,11 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Max Int](max-int.md) | Returns the larger of two whole numbers. |
 | [Min](min.md) | Returns the smaller of two numbers. |
 | [Min Int](min-int.md) | Returns the smaller of two whole numbers. |
-| [Modulo](modulo.md) | Returns the remainder after dividing one Float by another. |
-| [Modulo Int](modulo-int.md) | Returns the remainder after dividing one whole number by another. |
-| [Multiply](multiply.md) | Returns the product of two numbers. |
-| [Multiply Int](multiply-int.md) | Returns the product of two whole numbers. |
+| [Modulo](modulo.md) | Returns the remainder after dividing one number by another. |
+| [Multiply](multiply.md) | Returns the product of two numbers or vectors. |
 | [Natural Log](natural-log.md) | Returns the natural logarithm of a number. |
 | [Nearly Equal](nearly-equal.md) | Returns true when two numbers are almost the same. |
-| [Negate](negate.md) | Flips the sign of the input. |
+| [Negate](negate.md) | Flips the sign of a number, or points a vector the opposite way. |
 | [Normalize Axis](normalize-axis.md) | Wraps an angle in degrees to between -180 and 180. |
 | [Not Equal](not-equal.md) | Returns true when two numbers are not exactly equal. |
 | [Power](power.md) | Raises a base number to the power of an exponent. |
@@ -237,8 +233,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Snap To Grid](snap-to-grid.md) | Rounds a number to the nearest multiple of a grid size. |
 | [Sqrt](sqrt.md) | Returns the square root of the input. |
 | [Square](square.md) | Multiplies a number by itself. |
-| [Subtract](subtract.md) | Returns the first number minus the second. |
-| [Subtract Int](subtract-int.md) | Returns the first whole number minus the second. |
+| [Subtract](subtract.md) | Returns the first number or vector minus the second. |
 | [Tan (Degrees)](tan-degrees.md) | Returns the tangent of an angle in degrees. |
 | [Tan (Radians)](tan.md) | Returns the tangent of an angle in radians. |
 | [Truncate](truncate.md) | Drops the fraction of a number, rounding toward zero. |
@@ -248,9 +243,6 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
-| [Add Vector2](add-vector2.md) | Returns the sum of two vectors, added component by component. |
-| [Add Vector3](add-vector3.md) | Returns the sum of two vectors, added component by component. |
-| [Add Vector4](add-vector4.md) | Returns the sum of two vectors, added component by component. |
 | [Angle Between Vector3](angle-between-vector3.md) | Returns the angle between two vectors in degrees. |
 | [Break Vector2](break-vector2.md) | Splits a Vector2 into its X and Y numbers. |
 | [Break Vector3](break-vector3.md) | Splits a Vector3 into its X, Y and Z numbers. |
@@ -260,9 +252,6 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Distance Vector2](distance-vector2.md) | Returns the distance between two points. |
 | [Distance Vector3](distance-vector3.md) | Returns the distance between two points. |
 | [Distance Vector4](distance-vector4.md) | Returns the distance between two Vector4 values. |
-| [Divide Vector2](divide-vector2.md) | Divides the first vector by the second, component by component. |
-| [Divide Vector3](divide-vector3.md) | Divides the first vector by the second, component by component. |
-| [Divide Vector4](divide-vector4.md) | Divides the first vector by the second, component by component. |
 | [Dot Vector2](dot-vector2.md) | Returns the dot product of two vectors. |
 | [Dot Vector3](dot-vector3.md) | Returns the dot product of two vectors. |
 | [Dot Vector4](dot-vector4.md) | Returns the dot product of two vectors. |
@@ -274,23 +263,11 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Make Vector3](make-vector3.md) | Builds a Vector3 from X, Y and Z numbers. |
 | [Make Vector4](make-vector4.md) | Builds a Vector4 from X, Y, Z and W numbers. |
 | [Mirror Vector3 By Normal](mirror-vector3-by-normal.md) | Bounces a vector off a surface. |
-| [Multiply Vector2](multiply-vector2.md) | Multiplies two vectors together, component by component. |
-| [Multiply Vector3](multiply-vector3.md) | Multiplies two vectors together, component by component. |
-| [Multiply Vector4](multiply-vector4.md) | Multiplies two vectors together, component by component. |
-| [Negate Vector3](negate-vector3.md) | Returns a vector pointing the opposite way. |
-| [Negate Vector2](negate-vector2.md) | Returns a vector pointing the opposite way. |
-| [Negate Vector4](negate-vector4.md) | Returns a vector pointing the opposite way. |
 | [Normalize Vector2](normalize-vector2.md) | Returns the vector scaled to a length of 1, keeping its direction. |
 | [Normalize Vector3](normalize-vector3.md) | Returns the vector scaled to a length of 1, keeping its direction. |
 | [Normalize Vector4](normalize-vector4.md) | Returns the vector scaled to a length of 1, keeping its direction. |
 | [Project Vector3 On To Plane](project-vector3-on-to-plane.md) | Flattens a vector onto a plane. |
 | [Project Vector3 On To Vector3](project-vector3-on-to-vector3.md) | Returns the part of a vector that points along another. |
-| [Scale Vector2](scale-vector2.md) | Multiplies every component of a vector by one number. |
-| [Scale Vector3](scale-vector3.md) | Multiplies every component of a vector by one number. |
-| [Scale Vector4](scale-vector4.md) | Multiplies every component of a vector by one number. |
-| [Subtract Vector2](subtract-vector2.md) | Returns the first vector minus the second, component by component. |
-| [Subtract Vector3](subtract-vector3.md) | Returns the first vector minus the second, component by component. |
-| [Subtract Vector4](subtract-vector4.md) | Returns the first vector minus the second, component by component. |
 | [Interp To Vector3](interp-to-vector3.md) | Moves a vector smoothly toward a target, slowing as it arrives. |
 | [Interp To Vector2](interp-to-vector2.md) | Moves a vector smoothly toward a target, slowing as it arrives. |
 | [Interp To Vector4](interp-to-vector4.md) | Moves a vector smoothly toward a target, slowing as it arrives. |

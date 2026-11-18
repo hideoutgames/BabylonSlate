@@ -3,6 +3,7 @@ import { waterNodes } from "./water";
 import { EVENT_BY_TYPE_ID, NodeRegistry, type NodeDefinition } from "@haptic/scripting";
 import { catalogEventDefinitions, flowNodes } from "./flow";
 import { mathNodes } from "./math";
+import { registerNumericOperatorValidationRules } from "./numeric-operators";
 import { vectorNodes } from "./vector";
 import { stringNodes } from "./string";
 import { utilityHelperNodes } from "./utility-helpers";
@@ -69,6 +70,7 @@ import { curveRangeNodes } from "./curves-ranges";
 export * from "./flow";
 export * from "./anim-pose";
 export * from "./math";
+export * from "./numeric-operators";
 export * from "./vector";
 export * from "./string";
 export * from "./select";
@@ -204,6 +206,7 @@ for (const definition of allNodeDefinitions()) {
 export function createDefaultNodeRegistry(): NodeRegistry {
   registerPhysicsValidationRules();
   registerSceneLayerValidationRules();
+  registerNumericOperatorValidationRules();
   const registry = new NodeRegistry();
   registry.registerAll(allNodeDefinitions());
   return registry;

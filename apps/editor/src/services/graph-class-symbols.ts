@@ -258,11 +258,23 @@ function adoptsDelegateSignature(
   );
 }
 
+/**
+ * An input that lists `accepts` (a numeric operator's operand) also takes a wire of exactly one of
+ * those types; the editor then retypes the pin to it, so validation sees a matching wire.
+ */
+function acceptedForRetype(
+  outgoing: { type: { kind: string } },
+  incoming: { accepts?: ReadonlyArray<{ kind: string }> },
+): boolean {
+  return incoming.accepts?.some((type) => pinTypeEquals(outgoing.type as PinType, type as PinType)) === true;
+}
+
 export function scriptPinCompatibility(
   hierarchy?: ClassHierarchy,
 ): PinCompatibilityRule {
   return (outgoing, incoming) =>
     adoptsDelegateSignature(outgoing, incoming) ||
+    acceptedForRetype(outgoing, incoming) ||
     // A reference input takes a writable variable of its exact type; a wildcard one (Set By-Ref Var) takes any.
     // A Reroute knot's output (`anyKind`) passes on whatever feeds it, which the rule cannot see: validation
     // reads the wire through the knot and reports `pin.invalid_reference` when that source is not writable.

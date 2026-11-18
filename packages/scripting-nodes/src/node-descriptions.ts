@@ -2,7 +2,7 @@ import type { NodeDefinition } from "@haptic/scripting";
 
 /**
  * Tooltips for nodes whose definition carries none, by node id. Kept to a few words, and only for
- * nodes whose title does not already say what they do: Add Vector3 needs none. A node's reference
+ * nodes whose title does not already say what they do: Add needs none. A node's reference
  * page holds the detail. A definition's own `description` always wins.
  */
 export const NODE_DESCRIPTIONS: Readonly<Record<string, string>> = {
@@ -36,10 +36,9 @@ export const NODE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "timers.delayOneTick": "Continues on the next tick.",
   "timers.retriggerableDelay": "Delay that starts over each time it is called.",
   // Math
-  "math.div": "A divided by B. 0 when B is 0.",
-  "math.div_int": "Whole division, rounded toward zero. 0 when B is 0.",
-  "math.mod": "Remainder of A / B, with the sign of A.",
-  "math.mod_int": "Remainder of A / B, with the sign of A.",
+  "math.mul": "A times B, per component for vectors. A number scales a vector.",
+  "math.div": "A divided by B. Integers round toward zero. 0 where B is 0.",
+  "math.mod": "Remainder of A / B, with the sign of A. 0 when B is 0.",
   "math.compare": "True when A and B differ by no more than Tolerance.",
   "math.lerp": "A to B by Alpha. Alpha is not clamped.",
   "math.sign": "-1, 0 or 1 by the sign of the input.",
@@ -62,12 +61,6 @@ export const NODE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "vector.lengthSquared2": "Length without the square root. Cheaper to compare.",
   "vector.lengthSquared3": "Length without the square root. Cheaper to compare.",
   "vector.lengthSquared4": "Length without the square root. Cheaper to compare.",
-  "vector.scale2": "Every component multiplied by one number.",
-  "vector.scale3": "Every component multiplied by one number.",
-  "vector.scale4": "Every component multiplied by one number.",
-  "vector.div2": "Component by component. 0 where B is 0.",
-  "vector.div3": "Component by component. 0 where B is 0.",
-  "vector.div4": "Component by component. 0 where B is 0.",
   // Rotator and Quaternion
   "rotator.combine": "A, then B, as one rotation.",
   "rotator.delta": "The rotation that turns From into To.",
