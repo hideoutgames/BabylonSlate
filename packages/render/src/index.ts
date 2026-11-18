@@ -127,6 +127,7 @@ export type { RenderDiagnostics } from "./render-diagnostics";
 export type { SceneReadinessDirtyReason } from "./scene-readiness-signal";
 export { verifyScopedReadinessProbes } from "./readiness-scope";
 export { verifyRenderChangeJournal } from "./render-change-journal";
+export { verifyLeanPreparation, type LeanPreparationWork } from "./lean-render-preparation";
 export type { PresentedImageSample } from "./presented-image";
 export { activeRenderFrameCapture } from "./render-frame-report";
 export { parseRenderFrameReport, serializeRenderFrameReport } from "./render-frame-report-file";
@@ -145,6 +146,7 @@ export { spawnableLightsFromScripts, spawnableLightsOfLoad, spawnsLights2D, spaw
 export { NativePreparationScheduler, nativePreparationForEngine } from "./native-preparation";
 export type { NativePreparationLimits, NativePreparationPriority, NativePreparationRequest } from "./native-preparation";
 export { createEngineSession, type EngineSession, type EngineSessionOptions } from "./engine-session";
+export { createHeadlessEngine, largeWorldEngineOptions, PAGE_MATRIX_PRECISION } from "./large-world";
 
 export * from "./shared-outline";
 export { CommandSourcePreparation, commandSourceGuids, type CommandSourceLoader, type CommandFontMode, type CommandFontModes } from "./command-source-preparation";

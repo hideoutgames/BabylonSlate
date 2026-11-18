@@ -9,6 +9,8 @@ import { SOFTWARE_GL_ARGS } from "./software-gl";
 // and its raw readbacks beside it, so two builds' frames can be compared.
 const SOFTWARE_GL = process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || Boolean(process.env.CI);
 if (SOFTWARE_GL) test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
+// HAPTIC_LARGE_WORLD=1 builds the proof's Engine with Large World Rendering (Babylon's floating origin) on.
+const LARGE_WORLD = process.env.HAPTIC_LARGE_WORLD === "1";
 
 type Proof = typeof runEffectsComposeProof;
 const VARIANTS: EffectsComposeVariant[] = ["ao", "fog", "reflections", "ao-fog", "all", "screen-shadows"];
@@ -24,7 +26,7 @@ async function run(page: Page, variant: EffectsComposeVariant) {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/?test=1&effectsComposeProof=1");
   await page.waitForFunction(() => typeof (window as unknown as { __effectsComposeProof?: unknown }).__effectsComposeProof === "function");
-  const result = await page.evaluate((name) => (window as unknown as { __effectsComposeProof: Proof }).__effectsComposeProof(name), variant);
+  const result = await page.evaluate(({ name, largeWorld }) => (window as unknown as { __effectsComposeProof: Proof }).__effectsComposeProof(name, largeWorld), { name: variant, largeWorld: LARGE_WORLD });
   page.off("console", listener);
   return { result, errors };
 }

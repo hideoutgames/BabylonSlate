@@ -162,6 +162,7 @@ import {
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
 } from "./resource-cache";
+import { largeWorldEngineOptions } from "./large-world";
 import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
 import { sceneViewRenderSize, setSceneOutputScale } from "./scene-output-scale";
 import {
@@ -379,14 +380,14 @@ export const COMPILE_HOLD_PAUSE_DELAY_MS = 250;
  * Engine alike. A new object each time: Babylon writes resolved values back
  * into the options it is given, which must not reach the next Engine.
  */
-function projectEngineOptions(): EngineOptions {
+function projectEngineOptions(largeWorldRendering: boolean): EngineOptions {
   return {
     preserveDrawingBuffer: preserveDrawingBufferSetting(),
     stencil: true,
     adaptToDeviceRatio: false,
     // MSAA draws into the world view's own multisampled targets (`sceneMultisampleCount`): the canvas never multisamples.
     antialias: false,
-    useLargeWorldRendering: true,
+    ...largeWorldEngineOptions(largeWorldRendering),
     useExactSrgbConversions: true,
   };
 }
@@ -442,7 +443,7 @@ function initializeEngine(
     ? document.createElement("canvas") : canvas;
   const engine =
     options.sharedEngine ??
-    new Engine(constructorCanvas, false, projectEngineOptions());
+    new Engine(constructorCanvas, false, projectEngineOptions(options.renderSettings?.largeWorldRendering === true));
   if (ownsEngine) {
     engine.inputElement = canvas;
     onRollback(() => engine.dispose());
@@ -523,6 +524,8 @@ function initializeEngine(
     compileHolds: true, occlusion: !presentRtt && !options.previewLighting,
     // A game's view only: the editor viewport's depth also holds its helper visuals.
     seedsFromSceneDepth: options.playMode === true,
+    // A game's view only: the editor viewport keeps Babylon's preparation.
+    leanPreparation: options.playMode === true,
   });
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
@@ -4111,13 +4114,15 @@ export function createAppEngine(
     CreateEngineOptions,
     "ktx2BasePath" | "dracoBasePath" | "meshoptBasePath"
   > = {},
+  /** The project's Large World Rendering (`RenderProjectSettings.largeWorldRendering`): fixed for the Engine's life. */
+  largeWorldRendering = false,
 ): Engine {
   configureKtx2Transcoder(KhronosTextureContainer2, options.ktx2BasePath);
   configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
     dracoBasePath: options.dracoBasePath,
     meshoptBasePath: options.meshoptBasePath,
   });
-  const engine = new Engine(canvas, false, projectEngineOptions());
+  const engine = new Engine(canvas, false, projectEngineOptions(largeWorldRendering));
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     caps: engine.getCaps(),
     renderer: (

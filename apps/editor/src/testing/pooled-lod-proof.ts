@@ -73,7 +73,8 @@ export async function runPooledLodProof() {
     const sun = new DirectionalLight("sun", new Vector3(0.2, -0.5, 1).normalize(), scene);
     sun.intensity = 2;
 
-    const graph = new ForwardSceneFrameGraph(scene, {});
+    // A game's view: the lean preparation selects each leaf's level per frame, as Babylon's does.
+    const graph = new ForwardSceneFrameGraph(scene, { leanPreparation: true });
     for (let frame = 0, presented = 0; presented < 10; frame++) {
       if (frame > 600) throw new Error("The view did not present");
       await graph.prepare(camera);

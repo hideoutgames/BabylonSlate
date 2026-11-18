@@ -243,8 +243,11 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     const cel = celMode(scene);
     defines.setValue("HAPTIC_CEL", cel, true);
     // `waterdebug lighting off` draws water unlit, to measure what its lighting costs.
-    // `worlddebug lighting off` draws every lit surface unlit, to measure what lighting costs the world.
-    defines.setValue("HAPTIC_UNLIT", this.unlit || (isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "lighting")) || worldDebugOff(scene, "lighting"), true);
+    // `worlddebug lighting off` draws every lit surface unlit, to measure what lighting costs the world. `shading off`
+    // (one constant colour) compiles no lighting either: a compiler that keeps the unused light loop (WebKit's) would
+    // otherwise still pay for it, and the step would not be the shading's floor.
+    defines.setValue("HAPTIC_UNLIT",
+      this.unlit || (isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "lighting")) || worldDebugOff(scene, "lighting") || worldDebugOff(scene, "shading"), true);
     // `worlddebug shadowtaps off` and `locallights off`: shadow lookups return lit, and no local light is visited.
     defines.setValue(WORLD_DEBUG_NO_SHADOW_TAPS_DEFINE, worldDebugOff(scene, "shadowtaps"), true);
     defines.setValue(WORLD_DEBUG_NO_LOCAL_LIGHTS_DEFINE, worldDebugOff(scene, "locallights"), true);

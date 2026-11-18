@@ -336,12 +336,13 @@ function createNodeMaterial(scene: Scene, name: string): NodeMaterial {
 
 /**
  * Rebinds per-mesh blocks for each draw of a frozen material, which Babylon skips when another mesh shared the effect:
- * the surface, the lattice, the 2D light block's binding point and the light block's receiver terms.
+ * the surface, the lattice, the 2D light block's binding point and the light block's receiver terms. Takes the graph's blocks, which
+ * the Material lists as attached only once it is built.
  */
-function rebindPerMesh(material: NodeMaterial): void {
-  const perMesh = material.attachedBlocks.filter((block) =>
+function rebindPerMesh(material: NodeMaterial, blocks: readonly NodeMaterialBlock[]): void {
+  const perMesh = blocks.filter((block) =>
     block instanceof UnlitSurfaceBlock || block instanceof Light2DBlock || block.getClassName() === "LatticeDeformerBlock");
-  const lighting = material.attachedBlocks.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
+  const lighting = blocks.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
   material.onBindObservable.add((mesh) => {
     if (!material.isFrozen) return;
     const effect = material.getEffect();
@@ -392,7 +393,7 @@ function createVariant(owner: NodeMaterial, surface: SurfaceKind, kind: Authored
   material.alphaMode = Constants.ALPHA_DISABLE;
   const blocks: NodeMaterialBlock[] = [];
   buildVariant(material, surface, kind, owner, blocks);
-  rebindPerMesh(material);
+  rebindPerMesh(material, blocks);
   shareCompiledProgram(material, JSON.stringify([NAME, kind, surface.textured, surface.msdf, material.shaderLanguage]));
   material.onDisposeObservable.addOnce(() => { for (const block of blocks) block.dispose(); });
   material.build();
@@ -439,7 +440,7 @@ function createInstance(scene: Scene, key: UnlitMaterialKey, owned = false): Unl
   const blocks: NodeMaterialBlock[] = [];
   const kind = surfaceKind(key);
   buildSurface(material, kind, blocks);
-  rebindPerMesh(material);
+  rebindPerMesh(material, blocks);
   // CEL and Screen-Space Shadows are the light block's scene-level defines, set from the Scene's settings.
   if (kind.lighting === "3d") followLightingDefines(material);
   shareCompiledProgram(material, JSON.stringify([NAME, "surface", kind.textured, kind.msdf, kind.lighting, material.shaderLanguage]));

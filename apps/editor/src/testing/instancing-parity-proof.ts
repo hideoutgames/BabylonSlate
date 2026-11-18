@@ -93,7 +93,8 @@ async function drawStreet(engine: AbstractEngine, pooled: boolean) {
     const sun = new DirectionalLight("sun", new Vector3(1, -0.6, 0.3).normalize(), scene);
     applyAuthoredLightProperties(sun, { color: [1, 0.95, 0.85], intensity: 3, castShadows: true, range: 40, outerAngle: 70, innerAngle: 40 });
 
-    const graph = new ForwardSceneFrameGraph(scene, { occlusion: true });
+    // A game's view: instances draw through the lean preparation's kept answers.
+    const graph = new ForwardSceneFrameGraph(scene, { occlusion: true, leanPreparation: true });
     const drawCalls = () => readEngineDrawCalls(engine as unknown as Parameters<typeof readEngineDrawCalls>[0]);
     const draw = async () => {
       const deadline = performance.now() + 20_000;

@@ -20,13 +20,15 @@ import { defineConfig, devices } from "@playwright/test";
  *     --config playwright.perf.config.ts --project perf-gpu
  * The geometry pass lighting proof runs on the machine's GPU the same way:
  *   HAPTIC_RENDER_NATIVE_GPU=1 pnpm run test:e2e e2e/geometry-pass-lighting.spec.ts  *     --config playwright.perf.config.ts --project perf-gpu
+ * HAPTIC_LARGE_WORLD=1 runs it and the main pass, shadow atlas and effects compose proofs with Large World Rendering on;
+ * the large world proof (`e2e/large-world.spec.ts`) compares both modes itself.
  * The editor-edit profiling route also needs a React profiling build:
  *   VITE_REACT_PROFILING=true pnpm run test:e2e e2e/editor-edit-profile.spec.ts \
  *     --config playwright.perf.config.ts --project perf-software
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(?:play-(performance|sustained)-route|feature-test-(?:perf|flythrough|load|heap)-route|editor-edit-profile|rendering-baseline|shared-outline|scalability-play|lattice-deformer|geometry-pass-lighting|main-pass-exactness|shadow-atlas-pages|effects-compose)\.spec\.ts$/,
+  testMatch: /(?:play-(performance|sustained)-route|feature-test-(?:perf|flythrough|load|heap)-route|editor-edit-profile|rendering-baseline|shared-outline|scalability-play|lattice-deformer|geometry-pass-lighting|main-pass-exactness|shadow-atlas-pages|effects-compose|large-world)\.spec\.ts$/,
   timeout: 600_000,
   fullyParallel: false,
   retries: 0,

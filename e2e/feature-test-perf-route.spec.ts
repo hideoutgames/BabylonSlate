@@ -26,6 +26,8 @@ import {
  *      HAPTIC_PERF_WARMUP_MS (default 10000), HAPTIC_PERF_SETTLE_MS (default 5000),
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra, applied with the Play console),
  *      HAPTIC_PERF_FRAMECAP (Play console `framecap`), HAPTIC_PERF_VIEWPORT_CAP (Engine Settings),
+ *      HAPTIC_PERF_LARGE_WORLD=1 (turns the project's Large World Rendering on in Project Settings after creation,
+ *      which rebuilds the project Engine before the first scene opens; the starter has it off),
  *      HAPTIC_PERF_COMMANDS (further Play console commands after the quality, separated by `;`),
  *      HAPTIC_PERF_PLAYS (default 1: Plays per scene, each after the editor's view is ready again),
  *      HAPTIC_PERF_REOPEN (default 1: also time reload + reopen), HAPTIC_PERF_LABEL,
@@ -50,12 +52,16 @@ import {
  *      mirrored frustum and counts the meshes the crop left out within the widened footprint: `rendererWork.mirrorCrop.misses`),
  *      HAPTIC_PERF_VERIFY_OUTLINES=1 (each strict outline cull also culls the full way, splitting its candidates afresh and
  *      walking every occluder, and counts each that disagrees: `rendererWork.outlineCull.mismatches`),
+ *      HAPTIC_PERF_VERIFY_PREPARATION=1 (each lean object and geometry pass in Play runs Babylon's own preparation, which
+ *      draws, then the lean one into scratch, whose queues must match in order: `rendererWork.leanPreparation.mismatches`),
  *      HAPTIC_PERF_DEVICE (`<width>x<height>@<scale>`, e.g. `1180x788@2`: the page's CSS viewport and device scale factor),
  *      HAPTIC_PERF_VIEWS (comma list of the Feature Test Check's Profile views, light|heavy|mirror: Play holds each in
  *      turn with `possess` instead of sampling the camera tour, and each view reports its GL pass structure and, with
  *      HAPTIC_PERF_GPU_PASSES=1, its GPU time per stage and pass from timer queries, `gpuprobe timers`),
  *      HAPTIC_PERF_VARIANTS (with HAPTIC_PERF_VIEWS: a JSON list of `{ label, commands, restore? }`; each view measures
- *      its baseline, then each variant followed by its restore and the baseline again, A B A C A).
+ *      its baseline, then each variant followed by its restore and the baseline again, A B A C A),
+ *      HAPTIC_PERF_HOLD_MS (default 3000: each held view's measured window; it reports its animation frames' rate,
+ *      `averageFps`, beside `drawnFps`, and the view's attempted, drawn and held frames, `view`).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -79,6 +85,7 @@ const WARMUP_MS = number("HAPTIC_PERF_WARMUP_MS", 10_000);
 const SETTLE_MS = number("HAPTIC_PERF_SETTLE_MS", 5_000);
 const QUALITY = process.env.HAPTIC_PERF_QUALITY ?? null;
 const FRAMECAP = process.env.HAPTIC_PERF_FRAMECAP ?? null;
+const LARGE_WORLD = process.env.HAPTIC_PERF_LARGE_WORLD === "1";
 const COMMANDS = (process.env.HAPTIC_PERF_COMMANDS ?? "").split(";").map((command) => command.trim()).filter(Boolean);
 const REOPEN = process.env.HAPTIC_PERF_REOPEN !== "0";
 const PLAYS = number("HAPTIC_PERF_PLAYS", 1, 1);
@@ -103,11 +110,14 @@ const VERIFY_CAPTURES = process.env.HAPTIC_PERF_VERIFY_CAPTURES === "1";
 /** Each cropped Mirror cull in Play also culls uncropped (the measured frames carry its cost). */
 const VERIFY_MIRROR_CROP = process.env.HAPTIC_PERF_VERIFY_MIRROR_CROP === "1";
 const VERIFY_OUTLINES = process.env.HAPTIC_PERF_VERIFY_OUTLINES === "1";
+/** Each lean object and geometry pass in Play also runs Babylon's preparation (the measured frames carry its cost). */
+const VERIFY_PREPARATION = process.env.HAPTIC_PERF_VERIFY_PREPARATION === "1";
 const DEVICE = /^(\d+)x(\d+)@(\d+(?:\.\d+)?)$/.exec(process.env.HAPTIC_PERF_DEVICE ?? "");
 type ProfileViewName = keyof typeof FEATURE_TEST_PROFILE_VIEWS;
 const VIEWS = (process.env.HAPTIC_PERF_VIEWS ?? "").split(",").map((view) => view.trim())
   .filter((view): view is ProfileViewName => view in FEATURE_TEST_PROFILE_VIEWS);
 const GPU_PASSES = process.env.HAPTIC_PERF_GPU_PASSES === "1";
+const HOLD_MS = number("HAPTIC_PERF_HOLD_MS", 3_000, 1_000);
 type Variant = { label: string; commands: string[]; restore?: string[] };
 const VARIANTS = JSON.parse(process.env.HAPTIC_PERF_VARIANTS ?? "[]") as Variant[];
 if (DEVICE) test.use({ viewport: { width: Number(DEVICE[1]), height: Number(DEVICE[2]) }, deviceScaleFactor: Number(DEVICE[3]) });
@@ -133,6 +143,7 @@ type PlayHost = {
     verifyCaptureActorLists: (enabled: boolean) => void;
     verifyMirrorFootprintCrops: (enabled: boolean) => void;
     verifySharedOutlineCulls: (enabled: boolean) => void;
+    verifyLeanPreparation: (enabled: boolean) => void;
   };
 };
 
@@ -387,6 +398,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (VERIFY_CAPTURES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyCaptureActorLists(true));
   if (VERIFY_MIRROR_CROP) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorFootprintCrops(true));
   if (VERIFY_OUTLINES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifySharedOutlineCulls(true));
+  if (VERIFY_PREPARATION) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyLeanPreparation(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
@@ -447,7 +459,7 @@ async function probeRun(page: Page, action: "timers" | "burst") {
 async function measureHeld(page: Page) {
   await waitForViewDrawing(page);
   await page.waitForTimeout(SETTLE_MS);
-  const window = await samplePlay(page, Math.min(SAMPLE_MS, 3_000));
+  const window = await samplePlay(page, HOLD_MS);
   await runConsoleCommand(page, "gpuprobe on");
   await page.waitForTimeout(1_000);
   const signature = (await gpuProbeReading(page))?.signature ?? null;
@@ -455,7 +467,7 @@ async function measureHeld(page: Page) {
   const timers = GPU_PASSES ? [await probeRun(page, "timers"), await probeRun(page, "timers")] : null;
   const burst = GPU_PASSES ? await probeRun(page, "burst") : null;
   return {
-    drawnFps: window.drawnFps, frameCpu: window.frameCpu.medianMs, frameDraws: window.frameDraws, drawsPerPass: window.drawsPerPass,
+    averageFps: window.averageFps, drawnFps: window.drawnFps, view: window.view, frameCpu: window.frameCpu.medianMs, frameDraws: window.frameDraws, drawsPerPass: window.drawsPerPass,
     cpuMsPerPass: window.cpuMsPerPass,
     width: window.rendering.width, height: window.rendering.height, settings: window.rendering.settings, signature, timers, burst,
   };
@@ -502,6 +514,20 @@ async function waitForSceneView(page: Page): Promise<void> {
 
 test.skip(!ENABLED, "FeatureTest performance route; set HAPTIC_PERF_FEATURE_TEST=1 to run it.");
 
+
+/** Project Settings > Rendering > Pipeline: Large World Rendering on, staged until Done. */
+async function turnOnLargeWorldRendering(page: Page): Promise<void> {
+  await page.getByTestId("settings-menu").click();
+  await page.getByTestId("project-settings").click();
+  await page.getByTestId("settings-modal-category-rendering").click();
+  const pipeline = page.getByTestId("settings-modal").getByRole("button", { name: "Pipeline", exact: true });
+  if ((await pipeline.getAttribute("aria-expanded")) !== "true") await pipeline.click();
+  const toggle = page.getByTestId("setting-render-large-world");
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Project Settings" })).toBeHidden();
+}
 test("FeatureTest performance route", async ({ page }, testInfo) => {
   test.setTimeout(20 * 60_000 + SCENES.length * PLAYS * (SAMPLES * SAMPLE_MS * 2 + WARMUP_MS + SETTLE_MS + 5 * 60_000));
   const pageErrors: string[] = [];
@@ -531,6 +557,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   await cdp.send("Performance.enable");
 
   const createToInteractiveMs = await createFeatureTestProject(page);
+  if (LARGE_WORLD) await turnOnLargeWorldRendering(page);
   // The editor document starts at Homepage boot, so this covers boot plus creation.
   const bootAndCreateLongTasks = await longTasksSince(page, 0);
   const encodeWaitMs = await waitForTextureEncodes(page);
@@ -580,7 +607,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     viewportCss: page.viewportSize(),
     adapter,
     env: {
-      SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED, VERIFY_DRAW_LISTS,
+      SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, LARGE_WORLD, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED, VERIFY_DRAW_LISTS,
       DEVICE: DEVICE?.[0] ?? null, VIEWS, GPU_PASSES, VARIANTS,
     },
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },

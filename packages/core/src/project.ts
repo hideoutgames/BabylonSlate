@@ -142,6 +142,12 @@ export interface RenderProjectSettings {
    * `blackBars` (`pixelatedUpscaling`).
    */
   upscaling: RenderUpscaling;
+  /**
+   * Large World Rendering: Babylon's floating origin (`useLargeWorldRendering`), which draws every placement relative
+   * to the camera's eye in 64 bits so geometry kilometres from the origin does not jitter. It is an Engine construction
+   * option, so the project's Engine (editor, Play, Preview Build, exported player) is built with it. Off when missing.
+   */
+  largeWorldRendering?: boolean;
 }
 
 export type RenderUpscaling = "smooth" | "pixelated";
@@ -163,6 +169,7 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
   height: DEFAULT_RENDER_HEIGHT,
   blackBars: false,
   upscaling: "smooth",
+  largeWorldRendering: false,
 };
 
 /**
@@ -737,6 +744,7 @@ export function normalizeRenderProjectSettings(input: unknown): RenderProjectSet
     height: normalizePositiveInt(value?.height, DEFAULT_RENDER_HEIGHT),
     blackBars: value?.blackBars === true,
     upscaling: value?.upscaling === "pixelated" ? "pixelated" : "smooth",
+    largeWorldRendering: value?.largeWorldRendering === true,
   };
 }
 

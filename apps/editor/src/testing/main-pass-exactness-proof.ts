@@ -4,7 +4,8 @@
  * shadowed sun, shadowed spot and point lights, two rect lights (one facing away from most of the view) and
  * Screen-Space Shadows. `reference` draws it as before the savings: the light block's rect loop visits every rect light
  * and fetches the LTC tables per light, a spot light's shadow is looked up outside its cone, and a capture's own sun
- * maps redraw every time. The spec compares the two runs' frames and
+ * maps redraw every time, and the view's object and geometry passes take Babylon's preparation instead of the lean one
+ * (`leanPreparation`). The spec compares the two runs' frames and
  * capture images byte for byte, after a still stretch and after a caster moves.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
@@ -29,7 +30,7 @@ import {
   createDefaultRenderTargetCaptureProperties, normalizeCelShadingSettings, normalizeRenderEffectsSettings, normalizeRenderingQuality,
   normalizeShadowSettings, parseMirrorProperties, type RenderTargetCaptureQuality,
 } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, RenderTargetCaptures } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, RenderTargetCaptures, largeWorldEngineOptions } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { retainAreaLightLookup } from "../../../../packages/render/src/area-light-resources";
@@ -120,7 +121,7 @@ async function readCapture(texture: BaseTexture): Promise<number[]> {
 
 export type MainPassExactnessImages = { view: number[]; captures: Record<Shown, number[]> };
 
-export async function runMainPassExactnessProof(options: { reference: boolean }) {
+export async function runMainPassExactnessProof(options: { reference: boolean; largeWorld?: boolean }) {
   const block = HapticLightingBlock.prototype as unknown as { _buildBlock(state: NodeMaterialBuildState): unknown };
   const build = block._buildBlock;
   const controller = SceneShadowController.prototype as unknown as { applyViewRefresh(generator: ShadowGenerator): void };
@@ -144,7 +145,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean })
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, ...largeWorldEngineOptions(options.largeWorld === true) });
   engine.setSize(SIZE, SIZE);
   const scene = new Scene(engine);
   try {
@@ -222,7 +223,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean })
     mirror.position.set(3.2, 1.2, 4);
     mirror.rotation.y = Math.PI / 4;
 
-    const view = new SceneRenderCoordinator(scene);
+    const view = new SceneRenderCoordinator(scene, { leanPreparation: !options.reference });
     const captures = new RenderTargetCaptures(scene);
     captures.setAssets(
       new Map(QUALITIES.map((quality) => [quality, { mode: "SceneColor" as const, width: CAPTURE_SIZE, height: CAPTURE_SIZE }])),

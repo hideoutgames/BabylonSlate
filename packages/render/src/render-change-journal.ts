@@ -17,7 +17,7 @@ export const RenderChange = {
   Visibility: 2,
   /** Its own or an ancestor's enabled state was set, or it was re-parented (`_syncParentEnabledState`). */
   Enabled: 4,
-  /** Its Material was replaced (`_setMaterial`). */
+  /** Its Material, or its Material for a render pass, was replaced (`_setMaterial`, `setMaterialForRenderPass`). */
   Material: 8,
   /** Its geometry was replaced or notified an update (`applyToMesh`, `releaseForMesh`, `_notifyUpdate`). */
   Geometry: 16,
@@ -28,6 +28,11 @@ export const RenderChange = {
    * program. A change that crosses full opacity, which changes how it blends, also marks the Scene's readiness.
    */
   Style: 64,
+  /**
+   * What decides where its draws queue beyond its Material and visibility: its rendering group, layer mask, vertex
+   * alpha or LOD levels (`renderingGroupId`, `layerMask`, `hasVertexAlpha`, `addLODLevel`, `removeLODLevel`).
+   */
+  Dispatch: 128,
 } as const;
 
 /** Entries kept for the slowest reader; one further behind starts over (`drain` returns false). */
@@ -167,7 +172,7 @@ class Reader implements RenderChangeReader {
 
 /** Every kind of change. */
 const ALL_KINDS = RenderChange.Transform | RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material |
-  RenderChange.Geometry | RenderChange.Other | RenderChange.Style;
+  RenderChange.Geometry | RenderChange.Other | RenderChange.Style | RenderChange.Dispatch;
 
 /**
  * Opens a reader of `scene`'s changes of `kinds` (`RenderChange` bits; all by default). The Scene records a kind only
@@ -231,13 +236,14 @@ function noteInheritors(journal: Journal, node: Node): void {
 }
 
 /** The property names whose Babylon writes the journal hooks, on the prototypes it hooks them on. */
-const HOOKED_NAMES = ["isVisible", "inheritVisibility", "visibility", "material", "_setMaterial", "_syncParentEnabledState", "_afterComputeWorldMatrix"];
+const HOOKED_NAMES = ["isVisible", "inheritVisibility", "visibility", "material", "_setMaterial", "_syncParentEnabledState", "_afterComputeWorldMatrix",
+  "setMaterialForRenderPass", "renderingGroupId", "layerMask", "hasVertexAlpha", "addLODLevel", "removeLODLevel"];
 
 const hookedPrototypes = new Set<object>();
 const followedPrototypes = new WeakMap<object, boolean>();
 
 /**
- * Whether the journal hears every visibility, enabled and Material write of `node`: false when its class (beyond
+ * Whether the journal hears every visibility, enabled, Material and dispatch write of `node`: false when its class (beyond
  * Babylon's Node, TransformNode, AbstractMesh, Mesh and InstancedMesh, whose writes it hooks) or the object itself
  * redefines one of them (a Gaussian splat part proxy's `isVisible`, a line mesh's `material`). A reader polls such a
  * node instead.
@@ -344,6 +350,40 @@ function install(): void {
     const journal = journalOf(this);
     if (journal && was !== this.material) noteMesh(journal, this, RenderChange.Material);
   };
+  type PassMaterial = { setMaterialForRenderPass: (this: AbstractMesh, id: number, value: unknown) => void };
+  const passMaterialPrototype = AbstractMesh.prototype as unknown as PassMaterial;
+  const setForPass = passMaterialPrototype.setMaterialForRenderPass;
+  passMaterialPrototype.setMaterialForRenderPass = function (this: AbstractMesh, id: number, value: unknown) {
+    const was = this.getMaterialForRenderPass(id);
+    setForPass.call(this, id, value);
+    const journal = journalOf(this);
+    if (journal && was !== this.getMaterialForRenderPass(id)) noteMesh(journal, this, RenderChange.Material);
+  };
+
+  // An instance's draws queue by its source's rendering group and vertex alpha, so a source's write notes its instances.
+  for (const name of ["renderingGroupId", "layerMask", "hasVertexAlpha"]) {
+    const property = accessor(AbstractMesh.prototype, name);
+    Object.defineProperty(AbstractMesh.prototype, name, {
+      ...property,
+      set(this: AbstractMesh, value: unknown) {
+        const was: unknown = property.get!.call(this);
+        property.set!.call(this, value);
+        const journal = journalOf(this);
+        if (journal && !Object.is(was, property.get!.call(this))) noteMesh(journal, this, RenderChange.Dispatch);
+      },
+    });
+  }
+  type LodMethods = Record<"addLODLevel" | "removeLODLevel", (this: Mesh, ...args: unknown[]) => Mesh>;
+  const lodPrototype = Mesh.prototype as unknown as LodMethods;
+  for (const name of ["addLODLevel", "removeLODLevel"] as const) {
+    const original = lodPrototype[name];
+    lodPrototype[name] = function (this: Mesh, ...args: unknown[]) {
+      const result = original.apply(this, args);
+      const journal = journalOf(this);
+      if (journal) noteMesh(journal, this, RenderChange.Dispatch);
+      return result;
+    };
+  }
 
   type GeometryMethods = {
     _notifyUpdate: (this: Geometry, kind?: string) => void;

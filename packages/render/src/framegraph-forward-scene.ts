@@ -65,6 +65,7 @@ import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./va
 import { isRevealPending, revealRound } from "./reveal-pending";
 import { withFirstDrawRound } from "./variant-first-draws";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
+import { attachLeanPreparation, leanPreparationDiagnostics } from "./lean-render-preparation";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { whenPresentationFenceClear } from "./presented-frame";
 import {
@@ -122,6 +123,11 @@ type ForwardSceneFrameGraphOptions = {
    * other mesh is as that probe found it, ready. A mark that names no mesh, and the view's preparation, still ask all.
    */
   scopedStrictProbes?: boolean;
+  /**
+   * A game's world view (Play's, the player's): its object pass and geometry passes keep the per-mesh answers of
+   * their preparation between frames (`attachLeanPreparation`). Never with `auxiliary`.
+   */
+  leanPreparation?: boolean;
 };
 /**
  * Graph renders and camera assignments in progress, per scene. Babylon clears
@@ -412,12 +418,14 @@ export class ForwardSceneFrameGraph {
     const shadowJournal = findSceneShadowController(this.scene)?.journalDiagnostics();
     const mirrors = mirrorDiagnostics(this.scene);
     const captureLists = captureActorListDiagnostics(this.scene);
+    const leanPreparation = leanPreparationDiagnostics(this.scene);
     return {
       ...(captureLists ? { captureActorLists: { ...captureLists } } : {}),
       ...(shadowJournal ? { shadowJournal } : {}),
       ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...(mirrors ? { mirrorCrop: { checks: mirrors.cropChecks, misses: mirrors.cropMisses } } : {}),
       ...(this.outlineView ? { outlineCull: this.outlineView.cullDiagnostics() } : {}),
+      ...(leanPreparation ? { leanPreparation } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
@@ -458,6 +466,8 @@ export class ForwardSceneFrameGraph {
   private readonly seedsFromSceneDepth: boolean;
   /** `ForwardSceneFrameGraphOptions.scopedStrictProbes`. */
   private readonly scopedStrictProbes: boolean;
+  /** `ForwardSceneFrameGraphOptions.leanPreparation`. */
+  private readonly leanPreparation: boolean;
   /** The candidates a seeded spatial geometry pass's readiness probe asks (`sceneDepthLacks`). */
   private readonly seededProbeList: FrameGraphObjectList = { meshes: [], particleSystems: null };
   private clear: FrameGraphClearTextureTask | undefined;
@@ -581,6 +591,7 @@ export class ForwardSceneFrameGraph {
     this.occlusion = options.occlusion && !options.auxiliary ? new ViewOcclusion() : undefined;
     this.seedsFromSceneDepth = options.seedsFromSceneDepth === true && !options.auxiliary;
     this.scopedStrictProbes = options.scopedStrictProbes === true && !options.auxiliary;
+    this.leanPreparation = options.leanPreparation === true && !options.auxiliary;
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = (reason: SceneReadinessDirtyReason) => () => this.markReadinessDirty(reason);
@@ -1816,6 +1827,13 @@ export class ForwardSceneFrameGraph {
         this.cull.drawList = attachLayerDrawList(scene, this.graph, this.objects.objectRenderer, () => this.cull?.camera,
           !this.auxiliary && !this.water && !this.effectsGraph && !occlusion && !this.outlineTask && !this.postProcessGraph?.geometryTasks.length);
         this.observeDrawPasses();
+        if (this.leanPreparation) {
+          // The water split's opaque pass draws through the objects' renderer; its transparent pass keeps Babylon's.
+          for (const task of this.graph.tasks) {
+            if (task === this.objects) attachLeanPreparation(this.objects.objectRenderer, "objects");
+            else if (task instanceof LogicalGeometryTask) attachLeanPreparation(task.objectRenderer, "geometry");
+          }
+        }
       }
       this.assignCamera(camera);
       this.syncSceneInputs();

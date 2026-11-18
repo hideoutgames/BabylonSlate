@@ -236,6 +236,7 @@ describe("exportGame", () => {
     expect(result.value.manifest.startupSceneGuid).toBe("scene-1");
     expect(result.value.manifest.render).toEqual({
       mode: "cel",
+      largeWorldRendering: false,
       environmentLighting: { enabled: false, intensity: 2, rotationYDegrees: 45, celStrength: 0.5 },
       cel,
       shadows,
