@@ -20,6 +20,7 @@ import {
   isLatentFunctionKey,
   firstEnumMember,
   pinDefaultPropertyKey,
+  REROUTE_NODE_TYPE,
 } from "@haptic/scripting";
 import { animEventNodeTitle } from "../lib/anim-graph-events";
 import { ANIM_POSE_SAVE_CACHED_TYPE, ANIM_POSE_USE_CACHED_TYPE, cachedPoseNodeTitle } from "@haptic/anim-graph";
@@ -130,6 +131,8 @@ function pruneIncompatibleEdges(
     if (!source || !target) return false;
     const sourceTypeId = catalogTypeId(source);
     const targetTypeId = catalogTypeId(target);
+    // A knot takes the type of what it carries, exec included; validation checks the wire it stands in.
+    if (sourceTypeId === REROUTE_NODE_TYPE || targetTypeId === REROUTE_NODE_TYPE) return true;
     if (
       !isVariableAccessTypeId(sourceTypeId) &&
       !isVariableAccessTypeId(targetTypeId) &&
@@ -402,6 +405,9 @@ function withVisualMeta(
   }
   if (def?.declaredPinOrder === true) {
     next.__declaredPinOrder = true;
+  }
+  if (typeId === REROUTE_NODE_TYPE) {
+    next.__reroute = true;
   }
   return next;
 }

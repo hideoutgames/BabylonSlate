@@ -22,6 +22,7 @@ import {
   isSceneLayerExclusiveComponent,
 } from "@haptic/object-model";
 import { singletonEventKey, variableTypeFromPinType } from "@haptic/scripting";
+import { isRerouteNode, wiredSource } from "./reroute-wires";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { renamedComponentName } from "../panels/add-component-catalog";
 import {
@@ -491,10 +492,13 @@ function retargetComponentEventCalls(
   const retargeted = new Map<string, GraphNode>();
   const droppedEdges = new Set<GraphEdge>();
   const gets = new Set<string>();
+  // Reroute knots between a retargeted Call's Target and its Get.
+  const chainKnots = new Set<string>();
   for (const node of graph.nodes) {
     if (node.type !== "flow.event.call" || node.data.implicitSelf !== false) continue;
     const wire = graph.edges.find((edge) => edge.target === node.id && edge.targetHandle === "target");
-    const get = wire ? byId.get(wire.source) : undefined;
+    const source = wire ? wiredSource(graph, node.id, "target") : undefined;
+    const get = source ? byId.get(source.nodeId) : undefined;
     if (!wire || get?.type !== "variables.get" || typeof get.data.componentId !== "string") continue;
     const copy = refs.pastedComponentEvents.get(
       `${get.data.componentId}\0${formatEventMemberName(String(node.data.name ?? ""))}`,
@@ -502,6 +506,11 @@ function retargetComponentEventCalls(
     if (!copy) continue;
     droppedEdges.add(wire);
     gets.add(get.id);
+    for (let knot = byId.get(wire.source); knot && isRerouteNode(knot) && !chainKnots.has(knot.id);) {
+      chainKnots.add(knot.id);
+      const into = graph.edges.find((edge) => edge.target === knot!.id);
+      knot = into ? byId.get(into.source) : undefined;
+    }
     retargeted.set(
       node.id,
       withClassId(
@@ -520,8 +529,23 @@ function retargetComponentEventCalls(
     );
   }
   if (retargeted.size === 0) return graph;
-  const edges = graph.edges.filter((edge) => !droppedEdges.has(edge));
-  const unused = new Set([...gets].filter((id) => !edges.some((edge) => edge.source === id)));
+  let edges = graph.edges.filter((edge) => !droppedEdges.has(edge));
+  // A knot of the chain that now feeds nothing goes with its wires, back to the Get, so no
+  // half-chain is left; a knot that still feeds another node stays.
+  const droppedKnots = new Set<string>();
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const id of chainKnots) {
+      if (droppedKnots.has(id) || edges.some((edge) => edge.source === id)) continue;
+      droppedKnots.add(id);
+      edges = edges.filter((edge) => edge.target !== id);
+      changed = true;
+    }
+  }
+  const unused = new Set([
+    ...droppedKnots,
+    ...[...gets].filter((id) => !edges.some((edge) => edge.source === id)),
+  ]);
   return {
     nodes: graph.nodes.flatMap((node) => (unused.has(node.id) ? [] : [retargeted.get(node.id) ?? node])),
     edges: edges.filter((edge) => !unused.has(edge.target)),

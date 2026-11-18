@@ -780,3 +780,142 @@ function postProcessSampling(
   );
   return doc;
 }
+
+describe("Named Reroute lowering", () => {
+  const wire = (id: string, sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) =>
+    ({ id, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
+  const declaration = (id: string, name: string) =>
+    ({ id, type: "reroute.declaration", position: { x: 0, y: 0 }, properties: { name, color: [1, 0, 0] } });
+  const usage = (id: string, declarationId: string) =>
+    ({ id, type: "reroute.usage", position: { x: 0, y: 0 }, properties: { declarationId } });
+  const lowered = (doc: MaterialDocument, functions = {}) => {
+    const result = lowerMaterialDocument(doc, { functions });
+    if (!result.ok) throw new Error(result.diagnostics.map((row) => row.code).join(", "));
+    return result.plan;
+  };
+
+  it("lowers a graph wired through Named Reroutes to the same plan and hash as the direct wires", () => {
+    const direct = surfaceWithMultiply();
+    const rerouted = surfaceWithMultiply();
+    rerouted.nodes.push(declaration("tintReroute", "Tint"), usage("tintUse", "tintReroute"), usage("spareUse", "tintReroute"),
+      declaration("colorReroute", "Color"), usage("colorUse", "colorReroute"));
+    rerouted.edges = rerouted.edges.filter((edge) => edge.id !== "e-tint-mul" && edge.id !== "e-color-mul");
+    rerouted.edges.push(
+      wire("e-tint-r", "tint", "out", "tintReroute", "in"), wire("e-r-mul", "tintUse", "out", "mul", "b"),
+      wire("e-color-r", "baseColor", "out", "colorReroute", "in"), wire("e-c-mul", "colorUse", "out", "mul", "a"),
+    );
+
+    const plan = lowered(rerouted);
+    expect(plan).toEqual(lowered(direct));
+    expect(plan.operations.map((operation) => operation.nodeType)).toEqual(["const.color", "const.vec3", "math.multiply"]);
+  });
+
+  it("converts at the consumer's wire, from the type wired into the declaration", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "scalar", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [0.25] } },
+      declaration("r", "Scalar"), usage("u", "r"));
+    doc.edges = [wire("e-scalar-r", "scalar", "out", "r", "in"), wire("e-u-out", "u", "out", "output", "baseColor")];
+
+    const plan = lowered(doc);
+    expect(plan.outputs.baseColor).toEqual({ kind: "operation", operationId: "scalar", pinId: "out", conversions: [{ from: "float", to: "vec3" }] });
+    const direct = createDefaultMaterialDocument();
+    direct.nodes.push({ id: "scalar", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [0.25] } });
+    direct.edges = [wire("e-direct", "scalar", "out", "output", "baseColor")];
+    expect(plan.hash).toBe(lowered(direct).hash);
+  });
+
+  it("carries a Texture through a Named Reroute exactly as a direct wire, binding included", () => {
+    const build = (rerouted: boolean) => {
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push(
+        { id: "albedo", type: "param.texture", position: { x: 0, y: 0 }, properties: { name: "Albedo", textureGuid: "tex-albedo" } },
+        { id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: {} },
+      );
+      doc.edges = [wire("e-sample", "sample", "rgb", "output", "baseColor")];
+      if (rerouted) {
+        doc.nodes.push(declaration("r", "Albedo Texture"), usage("u", "r"));
+        doc.edges.push(wire("e-albedo-r", "albedo", "out", "r", "in"), wire("e-u-sample", "u", "out", "sample", "texture"));
+      } else {
+        doc.edges.push(wire("e-albedo-sample", "albedo", "out", "sample", "texture"));
+      }
+      return lowered(doc);
+    };
+
+    const plan = build(true);
+    expect(plan).toEqual(build(false));
+    expect(plan.textures).toEqual([{ operationId: "albedo", textureGuid: "tex-albedo" }]);
+    expect(plan.operations.find((operation) => operation.id === "sample")?.inputs.texture).toEqual({ kind: "operation", operationId: "albedo", pinId: "out" });
+  });
+
+  it("reads a Named Reroute inside a Material Function from that function's own graph", () => {
+    const body = (rerouted: boolean) => {
+      const fn = createDefaultMaterialFunctionDocument("Tint");
+      fn.nodes.push({ id: "boost", type: "math.multiply", position: { x: 0, y: 0 }, properties: { "default:b": [2] } });
+      fn.edges = [wire("e-in-boost", "inputs", "in_value", "boost", "a")];
+      if (rerouted) {
+        fn.nodes.push(declaration("r", "Boosted"), usage("u", "r"));
+        fn.edges.push(wire("e-boost-r", "boost", "out", "r", "in"), wire("e-u-out", "u", "out", "outputs", "out_value"));
+      } else {
+        fn.edges.push(wire("e-boost-out", "boost", "out", "outputs", "out_value"));
+      }
+      return fn;
+    };
+    const material = () => {
+      const doc = createDefaultMaterialDocument();
+      // The Material has its own declaration under the same id; the body's usage must not read it.
+      doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn" } }, declaration("r", "Outer"));
+      doc.edges = [
+        wire("e-color-call", "baseColor", "out", "call", "in_value"),
+        wire("e-call-out", "call", "out_value", "output", "baseColor"),
+        wire("e-color-r", "baseColor", "out", "r", "in"),
+      ];
+      return doc;
+    };
+
+    const plan = lowered(material(), { fn: body(true) });
+    expect(plan).toEqual(lowered(material(), { fn: body(false) }));
+    expect(plan.outputs.baseColor).toEqual({ kind: "operation", operationId: "call/boost", pinId: "out" });
+  });
+
+  it("reads 0 from a declaration with nothing wired into it", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(declaration("r", "Empty"), usage("u", "r"), usage("v", "r"));
+    doc.edges = [wire("e-u-metallic", "u", "out", "output", "metallic"), wire("e-v-color", "v", "out", "output", "baseColor")];
+
+    const plan = lowered(doc);
+    expect(plan.outputs.metallic).toEqual({ kind: "constant", type: "float", value: [0] });
+    expect(plan.outputs.baseColor).toEqual({ kind: "constant", type: "vec3", value: [0, 0, 0] });
+    expect(plan.operations).toEqual([]);
+  });
+});
+
+describe("Named Reroute loops in called Material Functions", () => {
+  const wire = (id: string, sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) =>
+    ({ id, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
+  const declaration = (id: string, name: string) =>
+    ({ id, type: "reroute.declaration", position: { x: 0, y: 0 }, properties: { name, color: [1, 0, 0] } });
+  const usage = (id: string, declarationId: string) =>
+    ({ id, type: "reroute.usage", position: { x: 0, y: 0 }, properties: { declarationId } });
+  const caller = () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn" } });
+    doc.edges = [wire("e-color-call", "baseColor", "out", "call", "in_value"), wire("e-call-out", "call", "out_value", "output", "baseColor")];
+    return doc;
+  };
+
+  it("reports a function whose usage feeds its own declaration instead of lowering forever", () => {
+    const selfLoop = createDefaultMaterialFunctionDocument("Loop");
+    selfLoop.nodes.push(declaration("d", "D"), usage("u", "d"));
+    selfLoop.edges = [wire("e-u-d", "u", "out", "d", "in"), wire("e-u-out", "u", "out", "outputs", "out_value")];
+    const mutual = createDefaultMaterialFunctionDocument("Mutual");
+    mutual.nodes.push(declaration("x", "X"), usage("ux", "x"), declaration("y", "Y"), usage("uy", "y"));
+    mutual.edges = [wire("e-uy-x", "uy", "out", "x", "in"), wire("e-ux-y", "ux", "out", "y", "in"), wire("e-ux-out", "ux", "out", "outputs", "out_value")];
+
+    for (const [fn, loops] of [[selfLoop, ["call/d"]], [mutual, ["call/x", "call/y"]]] as const) {
+      const result = lowerMaterialDocument(caller(), { functions: { fn } });
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics.filter((row) => row.code === "material.reroute.selfUse").map((row) => row.nodeId)).toEqual(loops);
+    }
+  });
+});
+

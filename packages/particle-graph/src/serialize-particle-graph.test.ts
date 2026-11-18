@@ -156,6 +156,40 @@ describe("particle graph canvas adapter", () => {
     }
   });
 
+  it("offers a Reroute knot that saves without editor keys and passes types through to the nodes it joins", () => {
+    const reroute = particlePaletteNodes().find((entry) => entry.id === "utility.reroute")!;
+    expect(reroute).toMatchObject({ title: "Reroute", category: "Utility", searchAliases: ["knot", "redirect", "wire"] });
+    expect(reroute.defaultData).toEqual({ __particleRole: "value", __reroute: true });
+    expect(reroute.pins.map(({ id, direction, kind, type }) => ({ id, direction, kind, type }))).toEqual([
+      { id: "in", direction: "in", kind: "data", type: { kind: "resolvingWildcard" } },
+      { id: "out", direction: "out", kind: "data", type: { kind: "resolvingWildcard" } },
+    ]);
+    const doc = createDefaultParticleGraphDocument();
+    doc.nodes.push(
+      { id: "up", type: "const.vec3", position: { x: 0, y: 0 }, properties: { value: [0, 1, 0] } },
+      { id: "k", type: "utility.reroute", position: { x: 5, y: 6 }, properties: {} },
+      { id: "add", type: "math.add", position: { x: 0, y: 0 }, properties: {} },
+    );
+    doc.edges.push(
+      { id: "u", sourceNodeId: "up", sourcePinId: "out", targetNodeId: "k", targetPinId: "in" },
+      { id: "v", sourceNodeId: "k", sourcePinId: "out", targetNodeId: "add", targetPinId: "a" },
+    );
+    const hydrated = hydrateParticleGraphForEditor(particleGraphToSerialized(doc));
+    expect(hydrated.nodes.find((node) => node.id === "k")!.data).toMatchObject({ __reroute: true, title: "Reroute" });
+    // Add reads the Vector3 behind the knot.
+    expect(hydrated.nodes.find((node) => node.id === "add")!.data.__pins).toContainEqual(
+      expect.objectContaining({ id: "out", type: { kind: "vec3" }, typeLabel: "V3" }),
+    );
+    expect(serializedToParticleGraph(hydrated, doc)).toEqual(doc);
+  });
+
+  it("lets a Reroute no wire has typed take any pin, Particle included", () => {
+    for (const kind of ["float", "vec3", "color", "particle", "generic"]) {
+      expect(particlePinsAreCompatible(pin(kind), pin("resolvingWildcard")), kind).toBe(true);
+      expect(particlePinsAreCompatible(pin("resolvingWildcard"), pin(kind)), kind).toBe(true);
+    }
+  });
+
   it("lists one new-parameter entry per type under Parameter, after Constants", () => {
     const palette = particlePaletteNodes();
     expect(palette.some((entry) => entry.id === "input.parameter")).toBe(false);

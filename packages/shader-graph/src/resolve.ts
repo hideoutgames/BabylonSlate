@@ -1,6 +1,10 @@
 import {
+  isNamedRerouteDeclarationType,
+  isNamedRerouteUsageType,
   materialNodeDefinition,
+  namedRerouteDeclarationId,
   type MaterialNodeDefinition,
+  type MaterialPinDefinition,
 } from "./catalog";
 import type {
   MaterialFunctionDocument,
@@ -29,6 +33,12 @@ export interface TypeResolver {
   inputType(nodeId: string, pinId: string): MaterialValueType | null;
   /** Resolved generic group, `"conflict"` when inputs disagree, or undefined. */
   genericOf(nodeId: string): MaterialValueType | "conflict" | undefined;
+  /**
+   * The type a Named Reroute declaration, or a usage of one, carries: its declaration's wired source
+   * type. Null when the declaration is unwired, missing or part of a reroute loop; the pins then
+   * resolve as Float.
+   */
+  namedRerouteType(nodeId: string): MaterialValueType | null;
   conflicts(): string[];
 }
 
@@ -75,6 +85,19 @@ export function plumbingDefinition(
 }
 
 /**
+ * A Named Reroute's pins at the type it carries: the declaration's input and the usage's output take
+ * `type`, or stay `wildcard` when it is not known.
+ */
+export function namedRerouteDefinition(
+  base: MaterialNodeDefinition,
+  type: MaterialValueType | null,
+): MaterialNodeDefinition {
+  if (!type) return base;
+  const typed = (pins: readonly MaterialPinDefinition[]) => pins.map((pin) => ({ ...pin, type: { kind: type } }));
+  return { ...base, inputs: typed(base.inputs), outputs: typed(base.outputs) };
+}
+
+/**
  * Lazy type resolution over one graph. Generic nodes resolve from the types
  * actually wired in, so a chain of generic nodes propagates a vector width all
  * the way down instead of collapsing to Float at the first hop.
@@ -88,6 +111,10 @@ export function createTypeResolver(
   const definitions = new Map<string, MaterialNodeDefinition | undefined>();
   const generics = new Map<string, MaterialValueType | "conflict">();
   const inProgress = new Set<string>();
+  const rerouteTypes = new Map<string, MaterialValueType | null>();
+  // Declarations being resolved: a usage reached again inside its own chain is a loop that
+  // validation reports, so it resolves as unknown instead of recursing.
+  const reroutesInProgress = new Set<string>();
   // First edge into each input pin, as `edges.find` answered; built when a generic node asks.
   let incoming: Map<string, Map<string, MaterialGraphEdge>> | undefined;
   const incomingEdge = (nodeId: string, pinId: string): MaterialGraphEdge | undefined => {
@@ -113,6 +140,10 @@ export function createTypeResolver(
       if (node.type === "vector.mask") definition = vectorMaskDefinition(node, definition);
       if (node.type === "vector.swizzle") definition = swizzleDefinition(node, definition);
       if (node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) definition = materialGlobalParameterDefinition(node, definition);
+      // Unknown reroute types are Float, as the plan reads them.
+      if (isNamedRerouteDeclarationType(node.type) || isNamedRerouteUsageType(node.type)) {
+        definition = namedRerouteDefinition(definition, namedRerouteType(nodeId) ?? "float");
+      }
       if (node.type === "function.call") {
         const guid = node.properties.functionGuid;
         const fn = typeof guid === "string" ? functions[guid] : undefined;
@@ -162,6 +193,27 @@ export function createTypeResolver(
     return value;
   };
 
+  function declarationType(declarationId: string): MaterialValueType | null {
+    const cached = rerouteTypes.get(declarationId);
+    if (cached !== undefined) return cached;
+    const node = nodesById.get(declarationId);
+    if (!node || !isNamedRerouteDeclarationType(node.type) || reroutesInProgress.has(declarationId)) return null;
+    reroutesInProgress.add(declarationId);
+    const edge = incomingEdge(declarationId, "in");
+    const type = edge ? outputType(edge.sourceNodeId, edge.sourcePinId) : null;
+    reroutesInProgress.delete(declarationId);
+    rerouteTypes.set(declarationId, type);
+    return type;
+  }
+
+  function namedRerouteType(nodeId: string): MaterialValueType | null {
+    const node = nodesById.get(nodeId);
+    if (!node) return null;
+    if (isNamedRerouteDeclarationType(node.type)) return declarationType(nodeId);
+    if (isNamedRerouteUsageType(node.type)) return declarationType(namedRerouteDeclarationId(node));
+    return null;
+  }
+
   function outputType(
     nodeId: string,
     pinId: string,
@@ -170,6 +222,7 @@ export function createTypeResolver(
     if (!definition) return null;
     const pin = definition.outputs.find((entry) => entry.id === pinId);
     if (!pin) return null;
+    if (pin.type.kind === "wildcard") return "float";
     if (pin.type.kind !== "generic") return pin.type.kind;
     const resolved = genericOf(nodeId);
     return resolved && resolved !== "conflict" ? resolved : null;
@@ -180,6 +233,7 @@ export function createTypeResolver(
     if (!definition) return null;
     const pin = definition.inputs.find((entry) => entry.id === pinId);
     if (!pin) return null;
+    if (pin.type.kind === "wildcard") return "float";
     if (pin.type.kind !== "generic") return pin.type.kind;
     const resolved = genericOf(nodeId);
     return resolved && resolved !== "conflict" ? resolved : null;
@@ -190,6 +244,7 @@ export function createTypeResolver(
     outputType,
     inputType,
     genericOf,
+    namedRerouteType,
     conflicts: () => {
       for (const node of graph.nodes) genericOf(node.id);
       return [...generics.entries()]

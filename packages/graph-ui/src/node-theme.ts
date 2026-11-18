@@ -206,12 +206,20 @@ export type NodeKind =
   | "bt-selector"
   | "bt-sequence"
   | "bt-parallel"
-  | "bt-task";
+  | "bt-task"
+  /** A Reroute knot (the Add Node row; the knot itself has no title). */
+  | "reroute"
+  /** A Material Named Reroute declaration or usage. */
+  | "namedReroute";
 
 export type NodeKindInput = NodeVisualInput & {
   /** A function graph's Input or Output node in a Script Interface implementation (`__interface`). */
   interface?: boolean;
+  /** A Reroute knot (`__reroute`). */
+  reroute?: boolean;
 };
+
+const NAMED_REROUTE_TYPE_IDS: ReadonlySet<string> = new Set(["reroute.declaration", "reroute.usage"]);
 
 const INPUT_EVENT_TYPE_IDS: ReadonlySet<string> = new Set([
   "input.actionEvent",
@@ -273,6 +281,8 @@ function animNodeKind(nodeType: string): NodeKind | null {
 
 export function nodeKind(input: NodeKindInput): NodeKind {
   const nodeType = input.nodeType ?? "";
+  if (NAMED_REROUTE_TYPE_IDS.has(nodeType)) return "namedReroute";
+  if (input.reroute === true) return "reroute";
   if (input.particleRole !== undefined && isParticleStage(input.particleRole)) {
     return PARTICLE_STAGE_KIND[input.particleRole];
   }
@@ -357,4 +367,40 @@ export function edgeStyleForPin(type: PinTypeRef | undefined): {
     stroke: pinCssVar(resolved),
     strokeWidth: edgeStrokeWidth(resolved.kind),
   };
+}
+
+/** A colour's red, green and blue channels (0–255), or null when it is not a hex or rgb() colour. */
+function parseRgb(color: string): [number, number, number] | null {
+  const text = color.trim().toLowerCase();
+  const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/.exec(text)?.[1];
+  if (hex) {
+    const full = hex.length <= 4 ? [...hex.slice(0, 3)].map((digit) => digit + digit).join("") : hex.slice(0, 6);
+    return [0, 2, 4].map((at) => Number.parseInt(full.slice(at, at + 2), 16)) as [number, number, number];
+  }
+  const rgb = /^rgba?\(([^)]*)\)$/.exec(text)?.[1];
+  if (!rgb) return null;
+  const parts = rgb.split(/[\s,/]+/).filter(Boolean).slice(0, 3);
+  if (parts.length < 3) return null;
+  const channels = parts.map((part) =>
+    part.endsWith("%") ? (Number.parseFloat(part) / 100) * 255 : Number.parseFloat(part),
+  );
+  return channels.every((value) => Number.isFinite(value))
+    ? (channels.map((value) => Math.min(255, Math.max(0, value))) as [number, number, number])
+    : null;
+}
+
+/**
+ * Black or white, whichever reads better on a node header of `background` (WCAG relative
+ * luminance); undefined when the colour is not a hex or rgb() colour, keeping the theme's title colour.
+ */
+export function headerContrastColor(background: string): "#000000" | "#ffffff" | undefined {
+  const rgb = parseRgb(background);
+  if (!rgb) return undefined;
+  const [r, g, b] = rgb.map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  // Contrast against black beats contrast against white above this luminance.
+  return luminance > 0.179 ? "#000000" : "#ffffff";
 }

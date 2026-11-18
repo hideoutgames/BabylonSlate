@@ -64,6 +64,17 @@ function LiveGraphSettings() {
 }
 
 describe("EngineSettingsForm graph", () => {
+  it("keeps Cut Links on by default and writes One Use when chosen", async () => {
+    const onChange = vi.fn();
+    const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={onChange} categoryId="graph" />);
+    const trigger = view.getByTestId("setting-graph-cut-tool-mode");
+    expect(trigger.textContent).toContain("Stays On");
+    fireEvent.click(trigger);
+    const option = await view.findByRole("option", { name: "One Use" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ graphCutToolMode: "oneShot" }));
+  });
   it("applies the local pin lock to an open graph and restores editing when disabled", async () => {
     const store = new MemoryAppSettingsStore();
     const onChange = vi.fn();

@@ -175,6 +175,9 @@ export type NewProjectHosting = (typeof NEW_PROJECT_HOSTINGS)[number];
 /** Where Stack New 2D Actors applies: no host, 2D Scenes, Scene Layers, or both. */
 export const STACK_NEW_ACTORS_2D_MODES = ["disabled", "scenes", "sceneLayers", "both"] as const;
 export type StackNewActors2D = (typeof STACK_NEW_ACTORS_2D_MODES)[number];
+/** Whether a graph's Cut Links tool stays on until turned off, or turns off after one cut. */
+export const GRAPH_CUT_TOOL_MODES = ["toggle", "oneShot"] as const;
+export type GraphCutToolMode = (typeof GRAPH_CUT_TOOL_MODES)[number];
 
 export const engineSettingsSchema = z.object({
   automaticUpdatesEnabled: z.boolean().default(true),
@@ -349,6 +352,7 @@ export const engineSettingsSchema = z.object({
   /** Rank Add Node picks from a dragged pin by past choices; off keeps the saved history. */
   graphAddNodeHistoryEnabled: z.boolean().default(true),
   readOnlyPinDefaults: z.boolean().default(false),
+  graphCutToolMode: z.enum(GRAPH_CUT_TOOL_MODES).catch("toggle").default("toggle"),
   /** Accessibility: tap one graph pin, then one on the other side, to connect them. */
   graphTapToConnect: z.boolean().default(false),
   /** Accessibility (Large Pins): multiplies graph pin glyphs, their hit areas and wires. */

@@ -110,7 +110,8 @@ export function createParticleTypeResolver(
     nodeId: string,
     pin: ParticlePinDefinition | undefined,
   ): ParticleValueType | null {
-    if (!pin) return null;
+    // A Reroute has no type of its own; graphs are collapsed before they are resolved.
+    if (!pin || pin.type.kind === "wildcard") return null;
     if (pin.type.kind !== "generic") return pin.type.kind;
     const resolved = genericOf(nodeId);
     return resolved && resolved !== "conflict" ? resolved : null;

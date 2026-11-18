@@ -230,13 +230,8 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     }
     applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
   };
-  // Rename Event opens the event's inline rename in the Class panel.
-  const { start: renameEvent, dialog: renameEventDialog } = useCustomEventRename({
-    graph,
-    documentKind: doc?.ref.kind,
-    classId: graphClassId,
-    commit: persistGraph,
-  });
+  // Rename Event opens the event node's inline header rename in the Event Graph.
+  const renameEvent = useCustomEventRename();
   const inspectGraph = useMemo(() => {
     if (!graph) return null;
     if (!activeFunctionId) return graph;
@@ -653,7 +648,6 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         delegateSignatures={delegateSignatures}
         animClipGraph={animClipGraph}
       />
-      {renameEventDialog}
     </PanelFrame>
   );
 }

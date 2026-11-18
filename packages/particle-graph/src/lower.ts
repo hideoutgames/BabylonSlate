@@ -19,6 +19,7 @@ import {
 } from "./gradient";
 import { hashParticlePlan, particleSettingsFingerprint } from "./hash";
 import { clampParticlePinValue, resolveParticlePinDefault } from "./pin-defaults";
+import { collapseParticleReroutes } from "./reroute";
 import {
   particleConversionFor,
   resizeParticleValue,
@@ -140,9 +141,11 @@ function planProperties(node: ParticleGraphNode): Record<string, unknown> {
  * on the node array and stray nodes never enter the plan.
  */
 export function lowerParticleGraphDocument(
-  doc: ParticleGraphDocument,
+  authored: ParticleGraphDocument,
   context: ParticleGraphLowerContext = {},
 ): ParticleGraphLowerResult {
+  // Reroutes are compiled away: the plan (and its hash) is the directly wired graph's.
+  const doc = collapseParticleReroutes(authored);
   const { diagnostics, resolver } = checkParticleGraphDocument(doc, context);
   if (!resolver || diagnostics.some((entry) => entry.severity === "error")) {
     return { ok: false, diagnostics };
@@ -255,9 +258,9 @@ export function lowerParticleGraphDocumentCached(
 }
 
 /**
- * Preview and slot rebuild key. Node positions, the name and the Material are
- * excluded, so dragging a node never rebuilds; an invalid graph still gets a
- * stable key.
+ * Preview and slot rebuild key. Node positions, the name, the Material and
+ * Reroutes are excluded, so dragging a node or adding a knot never rebuilds; an
+ * invalid graph still gets a stable key.
  */
 export function particleGraphCompileKey(
   doc: ParticleGraphDocument,
@@ -265,11 +268,13 @@ export function particleGraphCompileKey(
 ): string {
   const result = lowerParticleGraphDocumentCached(doc, context);
   if (result.ok) return result.plan.hash;
+  const graph = collapseParticleReroutes(doc);
   return `invalid:${fnv1a(
     JSON.stringify({
       settings: particleSettingsFingerprint(doc.settings),
-      nodes: doc.nodes.map((node) => ({ id: node.id, type: node.type, properties: node.properties })),
-      edges: doc.edges,
+      nodes: graph.nodes.map((node) => ({ id: node.id, type: node.type, properties: node.properties })),
+      // Endpoints only: a wire through knots has a joined id.
+      edges: graph.edges.map((edge) => [edge.sourceNodeId, edge.sourcePinId, edge.targetNodeId, edge.targetPinId]),
     }),
   )}`;
 }

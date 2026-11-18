@@ -100,3 +100,56 @@ describe("resolvePinValue", () => {
     expect(resolvePinValue(traceOf({}), graph(), "log", "extra", "in")).toBeUndefined();
   });
 });
+
+describe("Reroute knots", () => {
+  const knot = (id: string) => ({
+    id,
+    data: {
+      __reroute: true,
+      __pins: [
+        { id: "in", name: "In", kind: "data", direction: "in", type: { kind: "resolvingWildcard" }, anyKind: true },
+        { id: "out", name: "Out", kind: "data", direction: "out", type: { kind: "resolvingWildcard" }, anyKind: true },
+      ],
+    },
+  });
+  /** make --exec--> k-exec --> log; make.value --> k1 --> k2 --> log.message. Knots are not stamped pure. */
+  function knotted(): RunGraph {
+    return {
+      nodes: [
+        node("make", [exec("then", "out"), data("value", "out")]),
+        knot("k1"),
+        knot("k2"),
+        knot("k-exec"),
+        node("log", [exec("exec", "in"), data("message", "in")]),
+      ],
+      edges: [
+        wire("e1", "make", "then", "k-exec", "in"),
+        wire("e2", "k-exec", "out", "log", "exec"),
+        wire("d1", "make", "value", "k1", "in"),
+        wire("d2", "k1", "out", "k2", "in"),
+        wire("d3", "k2", "out", "log", "message"),
+      ],
+    };
+  }
+
+  it("light every segment of a data path a node read through them", () => {
+    expect(dataWiresRead(knotted(), "log").map((edge) => edge.id).sort()).toEqual(["d1", "d2", "d3"]);
+  });
+
+  it("show the real source's value on every segment, before or after a knot", () => {
+    const produced = traceOf({ "make.value.out": "3" });
+    expect(resolvePinValue(produced, knotted(), "log", "message", "in")).toBe("3");
+    expect(resolvePinValue(produced, knotted(), "k1", "out", "out")).toBe("3");
+    expect(resolvePinValue(produced, knotted(), "k2", "in", "in")).toBe("3");
+    // Only what the reader got is known: the source output and the knots show it.
+    const read = traceOf({ "log.message.in": "9" });
+    expect(resolvePinValue(read, knotted(), "make", "value", "out")).toBe("9");
+    expect(resolvePinValue(read, knotted(), "k1", "in", "in")).toBe("9");
+  });
+
+  it("show values only on knots carrying data", () => {
+    expect(pinShowsValue(knotted(), "k2", "out", "out")).toBe(true);
+    expect(pinShowsValue(knotted(), "k-exec", "in", "in")).toBe(false);
+    expect(pinShowsValue(knotted(), "k-exec", "out", "out")).toBe(false);
+  });
+});

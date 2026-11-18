@@ -48,6 +48,8 @@ export {
 export { createWaterMaterialDocument } from "./water-materials";
 export type { TypeResolver } from "./resolve";
 export {
+  CREATE_NAMED_REROUTE_PALETTE_TITLE,
+  namedReroutePaletteNodes,
   hydrateMaterialGraphForEditor,
   materialGraphToSerialized,
   materialAddNodePalette,
@@ -105,6 +107,24 @@ export {
   retypeMaterialParameter,
   type MaterialParameterValueType,
 } from "./parameter-authoring";
+export {
+  NAMED_REROUTE_DECLARATION_TYPE,
+  NAMED_REROUTE_USAGE_TYPE,
+  defaultNamedRerouteColor,
+  isNamedRerouteDeclarationType,
+  isNamedRerouteUsageType,
+  nameNewNamedReroutes,
+  namedRerouteColor,
+  namedRerouteColorCss,
+  namedRerouteDeclarationId,
+  namedRerouteDeclarations,
+  namedRerouteName,
+  remapPastedNamedReroutes,
+  renameNamedReroute,
+  uniqueNamedRerouteName,
+  type NamedRerouteColor,
+  type NamedRerouteDeclaration,
+} from "./named-reroute";
 export { customGlslInterface, customGlslInterfaceError, newCustomGlslProperties, type CustomGlslPin } from "./custom-glsl";
 export { materialGradientStops, type MaterialGradientStop } from "./gradient";
 export * from "./vector-mask";

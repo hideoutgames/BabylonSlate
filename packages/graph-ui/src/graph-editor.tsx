@@ -44,6 +44,7 @@ import { pinDefaultPropertyKey } from "@haptic/scripting";
 import { PinDefaultEditorContext } from "./pin-default-editor-context";
 import { inlinePinDefaultStorageValue } from "./pin-default-value";
 import { ClipboardPasteIcon, CopyIcon, PlusIcon, Trash2Icon, UnlinkIcon, WaypointsIcon } from "lucide-react";
+import { IconBlade, IconBladeFilled } from "@tabler/icons-react";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import { Separator } from "@haptic/ui/components/separator";
@@ -59,6 +60,7 @@ import {
 } from "@haptic/editor-kit";
 import {
   hasSerializedPins,
+  isRerouteNodeData,
   type GraphDiagnostic,
   type GraphDocument,
   type GraphPinDrop,
@@ -279,7 +281,27 @@ export interface GraphEditorProps {
   toolbarExtra?: ReactNode;
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;
-  hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "format">;
+  hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "cutLinks" | "format">;
+  /**
+   * Double-click or double-tap a wire to split it with a Reroute knot built from this Add Node row
+   * (its `nodeType`, `pins` and `defaultData`, which stamps `__reroute: true`), centred where it was
+   * pressed. A wire that got a knot does not reach `onEdgeDoubleClick`.
+   */
+  reroute?: { paletteNode: PaletteNode };
+  /** The node whose header title is an inline rename field (a new Named Reroute). */
+  renamingNodeId?: string | null;
+  /** The renamed node's new name: Enter or a click away with a changed, non-empty name. */
+  onNodeRenameCommit?: (nodeId: string, name: string) => void;
+  /** The rename ended without a new name: Escape, or the name unchanged or empty. */
+  onNodeRenameCancel?: () => void;
+  /** The rename field's starting text when it differs from the shown title (a Custom Event `Event Foo` edits `Foo`). */
+  renamingNodeValue?: string;
+  /**
+   * A double-click, or two taps within the double-tap time, on a node's title bar (not its pins or
+   * body): hosts start the inline rename. Not called read-only, while Cut Links is on, or for the
+   * node already renaming; such a double-click never reaches `onNodeDoubleClick`.
+   */
+  onNodeTitleDoubleClick?: (nodeId: string) => void;
   /**
    * CSS selector stamped onto each XYFlow node as `dragHandle`.
    * XYFlow 12 has no canvas-level `nodeDragHandle` prop. Attachments can use
@@ -367,6 +389,8 @@ export interface GraphEditorProps {
   preparePaste?: (
     pasted: GraphPasteElements,
     current: GraphPasteElements,
+    /** Each copied node's id → its copy's id. */
+    idMap: ReadonlyMap<string, string>,
   ) => GraphPasteResult;
   /**
    * Host rewrite of an Add Node row just before it is placed, read against the
@@ -427,6 +451,64 @@ function nonOverlappingOffset(
   let offset = PASTE_OFFSET;
   while (overlaps(offset)) offset += PASTE_OFFSET;
   return offset;
+}
+
+/** The canvas node an Add Node row adds (also the knot a wire's double-click inserts). */
+function paletteCanvasNode(
+  entry: PaletteNode,
+  nodeId: string,
+  at: { x: number; y: number },
+  selected: boolean,
+  knownTypes: NodeTypes,
+  dragHandle: string | undefined,
+): CanvasNode {
+  const data: Record<string, unknown> = {
+    ...(entry.defaultData ?? {}),
+    title: entry.nodeTitle ?? entry.title,
+    __nodeType: entry.nodeType ?? entry.id,
+    __category: entry.category,
+    __pure: entry.pure ?? false,
+    __latent: entry.latent ?? false,
+  };
+  if (entry.editorOnly === true) {
+    data.__editorOnly = true;
+  }
+  if (entry.pins && entry.pins.length > 0) {
+    data.__pins = entry.pins;
+  }
+  return withDragHandle(
+    {
+      id: nodeId,
+      type: resolveNodeType(entry.nodeType ?? entry.id, data, knownTypes),
+      position: at,
+      selected,
+      data,
+    },
+    dragHandle,
+  );
+}
+
+/** What a Cut Links click lands on: a wire, a pin, or a node (only a Reroute knot is cut). */
+type CutTarget =
+  | { kind: "edge"; edgeId: string }
+  | { kind: "pin"; nodeId: string; pinId: string }
+  | { kind: "node"; nodeId: string };
+
+function cutTargetOf(target: EventTarget | null): CutTarget | null {
+  if (!(target instanceof Element)) return null;
+  const handle = target.closest(".react-flow__handle");
+  if (handle) {
+    const nodeId = handle.getAttribute("data-nodeid");
+    const pinId = handle.getAttribute("data-handleid");
+    return nodeId && pinId ? { kind: "pin", nodeId, pinId } : null;
+  }
+  const edge = target.closest("[data-cut-edge-id], .react-flow__edge");
+  if (edge) {
+    const edgeId = edge.getAttribute("data-cut-edge-id") ?? edge.getAttribute("data-id");
+    return edgeId ? { kind: "edge", edgeId } : null;
+  }
+  const nodeId = target.closest(".react-flow__node")?.getAttribute("data-id");
+  return nodeId ? { kind: "node", nodeId } : null;
 }
 
 function asConnection(connection: Connection | Edge): Connection {
@@ -551,6 +633,17 @@ function pinOnNode(
   let pinIndex = pinIndexes.get(pins);
   if (!pinIndex) pinIndexes.set(pins, (pinIndex = indexById(pins)));
   return pinIndex.get(pinId);
+}
+
+/** A stored pin as it connects: a Reroute's any-kind pin in the kind and type its wires bound it to. */
+function connectPinOnNode(
+  nodes: CanvasNode[],
+  displayTypes: PinDisplayLookup,
+  nodeId: string,
+  pinId: string,
+): SerializedPin | undefined {
+  const pin = pinOnNode(nodes, nodeId, pinId);
+  return pin?.anyKind ? overlayPin(pin, nodeId, displayTypes) : pin;
 }
 
 /** The pins of one node a dragged node can link to, at the node's `position`. */
@@ -850,6 +943,12 @@ function GraphEditorCanvas({
   preparePaste,
   preparePaletteNode,
   onPaletteNodeAdded,
+  reroute,
+  renamingNodeId = null,
+  onNodeRenameCommit,
+  onNodeRenameCancel,
+  renamingNodeValue,
+  onNodeTitleDoubleClick,
 }: GraphEditorProps) {
   const inheritedReadOnly = useEditorReadOnly();
   const readOnly = readOnlyProp || inheritedReadOnly;
@@ -1145,6 +1244,45 @@ function GraphEditorCanvas({
     [hiddenToolbarActions],
   );
 
+  // Cut Links: while on, a click on a wire, a pin or a Reroute knot removes it (`cutTargetOf`).
+  // Locking the canvas or hiding the button turns it off.
+  const [cutToolOn, setCutToolOn] = useState(false);
+  const cutTool = cutToolOn && !readOnly && !hiddenToolbar.has("cutLinks");
+  if (cutToolOn && !cutTool) setCutToolOn(false);
+  const cutToolRef = useRef(cutTool);
+  const cutOneShotRef = useRef(interactions.cutToolOneShot === true);
+  const edgeBreaksAtPinRef = useRef(edgeBreaksAtPin);
+  const rerouteRef = useRef(reroute);
+  const onEdgeDoubleClickRef = useRef(onEdgeDoubleClick);
+  useLayoutEffect(() => {
+    cutToolRef.current = cutTool;
+    cutOneShotRef.current = interactions.cutToolOneShot === true;
+    edgeBreaksAtPinRef.current = edgeBreaksAtPin;
+    rerouteRef.current = reroute;
+    onEdgeDoubleClickRef.current = onEdgeDoubleClick;
+  });
+  const toggleCutTool = useCallback(() => setCutToolOn((on) => !on), []);
+
+  // Title double-click / double-tap → host rename. A mouse's two clicks fire it, so the native
+  // double-click that follows is taken (no `onNodeDoubleClick`) without firing again.
+  const titleHostRef = useRef({ onNodeTitleDoubleClick, readOnly, renamingNodeId });
+  useLayoutEffect(() => {
+    titleHostRef.current = { onNodeTitleDoubleClick, readOnly, renamingNodeId };
+  });
+  const lastTitleFireRef = useRef<{ nodeId: string; time: number } | null>(null);
+  const titleDoubleClick = useCallback((nodeId: string, via: "dblclick" | "tap"): boolean => {
+    const host = titleHostRef.current;
+    if (!host.onNodeTitleDoubleClick || host.readOnly || cutToolRef.current) return false;
+    const now = Date.now();
+    const last = lastTitleFireRef.current;
+    if (via === "dblclick" && last?.nodeId === nodeId && now - last.time < doubleTapWindowMs()) return true;
+    if (host.renamingNodeId === nodeId) return false;
+    lastTitleFireRef.current = { nodeId, time: now };
+    host.onNodeTitleDoubleClick(nodeId);
+    return true;
+  }, []);
+  const hasTitleRename = Boolean(onNodeTitleDoubleClick);
+
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
       // Snapped Nodes: a drag moves freely; its release lands on the grid.
@@ -1243,7 +1381,7 @@ function GraphEditorCanvas({
           graphStateRef.current.edges,
           { source, sourceHandle, target, targetHandle },
           (nodeId, pinId) =>
-            pinOnNode(graphStateRef.current.nodes, nodeId, pinId),
+            connectPinOnNode(graphStateRef.current.nodes, pinDisplayTypesRef.current, nodeId, pinId),
         )
       ) {
         noteReplacedWire();
@@ -1262,7 +1400,7 @@ function GraphEditorCanvas({
               : {}),
           },
           (nodeId, pinId) =>
-            pinOnNode(graphStateRef.current.nodes, nodeId, pinId),
+            connectPinOnNode(graphStateRef.current.nodes, pinDisplayTypesRef.current, nodeId, pinId),
           { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect, singleExecOutput: singleExecOutputOnConnect },
         );
         const unchanged =
@@ -1405,7 +1543,7 @@ function GraphEditorCanvas({
         singleExecOutputOnConnect &&
         edge.source === connection.source &&
         (edge.sourceHandle ?? "") === (connection.sourceHandle ?? "") &&
-        pinOnNode(graphStateRef.current.nodes, connection.source, connection.sourceHandle ?? "")?.kind === "exec";
+        connectPinOnNode(graphStateRef.current.nodes, pinDisplayTypesRef.current, connection.source, connection.sourceHandle ?? "")?.kind === "exec";
       const moving = new Map(dragged.map((node) => [node.id, node]));
       const pins: ProximityPin[] = [];
       const store = storeApi.getState();
@@ -2166,7 +2304,7 @@ function GraphEditorCanvas({
         });
         position = freeNodePosition(
           center,
-          estimateGraphNodeSize(paletteNode.pins),
+          estimateGraphNodeSize(paletteNode.pins, paletteNode.defaultData),
           graphStateRef.current.nodes,
         );
       }
@@ -2174,30 +2312,7 @@ function GraphEditorCanvas({
       const canvasNode = (entry: PaletteNode, at: { x: number; y: number }, selected: boolean): CanvasNode => {
         const nodeId = uniqueNodeId(`${entry.id}-${Date.now()}`, takenIds);
         takenIds.add(nodeId);
-        const data: Record<string, unknown> = {
-          ...(entry.defaultData ?? {}),
-          title: entry.nodeTitle ?? entry.title,
-          __nodeType: entry.nodeType ?? entry.id,
-          __category: entry.category,
-          __pure: entry.pure ?? false,
-          __latent: entry.latent ?? false,
-        };
-        if (entry.editorOnly === true) {
-          data.__editorOnly = true;
-        }
-        if (entry.pins && entry.pins.length > 0) {
-          data.__pins = entry.pins;
-        }
-        return withDragHandle(
-          {
-            id: nodeId,
-            type: resolveNodeType(entry.nodeType ?? entry.id, data, knownTypes),
-            position: at,
-            selected,
-            data,
-          },
-          nodeDragHandle,
-        );
+        return paletteCanvasNode(entry, nodeId, at, selected, knownTypes, nodeDragHandle);
       };
       const nextNode = canvasNode(paletteNode, position, true);
       const id = nextNode.id;
@@ -2242,7 +2357,7 @@ function GraphEditorCanvas({
             replacesExecOutputWire(
               nextEdges,
               { source, sourceHandle, target, targetHandle },
-              (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
+              (nodeId, pinId) => connectPinOnNode(next, pinDisplayTypesRef.current, nodeId, pinId),
             );
           nextEdges = edgesAfterConnect(
             nextEdges,
@@ -2256,7 +2371,7 @@ function GraphEditorCanvas({
                 ? { type: defaultEdgeOptions.type }
                 : {}),
             },
-            (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
+            (nodeId, pinId) => connectPinOnNode(next, pinDisplayTypesRef.current, nodeId, pinId),
             { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect, singleExecOutput: singleExecOutputOnConnect },
           );
         }
@@ -2296,6 +2411,111 @@ function GraphEditorCanvas({
       singleExecOutputOnConnect,
       screenToFlowPosition,
     ],
+  );
+
+  // Splits a wire with a Reroute knot centred on a client point: one graph change, the knot
+  // the only selection. Returns false, changing nothing, for a wire the knot cannot carry.
+  const insertRerouteOnEdge = useCallback(
+    (edgeId: string, client: { x: number; y: number }): boolean => {
+      const paletteNode = rerouteRef.current?.paletteNode;
+      if (!paletteNode || readOnly || cutToolRef.current) return false;
+      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const edge = currentEdges.find((entry) => entry.id === edgeId);
+      if (!edge?.sourceHandle || !edge.targetHandle) return false;
+      const inPin = paletteNode.pins?.find((pin) => pin.direction === "in");
+      const outPin = paletteNode.pins?.find((pin) => pin.direction === "out");
+      const sourcePin = pinOnNode(currentNodes, edge.source, edge.sourceHandle);
+      const targetPin = pinOnNode(currentNodes, edge.target, edge.targetHandle);
+      if (!inPin || !outPin || !sourcePin || !targetPin) return false;
+      const displayTypes = pinDisplayTypesRef.current;
+      if (
+        !pinsAreCompatible(overlayPin(sourcePin, edge.source, displayTypes), inPin, pinCompatibility) ||
+        !pinsAreCompatible(outPin, overlayPin(targetPin, edge.target, displayTypes), pinCompatibility)
+      ) {
+        return false;
+      }
+      const size = estimateGraphNodeSize(paletteNode.pins, { __reroute: true });
+      const point = screenToFlowPosition(client);
+      const position = snapPositionToGrid(
+        { x: point.x - size.width / 2, y: point.y - size.height / 2 },
+        nodeSnapGrid,
+      );
+      const taken = new Set(currentNodes.map((node) => node.id));
+      const knot = paletteCanvasNode(
+        paletteNode,
+        uniqueNodeId(`${paletteNode.id}-${Date.now()}`, taken),
+        position,
+        true,
+        knownTypes,
+        nodeDragHandle,
+      );
+      const edgeType = defaultEdgeOptions.type ? { type: defaultEdgeOptions.type } : {};
+      const wire = (source: string, sourceHandle: string, target: string, targetHandle: string): Edge => ({
+        id: createEdgeId(source, sourceHandle, target, targetHandle),
+        source,
+        sourceHandle,
+        target,
+        targetHandle,
+        ...edgeType,
+      });
+      commitGraph(
+        [
+          ...currentNodes.map((node) => (node.selected ? { ...node, selected: false } : node)),
+          knot,
+        ],
+        [
+          ...withoutEdgeSelection(currentEdges.filter((entry) => entry.id !== edgeId)),
+          wire(edge.source, edge.sourceHandle, knot.id, inPin.id),
+          wire(knot.id, outPin.id, edge.target, edge.targetHandle),
+        ],
+      );
+      return true;
+    },
+    [
+      commitGraph,
+      defaultEdgeOptions.type,
+      knownTypes,
+      nodeDragHandle,
+      nodeSnapGrid,
+      pinCompatibility,
+      readOnly,
+      screenToFlowPosition,
+    ],
+  );
+
+  // A second tap on the same wire within the double-tap time inserts a knot, like a mouse
+  // double-click; the first tap selects the wire as usual. The knot replaces the wire, so the
+  // native double-click that follows a mouse's second click finds no wire to split again.
+  const lastEdgeTapRef = useRef<{ edgeId: string; time: number } | null>(null);
+  const handleEdgeClick = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      const last = lastEdgeTapRef.current;
+      const now = Date.now();
+      if (!rerouteRef.current || readOnly || cutToolRef.current) {
+        lastEdgeTapRef.current = null;
+        return;
+      }
+      if (last && last.edgeId === edge.id && now - last.time < doubleTapWindowMs()) {
+        lastEdgeTapRef.current = null;
+        insertRerouteOnEdge(edge.id, { x: event.clientX, y: event.clientY });
+        return;
+      }
+      lastEdgeTapRef.current = { edgeId: edge.id, time: now };
+    },
+    [insertRerouteOnEdge, readOnly],
+  );
+  const handleEdgeDoubleClick = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      const client = { x: event.clientX, y: event.clientY };
+      if (rerouteRef.current) {
+        lastEdgeTapRef.current = null;
+        // A wire a click of this double-click already split is gone.
+        if (!graphStateRef.current.edges.some((entry) => entry.id === edge.id)) return;
+        if (insertRerouteOnEdge(edge.id, client)) return;
+      }
+      onEdgeDoubleClickRef.current?.(edge.id, screenToFlowPosition(client));
+    },
+    [insertRerouteOnEdge, screenToFlowPosition],
   );
 
   const selectedNodes = useMemo(
@@ -2421,6 +2641,7 @@ function GraphEditorCanvas({
       const prepared = preparePasteRef.current?.(
         { nodes: nextNodes, edges: nextEdges },
         { nodes: currentNodes, edges: currentEdges },
+        idMap,
       );
       if (prepared?.notice) showNotice(prepared.notice);
       const keptNodes = prepared?.nodes ?? nextNodes;
@@ -2488,6 +2709,107 @@ function GraphEditorCanvas({
     if (selected.size === 0) return;
     removeGraphElements(selected, new Set());
   }, [removeGraphElements]);
+
+  // Cut Links on a tap: a wire, every wire on a pin, or a Reroute knot with its wires, as one
+  // graph change. One Use turns the tool off after a tap that removed something.
+  const cutAt = useCallback(
+    (target: CutTarget): boolean => {
+      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      let removed = false;
+      if (target.kind === "edge") {
+        removed = removeGraphElements(new Set(), new Set([target.edgeId]));
+      } else if (target.kind === "pin") {
+        const breaks = edgeBreaksAtPinRef.current ?? edgeTouchesPin;
+        removed = removeGraphElements(
+          new Set(),
+          new Set(
+            currentEdges
+              .filter((edge) => breaks(edge, target.nodeId, target.pinId))
+              .map((edge) => edge.id),
+          ),
+        );
+      } else if (isRerouteNodeData(currentNodes.find((node) => node.id === target.nodeId)?.data)) {
+        removed = removeGraphElements(new Set([target.nodeId]), new Set());
+      }
+      if (removed && cutOneShotRef.current) setCutToolOn(false);
+      return removed;
+    },
+    [removeGraphElements],
+  );
+  const cutAtRef = useRef(cutAt);
+  useLayoutEffect(() => {
+    cutAtRef.current = cutAt;
+  });
+
+  // While Cut Links is on, a click on a wire, a pin or a knot cuts instead of selecting, and a
+  // press on a pin starts no wire; other nodes and the canvas keep their gestures. Everything is
+  // read through refs, so pans and drags render nothing extra.
+  useEffect(() => {
+    const root = wrapperRef.current;
+    if (!root) return;
+    let press: { x: number; y: number } | null = null;
+    const resolve = (event: Event): CutTarget | null => {
+      if (!cutToolRef.current) return null;
+      const target = cutTargetOf(event.target);
+      if (target?.kind !== "node") return target;
+      const node = graphStateRef.current.nodes.find((entry) => entry.id === target.nodeId);
+      return isRerouteNodeData(node?.data) ? target : null;
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      press = cutToolRef.current && event.isPrimary !== false ? { x: event.clientX, y: event.clientY } : null;
+    };
+    const onPressStart = (event: Event) => {
+      if (cutToolRef.current && cutTargetOf(event.target)?.kind === "pin") event.stopPropagation();
+    };
+    const onClick = (event: MouseEvent) => {
+      const target = resolve(event);
+      if (!target) return;
+      event.stopPropagation();
+      event.preventDefault();
+      const start = press;
+      press = null;
+      // A press that panned the canvas or dragged a knot is not a cut.
+      if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > CHOSEN_PIN_TAP_SLOP_PX) return;
+      cutAtRef.current(target);
+    };
+    const onDoubleClick = (event: MouseEvent) => {
+      if (!resolve(event)) return;
+      event.stopPropagation();
+      event.preventDefault();
+    };
+    root.addEventListener("pointerdown", onPointerDown, true);
+    root.addEventListener("mousedown", onPressStart, true);
+    root.addEventListener("touchstart", onPressStart, true);
+    root.addEventListener("click", onClick, true);
+    root.addEventListener("dblclick", onDoubleClick, true);
+    return () => {
+      root.removeEventListener("pointerdown", onPointerDown, true);
+      root.removeEventListener("mousedown", onPressStart, true);
+      root.removeEventListener("touchstart", onPressStart, true);
+      root.removeEventListener("click", onClick, true);
+      root.removeEventListener("dblclick", onDoubleClick, true);
+    };
+  }, []);
+
+  // The tool's cursor is its toolbar icon as drawn (Tabler Blade Filled), in the canvas text colour.
+  useLayoutEffect(() => {
+    const root = wrapperRef.current;
+    if (!root) return;
+    if (!cutTool) {
+      root.style.removeProperty("--graph-cut-cursor");
+      return;
+    }
+    const icon = root.querySelector('[data-testid="graph-cut-links"] svg');
+    if (!icon) return;
+    const glyph = icon.cloneNode(true) as Element;
+    glyph.removeAttribute("class");
+    glyph.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    glyph.setAttribute("width", "20");
+    glyph.setAttribute("height", "20");
+    glyph.setAttribute("color", getComputedStyle(root).color);
+    const markup = new XMLSerializer().serializeToString(glyph);
+    root.style.setProperty("--graph-cut-cursor", `url("data:image/svg+xml,${encodeURIComponent(markup)}")`);
+  }, [cutTool]);
 
   // XYFlow `fitView` only sees mounted nodes; virtualisation unmounts the rest.
   const fitGraph = useCallback(() => {
@@ -2579,6 +2901,10 @@ function GraphEditorCanvas({
         }
         case "breakLinks":
           return !hiddenToolbar.has("breakLinks") && breakSelectionLinks();
+        case "toggleCutLinks":
+          if (hiddenToolbar.has("cutLinks")) return false;
+          toggleCutTool();
+          return true;
         case "toggleBreakpoint":
           return breakpoints ? toggleBreakpoints(breakpoints, selectedBreakableIds()) : false;
         case "toggleBreakpointEnabled":
@@ -2592,7 +2918,7 @@ function GraphEditorCanvas({
         }
       }
     },
-    [breakSelectionLinks, breakpoints, copySelection, duplicateSelection, hiddenToolbar, pasteClipboard, removeGraphElements, selectedBreakableIds],
+    [breakSelectionLinks, breakpoints, copySelection, duplicateSelection, hiddenToolbar, pasteClipboard, removeGraphElements, selectedBreakableIds, toggleCutTool],
   );
   const commandRef = useRef({ readOnly, bindings: commandBindings, run: runGraphCommand });
   useLayoutEffect(() => {
@@ -2616,6 +2942,12 @@ function GraphEditorCanvas({
     const onKeyDown = (event: KeyboardEvent) => {
       const { readOnly: locked, bindings, run } = commandRef.current;
       if (!engaged || event.defaultPrevented || event.isComposing) return;
+      if (event.key === "Escape" && cutToolRef.current) {
+        if (event.target instanceof Element && event.target.closest(KEY_EXEMPT_TARGETS)) return;
+        if (!root.isConnected || !(root.checkVisibility?.() ?? true)) return;
+        setCutToolOn(false);
+        return;
+      }
       const command = graphCommandForEvent(event, bindings);
       // Breakpoints are not graph data, so a read-only canvas still sets them.
       if (!command || (locked && !BREAKPOINT_GRAPH_COMMANDS.has(command))) return;
@@ -2651,6 +2983,7 @@ function GraphEditorCanvas({
         width: node.measured?.width ?? node.width,
         height: node.measured?.height ?? node.height,
         pins: hasSerializedPins(node.data) ? node.data.__pins : undefined,
+        reroute: isRerouteNodeData(node.data),
       })),
       currentEdges.map((edge) => ({
         source: edge.source,
@@ -2659,6 +2992,7 @@ function GraphEditorCanvas({
         targetHandle: edge.targetHandle ?? undefined,
       })),
       selected,
+      displayTypeLookup(pinDisplayTypesRef.current),
     );
     const positions = new Map(
       formatted.map((node) => [node.id, node.position]),
@@ -2832,7 +3166,7 @@ function GraphEditorCanvas({
       clearSelection();
       onEmptyCanvasClickRef.current?.();
       const now = Date.now();
-      if (now - lastPaneTapRef.current < doubleTapWindowMs() && !readOnly) {
+      if (now - lastPaneTapRef.current < doubleTapWindowMs() && !readOnly && !cutToolRef.current) {
         const point = event ? { x: event.clientX, y: event.clientY } : null;
         setPendingConnect(point ? { position: screenToFlowPosition(point) } : null);
         setPaletteAnchor(point);
@@ -3098,11 +3432,13 @@ function GraphEditorCanvas({
     const ids = new Set<string>();
     if (focusedNodeId) ids.add(focusedNodeId);
     if (selectedNodeId) ids.add(selectedNodeId);
+    // The node being renamed keeps its field, and its focus, while it is scrolled away.
+    if (renamingNodeId) ids.add(renamingNodeId);
     for (const node of nodes) {
       if (node.selected) ids.add(node.id);
     }
     return [...ids];
-  }, [focusedNodeId, nodes, selectedNodeId]);
+  }, [focusedNodeId, nodes, renamingNodeId, selectedNodeId]);
   // The mounted nodes and edges follow the pan/zoom transform, but the editor renders
   // again only when that set changes, not on every pan or zoom frame.
   const visibleInputs = useRef<VisibleGraphInputs | null>(null);
@@ -3224,6 +3560,11 @@ function GraphEditorCanvas({
       breakpoints,
       describeNode,
       previewedNode,
+      renamingNodeId,
+      onNodeRenameCommit,
+      onNodeRenameCancel,
+      renamingNodeValue,
+      titleDoubleClick: hasTitleRename ? titleDoubleClick : undefined,
       connectionLineKind:
         defaultEdgeOptions.type === "animTransition" ||
         defaultEdgeOptions.type === "animTransitionBoth"
@@ -3258,6 +3599,12 @@ function GraphEditorCanvas({
       breakpoints,
       describeNode,
       previewedNode,
+      renamingNodeId,
+      onNodeRenameCommit,
+      onNodeRenameCancel,
+      renamingNodeValue,
+      hasTitleRename,
+      titleDoubleClick,
       defaultEdgeOptions.type,
     ],
   );
@@ -3277,6 +3624,7 @@ function GraphEditorCanvas({
         data-visible-node-count={String(visibleGraph.nodes.length)}
         data-readonly={readOnly ? "true" : undefined}
         data-nodes-draggable={nodesDraggable ? "true" : "false"}
+        data-graph-tool={cutTool ? "cut" : undefined}
       >
         {readOnly ? null : (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
@@ -3323,7 +3671,7 @@ function GraphEditorCanvas({
               <ClipboardPasteIcon />
             </IslandIconButton>
             )}
-            {hiddenToolbar.has("delete") && hiddenToolbar.has("breakLinks") ? null : <Separator orientation="vertical" />}
+            {hiddenToolbar.has("delete") && hiddenToolbar.has("breakLinks") && hiddenToolbar.has("cutLinks") ? null : <Separator orientation="vertical" />}
             {hiddenToolbar.has("delete") ? null : (
             <IslandIconButton
               label="Delete"
@@ -3343,6 +3691,16 @@ function GraphEditorCanvas({
               data-testid="graph-break-links"
             >
               <UnlinkIcon />
+            </IslandIconButton>
+            )}
+            {hiddenToolbar.has("cutLinks") ? null : (
+            <IslandIconButton
+              label="Cut Links"
+              aria-pressed={cutTool}
+              onClick={toggleCutTool}
+              data-testid="graph-cut-links"
+            >
+              {cutTool ? <IconBladeFilled /> : <IconBlade />}
             </IslandIconButton>
             )}
             {hiddenToolbar.has("format") ? null : (
@@ -3386,8 +3744,12 @@ function GraphEditorCanvas({
           onConnect={handleConnect}
           onConnectStart={handleConnectStart}
           onConnectEnd={handleConnectEnd}
-          onNodeDoubleClick={(_, node) => onNodeDoubleClick?.(node.id)}
-          onEdgeDoubleClick={(event, edge) => onEdgeDoubleClick?.(edge.id, screenToFlowPosition({ x: event.clientX, y: event.clientY }))}
+          onNodeDoubleClick={(_, node) => {
+            // A double-click that just split a wire lands on the new knot, which opens nothing.
+            if (!isRerouteNodeData(node.data)) onNodeDoubleClick?.(node.id);
+          }}
+          onEdgeClick={handleEdgeClick}
+          onEdgeDoubleClick={handleEdgeDoubleClick}
           isValidConnection={readOnly ? () => false : isValidConnection}
           onPaneClick={handlePaneClick}
           onPaneContextMenu={handlePaneContextMenu}

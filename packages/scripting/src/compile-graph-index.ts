@@ -90,7 +90,18 @@ function execOutPins(node: GraphNode, pinRef?: string): GraphPin[] {
 }
 
 /** An exec wire followed to its target; `GraphEdge` fits. */
-export type ExecTarget = { id: string; targetNodeId: string; targetPinId: string };
+export type ExecTarget = {
+  id: string;
+  targetNodeId: string;
+  targetPinId: string;
+  /** The authored wires a collapsed Reroute chain replaced (`GraphEdge.viaEdgeIds`). */
+  viaEdgeIds?: readonly string[];
+};
+
+/** The authored wire ids an exec wire stands for: every segment of a collapsed Reroute chain. */
+export function traceEdgeIds(edge: Pick<ExecTarget, "id" | "viaEdgeIds">): readonly string[] {
+  return edge.viaEdgeIds ?? [edge.id];
+}
 
 export function execSuccessorEdges(
   index: GraphIndex,
@@ -108,6 +119,7 @@ export function execSuccessorEdges(
           id: e.id,
           targetNodeId: e.targetNodeId,
           targetPinId: e.targetPinId,
+          ...(e.viaEdgeIds ? { viaEdgeIds: e.viaEdgeIds } : {}),
         });
       }
     }

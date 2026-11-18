@@ -83,6 +83,7 @@ The mode shortcuts switch the active Scene between its Design, Landscape, Foliag
 | Rename | <kbd>F2</kbd> |
 | Delete | <kbd>Delete</kbd> or <kbd>Backspace</kbd> |
 | Break Links | <kbd>Alt</kbd>+<kbd>L</kbd> |
+| Cut Links | <kbd>Alt</kbd>+<kbd>X</kbd> |
 | Search Panel | <kbd>Mod</kbd>+<kbd>F</kbd> |
 | New Folder | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> |
 | Place Actors | <kbd>Alt</kbd>+<kbd>A</kbd> |

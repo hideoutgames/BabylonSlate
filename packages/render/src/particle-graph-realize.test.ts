@@ -559,13 +559,15 @@ function graphWith(type: string): ParticleGraphDocument {
   // Required value pins without a wire get an authored default.
   for (const pin of definition.inputs) {
     if (!pin.required || pin.type.kind === "particle") continue;
-    const kind: ParticleNumericType = pin.type.kind === "generic" ? pin.type.fallback ?? "float" : pin.type.kind;
+    const kind: ParticleNumericType = pin.type.kind === "generic" ? pin.type.fallback ?? "float"
+      : pin.type.kind === "wildcard" ? "float" : pin.type.kind;
     subject.properties[`default:${pin.id}`] = resizeParticleValue([0.5], kind);
   }
   if (definition.role === "shape" || definition.role === "update") return withSpine([subject]);
   const output = definition.outputs[0]!;
   const kind: ParticleNumericType = output.type.kind === "particle" ? "float"
-    : output.type.kind === "generic" ? output.type.fallback ?? "float" : output.type.kind;
+    : output.type.kind === "generic" ? output.type.fallback ?? "float"
+    : output.type.kind === "wildcard" ? "float" : output.type.kind;
   const consumer = CONSUMERS[kind];
   const doc = withSpine([node("consumer", consumer.type)], [subject], [edge("subject", output.id, "consumer", consumer.pin)]);
   // A Parameter node needs its parameter declared.
@@ -574,7 +576,9 @@ function graphWith(type: string): ParticleGraphDocument {
 }
 
 describe("Particle Graph catalog", () => {
-  const types = PARTICLE_CATALOG.filter((definition) => !definition.terminal && definition.role !== "create").map((definition) => definition.type);
+  // A Reroute is collapsed before lowering, so it never reaches a block.
+  const types = PARTICLE_CATALOG.filter((definition) => !definition.terminal && definition.role !== "create" && definition.type !== "utility.reroute")
+    .map((definition) => definition.type);
 
   it.each(types)("builds and simulates %s", (type) => {
     const { result } = realize(planOf(graphWith(type)));
@@ -684,7 +688,7 @@ function typedValueGraph(type: string, kind: ParticleNumericType): ParticleGraph
   const edges: ReturnType<typeof edge>[] = [];
   definition.inputs.forEach((pin, index) => {
     if (pin.type.kind === "particle") return;
-    const pinKind: ParticleNumericType = pin.type.kind === "generic" ? kind : pin.type.kind;
+    const pinKind: ParticleNumericType = pin.type.kind === "generic" || pin.type.kind === "wildcard" ? kind : pin.type.kind;
     const id = `c-${pin.id}`;
     // Distinct values in (0, 1): a valid Lerp gradient, Clamp bounds that bite, no division by zero.
     extra.push(node(id, `const.${pinKind}`, { value: resizeParticleValue([0.15 + 0.2 * (index % 4)], pinKind) }));

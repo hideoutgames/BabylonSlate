@@ -35,6 +35,8 @@ import { customGlslDefinition, customGlslFunctionBodyError, customGlslInterfaceE
 import { swizzleDefinition, swizzleError, vectorMaskDefinition, vectorMaskError } from "./vector-mask";
 import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, materialGlobalParameterDefinition, validateMaterialGlobalParameter } from "./global-parameter";
 import { validateMaterialParameterNames } from "./parameters";
+import { namedRerouteLoopDeclarations, validateNamedReroutes } from "./named-reroute";
+import { NAMED_REROUTE_DECLARATION_TYPE, isNamedRerouteUsageType, namedRerouteDeclarationId } from "./catalog";
 import {
   materialTypeLabel,
   typesAreAssignable,
@@ -214,7 +216,12 @@ function validateGraph(
   graph: GraphLike,
   options: ValidateGraphOptions,
 ): MaterialDiagnostic[] {
-  const diagnostics: MaterialDiagnostic[] = validateMaterialParameterNames(graph);
+  // A usage feeding its own declaration is a loop the wires alone do not show (`findGraphCycle`).
+  const rerouteLoops = namedRerouteLoopDeclarations(graph);
+  const diagnostics: MaterialDiagnostic[] = [
+    ...validateMaterialParameterNames(graph),
+    ...validateNamedReroutes(graph, rerouteLoops),
+  ];
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const definitions = new Map<string, MaterialNodeDefinition>();
   const capabilities = { ...DEFAULT_CAPABILITIES, ...options.capabilities };
@@ -380,7 +387,7 @@ function validateGraph(
   }
 
   // Generic resolution and type checks only make sense on an acyclic graph.
-  if (!cycle) {
+  if (!cycle && rerouteLoops.size === 0) {
     const resolver = createTypeResolver(graph, {
       functions: options.functions,
       functionInterface: options.functionInterface,
@@ -644,6 +651,13 @@ function walkWorldPositionOffsetNode(
         diagnostics,
       );
     }
+    return;
+  }
+
+  if (isNamedRerouteUsageType(node.type)) {
+    // A usage carries its declaration's input; the declaration is in the same graph.
+    const declarationId = namedRerouteDeclarationId(node);
+    if (nodes.get(declarationId)?.type === NAMED_REROUTE_DECLARATION_TYPE) walkWorldPositionOffsetPin(frame, declarationId, "in", seen, diagnostics);
     return;
   }
 

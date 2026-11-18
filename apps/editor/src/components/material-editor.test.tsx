@@ -956,3 +956,180 @@ describe("Material graph panel", () => {
     expect(lastCommit().nodes.find((node) => node.id === "output")?.properties["default:metallic"]).toEqual([0.25]);
   });
 });
+
+describe("Material Named Reroutes", () => {
+  function reroutedDocument(): MaterialDocument {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "r", type: "reroute.declaration", position: { x: 0, y: 200 }, properties: { name: "Tint Route", color: [1, 0, 0] } },
+      { id: "u", type: "reroute.usage", position: { x: 200, y: 200 }, properties: { declarationId: "r" } },
+      { id: "s", type: "reroute.declaration", position: { x: 0, y: 400 }, properties: { name: "Other", color: [0, 0, 1] } },
+    );
+    doc.edges.push(
+      { id: "e-color-r", sourceNodeId: "baseColor", sourcePinId: "out", targetNodeId: "r", targetPinId: "in" },
+      { id: "e-u-emissive", sourceNodeId: "u", sourcePinId: "out", targetNodeId: "output", targetPinId: "emissive" },
+    );
+    return doc;
+  }
+  const nodeTitle = (container: HTMLElement, id: string) =>
+    container.querySelector(`[data-id="${id}"] [data-node-title]`)?.textContent;
+
+  it("lists Create Named Reroute… and each declaration by name, and adds a usage found by its name", () => {
+    harness.content = reroutedDocument() as unknown as Record<string, unknown>;
+    render(<MaterialGraphPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("graph-add-node"));
+    const search = screen.getByTestId("node-palette-search");
+    fireEvent.change(search, { target: { value: "Reroute" } });
+    expect(screen.getByTestId("node-palette-item-reroute.declaration").textContent).toContain("Create Named Reroute…");
+    fireEvent.change(search, { target: { value: "Tint Route" } });
+    expect(screen.queryByTestId("node-palette-item-reroute.usage:s")).toBeNull();
+    fireEvent.click(screen.getByTestId("node-palette-item-reroute.usage:r"));
+    const added = lastCommit().nodes.filter((node) => node.type === "reroute.usage" && node.id !== "u");
+    expect(added.map((node) => node.properties)).toEqual([{ declarationId: "r" }]);
+  });
+
+  it("opens the rename of a new declaration, and a rename retitles the declaration and its usages", async () => {
+    harness.content = reroutedDocument() as unknown as Record<string, unknown>;
+    const { container, rerender } = render(<MaterialGraphPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("graph-add-node"));
+    fireEvent.change(screen.getByTestId("node-palette-search"), { target: { value: "Create Named Reroute" } });
+    fireEvent.click(screen.getByTestId("node-palette-item-reroute.declaration"));
+    const created = lastCommit().nodes.find((node) => node.type === "reroute.declaration" && node.id !== "r" && node.id !== "s")!;
+    expect(created.properties).toEqual({ name: "Reroute", color: [0.9, 0.8, 0.25] });
+    harness.content = lastCommit() as unknown as Record<string, unknown>;
+    rerender(<MaterialGraphPanel {...panelProps} />);
+    const input = await waitFor(() => within(container.querySelector<HTMLElement>(`[data-id="${created.id}"]`)!).getByTestId("graph-node-rename") as HTMLInputElement);
+    expect(input.value).toBe("Reroute");
+    fireEvent.change(input, { target: { value: "Tint Route" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(lastCommit().nodes.find((node) => node.id === created.id)?.properties.name).toBe("Tint Route_1");
+
+    // Double-clicking a declaration's title renames it; its usages take the new name.
+    harness.content = reroutedDocument() as unknown as Record<string, unknown>;
+    rerender(<MaterialGraphPanel {...panelProps} />);
+    await waitFor(() => expect(nodeTitle(container, "u")).toBe("Tint Route"));
+    fireEvent.doubleClick(container.querySelector(`[data-id="r"] [data-node-title]`)!);
+    const rename = await waitFor(() => within(container.querySelector<HTMLElement>('[data-id="r"]')!).getByTestId("graph-node-rename"));
+    fireEvent.change(rename, { target: { value: "Base" } });
+    fireEvent.keyDown(rename, { key: "Enter" });
+    harness.content = lastCommit() as unknown as Record<string, unknown>;
+    rerender(<MaterialGraphPanel {...panelProps} />);
+    await waitFor(() => expect(nodeTitle(container, "u")).toBe("Base"));
+    expect(nodeTitle(container, "r")).toBe("Base");
+    expect(container.querySelector('[data-id="u"] [data-node-title]')?.getAttribute("style")).toContain("background-color: rgb(255, 0, 0)");
+  });
+
+  it("goes from a usage to its declaration by double-click and from its menu, and renames a declaration from its menu", async () => {
+    harness.content = reroutedDocument() as unknown as Record<string, unknown>;
+    const { container, rerender } = render(<MaterialGraphPanel {...panelProps} />);
+    await waitFor(() => expect(container.querySelector('[data-id="u"]')).not.toBeNull());
+    fireEvent.doubleClick(container.querySelector('[data-id="u"]')!);
+    expect(harness.focusNode).toHaveBeenLastCalledWith("r");
+    // Its title too: a usage has no name of its own to rename.
+    fireEvent.doubleClick(container.querySelector('[data-id="u"] [data-node-title]')!);
+    expect(harness.focusNode).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("graph-node-rename")).toBeNull();
+    fireEvent.contextMenu(container.querySelector('[data-id="u"]')!.firstElementChild!);
+    fireEvent.click(await screen.findByTestId("material-select-named-reroute-declaration"));
+    expect(harness.focusNode).toHaveBeenCalledTimes(3);
+    fireEvent.contextMenu(container.querySelector('[data-id="s"]')!.firstElementChild!);
+    fireEvent.click(await screen.findByTestId("material-rename-node"));
+    expect(within(container.querySelector<HTMLElement>('[data-id="s"]')!).getByTestId("graph-node-rename")).toBeTruthy();
+
+    // Deleting the declaration ends its rename; undoing the delete does not reopen it.
+    const without = reroutedDocument();
+    without.nodes = without.nodes.filter((node) => node.id !== "s");
+    harness.content = without as unknown as Record<string, unknown>;
+    rerender(<MaterialGraphPanel {...panelProps} />);
+    await waitFor(() => expect(container.querySelector('[data-id="s"]')).toBeNull());
+    harness.content = reroutedDocument() as unknown as Record<string, unknown>;
+    rerender(<MaterialGraphPanel {...panelProps} />);
+    await waitFor(() => expect(container.querySelector('[data-id="s"]')).not.toBeNull());
+    expect(screen.queryByTestId("graph-node-rename")).toBeNull();
+  });
+
+  it("points a pasted usage at the declaration pasted with it", async () => {
+    harness.content = reroutedDocument() as unknown as Record<string, unknown>;
+    const { container } = render(<MaterialGraphPanel {...panelProps} />);
+    await waitFor(() => expect(container.querySelector('[data-id="u"]')).not.toBeNull());
+    fireEvent.keyDown(document.body, { key: "Control", code: "ControlLeft" });
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="r"]')!);
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="u"]')!);
+    fireEvent.keyUp(document.body, { key: "Control", code: "ControlLeft" });
+    fireEvent.click(screen.getByTestId("graph-copy"));
+    fireEvent.click(screen.getByTestId("graph-paste"));
+    const added = lastCommit().nodes.filter((node) => !reroutedDocument().nodes.some((entry) => entry.id === node.id));
+    const declaration = added.find((node) => node.type === "reroute.declaration")!;
+    expect(declaration.properties.name).toBe("Tint Route_1");
+    expect(added.find((node) => node.type === "reroute.usage")?.properties.declarationId).toBe(declaration.id);
+  });
+
+  it("names a declaration and sets its colour from the Inspector, and shows a usage's declaration", () => {
+    harness.content = reroutedDocument() as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "r";
+    const view = render(<MaterialDetailsPanel {...panelProps} />);
+    const name = screen.getByTestId("property-rerouteName");
+    fireEvent.change(name, { target: { value: "Other" } });
+    fireEvent.blur(name);
+    expect(lastCommit().nodes.find((node) => node.id === "r")?.properties.name).toBe("Other_1");
+    fireEvent.change(screen.getByTestId("property-rerouteColor-hex"), { target: { value: "#00ff00" } });
+    expect(lastCommit().nodes.find((node) => node.id === "r")?.properties.color).toEqual([0, 1, 0]);
+    expect(harness.applyAssetDocumentChange.mock.lastCall?.[2]).toBe("material-node:r:color");
+
+    harness.selectedNodeId = "u";
+    view.rerender(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId("property-row-reroute").textContent).toContain("Tint Route");
+    expect(screen.queryByTestId("property-rerouteName")).toBeNull();
+  });
+
+  it("renames a parameter from its title: a taken name gets a free suffix and Escape keeps the name", async () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "tint", type: "param.float", position: { x: 0, y: 200 }, properties: { name: "Tint", value: [1] } },
+      { id: "gain", type: "param.float", position: { x: 0, y: 400 }, properties: { name: "Gain", value: [1] } },
+    );
+    harness.content = doc as unknown as Record<string, unknown>;
+    const { container } = render(<MaterialGraphPanel {...panelProps} />);
+    await waitFor(() => expect(container.querySelector('[data-id="gain"] [data-node-title]')).not.toBeNull());
+    const renameField = () => within(container.querySelector<HTMLElement>('[data-id="gain"]')!).getByTestId("graph-node-rename") as HTMLInputElement;
+
+    fireEvent.doubleClick(container.querySelector('[data-id="gain"] [data-node-title]')!);
+    const escaped = await waitFor(renameField);
+    expect(escaped.value).toBe("Gain");
+    fireEvent.change(escaped, { target: { value: "Scale" } });
+    fireEvent.keyDown(escaped, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("graph-node-rename")).toBeNull());
+    expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
+
+    fireEvent.contextMenu(container.querySelector('[data-id="gain"]')!.firstElementChild!);
+    fireEvent.click(await screen.findByTestId("material-rename-node"));
+    const field = await waitFor(renameField);
+    fireEvent.change(field, { target: { value: "Tint" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(harness.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
+    expect(lastCommit().nodes.find((node) => node.id === "gain")?.properties.name).toBe("Tint_1");
+    expect(lastCommit().nodes.find((node) => node.id === "tint")?.properties.name).toBe("Tint");
+  });
+
+  it("previews a usage by its declaration's name, and offers no preview of a declaration", async () => {
+    harness.content = reroutedDocument() as unknown as Record<string, unknown>;
+    const { container } = render(<MaterialGraphPanel {...panelProps} />);
+    await waitFor(() => expect(container.querySelector('[data-id="u"]')).not.toBeNull());
+    fireEvent.contextMenu(container.querySelector('[data-id="u"]')!.firstElementChild!);
+    fireEvent.click(await screen.findByTestId("material-preview-node"));
+    expect(harness.setPreviewNode).toHaveBeenLastCalledWith({ nodeId: "u", pinId: "out" });
+    cleanup();
+
+    harness.previewNode = { nodeId: "u", pinId: "out" };
+    render(<MaterialPreviewPanel {...panelProps} />);
+    expect(screen.getByTestId("material-preview-node-banner").textContent).toContain("Previewing Node: Tint Route");
+    cleanup();
+
+    harness.previewNode = null;
+    const graph = render(<MaterialGraphPanel {...panelProps} />);
+    await waitFor(() => expect(graph.container.querySelector('[data-id="r"]')).not.toBeNull());
+    fireEvent.contextMenu(graph.container.querySelector('[data-id="r"]')!.firstElementChild!);
+    expect(await screen.findByTestId("material-rename-node")).toBeTruthy();
+    expect(screen.queryByTestId("material-preview-node")).toBeNull();
+  });
+});

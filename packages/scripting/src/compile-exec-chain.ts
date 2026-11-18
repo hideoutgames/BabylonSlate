@@ -5,6 +5,7 @@ import { GATED_EVENT_TYPE_IDS } from "./compile-events";
 import {
   execSuccessorEdges,
   stripExecSuccessors,
+  traceEdgeIds,
   type ExecTarget,
 } from "./compile-graph-index";
 import {
@@ -34,7 +35,7 @@ function emitAlong(s: CodegenState, edges: ExecTarget[], visited: ExecPath) {
   const scoped = edges.length > 1;
   for (const edge of edges) {
     if (scoped) emitBody(s, "  {");
-    emitExecChain(s, edge.targetNodeId, new Map(visited), edge.targetPinId, edge.id);
+    emitExecChain(s, edge.targetNodeId, new Map(visited), edge.targetPinId, traceEdgeIds(edge));
     if (scoped) emitBody(s, "  }");
   }
 }
@@ -44,11 +45,12 @@ export function emitExecChain(
   startId: string,
   visited: ExecPath = new Map(),
   entryPinId?: string,
-  viaEdgeId?: string,
+  /** The authored wires taken to reach `startId`: one, or each segment through Reroutes. */
+  viaEdgeIds?: readonly string[],
 ) {
   let current: string | undefined = startId;
   let currentEntryPin = entryPinId;
-  let currentVia = viaEdgeId;
+  let currentVia = viaEdgeIds;
   const scopes: ExecScope[] = [];
   while (current) {
     const node = s.index.node(current);
@@ -56,7 +58,7 @@ export function emitExecChain(
     // Taking a wire is reported before the node's loop wrapper opens (once per
     // arrival) and also before a back edge's `continue`, never on loop re-entry.
     if (s.traceExecution && currentVia !== undefined) {
-      emitBody(s, traceProbe(`__dbg.edge(${JSON.stringify(currentVia)})`));
+      for (const edgeId of currentVia) emitBody(s, traceProbe(`__dbg.edge(${JSON.stringify(edgeId)})`));
     }
     // Control inputs (Gate Open/Close, Do Once Reset) are distinct states.
     const input = currentEntryPin ?? node.pins.find(
@@ -92,7 +94,7 @@ export function emitExecChain(
       if (targets.length === 1) {
         current = targets[0]!.targetNodeId;
         currentEntryPin = targets[0]!.targetPinId;
-        currentVia = targets[0]!.id;
+        currentVia = traceEdgeIds(targets[0]!);
         continue;
       }
       emitAlong(s, targets, visited);
@@ -274,7 +276,7 @@ export function emitExecChain(
     if (edges.length === 1) {
       current = edges[0]!.targetNodeId;
       currentEntryPin = edges[0]!.targetPinId;
-      currentVia = edges[0]!.id;
+      currentVia = traceEdgeIds(edges[0]!);
       continue;
     }
     emitAlong(s, edges, visited);

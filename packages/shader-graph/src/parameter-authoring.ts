@@ -1,7 +1,7 @@
 import type { MaterialGraphEdge, MaterialGraphNode } from "./document";
 import { isMaterialParameterNode, materialParameterName } from "./parameters";
 
-/** Longest parameter name the editor gives; longer authored names stay as they are. */
+/** Longest parameter or Named Reroute name the editor gives; longer authored names stay as they are. */
 const NAME_MAX = 64;
 
 type GraphDocument = { nodes: MaterialGraphNode[]; edges: MaterialGraphEdge[] };
@@ -53,9 +53,16 @@ export function uniqueMaterialParameterName(
   name = "Parameter",
   exceptNodeId?: string,
 ): string {
-  const taken = new Set(nodes
+  return uniqueSuffixedName(new Set(nodes
     .filter((node) => node.id !== exceptNodeId && isMaterialParameterNode(node.type))
-    .map(materialParameterName));
+    .map(materialParameterName)), name);
+}
+
+/**
+ * `name` when `taken` lacks it, else its stem (a trailing `_N` removed) with the first free `_1`,
+ * `_2`…, cut to fit 64 characters. Parameters and Named Reroutes name themselves this way.
+ */
+export function uniqueSuffixedName(taken: ReadonlySet<string>, name: string): string {
   if (!taken.has(name)) return name;
   const stem = name.replace(/_\d+$/, "") || name;
   for (let index = 1; ; index += 1) {

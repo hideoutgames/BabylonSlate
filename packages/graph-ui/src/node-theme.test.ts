@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { basicParticleStageRole } from "@haptic/ui/lib/data-types";
 import {
+  headerContrastColor,
   nodeKind,
   nodeVisualRole,
   pinCssVar,
@@ -202,9 +203,35 @@ describe("nodeKind", () => {
     ["behaviour tree sequence", { nodeType: "bt.node", btKind: "sequence" }, "bt-sequence"],
     ["behaviour tree parallel", { nodeType: "bt.node", btKind: "parallel" }, "bt-parallel"],
     ["behaviour tree task", { nodeType: "bt.node", btKind: "task" }, "bt-task"],
+    ["class graph reroute", { nodeType: "flow.reroute", category: "flow", pure: true, reroute: true }, "reroute"],
+    ["particle reroute", { nodeType: "particle.reroute", particleRole: "value", reroute: true }, "reroute"],
+    ["material named reroute", { nodeType: "reroute.declaration", category: "Reroute", material: true }, "namedReroute"],
+    ["material named reroute usage", { nodeType: "reroute.usage", category: "Reroute", material: true }, "namedReroute"],
   ];
 
   it.each(cases)("classifies a %s", (_name, input, expected) => {
     expect(nodeKind(input)).toBe(expected);
+  });
+});
+
+describe("headerContrastColor", () => {
+  it.each([
+    ["#ffffff", "#000000"],
+    ["#fe8", "#000000"],
+    ["#1e3a8a", "#ffffff"],
+    ["rgb(20, 30, 90)", "#ffffff"],
+    ["rgb(240 200 40 / 50%)", "#000000"],
+    ["rgba(100%, 100%, 100%, 1)", "#000000"],
+    // Greys either side of the crossover at relative luminance 0.179.
+    ["#767676", "#000000"],
+    ["#757575", "#ffffff"],
+  ])("puts %s titles in %s", (background, expected) => {
+    expect(headerContrastColor(background)).toBe(expected);
+  });
+
+  it("keeps the theme colour for colours it cannot read", () => {
+    expect(headerContrastColor("var(--node-event)")).toBeUndefined();
+    expect(headerContrastColor("oklch(0.7 0.1 200)")).toBeUndefined();
+    expect(headerContrastColor("#12")).toBeUndefined();
   });
 });

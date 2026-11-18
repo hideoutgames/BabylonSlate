@@ -35,6 +35,7 @@ import {
   pinWithDisplayType,
   type PinCompatibilityRule,
 } from "./graph-connect";
+import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
 
 const execOut: SerializedPin = {
   id: "execOut",
@@ -2285,5 +2286,116 @@ describe("edgesAfterConnect", () => {
     );
     expect(connected).toHaveLength(2);
     expect(connected[1]?.source).toBe("walk");
+  });
+});
+
+describe("any-kind Reroute pins", () => {
+  const wildcard = { kind: "resolvingWildcard" };
+  const knotIn: SerializedPin = { id: "in", name: "In", kind: "data", direction: "in", type: wildcard, anyKind: true };
+  const knotOut: SerializedPin = { id: "out", name: "Out", kind: "data", direction: "out", type: wildcard, anyKind: true };
+  const floatOut: SerializedPin = { id: "f", name: "F", kind: "data", direction: "out", type: { kind: "float" } };
+  const floatIn: SerializedPin = { id: "f", name: "F", kind: "data", direction: "in", type: { kind: "float" } };
+  const poseOut: SerializedPin = { id: "pose", name: "Pose", kind: "data", direction: "out", type: { kind: "pose" } };
+  const strictRule: PinCompatibilityRule = (outgoing, incoming) => outgoing.type.kind === incoming.type.kind;
+
+  it("connect unbound to exec and to any data, never to a Pose, whatever the host rule", () => {
+    expect(pinsAreCompatible(execOut, knotIn)).toBe(true);
+    expect(pinsAreCompatible(knotOut, execIn)).toBe(true);
+    expect(pinsAreCompatible(floatOut, knotIn, strictRule)).toBe(true);
+    expect(pinsAreCompatible(knotOut, knotIn, strictRule)).toBe(true);
+    expect(pinsAreCompatible(poseOut, knotIn)).toBe(false);
+  });
+
+  it("connect as the kind and type a wire bound them to", () => {
+    const execBound = pinWithDisplayType(knotOut, { kind: "exec" });
+    expect(execBound.kind).toBe("exec");
+    expect(pinsAreCompatible(execBound, execIn)).toBe(true);
+    expect(pinsAreCompatible(execBound, floatIn)).toBe(false);
+    const floatBound = pinWithDisplayType(knotIn, { kind: "float" });
+    expect(floatBound.kind).toBe("data");
+    expect(pinsAreCompatible(execOut, floatBound)).toBe(false);
+    expect(pinsAreCompatible(floatOut, floatBound, strictRule)).toBe(true);
+    // A plain wildcard never turns into exec.
+    expect(pinWithDisplayType({ ...knotIn, anyKind: undefined }, { kind: "exec" }).kind).toBe("data");
+  });
+
+  it("list a Reroute row for a dragged exec pin but not for a dragged Pose", () => {
+    const row: PaletteNode = { id: "flow.reroute", title: "Reroute", category: "flow", pins: [knotIn, knotOut] };
+    expect(filterPaletteForPin([row], execOut).map((node) => node.id)).toEqual(["flow.reroute"]);
+    expect(paletteConnectPin(row, execOut)?.id).toBe("in");
+    expect(filterPaletteForPin([row], poseOut)).toEqual([]);
+  });
+
+  type Wire = { id: string; source: string; sourceHandle: string; target: string; targetHandle: string };
+  const wire = (source: string, sourceHandle: string, target: string, targetHandle: string): Wire => ({
+    id: `${source}.${sourceHandle}>${target}.${targetHandle}`, source, sourceHandle, target, targetHandle,
+  });
+  const ids = (edges: Wire[]) => edges.map((edge) => edge.id).sort();
+
+  it("fan exec into a knot input bound to exec, but keep one wire into one bound to data", () => {
+    const execPins = (nodeId: string, pinId: string) =>
+      nodeId === "knot" ? pinWithDisplayType(pinId === "in" ? knotIn : knotOut, { kind: "exec" }) : pinId === "then" ? execOut : undefined;
+    const execEdges = edgesAfterConnect([wire("a", "then", "knot", "in")], wire("b", "then", "knot", "in"), execPins);
+    expect(ids(execEdges)).toEqual(["a.then>knot.in", "b.then>knot.in"]);
+
+    const dataPins = (nodeId: string, pinId: string) =>
+      nodeId === "knot" ? (pinId === "in" ? knotIn : knotOut) : pinId === "f" ? floatOut : undefined;
+    const dataEdges = edgesAfterConnect([wire("a", "f", "knot", "in")], wire("b", "f", "knot", "in"), dataPins);
+    expect(ids(dataEdges)).toEqual(["b.f>knot.in"]);
+  });
+
+  it("let a knot output carrying exec drive one wire where exec outputs do", () => {
+    const pins = (nodeId: string, pinId: string) =>
+      nodeId === "knot" ? (pinId === "in" ? knotIn : knotOut) : pinId === "execIn" ? execIn : undefined;
+    const existing = [wire("knot", "out", "x", "execIn")];
+    const next = wire("knot", "out", "y", "execIn");
+    expect(ids(edgesAfterConnect(existing, next, pins, { singleExecOutput: true }))).toEqual(["knot.out>y.execIn"]);
+    expect(ids(edgesAfterConnect(existing, next, pins))).toEqual(["knot.out>x.execIn", "knot.out>y.execIn"]);
+    expect(replacesExecOutputWire(existing, { source: "knot", sourceHandle: "out", target: "y", targetHandle: "execIn" }, pins)).toBe(true);
+  });
+});
+
+describe("any-kind Reroute chains held to one kind", () => {
+  const wildcard = { kind: "resolvingWildcard" };
+  const knotPins: SerializedPin[] = [
+    { id: "in", name: "In", kind: "data", direction: "in", type: wildcard, anyKind: true },
+    { id: "out", name: "Out", kind: "data", direction: "out", type: wildcard, anyKind: true },
+  ];
+  const pinsOf: Record<string, SerializedPin[]> = {
+    a: [execOut, { id: "f", name: "F", kind: "data", direction: "out", type: { kind: "float" } }],
+    y: [{ id: "y", name: "Y", kind: "data", direction: "in", type: wildcard }],
+    x: [execIn, { id: "fIn", name: "F", kind: "data", direction: "in", type: { kind: "float" } }],
+    k1: knotPins,
+    k2: knotPins,
+  };
+  type Wire = { source: string; sourceHandle: string; target: string; targetHandle: string };
+  const wire = (source: string, sourceHandle: string, target: string, targetHandle: string): Wire => ({ source, sourceHandle, target, targetHandle });
+  /** Whether `from` → `to` connects on the graph `edges` make, judged by display types as the canvas does. */
+  function connects(edges: Wire[], from: [string, string], to: [string, string]): boolean {
+    const nodes = Object.entries(pinsOf).map(([id, pins]) => ({ id, data: { __pins: pins } }));
+    const display = displayPinTypesForGraph(nodes, edges);
+    const pin = ([nodeId, pinId]: [string, string]) =>
+      pinWithDisplayType(pinsOf[nodeId]!.find((entry) => entry.id === pinId)!, display.get(pinTypeKey(nodeId, pinId)));
+    return pinsAreCompatible(pin(from), pin(to));
+  }
+
+  it("refuse exec into a knot already feeding a data-only pin, and keep taking data", () => {
+    const edges = [wire("k1", "out", "y", "y")];
+    expect(connects(edges, ["a", "execOut"], ["k1", "in"])).toBe(false);
+    expect(connects(edges, ["a", "f"], ["k1", "in"])).toBe(true);
+    expect(connects([], ["a", "execOut"], ["k1", "in"])).toBe(true);
+  });
+
+  it("refuse exec at either end of a two-knot chain held to data", () => {
+    const edges = [wire("k1", "out", "k2", "in"), wire("k2", "out", "y", "y")];
+    expect(connects(edges, ["a", "execOut"], ["k1", "in"])).toBe(false);
+    const fedFromData = [wire("a", "f", "k1", "in"), wire("k1", "out", "k2", "in")];
+    expect(connects(fedFromData, ["k2", "out"], ["x", "execIn"])).toBe(false);
+  });
+
+  it("refuse data out of a chain already carrying exec", () => {
+    const edges = [wire("a", "execOut", "k1", "in"), wire("k1", "out", "k2", "in")];
+    expect(connects(edges, ["k2", "out"], ["x", "fIn"])).toBe(false);
+    expect(connects(edges, ["k2", "out"], ["x", "execIn"])).toBe(true);
   });
 });

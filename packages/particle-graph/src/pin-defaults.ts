@@ -5,6 +5,7 @@ import {
   type ParticleGraphNode,
 } from "./document";
 import { createParticleTypeResolver } from "./resolve";
+import { collapseParticleReroutes } from "./reroute";
 import { resizeParticleValue, type ParticleNumericType } from "./types";
 
 export function particlePinDefaultPropertyKey(pinId: string): string {
@@ -58,6 +59,8 @@ export function listUnconnectedParticlePinDefaults(
   graph: { nodes: readonly ParticleGraphNode[]; edges: readonly ParticleGraphEdge[] },
   nodeId: string,
 ): ParticlePinDefault[] {
+  // A pin fed only by a dangling Reroute reads its default, like an unwired pin.
+  graph = collapseParticleReroutes(graph);
   const node = graph.nodes.find((entry) => entry.id === nodeId);
   if (!node) return [];
   const resolver = createParticleTypeResolver(graph);

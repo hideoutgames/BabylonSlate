@@ -1,4 +1,8 @@
+import { isRerouteNodeData } from "./graph-types";
+
 export const GRAPH_VIRTUALIZE_OVERSCAN_PX = 400;
+/** A Reroute knot at Large Pins 1 with a mouse (`.graph-reroute-knot` in graph-editor.css). */
+export const REROUTE_KNOT_SIZE = { width: 80, height: 35 } as const;
 /** Blueprint node shells are at least `min-w-80` wide. */
 export const GRAPH_NODE_FALLBACK_WIDTH = 320;
 export const GRAPH_NODE_FALLBACK_HEIGHT = 120;
@@ -36,7 +40,9 @@ export type GraphVirtualizeEdge = {
  */
 export function estimateGraphNodeSize(
   pins?: ReadonlyArray<{ direction?: string }>,
+  data?: Record<string, unknown>,
 ): { width: number; height: number } {
+  if (isRerouteNodeData(data)) return { ...REROUTE_KNOT_SIZE };
   let inputs = 0;
   let outputs = 0;
   for (const pin of pins ?? []) {
@@ -66,7 +72,7 @@ export function graphNodeSize(
   const width = node.measured?.width || node.width;
   const height = node.measured?.height || node.height;
   if (width && height) return { width, height };
-  const estimate = estimateGraphNodeSize(nodePins(node));
+  const estimate = estimateGraphNodeSize(nodePins(node), node.data as Record<string, unknown> | undefined);
   return { width: width || estimate.width, height: height || estimate.height };
 }
 

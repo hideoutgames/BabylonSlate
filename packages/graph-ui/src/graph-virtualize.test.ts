@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  estimateGraphNodeSize,
+  graphNodesBounds,
   GRAPH_NODE_FALLBACK_HEIGHT,
   GRAPH_NODE_FALLBACK_WIDTH,
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
@@ -138,5 +140,14 @@ describe("selectVisibleGraphElements", () => {
     expect(GRAPH_VIRTUALIZE_OVERSCAN_PX).toBeGreaterThan(0);
     expect(GRAPH_NODE_FALLBACK_WIDTH).toBeGreaterThan(0);
     expect(GRAPH_NODE_FALLBACK_HEIGHT).toBeGreaterThan(0);
+  });
+});
+
+describe("Reroute knot size", () => {
+  it("estimates an unmeasured knot at its small size, not a node's", () => {
+    const pins = [{ direction: "in" }, { direction: "out" }];
+    expect(estimateGraphNodeSize(pins, { __reroute: true })).toEqual({ width: 80, height: 35 });
+    expect(graphNodesBounds([{ id: "knot", position: { x: 100, y: 50 }, data: { __reroute: true, __pins: pins } }]))
+      .toEqual({ x: 100, y: 50, width: 80, height: 35 });
   });
 });

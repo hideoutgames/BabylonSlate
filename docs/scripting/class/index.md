@@ -87,6 +87,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Gate](gate.md) | Passes execution through only while the gate is open. |
 | [Input](input.md) | Starts a function and provides the values its caller passed in. |
 | [Output](output.md) | Returns values to the caller and ends the function. |
+| [Reroute](reroute.md) | Passes one wire through a point you can move, to tidy the graph. |
 | [Sequence](sequence.md) | Runs its outputs one after another, from the first to the last. |
 | [Switch On Int](switch-on-int.md) | Runs the output whose number matches an integer value, or Default if none match. |
 | [Switch On String](switch-on-string.md) | Runs the output whose text matches a string value, or Default if none match. |

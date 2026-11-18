@@ -14,6 +14,7 @@ import { nodeKind, nodeRoleClass, type NodeVisualRole } from "./node-theme";
 import { NodeKindIcon } from "./node-icons";
 import { isPinWired } from "./pin-connections";
 import { useRunNodeStatus } from "./use-run-node-status";
+import { NodeRenameField, useNodeTitleGestures, useRenameValue } from "./node-title";
 
 
 type AttachedRow = { id: string; classId: string; title?: string };
@@ -104,10 +105,17 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
     onAttachmentDoubleClick,
     contextMenuItemsForNode,
     contextMenuItemsForAttachment,
+    renamingNodeId,
+    onNodeRenameCommit,
+    onNodeRenameCancel,
   } = useGraphEditorContext();
   const lastTap = useRef(0);
   const lastAttachmentTap = useRef({ id: "", at: 0 });
   const title = typeof data.title === "string" ? data.title : id;
+  // The title text takes the rename gestures; the rest of the header keeps its double-tap.
+  const titleGestures = useNodeTitleGestures(id);
+  const renameValue = useRenameValue(title);
+  const renaming = renamingNodeId === id;
   const kind = typeof data.kind === "string" ? data.kind : "task";
   const sortIndex = typeof data.sortIndex === "number" ? data.sortIndex : 0;
   const protectedNode = data.__protected === true;
@@ -150,6 +158,8 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   );
 
   const role = treeRole(kind, protectedNode);
+  // An input cannot sit in a button, so the header is a plain element while its title is renamed.
+  const HeaderElement = renaming ? "div" : "button";
   const kindLabel = protectedNode
     ? `Root ${humanizePropertyLabel(kind)}`
     : humanizePropertyLabel(kind);
@@ -173,8 +183,8 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
           label="Parent"
         />
       )}
-      <button
-        type="button"
+      <HeaderElement
+        type={renaming ? undefined : "button"}
         className="bt-node-drag-handle flex h-12 w-full items-center gap-2.5 px-2.5 text-left"
         data-testid={`bt-node-${id}`}
         data-bt-state={state}
@@ -200,9 +210,20 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
           <NodeKindIcon kind={nodeKind({ nodeType: "bt.node", btKind: kind })} className="size-3.5" decorative />
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-sm font-medium leading-5 text-foreground" title={title}>
-            {title}
-          </span>
+          {renaming ? (
+            <NodeRenameField
+              title={renameValue}
+              className="h-6 min-h-6 text-sm md:text-sm"
+              onDone={(name) => {
+                if (name === null) onNodeRenameCancel?.();
+                else onNodeRenameCommit?.(id, name);
+              }}
+            />
+          ) : (
+            <span className="truncate text-sm font-medium leading-5 text-foreground" title={title} data-node-title="" {...titleGestures}>
+              {title}
+            </span>
+          )}
           <span className="flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
             <span className="truncate">{kindLabel}</span>
             <span
@@ -233,7 +254,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
         >
           {sortIndex}
         </span>
-      </button>
+      </HeaderElement>
       {decorators.length + services.length > 0 ? (
         <div className="flex flex-col border-t border-border py-1">
           {decorators.map((row) => (

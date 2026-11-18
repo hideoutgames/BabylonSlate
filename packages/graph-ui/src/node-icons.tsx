@@ -14,6 +14,7 @@ import {
   FlameIcon,
   FlipHorizontal2Icon,
   Gamepad2Icon,
+  GitCommitHorizontalIcon,
   HashIcon,
   ImageIcon,
   LinkIcon,
@@ -24,6 +25,7 @@ import {
   RadioTowerIcon,
   RefreshCwIcon,
   RepeatIcon,
+  RouteIcon,
   Settings2Icon,
   ShapesIcon,
   SplitIcon,
@@ -97,6 +99,8 @@ const NODE_KIND_ICON: Record<NodeKind, { Icon: Glyph; label: string }> = {
   "bt-sequence": { Icon: lucide(ListOrderedIcon), label: "Sequence" },
   "bt-parallel": { Icon: lucide(Columns3Icon), label: "Parallel" },
   "bt-task": { Icon: lucide(PlayIcon), label: "Task" },
+  reroute: { Icon: lucide(GitCommitHorizontalIcon), label: "Reroute" },
+  namedReroute: { Icon: lucide(RouteIcon), label: "Named Reroute" },
 };
 
 /**

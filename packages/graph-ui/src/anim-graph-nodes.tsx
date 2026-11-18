@@ -18,6 +18,33 @@ import { useNodeBreakpoint } from "./graph-breakpoints";
 import { NodeKindIcon } from "./node-icons";
 import { NodeBreakpointTab } from "./graph-nodes";
 import { useNodeMenu } from "./use-node-menu";
+import { useGraphEditorContext } from "./graph-editor-context";
+import { NodeRenameField, useNodeTitleGestures, useRenameValue } from "./node-title";
+
+/** A state or alias card's kind icon and title, or its inline rename field while the host renames it. */
+function AnimCardTitle({ nodeId, kind, title }: { nodeId: string; kind: "state" | "state-alias"; title: string }) {
+  const { renamingNodeId, onNodeRenameCommit, onNodeRenameCancel } = useGraphEditorContext();
+  const gestures = useNodeTitleGestures(nodeId);
+  const value = useRenameValue(title);
+  const renaming = renamingNodeId === nodeId;
+  return (
+    <div className="anim-state-node-title" data-node-title="" {...(renaming ? undefined : gestures)}>
+      <NodeKindIcon kind={kind} className="size-4" />
+      {renaming ? (
+        <NodeRenameField
+          title={value}
+          className="h-6 min-h-6 text-sm md:text-sm"
+          onDone={(name) => {
+            if (name === null) onNodeRenameCancel?.();
+            else onNodeRenameCommit?.(nodeId, name);
+          }}
+        />
+      ) : (
+        <span>{title}</span>
+      )}
+    </div>
+  );
+}
 
 type AnimStateSide = "top" | "right" | "bottom" | "left";
 
@@ -112,10 +139,7 @@ function AnimAliasNode({ id, data, selected }: NodeProps<Node<AnimStateData>>) {
       {...nodeMenu.bind}
     >
       <AnimStateHandles id={id} />
-      <div className="anim-state-node-title">
-        <NodeKindIcon kind="state-alias" className="size-4" />
-        <span>{typeof data.title === "string" ? data.title : "State Alias"}</span>
-      </div>
+      <AnimCardTitle nodeId={id} kind="state-alias" title={typeof data.title === "string" ? data.title : "State Alias"} />
       <div className="anim-state-node-clip" data-testid={`anim-alias-node-covers-${id}`}>
         <span className="truncate">{covers}</span>
       </div>
@@ -146,10 +170,7 @@ function AnimStateNode({
     >
       <NodeBreakpointTab nodeId={id} data={data} placement="inset" />
       <AnimStateHandles id={id} />
-      <div className="anim-state-node-title">
-        <NodeKindIcon kind="state" className="size-4" />
-        <span>{title}</span>
-      </div>
+      <AnimCardTitle nodeId={id} kind="state" title={title} />
       {typeof data.clipLabel === "string" ? (
         <div
           className={cn(
@@ -282,6 +303,7 @@ function AnimTransitionEdge({
             transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px) rotate(${angle}deg)`,
           }}
           data-testid={`anim-transition-badge-${id}`}
+          data-cut-edge-id={id}
           data-bidirectional={bidirectional ? "true" : undefined}
           data-breakpoint={breakpoint ?? undefined}
           aria-label="Select Transition"

@@ -34,6 +34,11 @@ export type GraphPin = {
   subject?: boolean;
   /** Drawn in the node's title bar instead of a pin row (a custom event's Output Delegate). */
   placement?: "header";
+  /**
+   * A `resolvingWildcard` data pin that may also bind to exec (the Reroute knot): its effective kind
+   * is exec while its resolved type is exec, else data.
+   */
+  anyKind?: boolean;
 };
 
 export type GraphNode = {
@@ -50,6 +55,11 @@ export type GraphEdge = {
   sourcePinId: string;
   targetNodeId: string;
   targetPinId: string;
+  /**
+   * Set only on an edge `collapseReroutes` made: the authored edge ids it replaces, in source to
+   * target order. Its `id` is these joined with "|".
+   */
+  viaEdgeIds?: readonly string[];
 };
 
 export type LogicGraphKind = "event" | "function";

@@ -99,6 +99,7 @@ describe("Playwright iPad project filter", () => {
     expect(filesOf(landscape)).toEqual([
       "compiler-results-open.spec.ts",
       "component-gallery.spec.ts",
+      "graph-reroute.spec.ts",
       "p10-tilemap.spec.ts",
       "scene-layer-joystick.spec.ts",
       "scene-modes.spec.ts",
@@ -119,6 +120,7 @@ describe("Playwright iPad project filter", () => {
       "TreeView native touch swipes scroll and a short hold reparents without scrolling",
       "a touch swipe on a slider track scrolls the panel; only the thumb drags",
       "a viewport tap selects the actor under it, not the one at the view centre",
+      "on touch, a double-tap on a wire adds a knot and a double-tap on a Custom Event's title renames it",
       "tall overlays › dialog and sheet keep Close visible and usable after scrolling",
     ]);
     const desktopKeys = new Set(desktop.map((test) => `${test.file} › ${test.title}`));

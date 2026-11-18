@@ -16,7 +16,7 @@ Outputs a named Float that can be changed at runtime or overridden per Material 
 
 | Setting | Description |
 | --- | --- |
-| Parameter Name | The unique name used to set the parameter from a Node Graph or a Material Instance. A taken name gets **_1**, **_2** and so on. |
+| Parameter Name | The unique name used to set the parameter from a Node Graph or a Material Instance. Also renamed by double-clicking the node's title or with **Rename** in its menu. A taken name gets **_1**, **_2** and so on. |
 | Type | **Float**, **Vector2**, **Vector3**, **Vector4**, **Color** or **Texture**. Changing it turns the node into that parameter, resizing the default. |
 | Per Instance | Lets each actor drawn with the material have its own value while still drawing together with the others. |
 | Value | The default value. |

@@ -18,6 +18,7 @@ import {
   arrayOf,
   mapOf,
   RESOLVING_WILDCARD,
+  REROUTE_NODE_TYPE,
   ENGINE_HIT_RESULT_STRUCT_ID,
   ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID,
   pinTypeForVariable,
@@ -683,6 +684,20 @@ export const flowNodes: NodeDefinition[] = [
     codegen: () => {
       /* entry is a no-op marker */
     },
+  },
+  {
+    // Compiled away (`collapseReroutes`): wires through it compile as direct wires. Pure so every
+    // scripting host offers it, Animation rule and pose graphs included; it carries exec too.
+    id: REROUTE_NODE_TYPE,
+    title: "Reroute",
+    category: "flow",
+    pure: true,
+    searchAliases: ["knot", "redirect", "wire"],
+    pins: () => [
+      { ...pin("in", "In", "in", RESOLVING_WILDCARD), anyKind: true },
+      { ...pin("out", "Out", "out", RESOLVING_WILDCARD), anyKind: true },
+    ],
+    codegen: (ctx) => ({ out: ctx.input("in") }),
   },
   {
     id: "flow.branch",
