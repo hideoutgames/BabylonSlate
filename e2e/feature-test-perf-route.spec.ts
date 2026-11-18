@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
 import { FEATURE_TEST_PROFILE_VIEWS } from "../apps/editor/src/lib/feature-test/layout";
 import { glLiveObjects, installGlMemoryLedger, readGlMemoryLedger } from "./gl-memory-ledger";
@@ -65,8 +66,9 @@ import {
  *      HAPTIC_PERF_MEMORY=1 (with HAPTIC_PERF_OUT: a memory timeline beside the report, `<out>.memory.json`: what the page
  *      asked WebGL to allocate every 250 ms (`gl-memory-ledger.ts`), each allocation or release of 4 MiB or more, the
  *      live objects at the phase marks, and the phase marks in epoch milliseconds; the editor settles again after the
- *      last Play), HAPTIC_PERF_MEMORY_SAMPLER (with it: a PowerShell script started with `-Out <out>.gpu.csv -Stop
- *      <file> -Pids <browser, GPU and renderer pids>` that samples those processes until the stop file appears).
+ *      last Play; on Windows `perf-process-sampler.ps1` also samples the browser, GPU and renderer processes' dedicated GPU
+ *      memory and private bytes into `<out>.gpu.csv`), HAPTIC_PERF_MEMORY_SAMPLER (another sampler script for it, started
+ *      with `-Out <out>.gpu.csv -Stop <file> -Pids <pids> -IntervalMs 250` and stopped when the stop file appears).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -547,7 +549,7 @@ async function startProcessSampler(page: Page): Promise<(() => Promise<void>) | 
   const { processInfo } = await browserCdp.send("SystemInfo.getProcessInfo");
   await browserCdp.detach();
   samplerProcesses = processInfo.map(({ type, id }) => ({ type, id }));
-  const script = process.env.HAPTIC_PERF_MEMORY_SAMPLER;
+  const script = process.env.HAPTIC_PERF_MEMORY_SAMPLER ?? (process.platform === "win32" ? fileURLToPath(new URL("./perf-process-sampler.ps1", import.meta.url)) : null);
   if (!script || !existsSync(script)) return null;
   const out = `${process.env.HAPTIC_PERF_OUT}.gpu.csv`;
   const stop = `${process.env.HAPTIC_PERF_OUT}.gpu.stop`;
