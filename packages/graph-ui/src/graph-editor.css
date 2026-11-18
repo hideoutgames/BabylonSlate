@@ -93,6 +93,19 @@
   box-shadow: 0 0 0 2px var(--destructive);
 }
 
+/*
+ * Pin hover, mouse only: anywhere in a pin's hit area, its glyph glows in its own colour (`--graph-pin-color`,
+ * set by `PinHandle`) and grows slightly in place, so neither layout nor the hit area moves. A wire hovering a
+ * pin it cannot connect to shows no glow; Cut Links draws its own mark instead (below). No transition.
+ */
+@media (hover: hover) and (pointer: fine) {
+  /* Low specificity, so the Cut Links mark overrides it. */
+  .graph-editor-canvas :where(.react-flow__handle[data-graph-pin]:hover:not(.connectingto:not(.valid))) .graph-pin-visual {
+    scale: 1.15;
+    filter: drop-shadow(0 0 1px var(--graph-pin-color)) drop-shadow(0 0 4px var(--graph-pin-color));
+  }
+}
+
 .graph-node-dev-only-tape {
   background: repeating-linear-gradient(
     -45deg,
@@ -585,6 +598,9 @@
   border-radius: 9999px;
   outline: 2px solid var(--destructive);
   outline-offset: 2px;
+  /* The cut mark replaces the pin hover glow. */
+  scale: none;
+  filter: none;
 }
 
 [data-graph-tool="cut"] .graph-editor-canvas .react-flow__handle:hover:not(:has(.graph-pin-visual)) {

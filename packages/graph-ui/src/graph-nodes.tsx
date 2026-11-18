@@ -11,6 +11,7 @@ import {
   useContext,
   useEffect,
   useRef,
+  type CSSProperties,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
@@ -239,6 +240,7 @@ function PinHandle({
       position={isSource ? Position.Right : Position.Left}
       aria-label={label ?? humanizePropertyLabel(pin.name)}
       data-pin-type={pin.type.kind}
+      data-graph-pin=""
       data-error={hasError ? "true" : undefined}
       className={cn(
         "!relative !top-auto !right-auto !left-auto !translate-x-0 !translate-y-0",
@@ -256,7 +258,9 @@ function PinHandle({
         height: "var(--graph-pin-hit, 44px)",
         background: "transparent",
         border: "none",
-      }}
+        // The glyph's colour, for its mouse hover glow (graph-editor.css).
+        "--graph-pin-color": pinCssVar(displayType),
+      } as CSSProperties}
       isConnectable={!disabled}
       onClick={(event) => {
         event.stopPropagation();

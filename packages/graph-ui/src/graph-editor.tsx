@@ -362,6 +362,12 @@ export interface GraphEditorProps {
    * above the graph's own Copy, Paste, Duplicate, Delete and Break Links.
    */
   contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
+  /**
+   * Host actions for a pin's menu (a right-click on a script-style pin), read once each time it opens. They
+   * follow the graph's own Break Links (shown when the pin has wires and the graph is editable). With no
+   * items at all the right-click opens the node's menu instead.
+   */
+  contextMenuItemsForPin?: (nodeId: string, pinId: string) => NestedMenuItem[];
   /** The node whose output the host previews, tagged and ringed in the warning colour (Material **Preview Node**). */
   previewedNode?: GraphPreviewedNode | null;
   contextMenuItemsForAttachment?: (
@@ -509,6 +515,22 @@ function cutTargetOf(target: EventTarget | null): CutTarget | null {
   }
   const nodeId = target.closest(".react-flow__node")?.getAttribute("data-id");
   return nodeId ? { kind: "node", nodeId } : null;
+}
+
+/** The script-style pin (`PinHandle`) an event landed on, anywhere in its hit area. */
+function graphPinOf(target: EventTarget | null): { nodeId: string; pinId: string } | null {
+  if (!(target instanceof Element)) return null;
+  const handle = target.closest(".react-flow__handle[data-graph-pin]");
+  const nodeId = handle?.getAttribute("data-nodeid");
+  const pinId = handle?.getAttribute("data-handleid");
+  return nodeId && pinId ? { nodeId, pinId } : null;
+}
+
+/** Menu groups in order, empty ones left out, with a separator between each. */
+function joinMenuGroups(groups: NestedMenuItem[][]): NestedMenuItem[] {
+  return groups
+    .filter((group) => group.length > 0)
+    .flatMap((group, index) => index === 0 ? group : [{ type: "separator" as const, id: `menu-group-${index}` }, ...group]);
 }
 
 function asConnection(connection: Connection | Edge): Connection {
@@ -933,6 +955,7 @@ function GraphEditorCanvas({
   deleteKeyCode,
   nodesFocusable = true,
   contextMenuItemsForNode,
+  contextMenuItemsForPin,
   previewedNode = null,
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
@@ -1092,10 +1115,8 @@ function GraphEditorCanvas({
     pinDisplayTypesRef.current = pinDisplayTypes;
     pinDisplaySourceRef.current = { nodes, edges, types: pinDisplayTypes };
   });
-  const paneMenu = useContextMenu({
-    items: [],
-    enabled: Boolean(contextMenuItemsForNode) && !readOnly,
-  });
+  // The pane's and the pins' menus; each caller decides whether its menu applies.
+  const paneMenu = useContextMenu({ items: [] });
 
   const errorDiagnostics = useMemo(
     () =>
@@ -2710,31 +2731,33 @@ function GraphEditorCanvas({
     removeGraphElements(selected, new Set());
   }, [removeGraphElements]);
 
+  // The wires a break at a pin removes: the same links a wire released on empty canvas breaks.
+  const pinLinkIds = useCallback((nodeId: string, pinId: string): Set<string> => {
+    const breaks = edgeBreaksAtPinRef.current ?? edgeTouchesPin;
+    return new Set(
+      graphStateRef.current.edges
+        .filter((edge) => breaks(edge, nodeId, pinId))
+        .map((edge) => edge.id),
+    );
+  }, []);
+
   // Cut Links on a tap: a wire, every wire on a pin, or a Reroute knot with its wires, as one
   // graph change. One Use turns the tool off after a tap that removed something.
   const cutAt = useCallback(
     (target: CutTarget): boolean => {
-      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const { nodes: currentNodes } = graphStateRef.current;
       let removed = false;
       if (target.kind === "edge") {
         removed = removeGraphElements(new Set(), new Set([target.edgeId]));
       } else if (target.kind === "pin") {
-        const breaks = edgeBreaksAtPinRef.current ?? edgeTouchesPin;
-        removed = removeGraphElements(
-          new Set(),
-          new Set(
-            currentEdges
-              .filter((edge) => breaks(edge, target.nodeId, target.pinId))
-              .map((edge) => edge.id),
-          ),
-        );
+        removed = removeGraphElements(new Set(), pinLinkIds(target.nodeId, target.pinId));
       } else if (isRerouteNodeData(currentNodes.find((node) => node.id === target.nodeId)?.data)) {
         removed = removeGraphElements(new Set([target.nodeId]), new Set());
       }
       if (removed && cutOneShotRef.current) setCutToolOn(false);
       return removed;
     },
-    [removeGraphElements],
+    [pinLinkIds, removeGraphElements],
   );
   const cutAtRef = useRef(cutAt);
   useLayoutEffect(() => {
@@ -3124,9 +3147,7 @@ function GraphEditorCanvas({
         : [];
       const groups = [hostItems, breakpointItems];
       if (!readOnly) groups.push(graphItems(currentNodes, currentEdges));
-      return groups
-        .filter((group) => group.length > 0)
-        .flatMap((group, index) => index === 0 ? group : [{ type: "separator" as const, id: `menu-group-${index}` }, ...group]);
+      return joinMenuGroups(groups);
     },
     [
       breakpoints,
@@ -3143,6 +3164,50 @@ function GraphEditorCanvas({
     }),
     [breakpoints, contextMenuItemsForNode, readOnly, resolveNodeMenu],
   );
+
+  // The menu of a script-style pin: Break Links (when it has wires and the graph is editable),
+  // then the host's items. It leaves the selection alone.
+  const resolvePinMenu = useCallback(
+    (nodeId: string, pinId: string): NestedMenuItem[] => {
+      const builtIn: NestedMenuItem[] = [];
+      if (!readOnly && !hiddenToolbar.has("breakLinks") && pinLinkIds(nodeId, pinId).size > 0) {
+        builtIn.push({
+          id: "break-pin-links",
+          label: "Break Links",
+          onSelect: () => { removeGraphElements(new Set(), pinLinkIds(nodeId, pinId)); },
+        });
+      }
+      return joinMenuGroups([builtIn, contextMenuItemsForPin?.(nodeId, pinId) ?? []]);
+    },
+    [contextMenuItemsForPin, hiddenToolbar, pinLinkIds, readOnly, removeGraphElements],
+  );
+  const resolvePinMenuRef = useRef(resolvePinMenu);
+  const openCanvasMenuRef = useRef(paneMenu.openMenuAt);
+  useLayoutEffect(() => {
+    resolvePinMenuRef.current = resolvePinMenu;
+    openCanvasMenuRef.current = paneMenu.openMenuAt;
+  });
+
+  // A right-click anywhere in a pin's hit area opens the pin's menu, when it has items, in place of
+  // the node's or the pane's; it neither selects nor starts a wire. One capture listener serves
+  // every pin. A touch hold is left to the node menu, since on a pin it is also the start of a wire.
+  useEffect(() => {
+    const root = wrapperRef.current;
+    if (!root) return;
+    const onContextMenu = (event: MouseEvent) => {
+      const pointerType = "pointerType" in event ? (event as PointerEvent).pointerType : "";
+      if (pointerType === "touch" || pointerType === "pen") return;
+      const pin = graphPinOf(event.target);
+      if (!pin) return;
+      const items = resolvePinMenuRef.current(pin.nodeId, pin.pinId);
+      if (items.length === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openCanvasMenuRef.current(event.clientX, event.clientY, items);
+    };
+    root.addEventListener("contextmenu", onContextMenu, true);
+    return () => root.removeEventListener("contextmenu", onContextMenu, true);
+  }, []);
 
 
   const clearSelection = useCallback(() => {
