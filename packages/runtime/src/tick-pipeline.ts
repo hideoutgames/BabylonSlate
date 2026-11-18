@@ -71,6 +71,13 @@ export class TickPipeline {
   private readonly _lastPhaseMs = new Float64Array(TICK_TIMING_PHASES.length);
   private _lastScriptMs = 0;
   private _lastPhysicsMs = 0;
+  /**
+   * Each phase's milliseconds summed over the ticks timed since the last `stats` command, and those ticks: the command
+   * reports their mean. A browser that steps its clock in whole milliseconds (WebKit outside cross-origin isolation)
+   * times each tick as a whole number of them; the mean of many such readings converges on the real time.
+   */
+  private readonly statsPhaseSums = new Float64Array(TICK_TIMING_PHASES.length);
+  private statsTicks = 0;
   /** Publish time spent in the current tick while a profile records. */
   private profilePublishMs = 0;
   private lastStatsEmitMs: number | null = null;
@@ -177,10 +184,10 @@ export class TickPipeline {
     this.closeTimingPhase(this.now());
     this.currentTimingPhase = -1;
     this._lastPhaseMs.set(this.phaseMs);
-    let scriptMs = 0;
-    for (let index = 0; index < this.phaseMs.length; index++) if (index !== PHYSICS_PHASE) scriptMs += this.phaseMs[index]!;
-    this._lastScriptMs = scriptMs;
+    this._lastScriptMs = scriptPhasesMs(this.phaseMs);
     this._lastPhysicsMs = this.phaseMs[PHYSICS_PHASE]!;
+    for (let index = 0; index < this.phaseMs.length; index++) this.statsPhaseSums[index]! += this.phaseMs[index]!;
+    this.statsTicks += 1;
   }
 
   /** Snapshot publish time counted toward the tick's profile sample. */
@@ -192,20 +199,23 @@ export class TickPipeline {
 
   /**
    * After the tick's publish point: the throttled `stats` command, then the
-   * trace frame. `timeDilation` is the one captured when the tick began.
+   * trace frame. `timeDilation` is the one captured when the tick began. The
+   * command's timings are means over the ticks and publishes since the last
+   * one; the trace frame keeps this tick's own.
    */
   finishTick(completedFrameId: number, pending: readonly RawInputEvent[], timeDilation: number): void {
     const statsNow = this.now();
     if (shouldEmitStatsCommand(statsNow, this.lastStatsEmitMs)) {
       this.lastStatsEmitMs = statsNow;
+      const phaseMs = this.takeStatsPhaseMeans();
       this.host.emit({
         type: "stats",
         frameId: this.host.frameId(),
         tickIndex: this.world.clock.tickIndex,
-        scriptMs: this._lastScriptMs,
-        physicsMs: this._lastPhysicsMs,
-        phaseMs: Array.from(this._lastPhaseMs),
-        publishMs: this.snapshots.lastPublishMs,
+        scriptMs: scriptPhasesMs(phaseMs),
+        physicsMs: phaseMs[PHYSICS_PHASE]!,
+        phaseMs,
+        publishMs: this.snapshots.takeMeanPublishMs(),
         liveActors: this.host.liveActors(),
         ...this.objectLifetimeStats(),
         snapshotCapacity: this.snapshots.capacity,
@@ -293,8 +303,25 @@ export class TickPipeline {
     return { collectableObjects: lifetime.collectable, ...(lifetime.lastPassMs === null ? {} : { garbageCollectionMs: lifetime.lastPassMs }) };
   }
 
+  /** Each phase's mean over the ticks timed since the last call, and a fresh window; the last tick's when none was. */
+  private takeStatsPhaseMeans(): number[] {
+    if (!this.statsTicks) return Array.from(this._lastPhaseMs);
+    const ticks = this.statsTicks;
+    const means = Array.from(this.statsPhaseSums, (sum) => sum / ticks);
+    this.statsPhaseSums.fill(0);
+    this.statsTicks = 0;
+    return means;
+  }
+
   private closeTimingPhase(now: number): void {
     if (this.currentTimingPhase < 0) return;
     this.phaseMs[this.currentTimingPhase]! += now - this.phaseMark;
   }
+}
+
+/** Every timed phase but physics: what the stats call script time. */
+function scriptPhasesMs(phaseMs: ArrayLike<number>): number {
+  let total = 0;
+  for (let index = 0; index < phaseMs.length; index++) if (index !== PHYSICS_PHASE) total += phaseMs[index]!;
+  return total;
 }

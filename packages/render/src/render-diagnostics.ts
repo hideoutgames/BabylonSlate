@@ -200,7 +200,13 @@ export type RenderDiagnostics = {
     sourceSize: [number, number] | null;
     now: number;
   };
+  /** The view's last rendered frame's CPU time, ms. */
   cpuMs: number;
+  /**
+   * The mean of the view's last rendered frames' CPU time (the Stats HUD's `cpu`), ms; null before the first. A
+   * clock that steps in whole milliseconds reads each frame as a whole number of them; the mean shows the fractions.
+   */
+  cpuMeanMs?: number | null;
   gpuMs: number | null;
   gpuStatus: "available" | "pending" | "unsupported";
   /**

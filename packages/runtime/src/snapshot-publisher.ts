@@ -72,8 +72,11 @@ export class SnapshotPublisher {
       "actor",
     );
   };
-  /** Most recent publish: overlay layout and removal pass, composition and buffer write (stats `publishMs`). */
+  /** Most recent publish: overlay layout and removal pass, composition and buffer write. */
   private _lastPublishMs = 0;
+  /** Publish milliseconds summed since `takeMeanPublishMs` last read them, and the publishes they cover. */
+  private publishSumMs = 0;
+  private publishCount = 0;
   /** Completed snapshot writes; unchanged while nothing (a tick, an edit, a realization) wrote a newer pose. */
   private _writes = 0;
   /** True while `advance()` runs catch-up ticks; their snapshot writes wait for the burst to end. */
@@ -102,6 +105,18 @@ export class SnapshotPublisher {
   get capacity(): number { return this.snapshots.maxActors; }
   get generation(): number { return this._generation; }
   get lastPublishMs(): number { return this._lastPublishMs; }
+
+  /**
+   * The mean publish milliseconds since the previous call (the stats command's `publishMs`), then a fresh window; the
+   * last publish's when none happened since. A mean shows the fractions a clock in whole milliseconds hides.
+   */
+  takeMeanPublishMs(): number {
+    if (!this.publishCount) return this._lastPublishMs;
+    const mean = this.publishSumMs / this.publishCount;
+    this.publishSumMs = 0;
+    this.publishCount = 0;
+    return mean;
+  }
   get writes(): number { return this._writes; }
 
   /** Grow the buffers to hold `required` slots and announce the new layout, or report and throw. */
@@ -154,7 +169,7 @@ export class SnapshotPublisher {
     this.pendingPublishMs = 0;
     this.runPrelude();
     this.write(this.host.frameId(), this.world.clock.tickIndex, this.host.lastScriptMs(), this.host.lastPhysicsMs());
-    this._lastPublishMs = this.now() - start;
+    this.notePublish(this.now() - start);
     if (this.host.recorder()?.recording) this.host.profilePublish(this._lastPublishMs);
   }
 
@@ -179,8 +194,14 @@ export class SnapshotPublisher {
     const header = this.pendingHeader;
     this.write(header.frameId, header.tickIndex, header.scriptMs, header.physicsMs);
     const publishMs = this.now() - start;
-    this._lastPublishMs = spent + publishMs;
+    this.notePublish(spent + publishMs);
     this.host.recorder()?.addPublishCost(header.tickIndex, publishMs);
+  }
+
+  private notePublish(milliseconds: number): void {
+    this._lastPublishMs = milliseconds;
+    this.publishSumMs += milliseconds;
+    this.publishCount += 1;
   }
 
   /** Per-tick part of a deferred publish: overlay layout, removals and their commands happen in this tick. */

@@ -117,6 +117,19 @@ describe("statsHudModel", () => {
     const warned = model.rows.flatMap((row) => row.metrics.filter((metric) => metric.warn).map((metric) => metric.id));
     expect(warned).toEqual(["geo", "draws", "first-draws", "quality-limits", "draw-warn", "geo-warn"]);
   });
+
+  it("shows the render cpu as the mean of the last frames where the host has one", () => {
+    const rendering = {
+      cpuMs: 1, gpuMs: null, gpuStatus: "unsupported", width: 8, height: 8, shadowDrawCalls: 0,
+      readbackMs: null, autoLod: { meshes: 0, reduced: 0 }, qualityLimits: [],
+    };
+    const cpu = (extra: object) => statsHudModel({ fps: 60, scriptMs: 0, physicsMs: 0, rendering: { ...rendering, ...extra } }, ["draws"])
+      .rows[0]!.metrics.find((metric) => metric.id === "cpu");
+    // A whole-millisecond clock read the last frame as 1 ms; the frames before it average 0.35 ms.
+    expect(cpu({ cpuMeanMs: 0.35 })).toMatchObject({ text: "0.35 ms", raw: 0.35 });
+    expect(cpu({ cpuMeanMs: null })).toMatchObject({ text: "1.00 ms", raw: 1 });
+    expect(cpu({})).toMatchObject({ text: "1.00 ms", raw: 1 });
+  });
 });
 
 describe("createMessageRateMeter", () => {

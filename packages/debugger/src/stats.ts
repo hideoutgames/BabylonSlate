@@ -44,6 +44,8 @@ export function nextStatGroups(
 /** The render timings Stats shows; a render package `RenderDiagnostics` satisfies it. */
 export type StatsHudRendering = {
   cpuMs: number;
+  /** The mean of the last rendered frames' CPU time, which `cpu` shows where present. */
+  cpuMeanMs?: number | null;
   gpuMs: number | null;
   gpuStatus: string;
   width: number;
@@ -193,7 +195,7 @@ function groupMetrics(group: StatGroup, input: StatsHudInput, overBudget: boolea
         input.meshCount == null ? null : { id: "meshes", label: "meshes", text: String(input.meshCount), raw: input.meshCount },
         input.textureCount == null ? null : { id: "textures", label: "tex", text: String(input.textureCount), raw: input.textureCount },
         ...(rendering ? [
-          { id: "cpu", label: "cpu", text: ms(rendering.cpuMs), raw: rendering.cpuMs },
+          ((cpu) => ({ id: "cpu", label: "cpu", text: ms(cpu), raw: cpu }))(rendering.cpuMeanMs ?? rendering.cpuMs),
           { id: "gpu", label: "gpu", text: rendering.gpuMs === null ? rendering.gpuStatus : ms(rendering.gpuMs), ...(rendering.gpuMs === null ? {} : { raw: rendering.gpuMs }) },
           { id: "resolution", text: `${rendering.width}×${rendering.height}` },
           { id: "shadows", label: "shadows", text: `${rendering.shadowDrawCalls} draws`, raw: rendering.shadowDrawCalls },
