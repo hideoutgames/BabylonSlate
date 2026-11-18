@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   createViewportZoomDrive,
+  editorZoomAtLimit,
   type ViewportZoomDriveOptions,
 } from "./viewport-zoom-drive";
 
@@ -246,5 +247,27 @@ describe("createViewportZoomDrive", () => {
     expect(acquired).toHaveLength(1);
     expect(released).toBe(1);
     expect(factors).toHaveLength(before);
+  });
+});
+
+describe("editorZoomAtLimit", () => {
+  // [case, mode, direction, radius, orthoHalfHeight, pixelZoom, pixelPerfect, expected]
+  const cases: [string, "2d" | "3d", 1 | -1, number, number, number, boolean, boolean][] = [
+    ["3D in at the closest radius", "3d", 1, 0.5, 6, 1, false, true],
+    ["3D out at the closest radius", "3d", -1, 0.5, 6, 1, false, false],
+    ["3D out at the farthest radius", "3d", -1, 400, 6, 1, false, true],
+    ["3D in at the farthest radius", "3d", 1, 400, 6, 1, false, false],
+    ["3D mid-range ignores 2D floors", "3d", 1, 12, 0.01, 0.01, true, false],
+    ["2D in at the smallest half-height", "2d", 1, 12, 0.01, 1, false, true],
+    ["2D out at the smallest half-height", "2d", -1, 12, 0.01, 1, false, false],
+    ["2D in mid-range", "2d", 1, 0.5, 6, 0.01, false, false],
+    ["pixel-perfect out at the smallest pixel zoom", "2d", -1, 12, 6, 0.01, true, true],
+    ["pixel-perfect in at the smallest pixel zoom", "2d", 1, 12, 6, 0.01, true, false],
+    ["pixel-perfect in ignores the derived half-height", "2d", 1, 12, 0.01, 1, true, false],
+    ["pixel-perfect out mid-range", "2d", -1, 400, 6, 2, true, false],
+  ];
+
+  it.each(cases)("%s", (_name, mode, direction, radius, orthoHalfHeight, pixelZoom, pixelPerfect, expected) => {
+    expect(editorZoomAtLimit(mode, direction, radius, orthoHalfHeight, pixelZoom, pixelPerfect)).toBe(expected);
   });
 });

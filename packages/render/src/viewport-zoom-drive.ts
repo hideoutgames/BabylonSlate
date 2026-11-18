@@ -1,4 +1,11 @@
-import type { EditorCameraController } from "./editor-camera";
+import type { ViewportMode } from "@haptic/core";
+import {
+  MAX_CAMERA_RADIUS,
+  MIN_CAMERA_RADIUS,
+  MIN_ORTHO_HALF_HEIGHT,
+  MIN_PIXEL_ZOOM,
+  type EditorCameraController,
+} from "./editor-camera";
 import type { RenderScheduler } from "./render-scheduler";
 
 /** Zoom factor of one tap of a viewport zoom button. */
@@ -34,6 +41,28 @@ export interface ViewportZoomDrive {
   /** One whole tap step (keyboard activation): `start` then `stop`. */
   step: (direction: ViewportZoomDirection) => void;
   dispose: () => void;
+}
+
+/**
+ * True when the editor camera's own clamp stops a zoom in `direction`: 3D
+ * radius at either end, free 2D at its smallest half-height (zoom in), or
+ * pixel-perfect 2D at its smallest pixel zoom (zoom out).
+ */
+export function editorZoomAtLimit(
+  mode: ViewportMode,
+  direction: ViewportZoomDirection,
+  radius: number,
+  orthoHalfHeight: number,
+  pixelZoom: number,
+  pixelPerfect: boolean,
+): boolean {
+  if (mode === "3d") {
+    return direction === 1
+      ? radius <= MIN_CAMERA_RADIUS
+      : radius >= MAX_CAMERA_RADIUS;
+  }
+  if (pixelPerfect) return direction === -1 && pixelZoom <= MIN_PIXEL_ZOOM;
+  return direction === 1 && orthoHalfHeight <= MIN_ORTHO_HALF_HEIGHT;
 }
 
 const TAP_LOG = Math.log(VIEWPORT_ZOOM_TAP_FACTOR);
