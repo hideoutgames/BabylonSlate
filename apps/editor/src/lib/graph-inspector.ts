@@ -57,7 +57,9 @@ import {
 } from "@haptic/scripting";
 import { growablePinList } from "./graph-pin-lists";
 import {
+  isNumericOperandType,
   numericOperandChoices,
+  numericOperandTypePatch,
   numericOperands,
   numericOperandType,
   numericOperandTypeName,
@@ -932,7 +934,7 @@ export function numericOperandPropertyRows(
       options: numericOperandChoices(typeId, other ? numericOperandType(data, other.property) : undefined)
         .map((type) => ({ value: type, label: numericOperandTypeName(type) })),
       onChange: (value) => {
-        if (value !== current) onPatch({ [operand.property]: value, [pinDefaultPropertyKey(operand.pinId)]: undefined });
+        if (value !== current && isNumericOperandType(value)) onPatch(numericOperandTypePatch(operand, value));
       },
     }];
   });

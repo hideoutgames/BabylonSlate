@@ -45,7 +45,7 @@ import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { applyDataGraphAssetPicks } from "../lib/data-graph";
 import { prepareClassGraphPaste } from "../lib/graph-paste";
 import { acceptsFunctionPinDrop, addFunctionPinFromDrop } from "../lib/function-pin-drop";
-import { addPinPatch } from "../lib/graph-pin-lists";
+import { useScriptGraphPinActions } from "../lib/use-script-graph-pin-actions";
 import {
   DEFAULT_FUNCTION_PINS,
   addClassMember,
@@ -69,7 +69,6 @@ import {
   knownClassIdSet,
   newCustomEventPaletteNode,
   ScriptPaletteCache,
-  scriptCatalogPaletteNode,
   scriptPaletteInjectorKey,
   scriptPaletteNodes,
   scriptPinCompatibility,
@@ -80,7 +79,6 @@ import {
 import { isInputWired, wiredSource, wiredTargets } from "../lib/reroute-wires";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { logicGraphHostClass } from "../lib/embedded-script";
-import { scriptPinConversion } from "../services/script-pin-conversion";
 import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipDispatcherSymbols, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
 import { refreshTimelineClipNodes, timelineGraphDiagnostics, timelineScriptClassIds, timelineScriptSymbols } from "../lib/timeline-script-catalog";
 import { useAnimObjectGraphRunTrace, useClassGraphRunTrace } from "../context/graph-debug-context";
@@ -251,11 +249,6 @@ export function GraphPanel(
   );
   const pinCompatibility = useMemo(
     () => scriptPinCompatibility(hierarchy),
-    [hierarchy],
-  );
-  // An Actor or component reference wired into a Vector3, Rotator, Transform or String input inserts its getter.
-  const pinConversion = useMemo(
-    () => scriptPinConversion({ hierarchy, paletteNodeFor: (nodeType) => scriptCatalogPaletteNode(nodeType) }),
     [hierarchy],
   );
   const pinTypeNames = useMemo(() => {
@@ -650,20 +643,6 @@ export function GraphPanel(
     },
     [activeFunctionId, doc, documentActions, documentId],
   );
-  // + Add Pin raises the count its Inspector row edits, as one change; hydration regenerates the pins.
-  const onAddPin = useCallback(
-    (nodeId: string) => {
-      const current = graphContentRef.current;
-      if (!current) return;
-      const nodes = activeFunctionId ? current.functionGraphs?.[activeFunctionId]?.nodes : current.nodes;
-      const node = nodes?.find((candidate) => candidate.id === nodeId);
-      if (!node) return;
-      const data = node.data as Record<string, unknown>;
-      const patch = addPinPatch(typeof data.__nodeType === "string" ? data.__nodeType : node.type, data);
-      if (patch) commitNodeData(current, nodeId, patch);
-    },
-    [activeFunctionId, commitNodeData],
-  );
   const renderCreateEventBody = useCallback(
     (nodeId: string, data: Record<string, unknown>) => {
       if (!graphContent) return null;
@@ -918,6 +897,33 @@ export function GraphPanel(
     return meshMaterialGuidsOf({ components });
   }, [graphContent, otherClassGraphs, parentClass, parentOf]);
 
+  // A canvas edit (or a pin action's whole next graph) into the open slice: Event Graph or function.
+  const commitCanvasGraph = useCallback((next: SerializedGraph) => {
+    if (!doc) return;
+    const edited = applyDataGraphAssetPicks(graph, next, dataAssets);
+    const current = graphContent ?? { nodes: [], edges: [] };
+    const merged: SerializedGraph = activeFunctionId
+      ? {
+          ...current,
+          functionGraphs: {
+            ...current.functionGraphs,
+            [activeFunctionId]: {
+              nodes: edited.nodes,
+              edges: edited.edges,
+            },
+          },
+        }
+      : adoptBoundEventSignatures({
+          ...edited,
+          members: edited.members ?? current.members,
+          components: edited.components ?? current.components,
+          functionGraphs: current.functionGraphs,
+        }, classId);
+    applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, merged));
+  }, [activeFunctionId, classId, dataAssets, doc, documentActions, documentId, graph, graphContent]);
+  // Add Pin, Convert to <Type> wires and the pin menu, each one change through the canvas's commit.
+  const pinActions = useScriptGraphPinActions({ graph, commit: commitCanvasGraph, hierarchy });
+
   const showLibraryEmpty = functionLibraryShowsEventGraphEmpty({
     parentClass,
     parentOf,
@@ -959,9 +965,9 @@ export function GraphPanel(
             paletteNodes={paletteNodes}
             onPaletteOpenChange={setPaletteOpen}
             pinCompatibility={pinCompatibility}
-            pinConversion={pinConversion}
+            pinConversion={pinActions.pinConversion}
             pinDrop={pinDrop}
-            onAddPin={onAddPin}
+            onAddPin={pinActions.onAddPin}
             reroute={reroute}
             renamingNodeId={renamingNodeId}
             renamingNodeValue={renamingNodeValue}
@@ -976,32 +982,11 @@ export function GraphPanel(
             // An empty click in a function's tab selects the function itself.
             onEmptyCanvasClick={functionMember ? () => setSelectedMemberId(functionMember.id) : undefined}
             contextMenuItemsForNode={contextMenuItemsForNode}
+            contextMenuItemsForPin={pinActions.contextMenuItemsForPin}
             preparePaste={preparePaste}
             preparePaletteNode={preparePaletteNode}
             onPaletteNodeAdded={onPaletteNodeAdded}
-            onChange={(next) => {
-              if (!doc) return;
-              const edited = applyDataGraphAssetPicks(graph, next, dataAssets);
-              const current = graphContent ?? { nodes: [], edges: [] };
-              const merged: SerializedGraph = activeFunctionId
-                ? {
-                    ...current,
-                    functionGraphs: {
-                      ...current.functionGraphs,
-                      [activeFunctionId]: {
-                        nodes: edited.nodes,
-                        edges: edited.edges,
-                      },
-                    },
-                  }
-                : adoptBoundEventSignatures({
-                    ...edited,
-                    members: edited.members ?? current.members,
-                    components: edited.components ?? current.components,
-                    functionGraphs: current.functionGraphs,
-                  }, classId);
-              applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, merged));
-            }}
+            onChange={commitCanvasGraph}
           />
           </div>
         </GraphPinDefaultHostContext.Provider>

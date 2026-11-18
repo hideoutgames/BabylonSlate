@@ -147,6 +147,14 @@ function operandPin(id: string, name: string, type: NumericOperandType, choices:
 }
 
 /**
+ * What choosing `type` for an operand writes (the Inspector's type row and the pin menu's Convert
+ * Pin): its type property, and no stored value, which was of the old type.
+ */
+export function numericOperandTypePatch(operand: NumericOperand, type: NumericOperandType): Record<string, unknown> {
+  return { [operand.property]: type, [pinDefaultPropertyKey(operand.pinId)]: undefined };
+}
+
+/**
  * The operand types after the wires into the node. An operand's type property is unset until a
  * wire, a follow or an Inspector pick chooses it; once set, it is what every later refresh reads.
  * - A wire the node accepts (anything else is left for validation to report) sets an unset
