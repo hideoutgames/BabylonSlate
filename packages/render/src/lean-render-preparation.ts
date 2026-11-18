@@ -11,6 +11,7 @@ import type { RenderingGroup } from "@babylonjs/core/Rendering/renderingGroup";
 import { RenderingManager } from "@babylonjs/core/Rendering/renderingManager";
 import type { Scene } from "@babylonjs/core/scene";
 import type { Nullable } from "@babylonjs/core/types";
+import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
 import { isAutoLodSelector } from "./model-lod";
 import { journalFollows, openRenderChangeReader, RenderChange, type RenderChangeReader } from "./render-change-journal";
 
@@ -98,18 +99,24 @@ type DataInfo = {
 };
 type MeshInternals = AbstractMesh & {
   _internalAbstractMeshDataInfo: DataInfo;
-  _internalMeshDataInfo?: { _LODLevels?: Array<{ mesh: Nullable<Mesh> }> };
-  _nodeDataStorage: { _isReady: boolean };
   _preActivateForIntermediateRendering(renderId: number): void;
   _activate(renderId: number, intermediateRendering: boolean): boolean;
   _postActivate(): void;
   _renderingGroup: Nullable<RenderingGroup>;
   _renderId: number;
   _edgesRenderer: Nullable<{ isEnabled: boolean }>;
+};
+/** Members Babylon declares private, which an intersection type cannot name: read through these views. */
+type MeshPrivate = {
+  _nodeDataStorage: { _isReady: boolean };
+  _internalMeshDataInfo?: { _LODLevels?: Array<{ mesh: Nullable<Mesh> }> };
   _currentLOD?: Nullable<AbstractMesh>;
 };
-type SubMeshInternals = SubMesh & { _wasDispatched: boolean; _renderingMesh: AbstractMesh };
-type GroupInternals = RenderingGroup & {
+const hidden = (mesh: AbstractMesh) => mesh as unknown as MeshPrivate;
+const renderingMeshOf = (subMesh: SubMesh) => (subMesh as unknown as { _renderingMesh: AbstractMesh })._renderingMesh;
+type SubMeshInternals = SubMesh & { _wasDispatched: boolean };
+type GroupInternals = {
+  disableDepthPrePass: boolean;
   _opaqueSubMeshes: SmartArray<SubMesh>;
   _alphaTestSubMeshes: SmartArray<SubMesh>;
   _transparentSubMeshes: SmartArray<SubMesh>;
@@ -117,12 +124,29 @@ type GroupInternals = RenderingGroup & {
   _edgesRenderers: SmartArrayNoDuplicate<unknown>;
   _empty: boolean;
 };
-type ManagerInternals = RenderingManager & {
+type ManagerInternals = {
   _renderingGroups: Array<GroupInternals | undefined>;
   _disableDepthPrePass: boolean;
+  maintainStateBetweenFrames: boolean;
+  reset(): void;
+  getRenderingGroup(id: number): RenderingGroup;
+  dispatch(subMesh: SubMesh, mesh?: AbstractMesh): void;
+  dispatchParticles(system: IParticleSystem): void;
 };
 type Prepare = (passIndex?: number, winterIsComing?: boolean) => Nullable<AbstractMesh[]>;
-type RendererInternals = ObjectRenderer & {
+type RendererInternals = {
+  renderList: Nullable<AbstractMesh[]>;
+  getCustomRenderList: ObjectRenderer["getCustomRenderList"];
+  customIsReadyFunction: ObjectRenderer["customIsReadyFunction"];
+  enableBoundingBoxRendering: boolean;
+  renderMeshes: boolean;
+  renderParticles: boolean;
+  particleSystemList: Nullable<IParticleSystem[]>;
+  cameraForLOD: Nullable<Camera>;
+  forceLayerMaskCheck: boolean;
+  refreshRate: number;
+  resetRefreshCounter(): void;
+  dispose(): void;
   _prepareRenderingManager: Prepare;
   _renderingManager: ManagerInternals;
   _activeMeshes: SmartArray<AbstractMesh>;
@@ -212,7 +236,7 @@ function buildDispatch(owner: AbstractMesh, passId: number): Dispatch {
   const subMeshes = owner.subMeshes;
   const items: Item[] = [];
   for (const subMesh of subMeshes) {
-    const rendering = (subMesh as SubMeshInternals)._renderingMesh;
+    const rendering = renderingMeshOf(subMesh);
     const root = rendering.getMaterialForRenderPass(passId) ?? rendering.material;
     const live = !root || (root as unknown as { getSubMaterial?: unknown }).getSubMaterial !== undefined;
     items.push({ subMesh, material: live ? null : root, poll: live ? null : pollOf(root!), live });
@@ -255,7 +279,7 @@ function followed(mesh: AbstractMesh): boolean {
 }
 
 function levelCount(mesh: AbstractMesh): number {
-  return (mesh as MeshInternals)._internalMeshDataInfo?._LODLevels?.length ?? 0;
+  return hidden(mesh)._internalMeshDataInfo?._LODLevels?.length ?? 0;
 }
 
 /** The LOD `mesh` draws from every camera, or null when it is selected per camera and frame. */
@@ -280,10 +304,10 @@ function makeEntry(mesh: AbstractMesh, scene: Scene, epoch: number): Entry {
 /** `mesh.isReady(completeCheck)` without the call where it is Babylon's own and cheap (`Mesh.isReady(false)`). */
 function readyNow(mesh: MeshInternals, completeCheck: boolean): boolean {
   if (!completeCheck) {
-    if (mesh.isReady === STOCK_IS_READY) return mesh.delayLoadState !== 2 && mesh._nodeDataStorage._isReady;
+    if (mesh.isReady === STOCK_IS_READY) return (mesh as unknown as Mesh).delayLoadState !== 2 && hidden(mesh)._nodeDataStorage._isReady;
     if (mesh.isReady === INSTANCE_IS_READY) {
-      const source = (mesh as unknown as InstancedMesh).sourceMesh as unknown as MeshInternals;
-      if (source.isReady === STOCK_IS_READY) return source.delayLoadState !== 2 && source._nodeDataStorage._isReady;
+      const source = (mesh as unknown as InstancedMesh).sourceMesh;
+      if (source.isReady === STOCK_IS_READY) return source.delayLoadState !== 2 && hidden(source)._nodeDataStorage._isReady;
     }
   }
   return mesh.isReady(completeCheck);
@@ -371,7 +395,7 @@ function babylonOnly(renderer: RendererInternals, winterIsComing: boolean): bool
  * and geometry passes in Play (`ForwardSceneFrameGraphOptions.leanPreparation`).
  */
 export function attachLeanPreparation(objectRenderer: ObjectRenderer, pass: string): void {
-  const renderer = objectRenderer as RendererInternals;
+  const renderer = objectRenderer as unknown as RendererInternals;
   if (Object.prototype.hasOwnProperty.call(renderer, "_prepareRenderingManager")) return;
   const scene = renderer._scene;
   let sceneLean = scenes.get(scene);
@@ -478,7 +502,7 @@ function prepareMeshes(lean: RendererLean, list: AbstractMesh[], checkLayerMask:
     const lod = entry.lod as MeshInternals;
     if (lod !== mesh) {
       // InstancedMesh.getLOD's write, which `_activate` registers the instance through.
-      mesh._currentLOD = lod;
+      hidden(mesh)._currentLOD = lod;
       if (lod.billboardMode !== 0) lod.computeWorldMatrix();
     }
     lod._preActivateForIntermediateRendering(renderId);
@@ -515,7 +539,7 @@ function dispatchKept(renderer: RendererInternals, entry: Entry, owner: MeshInte
       item = dispatch.items[index]!;
     }
     subMesh._wasDispatched = true;
-    const group = (groups[dispatch.groupId] ?? manager.getRenderingGroup(dispatch.groupId)) as GroupInternals;
+    const group = (groups[dispatch.groupId] ?? manager.getRenderingGroup(dispatch.groupId)) as unknown as GroupInternals;
     const material = item.live ? subMesh.getMaterial() : item.material;
     if (!material) continue;
     const poll = item.poll ?? pollOf(material);
@@ -525,7 +549,7 @@ function dispatchKept(renderer: RendererInternals, entry: Entry, owner: MeshInte
       if (poll.depth && !group.disableDepthPrePass) group._depthOnlySubMeshes.push(subMesh);
       (queue === ALPHA_TEST ? group._alphaTestSubMeshes : group._opaqueSubMeshes).push(subMesh);
     }
-    owner._renderingGroup = group;
+    owner._renderingGroup = group as unknown as RenderingGroup;
     const edges = owner._edgesRenderer;
     if (edges && owner.isEnabled() && owner.isVisible && edges.isEnabled) group._edgesRenderers.pushNoDuplicate(edges);
     group._empty = false;
@@ -600,7 +624,7 @@ function touchedBy(list: AbstractMesh[]): MeshInternals[] {
   const touched: MeshInternals[] = [];
   const add = (mesh: AbstractMesh) => {
     touched.push(mesh as MeshInternals);
-    for (const level of (mesh as MeshInternals)._internalMeshDataInfo?._LODLevels ?? []) if (level.mesh) touched.push(level.mesh as unknown as MeshInternals);
+    for (const level of hidden(mesh)._internalMeshDataInfo?._LODLevels ?? []) if (level.mesh) touched.push(level.mesh as unknown as MeshInternals);
   };
   for (const mesh of list) {
     if (!mesh) continue;
@@ -616,7 +640,7 @@ function save(touched: readonly MeshInternals[], camera: Camera): Saved[] {
     const memo = info._currentLOD.get(camera);
     return {
       mesh, flags: [info._wasActiveLastFrame, info._isActiveIntermediate, info._onlyForInstancesIntermediate, info._actAsRegularMesh],
-      renderId: mesh._renderId, group: mesh._renderingGroup, currentLod: mesh._currentLOD, memo,
+      renderId: mesh._renderId, group: mesh._renderingGroup, currentLod: hidden(mesh)._currentLOD, memo,
       memoValue: memo ? [memo[0], memo[1]] : undefined,
     };
   });
@@ -629,7 +653,7 @@ function restore(saved: readonly Saved[], camera: Camera): void {
     [info._wasActiveLastFrame, info._isActiveIntermediate, info._onlyForInstancesIntermediate, info._actAsRegularMesh] = state.flags;
     mesh._renderId = state.renderId;
     mesh._renderingGroup = state.group;
-    if (mesh instanceof InstancedMesh) mesh._currentLOD = state.currentLod;
+    if (mesh instanceof InstancedMesh) hidden(mesh)._currentLOD = state.currentLod;
     if (!state.memo) info._currentLOD.delete(camera);
     else {
       state.memo[0] = state.memoValue![0];
@@ -660,7 +684,7 @@ function verifyPass(lean: RendererLean, passIndex: number, list: AbstractMesh[],
   restore(before, cameraForLOD);
   const manager = renderer._renderingManager;
   const scratch = lean.scratch ??= {
-    manager: new RenderingManager(renderer._scene) as ManagerInternals, active: new SmartArray<AbstractMesh>(256),
+    manager: new RenderingManager(renderer._scene) as unknown as ManagerInternals, active: new SmartArray<AbstractMesh>(256),
     boxes: new SmartArray<unknown>(32),
   };
   scratch.manager._disableDepthPrePass = manager._disableDepthPrePass;

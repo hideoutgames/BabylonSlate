@@ -1817,7 +1817,7 @@ export class ForwardSceneFrameGraph {
         if (this.leanPreparation) {
           // The water split's opaque pass draws through the objects' renderer; its transparent pass keeps Babylon's.
           for (const task of this.graph.tasks) {
-            if (task === this.objects) attachLeanPreparation(task.objectRenderer, "objects");
+            if (task === this.objects) attachLeanPreparation(this.objects.objectRenderer, "objects");
             else if (task instanceof LogicalGeometryTask) attachLeanPreparation(task.objectRenderer, "geometry");
           }
         }
