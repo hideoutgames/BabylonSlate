@@ -1260,7 +1260,7 @@ describe("Profile", { timeout: 30_000 }, () => {
   it("changes, with every step at every tier, only its own fields, or nothing where the tier already holds its value", () => {
     // Low is already at half resolution, with no geometry effects.
     const expectedSkips: Record<QualityLevel, string[]> = {
-      low: ["resolution 0.5", "geometry effects off"],
+      low: ["resolution 0.5", "geometry effects off", "shadow filter low"],
       medium: [],
       high: [],
       ultra: [],
