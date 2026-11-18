@@ -21,8 +21,8 @@ const toPixel = (x: number, y: number) => ({ x: WIDTH / 2 + x * 40, y: HEIGHT / 
 const CAMERA_DISTANCE = 8;
 
 /**
- * `bare` is a plain engine and scene. `editor` matches the editor viewport: a floating-origin
- * engine (`useLargeWorldRendering`) and the gizmo's utility layer rendered
+ * `bare` is a plain engine and scene. `editor` matches the editor viewport of a project with Large World Rendering on:
+ * a floating-origin engine (`useLargeWorldRendering`) and the gizmo's utility layer rendered
  * after the scene every frame, so the last scene to render is not the one being picked.
  */
 export type GpuPickProofVariant = "bare" | "editor";

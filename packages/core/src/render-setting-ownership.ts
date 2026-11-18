@@ -76,6 +76,8 @@ export const PROJECT_RENDER_SETTING_OWNERS = {
   height: "independent",
   blackBars: "independent",
   upscaling: "independent",
+  // An Engine construction option: no quality tier or session command may change it.
+  largeWorldRendering: "independent",
 } as const satisfies Record<
   keyof RenderProjectSettings,
   QualityGroup | "scalability" | "independent"
