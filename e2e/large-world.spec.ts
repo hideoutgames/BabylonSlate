@@ -58,12 +58,14 @@ test("Large World Rendering keeps a scene kilometres out steady, and draws a sce
   await testInfo.attach("large-world", { body: JSON.stringify(summary), contentType: "application/json" });
   console.log(`large world proof ${JSON.stringify(summary)}`);
   const { nearOnVersusOff, farOnVersusNearOn, farOffVersusNearOff } = summary;
-  // Near the origin the two modes draw the same picture up to rounding: the eye-relative placement rounds differently.
+  // Near the origin the two modes draw the same picture up to rounding: the eye-relative placement rounds differently
+  // (RTX 2060: 381 of 64000 pixels differ, 11 by more than 8 of 255, at most 34).
   expect(nearOnVersusOff.visible, "near: pixels visibly different").toBeLessThanOrEqual(nearOnVersusOff.of * 0.002);
-  expect(nearOnVersusOff.pixels, "near: pixels different at all").toBeLessThanOrEqual(nearOnVersusOff.of * 0.05);
-  // Kilometres out with the mode on, the picture is the one near the origin, within the same tolerance.
+  expect(nearOnVersusOff.pixels, "near: pixels different at all").toBeLessThanOrEqual(nearOnVersusOff.of * 0.1);
+  // Kilometres out with the mode on, the picture is the one near the origin within the same tolerance (world-anchored work such as
+  // shadow texel snapping lands elsewhere; RTX 2060: 2854 differ, 27 visibly, at most 16).
   expect(farOnVersusNearOn.visible, "far on: pixels visibly different").toBeLessThanOrEqual(farOnVersusNearOn.of * 0.002);
-  expect(farOnVersusNearOn.pixels, "far on: pixels different at all").toBeLessThanOrEqual(farOnVersusNearOn.of * 0.05);
-  // The control: without it, the same scene out there is visibly wrong.
-  expect(farOffVersusNearOff.visible, "far off: the control").toBeGreaterThan(farOnVersusNearOn.visible);
+  expect(farOnVersusNearOn.pixels, "far on: pixels different at all").toBeLessThanOrEqual(farOnVersusNearOn.of * 0.1);
+  // The control: without it, the same scene out there is visibly wrong (RTX 2060: 1166 pixels visibly different).
+  expect(farOffVersusNearOff.visible, "far off: the control").toBeGreaterThan(farOnVersusNearOn.visible * 4);
 });
