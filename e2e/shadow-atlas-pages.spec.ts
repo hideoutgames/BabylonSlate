@@ -23,7 +23,7 @@ test("the shadow atlas's pages draw and sample every shadowed light's map, filte
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/?test=1&shadowAtlasProof=1");
   await page.waitForFunction(() => typeof (window as unknown as { __shadowAtlasProof?: unknown }).__shadowAtlasProof === "function");
-  const { captures, sampling, renderer } = await page.evaluate((largeWorld) => (window as unknown as { __shadowAtlasProof: Proof }).__shadowAtlasProof({ largeWorld }), LARGE_WORLD);
+  const { captures, handOver, sampling, renderer } = await page.evaluate((largeWorld) => (window as unknown as { __shadowAtlasProof: Proof }).__shadowAtlasProof({ largeWorld }), LARGE_WORLD);
   const hashes = captures.map(({ filter, frame }) => ({ filter, sha256: createHash("sha256").update(Uint8Array.from(frame)).digest("hex") }));
   const summary = { renderer, sampling, hashes, maps: captures[0]!.maps, cascadeEnds: captures[0]!.cascadeEnds };
   await testInfo.attach("shadow-atlas-proof", { body: JSON.stringify(summary), contentType: "application/json" });
@@ -38,4 +38,8 @@ test("the shadow atlas's pages draw and sample every shadowed light's map, filte
   }
   // Contact Hardening reads the pages plainly as well: its penumbrae differ from PCF's.
   expect(hashes[0]!.sha256).not.toBe(hashes[1]!.sha256);
+  // The same scene built again in a new Scene of the Engine takes the first Scene's atlas over, depth and all, and draws
+  // the same frame.
+  expect(handOver.sameAtlas).toBe(true);
+  expect(createHash("sha256").update(Uint8Array.from(handOver.frame)).digest("hex")).toBe(hashes[0]!.sha256);
 });

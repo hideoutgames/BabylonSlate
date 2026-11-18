@@ -3,7 +3,9 @@
  * Material under a shadowed sun (four cascades over the visible ground), a shadowed spot light and a shadowed point
  * light, with volumetric lighting marching all three, at the highest filter quality with PCF and then with Contact
  * Hardening. Each capture is the presented frame's bytes, so two builds' frames can be compared byte for byte, and each
- * map's tiles, so a capture shows that every map drew.
+ * map's tiles, so a capture shows that every map drew. Then the Scene is disposed and the same scene built again in a
+ * new Scene of the same Engine, which takes the first Scene's atlas over (`shadow-atlas.ts`, `ParkedAtlas`) with its depth
+ * as the first Scene left it: its PCF frame (`handOver`) must be the first's, byte for byte.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { Engine } from "@babylonjs/core/Engines/engine";
@@ -44,6 +46,34 @@ export async function runShadowAtlasProof(options: { largeWorld?: boolean } = {}
   engine.setSize(canvas.width, canvas.height);
   const sampling: Record<string, number> = {};
   const stopRecording = recordShadowSampling(engine, sampling);
+  try {
+    const first = await shadowedScene(engine, canvas);
+    let captures: ShadowAtlasCapture[];
+    let atlas: unknown;
+    try {
+      captures = [await first.capture("pcf"), await first.capture("pcss")];
+      atlas = first.atlas();
+    } finally {
+      await first.dispose();
+    }
+    const second = await shadowedScene(engine, canvas);
+    let handOver: { sameAtlas: boolean; frame: number[] };
+    try {
+      const again = await second.capture("pcf");
+      handOver = { sameAtlas: atlas !== null && second.atlas() === atlas, frame: again.frame };
+    } finally {
+      await second.dispose();
+    }
+    return { captures, handOver, sampling, renderer: engine.getGlInfo().renderer };
+  } finally {
+    stopRecording();
+    engine.dispose();
+    canvas.remove();
+  }
+}
+
+/** The proof's scene in a new Scene of `engine`: what captures its frame, its atlas's render target, and its disposal. */
+async function shadowedScene(engine: Engine, canvas: HTMLCanvasElement) {
   const scene = new Scene(engine);
   try {
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
@@ -138,15 +168,18 @@ export async function runShadowAtlasProof(options: { largeWorld?: boolean } = {}
         cascadeEnds: [...((sun.getShadowGenerator() as unknown as { cascadeEnds?: number[] } | null)?.cascadeEnds ?? [])],
       };
     };
-    const captures = [await capture("pcf"), await capture("pcss")];
-    graph.dispose();
-    await graph.whenReleased();
-    return { captures, sampling, renderer: engine.getGlInfo().renderer };
-  } finally {
-    stopRecording();
+    return {
+      capture,
+      atlas: () => sun.getShadowGenerator()?.getShadowMap()?.renderTarget ?? null,
+      dispose: async () => {
+        graph.dispose();
+        await graph.whenReleased();
+        scene.dispose();
+      },
+    };
+  } catch (error) {
     scene.dispose();
-    engine.dispose();
-    canvas.remove();
+    throw error;
   }
 }
 
