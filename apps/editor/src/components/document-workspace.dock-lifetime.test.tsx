@@ -45,6 +45,7 @@ vi.mock("../context/anim-graph-editing-context", () => ({
 }));
 vi.mock("../context/prefab-editing-context", () => ({
   PrefabEditingProvider: harness.passthrough,
+  usePrefabEditing: () => ({ setSelectedId: () => {} }),
 }));
 vi.mock("../context/graph-editing-context", () => ({
   GraphEditingProvider: harness.passthrough,

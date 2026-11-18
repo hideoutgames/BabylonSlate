@@ -6,7 +6,7 @@ Draws text with inline formatting, images and animated letters, and can reveal i
 
 Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Rich Text**. You can also place a ready-made actor from **Place Actors > Overlay > 2D Rich Text**.
 
-Type the words and tags in the **Text** field below the other settings. A new component starts with an example.
+Type the words and tags in the **Text** field below the other settings. A new component starts with an example of [tags](#tags) and letter effects. It has no image: add one with `[img=…]` and a Texture of your own.
 
 ## Settings
 
@@ -59,7 +59,7 @@ Tags use square brackets and can nest. Close them with the same name, such as `[
 | `[color=red]` | Colour, by name (red, orange, yellow, green, blue, purple, white, black and other basic colours) or hex such as `#ff8800`. |
 | `[size=48]` | Letter size in pixels. With a pixel font, it rounds to the nearest whole multiple of the font's Pixel Size. |
 | `[outline=2]`, `[outline-color=black]` | Outline width and colour. `[outline]` alone keeps the **Outline** setting, or uses 1 when that is 0. |
-| `[img=… size=32]` | An inline image from a Texture. In the **Content Browser**, choose **Copy Asset Reference** on the Texture and paste the value after `img=`. Size is optional. |
+| `[img=… size=32]` | An inline image from a Texture. In the **Content Browser**, choose **Copy Asset Reference** on the Texture and paste the value after `img=`. Size is optional. If no asset has that reference, Play does not start and names the Actor and component that use it ([Play stops on a missing asset](../start/editor-tour.md#when-play-cannot-start)). |
 | `[shake=1]` | Jitters each letter. The number is the strength. |
 | `[wave=2]` | Moves letters up and down in a wave. The number is the speed. Add `intensity=2` to change the height. |
 | `[hover=1]` | Bobs each letter up and down. The number is the strength. |

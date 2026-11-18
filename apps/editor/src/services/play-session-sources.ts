@@ -129,7 +129,8 @@ export function createPlaySourceTracker(ctx: PlaySourceTrackerContext): PlaySour
   const sessionSourcesReady = options.sessionSources ? handle.acquireSceneSources(options.sessionSources).then((release) => {
     if (ctx.stopped()) release(); else releaseSessionSources = release;
   }) : Promise.resolve();
-  void sessionSourcesReady.catch((error: unknown) => options.onLog?.(`Session sources: ${String(error)}`, "error"));
+  void sessionSourcesReady.catch((error: unknown) =>
+    options.onLog?.(`Session sources could not be prepared: ${error instanceof Error ? error.message : String(error)}`, "error"));
   const preparedScenes = new Map((options.scenes ?? []).map((entry) => [entry.guid, entry.scene]));
   // Baked reverb follows its prepared Scene, so every later activation finds it.
   const preparedSceneReverbs = new Map(options.audioReverbByScene ?? []);

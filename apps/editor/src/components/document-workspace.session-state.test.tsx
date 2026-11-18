@@ -4,6 +4,8 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { createDefaultScene, documentId } from "@haptic/core";
 import type { EditorCameraSessionState } from "@haptic/render";
 import { EditorSessionStateProvider } from "../context/editor-session-state-context";
+import { useValidation, ValidationProvider } from "../context/validation-context";
+import type { Diagnostic } from "@haptic/scripting";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
@@ -19,6 +21,7 @@ const state = vi.hoisted(() => ({
   /** Workspaces the P18 working set keeps mounted; null mounts every open tab. */
   mounted: null as Set<string> | null,
   passthrough: ({ children }: { children: ReactNode }) => children,
+  selectComponent: vi.fn(),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => {
@@ -51,6 +54,7 @@ vi.mock("../context/nav-bake-context", () => ({
 }));
 vi.mock("../context/prefab-editing-context", () => ({
   PrefabEditingProvider: state.passthrough,
+  usePrefabEditing: () => ({ setSelectedId: state.selectComponent }),
 }));
 vi.mock("../context/graph-editing-context", () => ({
   GraphEditingProvider: state.passthrough,
@@ -79,7 +83,7 @@ const topDown: EditorCameraSessionState = {
  */
 function ViewProbe() {
   const { documentId: id } = useDocumentWorkspace();
-  const { saveEditorCameraPose, loadEditorCameraPose } = useSceneEditing();
+  const { saveEditorCameraPose, loadEditorCameraPose, selectedActorIds } = useSceneEditing();
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(id);
   const liveCamera = useRef<EditorCameraSessionState | null>(null);
   const [restored, setRestored] = useState<EditorCameraSessionState | null>(null);
@@ -92,6 +96,7 @@ function ViewProbe() {
   }, [loadEditorCameraPose, saveEditorCameraPose]);
   return (
     <div data-testid={`view:${id}`}>
+      <span data-testid="selected">{selectedActorIds.join(",")}</span>
       <span data-testid="camera">
         {restored ? `radius ${restored.pose3d?.radius}` : "default"}
       </span>
@@ -229,5 +234,42 @@ describe("document view state across workspace remounts", () => {
     await open("graph", HERO);
     rerender(editor());
     expect(view(heroId).getByTestId("camera").textContent).toBe("radius 30");
+  });
+});
+
+describe("selection from a focused diagnostic", () => {
+  /** Focuses a Play preparation row on the active document, as its navigation does. */
+  function Focus({ diagnostic }: { diagnostic: Diagnostic }) {
+    const { setFocusDiagnostic } = useValidation();
+    return <button type="button" onClick={() => setFocusDiagnostic(diagnostic)}>Focus</button>;
+  }
+  const problem = (graphId: string, ids: Partial<Diagnostic>): Diagnostic => ({
+    severity: "error", code: "play.missing_asset", message: "Missing", assetGuid: "", graphId, ...ids,
+  });
+
+  it("selects the Actor a focused row names in its Scene, and the component in its Class", async () => {
+    const level = "assets/Level.scene.hasset";
+    const levelId = documentId({ kind: "scene", path: level });
+    await open("scene", level);
+    const scene = (diagnostic: Diagnostic) => (
+      <ValidationProvider scopeKey={levelId}>{editor()}<Focus diagnostic={diagnostic} /></ValidationProvider>
+    );
+    const { rerender, unmount } = render(scene(problem(levelId, { actorId: "guard", nodeId: "spawn" })));
+    // A row on a script node goes to the node, not to an Actor.
+    fireEvent.click(screen.getByText("Focus"));
+    expect(view(levelId).getByTestId("selected").textContent).toBe("");
+    rerender(scene(problem("scene:assets/Other.scene.hasset", { actorId: "guard" })));
+    fireEvent.click(screen.getByText("Focus"));
+    expect(view(levelId).getByTestId("selected").textContent).toBe("");
+    rerender(scene(problem(levelId, { actorId: "guard", componentId: "rich" })));
+    fireEvent.click(screen.getByText("Focus"));
+    expect(view(levelId).getByTestId("selected").textContent).toBe("guard");
+    expect(state.selectComponent).not.toHaveBeenCalled();
+    unmount();
+
+    await open("graph", HERO);
+    render(<ValidationProvider scopeKey={heroId}>{editor()}<Focus diagnostic={problem(heroId, { componentId: "label" })} /></ValidationProvider>);
+    fireEvent.click(screen.getByText("Focus"));
+    expect(state.selectComponent).toHaveBeenCalledWith("label");
   });
 });

@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { DockviewReact, type DockviewApi, type DockviewReadyEvent } from "dockview-react";
-import { createDefaultScene, engineCommandBus } from "@haptic/core";
+import { createDefaultScene, createEmptyProject, engineCommandBus } from "@haptic/core";
+import { AssetRegistry, createDefaultMigrationRegistry, createRegistryAssetLoadingService, encodeHasset, projectContentRoot } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
 import { OutputLogPanel } from "../panels/output-log-panel";
 import { enterPhoneDockLayout } from "../shell/phone-dock-layout";
 import type { SaveAllOutcome } from "./document-context-types";
@@ -452,4 +454,105 @@ it("cancels Simulation before save admission drains without touching its scene o
   expect(scene.dirty).toBe(true);
   expect(controls.preparing).toBe(false);
   expect(controls.canSimulate).toBe(true);
+});
+
+/**
+ * A project whose open Main Scene spawns the closed Scene Layer HUD, whose Dialogue Actor's 2D Rich Text
+ * shows an image no asset has.
+ */
+async function missingImageProject() {
+  const storage = new MemoryStorageAdapter();
+  await storage.pickProjectFolder();
+  await storage.mkdir("assets");
+  const sceneContent = { ...createDefaultScene(), name: "Main",
+    settings: { ...createDefaultScene().settings, sceneLayers: [{ assetGuid: "hud", zOrder: 0, enabled: true }] } };
+  const write = async (guid: string, name: string, type: string, version: number, payload: Record<string, unknown>, requires: string[]) =>
+    storage.writeBinary(`assets/${name}.hasset`, await encodeHasset({ header: {
+      guid, name, type, version, engineVersion: "0.0.0", mode: "thin", payload,
+      dependencies: requires, requiredDependencies: requires, dependencyMetadataVersion: 1,
+    }, chunks: [] }));
+  const formats = createDefaultMigrationRegistry();
+  await write("main", "Main", "Scene", formats.currentVersion("Scene"), sceneContent as unknown as Record<string, unknown>, ["hud"]);
+  await write("hud", "HUD", "SceneLayer", formats.currentVersion("SceneLayer") || 1, { name: "HUD", actors: [{
+    id: "dialogue", name: "Dialogue", classId: "Actor", components: [
+      { id: "rich", classId: "2DRichTextComponent", properties: { text: "Hi [img=MISSING_ID size=14]" } },
+    ],
+  }] }, ["MISSING_ID"]);
+  const registry = new AssetRegistry(storage);
+  await registry.mountRoot(projectContentRoot());
+  const loading = createRegistryAssetLoadingService(registry, { projectId: "missing-image" });
+  const projectDocument = createEmptyProject("Missing Image");
+  projectDocument.settings.startupSceneGuid = "main";
+  const scene = { id: "scene:assets/Main.hasset", ref: { kind: "scene", path: "assets/Main.hasset", label: "Main" }, content: sceneContent, dirty: false };
+  const openDocuments: unknown[] = [scene];
+  const openDocument = vi.fn(async (ref: { kind: string; path: string; label: string }) => {
+    openDocuments.push({ id: `${ref.kind}:${ref.path}`, ref, content: {}, dirty: false });
+  });
+  const setActiveDocument = vi.fn();
+  host.documents = {
+    ...host.noProject, openDocuments, activeDocumentId: scene.id, assetRegistry: registry, projectDocument,
+    createAssetLoadScope: (owner: string, options?: { keep?: boolean }) => loading.createScope(owner, options),
+    openDocument, setActiveDocument,
+    lockAuthoringWrites: () => ({ ready: Promise.resolve(true), release() {} }),
+    beginSimulationDocument: () => ({ baseline: scene, release() {} }),
+  };
+  return { scene, openDocument, setActiveDocument, loading };
+}
+
+const MISSING_IMAGE_MESSAGE = "2D Rich Text on \"Dialogue\" in Scene Layer \"HUD\" uses an asset that does not exist: MISSING_ID (Text).";
+
+it("stops Play on a missing required asset with a navigable problem: Compiler Results, the Output Log and a dialog without Play Anyway", async () => {
+  const { openDocument, setActiveDocument, loading } = await missingImageProject();
+  let controls!: ReturnType<typeof usePlay>;
+  function Controls() {
+    controls = usePlay();
+    const { lines } = useOutputLog();
+    return <output data-testid="logs">{lines.join("\n")}</output>;
+  }
+  render(<PlayProvider><Controls /></PlayProvider>);
+
+  await act(async () => { await controls.requestPlay(); });
+
+  expect(controls.playing).toBe(false);
+  await waitFor(() => expect(screen.getByTestId("logs").textContent).toBe(`Play preparation failed: ${MISSING_IMAGE_MESSAGE}`));
+  const problem = {
+    severity: "error", code: "play.missing_asset", message: MISSING_IMAGE_MESSAGE, assetGuid: "hud",
+    graphId: "scene-layer:assets/HUD.hasset", actorId: "dialogue", componentId: "rich",
+  };
+  expect(host.validation.setDiagnostics).toHaveBeenLastCalledWith([expect.objectContaining(problem)]);
+  const dialog = screen.getByRole("alertdialog", { name: "Play Could Not Start" });
+  expect(within(dialog).queryByRole("button", { name: "Play Anyway" })).toBeNull();
+  expect(screen.queryByTestId("play-failed-dialog")).toBeNull();
+  expect(within(dialog).getByTestId("play-blocked-row").textContent).toBe(`play.missing_asset: ${MISSING_IMAGE_MESSAGE}`);
+
+  // The row opens the Scene Layer and hands it the Actor and component to select.
+  await act(async () => { fireEvent.click(within(dialog).getByTestId("play-blocked-row")); });
+  expect(openDocument).toHaveBeenCalledWith({ kind: "scene-layer", path: "assets/HUD.hasset", label: "HUD" });
+  expect(host.validation.setFocusDiagnostic).toHaveBeenCalledWith(expect.objectContaining(problem), "scene-layer:assets/HUD.hasset");
+  expect(setActiveDocument).toHaveBeenCalledWith("scene-layer:assets/HUD.hasset");
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  loading.dispose();
+});
+
+it("reports a missing required asset the same way when a Simulation starts", async () => {
+  const { scene, loading } = await missingImageProject();
+  let controls!: ReturnType<typeof usePlay>;
+  function Controls() {
+    controls = usePlay();
+    const { lines } = useOutputLog();
+    return <output data-testid="logs">{lines.join("\n")}</output>;
+  }
+  render(<PlayProvider><Controls /></PlayProvider>);
+  act(() => { controls.registerSimulationViewport({ documentId: scene.id, host: document.body, suspend: async () => {}, restore() {} }); });
+
+  await act(async () => { await controls.requestSimulate(); });
+
+  await waitFor(() => expect(screen.getByTestId("logs").textContent).toBe(`Simulation preparation failed: ${MISSING_IMAGE_MESSAGE}`));
+  expect(host.validation.setDiagnostics).toHaveBeenLastCalledWith([expect.objectContaining({ code: "play.missing_asset", message: MISSING_IMAGE_MESSAGE })]);
+  const dialog = screen.getByRole("alertdialog", { name: "Simulation Could Not Start" });
+  expect(within(dialog).queryByRole("button", { name: "Play Anyway" })).toBeNull();
+  await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Close" })); });
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(controls.sessionState.lifecycle).toBe("idle");
+  loading.dispose();
 });

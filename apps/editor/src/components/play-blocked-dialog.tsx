@@ -14,14 +14,23 @@ import { SelectableText } from "@haptic/editor-kit";
 export type PlayBlockedDialogProps = {
   open: boolean;
   diagnostics: Diagnostic[];
+  title: string;
+  description: string;
   onOpenChange: (open: boolean) => void;
   onNavigate: (d: Diagnostic) => void;
-  onPlayAnyway: () => void;
+  /** Offers **Play Anyway** (with **Cancel**); without it Play cannot run and the dialog offers only **Close**. */
+  onPlayAnyway?: () => void;
 };
 
+/**
+ * The errors that stop Play, one row each; choosing a row goes to its source. Compile errors
+ * offer Play Anyway, a missing required asset does not.
+ */
 export function PlayBlockedDialog({
   open,
   diagnostics,
+  title,
+  description,
   onOpenChange,
   onNavigate,
   onPlayAnyway,
@@ -34,10 +43,8 @@ export function PlayBlockedDialog({
         data-testid="play-blocked-dialog"
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>Compile errors</AlertDialogTitle>
-          <AlertDialogDescription>
-            Fix errors before Preview, or play anyway. Tap a row to navigate.
-          </AlertDialogDescription>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           {errors.map((d, i) => (
@@ -55,15 +62,17 @@ export function PlayBlockedDialog({
           ))}
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            data-testid="play-anyway"
-            onClick={() => {
-              onPlayAnyway();
-            }}
-          >
-            Play Anyway
-          </AlertDialogAction>
+          <AlertDialogCancel>{onPlayAnyway ? "Cancel" : "Close"}</AlertDialogCancel>
+          {onPlayAnyway ? (
+            <AlertDialogAction
+              data-testid="play-anyway"
+              onClick={() => {
+                onPlayAnyway();
+              }}
+            >
+              Play Anyway
+            </AlertDialogAction>
+          ) : null}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

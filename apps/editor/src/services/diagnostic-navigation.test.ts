@@ -229,7 +229,9 @@ describe("navigateToSessionReportEntry", () => {
     await navigateToSessionReportEntry(entry({ assetGuid: "arena-guid", nodeId: "spawn" }), host);
     expect(calls).toContain("scene mode scene:assets/Arena.scene.hasset script");
     const actor = fakeHost();
-    await navigateToSessionReportEntry(entry({ assetGuid: "arena-guid" }), actor.host);
+    await navigateToSessionReportEntry({ ...entry({ assetGuid: "arena-guid" }), actorId: "guard", componentId: "rich" }, actor.host);
     expect(actor.calls.some((call) => call.startsWith("scene mode"))).toBe(false);
+    // The opened Scene selects the Actor a Play preparation row names.
+    expect(actor.host.currentFocus()).toMatchObject({ actorId: "guard", componentId: "rich", nodeId: undefined });
   });
 });

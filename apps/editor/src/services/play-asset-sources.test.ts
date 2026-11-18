@@ -9,6 +9,7 @@ import {
 } from "@haptic/assets";
 import { acquirePlayAssetSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
 import type { OpenDocument } from "./document-service";
+import { PlayRequiredAssetError } from "./play-asset-problems";
 
 const formats = createDefaultMigrationRegistry();
 /** Fixture header version: the type's current format, or 1 for unversioned types. */
@@ -38,17 +39,18 @@ describe("Play asset formats", () => {
   const options = { consumer: "Play Scene", signal: new AbortController().signal };
 
   it.each([
-    ["an older-format Scene", { scene: SCENE_SCHEMA_VERSION - 1, material: MATERIAL_PAYLOAD_VERSION },
-      `Asset type "Scene" version ${SCENE_SCHEMA_VERSION - 1} uses an unsupported old format. This engine reads version ${SCENE_SCHEMA_VERSION}; older files are not upgraded.`],
-    ["an older-format Material the Scene requires", { scene: SCENE_SCHEMA_VERSION, material: MATERIAL_PAYLOAD_VERSION - 1 },
-      `Asset type "Material" version ${MATERIAL_PAYLOAD_VERSION - 1} uses an unsupported old format. This engine reads version ${MATERIAL_PAYLOAD_VERSION}; older files are not upgraded.`],
-    ["a newer-format Scene", { scene: SCENE_SCHEMA_VERSION + 1, material: MATERIAL_PAYLOAD_VERSION },
-      `Asset type "Scene" version ${SCENE_SCHEMA_VERSION + 1} was made with a newer engine version (current ${SCENE_SCHEMA_VERSION})`],
-  ])("refuses to prepare %s before compiling or loading anything", async (_case, versions, message) => {
+    ["an older-format Scene", { scene: SCENE_SCHEMA_VERSION - 1, material: MATERIAL_PAYLOAD_VERSION }, "scene", [],
+      `Play needs Scene "Scene" (assets/scene.hasset), which is saved in a format Play cannot read: Asset type "Scene" version ${SCENE_SCHEMA_VERSION - 1} uses an unsupported old format. This engine reads version ${SCENE_SCHEMA_VERSION}; older files are not upgraded.`],
+    ["an older-format Material the Scene requires", { scene: SCENE_SCHEMA_VERSION, material: MATERIAL_PAYLOAD_VERSION - 1 }, "material",
+      [{ guid: "scene", name: "Scene", type: "Scene", path: "assets/scene.hasset" }],
+      `Scene "Scene" uses Material "Material" (assets/material.hasset), which is saved in a format Play cannot read: Asset type "Material" version ${MATERIAL_PAYLOAD_VERSION - 1} uses an unsupported old format. This engine reads version ${MATERIAL_PAYLOAD_VERSION}; older files are not upgraded.`],
+    ["a newer-format Scene", { scene: SCENE_SCHEMA_VERSION + 1, material: MATERIAL_PAYLOAD_VERSION }, "scene", [],
+      `Play needs Scene "Scene" (assets/scene.hasset), which is saved in a format Play cannot read: Asset type "Scene" version ${SCENE_SCHEMA_VERSION + 1} was made with a newer engine version (current ${SCENE_SCHEMA_VERSION}).`],
+  ])("refuses to prepare %s before compiling or loading anything", async (_case, versions, guid, referrers, message) => {
     const { host, loading } = await formatFixture(versions);
     const preparing = acquirePlayAssetSources(host, ["scene"], options);
-    await expect(preparing).rejects.toThrow(AssetFormatVersionError);
     await expect(preparing).rejects.toThrow(message);
+    await expect(preparing).rejects.toMatchObject({ code: "play.unsupported_asset_format", guid, referrers, cause: expect.any(AssetFormatVersionError) });
     expect(host.compile).not.toHaveBeenCalled();
     expect(loading.snapshot().entries).toEqual([]);
     loading.dispose();
@@ -968,6 +970,166 @@ describe("Play source reads overlap without changing order", () => {
     expect(atFailure).toBeLessThanOrEqual(10);
     await sleep(120);
     expect(walk.reads).toHaveLength(atFailure);
+    loading.dispose();
+  });
+});
+
+type FixtureAsset = { guid: string; name: string; type: string; path: string; payload: Record<string, unknown>; requires?: string[]; parentClass?: string; chunked?: boolean };
+
+/** A project whose catalogs name the given required dependencies; `chunked` stores the payload in its document chunk. */
+async function missingAssetFixture(assets: readonly FixtureAsset[]) {
+  const storage = new MemoryStorageAdapter();
+  await storage.pickProjectFolder();
+  await storage.mkdir("assets");
+  for (const asset of assets) {
+    const requires = asset.requires ?? [];
+    await storage.writeBinary(asset.path, await encodeHasset({ header: {
+      guid: asset.guid, name: asset.name, type: asset.type, version: currentFormat(asset.type), engineVersion: "0.0.0", mode: "thin",
+      payload: asset.chunked ? {} : asset.payload, dependencies: requires, requiredDependencies: requires, dependencyMetadataVersion: 1,
+      ...(asset.type === "Class" ? { parentClass: asset.parentClass ?? "Actor", requiredVariableNames: [] } : {}),
+    }, chunks: asset.chunked ? [{ id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode(JSON.stringify(asset.payload)) }] : [] }));
+  }
+  const registry = new AssetRegistry(storage);
+  await registry.mountRoot(projectContentRoot());
+  const loading = createRegistryAssetLoadingService(registry, { projectId: "missing" });
+  const compile = vi.fn(async () => ({ bundles: [], diagnostics: [] }));
+  const host = { registry, project: createEmptyProject("Missing"), createScope: (owner: string) => loading.createScope(owner), compile };
+  return { storage, registry, loading, host };
+}
+
+const richText = (actorId: string, actorName: string, text: string) => ({
+  id: actorId, name: actorName, classId: "Actor", components: [{ id: "rich", classId: "2DRichTextComponent", properties: { text } }],
+});
+const MAIN = { guid: "main", name: "Main", type: "Scene", path: "assets/Main.hasset" };
+const HUD = { guid: "hud", name: "HUD", type: "SceneLayer", path: "assets/HUD.hasset" };
+
+describe("Play missing required assets", () => {
+  const options = { consumer: "Play Scene", signal: new AbortController().signal };
+
+  it.each([
+    {
+      where: "a Scene Layer's 2D Rich Text image",
+      assets: [
+        { ...MAIN, payload: { name: "Main", actors: [] }, requires: ["hud"] },
+        { ...HUD, payload: { name: "HUD", actors: [richText("dialogue", "Dialogue", "Hi [img=MISSING_ID size=14] there")] }, requires: ["MISSING_ID"], chunked: true },
+      ],
+      referrers: [MAIN, HUD],
+      location: { actorId: "dialogue", actorName: "Dialogue", componentId: "rich", componentClassId: "2DRichTextComponent", property: "text" },
+      message: "2D Rich Text on \"Dialogue\" in Scene Layer \"HUD\" uses an asset that does not exist: MISSING_ID (Text).",
+      diagnostic: { assetGuid: "hud", graphId: "scene-layer:assets/HUD.hasset", actorId: "dialogue", componentId: "rich" },
+    },
+    {
+      where: "a Scene's 2D Rich Text image",
+      assets: [{ ...MAIN, payload: { name: "Main", actors: [richText("sign", "Sign", "[img=MISSING_ID]")] }, requires: ["MISSING_ID"] }],
+      referrers: [MAIN],
+      location: { actorId: "sign", actorName: "Sign", componentId: "rich", componentClassId: "2DRichTextComponent", property: "text" },
+      message: "2D Rich Text on \"Sign\" in Scene \"Main\" uses an asset that does not exist: MISSING_ID (Text).",
+      diagnostic: { assetGuid: "main", graphId: "scene:assets/Main.hasset", actorId: "sign", componentId: "rich" },
+    },
+    {
+      where: "a Class prefab's 2D Rich Text image",
+      assets: [
+        { ...MAIN, payload: { name: "Main", actors: [] }, requires: ["hero"] },
+        { guid: "hero", name: "Hero", type: "Class", path: "assets/Hero.class.hasset", requires: ["MISSING_ID"],
+          payload: { nodes: [], edges: [], components: [{ id: "label", classId: "2DRichTextComponent", properties: { text: "[b][img=MISSING_ID][/b]" } }] } },
+      ],
+      referrers: [MAIN, { guid: "hero", name: "Hero", type: "Class", path: "assets/Hero.class.hasset" }],
+      location: { componentId: "label", componentClassId: "2DRichTextComponent", property: "text" },
+      message: "2D Rich Text in Class \"Hero\" uses an asset that does not exist: MISSING_ID (Text).",
+      diagnostic: { assetGuid: "hero", graphId: "graph:assets/Hero.class.hasset", componentId: "label" },
+    },
+    {
+      where: "a component property that names the asset as its whole value",
+      assets: [{ ...MAIN, requires: ["MISSING_ID"], payload: { name: "Main", actors: [{ id: "wall", name: "Wall", classId: "Actor",
+        components: [{ id: "mesh", classId: "MeshComponent", properties: { meshKind: "box", materialGuid: "MISSING_ID" } }] }] } }],
+      referrers: [MAIN],
+      location: { actorId: "wall", actorName: "Wall", componentId: "mesh", componentClassId: "MeshComponent", property: "materialGuid" },
+      message: "Mesh on \"Wall\" in Scene \"Main\" uses an asset that does not exist: MISSING_ID (Material).",
+      diagnostic: { assetGuid: "main", graphId: "scene:assets/Main.hasset", actorId: "wall", componentId: "mesh" },
+    },
+  ])("fails Play preparation naming what uses a missing asset and where: $where", async ({ assets, referrers, location, message, diagnostic }) => {
+    const { host, loading } = await missingAssetFixture(assets);
+    const preparing = acquirePlayAssetSources(host, ["main"], options);
+    await expect(preparing).rejects.toBeInstanceOf(PlayRequiredAssetError);
+    await expect(preparing).rejects.toThrow(message);
+    await expect(preparing).rejects.toMatchObject({
+      code: "play.missing_asset", guid: "MISSING_ID", referrers, location,
+      problems: [{ code: "play.missing_asset", guid: "MISSING_ID", referrers, location,
+        diagnostic: { severity: "error", code: "play.missing_asset", message, nodeId: undefined, ...diagnostic } }],
+    });
+    expect(host.compile).not.toHaveBeenCalled();
+    expect(loading.snapshot().entries).toEqual([]);
+    loading.dispose();
+  });
+
+  it("names the Project Setting when a Play root does not exist", async () => {
+    const { host, loading } = await missingAssetFixture([]);
+    host.project.settings.startupSceneGuid = "MISSING_SCENE";
+    const preparing = acquirePlayAssetSources(host, ["MISSING_SCENE"], options);
+    const message = "Project Settings > Startup Scene names an asset that does not exist: MISSING_SCENE.";
+    await expect(preparing).rejects.toThrow(message);
+    await expect(preparing).rejects.toMatchObject({
+      code: "play.missing_asset", guid: "MISSING_SCENE", referrers: [], location: null,
+      problems: [{ diagnostic: { severity: "error", code: "play.missing_asset", message, assetGuid: "", graphId: "Project Settings" } }],
+    });
+    loading.dispose();
+  });
+
+  it("starts a Game Instance Class the settings name only when it exists, and reports one that does not", async () => {
+    const { registry, host, loading } = await missingAssetFixture([]);
+    host.project.settings.gameInstanceClass = "Vanished";
+    expect(requiredProjectAssets(registry, host.project)).toEqual(["Vanished"]);
+    await expect(acquirePlayAssetSources(host, requiredProjectAssets(registry, host.project), options))
+      .rejects.toThrow("Project Settings > Game Instance names a Class that does not exist: Vanished.");
+    host.project.settings.gameInstanceClass = "GameInstance";
+    expect(requiredProjectAssets(registry, host.project)).toEqual([]);
+    loading.dispose();
+  });
+
+  it("reports every missing asset of the walk in one failure", async () => {
+    const { host, loading } = await missingAssetFixture([
+      { ...MAIN, payload: { name: "Main", actors: [richText("sign", "Sign", "[img=FIRST]"), { id: "wall", name: "Wall", classId: "Actor",
+        components: [{ id: "mesh", classId: "MeshComponent", properties: { materialGuid: "SECOND" } }] }] }, requires: ["FIRST", "SECOND"] },
+    ]);
+    const failure = await acquirePlayAssetSources(host, ["main"], options).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: "play.missing_asset", guid: "SECOND" });
+    expect((failure as { problems: Array<{ message: string }> }).problems.map((problem) => problem.message)).toEqual([
+      "Mesh on \"Wall\" in Scene \"Main\" uses an asset that does not exist: SECOND (Material).",
+      "2D Rich Text on \"Sign\" in Scene \"Main\" uses an asset that does not exist: FIRST (Text).",
+    ]);
+    loading.dispose();
+  });
+
+  it("reports a required asset whose stored document cannot be read as unreadable, naming what uses it", async () => {
+    const { storage, host, loading } = await missingAssetFixture([
+      { ...MAIN, requires: ["broken"], payload: { name: "Main", actors: [{ id: "wall", name: "Wall", classId: "Actor",
+        components: [{ id: "mesh", classId: "MeshComponent", properties: { materialGuid: "broken" } }] }] } },
+      { guid: "broken", name: "Broken", type: "Material", path: "assets/Broken.hasset", payload: { name: "Broken", nodes: [], edges: [] }, chunked: true },
+    ]);
+    // The document chunk is cut short after the catalog was indexed.
+    const bytes = await storage.readBinary("assets/Broken.hasset");
+    const at = new TextDecoder().decode(bytes).lastIndexOf("{\"name\":\"Broken\"");
+    bytes.set(new TextEncoder().encode("#"), at);
+    await storage.writeBinary("assets/Broken.hasset", bytes);
+    const failure = await acquirePlayAssetSources(host, ["main"], options).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(PlayRequiredAssetError);
+    expect(failure).toMatchObject({ code: "play.unreadable_asset", guid: "broken", referrers: [MAIN],
+      location: { actorId: "wall", componentId: "mesh", property: "materialGuid" } });
+    expect((failure as Error).message).toMatch(/^Mesh on "Wall" in Scene "Main" \(Material\) uses Material "Broken" \(assets\/Broken\.hasset\), which could not be read: ./);
+    loading.dispose();
+  });
+
+  it("searches the open working document, not the stored one, for the reference", async () => {
+    const { registry, host, loading } = await missingAssetFixture([
+      { ...MAIN, payload: { name: "Main", actors: [] }, requires: ["hud"] },
+      { ...HUD, payload: { name: "HUD", actors: [richText("stored", "Stored", "[img=MISSING_ID]")] }, requires: ["MISSING_ID"], chunked: true },
+    ]);
+    const ref = createDocumentRef("scene-layer", HUD.path);
+    const open: OpenDocument = { id: documentId(ref), ref, dirty: true, layout: null,
+      content: { name: "HUD", actors: [richText("stored", "Stored", "Hello"), richText("edited", "Edited", "[img=MISSING_ID size=8]")] } };
+    const preparing = acquirePlayAssetSources({ ...host, documentOverrides: playDocumentOverrides(registry, [open]) }, ["main"], options);
+    await expect(preparing).rejects.toThrow("2D Rich Text on \"Edited\" in Scene Layer \"HUD\" uses an asset that does not exist: MISSING_ID (Text).");
+    await expect(preparing).rejects.toMatchObject({ location: { actorId: "edited", componentId: "rich", property: "text" } });
     loading.dispose();
   });
 });
