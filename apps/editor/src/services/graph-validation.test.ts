@@ -1114,10 +1114,11 @@ describe("validateSerializedGraph", () => {
     ).toBe(true);
   });
 
-  it("does not report a pure cycle when Line Trace location feeds back through Add Vector3", () => {
+  it("does not report a pure cycle when Line Trace location feeds back through Add", () => {
     const beginPins = registry.get("flow.event.beginPlay")!.pins({});
     const tracePins = registry.get("physics.lineTrace")!.pins({});
-    const addPins = registry.get("vector.add3")!.pins({});
+    const addTypes = { aType: "vec3", bType: "vec3" };
+    const addPins = registry.get("math.add")!.pins(addTypes);
     const diags = validateSerializedGraph(
       {
         nodes: [
@@ -1135,9 +1136,9 @@ describe("validateSerializedGraph", () => {
           },
           {
             id: "add",
-            type: "vector.add3",
+            type: "math.add",
             position: { x: 200, y: 80 },
-            data: { __pins: addPins },
+            data: { ...addTypes, __pins: addPins },
           },
         ],
         edges: [
@@ -1379,8 +1380,9 @@ describe("scriptPaletteNodes", () => {
   it("keeps operator and formula aliases on typed arithmetic palette choices", () => {
     const nodes = scriptPaletteNodes(registry);
     for (const [id, alias] of [
-      ["math.add", "+"], ["math.add_int", "+"], ["vector.add3", "+"],
-      ["math.mul", "×"], ["vector.div2", "÷"], ["math.lessEqual", "≤"],
+      ["math.add", "+"], ["math.add", "add vector3"], ["math.sub", "subtract int"],
+      ["math.mul", "×"], ["math.mul", "scale vector3"], ["math.div", "÷"], ["math.mod", "%"],
+      ["math.negate", "negate vector3"], ["math.lessEqual", "≤"],
       ["math.notEquals", "!="], ["boolean.and", "&&"],
       ["math.power", "**"], ["math.sqrt", "sqrt(x)"],
       ["vector.dot3", "dot(a,b)"], ["color.multiply", "*"], ["quat.multiply", "*"],
