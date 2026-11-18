@@ -1504,6 +1504,16 @@ function expectWiresLevelWithShortTransitions(nodes: readonly FormatNode[], edge
   }
 }
 
+/** Every knot chain Format adds ends in a knot level with the pin it feeds, so the wire runs level into it. */
+function expectFinalKnotsLevel(result: FormatResult): void {
+  const byId = new Map(result.nodes.map((entry) => [entry.id, entry]));
+  for (const knot of result.knots) {
+    const last = knot.positions[knot.positions.length - 1]!;
+    const label = `${knot.edge.source}.${knot.edge.sourceHandle} → ${knot.edge.target}.${knot.edge.targetHandle}`;
+    expect(last.y + REROUTE_KNOT_SIZE.height / 2, label).toBe(handleY(byId.get(knot.edge.target)!, "in", knot.edge.targetHandle));
+  }
+}
+
 /** Points along a polyline at most 10 apart. */
 function densely(points: readonly { x: number; y: number }[]): { x: number; y: number }[] {
   const out: { x: number; y: number }[] = [];
@@ -1636,6 +1646,7 @@ describe("formatGraphNodes on a branching graph", () => {
 
   it("keeps wires apart, crossing only where the branch and Length's far wire must", () => {
     expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
+    expectFinalKnotsLevel(result);
     expect(closestParallelRuns(knotted.nodes, knotted.edges)).toBeGreaterThanOrEqual(40);
     // False drops from Branch to its row below while Length's wire runs past Branch to To String:
     // the two cannot both stay on their sides.
@@ -1728,6 +1739,7 @@ describe("formatGraphNodes on a Sequence graph", () => {
 
   it("drops Then 1 and Then 2 nested below the Then 0 block, the lowest nearest the Sequence", () => {
     expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
+    expectFinalKnotsLevel(result);
     expectExecKnotsInLane(result.nodes, result);
     const blockBottom = Math.max(...["array", "int0", "int1", "int2", "length", "add", "toString"].map((id) => {
       const entry = byIdOf(result.nodes, id);
@@ -1844,6 +1856,7 @@ describe("formatGraphNodes on a loop with branches sharing inputs", () => {
     expect(wireCrossings(knotted.nodes, [...chain("element"), ...chain("index")])).toBe(0);
     expectWiresClear(knotted.nodes, knotted.edges);
     expectWiresLevelWithShortTransitions(knotted.nodes, knotted.edges);
+    expectFinalKnotsLevel(result);
     expectNoBoxOverlaps(knotted.nodes);
     expectExecKnotsInLane(result.nodes, result);
     expect(closestParallelRuns(knotted.nodes, knotted.edges)).toBeGreaterThanOrEqual(40);

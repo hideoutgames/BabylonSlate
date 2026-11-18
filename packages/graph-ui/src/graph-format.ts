@@ -1664,9 +1664,12 @@ function routeCandidates(
           if (near(first) + size.width + FORMAT_GAP_X <= before(last)) routes.push([knot(near(first), lane), knot(before(last), lane)]);
         }
       }
-      // The run in the lane, then the last knot level with the target pin just before it.
+      // The run in the lane, then the last knot level with the target pin just before it: straight
+      // from the lane, or after a third knot two lanes before it, so the change of height is short.
       for (let first = 0; first < 3; first++) {
-        if (lane !== to.y && near(first) + size.width + FORMAT_GAP_X <= before(0)) routes.push([knot(near(first), lane), knot(before(0), to.y)]);
+        if (lane === to.y) continue;
+        if (near(first) + size.width + FORMAT_GAP_X <= before(0)) routes.push([knot(near(first), lane), knot(before(0), to.y)]);
+        if (near(first) + size.width + FORMAT_GAP_X <= before(2)) routes.push([knot(near(first), lane), knot(before(2), lane), knot(before(0), to.y)]);
       }
     }
   }
@@ -1782,7 +1785,8 @@ function routeWires(
     const endIds = [edge.source, edge.target];
     const existing = lanes.knotOf.get(edge) ?? [];
     const size = existing.length > 0 ? nodeSize(knotNodes.get(existing[0]!)!) : knotSize;
-    const limit = existing.length > 0 ? existing.length : insertKnots ? 2 : 0;
+    // New knots: two, or three when the last sits level with the target pin.
+    const limit = existing.length > 0 ? existing.length : insertKnots ? 3 : 0;
     const source = `${edge.source}\n${edge.sourceHandle}`;
     const target = `${edge.target}\n${edge.targetHandle}`;
     const sharesPin = (other: Committed) => other.source === source || other.target === target;
@@ -1799,23 +1803,31 @@ function routeWires(
     // An exec drop takes the first lane that fits, nearest its node, so a node's lowest branch
     // (routed first) drops nearest it and the rows above keep clear of its drop.
     const isExec = exec.has(edge);
-    // Cost is lexicographic with the knot count first, so candidates are tried by knot count and
-    // the first count with a fitting route ends the search; the other candidates are built only
-    // when the direct wire does not fit.
+    // A route's weight is its knot count, plus one unless its last knot is level with the target
+    // pin: a knot that lets the wire run level into its pin is worth one more knot. Cost is
+    // lexicographic with the weight first, so candidates are tried by weight and the first weight
+    // with a fitting route ends the search; the other candidates are built only when the direct
+    // wire does not fit.
+    const levelEnd = (route: readonly Position[]) => route.length > 0 && route[route.length - 1]!.y + size.height / 2 === to.y;
+    const weightOf = (route: readonly Position[]) => (route.length === 0 ? 0 : route.length + (levelEnd(route) ? 0 : 1));
+    // Without knots of its own a wire takes at most two new knots, or three ending level.
+    const allowed = (route: readonly Position[]) =>
+      route.length <= limit && (existing.length > 0 || route.length <= 2 || levelEnd(route));
     let candidates: Position[][] | undefined;
     for (const spaced of [true, false]) {
       if (best) break;
-      for (let count = 0; count <= limit && !best; count++) {
-        if (count > 0) {
+      for (let weight = 0; weight <= limit + 1 && !best; weight++) {
+        if (weight > 0) {
+          if (limit === 0) break;
           const nest = (index.byNode.get(edge.source) ?? []).filter((other) => other.knots.length > 0).length;
           candidates ??= routeCandidates(from, to, endIds, size, obstacles, index.runs, nest);
         }
-        const group = count === 0 ? [[] as Position[]] : candidates!;
+        const group = weight === 0 ? [[] as Position[]] : candidates!;
         for (const [order, route] of group.entries()) {
-          if (route.length !== count) continue;
-          if (count === 0 && needsLevel && limit > 0 && spaced) continue;
+          if (weightOf(route) !== weight || !allowed(route)) continue;
+          if (weight === 0 && needsLevel && limit > 0 && spaced) continue;
           const pieces = piecesOf(from, route, size, to);
-          if (count > 0 && pieces.some((piece, at) => !piece.level && Math.abs(piece.to.x - piece.from.x) > reach(at))) continue;
+          if (weight > 0 && pieces.some((piece, at) => !piece.level && Math.abs(piece.to.x - piece.from.x) > reach(at))) continue;
           const boxes = route.map((at) => ({ ...at, ...size }));
           const direct = route.length === 0;
           const clearance = direct ? (from.y === to.y ? WIRE_CLEARANCE : WIRE_CROWDING) : WIRE_CLEARANCE;
@@ -1844,9 +1856,8 @@ function routeWires(
             if (crossed > most) break;
             if (!sharesPin(other)) crossed += crossings(pieces, other.pieces, most - crossed);
           }
-          // Among routes as good, one whose last knot is level with the target pin runs level into it.
-          const levelEnd = route[route.length - 1]!.y + size.height / 2 === to.y ? 0 : 1;
-          const cost = [route.length, crossed, levelEnd, isExec ? order : routeLength(pieces)];
+          // Among routes as good, one ending level with the pin, then the one with fewer knots.
+          const cost = [weight, crossed, levelEnd(route) ? 0 : 1, route.length, isExec ? order : routeLength(pieces)];
           if (!best || cheaper(cost, best.cost)) best = { route, pieces, cost };
         }
       }
