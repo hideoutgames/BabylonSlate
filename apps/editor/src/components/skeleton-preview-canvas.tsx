@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { prefersReducedMotion } from "@haptic/editor-kit";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { SkeletonKind, SkeletonSocket } from "@haptic/assets";
 import {
@@ -48,6 +50,8 @@ export function SkeletonPreviewCanvas({
   onMoveSocket?: (name: string, position: [number, number, number]) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
+  const zoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const play = useOptionalPlay();
   const { projectDocument } = useProjectState();
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
@@ -121,7 +125,8 @@ export function SkeletonPreviewCanvas({
         gizmos = handles;
         gizmoRef.current = handles;
         const pointerCanvas = () => ({ width: canvas.clientWidth, height: canvas.clientHeight });
-        gestures = attachMaterialPreviewGestures(canvas, host.camera, {
+        gestures = gesturesRef.current = attachMaterialPreviewGestures(canvas, host.camera, {
+          zoomInstant: prefersReducedMotion,
           onChange: () => presenter?.present({ force: true }),
           blockOrbit: (x, y) => handles.isDragging() || handles.hitTest(x, y, pointerCanvas()),
           onPointer: (type, x, y, pointerId) => {
@@ -213,14 +218,19 @@ export function SkeletonPreviewCanvas({
   }, [sockets, selectedSocket, previewGeneration]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="h-full w-full touch-none"
-      data-testid="skeleton-preview-canvas"
-      data-bones={bonesAttached ? "true" : "false"}
-      data-selected-bone={selectedBone ?? undefined}
-      data-sockets={String(sockets.length)}
-      data-selected-socket={selectedSocket ?? undefined}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="h-full w-full touch-none"
+        data-testid="skeleton-preview-canvas"
+        data-bones={bonesAttached ? "true" : "false"}
+        data-selected-bone={selectedBone ?? undefined}
+        data-sockets={String(sockets.length)}
+        data-selected-socket={selectedSocket ?? undefined}
+      />
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10">
+        <ViewportZoomControls drive={zoomDrive} testId="skeleton-preview-zoom-controls" />
+      </div>
+    </>
   );
 }

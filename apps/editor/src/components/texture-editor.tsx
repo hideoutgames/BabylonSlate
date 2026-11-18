@@ -54,6 +54,8 @@ import {
 import { shownCompressionState } from "../lib/texture-encode-state";
 import { ImportProgressDialog, type ImportProgress } from "./import-progress-dialog";
 import { asRecord } from "../lib/as-record";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
+import { usePanZoomDrive } from "../lib/use-pan-zoom-drive";
 
 const HDR_FACE_SIZE_OPTIONS = HDR_ENVIRONMENT_FACE_SIZES.map((size) => ({ value: String(size), label: `${size} × ${size}` }));
 
@@ -213,6 +215,7 @@ export const TexturePreview = memo(function TexturePreview({
   });
   const view = panZoom.view;
   const scale = view?.scale ?? 1;
+  const zoomDrive = usePanZoomDrive(panZoom);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden" data-testid="texture-preview">
@@ -317,6 +320,11 @@ export const TexturePreview = memo(function TexturePreview({
         ) : (
           <TexturePreviewEmpty icon={<ImageIcon />} title="Loading Preview…" />
         )}
+        {url && view ? (
+          <div className="pointer-events-none absolute bottom-3 right-3 z-40">
+            <ViewportZoomControls drive={zoomDrive} testId="texture-preview-zoom-controls" />
+          </div>
+        ) : null}
       </div>
     </div>
   );

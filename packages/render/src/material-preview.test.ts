@@ -1276,3 +1276,84 @@ describe("material preview presenter", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 });
+
+describe("material preview zoom buttons", () => {
+  /** Preview gestures with a manual frame queue and a scheduler counting its lease. */
+  function zoomPreview(options: { zoomInstant?: () => boolean } = {}) {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextId = 1;
+    // Unstubbed last, after the handle and host are disposed.
+    disposers.push(() => vi.unstubAllGlobals());
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(nextId, callback);
+      return nextId++;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+    const lease = { acquired: 0, released: 0 };
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const onChange = vi.fn();
+    const handle = attachMaterialPreviewGestures(new FakeCanvas() as unknown as HTMLCanvasElement, host.camera, {
+      onChange,
+      zoomInstant: options.zoomInstant,
+      scheduler: {
+        acquireContinuous: () => {
+          lease.acquired += 1;
+          return () => {
+            lease.released += 1;
+          };
+        },
+      },
+    });
+    disposers.push(() => handle.dispose());
+    let nowMs = performance.now();
+    const pump = (dtMs: number) => {
+      const [id, callback] = frames.entries().next().value ?? [];
+      if (!callback) throw new Error("no scheduled zoom frame");
+      frames.delete(id!);
+      nowMs += dtMs;
+      callback(nowMs);
+    };
+    return { host, handle, onChange, lease, frames, pump };
+  }
+
+  it("zooms the preview camera in by one 1.2 step on a Reduce Motion tap and redraws", () => {
+    const { host, handle, onChange, lease, frames } = zoomPreview({ zoomInstant: () => true });
+    host.camera.radius = 6;
+    handle.zoomDrive.step(1);
+    expect(host.camera.radius).toBeCloseTo(5, 10);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(frames.size).toBe(0);
+    expect(lease).toEqual({ acquired: 1, released: 1 });
+  });
+
+  it("ends a held zoom-in at the camera's closest radius", () => {
+    const { host, handle, onChange, lease, frames, pump } = zoomPreview();
+    const lower = host.camera.lowerRadiusLimit!;
+    host.camera.radius = lower * 1.05;
+    handle.zoomDrive.start(1);
+    for (let i = 0; i < 30 && frames.size > 0; i += 1) pump(1000 / 60);
+    expect(host.camera.radius).toBe(lower);
+    expect(frames.size).toBe(0);
+    expect(lease).toEqual({ acquired: 1, released: 1 });
+    const calls = onChange.mock.calls.length;
+    handle.zoomDrive.stop();
+    expect(onChange).toHaveBeenCalledTimes(calls);
+  });
+
+  it("leaves the drive inert after dispose", () => {
+    const { host, handle, onChange, lease, frames, pump } = zoomPreview();
+    host.camera.radius = 6;
+    handle.zoomDrive.start(-1);
+    pump(1000 / 60);
+    handle.dispose();
+    expect(frames.size).toBe(0);
+    expect(lease).toEqual({ acquired: 1, released: 1 });
+    const radius = host.camera.radius;
+    handle.zoomDrive.step(1);
+    expect(host.camera.radius).toBe(radius);
+    expect(frames.size).toBe(0);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(lease.acquired).toBe(1);
+  });
+});

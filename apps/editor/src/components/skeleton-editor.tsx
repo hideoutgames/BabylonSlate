@@ -147,7 +147,7 @@ function SkeletonPreview({
     );
   }
   return (
-    <div className="h-full min-h-0" data-testid="skeleton-preview">
+    <div className="relative h-full min-h-0" data-testid="skeleton-preview">
       <SkeletonPreviewCanvas
         sourceBytes={sourceBytes}
         kind={payload.kind}
