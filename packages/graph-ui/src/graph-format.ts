@@ -15,6 +15,8 @@ export const FORMAT_GAP_Y = 40;
 const HELIX_MAX_HEIGHT = 320;
 // Clearance between a wire or a knot and the box of another node.
 const WIRE_CLEARANCE = 8;
+/** A direct wire this close to another node is crowding it: Format routes it around with a knot. */
+const WIRE_CROWDING = 32;
 // Points sampled along a wire's curve when testing it against node boxes.
 const WIRE_SAMPLES = 24;
 // XYFlow `getBezierPath`'s default curvature.
@@ -698,15 +700,16 @@ function firstObstruction(
   to: Point,
   ends: readonly string[],
   obstacles: Obstacles,
+  clearance = WIRE_CLEARANCE,
 ): Obstacle | undefined {
   const offset = controlOffset(to.x - from.x);
   const first = { x: from.x + offset, y: from.y };
   const second = { x: to.x - offset, y: to.y };
   // The curve stays inside its control points' bounds.
-  const minX = Math.min(from.x, second.x) - WIRE_CLEARANCE;
-  const maxX = Math.max(first.x, to.x) + WIRE_CLEARANCE;
-  const minY = Math.min(from.y, to.y) - WIRE_CLEARANCE;
-  const maxY = Math.max(from.y, to.y) + WIRE_CLEARANCE;
+  const minX = Math.min(from.x, second.x) - clearance;
+  const maxX = Math.max(first.x, to.x) + clearance;
+  const minY = Math.min(from.y, to.y) - clearance;
+  const maxY = Math.max(from.y, to.y) + clearance;
   const near = boxesAcross(obstacles, minX, maxX).filter(
     (box) => !ends.includes(box.id) && box.y <= maxY && box.y + box.height >= minY,
   );
@@ -722,10 +725,10 @@ function firstObstruction(
     const y = a * from.y + b * first.y + c * second.y + d * to.y;
     const hit = near.find(
       (box) =>
-        x > box.x - WIRE_CLEARANCE &&
-        x < box.x + box.width + WIRE_CLEARANCE &&
-        y > box.y - WIRE_CLEARANCE &&
-        y < box.y + box.height + WIRE_CLEARANCE,
+        x > box.x - clearance &&
+        x < box.x + box.width + clearance &&
+        y > box.y - clearance &&
+        y < box.y + box.height + clearance,
     );
     if (hit) return hit;
   }
@@ -857,7 +860,7 @@ function routeDataWires(
     const knotId = lanes.knotOf.get(edge);
     if (!knotId && !insertKnots) continue;
     const size = knotId ? nodeSize(knotNodes.get(knotId)!) : knotSize;
-    const blocked = firstObstruction(from, to, ends, obstacles);
+    const blocked = firstObstruction(from, to, ends, obstacles, WIRE_CROWDING);
     let at = blocked ? knotAround(blocked, from, to, ends, size, obstacles, placedKnots) : undefined;
     if (knotId) {
       at ??= knotBesideTarget(from, to, ends, size, obstacles, placedKnots);
