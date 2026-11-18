@@ -1,4 +1,4 @@
-import type { QualityGroup, ShadowDebugPart, WaterDebugPart } from "@haptic/core";
+import type { QualityGroup, ShadowDebugPart, WaterDebugPart, WorldDebugPart } from "@haptic/core";
 export type CommandTier = "core" | "debug";
 
 export type CommandParamType = "string" | "float" | "int" | "bool" | "enum";
@@ -56,6 +56,8 @@ export type ConsoleCommandHost = {
   setRenderTargetCaptures?(enabled: boolean): void;
   /** `waterdebug`: switch one part of water off or back on for the session, to measure what it costs. */
   setWaterDebug?(part: WaterDebugPart, enabled: boolean): void;
+  /** `worlddebug`: switch one share of the world's main colour pass off (to measure it) or back on. */
+  setWorldDebug?(part: WorldDebugPart, enabled: boolean): void;
   /** `shadowdebug`: switch one part of shadow drawing off or back on for the session, to measure what it costs. */
   setShadowDebug?(part: ShadowDebugPart, enabled: boolean): void;
   /** `discardsamples`: discard multisampled samples after a frame's last resolve of them, to measure what storing them costs. */

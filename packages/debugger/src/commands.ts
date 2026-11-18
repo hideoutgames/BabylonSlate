@@ -1,4 +1,4 @@
-import { POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, SHADOW_DEBUG_PARTS, WATER_DEBUG_PARTS, WATER_QUALITY_FIELDS, type QualityGroup, type ShadowDebugPart, type WaterDebugPart } from "@haptic/core";
+import { POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, SHADOW_DEBUG_PARTS, WATER_DEBUG_PARTS, WATER_QUALITY_FIELDS, type QualityGroup, type ShadowDebugPart, type WaterDebugPart, WORLD_DEBUG_PARTS, type WorldDebugPart } from "@haptic/core";
 import { fail, ok } from "./parser";
 import type {
   CommandParameter,
@@ -43,6 +43,7 @@ export const DEBUG_COMMAND_NAMES = [
   "postprocessing",
   "rendertargets",
   "waterdebug",
+  "worlddebug",
   "shadowdebug",
   "discardsamples",
   "scenelayers",
@@ -236,6 +237,19 @@ export function builtinCommands(): RegisteredCommand[] {
         if (!host.setWaterDebug) return fail("waterdebug is unavailable here");
         host.setWaterDebug(part, enabled);
         return ok(`waterdebug ${part} ${enabled ? "on" : "off"}`);
+      },
+    },
+    {
+      name: "worlddebug",
+      tier: "debug",
+      category: "engine",
+      description: "Switch one share of the world's drawing off or back on, to size it: every world mesh of the view's passes (world), lighting (lit surfaces draw their base colour), shadow lookups (shadowtaps; maps still drawn, every lookup lit), point, spot and rect lights (locallights), or all shading (every surface one constant colour)",
+      parameters: [{ name: "part", type: "enum", enumValues: [...WORLD_DEBUG_PARTS] }, FLAG],
+      run(args, host) {
+        const part = args.part as WorldDebugPart, enabled = Boolean(args.enabled);
+        if (!host.setWorldDebug) return fail("worlddebug is unavailable here");
+        host.setWorldDebug(part, enabled);
+        return ok(`worlddebug ${part} ${enabled ? "on" : "off"}`);
       },
     },
     {

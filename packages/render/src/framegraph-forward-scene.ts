@@ -73,6 +73,7 @@ import {
 import { managedRenderTextureResource, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { drawSceneAuxiliaryViews } from "./scene-auxiliary-views";
 import { enterDrawPass, leaveDrawPass, observeTaskDrawPass, type DrawPass } from "./draw-passes";
+import { worldDebugOff } from "./world-debug";
 import { timeParticleAnimation } from "./particle-animation-pass";
 import { installSampleDiscard, markLastSampleWriters } from "./sample-discard";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
@@ -252,6 +253,9 @@ const isWorldMeshSceneDepthLacks = (mesh: AbstractMesh): boolean => isWorldMesh(
 const isShown = (mesh: AbstractMesh): boolean => !isRevealPending(mesh);
 
 /** Native camera frustum calculation reads the currently bound target's aspect. */
+/** The cull's output while `worlddebug world` is off. */
+const NO_WORLD_MESHES: AbstractMesh[] = [];
+
 class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   /** The output list without hidden meshes when culling is off (its output is then the input list itself). */
   private readonly shown: AbstractMesh[] = [];
@@ -281,6 +285,14 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 
   private cullFrame(): void {
     const scene = this.camera.getScene();
+    // `worlddebug world off`: the view's passes draw no world mesh (clears, effects over nothing, layers and presentation stay).
+    if (worldDebugOff(scene, "world")) {
+      this.outputObjectList.meshes = NO_WORLD_MESHES;
+      this.outputObjectList.particleSystems = null;
+      this.world.length = 0;
+      this.worldObjectList.particleSystems = null;
+      return;
+    }
     // Play: the meshes added since the last cull leave Intermediate's always-drawn mark first (`play-view-culling.ts`).
     settlePlayViewCulling(scene);
     // A Scene Layer's drawable meshes, which its scene objects hold, brought up to date in place as the cull reads them.

@@ -45,6 +45,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "setPostProcessingDebug",
   "setRenderTargetCapturesDebug",
   "setWaterDebug",
+  "setWorldDebug",
   "setShadowDebug",
   "setDiscardSamplesDebug",
   "setSceneLayersDebug",

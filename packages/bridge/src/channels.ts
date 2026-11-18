@@ -1,4 +1,4 @@
-import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, LayerCameraState, ShadowDebugPart, WaterDebugPart } from "@haptic/core";
+import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, LayerCameraState, ShadowDebugPart, WaterDebugPart, WorldDebugPart } from "@haptic/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
 import type { ActorDefaults, CollisionTriangleMesh, GameInstanceDefaults, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@haptic/core";
@@ -1244,6 +1244,8 @@ export type CommandMessage =
   | { type: "setRenderTargetCapturesDebug"; enabled: boolean }
   /** Debug: switch one part of water off or back on (the `waterdebug` console command). */
   | { type: "setWaterDebug"; part: WaterDebugPart; enabled: boolean }
+  /** Debug: switch one share of the world's main colour pass off or back on (the `worlddebug` console command). */
+  | { type: "setWorldDebug"; part: WorldDebugPart; enabled: boolean }
   /** Debug: switch one part of shadow drawing off or back on (the `shadowdebug` console command). */
   | { type: "setShadowDebug"; part: ShadowDebugPart; enabled: boolean }
   /** Debug: discard multisampled samples after a frame's last resolve of them, or keep them (the `discardsamples` console command). */

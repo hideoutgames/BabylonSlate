@@ -175,6 +175,10 @@ float hapticContactLit(vec4 tile, float layer, vec4 shading, vec4 contact, vec4 
 #endif
 
 ` : ""}float hapticShadow(float index, vec3 P, vec3 dPdx, vec3 dPdy) {
+#ifdef HAPTIC_DEBUG_NO_SHADOW_TAPS
+  // \`worlddebug shadowtaps off\`: every lookup lit, the maps still drawn.
+  return 1.0;
+#endif
   if (index < 0.0${surface ? " || hapticShadowReceiver == 0.0" : ""}) return 1.0;
   int base = int(index) * ${HAPTIC_SHADOW_VIEW_VEC4S};
   mat4 view = mat4(hapticShadowViews[base], hapticShadowViews[base + 1], hapticShadowViews[base + 2], hapticShadowViews[base + 3]);
@@ -571,6 +575,10 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
   hapticSunLookup sun = hapticSunCascade(P);
   float sunShadow = 1.0;
   uvec2 clusterMask = hapticClusterMask(P);
+#ifdef HAPTIC_DEBUG_NO_LOCAL_LIGHTS
+  // \`worlddebug locallights off\`: no point, spot or rect light.
+  clusterMask = uvec2(0u);
+#endif
   uint points = hapticClusterLights(clusterMask.x, int(hapticCounts.y));
   uint spots = hapticClusterLights(clusterMask.y & 0xffffu, int(hapticCounts.z));
   for (int slot = 0; slot < 2 + ${HAPTIC_LIGHT_MAXIMUM.point} + ${HAPTIC_LIGHT_MAXIMUM.spot}; slot++) {
@@ -788,6 +796,10 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
   hapticSunLookup sun = hapticSunCascade(P);
   float sunShadow = 1.0;
   uvec2 clusterMask = hapticClusterMask(P);
+#ifdef HAPTIC_DEBUG_NO_LOCAL_LIGHTS
+  // \`worlddebug locallights off\`: no point, spot or rect light.
+  clusterMask = uvec2(0u);
+#endif
   uint points = hapticClusterLights(clusterMask.x, int(hapticCounts.y));
   uint spots = hapticClusterLights(clusterMask.y & 0xffffu, int(hapticCounts.z));
   for (int slot = 0; slot < 2 + ${HAPTIC_LIGHT_MAXIMUM.point} + ${HAPTIC_LIGHT_MAXIMUM.spot}; slot++) {
