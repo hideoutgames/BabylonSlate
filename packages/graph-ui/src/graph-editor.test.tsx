@@ -5521,45 +5521,57 @@ describe("GraphEditor", () => {
     expect(wrap).toHaveBeenCalled();
   });
 
-  it("opens the selected node menu from the canvas pane", async () => {
-    const wrap = vi.fn();
-    const { getByTestId, container } = render(
+  it("opens Add Node from an empty-pane right-click with a node selected, leaving the selection and node menu alone", async () => {
+    const nodeItems = vi.fn(() => [{ id: "wrap", label: "Wrap In Sequence", testId: "bt-menu-wrap", onSelect: () => undefined }]);
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "root",
+          type: "bt.node",
+          position: { x: 0, y: 0 },
+          data: { title: "Selector", kind: "selector", classId: "bt.composite.selector" },
+        },
+      ],
+      edges: [],
+    };
+    const { container, queryByTestId, rerender } = render(
       <GraphEditor
-        initialGraph={{
-          nodes: [
-            {
-              id: "root",
-              type: "bt.node",
-              position: { x: 0, y: 0 },
-              data: {
-                title: "Selector",
-                kind: "selector",
-                classId: "bt.composite.selector",
-              },
-            },
-          ],
-          edges: [],
-        }}
+        initialGraph={graph}
         nodeTypes={treeNodeTypes}
         focusedNodeId="root"
-        contextMenuItemsForNode={() => [
-          {
-            id: "wrap",
-            label: "Wrap In Sequence",
-            testId: "bt-menu-wrap",
-            onSelect: wrap,
-          },
-        ]}
+        paletteNodes={pinDragPalette}
+        contextMenuItemsForNode={nodeItems}
       />,
     );
     await waitFor(() => {
-      expect(getByTestId("bt-node-root")).toBeTruthy();
+      expect(queryByTestId("bt-node-root")).toBeTruthy();
     });
+    const selected = () => [...container.querySelectorAll(".react-flow__node.selected")].map((node) => node.getAttribute("data-id"));
+    expect(selected()).toEqual(["root"]);
     const pane = container.querySelector(".react-flow__pane");
     expect(pane).not.toBeNull();
-    fireEvent.contextMenu(pane!);
-    fireEvent.click(getByTestId("bt-menu-wrap"));
-    expect(wrap).toHaveBeenCalled();
+    fireEvent.contextMenu(pane!, { clientX: 200, clientY: 150 });
+    expect(queryByTestId("node-palette")).not.toBeNull();
+    expect(queryByTestId("bt-menu-wrap")).toBeNull();
+    expect(nodeItems).not.toHaveBeenCalled();
+    expect(selected()).toEqual(["root"]);
+
+    // Read-only: an empty-pane right-click still opens nothing.
+    fireEvent.keyDown(screen.getByTestId("node-palette-search"), { key: "Escape" });
+    rerender(
+      <GraphEditor
+        initialGraph={graph}
+        nodeTypes={treeNodeTypes}
+        focusedNodeId="root"
+        paletteNodes={pinDragPalette}
+        contextMenuItemsForNode={nodeItems}
+        readOnly
+      />,
+    );
+    fireEvent.contextMenu(pane!, { clientX: 200, clientY: 150 });
+    expect(queryByTestId("node-palette")).toBeNull();
+    expect(queryByTestId("bt-menu-wrap")).toBeNull();
+    expect(nodeItems).not.toHaveBeenCalled();
   });
 
   it("selects a node added from the palette after the pane click cleared selection", async () => {

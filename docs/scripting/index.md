@@ -28,7 +28,7 @@ The pages in this section cover Class graphs.
 
 Open **Add Node** in any of these ways:
 
-- Double-tap or right-click (long-press on touch) empty canvas.
+- Double-tap or right-click (long-press on touch) empty canvas, even while nodes are selected; the selection stays as it is.
 - Tap **Add Node** (**+**) in the graph toolbar. The node appears in the middle of the canvas, or in the nearest free spot when something is already there.
 - Drag a wire from a pin and release it on empty canvas. The wire stays in place while **Add Node** is open, and the new node connects to that pin; closing the menu removes the wire.
 

@@ -51,10 +51,8 @@ import { Separator } from "@haptic/ui/components/separator";
 import { IslandIconButton } from "./island-icon-button";
 import {
   AssetOpenProvider,
-  ContextMenuOverlay,
   doubleTapWindowMs,
   normalizeChord,
-  useContextMenu,
   useEditorReadOnly,
   type NestedMenuItem,
 } from "@haptic/editor-kit";
@@ -1217,10 +1215,6 @@ function GraphEditorCanvas({
   useLayoutEffect(() => {
     pinDisplayTypesRef.current = pinDisplayTypes;
     pinDisplaySourceRef.current = { nodes, edges, types: pinDisplayTypes };
-  });
-  const paneMenu = useContextMenu({
-    items: [],
-    enabled: Boolean(contextMenuItemsForNode) && !readOnly,
   });
 
   const errorDiagnostics = useMemo(
@@ -3588,14 +3582,7 @@ function GraphEditorCanvas({
       ) {
         return;
       }
-      const selected = graphStateRef.current.nodes.find((node) => node.selected);
-      if (selected && contextMenuItemsForNode) {
-        const items = contextMenuItemsForNode(selected.id);
-        if (items.length > 0) {
-          paneMenu.openMenuAt(event.clientX, event.clientY, items);
-          return;
-        }
-      }
+      // Empty canvas always offers Add Node, whatever is selected; node actions live on the node's own menu.
       if (paletteNodes && paletteNodes.length > 0) {
         const point = { x: event.clientX, y: event.clientY };
         setPendingConnect({ position: screenToFlowPosition(point) });
@@ -3605,9 +3592,7 @@ function GraphEditorCanvas({
       }
     },
     [
-      contextMenuItemsForNode,
       paletteNodes,
-      paneMenu.openMenuAt,
       readOnly,
       screenToFlowPosition,
     ],
@@ -4264,7 +4249,6 @@ function GraphEditorCanvas({
           presentation={paletteModal ? "modal" : "popup"}
         />
         )}
-        <ContextMenuOverlay menu={paneMenu.menu} onClose={paneMenu.closeMenu} />
       </div>
     </GraphEditorProvider>
   );
