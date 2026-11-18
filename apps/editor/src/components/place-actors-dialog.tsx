@@ -12,6 +12,7 @@ import {
   type CatalogCategoryGroup,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
+import { Separator } from "@haptic/ui/components/separator";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -35,7 +36,9 @@ import {
 import { CatalogNoMatches } from "./catalog-no-matches";
 import { useThumbnailUrls, type LoadThumbnail } from "../lib/use-thumbnail-urls";
 
+const ALL = "all";
 const FEATURED = "featured";
+const ENGINE = "Engine";
 const MODELS = "Models";
 const PROJECT = "Project";
 const ALL_FOLDERS = "";
@@ -289,15 +292,30 @@ export function PlaceActorsDialog({
     const engine = [...counts.keys()].filter((id) => !content.includes(id));
     const list: CatalogCategory[] = [
       ...content.map((id) => ({ id, label: id, count: counts.get(id) })),
+      { id: ALL, label: "All", count: counted.length },
       { id: FEATURED, label: "Featured" },
       ...engine.map((id) => ({ id, label: id, count: counts.get(id) })),
     ];
     const grouped: CatalogCategoryGroup[] = [
       ...(content.length ? [{ label: "Content", ids: content }] : []),
-      { label: "Engine", ids: [FEATURED, ...engine] },
+      { label: ENGINE, ids: [ALL, FEATURED, ...engine] },
     ];
     return { categories: list, groups: grouped };
   }, [bySearch, items, searching]);
+  // All: engine entries in sidebar category order, then Project and Models by name.
+  const allSections = useMemo(() => {
+    const engine = [...new Set(items.map((item) => item.category))].filter(
+      (category) => category !== MODELS && category !== PROJECT,
+    );
+    return [
+      {
+        label: ENGINE,
+        items: engine.flatMap((category) => items.filter((item) => item.category === category)),
+      },
+      { label: PROJECT, items: sortAssets(project, "name") },
+      { label: MODELS, items: sortAssets(models, "name") },
+    ].filter((section) => section.items.length > 0);
+  }, [items, models, project]);
   // A remembered category can disappear with its last asset.
   const activeCategory = categories.some((category) => category.id === view.category)
     ? view.category
@@ -369,6 +387,28 @@ export function PlaceActorsDialog({
           )}
         </div>
       );
+  } else if (activeCategory === ALL) {
+    body = (
+      <div role="group" aria-label="All" className="flex flex-col gap-2">
+        {allSections.map((section, sectionIndex) => (
+          <div
+            key={section.label}
+            role="group"
+            aria-label={section.label}
+            className="flex flex-col"
+            data-testid={`place-actors-all-${section.label}`}
+          >
+            {sectionIndex > 0 ? <Separator className="mb-2" /> : null}
+            <p className="px-2.5 pb-1 text-xs font-medium text-muted-foreground">
+              {section.label}
+            </p>
+            {section.items.map((item, index) =>
+              row(item, index, item.kind.type === "asset" ? assetLine(item) : item.category),
+            )}
+          </div>
+        ))}
+      </div>
+    );
   } else if (activeCategory === FEATURED) {
     body = (
       <CatalogCardGrid label="Featured" size="compact">
