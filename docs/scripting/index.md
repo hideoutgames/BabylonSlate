@@ -45,7 +45,7 @@ In Class, Material and Particle graphs, Add Node learns from the nodes you add f
 - Most unconnected data inputs show an inline value you can edit on the node or in the **Inspector**. Object and actor inputs must be wired, unless the node's page says an unconnected one uses the actor running the graph.
 - Shake a node while dragging it to disconnect all its wires.
 
-The graph toolbar also has icon buttons for **Copy**, **Paste**, **Delete**, **Break Links** (removes the wires of the selected nodes), **Cut Links** (see [Cut Links](#cut-links)) and **Format** (tidies the selected chains); hover or long-press one to see its name. The zoom controls at the bottom left show the zoom level; tap it to return to 100%.
+The graph toolbar also has icon buttons for **Copy**, **Paste**, **Delete**, **Break Links** (removes the wires of the selected nodes), **Cut Links** (see [Cut Links](#cut-links)) and **Format** (lays out the selected chains, see [Format](#format)); hover or long-press one to see its name. The zoom controls at the bottom left show the zoom level; tap it to return to 100%.
 
 Where a node can be renamed, such as a custom event or an Animation Graph state, double-click its title (double-tap on touch) to edit the name in place; press Enter to keep it or Esc to cancel.
 
@@ -58,6 +58,16 @@ A **Reroute** node is a small knot that bends a wire around other nodes. Double-
 - A knot takes the type of the wire it carries: any data type, or execution in Class graphs. Its pins show that type's colour and shape.
 - Knots are available in Class, Scene, Animation Object, transition rule and state pose graphs, and in Particle Graphs. Material graphs use Named Reroutes instead ([Material](../assets/material.md#named-reroutes)).
 - Knots change only how the graph looks. They cost nothing when the game runs and the debugger never stops on one; hovering a pin or wire next to one shows the value of the wire's real source.
+- **Format** adds knots of its own to carry value wires around nodes, and moves the knots already on a value wire it lays out ([Format](#format)).
+
+## Format
+
+Select one or more nodes and press **Format** in the graph toolbar to lay out the chains they start. Nodes that are not part of those chains stay where they are.
+
+- Execution runs left to right on rows; each branch gets its own row, and a node where branches join sits after all of them.
+- The nodes that feed an execution node's inputs sit in columns to its left, starting just below its execution wire. Nodes in different columns share a row, and each is placed so its wire runs straight where it can.
+- Where a value wire would run through another node, Format adds a Reroute knot level with the input it feeds, so the wire goes around the node and then straight in. A knot that carries one value wire into one input moves to that wire's new route; Format never deletes a knot. Graphs without Reroute nodes, such as Material graphs, get no knots.
+- The whole layout, knots included, is one change, so one **Undo** reverts it. Pressing **Format** again with the same selection changes nothing.
 
 ## Cut Links
 

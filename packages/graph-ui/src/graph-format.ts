@@ -819,8 +819,9 @@ function knotBesideTarget(
 /**
  * Carries each data wire between two formatted nodes around the nodes in its way with a knot
  * level with its target pin. Wires go in a fixed order (by their ends), so a second Format
- * places every knot where the first one did. Each wire costs O(log N + W + S·K): a binary search,
- * the boxes W in its X range and S samples against the K boxes also in its Y range.
+ * places every knot where the first one did. Testing a wire costs O(log N + W + S·K): a binary
+ * search, the boxes W in its X range and S samples against the K boxes also in its Y range. Only
+ * a blocked wire tries knot spots, at most one per box in its X range, each two such tests.
  */
 function routeDataWires(
   graph: GraphIndex,
