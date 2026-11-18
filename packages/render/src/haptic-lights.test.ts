@@ -41,6 +41,7 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { createPreviewLighting } from "./preview-lighting";
 import { ViewportShadingOverlay } from "./viewport-shading-mode";
+import { setSceneWorldDebug } from "./world-debug";
 import { createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
 import { shadowAllocationCheckpoint } from "./shadow-map-factory";
 
@@ -146,6 +147,18 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     overlay.setMode("pbr");
     expect(await drawnDefines(scene, mesh, material)).not.toContain("#define HAPTIC_UNLIT");
     expect(scene.lightsEnabled).toBe(true);
+  });
+
+  it("compiles no lighting while worlddebug has lighting or shading off, and lights again after each", async () => {
+    const { scene } = host();
+    new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    const { mesh, material } = await litBox(scene);
+    for (const part of ["lighting", "shading"] as const) {
+      setSceneWorldDebug(scene, part, false);
+      expect(await drawnDefines(scene, mesh, material), part).toContain("#define HAPTIC_UNLIT");
+      setSceneWorldDebug(scene, part, true);
+      expect(await drawnDefines(scene, mesh, material), part).not.toContain("#define HAPTIC_UNLIT");
+    }
   });
 
   it("draws CEL as a define of the same graph, which a render-mode change re-prepares even when frozen", async () => {
