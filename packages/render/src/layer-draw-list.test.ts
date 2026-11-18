@@ -128,6 +128,11 @@ describe("layer draw list", () => {
     expect(blended(frames())).toEqual(["q2", "q0", "q1"]);
     q2.alphaIndex = Number.MAX_VALUE;
     expect(blended(frames())).toEqual(["q0", "q1", "q2"]);
+    // Moved out of the camera's view, then back: its pose alone takes it out of the cull and in again.
+    q1.position.x = 500;
+    expect(blended(frames())).toEqual(["q0", "q2"]);
+    q1.position.x = 0;
+    expect(blended(frames())).toEqual(["q0", "q1", "q2"]);
     // Hidden, disabled, faded out, then back.
     q1.isVisible = false;
     expect(blended(frames())).toEqual(["q0", "q2"]);

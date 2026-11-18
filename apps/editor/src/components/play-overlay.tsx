@@ -15,7 +15,7 @@ import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-sc
 import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
   verifyCaptureActorLists, verifyLayerDrawLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
-  verifyLeanPreparation,
+  verifyLeanPreparation, drawLayersFullPath,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1249,6 +1249,11 @@ function PlayOverlayView({
         presentedImage: () => ReturnType<PlaySession["handle"]["samplePresentedImage"]>;
         /** Turns the game view's draws into no-ops or back, as a Check's measurement does (`stubWebGlDraws`). */
         stubWebGlDraws: (on: boolean) => boolean;
+        /** Has every Scene Layer frame take Babylon's full path, to compare its picture and picks with the retained path's. */
+        drawLayersFullPath: (enabled: boolean) => void;
+        /** Points in pick space over the Scene Layers' interactive controls, and the overlay hits at given points. */
+        sceneLayerHitTargets: () => Array<{ layerId: string; mesh: string; x: number; y: number }>;
+        sceneLayerPickHits: (points: ReadonlyArray<{ x: number; y: number }>) => string[][];
         scalability: () => ReturnType<PlaySession["handle"]["scalabilityStatus"]>;
         renderTasks: () => string[];
         /** Every Render Target capture output, with what shows it. */
@@ -1293,6 +1298,9 @@ function PlayOverlayView({
       rendering: () => sessionRef.current?.handle.renderDiagnostics() ?? null,
       presentedImage: () => sessionRef.current?.handle.samplePresentedImage() ?? Promise.resolve(null),
       stubWebGlDraws: (on) => sessionRef.current?.handle.stubWebGlDraws(on) ?? false,
+      drawLayersFullPath,
+      sceneLayerHitTargets: () => sessionRef.current?.handle.sceneLayerHitTargets() ?? [],
+      sceneLayerPickHits: (points) => sessionRef.current?.handle.sceneLayerPickHits(points) ?? [],
       scalability: () => sessionRef.current?.handle.scalabilityStatus(),
       renderTasks: () => sessionRef.current?.handle.renderTaskNames() ?? [],
       captures: () => sessionRef.current?.handle.renderTargetCaptureDiagnostics() ?? [],

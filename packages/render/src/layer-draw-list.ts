@@ -86,6 +86,10 @@ export interface LayerDrawListWork {
   checkedFrames: number;
   fullReads: number;
   rereads: number;
+  /** Meshes only their pose named, whose scaling and frustum tests alone were asked again. */
+  reposes: number;
+  /** What sent the list down a full read: never read, a lost journal, renderer settings, readiness or reveal revisions. */
+  fullReadReasons: Partial<Record<"invalid" | "journal" | "settings" | "readiness" | "reveal", number>>;
   relists: number;
   /** Blended lists whose moved members all kept their places, so they were not sorted again. */
   keptOrders: number;
@@ -102,6 +106,16 @@ let verifies = false;
  */
 export function verifyLayerDrawLists(enabled: boolean): void {
   verifies = enabled;
+}
+
+let fullPath = false;
+
+/**
+ * Debugging aid: every Scene Layer frame takes Babylon's full path, uncounted, so its picture and picks can be compared
+ * with the retained path's. The list is read anew once it is off.
+ */
+export function drawLayersFullPath(enabled: boolean): void {
+  fullPath = enabled;
 }
 
 type SortCompare = (a: SubMesh, b: SubMesh) => number;
@@ -150,8 +164,9 @@ interface Part {
 interface Entry {
   mesh: AbstractMesh;
   ready: boolean;
-  /** Whether the cull and the objects pass draw it now. */
+  /** Whether the cull and the objects pass draw it now, and that answer but for the tests a pose moves (`inView`). */
   member: boolean;
+  posed: boolean;
   /** Its submeshes as last read (whatever their Material), and the parts a member draws. */
   subMeshes: SubMesh[];
   parts: Part[];
@@ -190,7 +205,7 @@ export class LayerDrawList {
   private readonly restoreCandidates: () => void;
   private readonly drawableCandidates: () => ISmartArrayLike<AbstractMesh>;
   private readonly work: LayerDrawListWork = {
-    retainedFrames: 0, fallbackFrames: 0, fallbacks: {}, checkedFrames: 0, fullReads: 0, rereads: 0, relists: 0, keptOrders: 0,
+    retainedFrames: 0, fallbackFrames: 0, fallbacks: {}, checkedFrames: 0, fullReads: 0, rereads: 0, reposes: 0, fullReadReasons: {}, relists: 0, keptOrders: 0,
     heals: 0, mismatches: 0, mismatchDetails: [],
   };
   /** The objects pass it fills, its graph and camera, and whether the graph's cull feeds nothing else. */
@@ -240,7 +255,7 @@ export class LayerDrawList {
 
   /** What the list did since it was made (`LayerDrawListWork`), as a copy. */
   get drawWork(): LayerDrawListWork {
-    return { ...this.work, fallbacks: { ...this.work.fallbacks }, mismatchDetails: [...this.work.mismatchDetails] };
+    return { ...this.work, fallbacks: { ...this.work.fallbacks }, fullReadReasons: { ...this.work.fullReadReasons }, mismatchDetails: [...this.work.mismatchDetails] };
   }
 
   /** Whether the render in progress draws from the retained lists: the cull then reads no mesh. */
@@ -298,6 +313,12 @@ export class LayerDrawList {
     this.checking = false;
     const renderer = this.renderer;
     if (!renderer || !this.graph || this.scene.frameGraph !== this.graph) return this.drawableCandidates();
+    if (fullPath) {
+      this.valid = false;
+      this.moved.length = 0;
+      this.reader.drain(ignore);
+      return this.drawableCandidates();
+    }
     const blocker = this.passBlocker(renderer);
     if (blocker) {
       this.fallBack(blocker);
@@ -381,10 +402,14 @@ export class LayerDrawList {
     named.clear();
     const heard = this.reader.drain(this.visit);
     const full = !this.valid || !heard || settingsChanged || readiness !== this.readinessRevision || reveal !== this.revealRevision;
+    const previousReadiness = this.readinessRevision;
     this.readinessRevision = readiness;
     this.revealRevision = reveal;
     this.stamp += 1;
     if (full) {
+      const reasons = this.work.fullReadReasons;
+      const why = !this.valid ? "invalid" : !heard ? "journal" : settingsChanged ? "settings" : readiness !== previousReadiness ? "readiness" : "reveal";
+      reasons[why] = (reasons[why] ?? 0) + 1;
       this.readAll(renderer, meshes);
       this.drawableRevision = drawable;
       this.valid = true;
@@ -404,8 +429,8 @@ export class LayerDrawList {
         const entry = this.entries.get(mesh);
         // Style alone moves neither membership nor list (crossing full opacity marks the readiness revision).
         if (!entry || !(kinds & ~RenderChange.Style)) continue;
-        // Babylon's readiness reads no pose.
-        this.reread(renderer, entry, (kinds & ~(RenderChange.Transform | RenderChange.Style)) !== 0);
+        if (!(kinds & ~(RenderChange.Transform | RenderChange.Style))) this.repose(renderer, entry);
+        else this.reread(renderer, entry, true);
       }
     }
     named.clear();
@@ -491,7 +516,7 @@ export class LayerDrawList {
 
   private create(renderer: ObjectRenderer, mesh: AbstractMesh): Entry {
     const entry: Entry = {
-      mesh, ready: false, member: false, subMeshes: [], parts: [], blocker: null, own: null, polled: !journalFollows(mesh),
+      mesh, ready: false, member: false, posed: false, subMeshes: [], parts: [], blocker: null, own: null, polled: !journalFollows(mesh),
       alphaIndex: 0, group: 0, layerMask: 0, always: false, sortGroup: undefined, sortLayer: undefined, ordinal: undefined, name: "",
       seen: this.stamp,
     };
@@ -523,7 +548,30 @@ export class LayerDrawList {
     }
     // The same draws: the parts the lists hold stay, and a blended one whose sort keys moved is checked in its place.
     entry.parts = before;
-    for (const part of before) {
+    this.rekey(before);
+  }
+
+  /** The cull's tests a pose moves: scaling and frustum. */
+  private inView(mesh: AbstractMesh): boolean {
+    return !mesh.scaling.hasAZeroComponent && (this.scene.skipFrustumClipping || mesh.alwaysSelectAsActiveMesh || mesh.isInFrustum(this.frustum()));
+  }
+
+  /**
+   * A mesh only its pose named: the cull's other tests keep their answers (a change of any of their inputs is named or
+   * polled), so only its scaling and frustum tests are asked again, and a blended member's sort keys set anew.
+   */
+  private repose(renderer: ObjectRenderer, entry: Entry): void {
+    if ((entry.posed && this.inView(entry.mesh)) !== entry.member) {
+      this.reread(renderer, entry, false);
+      return;
+    }
+    this.work.reposes += 1;
+    if (entry.member) this.rekey(entry.parts);
+  }
+
+  /** Sets blended parts' sort keys anew; one whose keys changed is checked in its place. */
+  private rekey(parts: readonly Part[]): void {
+    for (const part of parts) {
       if ((part.key & 3) !== BLENDED) continue;
       const subMesh = part.subMesh, alphaIndex = subMesh._alphaIndex, distance = subMesh._distanceToCamera;
       setBlendKeys(subMesh, this.eye);
@@ -549,10 +597,9 @@ export class LayerDrawList {
     entry.subMeshes.length = 0;
     if (subMeshes) for (const subMesh of subMeshes) entry.subMeshes.push(subMesh);
     // The cull's test (the objects pass repeats its layer mask, enabled and visible tests), then the hidden-mesh filter.
-    entry.member = entry.ready && !mesh.isBlocked && mesh.isEnabled() && !mesh.scaling.hasAZeroComponent && mesh.isVisible &&
-      mesh.visibility > 0 && (mesh.layerMask & camera.layerMask) !== 0 &&
-      (this.scene.skipFrustumClipping || mesh.alwaysSelectAsActiveMesh || mesh.isInFrustum(this.frustum())) &&
-      !isRevealPending(mesh) && !!subMeshes;
+    entry.posed = entry.ready && !mesh.isBlocked && mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0 &&
+      (mesh.layerMask & camera.layerMask) !== 0 && !isRevealPending(mesh) && !!subMeshes;
+    entry.member = entry.posed && this.inView(mesh);
     entry.parts.length = 0;
     entry.blocker = entry.own = null;
     if (!entry.member) return;
