@@ -17,8 +17,6 @@ import {
   profileComparison,
   profileDrift,
   profileFrameState,
-  PROFILE_HOLD_WINDOWS,
-  PROFILE_SLOW_RATIO,
   profileRanking,
   profileStep,
   PROFILE_CONTROL_VIEW,
@@ -35,7 +33,6 @@ import {
   type FeatureTestCheckSceneResult,
   type FeatureTestStoppedSession,
   type ProfileComparison,
-  type ProfileFrameState,
   type SampledGpuProbe,
   type CounterStats,
   type FrameStats,
@@ -646,13 +643,6 @@ function structureNote(samples: readonly FeatureTestBenchmarkSample[], sample: F
   return own !== null && reference !== null && own !== reference ? `STRUCTURE ${own}, not its view's first baseline's ${reference}` : "";
 }
 
-function medianOf(values: readonly number[]): number | null {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
-}
-
 /** Texels in millions: `67.1M`. */
 function texelsText(texels: number): string {
   return `${(texels / 1e6).toFixed(texels >= 1e7 ? 0 : 1)}M`;
@@ -748,108 +738,6 @@ function frameStructureLines(samples: readonly FeatureTestBenchmarkSample[]): st
   return lines;
 }
 
-/** Shares of one stage, or one row group, that count as "most of it" and "about the same". */
-const CONCENTRATED_SHARE = 0.6;
-const SAME_RATIO = 1.25;
-const SLOWER_RATIO = 1.5;
-
-/**
- * Per view, its FAST baselines against its SLOW ones (warm-up windows included: every row with nothing changed) in
- * every probe, and what each difference means.
- */
-function stateComparisonLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
-  if (!samples.some((sample) => sample.gpuProbe)) return [];
-  const lines = ["  State comparison (each view's unchanged rows, baselines and warm-up windows, FAST against SLOW; medians, FAST > SLOW):"];
-  const views = [...new Set(samples.map((sample) => sample.view))];
-  for (const view of views) {
-    const rows = (state: ProfileFrameState) => samples.filter((sample) =>
-      sample.view === view && (sample.warmup || isBreakdownBaseline(sample)) && sample.gpuProbe && profileFrameState(samples, sample) === state);
-    const fast = rows("FAST"), slow = rows("SLOW");
-    const name = view ?? "scene camera";
-    if (!fast.length || !slow.length) {
-      lines.push(`    ${name}: ${fast.length} FAST, ${slow.length} SLOW: nothing to compare`);
-      continue;
-    }
-    lines.push(`    ${name}: ${fast.length} FAST, ${slow.length} SLOW`);
-    const pair = (read: (sample: FeatureTestBenchmarkSample) => number | null | undefined) => {
-      const of = (group: readonly FeatureTestBenchmarkSample[]) => medianOf(group.flatMap((sample) => {
-        const value = read(sample);
-        return value === null || value === undefined ? [] : [value];
-      }));
-      return { fast: of(fast), slow: of(slow) };
-    };
-    const ratio = (values: { fast: number | null; slow: number | null }) =>
-      values.fast !== null && values.slow !== null && values.fast > 0 ? values.slow / values.fast : null;
-    const text = (values: { fast: number | null; slow: number | null }, digits = 1, format: (value: number) => string = (value) => value.toFixed(digits)) => {
-      if (values.fast === null || values.slow === null) return "-";
-      const times = ratio(values);
-      return `${format(values.fast)} > ${format(values.slow)}${times !== null && values.fast !== values.slow ? ` (x${times.toFixed(2)})` : ""}`;
-    };
-    // Structure.
-    const modals = (group: readonly FeatureTestBenchmarkSample[]) => [...new Set(group.flatMap((sample) => modalStructure(sample) ?? []))].sort();
-    const fastModals = modals(fast), slowModals = modals(slow);
-    const sameStructure = fastModals.join() === slowModals.join();
-    lines.push(`      structure: FAST ${fastModals.join(", ") || "-"} · SLOW ${slowModals.join(", ") || "-"}`);
-    if (fastModals.length && slowModals.length) {
-      lines.push(sameStructure
-        ? "        The same passes are submitted in both states: the engine's frame does not differ."
-        : "        The structure differs: the engine submits different passes in the two states (see Frame structures).");
-    }
-    // Counters.
-    const counter = (label: string, read: (probe: SampledGpuProbe) => number | null | undefined, format?: (value: number) => string) =>
-      `${label} ${text(pair((sample) => read(sample.gpuProbe!)), 0, format)}`;
-    lines.push(`      counters: ${[
-      counter("passes", (probe) => probe.signature?.passes), counter("clears", (probe) => probe.signature?.clears),
-      counter("blits", (probe) => probe.signature?.blits), counter("draws", (probe) => probe.signature?.draws),
-      counter("cleared", (probe) => probe.signature?.texelsCleared, texelsText), counter("covered", (probe) => probe.signature?.texelsCovered, texelsText),
-      counter("maps redrawn", (probe) => probe.shadows?.redrawn), counter("shadow texels", (probe) => probe.shadows?.texels, texelsText),
-      counter("atlas", (probe) => probe.shadows?.atlasEdge), counter("atlas generation", (probe) => probe.shadows?.generationLast),
-      counter("rAF", (probe) => probe.raf?.perSecond),
-    ].join(" · ")}`);
-    // Serial frame.
-    const frame = pair((sample) => sample.gpuProbe!.serial?.frameMs);
-    const cold = pair((sample) => sample.gpuProbe!.serial?.coldMs);
-    lines.push(`      serial frame: ${text(frame)} ms · cold ${text(cold)} ms`);
-    const frameRatio = ratio(frame);
-    if (frameRatio !== null) {
-      lines.push(frameRatio < SAME_RATIO
-        ? "        A frame rendered alone costs the same in both states: the difference exists only with frames queued, so it is pacing, not GPU work per frame."
-        : `        A frame rendered alone costs x${frameRatio.toFixed(2)} in the SLOW state: the GPU work per frame itself is slower there.`);
-    }
-    // Stages.
-    const stages = PROBE_STAGES.map((stage) => ({ stage, ...pair((sample) => stageOf(sample.gpuProbe, stage)?.ms) }))
-      .filter((entry) => entry.fast !== null && entry.slow !== null);
-    if (stages.length) {
-      lines.push(`      stages: ${stages.map((entry) => `${entry.stage} ${text(entry)}`).join(" · ")}`);
-      const extra = stages.map((entry) => ({ stage: entry.stage, ms: Math.max(0, entry.slow! - entry.fast!) }));
-      const total = extra.reduce((sum, entry) => sum + entry.ms, 0);
-      const top = extra.reduce((best, entry) => entry.ms > best.ms ? entry : best, extra[0]!);
-      if (frameRatio !== null && frameRatio >= SAME_RATIO && total > 0) {
-        const ratios = stages.flatMap((entry) => entry.fast! >= 0.5 ? [entry.slow! / entry.fast!] : []);
-        const uniform = ratios.length > 1 && Math.max(...ratios) / Math.min(...ratios) < SAME_RATIO;
-        // A uniform slowdown first: the largest stage always holds most of it.
-        lines.push(uniform
-          ? "        Every stage slows by about the same factor: the slowdown is device-wide, not one pass's."
-          : top.ms / total >= CONCENTRATED_SHARE
-            ? top.stage === "shadows"
-              ? `        ${Math.round((top.ms / total) * 100)}% of the extra time is in the shadows stage: the shadow atlas's passes cost more there (see atlas generation and shadow texels for what differs).`
-              : `        ${Math.round((top.ms / total) * 100)}% of the extra time is in the ${top.stage} stage.`
-            : `        The extra time is spread over stages, most in ${top.stage} (${Math.round((top.ms / total) * 100)}%).`);
-      }
-    }
-    // Synthetic.
-    const synthetic = pair((sample) => sample.gpuProbe!.serial?.syntheticMs);
-    lines.push(`      synthetic: ${text(synthetic, 2)} ms`);
-    const syntheticRatio = ratio(synthetic);
-    if (syntheticRatio !== null) {
-      lines.push(syntheticRatio >= SLOWER_RATIO
-        ? `        The synthetic load, which touches nothing of the scene, slows by x${syntheticRatio.toFixed(2)}: the GPU itself runs slower (its clock or thermal state).`
-        : "        The synthetic load holds: the GPU's own speed is the same in both states.");
-    }
-  }
-  return lines;
-}
-
 /** A comparison's A, B, A values in its basis: `30.1 > 25.0 > 30.5`. */
 function abaText(comparison: ProfileComparison): string {
   return `${comparison.before.toFixed(1)} > ${comparison.step.toFixed(1)} > ${comparison.after === null ? "-" : comparison.after.toFixed(1)}`;
@@ -866,7 +754,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   const drift = breakdownWarmupDrift(samples);
   const timed = samples.find((sample) => sample.gpuBusy);
   const lines = [
-    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 15 to 20 minutes: first a state probe at the control view (a minute held unchanged, reset actions and frames in flight off; below), then at fixed camera views (a short warm-up at the control view, then at each view every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling, then probed with serialised frames, a burst and the pass timers before it is restored; GPU probes, below):`,
+    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 12 minutes: a short warm-up at the control view, then at fixed camera views every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling for 1.5 s, then probed with serialised frames, a burst and the pass timers before it is restored (GPU probes, below):`,
     `  Settings: ${first?.settings ? Object.entries(first.settings).map(([field, value]) => `${field} ${value}`).join(" · ") : "unknown"}`,
     `  Frames in flight: ${framesInFlightText(samples)}`,
     `  Resolution held: ${heldResolutionText(profile?.resolution ?? null)}`,
@@ -874,7 +762,6 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
       ? `  Warm-up drift: first window ${drift.firstMs.toFixed(1)} ms, steady ${drift.steadyMs.toFixed(1)} ms (${drift.percent >= 0 ? "+" : ""}${drift.percent.toFixed(0)}%) over ${drift.windows} windows${drift.basis === "frame" ? " (mean frame)" : " (gpu busy)"}`
       : "  Warm-up drift: unmeasured (fewer than two windows)",
     ...driftLines(samples),
-    ...stateSequenceLines(samples),
     `  Instance pool: ${instancePoolText(profile?.instancePool ?? null)}`,
     `  Hold rate: ${holdRateText(profile?.holdRate ?? null)}`,
     profile?.endChanges
@@ -892,61 +779,18 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
     lines.push(`    ${pad(sample.label, 28)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(serialFrameText(sample), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(profileFrameState(samples, sample) ?? "-", 6)}${pad(`${deltaText(change)}${change?.basis === "frame" ? "*" : ""}`, 16)}${pad(deltaText(cpu), 16)}${pad(sample.resolution ? `${sample.resolution} / ${sample.backbuffer ?? "?"}` : "-", 26)}${profileNotes(samples, sample, first)}`.trimEnd());
   }
   lines.push(...drawPassTable(samples, "Step", 28), ...cpuPassTable(samples, "Step", 28));
-  lines.push(...stateProbeLines(samples));
-  lines.push(...gpuProbeLines(samples), ...passTimerLines(samples), ...frameStructureLines(samples), ...stateComparisonLines(samples));
-  lines.push("  Ranked by change at each view against baselines at its own GPU speed (synthetic load within 15%), the mean of its repeats (baseline > step > baseline), in the serial probe's frame time where the step and both its baselines have one (marked s), else in gpu busy (* = mean frame time where gpu busy is missing); norm = the same with every row scaled to the run's fastest synthetic load:");
+  lines.push(...gpuProbeLines(samples), ...passTimerLines(samples), ...frameStructureLines(samples));
+  lines.push("  Ranked by change at each view against baselines at its own GPU speed (synthetic load within 15%), the mean of its repeats (baseline > step > baseline), in the burst period where every row is GPU-bound (burst over 1.2x its serial submission; marked b), else the serial probe's frame time where the step and both its baselines have one and no serial frame stalled (submitted past 1.5x the window's CPU cost plus 2 ms; marked s), else gpu busy (* = mean frame time where gpu busy is missing); norm = the same with every row scaled to the run's fastest synthetic load:");
   const ranking = profileRanking(samples);
   for (const group of ranking) {
     lines.push(`    ${group.view ?? "scene camera"}:`);
     group.steps.forEach((entry, index) => lines.push(
-      `      ${index + 1}. ${entry.state ? `[${entry.state}] ` : ""}${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : entry.basis === "serial" ? " s" : ""} (${abaText(entry)}${entry.repeats > 1 ? `, mean of ${entry.repeats}` : ""})${entry.normalised ? ` · norm ${deltaText(entry.normalised.change)}` : ""} · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
+      `      ${index + 1}. ${entry.state ? `[${entry.state}] ` : ""}${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : entry.basis === "serial" ? " s" : entry.basis === "burst" ? " b" : ""} (${abaText(entry)}${entry.repeats > 1 ? `, mean of ${entry.repeats}` : ""})${entry.normalised ? ` · norm ${deltaText(entry.normalised.change)}` : ""} · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
     ));
   }
   if (!ranking.length) lines.push("    none measured");
   const straddling = samples.flatMap((sample) => profileComparison(samples, sample)?.straddles ? [sample.label] : []);
   lines.push(`  Not ranked, straddling a state change: ${straddling.length ? straddling.join(", ") : "none"}`);
-  return lines;
-}
-
-/** Each view's rows in run order as F (FAST) and S (SLOW), unmeasured rows as -. */
-function stateSequenceLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
-  const views = [...new Set(samples.map((sample) => sample.view))];
-  return [
-    `  States (SLOW past ${PROFILE_SLOW_RATIO}x the run's fastest synthetic load, or where rows have none past ${PROFILE_SLOW_RATIO}x the best baseline of the view in gpu busy; F FAST, S SLOW, every row in run order):`,
-    ...views.map((view) => `    ${view ?? "scene camera"}: ${samples.filter((sample) => sample.view === view)
-      .map((sample) => profileFrameState(samples, sample)?.[0] ?? "-").join(" ")}`),
-  ];
-}
-
-/** A row's frames by display intervals: `1:3 2:120 3:0 4:0 5+:0`. */
-function intervalsText(sample: FeatureTestBenchmarkSample): string {
-  const counts = sample.frames?.intervals;
-  return counts ? counts.map((count, index) => `${index === 4 ? "5+" : index + 1}:${count}`).join(" ") : "-";
-}
-
-/** The state probe: the hold windows one per line, then each reset action's state before and after. */
-function stateProbeLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
-  const hold = samples.filter((sample) => /^state hold \d+$/.test(sample.label));
-  if (!hold.length) return [];
-  const value = (sample: FeatureTestBenchmarkSample | undefined) =>
-    sample?.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)}` : meanFrameMs(sample?.frames ?? null)?.toFixed(1) ?? "-";
-  const lines = [
-    `  State probe, hold (${PROFILE_HOLD_WINDOWS} windows back to back at the control view, nothing changing): gpu busy · mean frame (animation frames) · frames the view rendered per second · cpu · animation frames by display intervals · readiness checks (ms) · graph builds · frames over 100 ms · renders skipped for frames in flight · deepest GPU queue · memory · state`,
-  ];
-  for (const sample of hold) {
-    const work = sample.work;
-    lines.push(`    ${pad(sample.label, 14)}${pad(value(sample), 6)}${pad(ms(meanFrameMs(sample.frames)), 8)}${pad(sample.presentation && sample.presentation.ms > 0 ? ((sample.presentation.drawn * 1000) / sample.presentation.ms).toFixed(0) : "-", 4)}${pad(ms(sample.cpuMs), 8)}${pad(intervalsText(sample), 28)}${pad(work ? `${work.strictReadinessChecks} (${work.readinessProbeMs.toFixed(0)} ms)` : "-", 14)}${pad(work ? String(work.graphBuilds) : "-", 3)}${pad(String(sample.frames?.stalls ?? "-"), 3)}${pad(String(sample.framesInFlight?.skipped ?? "-"), 4)}${pad(sample.inFlightPeak === undefined ? "-" : String(sample.inFlightPeak), 3)}${pad(memoryText(sample) || "-", 34)}${profileFrameState(samples, sample) ?? "-"}`.trimEnd());
-  }
-  // Each reset: the baseline before it (the last row of the control view before), then its two baselines after.
-  const resets = samples.filter((sample) => /^state after .+ 1$/.test(sample.label));
-  if (resets.length) lines.push("  State probe, reset actions (gpu busy and state before > after 1 > after 2):");
-  for (const after of resets) {
-    const index = samples.indexOf(after);
-    const before = samples.slice(0, index).reverse().find((sample) => sample.view === after.view && (sample.warmup || isBreakdownBaseline(sample)) && sample.frames);
-    const second = samples[index + 1];
-    const text = (sample: FeatureTestBenchmarkSample | undefined) => sample ? `${value(sample)} ${profileFrameState(samples, sample) ?? "-"}` : "-";
-    lines.push(`    ${after.label.replace(/^state after (.+) 1$/, "$1")}: ${text(before)} > ${text(after)} > ${text(second)}`);
-  }
   return lines;
 }
 
