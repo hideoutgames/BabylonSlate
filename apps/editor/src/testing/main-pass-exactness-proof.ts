@@ -4,7 +4,8 @@
  * shadowed sun, shadowed spot and point lights, two rect lights (one facing away from most of the view) and
  * Screen-Space Shadows. `reference` draws it as before the savings: the light block's rect loop visits every rect light
  * and fetches the LTC tables per light, a spot light's shadow is looked up outside its cone, and a capture's own sun
- * maps redraw every time. The spec compares the two runs' frames and
+ * maps redraw every time, and the view's object and geometry passes take Babylon's preparation instead of the lean one
+ * (`leanPreparation`). The spec compares the two runs' frames and
  * capture images byte for byte, after a still stretch and after a caster moves.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
@@ -222,7 +223,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean })
     mirror.position.set(3.2, 1.2, 4);
     mirror.rotation.y = Math.PI / 4;
 
-    const view = new SceneRenderCoordinator(scene);
+    const view = new SceneRenderCoordinator(scene, { leanPreparation: !options.reference });
     const captures = new RenderTargetCaptures(scene);
     captures.setAssets(
       new Map(QUALITIES.map((quality) => [quality, { mode: "SceneColor" as const, width: CAPTURE_SIZE, height: CAPTURE_SIZE }])),
