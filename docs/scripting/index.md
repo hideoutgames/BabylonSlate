@@ -43,7 +43,7 @@ In Class, Material and Particle graphs, Add Node learns from the nodes you add f
 - An execution output drives one wire; an execution input accepts several. Connecting a second wire from an execution output replaces the first and shows **Replaced the existing wire. Use a Sequence to run several.** To run several nodes in order, wire the output to a [Sequence](class/sequence.md).
 - While you drag a wire over a pin it cannot connect to, a label gives the reason, such as **Float does not connect to Vector3**.
 - Most unconnected data inputs show an inline value you can edit on the node or in the **Inspector**. Object and actor inputs must be wired, unless the node's page says an unconnected one uses the actor running the graph.
-- Shake a node while dragging it to disconnect all its wires.
+- Shake a node back and forth in place while dragging it to disconnect all its wires.
 
 The graph toolbar also has icon buttons for **Copy**, **Paste**, **Delete**, **Break Links** (removes the wires of the selected nodes), **Cut Links** (see [Cut Links](#cut-links)) and **Format** (tidies the selected chains); hover or long-press one to see its name. The zoom controls at the bottom left show the zoom level; tap it to return to 100%.
 

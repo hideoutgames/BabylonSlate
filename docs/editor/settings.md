@@ -102,7 +102,7 @@ These apply to every graph editor: Class, Material, Animation Graph, Behaviour T
 **Graph Connections**
 
 - **Node Connection Assistant** (default on): when you move a node near another, previews wires to their free matching pins and connects them when you let go. **Connection Distance (Pixels)** (default 48) sets how near.
-- **Shake Nodes To Disconnect** (default on): shaking a node back and forth while dragging it breaks all its wires. Turn it off if a tremor or an unsteady hand disconnects nodes by accident.
+- **Shake Nodes To Disconnect** (default on): shaking a node back and forth in place while dragging it breaks all its wires; moving it a long way never does. Turn it off if a tremor or an unsteady hand disconnects nodes by accident.
 
 ## Third-party notices
 
