@@ -7,8 +7,9 @@ export const REROUTE_KNOT_SIZE = { width: 80, height: 35 } as const;
 export const GRAPH_NODE_FALLBACK_WIDTH = 320;
 export const GRAPH_NODE_FALLBACK_HEIGHT = 120;
 /** Title bar plus the pin list padding above the first 44px pin row. */
-const GRAPH_NODE_CHROME_HEIGHT = 50;
-const GRAPH_PIN_ROW_HEIGHT = 44;
+export const GRAPH_NODE_CHROME_HEIGHT = 50;
+/** One pin row (`PinRow`, `min-h-[var(--touch-target,44px)]`). */
+export const GRAPH_PIN_ROW_HEIGHT = 44;
 
 export type GraphVirtualizeViewport = {
   x: number;

@@ -6,7 +6,10 @@ import {
   formatGraphNodes,
   type FormatEdge,
   type FormatNode,
+  type FormatOptions,
+  formatPinOffsetKey,
 } from "./graph-format";
+import { REROUTE_KNOT_SIZE } from "./graph-virtualize";
 
 const execPins: SerializedPin[] = [
   {
@@ -155,6 +158,22 @@ const NODE_H = 40;
 const EXEC_STEP = NODE_W + FORMAT_GAP_X;
 const HANG_Y = NODE_H + FORMAT_GAP_Y;
 
+// A one-column parameter block moves its consumer right by that column's width and gap.
+const BLOCK = NODE_W + FORMAT_GAP_X;
+// A block's top below a consumer whose first data input is on the second pin row (after the
+// exec row): that row's estimated bottom (50 + 2 × 44) plus the 40 gap.
+const LANE = 178;
+
+/** The formatted nodes, for layouts that request no knots. */
+function layout(
+  nodes: FormatNode[],
+  edges: readonly FormatEdge[],
+  selectedIds: readonly string[],
+  options?: FormatOptions,
+): FormatNode[] {
+  return formatGraphNodes(nodes, edges, selectedIds, options).nodes;
+}
+
 function pos(
   nodes: readonly FormatNode[],
   id: string,
@@ -199,7 +218,7 @@ function expectNoOverlaps(nodes: readonly FormatNode[]): void {
 describe("formatGraphNodes", () => {
   it("is a no-op for an isolated selected node", () => {
     const nodes = [node("solo", 40, 80)];
-    expect(formatGraphNodes(nodes, [], ["solo"])).toEqual(nodes);
+    expect(layout(nodes, [], ["solo"])).toEqual(nodes);
   });
 
   it("lays out a then-chain left to right from the selected origin", () => {
@@ -209,7 +228,7 @@ describe("formatGraphNodes", () => {
       node("c", 15, 200),
     ];
     const edges = [execEdge("a", "b"), execEdge("b", "c")];
-    const next = formatGraphNodes(nodes, edges, ["a"]);
+    const next = layout(nodes, edges, ["a"]);
     expect(next.find((entry) => entry.id === "a")?.position).toEqual({
       x: 10,
       y: 20,
@@ -234,7 +253,7 @@ describe("formatGraphNodes", () => {
       execEdge("branch", "yes", "true"),
       execEdge("branch", "no", "false"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["branch"]);
+    const next = layout(nodes, edges, ["branch"]);
     const yes = next.find((entry) => entry.id === "yes")!;
     const no = next.find((entry) => entry.id === "no")!;
     expect(yes.position.x).toBe(100 + FORMAT_GAP_X);
@@ -249,7 +268,7 @@ describe("formatGraphNodes", () => {
       node("b", 80, 40),
       node("a", 20, 90),
     ];
-    const next = formatGraphNodes(nodes, [], ["a", "b"]);
+    const next = layout(nodes, [], ["a", "b"]);
     expect(pos(next, "keep")).toEqual({ x: 0, y: 0 });
     expect(pos(next, "a")).toEqual({ x: 20, y: 90 });
     expect(pos(next, "b")).toEqual({ x: 80, y: 40 });
@@ -258,7 +277,7 @@ describe("formatGraphNodes", () => {
   it("leaves the exec-in source of a selected mid-chain node in place", () => {
     const nodes = [node("a", 0, 0), node("b", 200, 40), node("c", 10, 300)];
     const edges = [execEdge("a", "b"), execEdge("b", "c")];
-    const next = formatGraphNodes(nodes, edges, ["b"]);
+    const next = layout(nodes, edges, ["b"]);
     expect(pos(next, "a")).toEqual({ x: 0, y: 0 });
     expect(pos(next, "b")).toEqual({ x: 200, y: 40 });
     expect(pos(next, "c")).toEqual({ x: 200 + EXEC_STEP, y: 40 });
@@ -266,7 +285,7 @@ describe("formatGraphNodes", () => {
 
   it("returns the input nodes when nothing is selected", () => {
     const nodes = [node("a", 0, 0)];
-    expect(formatGraphNodes(nodes, [], [])).toBe(nodes);
+    expect(layout(nodes, [], [])).toBe(nodes);
   });
 
   it("places a data input below-left of a subsequent then-chain node, not on the exec row", () => {
@@ -276,17 +295,15 @@ describe("formatGraphNodes", () => {
       node("get", 5, 200, dataOutPins),
     ];
     const edges = [execEdge("a", "b"), dataEdge("get", "b")];
-    const next = formatGraphNodes(nodes, edges, ["a"]);
+    const next = layout(nodes, edges, ["a"]);
     expect(pos(next, "a")).toEqual({ x: 10, y: 20 });
-    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
-    expect(pos(next, "get")).toEqual({
-      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
-      y: 20 + HANG_Y,
-    });
+    // The block's column is reserved between a and b, so its wires never run back under a.
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 });
+    expect(pos(next, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
     expectNoOverlaps(next);
   });
 
-  it("places nested data inputs further down-left of their consumer", () => {
+  it("places a nested data input further left on its consumer's row, its wire level", () => {
     const nodes = [
       node("a", 10, 20),
       node("b", 12, 90, execWithValueIn),
@@ -307,16 +324,10 @@ describe("formatGraphNodes", () => {
       dataEdge("get", "b"),
       dataEdge("nested", "get", "in"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["a"]);
-    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
-    expect(pos(next, "get")).toEqual({
-      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
-      y: 20 + HANG_Y,
-    });
-    expect(pos(next, "nested")).toEqual({
-      x: 10 + EXEC_STEP - (NODE_W + FORMAT_GAP_X) * 2,
-      y: 20 + HANG_Y * 2,
-    });
+    const next = layout(nodes, edges, ["a"]);
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK * 2, y: 20 });
+    expect(pos(next, "get")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 + LANE });
+    expect(pos(next, "nested")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
     expectNoOverlaps(next);
   });
 
@@ -334,14 +345,11 @@ describe("formatGraphNodes", () => {
       execEdge("prev", "stolen"),
       dataEdge("stolen", "b", "second"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["a"]);
+    const next = layout(nodes, edges, ["a"]);
     expect(pos(next, "stolen")).toEqual({ x: 999, y: 888 });
     expect(pos(next, "prev")).toEqual({ x: 50, y: 50 });
-    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
-    expect(pos(next, "get")).toEqual({
-      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
-      y: 20 + HANG_Y,
-    });
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 });
+    expect(pos(next, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
   });
 
   it("stacks a consumer’s data inputs in pin order below the exec row", () => {
@@ -356,15 +364,12 @@ describe("formatGraphNodes", () => {
       dataEdge("getSecond", "b", "second"),
       dataEdge("getFirst", "b", "first"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["a"]);
-    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
-    expect(pos(next, "getFirst")).toEqual({
-      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
-      y: 20 + HANG_Y,
-    });
+    const next = layout(nodes, edges, ["a"]);
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 });
+    expect(pos(next, "getFirst")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
     expect(pos(next, "getSecond")).toEqual({
-      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
-      y: 20 + HANG_Y + NODE_H + FORMAT_GAP_Y,
+      x: 10 + EXEC_STEP,
+      y: 20 + LANE + HANG_Y,
     });
     expectNoOverlaps(next);
   });
@@ -382,13 +387,10 @@ describe("formatGraphNodes", () => {
       dataEdge("get", "b"),
       dataEdge("get", "c"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["a"]);
-    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
-    expect(pos(next, "c")).toEqual({ x: 10 + EXEC_STEP * 2, y: 20 });
-    expect(pos(next, "get")).toEqual({
-      x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X,
-      y: 20 + HANG_Y,
-    });
+    const next = layout(nodes, edges, ["a"]);
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 });
+    expect(pos(next, "c")).toEqual({ x: 10 + EXEC_STEP * 2 + BLOCK, y: 20 });
+    expect(pos(next, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
     expectNoOverlaps(next);
   });
 
@@ -398,11 +400,11 @@ describe("formatGraphNodes", () => {
       node("get", 0, 0, dataOutPins),
     ];
     const edges = [dataEdge("get", "b")];
-    const next = formatGraphNodes(nodes, edges, ["b"]);
+    const next = layout(nodes, edges, ["b"]);
     expect(pos(next, "b")).toEqual({ x: 200, y: 50 });
     expect(pos(next, "get")).toEqual({
       x: 200 - NODE_W - FORMAT_GAP_X,
-      y: 50 + HANG_Y,
+      y: 50 + LANE,
     });
     expectNoOverlaps(next);
   });
@@ -420,12 +422,12 @@ describe("formatGraphNodes", () => {
       dataEdge("call", "toUpper", "in", "result"),
       dataEdge("toUpper", "print", "value", "value"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["event"]);
+    const next = layout(nodes, edges, ["event"]);
     expect(pos(next, "event")).toEqual({ x: 10, y: 20 });
     expect(pos(next, "call")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
-    expect(pos(next, "print")).toEqual({ x: 10 + EXEC_STEP * 2, y: 20 });
+    expect(pos(next, "print")).toEqual({ x: 10 + EXEC_STEP * 2 + BLOCK, y: 20 });
     expect(pos(next, "toUpper").y).toBeGreaterThanOrEqual(20 + HANG_Y);
-    expect(pos(next, "toUpper").x).toBe(10 + EXEC_STEP * 2 - NODE_W - FORMAT_GAP_X);
+    expect(pos(next, "toUpper").x).toBe(10 + EXEC_STEP * 2);
     expectNoOverlaps(next);
   });
 
@@ -439,7 +441,7 @@ describe("formatGraphNodes", () => {
       dataEdge("get", "first"),
       dataEdge("get", "second"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["get"]);
+    const next = layout(nodes, edges, ["get"]);
     expect(pos(next, "get")).toEqual({ x: 10, y: 20 });
     expect(pos(next, "second")).toEqual({
       x: 10 + EXEC_STEP,
@@ -459,7 +461,7 @@ describe("formatGraphNodes", () => {
       node("later", 400, 80),
     ];
     const edges = [dataEdge("get", "print"), execEdge("print", "later")];
-    const next = formatGraphNodes(nodes, edges, ["get"]);
+    const next = layout(nodes, edges, ["get"]);
     expect(pos(next, "get")).toEqual({ x: 10, y: 20 });
     expect(pos(next, "print")).toEqual({
       x: 10 + EXEC_STEP,
@@ -476,7 +478,7 @@ describe("formatGraphNodes", () => {
       node("d", 50, 480),
     ];
     const edges = [execEdge("a", "b"), execEdge("c", "d")];
-    const next = formatGraphNodes(nodes, edges, ["a", "c"]);
+    const next = layout(nodes, edges, ["a", "c"]);
     expect(pos(next, "a")).toEqual({ x: 10, y: 20 });
     expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
     expect(pos(next, "c")).toEqual({ x: 10, y: 400 });
@@ -491,7 +493,7 @@ describe("formatGraphNodes", () => {
       node("c", 15, 200),
     ];
     const edges = [execEdge("a", "b"), execEdge("b", "c")];
-    const next = formatGraphNodes(nodes, edges, ["a", "b"]);
+    const next = layout(nodes, edges, ["a", "b"]);
     expect(pos(next, "a")).toEqual({ x: 10, y: 20 });
     expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
     expect(pos(next, "c")).toEqual({ x: 10 + EXEC_STEP * 2, y: 20 });
@@ -509,10 +511,10 @@ describe("formatGraphNodes", () => {
         execEdge("branch", "no", "false"),
         dataEdge("get", "yes"),
       ];
-      const next = formatGraphNodes(nodes, edges, ["branch"]);
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP, y: 0 });
-      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP, y: NODE_H + FORMAT_GAP_Y });
-      expect(pos(next, "get").x).toBe(EXEC_STEP - NODE_W - FORMAT_GAP_X);
+      const next = layout(nodes, edges, ["branch"]);
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + BLOCK, y: 0 });
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + BLOCK, y: NODE_H + FORMAT_GAP_Y });
+      expect(pos(next, "get").x).toBe(EXEC_STEP);
       expect(pos(next, "get").y).toBeGreaterThanOrEqual(
         pos(next, "yes").y + HANG_Y,
       );
@@ -531,12 +533,12 @@ describe("formatGraphNodes", () => {
         execEdge("branch", "no", "false"),
         dataEdge("get", "no"),
       ];
-      const next = formatGraphNodes(nodes, edges, ["branch"]);
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP, y: 0 });
-      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP, y: NODE_H + FORMAT_GAP_Y });
+      const next = layout(nodes, edges, ["branch"]);
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + BLOCK, y: 0 });
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + BLOCK, y: NODE_H + FORMAT_GAP_Y });
       expect(pos(next, "get")).toEqual({
-        x: EXEC_STEP - NODE_W - FORMAT_GAP_X,
-        y: HANG_Y,
+        x: EXEC_STEP,
+        y: LANE,
       });
       expectNoOverlaps(next);
     });
@@ -555,14 +557,14 @@ describe("formatGraphNodes", () => {
         dataEdge("getNo", "no"),
         dataEdge("getYes", "yes"),
       ];
-      const next = formatGraphNodes(nodes, edges, ["branch"]);
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP, y: 0 });
-      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP, y: NODE_H + FORMAT_GAP_Y });
+      const next = layout(nodes, edges, ["branch"]);
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + BLOCK, y: 0 });
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + BLOCK, y: NODE_H + FORMAT_GAP_Y });
       expect(pos(next, "getNo")).toEqual({
-        x: EXEC_STEP - NODE_W - FORMAT_GAP_X,
-        y: HANG_Y,
+        x: EXEC_STEP,
+        y: LANE,
       });
-      expect(pos(next, "getYes").x).toBe(EXEC_STEP - NODE_W - FORMAT_GAP_X);
+      expect(pos(next, "getYes").x).toBe(EXEC_STEP);
       expect(pos(next, "getYes").y).toBeGreaterThanOrEqual(
         pos(next, "yes").y + HANG_Y,
       );
@@ -585,15 +587,15 @@ describe("formatGraphNodes", () => {
         dataEdge("getSecond", "no", "second"),
         dataEdge("getYes", "yes"),
       ];
-      const next = formatGraphNodes(nodes, edges, ["branch"]);
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP, y: 0 });
-      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP, y: NODE_H + FORMAT_GAP_Y });
+      const next = layout(nodes, edges, ["branch"]);
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + BLOCK, y: 0 });
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + BLOCK, y: NODE_H + FORMAT_GAP_Y });
       expectNoOverlaps(next);
     });
 
   it("shifts overlapping isolated selected nodes apart", () => {
     const nodes = [node("a", 0, 0), node("b", 10, 10)];
-    const next = formatGraphNodes(nodes, [], ["a", "b"]);
+    const next = layout(nodes, [], ["a", "b"]);
     expect(pos(next, "a")).toEqual({ x: 0, y: 0 });
     expect(pos(next, "b").y).toBeGreaterThanOrEqual(NODE_H + FORMAT_GAP_Y);
     expectNoOverlaps(next);
@@ -617,7 +619,7 @@ describe("formatGraphNodes", () => {
       execEdge("long7", "merge"),
       execEdge("merge", "after"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["branch"]);
+    const next = layout(nodes, edges, ["branch"]);
     expect(pos(next, "branch")).toEqual({ x: 10, y: 20 });
     for (const edge of edges) {
       expect(pos(next, edge.target).x).toBeGreaterThanOrEqual(
@@ -626,7 +628,7 @@ describe("formatGraphNodes", () => {
     }
     expect(pos(next, "after").y).toBe(pos(next, "merge").y);
     expectNoOverlaps(next);
-    expect(formatGraphNodes(next, edges, ["branch"])).toEqual(next);
+    expect(layout(next, edges, ["branch"])).toEqual(next);
   });
 
   it("keeps nested execution branches on continuous rows despite scrambled node positions", () => {
@@ -649,7 +651,7 @@ describe("formatGraphNodes", () => {
       execEdge("upperSecond", "upperSecondEnd"),
       execEdge("lower", "lowerEnd"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["root"]);
+    const next = layout(nodes, edges, ["root"]);
     expect(pos(next, "upperFirstEnd").y).toBe(pos(next, "upperFirst").y);
     expect(pos(next, "upperSecondEnd").y).toBe(pos(next, "upperSecond").y);
     expect(pos(next, "lowerEnd").y).toBe(pos(next, "lower").y);
@@ -657,7 +659,7 @@ describe("formatGraphNodes", () => {
       pos(next, "upperSecondEnd").y + NODE_H + FORMAT_GAP_Y,
     );
     expectNoOverlaps(next);
-    expect(formatGraphNodes(next, [...edges].reverse(), ["root"])).toEqual(next);
+    expect(layout(next, [...edges].reverse(), ["root"])).toEqual(next);
   });
 
   it("compacts a deep pure input tree into left-side rows and reserves space ahead of execution", () => {
@@ -683,7 +685,7 @@ describe("formatGraphNodes", () => {
       ),
       dataEdge("wide", "pure11", "in"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["start"]);
+    const next = layout(nodes, edges, ["start"]);
     const parameters = next.filter((entry) => entry.id.startsWith("pure") || entry.id === "wide");
     expect(new Set(parameters.map((entry) => entry.position.y)).size).toBe(1);
     expect(pos(next, "wide").x).toBeGreaterThanOrEqual(
@@ -698,7 +700,7 @@ describe("formatGraphNodes", () => {
     expect(next.find((entry) => entry.id === "unrelated")).toBe(nodes[nodes.length - 1]);
     expect(pos(nodes, "consumer")).toEqual({ x: 30, y: 40 });
     expectNoOverlaps(next);
-    expect(formatGraphNodes(next, edges, ["start"])).toEqual(next);
+    expect(layout(next, edges, ["start"])).toEqual(next);
   });
 
   it("keeps dense branch parameter groups separate without displacing execution rows", () => {
@@ -716,13 +718,13 @@ describe("formatGraphNodes", () => {
         dataEdge(`second${index}`, `consumer${index}`, "second"),
       );
     }
-    const next = formatGraphNodes(nodes, edges, ["root"]);
+    const next = layout(nodes, edges, ["root"]);
     for (let index = 0; index < 72; index++) {
       expect(pos(next, `consumer${index}`).y).toBe(index * HANG_Y);
       expect(pos(next, `second${index}`).y - pos(next, `first${index}`).y).toBe(HANG_Y);
     }
     expectNoOverlaps(next);
-    expect(formatGraphNodes(next, edges, ["root"])).toEqual(next);
+    expect(layout(next, edges, ["root"])).toEqual(next);
   });
 
   it("places a shared pure dependency before both its direct and indirect consumers", () => {
@@ -736,7 +738,7 @@ describe("formatGraphNodes", () => {
       dataEdge("derived", "consumer", "second"),
       dataEdge("shared", "derived", "in"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["consumer"]);
+    const next = layout(nodes, edges, ["consumer"]);
     expect(pos(next, "shared").x + NODE_W + FORMAT_GAP_X).toBeLessThanOrEqual(
       pos(next, "derived").x,
     );
@@ -744,7 +746,7 @@ describe("formatGraphNodes", () => {
       pos(next, "consumer").x,
     );
     expectNoOverlaps(next);
-    expect(formatGraphNodes(next, edges, ["consumer"])).toEqual(next);
+    expect(layout(next, edges, ["consumer"])).toEqual(next);
   });
 
   it("compacts a long selected pure chain while keeping a data merge after every predecessor", () => {
@@ -761,25 +763,25 @@ describe("formatGraphNodes", () => {
       dataEdge("pure0", "merge", "in"),
       dataEdge("pure8", "merge", "in"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["pure0"]);
+    const next = layout(nodes, edges, ["pure0"]);
     for (const edge of edges) {
       expect(pos(next, edge.source).x + NODE_W + FORMAT_GAP_X)
         .toBeLessThanOrEqual(pos(next, edge.target).x);
     }
     expect(new Set(next.map((entry) => entry.position.y)).size).toBeLessThanOrEqual(2);
     expectNoOverlaps(next);
-    expect(formatGraphNodes(next, edges, ["pure0"])).toEqual(next);
+    expect(layout(next, edges, ["pure0"])).toEqual(next);
   });
 
   it("formats a selected execution cycle once instead of discarding all selected roots", () => {
     const nodes = [node("a", 0, 0), node("b", 0, 0), node("c", 0, 0)];
     const edges = [execEdge("a", "b"), execEdge("b", "c"), execEdge("c", "a")];
-    const next = formatGraphNodes(nodes, edges, ["b", "a"]);
+    const next = layout(nodes, edges, ["b", "a"]);
     expect(pos(next, "a")).toEqual({ x: 0, y: 0 });
     expect(pos(next, "b").x).toBeGreaterThan(pos(next, "a").x);
     expect(pos(next, "c").x).toBeGreaterThan(pos(next, "b").x);
     expectNoOverlaps(next);
-    expect(formatGraphNodes(next, edges, ["b", "a"])).toEqual(next);
+    expect(layout(next, edges, ["b", "a"])).toEqual(next);
   });
 
   it("keeps a shared parameter with the first independently selected chain", () => {
@@ -796,19 +798,19 @@ describe("formatGraphNodes", () => {
       dataEdge("shared", "b"),
       dataEdge("shared", "d"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["c", "a"]);
-    expect(pos(next, "shared")).toEqual({ x: 10, y: 20 + HANG_Y });
+    const next = layout(nodes, edges, ["c", "a"]);
+    expect(pos(next, "shared")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
     expect(pos(next, "c")).toEqual({ x: 10, y: 400 });
     expectNoOverlaps(next);
-    expect(formatGraphNodes(next, edges, ["a", "c"])).toEqual(next);
+    expect(layout(next, edges, ["a", "c"])).toEqual(next);
   });
 
   it("keeps a shortcut merge stable after its longer path becomes aligned", () => {
     const nodes = [node("root", 0, 0), node("z", 0, 10), node("a", 0, 100)];
     const edges = [execEdge("root", "z"), execEdge("root", "a"), execEdge("z", "a")];
-    const next = formatGraphNodes(nodes, edges, ["root"]);
+    const next = layout(nodes, edges, ["root"]);
     expect(pos(next, "z").y).toBe(pos(next, "a").y);
-    expect(formatGraphNodes(next, edges, ["root"])).toEqual(next);
+    expect(layout(next, edges, ["root"])).toEqual(next);
   });
 
   it("formats selected roots that converge using the full length of both paths", () => {
@@ -827,14 +829,14 @@ describe("formatGraphNodes", () => {
       execEdge("long1", "merge"),
       execEdge("merge", "after"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["second", "first"]);
+    const next = layout(nodes, edges, ["second", "first"]);
     expect(pos(next, "first")).toEqual({ x: 10, y: 20 });
     for (const edge of edges) {
       expect(pos(next, edge.source).x + NODE_W + FORMAT_GAP_X)
         .toBeLessThanOrEqual(pos(next, edge.target).x);
     }
     expectNoOverlaps(next);
-    expect(formatGraphNodes(next, edges, ["first", "second"])).toEqual(next);
+    expect(layout(next, edges, ["first", "second"])).toEqual(next);
   });
 
   it("honors both selected pure and execution walks without moving shared nodes twice", () => {
@@ -849,40 +851,48 @@ describe("formatGraphNodes", () => {
       dataEdge("pure", "otherConsumer"),
       execEdge("consumer", "after"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["pure", "consumer"]);
+    const next = layout(nodes, edges, ["pure", "consumer"]);
     expect(pos(next, "consumer")).toEqual({ x: 100, y: 100 });
     expect(pos(next, "after")).toEqual({ x: 100 + EXEC_STEP, y: 100 });
     expect(pos(next, "otherConsumer").x).toBeGreaterThan(pos(next, "pure").x);
     expect(pos(next, "otherConsumer")).not.toEqual(pos(nodes, "otherConsumer"));
     expectNoOverlaps(next);
-    expect(formatGraphNodes(next, edges, ["consumer", "pure"])).toEqual(next);
+    expect(layout(next, edges, ["consumer", "pure"])).toEqual(next);
   });
 });
 
+const wildcard = { kind: "resolvingWildcard" };
+const knotPins: SerializedPin[] = [
+  { id: "in", name: "In", kind: "data", direction: "in", type: wildcard, anyKind: true },
+  { id: "out", name: "Out", kind: "data", direction: "out", type: wildcard, anyKind: true },
+];
+
 describe("formatGraphNodes with Reroute knots", () => {
-  const wildcard = { kind: "resolvingWildcard" };
-  const knotPins: SerializedPin[] = [
-    { id: "in", name: "In", kind: "data", direction: "in", type: wildcard, anyKind: true },
-    { id: "out", name: "Out", kind: "data", direction: "out", type: wildcard, anyKind: true },
-  ];
   const bound = (kind: string) => (nodeId: string) => (nodeId === "knot" ? { kind } : undefined);
 
   it("lays an exec knot on the exec row like an exec node", () => {
-    const nodes = [node("a", 10, 20), node("knot", 40, 300, knotPins), node("b", 12, 90)];
+    const nodes = [node("a", 10, 20), { ...node("knot", 40, 300, knotPins), reroute: true }, node("b", 12, 90)];
     const edges = [
       { source: "a", sourceHandle: "execOut", target: "knot", targetHandle: "in" },
       { source: "knot", sourceHandle: "out", target: "b", targetHandle: "execIn" },
     ];
-    const next = formatGraphNodes(nodes, edges, ["a"], bound("exec"));
+    const next = layout(nodes, edges, ["a"], { displayType: bound("exec") });
     expect(pos(next, "knot")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
     expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP * 2, y: 20 });
   });
 
-  it("hangs a data knot below-left of its consumer like a pure node", () => {
+  const knotNode = (id: string, x: number, y: number): FormatNode => ({
+    id,
+    position: { x, y },
+    pins: knotPins,
+    reroute: true,
+  });
+
+  it("keeps a knot on a clear wire, level with the target pin, without changing the layout", () => {
     const nodes = [
       node("a", 10, 20),
       node("b", 12, 90, execWithValueIn),
-      node("knot", 5, 200, knotPins),
+      knotNode("knot", 5, 200),
       node("get", 1, 300, dataOutPins),
     ];
     const edges = [
@@ -890,10 +900,277 @@ describe("formatGraphNodes with Reroute knots", () => {
       dataEdge("knot", "b", "value", "out"),
       dataEdge("get", "knot", "in"),
     ];
-    const next = formatGraphNodes(nodes, edges, ["a"], bound("string"));
-    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
-    expect(pos(next, "knot")).toEqual({ x: 10 + EXEC_STEP - NODE_W - FORMAT_GAP_X, y: 20 + HANG_Y });
-    expect(pos(next, "get")).toEqual({ x: 10 + EXEC_STEP - (NODE_W + FORMAT_GAP_X) * 2, y: 20 + HANG_Y * 2 });
+    const result = formatGraphNodes(nodes, edges, ["a"], {
+      displayType: bound("string"),
+      insertKnots: true,
+    });
+    const direct = layout(
+      nodes.filter((entry) => entry.id !== "knot"),
+      [execEdge("a", "b"), dataEdge("get", "b")],
+      ["a"],
+    );
+    for (const id of ["a", "b", "get"]) {
+      expect(pos(result.nodes, id)).toEqual(pos(direct, id));
+    }
+    expect(pos(result.nodes, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 });
+    expect(pos(result.nodes, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
+    // In the gap after get, centred on b's Value pin (estimated at 50 + 44 + 22 below b's top).
+    expect(pos(result.nodes, "knot")).toEqual({
+      x: 10 + EXEC_STEP + NODE_W,
+      y: 20 + 116 - REROUTE_KNOT_SIZE.height / 2,
+    });
+    expect(result.knots).toEqual([]);
+  });
+
+  it("lays out a knot that feeds several inputs like a pure node", () => {
+    const nodes = [
+      node("a", 10, 20),
+      node("b", 12, 90, execWithValueIn),
+      node("c", 14, 160, execWithValueIn),
+      knotNode("knot", 5, 200),
+      node("get", 1, 300, dataOutPins),
+    ];
+    const edges = [
+      execEdge("a", "b"),
+      execEdge("b", "c"),
+      dataEdge("knot", "b", "value", "out"),
+      dataEdge("knot", "c", "value", "out"),
+      dataEdge("get", "knot", "in"),
+    ];
+    const result = formatGraphNodes(nodes, edges, ["a"], {
+      displayType: bound("string"),
+      insertKnots: true,
+    });
+    const knotStep = REROUTE_KNOT_SIZE.width + FORMAT_GAP_X;
+    expect(pos(result.nodes, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK + knotStep, y: 20 });
+    expect(pos(result.nodes, "knot")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 + LANE });
+    expect(pos(result.nodes, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
+    expect(result.knots).toEqual([]);
+  });
+
+  it("leaves a wire direct when no knot fits around the node in its way", () => {
+    const nodes = [
+      node("a", 10, 20),
+      node("b", 12, 90, execWithValueIn, { width: 100, height: 300 }),
+      node("c", 14, 160, execWithValueIn),
+      node("get", 1, 300, dataOutPins),
+    ];
+    const edges = [
+      execEdge("a", "b"),
+      execEdge("b", "c"),
+      dataEdge("get", "b"),
+      dataEdge("get", "c"),
+    ];
+    // get → c crosses the tall b, and every knot spot level with c's pin lies inside b.
+    const result = formatGraphNodes(nodes, edges, ["a"], { insertKnots: true });
+    expect(pos(result.nodes, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
+    expect(pos(result.nodes, "c")).toEqual({ x: 10 + EXEC_STEP * 2 + BLOCK, y: 20 });
+    expect(result.knots).toEqual([]);
+  });
+});
+
+describe("formatGraphNodes parameter rows", () => {
+  // Measured cards: handle centres 20 below the top of a 40px getter.
+  const getter = (id: string): FormatNode => ({
+    ...node(id, 0, 0, dataOutPins),
+    pinOffsets: { [formatPinOffsetKey("out", "value")]: 20 },
+  });
+  const consumer: FormatNode = {
+    ...node("b", 0, 0, [
+      ...twoDataInPins,
+      { id: "third", name: "third", kind: "data", direction: "in", type: { kind: "float" } },
+    ], { width: 100, height: 340 }),
+    pinOffsets: {
+      [formatPinOffsetKey("in", "execIn")]: 10,
+      [formatPinOffsetKey("in", "first")]: 30,
+      [formatPinOffsetKey("in", "second")]: 150,
+      [formatPinOffsetKey("in", "third")]: 300,
+    },
+  };
+
+  it("keeps a block below its owner's first data lane, and level below it", () => {
+    const nodes = [node("a", 0, 0), consumer, getter("getFirst"), getter("getThird")];
+    const edges = [
+      execEdge("a", "b"),
+      dataEdge("getFirst", "b", "first"),
+      dataEdge("getThird", "b", "third"),
+    ];
+    const next = layout(nodes, edges, ["a"]);
+    // The first lane's row ends 22 below its handle at 30; the block starts 40 below that.
+    expect(pos(next, "getFirst").y).toBe(30 + 22 + FORMAT_GAP_Y);
+    expect(pos(next, "getThird").y + 20).toBe(300);
     expectNoOverlaps(next);
+  });
+
+  it("pushes a member down when its level spot is taken", () => {
+    const nodes = [node("a", 0, 0), consumer, getter("getFirst"), getter("getSecond")];
+    const edges = [
+      execEdge("a", "b"),
+      dataEdge("getFirst", "b", "first"),
+      dataEdge("getSecond", "b", "second"),
+    ];
+    const next = layout(nodes, edges, ["a"]);
+    expect(pos(next, "getFirst").y).toBe(92);
+    // Level would be 130, which is within FORMAT_GAP_Y of getFirst (92 to 132).
+    expect(pos(next, "getSecond").y).toBe(92 + NODE_H + FORMAT_GAP_Y);
+    expect(pos(next, "getSecond").x).toBe(pos(next, "getFirst").x);
+    expectNoOverlaps(next);
+  });
+});
+
+describe("formatGraphNodes on a Line Trace graph", () => {
+  const exec = (id: string, direction: "in" | "out"): SerializedPin => ({
+    id, name: id, kind: "exec", direction, type: { kind: "exec" },
+  });
+  const data = (id: string, direction: "in" | "out"): SerializedPin => ({
+    id, name: id, kind: "data", direction, type: { kind: "vector3" },
+  });
+  // A measured card: 50px title, 44px pin rows, handle centres 72 + 44 × row below its top.
+  function card(
+    id: string,
+    x: number,
+    y: number,
+    width: number,
+    rows: { in?: SerializedPin; out?: SerializedPin }[],
+  ): FormatNode {
+    const pins: SerializedPin[] = [];
+    const pinOffsets: Record<string, number> = {};
+    rows.forEach((row, index) => {
+      for (const entry of [row.in, row.out]) {
+        if (!entry) continue;
+        pins.push(entry);
+        pinOffsets[formatPinOffsetKey(entry.direction, entry.id)] = 72 + 44 * index;
+      }
+    });
+    return { id, position: { x, y }, width, height: 50 + 44 * rows.length, pins, pinOffsets };
+  }
+  const nodes: FormatNode[] = [
+    card("event", 0, 0, 200, [{ out: exec("then", "out") }]),
+    card("trace", 900, 300, 260, [
+      { in: exec("exec", "in"), out: exec("then", "out") },
+      { in: data("start", "in"), out: data("hit", "out") },
+      { in: data("end", "in") },
+      { in: data("ignore", "in") },
+    ]),
+    card("branch", 40, 900, 200, [
+      { in: exec("exec", "in"), out: exec("true", "out") },
+      { in: data("condition", "in"), out: exec("false", "out") },
+    ]),
+    card("setLocation", 700, 700, 260, [
+      { in: exec("exec", "in"), out: exec("then", "out") },
+      { in: data("target", "in") },
+      { in: data("location", "in") },
+    ]),
+    card("self", 300, 600, 160, [{ out: data("self", "out") }]),
+    card("location", 50, 500, 280, [{ in: data("target", "in"), out: data("location", "out") }]),
+    card("add", 600, 40, 200, [
+      { in: data("a", "in"), out: data("out", "out") },
+      { in: data("b", "in") },
+    ]),
+    card("multiply", 120, 260, 200, [
+      { in: data("a", "in"), out: data("out", "out") },
+      { in: data("b", "in") },
+    ]),
+    card("forward", 1000, 1000, 280, [{ in: data("target", "in"), out: data("forward", "out") }]),
+    card("array", 30, 1200, 200, [{ out: data("array", "out") }]),
+    card("breakHit", 1500, 50, 220, [
+      { in: data("in", "in"), out: data("hit", "out") },
+      { out: data("location", "out") },
+      { out: data("normal", "out") },
+      { out: data("actor", "out") },
+    ]),
+    card("add2", 400, 400, 200, [
+      { in: data("a", "in"), out: data("out", "out") },
+      { in: data("b", "in") },
+    ]),
+    card("location2", 800, 1300, 280, [{ in: data("target", "in"), out: data("location", "out") }]),
+  ];
+  const wire = (source: string, sourceHandle: string, target: string, targetHandle: string): FormatEdge => ({
+    id: `${source}.${sourceHandle}->${target}.${targetHandle}`,
+    source,
+    sourceHandle,
+    target,
+    targetHandle,
+  });
+  const startWire = wire("location", "location", "trace", "start");
+  const targetWire = wire("breakHit", "actor", "setLocation", "target");
+  const edges: FormatEdge[] = [
+    wire("event", "then", "trace", "exec"),
+    wire("trace", "then", "branch", "exec"),
+    wire("branch", "true", "setLocation", "exec"),
+    startWire,
+    wire("self", "self", "location", "target"),
+    wire("add", "out", "trace", "end"),
+    wire("location", "location", "add", "a"),
+    wire("multiply", "out", "add", "b"),
+    wire("forward", "forward", "multiply", "a"),
+    wire("self", "self", "forward", "target"),
+    wire("array", "array", "trace", "ignore"),
+    wire("trace", "hit", "breakHit", "in"),
+    wire("breakHit", "hit", "branch", "condition"),
+    targetWire,
+    wire("add2", "out", "setLocation", "location"),
+    wire("breakHit", "location", "add2", "a"),
+    wire("location2", "location", "add2", "b"),
+    wire("breakHit", "actor", "location2", "target"),
+  ];
+  const byId = (list: readonly FormatNode[], id: string) => list.find((entry) => entry.id === id)!;
+  const pinAt = (list: readonly FormatNode[], id: string, direction: "in" | "out", pinId: string) => {
+    const entry = byId(list, id);
+    return entry.position.y + entry.pinOffsets![formatPinOffsetKey(direction, pinId)]!;
+  };
+
+  it("shares pure rows by column and keeps listed wires level", () => {
+    const { nodes: next } = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
+    // The block starts just under the exec lane: the Start row ends at 116 + 22, plus the gap.
+    expect(pos(next, "self").y).toBe(178);
+    expect(pos(next, "location").y).toBe(178);
+    expect(pos(next, "add").y).toBe(178);
+    expect(pos(next, "multiply").y).toBe(pos(next, "forward").y);
+    expect(pos(next, "multiply").y).toBeGreaterThan(178);
+    expect(pos(next, "array").x).toBe(pos(next, "add").x);
+    expect(pos(next, "array").y).toBe(pos(next, "add").y + byId(next, "add").height! + FORMAT_GAP_Y);
+    expect(pinAt(next, "self", "out", "self")).toBe(pinAt(next, "location", "in", "target"));
+    expect(pinAt(next, "location", "out", "location")).toBe(pinAt(next, "add", "in", "a"));
+    expect(pinAt(next, "forward", "out", "forward")).toBe(pinAt(next, "multiply", "in", "a"));
+    expect(pinAt(next, "breakHit", "out", "location")).toBe(pinAt(next, "add2", "in", "a"));
+    expect(pinAt(next, "breakHit", "out", "actor")).toBe(pinAt(next, "location2", "in", "target"));
+    for (const id of ["trace", "branch", "setLocation"]) expect(pos(next, id).y).toBe(0);
+    expectNoOverlaps(next);
+  });
+
+  it("asks for a knot level with the target pin on each wire that runs through a node", () => {
+    const { nodes: next, knots } = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
+    expect(knots).toHaveLength(2);
+    expect(new Set(knots.map((knot) => knot.edge))).toEqual(new Set([startWire, targetWire]));
+    for (const knot of knots) {
+      const edge = knot.edge;
+      expect(knot.position.y + REROUTE_KNOT_SIZE.height / 2).toBe(pinAt(next, edge.target, "in", edge.targetHandle!));
+      expect(knot.position.x).toBeGreaterThanOrEqual(pos(next, edge.source).x + byId(next, edge.source).width! + FORMAT_GAP_X);
+      expect(knot.position.x + REROUTE_KNOT_SIZE.width + FORMAT_GAP_X).toBeLessThanOrEqual(pos(next, edge.target).x);
+      const box = { ...knot.position, ...REROUTE_KNOT_SIZE };
+      for (const entry of next) expect(boxesOverlap(box, boxOf(entry))).toBe(false);
+    }
+    const plain = formatGraphNodes(nodes, edges, ["event"], { insertKnots: false });
+    expect(plain.knots).toEqual([]);
+    expect(plain.nodes).toEqual(next);
+  });
+
+  it("changes nothing when formatted again with its knots in place", () => {
+    const first = formatGraphNodes(nodes, edges, ["event"], { insertKnots: true });
+    const knotted = [...first.nodes];
+    let rewired = [...edges];
+    first.knots.forEach((knot, index) => {
+      const id = `knot${index}`;
+      knotted.push({ id, position: knot.position, pins: knotPins, reroute: true });
+      rewired = [
+        ...rewired.filter((edge) => edge !== knot.edge),
+        wire(knot.edge.source, knot.edge.sourceHandle!, id, "in"),
+        wire(id, "out", knot.edge.target, knot.edge.targetHandle!),
+      ];
+    });
+    const second = formatGraphNodes(knotted, rewired, ["event"], { insertKnots: true });
+    expect(second.knots).toEqual([]);
+    expect(second.nodes).toEqual(knotted);
   });
 });
