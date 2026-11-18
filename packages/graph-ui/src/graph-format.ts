@@ -950,6 +950,8 @@ function layoutExecChain(
     const blockRight = x - FORMAT_GAP_X;
     if (block.left <= 0 || blockRight <= laneLeft || x - block.left >= laneRight) return;
     const shift = blockRight - laneLeft;
+    // Past three lanes (a node with many branches) the block would leave its owner far behind.
+    if (shift > knot.width + 2 * WIRE_SPACING + 2 * WIRE_CLEARANCE) return;
     const move = (by: number) => {
       for (const [member, at] of block.x) block.x.set(member, at - by);
       for (const [member, at] of block.columnLeft) block.columnLeft.set(member, at - by);
@@ -1455,7 +1457,7 @@ function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
  * Crossings between two wires' pieces: bounding boxes first, then each segment against the other
  * piece's box, then segment pairs. Two level runs never cross (both are horizontal).
  */
-function crossings(pieces: readonly Piece[], others: readonly Piece[]): number {
+function crossings(pieces: readonly Piece[], others: readonly Piece[], limit = Infinity): number {
   let count = 0;
   for (const piece of pieces) {
     const a = piece.bounds;
@@ -1468,7 +1470,11 @@ function crossings(pieces: readonly Piece[], others: readonly Piece[]): number {
         const q = piece.path[i]!;
         if (Math.max(p.x, q.x) < b.minX || Math.min(p.x, q.x) > b.maxX || Math.max(p.y, q.y) < b.minY || Math.min(p.y, q.y) > b.maxY) continue;
         for (let j = 1; j < other.path.length; j++) {
-          if (segmentsCross(p, q, other.path[j - 1]!, other.path[j]!)) count++;
+          const r = other.path[j - 1]!;
+          const t = other.path[j]!;
+          if (Math.max(r.x, t.x) < Math.min(p.x, q.x) || Math.min(r.x, t.x) > Math.max(p.x, q.x)) continue;
+          if (Math.max(r.y, t.y) < Math.min(p.y, q.y) || Math.min(r.y, t.y) > Math.max(p.y, q.y)) continue;
+          if (segmentsCross(p, q, r, t) && ++count > limit) return count;
         }
       }
     }
@@ -1476,12 +1482,33 @@ function crossings(pieces: readonly Piece[], others: readonly Piece[]): number {
   return count;
 }
 
-/** Whether any sampled point of a piece comes within `distance` of a box (bounds first). */
+/**
+ * Whether any point of a piece's dense points (`curvePoints`) comes within `distance` of a box:
+ * bounds first, then each sampled segment's box, generating the points between its ends only for
+ * segments that come near (a tall drop meets few knots).
+ */
 function pieceNearBox(piece: Piece, box: Box, distance: number): boolean {
-  const { bounds } = piece;
-  if (bounds.maxX < box.x - distance || bounds.minX > box.x + box.width + distance) return false;
-  if (bounds.maxY < box.y - distance || bounds.minY > box.y + box.height + distance) return false;
-  return densePoints(piece).some((point) => distanceToBox(point, box) < distance);
+  const { bounds, path } = piece;
+  const minX = box.x - distance;
+  const maxX = box.x + box.width + distance;
+  const minY = box.y - distance;
+  const maxY = box.y + box.height + distance;
+  if (bounds.maxX < minX || bounds.minX > maxX || bounds.maxY < minY || bounds.minY > maxY) return false;
+  if (distanceToBox(path[0]!, box) < distance) return true;
+  for (let index = 1; index < path.length; index++) {
+    const last = path[index - 1]!;
+    const point = path[index]!;
+    if (Math.max(last.x, point.x) < minX || Math.min(last.x, point.x) > maxX) continue;
+    if (Math.max(last.y, point.y) < minY || Math.min(last.y, point.y) > maxY) continue;
+    // The same points `curvePoints` adds between these two samples, then the second sample.
+    const steps = piece.level ? 0 : Math.floor(Math.hypot(point.x - last.x, point.y - last.y) / WIRE_SPACING);
+    for (let step = 1; step < steps; step++) {
+      const at = { x: last.x + ((point.x - last.x) * step) / steps, y: last.y + ((point.y - last.y) * step) / steps };
+      if (distanceToBox(at, box) < distance) return true;
+    }
+    if (distanceToBox(point, box) < distance) return true;
+  }
+  return false;
 }
 
 function distanceToBox(point: Point, box: Box): number {
@@ -1601,13 +1628,17 @@ function routeCandidates(
   size: Size,
   obstacles: Obstacles,
   runs: BoxList<Box>,
+  nest: number,
 ): Position[][] {
   const routes: Position[][] = [[]];
   const knot = (x: number, lane: number): Position => ({ x, y: lane - size.height / 2 });
   // Lanes beside the source, `WIRE_SPACING` apart, so drops from one node nest without meeting.
   const near = (index: number) => from.x + FORMAT_GAP_X + index * WIRE_SPACING;
   const far = to.x - FORMAT_GAP_X - size.width;
-  for (let index = 0; index < 3; index++) {
+  // The three lanes nearest the source, and the lane this wire nests in when the source's other
+  // knotted wires (its lower branches, routed lowest first) already hold the ones before it.
+  const nearLanes = nest >= 3 ? [0, 1, 2, nest] : [0, 1, 2];
+  for (const index of nearLanes) {
     if (near(index) + size.width <= to.x - FORMAT_GAP_X / 2) routes.push([knot(near(index), to.y)]);
   }
   if (near(0) + size.width + FORMAT_GAP_X <= far) {
@@ -1775,7 +1806,10 @@ function routeWires(
     for (const spaced of [true, false]) {
       if (best) break;
       for (let count = 0; count <= limit && !best; count++) {
-        if (count > 0) candidates ??= routeCandidates(from, to, endIds, size, obstacles, index.runs);
+        if (count > 0) {
+          const nest = (index.byNode.get(edge.source) ?? []).filter((other) => other.knots.length > 0).length;
+          candidates ??= routeCandidates(from, to, endIds, size, obstacles, index.runs, nest);
+        }
         const group = count === 0 ? [[] as Position[]] : candidates!;
         for (const [order, route] of group.entries()) {
           if (route.length !== count) continue;
@@ -1803,8 +1837,13 @@ function routeWires(
             best = { route, pieces, cost: [] };
             break;
           }
+          // Counting stops once this route has more crossings than the best one: it cannot win.
+          const most = best ? best.cost[1]! : Infinity;
           let crossed = 0;
-          for (const other of near()) if (!sharesPin(other)) crossed += crossings(pieces, other.pieces);
+          for (const other of near()) {
+            if (crossed > most) break;
+            if (!sharesPin(other)) crossed += crossings(pieces, other.pieces, most - crossed);
+          }
           // Among routes as good, one whose last knot is level with the target pin runs level into it.
           const levelEnd = route[route.length - 1]!.y + size.height / 2 === to.y ? 0 : 1;
           const cost = [route.length, crossed, levelEnd, isExec ? order : routeLength(pieces)];
