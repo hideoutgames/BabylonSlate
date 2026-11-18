@@ -160,6 +160,8 @@ const HANG_Y = NODE_H + FORMAT_GAP_Y;
 
 // A one-column parameter block moves its consumer right by that column's width and gap.
 const BLOCK = NODE_W + FORMAT_GAP_X;
+// The lane after a node that branches to a lower row past parameter blocks: a knot and a gap.
+const KNOT_LANE = REROUTE_KNOT_SIZE.width + FORMAT_GAP_X;
 // A block's top below a consumer whose first data input is on the second pin row (after the
 // exec row): that row's estimated bottom (50 + 2 × 44) plus the 40 gap.
 const LANE = 178;
@@ -256,10 +258,11 @@ describe("formatGraphNodes", () => {
     const next = layout(nodes, edges, ["branch"]);
     const yes = next.find((entry) => entry.id === "yes")!;
     const no = next.find((entry) => entry.id === "no")!;
+    // Branch outputs in pin order: True keeps the row, False's row comes next.
     expect(yes.position.x).toBe(100 + FORMAT_GAP_X);
     expect(no.position.x).toBe(100 + FORMAT_GAP_X);
-    expect(no.position.y).toBe(0);
-    expect(yes.position.y).toBe(40 + FORMAT_GAP_Y);
+    expect(yes.position.y).toBe(0);
+    expect(no.position.y).toBe(40 + FORMAT_GAP_Y);
   });
 
   it("leaves disconnected selected nodes at their origins instead of merging them onto one row", () => {
@@ -534,16 +537,15 @@ describe("formatGraphNodes", () => {
         dataEdge("get", "yes"),
       ];
       const next = layout(nodes, edges, ["branch"]);
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + BLOCK, y: 0 });
-      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + BLOCK, y: NODE_H + FORMAT_GAP_Y });
-      expect(pos(next, "get").x).toBe(EXEC_STEP);
-      expect(pos(next, "get").y).toBeGreaterThanOrEqual(
-        pos(next, "yes").y + HANG_Y,
-      );
+      // True keeps the branch's row; a knot lane follows the branch because a child has a block.
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + KNOT_LANE + BLOCK, y: 0 });
+      expect(pos(next, "get")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: LANE });
+      // False's row starts below the data hanging between the branch and True.
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: LANE + HANG_Y });
       expectNoOverlaps(next);
     });
 
-    it("does not push the next branch exec below the first successor’s hanging data", () => {
+    it("hangs a lower branch row's data under that row, using the space under earlier columns", () => {
       const nodes = [
         node("branch", 0, 0, branchPins),
         node("yes", 20, 40),
@@ -556,12 +558,9 @@ describe("formatGraphNodes", () => {
         dataEdge("get", "no"),
       ];
       const next = layout(nodes, edges, ["branch"]);
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + BLOCK, y: 0 });
-      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + BLOCK, y: NODE_H + FORMAT_GAP_Y });
-      expect(pos(next, "get")).toEqual({
-        x: EXEC_STEP,
-        y: LANE,
-      });
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: 0 });
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: HANG_Y });
+      expect(pos(next, "get")).toEqual({ x: EXEC_STEP + KNOT_LANE - BLOCK, y: HANG_Y + LANE });
       expectNoOverlaps(next);
     });
 
@@ -580,20 +579,14 @@ describe("formatGraphNodes", () => {
         dataEdge("getYes", "yes"),
       ];
       const next = layout(nodes, edges, ["branch"]);
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + BLOCK, y: 0 });
-      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + BLOCK, y: NODE_H + FORMAT_GAP_Y });
-      expect(pos(next, "getNo")).toEqual({
-        x: EXEC_STEP,
-        y: LANE,
-      });
-      expect(pos(next, "getYes").x).toBe(EXEC_STEP);
-      expect(pos(next, "getYes").y).toBeGreaterThanOrEqual(
-        pos(next, "yes").y + HANG_Y,
-      );
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + KNOT_LANE + BLOCK, y: 0 });
+      expect(pos(next, "getYes")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: LANE });
+      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + KNOT_LANE, y: LANE + HANG_Y });
+      expect(pos(next, "getNo")).toEqual({ x: EXEC_STEP + KNOT_LANE - BLOCK, y: LANE + HANG_Y + LANE });
       expectNoOverlaps(next);
     });
 
-    it("nudges hanging data of stacked branches apart without moving the later exec", () => {
+    it("keeps the hanging data of stacked branches apart", () => {
       const nodes = [
         node("branch", 0, 0, branchPins),
         node("yes", 20, 40, execWithValueIn),
@@ -610,9 +603,11 @@ describe("formatGraphNodes", () => {
         dataEdge("getYes", "yes"),
       ];
       const next = layout(nodes, edges, ["branch"]);
-      expect(pos(next, "no")).toEqual({ x: EXEC_STEP + BLOCK, y: 0 });
-      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + BLOCK, y: NODE_H + FORMAT_GAP_Y });
+      expect(pos(next, "yes")).toEqual({ x: EXEC_STEP + KNOT_LANE + BLOCK, y: 0 });
+      expect(pos(next, "no").y).toBe(pos(next, "getYes").y + HANG_Y);
+      expect(pos(next, "getSecond").y).toBe(pos(next, "getFirst").y + HANG_Y);
       expectNoOverlaps(next);
+      expect(layout(next, edges, ["branch"])).toEqual(next);
     });
 
   it("shifts overlapping isolated selected nodes apart", () => {
@@ -725,7 +720,7 @@ describe("formatGraphNodes", () => {
     expect(layout(next, edges, ["start"])).toEqual(next);
   });
 
-  it("keeps dense branch parameter groups separate without displacing execution rows", () => {
+  it("keeps dense branch parameter groups separate, each branch row below the group above it", () => {
     const nodes = [node("root", 0, 0)];
     const edges: FormatEdge[] = [];
     for (let index = 0; index < 72; index++) {
@@ -741,8 +736,12 @@ describe("formatGraphNodes", () => {
       );
     }
     const next = layout(nodes, edges, ["root"]);
+    expect(pos(next, "consumer0").y).toBe(0);
     for (let index = 0; index < 72; index++) {
-      expect(pos(next, `consumer${index}`).y).toBe(index * HANG_Y);
+      if (index > 0) {
+        expect(pos(next, `consumer${index}`).y).toBe(pos(next, `second${index - 1}`).y + HANG_Y);
+      }
+      expect(pos(next, `first${index}`).y).toBe(pos(next, `consumer${index}`).y + LANE);
       expect(pos(next, `second${index}`).y - pos(next, `first${index}`).y).toBe(HANG_Y);
     }
     expectNoOverlaps(next);
@@ -892,15 +891,16 @@ const knotPins: SerializedPin[] = [
 describe("formatGraphNodes with Reroute knots", () => {
   const bound = (kind: string) => (nodeId: string) => (nodeId === "knot" ? { kind } : undefined);
 
-  it("lays an exec knot on the exec row like an exec node", () => {
-    const nodes = [node("a", 10, 20), { ...node("knot", 40, 300, knotPins), reroute: true }, node("b", 12, 90)];
+  it("lays out an exec knot's wire as if it were direct, keeping the knot level with its target", () => {
+    const nodes = [node("a", 10, 20), { id: "knot", position: { x: 40, y: 300 }, pins: knotPins, reroute: true }, node("b", 12, 90)];
     const edges = [
       { source: "a", sourceHandle: "execOut", target: "knot", targetHandle: "in" },
       { source: "knot", sourceHandle: "out", target: "b", targetHandle: "execIn" },
     ];
     const next = layout(nodes, edges, ["a"], { displayType: bound("exec") });
-    expect(pos(next, "knot")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
-    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP * 2, y: 20 });
+    expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    // In the gap after a, centred on b's exec pin (estimated 50 + 22 below b's top).
+    expect(pos(next, "knot")).toEqual({ x: 10 + NODE_W, y: 20 + 72 - REROUTE_KNOT_SIZE.height / 2 });
   });
 
   const knotNode = (id: string, x: number, y: number): FormatNode => ({
@@ -970,12 +970,14 @@ describe("formatGraphNodes with Reroute knots", () => {
     expect(result.knots).toEqual([]);
   });
 
-  it("leaves a wire direct when no knot fits around the node in its way", () => {
+  it("leaves a wire direct when no knot gets it around the node in its way", () => {
     const nodes = [
       node("a", 10, 20),
-      node("b", 12, 90, execWithValueIn, { width: 100, height: 300 }),
+      node("b", 12, 90, execWithValueIn),
       node("c", 14, 160, execWithValueIn),
       node("get", 1, 300, dataOutPins),
+      // An unrelated selected wall across every route from get to c: it stays where it is.
+      node("wall", 480, -2000, [], { width: 40, height: 4000 }),
     ];
     const edges = [
       execEdge("a", "b"),
@@ -983,8 +985,8 @@ describe("formatGraphNodes with Reroute knots", () => {
       dataEdge("get", "b"),
       dataEdge("get", "c"),
     ];
-    // get → c crosses the tall b, and every knot spot level with c's pin lies inside b.
-    const result = formatGraphNodes(nodes, edges, ["a"], { insertKnots: true });
+    const result = formatGraphNodes(nodes, edges, ["a", "wall"], { insertKnots: true });
+    expect(pos(result.nodes, "wall")).toEqual({ x: 480, y: -2000 });
     expect(pos(result.nodes, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
     expect(pos(result.nodes, "c")).toEqual({ x: 10 + EXEC_STEP * 2 + BLOCK, y: 20 });
     expect(result.knots).toEqual([]);
@@ -992,9 +994,9 @@ describe("formatGraphNodes with Reroute knots", () => {
 
   describe("a wire that passes close to a node", () => {
     // a → b → c. get (in b's block) feeds b.Value and c.Value, which is 400 below c's top, so
-    // get's wire into c drops from (290, 132) to (550, 420). An isolated selected node o sits
-    // above the right half of that curve: with its bottom at 320 the curve passes about 20 units
-    // from its box, at 258 about 40.
+    // get's wire into c, leaving under b, drops from (290, 144) to (550, 420). An isolated node o sits
+    // above the right half of that curve: with its bottom at 322 the curve passes about 20 units
+    // from its box, at 262 about 40.
     function crowdedGraph(obstacleBottom: number): { nodes: FormatNode[]; edges: FormatEdge[]; cWire: FormatEdge } {
       const cWire = { id: "get-c", ...dataEdge("get", "c") };
       return {
@@ -1011,24 +1013,24 @@ describe("formatGraphNodes with Reroute knots", () => {
     }
 
     it("gets a knot level with the target pin when it passes 20 units from the node", () => {
-      const { nodes, edges, cWire } = crowdedGraph(320);
+      const { nodes, edges, cWire } = crowdedGraph(322);
       const result = formatGraphNodes(nodes, edges, ["a", "o"], { insertKnots: true });
-      expect(pos(result.nodes, "o")).toEqual({ x: 470, y: 280 });
-      expect(pos(result.nodes, "get")).toEqual({ x: 190, y: 112 });
+      expect(pos(result.nodes, "o")).toEqual({ x: 470, y: 282 });
+      expect(pos(result.nodes, "get")).toEqual({ x: 190, y: 124 });
       expect(pos(result.nodes, "c")).toEqual({ x: 550, y: 20 });
       // As far right as the gaps allow (550 − 80 − 80), centred on c.Value at 420.
       expect(result.knots).toEqual([{ edge: cWire, position: { x: 390, y: 420 - REROUTE_KNOT_SIZE.height / 2 } }]);
     });
 
     it("stays direct when it passes 40 units from the node", () => {
-      const { nodes, edges } = crowdedGraph(258);
+      const { nodes, edges } = crowdedGraph(262);
       const result = formatGraphNodes(nodes, edges, ["a", "o"], { insertKnots: true });
-      expect(pos(result.nodes, "get")).toEqual({ x: 190, y: 112 });
+      expect(pos(result.nodes, "get")).toEqual({ x: 190, y: 124 });
       expect(result.knots).toEqual([]);
     });
 
     it("changes nothing when formatted again with its knot in place", () => {
-      const { nodes, edges, cWire } = crowdedGraph(320);
+      const { nodes, edges, cWire } = crowdedGraph(322);
       const first = formatGraphNodes(nodes, edges, ["a", "o"], { insertKnots: true });
       expect(first.knots).toHaveLength(1);
       const knotted = [...first.nodes, { id: "k", position: first.knots[0]!.position, pins: knotPins, reroute: true }];
