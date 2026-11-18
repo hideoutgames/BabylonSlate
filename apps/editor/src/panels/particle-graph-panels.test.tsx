@@ -549,7 +549,7 @@ describe("Particle Graph Reroute knots on the canvas", () => {
   });
 
   it("take a Float wired into a knot that feeds a Vector3 input, and still build", () => {
-    // Float constant → knot → Update Direction's Direction (Vector3), and the same through two knots.
+    // Float constant → k1 → k2 → Update Direction's Direction (Vector3), wired target side first; Float → k3 → Add's A.
     const doc = createDefaultParticleGraphDocument("Embers");
     const at = { x: 0, y: 0 };
     doc.nodes.push(
@@ -560,7 +560,11 @@ describe("Particle Graph Reroute knots on the canvas", () => {
       { id: "k3", type: "utility.reroute", position: at, properties: {} },
       { id: "add", type: "math.add", position: at, properties: {} },
     );
+    // Update Direction joins the spine between Apply Velocity and Update Color.
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-velocity-color");
     doc.edges.push(
+      { id: "s1", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "dir", targetPinId: "particle" },
+      { id: "s2", sourceNodeId: "dir", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
       { id: "w1", sourceNodeId: "k1", sourcePinId: "out", targetNodeId: "k2", targetPinId: "in" },
       { id: "w2", sourceNodeId: "k2", sourcePinId: "out", targetNodeId: "dir", targetPinId: "direction" },
       { id: "w3", sourceNodeId: "one", sourcePinId: "out", targetNodeId: "k1", targetPinId: "in" },
