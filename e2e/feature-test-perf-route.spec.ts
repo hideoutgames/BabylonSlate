@@ -419,20 +419,22 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   return { playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects };
 }
 
-type GpuProbeReading = { signature?: unknown; timers?: { id: number } & Record<string, unknown> | null } | null;
+type GpuProbeReading = {
+  signature?: unknown; timers?: { id: number } & Record<string, unknown> | null; burst?: { id: number } & Record<string, unknown> | null;
+} | null;
 const gpuProbeReading = (page: Page) =>
   page.evaluate(() => ((globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.gpuProbe ?? null) as GpuProbeReading);
 
-/** One `gpuprobe timers` run: GPU time per stage and pass over its frames. */
-async function passTimers(page: Page) {
-  const before = (await gpuProbeReading(page))?.timers?.id ?? 0;
-  await runConsoleCommand(page, "gpuprobe timers");
+/** One `gpuprobe timers` or `burst` run, once it reports. */
+async function probeRun(page: Page, action: "timers" | "burst") {
+  const before = (await gpuProbeReading(page))?.[action]?.id ?? 0;
+  await runConsoleCommand(page, `gpuprobe ${action}`);
   let result: GpuProbeReading = null;
   await expect.poll(async () => {
     result = await gpuProbeReading(page);
-    return result?.timers?.id ?? 0;
+    return result?.[action]?.id ?? 0;
   }, { timeout: 60_000, intervals: [250] }).toBeGreaterThan(before);
-  return (result as GpuProbeReading)?.timers ?? null;
+  return (result as GpuProbeReading)?.[action] ?? null;
 }
 
 /** The view as it is now: its frame rate, the GL pass structure, and with GPU_PASSES its GPU time per pass. */
@@ -444,11 +446,12 @@ async function measureHeld(page: Page) {
   await page.waitForTimeout(1_000);
   const signature = (await gpuProbeReading(page))?.signature ?? null;
   await runConsoleCommand(page, "gpuprobe off");
-  const timers = GPU_PASSES ? [await passTimers(page), await passTimers(page)] : null;
+  const timers = GPU_PASSES ? [await probeRun(page, "timers"), await probeRun(page, "timers")] : null;
+  const burst = GPU_PASSES ? await probeRun(page, "burst") : null;
   return {
     drawnFps: window.drawnFps, frameCpu: window.frameCpu.medianMs, frameDraws: window.frameDraws, drawsPerPass: window.drawsPerPass,
     cpuMsPerPass: window.cpuMsPerPass,
-    width: window.rendering.width, height: window.rendering.height, settings: window.rendering.settings, signature, timers,
+    width: window.rendering.width, height: window.rendering.height, settings: window.rendering.settings, signature, timers, burst,
   };
 }
 

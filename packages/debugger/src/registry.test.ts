@@ -242,10 +242,10 @@ describe("createCommandRegistry", () => {
     host.setGpuProbe = (action) => host.calls.push(`probe:${action}`);
     const debug = createCommandRegistry({ includeDebug: true });
     const release = createCommandRegistry({ includeDebug: false });
-    for (const action of ["on", "serial", "timers", "off"]) expect(debug.execute(`gpuprobe ${action}`, host)).toEqual({ success: true, output: `gpuprobe ${action}` });
+    for (const action of ["on", "serial", "timers", "burst", "off"]) expect(debug.execute(`gpuprobe ${action}`, host)).toEqual({ success: true, output: `gpuprobe ${action}` });
     expect(debug.execute("gpuprobe fences", host).success).toBe(false);
     expect(release.execute("gpuprobe on", host).success).toBe(false);
-    expect(host.calls).toEqual(["probe:on", "probe:serial", "probe:timers", "probe:off"]);
+    expect(host.calls).toEqual(["probe:on", "probe:serial", "probe:timers", "probe:burst", "probe:off"]);
   });
 
   it("hides Play's Scene Layers and shows them again, in debug registries only", () => {

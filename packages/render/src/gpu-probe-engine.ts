@@ -3,7 +3,7 @@ import { setDrawPassStageListener } from "./draw-passes";
 import { engineFrameBackpressure } from "./frame-backpressure";
 import { engineFrameMarkers } from "./gpu-busy-probe";
 import {
-  GlSignatureRecorder, installGlSignature, messageChannelScheduler, RafCadence, SerialFrameProbe, ShadowFrameWindow,
+  BurstFrameProbe, type BurstProbeResult, GlSignatureRecorder, installGlSignature, messageChannelScheduler, RafCadence, SerialFrameProbe, ShadowFrameWindow,
   type GlSignatureStats, type SerialProbeResult, type ShadowFrameStats,
 } from "./gpu-frame-probe";
 import { GpuPassTimers, webglPassTimerHost, type PassTimerHost, type PassTimerResult } from "./gpu-pass-timers";
@@ -22,6 +22,9 @@ export interface GpuProbeSnapshot {
   /** The last `gpuprobe timers` result: GPU time per stage and pass from timer queries; its `id` grows with each. */
   timers: PassTimerResult | null;
   timersRunning: boolean;
+  /** The last `gpuprobe burst` result: the unquantised frame period with frames queued; its `id` grows with each. */
+  burst: BurstProbeResult | null;
+  burstRunning: boolean;
 }
 
 /** A context without timer queries: nothing starts. */
@@ -54,6 +57,9 @@ export class EngineGpuProbe {
   private readonly scheduler = messageChannelScheduler();
   private readonly synthetic: GpuSyntheticLoad;
   private readonly serialProbe: SerialFrameProbe;
+  private readonly burstProbe: BurstFrameProbe;
+  /** The frames-in-flight limit a burst lifted, restored as it ends. */
+  private burstPaced: ReturnType<typeof engineFrameBackpressure>["mode"] | null = null;
   private readonly timers: GpuPassTimers<unknown>;
   private readonly timersAvailable: boolean;
   private readonly headLoad: GpuSyntheticLoad;
@@ -89,6 +95,21 @@ export class EngineGpuProbe {
       },
     });
     this.recorder.onPassStart = () => this.submitDeferred();
+    this.burstProbe = new BurstFrameProbe({
+      fence: () => markers?.(performance.now()) ?? null,
+      now: () => performance.now(),
+      schedule: (callback) => this.scheduler.schedule(callback),
+      unpace: (on) => {
+        const backpressure = engineFrameBackpressure(engine);
+        if (on) {
+          this.burstPaced ??= backpressure.mode;
+          backpressure.setMode("off");
+        } else if (this.burstPaced !== null) {
+          backpressure.setMode(this.burstPaced);
+          this.burstPaced = null;
+        }
+      },
+    });
     const gl = (engine as unknown as { _gl?: WebGL2RenderingContext })._gl;
     // The head start: the synthetic load's program in a load of its own, which the timers draw before each frame.
     this.headLoad = createGpuSyntheticLoad(engine);
@@ -141,6 +162,7 @@ export class EngineGpuProbe {
    * last results stay readable.
    */
   off(): void {
+    this.burstProbe.dispose();
     this.timers.stop();
     this.headLoad.release();
     this.restoreFrameCapture();
@@ -162,6 +184,11 @@ export class EngineGpuProbe {
    * `gpuprobe timers`: GPU time per stage and pass over the next `PASS_TIMER_FRAMES` frames, from timer queries; false
    * while a run records. Without timer queries the run ends at once, reporting them absent.
    */
+  /** `gpuprobe burst`: the frame period over the next frames with the frames-in-flight limit lifted; false while one runs. */
+  burst(): boolean {
+    return this.burstProbe.request();
+  }
+
   passTimers(): boolean {
     return this.timers.start(this.timersAvailable);
   }
@@ -185,6 +212,7 @@ export class EngineGpuProbe {
       signature: this.recorder.stats(), shadows: this.shadowWindow.stats(), raf: this.raf.stats(),
       serial: this.serialProbe.result(), serialRunning: this.serialProbe.running,
       timers: this.timers.result(), timersRunning: this.timers.running,
+      burst: this.burstProbe.result(), burstRunning: this.burstProbe.active,
     };
   }
 
@@ -207,6 +235,7 @@ export class EngineGpuProbe {
     // The frame's work is all submitted: the fences still waiting for a pass to start go first, in order.
     this.submitDeferred();
     this.serialProbe.frameEnded();
+    this.burstProbe.frameEnded(engineFrameBackpressure(this.engine).renderedThisFrame());
   }
 
   private submitDeferred(): void {

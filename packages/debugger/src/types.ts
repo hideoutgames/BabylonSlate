@@ -78,9 +78,9 @@ export type ConsoleCommandHost = {
   setGpuBusyProbe?(enabled: boolean): void;
   /**
    * `gpuprobe`: start (restart) or stop recording each frame's GL passes and shadow map draws, run the serialised
-   * stage-fence frames, or time each stage and pass with GPU timer queries.
+   * stage-fence frames, time each stage and pass with GPU timer queries, or fence a burst of frames for their period.
    */
-  setGpuProbe?(action: "on" | "off" | "serial" | "timers"): void;
+  setGpuProbe?(action: "on" | "off" | "serial" | "timers" | "burst"): void;
   /** How many rendered frames the Engine may queue on the GPU; "off" lifts the limit (`framesinflight`). */
   setFramesInFlight?(mode: "off" | 2 | 3): void;
   /** Store whether the next project Engine keeps its drawing buffer (applies after an editor reload). */
