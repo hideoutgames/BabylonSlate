@@ -42,15 +42,22 @@ test("Viewport Zoom Buttons adds Zoom In and Zoom Out to the Scene viewport's co
 
   await expect.poll(() => editorCameraExtent(page), { timeout: 30_000 }).not.toBeNull();
   const start = (await editorCameraExtent(page))!;
+  // One tap zooms by the drive's tap factor, 1.2; within 1% once its glide ends.
+  const near = (expected: number) => async () => Math.abs((await editorCameraExtent(page))! / expected - 1) < 0.01;
   await page.getByTestId("viewport-zoom-in").click();
-  await expect.poll(() => editorCameraExtent(page)).toBeLessThan(start);
-  // Let the tap's glide finish before reversing it.
-  await expect.poll(async () => {
-    const before = await editorCameraExtent(page);
-    await page.waitForTimeout(200);
-    return before === (await editorCameraExtent(page));
-  }).toBe(true);
-  const zoomedIn = (await editorCameraExtent(page))!;
+  await expect.poll(near(start / 1.2)).toBe(true);
   await page.getByTestId("viewport-zoom-out").click();
-  await expect.poll(() => editorCameraExtent(page)).toBeGreaterThan(zoomedIn);
+  await expect.poll(near(start)).toBe(true);
+
+  // Holding keeps zooming well past one step, and stops on release.
+  const zoomIn = (await page.getByTestId("viewport-zoom-in").boundingBox())!;
+  await page.mouse.move(zoomIn.x + zoomIn.width / 2, zoomIn.y + zoomIn.height / 2);
+  await page.mouse.down();
+  await expect.poll(async () => (await editorCameraExtent(page))!).toBeLessThan(start / 1.5);
+  await page.mouse.up();
+  const released = (await editorCameraExtent(page))!;
+  // Bounded on purpose: this asserts that nothing changes once the button is released.
+  await page.waitForTimeout(300);
+  expect(await editorCameraExtent(page)).toBe(released);
+  await expect(page.getByTestId("context-menu-panel")).toHaveCount(0);
 });

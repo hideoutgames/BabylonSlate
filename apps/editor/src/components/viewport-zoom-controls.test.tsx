@@ -114,11 +114,11 @@ describe("ViewportZoomControls", () => {
   it("stops on pointer cancel and on lost capture, but only for the pointer that pressed", async () => {
     const { drive } = await renderControls();
     dispatchPointerEvent(zoomIn(), "pointerdown", { pointerId: 4 });
-    dispatchPointerEvent(zoomIn(), "pointerup", { pointerId: 9 });
+    dispatchPointerEvent(zoomIn(), "pointercancel", { pointerId: 9 });
     expect(drive.stop).not.toHaveBeenCalled();
     dispatchPointerEvent(zoomIn(), "pointercancel", { pointerId: 4 });
     expect(drive.stop).toHaveBeenCalledOnce();
-    // A cancelled touch sends no click, so the next keyboard activation still zooms.
+    // A cancelled touch sends no click, so an activation right after it still zooms.
     fireEvent.click(zoomIn(), { detail: 0 });
     expect(drive.step).toHaveBeenCalledExactlyOnceWith(1);
 
