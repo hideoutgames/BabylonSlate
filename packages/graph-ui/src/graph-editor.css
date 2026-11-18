@@ -593,7 +593,8 @@
 }
 
 [data-graph-tool="cut"] .graph-editor-canvas .graph-reroute-knot:hover:not(:has(.react-flow__handle:hover)) {
-  box-shadow: 0 0 0 2px var(--destructive);
+  /* Over the knot's inline outline in its carried colour. */
+  box-shadow: 0 0 0 2px var(--destructive) !important;
 }
 
 [data-graph-tool="cut"] .graph-editor-canvas .anim-transition-badge:hover {

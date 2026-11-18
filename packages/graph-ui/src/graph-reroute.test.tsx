@@ -258,6 +258,10 @@ describe("Reroute knot", () => {
       expect(knotB.querySelector('.react-flow__handle[data-handleid="out"]')?.getAttribute("data-handlepos")).toBe("right");
       const outGlyph = knotB.querySelector('.react-flow__handle[data-handleid="out"] [data-pin-shape]') as HTMLElement;
       expect(outGlyph.getAttribute("style")).toMatch(/color: var\(--pin-float\)/);
+      // The outline is drawn in the carried type's colour too.
+      expect((knotB as HTMLElement).style.borderColor).toBe("var(--pin-float)");
+      expect((container.querySelector('.react-flow__node[data-id="knot-x"] [aria-label="Reroute"]') as HTMLElement).style.borderColor)
+        .toBe("var(--pin-exec)");
 
       // The exec knot draws exec diamonds, and its outgoing wire the exec stroke and width.
       const knotX = container.querySelector('.react-flow__node[data-id="knot-x"]')!;

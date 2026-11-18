@@ -846,7 +846,7 @@ function VariableGetNode({
  * at the right, both drawn in the type the knot carries. The space between them drags the knot.
  */
 function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
-  const { pendingPin, pinHasError } = useGraphEditorContext();
+  const { pendingPin, pinHasError, pinDisplayType } = useGraphEditorContext();
   const nodeMenu = useNodeMenu(id);
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const input = pins.find((pin) => pin.direction === "in");
@@ -854,6 +854,9 @@ function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const inputWired = useStore((state) => (input ? isPinWired(state.edges, id, input) : false));
   const outputWired = useStore((state) => (output ? isPinWired(state.edges, id, output) : false));
   const isPending = (pin: SerializedPin) => pendingPin?.nodeId === id && pendingPin.pinId === pin.id;
+  // The outline takes the colour of what the knot carries, as its pins do (the input's, should they differ).
+  const carried = input ?? output;
+  const outline = pinCssVar((carried && pinDisplayType(id, carried.id)) ?? carried?.type ?? { kind: "wildcard" });
   const handle = (pin: SerializedPin, connected: boolean) => (
     <span className="flex" data-pin-side={pin.direction} data-pin-id={pin.id}>
       <PinHandle
@@ -873,9 +876,11 @@ function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
         data-node-kind="reroute"
         data-selected={selected ? "true" : undefined}
         className={cn(
-          "graph-reroute-knot flex items-center justify-between rounded-full border border-border bg-graph-node shadow-sm",
-          selected && "ring-2 ring-primary",
+          "graph-reroute-knot flex items-center justify-between rounded-full border bg-graph-node shadow-sm",
+          selected && "outline-2 outline-offset-2 outline-primary",
         )}
+        // A 3px outline that keeps the knot's size: the 1px border plus a 2px inset ring, both in the carried colour.
+        style={{ borderColor: outline, boxShadow: `inset 0 0 0 2px ${outline}` }}
       >
         {input ? handle(input, inputWired) : null}
         {output ? handle(output, outputWired) : null}
