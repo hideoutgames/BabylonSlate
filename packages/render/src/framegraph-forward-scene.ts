@@ -58,6 +58,7 @@ import { layerDrawableMeshes } from "./layer-drawable-meshes";
 import { attachLayerDrawList, type LayerDrawList } from "./layer-draw-list";
 import { findSceneShadowController } from "./shadow-controller";
 import { mirrorDiagnostics } from "./mirrors";
+import { lightClusterDiagnostics } from "./haptic-lights";
 import { sceneLightingSettledWithoutLights, syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
@@ -419,11 +420,14 @@ export class ForwardSceneFrameGraph {
     const mirrors = mirrorDiagnostics(this.scene);
     const captureLists = captureActorListDiagnostics(this.scene);
     const leanPreparation = leanPreparationDiagnostics(this.scene);
+    const lightClusters = lightClusterDiagnostics(this.scene);
     return {
       ...(captureLists ? { captureActorLists: { ...captureLists } } : {}),
       ...(shadowJournal ? { shadowJournal } : {}),
       ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...(mirrors ? { mirrorCrop: { checks: mirrors.cropChecks, misses: mirrors.cropMisses } } : {}),
+      ...(mirrors ? { mirrorCulls: { checks: mirrors.cullChecks, mismatches: mirrors.cullMismatches } } : {}),
+      ...(lightClusters ? { lightClusters } : {}),
       ...(this.outlineView ? { outlineCull: this.outlineView.cullDiagnostics() } : {}),
       ...(leanPreparation ? { leanPreparation } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,

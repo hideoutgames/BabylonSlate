@@ -15,7 +15,7 @@ import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-sc
 import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
   verifyCaptureActorLists, verifyLayerDrawLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
-  verifyLeanPreparation, drawLayersFullPath,
+  verifyLeanPreparation, drawLayersFullPath, forceClusterRebuilds, verifyLightClusterSlots, verifyMirrorSharedCulls, walkMirrorCullsUnshared,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1285,6 +1285,13 @@ function PlayOverlayView({
         verifyMirrorFootprintCrops: (enabled: boolean) => void;
         /** Has each strict outline cull also cull the full way, which must agree (`rendererWork.outlineCull.mismatches`). */
         verifySharedOutlineCulls: (enabled: boolean) => void;
+        /**
+         * Has each Mirror cull from its render's shared candidates also walk the whole Scene (`rendererWork.mirrorCulls.mismatches`),
+         * and each light cluster block kept across another camera's turn also build afresh (`rendererWork.lightClusters.mismatches`).
+         */
+        verifyMirrorSharedWork: (enabled: boolean) => void;
+        /** Has Mirror culls walk the whole Scene each and light clusters build at every camera's turn, as before they were shared. */
+        unshareMirrorWork: (enabled: boolean) => void;
         /** Has each lean object and geometry pass also run Babylon's preparation, whose queues it must match (`rendererWork.leanPreparation.mismatches`). */
         verifyLeanPreparation: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
@@ -1319,6 +1326,8 @@ function PlayOverlayView({
       verifyCaptureActorLists,
       verifyMirrorFootprintCrops,
       verifySharedOutlineCulls,
+      verifyMirrorSharedWork: (enabled: boolean) => { verifyMirrorSharedCulls(enabled); verifyLightClusterSlots(enabled); },
+      unshareMirrorWork: (enabled: boolean) => { walkMirrorCullsUnshared(enabled); forceClusterRebuilds(enabled); },
       verifyLeanPreparation,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],

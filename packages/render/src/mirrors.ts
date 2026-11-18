@@ -59,8 +59,8 @@ import {
   createMirrorReflectionBinding, isBuiltInMirrorMaterial, isMirrorSurfaceMesh, markBuiltInMirrorMaterial, mirrorFallbackTexture, type MirrorReflectionBinding,
 } from "./mirror-surface-state";
 import {
-  beginPlanarMirrorPassState, buildViewProjectionMatrix, clipFrustumAtMirror, collectPlanarMirrorMeshes, createPlanarMirrorTarget,
-  cropToFootprint, disposePlanarMirrorTarget, drawPlanarMirrorPass, planarFootprintCulling, planarMirrorTargetSize, PlanarMirrorMath,
+  beginPlanarMirrorPassState, buildViewProjectionMatrix, clipFrustumAtMirror, collectPlanarMirrorCandidates, collectPlanarMirrorMeshes,
+  createPlanarMirrorTarget, cropToFootprint, cullPlanarMirrorCandidates, disposePlanarMirrorTarget, drawPlanarMirrorPass, planarFootprintCulling, planarMirrorTargetSize, PlanarMirrorMath,
   projectHullInFront, resizePlanarMirrorTarget,
   type MirrorPlane, type PlanarMirrorTargetState,
 } from "./planar-mirror";
@@ -117,6 +117,10 @@ export interface MirrorDiagnostics {
    * surface's footprint widened by its sampling reach. Must stay 0.
    */
   readonly cropMisses: number;
+  /** While `verifyMirrorSharedCulls` is on: culls made from the render's shared candidates also made by the whole walk. */
+  readonly cullChecks: number;
+  /** Those whose list differed from the whole walk's, in content or order. Must stay 0. */
+  readonly cullMismatches: number;
 }
 
 let verifyingPolls = false;
@@ -138,6 +142,23 @@ let verifyingCrops = false;
  */
 export function verifyMirrorFootprintCrops(enabled: boolean): void {
   verifyingCrops = enabled;
+}
+
+let verifyingCulls = false;
+
+/**
+ * Debugging aid: each Mirror cull made from the candidates its render shares (`collectPlanarMirrorCandidates`) also
+ * walks the whole Scene as each cull did before, and counts each list that differs (`MirrorDiagnostics.cullMismatches`).
+ */
+export function verifyMirrorSharedCulls(enabled: boolean): void {
+  verifyingCulls = enabled;
+}
+
+let unshared = false;
+
+/** Test and proof hook: each Mirror cull walks the whole Scene again, as before its render shared the candidates. */
+export function walkMirrorCullsUnshared(enabled: boolean): void {
+  unshared = enabled;
 }
 
 /** NDC slack before a left-out mesh's bounds count as reaching the footprint: a box touching its edge is either side. */
@@ -230,6 +251,8 @@ class SceneMirrors {
   pollMismatches = 0;
   cropChecks = 0;
   cropMisses = 0;
+  cullChecks = 0;
+  cullMismatches = 0;
   private readonly scene: Scene;
   private beforeRender: Observer<Scene> | null = null;
   /** The owner's renders, and whether Reflection Shadows is on in this one. */
@@ -258,6 +281,14 @@ class SceneMirrors {
   private readonly checkPlanes = Frustum.GetPlanes(Matrix.Identity());
   private readonly checkList: AbstractMesh[] = [];
   private readonly checkListed = new Set<AbstractMesh>();
+  /**
+   * The candidates of the culls (`collectPlanarMirrorCandidates`), for Everything and for Moving Actors surfaces, and the
+   * `culls` value they were collected under: the culls of one render share them until a pass draws.
+   */
+  private readonly candidates: AbstractMesh[] = [];
+  private readonly stillCandidates: AbstractMesh[] = [];
+  private candidatesAt = -1;
+  private stillCandidatesAt = -1;
   private readonly corners = [new Vector3(), new Vector3(), new Vector3(), new Vector3()];
   private readonly relativeView = new Matrix();
   private readonly planes = Frustum.GetPlanes(Matrix.Identity());
@@ -323,6 +354,7 @@ class SceneMirrors {
       shadowPasses: shadowChangeSequence(this.scene),
       sunShadowViews: this.surfaces.filter((surface) => surface.target?.sunShadows.holdsMaps).length,
       skippedPolls: this.skippedPolls, pollMismatches: this.pollMismatches, cropChecks: this.cropChecks, cropMisses: this.cropMisses,
+      cullChecks: this.cullChecks, cullMismatches: this.cullMismatches,
     };
   }
 
@@ -357,7 +389,20 @@ class SceneMirrors {
     const viewWidth = view.width * camera.viewport.width;
     const viewHeight = view.height * camera.viewport.height;
     if (!(viewWidth >= 1 && viewHeight >= 1)) return;
-    buildViewProjectionMatrix(scene, camera, viewWidth / viewHeight, this.projection);
+    // Everything the reflections cost counts to them: placement, currency checks, culls and content asks too, not only
+    // their passes (which nest in this).
+    enterDrawPass(engine, "mirrors", true);
+    try {
+      this.updateSurfaces(camera, view, viewWidth / viewHeight, linear);
+    } finally {
+      leaveDrawPass(engine);
+    }
+  }
+
+  /** `update` for a view whose camera and size (`view`, its output's) draw reflections. */
+  private updateSurfaces(camera: Camera, view: { width: number; height: number }, aspect: number, linear: boolean): void {
+    const scene = this.scene, engine = scene.getEngine();
+    buildViewProjectionMatrix(scene, camera, aspect, this.projection);
     camera.getViewMatrix().multiplyToRef(this.projection, this.viewProjection);
     Frustum.GetPlanesToRef(this.viewProjection, this.planes);
     // Targets follow the size the view's scene draws at: its output's, or less under FSR Upscaling's render scale.
@@ -549,12 +594,39 @@ class SceneMirrors {
     target.mirror.mirrorView.multiplyToRef(this.projection, this.cullViewProjection);
     const cropped = this.cropToSurface(surface, target);
     clipFrustumAtMirror(cropped ? this.cropViewProjection : this.cullViewProjection, surface.plane, this.reflectionPlanes);
-    const excluded = this.mode(surface) === "movingActors" ? this.excludedStill : excludedFromMirrors;
-    collectPlanarMirrorMeshes(this.scene, target.texture.renderList!, camera.layerMask, this.reflectionPlanes, excluded);
-    if (cropped && verifyingCrops) this.checkCrop(target.texture.renderList!, camera.layerMask, surface.plane, excluded);
+    const still = this.mode(surface) === "movingActors";
+    const excluded = still ? this.excludedStill : excludedFromMirrors;
+    const list = target.texture.renderList!;
+    cullPlanarMirrorCandidates(this.scene, this.candidatesFor(still, camera.layerMask, excluded), list, this.reflectionPlanes);
+    if (verifyingCulls) this.checkCull(list, camera.layerMask, excluded);
+    if (cropped && verifyingCrops) this.checkCrop(list, camera.layerMask, surface.plane, excluded);
     surface.culledAt = this.culls;
     surface.culledInto = target;
     return true;
+  }
+
+  /**
+   * The candidates a cull keeps from: collected at the render's first cull of that kind and shared by its later ones
+   * until a pass draws (`culls` moves), since nothing between them writes what they test; collected afresh every cull
+   * when unshared (`walkMirrorCullsUnshared`). One camera draws a render, so its layer mask is the same throughout.
+   */
+  private candidatesFor(still: boolean, layerMask: number, excluded: (mesh: AbstractMesh) => boolean): readonly AbstractMesh[] {
+    const list = still ? this.stillCandidates : this.candidates;
+    if (unshared || (still ? this.stillCandidatesAt : this.candidatesAt) !== this.culls) {
+      collectPlanarMirrorCandidates(this.scene, list, layerMask, excluded);
+      if (still) this.stillCandidatesAt = this.culls;
+      else this.candidatesAt = this.culls;
+    }
+    return list;
+  }
+
+  /** The shared-cull verifier: the whole walk at the same moment, whose list must equal `listed` in order. */
+  private checkCull(listed: readonly AbstractMesh[], layerMask: number, excluded: (mesh: AbstractMesh) => boolean): void {
+    this.cullChecks++;
+    const walked = this.checkList;
+    collectPlanarMirrorMeshes(this.scene, walked, layerMask, this.reflectionPlanes, excluded, false);
+    if (walked.length !== listed.length || walked.some((mesh, index) => mesh !== listed[index])) this.cullMismatches++;
+    walked.length = 0;
   }
 
   /**
