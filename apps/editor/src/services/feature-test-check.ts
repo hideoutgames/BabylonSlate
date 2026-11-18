@@ -316,8 +316,15 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  *   off`: vertex, raster and attachment cost without shading), the main pass unlit (all per-pixel lighting and shadow
  *   sampling), its shadow lookups lit with the maps still drawn, no local lights, and half resolution (per-pixel against
  *   fixed cost);
- * - the passes that draw the world again: shadows off, every geometry effect off, post-processing off, and all of them
- *   with the captures and Mirrors' live reflection at once (`world drawn once`).
+ * - the shadow filter low with the maps unchanged (four compare taps a lookup in place of the level's): against
+ *   `shadow taps off` it tells the taps themselves from the rest of a lookup;
+ * - the passes that draw the world again: the shadow map passes off (the maps stay allocated and sampled), every
+ *   geometry effect off, post-processing off, and all of them with the captures and Mirrors' live reflection at once
+ *   (`world drawn once`).
+ *
+ * A Profile step never changes a setting that releases the shadow atlas (`quality shadows enabled off`, a shadow level
+ * or resolution change): `quality reset` would re-create it, a 256 MiB depth texture array, on top of the programs the
+ * steps have compiled, and a memory-limited device kills the page.
  *
  * `light` (few draws) takes them all and the Scene Layers hidden (the device-resolution tail). `heavy` (many draws, no
  * Mirror on screen; the control view) takes what follows the draws rather than the pixels: the world hidden, the shadow
@@ -339,8 +346,11 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
   const unlit = world("main pass unlit", "lighting");
   const taps = world("shadow taps off", "shadowtaps");
   const local = world("local lights off", "locallights");
+  // Four compare taps a lookup, the maps and their atlas unchanged: what the taps cost, apart from the lookup around them.
+  const filterLow: FeatureTestBreakdownStep = { label: "shadow filter low", commands: ["quality shadows filter low"], fields: ["shadows.filter"], overlaps: true };
+  // No map redrawn, the last maps still sampled: what redrawing the maps costs.
+  const shadowPassesOff = shadowPartOff("passes", "shadow passes off");
   const half: FeatureTestBreakdownStep = { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale", "resolution.dynamic"], overlaps: true };
-  const shadowsOff: FeatureTestBreakdownStep = { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows", "shadows.filter"], overlaps: true };
   // Every effect that reads the geometry pass, so the pass itself goes too.
   const geometryOff: FeatureTestBreakdownStep = {
     label: "geometry effects off",
@@ -351,15 +361,16 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
     fields: GEOMETRY_EFFECT_FIELDS, overlaps: true,
   };
   const postOff: FeatureTestBreakdownStep = { label: "post off", commands: ["postprocessing off"], restore: [post], fields: ["post.enabled"], overlaps: true };
-  // Every pass that draws the world again besides the main one off together: what drawing it once would save.
+  // Every pass that draws the world again besides the main one off together: what drawing it once would save. The shadow
+  // map passes stop while the maps stay allocated and sampled, so no atlas is released.
   const once: FeatureTestBreakdownStep = {
     label: "world drawn once",
     commands: [
-      "quality shadows enabled off", "quality postprocessing ambientOcclusion off", "quality postprocessing reflections off",
+      "shadowdebug passes off", "quality postprocessing ambientOcclusion off", "quality postprocessing reflections off",
       "quality postprocessing volumetricLighting off", "quality shadows screen off", "rendertargets off", "quality geometry mirrors environment",
     ],
-    restore: [captures],
-    fields: ["shadows", "shadows.filter", ...GEOMETRY_EFFECT_FIELDS, "captures", "geometry.mirrors"], overlaps: true,
+    restore: ["shadowdebug passes on", captures],
+    fields: ["shadows.debug", ...GEOMETRY_EFFECT_FIELDS, "captures", "geometry.mirrors"], overlaps: true,
   };
   return {
     views: [
@@ -369,15 +380,13 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
           // Every Scene Layer hidden: the backbuffer is the world's size again, so the passes that ran at the device's
           // resolution for the layers (their draws, the upscale and sharpening to the output) go.
           { label: "scene layers hidden", commands: ["scenelayers off"], restore: [`scenelayers ${state.layers ? "on" : "off"}`], fields: ["layers"] },
-          geometryOff, postOff, shadowsOff, once,
+          shadowPassesOff, geometryOff, postOff, once, filterLow,
         ],
       },
       {
         name: "heavy", enter: [possessProfileView("heavy")], steps: [
           worldHidden,
-          // No map redrawn, the last maps still sampled: what redrawing the maps costs.
-          { label: "shadow passes off", commands: ["shadowdebug passes off"], restore: ["shadowdebug passes on"], fields: ["shadows.debug"], overlaps: true },
-          geometryOff, once,
+          shadowPassesOff, geometryOff, once,
         ],
       },
       {

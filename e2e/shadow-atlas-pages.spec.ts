@@ -8,6 +8,8 @@ import { SOFTWARE_GL_ARGS } from "./software-gl";
 // HAPTIC_SHADOW_ATLAS_PROOF_OUT (an absolute path) also receives the captured frames, to compare two builds byte for byte.
 const SOFTWARE_GL = process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || Boolean(process.env.CI);
 if (SOFTWARE_GL) test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
+// HAPTIC_LARGE_WORLD=1 builds the proof's Engine with Large World Rendering (Babylon's floating origin) on.
+const LARGE_WORLD = process.env.HAPTIC_LARGE_WORLD === "1";
 
 type Proof = typeof runShadowAtlasProof;
 
@@ -21,7 +23,7 @@ test("the shadow atlas's pages draw and sample every shadowed light's map, filte
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/?test=1&shadowAtlasProof=1");
   await page.waitForFunction(() => typeof (window as unknown as { __shadowAtlasProof?: unknown }).__shadowAtlasProof === "function");
-  const { captures, sampling, renderer } = await page.evaluate(() => (window as unknown as { __shadowAtlasProof: Proof }).__shadowAtlasProof());
+  const { captures, sampling, renderer } = await page.evaluate((largeWorld) => (window as unknown as { __shadowAtlasProof: Proof }).__shadowAtlasProof({ largeWorld }), LARGE_WORLD);
   const hashes = captures.map(({ filter, frame }) => ({ filter, sha256: createHash("sha256").update(Uint8Array.from(frame)).digest("hex") }));
   const summary = { renderer, sampling, hashes, maps: captures[0]!.maps, cascadeEnds: captures[0]!.cascadeEnds };
   await testInfo.attach("shadow-atlas-proof", { body: JSON.stringify(summary), contentType: "application/json" });

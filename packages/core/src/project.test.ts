@@ -601,6 +601,16 @@ describe("project schema", () => {
     });
   });
 
+  it("keeps Large World Rendering off unless a project saved it on", () => {
+    expect(normalizeProjectSettings(undefined).render.largeWorldRendering).toBe(false);
+    expect(createEmptyProject("Demo").settings.render.largeWorldRendering).toBe(false);
+    for (const saved of ["true", 1, null, {}])
+      expect(normalizeRenderProjectSettings({ largeWorldRendering: saved }).largeWorldRendering, String(saved)).toBe(false);
+    const on = normalizeRenderProjectSettings({ largeWorldRendering: true });
+    expect(on.largeWorldRendering).toBe(true);
+    expect(normalizeRenderProjectSettings(JSON.parse(JSON.stringify(on))).largeWorldRendering).toBe(true);
+  });
+
   it("starts new projects at High in every Scalability group, and keeps it on reload", () => {
     const labels = (settings: ProjectSettings) => {
       const effective = resolveRenderingQuality(settings.render);

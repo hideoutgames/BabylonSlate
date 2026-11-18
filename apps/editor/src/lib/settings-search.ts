@@ -111,6 +111,7 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
   ...category("rendering", [
     ["pipeline", "Pipeline", [
       ["Render Mode PBR CEL", "setting-render-mode"],
+      ["Large World Rendering Floating Origin", "setting-render-large-world"],
     ]],
     ["scalability", "Scalability", [
       ["Overall Quality", "quality-all"],

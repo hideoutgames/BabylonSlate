@@ -11,7 +11,7 @@ function deferred<T>() {
   const promise = new Promise<T>((done) => { resolve = done; });
   return { promise, resolve };
 }
-const request: ProjectEngineRequest = { projectGuid: "project", prepare: async () => {} };
+const request: ProjectEngineRequest = { projectGuid: "project", largeWorldRendering: false, prepare: async () => {} };
 
 // The real controller and session owner; only the GPU session and the game's
 // native release are stand-ins.

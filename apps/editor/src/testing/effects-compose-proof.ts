@@ -23,7 +23,7 @@ import {
   normalizeRenderingQuality,
   normalizeShadowSettings,
 } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings, largeWorldEngineOptions } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialBlendMode } from "@haptic/shader-graph";
 import { GlSignatureRecorder, installGlSignature } from "../../../../packages/render/src/gpu-frame-probe";
@@ -80,12 +80,12 @@ function png(pixels: Uint8Array): string {
   return canvas.toDataURL("image/png");
 }
 
-export async function runEffectsComposeProof(variant: EffectsComposeVariant): Promise<EffectsComposeCapture> {
+export async function runEffectsComposeProof(variant: EffectsComposeVariant, largeWorld = false): Promise<EffectsComposeCapture> {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, ...largeWorldEngineOptions(largeWorld) });
   engine.setHardwareScalingLevel(1);
   engine.setSize(WIDTH, HEIGHT);
   const scene = new Scene(engine);

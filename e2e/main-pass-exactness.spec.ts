@@ -5,6 +5,8 @@ import { SOFTWARE_GL_ARGS } from "./software-gl";
 // HAPTIC_RENDER_NATIVE_GPU=1 runs it on the machine's GPU outside CI: `--config playwright.perf.config.ts --project perf-gpu`.
 const SOFTWARE_GL = process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || Boolean(process.env.CI);
 if (SOFTWARE_GL) test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
+// HAPTIC_LARGE_WORLD=1 builds the proof's Engine with Large World Rendering (Babylon's floating origin) on.
+const LARGE_WORLD = process.env.HAPTIC_LARGE_WORLD === "1";
 
 type Proof = typeof runMainPassExactnessProof;
 
@@ -19,7 +21,7 @@ async function run(page: Page, reference: boolean) {
   // A page of its own per run: nothing compiled in one is reused by the other.
   await page.goto("/?test=1&mainPassExactnessProof=1");
   await page.waitForFunction(() => typeof (window as unknown as { __mainPassExactnessProof?: unknown }).__mainPassExactnessProof === "function");
-  const result = await page.evaluate((value) => (window as unknown as { __mainPassExactnessProof: Proof }).__mainPassExactnessProof({ reference: value }), reference);
+  const result = await page.evaluate((value) => (window as unknown as { __mainPassExactnessProof: Proof }).__mainPassExactnessProof({ reference: value.reference, largeWorld: value.largeWorld }), { reference, largeWorld: LARGE_WORLD });
   page.off("console", listener);
   expect(errors).toEqual([]);
   return result;

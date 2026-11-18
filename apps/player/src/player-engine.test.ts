@@ -12,14 +12,14 @@ vi.mock("@haptic/render", () => ({ createEngineSession: createSession }));
 vi.mock("./boot", () => ({ startPlayer: start }));
 import { startPlayerWithEngine } from "./player-engine";
 
-async function game() {
+async function game(renderSettings = DEFAULT_RENDER_PROJECT_SETTINGS) {
   const material = createDefaultMaterialDocument("Packed Surface");
   const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
   const files = await exportGame({
     platform: "web",
     bundleDebugger: false,
     startupSceneGuid: "scene",
-    renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+    renderSettings,
     scripts: [],
     assets: [
       { guid: "scene", type: "Scene", sceneGuid: "scene", requiredDependencies: ["material"], bytes: encode(createDefaultScene()) },
@@ -106,6 +106,14 @@ describe("packed player Engine lifetime", () => {
     handle.stop();
     handle.stop();
     expect(events).toEqual(["player", "engine"]);
+  });
+
+  it("builds the Engine in the exported project's Large World Rendering, off by default", async () => {
+    for (const largeWorldRendering of [false, true]) {
+      const handle = await startPlayerWithEngine({ game: await game({ ...DEFAULT_RENDER_PROJECT_SETTINGS, largeWorldRendering }), canvas });
+      expect(createSession.mock.calls.at(-1)![0].largeWorldRendering).toBe(largeWorldRendering);
+      handle.stop();
+    }
   });
 
   it("releases an engine that completes after Stop without starting authored runtime", async () => {

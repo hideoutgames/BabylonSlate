@@ -15,6 +15,8 @@ export interface EngineSessionOptions {
   decoders?: Pick<CreateEngineOptions, "ktx2BasePath" | "dracoBasePath" | "meshoptBasePath">;
   /** Views of this Engine may show its canvas directly while one is on screen (the editor's project Engine, the player's); absent: they copy. */
   presentViewsDirectly?: boolean;
+  /** The project's Large World Rendering (`largeWorldEngineOptions`), fixed for the Engine's life; absent: off. */
+  largeWorldRendering?: boolean;
   signal?: AbortSignal;
 }
 
@@ -25,7 +27,7 @@ export async function createEngineSession(options: EngineSessionOptions): Promis
   const canvas = options.createCanvas();
   let engine: AbstractEngine | undefined;
   try {
-    engine = createAppEngine(canvas, options.decoders);
+    engine = createAppEngine(canvas, options.decoders, options.largeWorldRendering === true);
     signal?.throwIfAborted();
     if ("webGLVersion" in engine && engine.webGLVersion !== 2) {
       throw new Error("WebGL2 is required but unavailable in this browser.");

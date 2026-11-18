@@ -26,7 +26,7 @@ import {
   normalizeShadowSettings,
   type RenderMode,
 } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings, largeWorldEngineOptions } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialBlendMode } from "@haptic/shader-graph";
 import { GEOMETRY_PASS_WITHOUT_COLOR } from "../../../../packages/render/src/geometry-surface-output-block";
@@ -51,7 +51,7 @@ export type GeometryPassLightingCapture = {
   tasks: string[];
 };
 
-export async function runGeometryPassLightingProof(options: { keepGeometryLighting: boolean }) {
+export async function runGeometryPassLightingProof(options: { keepGeometryLighting: boolean; largeWorld?: boolean }) {
   const block = HapticLightingBlock.prototype as unknown as { _buildBlock(state: NodeMaterialBuildState): unknown };
   const build = block._buildBlock;
   if (options.keepGeometryLighting) {
@@ -66,7 +66,7 @@ export async function runGeometryPassLightingProof(options: { keepGeometryLighti
   canvas.width = 160;
   canvas.height = 100;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, ...largeWorldEngineOptions(options.largeWorld === true) });
   engine.setSize(canvas.width, canvas.height);
   const scene = new Scene(engine);
   try {

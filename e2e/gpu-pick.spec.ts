@@ -5,11 +5,11 @@ import { SOFTWARE_GL_ARGS } from "./software-gl";
 if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
   test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
-// `editor` renders like the editor viewport: a floating-origin engine with the gizmo's utility layer
+// `editor` renders like the editor viewport of a project with Large World Rendering on: a floating-origin engine with the gizmo's utility layer
 // drawn after the scene each frame, which leaves Babylon's floating-origin context on the gizmo scene.
 const VARIANTS = {
   bare: "1×1 GPU object-ID pick follows drawn geometry at any pixel",
-  editor: "1×1 GPU object-ID pick follows drawn geometry at any pixel with the editor's floating origin and gizmo layer",
+  editor: "1×1 GPU object-ID pick follows drawn geometry at any pixel with Large World Rendering's floating origin and the gizmo layer",
 } as const;
 
 for (const variant of ["bare", "editor"] as const) test(VARIANTS[variant], async ({ page }) => {

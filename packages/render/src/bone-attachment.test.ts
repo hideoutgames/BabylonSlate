@@ -173,10 +173,12 @@ describe("render bone attachment", () => {
     childSlot.scale = { x: 6, y: 6, z: 6 };
     attach("Hand.R");
     apply();
-    expect(child.getAbsolutePosition().asArray()).toEqual([6, 2, 0]);
+    // 64-bit matrices: equal to the last few places, not to the bit.
+    const close = (values: number[], expected: number[]) => values.forEach((value, index) => expect(value).toBeCloseTo(expected[index]!, 9));
+    close(child.getAbsolutePosition().asArray(), [6, 2, 0]);
     const scale = new Vector3();
     child.getWorldMatrix().decompose(scale);
-    expect(scale.asArray()).toEqual([6, 6, 6]);
+    close(scale.asArray(), [6, 6, 6]);
     hand.setPosition(new Vector3(0, 4, 0));
     apply();
     expect(child.getAbsolutePosition().x).toBeCloseTo(2);
