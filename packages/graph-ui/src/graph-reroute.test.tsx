@@ -319,8 +319,10 @@ describe("Format with Reroute knots", () => {
     // Get and Add share the first parameter row, which starts under Log's First lane.
     expect(at("get").y).toBe(at("add").y);
     expect(at("add").x).toBeGreaterThan(at("get").x);
-    // The knots keep the 40-unit wire spacing from the exec wire (72 below Log's top).
-    for (const knot of knots) expect(knot.position.y).toBeGreaterThanOrEqual(at("log").y + 72 + 40);
+    // The last knot sits level with Log's First pin (row 1: 116 below its top), so the wire runs
+    // level into it, one pin row under the exec wire.
+    const last = chain[chain.length - 1]!;
+    expect(at(last).y + 35 / 2).toBe(at("log").y + 116);
     const selected = Array.from(container.querySelectorAll(".react-flow__node.selected")).map((element) => element.getAttribute("data-id"));
     expect(selected).toEqual(["event"]);
 
