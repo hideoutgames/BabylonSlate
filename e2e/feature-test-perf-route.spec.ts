@@ -55,7 +55,9 @@ import {
  *      turn with `possess` instead of sampling the camera tour, and each view reports its GL pass structure and, with
  *      HAPTIC_PERF_GPU_PASSES=1, its GPU time per stage and pass from timer queries, `gpuprobe timers`),
  *      HAPTIC_PERF_VARIANTS (with HAPTIC_PERF_VIEWS: a JSON list of `{ label, commands, restore? }`; each view measures
- *      its baseline, then each variant followed by its restore and the baseline again, A B A C A).
+ *      its baseline, then each variant followed by its restore and the baseline again, A B A C A),
+ *      HAPTIC_PERF_HOLD_MS (default 3000: each held view's measured window; it reports its animation frames' rate,
+ *      `averageFps`, beside `drawnFps`, and the view's attempted, drawn and held frames, `view`).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -108,6 +110,7 @@ type ProfileViewName = keyof typeof FEATURE_TEST_PROFILE_VIEWS;
 const VIEWS = (process.env.HAPTIC_PERF_VIEWS ?? "").split(",").map((view) => view.trim())
   .filter((view): view is ProfileViewName => view in FEATURE_TEST_PROFILE_VIEWS);
 const GPU_PASSES = process.env.HAPTIC_PERF_GPU_PASSES === "1";
+const HOLD_MS = number("HAPTIC_PERF_HOLD_MS", 3_000, 1_000);
 type Variant = { label: string; commands: string[]; restore?: string[] };
 const VARIANTS = JSON.parse(process.env.HAPTIC_PERF_VARIANTS ?? "[]") as Variant[];
 if (DEVICE) test.use({ viewport: { width: Number(DEVICE[1]), height: Number(DEVICE[2]) }, deviceScaleFactor: Number(DEVICE[3]) });
@@ -447,7 +450,7 @@ async function probeRun(page: Page, action: "timers" | "burst") {
 async function measureHeld(page: Page) {
   await waitForViewDrawing(page);
   await page.waitForTimeout(SETTLE_MS);
-  const window = await samplePlay(page, Math.min(SAMPLE_MS, 3_000));
+  const window = await samplePlay(page, HOLD_MS);
   await runConsoleCommand(page, "gpuprobe on");
   await page.waitForTimeout(1_000);
   const signature = (await gpuProbeReading(page))?.signature ?? null;
@@ -455,7 +458,7 @@ async function measureHeld(page: Page) {
   const timers = GPU_PASSES ? [await probeRun(page, "timers"), await probeRun(page, "timers")] : null;
   const burst = GPU_PASSES ? await probeRun(page, "burst") : null;
   return {
-    drawnFps: window.drawnFps, frameCpu: window.frameCpu.medianMs, frameDraws: window.frameDraws, drawsPerPass: window.drawsPerPass,
+    averageFps: window.averageFps, drawnFps: window.drawnFps, view: window.view, frameCpu: window.frameCpu.medianMs, frameDraws: window.frameDraws, drawsPerPass: window.drawsPerPass,
     cpuMsPerPass: window.cpuMsPerPass,
     width: window.rendering.width, height: window.rendering.height, settings: window.rendering.settings, signature, timers, burst,
   };
