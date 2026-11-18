@@ -79,9 +79,11 @@ test("a Class graph wire splits with a Reroute knot, and Cut Links removes wires
   let knotId = (await knots.getAttribute("data-id"))!;
   const glyph = (nodeId: string, pinId: string) =>
     editor.locator(`.react-flow__node[data-id="${nodeId}"] [data-handleid="${pinId}"] .graph-pin-visual`)
-      .evaluate((element) => element.outerHTML);
-  // Drawn exactly as Print's wired exec input: the exec glyph in the exec colour.
-  expect(await glyph(knotId, "in")).toBe(await glyph("print", "execIn"));
+      .evaluate((element) => ({ shape: element.getAttribute("data-pin-shape"), style: element.getAttribute("style") }));
+  // A knot's pins are always round, in the colour of what it carries: here the exec colour of Print's input.
+  const knotPin = await glyph(knotId, "in");
+  expect(knotPin.shape).toBe("circle");
+  expect(knotPin.style).toBe((await glyph("print", "execIn")).style);
   await shot(page, editor, "class-knot", testInfo);
 
   await page.getByTestId("undo-document").click();
