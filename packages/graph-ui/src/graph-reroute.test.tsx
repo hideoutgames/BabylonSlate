@@ -196,6 +196,20 @@ describe("Reroute insertion", () => {
     }
   });
 
+  it("still selects a wire on a single click, adding nothing", async () => {
+    const restore = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const onEdgeSelectionChange = vi.fn();
+      const { container } = renderGraph({ initialGraph: wiredGraph(), reroute, onChange, onEdgeSelectionChange });
+      fireEvent.click(await findWire(container, DATA_WIRE), { clientX: 300, clientY: 200 });
+      await waitFor(() => expect(onEdgeSelectionChange).toHaveBeenLastCalledWith([DATA_WIRE]));
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
   it("leaves a Pose wire whole and lets the host handle its double-click", async () => {
     const restore = stubMeasuredGraphLayout();
     try {
