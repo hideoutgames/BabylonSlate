@@ -15,6 +15,13 @@ export interface ViewportZoomDriveOptions {
   isEnabled?: () => boolean;
   /** True applies a tap's whole step at once instead of gliding (Reduce Motion). */
   instantStep?: () => boolean;
+  /**
+   * True when zooming further in `direction` cannot change the view (a
+   * clamped camera). Read each frame; a press at its limit ends.
+   */
+  atLimit?: (direction: ViewportZoomDirection) => boolean;
+  /** Press clock in the `requestFrame` timebase; defaults to `performance.now()`. */
+  now?: () => number;
   requestFrame?: (callback: FrameRequestCallback) => number;
   cancelFrame?: (id: number) => void;
 }
@@ -47,6 +54,7 @@ export function createViewportZoomDrive(
     ((callback: FrameRequestCallback) => requestAnimationFrame(callback));
   const cancelFrame =
     options.cancelFrame ?? ((id: number) => cancelAnimationFrame(id));
+  const now = options.now ?? (() => performance.now());
   const enabled = () => options.isEnabled?.() ?? true;
 
   let disposed = false;
@@ -57,7 +65,6 @@ export function createViewportZoomDrive(
   let applied = 0;
   let frameId = 0;
   let lastTime = 0;
-  let hasLastTime = false;
   let releaseLease: (() => void) | null = null;
 
   const end = () => {
@@ -74,17 +81,13 @@ export function createViewportZoomDrive(
   const tick = (time: number) => {
     frameId = 0;
     if (!active) return;
-    if (!enabled()) {
+    if (!enabled() || options.atLimit?.(direction) === true) {
       end();
       return;
     }
-    let dt = 0;
-    if (hasLastTime) {
-      const raw = (time - lastTime) / 1000;
-      dt = Number.isFinite(raw) ? Math.min(0.05, Math.max(0, raw)) : 0;
-    }
+    const raw = (time - lastTime) / 1000;
+    const dt = Number.isFinite(raw) ? Math.min(0.05, Math.max(0, raw)) : 0;
     lastTime = time;
-    hasLastTime = true;
     elapsed += dt;
     let target = elapsed * RATE_LOG_PER_SECOND;
     if (!held && target > TAP_LOG) target = TAP_LOG;
@@ -111,8 +114,8 @@ export function createViewportZoomDrive(
     held = true;
     elapsed = 0;
     applied = 0;
-    lastTime = 0;
-    hasLastTime = false;
+    // Seed the clock at the press so the first frame already zooms.
+    lastTime = now();
     if (!releaseLease && options.scheduler) {
       releaseLease = options.scheduler.acquireContinuous("viewport-zoom");
     }

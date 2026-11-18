@@ -9,6 +9,8 @@ import type {
 } from "@haptic/core";
 import {
   createEditorCamera,
+  MAX_CAMERA_RADIUS,
+  MIN_CAMERA_RADIUS,
   type EditorCameraController,
 } from "./editor-camera";
 import {
@@ -515,6 +517,13 @@ export function createEditorViewportTools({
     scheduler,
     isEnabled: navigationActive,
     instantStep: () => options.editorZoomInstant?.() === true,
+    // Only the editor camera clamps (3D radius); a piloted camera and 2D zoom never stall.
+    atLimit: (direction) =>
+      !pilot.active() &&
+      cameraController.mode === "3d" &&
+      (direction === 1
+        ? cameraController.camera.radius <= MIN_CAMERA_RADIUS
+        : cameraController.camera.radius >= MAX_CAMERA_RADIUS),
   });
   onRollback(() => zoomDrive.dispose());
   // A handle being disposed takes no more input: a piloted move still waiting
