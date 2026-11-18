@@ -43,6 +43,7 @@ describe("createViewportZoomDrive", () => {
         cancelFrame: (id) => {
           frames = frames.filter((frame) => frame.id !== id);
         },
+        now: () => nowMs,
         ...options,
       },
     );
@@ -60,7 +61,7 @@ describe("createViewportZoomDrive", () => {
     let count = 0;
     while (frames.length > 0) {
       if (count >= limit) throw new Error("zoom drive never settled");
-      pump(count === 0 ? 0 : dtMs);
+      pump(dtMs);
       count += 1;
     }
     return count;
@@ -82,6 +83,15 @@ describe("createViewportZoomDrive", () => {
     expect(frames).toHaveLength(0);
     expect(acquired).toEqual(["viewport-zoom"]);
     expect(released).toBe(1);
+  });
+
+  it("zooms on the first frame after a press, timed from the press", () => {
+    const drive = create();
+    nowMs = 1000;
+    drive.start(1);
+    pump(FRAME_MS);
+    expect(factors).toHaveLength(1);
+    expect(factors[0]).toBeCloseTo(3 ** (1 / 60), 10);
   });
 
   it("zooms out a tap by the reciprocal step", () => {
@@ -136,6 +146,34 @@ describe("createViewportZoomDrive", () => {
     expect(frames).toHaveLength(0);
     expect(released).toBe(1);
     expect(factors).toHaveLength(1);
+
+    drive.step(-1);
+    expect(factors).toHaveLength(2);
+    expect(factors[1]).toBeCloseTo(1 / 1.2, 12);
+    expect(frames).toHaveLength(0);
+    expect(acquired).toHaveLength(2);
+    expect(released).toBe(2);
+  });
+
+  it("ends a held press once the camera reports its zoom limit in that direction", () => {
+    let limited = false;
+    const asked: number[] = [];
+    const drive = create({
+      atLimit: (direction) => {
+        asked.push(direction);
+        return limited;
+      },
+    });
+    drive.start(-1);
+    pump(FRAME_MS);
+    pump(FRAME_MS);
+    const before = factors.length;
+    limited = true;
+    pump(FRAME_MS);
+    expect(factors).toHaveLength(before);
+    expect(frames).toHaveLength(0);
+    expect(released).toBe(1);
+    expect(asked.every((direction) => direction === -1)).toBe(true);
   });
 
   it("keeps zooming an instant press that is held past one step, without a jump", () => {

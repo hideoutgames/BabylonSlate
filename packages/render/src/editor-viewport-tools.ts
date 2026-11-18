@@ -518,12 +518,13 @@ export function createEditorViewportTools({
     isEnabled: navigationActive,
     instantStep: () => options.editorZoomInstant?.() === true,
     // Only the editor camera clamps (3D radius); a piloted camera and 2D zoom never stall.
+    // The pilot check runs last: it resolves the Default Camera actor.
     atLimit: (direction) =>
-      !pilot.active() &&
       cameraController.mode === "3d" &&
       (direction === 1
         ? cameraController.camera.radius <= MIN_CAMERA_RADIUS
-        : cameraController.camera.radius >= MAX_CAMERA_RADIUS),
+        : cameraController.camera.radius >= MAX_CAMERA_RADIUS) &&
+      !pilot.active(),
   });
   onRollback(() => zoomDrive.dispose());
   // A handle being disposed takes no more input: a piloted move still waiting
