@@ -71,8 +71,22 @@ export function noteDrawn(mesh: AbstractMesh): void {
   drawnWith.set(mesh, mesh.material ?? null);
 }
 
+/** Per Scene, a number that moves whenever one of its meshes is hidden or revealed. */
+const revisions = new WeakMap<Scene, number>();
+
+function noteRevealChange(mesh: AbstractMesh): void {
+  const scene = mesh.getScene();
+  revisions.set(scene, (revisions.get(scene) ?? 0) + 1);
+}
+
+/** A number that moves whenever one of `scene`'s meshes is hidden until ready or revealed (`isRevealPending` changes). */
+export function revealPendingRevision(scene: Scene): number {
+  return revisions.get(scene) ?? 0;
+}
+
 export function hideUntilReady(mesh: AbstractMesh): void {
   if (pending.has(mesh) && groupOf.has(mesh)) return;
+  if (!pending.has(mesh)) noteRevealChange(mesh);
   pending.add(mesh);
   const root = actorRoot(mesh);
   groupOf.set(mesh, root);
@@ -158,7 +172,7 @@ function revealIfReady(root: Node): void {
   for (const member of [...members]) {
     if (!ready.has(member)) continue;
     members.delete(member);
-    pending.delete(member);
+    if (pending.delete(member)) noteRevealChange(member);
     ready.delete(member);
     groupOf.delete(member);
     noteDrawn(member);

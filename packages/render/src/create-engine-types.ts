@@ -167,6 +167,12 @@ export interface EngineHandle {
    * after a context loss or disposal, which end it.
    */
   stubWebGlDraws: (on: boolean) => boolean;
+  /**
+   * Test builds: points in pick space over the Scene Layers' interactive controls (`SceneLayerCompositor.hitTargets`),
+   * and what the overlay pick finds at each (layer, actor, component or control part, Hit Test), as a pointer would.
+   */
+  sceneLayerHitTargets: () => Array<{ layerId: string; mesh: string; x: number; y: number }>;
+  sceneLayerPickHits: (points: ReadonlyArray<{ x: number; y: number }>) => string[][];
   /** Explicit next coherent game presentation; rejects concurrent profiling. */
   captureFrame: () => Promise<RenderFrameReport>;
   cancelFrameCapture: (reason?: string) => void;

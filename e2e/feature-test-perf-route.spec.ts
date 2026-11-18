@@ -39,6 +39,11 @@ import {
  *      HAPTIC_PERF_VERIFY_BATCHES=1 (Play checks each Scene Layer pass whose draw batches kept their work against the
  *      full path: `layerWork[].batching.mismatches`, and each layer's drawable mesh list against a full filter every
  *      frame: `layerWork[].drawable.mismatches`),
+ *      HAPTIC_PERF_VERIFY_DRAW_LISTS=1 (every fourth frame of each Scene Layer takes Babylon's full path, whose sorted
+ *      lists must equal the layer's retained draw list: `layerWork[].drawList.mismatches`),
+ *      HAPTIC_PERF_LAYER_PARITY=1 (after the windows, with the game paused, the play canvas and the overlay picks over the Scene
+ *      Layers' interactive controls with the retained draw lists and with every layer frame on Babylon's full path:
+ *      `play.layerParity`, whose differing pixels and picks must be 0),
  *      HAPTIC_PERF_IDLE_HALF_RATE=1 (the editor viewport keeps Half Rate When Idle on; the route turns it off otherwise),
  *      HAPTIC_PERF_VERIFY_JOURNAL=1 (Play follows each shadow caster walk of the change journal with the full walk, which
  *      must find nothing more: `rendererWork.shadowJournal.mismatches` and `missedKinds`),
@@ -95,6 +100,10 @@ const VERIFY_SCOPED = process.env.HAPTIC_PERF_VERIFY_SCOPED === "1";
 const GPU_BUSY = process.env.HAPTIC_PERF_GPU_BUSY === "1";
 /** Each Scene Layer pass that keeps its batches' work is checked against the full path (the measured frames carry its cost). */
 const VERIFY_BATCHES = process.env.HAPTIC_PERF_VERIFY_BATCHES === "1";
+/** Every fourth Scene Layer frame takes Babylon's full path and checks the retained draw list against it (those frames carry its cost). */
+const VERIFY_DRAW_LISTS = process.env.HAPTIC_PERF_VERIFY_DRAW_LISTS === "1";
+/** After the windows, with the game paused: the Scene Layers' picture and picks with the retained draw list and on Babylon's full path. */
+const LAYER_PARITY = process.env.HAPTIC_PERF_LAYER_PARITY === "1";
 /** Leaves Engine Settings' Half Rate When Idle on, to measure the idle editor viewport as a user has it by default. */
 const IDLE_HALF_RATE = process.env.HAPTIC_PERF_IDLE_HALF_RATE === "1";
 /** Each shadow caster walk of the change journal in Play is followed by the full walk (the measured frames carry its cost). */
@@ -133,6 +142,10 @@ type PlayHost = {
     spawnableWarm: () => { materials: number; models: number; ms: number } | null;
     verifyScopedReadinessProbes: (enabled: boolean) => void;
     verifyRetainedOverlayBatches: (enabled: boolean) => void;
+    verifyLayerDrawLists: (enabled: boolean) => void;
+    drawLayersFullPath: (enabled: boolean) => void;
+    sceneLayerHitTargets: () => Array<{ layerId: string; mesh: string; x: number; y: number }>;
+    sceneLayerPickHits: (points: ReadonlyArray<{ x: number; y: number }>) => string[][];
     verifyRenderChangeJournal: (enabled: boolean) => void;
     verifyMirrorContentPolls: (enabled: boolean) => void;
     verifyCaptureActorLists: (enabled: boolean) => void;
@@ -387,6 +400,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   const spawnableWarm = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.spawnableWarm() ?? null);
   if (VERIFY_SCOPED) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyScopedReadinessProbes(true));
   if (VERIFY_BATCHES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyRetainedOverlayBatches(true));
+  if (VERIFY_DRAW_LISTS) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyLayerDrawLists(true));
   if (VERIFY_JOURNAL) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyRenderChangeJournal(true));
   if (VERIFY_MIRRORS) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorContentPolls(true));
   if (VERIFY_CAPTURES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyCaptureActorLists(true));
@@ -421,6 +435,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
     await cdp.send("Profiler.disable");
     writeFileSync(`${process.env.HAPTIC_PERF_OUT}.${scene}-play.cpuprofile`, JSON.stringify(profile));
   }
+  const parity = LAYER_PARITY ? await layerParity(page) : null;
   const liveObjects = await page.evaluate(
     () => (globalThis as unknown as PlayHost).__hapticPlayTest?.liveObjectCounts() ?? null,
   );
@@ -428,7 +443,57 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
-  return { playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects };
+  return { playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects, ...(parity ? { layerParity: parity } : {}) };
+}
+
+/**
+ * With the game paused: the play canvas twice with the Scene Layers' retained draw lists (the second shows what a paused
+ * frame changes by itself), then with every layer frame on Babylon's full path, compared pixel by pixel; and the
+ * overlay picks at points over every interactive control on both paths.
+ */
+async function layerParity(page: Page) {
+  await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyLayerDrawLists(false));
+  await runConsoleCommand(page, "pause");
+  await page.waitForTimeout(1500);
+  const canvas = page.getByTestId("play-canvas");
+  const shot = async () => (await canvas.screenshot()).toString("base64");
+  const retained = await shot();
+  await page.waitForTimeout(500);
+  const retainedAgain = await shot();
+  const targets = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.sceneLayerHitTargets());
+  const pick = () => page.evaluate((points) => (globalThis as unknown as PlayHost).__hapticPlayTest!.sceneLayerPickHits(points), targets);
+  const retainedHits = await pick();
+  await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.drawLayersFullPath(true));
+  await page.waitForTimeout(1500);
+  const full = await shot();
+  const fullHits = await pick();
+  await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.drawLayersFullPath(false));
+  await runConsoleCommand(page, "resume");
+  const compare = (a: string, b: string) => page.evaluate(async ([first, second]) => {
+    const load = async (base64: string) => {
+      const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
+      const surface = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = surface.getContext("2d")!;
+      context.drawImage(bitmap, 0, 0);
+      return context.getImageData(0, 0, bitmap.width, bitmap.height);
+    };
+    const [x, y] = await Promise.all([load(first!), load(second!)]);
+    let differing = 0;
+    for (let index = 0; index < x.data.length; index += 4)
+      if (x.data[index] !== y.data[index] || x.data[index + 1] !== y.data[index + 1] || x.data[index + 2] !== y.data[index + 2]) differing += 1;
+    return { pixels: x.width * x.height, differing };
+  }, [a, b]);
+  const pickDifferences = targets.flatMap((target, index) =>
+    JSON.stringify(retainedHits[index]) === JSON.stringify(fullHits[index]) ? [] : [{ ...target, retained: retainedHits[index], full: fullHits[index] }]);
+  return {
+    retainedVsRetained: await compare(retained, retainedAgain),
+    retainedVsFull: await compare(retained, full),
+    targets: targets.length,
+    controls: new Set(targets.map((target) => `${target.layerId}/${target.mesh}`)).size,
+    pointsHit: retainedHits.filter((hits) => hits.length > 0).length,
+    pickDifferences: pickDifferences.length,
+    firstPickDifferences: pickDifferences.slice(0, 4),
+  };
 }
 
 type GpuProbeReading = {
@@ -601,7 +666,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     viewportCss: page.viewportSize(),
     adapter,
     env: {
-      SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, LARGE_WORLD, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED,
+      SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, LARGE_WORLD, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED, VERIFY_DRAW_LISTS,
       DEVICE: DEVICE?.[0] ?? null, VIEWS, GPU_PASSES, VARIANTS,
     },
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },

@@ -25,6 +25,7 @@ export * from "./draw-calls";
 export { DRAW_PASSES, type DrawPass, type DrawPassCounts } from "./draw-passes";
 export type { OverlayAloneReason, OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
 export { verifyRetainedOverlayBatches } from "./overlay-draw-batcher";
+export { drawLayersFullPath, verifyLayerDrawLists } from "./layer-draw-list";
 export type { InstancePoolDiagnostics, InstancingIneligibility } from "./instance-pool";
 export * from "./ktx2-transcoder";
 export * from "./gltf-mesh-decoders";

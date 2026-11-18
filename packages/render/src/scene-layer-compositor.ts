@@ -11,7 +11,8 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
-import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
@@ -36,6 +37,7 @@ import {
 import { installEngineDefaultMaterial } from "./default-material";
 import { sceneDrawBatchWork, setSceneDrawBatching, type OverlayBatchWork } from "./overlay-draw-batcher";
 import { keepLayerDrawableMeshes, layerDrawableMeshWork, type LayerDrawableMeshWork } from "./layer-drawable-meshes";
+import { keepLayerDrawList, layerDrawListWork, type LayerDrawListWork } from "./layer-draw-list";
 import { isSceneFrameReady } from "./scene-perf";
 import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
@@ -166,6 +168,9 @@ export class SceneLayerCompositor {
     // Most of a HUD's meshes are hidden actor roots and disabled control parts: the mesh loop and the cull read only
     // those that can draw (`layer-drawable-meshes.ts`).
     keepLayerDrawableMeshes(scene);
+    // Babylon's per-frame mesh loop, cull, list preparation and sorts see only what the batcher draws; the objects pass
+    // draws a retained list kept from what changed (`layer-draw-list.ts`).
+    keepLayerDrawList(scene);
     scene.lightsEnabled = false;
     scene.skipPointerMovePicking = false;
     scene.autoClear = false;
@@ -349,16 +354,16 @@ export class SceneLayerCompositor {
   /**
    * Each layer's renderer work in draw order (`ForwardSceneFrameGraph.diagnostics`: its graph builds, strict readiness
    * checks with their reasons and time, and what the last failed one waited for) with its mesh count, how its draw
-   * batcher kept its work (`sceneDrawBatchWork`) and how its drawable mesh list was kept (`layerDrawableMeshWork`).
-   * Reading starts the measuring, as a view's own does.
+   * batcher kept its work (`sceneDrawBatchWork`), how its drawable mesh list was kept (`layerDrawableMeshWork`) and how
+   * its retained draw list was kept and checked (`layerDrawListWork`). Reading starts the measuring, as a view's own does.
    */
   diagnostics(): Array<{
     layerId: string; meshes: number; work: ReturnType<SceneRenderCoordinator["diagnostics"]>; batching: OverlayBatchWork | null;
-    drawable: LayerDrawableMeshWork | null;
+    drawable: LayerDrawableMeshWork | null; drawList: LayerDrawListWork | null;
   }> {
     return this.orderedLayers().map((layer) => ({
       layerId: layer.layerId, meshes: layer.scene.meshes.length, work: layer.renderer.diagnostics(), batching: sceneDrawBatchWork(layer.scene),
-      drawable: layerDrawableMeshWork(layer.scene),
+      drawable: layerDrawableMeshWork(layer.scene), drawList: layerDrawListWork(layer.scene),
     }));
   }
 
@@ -694,6 +699,37 @@ export class SceneLayerCompositor {
       }
     }
     return hits;
+  }
+
+  /**
+   * Test builds: points in pick space (as `pickHits` takes them) over every enabled, visible, pickable mesh of a ready
+   * layer that takes pointer input (a button, a joystick or a form control part): its projected bounds' centre and four
+   * points halfway to its corners.
+   */
+  hitTargets(): Array<{ layerId: string; mesh: string; x: number; y: number }> {
+    const points: Array<{ layerId: string; mesh: string; x: number; y: number }> = [];
+    for (const layer of this.orderedLayers()) {
+      if (!this.isLayerReady(layer.layerId)) continue;
+      this.bindHudCamera(layer);
+      const size = pickBufferSize(layer.scene);
+      const viewport = new Viewport(0, 0, size.width, size.height);
+      const transform = layer.camera.getViewMatrix().multiply(layer.camera.getProjectionMatrix());
+      for (const mesh of layer.scene.meshes) {
+        if (!mesh.isEnabled() || !mesh.isVisible || !mesh.isPickable || !isOverlayTouchTarget(overlayMetadataOf(mesh))) continue;
+        const box = mesh.getBoundingInfo().boundingBox;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const corner of box.vectorsWorld) {
+          const projected = Vector3.Project(corner, Matrix.IdentityReadOnly, transform, viewport);
+          minX = Math.min(minX, projected.x); maxX = Math.max(maxX, projected.x);
+          minY = Math.min(minY, projected.y); maxY = Math.max(maxY, projected.y);
+        }
+        if (!Number.isFinite(minX + minY + maxX + maxY)) continue;
+        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, hx = (maxX - minX) / 4, hy = (maxY - minY) / 4;
+        for (const [dx, dy] of [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]] as const)
+          points.push({ layerId: layer.layerId, mesh: mesh.name, x: cx + dx * hx, y: cy + dy * hy });
+      }
+    }
+    return points;
   }
 
   dispose(): Promise<void> {

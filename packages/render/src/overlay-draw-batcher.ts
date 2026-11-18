@@ -767,6 +767,10 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   private readonly scratchViewport = new Viewport(0, 0, 1, 1);
   /** The Scene's shared page of small images, which its batches sample; null while they sample their own textures. */
   private atlas: LayerImageAtlas | null;
+  /** The meshes drawn in the Engine frame `drawnFrame` (`drawn`) and in the frame that drew before it (`drawnBefore`). */
+  private drawn: AbstractMesh[] = [];
+  private drawnBefore: AbstractMesh[] = [];
+  private drawnFrame = -1;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -796,8 +800,9 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
 
   draw(sorted: readonly SubMesh[], count: number, transparent: boolean, drawOne: (subMesh: SubMesh) => void): void {
     const scene = this.scene;
+    this.startOutputs();
     if (this.disposed || scene.prePassRenderer) {
-      for (let index = 0; index < count; index += 1) drawOne(sorted[index]!);
+      for (let index = 0; index < count; index += 1) this.drawAlone(sorted[index]!, drawOne);
       return;
     }
     const stats = counting ?? uncounted;
@@ -805,7 +810,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     if (count < 2) {
       stats.alone.single += count;
       stats.draws += count;
-      for (let index = 0; index < count; index += 1) drawOne(sorted[index]!);
+      for (let index = 0; index < count; index += 1) this.drawAlone(sorted[index]!, drawOne);
       return;
     }
     this.readChanges();
@@ -830,6 +835,27 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     }
   }
 
+  outputs(): readonly AbstractMesh[] {
+    return this.drawnFrame === this.scene.getEngine().frameId ? this.drawnBefore : this.drawn;
+  }
+
+  /** The first pass of an Engine frame starts its list of drawn meshes; the last frame's is kept for `outputs`. */
+  private startOutputs(): void {
+    const frame = this.scene.getEngine().frameId;
+    if (frame === this.drawnFrame) return;
+    const before = this.drawnBefore;
+    this.drawnBefore = this.drawn;
+    this.drawn = before;
+    before.length = 0;
+    this.drawnFrame = frame;
+  }
+
+  /** Draws `subMesh` on its own, as `drawOne` draws it, and notes its mesh among the frame's drawn meshes. */
+  private drawAlone(subMesh: SubMesh, drawOne: (subMesh: SubMesh) => void): void {
+    this.drawn.push(subMesh.getMesh());
+    drawOne(subMesh);
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -850,6 +876,8 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     this.checkBatches.length = 0;
     this.atlas?.dispose();
     this.atlas = null;
+    this.drawn.length = 0;
+    this.drawnBefore.length = 0;
   }
 
   /**
@@ -1348,6 +1376,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       const members = batch.entries;
       // A member whose own draw would not draw now (Babylon's readiness gate) leaves its batch's members to their own.
       if (members.length > 1 && this.allReady(members) && this.drawBatch(batch, transparent)) {
+        this.drawn.push(batch.slot!.mesh);
         stats.draws += 1;
         stats.batches += 1;
         stats.batched += members.length;
@@ -1356,7 +1385,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       stats.draws += members.length;
       // A candidate nothing matched, or whose batch could not draw as one now; the others were counted as classified.
       for (const entry of members) if (entry.mesh) stats.alone.unmatched += 1;
-      for (const entry of members) drawOne(entry.subMesh);
+      for (const entry of members) this.drawAlone(entry.subMesh, drawOne);
     }
   }
 
