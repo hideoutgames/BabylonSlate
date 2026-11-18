@@ -32,8 +32,8 @@ import { journalFollows, openRenderChangeReader, RenderChange, type RenderChange
  *   Material (`RenderChange.Material`: `_setMaterial`, `setMaterialForRenderPass`), its rendering group id and
  *   whether it is below full visibility or has vertex alpha (`RenderChange.Visibility`, `RenderChange.Dispatch`).
  *
- * Read every frame: `isBlocked`; readiness, from the fields `Mesh.isReady(false)` reads (`delayLoadState`, the node's
- * ready flag); the layer mask against the camera's; the sub-mesh array, its length and each element (a different one
+ * Read every frame: `isBlocked`; readiness, from the renderer's readiness callback where it has one (the geometry
+ * pass's), else from the fields `Mesh.isReady(false)` reads (`delayLoadState`, the node's ready flag); the layer mask against the camera's; the sub-mesh array, its length and each element (a different one
  * rebuilds the mesh's sub-mesh answers); a MultiMaterial root's sub-material and the default material
  * (`SubMesh.getMaterial`, with its side effect); each group's `disableDepthPrePass`. Polled once per distinct Material
  * per prepare: whether its `needAlphaBlendingForMesh` and `needAlphaTestingForMesh` are Material's own, their answers for
@@ -43,12 +43,12 @@ import { journalFollows, openRenderChangeReader, RenderChange, type RenderChange
  * Still run every frame, as Babylon does: the billboard LOD's world matrix, `_preActivateForIntermediateRendering`,
  * the active-mesh push, `_wasActiveLastFrame`, `_activate` (instance registration), the instance and intermediate
  * flags, `_prepareSkeleton`, `_wasDispatched`, the queue pushes, `_renderingGroup`, the edges check, `_empty`,
- * `_postActivate`, the bounding-box renderer's reset and particle dispatch.
+ * `_postActivate`, the bounding-box renderer's reset and its per-mesh and per-sub-mesh boxes, and particle dispatch.
  *
  * A mesh the journal cannot follow (`journalFollows` false for it, an ancestor or an instance's source), whose class
  * replaces `isEnabled`, or whose LOD is not fixed takes Babylon's path for that mesh. A pass Babylon would prepare
- * otherwise (a custom render list, `winterIsComing`, frozen meshes, bounding boxes, a readiness callback, several
- * render passes, `maintainStateBetweenFrames`, no LOD camera) runs Babylon's function.
+ * otherwise (a custom render list, `winterIsComing`, no render list, frozen meshes, several render passes,
+ * `maintainStateBetweenFrames`, no LOD camera) runs Babylon's function.
  *
  * Each prepare recomputes one in `SELF_CHECK_STRIDE` of its kept entries and heals any that differ, counting the field
  * (`heals`, `healedFields`). While `verifyLeanPreparation` is on, every pass runs Babylon's own preparation, which
@@ -159,7 +159,14 @@ type RendererInternals = {
 type SceneInternals = Scene & {
   _activeMeshesFrozen: boolean;
   _prepareSkeleton(mesh: AbstractMesh): void;
-  getBoundingBoxRenderer?: () => { reset(): void } | undefined;
+  getBoundingBoxRenderer?: () => BoxRenderer | undefined;
+};
+/** Babylon's bounding-box renderer, as the preparation feeds it. */
+type BoxRenderer = {
+  reset(): void;
+  renderList: { length: number };
+  _preActiveMesh(mesh: AbstractMesh): void;
+  _evaluateSubMesh(mesh: AbstractMesh, subMesh: SubMesh): void;
 };
 
 const STOCK_BLEND = Material.prototype.needAlphaBlendingForMesh;
@@ -385,8 +392,7 @@ class RendererLean {
 /** Whether Babylon's function prepares this pass: what the lean one does not repeat. */
 function babylonOnly(renderer: RendererInternals, winterIsComing: boolean): boolean {
   const scene = renderer._scene as SceneInternals;
-  return winterIsComing || !renderer.renderList || !!renderer.customIsReadyFunction || renderer.enableBoundingBoxRendering ||
-    !renderer.renderMeshes || scene.getEngine().isWebGPU || (scene._activeMeshesFrozen && renderer._isFrozen) ||
+  return winterIsComing || !renderer.renderList || !renderer.renderMeshes || scene.getEngine().isWebGPU || (scene._activeMeshesFrozen && renderer._isFrozen) ||
     renderer._renderPassIds.length !== 1 || renderer._renderingManager.maintainStateBetweenFrames;
 }
 
@@ -479,12 +485,16 @@ function prepareMeshes(lean: RendererLean, list: AbstractMesh[], checkLayerMask:
   const epoch = sceneLean.epoch;
   const phase = lean.checkPhase;
   lean.checkPhase = (phase + 1) % SELF_CHECK_STRIDE;
+  const custom = renderer.customIsReadyFunction;
+  const refreshRate = renderer.refreshRate;
+  const boxes = renderer.enableBoundingBoxRendering ? scene.getBoundingBoxRenderer?.() : undefined;
   const length = list.length;
   for (let index = 0; index < length; index++) {
     const mesh = list[index] as MeshInternals;
     if (!mesh || mesh.isBlocked) continue;
     work.meshes++;
-    if (!readyNow(mesh, completeCheck)) {
+    // A readiness callback (the geometry pass's leaves out meshes that write no depth) is asked every frame.
+    if (custom ? !custom(mesh, refreshRate, false) : !readyNow(mesh, completeCheck)) {
       renderer.resetRefreshCounter();
       continue;
     }
@@ -496,7 +506,7 @@ function prepareMeshes(lean: RendererLean, list: AbstractMesh[], checkLayerMask:
     } else if (index % SELF_CHECK_STRIDE === phase) entry = selfCheck(lean, mesh, entry, scene, epoch);
     if (entry.live) {
       work.liveMeshes++;
-      prepareMeshLive(renderer, mesh, renderId, camera, cameraForLOD, checkLayerMask);
+      prepareMeshLive(renderer, mesh, renderId, camera, cameraForLOD, checkLayerMask, boxes);
       continue;
     }
     const lod = entry.lod as MeshInternals;
@@ -510,20 +520,22 @@ function prepareMeshes(lean: RendererLean, list: AbstractMesh[], checkLayerMask:
     active.push(mesh);
     lod._internalAbstractMeshDataInfo._wasActiveLastFrame = true;
     if (lod !== mesh) lod._activate(renderId, true);
+    boxes?._preActiveMesh(mesh);
     if (mesh._activate(renderId, true) && mesh.subMeshes.length) {
       let owner = lod;
       if (!mesh.isAnInstance) owner._internalAbstractMeshDataInfo._onlyForInstancesIntermediate = false;
       else if (mesh._internalAbstractMeshDataInfo._actAsRegularMesh) owner = mesh;
       owner._internalAbstractMeshDataInfo._isActiveIntermediate = true;
       scene._prepareSkeleton(owner);
-      dispatchKept(renderer, entry, owner);
+      dispatchKept(renderer, entry, owner, mesh, boxes);
     }
     mesh._postActivate();
   }
 }
 
 /** `RenderingManager.dispatch` and `RenderingGroup.dispatch` of `owner`'s sub-meshes, with the kept answers. */
-function dispatchKept(renderer: RendererInternals, entry: Entry, owner: MeshInternals): void {
+function dispatchKept(renderer: RendererInternals, entry: Entry, owner: MeshInternals, mesh: AbstractMesh,
+  boxes: BoxRenderer | undefined): void {
   const manager = renderer._renderingManager;
   const groups = manager._renderingGroups;
   const passId = renderer._renderPassIds[0]!;
@@ -538,6 +550,7 @@ function dispatchKept(renderer: RendererInternals, entry: Entry, owner: MeshInte
       entry.dispatch = dispatch = buildDispatch(owner, passId);
       item = dispatch.items[index]!;
     }
+    boxes?._evaluateSubMesh(mesh, subMesh);
     subMesh._wasDispatched = true;
     const group = (groups[dispatch.groupId] ?? manager.getRenderingGroup(dispatch.groupId)) as unknown as GroupInternals;
     const material = item.live ? subMesh.getMaterial() : item.material;
@@ -558,7 +571,7 @@ function dispatchKept(renderer: RendererInternals, entry: Entry, owner: MeshInte
 
 /** Babylon 9.29's loop body for one mesh (`_prepareRenderingManager`), after its readiness. */
 function prepareMeshLive(renderer: RendererInternals, mesh: MeshInternals, renderId: number, camera: Nullable<Camera>,
-  cameraForLOD: Camera, checkLayerMask: boolean): void {
+  cameraForLOD: Camera, checkLayerMask: boolean, boxes: BoxRenderer | undefined): void {
   const scene = renderer._scene as SceneInternals;
   const frameId = scene.getFrameId();
   const memo = mesh._internalAbstractMeshDataInfo._currentLOD.get(cameraForLOD);
@@ -576,12 +589,16 @@ function prepareMeshLive(renderer: RendererInternals, mesh: MeshInternals, rende
   renderer._activeMeshes.push(mesh);
   lod._internalAbstractMeshDataInfo._wasActiveLastFrame = true;
   if (lod !== mesh) lod._activate(renderId, true);
+  boxes?._preActiveMesh(mesh);
   if (mesh._activate(renderId, true) && mesh.subMeshes.length) {
     if (!mesh.isAnInstance) lod._internalAbstractMeshDataInfo._onlyForInstancesIntermediate = false;
     else if (mesh._internalAbstractMeshDataInfo._actAsRegularMesh) lod = mesh;
     lod._internalAbstractMeshDataInfo._isActiveIntermediate = true;
     scene._prepareSkeleton(lod);
-    for (let index = 0; index < lod.subMeshes.length; index++) renderer._renderingManager.dispatch(lod.subMeshes[index]!, lod);
+    for (let index = 0; index < lod.subMeshes.length; index++) {
+      boxes?._evaluateSubMesh(mesh, lod.subMeshes[index]!);
+      renderer._renderingManager.dispatch(lod.subMeshes[index]!, lod);
+    }
   }
   mesh._postActivate();
 }
@@ -698,6 +715,9 @@ function verifyPass(lean: RendererLean, passIndex: number, list: AbstractMesh[],
   renderer._renderingManager = scratch.manager;
   renderer._activeMeshes = scratch.active;
   renderer._activeBoundingBoxes = scratch.boxes;
+  // Babylon's preparation listed this pass's bounding boxes; the lean one's are dropped after it.
+  const boxList = renderer.enableBoundingBoxRendering ? (renderer._scene as SceneInternals).getBoundingBoxRenderer?.()?.renderList : undefined;
+  const boxCount = boxList?.length ?? 0;
   // Babylon's preparation registered this pass's instances; the lean one must not register them twice.
   meshPrototype._registerInstanceForRenderId = function (this: unknown) { return this; };
   try {
@@ -710,6 +730,7 @@ function verifyPass(lean: RendererLean, passIndex: number, list: AbstractMesh[],
     renderer._activeMeshes = active;
     renderer._activeBoundingBoxes = boxes;
     restore(after, cameraForLOD);
+    if (boxList) boxList.length = boxCount;
   }
   work.verifiedPasses++;
   const differences: string[] = [];

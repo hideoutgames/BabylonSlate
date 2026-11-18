@@ -10,6 +10,7 @@ import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { SubMesh as SubMeshType } from "@babylonjs/core/Meshes/subMesh";
 import { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
+import "@babylonjs/core/Rendering/boundingBoxRenderer";
 import { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it } from "vitest";
 import { attachLeanPreparation, leanPreparationDiagnostics, SELF_CHECK_STRIDE, verifyLeanPreparation } from "./lean-render-preparation";
@@ -43,8 +44,9 @@ function world() {
   const internals = renderer as unknown as Internals;
   const list: AbstractMesh[] = [];
   renderer.renderList = list;
-  // As the frame graph's object task sets it.
+  // As the frame graph's object task sets them.
   renderer.forceLayerMaskCheck = true;
+  renderer.enableBoundingBoxRendering = true;
   const box = (name: string) => {
     const mesh = MeshBuilder.CreateBox(name, { size: 1 }, scene);
     mesh.material = new StandardMaterial(`${name} material`, scene);
@@ -99,6 +101,27 @@ describe("lean render preparation", () => {
     // The second frame made no entry afresh.
     expect(w.work().refreshes).toBe(2);
     expect(w.work().passes).toBe(2);
+    expect(w.work().fallbacks).toBe(0);
+  });
+
+  it("asks the renderer's readiness callback every frame and lists bounding boxes as Babylon does", () => {
+    const w = world();
+    const a = w.box("a");
+    const b = w.box("b");
+    let skip: AbstractMesh | undefined;
+    w.renderer.customIsReadyFunction = (mesh) => mesh !== skip;
+    a.showBoundingBox = true;
+    w.prepare();
+    expect(w.opaque()).toEqual(["a", "b"]);
+    skip = b;
+    w.prepare();
+    expect(w.opaque()).toEqual(["a"]);
+    expect(w.scene.getBoundingBoxRenderer().renderList.length).toBe(1);
+    verifyLeanPreparation(true);
+    w.prepare();
+    expect(w.scene.getBoundingBoxRenderer().renderList.length).toBe(1);
+    expect(w.work().mismatches).toBe(0);
+    expect(w.work().fallbacks).toBe(0);
   });
 
   type World = ReturnType<typeof world>;
