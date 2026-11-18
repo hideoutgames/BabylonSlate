@@ -72,7 +72,7 @@ const MAX_MISMATCH_DETAILS = 4;
 /** Why a frame took Babylon's full path. */
 export type LayerDrawListFallback =
   | "graph" | "batcher" | "frozen" | "particles" | "renderer" | "camera"
-  | "instances" | "lod" | "skeleton" | "edges" | "depthPrePass";
+  | "instances" | "lod" | "skeleton" | "edges" | "boundingBox" | "depthPrePass";
 
 /**
  * How a layer's draw list was kept: frames drawn from it, frames on Babylon's full path (by reason) and checked frames;
@@ -353,7 +353,8 @@ export class LayerDrawList {
     const manager = (renderer as unknown as RendererInternals)._renderingManager;
     // Babylon types these hooks as always set; they are unset until someone sets one.
     const hooks = renderer as unknown as { customRenderFunction?: unknown }, lod = scene as unknown as { customLODSelector?: unknown };
-    if (hooks.customRenderFunction || !renderer.renderMeshes || renderer.getCustomRenderList || renderer.enableBoundingBoxRendering ||
+    if (hooks.customRenderFunction || !renderer.renderMeshes || renderer.getCustomRenderList ||
+      (renderer.enableBoundingBoxRendering && scene.forceShowBoundingBoxes) ||
       renderer.options.numPasses !== 1 || manager.maintainStateBetweenFrames || scene.useOrderIndependentTransparency || lod.customLODSelector)
       return "renderer";
     if (!this.camera()) return "camera";
@@ -686,6 +687,8 @@ export class LayerDrawList {
     manager.reset();
     internals._activeMeshes.reset();
     internals._activeBoundingBoxes.reset();
+    // As Babylon's preparation starts its frame (no member shows a box: one that does falls back).
+    (this.scene as unknown as { getBoundingBoxRenderer?: () => { reset(): void } | undefined }).getBoundingBoxRenderer?.()?.reset();
     for (const list of this.lists.values()) {
       if (list.subMeshes.length === 0) continue;
       const group = manager.getRenderingGroup(list.group) as unknown as GroupInternals;
@@ -768,6 +771,7 @@ function meshBlocker(mesh: AbstractMesh): LayerDrawListFallback | null {
   if (mesh instanceof Mesh && mesh.hasLODLevels) return "lod";
   if (mesh.skeleton) return "skeleton";
   if (mesh._edgesRenderer) return "edges";
+  if (mesh.showBoundingBox) return "boundingBox";
   return null;
 }
 

@@ -73,7 +73,9 @@ function batchedX(scene: Scene): number[] {
   for (const mesh of sceneDrawBatcher(scene)!.outputs()) {
     const rows = (mesh as Mesh).getVertexBuffer("batchWorld0")?.getData() as Float32Array | undefined;
     if (!rows) continue;
-    for (let at = 3; at < rows.length; at += 4) xs.add(Math.round(rows[at]! * 1000) / 1000);
+    // Only the vertices in use: the buffers keep spare room.
+    const used = (mesh as Mesh).subMeshes[0]!.verticesCount * 4;
+    for (let at = 3; at < used; at += 4) xs.add(Math.round(rows[at]! * 1000) / 1000);
   }
   return [...xs].sort((a, b) => a - b);
 }
@@ -170,23 +172,23 @@ describe("layer draw list", () => {
       }
     });
     const { root, other, a, b } = meshes as Record<"root" | "other" | "a" | "b", Mesh>;
-    expect(batchedX(scene)).toEqual([-2.5, -1.5, 1.5, 2.5]);
+    expect(batchedX(scene)).toEqual([-2, 2]);
     // A hidden ancestor written in place.
     root.position.x = 1;
     frames();
-    expect(batchedX(scene)).toEqual([-1.5, -0.5, 2.5, 3.5]);
+    expect(batchedX(scene)).toEqual([-1, 3]);
     // A replaced vector.
     a.position = new Vector3(-4, 0, 0);
     frames();
-    expect(batchedX(scene)).toEqual([-3.5, -2.5, 2.5, 3.5]);
+    expect(batchedX(scene)).toEqual([-3, 3]);
     // A scaled ancestor.
     root.scaling.x = 2;
     frames();
-    expect(batchedX(scene)).toEqual([-7, -5, 5, 7]);
+    expect(batchedX(scene)).toEqual([-7, 5]);
     // Re-parented under an actor at x 10.
     b.parent = other;
     frames();
-    expect(batchedX(scene)).toEqual([-7, -5, 11.5, 12.5]);
+    expect(batchedX(scene)).toEqual([-7, 12]);
   });
 
   it("takes Babylon's full path for a frame it cannot represent, and counts why", async () => {
