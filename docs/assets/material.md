@@ -31,6 +31,22 @@ While a node is previewed:
 
 To return to the Material, choose **Stop Previewing** in the bar, or **Stop Previewing Node** from the menu of the previewed node or the output node. Deleting the previewed node also stops it. Previewing a node does not change the Material: it is not saved and is not an undo step. Texture outputs cannot be previewed, and Material Functions, which have no Preview, do not offer **Preview Node**.
 
+## Named Reroutes
+
+A Named Reroute carries a value across the graph by name instead of by a long wire.
+
+1. In **Add Node**, choose **Create Named Reroute…** (under **Reroute**). The new node is named **Reroute**, **Reroute_1** and so on, and its title opens for renaming. Type a name and press <kbd>Enter</kbd>.
+2. Wire any value into its **In** pin, Textures included.
+3. To read the value elsewhere, search **Add Node** for the reroute's name and add it. The usage node outputs whatever is wired into the Named Reroute, as if wired straight from it.
+
+- Each name has exactly one [Named Reroute](../scripting/material/named-reroute.md) and any number of [usages](../scripting/material/named-reroute-usage.md). Names are unique: a taken name gets **_1**, **_2** and so on, including on copied and pasted reroutes.
+- Rename a reroute by double-clicking its title, with **Rename** in its menu, or in the **Inspector**'s **Name**. Every usage takes the new name.
+- Its **Color** in the **Inspector** colours the headers of the reroute and all its usages.
+- Double-click a usage, or choose **Select Declaration** in its menu, to go to its Named Reroute.
+- A usage that feeds back into its own Named Reroute, directly or through other nodes and reroutes, is an error in **Compiler Results**. So is a usage whose Named Reroute was deleted, which shows **Missing Reroute**.
+- Named Reroutes belong to one graph: a Material's are not visible in a Material Function, and each Material Function has its own.
+- Reroutes cost nothing: the Material compiles as if the wires were direct.
+
 ## Settings
 
 With no node selected, the **Inspector** shows these settings. Some apply to only some domains.

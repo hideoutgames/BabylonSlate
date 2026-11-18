@@ -103,6 +103,11 @@ export {
   type ParticlePaletteNode,
 } from "./serialize-particle-graph";
 export {
+  PARTICLE_REROUTE_NODE_TYPE,
+  collapseParticleReroutes,
+  isParticleRerouteNode,
+} from "./reroute";
+export {
   resizeParticleValue,
   type ParticleConversion,
   type ParticleGenericResolution,

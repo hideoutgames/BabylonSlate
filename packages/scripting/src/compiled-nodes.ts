@@ -1,4 +1,5 @@
 import type { GraphNode, GraphPin, LogicGraph } from "./ir";
+import { collapseReroutes } from "./reroute";
 
 /** A function graph's Output node, which returns the function's outputs. */
 const FUNCTION_OUTPUT_NODE_TYPE = "flow.function.output";
@@ -72,9 +73,11 @@ function isDataOnly(node: GraphNode): boolean {
  * Node ids that `compileGraph` / `compileTransitionRuleGraph` would emit:
  * trigger entries, exec-reachable successors, and data-only pures those
  * nodes read. Isolated leftover nodes are omitted (match the emitted
- * program, not compileGraph's extra ensurePure-all loop).
+ * program, not compileGraph's extra ensurePure-all loop). Reroutes are never compiled: wires
+ * through them count as direct wires.
  */
 export function compiledNodeIds(graph: LogicGraph): Set<string> {
+  graph = collapseReroutes(graph);
   const nodes = nodesById(graph);
   // Exec successors by source node, and data sources by target node.
   const execNext = new Map<string, string[]>();

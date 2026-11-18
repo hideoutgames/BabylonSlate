@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 import { useEffect } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultTimelineClipAsset, defaultTimelineProxyPreview, type SerializedScene, type SerializedTimelineClipAsset } from "@haptic/core";
@@ -23,6 +24,7 @@ const harness = vi.hoisted(() => {
       setGridSettings: vi.fn(),
       grid: { setCameraBounds: vi.fn(), setVisible: vi.fn() },
       gizmos: { setTool: vi.fn(), setSpace: vi.fn(), setSnap: vi.fn() },
+      zoomDrive: { start: vi.fn(), stop: vi.fn(), step: vi.fn(), dispose: vi.fn() },
       selectedActorTransforms: vi.fn((): Array<{ actorId: string; position: [number, number, number]; rotation: [number, number, number, number]; scale: [number, number, number] }> => []),
     },
     scheduler: { setAlwaysRender: vi.fn(), acquireObstruction: vi.fn(), setResizing: vi.fn(), acquireContinuous: vi.fn() },
@@ -195,6 +197,21 @@ describe("TimelineClipPreviewPanel", () => {
     await waitFor(() => expect(harness.handle.editor.camera.fly.mock.calls.some(([forward, right]) => forward > 0 && right === 0)).toBe(true));
     act(() => dispatchPointerEvent(stick, "pointerup", { clientX: 0, clientY: -40 }));
     expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows Viewport Zoom Buttons in its corner, driving the preview Engine's zoom", async () => {
+    receiveActiveAppSettingsUpdate({ viewportZoomButtons: true });
+    try {
+      render(<SceneToolsProvider><TimelineClipPreviewPanel {...panel} /></SceneToolsProvider>);
+      await waitFor(() => expect(harness.handle.loadScene).toHaveBeenCalled());
+      const zoomIn = within(screen.getByTestId("timeline-clip-zoom-controls")).getByRole("button", { name: "Zoom In" });
+      dispatchPointerEvent(zoomIn, "pointerdown");
+      expect(harness.handle.editor.zoomDrive.start).toHaveBeenCalledExactlyOnceWith(1);
+      dispatchPointerEvent(zoomIn, "pointerup");
+      expect(harness.handle.editor.zoomDrive.stop).toHaveBeenCalledOnce();
+    } finally {
+      receiveActiveAppSettingsUpdate({ viewportZoomButtons: false });
+    }
   });
 
   it("previews a 2D clip in a locked 2D overlay viewport", async () => {

@@ -52,8 +52,6 @@ const applyGraphChange = vi.hoisted(() =>
 const harness = vi.hoisted(() => ({
   path: "assets/Hero.class.hasset",
   graphs: {} as Record<string, SerializedGraph>,
-  /** The custom event node the Request Rename button asks the Class panel to rename. */
-  renameTarget: "",
   assets: [] as Array<{ path: string; header: { type: string; name: string; guid: string; parentClass?: string } }>,
 }));
 
@@ -135,12 +133,6 @@ function Canvas() {
   return null;
 }
 
-/** Rename Event and Add Node ask the Class panel through the shared editing state. */
-function RequestRename() {
-  const { requestEventRename } = useGraphEditing();
-  return <button type="button" data-testid="request-rename" onClick={() => requestEventRename(harness.renameTarget)} />;
-}
-
 function panel() {
   return (
     <KeybindProvider>
@@ -148,7 +140,6 @@ function panel() {
         <GraphEditingProvider>
           <Canvas />
           <Probe />
-          <RequestRename />
           <MyClassPanel {...({} as IDockviewPanelProps)} />
         </GraphEditingProvider>
       </EditorSessionStateProvider>
@@ -621,34 +612,3 @@ describe("Events add menu", () => {
   });
 });
 
-describe("Class tree custom event rename", () => {
-  it("opens a requested event's inline rename, with its section expanded, and renames an event Add Node placed without a member", async () => {
-    const hero = heroGraph();
-    const { rerender } = renderPanel({
-      ...hero,
-      nodes: [
-        ...hero.nodes,
-        { id: "evt-free", type: "flow.event.custom", position: { x: 0, y: 400 }, data: { name: "NewEvent", title: "Event NewEvent", pins: [] } },
-        { id: "call-free", type: "flow.event.call", position: { x: 300, y: 400 }, data: { name: "NewEvent", title: "Call NewEvent", implicitSelf: true, pins: [] } },
-      ],
-    });
-    fireEvent.click(screen.getByTestId("tree-disclosure-section-events"));
-    expect(screen.queryByTestId("tree-row-evt-free")).toBeNull();
-
-    harness.renameTarget = "evt-free";
-    fireEvent.click(screen.getByTestId("request-rename"));
-    const input = (await screen.findByTestId("tree-rename-evt-free")) as HTMLInputElement;
-    expect(input.value).toBe("NewEvent");
-    expect(document.activeElement).toBe(input);
-    fireEvent.change(input, { target: { value: "Open Door" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-
-    const next = applyGraphChange.mock.calls.at(-1)![1];
-    expect(next.nodes.find((node) => node.id === "evt-free")?.data).toMatchObject({ name: "Open Door", title: "Event Open Door" });
-    expect(next.nodes.find((node) => node.id === "call-free")?.data).toMatchObject({ name: "Open Door", title: "Call Open Door" });
-    // The request was taken: the renamed graph does not reopen the rename.
-    rerender(panel());
-    expect(screen.queryByTestId("tree-rename-evt-free")).toBeNull();
-    expect(screen.getByTestId("tree-row-evt-free").textContent).toContain("Open Door");
-  });
-});

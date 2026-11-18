@@ -36,7 +36,7 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 - **Undo**: history limits. See [Undo and Saving](undo-and-saving.md).
 - **Debugger**: Play debugging defaults and **Debug Mode**. See [Debugging](../debugging/index.md).
 - **Viewport**: **Viewport Frame Cap (FPS)** (default 60), **Half Rate When Idle** (default on: after a second without input, camera motion, edits or loading, editor viewports draw at half the Viewport Frame Cap, so animated materials, water and particles keep moving while the editor stays responsive; the first click, key, scroll or edit returns them to the full rate at once; Play and Preview Build are unchanged), **Camera Preview Frame Rate (FPS)** for the preview of a selected Camera or Render Target Capture (default 30), **Camera Speed**, **Drop Distance**, **Place On Surfaces** with its **Placement Trace Distance** (new actors land on the surface in front of the camera within that many units, default 25), **Stack New 2D Actors** (**Disabled**, **Scenes Only**, **Scene Layers Only** or **Both**: new actors there go one Z-Order above the highest actor that draws; see [Draw order](../2d/index.md#draw-order)), **Occlusion Culling**, which skips objects hidden behind solid shapes in Scene viewports (default on; Play and exported games follow the project's Scalability setting), and **Override Project Rendering**, which lets the editor preview use its own resolution and post-processing.
-- **Graph**: default zoom, **Read-Only Pin Defaults** and **Add Node History** for node graphs. See [Scripting](../scripting/index.md#add-a-node).
+- **Graph**: default zoom, **Read-Only Pin Defaults**, **Cut Links Tool** (whether **Cut Links** stays on or turns off after one cut) and **Add Node History** for node graphs. See [Scripting](../scripting/index.md#add-a-node).
 - **Assets**: model import scale, editor texture quality, and texture and audio memory budgets.
 - **Thumbnails**: turn Content Browser thumbnails on or off.
 - **Focus**: which windows stay visible in Focus. See [Windows and Layout](index.md).
@@ -85,6 +85,7 @@ Compact Mode changes only sizes. Touch gestures, such as holding to open a menu 
 - **Hold Time** (default 500 ms): how long to hold before a menu opens, from 300 to 1500 ms. Holding to drag, such as reordering a tree row or drawing a selection rectangle in a graph, starts at half of it. Tab headers keep the device's own hold to drag.
 - **Double-Tap Time** (default 350 ms): the longest gap between two taps that still counts as a double-tap, from 200 to 1000 ms. Double-clicking with a mouse follows the device's own setting.
 - **Number Snap Strength** (default **Normal**): how long dragging a number field pauses on round values, such as 0.1, 0.25, 1, 10 and 100. **Off**, **Light**, **Normal** or **Strong**.
+- **Viewport Zoom Buttons** (default off): adds **Zoom In** and **Zoom Out** buttons to the bottom-right corner of viewports and asset previews, so you can zoom without a pinch or a mouse wheel: the Scene, Scene Layer, Prefab and Timeline Clip viewports, and the Material, Model, Animation, Animation Graph, Blend Space, Skeleton, Water, Texture, Sprite and Skybox Creator previews. Tap a button to zoom one step, or hold it to keep zooming. With **Reduce Motion** on, each tap jumps straight to the next step.
 
 **Graph Pins**
 

@@ -544,8 +544,6 @@ function ClassMembersView({
   classPath,
   canvasDropApi,
   onOpenInherited,
-  renameRequestId,
-  onRenameRequestHandled,
 }: {
   graph: SerializedGraph | null;
   onGraphChange: (next: SerializedGraph) => void;
@@ -561,9 +559,6 @@ function ClassMembersView({
   classPath?: string;
   canvasDropApi?: GraphDropPoint | null;
   onOpenInherited?: (member: MyClassMember) => void;
-  /** A custom event row to open the inline rename on once it is in the tree. */
-  renameRequestId?: string | null;
-  onRenameRequestHandled?: () => void;
 }) {
   const watchStore = useWatchStore();
   const touchSizing = usePhoneTouchSizing();
@@ -628,19 +623,6 @@ function ClassMembersView({
     }
     return ids;
   }, [graph]);
-  // Rename Event and Add Node's new event open the row's inline rename here,
-  // once the row exists, with the Events section expanded.
-  useEffect(() => {
-    if (!renameRequestId || !renamableIds.has(renameRequestId)) return;
-    setCollapsed((current) => {
-      if (!current.has("events")) return current;
-      const next = new Set(current);
-      next.delete("events");
-      return next;
-    });
-    setRenamingId(renameRequestId);
-    onRenameRequestHandled?.();
-  }, [onRenameRequestHandled, renamableIds, renameRequestId]);
   const namesOfKind = (kind: GraphClassMemberKind) =>
     members.filter((member) => member.kind === kind).map((member) => member.name);
   const startRename = (id: string) => {
@@ -1443,8 +1425,6 @@ export function MyClassPanel(props: MyClassPanelProps) {
     setSelectedNodeIds,
     activeFunctionId,
     setActiveFunctionId,
-    eventRenameRequest,
-    clearEventRenameRequest,
   } = useGraphEditing();
   const selectedId = selectedMemberId ?? selectedNodeIds[0] ?? null;
 
@@ -1532,8 +1512,6 @@ export function MyClassPanel(props: MyClassPanelProps) {
         membersOptions={membersOptions}
         onGraphChange={persistGraph}
         onFocusEventNode={focusEvent}
-        renameRequestId={eventRenameRequest}
-        onRenameRequestHandled={clearEventRenameRequest}
         onOpenInherited={(member) => {
           const from = member.inheritedFrom;
           if (!from || isLockedEngineClassId(from)) return;

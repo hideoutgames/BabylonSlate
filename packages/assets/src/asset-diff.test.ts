@@ -233,6 +233,24 @@ describe("asset diffs", () => {
     expect(view.counts).toEqual({ added: 1, removed: 1, changed: 2 });
   });
 
+  it("titles Named Reroutes by their declaration's name, and a usage whose declaration is gone by its node", async () => {
+    const node = (id: string, type: string, properties: Record<string, unknown>) => ({ id, type, position: { x: 0, y: 0 }, properties });
+    const material = (nodes: unknown[]) => ({ name: "Water", domain: "surface", shadingModel: "pbr", blendMode: "opaque", twoSided: false, nodes, edges: [] });
+    const view = (await diff(
+      await asset("Material", { document: material([]) }),
+      await asset("Material", { document: material([
+        node("r", "reroute.declaration", { name: "Wave Height", color: [1, 0, 0] }),
+        node("u", "reroute.usage", { declarationId: "r" }),
+        node("lost", "reroute.usage", { declarationId: "gone" }),
+      ]) }),
+    )).view as GraphDiff;
+    expect(view.sections[0]!.nodes.map((entry) => [entry.title, entry.status])).toEqual([
+      ["Wave Height", "added"],
+      ["Wave Height", "added"],
+      ["Named Reroute Usage", "added"],
+    ]);
+  });
+
   it("compares a Material Function's Inputs and Outputs as members", async () => {
     const fn = (defaultValue: number[], outputs: unknown[]) => ({ name: "Fresnel", description: "", inputs: [{ id: "power", name: "Power", type: "float", defaultValue }], outputs, nodes: [], edges: [] });
     const view = (await diff(

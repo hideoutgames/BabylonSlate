@@ -11,6 +11,7 @@ In the **Content Browser**, choose **New Asset > Rendering > Particle Graph**. L
 Double-tap the asset to open it. The window has **Graph**, **Preview**, **Inspector** and **Compiler Results**.
 
 - In **Graph**, wire a chain that starts at [Create Particle](../scripting/particle/create-particle.md), passes through shape and update nodes, and ends at [Emitter Output](../scripting/particle/emitter-output.md). See the [particle node reference](../scripting/particle/index.md).
+- Double-click a wire, or double-tap it, to add a [Reroute](../scripting/particle/reroute.md) knot there, then drag the knot to tidy the wire. A knot carries one type at a time: the type of what is wired to it. Knots are removed when the graph builds, so they cost nothing while the emitter runs.
 - **Preview** plays the emitter. While the graph has errors it shows **Graph Has Errors** and keeps the last valid result.
 - **Compiler Results** lists errors to fix. Tap one to jump to its node, or double-tap it to also bring **Graph** forward. Right-click or hold one to copy it.
 - Select **Emitter Output**, or nothing, to edit the emitter settings in the **Inspector**.
@@ -37,6 +38,8 @@ A parameter is a value gameplay can set while the emitter runs. Each parameter h
 - **Add Node** lists **Float Parameter**, **Vector2 Parameter**, **Vector3 Parameter** and **Color Parameter** under **Parameter**. Each adds a node with a new parameter of that type.
 - Right-click a [Float](../scripting/particle/float.md), [Vector2](../scripting/particle/vector2.md), [Vector3](../scripting/particle/vector3.md) or [Color](../scripting/particle/color.md) node, or long-press it, and choose **Convert to Parameter**. The node becomes a Parameter node of a new parameter whose default is the constant's value. Its wires stay.
 - On a Parameter node, **Convert to Constant** does the reverse: the node becomes a constant holding the parameter's default.
+
+To rename a parameter on the graph, double-click or double-tap its Parameter node's title, or right-click or long-press the node and choose **Rename**. Type the name and press Enter; Escape keeps the old name. Undo reverts the rename in one step.
 
 Select a Parameter node to edit its parameter in the **Inspector**. With several Parameter nodes selected, the **Inspector** shows their **Type** and **Default**, but not **Name**, which each parameter keeps.
 

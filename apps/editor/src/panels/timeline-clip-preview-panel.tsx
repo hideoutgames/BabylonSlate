@@ -1,6 +1,6 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AssetLoadError } from "@haptic/assets";
 import { applyTimelineClipToScene, sceneLayerCameraFrame, sceneLayerDesignResolution, type SerializedScene } from "@haptic/core";
 import { applyViewportJoystickSteer, createEngine, EDITOR_CANVAS_COLOR_SCHEME, syncEditorPlayState, type EngineHandle } from "@haptic/render";
@@ -8,6 +8,8 @@ import { isTestModeEnabled } from "@haptic/vfs";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportFpsCounter } from "../components/viewport-fps-counter";
+import { ViewportZoomControls } from "../components/viewport-zoom-controls";
+import { prefersReducedMotion } from "@haptic/editor-kit";
 import { selectProxies, selectProxy, TimelineClipAssetSource, useSelectedProxies, useTimelineClipAsset } from "../components/timeline-clip-asset-editor";
 import { usePlay } from "../context/play-context";
 import { useDocumentActions, useProjectState } from "../context/document-context";
@@ -53,6 +55,7 @@ function ClipPreview(_props: IDockviewPanelProps) {
   void _props;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
+  const zoomDrive = useCallback(() => engineRef.current?.editor?.zoomDrive, []);
   const joystickLeaseRef = useRef<(() => void) | null>(null);
   const viewportId = useId();
   const { id: documentId, payload, twoD, commit } = useTimelineClipAsset();
@@ -150,6 +153,7 @@ function ClipPreview(_props: IDockviewPanelProps) {
       },
       onGizmoDragEnd: () => commitGizmoRef.current(),
       editorFlySpeed: () => flySpeedRef.current,
+      editorZoomInstant: prefersReducedMotion,
     });
     engineRef.current = handle;
     setEngineEpoch((epoch) => epoch + 1);
@@ -370,6 +374,9 @@ function ClipPreview(_props: IDockviewPanelProps) {
         style={{ left: marqueeRect.x, top: marqueeRect.y, width: marqueeRect.width, height: marqueeRect.height }}
       /> : null}
       <canvas ref={canvasRef} className="h-full min-h-0 min-w-0 w-full flex-1 touch-none" data-testid="timeline-clip-preview-canvas" />
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10">
+        <ViewportZoomControls drive={zoomDrive} disabled={playing || preparing} testId="timeline-clip-zoom-controls" />
+      </div>
       {joystickEnabled ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
           <div className="pointer-events-auto">

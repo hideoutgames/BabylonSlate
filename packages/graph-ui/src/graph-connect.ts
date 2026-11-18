@@ -233,8 +233,11 @@ export function edgesAfterConnect<T extends PinEdgeRef>(
       return updated;
     }
   }
-  const targetPin = pinFor(candidate.target, candidate.targetHandle ?? "");
-  const sourcePin = pinFor(candidate.source, candidate.sourceHandle ?? "");
+  const storedTarget = pinFor(candidate.target, candidate.targetHandle ?? "");
+  const storedSource = pinFor(candidate.source, candidate.sourceHandle ?? "");
+  // An unbound any-kind pin (a Reroute's) wired to exec carries exec from now on.
+  const targetPin = withConnectedKind(storedTarget, storedSource);
+  const sourcePin = withConnectedKind(storedSource, storedTarget);
   const exclusiveTarget =
     options?.replaceIncoming === true || !pinAllowsMultipleIncoming(targetPin);
   const exclusiveSource =
@@ -274,7 +277,42 @@ export function pinWithDisplayType(
   displayType: SerializedPin["type"] | undefined,
 ): SerializedPin {
   if (!displayType || pin.type.kind === "boxedWildcard") return pin;
-  return { ...pin, type: displayType };
+  const kind = effectivePinKind(pin, displayType);
+  return kind === pin.kind ? { ...pin, type: displayType } : { ...pin, kind, type: displayType };
+}
+
+/**
+ * The kind a pin connects as: an `anyKind` pin (a Reroute's) is exec while its display type is
+ * exec, else data; every other pin keeps its declared kind.
+ */
+export function effectivePinKind(
+  pin: Pick<SerializedPin, "kind" | "anyKind">,
+  displayType: SerializedPin["type"] | undefined,
+): SerializedPin["kind"] {
+  return pin.anyKind === true && displayType?.kind === "exec" ? "exec" : pin.kind;
+}
+
+/** An `anyKind` pin that no wire has bound yet: it still connects to any data, and to exec unless held to data. */
+export function isUnboundAnyKindPin(pin: SerializedPin): boolean {
+  return pin.anyKind === true && pin.kind === "data" && isWildcardType(pin.type);
+}
+
+/**
+ * Whether an unbound any-kind pin can still take an exec wire: not when its knot, or a knot chained
+ * to it, is already wired to a pin that only carries data (`displayPinTypesForGraph` marks its
+ * display type `dataOnly`), since exec could then never reach that pin.
+ */
+export function anyKindTakesExec(pin: SerializedPin): boolean {
+  return isUnboundAnyKindPin(pin) && pin.type.dataOnly !== true;
+}
+
+/** `pin` as it connects to `peer`: an unbound any-kind pin meeting exec becomes exec. */
+function withConnectedKind(
+  pin: SerializedPin | undefined,
+  peer: SerializedPin | undefined,
+): SerializedPin | undefined {
+  if (!pin || !peer || !anyKindTakesExec(pin) || peer.kind !== "exec") return pin;
+  return { ...pin, kind: "exec", type: { kind: "exec" } };
 }
 
 /**
@@ -298,12 +336,17 @@ export function pinsAreCompatible(
   if (source.direction === target.direction) return false;
   const outgoing = source.direction === "out" ? source : target;
   const incoming = source.direction === "in" ? source : target;
-  if (outgoing.kind !== incoming.kind) return false;
+  if (outgoing.kind !== incoming.kind) {
+    // An unbound any-kind pin (a Reroute's) still takes an exec wire, unless its chain is held to data.
+    return anyKindTakesExec(outgoing.kind === "exec" ? incoming : outgoing);
+  }
   if (outgoing.kind === "exec") return true;
   // Poses and frames are structure, not values: they meet only their own kind, never a wildcard or a conversion.
   if (isStructuralPinKind(outgoing.type.kind) || isStructuralPinKind(incoming.type.kind)) {
     return outgoing.type.kind === incoming.type.kind;
   }
+  // An unbound any-kind pin takes any value; a host rule judges it once it is bound.
+  if (isUnboundAnyKindPin(outgoing) || isUnboundAnyKindPin(incoming)) return true;
   if (rule) return rule(outgoing, incoming);
   if (outgoing.type.kind === incoming.type.kind) return true;
   return (
@@ -414,7 +457,11 @@ export function replacesExecOutputWire(
   next: OrientedConnection,
   pinFor: ConnectPinLookup,
 ): boolean {
-  if (pinFor(next.source, next.sourceHandle)?.kind !== "exec") return false;
+  const source = withConnectedKind(
+    pinFor(next.source, next.sourceHandle),
+    pinFor(next.target, next.targetHandle),
+  );
+  if (source?.kind !== "exec") return false;
   return edges.some(
     (edge) =>
       edge.source === next.source &&
@@ -553,7 +600,7 @@ function typeMatchQuality(
   if (!pinsAreCompatible(source, target, rule)) return 0;
   const outgoing = source.direction === "out" ? source : target;
   const incoming = source.direction === "in" ? source : target;
-  if (outgoing.kind === "exec") return 4;
+  if (outgoing.kind === "exec" && incoming.kind === "exec") return 4;
   if (isWildcardType(outgoing.type) || isWildcardType(incoming.type)) return 1;
   if (pinTypeEquals(outgoing.type as PinType, incoming.type as PinType)) {
     return 4;

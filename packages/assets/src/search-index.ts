@@ -340,6 +340,8 @@ export class ProjectSearchIndex {
         node.data && typeof node.data === "object"
           ? (node.data as Record<string, unknown>)
           : {};
+      // A Reroute knot (the editor's `__reroute` marker, saved with the node) has nothing to find.
+      if (data.__reroute === true) continue;
       const propertyStrings = collectStringLeaves(data);
       const title = this.nodeTitles[typeId] ?? typeId;
       this.add({

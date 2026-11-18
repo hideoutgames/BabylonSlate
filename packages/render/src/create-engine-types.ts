@@ -36,6 +36,7 @@ import type {
   MaterialFunctionDocument,
 } from "@haptic/shader-graph";
 import type { EditorCameraController } from "./editor-camera";
+import type { ViewportZoomDrive } from "./viewport-zoom-drive";
 import type { EditorCameraBounds2D, EditorGrid } from "./editor-grid";
 import type { EditorSceneSync } from "./editor-scene-sync";
 import type { EditorDropTransform } from "./editor-drop";
@@ -379,6 +380,8 @@ export interface CreateEngineOptions {
   }) => void;
   /** World units/s for WASD. Read each tick so Engine Settings apply live. */
   editorFlySpeed?: () => number;
+  /** True makes a zoom button tap jump its whole step instead of gliding (Reduce Motion). */
+  editorZoomInstant?: () => boolean;
   /** Selected camera or capture lens preview redraws per second. Read each tick so Engine Settings apply live. */
   cameraPreviewFrameRate?: () => number;
   /** Viewport clear color scheme; defaults from `html.dark` when present. */
@@ -572,6 +575,8 @@ export interface EditorTools {
    * the Default Camera actor while Game Camera is on and that actor can move.
    */
   navigation: EditorCameraController;
+  /** Zoom buttons' drive: steers `navigation` about the view centre; ignored while Game Camera shows a camera that cannot move. */
+  zoomDrive: ViewportZoomDrive;
   gizmos: GizmoHost;
   grid: EditorGrid;
   selection: SceneOutlineSelection;

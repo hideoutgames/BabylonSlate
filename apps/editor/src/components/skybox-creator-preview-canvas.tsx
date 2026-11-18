@@ -1,5 +1,7 @@
 import { installTextureBytes } from "@haptic/render";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { prefersReducedMotion } from "@haptic/editor-kit";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import {
   DEFAULT_SKYBOX_SIZE,
@@ -37,6 +39,8 @@ export function SkyboxCreatorPreviewCanvas({
   testId?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
+  const zoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const play = useOptionalPlay();
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const faceKey = SKYBOX_FACE_KEYS.map((key) => facePngs[key]?.byteLength ?? 0).join(",");
@@ -70,7 +74,8 @@ export function SkyboxCreatorPreviewCanvas({
       }
       // Drag looks around the cube from its centre, like the other previews orbit.
       const look = presenter;
-      gestures = attachMaterialPreviewGestures(canvas, host.camera, {
+      gestures = gesturesRef.current = attachMaterialPreviewGestures(canvas, host.camera, {
+        zoomInstant: prefersReducedMotion,
         onChange: () => look.present({ force: true }),
       });
       const faces = emptySkyboxFaces();
@@ -109,10 +114,15 @@ export function SkyboxCreatorPreviewCanvas({
   }, [engine, faceKey, facePngs]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="h-full w-full cursor-grab touch-none rounded-md border border-border active:cursor-grabbing"
-      data-testid={testId}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="h-full w-full cursor-grab touch-none rounded-md border border-border active:cursor-grabbing"
+        data-testid={testId}
+      />
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10">
+        <ViewportZoomControls drive={zoomDrive} testId="skybox-creator-cubemap-zoom-controls" />
+      </div>
+    </>
   );
 }

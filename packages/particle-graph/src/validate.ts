@@ -14,6 +14,7 @@ import type {
   ParticleGraphNode,
 } from "./document";
 import { readParticlePinDefault } from "./pin-defaults";
+import { collapseParticleReroutes } from "./reroute";
 import { PARTICLE_SPAWN_LIMITS, particleSpawnSettings } from "./spawn";
 import {
   createParticleTypeResolver,
@@ -574,11 +575,14 @@ function validateSettings(
 /**
  * Validation plus the type resolver it built, so lowering does not resolve the
  * graph a second time. The resolver is null when a cycle stopped type checks.
+ * Both read the graph with its Reroutes collapsed.
  */
 export function checkParticleGraphDocument(
-  doc: ParticleGraphDocument,
+  authored: ParticleGraphDocument,
   context: ParticleGraphValidationContext = {},
 ): { diagnostics: ParticleGraphDiagnostic[]; resolver: ParticleTypeResolver | null } {
+  // Wires through Reroutes are checked as the direct wires they stand for; a dangling knot is no error.
+  const doc = collapseParticleReroutes(authored);
   const incoming = indexParticleIncomingEdges(doc);
   const { diagnostics, definitions, resolver } = validateGraph(doc, incoming);
   diagnostics.push(...validateSpine(doc, definitions, incoming));

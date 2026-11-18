@@ -42,12 +42,16 @@ Parameters are the values you can change per instance or from scripts.
 
 1. Add a [Float Parameter](../scripting/material/float-parameter.md), [Vector2 Parameter](../scripting/material/vector2-parameter.md), [Vector3 Parameter](../scripting/material/vector3-parameter.md), [Vector4 Parameter](../scripting/material/vector4-parameter.md), [Color Parameter](../scripting/material/color-parameter.md) or [Texture Parameter](../scripting/material/texture-parameter.md).
    They are listed under **Parameter** in **Add Node**. You can also right-click a Float, Vector2, Vector3, Vector4 or Color constant, or long-press it, and choose **Convert to Parameter**; **Convert to Constant** turns a parameter back.
-2. Select it and set its **Parameter Name** in the **Inspector**. A new parameter is named **Parameter**; names are case-sensitive and unique in the graph, and a name that is already taken gets **_1**, **_2** and so on. A copied or pasted parameter gets a free name the same way.
+2. Name it: double-click its title in the graph, choose **Rename** in its menu, or set its **Parameter Name** in the **Inspector**. A new parameter is named **Parameter**; names are case-sensitive and unique in the graph, and a name that is already taken gets **_1**, **_2** and so on. A copied or pasted parameter gets a free name the same way.
 3. Set its **Type** and default value in the Inspector. Changing the type resizes the default and removes wires the new type cannot carry.
 
 For a value the whole game shares, such as a sky tint every Material follows, add a [Global Parameter](../scripting/material/global-parameter.md) node and pick a parameter of a [Global Parameter Collection](../assets/global-parameter-collection.md) in the **Inspector**. Class graphs change it with **Set Global Color Parameter** and the Float and Vector versions.
 
 For a fixed texture, a [Texture Sample](../scripting/material/texture-sample.md) node can also pick its Texture directly. An unconnected UV uses the mesh's UVs, or screen UVs in a post-process Material.
+
+## Named Reroutes
+
+To carry a value across a large graph without long wires, give it a name with a Named Reroute and read it anywhere in the same graph with its usages. See [Named Reroutes](../assets/material.md#named-reroutes).
 
 ## Material Instances
 

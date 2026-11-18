@@ -11,7 +11,7 @@ import {
   type GraphPinDrop,
   type PaletteNode,
 } from "@haptic/graph-ui";
-import { PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
+import { formatEventMemberName, PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
 import { isEditorGraphHost, type GraphClassMemberPin, type SerializedGraph, type SerializedScene, isAnimGraphDocumentKind } from "@haptic/core";
 import { variableTypeFromPinType, type PinType } from "@haptic/scripting";
 import { parseAnimGraphDocument } from "@haptic/anim-graph";
@@ -51,6 +51,7 @@ import {
   adoptBoundEventSignatures,
   canRenameCustomEvent,
   convertVariableGetNode,
+  renameCustomEvent,
   dispatcherEventNodeData,
   dispatcherEventPins,
   freeDispatcherEventName,
@@ -59,7 +60,6 @@ import {
 } from "../lib/class-members";
 import { createEventCandidates, createEventPickData } from "../lib/create-event-members";
 import { CreateEventMemberPicker } from "../components/create-event-member-picker";
-import { useCustomEventRename } from "./use-custom-event-rename";
 import { CREATE_EVENT_NODE_TYPE_ID, isDispatcherNodeType } from "@haptic/scripting-nodes";
 import {
   classMemberSymbolsFromGraphs,
@@ -71,9 +71,11 @@ import {
   scriptPaletteInjectorKey,
   scriptPaletteNodes,
   scriptPinCompatibility,
+  scriptReroutePaletteNode,
   validateSerializedGraph,
   defaultNodeRegistry,
 } from "../services/graph-validation";
+import { isInputWired, wiredSource, wiredTargets } from "../lib/reroute-wires";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { logicGraphHostClass } from "../lib/embedded-script";
 import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipDispatcherSymbols, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
@@ -140,6 +142,8 @@ export function GraphPanel(
     setActiveFunctionId,
     releaseActiveFunctionId,
     setCanvasDropApi,
+    eventRenameRequest,
+    clearEventRenameRequest,
   } = useGraphEditing();
   // Several graph tabs can be mounted at once; the last focused one owns the
   // shared Class, Inspector, drop target, and diagnostics state.
@@ -341,7 +345,7 @@ export function GraphPanel(
         location: { assetGuid: breakpointAsset, graphId: runGraphId, nodeId },
         nodeTitle: breakpointLabel(nodeId).nodeTitle,
         pins: conditionPins(hasSerializedPins(data) ? data.__pins : [],
-          (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId)),
+          (pinId) => isInputWired({ nodes, edges }, nodeId, pinId)),
       });
     };
     return breakpointStore.graphView(breakpointAsset, runGraphId, breakpointLabel, { edit });
@@ -646,15 +650,15 @@ export function GraphPanel(
         const node = nodes.find((candidate) => candidate.id === id);
         return hasSerializedPins(node?.data) ? node.data.__pins.find((pin) => pin.id === pinId) : undefined;
       };
-      // The Object wired in names the Class; unwired, it is Self.
-      const objectWire = edges.find((edge) => edge.target === nodeId && edge.targetHandle === "object");
-      const objectType = objectWire ? pinOf(objectWire.source, objectWire.sourceHandle)?.type : undefined;
+      // The Object wired in names the Class; unwired, it is Self. Wires are read through Reroute knots.
+      const objectWire = wiredSource({ nodes, edges }, nodeId, "object");
+      const objectType = objectWire ? pinOf(objectWire.nodeId, objectWire.pinId)?.type : undefined;
       const objectClassId = objectType?.kind === "objectRef" && typeof objectType.classId === "string" && objectType.classId
         ? objectType.classId
         : (classId ?? "Object");
-      const eventWire = edges.find((edge) => edge.source === nodeId && edge.sourceHandle === "event");
-      const delegate = eventWire ? pinOf(eventWire.target, eventWire.targetHandle)?.type : undefined;
-      const feeds = eventWire ? graphContent.nodes.find((node) => node.id === eventWire.target) : undefined;
+      const eventWire = wiredTargets({ nodes, edges }, nodeId, "event")[0];
+      const delegate = eventWire ? pinOf(eventWire.nodeId, eventWire.pinId)?.type : undefined;
+      const feeds = eventWire ? graphContent.nodes.find((node) => node.id === eventWire.nodeId) : undefined;
       const graphs = { ...otherClassGraphs, ...(classId ? { [classId]: graphContent } : {}) };
       const candidates = createEventCandidates({
         objectClassId,
@@ -744,15 +748,38 @@ export function GraphPanel(
     graphId: runGraphId,
     node: extensionNodeRef.current,
   }), [doc?.ref.path, runGraphId]));
-  // Rename Event opens the event's inline rename in the Class panel.
-  const { start: renameEvent, dialog: renameEventDialog } = useCustomEventRename({
-    graph: graphContent,
-    documentKind: doc?.ref.kind,
-    classId,
-    commit: (next) => {
-      if (doc) applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
-    },
-  });
+  // Rename Event opens the custom event node's title as an inline rename field. Events live only
+  // in the Event Graph, so a function tab never renames one.
+  const [renamingNodeId, setRenamingNodeId] = useState<string | null>(null);
+  const renameEvent = useCallback((nodeId: string) => {
+    if (!activeFunctionId) setRenamingNodeId(nodeId);
+  }, [activeFunctionId]);
+  // Rename Event from the Inspector reaches the Event Graph through the editing context.
+  useEffect(() => {
+    if (!eventRenameRequest || activeFunctionId) return;
+    if (!latestGraph.current.nodes.some((node) => node.id === eventRenameRequest)) return;
+    setRenamingNodeId(eventRenameRequest);
+    clearEventRenameRequest();
+  }, [activeFunctionId, clearEventRenameRequest, eventRenameRequest, graph]);
+  // The field shows the event's name without the title's `Event ` prefix.
+  const renamingNodeValue = useMemo(() => {
+    const data = renamingNodeId ? graph.nodes.find((node) => node.id === renamingNodeId)?.data : undefined;
+    return data ? formatEventMemberName(String(data.name ?? data.title ?? "")) : undefined;
+  }, [graph, renamingNodeId]);
+  // As the Class panel's row rename: one graph change that renames the event, its member and this
+  // Class's calls; an empty, taken or unchanged name leaves the event as it was.
+  const onNodeRenameCommit = useCallback((nodeId: string, name: string) => {
+    setRenamingNodeId(null);
+    const current = graphContentRef.current;
+    if (!doc || !current) return;
+    const next = renameCustomEvent(current, nodeId, name, classId);
+    if (next !== current) applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
+  }, [classId, doc, documentActions, documentId]);
+  const onNodeRenameCancel = useCallback(() => setRenamingNodeId(null), []);
+  // A custom event's title starts the same rename when double-clicked or double-tapped.
+  const onNodeTitleDoubleClick = useCallback((nodeId: string) => {
+    if (graphContentRef.current && canRenameCustomEvent(graphContentRef.current, nodeId)) renameEvent(nodeId);
+  }, [renameEvent]);
   // Rename (F2) renames the one selected custom event, as the node menu's Rename Event does.
   const renameChord = useKeybindChord("edit.rename");
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -763,6 +790,11 @@ export function GraphPanel(
     enabled: renameTargetId !== null,
     focusWithinRef: canvasRef,
   });
+  // Double-clicking a wire adds a Reroute knot on it.
+  const reroute = useMemo(() => {
+    const paletteNode = scriptReroutePaletteNode(defaultNodeRegistry());
+    return paletteNode ? { paletteNode } : undefined;
+  }, []);
   const contextMenuItemsForNode = useCallback(
     (nodeId: string) => {
       const withExtensions = (entries: NestedMenuItem[]) => {
@@ -793,7 +825,7 @@ export function GraphPanel(
         });
       }
       if (watchStore && watchAsset) {
-        const pins = watchablePins(node?.data, (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId));
+        const pins = watchablePins(node?.data, (pinId) => isInputWired({ nodes, edges }, nodeId, pinId));
         items.push(...watchPinMenuItems(watchStore, pins, (pin) => ({
           kind: "pin", assetGuid: watchAsset, graphId: runGraphId, nodeId, pinId: pin.id, direction: pin.direction,
           label: { ...breakpointLabel(nodeId), className: classId ?? watchAsset, pinName: pin.name },
@@ -827,7 +859,7 @@ export function GraphPanel(
   }, [activeFunctionId, documentActions, documentId]);
 
   // Create New Custom Event…: a name free in the graph as it is now, then the
-  // inline rename in the Class panel, as for the Class panel's New Event.
+  // inline rename in the new node's header.
   const preparePaletteNode = useCallback(
     (row: PaletteNode) => row.id === "flow.event.custom" ? newCustomEventPaletteNode(row, graphContentRef.current) : row,
     [],
@@ -906,6 +938,12 @@ export function GraphPanel(
             onPaletteOpenChange={setPaletteOpen}
             pinCompatibility={pinCompatibility}
             pinDrop={pinDrop}
+            reroute={reroute}
+            renamingNodeId={renamingNodeId}
+            renamingNodeValue={renamingNodeValue}
+            onNodeRenameCommit={onNodeRenameCommit}
+            onNodeRenameCancel={onNodeRenameCancel}
+            onNodeTitleDoubleClick={onNodeTitleDoubleClick}
             addNodeHistoryScope="script"
             pinTypeNames={pinTypeNames}
             onCanvasApi={setCanvasApi}
@@ -946,7 +984,6 @@ export function GraphPanel(
         </ClassMaterialsContext.Provider>
         </ClassParticleSystemsContext.Provider>
       )}
-      {renameEventDialog}
       {breakpointSettingsDialog}
     </PanelFrame>
   );

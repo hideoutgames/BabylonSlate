@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
 import { syncEditorPlayState } from "@haptic/render";
@@ -27,6 +28,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
         setPivotAroundCenter: vi.fn(),
       },
       setPreviewCanvas: vi.fn(),
+      zoomDrive: { start: vi.fn(), stop: vi.fn(), step: vi.fn(), dispose: vi.fn() },
       setSelectedActors: vi.fn(),
       syncSelectionDebug: vi.fn(),
       setViewportMode: vi.fn(),
@@ -274,7 +276,8 @@ describe("ViewportPanel engine", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    receiveActiveAppSettingsUpdate({ viewportDropDistance: 10_000, linkedScaleKeys: [] });
+    receiveActiveAppSettingsUpdate({ viewportDropDistance: 10_000, linkedScaleKeys: [], viewportZoomButtons: false });
+    handle.editor.zoomDrive.start.mockClear();
     createEngineMock.mockClear();
     handle.editor.setGridSettings.mockClear();
     handle.editor.gizmos.setSnap.mockClear();
@@ -565,6 +568,33 @@ describe("ViewportPanel engine", () => {
       }
     },
   );
+
+  it("shows Viewport Zoom Buttons once the scene is ready, driving the Engine's zoom, and hides them on a failed load", async () => {
+    documents.openDocuments = [{
+      id: "scene:S", ref: { kind: "scene", path: "assets/S.scene.hasset", label: "S" },
+      content: createDefaultScene(),
+    }];
+    receiveActiveAppSettingsUpdate({ viewportZoomButtons: true });
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    handle.loadSceneAsync.mockRejectedValueOnce(new Error("Unavailable scene resource"));
+    try {
+      renderViewport();
+      await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("Scene Loading Failed"));
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.getByTestId("viewport-load-failed")).toBeTruthy());
+      expect(screen.queryByTestId("viewport-zoom-controls")).toBeNull();
+
+      fireEvent.click(screen.getByTestId("viewport-load-retry"));
+      await waitFor(() => expect(screen.getByTestId("viewport-panel").getAttribute("data-scene-ready")).toBe("true"));
+      const zoomIn = screen.getByRole("button", { name: "Zoom In" });
+      expect(screen.getByTestId("viewport-zoom-controls").contains(zoomIn)).toBe(true);
+      dispatchPointerEvent(zoomIn, "pointerdown");
+      expect(handle.editor.zoomDrive.start).toHaveBeenCalledExactlyOnceWith(1);
+      dispatchPointerEvent(zoomIn, "pointerup");
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
 
   it("keeps Retry in the viewport after closing a failed load and holds Play only while loading", async () => {
     documents.openDocuments = [{

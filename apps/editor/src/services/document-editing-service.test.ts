@@ -187,6 +187,44 @@ describe("DocumentEditingService", () => {
     expect(documents.getDocument(id)!.content).toEqual(saved);
   });
 
+  it("makes a Reroute knot inserted on a wire one Undo step that brings the original wire back", async () => {
+    const { documents, editSession, editing, open } = createEditing();
+    const node = (id: string, type: string, x: number, data: Record<string, unknown> = {}) =>
+      ({ id, type, position: { x, y: 0 }, data });
+    const wire = (id: string, source: string, sourceHandle: string, target: string, targetHandle: string) =>
+      ({ id, source, sourceHandle, target, targetHandle });
+    const original: SerializedGraph = {
+      nodes: [node("begin", "flow.event.beginPlay", 0), node("print", "debug.print", 400)],
+      edges: [wire("x", "begin", "execOut", "print", "execIn")],
+    };
+    const id = await open({ kind: "graph", path: "assets/Hero.class.hasset", label: "Hero" }, original);
+    const saved = documents.getDocument(id)!.content;
+    // What GraphEditor commits when a wire is double-clicked: the knot and its two wires replace the wire.
+    const knotted = (knotId: string, from: SerializedGraph, edgeId: string): SerializedGraph => {
+      const split = from.edges.find((edge) => edge.id === edgeId)!;
+      return {
+        nodes: [...from.nodes, node(knotId, "flow.reroute", 200, { __reroute: true })],
+        edges: [
+          ...from.edges.filter((edge) => edge.id !== edgeId),
+          wire(`${knotId}-in`, split.source, split.sourceHandle!, knotId, "in"),
+          wire(`${knotId}-out`, knotId, "out", split.target, split.targetHandle!),
+        ],
+      };
+    };
+    const once = knotted("knot-1", original, "x");
+    expect(await editing.applyGraphChange(id, once)).toBe(true);
+    expect(editSession.getStack(id).undoDepth).toBe(1);
+    // A second knot is its own step.
+    expect(await editing.applyGraphChange(id, knotted("knot-2", once, "knot-1-out"))).toBe(true);
+    expect(editSession.getStack(id).undoDepth).toBe(2);
+
+    editing.stepHistory("undo", id);
+    expect(documents.getDocument(id)!.content).toEqual(once);
+    editing.stepHistory("undo", id);
+    expect(documents.getDocument(id)!.content).toEqual(saved);
+    expect((documents.getDocument(id)!.content as SerializedGraph).edges.map((edge) => edge.id)).toEqual(["x"]);
+  });
+
   it("keeps a component scrub or rename on several selected actors as one Undo step, and a new gesture apart", async () => {
     const { documents, editSession, editing, open } = createEditing();
     const light = (actorId: string, range: number) => createActor(actorId, actorId, {

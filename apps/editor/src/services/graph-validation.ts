@@ -14,6 +14,7 @@ import { walkAncestry } from "@haptic/editor-kit";
 import {
   validateGraphs,
   hasBlockingErrors,
+  collapseReroutes,
   isLogicGraphPayload,
   knownGuidsFromSchemas,
   validateDataEntry,
@@ -88,6 +89,7 @@ export {
   ScriptPaletteCache,
   scriptPaletteInjectorKey,
   scriptPaletteNodes,
+  scriptReroutePaletteNode,
 } from "./script-palette";
 
 export type ValidateSerializedGraphOptions = {
@@ -376,12 +378,14 @@ export function validateSerializedGraph(
         : undefined),
   };
   if (isLogicGraphPayload(content)) {
+    // The editor's own checks, like validateGraphs, read wires through Reroutes as direct wires.
+    const collapsed = [collapseReroutes(content)];
     return [
       ...validateGraphs([content], ctx, { registry: defaultNodeRegistry() }),
-      ...hostLineageDiagnostics([content], options),
-      ...dataGraphDiagnostics([content], options),
-      ...warnDebugTierConsoleCommands([content], { assetGuid: options.assetGuid }),
-      ...warnReservedConsoleCommandNames([content], { assetGuid: options.assetGuid }),
+      ...hostLineageDiagnostics(collapsed, options),
+      ...dataGraphDiagnostics(collapsed, options),
+      ...warnDebugTierConsoleCommands(collapsed, { assetGuid: options.assetGuid }),
+      ...warnReservedConsoleCommandNames(collapsed, { assetGuid: options.assetGuid }),
     ];
   }
   const typeOptions: HydrateGraphOptions = {
@@ -410,13 +414,14 @@ export function validateSerializedGraph(
       ),
     );
   }
+  const collapsed = graphs.map(collapseReroutes);
   return [
     ...validateGraphs(graphs, ctx, { registry: defaultNodeRegistry() }),
     ...pureLatentDiagnostics(content, options),
-    ...hostLineageDiagnostics(graphs, options),
-    ...dataGraphDiagnostics(graphs, options),
-    ...warnDebugTierConsoleCommands(graphs, { assetGuid: options.assetGuid }),
-    ...warnReservedConsoleCommandNames(graphs, { assetGuid: options.assetGuid }),
+    ...hostLineageDiagnostics(collapsed, options),
+    ...dataGraphDiagnostics(collapsed, options),
+    ...warnDebugTierConsoleCommands(collapsed, { assetGuid: options.assetGuid }),
+    ...warnReservedConsoleCommandNames(collapsed, { assetGuid: options.assetGuid }),
   ];
 }
 

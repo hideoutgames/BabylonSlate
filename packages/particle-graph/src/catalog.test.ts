@@ -69,6 +69,8 @@ describe("particle node catalog", () => {
 
   it("gives every input a default or makes it required, so Babylon never sees an empty non-optional port", () => {
     for (const definition of PARTICLE_CATALOG) {
+      // Reroutes are collapsed before lowering; Babylon never sees one.
+      if (definition.type === "utility.reroute") continue;
       for (const pin of definition.inputs) {
         const directedPair =
           RADIAL_SHAPES.has(definition.type) && (pin.id === "direction1" || pin.id === "direction2");

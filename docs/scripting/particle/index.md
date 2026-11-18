@@ -97,6 +97,7 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | [Gradient](gradient.md) | Returns a value sampled from a gradient of 2 to 8 stops at a position from 0 to 1. |
 | [Local Variable](local-variable.md) | Keeps the first value it reads and returns it again, so a random or computed value is read once and reused. |
 | [Random](random.md) | Returns a random value between a minimum and a maximum. |
+| [Reroute](reroute.md) | A knot that tidies a wire. It takes the type of what is wired to it and costs nothing. |
 
 ## Math
 

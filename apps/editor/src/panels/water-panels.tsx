@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { IDockviewPanelProps } from "dockview-react";
-import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, useAssetCreate, useAssetOpen, type PropertyRow } from "@haptic/editor-kit";
+import { AssetPicker, PanelFrame, PropertyGrid, assetRowIdentity, humanizePropertyLabel, prefersReducedMotion, useAssetCreate, useAssetOpen, type PropertyRow } from "@haptic/editor-kit";
+import { ViewportZoomControls } from "../components/viewport-zoom-controls";
 import {
   createDefaultWaterDefinition, normalizeWaterBody, normalizeWaterDefinition, type RenderProjectSettings, type WaterDefinition,
 } from "@haptic/core";
@@ -158,6 +159,8 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   const { projectDocument } = useProjectState();
   const play = useOptionalPlay();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
+  const zoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const sceneRef = useRef<Scene | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
@@ -201,8 +204,12 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
     // Orbit pivots on the lake's centre, above or below its surface.
     host.camera.target = Vector3.Zero();
     const presenter = createMaterialPreviewPresenter(host, canvas, { onError: setError });
-    // Drag orbits about the centre, pinch and wheel zoom; the running loop redraws.
-    const gestures = attachMaterialPreviewGestures(canvas, host.camera);
+    // Drag orbits about the centre, pinch, wheel and the zoom buttons zoom. The running loop redraws while the water
+    // animates; a zoom also draws at once, so it shows before the water has loaded.
+    const gestures = gesturesRef.current = attachMaterialPreviewGestures(canvas, host.camera, {
+      onChange: () => presenter.present({ force: true }),
+      zoomInstant: prefersReducedMotion,
+    });
     let materials: MaterialLibrary | null = null;
     let cancelled = false;
     let frame = 0;
@@ -272,7 +279,12 @@ export function WaterPreviewPanel(_props: IDockviewPanelProps) {
   }, [definitionKey]);
 
   return <PanelFrame data-testid="water-preview-panel">
-    <canvas ref={canvasRef} className="min-h-0 h-full w-full touch-none" aria-label="Water Preview" data-testid="water-preview-canvas" />
+    <div className="relative h-full min-h-0">
+      <canvas ref={canvasRef} className="min-h-0 h-full w-full touch-none" aria-label="Water Preview" data-testid="water-preview-canvas" />
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10">
+        <ViewportZoomControls drive={zoomDrive} testId="water-preview-zoom-controls" />
+      </div>
+    </div>
     {error ? <Alert variant="destructive"><AlertTitle>Preview Failed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
   </PanelFrame>;
 }

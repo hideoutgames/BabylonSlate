@@ -175,6 +175,9 @@ export type NewProjectHosting = (typeof NEW_PROJECT_HOSTINGS)[number];
 /** Where Stack New 2D Actors applies: no host, 2D Scenes, Scene Layers, or both. */
 export const STACK_NEW_ACTORS_2D_MODES = ["disabled", "scenes", "sceneLayers", "both"] as const;
 export type StackNewActors2D = (typeof STACK_NEW_ACTORS_2D_MODES)[number];
+/** Whether a graph's Cut Links tool stays on until turned off, or turns off after one cut. */
+export const GRAPH_CUT_TOOL_MODES = ["toggle", "oneShot"] as const;
+export type GraphCutToolMode = (typeof GRAPH_CUT_TOOL_MODES)[number];
 
 export const engineSettingsSchema = z.object({
   automaticUpdatesEnabled: z.boolean().default(true),
@@ -349,12 +352,15 @@ export const engineSettingsSchema = z.object({
   /** Rank Add Node picks from a dragged pin by past choices; off keeps the saved history. */
   graphAddNodeHistoryEnabled: z.boolean().default(true),
   readOnlyPinDefaults: z.boolean().default(false),
+  graphCutToolMode: z.enum(GRAPH_CUT_TOOL_MODES).catch("toggle").default("toggle"),
   /** Accessibility: tap one graph pin, then one on the other side, to connect them. */
   graphTapToConnect: z.boolean().default(false),
   /** Accessibility (Large Pins): multiplies graph pin glyphs, their hit areas and wires. */
   graphPinScale: steppedNumber(MIN_GRAPH_PIN_SCALE, MAX_GRAPH_PIN_SCALE, GRAPH_PIN_SCALE_STEP, MIN_GRAPH_PIN_SCALE),
   /** Accessibility: a type letter (B for Boolean) inside every graph data pin. */
   graphPinTypeLetters: z.boolean().default(false),
+  /** Accessibility: Zoom In and Zoom Out buttons in viewports and asset previews. */
+  viewportZoomButtons: z.boolean().default(false),
   /** Accessibility (Snapped Nodes): a released graph node drag lands on the `graphSnapGridSize` grid. */
   graphSnapNodes: z.boolean().default(false),
   graphSnapGridSize: steppedNumber(MIN_GRAPH_SNAP_GRID_SIZE, MAX_GRAPH_SNAP_GRID_SIZE, 1, DEFAULT_GRAPH_SNAP_GRID_SIZE),

@@ -26,6 +26,7 @@ import {
   MIN_VIEWPORT_FRAME_CAP,
   resolveCompactMode,
   type EngineSettings,
+  type GraphCutToolMode,
   type StackNewActors2D,
 } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
@@ -59,6 +60,11 @@ const STACK_NEW_ACTORS_2D_ITEMS: ReadonlyArray<{ value: StackNewActors2D; label:
   { value: "scenes", label: "Scenes Only" },
   { value: "sceneLayers", label: "Scene Layers Only" },
   { value: "both", label: "Both" },
+];
+
+const GRAPH_CUT_TOOL_ITEMS: ReadonlyArray<{ value: GraphCutToolMode; label: string }> = [
+  { value: "toggle", label: "Stays On" },
+  { value: "oneShot", label: "One Use" },
 ];
 
 const HDR_FACE_SIZE_ITEMS = ([128, 256, 512] as const).map((size) => ({
@@ -827,6 +833,37 @@ export function EngineSettingsForm({
               checked={settings.readOnlyPinDefaults}
               onCheckedChange={(checked) => void onChange({ readOnlyPinDefaults: checked === true })}
             />
+          </Field>
+          <Field className="settings-field">
+            <LabelHint hint="Whether Cut Links stays on until you turn it off or turns off after one cut.">
+              <FieldLabel htmlFor="setting-graph-cut-tool-mode">Cut Links Tool</FieldLabel>
+            </LabelHint>
+            <Select
+              items={GRAPH_CUT_TOOL_ITEMS}
+              value={settings.graphCutToolMode}
+              onValueChange={(value) => {
+                const item = GRAPH_CUT_TOOL_ITEMS.find((entry) => entry.value === value);
+                if (item) void onChange({ graphCutToolMode: item.value });
+              }}
+            >
+              <SelectTrigger
+                id="setting-graph-cut-tool-mode"
+                size="sm"
+                className="w-full"
+                data-testid="setting-graph-cut-tool-mode"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {GRAPH_CUT_TOOL_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </Field>
         </SettingsSection>
         </>

@@ -668,10 +668,16 @@ function landscapeMaterial(name: string): MaterialDocument {
   return doc;
 }
 
-/** Subtle full-screen grade: partial desaturation and a soft vignette. */
+/**
+ * Subtle full-screen grade: partial desaturation and a soft vignette. Screen UV reaches both through
+ * the Named Reroute `Screen UV`, which compiles as the direct wires would.
+ */
 function postGradeMaterial(name: string): MaterialDocument {
   const doc = blankMaterial(name, "postProcess");
   node(doc, "screenUv", "input.screenUv", 0, 0);
+  node(doc, "screenUvReroute", "reroute.declaration", 0, 1, { name: "Screen UV", color: [0.25, 0.7, 0.75] });
+  node(doc, "screenUvForColor", "reroute.usage", 1, 1, { declarationId: "screenUvReroute" });
+  node(doc, "screenUvForVignette", "reroute.usage", 1, 4, { declarationId: "screenUvReroute" });
   node(doc, "amount", "param.float", 0, 2, { name: "Desaturation", value: [0.15] });
   node(doc, "vignette", "param.float", 0, 3, { name: "Vignette", value: [0.25] });
   node(doc, "sceneColor", "input.sceneColor", 1, 0);
@@ -687,10 +693,11 @@ function postGradeMaterial(name: string): MaterialDocument {
   const vignettePin = splat(doc, "darken", "clamp", "out", 4, 2, 3);
   node(doc, "graded", "math.multiply", 5, 0);
   node(doc, "output", "output.postProcess", 6, 0);
-  wire(doc, "screenUv", "uv", "sceneColor", "uv");
+  wire(doc, "screenUv", "uv", "screenUvReroute", "in");
+  wire(doc, "screenUvForColor", "out", "sceneColor", "uv");
   wire(doc, "sceneColor", "color", "desaturate", "color");
   wire(doc, "amount", "out", "desaturate", "level");
-  wire(doc, "screenUv", "uv", "distance", "a");
+  wire(doc, "screenUvForVignette", "out", "distance", "a");
   wire(doc, "vignette", "out", "edge", "b");
   wire(doc, "distance", "out", "falloff", "value");
   wire(doc, "edge", "out", "falloff", "toMax");

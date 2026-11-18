@@ -1,4 +1,5 @@
 import type { SerializedPin } from "./graph-types";
+import { pinWithDisplayType } from "./graph-connect";
 import { estimateGraphNodeSize } from "./graph-virtualize";
 
 export const FORMAT_GAP_X = 80;
@@ -15,7 +16,12 @@ export type FormatNode = {
   height?: number;
   measured?: { width?: number; height?: number };
   pins?: SerializedPin[];
+  /** A Reroute knot: estimated at the knot's size while unmeasured. */
+  reroute?: boolean;
 };
+
+/** Resolved pin types (wildcards bound by their wires), by node and pin id. */
+export type FormatPinDisplayType = (nodeId: string, pinId: string) => SerializedPin["type"] | undefined;
 
 export type FormatEdge = {
   source: string;
@@ -39,7 +45,7 @@ function nodeSize(node: FormatNode): { width: number; height: number } {
   const height = node.height ?? node.measured?.height;
   if (width !== undefined && height !== undefined) return { width, height };
   // Off-screen nodes that were never mounted have no measured size.
-  const estimate = estimateGraphNodeSize(node.pins);
+  const estimate = estimateGraphNodeSize(node.pins, node.reroute ? { __reroute: true } : undefined);
   return { width: width ?? estimate.width, height: height ?? estimate.height };
 }
 
@@ -467,9 +473,19 @@ export function formatGraphNodes(
   nodes: FormatNode[],
   edges: readonly FormatEdge[],
   selectedIds: readonly string[],
+  displayType?: FormatPinDisplayType,
 ): FormatNode[] {
   if (selectedIds.length === 0) return nodes;
-  const graph = indexGraph(nodes, edges);
+  // A Reroute's any-kind pins take the kind their wires bound them to, so an exec knot sits on
+  // the exec row and a data knot hangs like a pure node.
+  const effective = displayType
+    ? nodes.map((node) =>
+        node.pins?.some((pin) => pin.anyKind)
+          ? { ...node, pins: node.pins.map((pin) => (pin.anyKind ? pinWithDisplayType(pin, displayType(node.id, pin.id)) : pin)) }
+          : node,
+      )
+    : nodes;
+  const graph = indexGraph(effective, edges);
   const roots = formatChainRoots(selectedIds, graph);
   if (roots.length === 0) return nodes;
   const positions = new Map<string, Position>();

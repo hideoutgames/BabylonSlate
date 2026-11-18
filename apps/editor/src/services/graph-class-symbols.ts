@@ -264,7 +264,9 @@ export function scriptPinCompatibility(
   return (outgoing, incoming) =>
     adoptsDelegateSignature(outgoing, incoming) ||
     // A reference input takes a writable variable of its exact type; a wildcard one (Set By-Ref Var) takes any.
-    ((incoming.reference !== "required" || (outgoing.reference === "writable" &&
+    // A Reroute knot's output (`anyKind`) passes on whatever feeds it, which the rule cannot see: validation
+    // reads the wire through the knot and reports `pin.invalid_reference` when that source is not writable.
+    ((incoming.reference !== "required" || ((outgoing.reference === "writable" || outgoing.anyKind === true) &&
       (incoming.type.kind === "resolvingWildcard" ||
         pinTypeEquals(outgoing.type as PinType, incoming.type as PinType)))) &&
     isAssignable(outgoing.type as PinType, incoming.type as PinType, {

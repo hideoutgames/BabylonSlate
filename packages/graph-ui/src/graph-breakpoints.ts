@@ -2,7 +2,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type { NestedMenuItem } from "@haptic/editor-kit";
 import { useGraphEditorContext } from "./graph-editor-context";
 import type { GraphKeybinds } from "./graph-keybinds";
-import { hasSerializedPins } from "./graph-types";
+import { hasSerializedPins, isRerouteNodeData } from "./graph-types";
 
 /** A node's breakpoint: on, or kept but off. */
 export type GraphBreakpointState = "enabled" | "disabled";
@@ -31,9 +31,10 @@ export type GraphBreakpoints = {
 /**
  * Whether execution can stop at a node: breakpoints are checked where execution reaches a node, so
  * only a node with an exec pin (an event, a function entry or a call in an exec chain) can have one.
+ * A Reroute knot is compiled away, so execution never stops on one.
  */
 export function canBreakOnNode(data: Record<string, unknown> | undefined): boolean {
-  return hasSerializedPins(data) && data.__pins.some((pin) => pin.kind === "exec");
+  return !isRerouteNodeData(data) && hasSerializedPins(data) && data.__pins.some((pin) => pin.kind === "exec");
 }
 
 /** Whether `breakpoints` let the node have one. */
@@ -42,6 +43,7 @@ export function nodeCanBreak(
   nodeId: string,
   data: Record<string, unknown> | undefined,
 ): boolean {
+  if (isRerouteNodeData(data)) return false;
   return breakpoints.canBreak ? breakpoints.canBreak(nodeId, data) : canBreakOnNode(data);
 }
 

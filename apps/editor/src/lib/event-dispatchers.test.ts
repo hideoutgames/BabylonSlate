@@ -102,6 +102,27 @@ describe("Event Dispatcher members", () => {
     expect(nodeData(adoptBoundEventSignatures(boundGraph(own), "Enemy"), "listener")?.pins).toEqual(own);
   });
 
+  it("give an empty custom event the dispatcher's inputs when its wire to Bind runs through Reroute knots", () => {
+    const direct = boundGraph([]);
+    const knot = (id: string) => ({ id, type: "flow.reroute", position: { x: 150, y: 0 }, data: { __reroute: true } });
+    const rerouted: SerializedGraph = {
+      ...direct,
+      nodes: [...direct.nodes, knot("k1"), knot("k2")],
+      edges: [
+        { id: "e1", source: "listener", sourceHandle: "OutputDelegate", target: "k1", targetHandle: "in" },
+        { id: "e2", source: "k1", sourceHandle: "out", target: "k2", targetHandle: "in" },
+        { id: "e3", source: "k2", sourceHandle: "out", target: "bind", targetHandle: "event" },
+      ],
+    };
+    expect(nodeData(adoptBoundEventSignatures(rerouted, "Enemy"), "listener")?.pins).toEqual([
+      { name: "Damage", typeId: "float", direction: "out" },
+      { name: "Source", typeId: "string", direction: "out" },
+    ]);
+    // A knot that reaches no Bind adopts nothing.
+    const dangling = { ...rerouted, edges: rerouted.edges.slice(0, 2) };
+    expect(nodeData(adoptBoundEventSignatures(dangling, "Enemy"), "listener")?.pins).toEqual([]);
+  });
+
   it("place Unreal's Assign as a Bind node wired from a matching custom event with a free name", () => {
     const taken = enemy({
       nodes: [{ id: "old", type: "flow.event.custom", position: { x: 0, y: 0 }, data: { name: "On Damaged", pins: [] } }],

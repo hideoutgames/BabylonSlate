@@ -36,6 +36,7 @@ import {
 } from "./flow-switch-pins";
 import { isBreakableLoopKind } from "./structured-flow";
 import { eventNameForEntry, localVariableIdent } from "./compile";
+import { collapseReroutes } from "./reroute";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as FunctionConstructor;
 
@@ -1535,10 +1536,13 @@ function validateExtensionNodes(graph: LogicGraph, ctx: TypeContext, registry: V
 }
 
 export function validateGraphs(
-  graphs: readonly LogicGraph[],
+  authoredGraphs: readonly LogicGraph[],
   ctx: TypeContext,
   options: ValidateOptions = {},
 ): Diagnostic[] {
+  // Every check, registered rules included, sees wires through Reroutes as direct wires, exactly
+  // as the compiler does; a Reroute itself is never reported.
+  const graphs = authoredGraphs.map(collapseReroutes);
   const diagnostics: Diagnostic[] = [];
   const compiledByGraph = new Map<string, ReadonlySet<string>>();
   for (const graph of graphs) {

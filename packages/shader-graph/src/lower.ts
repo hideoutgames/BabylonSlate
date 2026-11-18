@@ -1,6 +1,9 @@
 import { fnv1a } from "@haptic/core";
 import {
+  isNamedRerouteDeclarationType,
+  isNamedRerouteUsageType,
   materialNodeDefinition,
+  namedRerouteDeclarationId,
   terminalNodeTypeFor,
   type MaterialDomain,
   type MaterialNodeDefinition,
@@ -294,6 +297,8 @@ function lowerWithinBudget(
   const operations: MaterialOperation[] = [];
   const emitted = new Map<string, MaterialOperation>();
   const emitting = new Set<string>();
+  /** Named Reroute usages being followed to their source, by frame prefix and node id. */
+  const readingUsages = new Set<string>();
   const textures: MaterialTextureBinding[] = [];
 
   const rootFrame: Frame = {
@@ -399,6 +404,28 @@ function lowerWithinBudget(
       if (declared && frame.bindInput) return frame.bindInput(pinId);
       return constantOperand(declared?.type ?? "float", declared?.defaultValue);
     }
+
+    if (isNamedRerouteUsageType(node.type)) {
+      // The reroute collapses: the usage is its declaration's source, unconverted, so the consumer's
+      // wire converts from the real source type exactly as a direct wire would.
+      const declaration = lookupOf(frame).node(namedRerouteDeclarationId(node));
+      const edge = declaration && isNamedRerouteDeclarationType(declaration.type)
+        ? lookupOf(frame).incoming(declaration.id, "in")
+        : undefined;
+      // Validation rejects a usage that reads itself, in the Material and in every called function;
+      // this guard keeps lowering finite should one ever get past it.
+      const key = `${frame.prefix}${node.id}`;
+      if (!edge || readingUsages.has(key)) return constantOperand("float", undefined);
+      readingUsages.add(key);
+      try {
+        return operandForOutput(frame, edge.sourceNodeId, edge.sourcePinId);
+      } finally {
+        readingUsages.delete(key);
+      }
+    }
+
+    // A declaration has no output to read; nothing else reaches here for it.
+    if (isNamedRerouteDeclarationType(node.type)) return null;
 
     if (node.type === "function.call") {
       const child = frameForCall(frame, node);

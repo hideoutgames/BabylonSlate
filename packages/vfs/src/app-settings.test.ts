@@ -27,7 +27,7 @@ describe("app settings", () => {
     expect(defaults).toMatchObject({
       touchTargetScale: 1, textSizePercent: 100, reduceMotion: "system", holdTimeMs: 500,
       doubleTapTimeMs: 350, numberSnapStrength: 2, graphPinScale: 1, graphPinTypeLetters: false,
-      graphSnapNodes: false, graphSnapGridSize: 32,
+      graphSnapNodes: false, graphSnapGridSize: 32, viewportZoomButtons: false,
     });
     expect(engineSettingsSchema.parse({
       touchTargetScale: 1.4, textSizePercent: 133, holdTimeMs: 820, doubleTapTimeMs: 370,
@@ -43,6 +43,11 @@ describe("app settings", () => {
       touchTargetScale: 2, textSizePercent: 50, holdTimeMs: 300, doubleTapTimeMs: 1000,
       numberSnapStrength: 0, graphPinScale: 2, reduceMotion: "system", graphSnapGridSize: 1,
     });
+  });
+  it("keeps Cut Links on by default and reads an unknown mode as the default", () => {
+    expect(engineSettingsSchema.parse({}).graphCutToolMode).toBe("toggle");
+    expect(engineSettingsSchema.parse({ graphCutToolMode: "oneShot" }).graphCutToolMode).toBe("oneShot");
+    expect(engineSettingsSchema.parse({ graphCutToolMode: "sometimes" }).graphCutToolMode).toBe("toggle");
   });
   it("keeps inline pin editing enabled for existing devices and persists the local lock", async () => {
     localStorage.setItem("haptic:engine-settings", JSON.stringify({ graphDefaultZoom: 0.75 }));

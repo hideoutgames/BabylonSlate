@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createRichText2DComponent } from "@haptic/core";
 import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { encodeAssetDocument } from "./asset-document";
 import { readHassetHeader } from "./hasset";
@@ -19,6 +20,17 @@ describe("typed asset dependencies", () => {
     }, { classes: [{ guid: "hero", classId: "Hero" }] });
     expect(metadata.dependencies).toEqual(["environment", "font", "hero", "hud", "material", "model", "pause", "scene-b", "sound", "spark"]);
     expect(metadata.requiredDependencies).toEqual(["environment", "font", "hero", "hud", "material", "model", "sound", "spark"]);
+  });
+
+  it("requires the Texture a 2D Rich Text image names, and nothing for a new 2D Rich Text", () => {
+    const actor = (text?: string) => ({ classId: "Actor", components: [
+      text === undefined ? createRichText2DComponent("rich") : { classId: "2DRichTextComponent", properties: { text } },
+    ] });
+    for (const type of ["Scene", "SceneLayer"]) {
+      expect(collectAssetDependencyMetadata(type, { actors: [actor("Hi [img=icon size=8]")] }).requiredDependencies).toEqual(["icon"]);
+      // A placeholder image id in the default text made Play fail for every holder of a new 2D Rich Text.
+      expect(collectAssetDependencyMetadata(type, { actors: [actor()] })).toMatchObject({ dependencies: [], requiredDependencies: [] });
+    }
   });
 
   it("requires an Animation Graph's Skeleton and the clips its state graphs play", () => {

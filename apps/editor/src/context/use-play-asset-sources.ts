@@ -6,6 +6,7 @@ import {
   type PlayAssetSourceHost,
 } from "../services/play-asset-sources";
 import type { PlaySceneLoad } from "../services/play-physics";
+import { describePlayAssetForMessage } from "../services/play-asset-problems";
 
 /**
  * The asset sources a Play session holds: the startup set, the project
@@ -51,7 +52,11 @@ export function usePlayAssetSources({
   const acquireSceneSources = useCallback(async (guid: string, options: { consumer: string; signal: AbortSignal }) => {
     const prepared = await acquireAssetSources([guid], options);
     const scene = prepared.game.scenes.get(guid);
-    if (!scene) { prepared.release(); throw new Error(`Scene ${guid} could not be prepared.`); }
+    if (!scene) {
+      prepared.release();
+      const registry = playSourceHostRef.current?.registry;
+      throw new Error(`${registry ? describePlayAssetForMessage(registry, guid) : `Scene ${guid}`} could not be prepared as a Scene.`);
+    }
     return { ...prepared, scene, audioReverb: prepared.game.audioReverbBytes.get(guid) ?? null };
   }, [acquireAssetSources]);
   const releaseInitialSources = useCallback(() => {

@@ -352,6 +352,33 @@ export function resolveWildcardPinTypes(
     }
   }
 
+  // A wildcard bound to exec (a Reroute carrying an exec wire) cannot also feed or read data.
+  for (const edge of graph.edges) {
+    const sourceType = findPin(pinTypes, edge.sourceNodeId, edge.sourcePinId);
+    const targetType = findPin(pinTypes, edge.targetNodeId, edge.targetPinId);
+    if (!sourceType || !targetType) continue;
+    const targetWildcard = isResolving(targetType);
+    if (!targetWildcard && !isResolving(sourceType)) continue;
+    const from = substitute(sourceType, edge.sourceNodeId, subst, conflicted);
+    const to = substitute(targetType, edge.targetNodeId, subst, conflicted);
+    if (isResolving(from) || isResolving(to) || (from.kind === "exec") === (to.kind === "exec")) continue;
+    conflicts.push(targetWildcard
+      ? {
+          nodeId: edge.targetNodeId,
+          pinId: edge.targetPinId,
+          relatedNodeId: edge.sourceNodeId,
+          relatedPinId: edge.sourcePinId,
+          message: `Cannot connect ${from.kind} pin to ${to.kind} pin`,
+        }
+      : {
+          nodeId: edge.sourceNodeId,
+          pinId: edge.sourcePinId,
+          relatedNodeId: edge.targetNodeId,
+          relatedPinId: edge.targetPinId,
+          message: `Cannot connect ${from.kind} pin to ${to.kind} pin`,
+        });
+  }
+
   const resolved = new Map<string, PinType>();
   const display = new Map<string, PinType>();
 

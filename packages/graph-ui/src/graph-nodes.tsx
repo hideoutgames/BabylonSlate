@@ -32,9 +32,10 @@ import { cn } from "@haptic/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { nodeCanBreak, useNodeBreakpoint } from "./graph-breakpoints";
 import { useNodeMenu } from "./use-node-menu";
-import { hasSerializedPins, type SerializedPin } from "./graph-types";
+import { hasSerializedPins, isRerouteNodeData, type SerializedPin } from "./graph-types";
 import { displayNodeTitle } from "./graph-connect";
 import {
+  headerContrastColor,
   nodeKind,
   nodeRoleClass,
   nodeVisualRole,
@@ -46,6 +47,7 @@ import {
   type PinTypeRef,
 } from "./node-theme";
 import { NodeKindIcon } from "./node-icons";
+import { NodeRenameField, useNodeTitleGestures, useRenameValue } from "./node-title";
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
 import { PinDefaultEditor } from "./pin-default-editor";
@@ -92,6 +94,7 @@ function visualFromData(
       // An async Execute JavaScript waits like a latent call without the latent header colour.
       latent: input.latent || (nodeType === "debug.executeJavaScript" && data.async === true),
       interface: data.__interface === true,
+      reroute: isRerouteNodeData(data),
     }),
   };
 }
@@ -160,15 +163,18 @@ function PinVisual({
   pin,
   connected,
   byReference = false,
+  circle = false,
 }: {
   type: PinTypeRef;
   pin?: SerializedPin;
   connected: boolean;
   /** A variable output wired into a reference input: drawn as the reference it passes. */
   byReference?: boolean;
+  /** Always the round glyph, whatever the type (a Reroute knot's pins, exec included). */
+  circle?: boolean;
 }) {
   const { pinTypeLetters } = useContext(GraphInteractionSettingsContext);
-  const shape = byReference ? "reference" : pinVisualShape(type, pin);
+  const shape = circle ? "circle" : byReference ? "reference" : pinVisualShape(type, pin);
   const color = pinCssVar(type);
   if (type.kind === "pose" || type.kind === "frame") {
     return <AnimPinGlyph kind={type.kind} color={color} connected={connected} />;
@@ -210,6 +216,7 @@ function PinHandle({
   connected,
   disabled,
   label,
+  circle = false,
 }: {
   nodeId: string;
   pin: SerializedPin;
@@ -218,6 +225,7 @@ function PinHandle({
   hasError: boolean;
   connected: boolean;
   disabled?: boolean;
+  circle?: boolean;
 }) {
   const { onPinTap, pinDisplayType } = useGraphEditorContext();
   const isSource = pin.direction === "out";
@@ -256,7 +264,7 @@ function PinHandle({
         onPinTap(nodeId, pin.id, pin.direction);
       }}
     >
-      <PinVisual type={displayType} pin={pin} connected={connected} byReference={byReference} />
+      <PinVisual type={displayType} pin={pin} connected={connected} byReference={byReference} circle={circle} />
     </Handle>
   );
 }
@@ -606,8 +614,12 @@ export function BlueprintNodeShell({
   /** Fixed-width flat card without the role title bar; children render their own header. */
   card?: boolean;
 }) {
-  const { nodeErrorCount, describeNode, previewedNode } = useGraphEditorContext();
+  const { nodeErrorCount, describeNode, previewedNode, renamingNodeId, onNodeRenameCommit, onNodeRenameCancel } = useGraphEditorContext();
   const previewed = previewedNode?.nodeId === nodeId ? previewedNode : null;
+  const renaming = !card && renamingNodeId === nodeId;
+  const titleGestures = useNodeTitleGestures(nodeId);
+  const renameValue = useRenameValue(title);
+  const headerColor = typeof data?.__headerColor === "string" && data.__headerColor ? data.__headerColor : undefined;
   const description = data ? describeNode?.(String(data.__nodeType ?? ""), data) : undefined;
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
   const editorOnly = data?.__editorOnly === true;
@@ -643,11 +655,22 @@ export function BlueprintNodeShell({
               "group/title relative flex items-center gap-2 rounded-t-lg py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
               kind ? "pl-3 pr-4" : "px-4",
               headerPins.length > 0 && "pr-12",
-              nodeRoleClass(role),
+              headerColor ? undefined : nodeRoleClass(role),
             )}
+            style={headerColor ? { backgroundColor: headerColor, color: headerContrastColor(headerColor) } : undefined}
+            data-header-color={headerColor ? "" : undefined}
+            {...(renaming ? undefined : titleGestures)}
           >
             {kind ? <NodeKindIcon kind={kind} className="size-5" /> : null}
-            {description ? (
+            {renaming ? (
+              <NodeRenameField
+                title={renameValue}
+                onDone={(name) => {
+                  if (name === null) onNodeRenameCancel?.();
+                  else onNodeRenameCommit?.(nodeId, name);
+                }}
+              />
+            ) : description ? (
               <LabelHint hint={description} underline={false} delay={GRAPH_HINT_DELAY_MS}>
                 <span data-node-title-hint="">{title}</span>
               </LabelHint>
@@ -823,11 +846,62 @@ function VariableGetNode({
   );
 }
 
+/**
+ * A Reroute knot: a small pill with no title bar, its input pin at the left end and its output
+ * at the right, both drawn in the type the knot carries. The space between them drags the knot.
+ */
+function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
+  const { pendingPin, pinHasError, pinDisplayType } = useGraphEditorContext();
+  const nodeMenu = useNodeMenu(id);
+  const pins = hasSerializedPins(data) ? data.__pins : [];
+  const input = pins.find((pin) => pin.direction === "in");
+  const output = pins.find((pin) => pin.direction === "out");
+  const inputWired = useStore((state) => (input ? isPinWired(state.edges, id, input) : false));
+  const outputWired = useStore((state) => (output ? isPinWired(state.edges, id, output) : false));
+  const isPending = (pin: SerializedPin) => pendingPin?.nodeId === id && pendingPin.pinId === pin.id;
+  // The outline takes the colour of what the knot carries, as its pins do (the input's, should they differ).
+  const carried = input ?? output;
+  const outline = pinCssVar((carried && pinDisplayType(id, carried.id)) ?? carried?.type ?? { kind: "wildcard" });
+  const handle = (pin: SerializedPin, connected: boolean) => (
+    <span className="flex" data-pin-side={pin.direction} data-pin-id={pin.id}>
+      <PinHandle
+        nodeId={id}
+        pin={pin}
+        pending={isPending(pin)}
+        hasError={pinHasError(id, pin.id)}
+        connected={connected}
+        circle
+      />
+    </span>
+  );
+  return (
+    <div {...nodeMenu.bind}>
+      <div
+        role="group"
+        aria-label="Reroute"
+        data-node-kind="reroute"
+        data-selected={selected ? "true" : undefined}
+        className={cn(
+          "graph-reroute-knot flex items-center justify-between rounded-full border bg-graph-node shadow-sm",
+          selected && "outline-2 outline-offset-2 outline-primary",
+        )}
+        // A 3px outline that keeps the knot's size: the 1px border plus a 2px inset ring, both in the carried colour.
+        style={{ borderColor: outline, boxShadow: `inset 0 0 0 2px ${outline}` }}
+      >
+        {input ? handle(input, inputWired) : null}
+        {output ? handle(output, outputWired) : null}
+      </div>
+      {nodeMenu.overlay}
+    </div>
+  );
+}
+
 export function resolveNodeType(
   type: string,
   data: Record<string, unknown>,
   knownTypes: Record<string, unknown> = graphNodeTypes,
 ): string {
+  if (isRerouteNodeData(data) && "reroute" in knownTypes) return "reroute";
   const typeId = typeof data.__nodeType === "string" ? data.__nodeType : type;
   if (typeId === "variables.get" || typeId.startsWith("variables.get:")) {
     return "variableGet";
@@ -839,4 +913,5 @@ export function resolveNodeType(
 export const graphNodeTypes = {
   pinNode: PinNode,
   variableGet: VariableGetNode,
+  reroute: RerouteNode,
 };

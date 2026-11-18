@@ -204,6 +204,7 @@ export function KeybindProvider({
       duplicate: bindings.get("edit.duplicate") ?? [],
       delete: bindings.get("edit.delete") ?? [],
       breakLinks: bindings.get("graph.breakLinks") ?? [],
+      toggleCutLinks: bindings.get("graph.cutLinks") ?? [],
       toggleBreakpoint: bindings.get("graph.toggleBreakpoint") ?? [],
       toggleBreakpointEnabled: bindings.get("graph.toggleBreakpointEnabled") ?? [],
       editBreakpoint: bindings.get("graph.editBreakpoint") ?? [],

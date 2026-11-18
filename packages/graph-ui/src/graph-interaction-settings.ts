@@ -15,6 +15,8 @@ export interface GraphInteractionSettings {
   pinTypeLetters?: boolean;
   /** Snapped Nodes: a released node drag rounds positions to this grid (flow units); unset or 0 is off. */
   nodeSnapGrid?: number;
+  /** Cut Links turns itself off after its first cut; unset keeps it on until turned off. */
+  cutToolOneShot?: boolean;
 }
 
 /** A position rounded to `grid` flow units; a grid of 0 or less leaves it as it is. */

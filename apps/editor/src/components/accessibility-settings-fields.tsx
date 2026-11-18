@@ -232,6 +232,13 @@ export function AccessibilitySettingsFields({
           format={(value) => SCRUB_SNAP_STRENGTH_LABELS[value] ?? String(value)}
           onChange={(numberSnapStrength) => void onChange({ numberSnapStrength })}
         />
+        <SwitchField
+          id="setting-viewport-zoom-buttons"
+          label="Viewport Zoom Buttons"
+          hint="Adds Zoom In and Zoom Out buttons to viewports and asset previews, for zooming without a pinch."
+          checked={settings.viewportZoomButtons}
+          onChange={(viewportZoomButtons) => void onChange({ viewportZoomButtons })}
+        />
       </SettingsSection>
 
       <SettingsSection id="graphPins" title="Graph Pins">

@@ -26,9 +26,8 @@ export interface GraphEditingContextValue {
   canvasDropApi: GraphCanvasDropApi | null;
   setCanvasDropApi: (api: GraphCanvasDropApi | null) => void;
   /**
-   * A custom event node whose Class panel row should open its inline rename
-   * (Rename Event, or a new event from Add Node). The Class panel takes it
-   * once the row exists and clears it.
+   * A custom event node whose header should open its inline rename (Rename Event in the
+   * Inspector). The Event Graph takes it once the node is on its canvas and clears it.
    */
   eventRenameRequest: string | null;
   requestEventRename: (nodeId: string) => void;

@@ -35,6 +35,8 @@ export type ViewportTestHost = {
       }
     >;
     hardwareScalingLevel: () => number | null;
+    /** The editor camera's zoom: 3D orbit radius and 2D orthographic half height (both shrink as it zooms in). */
+    editorCameraZoom: () => { mode: "2d" | "3d"; radius: number; orthoHalfHeight: number } | null;
     postProcessPassCount: () => number | null;
     renderingBaseline: () => Record<string, unknown> | null;
     /** Babylon Engines alive in the page; answers while Play or Preview Build has released this viewport. */
@@ -367,6 +369,10 @@ export function installViewportTestHost({
       return { x: (ndc.x + 1) / 2, y: (1 - ndc.y) / 2 };
     },
     hardwareScalingLevel: () => engineRef.current?.scaling.getLevel() ?? null,
+    editorCameraZoom: () => {
+      const camera = engineRef.current?.editor?.camera;
+      return camera ? { mode: camera.mode, radius: camera.camera.radius, orthoHalfHeight: camera.orthoHalfHeight() } : null;
+    },
     postProcessPassCount: () =>
       engineRef.current?.postProcessPassCount() ?? null,
     /**

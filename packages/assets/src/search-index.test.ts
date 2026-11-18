@@ -195,6 +195,7 @@ describe("ProjectSearchIndex", () => {
             type: "debug.executeJavaScript",
             data: { body: "uniqueBodyTokenShouldNotMatch" },
           },
+          { id: "knot-1", type: "flow.reroute", data: { __reroute: true, title: "Reroute" } },
         ],
         edges: [],
       },
@@ -208,9 +209,12 @@ describe("ProjectSearchIndex", () => {
         "variables.get": "Get Variable",
         "variables.getValidated": "Validated Get",
         "debug.executeJavaScript": "Execute JavaScript",
+        "flow.reroute": "Reroute",
       },
     });
     await index.rebuild(registry);
+    // A Reroute knot is wiring, not something to find.
+    expect(index.query("reroute").filter((hit) => hit.kind === "graph-node")).toEqual([]);
 
     const hello = index.query("hello from");
     expect(hello.some((hit) => hit.kind === "graph-node" && hit.target.kind === "graph-node")).toBe(

@@ -3,10 +3,20 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DocumentEditStack, SetAssetDocumentCommand } from "@haptic/edit";
-import { GraphInteractionSettingsContext } from "@haptic/graph-ui";
+import {
+  GraphInteractionSettingsContext,
+  displayPinTypesForGraph,
+  pinWithDisplayType,
+  pinsAreCompatible,
+  type SerializedPin,
+} from "@haptic/graph-ui";
 import {
   PARTICLE_OUTPUT_NODE_TYPE,
   createDefaultParticleGraphDocument,
+  hydrateParticleGraphForEditor,
+  particleGraphToSerialized,
+  particlePinsAreCompatible,
+  validateParticleGraphDocument,
   newParticleNodeProperties,
   normalizeParticleGraphDocument,
   type ParticleGraphDocument,
@@ -154,6 +164,20 @@ async function pickOption(testId: string, label: string) {
 
 function nodeOf(doc: ParticleGraphDocument, id: string) {
   return doc.nodes.find((node) => node.id === id)!;
+}
+
+/** The default graph with Multiply → Update Color routed through a Reroute knot. */
+function withKnot(): ParticleGraphDocument {
+  const doc = createDefaultParticleGraphDocument("Embers");
+  return {
+    ...doc,
+    nodes: [...doc.nodes, { id: "knot", type: "utility.reroute", position: { x: 1100, y: 400 }, properties: {} }],
+    edges: [
+      ...doc.edges.filter((edge) => edge.id !== "e-multiply-color"),
+      { id: "e-multiply-knot", sourceNodeId: "multiply", sourcePinId: "out", targetNodeId: "knot", targetPinId: "in" },
+      { id: "e-knot-color", sourceNodeId: "knot", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "color" },
+    ],
+  };
 }
 
 /** Create → Shape → Apply Velocity → Update Color → Update Position (unwired Position) → Emitter Output. */
@@ -481,6 +505,100 @@ describe("ParticleGraphDetails with several nodes selected", () => {
   });
 });
 
+describe("Particle Graph Reroute knots on the canvas", () => {
+  /** Vector3 → a → b → Update Direction, a knot only wired into Update Size, and a loose knot. */
+  function canvas() {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    const at = { x: 0, y: 0 };
+    doc.nodes.push(
+      { id: "up", type: "const.vec3", position: at, properties: { value: [0, 1, 0] } },
+      { id: "a", type: "utility.reroute", position: at, properties: {} },
+      { id: "b", type: "utility.reroute", position: at, properties: {} },
+      { id: "dir", type: "update.direction", position: at, properties: {} },
+      { id: "s", type: "utility.reroute", position: at, properties: {} },
+      { id: "size", type: "update.size", position: at, properties: {} },
+      { id: "loose", type: "utility.reroute", position: at, properties: {} },
+      { id: "tint", type: "const.color", position: at, properties: { value: [1, 1, 1, 1] } },
+      { id: "one", type: "const.float", position: at, properties: { value: [1] } },
+    );
+    doc.edges.push(
+      { id: "w1", sourceNodeId: "up", sourcePinId: "out", targetNodeId: "a", targetPinId: "in" },
+      { id: "w2", sourceNodeId: "a", sourcePinId: "out", targetNodeId: "b", targetPinId: "in" },
+      { id: "w3", sourceNodeId: "b", sourcePinId: "out", targetNodeId: "dir", targetPinId: "direction" },
+      { id: "w4", sourceNodeId: "s", sourcePinId: "out", targetNodeId: "size", targetPinId: "size" },
+    );
+    const graph = hydrateParticleGraphForEditor(particleGraphToSerialized(doc));
+    const display = displayPinTypesForGraph(graph.nodes, graph.edges);
+    /** A pin as the canvas connects it: its declared pin with the type its wires give it. */
+    const pinOf = (nodeId: string, pinId: string) => {
+      const pins = graph.nodes.find((node) => node.id === nodeId)!.data.__pins as SerializedPin[];
+      return pinWithDisplayType(pins.find((pin) => pin.id === pinId)!, display.get(`${nodeId}\0${pinId}`));
+    };
+    const connects = (source: SerializedPin, target: SerializedPin) =>
+      pinsAreCompatible(source, target, particlePinsAreCompatible);
+    return { pinOf, connects };
+  }
+
+  it("take the type wired into them on both pins, through a chain, or the type of the input they feed", () => {
+    const { pinOf } = canvas();
+    for (const [nodeId, pinId] of [["a", "in"], ["a", "out"], ["b", "in"], ["b", "out"]] as const) {
+      expect(pinOf(nodeId, pinId).type, `${nodeId}.${pinId}`).toEqual({ kind: "vec3" });
+    }
+    expect(pinOf("s", "in").type).toEqual({ kind: "float" });
+    expect(pinOf("loose", "out").type).toEqual({ kind: "resolvingWildcard" });
+  });
+
+  it("take a Float wired into a knot that feeds a Vector3 input, and still build", () => {
+    // Float constant → k1 → k2 → Update Direction's Direction (Vector3), wired target side first; Float → k3 → Add's A.
+    const doc = createDefaultParticleGraphDocument("Embers");
+    const at = { x: 0, y: 0 };
+    doc.nodes.push(
+      { id: "one", type: "const.float", position: at, properties: { value: [1] } },
+      { id: "k1", type: "utility.reroute", position: at, properties: {} },
+      { id: "k2", type: "utility.reroute", position: at, properties: {} },
+      { id: "dir", type: "update.direction", position: at, properties: {} },
+      { id: "k3", type: "utility.reroute", position: at, properties: {} },
+      { id: "add", type: "math.add", position: at, properties: {} },
+    );
+    // Update Direction joins the spine between Apply Velocity and Update Color.
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-velocity-color");
+    doc.edges.push(
+      { id: "s1", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "dir", targetPinId: "particle" },
+      { id: "s2", sourceNodeId: "dir", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
+      { id: "w1", sourceNodeId: "k1", sourcePinId: "out", targetNodeId: "k2", targetPinId: "in" },
+      { id: "w2", sourceNodeId: "k2", sourcePinId: "out", targetNodeId: "dir", targetPinId: "direction" },
+      { id: "w3", sourceNodeId: "one", sourcePinId: "out", targetNodeId: "k1", targetPinId: "in" },
+      { id: "w4", sourceNodeId: "one", sourcePinId: "out", targetNodeId: "k3", targetPinId: "in" },
+      { id: "w5", sourceNodeId: "k3", sourcePinId: "out", targetNodeId: "add", targetPinId: "a" },
+    );
+    const graph = hydrateParticleGraphForEditor(particleGraphToSerialized(doc));
+    const display = displayPinTypesForGraph(graph.nodes, graph.edges);
+    for (const key of ["k1\0in", "k1\0out", "k2\0in", "k2\0out", "k3\0in", "k3\0out"]) {
+      expect(display.get(key), key).toEqual({ kind: "float" });
+    }
+    expect(validateParticleGraphDocument(doc).filter((entry) => entry.severity === "error")).toEqual([]);
+  });
+
+  it("carry one type at a time: a loose knot takes any pin, a typed one only what that type connects to", () => {
+    const { pinOf, connects } = canvas();
+    expect(connects(pinOf("tint", "out"), pinOf("loose", "in"))).toBe(true);
+    expect(connects(pinOf("create", "out"), pinOf("loose", "in"))).toBe(true);
+    expect(connects(pinOf("loose", "out"), pinOf("updateColor", "color"))).toBe(true);
+    // b carries a Vector3.
+    expect(connects(pinOf("b", "out"), pinOf("updateColor", "color"))).toBe(false);
+    expect(connects(pinOf("b", "out"), pinOf("size", "particle"))).toBe(false);
+    expect(connects(pinOf("tint", "out"), pinOf("a", "in"))).toBe(false);
+    // A Float splats into the Vector3, as it does on a direct wire.
+    expect(connects(pinOf("one", "out"), pinOf("a", "in"))).toBe(true);
+  });
+
+  it("show no Inspector rows for a selected knot", () => {
+    renderDetails(withKnot(), "knot");
+    expect(screen.getByTestId("module-stage-node").textContent).toContain("Reroute");
+    expect(screen.queryAllByTestId(/^property-/)).toEqual([]);
+  });
+});
+
 describe("ParticleGraphPreview", () => {
   it("explains an empty Preview while the graph has never validated", () => {
     render(
@@ -663,6 +781,79 @@ describe("Particle Graph document panels", () => {
     expect(readers.map((node) => node.properties.parameterId)).toEqual(duplicated.parameters.map((parameter) => parameter.id));
   });
 
+  describe("renaming a Parameter node on its header", () => {
+    /** Heat and Glow, each read by its own Parameter node, and a Float constant. */
+    function withParameters(): ParticleGraphDocument {
+      const doc = createDefaultParticleGraphDocument("Embers");
+      doc.parameters = [
+        { id: "heat", name: "Heat", type: "float", defaultValue: [2] },
+        { id: "glow", name: "Glow", type: "float", defaultValue: [1] },
+      ];
+      doc.nodes.push(
+        { id: "heat-node", type: "input.parameter", position: { x: 0, y: 400 }, properties: { parameterId: "heat", valueType: "float" } },
+        { id: "glow-node", type: "input.parameter", position: { x: 0, y: 600 }, properties: { parameterId: "glow", valueType: "float" } },
+        { id: "life", type: "const.float", position: { x: 0, y: 800 }, properties: { value: [1] } },
+      );
+      return doc;
+    }
+
+    async function titleOf(container: HTMLElement, nodeId: string) {
+      await waitFor(() => expect(container.querySelector(`[data-id="${nodeId}"] [data-node-title]`)).not.toBeNull());
+      return container.querySelector(`[data-id="${nodeId}"] [data-node-title]`)!;
+    }
+
+    function parameterNames() {
+      return normalizeParticleGraphDocument(store.getSnapshot()).parameters.map((entry) => entry.name);
+    }
+
+    it("renames the parameter from a title double-click as one change", async () => {
+      const { container } = renderPanels(withParameters(), "canvas");
+      fireEvent.doubleClick(await titleOf(container, "heat-node"));
+      const field = await screen.findByTestId("graph-node-rename");
+      expect((field as HTMLInputElement).value).toBe("Heat");
+      fireEvent.change(field, { target: { value: "Ember Heat" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      expect(store.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
+      expect(parameterNames()).toEqual(["Ember Heat", "Glow"]);
+      await waitFor(() => expect(screen.queryByTestId("graph-node-rename")).toBeNull());
+      expect((await titleOf(container, "heat-node")).textContent).toContain("Ember Heat");
+    });
+
+    it("keeps names unique, and Escape keeps the name", async () => {
+      const { container } = renderPanels(withParameters(), "canvas");
+      fireEvent.doubleClick(await titleOf(container, "glow-node"));
+      const field = await screen.findByTestId("graph-node-rename");
+      fireEvent.change(field, { target: { value: "Heat" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      expect(parameterNames()).toEqual(["Heat", "Heat_1"]);
+
+      fireEvent.doubleClick(await titleOf(container, "heat-node"));
+      const again = await screen.findByTestId("graph-node-rename");
+      fireEvent.change(again, { target: { value: "Cold" } });
+      fireEvent.keyDown(again, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByTestId("graph-node-rename")).toBeNull());
+      expect(store.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
+      expect(parameterNames()).toEqual(["Heat", "Heat_1"]);
+    });
+
+    it("starts from the node menu's Rename, and only on Parameter nodes", async () => {
+      const { container } = renderPanels(withParameters(), "canvas");
+      fireEvent.doubleClick(await titleOf(container, "life"));
+      fireEvent.contextMenu((await titleOf(container, "life")).parentElement!);
+      await screen.findByTestId("particle-graph-convert-to-parameter");
+      expect(screen.queryByTestId("particle-graph-rename")).toBeNull();
+      expect(screen.queryByTestId("graph-node-rename")).toBeNull();
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      fireEvent.contextMenu((await titleOf(container, "glow-node")).parentElement!);
+      fireEvent.click(await screen.findByTestId("particle-graph-rename"));
+      const field = await screen.findByTestId("graph-node-rename");
+      fireEvent.change(field, { target: { value: "Shine" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      expect(parameterNames()).toEqual(["Heat", "Shine"]);
+    });
+  });
+
   it("declares a new parameter for an Add Node Parameter entry", async () => {
     renderPanels(createDefaultParticleGraphDocument("Embers"), "canvas");
     fireEvent.click(await screen.findByTestId("graph-add-node"));
@@ -674,6 +865,23 @@ describe("Particle Graph document panels", () => {
     ]);
     const node = added.nodes.find((entry) => entry.type === "input.parameter")!;
     expect(node.properties).toEqual({ parameterId: added.parameters[0]!.id, valueType: "color" });
+  });
+
+  it("adds a Reroute from Add Node and builds a wire through one as the direct wire", async () => {
+    const { container } = renderPanels(withKnot(), "canvas");
+    await waitFor(() => expect(container.querySelector('[data-id="knot"] [data-node-kind="reroute"]')).not.toBeNull());
+    fireEvent.click(await screen.findByTestId("graph-add-node"));
+    fireEvent.change(screen.getByTestId("node-palette-search"), { target: { value: "knot" } });
+    fireEvent.click(screen.getByTestId("node-palette-item-utility.reroute"));
+    const added = normalizeParticleGraphDocument(store.applyAssetDocumentChange.mock.calls.at(-1)![1]);
+    const knots = added.nodes.filter((node) => node.type === "utility.reroute");
+    expect(knots.map((node) => node.properties)).toEqual([{}, {}]);
+    expect(links(added)).toEqual(links(withKnot()));
+    cleanup();
+
+    renderPanels(withKnot(), "details");
+    expect(screen.queryAllByTestId(/^particle-graph-diagnostic-/).map((row) => row.getAttribute("data-testid")))
+      .toEqual(["particle-graph-diagnostic-particle.missingMaterial"]);
   });
 
   it("shows a diagnostic's node in Details when its row is tapped", () => {

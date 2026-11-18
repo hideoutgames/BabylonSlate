@@ -6,7 +6,15 @@
 import { isEditorGraphHost, type SerializedGraph } from "@haptic/core";
 import { engineParentOf, formatEventTitle, walkAncestry } from "@haptic/editor-kit";
 import { isPureAnimGraphHost } from "../lib/class-event-catalog";
-import { ANIM_NOTIFY_EVENT_TYPE, EXTENSION_NODE_TYPE_PREFIX, isEventEntryNodeType, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
+import {
+  ANIM_NOTIFY_EVENT_TYPE,
+  EXTENSION_NODE_TYPE_PREFIX,
+  REROUTE_NODE_TYPE,
+  isEventEntryNodeType,
+  isTouchEventNodeType,
+  type NodeDefinition,
+  type NodeRegistry,
+} from "@haptic/scripting";
 import { animEventNodeTitle } from "../lib/anim-graph-events";
 import { ANIM_POSE_USE_CACHED_TYPE, cachedPoseNodeTitle } from "@haptic/anim-graph";
 import { sceneAssetClassId } from "@haptic/object-model";
@@ -345,6 +353,35 @@ export function newCustomEventPaletteNode(
   };
 }
 
+const reroutePaletteRows = new WeakMap<NodeDefinition, PaletteNode>();
+
+function reroutePaletteRow(def: NodeDefinition): PaletteNode {
+  let row = reroutePaletteRows.get(def);
+  if (!row) {
+    row = {
+      id: def.id,
+      title: def.title,
+      description: def.description,
+      category: def.category,
+      searchAliases: def.searchAliases,
+      pins: def.pins({}),
+      pure: def.pure,
+      defaultData: { __reroute: true },
+    };
+    reroutePaletteRows.set(def, row);
+  }
+  return row;
+}
+
+/**
+ * The Reroute knot's Add Node row, the one `GraphEditor.reroute` inserts on a double-clicked wire.
+ * One object per catalog definition, so hosts can pass it without memoizing.
+ */
+export function scriptReroutePaletteNode(nodeRegistry: NodeRegistry = defaultNodeRegistry()): PaletteNode | undefined {
+  const def = nodeRegistry.get(REROUTE_NODE_TYPE);
+  return def ? reroutePaletteRow(def) : undefined;
+}
+
 function scriptPaletteCatalogNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
@@ -374,6 +411,7 @@ function scriptPaletteCatalogNodes(
       return isScriptCatalogNodeAllowed(def.id, options);
     })
     .map((def) => {
+      if (def.id === REROUTE_NODE_TYPE) return reroutePaletteRow(def);
       const defaultData: Record<string, unknown> = {};
       if (def.id === "debug.log") {
         defaultData.message = "";

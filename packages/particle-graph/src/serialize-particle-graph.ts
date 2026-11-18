@@ -18,6 +18,7 @@ import {
   type ParticleParameterSnapshot,
 } from "./parameter-nodes";
 import { createParticleTypeResolver } from "./resolve";
+import { PARTICLE_REROUTE_NODE_TYPE, collapseParticleReroutes } from "./reroute";
 import {
   PARTICLE_NUMERIC_TYPES,
   isParticleNumericType,
@@ -51,7 +52,10 @@ function toPin(pin: ParticlePinDefinition, direction: "in" | "out"): ParticleGra
     kind: "data",
     direction,
     type:
-      pin.type.kind === "generic"
+      // The shared canvas resolves a Reroute's pins from their wires, as one type for both.
+      pin.type.kind === "wildcard"
+        ? { kind: "resolvingWildcard" }
+        : pin.type.kind === "generic"
         ? {
             kind: "generic",
             ...(pin.type.accepts ? { accepts: pin.type.accepts } : {}),
@@ -95,6 +99,7 @@ const EDITOR_NODE_KEYS = new Set([
   "__pure",
   "__latent",
   "__editorOnly",
+  "__reroute",
   PARTICLE_PARAMETER_SNAPSHOT_KEY,
   "title",
 ]);
@@ -166,7 +171,11 @@ export function particlePaletteNodes(): ParticlePaletteNode[] {
       ...(definition.description ? { description: definition.description } : {}),
       ...(definition.searchAliases ? { searchAliases: definition.searchAliases } : {}),
       pins: pinsForParticleNode(definition.type, properties),
-      defaultData: { ...properties, __particleRole: definition.role },
+      defaultData: {
+        ...properties,
+        __particleRole: definition.role,
+        ...(definition.type === PARTICLE_REROUTE_NODE_TYPE ? { __reroute: true } : {}),
+      },
     };
   });
   let afterConstants = entries.length;
@@ -270,22 +279,23 @@ export function hydrateParticleGraphForEditor(
   globalParameters?: Readonly<GlobalParameterCatalog>,
 ): SerializedGraph {
   const declared = new Map(parameters.map((parameter) => [parameter.id, parameter]));
-  const edges = graph.edges.map((edge) => ({
-    id: edge.id,
-    sourceNodeId: edge.source,
-    sourcePinId: edge.sourceHandle ?? "",
-    targetNodeId: edge.target,
-    targetPinId: edge.targetHandle ?? "",
-  }));
-  const resolver = createParticleTypeResolver({
+  // Types flow through Reroutes as through the direct wires; the canvas types the knots themselves.
+  const { edges, ...resolverGraph } = collapseParticleReroutes({
     nodes: graph.nodes.map((node) => ({
       id: node.id,
       type: node.type,
       position: node.position,
       properties: particleNodePropertiesFromData(node.data),
     })),
-    edges,
+    edges: graph.edges.map((edge) => ({
+      id: edge.id,
+      sourceNodeId: edge.source,
+      sourcePinId: edge.sourceHandle ?? "",
+      targetNodeId: edge.target,
+      targetPinId: edge.targetHandle ?? "",
+    })),
   });
+  const resolver = createParticleTypeResolver({ ...resolverGraph, edges });
   /** A non-Float numeric type is wired into one of the node's generic inputs. */
   const resolvedFromWire = (nodeId: string): boolean => {
     const definition = resolver.definitionOf(nodeId);
@@ -303,6 +313,12 @@ export function hydrateParticleGraphForEditor(
     nodes: graph.nodes.map((node) => {
       const properties = particleNodePropertiesFromData(node.data);
       const pins = pinsForParticleNode(node.type, properties);
+      if (node.type === PARTICLE_REROUTE_NODE_TYPE) {
+        return {
+          ...node,
+          data: { ...properties, __pins: pins, __nodeType: node.type, __particleRole: "value", __reroute: true, title: "Reroute" },
+        };
+      }
       const wired = resolvedFromWire(node.id);
       for (const pin of pins) {
         const resolved =
@@ -351,11 +367,13 @@ function acceptedTypes(pin: CanvasPin): readonly string[] {
 /**
  * Canvas connection rule: Particle meets only Particle, a Float splats into a
  * vector or color, a generic input takes Float or one of its accepted types,
- * and vector widths never mix.
+ * and vector widths never mix. A Reroute no wire has typed yet takes anything;
+ * the canvas hands a typed one in as the type it carries, so it meets the same rule.
  */
 export function particlePinsAreCompatible(outgoing: CanvasPin, incoming: CanvasPin): boolean {
   const from = outgoing.type.kind;
   const to = incoming.type.kind;
+  if (from === "resolvingWildcard" || to === "resolvingWildcard") return true;
   if (from === "particle" || to === "particle") return from === to;
   if (to === "generic") {
     return from === "generic" || from === "float" || acceptedTypes(incoming).includes(from);

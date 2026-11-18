@@ -36,6 +36,7 @@ import {
   PARTICLE_GRAPH_LIMITS,
   PARTICLE_OUTPUT_NODE_TYPE,
   PARTICLE_RANDOM_LOCKS,
+  PARTICLE_REROUTE_NODE_TYPE,
   PARTICLE_SPAWN_LIMITS,
   PARTICLE_SPAWN_PRESETS,
   PARTICLE_SPRITE_SHEET_LIMITS,
@@ -1254,6 +1255,13 @@ function ParticleGraphCompilerResults({
   );
 }
 
+/** The parameter a Parameter node reads, which its header title names. */
+function renamedParameterOf(document: ParticleGraphDocument, nodeId: string) {
+  const node = document.nodes.find((entry) => entry.id === nodeId);
+  if (node?.type !== PARTICLE_PARAMETER_NODE_TYPE) return undefined;
+  return (document.parameters ?? []).find((entry) => entry.id === node.properties.parameterId);
+}
+
 function ParticleGraphCanvas() {
   const editing = useParticleGraphEditing();
   const { document, commit, documentId, setSelectedNodeIds } = editing;
@@ -1272,9 +1280,34 @@ function ParticleGraphCanvas() {
     [],
   );
   const paletteNodes = useMemo(() => particlePaletteNodes(), []);
+  // Double-click or double-tap on a wire splits it with this knot.
+  const reroute = useMemo(() => {
+    const paletteNode = paletteNodes.find((entry) => entry.id === PARTICLE_REROUTE_NODE_TYPE);
+    return paletteNode ? { paletteNode } : undefined;
+  }, [paletteNodes]);
   // Menu actions read the document as it is when picked.
   const documentRef = useRef(document);
   documentRef.current = document;
+  // A Parameter node's header title renames its parameter in place; nothing else here has a name of its own.
+  const [renamingNodeId, setRenamingNodeId] = useState<string | null>(null);
+  const renamedParameter = useCallback((nodeId: string) => renamedParameterOf(documentRef.current, nodeId), []);
+  const startRename = useCallback((nodeId: string) => {
+    if (renamedParameter(nodeId)) setRenamingNodeId(nodeId);
+  }, [renamedParameter]);
+  const cancelRename = useCallback(() => setRenamingNodeId(null), []);
+  const commitRename = useCallback((nodeId: string, text: string) => {
+    setRenamingNodeId(null);
+    const parameter = renamedParameter(nodeId);
+    const name = normalizeParticleParameterName(text);
+    // A taken name gets a `_N` suffix, as in the Inspector's Name row.
+    if (parameter && name && name !== parameter.name) {
+      commit(withParticleParameter(documentRef.current, { ...parameter, name }));
+    }
+  }, [commit, renamedParameter]);
+  // The field closes when its node, or the node's parameter, is gone (Undo, a delete, a conversion).
+  const activeRenameId = renamingNodeId && renamedParameterOf(document, renamingNodeId) ? renamingNodeId : null;
+  // Forgotten too, so an Undo that brings the node back does not reopen the field.
+  if (renamingNodeId && !activeRenameId) setRenamingNodeId(null);
   const contextMenuItemsForNode = useCallback(
     (nodeId: string): NestedMenuItem[] => {
       const node = documentRef.current.nodes.find((entry) => entry.id === nodeId);
@@ -1290,7 +1323,12 @@ function ParticleGraphCanvas() {
         }];
       }
       if (node?.type === PARTICLE_PARAMETER_NODE_TYPE) {
-        return [{
+        return [...(renamedParameter(nodeId) ? [{
+          id: "rename",
+          label: "Rename",
+          testId: "particle-graph-rename",
+          onSelect: () => startRename(nodeId),
+        }] : []), {
           id: "convert-to-constant",
           label: "Convert to Constant",
           testId: "particle-graph-convert-to-constant",
@@ -1302,7 +1340,7 @@ function ParticleGraphCanvas() {
       }
       return [];
     },
-    [commit],
+    [commit, renamedParameter, startRename],
   );
   // Pin ids stay on the rows so the canvas rings the offending pin.
   const diagnostics = useMemo<GraphDiagnostic[]>(
@@ -1321,6 +1359,7 @@ function ParticleGraphCanvas() {
         initialGraph={initialGraph}
         diagnostics={diagnostics}
         paletteNodes={paletteNodes}
+        reroute={reroute}
         describeNode={describeParticleNode}
         pinCompatibility={particlePinsAreCompatible}
         addNodeHistoryScope="particle"
@@ -1332,6 +1371,10 @@ function ParticleGraphCanvas() {
         focusRequest={editing.focusRequest}
         commitPositionsOnDragEnd
         contextMenuItemsForNode={contextMenuItemsForNode}
+        renamingNodeId={activeRenameId}
+        onNodeTitleDoubleClick={startRename}
+        onNodeRenameCommit={commitRename}
+        onNodeRenameCancel={cancelRename}
         onChange={(next, meta) =>
           commit(
             // New Parameter entries declare their parameter; pasted nodes bring theirs back.

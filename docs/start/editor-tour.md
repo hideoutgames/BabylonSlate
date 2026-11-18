@@ -43,6 +43,16 @@ A scene opens with these windows:
 
 Tap a result in **Compiler Results** to select its node or actor, and double-tap it to open the graph or viewport that shows it, framed on the problem. A result Play reported for another class opens that class. Right-click or hold a result for **Open**, **Copy Error** (or **Copy Warning**) and **Copy Details**.
 
+### When Play cannot start
+
+Play needs every asset the game loads at the start. When one does not exist, is saved in a format Haptic cannot read, or cannot be read, Play does not start:
+
+- The **Play Could Not Start** dialog (**Simulation Could Not Start** for a Simulation) lists each problem. Each row names the asset and the actor, component and setting that use it, such as `2D Rich Text on "Dialogue" in Scene Layer "HUD" uses an asset that does not exist: … (Text).` Tap a row to open that Scene, Scene Layer or class with the actor or component selected.
+- **Compiler Results** lists the same problems; double-tap one to go to it the same way.
+- The **Output Log** shows each problem in full.
+
+When a project setting names the missing asset, such as **Startup Scene** or **Game Instance**, the row names the setting in **Project Settings** instead. Fix the reference, or remove it, and press Play again. Other preparation failures show in the **Output Log**, or in a **Play Failed** dialog when no Output Log is open.
+
 Other asset editors have their own windows, such as **Preview** and **Inspector** for a Texture. See [Scenes](../scenes/index.md) and [Actors](../scenes/actors.md).
 
 Number fields show their unit after the value, such as **45°**, **120 ms** or **50%**. You can type the unit or leave it out. Drag a field's handle to change the value, or type a sum such as `90+45`. While you drag, round values such as 0.1, 0.25, 1, 10 and 100 hold for a moment, so they are easy to land on; keep dragging to move past them. **Number Snap Strength** in **Engine Settings > Accessibility** sets how long they hold, or turns this off.

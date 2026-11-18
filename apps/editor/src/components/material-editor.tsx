@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
 import { MessageDetails } from "./message-details";
 import { DiagnosticResultRow } from "./diagnostic-result-row";
 import { nodeDiagnosticDetails } from "../lib/diagnostic-details";
@@ -31,7 +32,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@haptic/ui/components/toggle-group";
-import { GraphEditor } from "@haptic/graph-ui";
+import { GraphEditor, type GraphPasteElements, type PaletteNode } from "@haptic/graph-ui";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { useRevealResultWindow } from "../lib/use-reveal-result-window";
 import { primaryDockPanel } from "../shell/window-catalog";
@@ -63,6 +64,16 @@ import {
   listUnconnectedMaterialPinDefaults,
   materialGraphToSerialized,
   materialAddNodePalette,
+  isNamedRerouteDeclarationType,
+  isNamedRerouteUsageType,
+  namedRerouteColor,
+  namedRerouteDeclarationId,
+  namedRerouteName,
+  namedReroutePaletteNodes,
+  remapPastedNamedReroutes,
+  renameNamedReroute,
+  NAMED_REROUTE_DECLARATION_TYPE,
+  type MaterialPaletteNode,
   materialNodePreviewOutputs,
   materialNodeTitle,
   materialPinDefaultPropertyKey,
@@ -91,6 +102,8 @@ import {
   CylinderIcon,
   EyeIcon,
   EyeOffIcon,
+  PencilIcon,
+  RouteIcon,
   SquareIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -378,10 +391,145 @@ function usePreviewedNode(document: MaterialDocument): { nodeId: string; title: 
     const outputs = materialNodePreviewOutputs(document, node.id, { functions });
     return {
       nodeId: node.id,
-      title: materialNodeTitle(node, { functions, globalParameters }),
+      title: materialNodeTitle(node, { functions, globalParameters, graphNodes: document.nodes }),
       output: outputs.length > 1 ? outputs.find((output) => output.pinId === previewNode.pinId)?.name ?? null : null,
     };
   }, [document, functions, globalParameters, previewNode]);
+}
+
+/** Nodes the canvas renames in their header: parameters and Named Reroute declarations. */
+function isRenamableMaterialNode(type: string): boolean {
+  return isMaterialParameterNode(type) || isNamedRerouteDeclarationType(type);
+}
+
+/** Rows whose chips, titles or pin types differ; Add Node rebuilds its list only when this changes. */
+function namedRerouteRowsSignature(rows: readonly MaterialPaletteNode[]): string {
+  return JSON.stringify(rows.map((row) => [row.id, row.title, row.headerColor, row.pins.map((pin) => pin.type.kind)]));
+}
+
+/**
+ * Naming on a Material or Material Function canvas: the Named Reroute Add Node rows (one per
+ * declaration, after **Create Named Reroute…**), the header rename of parameters and declarations
+ * (a new declaration, a title double-click or the node menu's **Rename**), **Select Declaration** on
+ * a usage, and pasted usages following a declaration pasted with them. Everything reads the document
+ * as it is when used.
+ */
+function useMaterialCanvasNaming<T extends MaterialGraphDocument>(
+  document: T,
+  commit: (next: T) => void,
+  staticPalette: readonly PaletteNode[],
+  context: { functions: Record<string, MaterialFunctionDocument>; functionInterface?: MaterialFunctionDocument },
+  focusNode: (nodeId: string) => void,
+) {
+  const documentRef = useRef(document);
+  documentRef.current = document;
+  const contextRef = useRef(context);
+  contextRef.current = context;
+
+  // A node move or an unrelated edit keeps the same rows, so Add Node does not rebuild.
+  const rowsRef = useRef<{ signature: string; rows: MaterialPaletteNode[] } | null>(null);
+  const rerouteRows = useMemo(() => {
+    const rows = namedReroutePaletteNodes(document, { functions: context.functions, functionInterface: context.functionInterface });
+    const signature = namedRerouteRowsSignature(rows);
+    if (rowsRef.current?.signature !== signature) rowsRef.current = { signature, rows };
+    return rowsRef.current.rows;
+  }, [document, context.functions, context.functionInterface]);
+  const paletteNodes = useMemo(() => [...staticPalette, ...rerouteRows], [rerouteRows, staticPalette]);
+
+  // `seen` turns true once the document holds the node: a new declaration is renamed before its add
+  // commits, and the rename ends when the node leaves the document (deleted, or the add undone).
+  const [renaming, setRenaming] = useState<{ nodeId: string; seen: boolean } | null>(null);
+  if (renaming) {
+    const exists = document.nodes.some((node) => node.id === renaming.nodeId);
+    if (exists && !renaming.seen) setRenaming({ nodeId: renaming.nodeId, seen: true });
+    else if (!exists && renaming.seen) setRenaming(null);
+  }
+
+  // Parameters and Named Reroute declarations rename in their header; each keeps its own unique-name rule.
+  const onNodeRenameCommit = useCallback((nodeId: string, name: string) => {
+    setRenaming(null);
+    const current = documentRef.current;
+    const node = current.nodes.find((entry) => entry.id === nodeId);
+    if (!node || !name.trim()) return;
+    if (isNamedRerouteDeclarationType(node.type)) {
+      const nodes = renameNamedReroute(current.nodes, nodeId, name);
+      if (nodes !== current.nodes) commit({ ...current, nodes });
+    } else if (isMaterialParameterNode(node.type) && name.trim() !== materialParameterName(node)) {
+      commit(renameMaterialParameter(current, nodeId, name));
+    }
+  }, [commit]);
+  const onNodeRenameCancel = useCallback(() => setRenaming(null), []);
+  // The field starts from the stored name: a blank parameter is titled by its type, not edited as one.
+  const renamingNode = renaming ? document.nodes.find((node) => node.id === renaming.nodeId) : undefined;
+  const renamingNodeValue = renamingNode
+    ? isNamedRerouteDeclarationType(renamingNode.type) ? namedRerouteName(renamingNode) : materialParameterName(renamingNode)
+    : undefined;
+
+  // The Create row takes a name and colour free in the graph as it is now, not when the list was built.
+  const preparePaletteNode = useCallback((row: PaletteNode): PaletteNode => {
+    if (row.id !== NAMED_REROUTE_DECLARATION_TYPE) return row;
+    const fresh = namedReroutePaletteNodes(documentRef.current, contextRef.current)[0]!;
+    return { ...row, nodeTitle: fresh.nodeTitle, defaultData: fresh.defaultData, headerColor: fresh.headerColor };
+  }, []);
+  // A new declaration opens its rename at once (GraphEditor focuses it once Add Node closes).
+  const onPaletteNodeAdded = useCallback((row: PaletteNode, nodeId: string) => {
+    if (row.id === NAMED_REROUTE_DECLARATION_TYPE) setRenaming({ nodeId, seen: false });
+  }, []);
+
+  const selectDeclaration = useCallback((nodeId: string): boolean => {
+    const nodes = documentRef.current.nodes;
+    const node = nodes.find((entry) => entry.id === nodeId);
+    if (!node || !isNamedRerouteUsageType(node.type)) return false;
+    const declarationId = namedRerouteDeclarationId(node);
+    if (!nodes.some((entry) => entry.id === declarationId && isNamedRerouteDeclarationType(entry.type))) return false;
+    focusNode(declarationId);
+    return true;
+  }, [focusNode]);
+
+  // Double-click: a declaration opens its rename, a usage goes to its declaration.
+  // Double-click on a usage, title or body, goes to its declaration; a renamable node's title renames it.
+  const onNodeDoubleClick = useCallback((nodeId: string) => { selectDeclaration(nodeId); }, [selectDeclaration]);
+  const onNodeTitleDoubleClick = useCallback((nodeId: string) => {
+    const node = documentRef.current.nodes.find((entry) => entry.id === nodeId);
+    if (node && isRenamableMaterialNode(node.type)) setRenaming({ nodeId, seen: true });
+    else selectDeclaration(nodeId);
+  }, [selectDeclaration]);
+
+  const menu = useCallback((nodeId: string): NestedMenuItem[] => {
+    const nodes = documentRef.current.nodes;
+    const node = nodes.find((entry) => entry.id === nodeId);
+    if (node && isRenamableMaterialNode(node.type)) {
+      return [{ id: "rename-node", label: "Rename", testId: "material-rename-node", icon: <PencilIcon />, onSelect: () => setRenaming({ nodeId, seen: true }) }];
+    }
+    if (node && isNamedRerouteUsageType(node.type)) {
+      const declarationId = namedRerouteDeclarationId(node);
+      if (!nodes.some((entry) => entry.id === declarationId && isNamedRerouteDeclarationType(entry.type))) return [];
+      return [{ id: "select-named-reroute-declaration", label: "Select Declaration", testId: "material-select-named-reroute-declaration", icon: <RouteIcon />, onSelect: () => { selectDeclaration(nodeId); } }];
+    }
+    return [];
+  }, [selectDeclaration]);
+
+  const preparePaste = useCallback(
+    (pasted: GraphPasteElements, _current: GraphPasteElements, idMap: ReadonlyMap<string, string>) =>
+      ({ nodes: remapPastedNamedReroutes(pasted.nodes, idMap) }),
+    [],
+  );
+
+  return {
+    menu,
+    props: {
+      paletteNodes,
+      renamingNodeId: renaming?.nodeId ?? null,
+      renamingNodeValue,
+      onNodeTitleDoubleClick,
+      onNodeRenameCommit,
+      onNodeRenameCancel,
+      preparePaletteNode,
+      onPaletteNodeAdded,
+      onNodeDoubleClick,
+      preparePaste,
+    },
+  };
 }
 
 export function MaterialGraphPanel(_props: IDockviewPanelProps) {
@@ -433,9 +581,12 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
     focusWithinRef: canvasRef,
   });
   const previewMenu = usePreviewNodeMenu(document, previewChord);
+  const staticPalette = useMemo(() => materialAddNodePalette(document.domain), [document.domain]);
+  const reroutes = useMaterialCanvasNaming(document, commit, staticPalette, { functions }, editing.focusNode);
+  const rerouteMenu = reroutes.menu;
   const nodeMenu = useCallback(
-    (nodeId: string) => [...previewMenu(nodeId), ...conversionMenu(nodeId)],
-    [conversionMenu, previewMenu],
+    (nodeId: string) => [...rerouteMenu(nodeId), ...previewMenu(nodeId), ...conversionMenu(nodeId)],
+    [conversionMenu, previewMenu, rerouteMenu],
   );
   const previewed = usePreviewedNode(document);
   const previewedNode = useMemo(
@@ -454,7 +605,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           renderNodeBody={renderMaterialNodeBody}
           initialGraph={initialGraph}
           diagnostics={diagnostics}
-          paletteNodes={materialAddNodePalette(document.domain)}
+          {...reroutes.props}
           pinCompatibility={materialPinsAreCompatible}
           addNodeHistoryScope="material"
           sessionViewport={sessionViewport}
@@ -511,6 +662,14 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
       }),
     [document, editing.functions, globalParameters],
   );
+  const staticPalette = useMemo(() => materialAddNodePalette("surface"), []);
+  const rerouteContext = useMemo(() => ({ functions: editing.functions, functionInterface: document }), [document, editing.functions]);
+  const reroutes = useMaterialCanvasNaming(document, commit, staticPalette, rerouteContext, editing.focusNode);
+  const rerouteMenu = reroutes.menu;
+  const nodeMenu = useCallback(
+    (nodeId: string) => [...rerouteMenu(nodeId), ...conversionMenu(nodeId)],
+    [conversionMenu, rerouteMenu],
+  );
 
   return (
     <PanelFrame className="flex-1" data-testid="material-function-graph-panel">
@@ -522,14 +681,16 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           renderNodeBody={renderMaterialNodeBody}
           initialGraph={initialGraph}
           diagnostics={diagnostics}
-          paletteNodes={materialAddNodePalette("surface")}
+          {...reroutes.props}
           pinCompatibility={materialPinsAreCompatible}
           addNodeHistoryScope="material"
           sessionViewport={sessionViewport}
           onSessionViewportChange={onSessionViewportChange}
           onSelectionChange={editing.setSelectedNodeIds}
+          focusedNodeId={editing.focusedNodeId ?? undefined}
+          focusRequest={editing.focusRequest}
           commitPositionsOnDragEnd
-          contextMenuItemsForNode={conversionMenu}
+          contextMenuItemsForNode={nodeMenu}
           onChange={(next, meta) => {
             const nextDocument = serializedToMaterialFunctionGraph(next, document);
             commit(
@@ -683,14 +844,20 @@ export function MaterialPreviewSurface({
           data-ready-generation={editing.previewState.readyGeneration ?? -1}
           className="min-h-40 w-full flex-1 touch-none bg-background"
         />
-        {editing.previewState.lastError ? (
-          <p
-            className="absolute inset-x-0 bottom-0 z-10 px-3 py-1 text-xs text-destructive"
-            data-testid="material-preview-error"
-          >
-            <SelectableText>{editing.previewState.lastError}</SelectableText>
-          </p>
-        ) : null}
+        {/* The zoom buttons sit in the corner, above the error line while one shows. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-end">
+          <div className="mb-3 mr-3">
+            <ViewportZoomControls drive={editing.previewZoomDrive} testId="material-preview-zoom-controls" />
+          </div>
+          {editing.previewState.lastError ? (
+            <p
+              className="pointer-events-auto w-full px-3 py-1 text-xs text-destructive"
+              data-testid="material-preview-error"
+            >
+              <SelectableText>{editing.previewState.lastError}</SelectableText>
+            </p>
+          ) : null}
+        </div>
         <AssetPicker
           open={meshPickOpen}
           onOpenChange={setMeshPickOpen}
@@ -938,6 +1105,33 @@ function materialNodeRows<T extends MaterialGraphDocument>(
       value: node.properties.perInstance === true,
       onChange: (perInstance) => setProperties({ perInstance }),
     });
+  }
+  if (isNamedRerouteDeclarationType(node.type)) {
+    // A declaration's name is its own, so a multi-selection only shares Color.
+    if (!multi) rows.push({
+      id: "rerouteName",
+      kind: "text",
+      label: "Name",
+      value: namedRerouteName(node),
+      onChange: () => undefined,
+      onCommit: (name) => {
+        const document = edit.read();
+        const nodes = renameNamedReroute(document.nodes, node.id, name);
+        if (nodes !== document.nodes) edit.write({ ...document, nodes });
+      },
+    });
+    rows.push({
+      id: "rerouteColor",
+      kind: "color",
+      label: "Color",
+      value: namedRerouteColor(node),
+      onChange: (next) => setProperties({ color: [next[0], next[1], next[2]] }),
+    });
+  }
+  if (isNamedRerouteUsageType(node.type) && !multi) {
+    const declarationId = namedRerouteDeclarationId(node);
+    const declaration = edit.read().nodes.find((entry) => entry.id === declarationId && isNamedRerouteDeclarationType(entry.type));
+    rows.push({ id: "reroute", kind: "info", label: "Reroute", value: declaration ? namedRerouteName(declaration) : "Missing Reroute" });
   }
   if (node.type === "const.float" || node.type === "param.float") {
     const value = Array.isArray(node.properties.value)

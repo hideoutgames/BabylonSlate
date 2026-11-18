@@ -16,6 +16,10 @@ import { EDITOR_CAMERA_MODEL_LAYER } from "./editor-camera-model";
 export const DEFAULT_CAMERA_RADIUS = 12;
 export const MIN_CAMERA_RADIUS = 0.5;
 export const MAX_CAMERA_RADIUS = 400;
+/** Smallest 2D orthographic half-height: the free 2D zoom-in limit. */
+export const MIN_ORTHO_HALF_HEIGHT = 0.01;
+/** Smallest pixel-perfect zoom: the pixel-perfect zoom-out limit. */
+export const MIN_PIXEL_ZOOM = 0.01;
 
 /**
  * 2D convention (engineplan §13): the camera sits at negative Z looking toward
@@ -97,6 +101,8 @@ export interface EditorCameraController {
    * view shows it at `pixelsPerTexel`, which settles on whole levels near them.
    */
   pixelZoom: () => number;
+  /** True while pixel-perfect framing is set, so 2D zoom moves `pixelZoom` instead of `orthoHalfHeight`. */
+  isPixelPerfect: () => boolean;
   /**
    * Render pixels per texel the pixel-perfect view shows: the zoom times the pixel ratio, settled on a whole level near
    * one (`pixelZoomDetent`); 1 without it.
@@ -341,6 +347,7 @@ export function createEditorCamera(
       }
     },
     pixelZoom: () => pixelZoom,
+    isPixelPerfect: () => pixelPerfect !== null,
     pixelsPerTexel,
     captureFraming: () => ({
       target: plainVec(camera.target),
@@ -354,8 +361,8 @@ export function createEditorCamera(
         MAX_CAMERA_RADIUS,
         Math.max(MIN_CAMERA_RADIUS, snapshot.radius),
       );
-      orthoHalfHeight = Math.max(0.01, snapshot.orthoHalfHeight);
-      pixelZoom = Math.max(0.01, snapshot.pixelZoom);
+      orthoHalfHeight = Math.max(MIN_ORTHO_HALF_HEIGHT, snapshot.orthoHalfHeight);
+      pixelZoom = Math.max(MIN_PIXEL_ZOOM, snapshot.pixelZoom);
       if (mode === "2d") applyOrthoBounds();
     },
     pan: (deltaX: number, deltaY: number) => {
@@ -381,9 +388,9 @@ export function createEditorCamera(
           : null;
       if (mode === "2d") {
         if (pixelPerfect) {
-          pixelZoom = Math.max(0.01, pixelZoom * factor);
+          pixelZoom = Math.max(MIN_PIXEL_ZOOM, pixelZoom * factor);
         } else {
-          orthoHalfHeight = Math.max(0.01, orthoHalfHeight / factor);
+          orthoHalfHeight = Math.max(MIN_ORTHO_HALF_HEIGHT, orthoHalfHeight / factor);
         }
         applyOrthoBounds();
       } else {
@@ -422,7 +429,7 @@ export function createEditorCamera(
       }
       if (typeof radius === "number") {
         if (mode === "2d") {
-          orthoHalfHeight = Math.max(0.01, radius);
+          orthoHalfHeight = Math.max(MIN_ORTHO_HALF_HEIGHT, radius);
           applyOrthoBounds();
         } else {
           camera.radius = Math.min(

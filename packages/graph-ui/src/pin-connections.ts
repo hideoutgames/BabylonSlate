@@ -1,5 +1,6 @@
 import type { Edge } from "@xyflow/react";
-import { hasSerializedPins, type SerializedPin } from "./graph-types";
+import { passThroughTargets } from "@haptic/core";
+import { hasSerializedPins, isRerouteNodeData, type SerializedPin } from "./graph-types";
 
 type ConnectionEdges = ReadonlyArray<
   Pick<Edge, "source" | "target" | "sourceHandle" | "targetHandle">
@@ -49,11 +50,12 @@ export function passesReference(
   pin: Pick<SerializedPin, "id" | "direction" | "reference">,
 ): boolean {
   if (pin.direction !== "out" || pin.reference !== "writable") return false;
-  for (const edge of edges) {
-    if (edge.source !== nodeId || (edge.sourceHandle ?? "") !== pin.id) continue;
-    const target = nodeLookup.get(edge.target)?.data;
+  // Reroute knots pass the variable on, so the inputs past them count.
+  const isKnot = (id: string) => isRerouteNodeData(nodeLookup.get(id)?.data);
+  for (const end of passThroughTargets(edges, isKnot, nodeId, pin.id)) {
+    const target = nodeLookup.get(end.nodeId)?.data;
     if (!hasSerializedPins(target)) continue;
-    if (target.__pins.some((input) => input.id === edge.targetHandle && input.reference === "required")) return true;
+    if (target.__pins.some((input) => input.id === end.pinId && input.reference === "required")) return true;
   }
   return false;
 }

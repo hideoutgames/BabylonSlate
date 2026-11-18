@@ -110,9 +110,10 @@ export async function focusDiagnosticNode(
  */
 export async function navigateToSessionReportEntry(
   // A Simulation stopped at a breakpoint opens its node the same way, as `info`.
+  // A Play preparation row names the Actor or component that holds a missing asset; the opened document selects it.
   entry: Pick<SessionReportEntry, "code" | "message" | "assetGuid" | "graphId" | "nodeId" | "btNodeId" | "bodyLine"> & {
     severity: Diagnostic["severity"];
-  },
+  } & Partial<Pick<Diagnostic, "actorId" | "componentId">>,
   host: SessionReportNavigationHost,
 ): Promise<SessionReportNavigationResult> {
   const nav = sessionReportNavigation(entry, (ref) => host.findAsset(ref));
@@ -133,6 +134,8 @@ export async function navigateToSessionReportEntry(
     graphId: entry.graphId ?? "",
     nodeId: nav.focusedNodeId || undefined,
     bodyLine: nav.bodyLine,
+    actorId: entry.actorId,
+    componentId: entry.componentId,
   };
   await focusDiagnosticNode(host, focus, id);
 

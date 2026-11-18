@@ -29,6 +29,7 @@ import {
 } from "@haptic/scripting-nodes";
 import { delegateSignatureSource } from "@haptic/scripting";
 import { signatureOfPins } from "./delegate-signatures";
+import { wiredTargets } from "./reroute-wires";
 import { freeCustomEventName, takenCustomEventNames } from "./custom-event-names";
 
 export {
@@ -437,9 +438,10 @@ export function canRenameCustomEvent(
       !node.data.componentId &&
       !node.data.eventQualifier &&
       !String(node.data.title ?? "").endsWith("(Inherited)") &&
+      // Through any Reroute knots, as the compiler reads the wire.
       !graph.edges.some((edge) =>
-        edge.source === nodeId && graph.nodes.some(
-          (entry) => entry.id === edge.target && entry.type === "flow.event.callParent",
+        edge.source === nodeId && wiredTargets(graph, nodeId, edge.sourceHandle ?? "").some((end) =>
+          graph.nodes.some((entry) => entry.id === end.nodeId && entry.type === "flow.event.callParent"),
         ),
       ),
   );
@@ -835,14 +837,21 @@ export function adoptBoundEventSignatures(
   classId?: string,
 ): SerializedGraph {
   let next = graph;
-  for (const edge of graph.edges) {
-    if (edge.sourceHandle !== OUTPUT_DELEGATE_PIN_ID || !edge.targetHandle) continue;
+  // Each wire from an Output Delegate, followed through Reroute knots to the delegate input it feeds.
+  const events = new Set(
+    graph.edges.filter((edge) => edge.sourceHandle === OUTPUT_DELEGATE_PIN_ID).map((edge) => edge.source),
+  );
+  const bound = [...events].flatMap((source) =>
+    wiredTargets(graph, source, OUTPUT_DELEGATE_PIN_ID).map((end) => ({ source, ...end })),
+  );
+  for (const edge of bound) {
+    if (!edge.pinId) continue;
     const event = next.nodes.find((node) => node.id === edge.source);
     if (event?.type !== "flow.event.custom") continue;
     const current = Array.isArray(event.data.pins) ? (event.data.pins as GraphClassMemberPin[]) : [];
     if (current.some((pin) => pin.typeId !== "exec")) continue;
-    const target = next.nodes.find((node) => node.id === edge.target);
-    const pins = target ? delegateInputRows(target, edge.targetHandle) : null;
+    const target = next.nodes.find((node) => node.id === edge.nodeId);
+    const pins = target ? delegateInputRows(target, edge.pinId) : null;
     if (!pins || pins.length === 0) continue;
     const name = formatEventMemberName(String(event.data.name ?? event.data.title ?? "Custom"));
     const member = (next.members ?? []).find(

@@ -4,8 +4,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@haptic/core";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphPanel } from "./graph-panel";
-import { MyClassPanel } from "./my-class-panel";
-import { GraphEditingProvider, useGraphEditing } from "../context/graph-editing-context";
+import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { KeybindProvider } from "../context/keybind-context";
 
@@ -21,9 +20,14 @@ if (
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
+/** The document as the last applied change left it; null for the fixture below. */
+const docState = vi.hoisted(() => ({ content: null as SerializedGraph | null }));
 const applyGraphChange = vi.hoisted(() =>
   vi.fn<(id: string, next: SerializedGraph) => Promise<boolean>>(
-    async () => true,
+    async (_id, next) => {
+      docState.content = next;
+      return true;
+    },
   ),
 );
 const eventState = vi.hoisted(() => ({ qualifier: "" }));
@@ -44,7 +48,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         path: "assets/Hero.class.hasset",
         label: "Hero Class",
       },
-      content: {
+      content: docState.content ?? {
         nodes: [
           {
             id: "evt-1",
@@ -113,25 +117,20 @@ afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
   toggleDockWindow.mockClear();
+  docState.content = null;
   eventState.qualifier = "";
 });
 
 const panelProps = {} as IDockviewPanelProps;
 
-/** The Class panel row's inline rename, focused with its name selected. */
-async function classPanelRename(nodeId: string, name: string): Promise<HTMLInputElement> {
-  const input = (await screen.findByTestId(`tree-rename-${nodeId}`)) as HTMLInputElement;
+/** The node header's inline rename field, focused with `name` selected. */
+async function headerRename(name: string): Promise<HTMLInputElement> {
+  const input = (await screen.findByTestId("graph-node-rename")) as HTMLInputElement;
   await act(async () => {});
   expect(input.value).toBe(name);
   expect(document.activeElement).toBe(input);
   expect([input.selectionStart, input.selectionEnd]).toEqual([0, name.length]);
-  // The Class panel was closed (the mock reports no open windows), so it opens.
-  expect(toggleDockWindow).toHaveBeenCalledWith("my-class");
   return input;
-}
-
-function RenameRequest() {
-  return <output data-testid="rename-request">{useGraphEditing().eventRenameRequest ?? ""}</output>;
 }
 
 describe("Inspector custom event details", () => {
@@ -141,21 +140,42 @@ describe("Inspector custom event details", () => {
     expect(screen.queryByRole("button", { name: "Rename Event" })).toBeNull();
   });
 
-  it("renames an event inline in the Class panel from its graph node menu", async () => {
+  it("renames an event, its member and its call inline in the node header from its graph node menu", async () => {
     render(
       <GraphEditingProvider>
         <GraphPanel {...panelProps} />
-        <MyClassPanel {...panelProps} />
       </GraphEditingProvider>,
     );
     fireEvent.contextMenu(screen.getByText("Event On Hit"));
     fireEvent.click(screen.getByText("Rename Event"));
-    expect(screen.queryByLabelText("Event Name")).toBeNull();
-    const input = await classPanelRename("evt-1", "On Hit");
-    fireEvent.change(input, { target: { value: "On Damage" } });
+    const input = await headerRename("On Hit");
+    fireEvent.change(input, { target: { value: "onDamage" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(applyGraphChange.mock.calls[0]?.[1].nodes[0]?.data.name).toBe("On Damage");
-    expect(applyGraphChange.mock.calls[0]?.[1].nodes[1]?.data.name).toBe("On Damage");
+    expect(applyGraphChange).toHaveBeenCalledTimes(1);
+    const next = applyGraphChange.mock.calls[0]![1];
+    expect(next.members?.[0]?.name).toBe("On Damage");
+    expect(next.nodes[0]?.data).toMatchObject({ name: "On Damage", title: "Event On Damage" });
+    expect(next.nodes[1]?.data).toMatchObject({ name: "On Damage", title: "Call On Damage" });
+    expect(screen.queryByTestId("graph-node-rename")).toBeNull();
+  });
+
+  it("starts the header rename when the event's title is double-clicked, and Escape keeps the name", async () => {
+    render(
+      <GraphEditingProvider>
+        <GraphPanel {...panelProps} />
+      </GraphEditingProvider>,
+    );
+    fireEvent.doubleClick(screen.getByText("Event On Hit"));
+    const input = await headerRename("On Hit");
+    fireEvent.change(input, { target: { value: "Other" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByTestId("graph-node-rename")).toBeNull();
+    expect(screen.getByText("Event On Hit")).toBeTruthy();
+    expect(applyGraphChange).not.toHaveBeenCalled();
+    // A Call's title is not a rename.
+    fireEvent.doubleClick(screen.getByText("Call On Hit"));
+    await act(async () => {});
+    expect(screen.queryByTestId("graph-node-rename")).toBeNull();
   });
 
   it("renames the selected custom event with the Rename key its menu item shows", async () => {
@@ -163,7 +183,6 @@ describe("Inspector custom event details", () => {
       <KeybindProvider>
         <GraphEditingProvider>
           <GraphPanel {...panelProps} />
-          <MyClassPanel {...panelProps} />
         </GraphEditingProvider>
       </KeybindProvider>,
     );
@@ -176,44 +195,48 @@ describe("Inspector custom event details", () => {
     await act(async () => {});
     node.focus();
     fireEvent.keyDown(node, { key: "F2", code: "F2" });
-    await classPanelRename("evt-1", "On Hit");
+    await headerRename("On Hit");
   });
 
-  it("renames the selected custom event and its call inline from Details", async () => {
-    render(
+  it("renames the selected custom event in the Event Graph's node header from Details", async () => {
+    // The Event Graph opens after the click, as the window does when it was closed.
+    const view = (graphOpen: boolean) => (
       <PrefabEditingProvider initialSelectedId={null}>
         <GraphEditingProvider initialSelectedNodeIds={["evt-1"]}>
           <InspectorPanel {...panelProps} />
-          <MyClassPanel {...panelProps} />
+          {graphOpen ? <GraphPanel {...panelProps} /> : null}
         </GraphEditingProvider>
-      </PrefabEditingProvider>,
+      </PrefabEditingProvider>
     );
+    const { rerender } = render(view(false));
     fireEvent.click(screen.getByRole("button", { name: "Rename Event" }));
-    const input = await classPanelRename("evt-1", "On Hit");
-    fireEvent.change(input, { target: { value: "onDamage" } });
+    // The mock reports no open windows, so the Event Graph is opened.
+    expect(toggleDockWindow).toHaveBeenCalledWith("graph");
+    rerender(view(true));
+    const input = await headerRename("On Hit");
+    fireEvent.change(input, { target: { value: "On Damage" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    const next = applyGraphChange.mock.calls[0]?.[1];
-    expect(next?.members?.[0]?.name).toBe("On Damage");
-    expect(next?.nodes[0]?.data.title).toBe("Event On Damage");
-    expect(next?.nodes[1]?.data.name).toBe("On Damage");
+    expect(applyGraphChange.mock.calls[0]?.[1].members?.[0]?.name).toBe("On Damage");
   });
 
-  it("adds Create New Custom Event… under a free name and asks the Class panel to rename it", async () => {
+  it("adds Create New Custom Event… under a free name and renames it in its node header", async () => {
     render(
       <GraphEditingProvider>
         <GraphPanel {...panelProps} />
-        <RenameRequest />
       </GraphEditingProvider>,
     );
     fireEvent.click(screen.getByTestId("graph-add-node"));
     const row = await screen.findByTestId("node-palette-item-flow.event.custom");
     expect(row.textContent).toContain("Create New Custom Event…");
     fireEvent.click(row);
-    const next = applyGraphChange.mock.calls.at(-1)?.[1];
-    const added = next?.nodes.find((node) => node.type === "flow.event.custom" && node.id !== "evt-1");
-    expect(added?.data).toMatchObject({ name: "NewEvent", title: "Event NewEvent" });
-    expect(screen.getByTestId("rename-request").textContent).toBe(added?.id);
-    expect(toggleDockWindow).toHaveBeenCalledWith("my-class");
+    const added = applyGraphChange.mock.calls.at(-1)![1].nodes.find((node) => node.type === "flow.event.custom" && node.id !== "evt-1")!;
+    expect(added.data).toMatchObject({ name: "NewEvent", title: "Event NewEvent" });
+    const input = await headerRename("NewEvent");
+    expect(input.closest(`.react-flow__node[data-id="${added.id}"]`)).not.toBeNull();
+    fireEvent.change(input, { target: { value: "Open Door" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    const renamed = applyGraphChange.mock.calls.at(-1)![1].nodes.find((node) => node.id === added.id);
+    expect(renamed?.data).toMatchObject({ name: "Open Door", title: "Event Open Door" });
   });
 
   it("shows an Outputs pin list when the Class-panel event node is selected", () => {

@@ -19,7 +19,11 @@ import { humanizePropertyLabel, PinShapeGlyph } from "@haptic/editor-kit";
 import { allNodeDefinitions } from "@haptic/scripting-nodes";
 import {
   MATERIAL_CATALOG,
+  defaultNamedRerouteColor,
+  isNamedRerouteDeclarationType,
+  isNamedRerouteUsageType,
   materialPaletteNodes,
+  namedRerouteColorCss,
   pinsForMaterialNode,
   type MaterialDomain,
 } from "@haptic/shader-graph";
@@ -109,6 +113,8 @@ function renderScriptNode(def: ScriptNodeDefinition, pins: ReturnType<ScriptNode
   };
   if (def.developmentOnlyByDefault) data.developmentOnly = true;
   if (def.editorOnly) data.__editorOnly = true;
+  // The Class graph Reroute draws as the editor's knot, which hosts mark as they hydrate it.
+  if (def.id === "flow.reroute") data.__reroute = true;
   return renderNode(def.id, resolveNodeType(def.id, data), data);
 }
 
@@ -126,6 +132,10 @@ function materialPreviews(previews: NodePreviews): void {
       __nodeType: def.type,
       __category: def.category,
       __pins: entry?.pins ?? pinsForMaterialNode(def.type, { properties }),
+      // A Named Reroute's header takes its colour; a new one starts with the first default colour.
+      ...(isNamedRerouteDeclarationType(def.type) || isNamedRerouteUsageType(def.type)
+        ? { __headerColor: namedRerouteColorCss(defaultNamedRerouteColor(0)) }
+        : {}),
     };
     const pins = [
       ...def.inputs.map((pin) => ({ ...pin, direction: "in" })),

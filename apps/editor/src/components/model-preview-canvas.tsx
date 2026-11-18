@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Quaternion } from "@babylonjs/core/Maths/math.vector";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -31,7 +31,8 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@haptic/ui/components/empty";
-import { NestedMenu, type NestedMenuItem } from "@haptic/editor-kit";
+import { NestedMenu, prefersReducedMotion, type NestedMenuItem } from "@haptic/editor-kit";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
 import { Button } from "@haptic/ui/components/button";
 import { Toggle } from "@haptic/ui/components/toggle";
 import {
@@ -70,6 +71,8 @@ export function ModelPreviewCanvas({
   onChange?: (next: Record<string, unknown>) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
+  const zoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const play = useOptionalPlay();
   const {
     selectedColliderId,
@@ -197,7 +200,8 @@ export function ModelPreviewCanvas({
           width: canvas.clientWidth,
           height: canvas.clientHeight,
         });
-        gestures = attachMaterialPreviewGestures(canvas, host.camera, {
+        gestures = gesturesRef.current = attachMaterialPreviewGestures(canvas, host.camera, {
+          zoomInstant: prefersReducedMotion,
           onChange: () => presenter?.present({ force: true }),
           blockOrbit: (x, y) =>
             gizmos.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
@@ -455,6 +459,9 @@ export function ModelPreviewCanvas({
         data-testid="model-preview-canvas"
         aria-busy={!materials.ready}
       />
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10">
+        <ViewportZoomControls drive={zoomDrive} testId="model-preview-zoom-controls" />
+      </div>
       {previewError ? (
         <div
           className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-3"

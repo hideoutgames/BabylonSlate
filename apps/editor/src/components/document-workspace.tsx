@@ -22,11 +22,13 @@ import { DocumentWorkspaceProvider } from "../context/document-workspace-context
 import { useProjectSearch } from "../context/project-search-context";
 import {
   SceneEditingProvider,
+  useOptionalSceneEditing,
   useSceneEditing,
 } from "../context/scene-editing-context";
 import { NavBakeProvider } from "../context/nav-bake-context";
 import { AudioReverbBakeProvider } from "../context/audio-reverb-bake-context";
-import { PrefabEditingProvider } from "../context/prefab-editing-context";
+import { PrefabEditingProvider, usePrefabEditing } from "../context/prefab-editing-context";
+import { useOptionalValidation } from "../context/validation-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { MaterialEditingProvider } from "../context/material-editing-context";
 import { ParticleGraphEditingProvider } from "../context/particle-graph-editing-context";
@@ -83,6 +85,25 @@ function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
     clearPendingTarget();
   }, [clearPendingTarget, pendingTarget, scenePath, selectActor]);
 
+  return null;
+}
+
+/**
+ * Selects the Actor (Scene, Scene Layer) or component (Class, Prefab) that a diagnostic focused on this
+ * document names, when it names no node: a Play preparation row that opened this document for a
+ * missing asset lands on what uses it.
+ */
+function DiagnosticSelection({ documentId, kind }: { documentId: string; kind: string }) {
+  const focus = useOptionalValidation()?.focusDiagnostic;
+  const sceneEditing = useOptionalSceneEditing();
+  const prefabEditing = usePrefabEditing();
+  const selectActor = sceneEditing?.selectActor;
+  const setSelectedComponent = prefabEditing.setSelectedId;
+  useEffect(() => {
+    if (!focus || focus.nodeId || focus.graphId !== documentId) return;
+    if ((kind === "scene" || kind === "scene-layer") && focus.actorId) selectActor?.(focus.actorId);
+    else if ((kind === "graph" || kind === "prefab") && focus.componentId) setSelectedComponent(focus.componentId);
+  }, [documentId, focus, kind, selectActor, setSelectedComponent]);
   return null;
 }
 
@@ -764,6 +785,7 @@ export function DocumentWorkspace() {
               {doc.ref.kind === "scene" ? (
                 <PendingSceneSearchFocus scenePath={doc.ref.path} />
               ) : null}
+              <DiagnosticSelection documentId={id} kind={doc.ref.kind} />
               <DocumentShell
                 id={id}
                 path={doc.ref.path}

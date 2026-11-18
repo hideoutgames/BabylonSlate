@@ -6,6 +6,7 @@ import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-suppor
 import { getAddNodeHistory, GraphEditor, type GraphDocument } from "@haptic/graph-ui";
 import { TagProvider } from "@haptic/editor-kit";
 import { EngineSettingsForm } from "./engine-settings-form";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
 import { AppSettingsProvider, useAppSettings } from "../context/app-settings-context";
 
 if (typeof window !== "undefined") {
@@ -63,6 +64,17 @@ function LiveGraphSettings() {
 }
 
 describe("EngineSettingsForm graph", () => {
+  it("keeps Cut Links on by default and writes One Use when chosen", async () => {
+    const onChange = vi.fn();
+    const view = render(<EngineSettingsForm settings={defaultEngineSettings()} onChange={onChange} categoryId="graph" />);
+    const trigger = view.getByTestId("setting-graph-cut-tool-mode");
+    expect(trigger.textContent).toContain("Stays On");
+    fireEvent.click(trigger);
+    const option = await view.findByRole("option", { name: "One Use" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith({ graphCutToolMode: "oneShot" }));
+  });
   it("applies the local pin lock to an open graph and restores editing when disabled", async () => {
     const store = new MemoryAppSettingsStore();
     const onChange = vi.fn();
@@ -192,6 +204,21 @@ describe("EngineSettingsForm accessibility", () => {
     fireEvent.click(view.getByRole("switch", { name: "Snapped Nodes" }));
     await waitFor(() => expect(gridSize).toHaveProperty("disabled", false));
     expect(await store.load()).toMatchObject({ graphSnapNodes: true, graphSnapGridSize: 32 });
+  });
+
+  it("shows the viewport's Zoom In and Zoom Out buttons once Viewport Zoom Buttons is on", async () => {
+    const store = new MemoryAppSettingsStore();
+    const view = render(<AppSettingsProvider store={store}>
+      <LiveAccessibilitySettings />
+      <ViewportZoomControls drive={() => null} />
+    </AppSettingsProvider>);
+    const toggle = view.getByRole("switch", { name: "Viewport Zoom Buttons" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(view.queryByRole("group", { name: "Viewport Zoom" })).toBeNull();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(view.getByRole("group", { name: "Viewport Zoom" })).toBeTruthy());
+    expect(view.getByRole("button", { name: "Zoom In" })).toBeTruthy();
+    expect((await store.load()).viewportZoomButtons).toBe(true);
   });
 });
 

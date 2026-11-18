@@ -1,6 +1,6 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AssetLoadError } from "@haptic/assets";
 import {
   areaEmissionTextureGuids,
@@ -23,6 +23,7 @@ import { isTestModeEnabled } from "@haptic/vfs";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportFpsCounter } from "../components/viewport-fps-counter";
 import { ViewportJoystick } from "../components/viewport-joystick";
+import { ViewportZoomControls } from "../components/viewport-zoom-controls";
 import { SceneLayerActorFrameControls } from "../components/scene-layer-actor-frame-controls";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useGraphEditing } from "../context/graph-editing-context";
@@ -38,7 +39,7 @@ import {
   type MaterialViewportTestSnapshot,
 } from "../lib/material-viewport-test-snapshot";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { walkAncestry } from "@haptic/editor-kit";
+import { prefersReducedMotion, walkAncestry } from "@haptic/editor-kit";
 import {
   classIdFromClassAsset,
   classParentLookup,
@@ -98,6 +99,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
+  const zoomDrive = useCallback(() => engineRef.current?.editor?.zoomDrive, []);
   const dropViewportId = useId();
   const [dropReady, setDropReady] = useState<{
     handle: EngineHandle;
@@ -316,6 +318,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         commitComponentPropertiesRef.current(edit.componentId, edit.properties);
       },
       editorFlySpeed: () => flySpeedRef.current,
+      editorZoomInstant: prefersReducedMotion,
       cameraPreviewFrameRate: () => cameraPreviewFrameRateRef.current,
     });
     engineRef.current = handle;
@@ -751,12 +754,20 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         className="h-full min-h-0 min-w-0 w-full flex-1 touch-none"
         data-testid="prefab-preview-canvas"
       />
-      <canvas
-        ref={previewCanvasRef}
-        hidden
-        data-testid="camera-preview"
-        className="pointer-events-none absolute bottom-3 right-3 z-10 h-[180px] w-[320px] rounded-md border border-border bg-black object-contain"
-      />
+      {/* Zoom buttons rest in the corner and sit above the Game Camera preview while it shows. */}
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10 flex flex-col items-end gap-2">
+        <ViewportZoomControls
+          drive={zoomDrive}
+          disabled={playing || preparing}
+          testId="prefab-viewport-zoom-controls"
+        />
+        <canvas
+          ref={previewCanvasRef}
+          hidden
+          data-testid="camera-preview"
+          className="pointer-events-none h-[180px] w-[320px] shrink-0 rounded-md border border-border bg-black object-contain"
+        />
+      </div>
       {joystickEnabled ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
           <div className="pointer-events-auto">

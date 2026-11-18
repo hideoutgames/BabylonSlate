@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_RICH_TEXT_EXAMPLE,
   expandRichTextTags,
   parseRichText,
   parseRichTextColor,
@@ -140,9 +141,20 @@ describe("richTextImageGuids", () => {
   it("collects unique image guids from markup", () => {
     expect(
       richTextImageGuids(
-        "[img=one] x [img=one size=8] [img=two] [img=PASTE_TEXTURE_GUID]",
+        "[img=one] x [img=one size=8] [img=two] [img=three]",
       ),
-    ).toEqual(["one", "two", "PASTE_TEXTURE_GUID"]);
+    ).toEqual(["one", "two", "three"]);
+  });
+
+  it("finds no asset in the text a new 2D Rich Text starts with, which still shows tags and effects", () => {
+    // A placeholder [img] id here made every Scene, Scene Layer or Class holding a new 2D Rich Text fail Play.
+    expect(richTextImageGuids(DEFAULT_RICH_TEXT_EXAMPLE)).toEqual([]);
+    expect(richTextCustomEffectNames(DEFAULT_RICH_TEXT_EXAMPLE)).toEqual([]);
+    const spans = parseRichText(DEFAULT_RICH_TEXT_EXAMPLE, defaults);
+    expect(spans.some((span) => span.style.bold)).toBe(true);
+    expect(spans.some((span) => span.effects.rotate === 45)).toBe(true);
+    expect(spans.some((span) => span.effects.shake === 1)).toBe(true);
+    expect(spans.some((span) => span.effects.waveIntensity === 1)).toBe(true);
   });
 });
 
