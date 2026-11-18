@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { Constants } from "@babylonjs/core/Engines/constants";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
@@ -244,6 +246,38 @@ describe("unlit Material", () => {
     expect(outlined.subMeshes[0]!.effect).toBe(glyph.subMeshes[0]!.effect);
     expect(material.needAlphaBlendingForMesh(glyph)).toBe(true);
     expect(material.fogEnabled).toBe(false);
+  });
+
+  it("binds each mesh's own colour on every draw of a frozen Material that Babylon skips rebinding", async () => {
+    const target = scene();
+    target.activeCamera = new FreeCamera("camera", new Vector3(0, 0, -10), target);
+    const colours: Array<[number, number, number]> = [[0.95, 0.95, 1], [0.6, 1, 0.7], [1, 0.85, 0.5]];
+    const planes = colours.map((color, index) => {
+      const plane = MeshBuilder.CreatePlane(`label${index}`, {}, target);
+      plane.position.x = index * 2;
+      setUnlitMaterial(plane, solid, binding({ color }));
+      return plane;
+    });
+    const material = unlitMaterial(target, solid);
+    await built(material);
+    for (const plane of planes) await ready(material, plane);
+    material.freeze();
+    const effect = planes[0]!.subMeshes[0]!.effect!;
+    // The colour the program holds as each mesh draws.
+    let held: number[] = [];
+    const drawn: number[][] = [];
+    const set = effect.setFloat4.bind(effect);
+    vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => {
+      if (name === "unlitColor") held = [x, y, z];
+      return set(name, x, y, z, w);
+    });
+    for (const plane of planes) plane.onBeforeDrawObservable.add(() => { drawn.push(held); });
+    // The first frame binds every draw's wrapper afresh; later frames share the cached Material and Effect, so Babylon
+    // skips a frozen Material's own binds and the Material's hook must rebind each mesh's colour.
+    target.render();
+    drawn.length = 0;
+    target.render();
+    expect(drawn).toEqual(colours);
   });
 
   it("waits for the mesh's bound texture before drawing", async () => {

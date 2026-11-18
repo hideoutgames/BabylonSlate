@@ -10,6 +10,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
+import type { Nullable } from "@babylonjs/core/types";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import type { MeshoptSimplifier as Simplifier } from "meshoptimizer/simplifier";
 import { simplifyLevels, type LodLevelIndices, type LodSimplifyInput } from "./model-lod-simplify";
@@ -460,6 +461,16 @@ function selectLevel(binding: LodBinding, camera: Camera, commit: boolean, subje
   return level;
 }
 
+const autoLodSelectors = new WeakSet<object>();
+
+/**
+ * Whether `selector` is automatic LOD's Scene selector: it draws a mesh that is no master and no master's pool member
+ * as Babylon's `getLOD` would (every master has Babylon LOD levels, `addLODLevel`).
+ */
+export function isAutoLodSelector(selector: unknown): boolean {
+  return typeof selector === "function" && autoLodSelectors.has(selector);
+}
+
 function lodsFor(scene: Scene): SceneLods {
   const lods = sceneLods.get(scene);
   if (lods) return lods;
@@ -467,7 +478,7 @@ function lodsFor(scene: Scene): SceneLods {
   sceneLods.set(scene, state);
   // Babylon consults the Scene selector in direct Scene.render calls and in
   // every ObjectRenderer pass (FrameGraph, shadow maps, outline masks).
-  scene.customLODSelector = (mesh, camera) => {
+  const selector = (mesh: AbstractMesh, camera: Camera): Nullable<AbstractMesh> => {
     const binding = state.masters.get(mesh);
     if (!binding && mesh instanceof InstancedMesh) {
       // A pool member draws in the batch of the level chosen for its own bounds, which Babylon reads from it.
@@ -491,6 +502,8 @@ function lodsFor(scene: Scene): SceneLods {
     }
     return lod;
   };
+  autoLodSelectors.add(selector);
+  scene.customLODSelector = selector;
   const mirror = scene.onBeforeRenderObservable.add(() => {
     for (const binding of state.bindings) {
       for (const level of binding.levels) mirrorLodState(binding.master, level.mesh);

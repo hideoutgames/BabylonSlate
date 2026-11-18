@@ -524,6 +524,8 @@ function initializeEngine(
     compileHolds: true, occlusion: !presentRtt && !options.previewLighting,
     // A game's view only: the editor viewport's depth also holds its helper visuals.
     seedsFromSceneDepth: options.playMode === true,
+    // A game's view only: the editor viewport keeps Babylon's preparation.
+    leanPreparation: options.playMode === true,
   });
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
