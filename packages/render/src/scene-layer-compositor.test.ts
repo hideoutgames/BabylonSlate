@@ -8,6 +8,7 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sceneLayerCanvasToLayer } from "@haptic/core";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
+import { sceneDrawBatcher } from "./draw-batching";
 import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
@@ -15,7 +16,6 @@ import * as scenePerf from "./scene-perf";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { RenderingManager } from "@babylonjs/core/Rendering/renderingManager";
 import { layerDrawableMeshes } from "./layer-drawable-meshes";
 import { sceneShadowController } from "./shadow-controller";
 import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
@@ -1049,20 +1049,24 @@ describe("SceneLayerCompositor", () => {
     return { engine, compositor, layer, scene: layer.scene, root, label, caret, icon, quad };
   }
 
-  /** The meshes one compositor frame dispatched to its passes, by name in dispatch order. */
+  /**
+   * The meshes one compositor frame handed its layer's draw batcher, by name in draw order: what Babylon's passes, or
+   * the layer's retained draw list, put in its sorted lists.
+   */
   function dispatched(engine: NullEngine, compositor: SceneLayerCompositor): string[] {
     const meshes: string[] = [];
-    const dispatch = RenderingManager.prototype.dispatch;
-    const spy = vi.spyOn(RenderingManager.prototype, "dispatch").mockImplementation(function (this: RenderingManager, subMesh, mesh, material) {
-      meshes.push((mesh ?? subMesh.getMesh()).name);
-      return dispatch.call(this, subMesh, mesh, material);
-    });
+    const batcher = sceneDrawBatcher(compositor.layers()[0]!.scene)!;
+    const draw = batcher.draw;
+    batcher.draw = (sorted, count, transparent, drawOne) => {
+      for (let index = 0; index < count; index += 1) meshes.push(sorted[index]!.getMesh().name);
+      draw.call(batcher, sorted, count, transparent, drawOne);
+    };
     try {
       engine.beginFrame();
       compositor.render();
       engine.endFrame();
     } finally {
-      spy.mockRestore();
+      batcher.draw = draw;
     }
     return meshes;
   }
@@ -1124,6 +1128,7 @@ describe("SceneLayerCompositor", () => {
     change(hud);
     expect(dispatched(hud.engine, hud.compositor)).toEqual(expected);
     expect(hud.compositor.diagnostics()[0]!.drawable).toMatchObject({ mismatches: 0 });
+    expect(hud.compositor.diagnostics()[0]!.drawList).toMatchObject({ fallbackFrames: 0, heals: 0, mismatches: 0 });
   });
 
   it("keeps a layer's drawable meshes from its creation until its Scene is released", async () => {
