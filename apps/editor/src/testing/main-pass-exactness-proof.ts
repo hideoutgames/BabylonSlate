@@ -29,7 +29,7 @@ import {
   createDefaultRenderTargetCaptureProperties, normalizeCelShadingSettings, normalizeRenderEffectsSettings, normalizeRenderingQuality,
   normalizeShadowSettings, parseMirrorProperties, type RenderTargetCaptureQuality,
 } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, RenderTargetCaptures } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, RenderTargetCaptures, largeWorldEngineOptions } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { retainAreaLightLookup } from "../../../../packages/render/src/area-light-resources";
@@ -120,7 +120,7 @@ async function readCapture(texture: BaseTexture): Promise<number[]> {
 
 export type MainPassExactnessImages = { view: number[]; captures: Record<Shown, number[]> };
 
-export async function runMainPassExactnessProof(options: { reference: boolean }) {
+export async function runMainPassExactnessProof(options: { reference: boolean; largeWorld?: boolean }) {
   const block = HapticLightingBlock.prototype as unknown as { _buildBlock(state: NodeMaterialBuildState): unknown };
   const build = block._buildBlock;
   const controller = SceneShadowController.prototype as unknown as { applyViewRefresh(generator: ShadowGenerator): void };
@@ -144,7 +144,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean })
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
   document.getElementById("root")!.append(canvas);
-  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, ...largeWorldEngineOptions(options.largeWorld === true) });
   engine.setSize(SIZE, SIZE);
   const scene = new Scene(engine);
   try {

@@ -1,6 +1,6 @@
+import { createHeadlessEngine } from "./large-world";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { ModelBatchConversionOptions } from "./convert-fbx-to-glb";
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
 import { STLFileLoader } from "@babylonjs/loaders/STL/stlFileLoader";
 import { exportConvertedSceneToGlb } from "./convert-obj-to-glb";
@@ -13,7 +13,7 @@ export async function convertStlToGlb(
   stlBytes: Uint8Array,
   options: { engine?: AbstractEngine } = {},
 ): Promise<Uint8Array> {
-  const engine = options.engine ?? new NullEngine();
+  const engine = options.engine ?? createHeadlessEngine();
   const ownsEngine = !options.engine;
   const scene = new Scene(engine);
   try {

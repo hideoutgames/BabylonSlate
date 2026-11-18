@@ -11,6 +11,11 @@ export type ProjectEngineState = {
 };
 export type ProjectEngineRequest = {
   projectGuid: string;
+  /**
+   * The project's Large World Rendering. Babylon takes it at Engine construction, so a change replaces the Engine as
+   * a project switch does (views rebuild on the new one).
+   */
+  largeWorldRendering: boolean;
   /** Paint blocking UI and detach old clients. */
   prepare(signal: AbortSignal): Promise<void>;
 };
@@ -22,10 +27,11 @@ export type ProjectEngineController = {
 };
 
 /** Hidden constructor canvas + initialized Engine for one open project. */
-export async function createProjectEngineSession(signal: AbortSignal): Promise<ProjectEngineSession> {
+export async function createProjectEngineSession(signal: AbortSignal, largeWorldRendering = false): Promise<ProjectEngineSession> {
   let constructorCanvas: HTMLCanvasElement | undefined;
   const session = await createEngineSession({
     signal,
+    largeWorldRendering,
     // The editor's viewport, Play and other project views show this Engine's canvas itself while one is on screen.
     presentViewsDirectly: true,
     decoders: {
@@ -84,7 +90,7 @@ export function createProjectEngineController(): ProjectEngineController {
       return () => { listeners.delete(listener); };
     },
     sync(request, retry = false) {
-      const nextKey = request ? request.projectGuid : null;
+      const nextKey = request ? `${request.projectGuid}:${request.largeWorldRendering ? "large" : "standard"}` : null;
       if (!retry && key === nextKey &&
         (state.phase !== "ready" || isUsableEngine(state.session?.engine))) return tail;
       key = nextKey;
@@ -102,7 +108,7 @@ export function createProjectEngineController(): ProjectEngineController {
           drop();
           if (!request) return;
           publish({ phase: "initializing", session: null });
-          const session = await createProjectEngineSession(signal);
+          const session = await createProjectEngineSession(signal, request.largeWorldRendering);
           owned = session;
           if (signal.aborted) {
             drop();

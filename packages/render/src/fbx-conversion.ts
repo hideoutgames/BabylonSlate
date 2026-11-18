@@ -1,4 +1,4 @@
-import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { createHeadlessEngine } from "./large-world";
 import { Scene } from "@babylonjs/core/scene";
 import { FBXFileLoader } from "@babylonjs/loaders/FBX/fbxFileLoader";
 import { ingestGltfForImport } from "@haptic/assets";
@@ -49,7 +49,7 @@ export async function convertFbxToGlb(
     if (byName.has(key)) throw new Error(`Ambiguous FBX sidecar name: ${key}`);
     byName.set(key, sidecar);
   }
-  const engine = new NullEngine();
+  const engine = createHeadlessEngine();
   const scene = new Scene(engine);
   try {
     const loader = new FBXFileLoader({ materials: "pbr", unitScale: "meters" });

@@ -4,8 +4,8 @@ const { createSession } = vi.hoisted(() => ({ createSession: vi.fn() }));
 vi.mock("@haptic/render", () => ({ createEngineSession: createSession }));
 import { createProjectEngineController, createProjectEngineSession, type ProjectEngineRequest } from "./project-engine";
 
-function request(projectGuid = "project"): ProjectEngineRequest {
-  return { projectGuid, prepare: async () => {} };
+function request(projectGuid = "project", largeWorldRendering = false): ProjectEngineRequest {
+  return { projectGuid, largeWorldRendering, prepare: async () => {} };
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -55,6 +55,22 @@ describe("project Engine transitions", () => {
     await host.sync(null);
     expect(first?.engine.isDisposed).toBe(true);
     expect(host.getSnapshot()).toEqual({ phase: "idle", session: null });
+  });
+
+  it("replaces the Engine when Large World Rendering changes, building the new one with the project's setting", async () => {
+    const host = createProjectEngineController();
+    await host.sync(request());
+    const standard = host.getSnapshot().session!;
+    await host.sync(request("project", true));
+    const large = host.getSnapshot().session!;
+    expect(standard.engine.isDisposed).toBe(true);
+    expect(large).not.toBe(standard);
+    await host.sync(request("project", true));
+    expect(host.getSnapshot().session).toBe(large);
+    await host.sync(request());
+    expect(large.engine.isDisposed).toBe(true);
+    expect(createSession.mock.calls.map(([options]) => (options as EngineSessionOptions).largeWorldRendering)).toEqual([false, true, false]);
+    await host.sync(null);
   });
 
   it("detaches clients before preparation and releases the old Engine before allocating its replacement", async () => {

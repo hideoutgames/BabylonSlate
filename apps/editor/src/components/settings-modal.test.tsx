@@ -828,6 +828,19 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("setting-render-black-bars")).toBeTruthy();
   });
 
+  it("shows Large World Rendering off for a project without it, and stages turning it on until Done", () => {
+    showRenderingSections("pipeline");
+    lastProjectRender.current = createEmptyProject("Demo").settings.render;
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    const toggle = screen.getByTestId("setting-render-large-world");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(updateProjectSettings).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(lastProjectRender.current).toMatchObject({ largeWorldRendering: true });
+  });
+
   it("offers Upscaling only with Custom Resolution, and stages Pixelated until Done", async () => {
     showRenderingSections("resolution");
     const openResolution = () => {
@@ -923,9 +936,10 @@ describe("SettingsModal project authoring", () => {
     ["audio", "settings-audio-occlusion", /Wall muffling/, "hint"],
     ["rendering", "setting-render-custom", /Sets the design size/, "hint"],
     ["rendering", "setting-render-black-bars", /Adds bars to preserve/, "hint"],
+    ["rendering", "setting-render-large-world", /kilometres from the origin/, "hint"],
     ["rendering", "setting-play-follow-system", /Off uses a fixed aspect ratio/, "hint"],
   ])("keeps the %s %s description %s inside its setting before the separator", (category, controlId, descriptionText, kind) => {
-    showRenderingSections("resolution", "playPreview");
+    showRenderingSections("pipeline", "resolution", "playPreview");
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId(`settings-modal-category-${category}`));
     const control = screen.getByTestId(controlId);
