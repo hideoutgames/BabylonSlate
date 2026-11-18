@@ -6,6 +6,7 @@ import {
 } from "./wildcard-resolve";
 import {
   BOXED_WILDCARD,
+  EXEC,
   FLOAT,
   INT,
   RESOLVING_WILDCARD,
@@ -364,5 +365,70 @@ describe("resolveWildcardPinTypes", () => {
       mapOf(STRING, FLOAT),
     );
     expect(result.conflicts).toEqual([]);
+  });
+});
+
+describe("resolveWildcardPinTypes on Reroute knots", () => {
+  const knot = (id: string) => ({ id, pins: [{ id: "in", type: T }, { id: "out", type: T }] });
+  const wire = (from: string, to: string) => {
+    const [sourceNodeId, sourcePinId] = from.split(".") as [string, string];
+    const [targetNodeId, targetPinId] = to.split(".") as [string, string];
+    return { sourceNodeId, sourcePinId, targetNodeId, targetPinId };
+  };
+  const nodes = [
+    { id: "event", pins: [{ id: "then", type: EXEC }] },
+    { id: "print", pins: [{ id: "execIn", type: EXEC }, { id: "value", type: FLOAT }] },
+    { id: "number", pins: [{ id: "value", type: FLOAT }] },
+    knot("k1"),
+    knot("k2"),
+    knot("k3"),
+  ];
+  const kinds = (graph: WildcardGraph, ...pins: string[]) => {
+    const result = resolveWildcardPinTypes(graph);
+    return pins.map((entry) => {
+      const [nodeId, pinId] = entry.split(".") as [string, string];
+      return typeAt(result.resolved, nodeId, pinId).kind;
+    });
+  };
+
+  it("binds to exec from an exec output", () => {
+    expect(kinds({ nodes, edges: [wire("event.then", "k1.in")] }, "k1.in", "k1.out")).toEqual(["exec", "exec"]);
+  });
+
+  it("binds to the data type of a data output", () => {
+    expect(kinds({ nodes, edges: [wire("number.value", "k1.in")] }, "k1.in", "k1.out")).toEqual(["float", "float"]);
+  });
+
+  it("takes the type of an exec or data input that only its output feeds", () => {
+    expect(kinds({ nodes, edges: [wire("k1.out", "print.execIn")] }, "k1.in", "k1.out")).toEqual(["exec", "exec"]);
+    expect(kinds({ nodes, edges: [wire("k1.out", "print.value")] }, "k1.in", "k1.out")).toEqual(["float", "float"]);
+  });
+
+  it("carries the type through a chain of knots in both directions", () => {
+    const chain = [wire("k1.out", "k2.in"), wire("k2.out", "k3.in")];
+    expect(kinds({ nodes, edges: [...chain, wire("event.then", "k1.in")] }, "k1.out", "k2.out", "k3.out"))
+      .toEqual(["exec", "exec", "exec"]);
+    expect(kinds({ nodes, edges: [...chain, wire("k3.out", "print.value")] }, "k1.in", "k2.in", "k3.in"))
+      .toEqual(["float", "float", "float"]);
+  });
+
+  it("returns to a wildcard when unwired", () => {
+    expect(kinds({ nodes, edges: [] }, "k1.in", "k1.out")).toEqual(["resolvingWildcard", "resolvingWildcard"]);
+  });
+
+  it("reports a conflict when one knot chain joins an exec output to a data input", () => {
+    const result = resolveWildcardPinTypes({
+      nodes,
+      edges: [wire("event.then", "k1.in"), wire("k1.out", "k2.in"), wire("k2.out", "print.value")],
+    });
+    expect(result.conflicts).toEqual([{
+      nodeId: "k2", pinId: "out", relatedNodeId: "print", relatedPinId: "value",
+      message: "Cannot connect exec pin to float pin",
+    }]);
+    const reverse = resolveWildcardPinTypes({ nodes, edges: [wire("number.value", "k1.in"), wire("k1.out", "print.execIn")] });
+    expect(reverse.conflicts).toEqual([{
+      nodeId: "k1", pinId: "out", relatedNodeId: "print", relatedPinId: "execIn",
+      message: "Cannot connect float pin to exec pin",
+    }]);
   });
 });

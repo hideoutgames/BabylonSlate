@@ -9,6 +9,7 @@ export const NODE_DESCRIPTIONS: Readonly<Record<string, string>> = {
   // Flow
   "flow.branch": "Runs True or False by Condition.",
   "flow.sequence": "Runs each output in order.",
+  "flow.reroute": "Passes one wire through a movable point to tidy the graph.",
   "flow.doOnce": "Runs once, until Reset.",
   "flow.doN": "Runs the first N times, until Reset.",
   "flow.flipFlop": "Alternates between A and B, starting with A.",

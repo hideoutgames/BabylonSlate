@@ -4,6 +4,7 @@ import { isPureNode, type HoistBodyAnchor } from "./node-registry";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { createPureExpressions } from "./pure-expressions";
 import type { CompileAnchor, CompileOptions } from "./compile-types";
+import { collapseReroutes } from "./reroute";
 import {
   indexGraph,
   withResolvedPinTypes,
@@ -97,12 +98,15 @@ export type CodegenState = {
   isAsync: boolean;
 };
 
-/** Resolves wildcard pin types first, so no generator sees the authored graph. */
+/**
+ * Collapses Reroutes and resolves wildcard pin types first, so no generator sees the authored
+ * graph: a wire through Reroutes compiles as a direct wire.
+ */
 export function createCodegenState(
   graph: LogicGraph,
   options: CompileOptions,
 ): CodegenState {
-  graph = withResolvedPinTypes(graph);
+  graph = withResolvedPinTypes(collapseReroutes(graph));
   const index = indexGraph(graph);
   return {
     graph,
