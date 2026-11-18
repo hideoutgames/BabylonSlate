@@ -39,6 +39,12 @@ export type GraphPin = {
    * is exec while its resolved type is exec, else data.
    */
   anyKind?: boolean;
+  /**
+   * Types besides those assignable to `type` that a wire into this input may carry: the host
+   * connects it and then retypes the pin to the wire's type (a numeric operator's operands).
+   * Validation still checks the wire against `type`.
+   */
+  accepts?: PinType[];
 };
 
 export type GraphNode = {

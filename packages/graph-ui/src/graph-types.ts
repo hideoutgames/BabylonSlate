@@ -37,6 +37,11 @@ export type SerializedPin = {
   singleLink?: boolean;
   /** Drawn at the right end of the title bar instead of in a pin row (a custom event's Output Delegate). */
   placement?: "header";
+  /**
+   * Further types a host's connection rule may let a wire bring into this input, which the host
+   * then retypes the pin to. The canvas only keeps it with the pin.
+   */
+  accepts?: Array<{ kind: string; [key: string]: unknown }>;
 };
 
 export type GraphEdge = SerializedGraph["edges"][number];

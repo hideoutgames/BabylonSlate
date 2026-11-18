@@ -4,6 +4,7 @@
  */
 import {
   normalizeDataTreeEntry,
+  passThroughSources,
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@haptic/core";
@@ -15,7 +16,10 @@ import {
   type PinType,
   type TypeSchemas,
   isDevelopmentOnlyByDefaultTypeId,
+  pinTypeKey,
+  resolveWildcardPinTypes,
   REROUTE_NODE_TYPE,
+  type GraphPin,
 } from "@haptic/scripting";
 import { ENGINE_CLASS_SCRIPT_APIS } from "@haptic/object-model";
 import {
@@ -42,6 +46,10 @@ import {
   ownedTimelineClipGetTitle,
   subsystemGetClassId,
   subsystemGetTitle,
+  isNumericOperatorNode,
+  numericOperands,
+  numericOperandTypeOf,
+  retypeNumericOperands,
 } from "@haptic/scripting-nodes";
 import {
   dataGraphDefinitionGuid,
@@ -51,7 +59,7 @@ import {
   isDataGraphNode,
   type DataGraphAssetEntry,
 } from "../lib/data-graph";
-import { wiredSource } from "../lib/reroute-wires";
+import { rerouteNodeIdLookup, wiredSource } from "../lib/reroute-wires";
 
 export function catalogTypeId(node: {
   type: string;
@@ -146,6 +154,8 @@ export function shouldRegeneratePins(typeId: string): boolean {
     typeId === "array.make" ||
     typeId === "map.make" ||
     typeId === "scene.change" ||
+    // Operand and Out types follow the operand type properties.
+    isNumericOperatorNode(typeId) ||
     isDevelopmentOnlyByDefaultTypeId(typeId)
   );
 }
@@ -268,6 +278,83 @@ export function castPinProperties(
     defaultClassId,
     wiredClassId,
   };
+}
+
+type RetypeNode = { id: string; type: string; data: Record<string, unknown> };
+type RetypeEdge = SerializedGraph["edges"][number];
+
+/**
+ * Add, Subtract, Multiply, Divide, Modulo and Negate take each operand's type from the wire into
+ * it (`retypeNumericOperands`), the way Cast takes its Class: derived on every refresh, so the
+ * connect and the retype are one edit. The wire is read through Reroute knots, and a wildcard
+ * source counts once the graph resolves it. A retyped node's Out can retype the operator it feeds,
+ * so passes repeat until nothing changes. `data.__pins` holds each node's current pins; a changed
+ * node gets new data with fresh pins. Returns `nodes` itself when nothing changes.
+ *
+ * Cost: one scan when no operator has a wired operand; else O(nodes + edges) per pass, plus a
+ * wildcard resolve only when an operand reads an unresolved wildcard.
+ */
+export function retypeNumericOperatorNodes<N extends RetypeNode>(
+  nodes: readonly N[],
+  edges: readonly RetypeEdge[],
+  nodeRegistry: NodeRegistry,
+): readonly N[] {
+  const operators: number[] = [];
+  nodes.forEach((node, index) => {
+    if (isNumericOperatorNode(catalogTypeId(node))) operators.push(index);
+  });
+  if (operators.length === 0) return nodes;
+  const into = new Map<string, RetypeEdge>();
+  for (const edge of edges) into.set(pinTypeKey(edge.target, edge.targetHandle ?? ""), edge);
+  const hasWiredOperand = operators.some((index) =>
+    numericOperands(catalogTypeId(nodes[index]!)).some((operand) => into.has(pinTypeKey(nodes[index]!.id, operand.pinId))));
+  if (!hasWiredOperand) return nodes;
+  const isKnot = rerouteNodeIdLookup(nodes);
+  const sourceOf = (nodeId: string, pinId: string): { nodeId: string; pinId: string } | undefined => {
+    const edge = into.get(pinTypeKey(nodeId, pinId));
+    if (!edge) return undefined;
+    if (!isKnot(edge.source)) return { nodeId: edge.source, pinId: edge.sourceHandle ?? "" };
+    return passThroughSources(edges, isKnot, nodeId, pinId)[0];
+  };
+  const current = [...nodes];
+  const indexById = new Map(current.map((node, index) => [node.id, index] as const));
+  const pinsOf = (nodeId: string): GraphPin[] => {
+    const pins = current[indexById.get(nodeId) ?? -1]?.data.__pins;
+    return Array.isArray(pins) ? (pins as GraphPin[]) : [];
+  };
+  let resolved: Map<string, PinType> | undefined;
+  const sourceType = (source: { nodeId: string; pinId: string }): PinType | undefined => {
+    const type = pinsOf(source.nodeId).find((pin) => pin.id === source.pinId)?.type;
+    if (type?.kind !== "resolvingWildcard") return type;
+    resolved ??= resolveWildcardPinTypes({
+      nodes: current.map((node) => ({ id: node.id, pins: pinsOf(node.id) })),
+      edges: edges.map((edge) => ({
+        sourceNodeId: edge.source, sourcePinId: edge.sourceHandle ?? "",
+        targetNodeId: edge.target, targetPinId: edge.targetHandle ?? "",
+      })),
+    }).resolved;
+    return resolved.get(pinTypeKey(source.nodeId, source.pinId));
+  };
+  let changedAny = false;
+  for (let pass = 0; pass <= operators.length; pass++) {
+    let changed = false;
+    for (const index of operators) {
+      const node = current[index]!;
+      const typeId = catalogTypeId(node);
+      const next = retypeNumericOperands(typeId, node.data, (pinId) => {
+        const source = sourceOf(node.id, pinId);
+        return source ? { wired: true, type: numericOperandTypeOf(sourceType(source)) } : { wired: false };
+      });
+      if (next === node.data) continue;
+      const def = nodeRegistry.get(typeId);
+      current[index] = { ...node, data: { ...next, __pins: def ? def.pins(next) : next.__pins } };
+      changed = true;
+    }
+    if (!changed) break;
+    changedAny = true;
+    resolved = undefined;
+  }
+  return changedAny ? current : nodes;
 }
 
 /**
