@@ -343,8 +343,11 @@ int hapticLoopVisited = 0;
 int hapticLoopReached = 0;
 #endif
 #ifdef HAPTIC_SCREEN_SHADOWS
-// The sun's lit share from Screen-Space Shadows at this pixel (\`hapticScreenShadowLit\`), set before the direct lights.
-float hapticScreenLit = 1.0;
+// What the screen shadows' read takes (\`hapticScreenShadowLit\`): the eye, and this surface's change of eye distance per
+// pixel, taken before the direct lights where control flow is uniform. The read itself waits for the sun
+// (\`hapticSunScreenShadow\`).
+vec3 hapticScreenEye = vec3(0.0);
+vec2 hapticScreenSlope = vec2(0.0);
 // The screen shadows of this draw's pass (\`hapticScreenShadowSampler\`: R the sun's lit share, G the eye distance of the
 // surface marched from; \`hapticScreenShadowTerms.x\` 0 where the pass has none, a placeholder then bound), for the surface
 // at P only: a fragment at another distance (behind glass or water, or anything the depth did not hold) keeps 1. The
@@ -388,11 +391,14 @@ float hapticScreenShadowLit(vec3 P, vec3 eye, vec2 slope) {
 }
 
 // Where the sun's cascades darken to (the first cascade's darkness; a map awaiting its first draw is neutral), as far as
-// the screen shadows say the sun is blocked.
-float hapticSunScreenShadow() {
+// the screen shadows say the sun is blocked; the sun takes the darker of it and its cascades' \`sunShadow\`. Where the
+// cascades already hold the sun at that darkness (their shadow never reads darker), the screen shadows cannot darken it
+// further: \`sunShadow\` itself, and no read.
+float hapticSunScreenShadow(vec3 P, float sunShadow) {
   vec4 cascades = hapticSunShadow[0];
   float darkness = cascades.x > 0.5 ? hapticShadowViews[int(cascades.w) * ${HAPTIC_SHADOW_VIEW_VEC4S} + 5].x : 1.0;
-  return mix(darkness, 1.0, hapticScreenLit);
+  if (sunShadow <= darkness) return sunShadow;
+  return mix(darkness, 1.0, hapticScreenShadowLit(P, hapticScreenEye, hapticScreenSlope));
 }
 #endif
 // The masks of the cluster holding world position P (\`light-clusters.ts\`): every light outside the clusters' view.
@@ -647,7 +653,7 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
         vec4 record = hapticDirectional[d * 2 + 1];
 #ifdef HAPTIC_SCREEN_SHADOWS
         // The cascades and the screen shadows each block the sun; the darker wins, so neither doubles the other.
-        vec3 sunColor = record.rgb * (record.w > 0.5 ? min(sunShadow, hapticSunScreenShadow()) : 1.0);
+        vec3 sunColor = record.rgb * (record.w > 0.5 ? min(sunShadow, hapticSunScreenShadow(P, sunShadow)) : 1.0);
 #else
         vec3 sunColor = record.rgb * (record.w > 0.5 ? sunShadow : 1.0);
 #endif
@@ -969,7 +975,8 @@ vec3 hapticDiffuseLight = vec3(0.0);
 vec3 hapticSpecularLight = vec3(0.0);
 #ifdef HAPTIC_SCREEN_SHADOWS
 float hapticScreenDistance = length(${input.cameraPosition} - hapticP);
-hapticScreenLit = hapticScreenShadowLit(hapticP, ${input.cameraPosition}, vec2(dFdx(hapticScreenDistance), dFdy(hapticScreenDistance)));
+hapticScreenEye = ${input.cameraPosition};
+hapticScreenSlope = vec2(dFdx(hapticScreenDistance), dFdy(hapticScreenDistance));
 #endif
 hapticDirectLights(hapticS, hapticP, hapticN, hapticV, hapticDiffuseLight, hapticSpecularLight);
 ${output.diffuseDirect} = hapticDiffuseLight * hapticS.diffuse;

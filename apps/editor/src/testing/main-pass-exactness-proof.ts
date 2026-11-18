@@ -70,8 +70,32 @@ const REFERENCE_GLSL: readonly (readonly [string, string])[] = [
   ],
 ];
 
+/**
+ * The light block's main code as before the savings, from the current: the screen shadows read for every pixel before
+ * the direct lights, where the sun now reads them only where its cascades leave it lighter than their darkness.
+ */
+function referenceMain(code: string): string {
+  const pattern = /hapticScreenEye = (.+);\nhapticScreenSlope = (vec2\(.+\));/g;
+  if ((code.match(pattern) ?? []).length !== 1) throw new Error("The reference main code no longer matches once.");
+  return code.replace(pattern, (_, eye: string, slope: string) => `hapticScreenLit = hapticScreenShadowLit(hapticP, ${eye}, ${slope});`);
+}
+
+/** The light block's functions' screen shadow read as before: a global set once per pixel, read by the sun. */
+const REFERENCE_SCREEN_GLSL: readonly (readonly [string, string])[] = [
+  ["vec3 hapticScreenEye = vec3(0.0);\nvec2 hapticScreenSlope = vec2(0.0);\n", "float hapticScreenLit = 1.0;\n"],
+  [
+    "float hapticSunScreenShadow(vec3 P, float sunShadow) {",
+    "float hapticSunScreenShadow() {",
+  ],
+  [
+    "  if (sunShadow <= darkness) return sunShadow;\n  return mix(darkness, 1.0, hapticScreenShadowLit(P, hapticScreenEye, hapticScreenSlope));\n",
+    "  return mix(darkness, 1.0, hapticScreenLit);\n",
+  ],
+  ["min(sunShadow, hapticSunScreenShadow(P, sunShadow))", "min(sunShadow, hapticSunScreenShadow())"],
+];
+
 function referenceFunctions(code: string): string {
-  for (const [current, before] of REFERENCE_GLSL) {
+  for (const [current, before] of [...REFERENCE_GLSL, ...REFERENCE_SCREEN_GLSL]) {
     if (code.split(current).length !== 2) throw new Error(`The reference pair no longer matches once: ${JSON.stringify(current.slice(0, 80))}`);
     code = code.replace(current, () => before);
   }
@@ -107,7 +131,12 @@ export async function runMainPassExactnessProof(options: { reference: boolean })
       state._emitFunction = function (this: NodeMaterialBuildState, name: string, code: string, comments: string) {
         return emit.call(this, name, name === "hapticLightingFunctions" ? referenceFunctions(code) : code, comments);
       };
-      try { return build.call(this, state); } finally { state._emitFunction = emit; }
+      const start = state.compilationString.length;
+      try {
+        const built = build.call(this, state);
+        state.compilationString = state.compilationString.slice(0, start) + referenceMain(state.compilationString.slice(start));
+        return built;
+      } finally { state._emitFunction = emit; }
     };
     // A capture's own sun maps keep the refresh rate they were made with: every frame.
     controller.applyViewRefresh = () => {};
