@@ -1,6 +1,8 @@
-import { writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
 import { FEATURE_TEST_PROFILE_VIEWS } from "../apps/editor/src/lib/feature-test/layout";
+import { glLiveObjects, installGlMemoryLedger, readGlMemoryLedger } from "./gl-memory-ledger";
 import { clickPlayAndWaitForOverlay, runConsoleCommand } from "./play";
 import { distribution, graphicsAdapter } from "./play-performance-fixture";
 import {
@@ -59,7 +61,12 @@ import {
  *      HAPTIC_PERF_VARIANTS (with HAPTIC_PERF_VIEWS: a JSON list of `{ label, commands, restore? }`; each view measures
  *      its baseline, then each variant followed by its restore and the baseline again, A B A C A),
  *      HAPTIC_PERF_HOLD_MS (default 3000: each held view's measured window; it reports its animation frames' rate,
- *      `averageFps`, beside `drawnFps`, and the view's attempted, drawn and held frames, `view`).
+ *      `averageFps`, beside `drawnFps`, and the view's attempted, drawn and held frames, `view`),
+ *      HAPTIC_PERF_MEMORY=1 (with HAPTIC_PERF_OUT: a memory timeline beside the report, `<out>.memory.json`: what the page
+ *      asked WebGL to allocate every 250 ms (`gl-memory-ledger.ts`), each allocation or release of 4 MiB or more, the
+ *      live objects at the phase marks, and the phase marks in epoch milliseconds; the editor settles again after the
+ *      last Play), HAPTIC_PERF_MEMORY_SAMPLER (with it: a PowerShell script started with `-Out <out>.gpu.csv -Stop
+ *      <file> -Pids <browser, GPU and renderer pids>` that samples those processes until the stop file appears).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -117,6 +124,13 @@ const HOLD_MS = number("HAPTIC_PERF_HOLD_MS", 3_000, 1_000);
 type Variant = { label: string; commands: string[]; restore?: string[] };
 const VARIANTS = JSON.parse(process.env.HAPTIC_PERF_VARIANTS ?? "[]") as Variant[];
 if (DEVICE) test.use({ viewport: { width: Number(DEVICE[1]), height: Number(DEVICE[2]) }, deviceScaleFactor: Number(DEVICE[3]) });
+const MEMORY = process.env.HAPTIC_PERF_MEMORY === "1" && !!process.env.HAPTIC_PERF_OUT;
+/** Phase marks of the memory timeline, in epoch milliseconds, with the live WebGL objects of 4 MiB or more at some. */
+const marks: Array<{ label: string; epochMs: number; live?: unknown }> = [];
+async function mark(page: Page, label: string, live = false): Promise<void> {
+  if (!MEMORY) return;
+  marks.push({ label, epochMs: Date.now(), ...(live ? { live: await glLiveObjects(page, 4 * 1024 ** 2) } : {}) });
+}
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -371,10 +385,13 @@ async function samplePlay(page: Page, durationMs: number) {
 async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   const started = Date.now();
   const linksSince = await pageNow(page);
+  await mark(page, "play: click");
   await clickPlayAndWaitForOverlay(page);
+  await mark(page, "play: overlay shown");
   await expect(page.getByTestId("play-blocked-dialog")).toHaveCount(0);
   await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 180_000 });
   const loadedAt = await pageNow(page);
+  await mark(page, "play: loaded", true);
   await expect(page.getByTestId("play-canvas")).toBeVisible({ timeout: 60_000 });
   await expect
     .poll(
@@ -383,6 +400,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
     )
     .toBeGreaterThan(30);
   const playBootMs = Date.now() - started;
+  await mark(page, "play: ticking", true);
   // The share of the boot spent compiling what Play may spawn, before the first frame.
   const spawnableWarm = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.spawnableWarm() ?? null);
   if (VERIFY_SCOPED) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyScopedReadinessProbes(true));
@@ -425,8 +443,10 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
     () => (globalThis as unknown as PlayHost).__hapticPlayTest?.liveObjectCounts() ?? null,
   );
   const programs = await programLinks(page, linksSince, loadedAt, await pageNow(page));
+  await mark(page, "play: stop click", true);
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
+  await mark(page, "play: closed", true);
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
   return { playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects };
 }
@@ -508,6 +528,38 @@ async function waitForSceneView(page: Page): Promise<void> {
 
 test.skip(!ENABLED, "FeatureTest performance route; set HAPTIC_PERF_FEATURE_TEST=1 to run it.");
 
+/** Stops the process sampler and writes the memory timeline, `<out>.memory.json`. */
+async function writeMemoryTimeline(page: Page, stopSampler: (() => Promise<void>) | null): Promise<void> {
+  await stopSampler?.();
+  const ledger = await readGlMemoryLedger(page, 0);
+  writeFileSync(`${process.env.HAPTIC_PERF_OUT}.memory.json`, JSON.stringify({ marks, processes: samplerProcesses, ledger }));
+}
+
+/** The browser's processes the sampler watches, from the browser's own process list. */
+let samplerProcesses: Array<{ type: string; id: number }> = [];
+
+/**
+ * Starts `HAPTIC_PERF_MEMORY_SAMPLER` (a PowerShell script) on the browser's processes, writing `<out>.gpu.csv`;
+ * returns what stops it and waits for it to exit. Without the script, only the process list is recorded.
+ */
+async function startProcessSampler(page: Page): Promise<(() => Promise<void>) | null> {
+  const browserCdp = await page.context().browser()!.newBrowserCDPSession();
+  const { processInfo } = await browserCdp.send("SystemInfo.getProcessInfo");
+  await browserCdp.detach();
+  samplerProcesses = processInfo.map(({ type, id }) => ({ type, id }));
+  const script = process.env.HAPTIC_PERF_MEMORY_SAMPLER;
+  if (!script || !existsSync(script)) return null;
+  const out = `${process.env.HAPTIC_PERF_OUT}.gpu.csv`;
+  const stop = `${process.env.HAPTIC_PERF_OUT}.gpu.stop`;
+  const pids = samplerProcesses.filter(({ type }) => type === "browser" || type === "GPU" || type === "renderer").map(({ id }) => id);
+  const child = spawn("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Out", out, "-Stop", stop, "-Pids", pids.join(","), "-IntervalMs", "250"], { stdio: "ignore" });
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  return async () => {
+    writeFileSync(stop, "");
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 10_000))]);
+  };
+}
+
 
 /** Project Settings > Rendering > Pipeline: Large World Rendering on, staged until Done. */
 async function turnOnLargeWorldRendering(page: Page): Promise<void> {
@@ -541,6 +593,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   });
   await recordLongTasks(page);
   await recordProgramLinks(page);
+  if (MEMORY) await installGlMemoryLedger(page, 250);
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
     // The route measures the editor viewport while it sits idle; full rate keeps runs comparable.
@@ -551,6 +604,8 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   await cdp.send("Performance.enable");
 
   const createToInteractiveMs = await createFeatureTestProject(page);
+  // After the page's first navigation, which may move it to another renderer process.
+  const stopSampler = MEMORY ? await startProcessSampler(page) : null;
   if (LARGE_WORLD) await turnOnLargeWorldRendering(page);
   // The editor document starts at Homepage boot, so this covers boot plus creation.
   const bootAndCreateLongTasks = await longTasksSince(page, 0);
@@ -561,8 +616,11 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   for (const scene of SCENES) {
     let step = "opening it";
     try {
+      await mark(page, `${scene}: open`);
       const { readyMs: sceneReadyMs, loadRetries } = await openFeatureTestScene(page, scene);
+      await mark(page, `${scene}: ready`);
       await page.waitForTimeout(SETTLE_MS);
+      await mark(page, `${scene}: editor settled`, true);
       const viewport = [];
       for (let index = 0; index < EDITOR_SAMPLES; index += 1) {
         const { result, busy } = await busyFraction(cdp, () => measureViewport(page, SAMPLE_MS));
@@ -574,6 +632,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
         if (index > 0) {
           step = `the editor's reload before Play ${index + 1}`;
           await waitForSceneView(page);
+          await mark(page, "editor: view ready after Play", true);
           await page.waitForTimeout(SETTLE_MS);
         }
         step = `Play ${index + 1}`;
@@ -584,13 +643,20 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
       // The next scene opens over the editor's reloaded view.
       step = "the editor's reload after the last Play";
       await waitForSceneView(page);
+      await mark(page, "editor: view ready after Play", true);
+      if (MEMORY) {
+        await page.waitForTimeout(SETTLE_MS);
+        await mark(page, "editor: settled after Play", true);
+      }
       scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: plays[0], ...(PLAYS > 1 ? { repeatPlays: plays.slice(1) } : {}) };
     } catch (error) {
       console.log(`[feature-test-perf] ${scene}: ${step} failed; last console problems:\n${consoleProblems.join("\n")}`);
+      if (MEMORY) await writeMemoryTimeline(page, stopSampler).catch(() => {});
       throw error;
     }
   }
 
+  if (MEMORY) await writeMemoryTimeline(page, stopSampler);
   const reopenToInteractiveMs = REOPEN ? await reopenFeatureTestProject(page) : null;
   const report = {
     qualification:
