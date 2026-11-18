@@ -304,10 +304,10 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "gpuprobe",
       tier: "debug",
       category: "engine",
-      description: "Probe what the GPU is given each frame: record every frame's passes, clears, blits and shadow map draws (on, restarting), stop and take the recorder off (off), or render a few frames one at a time with a fence after each stage and then a fixed synthetic load (serial)",
-      parameters: [{ name: "action", type: "enum", enumValues: ["on", "off", "serial"] }],
+      description: "Probe what the GPU is given each frame: record every frame's passes, clears, blits and shadow map draws (on, restarting), stop and take the recorder off (off), render a few frames one at a time with a fence after each stage and then a fixed synthetic load (serial), or time each stage and pass on the GPU with timer queries over the next frames (timers)",
+      parameters: [{ name: "action", type: "enum", enumValues: ["on", "off", "serial", "timers"] }],
       run(args, host) {
-        const action = args.action as "on" | "off" | "serial";
+        const action = args.action as "on" | "off" | "serial" | "timers";
         if (!host.setGpuProbe) return fail("gpuprobe is unavailable here");
         host.setGpuProbe(action);
         return ok(`gpuprobe ${action}`);

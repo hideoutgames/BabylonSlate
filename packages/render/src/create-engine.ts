@@ -3380,6 +3380,7 @@ function initializeEngine(
             };
           });
           if (command.action === "on") probe.on();
+          else if (command.action === "timers") probe.passTimers();
           else probe.serial();
           // The probe's frames render whatever else asks for none.
           scheduler.invalidate("asset");

@@ -76,13 +76,13 @@ describe("DrawPassFrame", () => {
     expect(frame.last).toEqual({ ...emptyDrawPasses(), other: 2, shadows: 4, captures: 10, objects: 8, post: 2 });
   });
 
-  it("tells a stage listener the pass running at every boundary, and the tail from a tail task of the view's own graph only", () => {
+  it("tells a stage listener the pass and label running at every boundary, and the tail from a tail task of the view's own graph only", () => {
     const { engine } = counter();
     const frame = new DrawPassFrame(engine);
     const seen: string[] = [];
-    const sharpen = { onBeforeTaskExecute: new Observable<unknown>(), onAfterTaskExecute: new Observable<unknown>() };
+    const sharpen = { name: "FSR sharpen", onBeforeTaskExecute: new Observable<unknown>(), onAfterTaskExecute: new Observable<unknown>() };
     observeTaskDrawPass(sharpen as unknown as FrameGraphTask, engine, "post", true);
-    setDrawPassStageListener((pass) => seen.push(pass));
+    setDrawPassStageListener((pass, label) => seen.push(`${pass}:${label}`));
     try {
       // Outside a frame nothing is told.
       markFrameTail(engine);
@@ -103,12 +103,16 @@ describe("DrawPassFrame", () => {
     } finally {
       setDrawPassStageListener(null);
     }
-    expect(seen).toEqual(["shadows", "other", "captures", "captures", "captures", "other", "tail", "post", "other"]);
+    // A task is labelled by its name, a pass outside a task by itself, and what an owner pass nests by the owner.
+    expect(seen).toEqual([
+      "other:other", "shadows:shadows", "other:other", "captures:captures", "captures:captures", "captures:captures", "other:other",
+      "tail:other", "post:FSR sharpen", "other:other", "other:after view",
+    ]);
     // Without a listener a boundary tells nobody.
     beginDrawPassFrame(frame);
     enterDrawPass(engine, "objects");
     endDrawPassFrame(frame);
-    expect(seen).toHaveLength(9);
+    expect(seen).toHaveLength(11);
   });
 
   it("starts every frame from zero, keeps the last published frame, and ignores passes outside a frame or on another Engine", () => {

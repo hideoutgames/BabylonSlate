@@ -63,6 +63,8 @@ export class DrawPassFrame {
   readonly engine: DrawCallEngine;
   private readonly passes: DrawPass[] = new Array<DrawPass>(MAX_DEPTH).fill("other");
   private readonly owners: boolean[] = new Array<boolean>(MAX_DEPTH).fill(false);
+  /** What each open pass is called for the GPU pass timers: its frame graph task's name, else its pass. */
+  private readonly labels: string[] = new Array<string>(MAX_DEPTH).fill("other");
   private depth = 0;
   private mark = 0;
   /** `timePasses` was called: frames begun from now on are timed. */
@@ -85,6 +87,7 @@ export class DrawPassFrame {
     this.depth = 0;
     this.passes[0] = "other";
     this.owners[0] = false;
+    this.labels[0] = "other";
     this.mark = readEngineDrawCalls(this.engine);
     this.timed = this.timingRequested;
     if (this.timed) {
@@ -93,30 +96,37 @@ export class DrawPassFrame {
     }
   }
 
-  enter(pass: DrawPass, owner: boolean): void {
+  enter(pass: DrawPass, owner: boolean, label?: string): void {
     this.flush();
     const depth = ++this.depth;
     if (depth >= MAX_DEPTH) return;
     if (this.owners[depth - 1]) {
       this.passes[depth] = this.passes[depth - 1]!;
       this.owners[depth] = true;
+      this.labels[depth] = this.labels[depth - 1]!;
     } else {
       this.passes[depth] = pass;
       this.owners[depth] = owner;
+      this.labels[depth] = label ?? pass;
     }
-    stageListener?.(this.passes[depth]!);
+    stageListener?.(this.passes[depth]!, this.labels[depth]!);
   }
 
   leave(): void {
     if (this.depth === 0) return;
     this.flush();
     this.depth -= 1;
-    stageListener?.(this.pass);
+    stageListener?.(this.pass, this.labels[Math.min(this.depth, MAX_DEPTH - 1)]!);
   }
 
   /** The pass running now: the one a draw made at this moment counts to. */
   get pass(): DrawPass {
     return this.passes[Math.min(this.depth, MAX_DEPTH - 1)]!;
+  }
+
+  /** The open pass's label (`enter`). */
+  get label(): string {
+    return this.labels[Math.min(this.depth, MAX_DEPTH - 1)]!;
   }
 
   /** Whether an owner pass (a capture, mirror, probe, water reflection or Scene Layer) is running. */
@@ -151,13 +161,16 @@ export class DrawPassFrame {
 let active: DrawPassFrame | undefined;
 
 /**
- * Told the pass running now at every pass boundary of the attributed frame, and `"tail"` once the frame reaches its
- * device-resolution tail (`markFrameTail`). Set only while the GPU probe's serialised frame renders
- * (`gpu-frame-probe.ts`); null otherwise, so a frame pays one null check per boundary.
+ * Told the pass running now and its label (its frame graph task's name, an owner pass's name, else the pass) at every
+ * pass boundary of the attributed frame, `"other"` as the frame begins and `"other"`, `"after view"` once it ends, and
+ * `"tail"` once the frame reaches its device-resolution tail (`markFrameTail`). Set only while the GPU probe's serialised
+ * frame renders or its pass timers record (`gpu-probe-engine.ts`); null otherwise, so a frame pays one null check per
+ * boundary.
  */
-let stageListener: ((pass: DrawPass | "tail") => void) | null = null;
+let stageListener: DrawPassStageListener | null = null;
+export type DrawPassStageListener = (pass: DrawPass | "tail", label: string) => void;
 
-export function setDrawPassStageListener(listener: ((pass: DrawPass | "tail") => void) | null): void {
+export function setDrawPassStageListener(listener: DrawPassStageListener | null): void {
   stageListener = listener;
 }
 
@@ -167,13 +180,14 @@ export function setDrawPassStageListener(listener: ((pass: DrawPass | "tail") =>
  * own graph writes its own output.
  */
 export function markFrameTail(engine: object): void {
-  if (stageListener && active?.engine === engine && !active.inOwner) stageListener("tail");
+  if (stageListener && active?.engine === engine && !active.inOwner) stageListener("tail", active.label);
 }
 
 /** Starts attributing `frame.engine`'s draws to `frame`; call right after the frame's draw counter reset. */
 export function beginDrawPassFrame(frame: DrawPassFrame): void {
   frame.begin();
   active = frame;
+  stageListener?.("other", "other");
 }
 
 /** The pass a draw made now counts to; undefined while no view's frame is being attributed. */
@@ -186,6 +200,7 @@ export function endDrawPassFrame(frame: DrawPassFrame): void {
   if (active !== frame) return;
   frame.flush();
   active = undefined;
+  stageListener?.("other", "after view");
 }
 
 /** The view drew the frame: its counts become `frame.last`, and on a timed frame its times `frame.lastMs`. */
@@ -194,8 +209,8 @@ export function publishDrawPassFrame(frame: DrawPassFrame): void {
 }
 
 /** Opens `pass` on `engine`'s attributed frame; a no-op outside one (previews, thumbnails, loading work). */
-export function enterDrawPass(engine: object, pass: DrawPass, owner = false): void {
-  if (active?.engine === engine) active.enter(pass, owner);
+export function enterDrawPass(engine: object, pass: DrawPass, owner = false, label?: string): void {
+  if (active?.engine === engine) active.enter(pass, owner, label);
 }
 
 export function leaveDrawPass(engine: object): void {
@@ -224,7 +239,7 @@ export function observeTaskDrawPass(task: FrameGraphTask, engine: object, pass: 
   if (observed.has(task)) return;
   observed.add(task);
   // Insert-first observers run in reverse order of their adding: the tail mark runs before the task's pass opens.
-  task.onBeforeTaskExecute.add(() => enterDrawPass(engine, pass), undefined, true);
+  task.onBeforeTaskExecute.add(() => enterDrawPass(engine, pass, false, task.name), undefined, true);
   if (tail) task.onBeforeTaskExecute.add(() => markFrameTail(engine), undefined, true);
   task.onAfterTaskExecute.add(() => leaveDrawPass(engine), undefined, true);
 }

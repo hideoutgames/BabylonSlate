@@ -6,6 +6,7 @@ import {
   GlSignatureRecorder, installGlSignature, messageChannelScheduler, RafCadence, SerialFrameProbe, ShadowFrameWindow,
   type GlSignatureStats, type SerialProbeResult, type ShadowFrameStats,
 } from "./gpu-frame-probe";
+import { GpuPassTimers, webglPassTimerHost, type PassTimerHost, type PassTimerResult } from "./gpu-pass-timers";
 import { createGpuSyntheticLoad, type GpuSyntheticLoad } from "./gpu-synthetic-load";
 
 /** What the GPU probes report (`RenderDiagnostics.gpuProbe`): the window since `gpuprobe on`, and the last serial probe. */
@@ -18,7 +19,17 @@ export interface GpuProbeSnapshot {
   /** The last `gpuprobe serial` result; its `id` grows with each. */
   serial: SerialProbeResult | null;
   serialRunning: boolean;
+  /** The last `gpuprobe timers` result: GPU time per stage and pass from timer queries; its `id` grows with each. */
+  timers: PassTimerResult | null;
+  timersRunning: boolean;
 }
+
+/** A context without timer queries: nothing starts. */
+const NO_TIMER_QUERIES: PassTimerHost<never> = {
+  begin: () => null, end: () => {}, read: () => null, disjoint: () => false, release: () => {}, now: () => performance.now(),
+};
+
+type FrameCaptureEngine = AbstractEngine & { _captureGPUFrameTime?: boolean };
 
 /** A Scene's shadow state as an Engine frame ends: the maps held, and the atlas's cumulative draws (`shadow-atlas.ts`). */
 export interface ShadowProbeReading {
@@ -43,6 +54,10 @@ export class EngineGpuProbe {
   private readonly scheduler = messageChannelScheduler();
   private readonly synthetic: GpuSyntheticLoad;
   private readonly serialProbe: SerialFrameProbe;
+  private readonly timers: GpuPassTimers<unknown>;
+  private readonly timersAvailable: boolean;
+  /** Babylon's frame-wide GPU timer was on as the pass timers started: it is off while they record, back on after. */
+  private captureSuspended = false;
   private uninstall: (() => void) | null = null;
   private shadowSource: (() => ShadowProbeReading | null) | null = null;
   private shadowBefore: ShadowProbeReading | null = null;
@@ -73,13 +88,25 @@ export class EngineGpuProbe {
       },
     });
     this.recorder.onPassStart = () => this.submitDeferred();
+    const gl = (engine as unknown as { _gl?: WebGL2RenderingContext })._gl;
+    const timerHost = gl && (engine as unknown as { webGLVersion?: number }).webGLVersion === 2 ? webglPassTimerHost(gl) : null;
+    this.timersAvailable = timerHost !== null;
+    this.timers = new GpuPassTimers<unknown>((timerHost ?? NO_TIMER_QUERIES) as PassTimerHost<unknown>);
     const begin = engine.onBeginFrameObservable.add(() => {
       this.serialProbe.expire();
       if (this.uninstall) this.recorder.beginFrame();
     });
+    // First of the frame's begin observers: Babylon's frame timer is taken off before its own observer starts a query.
+    const timerBegin = engine.onBeginFrameObservable.add(() => {
+      if (!this.timers.running) return;
+      this.suspendFrameCapture();
+      this.timers.frameBegin();
+      if (this.timers.inFrame) this.listen(true);
+    }, undefined, true);
     const end = engine.onEndFrameObservable.add(() => this.frameEnd());
     engine.onDisposeObservable.addOnce(() => {
       engine.onBeginFrameObservable.remove(begin);
+      engine.onBeginFrameObservable.remove(timerBegin);
       engine.onEndFrameObservable.remove(end);
       this.off();
       this.synthetic.dispose();
@@ -108,6 +135,8 @@ export class EngineGpuProbe {
    * last results stay readable.
    */
   off(): void {
+    this.timers.stop();
+    this.restoreFrameCapture();
     this.serialProbe.dispose();
     this.deferred.length = 0;
     this.synthetic.release();
@@ -122,6 +151,14 @@ export class EngineGpuProbe {
     return this.serialProbe.request();
   }
 
+  /**
+   * `gpuprobe timers`: GPU time per stage and pass over the next `PASS_TIMER_FRAMES` frames, from timer queries; false
+   * while a run records. Without timer queries the run ends at once, reporting them absent.
+   */
+  passTimers(): boolean {
+    return this.timers.start(this.timersAvailable);
+  }
+
   /** Whether no view may render now (`SerialFrameProbe.holding`). */
   get holding(): boolean { return this.serialProbe.holding; }
 
@@ -129,7 +166,7 @@ export class EngineGpuProbe {
   frameStarted(): void {
     if (!this.serialProbe.running) return;
     this.serialProbe.frameStarted();
-    this.listen(this.serialProbe.inFrame);
+    this.listen(this.serialProbe.inFrame || this.timers.inFrame);
   }
 
   /** A view drew its frame whole. */
@@ -140,10 +177,13 @@ export class EngineGpuProbe {
       recording: this.uninstall !== null,
       signature: this.recorder.stats(), shadows: this.shadowWindow.stats(), raf: this.raf.stats(),
       serial: this.serialProbe.result(), serialRunning: this.serialProbe.running,
+      timers: this.timers.result(), timersRunning: this.timers.running,
     };
   }
 
   private frameEnd(): void {
+    this.timers.frameEnd();
+    if (!this.timers.running) this.restoreFrameCapture();
     if (this.uninstall && this.recorder.endFrame()) {
       const now = this.shadowSource?.() ?? null;
       const before = this.shadowBefore;
@@ -167,11 +207,31 @@ export class EngineGpuProbe {
     for (const submit of this.deferred.splice(0)) submit();
   }
 
-  /** Draw pass boundaries are stage boundaries only while a serialised frame renders. */
+  /** Draw pass boundaries are told only while a serialised frame renders or the pass timers record one. */
   private listen(on: boolean): void {
     if (on === this.listening) return;
     this.listening = on;
-    setDrawPassStageListener(on ? (pass) => this.serialProbe.stageBoundary(pass) : null);
+    setDrawPassStageListener(on ? (pass, label) => {
+      this.serialProbe.stageBoundary(pass);
+      this.timers.boundary(pass, label);
+    } : null);
+  }
+
+  /**
+   * Only one elapsed-time query can run at a time: Babylon's frame-wide one (Play's renderer timing,
+   * `engine-gpu-timing.ts`) is off while the pass timers record, its counter keeping its last value.
+   */
+  private suspendFrameCapture(): void {
+    const engine = this.engine as FrameCaptureEngine;
+    if (engine._captureGPUFrameTime !== true) return;
+    engine.captureGPUFrameTime(false);
+    this.captureSuspended = true;
+  }
+
+  private restoreFrameCapture(): void {
+    if (!this.captureSuspended) return;
+    this.captureSuspended = false;
+    if (!this.engine.isDisposed) this.engine.captureGPUFrameTime(true);
   }
 }
 
