@@ -21,6 +21,7 @@ import ImageGlyph from "react-bootstrap-icons/dist/icons/image";
 import ImageFillGlyph from "react-bootstrap-icons/dist/icons/image-fill";
 import {
   humanizePropertyLabel,
+  InlineRenameInput,
   LabelHint,
   PinShapeGlyph,
   tagDisplayName,
@@ -32,9 +33,10 @@ import { cn } from "@haptic/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { nodeCanBreak, useNodeBreakpoint } from "./graph-breakpoints";
 import { useNodeMenu } from "./use-node-menu";
-import { hasSerializedPins, type SerializedPin } from "./graph-types";
+import { hasSerializedPins, isRerouteNodeData, type SerializedPin } from "./graph-types";
 import { displayNodeTitle } from "./graph-connect";
 import {
+  headerContrastColor,
   nodeKind,
   nodeRoleClass,
   nodeVisualRole,
@@ -92,6 +94,7 @@ function visualFromData(
       // An async Execute JavaScript waits like a latent call without the latent header colour.
       latent: input.latent || (nodeType === "debug.executeJavaScript" && data.async === true),
       interface: data.__interface === true,
+      reroute: isRerouteNodeData(data),
     }),
   };
 }
@@ -606,8 +609,10 @@ export function BlueprintNodeShell({
   /** Fixed-width flat card without the role title bar; children render their own header. */
   card?: boolean;
 }) {
-  const { nodeErrorCount, describeNode, previewedNode } = useGraphEditorContext();
+  const { nodeErrorCount, describeNode, previewedNode, renamingNodeId, onNodeRenameCommit, onNodeRenameCancel } = useGraphEditorContext();
   const previewed = previewedNode?.nodeId === nodeId ? previewedNode : null;
+  const renaming = !card && renamingNodeId === nodeId;
+  const headerColor = typeof data?.__headerColor === "string" && data.__headerColor ? data.__headerColor : undefined;
   const description = data ? describeNode?.(String(data.__nodeType ?? ""), data) : undefined;
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
   const editorOnly = data?.__editorOnly === true;
@@ -643,11 +648,27 @@ export function BlueprintNodeShell({
               "group/title relative flex items-center gap-2 rounded-t-lg py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
               kind ? "pl-3 pr-4" : "px-4",
               headerPins.length > 0 && "pr-12",
-              nodeRoleClass(role),
+              headerColor ? undefined : nodeRoleClass(role),
             )}
+            style={headerColor ? { backgroundColor: headerColor, color: headerContrastColor(headerColor) } : undefined}
+            data-header-color={headerColor ? "" : undefined}
           >
             {kind ? <NodeKindIcon kind={kind} className="size-5" /> : null}
-            {description ? (
+            {renaming ? (
+              // `nodrag` and `nopan` keep presses in the field from moving the node or the canvas.
+              <span className="nodrag nopan nowheel flex min-w-40 flex-1 text-foreground">
+                <InlineRenameInput
+                  value={title}
+                  aria-label="Name"
+                  data-testid="graph-node-rename"
+                  className="h-7 min-h-7 text-base md:text-base"
+                  onDone={(name) => {
+                    if (name === null) onNodeRenameCancel?.();
+                    else onNodeRenameCommit?.(nodeId, name);
+                  }}
+                />
+              </span>
+            ) : description ? (
               <LabelHint hint={description} underline={false} delay={GRAPH_HINT_DELAY_MS}>
                 <span data-node-title-hint="">{title}</span>
               </LabelHint>
@@ -823,11 +844,56 @@ function VariableGetNode({
   );
 }
 
+/**
+ * A Reroute knot: a small pill with no title bar, its input pin at the left end and its output
+ * at the right, both drawn in the type the knot carries. The space between them drags the knot.
+ */
+function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
+  const { pendingPin, pinHasError } = useGraphEditorContext();
+  const nodeMenu = useNodeMenu(id);
+  const pins = hasSerializedPins(data) ? data.__pins : [];
+  const input = pins.find((pin) => pin.direction === "in");
+  const output = pins.find((pin) => pin.direction === "out");
+  const inputWired = useStore((state) => (input ? isPinWired(state.edges, id, input) : false));
+  const outputWired = useStore((state) => (output ? isPinWired(state.edges, id, output) : false));
+  const isPending = (pin: SerializedPin) => pendingPin?.nodeId === id && pendingPin.pinId === pin.id;
+  const handle = (pin: SerializedPin, connected: boolean) => (
+    <span className="flex" data-pin-side={pin.direction} data-pin-id={pin.id}>
+      <PinHandle
+        nodeId={id}
+        pin={pin}
+        pending={isPending(pin)}
+        hasError={pinHasError(id, pin.id)}
+        connected={connected}
+      />
+    </span>
+  );
+  return (
+    <div {...nodeMenu.bind}>
+      <div
+        role="group"
+        aria-label="Reroute"
+        data-node-kind="reroute"
+        data-selected={selected ? "true" : undefined}
+        className={cn(
+          "graph-reroute-knot flex items-center justify-between rounded-full border border-border bg-graph-node shadow-sm",
+          selected && "ring-2 ring-primary",
+        )}
+      >
+        {input ? handle(input, inputWired) : null}
+        {output ? handle(output, outputWired) : null}
+      </div>
+      {nodeMenu.overlay}
+    </div>
+  );
+}
+
 export function resolveNodeType(
   type: string,
   data: Record<string, unknown>,
   knownTypes: Record<string, unknown> = graphNodeTypes,
 ): string {
+  if (isRerouteNodeData(data) && "reroute" in knownTypes) return "reroute";
   const typeId = typeof data.__nodeType === "string" ? data.__nodeType : type;
   if (typeId === "variables.get" || typeId.startsWith("variables.get:")) {
     return "variableGet";
@@ -839,4 +905,5 @@ export function resolveNodeType(
 export const graphNodeTypes = {
   pinNode: PinNode,
   variableGet: VariableGetNode,
+  reroute: RerouteNode,
 };

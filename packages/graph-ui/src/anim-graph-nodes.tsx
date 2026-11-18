@@ -282,6 +282,7 @@ function AnimTransitionEdge({
             transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px) rotate(${angle}deg)`,
           }}
           data-testid={`anim-transition-badge-${id}`}
+          data-cut-edge-id={id}
           data-bidirectional={bidirectional ? "true" : undefined}
           data-breakpoint={breakpoint ?? undefined}
           aria-label="Select Transition"

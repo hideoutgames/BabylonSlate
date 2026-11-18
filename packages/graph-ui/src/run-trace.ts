@@ -1,4 +1,4 @@
-import { hasSerializedPins, type SerializedPin } from "./graph-types";
+import { hasSerializedPins, isRerouteNodeData, type SerializedPin } from "./graph-types";
 
 /**
  * What ran in a graph while its owner was running, for a canvas to show. Any graph kind can
@@ -79,8 +79,31 @@ function pinOf(index: GraphIndex, nodeId: string, pinId: string): SerializedPin 
   return hasSerializedPins(data) ? data.__pins.find((pin) => pin.id === pinId) : undefined;
 }
 
+function isReroute(index: GraphIndex, nodeId: string): boolean {
+  return isRerouteNodeData(index.nodes.get(nodeId)?.data);
+}
+
+/** Pure nodes evaluate when their consumer reads them; a Reroute knot is compiled away and passes its wire through. */
 function isPure(index: GraphIndex, nodeId: string): boolean {
-  return index.nodes.get(nodeId)?.data?.__pure === true;
+  return index.nodes.get(nodeId)?.data?.__pure === true || isReroute(index, nodeId);
+}
+
+/** The wire into a Reroute knot's input, if one is wired. */
+function wireIntoReroute(index: GraphIndex, nodeId: string): RunEdge | undefined {
+  const incoming = index.incoming.get(nodeId);
+  return incoming?.get("in") ?? incoming?.values().next().value;
+}
+
+/** The real output a wire carries: its source, or, through Reroute knots, the pin feeding the first one. */
+function realSource(index: GraphIndex, edge: RunEdge | undefined): { nodeId: string; pinId: string } | undefined {
+  const visited = new Set<string>();
+  let current = edge;
+  while (current && isReroute(index, current.source)) {
+    if (visited.has(current.source)) return undefined;
+    visited.add(current.source);
+    current = wireIntoReroute(index, current.source);
+  }
+  return current ? { nodeId: current.source, pinId: current.sourceHandle ?? "" } : undefined;
 }
 
 /**
@@ -115,6 +138,11 @@ export function wireEnds(edge: RunEdge): [[string, string], [string, string]] {
  */
 export function pinShowsValue(graph: RunGraph, nodeId: string, pinId: string, direction: "in" | "out"): boolean {
   const index = graphIndex(graph);
+  if (isReroute(index, nodeId)) {
+    // A knot shows what it passes on: a value only when a data output feeds it.
+    const source = realSource(index, wireIntoReroute(index, nodeId));
+    return source !== undefined && pinOf(index, source.nodeId, source.pinId)?.kind === "data";
+  }
   if (pinOf(index, nodeId, pinId)?.kind !== "data") return false;
   return direction === "out" || index.incoming.get(nodeId)?.has(pinId) === true;
 }
@@ -135,23 +163,43 @@ export function resolvePinValue(
   const own = trace.value(nodeId, pinId, direction);
   if (own !== undefined) return own;
   const index = graphIndex(graph);
-  if (direction === "in") {
-    const edge = index.incoming.get(nodeId)?.get(pinId);
-    if (!edge) return undefined;
+  // Either pin of a Reroute knot, and an input wired from one, show the real source's value.
+  const reroute = isReroute(index, nodeId);
+  if (direction === "in" || reroute) {
+    const edge = reroute ? wireIntoReroute(index, nodeId) : index.incoming.get(nodeId)?.get(pinId);
+    const source = realSource(index, edge);
+    if (!source) {
+      if (!reroute) return undefined;
+      for (const outPin of index.outgoing.get(nodeId)?.keys() ?? []) {
+        const read = readThroughConsumers(trace, index, nodeId, outPin, new Set([nodeId]));
+        if (read !== undefined) return read;
+      }
+      return undefined;
+    }
     // What flowed in is what the source produced.
-    return trace.value(edge.source, edge.sourceHandle ?? "", "out") ?? readThroughConsumers(trace, index, edge.source, edge.sourceHandle ?? "");
+    return trace.value(source.nodeId, source.pinId, "out") ?? readThroughConsumers(trace, index, source.nodeId, source.pinId);
   }
   return readThroughConsumers(trace, index, nodeId, pinId);
 }
 
-/** What a node that ran read from this output, if any. */
+/** What a node that ran read from this output, if any, looking through Reroute knots to their consumers. */
 function readThroughConsumers(
   trace: Pick<GraphRunTrace, "value">,
   index: GraphIndex,
   nodeId: string,
   pinId: string,
+  visited: Set<string> = new Set(),
 ): string | undefined {
   for (const edge of index.outgoing.get(nodeId)?.get(pinId) ?? []) {
+    if (isReroute(index, edge.target)) {
+      if (visited.has(edge.target)) continue;
+      visited.add(edge.target);
+      for (const outPin of index.outgoing.get(edge.target)?.keys() ?? []) {
+        const read = readThroughConsumers(trace, index, edge.target, outPin, visited);
+        if (read !== undefined) return read;
+      }
+      continue;
+    }
     const read = trace.value(edge.target, edge.targetHandle ?? "", "in");
     if (read !== undefined) return read;
   }

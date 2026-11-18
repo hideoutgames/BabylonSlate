@@ -66,6 +66,12 @@ export type GraphEditorContextValue = {
   ) => string | null;
   /** Whether a node's body takes the dragged wire as a new pin (`GraphPinDrop.accepts`). */
   acceptsPinDrop?: (targetNodeId: string, source: GraphPinDragSource) => boolean;
+  /** The node whose header title is an inline rename field. */
+  renamingNodeId?: string | null;
+  /** Enter or a click away with a changed name. */
+  onNodeRenameCommit?: (nodeId: string, name: string) => void;
+  /** Escape, or Enter or a click away with the name unchanged or empty. */
+  onNodeRenameCancel?: () => void;
 };
 
 const GraphEditorContext = createContext<GraphEditorContextValue | null>(null);

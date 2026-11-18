@@ -11,6 +11,7 @@ export type GraphCommand =
   | "duplicate"
   | "delete"
   | "breakLinks"
+  | "toggleCutLinks"
   | "toggleBreakpoint"
   | "toggleBreakpointEnabled"
   | "editBreakpoint";
@@ -24,6 +25,7 @@ export const DEFAULT_GRAPH_KEYBINDS: GraphKeybinds = {
   duplicate: ["Mod+D"],
   delete: ["Delete", "Backspace"],
   breakLinks: ["Alt+L"],
+  toggleCutLinks: ["Alt+X"],
   toggleBreakpoint: ["F9"],
   toggleBreakpointEnabled: ["Mod+F9"],
   editBreakpoint: ["Shift+F9"],

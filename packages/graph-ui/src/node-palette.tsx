@@ -10,7 +10,7 @@ import {
   filterPaletteForPin,
   type PinCompatibilityRule,
 } from "./graph-connect";
-import { nodeKind, nodeRoleClass, nodeVisualRole, type NodeKindInput } from "./node-theme";
+import { headerContrastColor, nodeKind, nodeRoleClass, nodeVisualRole, type NodeKindInput } from "./node-theme";
 import { NodeKindIcon } from "./node-icons";
 
 export interface NodePaletteProps {
@@ -112,19 +112,23 @@ function paletteVisualInput(node: PaletteNode): NodeKindInput {
     latent: node.latent,
     particleRole: typeof data?.__particleRole === "string" ? data.__particleRole : undefined,
     btKind: typeof data?.kind === "string" ? data.kind : undefined,
+    reroute: data?.__reroute === true,
   };
 }
 
 /** The row's kind icon in a chip of the node's header colour, so the list matches the canvas. */
 function NodeKindChip({ node }: { node: PaletteNode }) {
   const input = paletteVisualInput(node);
+  const headerColor = node.headerColor || undefined;
   return (
     <span
       aria-hidden="true"
       className={cn(
         "flex size-4 shrink-0 items-center justify-center rounded-sm text-node-title",
-        nodeRoleClass(nodeVisualRole(input)),
+        headerColor ? undefined : nodeRoleClass(nodeVisualRole(input)),
       )}
+      style={headerColor ? { backgroundColor: headerColor, color: headerContrastColor(headerColor) } : undefined}
+      data-header-color={headerColor ? "" : undefined}
     >
       <NodeKindIcon kind={nodeKind(input)} className="size-3" decorative />
     </span>

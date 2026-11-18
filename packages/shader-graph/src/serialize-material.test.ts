@@ -10,7 +10,9 @@ import {
   materialNodeTitle,
   materialPaletteNodes,
   materialPinsAreCompatible,
+  namedReroutePaletteNodes,
   pinsForMaterialNode,
+  serializedToMaterialFunctionGraph,
   serializedToMaterialGraph,
 } from "./serialize-material";
 
@@ -52,6 +54,8 @@ describe("material graph serialization", () => {
     for (const domain of ["surface", "landscape", "postProcess", "particle", "text"] as const) {
       const ids = materialAddNodePalette(domain).map((node) => node.id);
       expect(ids.filter((id) => id.startsWith("output."))).toEqual([]);
+      // Named Reroutes are listed per graph by namedReroutePaletteNodes.
+      expect(ids.filter((id) => id.startsWith("reroute."))).toEqual([]);
       expect(ids).toContain("math.add");
     }
   });
@@ -269,5 +273,115 @@ describe("material graph serialization", () => {
     expect(materialNodeTitle({ type: "param.float", properties: { name: "Roughness Scale" } })).toBe("Roughness Scale");
     expect(materialNodeTitle({ type: "function.call", properties: { functionGuid: "wave" } }, { functions: { wave: fn } })).toBe("Wave Blend");
     expect(materialNodeTitle({ type: "noise.perlin", properties: {} })).toBe("Perlin Noise");
+  });
+});
+
+describe("Named Reroutes on the canvas", () => {
+  const wire = (id: string, sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) =>
+    ({ id, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
+  const declaration = (id: string, name: string, color: number[]) =>
+    ({ id, type: "reroute.declaration", position: { x: 0, y: 0 }, properties: { name, color } });
+  const usage = (id: string, declarationId: string) =>
+    ({ id, type: "reroute.usage", position: { x: 0, y: 0 }, properties: { declarationId } });
+
+  function rerouted() {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "albedo", type: "param.texture", position: { x: 0, y: 0 }, properties: { name: "Albedo", textureGuid: "tex" } },
+      { id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: {} },
+      declaration("tex", "Albedo Texture", [1, 0, 0]), usage("texUse", "tex"),
+      declaration("empty", "Empty", [0, 0.5, 1]), usage("emptyUse", "empty"),
+      usage("lost", "gone"),
+    );
+    doc.edges.push(wire("e-albedo-tex", "albedo", "out", "tex", "in"), wire("e-use-sample", "texUse", "out", "sample", "texture"));
+    return doc;
+  }
+
+  it("titles and colours declarations and their usages and types their pins by what the declaration carries", () => {
+    const nodes = new Map(hydrateMaterialGraphForEditor(materialGraphToSerialized(rerouted())).nodes.map((node) => [node.id, node.data]));
+    const summary = (id: string) => {
+      const data = nodes.get(id)!;
+      return { title: data.title, header: data.__headerColor, pins: (data.__pins as { id: string; type: unknown; typeLabel: string }[]).map((pin) => [pin.id, pin.type, pin.typeLabel]) };
+    };
+    expect(summary("tex")).toEqual({ title: "Albedo Texture", header: "rgb(255, 0, 0)", pins: [["in", { kind: "texture", wildcard: true }, "Texture"]] });
+    expect(summary("texUse")).toEqual({ title: "Albedo Texture", header: "rgb(255, 0, 0)", pins: [["out", { kind: "texture" }, "Texture"]] });
+    expect(summary("empty")).toEqual({ title: "Empty", header: "rgb(0, 128, 255)", pins: [["in", { kind: "wildcard" }, "Any"]] });
+    expect(summary("emptyUse")).toEqual({ title: "Empty", header: "rgb(0, 128, 255)", pins: [["out", { kind: "wildcard" }, "Numeric"]] });
+    expect(summary("lost")).toEqual({ title: "Missing Reroute", header: undefined, pins: [["out", { kind: "wildcard" }, "Numeric"]] });
+  });
+
+  it("never saves the header colour or title it hydrates", () => {
+    const doc = rerouted();
+    const saved = serializedToMaterialGraph(hydrateMaterialGraphForEditor(materialGraphToSerialized(doc)), doc);
+    expect(saved.nodes.find((node) => node.id === "tex")?.properties).toEqual({ name: "Albedo Texture", color: [1, 0, 0] });
+    expect(saved.nodes.find((node) => node.id === "texUse")?.properties).toEqual({ declarationId: "tex" });
+  });
+
+  it("connects any output to a declaration's input and a usage as the type it carries", () => {
+    const pins = new Map(hydrateMaterialGraphForEditor(materialGraphToSerialized(rerouted())).nodes.flatMap((node) =>
+      (node.data.__pins as Parameters<typeof materialPinsAreCompatible>[0][]).map((pin) => [`${node.id}.${pin.id}`, pin] as const)));
+    const connects = (from: string, to: string) => materialPinsAreCompatible(pins.get(from)!, pins.get(to)!);
+    expect(connects("albedo.out", "empty.in")).toBe(true);
+    // A wired declaration shows its type yet still takes another.
+    expect(connects("baseColor.out", "tex.in")).toBe(true);
+    expect(connects("texUse.out", "sample.texture")).toBe(true);
+    expect(connects("texUse.out", "output.metallic")).toBe(false);
+    expect(connects("emptyUse.out", "output.metallic")).toBe(true);
+    expect(connects("emptyUse.out", "sample.texture")).toBe(false);
+  });
+
+  it("lists Create Named Reroute… first, then one usage row per declaration by name", () => {
+    const doc = rerouted();
+    doc.nodes.push(declaration("b", "Blend", [0, 1, 0]));
+    const rows = namedReroutePaletteNodes(doc);
+    expect(rows.map((row) => ({ id: row.id, nodeType: row.nodeType, title: row.title, nodeTitle: row.nodeTitle, category: row.category, headerColor: row.headerColor, defaultData: row.defaultData, pins: row.pins.map((pin) => [pin.id, pin.direction, pin.type]) }))).toEqual([
+      {
+        id: "reroute.declaration", nodeType: "reroute.declaration", title: "Create Named Reroute…", nodeTitle: "Reroute", category: "Reroute",
+        // Three declarations already: the fourth default colour.
+        headerColor: "rgb(89, 191, 89)",
+        defaultData: { name: "Reroute", color: [0.35, 0.75, 0.35], __material: true, __headerColor: "rgb(89, 191, 89)" },
+        pins: [["in", "in", { kind: "wildcard" }]],
+      },
+      {
+        id: "reroute.usage:tex", nodeType: "reroute.usage", title: "Albedo Texture", nodeTitle: "Albedo Texture", category: "Reroute", headerColor: "rgb(255, 0, 0)",
+        defaultData: { declarationId: "tex", __material: true, __headerColor: "rgb(255, 0, 0)" }, pins: [["out", "out", { kind: "texture" }]],
+      },
+      {
+        id: "reroute.usage:b", nodeType: "reroute.usage", title: "Blend", nodeTitle: "Blend", category: "Reroute", headerColor: "rgb(0, 255, 0)",
+        defaultData: { declarationId: "b", __material: true, __headerColor: "rgb(0, 255, 0)" }, pins: [["out", "out", { kind: "wildcard" }]],
+      },
+      {
+        id: "reroute.usage:empty", nodeType: "reroute.usage", title: "Empty", nodeTitle: "Empty", category: "Reroute", headerColor: "rgb(0, 128, 255)",
+        defaultData: { declarationId: "empty", __material: true, __headerColor: "rgb(0, 128, 255)" }, pins: [["out", "out", { kind: "wildcard" }]],
+      },
+    ]);
+  });
+
+  it("names and colours declarations added or pasted into a Material or Material Function", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(declaration("first", "Reroute", [1, 1, 1]));
+    const graph = materialGraphToSerialized(doc);
+    graph.nodes.push(
+      { id: "pasted", type: "reroute.declaration", position: { x: 0, y: 0 }, data: { name: "Reroute", color: [0, 0, 1] } },
+      { id: "added", type: "reroute.declaration", position: { x: 0, y: 0 }, data: {} },
+    );
+    const saved = serializedToMaterialGraph(graph, doc);
+    expect(saved.nodes.filter((node) => node.type === "reroute.declaration").map((node) => [node.id, node.properties])).toEqual([
+      ["first", { name: "Reroute", color: [1, 1, 1] }],
+      ["pasted", { name: "Reroute_1", color: [0, 0, 1] }],
+      ["added", { name: "Reroute_2", color: [0.9, 0.8, 0.25] }],
+    ]);
+
+    const fn = createDefaultMaterialFunctionDocument("Body");
+    const fnGraph = materialGraphToSerialized(fn);
+    fnGraph.nodes.push({ id: "inner", type: "reroute.declaration", position: { x: 0, y: 0 }, data: {} });
+    expect(serializedToMaterialFunctionGraph(fnGraph, fn).nodes.find((node) => node.id === "inner")?.properties).toEqual({ name: "Reroute", color: [0.9, 0.3, 0.3] });
+  });
+
+  it("titles a usage on its own by its declaration when given the graph", () => {
+    const doc = rerouted();
+    expect(materialNodeTitle({ type: "reroute.usage", properties: { declarationId: "tex" } }, { graphNodes: doc.nodes })).toBe("Albedo Texture");
+    expect(materialNodeTitle({ type: "reroute.usage", properties: { declarationId: "gone" } }, { graphNodes: doc.nodes })).toBe("Missing Reroute");
+    expect(materialNodeTitle({ type: "reroute.declaration", properties: { name: "Blend" } })).toBe("Blend");
   });
 });

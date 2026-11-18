@@ -10,6 +10,11 @@ export type SerializedPin = {
   id: string;
   name: string;
   kind: "exec" | "data";
+  /**
+   * A `data` pin with a resolving wildcard type that may also bind to exec (a Reroute's pins). Its
+   * effective kind is `exec` while its display type is exec, else `data` (`effectivePinKind`).
+   */
+  anyKind?: boolean;
   direction: "in" | "out";
   type: { kind: string; [key: string]: unknown };
   optional?: boolean;
@@ -65,6 +70,11 @@ export type PaletteNode = {
   nodeType?: string;
   pure?: boolean;
   latent?: boolean;
+  /**
+   * A CSS colour for the row's chip, matching the node's header (`data.__headerColor`); text and icon
+   * switch between black and white for contrast.
+   */
+  headerColor?: string;
   /** When true, added nodes stamp `data.__editorOnly` for the canvas banner. */
   editorOnly?: boolean;
   /**
@@ -122,4 +132,12 @@ export function hasSerializedPins(
   data: Record<string, unknown> | undefined,
 ): data is Record<string, unknown> & { __pins: SerializedPin[] } {
   return Array.isArray(data?.__pins);
+}
+
+/**
+ * Whether canvas node data is a Reroute knot: a pass-through node with one `in` and one `out` pin,
+ * drawn as a small knot. Hosts stamp the editor-only `__reroute: true` key, as they stamp `__pure`.
+ */
+export function isRerouteNodeData(data: Record<string, unknown> | undefined | null): boolean {
+  return data?.__reroute === true;
 }

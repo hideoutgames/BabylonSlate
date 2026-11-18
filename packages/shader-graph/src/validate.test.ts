@@ -721,3 +721,114 @@ describe("material validation", () => {
     expect(diagnostic?.nodeId).toBe("call/ddx");
   });
 });
+
+describe("Named Reroute validation", () => {
+  const wire = (id: string, sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) =>
+    ({ id, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
+  const declaration = (id: string, name: string) =>
+    ({ id, type: "reroute.declaration", position: { x: 0, y: 0 }, properties: { name, color: [1, 0, 0] } });
+  const usage = (id: string, declarationId: string) =>
+    ({ id, type: "reroute.usage", position: { x: 0, y: 0 }, properties: { declarationId } });
+  const rows = (doc: MaterialDocument | MaterialFunctionDocument, context = {}) =>
+    ("domain" in doc ? validateMaterialDocument(doc, context) : validateMaterialFunctionDocument(doc, context))
+      .map((row) => ({ code: row.code, nodeId: row.nodeId, message: row.message }));
+
+  it("accepts a wired declaration with several usages", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(declaration("r", "Color"), usage("u", "r"), usage("v", "r"));
+    doc.edges = [wire("e-color-r", "baseColor", "out", "r", "in"), wire("e-u", "u", "out", "output", "baseColor"), wire("e-v", "v", "out", "output", "emissive")];
+    expect(validateMaterialDocument(doc)).toEqual([]);
+  });
+
+  it("requires a nonblank name, unique among the graph's declarations", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(declaration("blank", "  "), declaration("a", "Shared"), declaration("b", " Shared "), declaration("c", "Other"));
+    expect(rows(doc)).toEqual([
+      { code: "material.reroute.missingName", nodeId: "blank", message: "Named Reroute needs a unique name" },
+      { code: "material.reroute.duplicateName", nodeId: "a", message: 'Named Reroute name "Shared" is already used; choose a unique name' },
+      { code: "material.reroute.duplicateName", nodeId: "b", message: 'Named Reroute name "Shared" is already used; choose a unique name' },
+    ]);
+  });
+
+  it("reports a usage whose declaration is not in its graph", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(usage("u", "gone"));
+    doc.edges.push(wire("e-u", "u", "out", "output", "metallic"));
+    expect(rows(doc)).toEqual([{ code: "material.reroute.missingDeclaration", nodeId: "u", message: "Named Reroute is missing" }]);
+  });
+
+  it("reports a declaration reading its own usage, directly or through other nodes, once and not as a cycle", () => {
+    const direct = createDefaultMaterialDocument();
+    direct.nodes.push(declaration("r", "Loop"), usage("u", "r"));
+    direct.edges.push(wire("e-u-r", "u", "out", "r", "in"));
+    expect(rows(direct)).toEqual([{ code: "material.reroute.selfUse", nodeId: "r", message: 'Named Reroute "Loop" uses itself' }]);
+
+    const indirect = createDefaultMaterialDocument();
+    indirect.nodes.push(declaration("r", "Loop"), usage("u", "r"), usage("w", "r"),
+      { id: "add", type: "math.add", position: { x: 0, y: 0 }, properties: {} },
+      { id: "sin", type: "math.sin", position: { x: 0, y: 0 }, properties: {} });
+    indirect.edges.push(
+      wire("e-color-add", "baseColor", "out", "add", "a"), wire("e-u-sin", "u", "out", "sin", "value"),
+      wire("e-sin-add", "sin", "out", "add", "b"), wire("e-add-r", "add", "out", "r", "in"),
+      wire("e-w-emissive", "w", "out", "output", "emissive"),
+    );
+    expect(rows(indirect)).toEqual([{ code: "material.reroute.selfUse", nodeId: "r", message: 'Named Reroute "Loop" uses itself' }]);
+  });
+
+  it("reports every declaration on a loop between Named Reroutes", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(declaration("x", "X"), usage("ux", "x"), declaration("y", "Y"), usage("uy", "y"),
+      declaration("z", "Z"), usage("uz", "z"));
+    // X reads Y and Y reads X; Z only reads the loop.
+    doc.edges.push(wire("e-uy-x", "uy", "out", "x", "in"), wire("e-ux-y", "ux", "out", "y", "in"), wire("e-ux-z", "ux", "out", "z", "in"),
+      wire("e-uz", "uz", "out", "output", "metallic"));
+    expect(rows(doc).map((row) => [row.code, row.nodeId])).toEqual([
+      ["material.reroute.selfUse", "x"],
+      ["material.reroute.selfUse", "y"],
+    ]);
+  });
+
+  it("reports Named Reroute errors inside a called Material Function under the call's path", () => {
+    const fn = createDefaultMaterialFunctionDocument("Loop");
+    fn.nodes.push(declaration("r", "Inner"), usage("u", "r"), usage("gone", "elsewhere"));
+    fn.edges.push(wire("e-u-r", "u", "out", "r", "in"));
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn" } });
+    doc.edges = [wire("e-color-call", "baseColor", "out", "call", "in_value"), wire("e-call-out", "call", "out_value", "output", "baseColor")];
+    expect(rows(doc, { functions: { fn } }).map((row) => [row.code, row.nodeId])).toEqual([
+      ["material.reroute.selfUse", "call/r"],
+      ["material.reroute.missingDeclaration", "call/gone"],
+    ]);
+    expect(rows(fn).map((row) => [row.code, row.nodeId])).toEqual([
+      ["material.reroute.selfUse", "r"],
+      ["material.reroute.missingDeclaration", "gone"],
+    ]);
+  });
+
+  it("scopes declarations to their graph: a function's usage cannot read the Material's declaration", () => {
+    const fn = createDefaultMaterialFunctionDocument("Reader");
+    fn.nodes.push(usage("u", "r"));
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(declaration("r", "Outer"), { id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn" } });
+    doc.edges = [wire("e-color-r", "baseColor", "out", "r", "in"), wire("e-color-call", "baseColor", "out", "call", "in_value"), wire("e-call-out", "call", "out_value", "output", "baseColor")];
+    expect(rows(doc, { functions: { fn } }).map((row) => [row.code, row.nodeId])).toEqual([["material.reroute.missingDeclaration", "call/u"]]);
+  });
+
+  it("checks types through a Named Reroute: a Texture usage cannot feed a numeric input", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "albedo", type: "param.texture", position: { x: 0, y: 0 }, properties: { name: "Albedo", textureGuid: "tex" } },
+      declaration("r", "Albedo Texture"), usage("u", "r"));
+    doc.edges.push(wire("e-albedo-r", "albedo", "out", "r", "in"), wire("e-u-metallic", "u", "out", "output", "metallic"));
+    expect(codes(doc)).toEqual(["material.typeMismatch"]);
+  });
+
+  it("follows a Named Reroute from World Position Offset to a fragment-only node", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
+      { id: "ddx", type: "derivative.ddx", position: { x: 0, y: 0 }, properties: {} },
+      declaration("r", "Slope"), usage("u", "r"));
+    doc.edges.push(wire("e-uv-ddx", "uv", "uv", "ddx", "value"), wire("e-ddx-r", "ddx", "out", "r", "in"),
+      wire("e-u-wpo", "u", "out", "output", "worldPositionOffset"));
+    expect(validateMaterialDocument(doc).find((row) => row.code === "material.stageMismatch")?.nodeId).toBe("ddx");
+  });
+});

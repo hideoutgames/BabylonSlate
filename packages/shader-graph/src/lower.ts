@@ -1,6 +1,9 @@
 import { fnv1a } from "@haptic/core";
 import {
+  isNamedRerouteDeclarationType,
+  isNamedRerouteUsageType,
   materialNodeDefinition,
+  namedRerouteDeclarationId,
   terminalNodeTypeFor,
   type MaterialDomain,
   type MaterialNodeDefinition,
@@ -399,6 +402,20 @@ function lowerWithinBudget(
       if (declared && frame.bindInput) return frame.bindInput(pinId);
       return constantOperand(declared?.type ?? "float", declared?.defaultValue);
     }
+
+    if (isNamedRerouteUsageType(node.type)) {
+      // The reroute collapses: the usage is its declaration's source, unconverted, so the consumer's
+      // wire converts from the real source type exactly as a direct wire would.
+      const declaration = lookupOf(frame).node(namedRerouteDeclarationId(node));
+      const edge = declaration && isNamedRerouteDeclarationType(declaration.type)
+        ? lookupOf(frame).incoming(declaration.id, "in")
+        : undefined;
+      if (!edge) return constantOperand("float", undefined);
+      return operandForOutput(frame, edge.sourceNodeId, edge.sourcePinId);
+    }
+
+    // A declaration has no output to read; nothing else reaches here for it.
+    if (isNamedRerouteDeclarationType(node.type)) return null;
 
     if (node.type === "function.call") {
       const child = frameForCall(frame, node);

@@ -23,9 +23,14 @@ export type MaterialCapability =
   | "sceneNormal"
   | "vertexTexture";
 
+/**
+ * `wildcard` is a Named Reroute pin: it takes whatever type is wired into the declaration, Texture
+ * included, with no conversion at the reroute (`createTypeResolver` gives it the concrete type).
+ */
 export type MaterialPinType =
   | { kind: MaterialValueType }
-  | { kind: "generic"; group?: string };
+  | { kind: "generic"; group?: string }
+  | { kind: "wildcard" };
 
 export interface MaterialPinDefinition {
   id: string;
@@ -67,6 +72,30 @@ const VEC2: MaterialPinType = { kind: "vec2" };
 const VEC3: MaterialPinType = { kind: "vec3" };
 const VEC4: MaterialPinType = { kind: "vec4" };
 const TEXTURE: MaterialPinType = { kind: "texture" };
+const WILDCARD: MaterialPinType = { kind: "wildcard" };
+
+/** A Named Reroute declaration: one input of any type, no output, named `properties.name`. */
+export const NAMED_REROUTE_DECLARATION_TYPE = "reroute.declaration";
+/** A Named Reroute usage: one output carrying its declaration's input (`properties.declarationId`). */
+export const NAMED_REROUTE_USAGE_TYPE = "reroute.usage";
+
+export function isNamedRerouteDeclarationType(type: string): boolean {
+  return type === NAMED_REROUTE_DECLARATION_TYPE;
+}
+
+export function isNamedRerouteUsageType(type: string): boolean {
+  return type === NAMED_REROUTE_USAGE_TYPE;
+}
+
+/** A declaration's trimmed name, or "" when blank. */
+export function namedRerouteName(node: { properties: Readonly<Record<string, unknown>> }): string {
+  return typeof node.properties.name === "string" ? node.properties.name.trim() : "";
+}
+
+/** The declaration node id a usage reads, or "" when unset. */
+export function namedRerouteDeclarationId(node: { properties: Readonly<Record<string, unknown>> }): string {
+  return typeof node.properties.declarationId === "string" ? node.properties.declarationId : "";
+}
 
 const MATERIAL_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "math.add": ["+","a + b","plus","sum"],
@@ -1192,6 +1221,29 @@ const FUNCTION_NODES: MaterialNodeDefinition[] = [
   },
 ];
 
+/**
+ * Named Reroutes collapse in lowering: a usage reads its declaration's wired source, so the plan
+ * never holds either node. Add Node lists them per graph (`namedReroutePaletteNodes`), not here.
+ */
+const REROUTE_NODES: MaterialNodeDefinition[] = [
+  {
+    type: NAMED_REROUTE_DECLARATION_TYPE,
+    title: "Named Reroute",
+    category: "Reroute",
+    cost: 0,
+    inputs: [{ id: "in", name: "In", type: WILDCARD }],
+    outputs: [],
+  },
+  {
+    type: NAMED_REROUTE_USAGE_TYPE,
+    title: "Named Reroute Usage",
+    category: "Reroute",
+    cost: 0,
+    inputs: [],
+    outputs: [{ id: "out", name: "Out", type: WILDCARD }],
+  },
+];
+
 const OUTPUT_NODES: MaterialNodeDefinition[] = [
   {
     type: "output.text",
@@ -1312,6 +1364,7 @@ export const MATERIAL_CATALOG: readonly MaterialNodeDefinition[] = [
   ...SHADING_NODES,
   ...CUSTOM_NODES,
   ...FUNCTION_NODES,
+  ...REROUTE_NODES,
   ...OUTPUT_NODES,
 ].map(withSearchAliases);
 
@@ -1343,7 +1396,10 @@ export function nodeIsLegalInStage(
   return definition.stages ? definition.stages.includes(stage) : true;
 }
 
-/** Palette rows for one domain. Function plumbing nodes are hydrated per host. */
+/**
+ * Palette rows for one domain. Function plumbing nodes are hydrated per host; Named Reroutes are
+ * listed per graph by `namedReroutePaletteNodes`.
+ */
 export function materialPaletteEntries(
   domain: MaterialDomain,
 ): MaterialNodeDefinition[] {
@@ -1351,6 +1407,7 @@ export function materialPaletteEntries(
     (definition) =>
       definition.type !== "function.input" &&
       definition.type !== "function.output" &&
+      definition.category !== "Reroute" &&
       nodeIsLegalInDomain(definition.type, domain),
   );
 }
