@@ -292,9 +292,18 @@ export function effectivePinKind(
   return pin.anyKind === true && displayType?.kind === "exec" ? "exec" : pin.kind;
 }
 
-/** An `anyKind` pin that no wire has bound yet: it still connects to exec and to any data. */
+/** An `anyKind` pin that no wire has bound yet: it still connects to any data, and to exec unless held to data. */
 export function isUnboundAnyKindPin(pin: SerializedPin): boolean {
   return pin.anyKind === true && pin.kind === "data" && isWildcardType(pin.type);
+}
+
+/**
+ * Whether an unbound any-kind pin can still take an exec wire: not when its knot, or a knot chained
+ * to it, is already wired to a pin that only carries data (`displayPinTypesForGraph` marks its
+ * display type `dataOnly`), since exec could then never reach that pin.
+ */
+export function anyKindTakesExec(pin: SerializedPin): boolean {
+  return isUnboundAnyKindPin(pin) && pin.type.dataOnly !== true;
 }
 
 /** `pin` as it connects to `peer`: an unbound any-kind pin meeting exec becomes exec. */
@@ -302,7 +311,7 @@ function withConnectedKind(
   pin: SerializedPin | undefined,
   peer: SerializedPin | undefined,
 ): SerializedPin | undefined {
-  if (!pin || !peer || !isUnboundAnyKindPin(pin) || peer.kind !== "exec") return pin;
+  if (!pin || !peer || !anyKindTakesExec(pin) || peer.kind !== "exec") return pin;
   return { ...pin, kind: "exec", type: { kind: "exec" } };
 }
 
@@ -328,8 +337,8 @@ export function pinsAreCompatible(
   const outgoing = source.direction === "out" ? source : target;
   const incoming = source.direction === "in" ? source : target;
   if (outgoing.kind !== incoming.kind) {
-    // An unbound any-kind pin (a Reroute's) still takes an exec wire.
-    return isUnboundAnyKindPin(outgoing.kind === "exec" ? incoming : outgoing);
+    // An unbound any-kind pin (a Reroute's) still takes an exec wire, unless its chain is held to data.
+    return anyKindTakesExec(outgoing.kind === "exec" ? incoming : outgoing);
   }
   if (outgoing.kind === "exec") return true;
   // Poses and frames are structure, not values: they meet only their own kind, never a wildcard or a conversion.

@@ -28,6 +28,28 @@ const sourcesOf = (nodes: Node[], edges: PinEdgeLike[], target: string) => {
   return passThroughSources(serialized(edges), (id) => knots.has(id), nodeId, pinId);
 };
 
+
+/** `count` diamonds in a row from a.then to c.execIn: each knot splits to two knots that join again. */
+function stackedDiamonds(count: number) {
+  const nodes: Node[] = [real("a"), real("c")];
+  const edges: PinEdgeLike[] = [];
+  let previous = "a.then";
+  for (let index = 0; index < count; index++) {
+    const [split, left, right, join] = ["s", "l", "r", "j"].map((part) => `${part}${index}`) as [string, string, string, string];
+    nodes.push(knot(split), knot(left), knot(right), knot(join));
+    edges.push(
+      edge(`in${index}`, previous, `${split}.in`),
+      edge(`sl${index}`, `${split}.out`, `${left}.in`),
+      edge(`sr${index}`, `${split}.out`, `${right}.in`),
+      edge(`lj${index}`, `${left}.out`, `${join}.in`),
+      edge(`rj${index}`, `${right}.out`, `${join}.in`),
+    );
+    previous = `${join}.out`;
+  }
+  edges.push(edge("last", previous, "c.execIn"));
+  return { nodes, edges };
+}
+
 describe("collapsePassThroughNodes", () => {
   it("returns the same arrays when no node passes through", () => {
     const nodes = [real("a"), real("b")];
@@ -139,6 +161,24 @@ describe("collapsePassThroughNodes", () => {
     ]);
   });
 
+  it("wires a diamond of knots as one edge, along its first path in authored order", () => {
+    const result = collapse(...Object.values(stackedDiamonds(1)) as [Node[], PinEdgeLike[]]);
+    expect(result.edges).toEqual([
+      {
+        id: "in0|sl0|lj0|last",
+        sourceNodeId: "a", sourcePinId: "then", targetNodeId: "c", targetPinId: "execIn",
+        viaEdgeIds: ["in0", "sl0", "lj0", "last"],
+      },
+    ]);
+  });
+
+  it("wires twenty stacked diamonds as one edge", () => {
+    const { nodes, edges } = stackedDiamonds(20);
+    const result = collapse(nodes, edges);
+    expect(result.edges.map(({ sourceNodeId, targetNodeId }) => [sourceNodeId, targetNodeId])).toEqual([["a", "c"]]);
+    expect(result.edges[0]!.viaEdgeIds).toHaveLength(20 * 3 + 1);
+  });
+
   it("copies the target-side edge's other fields", () => {
     const result = collapsePassThroughNodes(
       [real("a"), knot("k"), real("b")],
@@ -197,6 +237,11 @@ describe("passThroughSources", () => {
     expect(sourcesOf([knot("k1"), knot("k2"), real("b")], cycle, "b.x")).toEqual([]);
   });
 
+  it("returns the one source behind twenty stacked diamonds", () => {
+    const { nodes, edges } = stackedDiamonds(20);
+    expect(sourcesOf(nodes, edges, "c.execIn")).toEqual([{ nodeId: "a", pinId: "then" }]);
+  });
+
   it("returns nothing for an unwired input", () => {
     expect(sourcesOf([real("a"), real("b")], [edge("e1", "a.value", "b.x")], "b.y")).toEqual([]);
   });
@@ -223,6 +268,12 @@ describe("passThroughTargets", () => {
       { nodeId: "c", pinId: "y" },
       { nodeId: "d", pinId: "z" },
     ]);
+  });
+
+  it("returns the one target behind twenty stacked diamonds", () => {
+    const { nodes, edges } = stackedDiamonds(20);
+    const knots = new Set(nodes.filter((node) => node.knot).map((node) => node.id));
+    expect(passThroughTargets(serialized(edges), (id) => knots.has(id), "a", "then")).toEqual([{ nodeId: "c", pinId: "execIn" }]);
   });
 
   it("returns nothing behind a knot that feeds nothing or a knot cycle", () => {

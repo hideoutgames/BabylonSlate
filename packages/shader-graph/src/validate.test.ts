@@ -805,6 +805,19 @@ describe("Named Reroute validation", () => {
     ]);
   });
 
+  it("reports blank and duplicate Named Reroute names inside a called Material Function on the calling Material", () => {
+    const fn = createDefaultMaterialFunctionDocument("Names");
+    fn.nodes.push(declaration("blank", " "), declaration("a", "Same"), declaration("b", "Same"));
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn" } });
+    doc.edges = [wire("e-color-call", "baseColor", "out", "call", "in_value"), wire("e-call-out", "call", "out_value", "output", "baseColor")];
+    expect(rows(doc, { functions: { fn } }).map((row) => [row.code, row.nodeId])).toEqual([
+      ["material.reroute.missingName", "call/blank"],
+      ["material.reroute.duplicateName", "call/a"],
+      ["material.reroute.duplicateName", "call/b"],
+    ]);
+  });
+
   it("scopes declarations to their graph: a function's usage cannot read the Material's declaration", () => {
     const fn = createDefaultMaterialFunctionDocument("Reader");
     fn.nodes.push(usage("u", "r"));

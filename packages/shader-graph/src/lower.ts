@@ -297,6 +297,8 @@ function lowerWithinBudget(
   const operations: MaterialOperation[] = [];
   const emitted = new Map<string, MaterialOperation>();
   const emitting = new Set<string>();
+  /** Named Reroute usages being followed to their source, by frame prefix and node id. */
+  const readingUsages = new Set<string>();
   const textures: MaterialTextureBinding[] = [];
 
   const rootFrame: Frame = {
@@ -410,8 +412,16 @@ function lowerWithinBudget(
       const edge = declaration && isNamedRerouteDeclarationType(declaration.type)
         ? lookupOf(frame).incoming(declaration.id, "in")
         : undefined;
-      if (!edge) return constantOperand("float", undefined);
-      return operandForOutput(frame, edge.sourceNodeId, edge.sourcePinId);
+      // Validation rejects a usage that reads itself, in the Material and in every called function;
+      // this guard keeps lowering finite should one ever get past it.
+      const key = `${frame.prefix}${node.id}`;
+      if (!edge || readingUsages.has(key)) return constantOperand("float", undefined);
+      readingUsages.add(key);
+      try {
+        return operandForOutput(frame, edge.sourceNodeId, edge.sourcePinId);
+      } finally {
+        readingUsages.delete(key);
+      }
     }
 
     // A declaration has no output to read; nothing else reaches here for it.

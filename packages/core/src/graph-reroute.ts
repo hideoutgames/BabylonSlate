@@ -21,6 +21,11 @@ const pinKey = (nodeId: string, pinId: string) => `${nodeId}\0${pinId}`;
  * those ids joined with "|". Chains with no real source or no real target vanish. Cycles made
  * only of pass-through nodes vanish. Returns the SAME `nodes` and `edges` arrays when no node
  * is pass-through.
+ *
+ * Each real source pin reaches a final (target-side) edge at most once, however many paths of
+ * pass-through nodes join them: a diamond of knots is one edge, along the first path found
+ * following edges in authored order. The work is linear in nodes and edges per real source pin
+ * that feeds a pass-through node.
  */
 export function collapsePassThroughNodes<N extends { id: string }, E extends PinEdgeLike>(
   nodes: readonly N[],
@@ -33,46 +38,82 @@ export function collapsePassThroughNodes<N extends { id: string }, E extends Pin
   }
   if (!passIds) return { nodes, edges };
   const passThrough = passIds;
+  const segments = (edge: E): readonly string[] => edge.viaEdgeIds ?? [edge.id];
 
-  // Edges into each pass-through node's input, in authored order (exec inputs fan in).
-  const into = new Map<string, E[]>();
-  for (const edge of edges) {
-    if (!passThrough.has(edge.targetNodeId) || edge.targetPinId !== PASS_THROUGH_INPUT_PIN) continue;
-    const list = into.get(edge.targetNodeId);
+  // Edges leaving each pass-through node's output, and the edges from each real source pin into
+  // a pass-through input, both in authored order (source pins in order of their first such edge).
+  const leaving = new Map<string, E[]>();
+  const starts = new Map<string, E[]>();
+  const push = (map: Map<string, E[]>, key: string, edge: E) => {
+    const list = map.get(key);
     if (list) list.push(edge);
-    else into.set(edge.targetNodeId, [edge]);
+    else map.set(key, [edge]);
+  };
+  for (const edge of edges) {
+    if (passThrough.has(edge.sourceNodeId)) {
+      if (edge.sourcePinId === PASS_THROUGH_OUTPUT_PIN) push(leaving, edge.sourceNodeId, edge);
+    } else if (passThrough.has(edge.targetNodeId) && edge.targetPinId === PASS_THROUGH_INPUT_PIN) {
+      push(starts, pinKey(edge.sourceNodeId, edge.sourcePinId), edge);
+    }
+  }
+
+  // Per final edge, the real sources reaching it, each once, with the segments of its first path.
+  const reaching = new Map<E, { source: E; ids: readonly string[] }[]>();
+  for (const sourceEdges of starts.values()) {
+    const source = sourceEdges[0]!;
+    // The edge each pass-through node was first reached by: it is walked once, along that path.
+    const reachedBy = new Map<string, E>();
+    const pathTo = (nodeId: string, final: E): string[] => {
+      const chunks = [segments(final)];
+      for (let edge = reachedBy.get(nodeId); edge; edge = reachedBy.get(edge.sourceNodeId)) {
+        chunks.push(segments(edge));
+        if (!passThrough.has(edge.sourceNodeId)) break;
+      }
+      return chunks.reverse().flat();
+    };
+    // Depth first, edges in authored order, with an explicit stack so long chains cannot overflow.
+    const frames: { nodeId: string; next: number }[] = [];
+    for (const start of sourceEdges) {
+      if (reachedBy.has(start.targetNodeId)) continue;
+      reachedBy.set(start.targetNodeId, start);
+      frames.push({ nodeId: start.targetNodeId, next: 0 });
+      while (frames.length > 0) {
+        const frame = frames[frames.length - 1]!;
+        const out = leaving.get(frame.nodeId) ?? [];
+        if (frame.next >= out.length) {
+          frames.pop();
+          continue;
+        }
+        const edge = out[frame.next++]!;
+        if (!passThrough.has(edge.targetNodeId)) {
+          const entry = { source, ids: pathTo(frame.nodeId, edge) };
+          const list = reaching.get(edge);
+          if (list) list.push(entry);
+          else reaching.set(edge, [entry]);
+        } else if (edge.targetPinId === PASS_THROUGH_INPUT_PIN && !reachedBy.has(edge.targetNodeId)) {
+          reachedBy.set(edge.targetNodeId, edge);
+          frames.push({ nodeId: edge.targetNodeId, next: 0 });
+        }
+      }
+    }
   }
 
   const collapsed: E[] = [];
-  const onPath = new Set<string>();
-  const walk = (final: E, nodeId: string, downstream: readonly string[]) => {
-    if (onPath.has(nodeId)) return;
-    onPath.add(nodeId);
-    for (const edge of into.get(nodeId) ?? []) {
-      const ids = [...(edge.viaEdgeIds ?? [edge.id]), ...downstream];
-      if (!passThrough.has(edge.sourceNodeId)) {
-        collapsed.push({
-          ...final,
-          id: ids.join("|"),
-          sourceNodeId: edge.sourceNodeId,
-          sourcePinId: edge.sourcePinId,
-          viaEdgeIds: ids,
-        });
-      } else if (edge.sourcePinId === PASS_THROUGH_OUTPUT_PIN) {
-        walk(final, edge.sourceNodeId, ids);
-      }
-    }
-    onPath.delete(nodeId);
-  };
-
   for (const edge of edges) {
     if (passThrough.has(edge.targetNodeId)) continue;
     if (!passThrough.has(edge.sourceNodeId)) {
       collapsed.push(edge);
       continue;
     }
-    if (edge.sourcePinId !== PASS_THROUGH_OUTPUT_PIN) continue;
-    walk(edge, edge.sourceNodeId, edge.viaEdgeIds ?? [edge.id]);
+    for (const { source, ids } of reaching.get(edge) ?? []) {
+      collapsed.push({
+        ...edge,
+        id: ids.join("|"),
+        sourceNodeId: source.sourceNodeId,
+        sourcePinId: source.sourcePinId,
+        viaEdgeIds: ids,
+      });
+    }
   }
 
   return { nodes: nodes.filter((node) => !passThrough.has(node.id)), edges: collapsed };

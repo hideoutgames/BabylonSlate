@@ -244,6 +244,35 @@ describe("Reroute insertion", () => {
   });
 });
 
+describe("Reroute knot connections", () => {
+  it("refuses tapping an exec output onto a knot that already feeds a data-only pin", async () => {
+    const restore = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const graph: GraphDocument = {
+        nodes: [
+          { id: "make", type: "math.make", position: { x: 0, y: 0 }, data: { title: "Make", __pins: makePins } },
+          { id: "knot", type: "flow.reroute", position: { x: 300, y: 0 }, data: { __reroute: true, __pins: reroutePins } },
+          { id: "any", type: "util.any", position: { x: 600, y: 0 }, data: { title: "Any", __pins: [{ id: "y", name: "Y", kind: "data", direction: "in", type: wildcard }] } },
+        ],
+        edges: [wire("knot", "out", "any", "y")],
+      };
+      const { container } = renderGraph({ initialGraph: graph, onChange }, { tapToConnectEnabled: true });
+      await findWire(container, "e:knot:out:any:y");
+      const handle = (nodeId: string, pinId: string) =>
+        container.querySelector(`.react-flow__node[data-id="${nodeId}"] .react-flow__handle[data-handleid="${pinId}"]`)!;
+      fireEvent.click(handle("make", "then"));
+      fireEvent.click(handle("knot", "in"));
+      expect(onChange).not.toHaveBeenCalled();
+      fireEvent.click(handle("make", "value"));
+      fireEvent.click(handle("knot", "in"));
+      expect(edgeEnds(lastGraph(onChange))).toEqual(["knot.out>any.y", "make.value>knot.in"]);
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe("Reroute knot", () => {
   it("draws its pins and outgoing wire in the type that reaches it through other knots", async () => {
     const restore = stubMeasuredGraphLayout();

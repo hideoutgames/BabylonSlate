@@ -888,3 +888,34 @@ describe("Named Reroute lowering", () => {
     expect(plan.operations).toEqual([]);
   });
 });
+
+describe("Named Reroute loops in called Material Functions", () => {
+  const wire = (id: string, sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) =>
+    ({ id, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
+  const declaration = (id: string, name: string) =>
+    ({ id, type: "reroute.declaration", position: { x: 0, y: 0 }, properties: { name, color: [1, 0, 0] } });
+  const usage = (id: string, declarationId: string) =>
+    ({ id, type: "reroute.usage", position: { x: 0, y: 0 }, properties: { declarationId } });
+  const caller = () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn" } });
+    doc.edges = [wire("e-color-call", "baseColor", "out", "call", "in_value"), wire("e-call-out", "call", "out_value", "output", "baseColor")];
+    return doc;
+  };
+
+  it("reports a function whose usage feeds its own declaration instead of lowering forever", () => {
+    const selfLoop = createDefaultMaterialFunctionDocument("Loop");
+    selfLoop.nodes.push(declaration("d", "D"), usage("u", "d"));
+    selfLoop.edges = [wire("e-u-d", "u", "out", "d", "in"), wire("e-u-out", "u", "out", "outputs", "out_value")];
+    const mutual = createDefaultMaterialFunctionDocument("Mutual");
+    mutual.nodes.push(declaration("x", "X"), usage("ux", "x"), declaration("y", "Y"), usage("uy", "y"));
+    mutual.edges = [wire("e-uy-x", "uy", "out", "x", "in"), wire("e-ux-y", "ux", "out", "y", "in"), wire("e-ux-out", "ux", "out", "outputs", "out_value")];
+
+    for (const [fn, loops] of [[selfLoop, ["call/d"]], [mutual, ["call/x", "call/y"]]] as const) {
+      const result = lowerMaterialDocument(caller(), { functions: { fn } });
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics.filter((row) => row.code === "material.reroute.selfUse").map((row) => row.nodeId)).toEqual(loops);
+    }
+  });
+});
+
