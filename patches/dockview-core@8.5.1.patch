@@ -1,0 +1,220 @@
+diff --git a/dist/dockview-core.js b/dist/dockview-core.js
+index cd57d4fbec517a124bbd8c1064a4d7170bd71e93..e53c98cb387d5674f3fcbd359cd87a21cce4b7af 100644
+--- a/dist/dockview-core.js
++++ b/dist/dockview-core.js
+@@ -1206,6 +1206,8 @@ Object.defineProperties(exports, { __esModule: { value: true }, [Symbol.toString
+ 	let Sizing;
+ 	(function(_Sizing) {
+ 		_Sizing.Distribute = { type: "distribute" };
++		/** Haptic patch: the removed view's nearest sibling absorbs its size; every other view keeps its size. */
++		_Sizing.Absorb = { type: "absorb" };
+ 		function Split(index) {
+ 			return {
+ 				type: "split",
+@@ -1566,17 +1568,32 @@ Object.defineProperties(exports, { __esModule: { value: true }, [Symbol.toString
+ 			this.relayout(lowPriorityIndexes, highPriorityIndexes);
+ 		}
+ 		removeView(index, sizing, skipLayout = false) {
++			const absorbedSize = (sizing === null || sizing === void 0 ? void 0 : sizing.type) === "absorb" && this.viewItems[index] && this.viewItems[index].visible ? this.viewItems[index].size : 0;
+ 			const viewItem = this.viewItems.splice(index, 1)[0];
+ 			viewItem.dispose();
+ 			if (this.viewItems.length >= 1) {
+ 				const sashIndex = Math.max(index - 1, 0);
+ 				this.sashes.splice(sashIndex, 1)[0].disposable();
+ 			}
++			if (absorbedSize > 0) this.absorbViewSize(index, absorbedSize);
+ 			if (!skipLayout) this.relayout();
+ 			if ((sizing === null || sizing === void 0 ? void 0 : sizing.type) === "distribute") this.distributeViewSizes();
+ 			this._onDidRemoveView.fire(viewItem.view);
+ 			return viewItem.view;
+ 		}
++		/**
++		* Haptic patch: give `size` freed at `index` to the visible views nearest to it, the previous one before the
++		* next one, each up to its maximum size; views that take none of it keep their size.
++		*/
++		absorbViewSize(index, size) {
++			for (let distance = 1; size > 0 && (index - distance >= 0 || index + distance - 1 < this.viewItems.length); distance++) for (const i of [index - distance, index + distance - 1]) {
++				const item = this.viewItems[i];
++				if (!item || !item.visible || size <= 0) continue;
++				const next = Math.min(Math.max(item.size + size, item.minimumSize), item.maximumSize);
++				size -= next - item.size;
++				item.size = next;
++			}
++		}
+ 		getViewCachedVisibleSize(index) {
+ 			if (index < 0 || index >= this.viewItems.length) throw new Error("Index out of bounds");
+ 			return this.viewItems[index].cachedVisibleSize;
+@@ -3015,7 +3032,7 @@ Object.defineProperties(exports, { __esModule: { value: true }, [Symbol.toString
+ 		doRemoveGroup(group, options) {
+ 			if (!this._groups.has(group.id)) throw new Error("invalid operation");
+ 			const item = this._groups.get(group.id);
+-			const view = this.gridview.remove(group, Sizing.Distribute);
++			const view = this.gridview.remove(group, Sizing.Absorb);
+ 			if (item && !(options === null || options === void 0 ? void 0 : options.skipDispose)) {
+ 				item.disposable.dispose();
+ 				item.value.dispose();
+diff --git a/dist/dockview-core.noStyle.js b/dist/dockview-core.noStyle.js
+index c8c39b1a6f41c85b8937dad95ec5c12b542f4126..df1cc3cadbada4c637ddc882329edfe8a5599a42 100644
+--- a/dist/dockview-core.noStyle.js
++++ b/dist/dockview-core.noStyle.js
+@@ -1198,6 +1198,8 @@ Object.defineProperties(exports, { __esModule: { value: true }, [Symbol.toString
+ 	let Sizing;
+ 	(function(_Sizing) {
+ 		_Sizing.Distribute = { type: "distribute" };
++		/** Haptic patch: the removed view's nearest sibling absorbs its size; every other view keeps its size. */
++		_Sizing.Absorb = { type: "absorb" };
+ 		function Split(index) {
+ 			return {
+ 				type: "split",
+@@ -1558,17 +1560,32 @@ Object.defineProperties(exports, { __esModule: { value: true }, [Symbol.toString
+ 			this.relayout(lowPriorityIndexes, highPriorityIndexes);
+ 		}
+ 		removeView(index, sizing, skipLayout = false) {
++			const absorbedSize = (sizing === null || sizing === void 0 ? void 0 : sizing.type) === "absorb" && this.viewItems[index] && this.viewItems[index].visible ? this.viewItems[index].size : 0;
+ 			const viewItem = this.viewItems.splice(index, 1)[0];
+ 			viewItem.dispose();
+ 			if (this.viewItems.length >= 1) {
+ 				const sashIndex = Math.max(index - 1, 0);
+ 				this.sashes.splice(sashIndex, 1)[0].disposable();
+ 			}
++			if (absorbedSize > 0) this.absorbViewSize(index, absorbedSize);
+ 			if (!skipLayout) this.relayout();
+ 			if ((sizing === null || sizing === void 0 ? void 0 : sizing.type) === "distribute") this.distributeViewSizes();
+ 			this._onDidRemoveView.fire(viewItem.view);
+ 			return viewItem.view;
+ 		}
++		/**
++		* Haptic patch: give `size` freed at `index` to the visible views nearest to it, the previous one before the
++		* next one, each up to its maximum size; views that take none of it keep their size.
++		*/
++		absorbViewSize(index, size) {
++			for (let distance = 1; size > 0 && (index - distance >= 0 || index + distance - 1 < this.viewItems.length); distance++) for (const i of [index - distance, index + distance - 1]) {
++				const item = this.viewItems[i];
++				if (!item || !item.visible || size <= 0) continue;
++				const next = Math.min(Math.max(item.size + size, item.minimumSize), item.maximumSize);
++				size -= next - item.size;
++				item.size = next;
++			}
++		}
+ 		getViewCachedVisibleSize(index) {
+ 			if (index < 0 || index >= this.viewItems.length) throw new Error("Index out of bounds");
+ 			return this.viewItems[index].cachedVisibleSize;
+@@ -3007,7 +3024,7 @@ Object.defineProperties(exports, { __esModule: { value: true }, [Symbol.toString
+ 		doRemoveGroup(group, options) {
+ 			if (!this._groups.has(group.id)) throw new Error("invalid operation");
+ 			const item = this._groups.get(group.id);
+-			const view = this.gridview.remove(group, Sizing.Distribute);
++			const view = this.gridview.remove(group, Sizing.Absorb);
+ 			if (item && !(options === null || options === void 0 ? void 0 : options.skipDispose)) {
+ 				item.disposable.dispose();
+ 				item.value.dispose();
+diff --git a/dist/package/main.cjs.js b/dist/package/main.cjs.js
+index da408333c61567d45569f2631d817d5b74b90efe..7e9b41192087d3f8f3237fdba65a378bbbf0da09 100644
+--- a/dist/package/main.cjs.js
++++ b/dist/package/main.cjs.js
+@@ -1193,6 +1193,8 @@ function setSashPosition(sash, left, top) {
+ let Sizing;
+ (function(_Sizing) {
+ 	_Sizing.Distribute = { type: "distribute" };
++	/** Haptic patch: the removed view's nearest sibling absorbs its size; every other view keeps its size. */
++	_Sizing.Absorb = { type: "absorb" };
+ 	function Split(index) {
+ 		return {
+ 			type: "split",
+@@ -1553,17 +1555,32 @@ var Splitview = class {
+ 		this.relayout(lowPriorityIndexes, highPriorityIndexes);
+ 	}
+ 	removeView(index, sizing, skipLayout = false) {
++		const absorbedSize = (sizing === null || sizing === void 0 ? void 0 : sizing.type) === "absorb" && this.viewItems[index] && this.viewItems[index].visible ? this.viewItems[index].size : 0;
+ 		const viewItem = this.viewItems.splice(index, 1)[0];
+ 		viewItem.dispose();
+ 		if (this.viewItems.length >= 1) {
+ 			const sashIndex = Math.max(index - 1, 0);
+ 			this.sashes.splice(sashIndex, 1)[0].disposable();
+ 		}
++		if (absorbedSize > 0) this.absorbViewSize(index, absorbedSize);
+ 		if (!skipLayout) this.relayout();
+ 		if ((sizing === null || sizing === void 0 ? void 0 : sizing.type) === "distribute") this.distributeViewSizes();
+ 		this._onDidRemoveView.fire(viewItem.view);
+ 		return viewItem.view;
+ 	}
++	/**
++	* Haptic patch: give `size` freed at `index` to the visible views nearest to it, the previous one before the
++	* next one, each up to its maximum size; views that take none of it keep their size.
++	*/
++	absorbViewSize(index, size) {
++		for (let distance = 1; size > 0 && (index - distance >= 0 || index + distance - 1 < this.viewItems.length); distance++) for (const i of [index - distance, index + distance - 1]) {
++			const item = this.viewItems[i];
++			if (!item || !item.visible || size <= 0) continue;
++			const next = Math.min(Math.max(item.size + size, item.minimumSize), item.maximumSize);
++			size -= next - item.size;
++			item.size = next;
++		}
++	}
+ 	getViewCachedVisibleSize(index) {
+ 		if (index < 0 || index >= this.viewItems.length) throw new Error("Index out of bounds");
+ 		return this.viewItems[index].cachedVisibleSize;
+@@ -3002,7 +3019,7 @@ var BaseGrid = class extends Resizable {
+ 	doRemoveGroup(group, options) {
+ 		if (!this._groups.has(group.id)) throw new Error("invalid operation");
+ 		const item = this._groups.get(group.id);
+-		const view = this.gridview.remove(group, Sizing.Distribute);
++		const view = this.gridview.remove(group, Sizing.Absorb);
+ 		if (item && !(options === null || options === void 0 ? void 0 : options.skipDispose)) {
+ 			item.disposable.dispose();
+ 			item.value.dispose();
+diff --git a/dist/package/main.esm.mjs b/dist/package/main.esm.mjs
+index a7327b551fcd60ca957884d7c89478e2d434d996..d5364d50ac1264406779e36c04b6562b1c446b25 100644
+--- a/dist/package/main.esm.mjs
++++ b/dist/package/main.esm.mjs
+@@ -1191,6 +1191,8 @@ function setSashPosition(sash, left, top) {
+ let Sizing;
+ (function(_Sizing) {
+ 	_Sizing.Distribute = { type: "distribute" };
++	/** Haptic patch: the removed view's nearest sibling absorbs its size; every other view keeps its size. */
++	_Sizing.Absorb = { type: "absorb" };
+ 	function Split(index) {
+ 		return {
+ 			type: "split",
+@@ -1551,17 +1553,32 @@ var Splitview = class {
+ 		this.relayout(lowPriorityIndexes, highPriorityIndexes);
+ 	}
+ 	removeView(index, sizing, skipLayout = false) {
++		const absorbedSize = (sizing === null || sizing === void 0 ? void 0 : sizing.type) === "absorb" && this.viewItems[index] && this.viewItems[index].visible ? this.viewItems[index].size : 0;
+ 		const viewItem = this.viewItems.splice(index, 1)[0];
+ 		viewItem.dispose();
+ 		if (this.viewItems.length >= 1) {
+ 			const sashIndex = Math.max(index - 1, 0);
+ 			this.sashes.splice(sashIndex, 1)[0].disposable();
+ 		}
++		if (absorbedSize > 0) this.absorbViewSize(index, absorbedSize);
+ 		if (!skipLayout) this.relayout();
+ 		if ((sizing === null || sizing === void 0 ? void 0 : sizing.type) === "distribute") this.distributeViewSizes();
+ 		this._onDidRemoveView.fire(viewItem.view);
+ 		return viewItem.view;
+ 	}
++	/**
++	* Haptic patch: give `size` freed at `index` to the visible views nearest to it, the previous one before the
++	* next one, each up to its maximum size; views that take none of it keep their size.
++	*/
++	absorbViewSize(index, size) {
++		for (let distance = 1; size > 0 && (index - distance >= 0 || index + distance - 1 < this.viewItems.length); distance++) for (const i of [index - distance, index + distance - 1]) {
++			const item = this.viewItems[i];
++			if (!item || !item.visible || size <= 0) continue;
++			const next = Math.min(Math.max(item.size + size, item.minimumSize), item.maximumSize);
++			size -= next - item.size;
++			item.size = next;
++		}
++	}
+ 	getViewCachedVisibleSize(index) {
+ 		if (index < 0 || index >= this.viewItems.length) throw new Error("Index out of bounds");
+ 		return this.viewItems[index].cachedVisibleSize;
+@@ -3000,7 +3017,7 @@ var BaseGrid = class extends Resizable {
+ 	doRemoveGroup(group, options) {
+ 		if (!this._groups.has(group.id)) throw new Error("invalid operation");
+ 		const item = this._groups.get(group.id);
+-		const view = this.gridview.remove(group, Sizing.Distribute);
++		const view = this.gridview.remove(group, Sizing.Absorb);
+ 		if (item && !(options === null || options === void 0 ? void 0 : options.skipDispose)) {
+ 			item.disposable.dispose();
+ 			item.value.dispose();
