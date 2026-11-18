@@ -49,7 +49,7 @@ Class, Material, Animation Graph, Behaviour Tree and Particle Graph editors shar
 | Right-click a pin | Open the pin menu: **Break Links** removes the pin's wires, plus any actions the node offers for that pin. Holding a pin on touch opens the node menu. |
 | Hold a node, or right-click it | Open the node menu. Nodes in Class, Material and Particle graphs list **Copy**, **Paste**, **Duplicate**, **Delete** and **Break Links**; holding an unselected node selects only that node. |
 
-Double-tapping does not zoom. Shaking a node back and forth while dragging breaks its links; turn this off with **Shake Nodes To Disconnect** in **Engine Settings > Accessibility**. To make pins easier to hit, raise **Large Pins** there.
+Double-tapping does not zoom. Shaking a node back and forth in place while dragging breaks its links; turn this off with **Shake Nodes To Disconnect** in **Engine Settings > Accessibility**. To make pins easier to hit, raise **Large Pins** there.
 
 ## Content Browser
 

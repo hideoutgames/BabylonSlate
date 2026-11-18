@@ -312,12 +312,13 @@ export interface GraphEditorProps {
    */
   nodeDragHandle?: string;
   /**
-   * Connect-end policy. Default opens Add Node on a far empty-canvas drop
-   * and keeps the 96px near-pin wire-break. Behaviour trees use `add-node`
-   * so a short drag off a handle opens Add Node and never breaks structural
-   * edges. Animation Graph State Machine uses `zone-add-node` (far release
-   * opens Add State, a release near a state's pin snap-connects, and any
-   * other release breaks the pin's links as the default mode does).
+   * Connect-end policy. Default opens Add Node on an empty-canvas drop at
+   * least 40px (`CONNECT_END_CANCEL_PX`) from the source pin and every
+   * compatible pin, and breaks the pin's wires on a release closer than that.
+   * Behaviour trees use `add-node` so a short drag off a handle opens Add Node
+   * and never breaks structural edges. Animation Graph State Machine uses
+   * `zone-add-node` (a release within 96px, `CONNECT_END_SNAP_PX`, of a
+   * state's pin snap-connects, otherwise it behaves as the default mode).
    */
   connectEndMode?: ConnectEndMode;
   /**

@@ -112,7 +112,7 @@ describe("GraphConnectionLineView", () => {
       fromNode: { id: "source", data: { __pins: [floatOut] } },
       fromHandle: { id: "value" },
       nodes: [{ id: "source", data: { __pins: [floatOut] } }, { id: "target", data: { __pins: [colorIn] } }],
-      pointer: { x: 340, y: 0 },
+      pointer: { x: 320, y: 0 },
       pinCompatibility: (from, to) => from.type.kind === "float" && to.type.kind === "vec3",
     });
     expect(queryByTestId("add-node-hint")).toBeNull();
@@ -174,13 +174,42 @@ describe("GraphConnectionLineView", () => {
     expect(getByTestId("add-node-hint").textContent).toBe("Release to Add Node");
   });
 
-  it("hides the hint near the source pin", () => {
+  it("hides the hint near the source pin and shows it just outside the cancel zone", () => {
     mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
-    const { queryByTestId } = renderLine({
-      toX: 40,
-      pointer: { x: 40, y: 0 },
+    const near = renderLine({
+      toX: 30,
+      pointer: { x: 30, y: 0 },
     });
-    expect(queryByTestId("add-node-hint")).toBeNull();
+    expect(near.queryByTestId("add-node-hint")).toBeNull();
+    near.unmount();
+
+    const { getByTestId } = renderLine({
+      toX: 60,
+      pointer: { x: 60, y: 0 },
+    });
+    expect(getByTestId("add-node-hint").textContent).toBe("Tap to Cancel");
+  });
+
+  it("hides Release to Add Node where a zone-add-node release would snap-connect", () => {
+    mountHandles([
+      { nodeId: "source", pinId: "execOut", x: 0, y: 0 },
+      { nodeId: "log", pinId: "execIn", x: 200, y: 0 },
+    ]);
+    // 60px from a compatible pin on another node: outside the cancel zone, inside the snap radius.
+    const snapping = renderLine({
+      connectEndMode: "zone-add-node",
+      toX: 260,
+      pointer: { x: 260, y: 0 },
+    });
+    expect(snapping.queryByTestId("add-node-hint")).toBeNull();
+    snapping.unmount();
+
+    const { getByTestId } = renderLine({
+      connectEndMode: "zone-add-node",
+      toX: 60,
+      pointer: { x: 60, y: 0 },
+    });
+    expect(getByTestId("add-node-hint").textContent).toBe("Release to Add Node");
   });
 
   it("hides the hint near a compatible pin", () => {

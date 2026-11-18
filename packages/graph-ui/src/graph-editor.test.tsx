@@ -1605,7 +1605,7 @@ describe("GraphEditor", () => {
       onChange.mockClear();
 
       act(() => {
-        dragHandle(source!, { x: 22, y: 22 }, { x: 80, y: 22 });
+        dragHandle(source!, { x: 22, y: 22 }, { x: 55, y: 22 });
       });
 
       expect(onChange).toHaveBeenCalled();
@@ -1627,7 +1627,7 @@ describe("GraphEditor", () => {
       const source = second.container.querySelector(selector)!;
       mockHandleRect(source, { left: 500, top: 0, width: 44, height: 44 });
       onChange.mockClear();
-      act(() => dragHandle(source, { x: 522, y: 22 }, { x: 580, y: 22 }));
+      act(() => dragHandle(source, { x: 522, y: 22 }, { x: 555, y: 22 }));
       expect(second.queryByTestId("node-palette-body")).toBeNull();
       expect(onChange.mock.calls.at(-1)?.[0].edges).toEqual([]);
     } finally {
@@ -2191,6 +2191,34 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("snap-connects in zone-add-node mode on a release beyond the cancel zone but within reach of a state pin", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          connectEndMode="zone-add-node"
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      onChange.mockClear();
+      // log-b's exec input is centred at (302, 22); release 60px to its right.
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, { x: 362, y: 22 });
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([
+        expect.objectContaining({ source: "log-a", sourceHandle: "execOut", target: "log-b", targetHandle: "execIn" }),
+      ]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("snap-connects onto an occupied pin in zone-add-node mode without queuing a second wire", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
@@ -2347,7 +2375,7 @@ describe("GraphEditor", () => {
       const source = mockPinDragLayout(container);
       onChange.mockClear();
       act(() => {
-        dragHandle(source, { x: 22, y: 22 }, { x: 80, y: 22 });
+        dragHandle(source, { x: 22, y: 22 }, { x: 55, y: 22 });
       });
       expect(queryByTestId("node-palette-body")).toBeNull();
       const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
@@ -2376,7 +2404,7 @@ describe("GraphEditor", () => {
       const source = mockPinDragLayout(container);
       onChange.mockClear();
       act(() => {
-        dragHandle(source, { x: 22, y: 22 }, { x: 80, y: 22 });
+        dragHandle(source, { x: 22, y: 22 }, { x: 55, y: 22 });
       });
       expect(edgeBreaksAtPin).toHaveBeenCalledWith(expect.objectContaining({ target: "log-c" }), "log-a", "execOut");
       const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;

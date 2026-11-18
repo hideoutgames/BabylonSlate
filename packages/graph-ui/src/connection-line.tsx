@@ -8,11 +8,11 @@ import { useMemo, type CSSProperties } from "react";
 import { Badge } from "@haptic/ui/components/badge";
 import {
   collectDisplayConnectPins,
+  connectEndAction,
   containerPointerToClient,
   graphNodeIdAtClientPoint,
   isClientPointOverGraphNode,
-  screenCentersForSafePins,
-  shouldOpenAddNodeOnConnectEnd,
+  screenPinsForSafeRefs,
   type ConnectEndMode,
   type PinCompatibilityRule,
 } from "./graph-connect";
@@ -71,6 +71,28 @@ function hintOffset(
     x: toX + (dx / len) * 14 + (-dy / len) * 10,
     y: toY + (dy / len) * 14 + (dx / len) * 10,
   };
+}
+
+function connectEndHintAction(
+  pointer: { x: number; y: number },
+  fromNodeId: string,
+  pins: ReturnType<typeof screenPinsForSafeRefs>,
+  mode: ConnectEndMode,
+) {
+  const safePins: Array<{ x: number; y: number }> = [];
+  const snapPins: Array<{ x: number; y: number }> = [];
+  for (const pin of pins) {
+    safePins.push({ x: pin.x, y: pin.y });
+    if (pin.nodeId !== fromNodeId) snapPins.push({ x: pin.x, y: pin.y });
+  }
+  return connectEndAction({
+    hasTargetHandle: false,
+    pointerOverNode: false,
+    pointerOverSourceHandle: false,
+    pointer,
+    safePins,
+    snapPins,
+  }, mode);
 }
 
 export function GraphConnectionLineView({
@@ -142,17 +164,13 @@ export function GraphConnectionLineView({
       pin: declaredPin,
       type: pinDisplayType(fromNode.id, declaredPin.id) ?? declaredPin.type,
     });
-  // Measure the DOM only when the zone decides the hint.
+  // Measure the DOM only when the zone decides the hint. The release decision itself picks it, so the hint
+  // never promises Add Node where a release would break wires or snap-connect.
   const showHint = !declaredPin || toHandle || showAddPin || conversion
     ? false
     : connectEndMode === "add-node" ||
       (!isClientPointOverGraphNode(pointer, root) &&
-        shouldOpenAddNodeOnConnectEnd({
-          hasTargetHandle: false,
-          pointerOverNode: false,
-          pointer,
-          safePins: screenCentersForSafePins(root, safeRefs),
-        }));
+        connectEndHintAction(pointer, fromNode.id, screenPinsForSafeRefs(root, safeRefs), connectEndMode) === "add-node");
   const badge = hintOffset(fromX, fromY, toX, toY);
   const hintLabel =
     connectEndMode === "zone-add-node" ? "Release to Add Node" : "Tap to Cancel";

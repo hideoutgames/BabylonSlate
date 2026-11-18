@@ -7,8 +7,14 @@ import {
 } from "./graph-types";
 import type { PinTypeNames } from "./pin-default-preview";
 
-/** Drop closer than this (screen px) to a safe pin cancels Add Node. */
-export const CONNECT_END_CANCEL_PX = 96;
+/**
+ * Cancel zone (client px): a pin-drag release closer than this to the source pin or a compatible pin breaks the
+ * dragged pin's wires instead of opening Add Node, and the live wire hides its Add Node hint.
+ */
+export const CONNECT_END_CANCEL_PX = 40;
+
+/** Snap radius (client px): in `zone-add-node` mode a release this close to a compatible pin on another node connects. */
+export const CONNECT_END_SNAP_PX = 96;
 
 export type SafeConnectPinRef = {
   nodeId: string;
@@ -20,7 +26,7 @@ export type ConnectEndDecision = {
   pointerOverNode: boolean;
   pointer: { x: number; y: number };
   safePins: Array<{ x: number; y: number }>;
-  /** Compatible non-source pin centers; zone-add-node snap-connects when near one. */
+  /** Compatible non-source pin centers; zone-add-node snap-connects within `CONNECT_END_SNAP_PX` of one. */
   snapPins?: Array<{ x: number; y: number }>;
   thresholdPx?: number;
 };
@@ -838,7 +844,7 @@ export function nearestSnapConnectPin(
   for (const pin of pins) {
     if (pin.nodeId === source.nodeId) continue;
     const dist = Math.hypot(pin.x - pointer.x, pin.y - pointer.y);
-    if (dist >= CONNECT_END_CANCEL_PX) continue;
+    if (dist >= CONNECT_END_SNAP_PX) continue;
     if (!best || dist < best.dist) {
       best = { nodeId: pin.nodeId, pinId: pin.pinId, dist };
     }
@@ -958,7 +964,7 @@ export type ConnectEndAction = "add-node" | "break" | "none" | "connect";
 
 function isNearSnapPin(decision: ConnectEndDecision): boolean {
   return (decision.snapPins ?? []).some((pin) =>
-    isNearSourcePin(pin, decision.pointer, decision.thresholdPx),
+    isNearSourcePin(pin, decision.pointer, CONNECT_END_SNAP_PX),
   );
 }
 
