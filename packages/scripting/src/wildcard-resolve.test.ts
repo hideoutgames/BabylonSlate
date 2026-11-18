@@ -431,4 +431,22 @@ describe("resolveWildcardPinTypes on Reroute knots", () => {
       message: "Cannot connect float pin to exec pin",
     }]);
   });
+
+  it("takes the type of what feeds it over the type of what it feeds, in either wiring order", () => {
+    const fed = [
+      { id: "number", pins: [{ id: "value", type: FLOAT }] },
+      knot("k1"),
+      { id: "move", pins: [{ id: "offset", type: { kind: "vec3" } as PinType }] },
+    ];
+    const into = wire("number.value", "k1.in");
+    const out = wire("k1.out", "move.offset");
+    for (const edges of [[into, out], [out, into]]) {
+      const result = resolveWildcardPinTypes({ nodes: fed, edges });
+      expect(typeAt(result.resolved, "k1", "in")).toEqual(FLOAT);
+      expect(typeAt(result.display, "k1", "out")).toEqual(FLOAT);
+      expect(result.conflicts).toEqual([]);
+    }
+    // With nothing feeding it, it still takes the type of what it feeds.
+    expect(typeAt(resolveWildcardPinTypes({ nodes: fed, edges: [out] }).display, "k1", "in")).toEqual({ kind: "vec3" });
+  });
 });
