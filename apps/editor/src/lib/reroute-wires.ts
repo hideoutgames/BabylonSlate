@@ -45,3 +45,20 @@ export function wiredTargets(graph: WireGraph, nodeId: string, pinId: string): W
 export function isInputWired(graph: WireGraph, nodeId: string, pinId: string): boolean {
   return wiredSources(graph, nodeId, pinId).length > 0;
 }
+
+/**
+ * `graph.edges` with each wire into `nodeId` read through Reroute knots: it leaves the real source
+ * pin instead of a knot, and a wire from a knot nothing feeds is gone. Other wires are unchanged.
+ */
+export function edgesIntoNodeThroughKnots<E extends Wire>(
+  graph: { nodes: readonly WireNode[]; edges: readonly E[] },
+  nodeId: string,
+): E[] {
+  const isKnot = rerouteNodeIdLookup(graph.nodes);
+  return graph.edges.flatMap((edge) => {
+    if (edge.target !== nodeId || !isKnot(edge.source)) return [edge];
+    return passThroughSources([edge, ...graph.edges.filter((entry) => entry !== edge && entry.target !== nodeId)],
+      isKnot, nodeId, edge.targetHandle ?? "")
+      .map((end) => ({ ...edge, source: end.nodeId, sourceHandle: end.pinId }));
+  });
+}

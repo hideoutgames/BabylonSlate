@@ -11,6 +11,7 @@ In the **Content Browser**, choose **New Asset > Rendering > Particle Graph**. L
 Double-tap the asset to open it. The window has **Graph**, **Preview**, **Inspector** and **Compiler Results**.
 
 - In **Graph**, wire a chain that starts at [Create Particle](../scripting/particle/create-particle.md), passes through shape and update nodes, and ends at [Emitter Output](../scripting/particle/emitter-output.md). See the [particle node reference](../scripting/particle/index.md).
+- Double-click a wire, or double-tap it, to add a [Reroute](../scripting/particle/reroute.md) knot there, then drag the knot to tidy the wire. A knot carries one type at a time: the type of what is wired to it. Knots are removed when the graph builds, so they cost nothing while the emitter runs.
 - **Preview** plays the emitter. While the graph has errors it shows **Graph Has Errors** and keeps the last valid result.
 - **Compiler Results** lists errors to fix. Tap one to jump to its node, or double-tap it to also bring **Graph** forward. Right-click or hold one to copy it.
 - Select **Emitter Output**, or nothing, to edit the emitter settings in the **Inspector**.

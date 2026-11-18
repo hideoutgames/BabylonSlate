@@ -1,4 +1,5 @@
 import { globalParameterSelection } from "@haptic/core";
+import { PARTICLE_REROUTE_NODE_TYPE } from "./reroute";
 import type { ParticleGraphNode } from "./document";
 import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE, particleGlobalParameterValueType } from "./global-parameter";
 import {
@@ -27,6 +28,8 @@ export function isParticleSpineRole(role: ParticleNodeRole): boolean {
 
 export type ParticlePinType =
   | { kind: ParticleValueType }
+  /** A Reroute's pin: the canvas types it from its wires; collapsed away before validation and lowering. */
+  | { kind: "wildcard" }
   | {
       kind: "generic";
       /** Non-Float types the group accepts (Float always splats in). Default: every numeric type. */
@@ -629,6 +632,17 @@ const INPUT_NODES: ParticleNodeDefinition[] = [
 ];
 
 const UTILITY_NODES: ParticleNodeDefinition[] = [
+  {
+    type: PARTICLE_REROUTE_NODE_TYPE,
+    title: "Reroute",
+    category: "Utility",
+    role: "value",
+    description:
+      "A knot that tidies a wire. It takes the type of what is wired to it and is removed when the graph builds, so it costs nothing.",
+    searchAliases: ["knot", "redirect", "wire"],
+    inputs: [{ id: "in", name: "In", type: { kind: "wildcard" } }],
+    outputs: [{ id: "out", name: "Out", type: { kind: "wildcard" } }],
+  },
   {
     type: "random.range",
     title: "Random",

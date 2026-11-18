@@ -36,6 +36,7 @@ import {
   PARTICLE_GRAPH_LIMITS,
   PARTICLE_OUTPUT_NODE_TYPE,
   PARTICLE_RANDOM_LOCKS,
+  PARTICLE_REROUTE_NODE_TYPE,
   PARTICLE_SPAWN_LIMITS,
   PARTICLE_SPAWN_PRESETS,
   PARTICLE_SPRITE_SHEET_LIMITS,
@@ -1272,6 +1273,11 @@ function ParticleGraphCanvas() {
     [],
   );
   const paletteNodes = useMemo(() => particlePaletteNodes(), []);
+  // Double-click or double-tap on a wire splits it with this knot.
+  const reroute = useMemo(() => {
+    const paletteNode = paletteNodes.find((entry) => entry.id === PARTICLE_REROUTE_NODE_TYPE);
+    return paletteNode ? { paletteNode } : undefined;
+  }, [paletteNodes]);
   // Menu actions read the document as it is when picked.
   const documentRef = useRef(document);
   documentRef.current = document;
@@ -1321,6 +1327,7 @@ function ParticleGraphCanvas() {
         initialGraph={initialGraph}
         diagnostics={diagnostics}
         paletteNodes={paletteNodes}
+        reroute={reroute}
         describeNode={describeParticleNode}
         pinCompatibility={particlePinsAreCompatible}
         addNodeHistoryScope="particle"

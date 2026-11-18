@@ -72,6 +72,7 @@ import {
   type GraphNodeRowSection,
 } from "./inspector-node-rows";
 import type { InspectorCatalogs } from "./use-inspector-catalogs";
+import { wiredTargets } from "../lib/reroute-wires";
 
 
 /** Command parameter row ids from the last commit, as for member pins. */
@@ -748,11 +749,10 @@ export function GraphNodesDetails({
  * the node it feeds. Null while unwired.
  */
 function customEventSignatureSource(graph: SerializedGraph, eventId: string): string | null {
-  const wire = graph.edges.find(
-    (edge) => edge.source === eventId && edge.sourceHandle === OUTPUT_DELEGATE_PIN_ID,
-  );
+  // Through any Reroute knots, as the compiler reads the wire.
+  const wire = wiredTargets(graph, eventId, OUTPUT_DELEGATE_PIN_ID)[0];
   if (!wire) return null;
-  const target = graph.nodes.find((node) => node.id === wire.target);
+  const target = graph.nodes.find((node) => node.id === wire.nodeId);
   if (!target) return null;
   if (isDispatcherNodeType(target.type) && typeof target.data.name === "string") {
     return typeof target.data.classId === "string" && target.data.classId

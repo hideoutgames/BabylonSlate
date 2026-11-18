@@ -574,7 +574,9 @@ function graphWith(type: string): ParticleGraphDocument {
 }
 
 describe("Particle Graph catalog", () => {
-  const types = PARTICLE_CATALOG.filter((definition) => !definition.terminal && definition.role !== "create").map((definition) => definition.type);
+  // A Reroute is collapsed before lowering, so it never reaches a block.
+  const types = PARTICLE_CATALOG.filter((definition) => !definition.terminal && definition.role !== "create" && definition.type !== "utility.reroute")
+    .map((definition) => definition.type);
 
   it.each(types)("builds and simulates %s", (type) => {
     const { result } = realize(planOf(graphWith(type)));

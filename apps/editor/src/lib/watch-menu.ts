@@ -1,5 +1,5 @@
 import { humanizePropertyLabel, type NestedMenuItem } from "@haptic/editor-kit";
-import { hasSerializedPins } from "@haptic/graph-ui";
+import { hasSerializedPins, isRerouteNodeData } from "@haptic/graph-ui";
 import type { PinWatch, WatchStore } from "../services/watch-store";
 
 /** A pin the graph debugger records a value for. */
@@ -8,10 +8,11 @@ export type WatchablePin = { id: string; direction: "in" | "out"; name: string }
 /**
  * The pins of a Class graph node whose value the followed object reports: every data output, and the
  * data inputs a node that runs reads through a wire. A pure node reports only its outputs, and an
- * unwired input only shows its literal on the node.
+ * unwired input only shows its literal on the node. A Reroute knot has none: it is compiled away, so
+ * nothing reports a value for its pins.
  */
 export function watchablePins(data: Record<string, unknown> | undefined, isWired: (pinId: string) => boolean): WatchablePin[] {
-  if (!hasSerializedPins(data)) return [];
+  if (!hasSerializedPins(data) || isRerouteNodeData(data)) return [];
   const pure = data.__pure === true;
   return data.__pins
     .filter((pin) => pin.kind === "data" && (pin.direction === "out" || (!pure && isWired(pin.id))))

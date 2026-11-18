@@ -631,6 +631,77 @@ describe("pasteClassMembers variables", () => {
       // A call to an event that was not pasted stays as it was.
       expect(byTitle("Call Other")[0]!.data).toMatchObject({ name: "Other", implicitSelf: false, classId: "MeshComponent" });
     });
+
+    it("retarget a call wired through Reroute knots, dropping the knots that then feed nothing", () => {
+      const hero = source();
+      const get = (id: string) =>
+        node(id, "variables.get", {
+          title: "Get Mesh",
+          variableName: "Mesh",
+          variableId: "component:prefab-mesh",
+          componentId: "prefab-mesh",
+          typeId: "object",
+          typeClassId: "MeshComponent",
+          scope: "member",
+          classId: "Hero",
+        });
+      const call = (id: string, name: string) =>
+        node(id, "flow.event.call", { title: `Call ${name}`, name, classId: "MeshComponent", implicitSelf: false, pins: EVENT_PINS });
+      const knot = (id: string) => node(id, "flow.reroute", { __reroute: true, title: "Reroute" });
+      hero.nodes.push(
+        node("evt-opened", "flow.event.custom", {
+          title: "Event Opened (Mesh)",
+          name: "Opened",
+          eventQualifier: "Mesh",
+          componentId: "prefab-mesh",
+          pins: EVENT_PINS,
+        }),
+      );
+      const wire = (from: string, fromHandle: string, to: string, toHandle: string) => ({
+        id: `${from}-${to}`,
+        source: from,
+        target: to,
+        sourceHandle: fromHandle,
+        targetHandle: toHandle,
+      });
+      hero.functionGraphs!["fn-helper"] = {
+        nodes: [
+          get("get-opened"), knot("knot-a"), knot("knot-b"), call("call-opened", "Opened"),
+          get("get-shared"), knot("knot-shared"), call("call-shared-opened", "Opened"), call("call-other", "Other"),
+        ],
+        edges: [
+          wire("get-opened", "value", "knot-a", "in"),
+          wire("knot-a", "out", "knot-b", "in"),
+          wire("knot-b", "out", "call-opened", "target"),
+          wire("get-shared", "value", "knot-shared", "in"),
+          wire("knot-shared", "out", "call-shared-opened", "target"),
+          wire("knot-shared", "out", "call-other", "target"),
+        ],
+      };
+      const clip = copy(
+        [componentRow(MESH), { id: "evt-opened", kind: "event", name: "Opened" }, row(hero, "function", "Helper")],
+        hero,
+      );
+      const target = {
+        ...targetWith([]),
+        nodes: [node("t-opened", "flow.event.custom", { name: "Opened", pins: EVENT_PINS })],
+      };
+      const result = paste(clip, target, { takenNames: { variable: ["Mesh"], function: [] } });
+      const helper = result.pasted.find((entry) => entry.kind === "function")!;
+      const { nodes, edges } = result.graph.functionGraphs![helper.id]!;
+      const typeOf = (id: string) => nodes.find((entry) => entry.id === id)?.type;
+
+      expect(nodes.filter((entry) => entry.data.title === "Call Opened_1")).toHaveLength(2);
+      // The chain to the first call goes whole with its Get; the shared knot still feeds Call Other.
+      expect(nodes.filter((entry) => entry.type === "flow.reroute")).toHaveLength(1);
+      expect(nodes.filter((entry) => entry.type === "variables.get")).toHaveLength(1);
+      expect(edges.map((edge) => [typeOf(edge.source), edge.sourceHandle, typeOf(edge.target), edge.targetHandle])).toEqual([
+        ["variables.get", "value", "flow.reroute", "in"],
+        ["flow.reroute", "out", "flow.event.call", "target"],
+      ]);
+      const other = nodes.find((entry) => entry.data.title === "Call Other")!;
+      expect(edges.find((edge) => edge.targetHandle === "target")!.target).toBe(other.id);
+    });
   });
 });
 

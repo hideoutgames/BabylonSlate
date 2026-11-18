@@ -54,7 +54,7 @@ Right-click a node (long-press on touch) for a menu with **Copy**, **Paste**, **
 A **Reroute** node is a small knot that bends a wire around other nodes. Double-click a wire, or double-tap it on touch, to split it with a knot at that spot, then drag the knot where you want the wire to run. You can also add **Reroute** from **Add Node** and wire it like any node.
 
 - A knot takes the type of the wire it carries: any data type, or execution in Class graphs. Its pins show that type's colour and shape.
-- Knots are available in Class, Scene, Animation Object, transition rule and state pose graphs, and in Particle Graphs. Material graphs use Named Reroutes instead ([Material](../assets/material.md)).
+- Knots are available in Class, Scene, Animation Object, transition rule and state pose graphs, and in Particle Graphs. Material graphs use Named Reroutes instead ([Material](../assets/material.md#named-reroutes)).
 - Knots change only how the graph looks. They cost nothing when the game runs and the debugger never stops on one; hovering a pin or wire next to one shows the value of the wire's real source.
 
 ## Cut Links

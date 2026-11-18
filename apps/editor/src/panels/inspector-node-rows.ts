@@ -20,6 +20,7 @@ import {
   tagNodePropertyRows,
 } from "../lib/graph-inspector";
 import { dataGraphAssetPickPatch } from "../lib/data-graph";
+import { edgesIntoNodeThroughKnots, isRerouteNode } from "../lib/reroute-wires";
 import { timelineProxyPickerRows, type TimelineScriptClipAsset } from "../lib/timeline-script-catalog";
 import type { InspectorCatalogs } from "./use-inspector-catalogs";
 
@@ -72,13 +73,24 @@ export interface GraphNodeRowsEnv {
  * multi-selection shares only same-id, same-type pins), the defaults shown by
  * custom fields, and what a Class or asset pick writes for a pin.
  */
+/** `graph` with the wires into `nodeId` leaving their real sources, for reading a wired enum's type. */
+function enumSourceGraph(graph: SerializedGraph, nodeId: string): SerializedGraph {
+  return { ...graph, edges: edgesIntoNodeThroughKnots(graph, nodeId) };
+}
+
 export function graphNodeInspectorRows(node: GraphNode, env: GraphNodeRowsEnv) {
   const { graph, inspectGraph, hydratedInspectGraph, catalogs, updateNodeData } = env;
   const { dataAssets, enumMembers, objectClassEntries, pickerAssets, typeCatalog, typeSchemas } = catalogs;
-  const edges = inspectGraph?.edges ?? graph.edges;
+  // Wires into this node are read through Reroute knots, as they compile: an input fed only by a
+  // knot that nothing feeds reads its literal.
+  const edges = edgesIntoNodeThroughKnots(inspectGraph ?? graph, node.id);
   const dataPinWired = (pinId: string) =>
     edges.some((edge) => edge.target === node.id && edge.targetHandle === pinId);
-  const literalDefaults = inspectorLiteralPinDefaults(node, edges, (hydratedInspectGraph ?? inspectGraph)?.nodes);
+  // A knot has no settings: it carries whatever its wire carries.
+  const knot = isRerouteNode(node);
+  const literalDefaults = knot
+    ? []
+    : inspectorLiteralPinDefaults(node, edges, (hydratedInspectGraph ?? inspectGraph)?.nodes);
   const pathDefaults = literalDefaults.flatMap((entry) => {
     const options = dataNodePathOptions(node.type, entry.pinId, node.data, dataAssets, dataPinWired);
     return options ? [{ ...options, pin: entry }] : [];
@@ -115,13 +127,14 @@ export function graphNodeInspectorRows(node: GraphNode, env: GraphNodeRowsEnv) {
     inputEvent: inputEventPropertyRows(node.type, node.data, updateNodeData, mapping.assetEntries, dataPinWired("binding")),
     timelineProxy: timelineProxyPickerRows(node.type, node.data, env.proxyClip, updateNodeData),
     log: node.type === "debug.log" ? logNodePropertyRows(node.data, updateNodeData) : [],
-    developmentOnly: developmentOnlyPropertyRows(node.type, node.data, updateNodeData),
+    // A knot is compiled away, so it has nothing to strip from a release.
+    developmentOnly: knot ? [] : developmentOnlyPropertyRows(node.type, node.data, updateNodeData),
     enum: node.type.startsWith("enum.")
       ? enumNodePropertyRows(node.type, node.data, updateNodeData, {
           enums: typeCatalog.enums,
           // The wire lives in the graph being inspected (event or function).
           typeSelectDisabled: Boolean(
-            connectedEnumGuidFromSerialized(hydratedInspectGraph ?? inspectGraph ?? graph, node.id),
+            connectedEnumGuidFromSerialized(enumSourceGraph(hydratedInspectGraph ?? inspectGraph ?? graph, node.id), node.id),
           ),
         })
       : [],

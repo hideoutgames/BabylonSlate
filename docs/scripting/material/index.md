@@ -217,3 +217,10 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | Node | Description |
 | --- | --- |
 | [Custom GLSL](custom-glsl.md) | Runs your own GLSL function body, with the inputs and outputs you define in the **Inspector**. |
+
+## Reroute
+
+| Node | Description |
+| --- | --- |
+| [Named Reroute](named-reroute.md) | Names the value wired into it so usages elsewhere in the graph can read it. |
+| [Named Reroute Usage](named-reroute-usage.md) | Outputs the value wired into its Named Reroute. |

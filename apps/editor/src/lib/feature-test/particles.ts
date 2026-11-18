@@ -7,6 +7,7 @@ import {
 } from "@haptic/assets";
 import { engineScriptApiFor } from "@haptic/object-model";
 import {
+  PARTICLE_REROUTE_NODE_TYPE,
   createDefaultParticleGraphDocument,
   newParticleNodeProperties,
   withParticleSpawnPreset,
@@ -548,7 +549,7 @@ function stressEmitter(materialGuid: string): ParticleEmitterPayload {
 // Particle Graph (CPU node particles)
 
 /**
- * Create Particle (Random size per particle) → Sphere Shape → Apply Velocity
+ * Create Particle (Random size per particle, wired through a Reroute knot) → Sphere Shape → Apply Velocity
  * → Gravity (gentle lift) → Update Color (Initial Color × Gradient over
  * Normalized Age) → Emitter Output at 90/s. One Particle output feeds one node.
  */
@@ -601,12 +602,15 @@ export function glowGraph(name: string, materialGuid: string, globalParameters: 
       position: { x: -450, y: 300 },
       properties: { ...newParticleNodeProperties("random.range"), "default:min": [0.12], "default:max": [0.35] },
     },
+    // A Reroute knot on the Random → Size wire; it builds exactly as the direct wire.
+    { id: "sizeKnot", type: PARTICLE_REROUTE_NODE_TYPE, position: { x: -150, y: 340 }, properties: {} },
   );
   graph.edges = graph.edges.filter((entry) => entry.id !== "e-velocity-color");
   graph.edges.push(
     { id: "e-velocity-gravity", sourceNodeId: "velocity", sourcePinId: "out", targetNodeId: "gravity", targetPinId: "particle" },
     { id: "e-gravity-color", sourceNodeId: "gravity", sourcePinId: "out", targetNodeId: "updateColor", targetPinId: "particle" },
-    { id: "e-size-create", sourceNodeId: "sizeRandom", sourcePinId: "out", targetNodeId: "create", targetPinId: "size" },
+    { id: "e-size-knot", sourceNodeId: "sizeRandom", sourcePinId: "out", targetNodeId: "sizeKnot", targetPinId: "in" },
+    { id: "e-knot-create", sourceNodeId: "sizeKnot", sourcePinId: "out", targetNodeId: "create", targetPinId: "size" },
     { id: "e-wind-create", sourceNodeId: "windStrength", sourcePinId: "out", targetNodeId: "create", targetPinId: "emitPower" },
     { id: "e-glowRate-output", sourceNodeId: "glowRate", sourcePinId: "out", targetNodeId: "output", targetPinId: "emitRate" },
   );

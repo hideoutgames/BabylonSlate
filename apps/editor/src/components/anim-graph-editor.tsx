@@ -61,6 +61,7 @@ import {
   GraphEditor,
   animGraphEdgeTypes,
   animGraphNodeTypes,
+  type PaletteNode,
 } from "@haptic/graph-ui";
 import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type BreakpointLocation } from "@haptic/bridge";
 import { parseDocumentId, type SerializedGraph } from "@haptic/core";
@@ -95,6 +96,7 @@ import {
   ScriptPaletteCache,
   scriptPaletteInjectorKey,
   scriptPaletteNodes,
+  scriptReroutePaletteNode,
   validateSerializedGraph,
 } from "../services/graph-validation";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
@@ -829,6 +831,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
             initialGraph={ruleGraph}
             commitPositionsOnDragEnd
             paletteNodes={rulePalette}
+            reroute={scriptGraphReroute()}
             pinTypeNames={pinTypeNames}
             onPaletteOpenChange={setRulePaletteOpen}
             diagnostics={graphDiagnostics}
@@ -1024,6 +1027,7 @@ export function AnimStateGraphPanel(props: IDockviewPanelProps<Partial<AnimState
             initialGraph={poseGraph}
             commitPositionsOnDragEnd
             paletteNodes={posePalette}
+            reroute={scriptGraphReroute()}
             pinTypeNames={pinTypeNames}
             onPaletteOpenChange={setPosePaletteOpen}
             diagnostics={graphDiagnostics}
@@ -1042,6 +1046,20 @@ export function AnimStateGraphPanel(props: IDockviewPanelProps<Partial<AnimState
       </div>
     </PanelFrame>
   );
+}
+
+let scriptReroute: { paletteNode: PaletteNode } | undefined;
+
+/**
+ * Rule and pose graphs split a double-clicked wire with a Reroute knot (one stable object, so the
+ * canvas never sees a new prop). The state machine canvas opens the rule instead.
+ */
+function scriptGraphReroute(): { paletteNode: PaletteNode } | undefined {
+  if (!scriptReroute) {
+    const paletteNode = scriptReroutePaletteNode(defaultNodeRegistry());
+    if (paletteNode) scriptReroute = { paletteNode };
+  }
+  return scriptReroute;
 }
 
 /** A pose graph as stored: its nodes and wires, without the editor's member list. */

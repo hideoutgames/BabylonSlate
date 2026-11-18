@@ -71,9 +71,11 @@ import {
   scriptPaletteInjectorKey,
   scriptPaletteNodes,
   scriptPinCompatibility,
+  scriptReroutePaletteNode,
   validateSerializedGraph,
   defaultNodeRegistry,
 } from "../services/graph-validation";
+import { isInputWired, wiredSource, wiredTargets } from "../lib/reroute-wires";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { logicGraphHostClass } from "../lib/embedded-script";
 import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipDispatcherSymbols, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
@@ -341,7 +343,7 @@ export function GraphPanel(
         location: { assetGuid: breakpointAsset, graphId: runGraphId, nodeId },
         nodeTitle: breakpointLabel(nodeId).nodeTitle,
         pins: conditionPins(hasSerializedPins(data) ? data.__pins : [],
-          (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId)),
+          (pinId) => isInputWired({ nodes, edges }, nodeId, pinId)),
       });
     };
     return breakpointStore.graphView(breakpointAsset, runGraphId, breakpointLabel, { edit });
@@ -646,15 +648,15 @@ export function GraphPanel(
         const node = nodes.find((candidate) => candidate.id === id);
         return hasSerializedPins(node?.data) ? node.data.__pins.find((pin) => pin.id === pinId) : undefined;
       };
-      // The Object wired in names the Class; unwired, it is Self.
-      const objectWire = edges.find((edge) => edge.target === nodeId && edge.targetHandle === "object");
-      const objectType = objectWire ? pinOf(objectWire.source, objectWire.sourceHandle)?.type : undefined;
+      // The Object wired in names the Class; unwired, it is Self. Wires are read through Reroute knots.
+      const objectWire = wiredSource({ nodes, edges }, nodeId, "object");
+      const objectType = objectWire ? pinOf(objectWire.nodeId, objectWire.pinId)?.type : undefined;
       const objectClassId = objectType?.kind === "objectRef" && typeof objectType.classId === "string" && objectType.classId
         ? objectType.classId
         : (classId ?? "Object");
-      const eventWire = edges.find((edge) => edge.source === nodeId && edge.sourceHandle === "event");
-      const delegate = eventWire ? pinOf(eventWire.target, eventWire.targetHandle)?.type : undefined;
-      const feeds = eventWire ? graphContent.nodes.find((node) => node.id === eventWire.target) : undefined;
+      const eventWire = wiredTargets({ nodes, edges }, nodeId, "event")[0];
+      const delegate = eventWire ? pinOf(eventWire.nodeId, eventWire.pinId)?.type : undefined;
+      const feeds = eventWire ? graphContent.nodes.find((node) => node.id === eventWire.nodeId) : undefined;
       const graphs = { ...otherClassGraphs, ...(classId ? { [classId]: graphContent } : {}) };
       const candidates = createEventCandidates({
         objectClassId,
@@ -763,6 +765,11 @@ export function GraphPanel(
     enabled: renameTargetId !== null,
     focusWithinRef: canvasRef,
   });
+  // Double-clicking a wire adds a Reroute knot on it.
+  const reroute = useMemo(() => {
+    const paletteNode = scriptReroutePaletteNode(defaultNodeRegistry());
+    return paletteNode ? { paletteNode } : undefined;
+  }, []);
   const contextMenuItemsForNode = useCallback(
     (nodeId: string) => {
       const withExtensions = (entries: NestedMenuItem[]) => {
@@ -793,7 +800,7 @@ export function GraphPanel(
         });
       }
       if (watchStore && watchAsset) {
-        const pins = watchablePins(node?.data, (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId));
+        const pins = watchablePins(node?.data, (pinId) => isInputWired({ nodes, edges }, nodeId, pinId));
         items.push(...watchPinMenuItems(watchStore, pins, (pin) => ({
           kind: "pin", assetGuid: watchAsset, graphId: runGraphId, nodeId, pinId: pin.id, direction: pin.direction,
           label: { ...breakpointLabel(nodeId), className: classId ?? watchAsset, pinName: pin.name },
@@ -906,6 +913,7 @@ export function GraphPanel(
             onPaletteOpenChange={setPaletteOpen}
             pinCompatibility={pinCompatibility}
             pinDrop={pinDrop}
+            reroute={reroute}
             addNodeHistoryScope="script"
             pinTypeNames={pinTypeNames}
             onCanvasApi={setCanvasApi}
