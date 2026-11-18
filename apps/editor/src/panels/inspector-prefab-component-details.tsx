@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { normalizeModelPayload } from "@haptic/assets";
 import {
+  componentHasTransform,
   identitySerializedTransform,
   isFocusTargetClass,
   normalizeRenderTargetCaptureProperties,
@@ -82,9 +83,6 @@ interface PrefabDetailsSharedProps {
   fontHasMsdfPng?: (guid: string | null | undefined) => boolean;
   fontPixelSize?: (guid: string | null | undefined) => number;
 }
-
-/** Components whose Details have no local Transform. */
-const NO_TRANSFORM_CLASSES = new Set(["2DAnchorComponent", "MovementComponent", "DeformerComponent", "SaveGameComponent"]);
 
 /** The row context every prefab component's Details share, and the Material domains the asset picker filters by. */
 function usePrefabRowContext(props: PrefabDetailsSharedProps): {
@@ -215,7 +213,7 @@ export function PrefabComponentDetails({
       className="flex flex-col gap-3 p-3"
       data-testid="inspector-prefab-component"
     >
-      {!NO_TRANSFORM_CLASSES.has(component.classId) && <PropertyGrid
+      {componentHasTransform(component.classId) && <PropertyGrid
         title="Transform"
         rows={spatialTransformPropertyRows(
           component.id,
@@ -356,7 +354,7 @@ export function PrefabComponentsDetails({
       for (const row of rows) keys.set(row, componentRowKey(component.id, row.id));
       return rows;
     }), { key: (row) => keys.get(row) ?? row.id, batch });
-  const transformRows = selected.some((component) => NO_TRANSFORM_CLASSES.has(component.classId))
+  const transformRows = selected.some((component) => !componentHasTransform(component.classId))
     ? []
     : merge((component) => spatialTransformPropertyRows(
         component.id,

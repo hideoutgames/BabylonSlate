@@ -98,6 +98,19 @@ export type PaletteNode = {
   bundle?: PaletteBundle;
 };
 
+/**
+ * A node the editor inserts between two pins that do not connect directly (`GraphEditor.pinConversion`):
+ * the output wires into its `inPinId` and its `outPinId` wires into the input.
+ */
+export type PinConversion = {
+  /** Shown on the live wire over the input, such as `Convert to Vector3`. */
+  label: string;
+  /** The Add Node row the inserted node is built from. */
+  paletteNode: PaletteNode;
+  inPinId: string;
+  outPinId: string;
+};
+
 export type PaletteBundle = {
   /** Placed at the new node's position plus `offset`, unselected. */
   nodes: ReadonlyArray<{ key: string; node: PaletteNode; offset: { x: number; y: number } }>;

@@ -9,6 +9,8 @@ export const GRAPH_NODE_FALLBACK_HEIGHT = 120;
 /** Title bar plus the pin list padding above the first 44px pin row. */
 const GRAPH_NODE_CHROME_HEIGHT = 50;
 const GRAPH_PIN_ROW_HEIGHT = 44;
+/** From an unmeasured node's top edge to the middle of its first pin row. */
+export const GRAPH_FIRST_PIN_ROW_CENTER_Y = GRAPH_NODE_CHROME_HEIGHT + GRAPH_PIN_ROW_HEIGHT / 2;
 
 export type GraphVirtualizeViewport = {
   x: number;

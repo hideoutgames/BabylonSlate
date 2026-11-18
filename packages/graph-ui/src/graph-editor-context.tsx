@@ -64,6 +64,14 @@ export type GraphEditorContextValue = {
     from: { nodeId: string; pinId: string },
     to: { nodeId: string; pinId: string },
   ) => string | null;
+  /**
+   * The label of the converter node a wire dragged from one pin inserts on another (`Convert to Vector3`), or
+   * null when it connects directly or not at all. Present only when the host converts (`GraphEditor.pinConversion`).
+   */
+  pinConversionLabel?: (
+    from: { nodeId: string; pinId: string },
+    to: { nodeId: string; pinId: string },
+  ) => string | null;
   /** Whether a node's body takes the dragged wire as a new pin (`GraphPinDrop.accepts`). */
   acceptsPinDrop?: (targetNodeId: string, source: GraphPinDragSource) => boolean;
   /** The node whose header title is an inline rename field. */

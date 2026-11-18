@@ -68,6 +68,7 @@ import {
   knownClassIdSet,
   newCustomEventPaletteNode,
   ScriptPaletteCache,
+  scriptCatalogPaletteNode,
   scriptPaletteInjectorKey,
   scriptPaletteNodes,
   scriptPinCompatibility,
@@ -78,6 +79,7 @@ import {
 import { isInputWired, wiredSource, wiredTargets } from "../lib/reroute-wires";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { logicGraphHostClass } from "../lib/embedded-script";
+import { scriptPinConversion } from "../services/script-pin-conversion";
 import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipDispatcherSymbols, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
 import { refreshTimelineClipNodes, timelineGraphDiagnostics, timelineScriptClassIds, timelineScriptSymbols } from "../lib/timeline-script-catalog";
 import { useAnimObjectGraphRunTrace, useClassGraphRunTrace } from "../context/graph-debug-context";
@@ -248,6 +250,11 @@ export function GraphPanel(
   );
   const pinCompatibility = useMemo(
     () => scriptPinCompatibility(hierarchy),
+    [hierarchy],
+  );
+  // An Actor or component reference wired into a Vector3, Rotator, Transform or String input inserts its getter.
+  const pinConversion = useMemo(
+    () => scriptPinConversion({ hierarchy, paletteNodeFor: (nodeType) => scriptCatalogPaletteNode(nodeType) }),
     [hierarchy],
   );
   const pinTypeNames = useMemo(() => {
@@ -937,6 +944,7 @@ export function GraphPanel(
             paletteNodes={paletteNodes}
             onPaletteOpenChange={setPaletteOpen}
             pinCompatibility={pinCompatibility}
+            pinConversion={pinConversion}
             pinDrop={pinDrop}
             reroute={reroute}
             renamingNodeId={renamingNodeId}
