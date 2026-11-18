@@ -36,6 +36,8 @@ function world() {
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 0, -10), scene);
   scene.activeCamera = camera;
+  // Its global position, which LOD distances read.
+  camera.getViewMatrix(true);
   const renderer = new ObjectRenderer("objects", scene);
   attachLeanPreparation(renderer, "objects");
   const internals = renderer as unknown as Internals;
@@ -351,7 +353,7 @@ describe("lean render preparation", () => {
       const lod = w.box("lod");
       lod.addLODLevel(1, far);
       for (let frame = 0; frame < 3; frame++) w.prepare();
-      expect(w.opaque()).toEqual(["source", "far", "lone"]);
+      expect(w.opaque()).toEqual(["source", "lone", "far"]);
       expect(w.transparent()).toEqual(["glass"]);
       expect(registered(source, w.scene.getRenderId())).toBe(1);
       expect(registered(lone, w.scene.getRenderId())).toBe(1);
@@ -364,16 +366,17 @@ describe("lean render preparation", () => {
 
     it("reports a lean queue that differs, while Babylon's draws", () => {
       const w = world();
-      w.box("a");
-      const b = w.box("b");
+      // The first list position, which the rotating self-check leaves alone in the second pass.
+      const a = w.box("a");
+      w.box("b");
       w.prepare();
       verifyLeanPreparation(true);
-      (b as unknown as { _nodeDataStorage: { _isVisible: boolean } })._nodeDataStorage._isVisible = false;
+      (a as unknown as { _nodeDataStorage: { _isVisible: boolean } })._nodeDataStorage._isVisible = false;
       w.prepare();
-      expect(w.opaque()).toEqual(["a"]);
+      expect(w.opaque()).toEqual(["b"]);
       const work = w.work();
       expect(work.mismatches).toBe(1);
-      expect(work.mismatchExamples[0]).toBe('objects group 0 opaqueSubMeshes[1] of 1/2: Babylon none, lean "b" sub-mesh 0');
+      expect(work.mismatchExamples[0]).toBe('objects group 0 opaqueSubMeshes[0] of 1/2: Babylon "b" sub-mesh 0, lean "a" sub-mesh 0');
     });
   });
 });
