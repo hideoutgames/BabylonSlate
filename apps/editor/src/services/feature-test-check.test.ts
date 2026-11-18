@@ -1160,8 +1160,9 @@ describe("Profile", { timeout: 30_000 }, () => {
     const other = featureTestProfilePlan({ postProcessing: false, captures: false, layers: false });
     expect(other.views.flatMap((view) => view.steps).map((entry) => [entry.label, (entry.restore ?? []).filter((line) => !/^(shadow|world)debug/.test(line))]).filter(([, restore]) => restore!.length > 0))
       .toEqual([
-      ["scene layers hidden", ["scenelayers off"]], ["post off", ["postprocessing off"]], ["world drawn once", ["rendertargets off"]],
+      ["world hidden", ["rendertargets off", "postprocessing off"]], ["scene layers hidden", ["scenelayers off"]], ["post off", ["postprocessing off"]],
       ["world drawn once", ["rendertargets off"]],
+      ["world hidden", ["rendertargets off", "postprocessing off"]], ["world drawn once", ["rendertargets off"]],
       ["captures off", ["rendertargets off"]], ["world drawn once", ["rendertargets off"]],
     ]);
     expect(other.views[0]!.steps.find((entry) => entry.label === "world hidden")!.restore)
@@ -1664,7 +1665,8 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(samples.at(-1)!.failed).toEqual(["The view drew no frame in the last 2 s of 90 s; the remaining profiles were skipped."]);
     expect(waits.at(-1)).toEqual({ step: "main: measuring light shadow passes off", ms: 90_000 });
     expect(editor.commands).not.toContain('possess "Profile Mirror Camera"');
-    expect(editor.commands.slice(-3)).toEqual(["gpubusy off", "quality reset", 'possess "Main Camera"']);
+    // The step that ended the sweep is undone with the rest: its own restore follows the reset.
+    expect(editor.commands.slice(-3)).toEqual(["quality reset", "shadowdebug passes on", 'possess "Main Camera"']);
   });
 
   it("keeps a Breakdown on its strict wait: a view that holds a frame in four ends its warm-up and its sweep", async () => {
