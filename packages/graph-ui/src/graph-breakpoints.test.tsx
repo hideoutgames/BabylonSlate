@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GraphEditor } from "./graph-editor";
 import { treeNodeTypes } from "./tree-node";
-import type { GraphBreakpoints } from "./graph-breakpoints";
+import { canBreakOnNode, nodeCanBreak, type GraphBreakpoints } from "./graph-breakpoints";
 import type { GraphDocument, SerializedPin } from "./graph-types";
 
 afterEach(cleanup);
@@ -175,5 +175,15 @@ describe("graph breakpoints", () => {
     act(() => { fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" }); });
     press("l", { altKey: true });
     expect(onChange.mock.calls.at(-1)?.[0].edges).toEqual([]);
+  });
+});
+
+describe("Reroute knots", () => {
+  it("never take a breakpoint, even carrying exec or on a canvas that accepts every node", () => {
+    const knot = { __reroute: true, __pins: [{ ...execIn, id: "in" }, { ...execOut, id: "out" }] };
+    expect(canBreakOnNode(knot)).toBe(false);
+    expect(canBreakOnNode({ __pins: [execIn] })).toBe(true);
+    const everyNode = { state: () => null, subscribe: () => () => {}, toggle: () => {}, setEnabled: () => {}, canBreak: () => true };
+    expect(nodeCanBreak(everyNode, "knot", knot)).toBe(false);
   });
 });
