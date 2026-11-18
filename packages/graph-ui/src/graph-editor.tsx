@@ -8,7 +8,6 @@ import {
   ViewportPortal,
   applyEdgeChanges,
   applyNodeChanges,
-  getBezierPath,
   getViewportForBounds,
   useReactFlow,
   useStore,
@@ -141,6 +140,8 @@ import {
   type GraphViewport,
 } from "./graph-viewport";
 import { formatGraphNodes, formatPinOffsetKey } from "./graph-format";
+import { GraphWireEdge } from "./graph-wire-edge";
+import { graphWirePath } from "./graph-wire-path";
 import { freeNodePosition } from "./graph-placement";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
@@ -1365,6 +1366,9 @@ function GraphEditorCanvas({
     });
   }
 
+  // Script wires use the shared wire shape; a host's own edge types, "default" included, win.
+  const wireEdgeTypes = useMemo(() => ({ default: GraphWireEdge, ...edgeTypes }), [edgeTypes]);
+
   const hiddenToolbar = useMemo(
     () => new Set(hiddenToolbarActions),
     [hiddenToolbarActions],
@@ -1961,14 +1965,7 @@ function GraphEditorCanvas({
         )!;
         return {
           connection,
-          path: getBezierPath({
-            sourceX: source.x,
-            sourceY: source.y,
-            sourcePosition: Position.Right,
-            targetX: target.x,
-            targetY: target.y,
-            targetPosition: Position.Left,
-          })[0],
+          path: graphWirePath(source.x, source.y, target.x, target.y)[0],
         };
       });
     },
@@ -4118,7 +4115,7 @@ function GraphEditorCanvas({
           nodes={virtualize ? visibleGraph.nodes : nodes}
           edges={virtualize ? visibleGraph.edges : styledEdges}
           nodeTypes={knownTypes}
-          edgeTypes={edgeTypes}
+          edgeTypes={wireEdgeTypes}
           nodesDraggable={nodesDraggable}
           nodesConnectable={!readOnly}
           // Pin handles route taps through onPinTap; this covers handles
