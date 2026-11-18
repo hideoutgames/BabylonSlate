@@ -217,11 +217,13 @@ export function AppSettingsProvider({
     graphPinTypeLetters: pinTypeLetters,
     graphSnapNodes,
     graphSnapGridSize,
+    graphCutToolMode,
   } = snapshot.settings;
   const nodeSnapGrid = graphSnapNodes ? graphSnapGridSize : 0;
+  const cutToolOneShot = graphCutToolMode === "oneShot";
   const graphInteractions = useMemo(
-    () => ({ assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale, pinTypeLetters, nodeSnapGrid }),
-    [assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale, pinTypeLetters, nodeSnapGrid],
+    () => ({ assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale, pinTypeLetters, nodeSnapGrid, cutToolOneShot }),
+    [assistantEnabled, assistantDistance, shakeEnabled, readOnlyPinDefaults, addNodeHistoryEnabled, tapToConnectEnabled, pinScale, pinTypeLetters, nodeSnapGrid, cutToolOneShot],
   );
   return (
     <AppSettingsContext.Provider value={value}>

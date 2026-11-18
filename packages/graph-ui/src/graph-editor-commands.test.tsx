@@ -392,9 +392,13 @@ describe("host paste hook", () => {
   it("lets the host rewrite or leave out copies, drops their wires and shows its notice", () => {
     vi.useFakeTimers();
     const onChange = vi.fn();
-    let seen: { pasted: GraphPasteElements; current: GraphPasteElements } | undefined;
-    const preparePaste = (pasted: GraphPasteElements, current: GraphPasteElements): GraphPasteResult => {
-      seen = { pasted, current };
+    let seen: { pasted: GraphPasteElements; current: GraphPasteElements; idMap: ReadonlyMap<string, string> } | undefined;
+    const preparePaste = (
+      pasted: GraphPasteElements,
+      current: GraphPasteElements,
+      idMap: ReadonlyMap<string, string>,
+    ): GraphPasteResult => {
+      seen = { pasted, current, idMap };
       return {
         nodes: pasted.nodes
           .filter((node) => !node.id.startsWith("log-b-"))
@@ -411,6 +415,9 @@ describe("host paste hook", () => {
     // The host sees the copies with their new ids and the wire between them.
     expect(seen!.pasted.nodes.map((node) => node.id.replace(/-copy-.*/, ""))).toEqual(["log-a", "log-b"]);
     expect(seen!.pasted.edges).toHaveLength(1);
+    // Each original's id leads to its copy's.
+    expect([...seen!.idMap.keys()]).toEqual(["log-a", "log-b"]);
+    expect([...seen!.idMap.values()]).toEqual(seen!.pasted.nodes.map((node) => node.id));
     expect(seen!.current.nodes.map((node) => node.id)).toEqual(["log-a", "log-b", "log-c", "log-d"]);
     const graph = lastGraph(onChange);
     expect(graph.nodes).toHaveLength(5);

@@ -121,7 +121,7 @@ export const ENGINE_CATEGORIES: Array<
   {
     id: "graph",
     label: "Graph",
-    keywords: "graph default zoom node canvas fit view add node history read-only read only lock pin defaults inline input values",
+    keywords: "graph default zoom node canvas fit view add node history read-only read only lock pin defaults inline input values cut links tool one use stays on",
   },
   {
     id: "thumbnails",

@@ -74,6 +74,7 @@ const COMMAND_LIST = [
   { id: "edit.rename", label: "Rename", category: "Editing", defaultChords: ["F2"] },
   { id: "edit.delete", label: "Delete", category: "Editing", defaultChords: ["Delete", "Backspace"] },
   { id: "graph.breakLinks", label: "Break Links", category: "Editing", defaultChords: ["Alt+L"] },
+  { id: "graph.cutLinks", label: "Cut Links", category: "Editing", defaultChords: ["Alt+X"] },
   { id: "edit.find", label: "Search Panel", category: "Editing", defaultChords: ["Mod+F"], allowInTextInput: true },
   { id: "edit.newFolder", label: "New Folder", category: "Editing", defaultChords: ["Alt+Shift+N"] },
   { id: "scene.placeActor", label: "Place Actors", category: "Editing", defaultChords: ["Alt+A"] },

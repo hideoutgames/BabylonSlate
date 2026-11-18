@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPinWired } from "./pin-connections";
+import { isPinWired, passesReference } from "./pin-connections";
 
 describe("wired-pin index", () => {
   it("bounds edge reads across repeated queries from many mounted pins", () => {
@@ -99,5 +99,26 @@ describe("wired-pin index", () => {
       isPinWired(reconnected, "sink", { ...input, id: "replacement" }),
     ).toBe(true);
     expect(isPinWired(both, "sink", input)).toBe(true);
+  });
+});
+
+describe("passesReference", () => {
+  const variable = { id: "value", direction: "out" as const, reference: "writable" as const };
+  const lookup = new Map<string, { data: Record<string, unknown> }>([
+    ["get", { data: { __pins: [{ ...variable, name: "Value", kind: "data", type: { kind: "int" } }] } }],
+    ["knot", { data: { __reroute: true, __pins: [] } }],
+    ["seeded", { data: { __pins: [{ id: "seed", name: "Seed", kind: "data", direction: "in", type: { kind: "int" }, reference: "required" }] } }],
+    ["print", { data: { __pins: [{ id: "text", name: "Text", kind: "data", direction: "in", type: { kind: "int" } }] } }],
+  ]);
+  const wire = (source: string, sourceHandle: string, target: string, targetHandle: string) => ({ source, sourceHandle, target, targetHandle });
+
+  it("passes the variable by reference into a reference input past a Reroute knot", () => {
+    const edges = [wire("get", "value", "knot", "in"), wire("knot", "out", "seeded", "seed")];
+    expect(passesReference(edges, lookup, "get", variable)).toBe(true);
+  });
+
+  it("does not when the knot leads only to a value input", () => {
+    const edges = [wire("get", "value", "knot", "in"), wire("knot", "out", "print", "text")];
+    expect(passesReference(edges, lookup, "get", variable)).toBe(false);
   });
 });

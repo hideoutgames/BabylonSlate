@@ -381,6 +381,8 @@ export interface GraphEditorProps {
   preparePaste?: (
     pasted: GraphPasteElements,
     current: GraphPasteElements,
+    /** Each copied node's id → its copy's id. */
+    idMap: ReadonlyMap<string, string>,
   ) => GraphPasteResult;
   /**
    * Host rewrite of an Add Node row just before it is placed, read against the
@@ -2609,6 +2611,7 @@ function GraphEditorCanvas({
       const prepared = preparePasteRef.current?.(
         { nodes: nextNodes, edges: nextEdges },
         { nodes: currentNodes, edges: currentEdges },
+        idMap,
       );
       if (prepared?.notice) showNotice(prepared.notice);
       const keptNodes = prepared?.nodes ?? nextNodes;

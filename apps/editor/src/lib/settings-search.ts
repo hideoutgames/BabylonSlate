@@ -328,6 +328,7 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
     ["canvas", "Canvas", [
       ["Graph Default Zoom", "setting-graph-default-zoom"],
       ["Read-Only Pin Defaults", "setting-read-only-pin-defaults"],
+      ["Cut Links Tool", "setting-graph-cut-tool-mode"],
     ]],
   ]),
   ...category("accessibility", [
