@@ -2,6 +2,7 @@ import type { Camera } from "@babylonjs/core/Cameras/camera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import type { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
@@ -153,6 +154,13 @@ const parked = new WeakMap<AbstractEngine, ParkedAtlas>();
 /** The edge of the atlas parked on `engine` (`ParkedAtlas`), else 0. */
 export function parkedShadowAtlasEdge(engine: AbstractEngine): number {
   return parked.get(engine)?.edge ?? 0;
+}
+
+/** The textures of the atlas parked on `engine`, which no Scene holds (a Play session's texture check leaves them out). */
+export function parkedShadowAtlasTextures(engine: AbstractEngine): InternalTexture[] {
+  const wrapper = parked.get(engine)?.wrapper;
+  if (!wrapper) return [];
+  return [...new Set([wrapper.depthStencilTexture, ...(wrapper.textures ?? [])])].filter((texture): texture is InternalTexture => !!texture);
 }
 
 /** Takes the atlas parked on `engine`, if any, out of its keeping: its timer and observers stop. */

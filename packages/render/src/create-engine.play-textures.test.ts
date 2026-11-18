@@ -12,7 +12,7 @@ import {
 import { createDefaultScene } from "@haptic/core";
 import { createEngine } from "./create-engine";
 import { describeEngineTexture } from "./resource-cache";
-import { discardParkedShadowAtlas } from "./shadow-atlas";
+import { discardParkedShadowAtlas, parkedShadowAtlasTextures } from "./shadow-atlas";
 
 class FakeCanvas {
   width = 256;
@@ -129,8 +129,10 @@ describe("textures across a Play cycle", () => {
       expect(retained(engine, before).length).toBeGreaterThanOrEqual(2);
       play.dispose();
       await play.whenReleased();
-      // Only the atlas stays, parked: its render target and depth texture.
+      // Only the atlas stays, parked: its render target and depth texture, the textures a Play stop's check leaves out.
       expect(retained(engine, before), `cycle ${cycle}`).toEqual(["RenderTarget", "DepthStencil"]);
+      const live = engine.getLoadedTexturesCache().filter((texture) => !before.has(texture) && texture._references > 0);
+      expect(new Set(parkedShadowAtlasTextures(engine)), `cycle ${cycle}`).toEqual(new Set(live));
       expect(discardParkedShadowAtlas(engine)).toBe(true);
       expect(retained(engine, before), `cycle ${cycle}`).toEqual([]);
     }
