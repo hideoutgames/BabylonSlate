@@ -294,6 +294,14 @@ export interface GraphEditorProps {
   onNodeRenameCommit?: (nodeId: string, name: string) => void;
   /** The rename ended without a new name: Escape, or the name unchanged or empty. */
   onNodeRenameCancel?: () => void;
+  /** The rename field's starting text when it differs from the shown title (a Custom Event `Event Foo` edits `Foo`). */
+  renamingNodeValue?: string;
+  /**
+   * A double-click, or two taps within the double-tap time, on a node's title bar (not its pins or
+   * body): hosts start the inline rename. Not called read-only, while Cut Links is on, or for the
+   * node already renaming; such a double-click never reaches `onNodeDoubleClick`.
+   */
+  onNodeTitleDoubleClick?: (nodeId: string) => void;
   /**
    * CSS selector stamped onto each XYFlow node as `dragHandle`.
    * XYFlow 12 has no canvas-level `nodeDragHandle` prop. Attachments can use
@@ -939,6 +947,8 @@ function GraphEditorCanvas({
   renamingNodeId = null,
   onNodeRenameCommit,
   onNodeRenameCancel,
+  renamingNodeValue,
+  onNodeTitleDoubleClick,
 }: GraphEditorProps) {
   const inheritedReadOnly = useEditorReadOnly();
   const readOnly = readOnlyProp || inheritedReadOnly;
@@ -1252,6 +1262,26 @@ function GraphEditorCanvas({
     onEdgeDoubleClickRef.current = onEdgeDoubleClick;
   });
   const toggleCutTool = useCallback(() => setCutToolOn((on) => !on), []);
+
+  // Title double-click / double-tap → host rename. A mouse's two clicks fire it, so the native
+  // double-click that follows is taken (no `onNodeDoubleClick`) without firing again.
+  const titleHostRef = useRef({ onNodeTitleDoubleClick, readOnly, renamingNodeId });
+  useLayoutEffect(() => {
+    titleHostRef.current = { onNodeTitleDoubleClick, readOnly, renamingNodeId };
+  });
+  const lastTitleFireRef = useRef<{ nodeId: string; time: number } | null>(null);
+  const titleDoubleClick = useCallback((nodeId: string, via: "dblclick" | "tap"): boolean => {
+    const host = titleHostRef.current;
+    if (!host.onNodeTitleDoubleClick || host.readOnly || cutToolRef.current) return false;
+    const now = Date.now();
+    const last = lastTitleFireRef.current;
+    if (via === "dblclick" && last?.nodeId === nodeId && now - last.time < doubleTapWindowMs()) return true;
+    if (host.renamingNodeId === nodeId) return false;
+    lastTitleFireRef.current = { nodeId, time: now };
+    host.onNodeTitleDoubleClick(nodeId);
+    return true;
+  }, []);
+  const hasTitleRename = Boolean(onNodeTitleDoubleClick);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
@@ -3533,6 +3563,8 @@ function GraphEditorCanvas({
       renamingNodeId,
       onNodeRenameCommit,
       onNodeRenameCancel,
+      renamingNodeValue,
+      titleDoubleClick: hasTitleRename ? titleDoubleClick : undefined,
       connectionLineKind:
         defaultEdgeOptions.type === "animTransition" ||
         defaultEdgeOptions.type === "animTransitionBoth"
@@ -3570,6 +3602,9 @@ function GraphEditorCanvas({
       renamingNodeId,
       onNodeRenameCommit,
       onNodeRenameCancel,
+      renamingNodeValue,
+      hasTitleRename,
+      titleDoubleClick,
       defaultEdgeOptions.type,
     ],
   );

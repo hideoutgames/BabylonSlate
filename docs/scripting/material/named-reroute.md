@@ -21,7 +21,7 @@ Gives the value wired into it a name, so **Named Reroute Usage** nodes elsewhere
 
 ## Notes
 
-- Create one with **Create Named Reroute…** in **Add Node**. The new node starts with a free name and opens its title for renaming; double-click the node, or choose **Rename** in its menu, to rename it later.
+- Create one with **Create Named Reroute…** in **Add Node**. The new node starts with a free name and opens its title for renaming; double-click its title, or choose **Rename** in its menu, to rename it later.
 - **In** takes any value, Texture included, and passes it on unchanged.
 - Each name has one Named Reroute and any number of usages. Renaming it renames every usage.
 - A usage of this reroute that feeds back into its own **In**, directly or through other nodes and reroutes, is an error.

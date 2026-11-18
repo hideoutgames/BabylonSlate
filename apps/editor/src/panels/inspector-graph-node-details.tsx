@@ -99,7 +99,7 @@ export interface GraphNodeDetailsProps {
   persistGraph: (next: SerializedGraph) => void;
   selectedJsPin: string | null;
   selectJsPin: Dispatch<SetStateAction<string | null>>;
-  /** Rename Event: the selected custom event's inline rename in the Class panel. */
+  /** Rename Event: the selected custom event's inline header rename in the Event Graph. */
   onRenameEvent: (nodeId: string) => void;
   classPinPick: ClassPinPick | null;
   setClassPinPick: Dispatch<SetStateAction<ClassPinPick | null>>;

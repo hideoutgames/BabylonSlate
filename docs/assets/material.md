@@ -40,7 +40,7 @@ A Named Reroute carries a value across the graph by name instead of by a long wi
 3. To read the value elsewhere, search **Add Node** for the reroute's name and add it. The usage node outputs whatever is wired into the Named Reroute, as if wired straight from it.
 
 - Each name has exactly one [Named Reroute](../scripting/material/named-reroute.md) and any number of [usages](../scripting/material/named-reroute-usage.md). Names are unique: a taken name gets **_1**, **_2** and so on, including on copied and pasted reroutes.
-- Rename a reroute by double-clicking it, with **Rename** in its menu, or in the **Inspector**'s **Name**. Every usage takes the new name.
+- Rename a reroute by double-clicking its title, with **Rename** in its menu, or in the **Inspector**'s **Name**. Every usage takes the new name.
 - Its **Color** in the **Inspector** colours the headers of the reroute and all its usages.
 - Double-click a usage, or choose **Select Declaration** in its menu, to go to its Named Reroute.
 - A usage that feeds back into its own Named Reroute, directly or through other nodes and reroutes, is an error in **Compiler Results**. So is a usage whose Named Reroute was deleted, which shows **Missing Reroute**.

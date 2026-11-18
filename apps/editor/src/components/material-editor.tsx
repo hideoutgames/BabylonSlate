@@ -396,18 +396,24 @@ function usePreviewedNode(document: MaterialDocument): { nodeId: string; title: 
   }, [document, functions, globalParameters, previewNode]);
 }
 
+/** Nodes the canvas renames in their header: parameters and Named Reroute declarations. */
+function isRenamableMaterialNode(type: string): boolean {
+  return isMaterialParameterNode(type) || isNamedRerouteDeclarationType(type);
+}
+
 /** Rows whose chips, titles or pin types differ; Add Node rebuilds its list only when this changes. */
 function namedRerouteRowsSignature(rows: readonly MaterialPaletteNode[]): string {
   return JSON.stringify(rows.map((row) => [row.id, row.title, row.headerColor, row.pins.map((pin) => pin.type.kind)]));
 }
 
 /**
- * Named Reroutes on a Material or Material Function canvas: the Add Node rows (one per declaration,
- * after **Create Named Reroute…**), the inline rename a new or double-clicked declaration opens, the
- * node menu's **Rename** and **Select Declaration**, and pasted usages following a declaration pasted
- * with them. Everything reads the document as it is when used.
+ * Naming on a Material or Material Function canvas: the Named Reroute Add Node rows (one per
+ * declaration, after **Create Named Reroute…**), the header rename of parameters and declarations
+ * (a new declaration, a title double-click or the node menu's **Rename**), **Select Declaration** on
+ * a usage, and pasted usages following a declaration pasted with them. Everything reads the document
+ * as it is when used.
  */
-function useNamedRerouteCanvas<T extends MaterialGraphDocument>(
+function useMaterialCanvasNaming<T extends MaterialGraphDocument>(
   document: T,
   commit: (next: T) => void,
   staticPalette: readonly PaletteNode[],
@@ -438,13 +444,25 @@ function useNamedRerouteCanvas<T extends MaterialGraphDocument>(
     else if (!exists && renaming.seen) setRenaming(null);
   }
 
+  // Parameters and Named Reroute declarations rename in their header; each keeps its own unique-name rule.
   const onNodeRenameCommit = useCallback((nodeId: string, name: string) => {
     setRenaming(null);
     const current = documentRef.current;
-    const nodes = renameNamedReroute(current.nodes, nodeId, name);
-    if (nodes !== current.nodes) commit({ ...current, nodes });
+    const node = current.nodes.find((entry) => entry.id === nodeId);
+    if (!node || !name.trim()) return;
+    if (isNamedRerouteDeclarationType(node.type)) {
+      const nodes = renameNamedReroute(current.nodes, nodeId, name);
+      if (nodes !== current.nodes) commit({ ...current, nodes });
+    } else if (isMaterialParameterNode(node.type) && name.trim() !== materialParameterName(node)) {
+      commit(renameMaterialParameter(current, nodeId, name));
+    }
   }, [commit]);
   const onNodeRenameCancel = useCallback(() => setRenaming(null), []);
+  // The field starts from the stored name: a blank parameter is titled by its type, not edited as one.
+  const renamingNode = renaming ? document.nodes.find((node) => node.id === renaming.nodeId) : undefined;
+  const renamingNodeValue = renamingNode
+    ? isNamedRerouteDeclarationType(renamingNode.type) ? namedRerouteName(renamingNode) : materialParameterName(renamingNode)
+    : undefined;
 
   // The Create row takes a name and colour free in the graph as it is now, not when the list was built.
   const preparePaletteNode = useCallback((row: PaletteNode): PaletteNode => {
@@ -452,23 +470,9 @@ function useNamedRerouteCanvas<T extends MaterialGraphDocument>(
     const fresh = namedReroutePaletteNodes(documentRef.current, contextRef.current)[0]!;
     return { ...row, nodeTitle: fresh.nodeTitle, defaultData: fresh.defaultData, headerColor: fresh.headerColor };
   }, []);
-  // Add Node is a modal dialog: a field that mounts while it is open cannot take focus, and closing
-  // it returns focus to where it opened. The rename therefore opens once the dialog has gone.
-  const pendingRenameRef = useRef<string | null>(null);
+  // A new declaration opens its rename at once (GraphEditor focuses it once Add Node closes).
   const onPaletteNodeAdded = useCallback((row: PaletteNode, nodeId: string) => {
-    if (row.id === NAMED_REROUTE_DECLARATION_TYPE) pendingRenameRef.current = nodeId;
-  }, []);
-  const onPaletteOpenChange = useCallback((open: boolean) => {
-    const nodeId = pendingRenameRef.current;
-    if (open || !nodeId) return;
-    pendingRenameRef.current = null;
-    let frames = 0;
-    const openWhenClosed = () => {
-      frames += 1;
-      if (frames < 60 && globalThis.document.querySelector("[data-popup-picker]")) requestAnimationFrame(openWhenClosed);
-      else setRenaming({ nodeId, seen: false });
-    };
-    requestAnimationFrame(openWhenClosed);
+    if (row.id === NAMED_REROUTE_DECLARATION_TYPE) setRenaming({ nodeId, seen: false });
   }, []);
 
   const selectDeclaration = useCallback((nodeId: string): boolean => {
@@ -482,17 +486,19 @@ function useNamedRerouteCanvas<T extends MaterialGraphDocument>(
   }, [focusNode]);
 
   // Double-click: a declaration opens its rename, a usage goes to its declaration.
-  const onNodeDoubleClick = useCallback((nodeId: string) => {
+  // Double-click on a usage, title or body, goes to its declaration; a renamable node's title renames it.
+  const onNodeDoubleClick = useCallback((nodeId: string) => { selectDeclaration(nodeId); }, [selectDeclaration]);
+  const onNodeTitleDoubleClick = useCallback((nodeId: string) => {
     const node = documentRef.current.nodes.find((entry) => entry.id === nodeId);
-    if (node && isNamedRerouteDeclarationType(node.type)) setRenaming({ nodeId, seen: true });
+    if (node && isRenamableMaterialNode(node.type)) setRenaming({ nodeId, seen: true });
     else selectDeclaration(nodeId);
   }, [selectDeclaration]);
 
   const menu = useCallback((nodeId: string): NestedMenuItem[] => {
     const nodes = documentRef.current.nodes;
     const node = nodes.find((entry) => entry.id === nodeId);
-    if (node && isNamedRerouteDeclarationType(node.type)) {
-      return [{ id: "rename-named-reroute", label: "Rename", testId: "material-rename-named-reroute", icon: <PencilIcon />, onSelect: () => setRenaming({ nodeId, seen: true }) }];
+    if (node && isRenamableMaterialNode(node.type)) {
+      return [{ id: "rename-node", label: "Rename", testId: "material-rename-node", icon: <PencilIcon />, onSelect: () => setRenaming({ nodeId, seen: true }) }];
     }
     if (node && isNamedRerouteUsageType(node.type)) {
       const declarationId = namedRerouteDeclarationId(node);
@@ -513,11 +519,12 @@ function useNamedRerouteCanvas<T extends MaterialGraphDocument>(
     props: {
       paletteNodes,
       renamingNodeId: renaming?.nodeId ?? null,
+      renamingNodeValue,
+      onNodeTitleDoubleClick,
       onNodeRenameCommit,
       onNodeRenameCancel,
       preparePaletteNode,
       onPaletteNodeAdded,
-      onPaletteOpenChange,
       onNodeDoubleClick,
       preparePaste,
     },
@@ -574,7 +581,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
   });
   const previewMenu = usePreviewNodeMenu(document, previewChord);
   const staticPalette = useMemo(() => materialAddNodePalette(document.domain), [document.domain]);
-  const reroutes = useNamedRerouteCanvas(document, commit, staticPalette, { functions }, editing.focusNode);
+  const reroutes = useMaterialCanvasNaming(document, commit, staticPalette, { functions }, editing.focusNode);
   const rerouteMenu = reroutes.menu;
   const nodeMenu = useCallback(
     (nodeId: string) => [...rerouteMenu(nodeId), ...previewMenu(nodeId), ...conversionMenu(nodeId)],
@@ -656,7 +663,7 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
   );
   const staticPalette = useMemo(() => materialAddNodePalette("surface"), []);
   const rerouteContext = useMemo(() => ({ functions: editing.functions, functionInterface: document }), [document, editing.functions]);
-  const reroutes = useNamedRerouteCanvas(document, commit, staticPalette, rerouteContext, editing.focusNode);
+  const reroutes = useMaterialCanvasNaming(document, commit, staticPalette, rerouteContext, editing.focusNode);
   const rerouteMenu = reroutes.menu;
   const nodeMenu = useCallback(
     (nodeId: string) => [...rerouteMenu(nodeId), ...conversionMenu(nodeId)],

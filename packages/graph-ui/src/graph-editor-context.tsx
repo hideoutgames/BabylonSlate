@@ -72,6 +72,13 @@ export type GraphEditorContextValue = {
   onNodeRenameCommit?: (nodeId: string, name: string) => void;
   /** Escape, or Enter or a click away with the name unchanged or empty. */
   onNodeRenameCancel?: () => void;
+  /** The rename field's starting text when it differs from the title (`Foo` for `Event Foo`). */
+  renamingNodeValue?: string;
+  /**
+   * A double-click (`dblclick`) or second tap (`tap`) on a node's title, present only when the host
+   * renames titles (`GraphEditor.onNodeTitleDoubleClick`). True when the canvas took it.
+   */
+  titleDoubleClick?: (nodeId: string, via: "dblclick" | "tap") => boolean;
 };
 
 const GraphEditorContext = createContext<GraphEditorContextValue | null>(null);

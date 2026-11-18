@@ -39,6 +39,8 @@ A parameter is a value gameplay can set while the emitter runs. Each parameter h
 - Right-click a [Float](../scripting/particle/float.md), [Vector2](../scripting/particle/vector2.md), [Vector3](../scripting/particle/vector3.md) or [Color](../scripting/particle/color.md) node, or long-press it, and choose **Convert to Parameter**. The node becomes a Parameter node of a new parameter whose default is the constant's value. Its wires stay.
 - On a Parameter node, **Convert to Constant** does the reverse: the node becomes a constant holding the parameter's default.
 
+To rename a parameter on the graph, double-click or double-tap its Parameter node's title, or right-click or long-press the node and choose **Rename**. Type the name and press Enter; Escape keeps the old name. Undo reverts the rename in one step.
+
 Select a Parameter node to edit its parameter in the **Inspector**. With several Parameter nodes selected, the **Inspector** shows their **Type** and **Default**, but not **Name**, which each parameter keeps.
 
 | Setting | Description |

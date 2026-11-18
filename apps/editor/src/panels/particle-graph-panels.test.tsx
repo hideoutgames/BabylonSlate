@@ -749,6 +749,79 @@ describe("Particle Graph document panels", () => {
     expect(readers.map((node) => node.properties.parameterId)).toEqual(duplicated.parameters.map((parameter) => parameter.id));
   });
 
+  describe("renaming a Parameter node on its header", () => {
+    /** Heat and Glow, each read by its own Parameter node, and a Float constant. */
+    function withParameters(): ParticleGraphDocument {
+      const doc = createDefaultParticleGraphDocument("Embers");
+      doc.parameters = [
+        { id: "heat", name: "Heat", type: "float", defaultValue: [2] },
+        { id: "glow", name: "Glow", type: "float", defaultValue: [1] },
+      ];
+      doc.nodes.push(
+        { id: "heat-node", type: "input.parameter", position: { x: 0, y: 400 }, properties: { parameterId: "heat", valueType: "float" } },
+        { id: "glow-node", type: "input.parameter", position: { x: 0, y: 600 }, properties: { parameterId: "glow", valueType: "float" } },
+        { id: "life", type: "const.float", position: { x: 0, y: 800 }, properties: { value: [1] } },
+      );
+      return doc;
+    }
+
+    async function titleOf(container: HTMLElement, nodeId: string) {
+      await waitFor(() => expect(container.querySelector(`[data-id="${nodeId}"] [data-node-title]`)).not.toBeNull());
+      return container.querySelector(`[data-id="${nodeId}"] [data-node-title]`)!;
+    }
+
+    function parameterNames() {
+      return normalizeParticleGraphDocument(store.getSnapshot()).parameters.map((entry) => entry.name);
+    }
+
+    it("renames the parameter from a title double-click as one change", async () => {
+      const { container } = renderPanels(withParameters(), "canvas");
+      fireEvent.doubleClick(await titleOf(container, "heat-node"));
+      const field = await screen.findByTestId("graph-node-rename");
+      expect((field as HTMLInputElement).value).toBe("Heat");
+      fireEvent.change(field, { target: { value: "Ember Heat" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      expect(store.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
+      expect(parameterNames()).toEqual(["Ember Heat", "Glow"]);
+      await waitFor(() => expect(screen.queryByTestId("graph-node-rename")).toBeNull());
+      expect((await titleOf(container, "heat-node")).textContent).toContain("Ember Heat");
+    });
+
+    it("keeps names unique, and Escape keeps the name", async () => {
+      const { container } = renderPanels(withParameters(), "canvas");
+      fireEvent.doubleClick(await titleOf(container, "glow-node"));
+      const field = await screen.findByTestId("graph-node-rename");
+      fireEvent.change(field, { target: { value: "Heat" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      expect(parameterNames()).toEqual(["Heat", "Heat_1"]);
+
+      fireEvent.doubleClick(await titleOf(container, "heat-node"));
+      const again = await screen.findByTestId("graph-node-rename");
+      fireEvent.change(again, { target: { value: "Cold" } });
+      fireEvent.keyDown(again, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByTestId("graph-node-rename")).toBeNull());
+      expect(store.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
+      expect(parameterNames()).toEqual(["Heat", "Heat_1"]);
+    });
+
+    it("starts from the node menu's Rename, and only on Parameter nodes", async () => {
+      const { container } = renderPanels(withParameters(), "canvas");
+      fireEvent.doubleClick(await titleOf(container, "life"));
+      fireEvent.contextMenu((await titleOf(container, "life")).parentElement!);
+      await screen.findByTestId("particle-graph-convert-to-parameter");
+      expect(screen.queryByTestId("particle-graph-rename")).toBeNull();
+      expect(screen.queryByTestId("graph-node-rename")).toBeNull();
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+      fireEvent.contextMenu((await titleOf(container, "glow-node")).parentElement!);
+      fireEvent.click(await screen.findByTestId("particle-graph-rename"));
+      const field = await screen.findByTestId("graph-node-rename");
+      fireEvent.change(field, { target: { value: "Shine" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+      expect(parameterNames()).toEqual(["Heat", "Shine"]);
+    });
+  });
+
   it("declares a new parameter for an Add Node Parameter entry", async () => {
     renderPanels(createDefaultParticleGraphDocument("Embers"), "canvas");
     fireEvent.click(await screen.findByTestId("graph-add-node"));

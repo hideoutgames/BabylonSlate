@@ -21,7 +21,6 @@ import ImageGlyph from "react-bootstrap-icons/dist/icons/image";
 import ImageFillGlyph from "react-bootstrap-icons/dist/icons/image-fill";
 import {
   humanizePropertyLabel,
-  InlineRenameInput,
   LabelHint,
   PinShapeGlyph,
   tagDisplayName,
@@ -48,6 +47,7 @@ import {
   type PinTypeRef,
 } from "./node-theme";
 import { NodeKindIcon } from "./node-icons";
+import { NodeRenameField, useNodeTitleGestures, useRenameValue } from "./node-title";
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
 import { PinDefaultEditor } from "./pin-default-editor";
@@ -588,67 +588,6 @@ function PinHint({ pin, children }: { pin: SerializedPin; children: ReactElement
   return pin.description ? <LabelHint hint={pin.description} delay={GRAPH_HINT_DELAY_MS}>{children}</LabelHint> : children;
 }
 
-/** How long a new rename field keeps claiming focus from a closing dialog (Add Node) that hands it back. */
-const RENAME_FOCUS_CLAIM_MS = 1500;
-
-/**
- * A node title's inline rename field. A host may open it while a modal dialog still holds focus
- * (a node just added from Add Node, whose dialog then returns focus to its opener), so until the
- * person presses elsewhere it takes focus, with its text selected, once no other dialog is open.
- */
-function NodeRenameField({ title, onDone }: { title: string; onDone: (name: string | null) => void }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const input = ref.current?.querySelector("input");
-    if (!input) return undefined;
-    let pressedElsewhere = false;
-    let frame = 0;
-    const blocked = () =>
-      Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).some((dialog) => !dialog.contains(input));
-    const claim = () => {
-      frame = 0;
-      if (pressedElsewhere || !input.isConnected || document.activeElement === input) return;
-      if (blocked()) {
-        frame = requestAnimationFrame(claim);
-        return;
-      }
-      input.focus({ preventScroll: true });
-      input.select();
-    };
-    const onPointerDown = (event: PointerEvent) => {
-      if (event.target !== input) pressedElsewhere = true;
-    };
-    const onFocusIn = (event: FocusEvent) => {
-      if (event.target !== input && !frame) frame = requestAnimationFrame(claim);
-    };
-    document.addEventListener("pointerdown", onPointerDown, true);
-    document.addEventListener("focusin", onFocusIn, true);
-    claim();
-    const stop = setTimeout(() => {
-      pressedElsewhere = true;
-      document.removeEventListener("focusin", onFocusIn, true);
-    }, RENAME_FOCUS_CLAIM_MS);
-    return () => {
-      clearTimeout(stop);
-      if (frame) cancelAnimationFrame(frame);
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      document.removeEventListener("focusin", onFocusIn, true);
-    };
-  }, []);
-  return (
-    // `nodrag` and `nopan` keep presses in the field from moving the node or the canvas.
-    <span ref={ref} className="nodrag nopan nowheel flex min-w-40 flex-1 text-foreground">
-      <InlineRenameInput
-        value={title}
-        aria-label="Name"
-        data-testid="graph-node-rename"
-        className="h-7 min-h-7 text-base md:text-base"
-        onDone={onDone}
-      />
-    </span>
-  );
-}
-
 export function BlueprintNodeShell({
   nodeId,
   title,
@@ -673,6 +612,8 @@ export function BlueprintNodeShell({
   const { nodeErrorCount, describeNode, previewedNode, renamingNodeId, onNodeRenameCommit, onNodeRenameCancel } = useGraphEditorContext();
   const previewed = previewedNode?.nodeId === nodeId ? previewedNode : null;
   const renaming = !card && renamingNodeId === nodeId;
+  const titleGestures = useNodeTitleGestures(nodeId);
+  const renameValue = useRenameValue(title);
   const headerColor = typeof data?.__headerColor === "string" && data.__headerColor ? data.__headerColor : undefined;
   const description = data ? describeNode?.(String(data.__nodeType ?? ""), data) : undefined;
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
@@ -713,11 +654,12 @@ export function BlueprintNodeShell({
             )}
             style={headerColor ? { backgroundColor: headerColor, color: headerContrastColor(headerColor) } : undefined}
             data-header-color={headerColor ? "" : undefined}
+            {...(renaming ? undefined : titleGestures)}
           >
             {kind ? <NodeKindIcon kind={kind} className="size-5" /> : null}
             {renaming ? (
               <NodeRenameField
-                title={title}
+                title={renameValue}
                 onDone={(name) => {
                   if (name === null) onNodeRenameCancel?.();
                   else onNodeRenameCommit?.(nodeId, name);

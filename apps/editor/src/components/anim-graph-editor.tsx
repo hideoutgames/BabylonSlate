@@ -699,6 +699,20 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     : null;
   const machineTransitions = machine.transitions;
   const aliasIds = useMemo(() => new Set((machine.aliases ?? []).map((alias) => alias.id)), [machine.aliases]);
+  // A double-click or double-tap on a state's or alias's title renames it in place, as its Name row does.
+  const [renamingStateId, setRenamingStateId] = useState<string | null>(null);
+  const renameStateOrAlias = (nodeId: string, name: string) => {
+    setRenamingStateId(null);
+    const current = latestDoc();
+    if (current.stateMachine.states.some((row) => row.id === nodeId)) {
+      commit(patchState(current, nodeId, { name }));
+      return;
+    }
+    commit(patchStateMachine(current, (row) => ({
+      ...row,
+      aliases: (row.aliases ?? []).map((alias) => (alias.id === nodeId ? { ...alias, name } : alias)),
+    })));
+  };
   const initialGraph = useMemo(() => {
     const graph = hydrateAnimGraphForEditor(stateMachineToSerialized(machine));
     const clipLabels = new Map(
@@ -896,6 +910,10 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
           onEdgeSelectionChange={(edgeIds) => {
             queueMicrotask(() => setSelectedTransitionId(edgeIds[0] ?? null));
           }}
+          renamingNodeId={renamingStateId}
+          onNodeTitleDoubleClick={setRenamingStateId}
+          onNodeRenameCommit={renameStateOrAlias}
+          onNodeRenameCancel={() => setRenamingStateId(null)}
           onNodeDoubleClick={(stateId) => {
             // Double-tap a state to open its graph in its own tab.
             const state = machine.states.find((row) => row.id === stateId);
