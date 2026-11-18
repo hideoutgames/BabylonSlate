@@ -220,7 +220,10 @@ describe("variableAssetPickerAllowedTypes", () => {
 });
 
 describe("containerConstructorPropertyRows", () => {
-  it.each(["array.make", "map.make"])("edits the dynamic pin count for %s", (typeId) => {
+  it.each([
+    { typeId: "array.make", label: "Items", defaultValue: 1 },
+    { typeId: "map.make", label: "Pairs", defaultValue: 1 },
+  ])("edits the dynamic pin count for $typeId", ({ typeId, label, defaultValue }) => {
     const onPatch = vi.fn();
     const rows = containerConstructorPropertyRows(typeId, { count: 3 }, onPatch);
 
@@ -228,9 +231,9 @@ describe("containerConstructorPropertyRows", () => {
     expect(rows[0]).toMatchObject({
       id: "count",
       kind: "number",
-      label: typeId === "array.make" ? "Items" : "Pairs",
+      label,
       value: 3,
-      defaultValue: 0,
+      defaultValue,
       min: 0,
       max: 32,
     });
@@ -241,6 +244,13 @@ describe("containerConstructorPropertyRows", () => {
     expect(onPatch).toHaveBeenCalledWith({ count: 5 });
     row.onChange(40);
     expect(onPatch).toHaveBeenLastCalledWith({ count: 32 });
+    row.onChange(-2);
+    expect(onPatch).toHaveBeenLastCalledWith({ count: 0 });
+  });
+
+  it.each(["array.make", "map.make"])("shows a new %s with one item or pair, and a stored 0 as 0", (typeId) => {
+    expect(containerConstructorPropertyRows(typeId, {}, vi.fn())[0]).toMatchObject({ value: 1 });
+    expect(containerConstructorPropertyRows(typeId, { count: 0 }, vi.fn())[0]).toMatchObject({ value: 0 });
   });
 
   it("returns no rows for static node types", () => {

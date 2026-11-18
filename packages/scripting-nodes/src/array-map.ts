@@ -8,7 +8,7 @@ import {
   arrayOf,
   defaultValueLiteral,
 } from "@haptic/scripting";
-import { hasValueTypePin, valueIndexOf } from "./map";
+import { hasValueTypePin, MAKE_CONTAINER_MAX_COUNT, valueIndexOf } from "./map";
 
 const T = RESOLVING_WILDCARD;
 
@@ -31,10 +31,14 @@ function outFallback(ctx: Parameters<NodeDefinition["codegen"]>[0], pinId = "out
   return defaultValueLiteral(outPin?.type ?? RESOLVING_WILDCARD);
 }
 
-function makeItemCount(properties: Record<string, unknown>): number {
-  const raw = Number(properties.count ?? 0);
+/** Item inputs of a new Make Array node, and of one whose `count` is missing. */
+export const MAKE_ARRAY_DEFAULT_ITEMS = 1;
+
+/** Make Array items: a whole `count` from 0 to {@link MAKE_CONTAINER_MAX_COUNT}; {@link MAKE_ARRAY_DEFAULT_ITEMS} when it is missing, none when it is not a number. */
+export function makeArrayItemCount(properties: Record<string, unknown>): number {
+  const raw = Number(properties.count ?? MAKE_ARRAY_DEFAULT_ITEMS);
   if (!Number.isFinite(raw)) return 0;
-  return Math.max(0, Math.min(32, Math.floor(raw)));
+  return Math.max(0, Math.min(MAKE_CONTAINER_MAX_COUNT, Math.floor(raw)));
 }
 
 export const arrayMapNodes: NodeDefinition[] = [
@@ -44,7 +48,7 @@ export const arrayMapNodes: NodeDefinition[] = [
     category: "array",
     pure: true,
     pins: (properties) => {
-      const count = makeItemCount(properties);
+      const count = makeArrayItemCount(properties);
       const pins = [];
       for (let i = 0; i < count; i++) {
         pins.push(pin(`item${i}`, `Item ${i}`, "in", T));
@@ -53,7 +57,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       return pins;
     },
     codegen: (ctx) => {
-      const count = makeItemCount(ctx.node.properties);
+      const count = makeArrayItemCount(ctx.node.properties);
       const items: string[] = [];
       for (let i = 0; i < count; i++) {
         items.push(ctx.input(`item${i}`));

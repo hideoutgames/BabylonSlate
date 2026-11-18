@@ -3554,6 +3554,31 @@ describe("container constructor hydration", () => {
   });
 });
 
+describe("Add Pin hydration", () => {
+  const hydratedAddPin = (type: string, data: Record<string, unknown>) =>
+    hydrateSerializedGraphForEditor({ nodes: [{ id: "n", type, position: { x: 0, y: 0 }, data }], edges: [] }, registry)
+      .nodes[0]?.data.__addPin;
+
+  it.each([
+    { type: "array.make", data: {}, side: "in" },
+    { type: "array.make", data: { count: 31 }, side: "in" },
+    { type: "map.make", data: { count: 0 }, side: "in" },
+    { type: "flow.sequence", data: {}, side: "out" },
+  ])("offers it on $type with $data, under its $side side", ({ type, data, side }) => {
+    expect(hydratedAddPin(type, data)).toEqual({ side, label: "Add Pin" });
+  });
+
+  it.each([
+    { type: "array.make", data: { count: 32 } },
+    { type: "map.make", data: { count: 40 } },
+    { type: "flow.sequence", data: { count: 32 } },
+    { type: "array.length", data: {} },
+  ])("leaves it off $type with $data, also when stale data still carries it", ({ type, data }) => {
+    expect(hydratedAddPin(type, data)).toBeUndefined();
+    expect(hydratedAddPin(type, { ...data, __addPin: { side: "in", label: "Add Pin" } })).toBeUndefined();
+  });
+});
+
 describe("sequence hydrate", () => {
   const execPin = (id: string, name: string, direction: "in" | "out") =>
     ({ id, name, kind: "exec", direction, type: { kind: "exec" } });

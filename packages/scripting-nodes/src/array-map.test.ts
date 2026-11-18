@@ -72,6 +72,15 @@ describe("array-map nodes", () => {
     expect(pins[3]?.type).toEqual(arrayOf({ kind: "resolvingWildcard" }));
   });
 
+  it.each([
+    { properties: {}, items: ["item0"] },
+    { properties: { count: 0 }, items: [] },
+    { properties: { count: 40 }, items: Array.from({ length: 32 }, (_, i) => `item${i}`) },
+  ])("Make Array with $properties has $items.length item inputs", ({ properties, items }) => {
+    const def = createDefaultNodeRegistry().get("array.make")!;
+    expect(def.pins(properties).map((pin) => pin.id)).toEqual([...items, "out"]);
+  });
+
   it("resolves Make Array item wildcards from a concrete item wire", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

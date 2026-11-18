@@ -435,7 +435,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Is Array Empty](is-array-empty.md) | Returns true when an array has no items. |
 | [Is Valid Array Index](is-valid-array-index.md) | Returns true when an index points at an item in an array. |
 | [Get Last Array Index](get-last-array-index.md) | Returns the index of the last item in an array. |
-| [Make Array](make-array.md) | Builds an array from the item inputs you add. |
+| [Make Array](make-array.md) | Builds an array from its item inputs. |
 | [Max Of Float Array](max-of-float-array.md) | Returns the largest number in an array and its index. |
 | [Max Of Int Array](max-of-int-array.md) | Returns the largest integer in an array and its index. |
 | [Min Of Float Array](min-of-float-array.md) | Returns the smallest number in an array and its index. |

@@ -64,6 +64,8 @@ export type GraphEditorContextValue = {
     from: { nodeId: string; pinId: string },
     to: { nodeId: string; pinId: string },
   ) => string | null;
+  /** A node's **+ Add Pin** control (`GraphEditor.onAddPin`); unset read-only or when the host has none. */
+  onAddPin?: (nodeId: string) => void;
   /** Whether a node's body takes the dragged wire as a new pin (`GraphPinDrop.accepts`). */
   acceptsPinDrop?: (targetNodeId: string, source: GraphPinDragSource) => boolean;
   /** The node whose header title is an inline rename field. */
