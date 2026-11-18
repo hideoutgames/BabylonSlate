@@ -143,3 +143,38 @@ test("a Class graph wire splits with a Reroute knot, and Cut Links removes wires
   await editor.getByTestId("graph-cut-links").click();
   await expect(root).toHaveCount(0);
 });
+
+test("a Custom Event created from Add Node is named in its node header, and its title renames it again", async ({ page }) => {
+  test.setTimeout(120_000);
+  await openTestProject(page);
+  const graph: SerializedGraph = {
+    nodes: [{ id: "begin", type: "flow.event.beginPlay", position: { x: 80, y: 80 }, data: {} }],
+    edges: [],
+  };
+  const installed = await page.evaluate(async (next) => (
+    globalThis as unknown as { __hapticTest: { setMainGraphContent: (graph: SerializedGraph) => Promise<boolean> } }
+  ).__hapticTest.setMainGraphContent(next), graph);
+  expect(installed).toBe(true);
+  await openAssetFromBrowser(page, GRAPH_PATH);
+  const editor = page.getByTestId("graph-editor");
+  await expect(editor.locator('.react-flow__node[data-id="begin"]')).toBeVisible({ timeout: 15_000 });
+
+  await editor.getByTestId("graph-add-node").click();
+  await page.getByTestId("node-palette-item-flow.event.custom").click();
+  const field = editor.getByTestId("graph-node-rename");
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue("NewEvent");
+  await page.keyboard.type("Open Door");
+  await page.keyboard.press("Enter");
+  await expect(field).toHaveCount(0);
+  const title = editor.getByText("Event Open Door", { exact: true });
+  await expect(title).toBeVisible();
+
+  await title.dblclick();
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue("Open Door");
+  await page.keyboard.type("Close Door");
+  await page.keyboard.press("Enter");
+  await expect(editor.getByText("Event Close Door", { exact: true })).toBeVisible();
+  await title.waitFor({ state: "detached" });
+});

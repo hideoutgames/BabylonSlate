@@ -38,9 +38,9 @@ When the Game Instance and subsystem events fire is described in [Game Instance 
 
 ## Custom events
 
-1. Tap **+** next to **Events** and choose **New Event**, or choose **Create New Custom Event…** in **Add Node**. Its name opens for editing in the **Class** window; type a name.
+1. Choose **Create New Custom Event…** in **Add Node**: the new node's title opens for editing, so type a name and press <kbd>Enter</kbd>. Or tap **+** next to **Events** in the **Class** window and choose **New Event**: its name opens for editing there.
 2. With the event selected, add **Outputs** in the **Inspector** for the values it receives. Integer, Float and Vector outputs can have a **Unit**, shown on the Call node's value field.
-3. To rename the event together with its calls in this class, double-click it in the **Class** window, or choose **Rename Event** in its node menu (<kbd>F2</kbd>) or the **Inspector**. Its name opens for editing in the **Class** window, which opens if it was closed. In an Animation Graph, **Rename Event** asks for the name instead.
+3. To rename the event together with its calls in this class, double-click or double-tap the node's title, or choose **Rename Event** in its node menu (<kbd>F2</kbd>) or the **Inspector**: the title opens for editing on the node. <kbd>Enter</kbd> renames it and <kbd>Esc</kbd> keeps the old name. You can also double-click the event in the **Class** window to rename it there.
 4. To run it, drag the event from the **Class** window onto the graph, or choose **Call** followed by its name in **Add Node**. This places a [Call Custom Event](class/call-custom-event.md) node with one input per output. Select several entries to drop a node for each.
 
 Two custom events of a class never share a name. A new event whose name is taken gets the first free number, so **New Event** adds **NewEvent**, then **NewEvent_1** and **NewEvent_2**; events added for an [Event Dispatcher](event-dispatchers.md) and pasted events are numbered the same way. A rename to a name another custom event has is refused.
