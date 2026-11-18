@@ -1385,7 +1385,7 @@ function routeCandidates(
   return routes;
 }
 
-/** Lexicographic: fewer knots, then fewer crossings, then shorter. */
+/** Lexicographic: fewer knots, then fewer crossings, then candidate order (exec) or length (data). */
 function cheaper(cost: readonly number[], than: readonly number[]): boolean {
   for (let index = 0; index < cost.length; index++) {
     if (cost[index] !== than[index]) return cost[index]! < than[index]!;
@@ -1394,11 +1394,11 @@ function cheaper(cost: readonly number[], than: readonly number[]): boolean {
 }
 
 /**
- * Lays every data and exec wire between two formatted nodes as level runs joined by short
- * transitions. A wire that is level and clear stays direct; a short wire stays direct while it
- * keeps clear of nodes and other wires; a long or steep one, and one that runs into a node, takes
- * the best route of `routeCandidates` that fits (`routeFits`): fewest knots, then fewest crossings
- * with the wires already laid, then the shortest. Exec wires go first, each node's lowest branch
+ * Lays every data and exec wire between two formatted nodes. A wire that is level and clear stays
+ * direct; any other wire takes the best route of `routeCandidates` that fits (`routeFits`), direct
+ * included, so a wire whose own ease keeps clear of nodes and other wires takes no knot: fewest
+ * knots, then fewest crossings with the wires already laid, then candidate order for exec wires
+ * (nearest lane first) and the shortest for data wires. Exec wires go first, each node's lowest branch
  * first so its drop sits nearest the node; then data wires; each in a fixed order, so a second
  * Format lays every wire the same way. Placed knots and wires are obstacles for later wires.
  * Cost per wire: O(C · (W + R + P²)) for C candidates (at most 10 + 6 × `LANE_CANDIDATES`), W boxes in
