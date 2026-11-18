@@ -73,8 +73,17 @@ test("Play, Preview Build and Export refuse an older-format startup Scene", asyn
   await page.getByTestId("play-from-scene-toggle").click();
   await page.keyboard.press("Escape");
   await page.getByTestId("play-preview").click();
-  await expect(page.getByTestId("output-log-line").filter({ hasText: `Play preparation failed: ${reason}` })).toHaveCount(1);
+  // Play names the setting and the Scene, then the format's own reason; the dialog lists it and cannot play anyway.
+  await expect(page.getByTestId("output-log-line")
+    .filter({ hasText: 'Play preparation failed: Project Settings > Startup Scene names Scene "' })
+    .filter({ hasText: `which is saved in a format Play cannot read: ${reason}` })).toHaveCount(1);
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+  const playFailure = page.getByTestId("play-blocked-dialog");
+  await expect(playFailure).toContainText("Play Could Not Start");
+  await expect(playFailure).toContainText(reason);
+  await expect(playFailure.getByTestId("play-anyway")).toHaveCount(0);
+  await playFailure.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(playFailure).toHaveCount(0);
 
   await enablePreviewBuild(page);
   await page.getByTestId("play-preview").click();
