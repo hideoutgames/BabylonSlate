@@ -45,6 +45,8 @@ export interface PanZoomSurface {
   view: PanZoomView | null;
   /** True once the user panned or zoomed away from the base view. */
   adjusted: boolean;
+  /** The scale range pinch and wheel keep to; host zoom controls keep to it too. */
+  limits: PanZoomLimits;
   /** Returns to the base view. */
   reset: () => void;
   /** Applies a view chosen by the host (zoom buttons, framing). */
@@ -223,6 +225,7 @@ export function usePanZoomSurface({
     surfaceSize,
     view,
     adjusted: userView !== null,
+    limits,
     reset,
     setView,
     surfaceProps: {

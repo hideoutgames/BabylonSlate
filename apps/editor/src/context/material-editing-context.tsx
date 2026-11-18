@@ -25,7 +25,9 @@ import {
   resourceCacheForEngine,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
+  type ViewportZoomDrive,
 } from "@haptic/render";
+import { prefersReducedMotion } from "@haptic/editor-kit";
 import {
   classifyMaterialCost,
   createMaterialPreviewState,
@@ -120,6 +122,8 @@ export interface MaterialEditingValue {
   focusNode: (nodeId: string) => void;
   requestRender: () => void;
   attachPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
+  /** The preview's zoom drive for **Viewport Zoom Buttons**; stable, read at each press. */
+  previewZoomDrive: () => ViewportZoomDrive | undefined;
   frameBudgetMs: number;
   /** The node output the preview shows instead of the Material's output; null shows the output. */
   previewNode: MaterialNodePreviewTarget | null;
@@ -174,6 +178,8 @@ export function MaterialEditingProvider({
   const { selectedNodeIds, selectedNodeId, setSelectedNodeIds, setSelectedNodeId } = useNodeSelection();
   const { focusedNodeId, focusRequest, requestFocus: focusNode } = useNodeFocus();
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
+  const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
+  const previewZoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
   const [renderCoolingDown, setRenderCoolingDown] = useState(false);
 
@@ -374,7 +380,8 @@ export function MaterialEditingProvider({
         },
       });
       presenter.setFrozen(frozen);
-      gestures = attachMaterialPreviewGestures(canvas, host.camera, {
+      gestures = gesturesRef.current = attachMaterialPreviewGestures(canvas, host.camera, {
+        zoomInstant: prefersReducedMotion,
         onChange: () => presenter?.present({ force: true }),
       });
     } catch {
@@ -776,6 +783,7 @@ export function MaterialEditingProvider({
       focusNode,
       requestRender,
       attachPreviewCanvas: setCanvas,
+      previewZoomDrive,
       frameBudgetMs,
       previewNode: previewedDocument ? previewNode : null,
       setPreviewNode,
@@ -792,6 +800,7 @@ export function MaterialEditingProvider({
       materialLowering,
       previewNode,
       previewState,
+      previewZoomDrive,
       previewedDocument,
       requestRender,
       selectedNodeId,

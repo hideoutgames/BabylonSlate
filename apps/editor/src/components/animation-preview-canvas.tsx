@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { prefersReducedMotion } from "@haptic/editor-kit";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { ModelMaterialSlot, SkeletonKind } from "@haptic/assets";
@@ -62,6 +64,8 @@ export function AnimationPreviewCanvas({
   onClip?: (clip: AnimationPreviewClip | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
+  const zoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const play = useOptionalPlay();
   const { projectDocument } = useProjectState();
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
@@ -158,7 +162,8 @@ export function AnimationPreviewCanvas({
           staticContent: true,
           suspended: overlay.isOpen,
         });
-        gestures = attachMaterialPreviewGestures(canvas, host.camera, {
+        gestures = gesturesRef.current = attachMaterialPreviewGestures(canvas, host.camera, {
+          zoomInstant: prefersReducedMotion,
           onChange: () => presenter?.present({ force: true }),
         });
         hostRef.current = host;
@@ -246,14 +251,19 @@ export function AnimationPreviewCanvas({
   }, [bonesOnly, previewGeneration, showBones, skeletonKind]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="h-full w-full touch-none"
-      data-testid="animation-preview-canvas"
-      data-playing={clipLoaded && playback.playing ? "true" : "false"}
-      data-bones-only={bonesOnly ? "true" : undefined}
-      data-bones={bonesAttached ? "true" : "false"}
-      data-looping={clipLoaded && playback.loop ? "true" : "false"}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="h-full w-full touch-none"
+        data-testid="animation-preview-canvas"
+        data-playing={clipLoaded && playback.playing ? "true" : "false"}
+        data-bones-only={bonesOnly ? "true" : undefined}
+        data-bones={bonesAttached ? "true" : "false"}
+        data-looping={clipLoaded && playback.loop ? "true" : "false"}
+      />
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10">
+        <ViewportZoomControls drive={zoomDrive} testId="animation-preview-zoom-controls" />
+      </div>
+    </>
   );
 }

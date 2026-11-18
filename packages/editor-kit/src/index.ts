@@ -342,10 +342,11 @@ export {
   type AtlasTileGridTool,
   type AtlasTileMark,
 } from "./atlas-tile-grid";
-export type {
-  PanZoomLimits,
-  PanZoomSize,
-  PanZoomView,
+export {
+  zoomViewAbout,
+  type PanZoomLimits,
+  type PanZoomSize,
+  type PanZoomView,
 } from "./pan-zoom-model";
 export {
   usePanZoomSurface,

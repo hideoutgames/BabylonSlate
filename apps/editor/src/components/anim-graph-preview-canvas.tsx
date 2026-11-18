@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { prefersReducedMotion } from "@haptic/editor-kit";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { AnimEvalState } from "@haptic/anim-graph";
@@ -97,6 +99,8 @@ export function AnimGraphPreviewCanvas({
   subscribe: (listener: () => void) => () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
+  const zoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const play = useOptionalPlay();
   const { projectDocument } = useProjectState();
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
@@ -222,7 +226,8 @@ export function AnimGraphPreviewCanvas({
           staticContent: true,
           suspended: overlay.isOpen,
         });
-        gestures = attachMaterialPreviewGestures(canvas, host.camera, {
+        gestures = gesturesRef.current = attachMaterialPreviewGestures(canvas, host.camera, {
+          zoomInstant: prefersReducedMotion,
           onChange: () => presenter?.present({ force: true }),
         });
         hostRef.current = host;
@@ -300,14 +305,19 @@ export function AnimGraphPreviewCanvas({
   }, [generation, showBones, skeletonKind]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="h-full w-full touch-none"
-      data-testid="anim-preview-canvas"
-      data-bones={bonesAttached ? "true" : "false"}
-      data-ik-targets={String(markerCount)}
-      data-spring-colliders={String(colliderCount)}
-      data-clips={String(boundClips)}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        className="h-full w-full touch-none"
+        data-testid="anim-preview-canvas"
+        data-bones={bonesAttached ? "true" : "false"}
+        data-ik-targets={String(markerCount)}
+        data-spring-colliders={String(colliderCount)}
+        data-clips={String(boundClips)}
+      />
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10">
+        <ViewportZoomControls drive={zoomDrive} testId="anim-graph-preview-zoom-controls" />
+      </div>
+    </>
   );
 }

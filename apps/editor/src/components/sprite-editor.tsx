@@ -31,6 +31,8 @@ import {
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 import { TexturePreviewStatus, useTexturePreview } from "./texture-preview-status";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
+import { usePanZoomDrive } from "../lib/use-pan-zoom-drive";
 
 export function SpritePreviewPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -98,6 +100,7 @@ export function SpritePreview({
     : null;
   const panZoom = usePanZoomSurface({ content: framePixels, base: zoom, inset: FIT_INSET, enabled: url !== null });
   const view = panZoom.view;
+  const zoomDrive = usePanZoomDrive(panZoom);
   const scale = view?.scale ?? 1;
 
   const writeCollision = (next: SpriteCollision) => {
@@ -203,6 +206,11 @@ export function SpritePreview({
             <TexturePreviewStatus preview={preview} />
           </div>
         )}
+        {url && view ? (
+          <div className="pointer-events-none absolute bottom-3 right-3 z-40">
+            <ViewportZoomControls drive={zoomDrive} testId="sprite-preview-zoom-controls" />
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
 import { MessageDetails } from "./message-details";
 import { DiagnosticResultRow } from "./diagnostic-result-row";
 import { nodeDiagnosticDetails } from "../lib/diagnostic-details";
@@ -683,14 +684,20 @@ export function MaterialPreviewSurface({
           data-ready-generation={editing.previewState.readyGeneration ?? -1}
           className="min-h-40 w-full flex-1 touch-none bg-background"
         />
-        {editing.previewState.lastError ? (
-          <p
-            className="absolute inset-x-0 bottom-0 z-10 px-3 py-1 text-xs text-destructive"
-            data-testid="material-preview-error"
-          >
-            <SelectableText>{editing.previewState.lastError}</SelectableText>
-          </p>
-        ) : null}
+        {/* The zoom buttons sit in the corner, above the error line while one shows. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-end">
+          <div className="mb-3 mr-3">
+            <ViewportZoomControls drive={editing.previewZoomDrive} testId="material-preview-zoom-controls" />
+          </div>
+          {editing.previewState.lastError ? (
+            <p
+              className="pointer-events-auto w-full px-3 py-1 text-xs text-destructive"
+              data-testid="material-preview-error"
+            >
+              <SelectableText>{editing.previewState.lastError}</SelectableText>
+            </p>
+          ) : null}
+        </div>
         <AssetPicker
           open={meshPickOpen}
           onOpenChange={setMeshPickOpen}

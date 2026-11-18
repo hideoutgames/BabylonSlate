@@ -59,6 +59,8 @@ import {
 } from "./skybox-creator-preview-canvas";
 import { SkyboxCreatorSourceOverlay } from "./skybox-creator-source-overlay";
 import { asRecord } from "../lib/as-record";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
+import { usePanZoomDrive } from "../lib/use-pan-zoom-drive";
 
 const SOURCE_DECODE_MAX = 16384;
 const SKYBOX_CREATOR_SOURCE_MERGE_KEY = "skybox-creator-source";
@@ -435,6 +437,7 @@ export function SkyboxCreatorPreview({
   // The 4 x 3 net is an artboard: drag empty space to move it, pinch or wheel to zoom.
   const panZoom = usePanZoomSurface({ content: NET_ARTBOARD, base: "fit", inset: NET_INSET });
   const view = panZoom.view;
+  const zoomDrive = usePanZoomDrive(panZoom);
 
   const cells = useMemo(() => {
     const rows: Array<{
@@ -584,6 +587,11 @@ export function SkyboxCreatorPreview({
               </Empty>
             )}
           </div>
+          {view ? (
+            <div className="pointer-events-none absolute bottom-3 right-3 z-40">
+              <ViewportZoomControls drive={zoomDrive} testId="skybox-creator-net-zoom-controls" />
+            </div>
+          ) : null}
         </div>
       </div>
       <AssetPicker
@@ -665,7 +673,7 @@ export function SkyboxCreatorCubemap({
 
   return (
     <div
-      className="flex h-full min-h-0 overflow-hidden bg-sidebar"
+      className="relative flex h-full min-h-0 overflow-hidden bg-sidebar"
       data-testid="skybox-creator-cubemap"
     >
       {facePngs ? (

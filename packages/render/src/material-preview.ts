@@ -33,6 +33,9 @@ import { createText2DMesh } from "./text2d-mesh";
 import { resolveSceneRenderingQuality } from "./render-settings";
 import { DriverCompileWatch } from "./driver-compile";
 import { createDepthTextureTarget } from "./depth-texture-target";
+import { MAX_CAMERA_RADIUS, MIN_CAMERA_RADIUS } from "./editor-camera";
+import type { RenderScheduler } from "./render-scheduler";
+import { createViewportZoomDrive, type ViewportZoomDirection, type ViewportZoomDrive } from "./viewport-zoom-drive";
 import type { HeldThreadBudget } from "./stall-deadline";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
@@ -354,10 +357,18 @@ function pointerSpread(points: PointerSample[]): number {
   return Math.hypot(points[0]!.x - points[1]!.x, points[0]!.y - points[1]!.y);
 }
 
+/** The closest radius preview zoom allows: the camera's own limit, else the editor camera's. */
+function previewRadiusLower(camera: ArcRotateCamera): number {
+  return camera.lowerRadiusLimit ?? MIN_CAMERA_RADIUS;
+}
+
+/** The farthest radius preview zoom allows: the camera's own limit, else the editor camera's. */
+function previewRadiusUpper(camera: ArcRotateCamera): number {
+  return camera.upperRadiusLimit ?? MAX_CAMERA_RADIUS;
+}
+
 function zoomPreviewCamera(camera: ArcRotateCamera, factor: number): void {
-  const lower = camera.lowerRadiusLimit ?? 0.5;
-  const upper = camera.upperRadiusLimit ?? 400;
-  camera.radius = Math.min(upper, Math.max(lower, camera.radius / factor));
+  camera.radius = Math.min(previewRadiusUpper(camera), Math.max(previewRadiusLower(camera), camera.radius / factor));
 }
 
 /**
@@ -383,8 +394,27 @@ export function attachMaterialPreviewGestures(
       pointerId: number,
     ) => void;
     onTap?: (x: number, y: number) => void;
+    /** True makes a zoom button tap jump its whole step instead of gliding (Reduce Motion). */
+    zoomInstant?: () => boolean;
+    /** Held for the length of a zoom button press, so the preview keeps drawing. */
+    scheduler?: Pick<RenderScheduler, "acquireContinuous">;
   },
-): { dispose: () => void } {
+): { dispose: () => void; zoomDrive: ViewportZoomDrive } {
+  // Zoom buttons: the same clamped zoom as pinch and wheel, ending a press at the radius limit.
+  const zoomDrive = createViewportZoomDrive(
+    {
+      zoom: (factor) => {
+        zoomPreviewCamera(camera, factor);
+        options?.onChange?.();
+      },
+    },
+    {
+      scheduler: options?.scheduler,
+      instantStep: () => options?.zoomInstant?.() === true,
+      atLimit: (direction: ViewportZoomDirection) =>
+        direction === 1 ? camera.radius <= previewRadiusLower(camera) : camera.radius >= previewRadiusUpper(camera),
+    },
+  );
   const pointers = new Map<number, PointerSample>();
   let lastPoint: PointerSample | null = null;
   let downPoint: PointerSample | null = null;
@@ -520,7 +550,9 @@ export function attachMaterialPreviewGestures(
   canvas.addEventListener("touchmove", onTouch, { passive: false });
 
   return {
+    zoomDrive,
     dispose: () => {
+      zoomDrive.dispose();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", endPointer);
