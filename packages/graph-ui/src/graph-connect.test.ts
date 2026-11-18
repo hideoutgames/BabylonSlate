@@ -1094,7 +1094,7 @@ describe("shouldOpenAddNodeOnConnectEnd", () => {
       shouldOpenAddNodeOnConnectEnd({
         hasTargetHandle: false,
         pointerOverNode: false,
-        pointer: { x: 40, y: 0 },
+        pointer: { x: 20, y: 0 },
         safePins: [source],
       }),
     ).toBe(false);
@@ -1116,7 +1116,7 @@ describe("shouldOpenAddNodeOnConnectEnd", () => {
       shouldOpenAddNodeOnConnectEnd({
         hasTargetHandle: false,
         pointerOverNode: false,
-        pointer: { x: 250, y: 0 },
+        pointer: { x: 225, y: 0 },
         safePins: [source, { x: 200, y: 0 }],
       }),
     ).toBe(false);
@@ -1160,7 +1160,7 @@ describe("shouldOpenAddNodeOnConnectEnd", () => {
       shouldOpenAddNodeOnConnectEnd({
         hasTargetHandle: false,
         pointerOverNode: false,
-        pointer: { x: 95, y: 0 },
+        pointer: { x: 39, y: 0 },
         safePins: [source],
       }),
     ).toBe(false);
@@ -1168,7 +1168,7 @@ describe("shouldOpenAddNodeOnConnectEnd", () => {
       shouldOpenAddNodeOnConnectEnd({
         hasTargetHandle: false,
         pointerOverNode: false,
-        pointer: { x: 96, y: 0 },
+        pointer: { x: 40, y: 0 },
         safePins: [source],
       }),
     ).toBe(true);
@@ -1251,7 +1251,7 @@ describe("edgesTouchingNodes", () => {
 describe("shouldBreakPinConnectionsOnConnectEnd", () => {
   const source = { x: 0, y: 0 };
   const far = { x: 200, y: 0 };
-  const near = { x: 40, y: 0 };
+  const near = { x: 20, y: 0 };
 
   it("does not break when React Flow snapped to a target handle", () => {
     expect(
@@ -1319,7 +1319,7 @@ describe("shouldBreakPinConnectionsOnConnectEnd", () => {
         hasTargetHandle: false,
         pointerOverNode: false,
         pointerOverSourceHandle: false,
-        pointer: { x: 250, y: 0 },
+        pointer: { x: 225, y: 0 },
         safePins: [source, { x: 200, y: 0 }],
       }),
     ).toBe(true);
@@ -1438,12 +1438,13 @@ describe("connectEndAction", () => {
   };
   const near = {
     ...far,
-    pointer: { x: 40, y: 0 },
+    pointer: { x: 20, y: 0 },
   };
 
   it("opens Add Node on default far connect-end; near drags break wires", () => {
     expect(connectEndAction(far)).toBe("add-node");
     expect(connectEndAction(near)).toBe("break");
+    expect(connectEndAction({ ...far, pointer: { x: 60, y: 0 } })).toBe("add-node");
   });
 
   it("opens Add Node from a short drag in add-node mode and never breaks wires", () => {
@@ -1491,6 +1492,21 @@ describe("connectEndAction", () => {
       ),
     ).toBe("none");
   });
+
+  it("snap-connects in zone-add-node mode beyond the cancel zone, and opens Add Node away from other pins", () => {
+    // 60px from a compatible pin on another node: outside the cancel zone, inside the snap radius.
+    expect(
+      connectEndAction({ ...far, safePins: [{ x: 0, y: 0 }, { x: 260, y: 0 }], snapPins: [{ x: 260, y: 0 }] }, "zone-add-node"),
+    ).toBe("connect");
+    // 60px from the source pin with no other pin near: Add Node.
+    expect(
+      connectEndAction({ ...far, pointer: { x: 60, y: 0 }, snapPins: [{ x: 400, y: 0 }] }, "zone-add-node"),
+    ).toBe("add-node");
+    // Just beyond the snap radius of the other pin: Add Node.
+    expect(
+      connectEndAction({ ...far, snapPins: [{ x: 297, y: 0 }] }, "zone-add-node"),
+    ).toBe("add-node");
+  });
 });
 
 describe("nearestSnapConnectPin", () => {
@@ -1501,9 +1517,12 @@ describe("nearestSnapConnectPin", () => {
     { nodeId: "run", pinId: "left-in", x: 400, y: 0 },
   ];
 
-  it("returns the closest compatible pin within the cancel radius", () => {
+  it("returns the closest compatible pin within the snap radius", () => {
     expect(
       nearestSnapConnectPin({ x: 210, y: 8 }, source, pins),
+    ).toEqual({ nodeId: "idle", pinId: "left-in" });
+    expect(
+      nearestSnapConnectPin({ x: 200, y: 60 }, source, pins),
     ).toEqual({ nodeId: "idle", pinId: "left-in" });
   });
 
@@ -1519,7 +1538,7 @@ describe("nearestSnapConnectPin", () => {
 
   it("returns undefined when every compatible pin is outside the radius", () => {
     expect(
-      nearestSnapConnectPin({ x: 200, y: CONNECT_END_CANCEL_PX }, source, pins),
+      nearestSnapConnectPin({ x: 200, y: 96 }, source, pins),
     ).toBeUndefined();
   });
 });
