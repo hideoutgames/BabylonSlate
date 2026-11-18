@@ -1134,7 +1134,7 @@ describe("Profile", { timeout: 30_000 }, () => {
     const plan = featureTestProfilePlan(SESSION);
     const switches = ["world hidden", "flat world", "main pass unlit", "shadow taps off", "local lights off", "resolution 0.5"];
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], [...switches, "scene layers hidden", "geometry effects off", "post off", "shadows off", "world drawn once"]],
+      ["light", ['possess "Profile Light Camera"'], [...switches, "scene layers hidden", "shadow passes off", "geometry effects off", "post off", "world drawn once"]],
       ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "world drawn once"]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["captures off", "mirrors environment", "world drawn once"]],
     ]);
@@ -1148,10 +1148,18 @@ describe("Profile", { timeout: 30_000 }, () => {
     });
     expect(step("light", "scene layers hidden")).toMatchObject({ commands: ["scenelayers off"], restore: ["scenelayers on"], fields: ["layers"] });
     expect(step("heavy", "shadow passes off")).toMatchObject({ commands: ["shadowdebug passes off"], restore: ["shadowdebug passes on"] });
+    // The light view's step is the same one, and the world drawn once stops the map passes while the maps stay allocated.
+    expect(step("light", "shadow passes off")).toBe(step("heavy", "shadow passes off"));
+    expect(step("mirror", "world drawn once")).toMatchObject({
+      commands: expect.arrayContaining(["shadowdebug passes off"]), restore: ["shadowdebug passes on", "rendertargets on"],
+      fields: ["shadows.debug", "post.ambientOcclusion", "post.reflections", "post.volumetricLighting", "shadows.screen", "captures", "geometry.mirrors"],
+    });
+    // No step releases or resizes the shadow atlas (`quality reset` would make it again): none changes the shadow level or switches shadows off.
+    expect(plan.views.flatMap((view) => view.steps).flatMap((entry) => entry.commands).filter((line) => /^quality shadows (enabled|low|medium|high|ultra|mapSize)/.test(line))).toEqual([]);
     // Toggles come back to the session's own value.
     const other = featureTestProfilePlan({ postProcessing: false, captures: false, layers: false });
-    expect(other.views.flatMap((view) => view.steps).filter((entry) => entry.restore && !/^(shadow|world)debug/.test(entry.restore[0]!))
-      .map((entry) => [entry.label, entry.restore])).toEqual([
+    expect(other.views.flatMap((view) => view.steps).map((entry) => [entry.label, (entry.restore ?? []).filter((line) => !/^(shadow|world)debug/.test(line))]).filter(([, restore]) => restore!.length > 0))
+      .toEqual([
       ["scene layers hidden", ["scenelayers off"]], ["post off", ["postprocessing off"]], ["world drawn once", ["rendertargets off"]],
       ["world drawn once", ["rendertargets off"]],
       ["captures off", ["rendertargets off"]], ["world drawn once", ["rendertargets off"]],
@@ -1175,7 +1183,7 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(sequence.at(-1)).toEqual({ label: "heavy drift", commands: ['possess "Profile Heavy Camera"'], baseline: true, view: "heavy" });
     // Two 5 s warm-up windows at about 10 s, then the 3 s rows at about 8 s with their settle and probes: within twelve minutes.
     expect(PROFILE_WARMUP_WINDOWS * 10 + sequence.length * 8).toBeLessThanOrEqual(720);
-    expect(profileStep("light shadows off")).toMatchObject({ view: "light", fields: ["shadows", "shadows.filter"] });
+    expect(profileStep("light shadow passes off")).toMatchObject({ view: "light", fields: ["shadows.debug"] });
     expect(profileStep("heavy baseline 2")).toBeUndefined();
   });
 
@@ -1405,8 +1413,9 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", 'possess "Main Camera"']);
     // Each row's draws per pass and shadow atlas, as the step left them.
     const row = (label: string) => rows.find((sample) => sample.label === label)!;
-    expect(row("light shadows off").drawPasses).toEqual({ objects: 520, shadows: 0, captures: 44, post: 12 });
-    expect(row("light shadows off").shadowAtlas).toEqual({ edge: 0, maps: [] });
+    // The shadow passes stop with the atlas kept: no Profile command switches shadows off.
+    expect(editor.commands).not.toContain("quality shadows enabled off");
+    expect(row("light shadow passes off").shadowAtlas).toEqual({ edge: 8192, maps: [{ mapSize: 2048, passes: 4 }] });
     expect(row("mirror captures off").drawPasses).toEqual({ objects: 520, shadows: 140, captures: 0, post: 12 });
     expect(main!.play.profile).toEqual({
       instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 },
@@ -1420,9 +1429,13 @@ describe("Profile", { timeout: 30_000 }, () => {
 
   /** Every fourth attempt held, as a scene that steadily holds frames does. */
   const ONE_IN_FOUR = (attempt: number) => attempt % 4 === 3;
-  /** Whether the commands so far leave `shadows off` applied (`quality reset` undoes it). */
-  const shadowsOff = (commands: readonly string[]) =>
-    commands.lastIndexOf("quality shadows enabled off") > commands.lastIndexOf("quality reset");
+  /** Whether the commands so far leave only the shadow map passes off (the `shadow passes off` step; `quality reset` undoes it). */
+  const shadowsOff = (commands: readonly string[]) => {
+    const off = commands.lastIndexOf("shadowdebug passes off");
+    const since = commands.slice(commands.lastIndexOf("quality reset") + 1);
+    return off > commands.lastIndexOf("shadowdebug passes on") && off > commands.lastIndexOf("quality reset")
+      && !since.includes("worlddebug world off") && !since.includes("quality postprocessing ambientOcclusion off");
+  };
 
   /**
    * A Play view that tries 40 frames a second and holds those `holds` names after the commands so far; each frame
@@ -1538,7 +1551,7 @@ describe("Profile", { timeout: 30_000 }, () => {
   });
 
   it("records the world renderer's work each row did while sampled, and the native memory as it ended", async () => {
-    // Two strict readiness checks and one shadow admission per attempt, three times as many while shadows are off.
+    // Two strict readiness checks and one shadow admission per attempt, three times as many while the shadow passes are off.
     let attempts = 0;
     const work = {
       graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, readinessProbeMs: 0, outlineReadinessChecks: 0,
@@ -1562,7 +1575,7 @@ describe("Profile", { timeout: 30_000 }, () => {
         await editor.deps.sleep(ms, signal);
         return stats;
       },
-      // The device has 1 GiB free, 2 GiB while shadows are off; the app's headroom is unreported.
+      // The device has 1 GiB free, 2 GiB while the shadow passes are off; the app's headroom is unreported.
       hostMemory: async () => ({ deviceAvailableBytes: (shadowsOff(editor.commands) ? 2048 : 1024) * MIB, appAvailableBytes: null }),
     };
     const report = await runFeatureTestCheck({
@@ -1570,36 +1583,35 @@ describe("Profile", { timeout: 30_000 }, () => {
     });
     const row = (label: string) => report.scenes[0]!.play.benchmark.find((sample) => sample.label === label)!;
     // Each row keeps the memory as its sample ended, before the step is undone.
-    expect([row("light baseline 19").memory, row("light shadows off").memory]).toEqual([
+    expect([row("light baseline 15").memory, row("light shadow passes off").memory]).toEqual([
       { deviceAvailableBytes: 1024 * MIB, appAvailableBytes: null }, { deviceAvailableBytes: 2048 * MIB, appAvailableBytes: null },
     ]);
     const perDrawn = (label: string) => {
       const { work: sampled, presentation } = row(label);
       return { readiness: sampled!.strictReadinessChecks / presentation!.drawn, admissions: sampled!.shadowAdmissions / presentation!.drawn };
     };
-    expect(perDrawn("light baseline 19")).toEqual({ readiness: 2, admissions: 1 });
-    expect(perDrawn("light shadows off")).toEqual({ readiness: 6, admissions: 3 });
-    expect(perDrawn("light baseline 20")).toEqual({ readiness: 2, admissions: 1 });
+    expect(perDrawn("light baseline 15")).toEqual({ readiness: 2, admissions: 1 });
+    expect(perDrawn("light shadow passes off")).toEqual({ readiness: 6, admissions: 3 });
+    expect(perDrawn("light baseline 16")).toEqual({ readiness: 2, admissions: 1 });
     // What an earlier failure waited for is not a row's: no check failed while it was sampled.
     expect(row("heavy baseline 1").work!.readinessBlockers).toEqual([]);
   });
 
   it("samples a step that raises the hold rate past the margin once the wait's bound passes, says so, and goes on", async () => {
-    // Shadows off holds three attempts in four.
+    // Shadow passes off holds three attempts in four.
     const { deps, waits, timeouts } = holdingView((attempt, commands) => shadowsOff(commands) ? attempt % 4 !== 0 : ONE_IN_FOUR(attempt));
     const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts, signal: new AbortController().signal });
     const samples = report.scenes[0]!.play.benchmark;
-    const shadows = samples.find((sample) => sample.label === "light shadows off")!;
+    const shadows = samples.find((sample) => sample.label === "light shadow passes off")!;
     expect(shadows.failed).toEqual([
       "The view still held 75% of its frames over the last 2 s after 90 s, past the 40% its warm-up allows (25% plus 15 points); these frames include them.",
     ]);
     // 90 s of waiting, then the 1 s settle.
-    expect(waits.find((wait) => wait.step === "main: measuring light shadows off")!.ms).toBe(91_000);
+    expect(waits.find((wait) => wait.step === "main: measuring light shadow passes off")!.ms).toBe(91_000);
     expect(samples.at(-1)!.label).toBe("heavy drift");
-    // Every window of a step that turns shadows off: shadows off and the world drawn once, each twice at each view.
+    // Every window of a step that stops the shadow passes alone: shadow passes off, twice at each of the light and heavy views.
     expect(report.scenes[0]!.problems).toEqual([
-      "light shadows off", "light shadows off", "light world drawn once", "light world drawn once",
-      "heavy world drawn once", "heavy world drawn once", "mirror world drawn once", "mirror world drawn once",
+      "light shadow passes off", "light shadow passes off", "heavy shadow passes off", "heavy shadow passes off",
     ].map((label) => `${label}: ${shadows.failed[0]}`));
   });
 
@@ -1648,9 +1660,9 @@ describe("Profile", { timeout: 30_000 }, () => {
     const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts, signal: new AbortController().signal });
     const samples = report.scenes[0]!.play.benchmark;
     const rowsUntil = featureTestProfileSequence(SESSION).map((step) => step.label);
-    expect(samples.map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2", ...rowsUntil.slice(0, rowsUntil.indexOf("light shadows off") + 1)]);
+    expect(samples.map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2", ...rowsUntil.slice(0, rowsUntil.indexOf("light shadow passes off") + 1)]);
     expect(samples.at(-1)!.failed).toEqual(["The view drew no frame in the last 2 s of 90 s; the remaining profiles were skipped."]);
-    expect(waits.at(-1)).toEqual({ step: "main: measuring light shadows off", ms: 90_000 });
+    expect(waits.at(-1)).toEqual({ step: "main: measuring light shadow passes off", ms: 90_000 });
     expect(editor.commands).not.toContain('possess "Profile Mirror Camera"');
     expect(editor.commands.slice(-3)).toEqual(["gpubusy off", "quality reset", 'possess "Main Camera"']);
   });
@@ -1677,7 +1689,7 @@ describe("Profile", { timeout: 30_000 }, () => {
     // Neither baseline after a skipped window is measured.
     const labels = rows.map((sample) => sample.label);
     expect(labels.slice(labels.indexOf("light post off") - 2, labels.lastIndexOf("light post off") + 3)).toEqual([
-      "light geometry effects off", "light baseline 17", "light post off", "light post off", "light shadows off", "light baseline 20",
+      "light geometry effects off", "light baseline 19", "light post off", "light post off", "light world drawn once", "light baseline 22",
     ]);
     // The step's undo failed: the baseline after it says so and fails the scene.
     expect(main!.problems[0]).toBe("light baseline 2: postprocessing on failed: Refused.");
