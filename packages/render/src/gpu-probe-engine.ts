@@ -56,6 +56,7 @@ export class EngineGpuProbe {
   private readonly serialProbe: SerialFrameProbe;
   private readonly timers: GpuPassTimers<unknown>;
   private readonly timersAvailable: boolean;
+  private readonly headLoad: GpuSyntheticLoad;
   /** Babylon's frame-wide GPU timer was on as the pass timers started: it is off while they record, back on after. */
   private captureSuspended = false;
   private uninstall: (() => void) | null = null;
@@ -89,7 +90,11 @@ export class EngineGpuProbe {
     });
     this.recorder.onPassStart = () => this.submitDeferred();
     const gl = (engine as unknown as { _gl?: WebGL2RenderingContext })._gl;
-    const timerHost = gl && (engine as unknown as { webGLVersion?: number }).webGLVersion === 2 ? webglPassTimerHost(gl) : null;
+    // The head start: the synthetic load's program in a load of its own, which the timers draw before each frame.
+    this.headLoad = createGpuSyntheticLoad(engine);
+    const timerHost = gl && (engine as unknown as { webGLVersion?: number }).webGLVersion === 2
+      ? webglPassTimerHost(gl, () => { if (this.headLoad.ready()) this.headLoad.draw(); })
+      : null;
     this.timersAvailable = timerHost !== null;
     this.timers = new GpuPassTimers<unknown>((timerHost ?? NO_TIMER_QUERIES) as PassTimerHost<unknown>);
     const begin = engine.onBeginFrameObservable.add(() => {
@@ -110,6 +115,7 @@ export class EngineGpuProbe {
       engine.onEndFrameObservable.remove(end);
       this.off();
       this.synthetic.dispose();
+      this.headLoad.dispose();
       this.scheduler.dispose();
     });
   }
@@ -136,6 +142,7 @@ export class EngineGpuProbe {
    */
   off(): void {
     this.timers.stop();
+    this.headLoad.release();
     this.restoreFrameCapture();
     this.serialProbe.dispose();
     this.deferred.length = 0;

@@ -161,8 +161,31 @@ describe("GPU pass timers", () => {
     expect(timers.start(true, 2)).toBe(false);
     timers.frameBegin();
     timers.frameEnd();
-    state.now = 11_000;
+    state.now = 21_000;
     timers.frameBegin();
     expect(timers.result()).toMatchObject({ id: 2, available: true, frames: 0, failed: "the view drew too few frames" });
+  });
+
+  it("gives each frame a GPU head start, outside every pass, and drops a frame whose head start ended before its submission did", () => {
+    const { host, state, finish } = fakeHost();
+    const draws: number[] = [];
+    const timers = new GpuPassTimers({ ...host, headStart: (count) => draws.push(count) });
+    timers.start(true, 1);
+    const run = (cpuMs: number) => {
+      timers.frameBegin();
+      timers.boundary("objects", "Forward objects");
+      state.now += cpuMs;
+      timers.frameEnd();
+    };
+    // Head start 4 ms against 10 ms of submission: the GPU waited for the frame, which is dropped.
+    run(10);
+    finish(4, 0, 3);
+    // The next frame gets a longer head start: 30 ms against 10 ms.
+    run(10);
+    expect(draws[1]).toBeGreaterThan(draws[0]!);
+    finish(30, 0, 3);
+    timers.frameBegin();
+    expect(timers.result()).toMatchObject({ frames: 1, frameMs: 3, cpuMs: 10, headStart: { ms: 30, starved: 1 } });
+    expect(timers.result()!.passes.map((entry) => entry.label)).toEqual(["frame start", "Forward objects"]);
   });
 });

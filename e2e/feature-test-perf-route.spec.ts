@@ -447,6 +447,7 @@ async function measureHeld(page: Page) {
   const timers = GPU_PASSES ? [await passTimers(page), await passTimers(page)] : null;
   return {
     drawnFps: window.drawnFps, frameCpu: window.frameCpu.medianMs, frameDraws: window.frameDraws, drawsPerPass: window.drawsPerPass,
+    cpuMsPerPass: window.cpuMsPerPass,
     width: window.rendering.width, height: window.rendering.height, settings: window.rendering.settings, signature, timers,
   };
 }

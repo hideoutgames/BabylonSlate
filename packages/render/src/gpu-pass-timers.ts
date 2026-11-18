@@ -8,6 +8,12 @@ import { FRAME_STAGES, frameStageOf, median, type FrameStage } from "./gpu-frame
  * queries cannot nest, so a nested pass ends its parent's segment and the parent resumes in a new one; a label's time is
  * the sum of its segments in the frame.
  *
+ * An elapsed query spans GPU timestamps, so a GPU that waits for the CPU's next command inside a segment counts the wait:
+ * on a CPU-bound frame each pass would read as its submission time. With a host that can (`headStart`), each frame first
+ * gives the GPU a fixed load to run, outside the passes, that lasts longer than the frame's CPU submission, so every
+ * pass's commands are queued before the GPU reaches them and a segment holds GPU work alone. A frame whose load ended
+ * before its submission did (`starved`) is dropped and the next frames get a longer load.
+ *
  * Off unless asked for; a run records a fixed number of frames and ends itself. Where the context has no timer queries
  * (`EXT_disjoint_timer_query_webgl2`: WebKit has none) the run ends at once, reporting them absent.
  */
@@ -24,6 +30,10 @@ export interface PassTimerHost<Q> {
   disjoint(): boolean;
   release(query: Q): void;
   now(): number;
+  /** Queues `draws` units of a fixed GPU load and flushes, so the GPU starts on it now; absent: no head start. */
+  headStart?(draws: number): void;
+  /** Flushes what the frame submitted. */
+  flush?(): void;
 }
 
 /** A pass's GPU time over a run: per-frame sums, median and mean over the measured frames (absent counts as zero). */
@@ -44,8 +54,12 @@ export interface PassTimerResult {
   frames: number;
   /** Frames dropped for a disjoint event, a query that could not start, or a query already running. */
   discarded: number;
-  /** Median whole-frame GPU time: the sum of a frame's segments. */
+  /** Median whole-frame GPU time: the sum of a frame's segments, the head start left out. */
   frameMs: number | null;
+  /** Median CPU submission of a measured frame, from after its head start to its end. */
+  cpuMs: number | null;
+  /** The head start's median GPU time over the measured frames, and the frames dropped as it ended too soon; null without one. */
+  headStart: { ms: number; starved: number } | null;
   stages: { stage: FrameStage; ms: number; meanMs: number }[];
   /** In order of first appearance within a frame. */
   passes: PassTimerEntry[];
@@ -57,15 +71,22 @@ export const PASS_TIMER_FRAMES = 60;
 /** Segments per frame; boundaries past it count to the last segment. */
 const MAX_SEGMENTS = 512;
 /** Longest a run waits for its frames, from its start. */
-const PASS_TIMER_TIMEOUT_MS = 10_000;
+const PASS_TIMER_TIMEOUT_MS = 20_000;
+/** Head start units at a run's start, and most a frame gets. */
+const HEAD_START_DRAWS = 8;
+const MAX_HEAD_START_DRAWS = 96;
+/** How much longer than its CPU submission a frame's head start must have lasted for its segments to count. */
+const HEAD_START_MARGIN = 1.2;
 /** Frames whose queries may be in flight at once. */
 const MAX_PENDING = 8;
 
 interface Segment<Q> { stage: FrameStage; label: string; query: Q }
-interface PendingFrame<Q> { segments: Segment<Q>[]; times: (number | null)[] }
+interface PendingFrame<Q> { segments: Segment<Q>[]; times: (number | null)[]; started: number; cpuMs: number; head: boolean }
 
 /** The label work carries before the frame's first pass boundary. */
 export const FRAME_START_LABEL = "frame start";
+/** The head start's own segment, outside every stage and total. */
+const HEAD_START_LABEL = "head start";
 
 export class GpuPassTimers<Q> {
   private readonly host: PassTimerHost<Q>;
@@ -83,6 +104,10 @@ export class GpuPassTimers<Q> {
   private active = false;
   private readonly pending: PendingFrame<Q>[] = [];
   private readonly measured: Map<string, number>[] = [];
+  private readonly cpu: number[] = [];
+  private readonly heads: number[] = [];
+  private starved = 0;
+  private headDraws = HEAD_START_DRAWS;
   private readonly order = new Map<string, { stage: FrameStage; label: string; rank: number }>();
   private discarded = 0;
   /** Told when a run ends, with its result. */
@@ -103,8 +128,12 @@ export class GpuPassTimers<Q> {
     if (this.recording) return false;
     this.framesWanted = Math.max(1, Math.floor(frames));
     this.measured.length = 0;
+    this.cpu.length = 0;
+    this.heads.length = 0;
     this.order.clear();
     this.discarded = 0;
+    this.starved = 0;
+    this.headDraws = HEAD_START_DRAWS;
     this.started = this.host.now();
     this.recording = true;
     if (!available) this.finish("no timer queries", false);
@@ -118,11 +147,19 @@ export class GpuPassTimers<Q> {
     if (!this.recording) return;
     if (this.host.now() - this.started > PASS_TIMER_TIMEOUT_MS) return this.finish("the view drew too few frames");
     if (this.frame || this.measured.length + this.pending.length >= this.framesWanted || this.pending.length >= MAX_PENDING) return;
-    this.frame = { segments: [], times: [] };
+    const head = this.host.headStart !== undefined;
+    this.frame = { segments: [], times: [], started: 0, cpuMs: 0, head };
     this.stage = "other";
-    this.label = FRAME_START_LABEL;
     this.tailReached = false;
     this.invalid = false;
+    if (head) {
+      this.label = HEAD_START_LABEL;
+      this.open();
+      this.host.headStart!(this.headDraws);
+      this.close();
+    }
+    this.frame.started = this.host.now();
+    this.label = FRAME_START_LABEL;
     this.open();
   }
 
@@ -149,6 +186,8 @@ export class GpuPassTimers<Q> {
     if (!frame) return;
     this.frame = null;
     this.close();
+    this.host.flush?.();
+    frame.cpuMs = this.host.now() - frame.started;
     if (this.invalid) {
       this.discard(frame);
       return;
@@ -212,8 +251,21 @@ export class GpuPassTimers<Q> {
   }
 
   private record(frame: PendingFrame<Q>): void {
+    if (frame.head) {
+      const headMs = frame.times[0]! / 1e6;
+      if (headMs < frame.cpuMs * HEAD_START_MARGIN) {
+        // The GPU may have waited for this frame's commands: its segments are not GPU time alone.
+        this.starved += 1;
+        const wanted = Math.ceil(this.headDraws * Math.max(1.5, (frame.cpuMs * HEAD_START_MARGIN * 1.3) / Math.max(headMs, 0.05)));
+        this.headDraws = Math.min(MAX_HEAD_START_DRAWS, wanted);
+        return;
+      }
+      this.heads.push(headMs);
+    }
+    this.cpu.push(frame.cpuMs);
     const sums = new Map<string, number>();
     frame.segments.forEach((segment, index) => {
+      if (frame.head && index === 0) return;
       const key = `${segment.stage}\u0000${segment.label}`;
       sums.set(key, (sums.get(key) ?? 0) + frame.times[index]! / 1e6);
       if (!this.order.has(key)) this.order.set(key, { stage: segment.stage, label: segment.label, rank: this.order.size });
@@ -234,7 +286,11 @@ export class GpuPassTimers<Q> {
   private finish(failed: string | null, available = true): void {
     this.stop();
     this.runs += 1;
-    this.last = summarisePassTimers(this.measured, this.order, this.discarded, failed, available, this.runs);
+    this.last = {
+      ...summarisePassTimers(this.measured, this.order, this.discarded, failed, available, this.runs),
+      cpuMs: median(this.cpu),
+      headStart: this.host.headStart && available ? { ms: median(this.heads) ?? 0, starved: this.starved } : null,
+    };
     this.onFinish?.(this.last);
   }
 }
@@ -243,7 +299,7 @@ export class GpuPassTimers<Q> {
 function summarisePassTimers(
   frames: readonly Map<string, number>[], order: ReadonlyMap<string, { stage: FrameStage; label: string; rank: number }>, discarded: number,
   failed: string | null, available: boolean, id: number,
-): PassTimerResult {
+): Omit<PassTimerResult, "cpuMs" | "headStart"> {
   const mean = (values: readonly number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
   const passes: PassTimerEntry[] = [...order].sort((a, b) => a[1].rank - b[1].rank).map(([key, { stage, label }]) => {
     const values = frames.map((frame) => frame.get(key) ?? 0);
@@ -261,8 +317,11 @@ function summarisePassTimers(
   return { id, available, frames: frames.length, discarded, frameMs: median(totals), stages, passes, failed };
 }
 
-/** A WebGL2 context's timer queries for `GpuPassTimers`; null where it has none. */
-export function webglPassTimerHost(gl: WebGL2RenderingContext): PassTimerHost<WebGLQuery> | null {
+/**
+ * A WebGL2 context's timer queries for `GpuPassTimers`, with `load` (one unit of a fixed GPU load) as the head start;
+ * null where it has none.
+ */
+export function webglPassTimerHost(gl: WebGL2RenderingContext, load?: () => void): PassTimerHost<WebGLQuery> | null {
   const ext = gl.getExtension("EXT_disjoint_timer_query_webgl2") as { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null;
   if (!ext) return null;
   const pool: WebGLQuery[] = [];
@@ -280,5 +339,12 @@ export function webglPassTimerHost(gl: WebGL2RenderingContext): PassTimerHost<We
     disjoint: () => !!gl.getParameter(ext.GPU_DISJOINT_EXT),
     release: (query) => { if (pool.length < 1024) pool.push(query); else gl.deleteQuery(query); },
     now: () => performance.now(),
+    ...load ? {
+      headStart: (draws: number) => {
+        for (let index = 0; index < draws; index++) load();
+        gl.flush();
+      },
+      flush: () => gl.flush(),
+    } : {},
   };
 }
