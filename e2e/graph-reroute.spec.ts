@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
 import type { SerializedGraph } from "../packages/core/src/index.ts";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openAssetFromBrowser, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
@@ -160,6 +161,8 @@ test("a Custom Event created from Add Node is named in its node header, and its 
   await expect(editor.locator('.react-flow__node[data-id="begin"]')).toBeVisible({ timeout: 15_000 });
 
   await editor.getByTestId("graph-add-node").click();
+  // The list is windowed: search brings the row into view.
+  await page.getByTestId("node-palette-search").fill("Create New Custom Event");
   await page.getByTestId("node-palette-item-flow.event.custom").click();
   const field = editor.getByTestId("graph-node-rename");
   await expect(field).toBeFocused();
@@ -177,4 +180,38 @@ test("a Custom Event created from Add Node is named in its node header, and its 
   await page.keyboard.press("Enter");
   await expect(editor.getByText("Event Close Door", { exact: true })).toBeVisible();
   await title.waitFor({ state: "detached" });
+});
+
+test("on touch, a double-tap on a wire adds a knot and a double-tap on a Custom Event's title renames it", {
+  tag: IPAD_TEST_TAG,
+}, async ({ page, hasTouch }) => {
+  test.skip(!hasTouch, "Taps need a touch screen.");
+  test.setTimeout(120_000);
+  await openTestProject(page);
+  const graph: SerializedGraph = {
+    nodes: [
+      { id: "begin", type: "flow.event.beginPlay", position: { x: 80, y: 80 }, data: {} },
+      { id: "print", type: "debug.print", position: { x: 760, y: 80 }, data: {} },
+      { id: "hit", type: "flow.event.custom", position: { x: 80, y: 360 }, data: { name: "Hit", title: "Event Hit", pins: [] } },
+    ],
+    edges: [{ id: "x", source: "begin", sourceHandle: "execOut", target: "print", targetHandle: "execIn" }],
+  };
+  const installed = await page.evaluate(async (next) => (
+    globalThis as unknown as { __hapticTest: { setMainGraphContent: (graph: SerializedGraph) => Promise<boolean> } }
+  ).__hapticTest.setMainGraphContent(next), graph);
+  expect(installed).toBe(true);
+  await openAssetFromBrowser(page, GRAPH_PATH);
+  const editor = page.getByTestId("graph-editor");
+  await expect(editor.locator('.react-flow__node[data-id="print"]')).toBeVisible({ timeout: 15_000 });
+
+  const point = await wireMiddle(editor, "x");
+  await page.touchscreen.tap(point.x, point.y);
+  await page.touchscreen.tap(point.x, point.y);
+  await expect(editor.locator('.react-flow__node:has([data-node-kind="reroute"])')).toHaveCount(1);
+  await expect(editor.locator(".react-flow__edge")).toHaveCount(2);
+
+  const title = await center(editor.getByText("Event Hit", { exact: true }));
+  await page.touchscreen.tap(title.x, title.y);
+  await page.touchscreen.tap(title.x, title.y);
+  await expect(editor.getByTestId("graph-node-rename")).toHaveValue("Hit");
 });
