@@ -12,6 +12,7 @@ import {
 import { createDefaultScene } from "@haptic/core";
 import { createEngine } from "./create-engine";
 import { describeEngineTexture } from "./resource-cache";
+import { discardParkedShadowAtlas } from "./shadow-atlas";
 
 class FakeCanvas {
   width = 256;
@@ -34,7 +35,8 @@ class FakeCanvas {
 
 /**
  * The textures a Basic 3D Play session creates: default sky cube, the engine default material's checker, the light
- * block's area-light lookup tables and the sun's shadow atlas.
+ * block's area-light lookup tables and the sun's shadow atlas. The atlas outlives the session parked on the Engine for the
+ * next Scene (`shadow-atlas.ts`, `ParkedAtlas`), until that Scene takes it or it is discarded.
  */
 describe("textures across a Play cycle", () => {
   const handles: Array<{ dispose: () => void }> = [];
@@ -127,6 +129,9 @@ describe("textures across a Play cycle", () => {
       expect(retained(engine, before).length).toBeGreaterThanOrEqual(2);
       play.dispose();
       await play.whenReleased();
+      // Only the atlas stays, parked: its render target and depth texture.
+      expect(retained(engine, before), `cycle ${cycle}`).toEqual(["RenderTarget", "DepthStencil"]);
+      expect(discardParkedShadowAtlas(engine)).toBe(true);
       expect(retained(engine, before), `cycle ${cycle}`).toEqual([]);
     }
   });
@@ -138,6 +143,7 @@ describe("textures across a Play cycle", () => {
     play.dispose();
     await play.whenReleased();
     await frames(engine, 4);
+    discardParkedShadowAtlas(engine);
     expect(retained(engine, before)).toEqual([]);
   });
 });
