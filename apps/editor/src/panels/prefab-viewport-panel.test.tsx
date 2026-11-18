@@ -17,6 +17,7 @@ import {
 } from "@haptic/assets";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { PrefabViewportPanel } from "./prefab-viewport-panel";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { playAudioLibraryFromAssets } from "../lib/play-audio";
 
@@ -56,6 +57,7 @@ const {
         setPivotAroundCenter: vi.fn(),
       },
       setPreviewCanvas: vi.fn(),
+      zoomDrive: { start: vi.fn(), stop: vi.fn(), step: vi.fn(), dispose: vi.fn() },
       setViewportMode: vi.fn(),
       setViewportShadingMode: vi.fn(),
       setDrawMeshCollision: vi.fn(),
@@ -321,7 +323,9 @@ describe("PrefabViewportPanel engine", () => {
       viewportSnapRotateDeg: 15,
       viewportSnapScale: 0.25,
       linkedScaleKeys: [],
+      viewportZoomButtons: false,
     });
+    handle.editor.zoomDrive.start.mockClear();
     createEngineMock.mockClear();
     dispose.mockClear();
     handle.editor.setLinkedScaleActors.mockClear();
@@ -351,6 +355,17 @@ describe("PrefabViewportPanel engine", () => {
     pickSelection.setSelectedId.mockClear();
     pickSelection.setSelectedMemberId.mockClear();
     pickSelection.setSelectedNodeIds.mockClear();
+  });
+
+  it("shows Viewport Zoom Buttons in its own island, driving the Engine's zoom", async () => {
+    receiveActiveAppSettingsUpdate({ viewportZoomButtons: true });
+    render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await waitFor(() => expect(createEngineMock).toHaveBeenCalled());
+    const zoomOut = screen.getByRole("button", { name: "Zoom Out" });
+    expect(screen.getByTestId("prefab-viewport-zoom-controls").contains(zoomOut)).toBe(true);
+    dispatchPointerEvent(zoomOut, "pointerdown");
+    expect(handle.editor.zoomDrive.start).toHaveBeenCalledExactlyOnceWith(-1);
+    dispatchPointerEvent(zoomOut, "pointerup");
   });
 
   it("clears the graph node and member selection only when a pick selects a component or Prefab Root", async () => {

@@ -8,7 +8,7 @@ World Scene documents in the Haptic editor: schema, selection, command path, vie
 | --- | --- |
 | Schema, normalization, `ViewportMode`, Euler helpers | [`packages/core/src/scene.ts`](../../../packages/core/src/scene.ts) (`SCENE_SCHEMA_VERSION = 4`) |
 | Scene commands, `diffSceneCommands`, `planSceneChange`, journal revivers | [`packages/edit/src/commands/`](../../../packages/edit/src/commands/) |
-| Editor camera, gizmos, outline, grid, placement, gestures, 2D sorting, `EditorSceneSync` | [`packages/render/src/`](../../../packages/render/src/) (`editor-camera.ts`, `gizmo-host.ts`, `overlay-transform-box.ts`, `scene-outline-host.ts`, `editor-grid.ts`, `editor-place.ts`, `viewport-gestures.ts`, `two-d.ts`, `sorting.ts`, `editor-scene-sync.ts`) |
+| Editor camera, gizmos, outline, grid, placement, gestures, 2D sorting, `EditorSceneSync` | [`packages/render/src/`](../../../packages/render/src/) (`editor-camera.ts`, `gizmo-host.ts`, `overlay-transform-box.ts`, `scene-outline-host.ts`, `editor-grid.ts`, `editor-place.ts`, `viewport-gestures.ts`, `viewport-zoom-drive.ts` (zoom buttons: tap glides one ×1.2 step, hold zooms continuously), `two-d.ts`, `sorting.ts`, `editor-scene-sync.ts`) |
 | PropertyGrid, TreeView, pickers, PanelFrame | [`packages/editor-kit/src/`](../../../packages/editor-kit/src/) |
 | Selection provider, session view state | [`apps/editor/src/context/`](../../../apps/editor/src/context/) (`scene-editing-context.tsx`, `editor-session-state-context.tsx`) |
 | Panels, Place Actors, Assets panel, Outliner drops | [`apps/editor/src/panels/`](../../../apps/editor/src/panels/), [`apps/editor/src/lib/`](../../../apps/editor/src/lib/) (`place-actors.ts`, `use-place-actor-items.ts`, `scene-assets.ts`, `outliner-drop.ts`) |

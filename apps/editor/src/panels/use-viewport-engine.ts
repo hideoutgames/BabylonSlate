@@ -7,6 +7,7 @@ import {
   type EngineHandle,
 } from "@haptic/render";
 import { sceneLayerCameraFrame, type EnvironmentLightingSettings, type SerializedScene } from "@haptic/core";
+import { prefersReducedMotion } from "@haptic/editor-kit";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
@@ -214,6 +215,7 @@ export function useViewportEngine({
           editorFlyEnabled: () => !playingRef.current,
           onPilotedActorMoveEnd: (live) => commitPilotedActorRef.current(live),
           editorFlySpeed: () => flySpeedRef.current,
+          editorZoomInstant: prefersReducedMotion,
           cameraPreviewFrameRate: () => cameraPreviewFrameRateRef.current,
         });
         engineRef.current = handle;

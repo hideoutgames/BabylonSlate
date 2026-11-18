@@ -244,6 +244,11 @@ export function useCompactMode(): boolean {
   return useSettingSelector(resolveCompactMode);
 }
 
+/** Accessibility **Viewport Zoom Buttons**; re-renders only when it changes. */
+export function useViewportZoomButtons(): boolean {
+  return useSettingSelector((settings) => settings.viewportZoomButtons);
+}
+
 /** Debug Mode Engine Setting; re-renders only when it changes. */
 export function useDebugMode(): boolean {
   return useSettingSelector((settings) => settings.debugMode);
