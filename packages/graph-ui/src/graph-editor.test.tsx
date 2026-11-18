@@ -2024,6 +2024,101 @@ describe("GraphEditor", () => {
     }
   });
 
+  describe("touch hold on a pin", () => {
+    const touchList = (point: { x: number; y: number }) => [{ identifier: 7, clientX: point.x, clientY: point.y } as Touch];
+    const touch = (target: EventTarget, type: "touchstart" | "touchmove" | "touchend", point: { x: number; y: number }) => {
+      target.dispatchEvent(
+        new TouchEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          touches: type === "touchend" ? [] : touchList(point),
+          changedTouches: touchList(point),
+        }),
+      );
+    };
+    /** A finger down on the pin, as a browser reports it: a pointer event, then a touch event. */
+    const press = (source: Element, point: { x: number; y: number }) => {
+      const down = new MouseEvent("pointerdown", { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y });
+      Object.defineProperty(down, "pointerId", { value: 7 });
+      Object.defineProperty(down, "pointerType", { value: "touch" });
+      Object.defineProperty(down, "isPrimary", { value: true });
+      source.dispatchEvent(down);
+      touch(source, "touchstart", point);
+    };
+    const move = (point: { x: number; y: number }) => {
+      dispatchPointerEvent(document.body, "pointermove", { clientX: point.x, clientY: point.y, pointerId: 7 });
+      touch(document, "touchmove", point);
+    };
+    const lift = (source: Element, point: { x: number; y: number }) => {
+      dispatchPointerEvent(document.body, "pointerup", { clientX: point.x, clientY: point.y, pointerId: 7 });
+      touch(document, "touchend", point);
+      fireEvent.click(source);
+    };
+
+    it.each([
+      ["after the wire began", true],
+      ["before the wire began", false],
+    ])("opens the pin menu and ends the press with no action %s", (_, jitter) => {
+      vi.useFakeTimers();
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const onChange = vi.fn();
+        const { container, queryByTestId } = renderTapToConnect(
+          <GraphEditor initialGraph={graphWithWiredPins()} paletteNodes={pinDragPalette} onChange={onChange} />,
+        );
+        const source = mockPinDragLayout(container);
+        onChange.mockClear();
+        act(() => {
+          press(source, { x: 22, y: 22 });
+          // A finger is never quite still: past XYFlow's 1px wire threshold, inside the hold's slop.
+          if (jitter) move({ x: 25, y: 24 });
+        });
+        act(() => {
+          vi.advanceTimersByTime(500);
+        });
+        expect(screen.getAllByTestId("context-menu-panel")).toHaveLength(1);
+        expect(screen.getByTestId("context-menu-item-break-pin-links")).toBeTruthy();
+        act(() => {
+          move(farDrop);
+          lift(source, farDrop);
+        });
+        expect(queryByTestId("node-palette-body")).toBeNull();
+        expect(queryByTestId("pending-connection-wire")).toBeNull();
+        expect(onChange).not.toHaveBeenCalled();
+        expect(source.className).not.toContain("ring-primary");
+        expect(container.querySelectorAll(".react-flow__node.selected")).toHaveLength(0);
+      } finally {
+        restoreLayout();
+      }
+    });
+
+    it("draws a wire as before when the finger moves before the hold", () => {
+      vi.useFakeTimers();
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const { container, getByTestId } = render(
+          <GraphEditor initialGraph={graphWithWiredPins()} paletteNodes={pinDragPalette} />,
+        );
+        const source = mockPinDragLayout(container);
+        act(() => {
+          press(source, { x: 22, y: 22 });
+          move(farDrop);
+        });
+        act(() => {
+          vi.advanceTimersByTime(500);
+        });
+        expect(screen.queryByTestId("context-menu-panel")).toBeNull();
+        act(() => {
+          dispatchPointerEvent(document.body, "pointerup", { clientX: farDrop.x, clientY: farDrop.y, pointerId: 7 });
+          touch(document, "touchend", farDrop);
+        });
+        expect(getByTestId("node-palette-body")).toBeTruthy();
+      } finally {
+        restoreLayout();
+      }
+    });
+  });
+
   it("ends a pin drag whose touch is cancelled, so a later release does nothing", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {

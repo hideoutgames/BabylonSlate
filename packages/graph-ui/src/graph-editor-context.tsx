@@ -48,13 +48,15 @@ export type GraphEditorContextValue = {
   previewedNode?: GraphPreviewedNode | null;
   /**
    * Context menu of script-style nodes: Copy, Paste, Duplicate, Delete and
-   * Break Links plus the host's items. `resolve` first applies the selection
-   * rule (a menu on an unselected node replaces the selection) and returns the
-   * items for the resulting selection.
+   * Break Links plus the host's items. `resolve` is given the element the gesture
+   * began on: on a pin's glyph or name with pin items it returns those and the
+   * pin's cell to highlight, leaving the selection alone; otherwise it applies the
+   * selection rule (a menu on an unselected node replaces the selection) and
+   * returns the items for the resulting selection.
    */
   nodeMenu?: {
     enabled: boolean;
-    resolve: (nodeId: string) => NestedMenuItem[];
+    resolve: (nodeId: string, target: EventTarget | null) => { items: NestedMenuItem[]; pinCell?: Element };
   };
   /**
    * Why a wire dragged from one pin cannot land on another, or null when it

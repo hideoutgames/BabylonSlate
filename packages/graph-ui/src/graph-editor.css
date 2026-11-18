@@ -94,15 +94,54 @@
 }
 
 /*
- * Pin hover, mouse only: anywhere in a pin's hit area, its glyph glows in its own colour (`--graph-pin-color`,
- * set by `PinHandle`) and grows slightly in place, so neither layout nor the hit area moves. A wire hovering a
- * pin it cannot connect to shows no glow; Cut Links draws its own mark instead (below). No transition.
+ * Pin highlight: a rounded rectangle under a pin's cell, a little brighter than the node body (the
+ * foreground laid thinly over it, so it also reads on a title bar or a Reroute knot). A pin row's half
+ * (`data-pin-cell`: glyph, inline default and name) is the cell; a pin without one (title-bar pins,
+ * Get Variable, Reroute knots) uses its hit area. The pseudo-element sits behind the cell's content and
+ * outside layout, so nothing moves or resizes. Shown while the pin's menu is open (`data-pin-menu-open`,
+ * every pointer) and, with a mouse, while the pointer is over the cell, except with Cut Links on (its own
+ * mark) or over a pin a dragged wire cannot join. No transition.
  */
+.graph-editor-canvas [data-pin-cell] {
+  position: relative;
+  isolation: isolate;
+}
+
+.graph-editor-canvas .react-flow__handle[data-graph-pin]:not([data-pin-cell] *) {
+  isolation: isolate;
+}
+
+.graph-editor-canvas :is([data-pin-cell], .react-flow__handle[data-graph-pin]:not([data-pin-cell] *))::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 4px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* Rows reach a little past the name, into the gap between the two halves; the glyph side stays inside the node. */
+.graph-editor-canvas [data-pin-cell][data-pin-side="in"]::before {
+  inset: 3px -8px 3px 2px;
+}
+
+.graph-editor-canvas [data-pin-cell][data-pin-side="out"]::before {
+  inset: 3px 2px 3px -8px;
+}
+
+.graph-editor-canvas [data-pin-menu-open]::before {
+  visibility: visible;
+}
+
 @media (hover: hover) and (pointer: fine) {
-  /* Low specificity, so the Cut Links mark overrides it. */
-  .graph-editor-canvas :where(.react-flow__handle[data-graph-pin]:hover:not(.connectingto:not(.valid))) .graph-pin-visual {
-    scale: 1.15;
-    filter: drop-shadow(0 0 1px var(--graph-pin-color)) drop-shadow(0 0 4px var(--graph-pin-color));
+  .graph-editor-canvas :is([data-pin-cell], .react-flow__handle[data-graph-pin]):hover:not(
+    [data-graph-tool="cut"] *,
+    .connectingto:not(.valid),
+    :has(.react-flow__handle.connectingto:not(.valid))
+  )::before {
+    visibility: visible;
   }
 }
 
@@ -598,9 +637,6 @@
   border-radius: 9999px;
   outline: 2px solid var(--destructive);
   outline-offset: 2px;
-  /* The cut mark replaces the pin hover glow. */
-  scale: none;
-  filter: none;
 }
 
 [data-graph-tool="cut"] .graph-editor-canvas .react-flow__handle:hover:not(:has(.graph-pin-visual)) {
