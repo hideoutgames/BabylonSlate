@@ -355,7 +355,7 @@ export const engineSettingsSchema = z.object({
   graphPinScale: steppedNumber(MIN_GRAPH_PIN_SCALE, MAX_GRAPH_PIN_SCALE, GRAPH_PIN_SCALE_STEP, MIN_GRAPH_PIN_SCALE),
   /** Accessibility: a type letter (B for Boolean) inside every graph data pin. */
   graphPinTypeLetters: z.boolean().default(false),
-  /** Accessibility: Zoom In and Zoom Out buttons in the Scene, Scene Layer and Prefab viewports. */
+  /** Accessibility: Zoom In and Zoom Out buttons in viewports and asset previews. */
   viewportZoomButtons: z.boolean().default(false),
   /** Accessibility (Snapped Nodes): a released graph node drag lands on the `graphSnapGridSize` grid. */
   graphSnapNodes: z.boolean().default(false),

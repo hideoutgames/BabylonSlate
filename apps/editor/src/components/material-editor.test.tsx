@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { ReactNode } from "react";
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { GraphInteractionSettingsContext } from "@haptic/graph-ui";
 import { AssetRegistry, projectContentRoot } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -31,6 +33,7 @@ const harness: {
   registryEpoch: number;
   previewNode: MaterialNodePreviewTarget | null;
   setPreviewNode: ReturnType<typeof vi.fn>;
+  zoomDrive: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; step: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> };
 } = {
   content: createDefaultMaterialDocument("Rock") as unknown as Record<
     string,
@@ -46,6 +49,7 @@ const harness: {
   registryEpoch: 0,
   previewNode: null,
   setPreviewNode: vi.fn(),
+  zoomDrive: { start: vi.fn(), stop: vi.fn(), step: vi.fn(), dispose: vi.fn() },
 };
 let assetRegistry: AssetRegistry;
 
@@ -81,6 +85,7 @@ vi.mock("../context/material-editing-context", () => ({
     focusNode: harness.focusNode,
     requestRender: harness.requestRender,
     attachPreviewCanvas: vi.fn(),
+    previewZoomDrive: () => harness.zoomDrive,
     frameBudgetMs: 1000 / 60,
     previewNode: harness.previewNode,
     setPreviewNode: harness.setPreviewNode,
@@ -246,6 +251,25 @@ describe("Material preview panel", () => {
     expect(screen.getByTestId("material-preview-error").textContent).toContain(
       "block failed",
     );
+  });
+
+  it("shows Viewport Zoom Buttons above the error line, driving the preview's zoom", () => {
+    harness.previewState = materialPreviewReducer(materialPreviewReducer(materialPreviewReducer(createMaterialPreviewState(), {
+      type: "edit", cost: "cheap",
+    }), { type: "compileStart", generation: 1 }), { type: "result", generation: 1, ok: false, error: "block failed" });
+    receiveActiveAppSettingsUpdate({ viewportZoomButtons: true });
+    try {
+      render(<MaterialPreviewPanel {...panelProps} />);
+      const controls = screen.getByTestId("material-preview-zoom-controls");
+      // Stacked over the error line, never on it.
+      expect(controls.compareDocumentPosition(screen.getByTestId("material-preview-error")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const zoomOut = within(controls).getByRole("button", { name: "Zoom Out" });
+      dispatchPointerEvent(zoomOut, "pointerdown");
+      expect(harness.zoomDrive.start).toHaveBeenCalledExactlyOnceWith(-1);
+      dispatchPointerEvent(zoomOut, "pointerup");
+    } finally {
+      receiveActiveAppSettingsUpdate({ viewportZoomButtons: false });
+    }
   });
 });
 

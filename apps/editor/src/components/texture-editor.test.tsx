@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 import type { IDockviewPanelProps } from "dockview-react";
 import { AssetRegistry, projectContentRoot, type AreaEmissionProgress } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -293,6 +294,31 @@ describe("Texture editor", () => {
       expect(zoom()).toBe("200%");
       expect(screen.getByTestId("texture-zoom-fit").getAttribute("aria-pressed")).toBe("true");
     } finally {
+      width.mockRestore();
+      height.mockRestore();
+    }
+  });
+
+  it("zooms the preview one step from Viewport Zoom Buttons, which Fit undoes", async () => {
+    const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(232);
+    const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(232);
+    // Reduce Motion makes the step land at once instead of gliding over frames.
+    document.documentElement.setAttribute("data-reduced-motion", "");
+    receiveActiveAppSettingsUpdate({ viewportZoomButtons: true });
+    try {
+      render(<TexturePreview path="assets/albedo.hasset" payload={{ usage: "albedo", sourceWidth: 100, sourceHeight: 100 }} />);
+      await screen.findByTestId("texture-preview-image");
+      const zoom = () => screen.getByTestId("texture-preview-zoom").textContent;
+      await waitFor(() => expect(zoom()).toBe("200%"));
+      const controls = screen.getByTestId("texture-preview-zoom-controls");
+      fireEvent.click(within(controls).getByRole("button", { name: "Zoom In" }), { detail: 0 });
+      expect(zoom()).toBe("240%");
+      expect(screen.getByTestId("texture-zoom-fit").getAttribute("aria-pressed")).toBe("false");
+      fireEvent.click(screen.getByTestId("texture-zoom-fit"));
+      expect(zoom()).toBe("200%");
+    } finally {
+      receiveActiveAppSettingsUpdate({ viewportZoomButtons: false });
+      document.documentElement.removeAttribute("data-reduced-motion");
       width.mockRestore();
       height.mockRestore();
     }
