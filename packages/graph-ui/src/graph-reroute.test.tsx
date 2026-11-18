@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import type { ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GraphEditor, type GraphEditorProps } from "./graph-editor";
 import type { GraphDocument, PaletteNode, SerializedPin } from "./graph-types";
@@ -463,5 +463,44 @@ describe("node header", () => {
     fireEvent.keyDown(await waitFor(() => second.getByTestId("graph-node-rename")), { key: "Escape" });
     expect(onNodeRenameCancel).toHaveBeenCalledTimes(1);
     expect(onNodeRenameCommit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("rename after Add Node", () => {
+  function RenamingHost({ onCommit }: { onCommit: (nodeId: string, name: string) => void }) {
+    const [renaming, setRenaming] = useState<string | null>(null);
+    const [graph, setGraph] = useState<GraphDocument>({ nodes: [], edges: [] });
+    return (
+      <GraphEditor
+        initialGraph={graph}
+        onChange={setGraph}
+        sessionViewport={{ x: 0, y: 0, zoom: 1 }}
+        paletteNodes={[{ id: "reroute.declaration", title: "Reroute", category: "Reroute", pins: logPins }]}
+        onPaletteNodeAdded={(_row, nodeId) => setRenaming(nodeId)}
+        renamingNodeId={renaming}
+        onNodeRenameCommit={(nodeId, name) => {
+          onCommit(nodeId, name);
+          setRenaming(null);
+        }}
+        onNodeRenameCancel={() => setRenaming(null)}
+      />
+    );
+  }
+
+  it("focuses the new node's name with its text selected once Add Node closes", async () => {
+    const onCommit = vi.fn();
+    const { getByTestId, queryByTestId } = render(<RenamingHost onCommit={onCommit} />);
+    fireEvent.click(getByTestId("graph-add-node"));
+    fireEvent.click(await waitFor(() => getByTestId("node-palette-item-reroute.declaration")));
+    await waitFor(() => expect(queryByTestId("node-palette")).toBeNull());
+    const input = await waitFor(() => {
+      const field = getByTestId("graph-node-rename") as HTMLInputElement;
+      expect(document.activeElement).toBe(field);
+      return field;
+    });
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, "Reroute".length]);
+    fireEvent.change(input, { target: { value: "Albedo" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onCommit).toHaveBeenCalledWith(expect.any(String), "Albedo");
   });
 });
