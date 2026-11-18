@@ -6,6 +6,7 @@ import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-suppor
 import { getAddNodeHistory, GraphEditor, type GraphDocument } from "@haptic/graph-ui";
 import { TagProvider } from "@haptic/editor-kit";
 import { EngineSettingsForm } from "./engine-settings-form";
+import { ViewportZoomControls } from "./viewport-zoom-controls";
 import { AppSettingsProvider, useAppSettings } from "../context/app-settings-context";
 
 if (typeof window !== "undefined") {
@@ -192,6 +193,21 @@ describe("EngineSettingsForm accessibility", () => {
     fireEvent.click(view.getByRole("switch", { name: "Snapped Nodes" }));
     await waitFor(() => expect(gridSize).toHaveProperty("disabled", false));
     expect(await store.load()).toMatchObject({ graphSnapNodes: true, graphSnapGridSize: 32 });
+  });
+
+  it("shows the viewport's Zoom In and Zoom Out buttons once Viewport Zoom Buttons is on", async () => {
+    const store = new MemoryAppSettingsStore();
+    const view = render(<AppSettingsProvider store={store}>
+      <LiveAccessibilitySettings />
+      <ViewportZoomControls drive={() => null} />
+    </AppSettingsProvider>);
+    const toggle = view.getByRole("switch", { name: "Viewport Zoom Buttons" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(view.queryByRole("group", { name: "Viewport Zoom" })).toBeNull();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(view.getByRole("group", { name: "Viewport Zoom" })).toBeTruthy());
+    expect(view.getByRole("button", { name: "Zoom In" })).toBeTruthy();
+    expect((await store.load()).viewportZoomButtons).toBe(true);
   });
 });
 

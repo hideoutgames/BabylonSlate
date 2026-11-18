@@ -340,6 +340,7 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
       ["Hold Time", "setting-hold-time"],
       ["Double-Tap Time", "setting-double-tap-time"],
       ["Number Snap Strength", "setting-number-snap-strength"],
+      ["Viewport Zoom Buttons", "setting-viewport-zoom-buttons"],
     ]],
     ["graphPins", "Graph Pins", [
       ["Tap To Connect Pins", "setting-tap-to-connect"],

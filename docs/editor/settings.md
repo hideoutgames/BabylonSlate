@@ -85,6 +85,7 @@ Compact Mode changes only sizes. Touch gestures, such as holding to open a menu 
 - **Hold Time** (default 500 ms): how long to hold before a menu opens, from 300 to 1500 ms. Holding to drag, such as reordering a tree row or drawing a selection rectangle in a graph, starts at half of it. Tab headers keep the device's own hold to drag.
 - **Double-Tap Time** (default 350 ms): the longest gap between two taps that still counts as a double-tap, from 200 to 1000 ms. Double-clicking with a mouse follows the device's own setting.
 - **Number Snap Strength** (default **Normal**): how long dragging a number field pauses on round values, such as 0.1, 0.25, 1, 10 and 100. **Off**, **Light**, **Normal** or **Strong**.
+- **Viewport Zoom Buttons** (default off): adds **Zoom In** and **Zoom Out** buttons to the bottom-right corner of the Scene, Scene Layer and Prefab viewports, so you can zoom without a pinch or a mouse wheel. Tap a button to zoom one step, or hold it to keep zooming. With **Reduce Motion** on, each tap jumps straight to the next step.
 
 **Graph Pins**
 

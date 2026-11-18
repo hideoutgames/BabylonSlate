@@ -95,7 +95,7 @@ export const ENGINE_CATEGORIES: Array<
   {
     id: "accessibility",
     label: "Accessibility",
-    keywords: "accessibility text size font scale zoom reduce motion animation touch target size hold time long press double tap number snap strength scrub tap to connect pins large pins wire thickness pin type letters colour color blind snapped nodes snap grid size align node connection assistant distance shake disconnect motor vision",
+    keywords: "accessibility text size font scale zoom reduce motion animation touch target size hold time long press double tap number snap strength scrub tap to connect pins large pins wire thickness pin type letters colour color blind snapped nodes snap grid size align node connection assistant distance shake disconnect motor vision viewport zoom buttons zoom in zoom out pinch",
   },
   {
     id: "undo",

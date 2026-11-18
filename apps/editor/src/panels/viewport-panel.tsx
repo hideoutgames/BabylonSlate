@@ -45,6 +45,7 @@ import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportFpsCounter } from "../components/viewport-fps-counter";
 import { useExtensionMenuItems } from "../components/use-extension-menu-items";
 import { ViewportJoystick } from "../components/viewport-joystick";
+import { ViewportZoomControls } from "../components/viewport-zoom-controls";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
 import { isTestModeEnabled } from "@haptic/vfs";
 import { editorViewportPausedForSession } from "../lib/preview-build-handoff";
@@ -82,6 +83,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<EngineHandle | null>(null);
+  const zoomDrive = useCallback(() => engineRef.current?.editor?.zoomDrive, []);
   const releaseEngineRef = useRef<(() => void) | null>(null);
   const simulationDetachedRef = useRef(false);
   const navDebugRef = useRef<NavMeshDebugOverlay | null>(null);
@@ -694,12 +696,16 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           }}
         />
       ) : null}
-      <canvas
-        ref={previewCanvasRef}
-        hidden
-        data-testid="camera-preview"
-        className="pointer-events-none absolute bottom-3 right-3 z-10 h-[180px] w-[320px] rounded-md border border-border bg-black object-contain"
-      />
+      {/* Zoom buttons rest in the corner and sit above the Game Camera preview while it shows. */}
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10 flex flex-col items-end gap-2">
+        <ViewportZoomControls drive={zoomDrive} disabled={!sceneReady || playing || preparing} />
+        <canvas
+          ref={previewCanvasRef}
+          hidden
+          data-testid="camera-preview"
+          className="pointer-events-none h-[180px] w-[320px] shrink-0 rounded-md border border-border bg-black object-contain"
+        />
+      </div>
       {joystickEnabled ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
           <div className="pointer-events-auto">

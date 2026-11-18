@@ -27,7 +27,7 @@ describe("app settings", () => {
     expect(defaults).toMatchObject({
       touchTargetScale: 1, textSizePercent: 100, reduceMotion: "system", holdTimeMs: 500,
       doubleTapTimeMs: 350, numberSnapStrength: 2, graphPinScale: 1, graphPinTypeLetters: false,
-      graphSnapNodes: false, graphSnapGridSize: 32,
+      graphSnapNodes: false, graphSnapGridSize: 32, viewportZoomButtons: false,
     });
     expect(engineSettingsSchema.parse({
       touchTargetScale: 1.4, textSizePercent: 133, holdTimeMs: 820, doubleTapTimeMs: 370,
