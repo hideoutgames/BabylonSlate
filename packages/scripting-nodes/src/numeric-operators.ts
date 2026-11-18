@@ -147,12 +147,16 @@ function operandPin(id: string, name: string, type: NumericOperandType, choices:
 }
 
 /**
- * The operand types after the wires into the node: a wired operand takes its source's type when
- * the node accepts it (anything else is left for validation to report). When a wired operand's
- * type changes and the other operand is unwired, has no stored value and had that operand's old
- * type, it follows, so a fresh node dropped on a Vector3 wire works on two Vector3s. A changed
- * operand loses its stored value, which was of the old type. Returns `properties` itself when
- * nothing changes.
+ * The operand types after the wires into the node. An operand's type property is unset until a
+ * wire, a follow or an Inspector pick chooses it; once set, it is what every later refresh reads.
+ * - A wire the node accepts (anything else is left for validation to report) sets an unset
+ *   operand to its type, and changes a set one only when its type is not assignable to the set
+ *   type: an Integer into a Float operand stays Float.
+ * - When a wire sets or changes one operand, the other follows when its type is unset, it is
+ *   unwired and it has no stored value, so a fresh node dropped on a Vector3 wire works on two
+ *   Vector3s. A follow writes the property, so it happens once.
+ * - An operand whose type changes loses its stored value, which was of the old type.
+ * Returns `properties` itself when nothing changes.
  */
 export function retypeNumericOperands(
   typeId: string,
@@ -162,26 +166,33 @@ export function retypeNumericOperands(
   const operands = numericOperands(typeId);
   if (operands.length === 0) return properties;
   const allowed = typeId === "math.mod" ? SCALAR_CHOICES : NUMERIC_OPERAND_TYPES;
+  const chosen = operands.map((operand) => isNumericOperandType(properties[operand.property]));
   const before = operands.map((operand) => numericOperandType(properties, operand.property));
-  const after = [...before];
   const links = operands.map((operand) => wired(operand.pinId));
-  links.forEach((link, index) => {
-    if (link.type && allowed.includes(link.type)) after[index] = link.type;
+  // The type each operand's property is set to here; undefined leaves it as it is.
+  const writes: Array<NumericOperandType | undefined> = links.map((link, index) => {
+    const type = link.type;
+    if (!type || !allowed.includes(type)) return undefined;
+    if (!chosen[index]) return type;
+    // Among these types only Integer widens to Float.
+    const assignable = type === before[index] || (type === "int" && before[index] === "float");
+    return assignable ? undefined : type;
   });
   if (operands.length === 2) {
-    for (const [changed, other] of [[0, 1], [1, 0]] as const) {
-      if (after[changed] === before[changed] || links[other]!.wired) continue;
-      if (after[other] !== before[other] || before[other] !== before[changed]) continue;
+    for (const [source, other] of [[0, 1], [1, 0]] as const) {
+      const type = writes[source];
+      if (!type || chosen[other] || writes[other] || links[other]!.wired) continue;
       if (properties[pinDefaultPropertyKey(operands[other]!.pinId)] !== undefined) continue;
-      after[other] = after[changed]!;
+      writes[other] = type;
     }
   }
-  if (after.every((type, index) => type === before[index])) return properties;
+  if (writes.every((type) => type === undefined)) return properties;
   const next = { ...properties };
   operands.forEach((operand, index) => {
-    if (after[index] === before[index]) return;
-    next[operand.property] = after[index];
-    delete next[pinDefaultPropertyKey(operand.pinId)];
+    const type = writes[index];
+    if (!type) return;
+    next[operand.property] = type;
+    if (type !== before[index]) delete next[pinDefaultPropertyKey(operand.pinId)];
   });
   return next;
 }

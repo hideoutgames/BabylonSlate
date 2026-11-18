@@ -81,6 +81,25 @@ describe("numeric operator retype on connect", () => {
     expect(mul.data).not.toHaveProperty("default:b");
   });
 
+  it("gives Vector3 × Float when a Float is wired into B and A is unwired with no value", () => {
+    const graph: SerializedGraph = {
+      nodes: [floatSource(), node("mul", "math.mul", { aType: "vec3", bType: "vec3" })],
+      edges: [wire("b", "float.out", "mul.b")],
+    };
+    const mul = hydrated(graph, "mul");
+    expect([mul.type("a"), mul.type("b"), mul.type("out")]).toEqual(["vec3", "float", "vec3"]);
+  });
+
+  it("keeps a Float operand Float when Integers are wired into it", () => {
+    const graph: SerializedGraph = {
+      nodes: [intSource(), node("int2", "literal.makeInt"), node("div", "math.div", { aType: "float", bType: "float" })],
+      edges: [wire("a", "int.out", "div.a"), wire("b", "int2.out", "div.b")],
+    };
+    const div = hydrated(graph, "div");
+    expect([div.type("a"), div.type("b"), div.type("out")]).toEqual(["float", "float", "float"]);
+    expect(validateSerializedGraph(graph, { assetGuid: "g", graphId: "g" }).filter((d) => d.severity === "error")).toEqual([]);
+  });
+
   it("leaves an unwired operand that has a value at its own type", () => {
     const graph: SerializedGraph = {
       nodes: [vec3Source(), node("add", "math.add", { "default:b": 2 })],

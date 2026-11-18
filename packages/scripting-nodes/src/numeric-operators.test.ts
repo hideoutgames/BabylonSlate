@@ -210,15 +210,36 @@ describe("retypeNumericOperands", () => {
       links({ a: wire("vec3"), b: wire("float") }))).toEqual({ aType: "vec3", bType: "float", "default:a": v3(1, 1, 1) });
   });
 
-  it("brings an untouched, valueless operand of the same old type along", () => {
+  it("sets a fresh node's operands from a wire, the unset, valueless other operand following", () => {
     expect(retypeNumericOperands("math.add", {}, links({ a: wire("vec3") }))).toEqual({ aType: "vec3", bType: "vec3" });
     expect(retypeNumericOperands("math.add", {}, links({ b: wire("int") }))).toEqual({ aType: "int", bType: "int" });
+    // A Float wire chooses Float too, so a later Integer wire does not make it Integer.
+    expect(retypeNumericOperands("math.div", { "default:b": 2 }, links({ a: wire("float") }))).toEqual({ aType: "float", "default:b": 2 });
   });
 
-  it("leaves the other operand when it has a value, a wire or another type", () => {
+  it("never brings along an operand whose type is set, wired or valued", () => {
+    // Vector3 × Vector3 with A unwired: a Float into B gives Vector3 × Float.
+    expect(retypeNumericOperands("math.mul", { aType: "vec3", bType: "vec3" }, links({ b: wire("float") })))
+      .toEqual({ aType: "vec3", bType: "float" });
     expect(retypeNumericOperands("math.mul", { "default:b": 2 }, links({ a: wire("vec3") }))).toEqual({ aType: "vec3", "default:b": 2 });
     expect(retypeNumericOperands("math.mul", {}, links({ a: wire("vec3"), b: wire() }))).toEqual({ aType: "vec3" });
     expect(retypeNumericOperands("math.mul", { bType: "int" }, links({ a: wire("vec3") }))).toEqual({ aType: "vec3", bType: "int" });
+  });
+
+  it("keeps a set Float operand Float with an Integer wire, and retypes a type that does not fit", () => {
+    const floats = { aType: "float", bType: "float", "default:b": 2 };
+    expect(retypeNumericOperands("math.div", floats, links({ a: wire("int"), b: wire("int") }))).toBe(floats);
+    expect(retypeNumericOperands("math.div", { aType: "int", bType: "int" }, links({ a: wire("float") })))
+      .toEqual({ aType: "float", bType: "int" });
+    expect(retypeNumericOperands("math.add", { aType: "vec3", bType: "float" }, links({ a: wire("float"), b: wire("vec2") })))
+      .toEqual({ aType: "float", bType: "vec2" });
+  });
+
+  it("is stable: what it writes is what the next refresh reads", () => {
+    const once = retypeNumericOperands("math.add", {}, links({ a: wire("int") }));
+    expect(retypeNumericOperands("math.add", once, links({ a: wire("int") }))).toBe(once);
+    // The followed operand keeps its type when a wire later reaches it with one that fits.
+    expect(retypeNumericOperands("math.add", once, links({ a: wire("int"), b: wire("int") }))).toBe(once);
   });
 
   it("returns the same object when the types already match or a wire has no number type", () => {
