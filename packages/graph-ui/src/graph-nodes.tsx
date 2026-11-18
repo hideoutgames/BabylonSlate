@@ -163,15 +163,18 @@ function PinVisual({
   pin,
   connected,
   byReference = false,
+  circle = false,
 }: {
   type: PinTypeRef;
   pin?: SerializedPin;
   connected: boolean;
   /** A variable output wired into a reference input: drawn as the reference it passes. */
   byReference?: boolean;
+  /** Always the round glyph, whatever the type (a Reroute knot's pins, exec included). */
+  circle?: boolean;
 }) {
   const { pinTypeLetters } = useContext(GraphInteractionSettingsContext);
-  const shape = byReference ? "reference" : pinVisualShape(type, pin);
+  const shape = circle ? "circle" : byReference ? "reference" : pinVisualShape(type, pin);
   const color = pinCssVar(type);
   if (type.kind === "pose" || type.kind === "frame") {
     return <AnimPinGlyph kind={type.kind} color={color} connected={connected} />;
@@ -213,6 +216,7 @@ function PinHandle({
   connected,
   disabled,
   label,
+  circle = false,
 }: {
   nodeId: string;
   pin: SerializedPin;
@@ -221,6 +225,7 @@ function PinHandle({
   hasError: boolean;
   connected: boolean;
   disabled?: boolean;
+  circle?: boolean;
 }) {
   const { onPinTap, pinDisplayType } = useGraphEditorContext();
   const isSource = pin.direction === "out";
@@ -259,7 +264,7 @@ function PinHandle({
         onPinTap(nodeId, pin.id, pin.direction);
       }}
     >
-      <PinVisual type={displayType} pin={pin} connected={connected} byReference={byReference} />
+      <PinVisual type={displayType} pin={pin} connected={connected} byReference={byReference} circle={circle} />
     </Handle>
   );
 }
@@ -865,6 +870,7 @@ function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
         pending={isPending(pin)}
         hasError={pinHasError(id, pin.id)}
         connected={connected}
+        circle
       />
     </span>
   );

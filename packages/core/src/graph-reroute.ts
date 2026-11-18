@@ -147,23 +147,23 @@ export function passThroughSources(
 
   const sources: { nodeId: string; pinId: string }[] = [];
   const seen = new Set<string>();
-  const onPath = new Set<string>();
-  const visit = (edge: Edge) => {
+  // Each pass-through node is followed once, so joined paths (a diamond of knots) cost no more.
+  const followed = new Set<string>();
+  // Depth first in wire order, with an explicit stack so long chains cannot overflow.
+  const stack = edges.filter((edge) => edge.target === targetNodeId && (edge.targetHandle ?? "") === targetPinId).reverse();
+  while (stack.length > 0) {
+    const edge = stack.pop()!;
     const pinId = edge.sourceHandle ?? "";
     if (!isPassThroughNode(edge.source)) {
       const key = pinKey(edge.source, pinId);
-      if (seen.has(key)) return;
+      if (seen.has(key)) continue;
       seen.add(key);
       sources.push({ nodeId: edge.source, pinId });
-      return;
+      continue;
     }
-    if (pinId !== PASS_THROUGH_OUTPUT_PIN || onPath.has(edge.source)) return;
-    onPath.add(edge.source);
-    for (const upstream of incoming(edge.source, PASS_THROUGH_INPUT_PIN)) visit(upstream);
-    onPath.delete(edge.source);
-  };
-  for (const edge of edges) {
-    if (edge.target === targetNodeId && (edge.targetHandle ?? "") === targetPinId) visit(edge);
+    if (pinId !== PASS_THROUGH_OUTPUT_PIN || followed.has(edge.source)) continue;
+    followed.add(edge.source);
+    stack.push(...[...incoming(edge.source, PASS_THROUGH_INPUT_PIN)].reverse());
   }
   return sources;
 }
@@ -196,23 +196,23 @@ export function passThroughTargets(
 
   const targets: { nodeId: string; pinId: string }[] = [];
   const seen = new Set<string>();
-  const onPath = new Set<string>();
-  const visit = (edge: Edge) => {
+  // Each pass-through node is followed once, so joined paths (a diamond of knots) cost no more.
+  const followed = new Set<string>();
+  // Depth first in wire order, with an explicit stack so long chains cannot overflow.
+  const stack = edges.filter((edge) => edge.source === sourceNodeId && (edge.sourceHandle ?? "") === sourcePinId).reverse();
+  while (stack.length > 0) {
+    const edge = stack.pop()!;
     const pinId = edge.targetHandle ?? "";
     if (!isPassThroughNode(edge.target)) {
       const key = pinKey(edge.target, pinId);
-      if (seen.has(key)) return;
+      if (seen.has(key)) continue;
       seen.add(key);
       targets.push({ nodeId: edge.target, pinId });
-      return;
+      continue;
     }
-    if (pinId !== PASS_THROUGH_INPUT_PIN || onPath.has(edge.target)) return;
-    onPath.add(edge.target);
-    for (const downstream of outgoing(edge.target, PASS_THROUGH_OUTPUT_PIN)) visit(downstream);
-    onPath.delete(edge.target);
-  };
-  for (const edge of edges) {
-    if (edge.source === sourceNodeId && (edge.sourceHandle ?? "") === sourcePinId) visit(edge);
+    if (pinId !== PASS_THROUGH_INPUT_PIN || followed.has(edge.target)) continue;
+    followed.add(edge.target);
+    stack.push(...[...outgoing(edge.target, PASS_THROUGH_OUTPUT_PIN)].reverse());
   }
   return targets;
 }
