@@ -27,5 +27,6 @@ Builds an array from its item inputs. A new Make Array has one item input.
 ## Notes
 
 - Select **+ Add Pin** below the item inputs to add one, or change **Items** in the **Inspector** to add or remove several. Lowering **Items** removes the last inputs and the wires into them. Set it to 0 for an empty array.
+- Right-click any pin of the node for **Add Pin**, or an item input for **Remove Pin**: it removes that input, and the inputs after it move up one, keeping their wires and values.
 - Items are placed in pin order, with Item 0 first.
 - All items share one type, which follows what you connect to them.

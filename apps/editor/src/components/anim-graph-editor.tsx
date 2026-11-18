@@ -98,7 +98,10 @@ import {
   scriptPaletteNodes,
   scriptReroutePaletteNode,
   validateSerializedGraph,
+  classHierarchyFromParentOf,
 } from "../services/graph-validation";
+import { classParentLookup } from "../lib/class-asset-lookup";
+import { useScriptGraphPinActions } from "../lib/use-script-graph-pin-actions";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
@@ -580,7 +583,13 @@ function useAnimScriptCanvas(doc: AnimGraphDocument) {
   const members = useMemo(() => animGraphMembersFromVariables(doc.variables), [doc.variables]);
   const { settings: appSettings } = useAppSettings();
   const defaultZoom = appSettings.graphDefaultZoom ?? GRAPH_DEFAULT_ZOOM;
-  return { typeCatalog, dataAssets, pinTypeNames, members, defaultZoom };
+  // For Convert to <Type> wires: which Classes are Actors or components.
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const hierarchy = useMemo(() => {
+    void registryEpoch;
+    return classHierarchyFromParentOf(classParentLookup(assetRegistry?.list() ?? []));
+  }, [assetRegistry, registryEpoch]);
+  return { typeCatalog, dataAssets, pinTypeNames, members, defaultZoom, hierarchy };
 }
 
 /** The graph's Variables as the validator reads a script's members. */
@@ -634,7 +643,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
   } = useAnimGraphEditing();
   const { setSelectedNodeIds } = useGraphEditing();
   const { activeDocumentId } = useActiveDocumentState();
-  const { typeCatalog, dataAssets, pinTypeNames, members: ruleMembers, defaultZoom } = useAnimScriptCanvas(doc);
+  const { typeCatalog, dataAssets, pinTypeNames, members: ruleMembers, defaultZoom, hierarchy } = useAnimScriptCanvas(doc);
   const ruleSurface = openTransitionId ? `rule:${openTransitionId}` : "machine";
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
     documentId,
@@ -815,6 +824,21 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     setDiagnostics,
   ]);
 
+  // The open rule's canvas edits, and its pin actions' whole next graphs: one change each.
+  const commitRuleGraph = useCallback((next: SerializedGraph) => {
+    if (!openTransition || !ruleGraph) return;
+    const nextRule = applyDataGraphAssetPicks(ruleGraph, { nodes: next.nodes, edges: next.edges }, dataAssets);
+    const transitionId = openTransition.id;
+    queueMicrotask(() => {
+      commit(
+        patchTransition(latestDoc(), transitionId, {
+          ruleGraph: persistTransitionRuleGraph(nextRule),
+        }),
+      );
+    });
+  }, [commit, dataAssets, latestDoc, openTransition, ruleGraph]);
+  const rulePinActions = useScriptGraphPinActions({ graph: ruleGraph, commit: commitRuleGraph, hierarchy });
+
   if (openTransition && ruleGraph) {
     return (
       <PanelFrame className="flex-1">
@@ -853,17 +877,10 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
             sessionViewport={sessionViewport}
             onSessionViewportChange={onSessionViewportChange}
             onSelectionChange={setSelectedNodeIds}
-            onChange={(next) => {
-              const nextRule = applyDataGraphAssetPicks(ruleGraph, { nodes: next.nodes, edges: next.edges }, dataAssets);
-              const transitionId = openTransition.id;
-              queueMicrotask(() => {
-                commit(
-                  patchTransition(latestDoc(), transitionId, {
-                    ruleGraph: persistTransitionRuleGraph(nextRule),
-                  }),
-                );
-              });
-            }}
+            onAddPin={rulePinActions.onAddPin}
+            pinConversion={rulePinActions.pinConversion}
+            contextMenuItemsForPin={rulePinActions.contextMenuItemsForPin}
+            onChange={commitRuleGraph}
           />
         </div>
       </PanelFrame>
@@ -957,7 +974,7 @@ export function AnimStateGraphPanel(props: IDockviewPanelProps<Partial<AnimState
   const state = machine.states.find((row) => row.id === stateId);
   const { setSelectedNodeIds } = useGraphEditing();
   const { activeDocumentId } = useActiveDocumentState();
-  const { typeCatalog, dataAssets, pinTypeNames, members, defaultZoom } = useAnimScriptCanvas(doc);
+  const { typeCatalog, dataAssets, pinTypeNames, members, defaultZoom, hierarchy } = useAnimScriptCanvas(doc);
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(documentId, `state:${stateId}`);
   const { setDiagnostics, diagnostics } = useValidation();
   const [shown, setShown] = useState(() => api.isVisible);
@@ -1036,6 +1053,15 @@ export function AnimStateGraphPanel(props: IDockviewPanelProps<Partial<AnimState
         .map((row) => ({ nodeId: row.nodeId, pinId: row.pinId, severity: row.severity, message: row.message })),
     [diagnostics, diagnosticsId, documentId],
   );
+  // The state graph's canvas edits, and its pin actions' whole next graphs: one change each.
+  const commitPoseGraph = useCallback((next: SerializedGraph) => {
+    if (!poseGraph) return;
+    const graph = applyDataGraphAssetPicks(poseGraph, { nodes: next.nodes, edges: next.edges }, dataAssets);
+    queueMicrotask(() => {
+      commit(patchStateGraph(latestDoc(), stateId, persistPoseGraph(graph)));
+    });
+  }, [commit, dataAssets, latestDoc, poseGraph, stateId]);
+  const posePinActions = useScriptGraphPinActions({ graph: poseGraph, commit: commitPoseGraph, hierarchy });
   return (
     <PanelFrame className="flex-1">
       <div className="flex h-full min-h-0 flex-col" data-testid="anim-pose-graph" data-state-id={stateId} onPointerDownCapture={claimCanvas}>
@@ -1053,12 +1079,10 @@ export function AnimStateGraphPanel(props: IDockviewPanelProps<Partial<AnimState
             sessionViewport={sessionViewport}
             onSessionViewportChange={onSessionViewportChange}
             onSelectionChange={setSelectedNodeIds}
-            onChange={(next) => {
-              const graph = applyDataGraphAssetPicks(poseGraph, { nodes: next.nodes, edges: next.edges }, dataAssets);
-              queueMicrotask(() => {
-                commit(patchStateGraph(latestDoc(), stateId, persistPoseGraph(graph)));
-              });
-            }}
+            onAddPin={posePinActions.onAddPin}
+            pinConversion={posePinActions.pinConversion}
+            contextMenuItemsForPin={posePinActions.contextMenuItemsForPin}
+            onChange={commitPoseGraph}
           />
         ) : null}
       </div>

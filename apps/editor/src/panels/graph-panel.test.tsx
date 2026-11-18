@@ -448,6 +448,43 @@ describe("Graph panel", () => {
     else expect(button()).toBeTruthy();
   });
 
+  it("removes a Make Array item from its pin menu as one graph change, moving the later item's wire down", async () => {
+    render(
+      <DocumentProvider>
+        <MainClassGraph />
+      </DocumentProvider>,
+    );
+    await waitFor(() => expect(seen.documents?.homepageReady).toBe(true));
+    const actions = seen.actions!;
+    await act(() => actions.createEmptyProject("Remove Pin", { kind: "2d" }));
+    await act(() => actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }));
+    const ints = { aType: "int", bType: "int" };
+    await act(() => actions.applyGraphChange(MAIN_CLASS_ID, {
+      ...openContent<SerializedGraph>(MAIN_CLASS_ID),
+      nodes: [
+        { id: "first", type: "math.add", position: { x: 0, y: 0 }, data: ints },
+        { id: "second", type: "math.add", position: { x: 0, y: 200 }, data: ints },
+        { id: "make", type: "array.make", position: { x: 400, y: 0 }, data: { count: 2 } },
+      ],
+      edges: [
+        { id: "w0", source: "first", sourceHandle: "out", target: "make", targetHandle: "item0" },
+        { id: "w1", source: "second", sourceHandle: "out", target: "make", targetHandle: "item1" },
+      ],
+    }));
+    const handle = () => document.querySelector('.react-flow__handle[data-nodeid="make"][data-handleid="item0"]');
+    await waitFor(() => expect(handle()).toBeTruthy());
+
+    const change = vi.spyOn(actions, "applyGraphChange");
+    fireEvent.contextMenu(handle()!);
+    fireEvent.click(await screen.findByTestId("graph-pin-remove"));
+    await waitFor(() => {
+      const stored = openContent<SerializedGraph>(MAIN_CLASS_ID);
+      expect(stored.nodes.find((entry) => entry.id === "make")?.data.count).toBe(1);
+      expect(stored.edges.map((edge) => [edge.source, edge.targetHandle])).toEqual([["second", "item0"]]);
+    });
+    expect(change).toHaveBeenCalledTimes(1);
+  });
+
   it("selects its function when the empty canvas of a function tab is clicked", async () => {
     render(
       <DocumentProvider>

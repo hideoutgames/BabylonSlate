@@ -1,4 +1,4 @@
-import type { SerializedPin } from "./graph-types";
+import type { GraphAddPin, SerializedPin } from "./graph-types";
 import { pinWithDisplayType } from "./graph-connect";
 import {
   estimateGraphNodeSize,
@@ -29,6 +29,8 @@ export type FormatNode = {
   pins?: SerializedPin[];
   /** A Reroute knot: estimated at the knot's size while unmeasured. */
   reroute?: boolean;
+  /** The node's Add Pin control, when shown: estimated as one more pin row while unmeasured. */
+  addPin?: GraphAddPin;
   /**
    * Measured handle centres, as Y from the node's top, keyed by `formatPinOffsetKey`. A pin
    * without one is estimated from its pin row.
@@ -83,7 +85,10 @@ function nodeSize(node: FormatNode): { width: number; height: number } {
   const height = node.height ?? node.measured?.height;
   if (width !== undefined && height !== undefined) return { width, height };
   // Off-screen nodes that were never mounted have no measured size.
-  const estimate = estimateGraphNodeSize(node.pins, node.reroute ? { __reroute: true } : undefined);
+  const estimate = estimateGraphNodeSize(
+    node.pins,
+    node.reroute ? { __reroute: true } : node.addPin ? { __addPin: node.addPin } : undefined,
+  );
   return { width: width ?? estimate.width, height: height ?? estimate.height };
 }
 

@@ -59,6 +59,7 @@ import {
   type NestedMenuItem,
 } from "@haptic/editor-kit";
 import {
+  addPinOf,
   hasSerializedPins,
   isRerouteNodeData,
   type GraphDiagnostic,
@@ -106,14 +107,13 @@ import type { GraphRunTrace } from "./run-trace";
 import {
   collectDisplayConnectPins,
   connectEndAction,
+  connectEndDecisionAt,
   connectEventPointerId,
   containerPointerToClient,
   edgesAfterConnect,
   edgesTouchingNodes,
   edgeTouchesPin,
   graphNodeIdAtClientPoint,
-  isClientPointOverGraphNode,
-  isClientPointOverHandle,
   nearestSnapConnectPin,
   finalizeOrientedConnection,
   paletteConnectPin,
@@ -122,11 +122,9 @@ import {
   pinsAreCompatible,
   replacesExecOutputWire,
   screenPinsForSafeRefs,
-  screenCentersForSafePins,
   type ConnectEndMode,
   type PinCompatibilityRule,
   type OrientedConnection,
-  shouldOpenAddNodeOnConnectEnd,
   shouldCancelConnectOnSecondaryPointer,
   shouldCancelConnectionOnSecondaryPointer,
 } from "./graph-connect";
@@ -2504,21 +2502,13 @@ function GraphEditorCanvas({
         nodeId: fromNode.id,
         pinId,
       }, located);
-      const decision = {
-        hasTargetHandle: Boolean(state.toHandle),
-        pointerOverNode: isClientPointOverGraphNode(point, root),
-        pointerOverSourceHandle: isClientPointOverHandle(
-          point,
-          fromNode.id,
-          pinId,
-          root,
-        ),
-        pointer: point,
-        safePins: located.map((entry) => ({ x: entry.x, y: entry.y })),
-        snapPins: located
-          .filter((entry) => entry.nodeId !== fromNode.id)
-          .map((entry) => ({ x: entry.x, y: entry.y })),
-      };
+      const decision = connectEndDecisionAt(
+        root,
+        point,
+        { nodeId: fromNode.id, pinId },
+        Boolean(state.toHandle),
+        located,
+      );
       const action = connectEndAction(decision, connectEndMode);
       if (action === "connect" && snap) {
         if (commitDraggedToNode(snap.nodeId, snap.pinId)) {
@@ -3287,6 +3277,7 @@ function GraphEditorCanvas({
         height: node.measured?.height ?? node.height,
         pins: hasSerializedPins(node.data) ? node.data.__pins : undefined,
         reroute: isRerouteNodeData(node.data),
+        addPin: addPinEnabled ? addPinOf(node.data) : undefined,
         pinOffsets: measuredPinOffsets(lookup.get(node.id)?.internals.handleBounds),
       })),
       currentEdges.map((edge) => ({
@@ -3350,7 +3341,7 @@ function GraphEditorCanvas({
         ? [...currentEdges.filter((edge) => !replaced.has(edge.id)), ...wires]
         : currentEdges,
     );
-  }, [commitGraph, defaultEdgeOptions.type, knownTypes, nodeDragHandle, pinCompatibility, readOnly, storeApi]);
+  }, [addPinEnabled, commitGraph, defaultEdgeOptions.type, knownTypes, nodeDragHandle, pinCompatibility, readOnly, storeApi]);
 
   // Copy, Paste, Duplicate, Delete and Break Links for the selection, with their keys.
   const graphItems = useCallback(
@@ -3732,23 +3723,29 @@ function GraphEditorCanvas({
         inProgress: connection.inProgress,
         pointer: connection.inProgress ? connection.pointer : null,
       }, wrapperRef.current ?? document);
-      const inAddNodeZone = shouldOpenAddNodeOnConnectEnd({
-        hasTargetHandle: Boolean(
-          connection.inProgress && connection.toHandle,
+      // The release's own decision, snap pins included: a second pointer cancels exactly where a
+      // release would open Add Node, and a release that would snap-connect keeps the wire.
+      const root = wrapperRef.current ?? document;
+      const located = screenPinsForSafeRefs(
+        root,
+        collectDisplayConnectPins(
+          graphStateRef.current.nodes,
+          session.nodeId,
+          pin,
+          displayTypeLookup(pinDisplayTypesRef.current),
+          pinCompatibilityRef.current,
         ),
-        pointerOverNode: isClientPointOverGraphNode(pointer, wrapperRef.current ?? document),
-        pointer,
-        safePins: screenCentersForSafePins(
-          wrapperRef.current ?? document,
-          collectDisplayConnectPins(
-            graphStateRef.current.nodes,
-            session.nodeId,
-            pin,
-            displayTypeLookup(pinDisplayTypesRef.current),
-            pinCompatibilityRef.current,
-          ),
+      );
+      const inAddNodeZone = connectEndAction(
+        connectEndDecisionAt(
+          root,
+          pointer,
+          { nodeId: session.nodeId, pinId: session.pinId },
+          Boolean(connection.inProgress && connection.toHandle),
+          located,
         ),
-      });
+        connectEndModeRef.current,
+      ) === "add-node";
       if (
         !shouldCancelConnectOnSecondaryPointer({
           connectionActive: true,
