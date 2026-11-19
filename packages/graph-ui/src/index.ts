@@ -11,6 +11,9 @@ export * from "./graph-canvas-api";
 export * from "./graph-model";
 export * from "./graph-types";
 export * from "./graph-format";
+export * from "./format-layout";
+export * from "./format-tree-layout";
+export * from "./format-state-machine-layout";
 export * from "./graph-marquee";
 export * from "./graph-drop-hint";
 export type {

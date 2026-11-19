@@ -139,6 +139,7 @@ import {
   type GraphViewport,
 } from "./graph-viewport";
 import { formatGraphNodes, formatPinOffsetKey } from "./graph-format";
+import type { GraphFormatLayout } from "./format-layout";
 import { freeNodePosition } from "./graph-placement";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
@@ -281,6 +282,14 @@ export interface GraphEditorProps {
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;
   hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "cutLinks" | "format">;
+  /**
+   * The host's own Format layout, in place of the Script graph formatter: Format passes it every node (measured size,
+   * else the estimate, and its data), every wire and the selected ids (empty with nothing selected, which the layout
+   * decides on), then moves the nodes it returns as one graph change (one undo step). Unknown ids and unchanged
+   * positions are skipped; nothing moved emits nothing. It never adds or removes nodes or wires, never changes the
+   * selection, and does nothing read-only or while nodes cannot be dragged. Keep its identity stable.
+   */
+  formatLayout?: GraphFormatLayout;
   /**
    * Double-click or double-tap a wire to split it with a Reroute knot built from this Add Node row
    * (its `nodeType`, `pins` and `defaultData`, which stamps `__reroute: true`), centred where it was
@@ -1038,6 +1047,7 @@ function GraphEditorCanvas({
   selectedAttachmentId = null,
   onAttachmentSelect,
   hiddenToolbarActions = NO_HIDDEN_TOOLBAR_ACTIONS,
+  formatLayout,
   nodeDragHandle,
   connectEndMode = "default",
   edgeBreaksAtPin,
@@ -3344,6 +3354,35 @@ function GraphEditorCanvas({
     );
   }, [addPinEnabled, commitGraph, defaultEdgeOptions.type, knownTypes, nodeDragHandle, pinCompatibility, readOnly, storeApi]);
 
+  // A host's Format layout: the nodes it returns move as one graph change; nothing else changes.
+  const formatWithLayout = useCallback(() => {
+    if (!formatLayout || !nodesDraggable) return;
+    const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    const placed = formatLayout({
+      nodes: currentNodes.map((node) => {
+        const { width, height } = graphNodeSize(node);
+        return { id: node.id, position: node.position, width, height, data: node.data };
+      }),
+      edges: currentEdges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+        ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+      })),
+      selectedIds: currentNodes.filter((node) => node.selected).map((node) => node.id),
+    });
+    const positions = new Map(placed.map((row) => [row.id, row.position]));
+    let changed = false;
+    const nextNodes = currentNodes.map((node) => {
+      const position = positions.get(node.id);
+      if (!position || (position.x === node.position.x && position.y === node.position.y)) return node;
+      changed = true;
+      return { ...node, position: { x: position.x, y: position.y } };
+    });
+    if (changed) commitGraph(nextNodes, currentEdges);
+  }, [commitGraph, formatLayout, nodesDraggable]);
+
   // Copy, Paste, Duplicate, Delete and Break Links for the selection, with their keys.
   const graphItems = useCallback(
     (currentNodes: CanvasNode[], currentEdges: Edge[]): NestedMenuItem[] => {
@@ -4084,9 +4123,13 @@ function GraphEditorCanvas({
             <Separator orientation="vertical" />
             <IslandIconButton
               label="Format"
-              hint="Format Selection: Exec Runs Left To Right, Data Hangs Below"
-              disabled={selectedNodes.length === 0}
-              onClick={formatSelection}
+              hint={
+                formatLayout
+                  ? "Format: Lays Out The Selection, Or The Whole Graph When Nothing Is Selected"
+                  : "Format Selection: Exec Runs Left To Right, Data Hangs Below"
+              }
+              disabled={formatLayout ? !nodesDraggable : selectedNodes.length === 0}
+              onClick={formatLayout ? formatWithLayout : formatSelection}
               data-testid="graph-format"
             >
               <WaypointsIcon />
