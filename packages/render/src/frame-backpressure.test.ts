@@ -13,11 +13,14 @@ function gpu() {
     queue.push(entry);
     return { submitted, done: () => { polls.count += 1; return entry.finished; }, dispose: () => { entry.disposed = true; } };
   }, () => frame);
-  /** One Engine frame: each view asks to render, then the frame ends. */
+  /**
+   * One Engine frame: each view asks to render, then the frame ends. As Babylon's `endFrame` does, the frame id
+   * advances before the end-frame observers run, so the frame end and the next frame's views read the same id.
+   */
   const run = (views = 1) => {
-    frame += 1;
     let rendered = false;
     for (let view = 0; view < views; view++) rendered = gate.admit() || rendered;
+    frame += 1;
     gate.frameEnd();
     return rendered;
   };
@@ -98,6 +101,18 @@ describe("frame backpressure", () => {
     expect([pollsOf(finishOldest), pollsOf(finishOldest), pollsOf(finishOldest)]).toEqual([rendered, rendered, rendered]);
     // At the limit with nothing finishing, both views ask and the frame is skipped after one poll.
     expect([pollsOf(() => {}), pollsOf(() => {})]).toEqual([{ rendered: false, polls: 1 }, { rendered: false, polls: 1 }]);
+  });
+
+  it("skips no render while the GPU finishes each frame during the next one", () => {
+    const { gate, queue, run } = gpu();
+    const rendered: boolean[] = [];
+    for (let index = 0; index < 8; index++) {
+      rendered.push(run(2));
+      // The frame before this one finishes only now, after this frame's end and before the next frame asks.
+      if (index > 0) queue[index - 1]!.finished = true;
+    }
+    expect(rendered).toEqual(Array.from({ length: 8 }, () => true));
+    expect(gate.stats().skipped).toBe(0);
   });
 
   it("says whether a view rendered in the Engine frame that is ending", () => {

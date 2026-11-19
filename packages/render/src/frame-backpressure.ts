@@ -38,8 +38,13 @@ export class FrameBackpressure {
   private readonly depths = [0, 0, 0, 0, 0, 0];
   /** The last Engine frame a view rendered in (`renderedThisFrame`). */
   private renderedFrame = -1;
-  /** The last Engine frame whose loop polled the markers (`retire`). */
-  private polledFrame = -1;
+  /**
+   * Whether `admit` polled the markers since the last frame end, and in which Engine frame: the frame loop polls at
+   * most once an Engine frame. Babylon advances its frame id before the end-frame observers run, so the frame end and
+   * the next frame's `admit` read the same id: the frame end's own poll must not count against that `admit`.
+   */
+  private admitPolled = false;
+  private admitPolledFrame = -1;
 
   private readonly submit: ((submitted: number) => FrameMarker | null) | null;
   private readonly frameId: () => number;
@@ -72,7 +77,11 @@ export class FrameBackpressure {
   admit(loading = false): boolean {
     if (!loading && this.limit !== "off" && this.submit) {
       // Only a queue at its limit can hold this frame back: polled until it is below the limit, once an Engine frame.
-      if (this.outstanding.length >= this.limit && this.polledFrame !== this.frameId()) this.retire(this.limit);
+      if (this.outstanding.length >= this.limit && !(this.admitPolled && this.admitPolledFrame === this.frameId())) {
+        this.admitPolled = true;
+        this.admitPolledFrame = this.frameId();
+        this.retire(this.limit);
+      }
       if (this.outstanding.length >= this.limit) {
         const frame = this.frameId();
         if (frame !== this.skippedFrame) { this.skippedFrame = frame; this.skips += 1; }
@@ -85,13 +94,16 @@ export class FrameBackpressure {
 
   /** At the Engine's frame end: a frame that rendered submits its marker. */
   frameEnd(): void {
+    // The Engine frame's one poll: `admit` spent it when the queue was at its limit, else it is spent below.
+    const polled = this.admitPolled;
+    this.admitPolled = false;
     if (!this.admitted) return;
     this.admitted = false;
     this.renderedFrame = this.frameId();
     if (this.limit === "off" || !this.submit) return;
     const marker = this.submit(this.now());
     if (!marker) return;
-    if (this.polledFrame !== this.frameId()) this.retire();
+    if (!polled) this.retire();
     this.outstanding.push(marker);
     this.depths[Math.min(this.outstanding.length, this.depths.length - 1)] += 1;
   }
@@ -111,10 +123,9 @@ export class FrameBackpressure {
   /**
    * Polls the markers in submission order, retiring the finished ones, until one is unfinished or the queue is below
    * `below`. Each poll can be a synchronous round trip to the GPU process (WebKit), so the frame loop polls at most once
-   * an Engine frame (`polledFrame`): in `admit` when the queue is at its limit, else at the frame end.
+   * an Engine frame (`admitPolled`): in `admit` when the queue is at its limit, else at the frame end.
    */
   private retire(below = 1): void {
-    this.polledFrame = this.frameId();
     while (this.outstanding.length >= below) {
       // A marker that cannot tell (a lost context) no longer holds frames back.
       if (this.outstanding[0]!.done() === false) break;
