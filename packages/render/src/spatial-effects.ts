@@ -26,6 +26,7 @@ import { ambientOcclusionBlurShader, ambientOcclusionShader } from "./ambient-oc
 import { spatialComposeShader } from "./spatial-compose-shader";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
+import { geometryRepeat } from "./world-debug";
 import { bindFogVolumes, hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import type { EffectCompileFailure } from "./effect-compile-failure";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
@@ -133,6 +134,9 @@ export function reserveSpatialEffects(
   // float).
   if (plan.screenShadows)
     bytes += Math.ceil(width / SCREEN_SHADOW_SCALE) * Math.ceil(height / SCREEN_SHADOW_SCALE) * 8 + pixels * 4;
+  // The geometry repeat's scratch targets (`worlddebug geometryonce off`): its depth32, view depth (at most float, with
+  // the caster mark) and the normal and reflectivity attachments the real pass has.
+  if (geometryRepeat(scene) !== "none") bytes += pixels * (4 + 8 + (plan.ambientOcclusion || plan.reflections ? 4 : 0) + (plan.reflections ? 4 : 0));
   return beginManagedRenderAllocation(scene.getEngine(), bytes);
 }
 
@@ -149,7 +153,8 @@ export function liveSceneEffectsKey(
   if (!camera || !hasSpatialEffects(plan)) return state.effectsKey;
   const size = camera.outputRenderTarget?.getSize();
   const engine = scene.getEngine();
-  return `${state.effectsKey}:${camera.uniqueId}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}`;
+  // The geometry repeat (`geometryRepeat`) adds a task and its targets: the graph builds again with it or without it.
+  return `${state.effectsKey}:${camera.uniqueId}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}:${geometryRepeat(scene)}`;
 }
 
 type VolumetricPlan = NonNullable<SceneEffectsPlan["volumetricLighting"]>;

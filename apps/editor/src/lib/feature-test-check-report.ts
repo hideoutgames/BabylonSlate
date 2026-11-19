@@ -38,8 +38,9 @@ import {
   type FrameStats,
   type PlayCounters,
   type PlayPresentation,
+  type WebGlCallSample,
 } from "../services/feature-test-check";
-import { DRAW_PASSES, type OverlayAloneReason, type RenderDiagnostics, type SceneReadinessDirtyReason } from "@haptic/render";
+import { DRAW_PASSES, type OverlayAloneReason, type RenderDiagnostics, type SceneReadinessDirtyReason, type WebGlCallGroup } from "@haptic/render";
 import { clipText, formatDiagnosticEnvironment, type DiagnosticEnvironment } from "./diagnostic-info";
 
 export type FeatureTestCheckEnvironment = DiagnosticEnvironment;
@@ -86,6 +87,42 @@ function cpuWithoutDrawsText(counters: PlayCounters | null | undefined): string 
     ? ` · per draw call ${Math.round(without / draws * 1000)} µs without and ${Math.round(Math.max(0, cpu - without) / draws * 1000)} µs for the draw`
     : "";
   return `${without.toFixed(1)} ms of ${cpu.toFixed(1)} ms a frame (${Math.round(without / cpu * 100)}%); draws, clears and uniform uploads take the rest${perDraw}`;
+}
+
+/** A frame's CPU time with the Engine's frame-end fence off, against the normal frame's; null where not measured. */
+function cpuWithoutFrameFenceText(counters: PlayCounters | null | undefined): string | null {
+  const without = counters?.cpuMsWithoutFrameFence?.median, cpu = counters?.cpuMs?.median;
+  if (without === undefined || cpu === undefined) return null;
+  return `${without.toFixed(1)} ms of ${cpu.toFixed(1)} ms (framesinflight off for ${counters!.cpuMsWithoutFrameFence!.samples} reads, then restored)`;
+}
+
+/** How each WebGL call group reads in a report. */
+const WEBGL_GROUP_LABELS: Record<WebGlCallGroup, string> = {
+  fenceSync: "fenceSync", clientWaitSync: "clientWaitSync", getSyncParameter: "getSyncParameter", getError: "getError",
+  checkFramebufferStatus: "checkFramebufferStatus", readPixels: "readPixels", getParameter: "getParameter",
+  reads: "other reads", draws: "draws", clears: "clears+blits", uniforms: "uniforms", uploads: "uploads", other: "other",
+};
+
+/**
+ * Where a frame's main-thread time went inside WebGL: `9.8 ms a frame in WebGL of 31.4 ms cpu (3 windows, 40 frames
+ * each) · fenceSync 2.10 (1) · ...`, each group's ms (calls) per frame; groups with no call left out.
+ */
+export function webGlCallsText(sample: WebGlCallSample): string {
+  const groups = (Object.keys(WEBGL_GROUP_LABELS) as WebGlCallGroup[]).flatMap((group) => {
+    const entry = sample.groups[group];
+    if (!entry || entry.calls <= 0) return [];
+    return [`${WEBGL_GROUP_LABELS[group]} ${entry.ms.toFixed(2)} (${entry.calls >= 10 ? Math.round(entry.calls) : entry.calls.toFixed(1)})`];
+  });
+  const cpu = sample.cpuMs !== null ? ` of ${sample.cpuMs.toFixed(1)} ms cpu` : "";
+  return `${sample.totalMs.toFixed(1)} ms a frame in WebGL${cpu} (${sample.windows} windows, ${Math.round(sample.frames)} frames each) · ${groups.join(" · ")}`;
+}
+
+/** The legend of a WebGL calls line. */
+const WEBGL_CALLS_LEGEND = "WebGL calls: every call on the game view's context timed on the main thread, ms (calls) per rendered frame: each window of at least 1 s summed and divided by its frames, the median of the windows (Safari's clock steps in about 1 ms, so only sums are read); a call that returns a value waits in WebKit until the GPU process has taken every earlier call; other reads = the other get*, is* and check* calls; uploads = buffer and texture data and storage; other = every other call (binds, state, creates); the end-of-frame present is not a context call and is not counted; the timing's own cost is in the cpu figure";
+
+/** Shares of frames lasting 1, 2, 3 and 4 or more display intervals: `12/70/10/8%`; `-` unsampled. */
+export function intervalsText(stats: FrameStats | null): string {
+  return stats ? `${stats.vsync.map((share) => Math.round(share * 100)).join("/")}%` : "-";
 }
 
 type LayerBatches = NonNullable<RenderDiagnostics["layerBatches"]>;
@@ -305,7 +342,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
   if (editor.error) lines.push("  Editor error:", ...editor.error.map((line) => `    ${line}`));
   const play = scene.play;
   if (play.status === "loaded") {
-    lines.push(`  Play: loaded in ${s(play.ms)} · ${frames(play.frames)}${play.runtimeFps !== null ? ` · render loop ${play.runtimeFps.toFixed(0)} fps (last second)` : ""}${typeof play.ticksPerSecond === "number" ? ` · game ${play.ticksPerSecond.toFixed(0)} ticks/s` : ""}`);
+    lines.push(`  Play: loaded in ${s(play.ms)} · ${frames(play.frames)}${play.frames ? ` · intervals 1/2/3/4+: ${intervalsText(play.frames)} (of animation frames, each rounded to whole 60 Hz display intervals)` : ""}${play.runtimeFps !== null ? ` · render loop ${play.runtimeFps.toFixed(0)} fps (last second)` : ""}${typeof play.ticksPerSecond === "number" ? ` · game ${play.ticksPerSecond.toFixed(0)} ticks/s` : ""}`);
     const snap = play.snapshot;
     if (snap) {
       const r = snap.rendering;
@@ -322,6 +359,9 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       if (r?.shadowRetained?.casters) lines.push(`  Shadow casters: ${retainedShadowsText(r.shadowRetained)}`);
       const withoutDraws = cpuWithoutDrawsText(counters);
       if (withoutDraws) lines.push(`  CPU without draws: ${withoutDraws}`);
+      const withoutFence = cpuWithoutFrameFenceText(counters);
+      if (withoutFence) lines.push(`  CPU with no frame-end fence: ${withoutFence}`);
+      if (counters?.webGl) lines.push(`  WebGL calls: ${webGlCallsText(counters.webGl)}`, `  (${WEBGL_CALLS_LEGEND}; cpu is the view's render callback, which ends before the Engine's frame end where the fence is submitted)`);
       if (r?.programs) {
         lines.push(`  Programs: ${programsText(r.programs)}`);
         const splits = programSplitsText(r.programs);
@@ -689,6 +729,32 @@ function gpuProbeLines(samples: readonly FeatureTestBenchmarkSample[]): string[]
   return lines;
 }
 
+/**
+ * Each serial-probed row's CPU submission per stage: `other 1.1 · shadows 6.4 · ...`, so the stage whose calls the
+ * context makes the page wait for shows.
+ */
+function serialSubmissionLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
+  const rows = samples.filter((sample) => sample.gpuProbe?.serial?.stages.length);
+  if (!rows.length) return [];
+  return [
+    "  Serial submission by stage (ms, median over the warm serial frames): from the return of the fence before the stage (the frame's start fence for the first) to the return of its own fenceSync, which in WebKit waits until the GPU process has taken the stage's calls; each frame's stages sum to its sub; Safari's clock steps in about 1 ms, so read differences over 1 ms",
+    ...rows.map((sample) => `    ${pad(sample.label, 28)}${PROBE_STAGES.flatMap((stage) => {
+      const entry = stageOf(sample.gpuProbe, stage);
+      return entry ? [`${stage} ${entry.subMs.toFixed(1)}`] : [];
+    }).join(" · ")}`),
+  ];
+}
+
+/** Each Profile view's first baseline's WebGL calls (`FeatureTestBenchmarkSample.webGl`). */
+function webGlRowLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
+  const rows = samples.filter((sample) => sample.webGl);
+  if (!rows.length) return [];
+  return [
+    `  ${WEBGL_CALLS_LEGEND}; sampled after each view's first baseline, its window and probes done, gpubusy on as in every row:`,
+    ...rows.map((sample) => `    ${pad(sample.label, 28)}${webGlCallsText(sample.webGl!)}`),
+  ];
+}
+
 /** Passes a row lists in its pass timers: those over this many ms, largest first. */
 const TIMER_PASS_MS = 0.1;
 
@@ -755,7 +821,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   const drift = breakdownWarmupDrift(samples);
   const timed = samples.find((sample) => sample.gpuBusy);
   const lines = [
-    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 14 minutes on a desktop: a short warm-up at the control view, then at fixed camera views every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling for 1 s, then probed with serialised frames, a burst and the pass timers before it is restored (GPU probes, below):`,
+    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 12 minutes on a desktop: a short warm-up at the control view, then at fixed camera views every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling for 1 s, then probed with serialised frames, a burst and the pass timers before it is restored (GPU probes, below):`,
     `  Settings: ${first?.settings ? Object.entries(first.settings).map(([field, value]) => `${field} ${value}`).join(" · ") : "unknown"}`,
     `  Frames in flight: ${framesInFlightText(samples)}`,
     `  Resolution held: ${heldResolutionText(profile?.resolution ?? null)}`,
@@ -768,25 +834,26 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
     profile?.endChanges
       ? profile.endChanges.length ? `  NOT RESTORED at the end: ${profile.endChanges.join(", ")}` : "  Restored: every setting as before the first step"
       : "  Restored: not checked",
-    "  Legend: step labels start with their view (light: few draws; heavy: many draws, no Mirror on screen, the control view; mirror: Mirrors and capture monitors on screen) · mean, p95 = frame time (it lands on whole display intervals: read gpu busy) · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences (with a frame already queued it equals the frame period, in whole display intervals: a step's change in it is then not a cost) · serial = the serial probe's whole-frame GPU time, each frame rendered alone after the GPU finished the last · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · change = gpu busy against the baselines of its view around the step (a baseline's: against its view's first), or mean frame time where gpu busy is missing (marked *) · cpu change = the same in CPU cost · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · device free, app headroom = the device's free and inactive memory and what the app process may still allocate, as the sample ended · world / backbuffer = the world's render size @ its scaling level, and the backbuffer's size (Scene Layers and the output's upscale draw there) · atlas, maps = the shadow atlas edge and each map's size x tiles · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED, COMPILING and UNSETTLED (its two baselines differ by more than its change) mark a row not to trust",
+    "  Legend: step labels start with their view (light: few draws; heavy: many draws, no Mirror on screen, the control view; mirror: Mirrors and capture monitors on screen) · mean, p95 = frame time (it lands on whole display intervals: read gpu busy) · intervals 1/2/3/4+ = % of the window's animation frames (rAF callbacks, held and skipped renders included) lasting 1, 2, 3, 4 or more display intervals, each rounded to the nearest whole interval of 16.7 ms (60 Hz): an even 40 fps reads about 50/50/0/0, 60 fps broken by long frames mostly 1 with a 3 or 4+ tail · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences (with a frame already queued it equals the frame period, in whole display intervals: a step's change in it is then not a cost) · serial = the serial probe's whole-frame GPU time, each frame rendered alone after the GPU finished the last · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · change = gpu busy against the baselines of its view around the step (a baseline's: against its view's first), or mean frame time where gpu busy is missing (marked *) · cpu change = the same in CPU cost · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · device free, app headroom = the device's free and inactive memory and what the app process may still allocate, as the sample ended · world / backbuffer = the world's render size @ its scaling level, and the backbuffer's size (Scene Layers and the output's upscale draw there) · atlas, maps = the shadow atlas edge and each map's size x tiles · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED, COMPILING and UNSETTLED (its two baselines differ by more than its change) mark a row not to trust",
     `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
-    `    ${pad("Step", 28)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("serial", 8)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("state", 6)}${pad("change", 16)}${pad("cpu change", 16)}${pad("world / backbuffer", 26)}notes`,
+    `    ${pad("Step", 28)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("intervals 1/2/3/4+", 19)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("serial", 8)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("state", 6)}${pad("change", 16)}${pad("cpu change", 16)}${pad("world / backbuffer", 26)}notes`,
   ];
   for (const sample of samples) {
     const mean = meanFrameMs(sample.frames);
     const busy = sample.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)} (${sample.gpuBusy.p95Ms.toFixed(0)})` : "-";
     const change = sample.warmup ? null : breakdownDelta(samples, sample);
     const cpu = profileComparison(samples, sample)?.cpu ?? (isBreakdownBaseline(sample) ? breakdownCpuDelta(samples, sample) : null);
-    lines.push(`    ${pad(sample.label, 28)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(serialFrameText(sample), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(profileFrameState(samples, sample) ?? "-", 6)}${pad(`${deltaText(change)}${change?.basis === "frame" ? "*" : ""}`, 16)}${pad(deltaText(cpu), 16)}${pad(sample.resolution ? `${sample.resolution} / ${sample.backbuffer ?? "?"}` : "-", 26)}${profileNotes(samples, sample, first)}`.trimEnd());
+    lines.push(`    ${pad(sample.label, 28)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(intervalsText(sample.frames), 19)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(serialFrameText(sample), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(profileFrameState(samples, sample) ?? "-", 6)}${pad(`${deltaText(change)}${change?.basis === "frame" ? "*" : ""}`, 16)}${pad(deltaText(cpu), 16)}${pad(sample.resolution ? `${sample.resolution} / ${sample.backbuffer ?? "?"}` : "-", 26)}${profileNotes(samples, sample, first)}`.trimEnd());
   }
   lines.push(...drawPassTable(samples, "Step", 28), ...cpuPassTable(samples, "Step", 28));
-  lines.push(...gpuProbeLines(samples), ...passTimerLines(samples), ...frameStructureLines(samples));
-  lines.push("  Ranked by change at each view against baselines at its own GPU speed (synthetic load within 15%), the mean of its repeats (baseline > step > baseline), in the burst period where every row is GPU-bound (burst over 1.2x both its serial submission and the display interval; marked b), else the serial probe's frame time where the step and both its baselines have one and no serial frame stalled (submitted past 1.5x the window's CPU cost plus 2 ms; marked s), else gpu busy (* = mean frame time where gpu busy is missing); norm = the same with every row scaled to the run's fastest synthetic load; OTHER SPEED = no baseline ran at its speed, so the nearest were taken (a step that lightens the GPU's load can lower its clock by itself):");
+  lines.push(...gpuProbeLines(samples), ...serialSubmissionLines(samples), ...passTimerLines(samples), ...frameStructureLines(samples));
+  lines.push(...webGlRowLines(samples));
+  lines.push("  Ranked by change at each view against baselines at its own GPU speed (synthetic load within 15%), the mean of its repeats (baseline > step > baseline), in the burst period where every row is GPU-bound (burst over 1.2x both its serial submission and the display interval; marked b), else the serial probe's frame time where the step and both its baselines have one and no serial frame stalled (submitted past 1.5x the window's CPU cost plus 2 ms; marked s), else gpu busy (* = mean frame time where gpu busy is missing); norm = the same with every row scaled to the run's fastest synthetic load; OTHER SPEED = no baseline ran at its speed, so the nearest were taken (a step that lightens the GPU's load can lower its clock by itself); ADDS WORK = the step adds work (the geometry pass drawn twice), ranked after the savings, largest first: its positive change is what that work costs:");
   const ranking = profileRanking(samples);
   for (const group of ranking) {
     lines.push(`    ${group.view ?? "scene camera"}:`);
     group.steps.forEach((entry, index) => lines.push(
-      `      ${index + 1}. ${entry.state ? `[${entry.state}] ` : ""}${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : entry.basis === "serial" ? " s" : entry.basis === "burst" ? " b" : ""} (${abaText(entry)}${entry.repeats > 1 ? `, mean of ${entry.repeats}` : ""})${entry.normalised ? ` · norm ${deltaText(entry.normalised.change)}` : ""}${entry.speedMatched ? "" : " · OTHER SPEED"} · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
+      `      ${index + 1}. ${entry.state ? `[${entry.state}] ` : ""}${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : entry.basis === "serial" ? " s" : entry.basis === "burst" ? " b" : ""} (${abaText(entry)}${entry.repeats > 1 ? `, mean of ${entry.repeats}` : ""})${entry.normalised ? ` · norm ${deltaText(entry.normalised.change)}` : ""}${entry.speedMatched ? "" : " · OTHER SPEED"} · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.adds ? " · ADDS WORK: + is its cost" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
     ));
   }
   if (!ranking.length) lines.push("    none measured");

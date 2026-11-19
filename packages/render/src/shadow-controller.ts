@@ -1041,6 +1041,9 @@ export class SceneShadowController {
    */
   setDebug(part: ShadowDebugPart, enabled: boolean): boolean {
     if (!writeSceneShadowDebug(this.scene, part, enabled)) return false;
+    // `fulltiles`: the next admission builds every map again at its new size in the same atlas; a map kept at a size
+    // smaller than it asks for would otherwise stay at the half size once the full tiles are back.
+    if (part === "fulltiles") for (const entry of this.entries.values()) entry.resetAllocation = true;
     this.forEachGenerator((generator) => generator.getShadowMap()?.resetRefreshCounter());
     return true;
   }

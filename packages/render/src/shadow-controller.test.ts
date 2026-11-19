@@ -35,7 +35,7 @@ import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, PARKED_SHADOW_ATLAS_MS, shadowAtlasBytes, shadowAtlasGeneration, shadowAtlasTexture } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, PARKED_SHADOW_ATLAS_MS, shadowAtlasBytes, shadowAtlasGeneration, shadowAtlasRenderTarget, shadowAtlasTexture } from "./shadow-atlas";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
 import { builtInWaterMaterial } from "./water-template";
 import { PlanarMirrorCamera } from "./planar-mirror";
@@ -2140,6 +2140,35 @@ describe("view sun shadow maps", () => {
     controller.sync();
     expect(shadowAtlasGeneration(scene)).toBe(2);
     expect(controller.generator(sun)).not.toBeNull();
+  });
+  it("draws every map at half its edge with `shadowdebug fulltiles off` and back, in the same High atlas, never making another", () => {
+    const { scene, controller } = fixture();
+    Object.assign(scene.getEngine().getCaps(), { maxTextureSize: 8192 });
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ profile: "high" }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    const spot = new SpotLight("spot", new Vector3(0, 4, -4), new Vector3(0, -1, 0.5), 1, 1, scene);
+    controller.register(sun, true);
+    controller.register(spot, true);
+    controller.sync();
+    const atlas = shadowAtlasRenderTarget(scene);
+    const full = { sun: [4096, 2048, 2048, 1024], spot: [2048] };
+    const sizes = () => ({ sun: tileSizes(controller.generator(sun)), spot: tileSizes(controller.generator(spot)) });
+    expect([atlasTextureEdge(scene), shadowAtlasGeneration(scene), sizes()]).toEqual([8192, 1, full]);
+    // As a Profile step runs it: the switch, the frames it is measured over, then the switch back and the frames after.
+    expect(controller.setDebug("fulltiles", false)).toBe(true);
+    for (let frame = 0; frame < 3; frame++) {
+      endFrame(scene);
+      controller.sync();
+      expect(shadowAtlasRenderTarget(scene)).toBe(atlas);
+      expect([shadowAtlasGeneration(scene), sizes()]).toEqual([1, { sun: [2048, 1024, 1024, 512], spot: [1024] }]);
+    }
+    expect(controller.setDebug("fulltiles", true)).toBe(true);
+    for (let frame = 0; frame < 3; frame++) {
+      endFrame(scene);
+      controller.sync();
+      expect(shadowAtlasRenderTarget(scene)).toBe(atlas);
+      expect([atlasTextureEdge(scene), shadowAtlasGeneration(scene), sizes()]).toEqual([8192, 1, full]);
+    }
   });
   it("mirrors each admitted sun map for an attached view, fitted to that view's camera, and shares local maps", async () => {
     const { scene, controller } = fixture();

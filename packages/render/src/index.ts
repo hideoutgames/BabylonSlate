@@ -133,6 +133,7 @@ export { verifyScopedReadinessProbes } from "./readiness-scope";
 export { verifyRenderChangeJournal } from "./render-change-journal";
 export { verifyLeanPreparation, type LeanPreparationWork } from "./lean-render-preparation";
 export type { PresentedImageSample } from "./presented-image";
+export type { WebGlCallGroup, WebGlCallTotals } from "./webgl-call-timer";
 export { activeRenderFrameCapture } from "./render-frame-report";
 export { parseRenderFrameReport, serializeRenderFrameReport } from "./render-frame-report-file";
 export type { RenderFrameReport, RenderFrameReportDraft, RenderFrameStage, RenderFrameTaskDescription, RenderFrameResource } from "./render-frame-report";

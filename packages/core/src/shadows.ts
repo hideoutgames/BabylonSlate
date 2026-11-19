@@ -282,7 +282,10 @@ export function componentCastsShadows(classId: string, castShadows: unknown): bo
  * clamped to it in the vertex stage, so no caster fragment writes its own depth; a triangle crossing the plane then
  * draws slightly differently), and the sun's far cascades drawn in every frame the map draws (`farcascades`: off, the
  * cascades after the first two are cleared and drawn only in every second Engine frame and keep their depth and the
- * view they were drawn with in between, so a moving caster's far shadow may lag a frame).
+ * view they were drawn with in between, so a moving caster's far shadow may lag a frame), and the map passes of the
+ * sun alone (`sunpasses`) or of the spot and point lights alone (`localpasses`), each as `passes` is for its maps, and
+ * every tile at its full size (`fulltiles`: off, every map is drawn again at half its edge, a quarter of its texels,
+ * with the same cascades, lights and casters, into the same atlas: the level's edge and pages do not change).
  */
-export const SHADOW_DEBUG_PARTS = ["casters", "passes", "atlasfit", "depthclamp", "farcascades"] as const;
+export const SHADOW_DEBUG_PARTS = ["casters", "passes", "sunpasses", "localpasses", "atlasfit", "fulltiles", "depthclamp", "farcascades"] as const;
 export type ShadowDebugPart = (typeof SHADOW_DEBUG_PARTS)[number];

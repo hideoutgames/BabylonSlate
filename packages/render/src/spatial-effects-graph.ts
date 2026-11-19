@@ -6,6 +6,8 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { createGeometryDepthSeed } from "./geometry-depth-seed";
+import { GeometryRepeatProbeTask } from "./geometry-repeat-probe";
+import { geometryRepeat } from "./world-debug";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 // Unlit Standard surfaces write no reflectivity: installed before any reflectivity geometry pass compiles.
 import {
@@ -97,6 +99,11 @@ export class SpatialEffectsGraph {
   readonly compileFailure = new EffectCompileFailure();
   private readonly graph: FrameGraph;
   readonly geometry: LogicalGeometryTask;
+  /**
+   * `worlddebug geometryonce off` (or `geometryoncescissor off`): a second geometry pass the owner adds right before
+   * `geometry`, drawing its object list into scratch targets nothing reads (`GeometryRepeatProbeTask`); absent otherwise.
+   */
+  readonly geometryProbe?: GeometryRepeatProbeTask;
   readonly tasks: SpatialTask[] = [];
   readonly output: FrameGraphTextureHandle;
   /** Screen-Space Shadows: a pass after the geometry pass that the owner adds before its objects (`screen-shadows.ts`). */
@@ -212,6 +219,23 @@ export class SpatialEffectsGraph {
       }
       for (const handle of Object.values(buffers))
         this.handles.push({ handle, category: "geometry" });
+      const repeat = geometryRepeat(graph.scene);
+      if (repeat !== "none") {
+        // `worlddebug geometryonce off`: the same pass once more first, into scratch targets nothing reads.
+        const probe = new GeometryRepeatProbeTask("Spatial Geometry Probe", graph, graph.scene, repeat === "scissor");
+        registerSpatialGeometryPass(graph.scene, probe.objectRenderer.renderPassId);
+        probe.camera = camera;
+        probe.objectList = this.geometry.objectList;
+        probe.depthTexture = target("Spatial Geometry Probe Z", 1, true);
+        probe.clearsDepth = true;
+        probe.size = { width, height };
+        probe.sizeIsPercentage = false;
+        probe.textureDescriptions = this.geometry.textureDescriptions.map((description) => ({ ...description }));
+        this.handles.push({ handle: probe.geometryViewDepthTexture, category: "geometry" });
+        if (plan.reflections || plan.ambientOcclusion) this.handles.push({ handle: probe.geometryWorldNormalTexture, category: "geometry" });
+        if (plan.reflections) this.handles.push({ handle: probe.geometryReflectivityTexture, category: "geometry" });
+        this.geometryProbe = probe;
+      }
       if (sceneDepth !== undefined && !plan.ambientOcclusion && !plan.reflections && !plan.screenShadows) {
         this.geometry.seed = createGeometryDepthSeed(graph.engine, "Spatial Geometry Depth Seed", sceneDepth,
           this.compileFailure.for("Spatial Geometry Depth Seed"));
@@ -280,6 +304,12 @@ export class SpatialEffectsGraph {
     // Screen-Space Shadows read the depth (and the caster mark) while they march: a shadowed sun and a perspective view.
     if (this.screenShadows?.sync()) geometryRead = true;
     this.geometry.disabled = !geometryRead;
+    if (this.geometryProbe) {
+      // The repeat draws what the real pass draws this frame, as it draws it.
+      this.geometryProbe.objectList = this.geometry.objectList;
+      this.geometryProbe.camera = this.geometry.camera;
+      this.geometryProbe.disabled = this.geometry.disabled;
+    }
   }
   reconcile(): void {
     this.screenShadows?.reconcile(this.graph);
@@ -306,6 +336,8 @@ export class SpatialEffectsGraph {
     if (seed) this.seedRetirement = retireOwnedEffect(seed.effect, () => seed.dispose());
     if (this.geometry) unregisterSpatialGeometryPass(this.graph.scene, this.geometry.objectRenderer.renderPassId);
     this.geometry?.dispose();
+    if (this.geometryProbe) unregisterSpatialGeometryPass(this.graph.scene, this.geometryProbe.objectRenderer.renderPassId);
+    this.geometryProbe?.dispose();
     this.disposed = true;
   }
   whenDisposed(): Promise<void> {

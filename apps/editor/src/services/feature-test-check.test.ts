@@ -109,6 +109,8 @@ function fakeEditor(
           return share === null ? null : { blackShare: share ?? 0, meanLevel: 120, width: 64, height: 36 };
         },
         stubWebGlDraws: () => false,
+        timeWebGlCalls: () => false,
+        webGlCallTotals: () => null,
         problemLogs: () => [],
         executeConsoleCommand: async (line) => {
           commands.push(line);
@@ -845,6 +847,70 @@ describe("draw sampling", () => {
     expect(editor.calls).toEqual([true, false]);
   });
 
+  /**
+   * A game view whose calls are timed on request: every 1 s of the check's clock it renders 50 frames, each with 3 ms in
+   * `fenceSync` (one call) and 0.5 ms in draws (100 calls); frames in flight at 2, its frames costing 40 ms on the CPU, 31
+   * with the frame-end fence off.
+   */
+  const timedView = (deps: FeatureTestCheckDeps, onTime?: (on: boolean) => void) => {
+    const calls: boolean[] = [];
+    let since: number | null = null;
+    let fenceOff = false;
+    const wrapped: FeatureTestCheckDeps = {
+      ...alternating(deps),
+      play: () => {
+        const play = deps.play();
+        return play && {
+          ...play,
+          snapshot: () => ({
+            ...play.snapshot(),
+            rendering: { cpuMs: fenceOff ? 31 : 40, gpuMs: null, frameBackpressure: { mode: 2, inFlight: 0, skipped: 0 } } as RenderDiagnostics,
+          }),
+          executeConsoleCommand: async (line: string) => {
+            if (line === "framesinflight off") fenceOff = true;
+            if (line === "framesinflight 2") fenceOff = false;
+            return play.executeConsoleCommand(line);
+          },
+          timeWebGlCalls: (on: boolean) => {
+            calls.push(on);
+            onTime?.(on);
+            since = on ? deps.now() : null;
+            return true;
+          },
+          webGlCallTotals: () => {
+            if (since === null) return null;
+            const frames = Math.floor((deps.now() - since) / 1000) * 50;
+            const groups = Object.fromEntries(["fenceSync", "clientWaitSync", "getSyncParameter", "getError", "checkFramebufferStatus",
+              "readPixels", "getParameter", "reads", "draws", "clears", "uniforms", "uploads", "other"].map((group) => [group, { ms: 0, calls: 0 }]));
+            Object.assign(groups, { fenceSync: { ms: frames * 3, calls: frames }, draws: { ms: frames * 0.5, calls: frames * 100 } });
+            return { frames, groups } as ReturnType<PlayProbe["webGlCallTotals"]>;
+          },
+        };
+      },
+    };
+    return { deps: wrapped, calls };
+  };
+
+  it("times Play's WebGL calls per rendered frame over windows of a second, after the frame-end fence's sample, and always stops", async () => {
+    const editor = timedView(fakeEditor({}).deps);
+    const report = await runFeatureTestCheck({ mode: "quick", scenes: [scene("FT_World")], deps: editor.deps, signal: new AbortController().signal });
+    const counters = report.scenes[0].play.counters!;
+    // Four reads half a second apart with the fence off, then the session's own two frames in flight again.
+    expect(counters.cpuMsWithoutFrameFence).toEqual({ median: 31, min: 31, max: 31, samples: 4 });
+    expect(counters.webGl).toMatchObject({
+      windows: 3, frames: 50, cpuMs: 40, totalMs: 3.5,
+      groups: { fenceSync: { ms: 3, calls: 1 }, draws: { ms: 0.5, calls: 100 }, getError: { ms: 0, calls: 0 } },
+    });
+    expect(editor.calls).toEqual([true, false]);
+  });
+
+  it("stops timing Play's WebGL calls when the Check is cancelled meanwhile", async () => {
+    const cancel = new AbortController();
+    const editor = timedView(fakeEditor({}).deps, (on) => { if (on) cancel.abort(); });
+    await runFeatureTestCheck({ mode: "quick", scenes: [scene("FT_World")], deps: editor.deps, signal: cancel.signal }).catch(() => null);
+    expect(editor.calls).toEqual([true, false]);
+  });
+
   it("gives each benchmark step its median counters and their range", async () => {
     const editor = fakeEditor({}, undefined, (now, commands) => ({ drawn: commands.length * 10 + now, held: 0 }));
     const report = await runFeatureTestCheck({
@@ -1132,28 +1198,28 @@ describe("Profile", { timeout: 30_000 }, () => {
   it("measures each step twice at fixed camera views, each between two baselines of that view, revisits the control view, and keeps to about twelve minutes", () => {
     expect(FEATURE_TEST_PROFILE_SCENES).toEqual([{ name: "main", path: "assets/main.scene.hasset" }]);
     const plan = featureTestProfilePlan(SESSION);
-    const effects = ["ambient occlusion off", "reflections off", "volumetrics off", "screen shadows off"];
+    const splits = ["sun shadow passes off", "local shadow passes off", "shadow tiles half"];
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["world hidden", "main pass unlit", "shadow taps off", "local lights off", "shadow passes off", "geometry effects off", "world drawn once"]],
-      ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", ...effects, "world drawn once"]],
+      ["light", ['possess "Profile Light Camera"'], ["world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once"]],
+      ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "geometry pass drawn twice", "geometry pass drawn twice, scissored", "world drawn once"]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["captures off", "mirrors environment", "world drawn once"]],
     ]);
     const step = (view: string, label: string) => plan.views.find((entry) => entry.name === view)!.steps.find((entry) => entry.label === label)!;
-    // The whole-frame switches, each undone by its own switch.
-    expect(step("light", "main pass unlit")).toMatchObject({ commands: ["worlddebug lighting off"], restore: ["worlddebug lighting on"], fields: ["world.debug"] });
-    expect(step("light", "local lights off")).toMatchObject({ commands: ["worlddebug locallights off"], restore: ["worlddebug locallights on"] });
-    // Each geometry effect alone, at the control view only (the run's time budget), each its own field and overlapping the combined step.
-    const combined = step("heavy", "geometry effects off");
-    expect(combined.commands).toHaveLength(4);
-    expect(effects.map((label) => step("heavy", label))).toMatchObject([
-      { commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"], overlaps: true },
-      { commands: ["quality postprocessing reflections off"], fields: ["post.reflections"], overlaps: true },
-      { commands: ["quality postprocessing volumetricLighting off"], fields: ["post.volumetricLighting"], overlaps: true },
-      { commands: ["quality shadows screen off"], fields: ["shadows.screen"], overlaps: true },
+    // The shadow passes split by light and by texels, at the light view only, each undone by its own switch and a
+    // share of the passes' saving.
+    expect(splits.map((label) => step("light", label))).toMatchObject([
+      { commands: ["shadowdebug sunpasses off"], restore: ["shadowdebug sunpasses on"], fields: ["shadows.debug"], overlaps: true },
+      { commands: ["shadowdebug localpasses off"], restore: ["shadowdebug localpasses on"], fields: ["shadows.debug"], overlaps: true },
+      { commands: ["shadowdebug fulltiles off"], restore: ["shadowdebug fulltiles on"], fields: ["shadows.debug"], overlaps: true },
     ]);
-    // Together they are the combined step, so each alone leaves the others (and the geometry pass) on.
-    expect(effects.flatMap((label) => step("heavy", label).commands)).toEqual(combined.commands);
-    expect(plan.views.filter((view) => view.steps.some((entry) => entry.label === "reflections off")).map((view) => view.name)).toEqual(["heavy"]);
+    // The geometry pass drawn once more, whole and scissored, at the control view: work added, each undone by its switch.
+    expect([step("heavy", "geometry pass drawn twice"), step("heavy", "geometry pass drawn twice, scissored")]).toMatchObject([
+      { commands: ["worlddebug geometryonce off"], restore: ["worlddebug geometryonce on"], fields: ["world.debug"], overlaps: true, adds: true },
+      { commands: ["worlddebug geometryoncescissor off"], restore: ["worlddebug geometryoncescissor on"], fields: ["world.debug"], overlaps: true, adds: true },
+    ]);
+    expect(plan.views.flatMap((view) => view.steps).filter((entry) => entry.adds).map((entry) => entry.label))
+      .toEqual(["geometry pass drawn twice", "geometry pass drawn twice, scissored"]);
+    expect(step("heavy", "geometry effects off").commands).toHaveLength(4);
     expect(step("light", "world hidden")).toMatchObject({
       commands: ["worlddebug world off", "shadowdebug passes off", "rendertargets off", "postprocessing off"],
       restore: ["worlddebug world on", "shadowdebug passes on", "rendertargets on", "postprocessing on"],
@@ -1181,8 +1247,8 @@ describe("Profile", { timeout: 30_000 }, () => {
     const sequence = featureTestProfileSequence(SESSION);
     // Each step twice, each time between two baselines: A B A B A C A C A.
     expect(sequence.slice(0, 9).map((entry) => entry.label)).toEqual([
-      "light baseline 1", "light world hidden", "light baseline 2", "light world hidden", "light baseline 3", "light main pass unlit",
-      "light baseline 4", "light main pass unlit", "light baseline 5",
+      "light baseline 1", "light world hidden", "light baseline 2", "light world hidden", "light baseline 3", "light shadow passes off",
+      "light baseline 4", "light shadow passes off", "light baseline 5",
     ]);
     // Only a view's first baseline moves the camera; every step sits between two baselines of its own view.
     expect(sequence.filter((entry) => entry.commands.some((line) => line.startsWith("possess"))).map((entry) => entry.label))
@@ -1233,6 +1299,24 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(profileComparison(lighter, lighter[1]!)).toMatchObject({ before: 30, step: 10, after: 30, change: { ms: -20 }, speedMatched: false });
   });
 
+  it("ranks a step that adds work after every step that saves, by what it adds, and marks it", () => {
+    const row = (label: string, gpu: number): FeatureTestBenchmarkSample => ({
+      label, baseline: label.includes("baseline"), view: "heavy", runtimeFps: null, cpuMs: 10, gpuMs: null,
+      frames: { frames: 100, durationMs: 3000, fps: 30, medianMs: 33, meanMs: 33, vsync: [0, 1, 0, 0], p95Ms: 40, maxMs: 50, stalls: 0 },
+      drawCalls: 100, resolution: null, failed: [], gpuBusy: { medianMs: gpu, p95Ms: gpu + 5, frames: 100, pollMs: 4 },
+    } as unknown as FeatureTestBenchmarkSample);
+    const samples = [
+      row("heavy baseline 1", 30), row("heavy geometry pass drawn twice, scissored", 31), row("heavy baseline 2", 30),
+      row("heavy geometry pass drawn twice", 36), row("heavy baseline 3", 30), row("heavy shadow passes off", 34), row("heavy baseline 4", 30),
+      row("heavy world hidden", 10), row("heavy baseline 5", 30),
+    ];
+    expect(profileRanking(samples)[0]!.steps.map((entry) => [entry.label, entry.change.ms, entry.adds])).toEqual([
+      // A step that saves nothing (here it cost 4 ms) still ranks among the savings; the added passes follow, the larger first.
+      ["heavy world hidden", -20, false], ["heavy shadow passes off", 4, false],
+      ["heavy geometry pass drawn twice", 6, true], ["heavy geometry pass drawn twice, scissored", 1, true],
+    ]);
+  });
+
   it("ranks in the burst period where every row is GPU-bound, else in the serial frame, leaving out a serial frame submitted slower than the window", () => {
     /** A row: its window's CPU cost, its serial frame and submission, and its burst period. */
     const row = (label: string, cpu: number, serial: { frame: number; sub: number }, burst: number): FeatureTestBenchmarkSample => ({
@@ -1271,9 +1355,8 @@ describe("Profile", { timeout: 30_000 }, () => {
   it("changes, with every step at every tier, only its own fields, or nothing where the tier already holds its value", () => {
     // Low has no geometry effects.
     const expectedSkips: Record<QualityLevel, string[]> = {
-      low: ["geometry effects off", "ambient occlusion off", "reflections off", "volumetrics off", "screen shadows off"],
-      // Medium has no volumetric lighting and no Screen-Space Shadows.
-      medium: ["volumetrics off", "screen shadows off"],
+      low: ["geometry effects off"],
+      medium: [],
       high: [],
       ultra: [],
     };
@@ -1408,19 +1491,20 @@ describe("Profile", { timeout: 30_000 }, () => {
     // Every row's window is recorded by the GPU probes, which come off before its restore. This Engine reports none, so
     // no serial probe is asked for.
     expect(editor.commands.filter((line) => line.startsWith("gpuprobe"))).toEqual(samples.flatMap(() => ["gpuprobe on", "gpuprobe off"]));
-    expect(editor.commands.slice(editor.commands.indexOf("worlddebug locallights off"), editor.commands.indexOf("worlddebug locallights off") + 5))
-      .toEqual(["worlddebug locallights off", "gpuprobe on", "gpubusy on", "gpuprobe off", "quality reset"]);
+    expect(editor.commands.slice(editor.commands.indexOf("shadowdebug sunpasses off"), editor.commands.indexOf("shadowdebug sunpasses off") + 5))
+      .toEqual(["shadowdebug sunpasses off", "gpuprobe on", "gpubusy on", "gpuprobe off", "quality reset"]);
     const commands = editor.commands.filter((line) => !line.startsWith("gpuprobe"));
     const at = (line: string) => commands.indexOf(line);
     // No tier and no frame cap: the session's own. High's Dynamic Resolution held at its floor, then the camera at the
     // control view, before the warm-up.
     // The cap is only read.
     expect(commands.filter((line) => line.startsWith("framecap") || /^quality (low|medium|high|ultra)$/.test(line))).toEqual(["framecap"]);
-    expect(commands.slice(0, 6)).toEqual(["framecap", "quality resolution scale 0.75", 'possess "Profile Heavy Camera"', "gpubusy on", "gpubusy on", 'possess "Profile Light Camera"']);
+    // Before the sweep, Play's frames are read once with the frame-end fence off, and the session's mode put back.
+    expect(commands.slice(0, 8)).toEqual(["framesinflight off", "framesinflight 2", "framecap", "quality resolution scale 0.75", 'possess "Profile Heavy Camera"', "gpubusy on", "gpubusy on", 'possess "Profile Light Camera"']);
     expect(samples.every((sample) => sample.settings!["resolution.scale"] === "0.75" || /resolution (1\.0|0\.5)$/.test(sample.label))).toBe(true);
     // Each step's commands, its sample, then `quality reset`, the held resolution and its own restore before the next baseline.
-    expect(commands.slice(at("worlddebug locallights off"), at("worlddebug locallights on") + 1))
-      .toEqual(["worlddebug locallights off", "gpubusy on", "quality reset", "quality resolution scale 0.75", "worlddebug locallights on"]);
+    expect(commands.slice(at("shadowdebug sunpasses off"), at("shadowdebug sunpasses on") + 1))
+      .toEqual(["shadowdebug sunpasses off", "gpubusy on", "quality reset", "quality resolution scale 0.75", "shadowdebug sunpasses on"]);
     expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length);
     // Back to the session's quality, its Dynamic Resolution included, and the tour camera.
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", 'possess "Main Camera"']);
@@ -1698,19 +1782,14 @@ describe("Profile", { timeout: 30_000 }, () => {
     const rows = main!.play.benchmark.filter((sample) => !sample.warmup);
     // The geometry effects, which Low already has off: both windows of each, at the light view and at the heavy one.
     const skipped = rows.filter((sample) => sample.skipped);
-    expect([...new Set(skipped.map((sample) => sample.label))]).toEqual([
-      "light geometry effects off", "heavy geometry effects off", "heavy ambient occlusion off", "heavy reflections off",
-      "heavy volumetrics off", "heavy screen shadows off",
-    ]);
-    expect(skipped).toHaveLength(12);
+    expect([...new Set(skipped.map((sample) => sample.label))]).toEqual(["light geometry effects off", "heavy geometry effects off"]);
+    expect(skipped).toHaveLength(4);
     expect(skipped.every((sample) => sample.skipped!.startsWith("already ") && sample.frames === null)).toBe(true);
     // Neither baseline after a skipped window is measured.
     const labels = rows.map((sample) => sample.label);
-    expect(labels.slice(labels.indexOf("heavy geometry effects off") - 2, labels.lastIndexOf("heavy screen shadows off") + 3)).toEqual([
+    expect(labels.slice(labels.indexOf("heavy geometry effects off") - 2, labels.lastIndexOf("heavy geometry effects off") + 3)).toEqual([
       "heavy shadow passes off", "heavy baseline 5", "heavy geometry effects off", "heavy geometry effects off",
-      "heavy ambient occlusion off", "heavy ambient occlusion off", "heavy reflections off", "heavy reflections off",
-      "heavy volumetrics off", "heavy volumetrics off", "heavy screen shadows off", "heavy screen shadows off",
-      "heavy world drawn once", "heavy baseline 16",
+      "heavy geometry pass drawn twice", "heavy baseline 8",
     ]);
     // The step's undo failed: the baseline after it says so and fails the scene.
     expect(main!.problems[0]).toBe("light baseline 2: postprocessing on failed: Refused.");

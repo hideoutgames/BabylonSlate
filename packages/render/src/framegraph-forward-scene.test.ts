@@ -58,9 +58,10 @@ import {
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { managedRenderReservations } from "./managed-render-resources";
+import { setSceneWorldDebug } from "./world-debug";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
-import { AtlasCascadedShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, shadowAtlasGeneration, shadowAtlasTexture } from "./shadow-atlas";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
 import { screenShadowsForPass } from "./screen-shadows";
 import { hapticLightBuffer, hapticShadowedSun } from "./haptic-lights";
@@ -2054,6 +2055,57 @@ it.each([
   expect(spatialGeometry(graph).objectList.meshes.map((mesh) => mesh.name)).toEqual(meshes);
   // The depth copy runs once a frame: clip depth spans -1 to 1 here, and a pixel nothing drew lies at the camera's far plane.
   expect(depthRange.mock.calls.filter((call) => call[0] === "depthRange").map((call) => call.slice(1))).toEqual(seeds);
+  graph.dispose();
+});
+
+// `worlddebug geometrypass off`: the pass still runs and clears (a seeded one its depth, in place of the seed's draw), and
+// draws nothing; every other task runs as before, the graph is not rebuilt, and switching back draws the meshes again.
+// `worlddebug geometryonce off` (and its scissored variant): the graph builds again with one more geometry pass right
+// before the real one, drawing what it draws into targets nothing reads; back on, the graph is today's again. The
+// shadow atlas is never made again.
+it.each(["geometryonce", "geometryoncescissor"] as const)("draws the geometry pass a second time first with %s off, the shadow atlas untouched", async (part) => {
+  const { engine, scene, camera, graph, skipped } = await shadowedFogHost();
+  const generation = shadowAtlasGeneration(scene);
+  let drawing: string | null = null;
+  const draws = new Map<string, number>();
+  const scissors: number[][] = [];
+  const count = () => { if (drawing) draws.set(drawing, (draws.get(drawing) ?? 0) + 1); };
+  vi.spyOn(engine, "drawElementsType").mockImplementation(count);
+  vi.spyOn(engine, "drawArraysType").mockImplementation(count);
+  vi.spyOn(engine, "enableScissor").mockImplementation((...area) => { if (drawing) scissors.push(area); });
+  const observe = () => {
+    const spatial = (graph as unknown as { effectsGraph: { spatial: { geometry: SpatialGeometry; geometryProbe?: SpatialGeometry } } }).effectsGraph.spatial;
+    for (const [name, task] of [["geometry", spatial.geometry], ["probe", spatial.geometryProbe]] as const) {
+      task?.onBeforeTaskExecute.add(() => { drawing = name; });
+      task?.onAfterTaskExecute.add(() => { drawing = null; });
+    }
+  };
+  const frame = () => {
+    draws.clear();
+    scissors.length = 0;
+    expect(skipped()).toEqual([]);
+    return Object.fromEntries(draws);
+  };
+  observe();
+  const today = graph.taskNames();
+  const once = frame();
+  expect(once.geometry).toBeGreaterThan(0);
+  expect(once.probe).toBeUndefined();
+  expect(setSceneWorldDebug(scene, part, false)).toBe(true);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  observe();
+  const repeated = [...today];
+  repeated.splice(today.indexOf("Spatial Geometry"), 0, "Spatial Geometry Probe");
+  expect(graph.taskNames()).toEqual(repeated);
+  // The same draws once more, the scissored one under a 1x1 scissor after its clears.
+  expect(frame()).toEqual({ geometry: once.geometry, probe: once.geometry });
+  expect(scissors).toEqual(part === "geometryoncescissor" ? [[0, 0, 1, 1]] : []);
+  expect(setSceneWorldDebug(scene, part, true)).toBe(true);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  observe();
+  expect(graph.taskNames()).toEqual(today);
+  expect(frame()).toEqual(once);
+  expect(shadowAtlasGeneration(scene)).toBe(generation);
   graph.dispose();
 });
 

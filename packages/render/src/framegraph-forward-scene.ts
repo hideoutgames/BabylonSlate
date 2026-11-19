@@ -767,7 +767,7 @@ export class ForwardSceneFrameGraph {
     const spatial = this.effectsGraph?.spatial;
     const geometry = new Set<FrameGraphTask>([
       ...this.postProcessGraph?.geometryTasks ?? [],
-      ...spatial ? [spatial.geometry, ...spatial.screenShadows ? [spatial.screenShadows.task] : []] : [],
+      ...spatial ? [spatial.geometry, ...spatial.geometryProbe ? [spatial.geometryProbe] : [], ...spatial.screenShadows ? [spatial.screenShadows.task] : []] : [],
     ]);
     const post = new Set<FrameGraphTask>([...this.postProcessGraph?.postProcessTasks ?? [], ...this.effectsGraph?.tasks ?? []]);
     if (this.outputCopy && (this.postProcessGraph || this.effectsGraph)) post.add(this.outputCopy);
@@ -1785,6 +1785,7 @@ export class ForwardSceneFrameGraph {
         // A geometry pass seeded from the scene's depth follows the passes that write it; any other precedes the
         // objects, which read Screen-Space Shadows.
         if (spatialGeometry && !spatialGeometry.seeded) {
+          if (spatialGeometry.geometryProbe) this.graph.addTask(spatialGeometry.geometryProbe);
           this.graph.addTask(spatialGeometry.geometry);
           if (spatialGeometry.screenShadows) this.graph.addTask(spatialGeometry.screenShadows.task);
         }
@@ -1792,7 +1793,10 @@ export class ForwardSceneFrameGraph {
         this.graph.addTask(this.objects);
         // The opaque copy and transparent pass precede every chain and the output copy.
         for (const task of this.water?.afterObjects ?? []) this.graph.addTask(task);
-        if (spatialGeometry?.seeded) this.graph.addTask(spatialGeometry.geometry);
+        if (spatialGeometry?.seeded) {
+          if (spatialGeometry.geometryProbe) this.graph.addTask(spatialGeometry.geometryProbe);
+          this.graph.addTask(spatialGeometry.geometry);
+        }
         for (const task of this.postProcessGraph?.postProcessTasks ?? []) this.graph.addTask(task);
         for (const task of this.effectsGraph?.tasks ?? []) this.graph.addTask(task);
         if (this.outlineTask && !this.effectsGraph && !outlineOnOutput) this.graph.addTask(this.outlineTask);

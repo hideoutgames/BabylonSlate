@@ -13,7 +13,7 @@ import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/T
 import { findSceneShadowController } from "./shadow-controller";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
-import { shadowDebugOff } from "./shadow-debug";
+import { shadowPassesOff } from "./shadow-debug";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetProbeReady } from "./readiness-scope";
 import { noteReadinessBlocker } from "./readiness-blockers";
@@ -448,8 +448,9 @@ export class ManagedShadowsTask extends FrameGraphTask {
           // consumed: a render-once map drawn without some casters would keep the gap. Until then it samples neutrally.
           if (!withSceneReadinessState(this.scene, () => map.isReadyForRendering())) continue;
         }
-        // `shadowdebug passes off`: a map that has drawn keeps the depth it holds; its refresh stays due.
-        if (!firstDraw && shadowDebugOff(this.scene, "passes")) continue;
+        // `shadowdebug passes off`, or `sunpasses` / `localpasses` off for the sun's or a local light's maps: a map that
+        // has drawn keeps the depth it holds; its refresh stays due.
+        if (!firstDraw && shadowPassesOff(this.scene, light)) continue;
         if (!viewMap && !map._shouldRender()) continue;
         draw();
       }
