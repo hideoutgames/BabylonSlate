@@ -302,13 +302,15 @@ export class HapticLightingBlock extends NodeMaterialBlock {
    * (`material-compiler.ts`).
    * - The drawn mesh's own terms: whether it receives shadows (the atlas's and the screen shadows'); otherwise one
    *   mesh's Receive Shadows leaks to the next.
-   * - The Scene's light and cluster blocks, whose binding points other programs reuse.
+   * - The Scene's light and cluster blocks, whose binding points other programs reuse. Every program binds them, one
+   *   that compiles no lighting too: a `std140` block stays active in a program that never reads it, and a draw with
+   *   another, smaller buffer at its binding point fails (ANGLE: "a uniform buffer that is too small").
    */
   bindReceiver(effect: Effect, mesh: AbstractMesh): void {
-    if (!this.readsBindings(effect)) return;
     const scene = mesh.getScene();
     bindHapticLights(scene, effect);
     bindHapticClusters(scene, effect);
+    if (!this.readsBindings(effect)) return;
     // `waterdebug shadows off`: water receives none, to measure what they cost on it.
     const receives = mesh.receiveShadows && !(isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "shadows"));
     effect.setFloat("hapticShadowReceiver", receives ? 1 : 0);
@@ -321,16 +323,19 @@ export class HapticLightingBlock extends NodeMaterialBlock {
   }
 
   /**
-   * Whether `effect` reads any of the block's bindings. A geometry pass program without a colour output compiles no
-   * lighting (`unlitGeometryEffect`): its draws bind none of them, neither textures nor uniforms, light and cluster
-   * blocks or receiver terms.
+   * Whether `effect` reads the block's textures and uniforms. A geometry pass program without a colour output compiles
+   * no lighting (`unlitGeometryEffect`): its draws bind only the light and cluster blocks (`bindReceiver`).
    */
   readsBindings(effect: Effect): boolean {
     return !unlitGeometryEffect(effect);
   }
 
   override bind(effect: Effect, _nodeMaterial: NodeMaterial, mesh?: Mesh): void {
-    if (!mesh || !this.readsBindings(effect)) return;
+    if (!mesh) return;
+    if (!this.readsBindings(effect)) {
+      this.bindReceiver(effect, mesh);
+      return;
+    }
     const scene = mesh.getScene();
     // A CEL program declares neither the split-sum table nor the atlas's plain read (Contact Hardening's).
     const cel = celEffect(effect);

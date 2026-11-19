@@ -60,12 +60,15 @@ describe("HapticLightingBlock bindings", () => {
     return { block, mesh, material: {} as NodeMaterial };
   }
 
-  it("binds nothing for a geometry pass program without a colour output, on its draws or a frozen Material's rebind", () => {
+  it("binds only the light and cluster blocks for a geometry pass program without a colour output, on its draws or a frozen Material's rebind", () => {
     const { block, mesh, material } = draw();
     const geometry = effect(defines("PREPASS", "PREPASS_DEPTH", "PREPASS_DEPTH_INDEX 0"));
     block.bind(geometry.effect, material, mesh);
+    // Its std140 blocks stay active: a draw without them bound fails.
+    expect(geometry.calls).toEqual(["block HapticLights", "block HapticClusters"]);
+    geometry.calls.length = 0;
     block.bindReceiver(geometry.effect, mesh);
-    expect(geometry.calls).toEqual([]);
+    expect(geometry.calls).toEqual(["block HapticLights", "block HapticClusters"]);
   });
 
   it("binds every input a colour pass program reads, the receiver terms on a frozen Material's rebind", () => {
@@ -74,7 +77,7 @@ describe("HapticLightingBlock bindings", () => {
     block.bind(colour.effect, material, mesh);
     // The control: what the geometry pass's draws no longer bind.
     expect(colour.calls).toEqual(expect.arrayContaining([
-      "texture hapticAreaLtcSampler", "texture hapticAreaEmissionSampler", "depth texture hapticShadowAtlas",
+      "block HapticLights", "block HapticClusters", "texture hapticAreaLtcSampler", "texture hapticAreaEmissionSampler", "depth texture hapticShadowAtlas",
       "float hapticShadowReceiver", "texture hapticEnvironmentBrdfSampler",
     ]));
     colour.calls.length = 0;
