@@ -28,6 +28,7 @@ import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettin
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { discardParkedShadowAtlas } from "../../../../packages/render/src/shadow-atlas";
+import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
 
 export type ShadowAtlasCapture = {
   filter: "pcf" | "pcss";
@@ -38,6 +39,8 @@ export type ShadowAtlasCapture = {
   /** Per shadowed light, its map's tile sizes (one per cascade or face), and the sun's cascade ends as drawn. */
   maps: { light: string; tiles: number[] }[];
   cascadeEnds: number[];
+  /** The atlas's pages as the frame was captured: every texel's depth bits, digested. */
+  atlas: ShadowAtlasPageDigest[];
 };
 
 export async function runShadowAtlasProof(options: { largeWorld?: boolean } = {}) {
@@ -179,6 +182,7 @@ async function shadowedScene(engine: Engine, canvas: HTMLCanvasElement, shift = 
         frame: Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength)),
         maps: [sun, spot, lamp].map((light) => ({ light: light.name, tiles: tiles(light.getShadowGenerator()) })),
         cascadeEnds: [...((sun.getShadowGenerator() as unknown as { cascadeEnds?: number[] } | null)?.cascadeEnds ?? [])],
+        atlas: await readShadowAtlasPages(scene),
       };
     };
     return {

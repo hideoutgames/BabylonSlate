@@ -7,13 +7,19 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
-import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import { backbufferColorTextureHandle, type FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
+import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
+import type { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import type { Nullable } from "@babylonjs/core/types";
 import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/shadowGeneratorTask";
 import { findSceneShadowController } from "./shadow-controller";
+import { holdShadowAtlasPages } from "./shadow-atlas";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
-import { shadowDebugOff } from "./shadow-debug";
+import { shadowPassesOff } from "./shadow-debug";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetProbeReady } from "./readiness-scope";
 import { noteReadinessBlocker } from "./readiness-blockers";
@@ -36,6 +42,10 @@ const SHADOW_DRAW: BorrowedDrawPolicy = {
   wrapDrawFailure: false,
   message: "Managed shadow draw state restoration failed.",
 };
+
+/** What a pass clears as it starts (`ManagedShadowObjectRendererTask.startClear`): a clear task's settings. */
+export type PassStartClear = Pick<FrameGraphClearTextureTask,
+  "color" | "clearColor" | "convertColorToLinearSpace" | "clearDepth" | "clearStencil" | "stencilValue">;
 
 /** Official object renderer with the pinned, protected shadow-binding hook exposed. */
 export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTask {
@@ -75,6 +85,16 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   }
 
   private releaseWarmPasses: (() => void) | undefined;
+
+  /**
+   * Set before the task records, on a view's main object pass only: the pass clears its target and depth as it starts,
+   * with these settings (the view's clear task's, read each frame, as that task would clear), instead of a clear task
+   * before it, a render pass of its own that stores the cleared target for this one to load.
+   */
+  startClear: PassStartClear | undefined;
+  /** The attachments the start clear clears, built as the pass records (as `FrameGraphClearTextureTask` builds them). */
+  private startClearLayout: number[] | undefined;
+  private readonly startClearColor = new Color4();
 
   constructor(...args: ConstructorParameters<typeof FrameGraphObjectRendererTask>) {
     super(...args);
@@ -127,6 +147,26 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   /** Forget the meshes probed ahead, so the next scan probes them ahead again: after a readiness invalidation. */
   forgetCompilesAhead(): void {
     this.requestedAhead.clear();
+  }
+
+  override record(...args: Parameters<FrameGraphObjectRendererTask["record"]>): FrameGraphRenderPass {
+    const pass = super.record(...args);
+    const targets = this._getTargetHandles();
+    this.startClearLayout = this.startClear ? this._frameGraph.engine.buildTextureLayout(new Array<boolean>(targets.length).fill(true),
+      this.targetTexture === backbufferColorTextureHandle && !this._frameGraph.textureManager.backBufferTextureOverriden) : undefined;
+    return pass;
+  }
+
+  protected override _prepareRendering(context: FrameGraphRenderContext, depthEnabled: boolean): Nullable<number[]> {
+    const clear = this.startClear;
+    if (clear && this.startClearLayout && (clear.clearColor || clear.clearDepth || clear.clearStencil)) {
+      const color = this.startClearColor.copyFrom(clear.color);
+      if (clear.convertColorToLinearSpace) color.toLinearSpaceToRef(color);
+      // A clear honours the depth write mask, which the passes before this one may leave off.
+      if (clear.clearDepth) this._frameGraph.engine.setDepthWrite(true);
+      context.clearAttachments(color, this.startClearLayout, !!clear.clearColor, !!clear.clearDepth, !!clear.clearStencil, clear.stencilValue);
+    }
+    return super._prepareRendering(context, depthEnabled);
   }
 
   override isReady(): boolean {
@@ -404,54 +444,61 @@ export class ManagedShadowsTask extends FrameGraphTask {
       this.bind();
       if (!this.scene.shadowsEnabled || !this.scene.renderTargetsEnabled)
         return;
-      for (const entry of this.borrowed) {
-        // A view draws only its own maps; the scene view drew the shared ones.
-        if (this.view && entry.generator.camera !== this.view) continue;
-        // A preceding caster draw can revoke a later light synchronously. Check
-        // controller ownership before touching that later borrowed resource.
-        if (!this.isCurrent(entry)) {
-          this.changedDuringFrame = true;
-          continue;
+      // Consecutive maps on one atlas page draw in one render pass: nothing below binds between them.
+      const pages = holdShadowAtlasPages(this.scene);
+      try {
+        for (const entry of this.borrowed) {
+          // A view draws only its own maps; the scene view drew the shared ones.
+          if (this.view && entry.generator.camera !== this.view) continue;
+          // A preceding caster draw can revoke a later light synchronously. Check
+          // controller ownership before touching that later borrowed resource.
+          if (!this.isCurrent(entry)) {
+            this.changedDuringFrame = true;
+            continue;
+          }
+          const { generator, map } = entry;
+          const light = generator.getLight();
+          if (!light.isEnabled() || !light.shadowEnabled) continue;
+          // A view's own sun map follows the scene view's refresh policy, applied once its camera projects as the map
+          // fits to it: it draws again only when its fit, its light, its settings or a caster it draws changed.
+          const viewMap = this.view !== undefined;
+          const draw = () => drawBorrowedTarget(
+            this.scene,
+            map,
+            () => {
+              context.setDepthStates(true, true);
+              withSceneReadinessState(this.scene, () => {
+                const output = this.objects.camera.outputRenderTarget?.renderTarget;
+                if (output) {
+                  // CSM's before-bind hook reads the camera's cached projection,
+                  // whose aspect follows the bound target. Match Scene.render's
+                  // output binding before computing cascades.
+                  this.scene.getEngine().bindFramebuffer(output);
+                  this.scene.updateTransformMatrix(true);
+                }
+                if (viewMap) {
+                  findSceneShadowController(this.scene)?.applyViewRefresh(generator);
+                  if (!map._shouldRender()) return;
+                }
+                context.renderUnmanaged(map);
+              });
+            },
+            SHADOW_DRAW,
+          );
+          const firstDraw = awaitsFirstDraw(generator);
+          if (firstDraw) {
+            // A map that has not drawn yet first draws with every caster's depth variant ready, before its refresh is
+            // consumed: a render-once map drawn without some casters would keep the gap. Until then it samples neutrally.
+            if (!withSceneReadinessState(this.scene, () => map.isReadyForRendering())) continue;
+          }
+          // `shadowdebug passes off`, or `sunpasses` / `localpasses` off for the sun's or a local light's maps: a map that
+          // has drawn keeps the depth it holds; its refresh stays due.
+          if (!firstDraw && shadowPassesOff(this.scene, light)) continue;
+          if (!viewMap && !map._shouldRender()) continue;
+          draw();
         }
-        const { generator, map } = entry;
-        const light = generator.getLight();
-        if (!light.isEnabled() || !light.shadowEnabled) continue;
-        // A view's own sun map follows the scene view's refresh policy, applied once its camera projects as the map
-        // fits to it: it draws again only when its fit, its light, its settings or a caster it draws changed.
-        const viewMap = this.view !== undefined;
-        const draw = () => drawBorrowedTarget(
-          this.scene,
-          map,
-          () => {
-            context.setDepthStates(true, true);
-            withSceneReadinessState(this.scene, () => {
-              const output = this.objects.camera.outputRenderTarget?.renderTarget;
-              if (output) {
-                // CSM's before-bind hook reads the camera's cached projection,
-                // whose aspect follows the bound target. Match Scene.render's
-                // output binding before computing cascades.
-                this.scene.getEngine().bindFramebuffer(output);
-                this.scene.updateTransformMatrix(true);
-              }
-              if (viewMap) {
-                findSceneShadowController(this.scene)?.applyViewRefresh(generator);
-                if (!map._shouldRender()) return;
-              }
-              context.renderUnmanaged(map);
-            });
-          },
-          SHADOW_DRAW,
-        );
-        const firstDraw = awaitsFirstDraw(generator);
-        if (firstDraw) {
-          // A map that has not drawn yet first draws with every caster's depth variant ready, before its refresh is
-          // consumed: a render-once map drawn without some casters would keep the gap. Until then it samples neutrally.
-          if (!withSceneReadinessState(this.scene, () => map.isReadyForRendering())) continue;
-        }
-        // `shadowdebug passes off`: a map that has drawn keeps the depth it holds; its refresh stays due.
-        if (!firstDraw && shadowDebugOff(this.scene, "passes")) continue;
-        if (!viewMap && !map._shouldRender()) continue;
-        draw();
+      } finally {
+        pages.release();
       }
       // Do not sample an allocation replaced during another shadow's callback.
       // It has not participated in this pass and needs fresh preparation.

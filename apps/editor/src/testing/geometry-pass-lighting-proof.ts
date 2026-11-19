@@ -54,6 +54,7 @@ export type GeometryPassLightingCapture = {
 export async function runGeometryPassLightingProof(options: { keepGeometryLighting: boolean; largeWorld?: boolean }) {
   const block = HapticLightingBlock.prototype as unknown as { _buildBlock(state: NodeMaterialBuildState): unknown };
   const build = block._buildBlock;
+  const readsBindings = HapticLightingBlock.prototype.readsBindings;
   if (options.keepGeometryLighting) {
     block._buildBlock = function (this: HapticLightingBlock, state: NodeMaterialBuildState) {
       const result = build.call(this, state);
@@ -61,6 +62,8 @@ export async function runGeometryPassLightingProof(options: { keepGeometryLighti
       if (state.compilationString.includes(guard)) state.compilationString = state.compilationString.replace(guard, "");
       return result;
     };
+    // A geometry pass program with the lighting reads its inputs: its draws bind them, as before the guard.
+    HapticLightingBlock.prototype.readsBindings = () => true;
   }
   const canvas = document.createElement("canvas");
   canvas.width = 160;
@@ -205,6 +208,7 @@ export async function runGeometryPassLightingProof(options: { keepGeometryLighti
     return { captures, renderer: engine.getGlInfo().renderer };
   } finally {
     block._buildBlock = build;
+    HapticLightingBlock.prototype.readsBindings = readsBindings;
     scene.dispose();
     engine.dispose();
     canvas.remove();

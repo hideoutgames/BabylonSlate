@@ -253,10 +253,14 @@ describe("Play quality changes", () => {
     // leaves the multisampled scene colour and depth, and with MSAA off too the view draws into the backbuffer; Medium
     // shadows draw no Screen-Space Shadows, whose half-size RGBA target the graph shares with a spatial stage's, so the
     // count is the same. The peak is the larger state, with no allowance above it.
+    // Two counts differ from that. Until the view first draws with post-processing off the session holds 8, not 9:
+    // the 1 × 1 RGBA placeholder bound where a sampler has no texture is made then and stays (22 before, 23 after).
+    // And without MSAA the scene depth takes the texture of the spatial geometry pass's depth, which that pass
+    // discards before the objects pass starts and clears it: one texture fewer (21).
     expect(counts).toEqual({
-      "MSAA off": { before: 23, peak: 23, after: 23 },
-      "MSAA restore": { before: 23, peak: 23, after: 23 },
-      "post off": { before: 23, peak: 11, after: 11 },
+      "MSAA off": { before: 22, peak: 22, after: 21 },
+      "MSAA restore": { before: 21, peak: 22, after: 22 },
+      "post off": { before: 22, peak: 11, after: 11 },
       "post restore": { before: 11, peak: 23, after: 23 },
       "shadows medium": { before: 23, peak: 23, after: 23 },
       "shadows restore": { before: 23, peak: 23, after: 23 },

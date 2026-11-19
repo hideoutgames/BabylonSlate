@@ -372,6 +372,8 @@ export function createShadowGenerator(
   // After the layer's clear (the map's own observer, added first) and before Babylon's casters: the layer listed last.
   if (map && context.retained) {
     const retained = context.retained;
+    // Before the frame's first map binds a page: every row its layers read, uploaded outside any render pass.
+    map.onBeforeBindObservable.add(() => retained.prepareFrame());
     (map as unknown as { _objectRenderer: ObjectRenderer })._objectRenderer.onBeforeRenderingManagerRenderObservable.add(() => {
       retained.draw(generator);
     });

@@ -1422,6 +1422,8 @@ function PlayOverlayView({
       .map(({ severity, message }) => ({ severity, message })),
     samplePresentedImage: () => sessionRef.current?.handle.samplePresentedImage() ?? Promise.resolve(null),
     stubWebGlDraws: (on) => sessionRef.current?.handle.stubWebGlDraws(on) ?? false,
+    timeWebGlCalls: (on) => sessionRef.current?.handle.timeWebGlCalls(on) ?? false,
+    webGlCallTotals: () => sessionRef.current?.handle.webGlCallTotals() ?? null,
     executeConsoleCommand: (line) => sessionRef.current?.executeConsoleCommand(line)
       ?? Promise.resolve({ success: false, output: "Play is not running." }),
     stop: () => finishSessionRef.current(),

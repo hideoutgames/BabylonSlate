@@ -19,8 +19,10 @@ export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
 }
 
 /**
- * Switches `part` on or off for `scene`; true when that changed it. Every Material of the Scene re-prepares its defines
- * on its next draw (a part off compiles its variant; back on, the Material draws its own program again).
+ * Switches `part` on or off for `scene`; true when that changed it. A part a shader reads has every Material of the
+ * Scene re-prepare its defines on its next draw (a part off compiles its variant; back on, the Material draws its own
+ * program again). The geometry repeat parts change no program: they change the view's graph (`liveSceneEffectsKey`),
+ * which builds again with or without the repeat pass (`geometryRepeat`).
  */
 export function setSceneWorldDebug(scene: Scene, part: WorldDebugPart, enabled: boolean): boolean {
   const current = off.get(scene) ?? NONE;
@@ -28,9 +30,17 @@ export function setSceneWorldDebug(scene: Scene, part: WorldDebugPart, enabled: 
   const next = new Set(current);
   if (enabled) next.delete(part); else next.add(part);
   off.set(scene, next);
-  for (const material of scene.materials) material.markDirty(true);
+  if (part !== "geometryonce" && part !== "geometryoncescissor") for (const material of scene.materials) material.markDirty(true);
   markSceneReadinessDirty(scene, "renderSettings");
   return true;
+}
+
+/**
+ * The geometry pass's repeat (`worlddebug geometryonce off` or `geometryoncescissor off`): `full`, a second whole pass;
+ * `scissor`, a second pass under a 1x1 scissor; `none`. `full` wins when both are off.
+ */
+export function geometryRepeat(scene: Scene): "none" | "full" | "scissor" {
+  return worldDebugOff(scene, "geometryonce") ? "full" : worldDebugOff(scene, "geometryoncescissor") ? "scissor" : "none";
 }
 
 /** `RenderDiagnostics.settings`' `world.debug`: the parts switched off, in `WORLD_DEBUG_PARTS` order, or `none`. */

@@ -25,7 +25,10 @@ test("the shadow atlas's pages draw and sample every shadowed light's map, filte
   await page.waitForFunction(() => typeof (window as unknown as { __shadowAtlasProof?: unknown }).__shadowAtlasProof === "function");
   const { captures, handOver, sampling, renderer } = await page.evaluate((largeWorld) => (window as unknown as { __shadowAtlasProof: Proof }).__shadowAtlasProof({ largeWorld }), LARGE_WORLD);
   const hashes = captures.map(({ filter, frame }) => ({ filter, sha256: createHash("sha256").update(Uint8Array.from(frame)).digest("hex") }));
-  const summary = { renderer, sampling, hashes, maps: captures[0]!.maps, cascadeEnds: captures[0]!.cascadeEnds };
+  const summary = {
+    renderer, sampling, hashes, maps: captures[0]!.maps, cascadeEnds: captures[0]!.cascadeEnds,
+    atlas: captures.map(({ filter, atlas }) => ({ filter, atlas })),
+  };
   await testInfo.attach("shadow-atlas-proof", { body: JSON.stringify(summary), contentType: "application/json" });
   console.log(`shadow atlas proof ${JSON.stringify(summary)}`);
   if (process.env.HAPTIC_SHADOW_ATLAS_PROOF_OUT) writeFileSync(process.env.HAPTIC_SHADOW_ATLAS_PROOF_OUT, JSON.stringify({ renderer, sampling, captures }));
@@ -35,6 +38,8 @@ test("the shadow atlas's pages draw and sample every shadowed light's map, filte
     expect(capture.maps.map(({ tiles }) => tiles.length), capture.filter).toEqual([4, 1, 6]);
     expect(capture.cascadeEnds.filter((end) => end > 0), capture.filter).toHaveLength(4);
     expect(new Set(capture.frame).size, `${capture.filter} frame`).toBeGreaterThan(16);
+    // The atlas's pages are read back (every texel's depth bits) for a comparison of two builds: some hold depth.
+    expect(capture.atlas.some((page) => page.written > 0), `${capture.filter} atlas`).toBe(true);
   }
   // Contact Hardening reads the pages plainly as well: its penumbrae differ from PCF's.
   expect(hashes[0]!.sha256).not.toBe(hashes[1]!.sha256);

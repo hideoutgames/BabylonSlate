@@ -43,6 +43,11 @@ describe("formatFeatureTestCheckReport", () => {
             draws: { median: 400, min: 390, max: 410, samples: 10 }, cpuMs: { median: 40, min: 38, max: 44, samples: 10 }, gpuMs: null,
             drawPasses: { objects: 10, shadows: 0, post: 2, layers: 30 },
             drawPassMs: { objects: 6.26, mirrors: 8.24, shadows: 0, other: 0.04, post: 1 }, cpuMsWithoutDraws: { median: 12, min: 11, max: 13, samples: 4 },
+            cpuMsWithoutFrameFence: { median: 31.5, min: 30, max: 33, samples: 4 },
+            webGl: { windows: 3, frames: 41, cpuMs: 40.2, totalMs: 17.25, groups: {
+              fenceSync: { ms: 6.5, calls: 1 }, getError: { ms: 0, calls: 0 }, checkFramebufferStatus: { ms: 1.25, calls: 4.5 },
+              draws: { ms: 5, calls: 400 }, uniforms: { ms: 2.5, calls: 1800 }, other: { ms: 2, calls: 2600 },
+            } },
           },
           presentation: {
             frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "FrameGraph is not ready.": 1, "Scene is not ready to render.": 3 } },
@@ -89,6 +94,11 @@ describe("formatFeatureTestCheckReport", () => {
     // What the further programs are for: the geometry pass's defines (two more with PREPASS) split 30 shaders, instancing 4.
     // 12 of a frame's 40 ms remain without its draws: 30%. Over 400 draw calls that is 30 µs each, and 70 µs for the draw.
     expect(lines).toContain("  CPU without draws: 12.0 ms of 40.0 ms a frame (30%); draws, clears and uniform uploads take the rest · per draw call 30 µs without and 70 µs for the draw");
+    // With the frame-end fence off, and where the frame's main-thread time went inside WebGL: a group without a call left out.
+    expect(lines).toContain("  CPU with no frame-end fence: 31.5 ms of 40.0 ms (framesinflight off for 4 reads, then restored)");
+    expect(lines).toContain("  WebGL calls: 17.3 ms a frame in WebGL of 40.2 ms cpu (3 windows, 41 frames each) · fenceSync 6.50 (1.0) · checkFramebufferStatus 1.25 (4.5) · draws 5.00 (400) · uniforms 2.50 (1800) · other 2.00 (2600)");
+    // The share of frames by display intervals.
+    expect(lines.find((line) => line.startsWith("  Play: loaded in 3.0 s"))).toContain(" · intervals 1/2/3/4+: 100/0/0/0% ");
     // The eight that split most shaders are named and the rest counted.
     expect(lines).toContain("  Shaders split by define: PREPASS (+2) 30 · INSTANCES 4 · A 1 · B 1 · C 1 · D 1 · E 1 · F 1 · 2 more");
     // The passes that made the first draws, the most first.
@@ -519,9 +529,9 @@ describe("formatFeatureTestCheckReport", () => {
         ...(serial ? { serial: {
           id: 1, frames: 8, frameMs: serial.shadows + serial.main, coldMs: serial.shadows + serial.main + 9, cpuMs: 4,
           stages: [
-            { stage: "other" as const, ms: 0.4, censored: true },
-            { stage: "shadows" as const, ms: serial.shadows, censored: serial.censored === true },
-            { stage: "main" as const, ms: serial.main, censored: false },
+            { stage: "other" as const, ms: 0.4, censored: true, subMs: 0.5 },
+            { stage: "shadows" as const, ms: serial.shadows, censored: serial.censored === true, subMs: serial.shadows > 1 ? 2.5 : 0 },
+            { stage: "main" as const, ms: serial.main, censored: false, subMs: 1 },
           ],
           syntheticMs: serial.synthetic, syntheticColdMs: serial.synthetic + 1, hashes: [USUAL, USUAL], splits: 0, failed: null, ms: 400,
         } } : {}),
@@ -585,6 +595,13 @@ describe("formatFeatureTestCheckReport", () => {
       "    heavy:",
       "      1. heavy world drawn once: -5.5ms -28% s (20.0 > 14.5 > 20.0) · norm -5.5ms -28% · cpu +0.0ms +0% · overlaps",
       "      2. heavy geometry effects off: -1.0ms -3% (33.0 > 32.0 > 33.0) · cpu +0.0ms +0% · overlaps",
+    ]);
+    // Each row's intervals, and each serial-probed row's submission by stage, in stage order.
+    expect(line("    heavy baseline 1 ")).toContain(" 0/0/100/0% ");
+    const submission = lines.findIndex((entry) => entry.startsWith("  Serial submission by stage"));
+    expect(lines.slice(submission + 1, submission + 3)).toEqual([
+      `    ${"heavy baseline 1".padEnd(28)}other 0.5 · shadows 2.5 · main 1.0`,
+      `    ${"heavy world drawn once".padEnd(28)}other 0.5 · shadows 0.0 · main 1.0`,
     ]);
 
   });
@@ -657,10 +674,10 @@ describe("formatFeatureTestCheckReport", () => {
       };
       return formatFeatureTestCheckReport(report, environment).split("\n").filter((line) => line.startsWith("  Shadow casters:"));
     };
-    const stats = { casters: 209, draws: 240, vertices: 90_000, indices: 300_000, multiDraw: true, calls: 40, drawn: 500 };
-    expect(casters(stats)).toEqual(["  Shadow casters: 209 drawn from the shared buffer, a map layer in one call · 12.5 caster draws a call"]);
-    // Without the extension each caster is a call, and before any map drew there is no ratio.
-    expect(casters({ ...stats, multiDraw: false, calls: 0, drawn: 0 })).toEqual(["  Shadow casters: 209 drawn from the shared buffer, one call each (no WEBGL_multi_draw)"]);
+    const stats = { casters: 209, draws: 240, parts: 31, vertices: 90_000, indices: 300_000, calls: 40, drawn: 500, lateUploads: 0 };
+    expect(casters(stats)).toEqual(["  Shadow casters: 209 drawn from the shared buffer in 31 parts · 12.5 caster draws a draw"]);
+    // Before any map drew there is no ratio; rows uploaded inside the stage are counted.
+    expect(casters({ ...stats, parts: 1, calls: 0, drawn: 0, lateUploads: 3 })).toEqual(["  Shadow casters: 209 drawn from the shared buffer in 1 part · 3 late row uploads"]);
     // A view that retains none and a Scene without such casters have no line.
     expect(casters(null)).toEqual([]);
     expect(casters({ ...stats, casters: 0 })).toEqual([]);

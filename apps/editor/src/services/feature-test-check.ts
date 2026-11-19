@@ -1,4 +1,4 @@
-import type { DrawPass, RenderDiagnostics } from "@haptic/render";
+import type { DrawPass, RenderDiagnostics, WebGlCallGroup, WebGlCallTotals } from "@haptic/render";
 import type { PlaySessionResult } from "./play-session";
 import type { PlayProbe, ViewportProbe } from "./runtime-probes";
 import { RENDER_QUALITY_PROFILES, SHADOW_PROFILES } from "@haptic/core";
@@ -118,6 +118,11 @@ export interface FeatureTestBreakdownStep {
   overlaps?: boolean;
   /** Add-one: the label of another step whose cost this one includes (AO and SSR run in the post-processing stack). */
   includes?: string;
+  /**
+   * Profile: the step adds work rather than removing it (the geometry pass drawn a second time), so its positive change
+   * is the cost of that work; it ranks after the steps that save.
+   */
+  adds?: boolean;
 }
 
 const POST_FIELDS = [
@@ -311,24 +316,26 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  * same at both) or what the view draws. Steps marked `overlaps` save part of another step's saving. Every step sizes an
  * architecture option:
  *
- * - the whole-frame switches: the world hidden (no world mesh, no shadow map redrawn, no capture, no post-processing:
- *   clears, Scene Layers and presentation, the pipeline's floor), every surface one constant colour (`worlddebug shading
- *   off`: vertex, raster and attachment cost without shading), the main pass unlit (all per-pixel lighting and shadow
- *   sampling), its shadow lookups lit with the maps still drawn, and no local lights;
- * - the passes that draw the world again: the shadow map passes off (the maps stay allocated and sampled), every
- *   geometry effect off, each of the four effects off alone, and all of them with the captures and Mirrors' live
- *   reflection at once (`world drawn once`).
+ * - the whole-frame switch: the world hidden (no world mesh, no shadow map redrawn, no capture, no post-processing:
+ *   clears, Scene Layers and presentation, the pipeline's floor);
+ * - the shadow map passes: all of them off (the maps stay allocated and sampled), the sun's alone, the spot and point
+ *   lights' alone, and every map drawn at half its edge (`shadowdebug fulltiles off`: the same maps and draws, a
+ *   quarter of the texels, in the same atlas), so the passes' cost is split by light and told apart from their texels;
+ * - the passes that draw the world again: every geometry effect off, the geometry pass they read drawn a second time
+ *   (`worlddebug geometryonce off`, a cost added: its positive change is one pass's cost) and that second pass under a
+ *   1x1 scissor (`geometryoncescissor off`: its draws and vertices without its fragments), and all of them with the
+ *   captures and Mirrors' live reflection at once (`world drawn once`).
  *
  * A Profile step never changes a setting that releases the shadow atlas (`quality shadows enabled off`, a shadow level
  * or resolution change): `quality reset` would re-create it, a 256 MiB depth texture array, on top of the programs the
- * steps have compiled, and a memory-limited device kills the page.
+ * steps have compiled, and a memory-limited device kills the page. `shadow tiles half` plans its smaller maps in the
+ * level's atlas, which stays the same object.
  *
- * `light` (few draws) takes the whole-frame switches, the shadow map passes, the geometry effects together and the world
- * drawn once. `heavy` (many draws, no Mirror on screen; the control view) takes what follows the draws rather than the
- * pixels: the world hidden, the shadow map passes alone, the geometry effects together and each alone (where the
- * geometry pass draws the most; at the light view too they would take the run past its time budget), and the world
- * drawn once; the per-pixel steps answer the same there as at the light view. `mirror` (both Mirrors and the capture monitors on screen) takes the captures, the
- * Mirrors' reflection and the world drawn once.
+ * `light` (few draws) takes the world hidden, the shadow map passes and their splits, the geometry effects together and
+ * the world drawn once. `heavy` (many draws, no Mirror on screen; the control view) takes what follows the draws rather
+ * than the pixels: the world hidden, the shadow map passes, the geometry effects together and the geometry pass drawn
+ * twice, whole and scissored (where it draws the most), and the world drawn once. `mirror` (both Mirrors and the capture monitors on screen) takes
+ * the captures, the Mirrors' reflection and the world drawn once.
  */
 export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureTestBreakdownPlan {
   const world = (label: string, part: string): FeatureTestBreakdownStep =>
@@ -340,11 +347,20 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
     restore: ["worlddebug world on", "shadowdebug passes on", captures, post],
     fields: ["world.debug", "shadows.debug", "captures", "post.enabled"], overlaps: true,
   };
-  const unlit = world("main pass unlit", "lighting");
-  const taps = world("shadow taps off", "shadowtaps");
-  const local = world("local lights off", "locallights");
   // No map redrawn, the last maps still sampled: what redrawing the maps costs.
   const shadowPassesOff = shadowPartOff("passes", "shadow passes off");
+  // The same for the sun's maps alone and for the spot and point lights' alone: which maps the passes' cost follows.
+  const sunPassesOff = shadowPartOff("sunpasses", "sun shadow passes off");
+  const localPassesOff = shadowPartOff("localpasses", "local shadow passes off");
+  // Every map drawn again at half its edge (a quarter of its texels) with the same lights, cascades and casters, into
+  // the same atlas: whether the passes' cost follows their texels or their draws.
+  const halfTiles = shadowPartOff("fulltiles", "shadow tiles half");
+  // The geometry pass the four effects read, drawn once more first into targets nothing reads, the picture unchanged:
+  // what one geometry pass costs (a cost added). Scissored to 1x1, the second pass keeps its draws and vertices and
+  // drops its fragments, so the two say whether the pass is bound by its draws and vertices or by its pixels.
+  const geometryTwice = (label: string, part: string): FeatureTestBreakdownStep => ({ ...world(label, part), adds: true });
+  const geometryRepeat = geometryTwice("geometry pass drawn twice", "geometryonce");
+  const geometryRepeatScissored = geometryTwice("geometry pass drawn twice, scissored", "geometryoncescissor");
   // Every effect that reads the geometry pass, so the pass itself goes too.
   const geometryOff: FeatureTestBreakdownStep = {
     label: "geometry effects off",
@@ -354,18 +370,6 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
     ],
     fields: GEOMETRY_EFFECT_FIELDS, overlaps: true,
   };
-  // One of the four effects off alone, the others still on: the geometry pass stays (the plan keeps it while any of the
-  // four is on, `spatial-effects.ts`), so the saving is that effect's own passes and targets, and the pass's share of the
-  // combined step stays out. None touches the shadow atlas. `screen shadows off` also stops the lit programs' read of the
-  // screen-space shadow texture: they bind a placeholder with the read off (the define stays on, so no program changes).
-  const effectOff = (label: string, command: string, field: (typeof GEOMETRY_EFFECT_FIELDS)[number]): FeatureTestBreakdownStep =>
-    ({ label, commands: [command], fields: [field], overlaps: true });
-  const effects = [
-    effectOff("ambient occlusion off", "quality postprocessing ambientOcclusion off", "post.ambientOcclusion"),
-    effectOff("reflections off", "quality postprocessing reflections off", "post.reflections"),
-    effectOff("volumetrics off", "quality postprocessing volumetricLighting off", "post.volumetricLighting"),
-    effectOff("screen shadows off", "quality shadows screen off", "shadows.screen"),
-  ];
   // Every pass that draws the world again besides the main one off together: what drawing it once would save. The shadow
   // map passes stop while the maps stay allocated and sampled, so no atlas is released.
   const once: FeatureTestBreakdownStep = {
@@ -381,13 +385,12 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
     views: [
       {
         name: "light", enter: [possessProfileView("light")], steps: [
-          worldHidden, unlit, taps, local, shadowPassesOff, geometryOff, once,
+          worldHidden, shadowPassesOff, sunPassesOff, localPassesOff, halfTiles, geometryOff, once,
         ],
       },
       {
         name: "heavy", enter: [possessProfileView("heavy")], steps: [
-          worldHidden,
-          shadowPassesOff, geometryOff, ...effects, once,
+          worldHidden, shadowPassesOff, geometryOff, geometryRepeat, geometryRepeatScissored, once,
         ],
       },
       {
@@ -629,6 +632,8 @@ export interface ProfileComparison {
   unsettled: boolean;
   cpu: BaselineDelta | null;
   overlaps: boolean;
+  /** The step adds work (`FeatureTestBreakdownStep.adds`): its positive change is what that work costs, not a loss. */
+  adds: boolean;
   /** The state both baselines were in (`profileFrameState`); null when unknown or when they differ. */
   state: ProfileFrameState | null;
   /** Its two baselines are in different states: the device changed cadence across it, so its change is not ranked. */
@@ -790,6 +795,7 @@ export function profileComparison(samples: readonly FeatureTestBenchmarkSample[]
       unsettled: spread !== null && spread > Math.max(Math.abs(ms), base * PROFILE_SETTLED_SPREAD),
       cpu: deltaAroundBaselines(samples, sample, (entry) => entry.cpuMs),
       overlaps: profileStep(sample.label)?.overlaps === true,
+      adds: profileStep(sample.label)?.adds === true,
       state: straddles ? null : beforeState, straddles, normalised, repeats: 1, speedMatched,
     };
   }
@@ -817,7 +823,8 @@ export function profileRanking(samples: readonly FeatureTestBenchmarkSample[]): 
     const best = new Map<string, number>();
     for (const entry of group.steps) best.set(entry.label, Math.min(best.get(entry.label) ?? Infinity, PROFILE_BASES.indexOf(entry.basis)));
     group.steps = group.steps.filter((entry) => PROFILE_BASES.indexOf(entry.basis) === best.get(entry.label));
-    group.steps.sort((a, b) => a.change.ms - b.change.ms);
+    // A step that adds work ranks after every step that removes some, by what it adds, the largest first.
+    group.steps.sort((a, b) => Number(a.adds) - Number(b.adds) || (a.adds ? b.change.ms - a.change.ms : a.change.ms - b.change.ms));
   }
   return views;
 }
@@ -1061,6 +1068,11 @@ export interface FeatureTestBenchmarkSample {
   shadowAtlas?: NonNullable<RenderDiagnostics["shadowAtlas"]>;
   /** A Profile row's GPU probes (`SampledGpuProbe`); absent where the Engine has none. */
   gpuProbe?: SampledGpuProbe;
+  /**
+   * A Profile view's first baseline: where a frame's main-thread time went inside WebGL (`sampleWebGlCalls`), sampled
+   * after its window and probes, before the next step; absent elsewhere and where unmeasured.
+   */
+  webGl?: WebGlCallSample;
 }
 
 type GpuProbeDiagnostics = NonNullable<RenderDiagnostics["gpuProbe"]>;
@@ -1163,6 +1175,29 @@ export interface PlayCounters {
    * what the draws cost on this thread. Absent or null where the view cannot be stubbed.
    */
   cpuMsWithoutDraws?: CounterStats | null;
+  /**
+   * A frame's CPU time with the Engine's frame-end fence off (`framesinflight off`), read as `cpuMsWithoutDraws` is and
+   * restored after: what the fence's wait costs the next frame's calls. Absent or null where it was not measured.
+   */
+  cpuMsWithoutFrameFence?: CounterStats | null;
+  /** Where a frame's main-thread time goes inside WebGL (`sampleWebGlCalls`), sampled after the above; absent or null unmeasured. */
+  webGl?: WebGlCallSample | null;
+}
+
+/**
+ * A frame's main-thread time inside WebGL (`PlayProbe.timeWebGlCalls`): per group of calls, the median over
+ * `WEBGL_CALL_WINDOWS` windows of at least a second of each window's time and calls divided by its rendered frames
+ * (Safari's clock steps in about 1 ms, so single calls read 0 or 1 ms; sums over a second of frames average that out).
+ * `cpuMs` is the frame's CPU time read meanwhile (the timing's own cost included), for scale.
+ */
+export interface WebGlCallSample {
+  windows: number;
+  /** Rendered frames per window, median. */
+  frames: number;
+  cpuMs: number | null;
+  /** Every group's time together per frame, median over the windows. */
+  totalMs: number;
+  groups: Partial<Record<WebGlCallGroup, { ms: number; calls: number }>>;
 }
 
 export interface FrameStats {
@@ -1621,6 +1656,10 @@ async function checkScene(
     result.problems.push(...presentationProblems(result.play.presentation));
     deps.onProgress?.(`${scene.name}: measuring Play without draws`);
     result.play.counters.cpuMsWithoutDraws = await sampleCpuWithoutDraws(play, deps, signal);
+    deps.onProgress?.(`${scene.name}: measuring Play without the frame-end fence`);
+    result.play.counters.cpuMsWithoutFrameFence = await sampleCpuWithoutFrameFence(play, deps, signal);
+    deps.onProgress?.(`${scene.name}: timing Play's WebGL calls`);
+    result.play.counters.webGl = await sampleWebGlCalls(play, deps, signal);
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
     if (mode === "benchmark" || mode === "breakdown" || mode === "profile") {
       result.play.firstDrawsBeforeSweep = play.snapshot().rendering?.firstDraws ?? null;
@@ -2167,6 +2206,8 @@ async function benchmarkProfiles(
     samples.findLast((sample) => (sample.warmup || isBreakdownBaseline(sample)) && sample.view === view && sample.settings)?.settings;
   // The last step skipped: the baseline after it would repeat the one before it.
   let skippedLast = false;
+  /** The Profile views whose first baseline has had its WebGL calls timed (`sampleWebGlCalls`). */
+  const timedViews = new Set<string>();
   try {
     // The base first, so the warm-up runs at the baseline the steps are compared with.
     if (interleaved) {
@@ -2249,6 +2290,14 @@ async function benchmarkProfiles(
       }
       samples.push(sample);
       if (!steady) break;
+      // A Profile view's first baseline: its WebGL calls timed once its window and probes are done (the timing
+      // perturbs the CPU, so never inside a window), before the next step changes anything.
+      if (profileMode && sample.baseline && step.view && !timedViews.has(step.view)) {
+        timedViews.add(step.view);
+        deps.onProgress?.(`${sceneName}: timing ${step.label}'s WebGL calls`);
+        const webGl = await sampleWebGlCalls(play, deps, signal);
+        if (webGl) sample.webGl = webGl;
+      }
       await restoreForNext(false);
     }
   } finally {
@@ -2342,6 +2391,86 @@ async function sampleCpuWithoutDraws(play: PlayProbe, deps: FeatureTestCheckDeps
     play.stubWebGlDraws(false);
   }
   return counterStats(cpu);
+}
+
+/**
+ * A frame's CPU time with the Engine's frame-end fence off (`framesinflight off`: no frame submits a fence or waits for
+ * one), read as `sampleCpuWithoutDraws` reads, then the mode it found put back however the sample ends; null where the
+ * view reports no frames in flight, already runs without them, or the command fails.
+ */
+async function sampleCpuWithoutFrameFence(play: PlayProbe, deps: FeatureTestCheckDeps, signal: AbortSignal): Promise<CounterStats | null> {
+  const mode = play.snapshot().rendering?.frameBackpressure?.mode;
+  if (mode === undefined || mode === "off") return null;
+  if (!(await play.executeConsoleCommand("framesinflight off")).success) return null;
+  const cpu: number[] = [];
+  try {
+    for (let read = 0; read < STUBBED_CPU_READS; read++) {
+      await deps.sleep(500, signal);
+      const rendering = play.snapshot().rendering;
+      if (rendering) cpu.push(rendering.cpuMs);
+    }
+  } finally {
+    await play.executeConsoleCommand(`framesinflight ${mode}`);
+  }
+  return counterStats(cpu);
+}
+
+/** Windows a WebGL call sample sums over (`sampleWebGlCalls`), each at least `WEBGL_CALL_WINDOW_MS`. */
+export const WEBGL_CALL_WINDOWS = 3;
+export const WEBGL_CALL_WINDOW_MS = 1000;
+/** The timing's first frames, which a window does not count: the frame that turned it on ran partly untimed. */
+const WEBGL_CALL_SETTLE_MS = 250;
+
+/** The median of `values`; null without one. */
+function medianOf(values: readonly number[]): number | null {
+  return counterStats(values)?.median ?? null;
+}
+
+/**
+ * Where a frame's main-thread time goes inside WebGL (`PlayProbe.timeWebGlCalls`): the calls are timed for
+ * `WEBGL_CALL_WINDOWS` windows of `WEBGL_CALL_WINDOW_MS`, each window's totals divided by the frames that rendered in
+ * it, and the median window kept per group. The timing always ends, however the sample does. Null where the view
+ * cannot be timed or no window rendered a frame.
+ */
+export async function sampleWebGlCalls(play: PlayProbe, deps: FeatureTestCheckDeps, signal: AbortSignal): Promise<WebGlCallSample | null> {
+  if (!play.timeWebGlCalls(true)) return null;
+  const windows: { frames: number; groups: WebGlCallTotals["groups"]; cpuMs: number | null }[] = [];
+  try {
+    await deps.sleep(WEBGL_CALL_SETTLE_MS, signal);
+    let before = play.webGlCallTotals();
+    for (let window = 0; window < WEBGL_CALL_WINDOWS && before; window++) {
+      await deps.sleep(WEBGL_CALL_WINDOW_MS, signal);
+      const after = play.webGlCallTotals();
+      if (!after) break;
+      const frames = after.frames - before.frames;
+      if (frames > 0) {
+        const groups = Object.fromEntries(Object.entries(after.groups).map(([group, total]) => {
+          const start = before!.groups[group as WebGlCallGroup];
+          return [group, { ms: (total.ms - start.ms) / frames, calls: (total.calls - start.calls) / frames }];
+        })) as WebGlCallTotals["groups"];
+        const rendering = play.snapshot().rendering;
+        windows.push({ frames, groups, cpuMs: rendering?.cpuMeanMs ?? rendering?.cpuMs ?? null });
+      }
+      before = after;
+    }
+  } finally {
+    play.timeWebGlCalls(false);
+  }
+  if (!windows.length) return null;
+  const groups: WebGlCallSample["groups"] = {};
+  for (const group of Object.keys(windows[0]!.groups) as WebGlCallGroup[]) {
+    groups[group] = {
+      ms: medianOf(windows.map((window) => window.groups[group].ms))!,
+      calls: medianOf(windows.map((window) => window.groups[group].calls))!,
+    };
+  }
+  return {
+    windows: windows.length,
+    frames: medianOf(windows.map((window) => window.frames))!,
+    cpuMs: medianOf(windows.flatMap((window) => window.cpuMs ?? [])),
+    totalMs: medianOf(windows.map((window) => Object.values(window.groups).reduce((sum, entry) => sum + entry.ms, 0)))!,
+    groups,
+  };
 }
 
 /** Reads the per-frame counters every half second while `frames` samples the frame intervals. */

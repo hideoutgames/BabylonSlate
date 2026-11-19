@@ -49,6 +49,11 @@ export type ShadowAdmissionBudget = {
    * with the same tiles, its growth exempt from the ledger as a sun's is; so a step measures the atlas's size alone.
    */
   readonly oversizedAtlas?: boolean;
+  /**
+   * `shadowdebug fulltiles off`: every map asks for half its map size's edge (at least 256), a quarter of its texels,
+   * with the same cascades and lights; the atlas is planned from the full sizes, so its edge and pages stay the level's.
+   */
+  readonly halfTiles?: boolean;
 };
 /** What a sync admits by (`planShadowAdmission`). */
 export type ShadowAdmissionInput = {
@@ -115,6 +120,7 @@ export function readShadowAdmissionBudget(
     atlasEdge: shadowAtlasEdge(scene.getEngine(), settings.profile),
     atlasEdgeLimit: shadowAtlasEdgeLimit(scene.getEngine()),
     ...(shadowDebugOff(scene, "atlasfit") ? { oversizedAtlas: true } : {}),
+    ...(shadowDebugOff(scene, "fulltiles") ? { halfTiles: true } : {}),
   };
 }
 
@@ -269,9 +275,10 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
     const entry = decision.entry;
     const directional = entry.light instanceof DirectionalLight;
     const passes = admissionPasses(entry.light, settings);
-    const requestedSize = directional
+    const authoredSize = directional
       ? settings.mapSize
       : settings.localMapSize;
+    const requestedSize = budget.halfTiles ? Math.max(256, authoredSize / 2) : authoredSize;
     // A recovery keyed to other settings no longer limits the map.
     const recovery = decision.dropRecovery ? null : entry.recovery;
     let mapSize = Math.min(requestedSize, fitted);
@@ -281,7 +288,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
       !entry.resetAllocation &&
       entry.settings?.profile === settings.profile &&
       (directional ? entry.settings.mapSize : entry.settings.localMapSize) ===
-        requestedSize
+        authoredSize
     )
       mapSize = Math.min(
         mapSize,

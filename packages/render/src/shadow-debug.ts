@@ -1,3 +1,5 @@
+import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { Light } from "@babylonjs/core/Lights/light";
 import type { Scene } from "@babylonjs/core/scene";
 import { SHADOW_DEBUG_PARTS, type ShadowDebugPart } from "@haptic/core";
 import { renderSettingsOwner } from "./render-settings";
@@ -9,6 +11,16 @@ const NONE: ReadonlySet<ShadowDebugPart> = new Set();
 /** Whether `part` of shadow drawing is switched off for `scene` (through its settings owner, so its views follow it). */
 export function shadowDebugOff(scene: Scene, part: ShadowDebugPart): boolean {
   return (off.get(renderSettingsOwner(scene)) ?? NONE).has(part);
+}
+
+/**
+ * Whether `light`'s map passes are switched off for `scene`: every map's (`passes`), the sun's (`sunpasses`) or a spot
+ * or point light's (`localpasses`).
+ */
+export function shadowPassesOff(scene: Scene, light: Light): boolean {
+  const parts = off.get(renderSettingsOwner(scene)) ?? NONE;
+  if (!parts.size) return false;
+  return parts.has("passes") || parts.has(light instanceof DirectionalLight ? "sunpasses" : "localpasses");
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { PresentedImageSample, RenderDiagnostics } from "@haptic/render";
+import type { PresentedImageSample, RenderDiagnostics, WebGlCallTotals } from "@haptic/render";
 import type { PlaySessionResult } from "./play-session";
 
 /** Read-only view of the running Play session for in-app diagnostics. */
@@ -24,6 +24,14 @@ export interface PlayProbe {
    * them can be measured; whether it did (false once Play stopped).
    */
   stubWebGlDraws(on: boolean): boolean;
+  /**
+   * Times every call on the game view's context by what it does (`true`) or stops and puts the context back (`false`),
+   * so a frame's CPU time inside WebGL can be measured; whether it did (false while the draws are stubbed, or once Play
+   * stopped).
+   */
+  timeWebGlCalls(on: boolean): boolean;
+  /** The timed calls' totals since the timing started; null while not timed. */
+  webGlCallTotals(): WebGlCallTotals | null;
   /** Error and warning lines the session logged, oldest first. */
   problemLogs(): Array<{ severity: string; message: string }>;
   executeConsoleCommand(line: string): Promise<{ success: boolean; output: string }>;

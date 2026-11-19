@@ -45,7 +45,8 @@ import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { submitPresentedFrame } from "./presented-frame";
 import { samplePresentedImage, type PresentedImageSample } from "./presented-image";
-import { stubWebGlDraws } from "./webgl-draw-stub";
+import { stubWebGlDraws, webGlDrawsStubbed } from "./webgl-draw-stub";
+import { timeWebGlCalls, webGlCallsTimed, webGlCallTotals } from "./webgl-call-timer";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
 import { setSceneHonoursUpdateRates } from "./update-rate-gate";
@@ -2621,6 +2622,7 @@ function initializeEngine(
     if (disposed) return;
     contextLost = true;
     stubWebGlDraws(engine, false);
+    timeWebGlCalls(engine, false);
     finalAuthoringDrain?.abort(new Error("The graphics context was lost during final scene capture."));
     runtimeMaterialEdits.cancelAll();
     frameReportFeed.cancel("The graphics context was lost before frame capture completed.");
@@ -2758,6 +2760,7 @@ function initializeEngine(
       disposed = true;
       // A measurement this view left running must not outlive it on the shared Engine.
       stubWebGlDraws(engine, false);
+      timeWebGlCalls(engine, false);
       finalAuthoringDrain?.abort(new Error("The game view stopped during final scene capture."));
       runtimeMaterialEdits.dispose();
       performanceFeed.dispose();
@@ -3511,7 +3514,10 @@ function initializeEngine(
     samplePresentedImage: () => disposed || contextLost
       ? Promise.resolve(null)
       : new Promise<PresentedImageSample | null>((resolve) => { presentedImageRequests.push(resolve); }),
-    stubWebGlDraws: (on) => !disposed && !contextLost && stubWebGlDraws(engine, on),
+    // The two measurements never overlap: each puts back the context calls it found.
+    stubWebGlDraws: (on) => !disposed && !contextLost && !(on && webGlCallsTimed(engine)) && stubWebGlDraws(engine, on),
+    timeWebGlCalls: (on) => !disposed && !contextLost && !(on && webGlDrawsStubbed(engine)) && timeWebGlCalls(engine, on),
+    webGlCallTotals: () => webGlCallTotals(engine),
     sceneLayerHitTargets: () => sceneLayerCompositor?.hitTargets() ?? [],
     sceneLayerPickHits: (points) => points.map(({ x, y }) => (sceneLayerCompositor?.pickHits(x, y, {
       minTargetPx: options.touchMinTargetPx ?? 44, canvasCssHeight: pointerCanvas().height,

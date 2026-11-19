@@ -373,11 +373,11 @@ describe("serialised frame probe", () => {
     // the tail mark finished together, so the effects stage took no time of its own.
     expect(result.stages).toEqual([
       // Nothing was drawn before the shadows: done within the 3 ms task, so an upper bound.
-      { stage: "other", ms: 3, censored: true },
-      { stage: "shadows", ms: 11, censored: false },
-      { stage: "main", ms: 7, censored: false },
-      { stage: "effects", ms: 0, censored: false },
-      { stage: "tail", ms: 3, censored: false },
+      { stage: "other", ms: 3, censored: true, subMs: 0 },
+      { stage: "shadows", ms: 11, censored: false, subMs: 1 },
+      { stage: "main", ms: 7, censored: false, subMs: 1 },
+      { stage: "effects", ms: 0, censored: false, subMs: 0 },
+      { stage: "tail", ms: 3, censored: false, subMs: 1 },
     ]);
   });
 
@@ -406,9 +406,9 @@ describe("serialised frame probe", () => {
     }
     // Shadows: submitted at 2, seen done at 9, so at most 7 ms. Main: submitted at 8, done at 20.
     expect(probe.result()!.stages).toEqual([
-      { stage: "other", ms: 9, censored: true },
-      { stage: "shadows", ms: 7, censored: true },
-      { stage: "main", ms: 12, censored: false },
+      { stage: "other", ms: 9, censored: true, subMs: 0 },
+      { stage: "shadows", ms: 7, censored: true, subMs: 2 },
+      { stage: "main", ms: 12, censored: false, subMs: 6 },
     ]);
   });
 
@@ -536,11 +536,12 @@ describe("serialised frame probe", () => {
     }
     // Fences: "other" at 2 (the shadows' first pass start), shadows at 6, main at 6 (as the effects' pass starts),
     // effects at 10, main again at 10; all seen done at 12. Main's two parts, 6 and 2 ms long, count as 6, not 8.
+    // Submission per stage runs from one fence's return to the next: 2, 4, 0 and 4, summing to the frame's 10.
     expect(probe.result()!.stages).toEqual([
-      { stage: "other", ms: 10, censored: true },
-      { stage: "shadows", ms: 6, censored: true },
-      { stage: "main", ms: 6, censored: true },
-      { stage: "effects", ms: 2, censored: true },
+      { stage: "other", ms: 10, censored: true, subMs: 2 },
+      { stage: "shadows", ms: 6, censored: true, subMs: 4 },
+      { stage: "main", ms: 6, censored: true, subMs: 0 },
+      { stage: "effects", ms: 2, censored: true, subMs: 4 },
     ]);
   });
 

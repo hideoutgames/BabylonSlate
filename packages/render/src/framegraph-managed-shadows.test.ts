@@ -235,6 +235,31 @@ it("draws no map layer with shadow passes off, and binds each without its caster
   graph.dispose();
 });
 
+it.each([
+  ["spot", "localpasses", "sunpasses"],
+  ["point", "localpasses", "sunpasses"],
+  ["sun", "sunpasses", "localpasses"],
+] as const)("keeps a drawn %s map with %s off, and draws it with %s off", async (kind, own, other) => {
+  const { camera, mesh, controller, graph, render } = await fixture(kind);
+  const count = kind === "point" ? 6 : 1;
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(render()).toBe(count);
+  // The other kind's passes off: this map is due again (every map is, on a switch) and draws.
+  expect(controller.setDebug(other, false)).toBe(true);
+  expect(render()).toBe(count);
+  expect(controller.setDebug(other, true)).toBe(true);
+  expect(render()).toBe(count);
+  // Its own kind's passes off: it keeps the depth it holds, even with a caster moved, and stays due.
+  expect(controller.setDebug(own, false)).toBe(true);
+  mesh.position.x += 0.4;
+  expect(render()).toBe(0);
+  expect(render()).toBe(0);
+  expect(controller.setDebug(own, true)).toBe(true);
+  expect(render()).toBe(count);
+  expect(render()).toBe(0);
+  graph.dispose();
+});
+
 it("binds current directional projection bias before the managed caster draw without replacing resources", async () => {
   const { scene, camera, light, controller, generator, map, texture, graph, render } =
     await fixture("sun");

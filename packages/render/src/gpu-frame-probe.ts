@@ -521,6 +521,13 @@ export interface SerialStageResult {
   stage: FrameStage;
   ms: number;
   censored: boolean;
+  /**
+   * The stage's CPU submission: from the return of the fence before it (the frame's start fence for the first) to the
+   * return of its own, summed where it was fenced more than once, median over the warm frames. It includes the fence
+   * call, a synchronous round trip where the context runs in another process (WebKit's GPU process), so a stage whose
+   * calls that process is slow to take reads long here. In each frame the stages sum to its submission (`cpuMs`).
+   */
+  subMs: number;
 }
 
 export interface SerialProbeResult {
@@ -818,6 +825,17 @@ function frameStages(frame: ProbeFrame): Map<FrameStage, { ms: number; censored:
   return new Map([...stages].map(([stage, total]) => [stage, { ms: total.measured + total.bound, censored: total.censored }]));
 }
 
+/** A frame's CPU submission per stage (`SerialStageResult.subMs`): consecutive fences' returns, from the start fence's. */
+function frameSubmissions(frame: ProbeFrame): Map<FrameStage, number> {
+  const submissions = new Map<FrameStage, number>();
+  let previous = frame.started;
+  for (const entry of frame.stages) {
+    submissions.set(entry.stage, (submissions.get(entry.stage) ?? 0) + Math.max(0, entry.submitted - previous));
+    previous = entry.submitted;
+  }
+  return submissions;
+}
+
 /** The result of a probe's frames and synthetic runs (`SerialProbeResult`). */
 export function summariseSerialProbe(
   frames: readonly ProbeFrame[], synthetic: readonly number[], failed: string | null, id: number, ms: number, splits: number | null = null,
@@ -826,12 +844,14 @@ export function summariseSerialProbe(
   const warm = frames.slice(1);
   const values = (read: (frame: ProbeFrame) => number | null) => warm.flatMap((frame) => { const value = read(frame); return value === null ? [] : [value]; });
   const perFrame = warm.map(frameStages);
+  const submissions = warm.map(frameSubmissions);
   const stages: SerialStageResult[] = [];
   for (const stage of FRAME_STAGES) {
     const entries = perFrame.flatMap((map) => map.has(stage) ? [map.get(stage)!] : []);
     if (!entries.length) continue;
     const censored = entries.filter((entry) => entry.censored).length * 2 > entries.length;
-    stages.push({ stage, ms: median(entries.map((entry) => entry.ms))!, censored });
+    const sub = median(submissions.flatMap((map) => map.has(stage) ? [map.get(stage)!] : []))!;
+    stages.push({ stage, ms: median(entries.map((entry) => entry.ms))!, censored, subMs: sub });
   }
   return {
     id, frames: frames.length, frameMs: median(values(span)), coldMs: frames[0] ? span(frames[0]) : null,
