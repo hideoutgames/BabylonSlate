@@ -230,6 +230,8 @@ export class SpatialEffectsGraph {
         probe.objectList = this.geometry.objectList;
         probe.depthTexture = target("Spatial Geometry Probe Z", 1, true);
         probe.clearsDepth = true;
+        // As the real pass: its depth is not stored, so the repeat costs what that pass costs.
+        probe.discardsDepth = true;
         probe.size = { width, height };
         probe.sizeIsPercentage = false;
         probe.textureDescriptions = this.geometry.textureDescriptions.map((description) => ({ ...description }));
