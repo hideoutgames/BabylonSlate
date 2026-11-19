@@ -289,9 +289,17 @@ describe("formatGraphNodes", () => {
     expect(pos(next, "c")).toEqual({ x: 200 + EXEC_STEP, y: 40 });
   });
 
-  it("returns the input nodes when nothing is selected", () => {
+  it("formats the whole graph when nothing is selected, leaving an isolated node where it is", () => {
     const nodes = [node("a", 0, 0)];
-    expect(layout(nodes, [], [])).toBe(nodes);
+    expect(layout(nodes, [], [])).toEqual(nodes);
+    const chain = [node("start", 10, 20), node("next", 0, 300), node("value", 0, -300, dataOutPins), node("sink", 900, 900, dataInPins), node("source", 0, 0, dataOutPins)];
+    const edges = [execEdge("start", "next"), dataEdge("source", "sink")];
+    const next = layout(chain, edges, []);
+    expect(pos(next, "next")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    // The sink keeps its place and what feeds it comes in from the left, level with its pin.
+    expect(pos(next, "sink")).toEqual({ x: 900, y: 900 });
+    expect(pos(next, "source")).toEqual({ x: 900 - EXEC_STEP, y: 900 });
+    expect(pos(next, "value")).toEqual({ x: 0, y: -300 });
   });
 
   it("places a data input below-left of a subsequent then-chain node, not on the exec row", () => {
@@ -459,7 +467,7 @@ describe("formatGraphNodes", () => {
     expectNoOverlaps(next);
   });
 
-  it("stacks data-out branches of a selected pure node below-right of the source", () => {
+  it("formats only what feeds a selected pure node, never what it feeds", () => {
     const nodes = [
       node("get", 10, 20, dataOutPins),
       node("first", 0, 200, dataInPins),
@@ -469,32 +477,26 @@ describe("formatGraphNodes", () => {
       dataEdge("get", "first"),
       dataEdge("get", "second"),
     ];
-    const next = layout(nodes, edges, ["get"]);
-    expect(pos(next, "get")).toEqual({ x: 10, y: 20 });
-    expect(pos(next, "second")).toEqual({
-      x: 10 + EXEC_STEP,
-      y: 20 + HANG_Y,
-    });
-    expect(pos(next, "first")).toEqual({
-      x: 10 + EXEC_STEP,
-      y: 20 + HANG_Y + NODE_H + FORMAT_GAP_Y,
-    });
-    expectNoOverlaps(next);
+    expect(layout(nodes, edges, ["get"])).toEqual(nodes);
+    // Selecting a consumer brings the source in from the left, level with its pin.
+    const next = layout(nodes, edges, ["first"]);
+    expect(pos(next, "first")).toEqual({ x: 0, y: 200 });
+    expect(pos(next, "get")).toEqual({ x: -EXEC_STEP, y: 200 });
+    expect(pos(next, "second")).toEqual({ x: 0, y: 0 });
   });
 
-  it("does not pull exec successors when formatting from a pure node", () => {
+  it("does not pull exec consumers or successors when formatting from a pure node", () => {
     const nodes = [
-      node("get", 10, 20, dataOutPins),
+      node("source", 500, 500, dataOutPins),
+      node("get", 10, 20, dataThruPins),
       node("print", 200, 50, execWithValueIn),
       node("later", 400, 80),
     ];
-    const edges = [dataEdge("get", "print"), execEdge("print", "later")];
+    const edges = [dataEdge("source", "get", "in"), dataEdge("get", "print"), execEdge("print", "later")];
     const next = layout(nodes, edges, ["get"]);
     expect(pos(next, "get")).toEqual({ x: 10, y: 20 });
-    expect(pos(next, "print")).toEqual({
-      x: 10 + EXEC_STEP,
-      y: 20 + HANG_Y,
-    });
+    expect(pos(next, "source")).toEqual({ x: 10 - EXEC_STEP, y: 20 });
+    expect(pos(next, "print")).toEqual({ x: 200, y: 50 });
     expect(pos(next, "later")).toEqual({ x: 400, y: 80 });
   });
 
@@ -775,28 +777,30 @@ describe("formatGraphNodes", () => {
     expect(layout(next, edges, ["consumer"])).toEqual(next);
   });
 
-  it("compacts a long selected pure chain while keeping a data merge after every predecessor", () => {
+  it("lays a long pure chain out level from its sink, every source left of what it feeds", () => {
     const nodes = [
       ...Array.from({ length: 9 }, (_, index) =>
         node(`pure${index}`, 0, index * 100, dataThruPins),
       ),
-      node("merge", 0, -100, dataThruPins),
+      node("merge", 0, -100, twoDataInPins.filter((pin) => pin.kind === "data")),
     ];
     const edges = [
       ...Array.from({ length: 8 }, (_, index) =>
         dataEdge(`pure${index}`, `pure${index + 1}`, "in"),
       ),
-      dataEdge("pure0", "merge", "in"),
-      dataEdge("pure8", "merge", "in"),
+      dataEdge("pure0", "merge", "second"),
+      dataEdge("pure8", "merge", "first"),
     ];
-    const next = layout(nodes, edges, ["pure0"]);
+    const next = layout(nodes, edges, ["merge"]);
+    expect(pos(next, "merge")).toEqual({ x: 0, y: -100 });
     for (const edge of edges) {
       expect(pos(next, edge.source).x + NODE_W + FORMAT_GAP_X)
         .toBeLessThanOrEqual(pos(next, edge.target).x);
     }
-    expect(new Set(next.map((entry) => entry.position.y)).size).toBeLessThanOrEqual(2);
+    // The chain into First runs level all the way.
+    for (let index = 0; index < 9; index++) expect(pos(next, `pure${index}`).y).toBe(-100);
     expectNoOverlaps(next);
-    expect(layout(next, edges, ["pure0"])).toEqual(next);
+    expect(layout(next, edges, ["merge"])).toEqual(next);
   });
 
   it("formats a selected execution cycle once instead of discarding all selected roots", () => {
@@ -865,7 +869,7 @@ describe("formatGraphNodes", () => {
     expect(layout(next, edges, ["first", "second"])).toEqual(next);
   });
 
-  it("honors both selected pure and execution walks without moving shared nodes twice", () => {
+  it("honors both selected sinks and execution walks without moving shared nodes twice", () => {
     const nodes = [
       node("pure", 0, 0, dataOutPins),
       node("consumer", 100, 100, execWithValueIn),
@@ -877,13 +881,14 @@ describe("formatGraphNodes", () => {
       dataEdge("pure", "otherConsumer"),
       execEdge("consumer", "after"),
     ];
-    const next = layout(nodes, edges, ["pure", "consumer"]);
+    const next = layout(nodes, edges, ["otherConsumer", "consumer"]);
     expect(pos(next, "consumer")).toEqual({ x: 100, y: 100 });
     expect(pos(next, "after")).toEqual({ x: 100 + EXEC_STEP, y: 100 });
-    expect(pos(next, "otherConsumer").x).toBeGreaterThan(pos(next, "pure").x);
-    expect(pos(next, "otherConsumer")).not.toEqual(pos(nodes, "otherConsumer"));
+    // Pure is the exec node's parameter (exec chains go first); the sink keeps its place.
+    expect(pos(next, "pure")).toEqual({ x: 100 - EXEC_STEP, y: 100 + LANE });
+    expect(pos(next, "otherConsumer")).toEqual({ x: 0, y: -200 });
     expectNoOverlaps(next);
-    expect(layout(next, edges, ["consumer", "pure"])).toEqual(next);
+    expect(layout(next, edges, ["consumer", "otherConsumer"])).toEqual(next);
   });
 });
 

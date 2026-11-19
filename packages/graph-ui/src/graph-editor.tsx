@@ -3256,10 +3256,11 @@ function GraphEditorCanvas({
   // selection stays as it was. A Format that changes nothing emits nothing.
   const formatSelection = useCallback(() => {
     const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    // With nothing selected, Format lays out the whole graph.
     const selected = currentNodes
       .filter((node) => node.selected)
       .map((node) => node.id);
-    if (selected.length === 0) return;
+    if (currentNodes.length === 0) return;
     const paletteNode = readOnly ? undefined : rerouteRef.current?.paletteNode;
     const displayTypes = pinDisplayTypesRef.current;
     const lookup = storeApi.getState().nodeLookup;
@@ -4084,8 +4085,8 @@ function GraphEditorCanvas({
             <Separator orientation="vertical" />
             <IslandIconButton
               label="Format"
-              hint="Format Selection: Exec Runs Left To Right, Data Hangs Below"
-              disabled={selectedNodes.length === 0}
+              hint="Format Selection Or Whole Graph: Exec Runs Left To Right, Inputs Flow In From The Left"
+              disabled={nodes.length === 0}
               onClick={formatSelection}
               data-testid="graph-format"
             >
