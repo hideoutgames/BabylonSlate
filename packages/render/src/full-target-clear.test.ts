@@ -8,7 +8,6 @@ import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/
 import { backbufferColorTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
-import type { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Scene } from "@babylonjs/core/scene";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { fragmentDiscards, fullTargetClear, startFullScreenPassesWithClear } from "./full-target-clear";
@@ -52,9 +51,10 @@ function host(intoBackbuffer = false) {
   // What the frame does, in order: the full-target clears (by their colour) and the draws.
   const events: string[] = [];
   const clear = engine.clear.bind(engine);
-  vi.spyOn(engine, "clear").mockImplementation((color: Color4 | null, backBuffer: boolean, depth: boolean, stencil?: boolean) => {
+  vi.spyOn(engine, "clear").mockImplementation((...args: Parameters<typeof engine.clear>) => {
+    const [color, backBuffer, depth] = args;
     events.push(`clear ${engine._currentRenderTarget ? "target" : "backbuffer"} ${color && backBuffer ? "colour" : ""}${depth ? " depth" : ""}`);
-    clear(color, backBuffer, depth, stencil);
+    clear(...args);
   });
   const draw = engine.drawElementsType.bind(engine);
   vi.spyOn(engine, "drawElementsType").mockImplementation((...args: Parameters<typeof engine.drawElementsType>) => {
