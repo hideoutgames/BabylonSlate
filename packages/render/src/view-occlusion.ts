@@ -35,6 +35,11 @@ import { RENDERING_GROUP } from "./sorting";
  * - A frame whose occluders, in drawing order, have the shapes and world matrices the buffer was drawn with, seen with the
  *   same view-projection, near plane, winding parity and eye, keeps the buffer instead of drawing them again: the
  *   rasteriser is deterministic, so it would write the same depths (`verifyKeptOcclusionBuffers` checks it).
+ * - A view whose filter culls nothing backs off: after `QUIET_RUNS` such runs in a row it skips the filter (candidates,
+ *   occluder raster and tests) and passes the frustum's list on unfiltered, as with occlusion off, for `FIRST_BACK_OFF`
+ *   frames, doubling after each probe that again culls nothing up to `MAX_BACK_OFF`; a run that culls returns it to every
+ *   frame. Occlusion only ever leaves out meshes opaque occluders hide, so this changes how many hidden meshes draw, never
+ *   the picture. A frozen view runs every frame; `forceOcclusionEveryFrame` turns backing off off.
  * - Nothing of Babylon's state changes: the filter writes its own list, so shadows, captures, mirrors, probes, picking
  *   and outline masks, which build their own lists, still see every mesh.
  */
@@ -207,18 +212,38 @@ export function sceneOcclusionDiagnostics(scene: Scene): Readonly<ViewOcclusionD
 }
 
 export interface ViewOcclusionDiagnostics {
-  /** Meshes tested and of them those culled, in the last filtered frame. */
+  /** Meshes tested and of them those culled, in the last filtered frame (on an idle frame, the last run's). */
   tested: number;
   culled: number;
   occluders: number;
   triangles: number;
-  /** The filter's time in the last frame, in milliseconds. */
+  /** The filter's time in the last frame, in milliseconds (0 on an idle frame). */
   ms: number;
+  /** The last frame skipped the filter: it is backing off, as its last runs culled nothing. */
+  idle: boolean;
+  /** Frames skipped after each run while backing off (0: it runs every frame), and frames skipped since the view's first. */
+  backOff: number;
+  skippedFrames: number;
   /** Frames, since the view's first, that kept the buffer their occluders were drawn into before (not reset per frame). */
   keptBuffers: number;
   /** Kept buffers checked by drawing the occluders again (`verifyKeptOcclusionBuffers`), and those whose list then differed. */
   keptChecks: number;
   keptMismatches: number;
+}
+
+/** Runs in a row that cull nothing before the filter backs off, the first skip, and the longest. */
+export const QUIET_RUNS = 4;
+export const FIRST_BACK_OFF = 2;
+export const MAX_BACK_OFF = 32;
+
+let forcingEveryFrame = false;
+
+/**
+ * Has every world view run the occlusion filter on every frame, as before it backed off (comparisons and parity checks;
+ * a view that backs off draws the same picture with more hidden meshes drawn).
+ */
+export function forceOcclusionEveryFrame(enabled: boolean): void {
+  forcingEveryFrame = enabled;
 }
 
 let verifyingKeptBuffers = false;
@@ -268,7 +293,8 @@ export class ViewOcclusion {
   private readonly eye = new Vector3();
   private readonly flat = new Float64Array(24);
   readonly diagnostics: ViewOcclusionDiagnostics = {
-    tested: 0, culled: 0, occluders: 0, triangles: 0, ms: 0, keptBuffers: 0, keptChecks: 0, keptMismatches: 0,
+    tested: 0, culled: 0, occluders: 0, triangles: 0, ms: 0, idle: false, backOff: 0, skippedFrames: 0,
+    keptBuffers: 0, keptChecks: 0, keptMismatches: 0,
   };
   /** The meshes the last filtered frame left out. */
   readonly culled = new Set<AbstractMesh>();
@@ -284,6 +310,10 @@ export class ViewOcclusion {
   private inputCount = -1;
   /** The kept buffer's list while a verifying frame filters again (`checkKept`). */
   private readonly checkList: AbstractMesh[] = [];
+  /** Runs in a row that culled nothing, the frames skipped after each probe now (0: every frame), and those left. */
+  private quietRuns = 0;
+  private backOff = 0;
+  private skipLeft = 0;
 
   /** The buffer's view depths (`sceneOcclusionBuffer`). */
   depthBuffer(): { width: number; height: number; depth: Float32Array } {
@@ -297,16 +327,31 @@ export class ViewOcclusion {
    */
   filter(meshes: readonly AbstractMesh[], camera: Camera, renderPassId: number): readonly AbstractMesh[] {
     const diagnostics = this.diagnostics;
-    diagnostics.tested = diagnostics.culled = diagnostics.occluders = diagnostics.triangles = 0;
-    diagnostics.ms = 0;
     this.culled.clear();
     const scene = camera.getScene();
-    if (!sceneOcclusionCulling(scene) || camera.mode !== Camera.PERSPECTIVE_CAMERA || scene.skipFrustumClipping) return meshes;
+    if (!sceneOcclusionCulling(scene) || camera.mode !== Camera.PERSPECTIVE_CAMERA || scene.skipFrustumClipping) {
+      diagnostics.tested = diagnostics.culled = diagnostics.occluders = diagnostics.triangles = diagnostics.ms = 0;
+      diagnostics.idle = false;
+      this.quietRuns = this.backOff = this.skipLeft = 0;
+      diagnostics.backOff = 0;
+      return meshes;
+    }
     sceneDiagnostics.set(scene, diagnostics);
     sceneViews.set(scene, this);
+    const frozen = frozenScenes.has(scene) && !!this.drawn;
+    // Backing off: the frustum's list, unfiltered as with occlusion off; the last run's counts stay for the readers.
+    if (this.skipLeft > 0 && !frozen && !forcingEveryFrame) {
+      this.skipLeft -= 1;
+      diagnostics.idle = true;
+      diagnostics.skippedFrames += 1;
+      diagnostics.ms = 0;
+      return meshes;
+    }
+    diagnostics.idle = false;
+    diagnostics.tested = diagnostics.culled = diagnostics.occluders = diagnostics.triangles = diagnostics.ms = 0;
     const start = performance.now();
     try {
-      if (frozenScenes.has(scene) && this.drawn) {
+      if (frozen && this.drawn) {
         diagnostics.occluders = this.drawn.occluders;
         diagnostics.triangles = this.drawn.triangles;
       } else {
@@ -320,7 +365,22 @@ export class ViewOcclusion {
       return this.cull(meshes, scene.getEngine(), renderPassId);
     } finally {
       diagnostics.ms = performance.now() - start;
+      if (!frozen) this.noteRun(diagnostics.culled);
     }
+  }
+
+  /**
+   * After `QUIET_RUNS` runs in a row that culled nothing, the next frames skip the filter; each probe that again culls
+   * nothing doubles the skip (`FIRST_BACK_OFF` up to `MAX_BACK_OFF` frames). A run that culls returns it to every frame.
+   */
+  private noteRun(culled: number): void {
+    if (culled > 0 || forcingEveryFrame) {
+      this.quietRuns = this.backOff = this.skipLeft = 0;
+    } else if (++this.quietRuns >= QUIET_RUNS) {
+      this.backOff = this.backOff === 0 ? FIRST_BACK_OFF : Math.min(this.backOff * 2, MAX_BACK_OFF);
+      this.skipLeft = this.backOff;
+    }
+    this.diagnostics.backOff = this.backOff;
   }
 
   /**

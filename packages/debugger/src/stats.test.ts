@@ -118,6 +118,19 @@ describe("statsHudModel", () => {
     expect(warned).toEqual(["geo", "draws", "first-draws", "quality-limits", "draw-warn", "geo-warn"]);
   });
 
+  it("says when occlusion culling is idle, backing off while its runs cull nothing, and how often it runs", () => {
+    const rendering = {
+      cpuMs: 1, gpuMs: null, gpuStatus: "unsupported", width: 8, height: 8, shadowDrawCalls: 0,
+      readbackMs: null, autoLod: { meshes: 0, reduced: 0 }, qualityLimits: [],
+    };
+    type Occlusion = { tested: number; culled: number; triangles: number; ms: number; idle: boolean; backOff: number };
+    const occlusion = (value: Occlusion) => statsHudModel({ fps: 60, scriptMs: 0, physicsMs: 0, rendering: { ...rendering, occlusion: value } }, ["draws"])
+      .rows[0]!.metrics.find((metric) => metric.id === "occlusion");
+    expect(occlusion({ tested: 280, culled: 0, triangles: 156, ms: 0, idle: true, backOff: 32 }))
+      .toMatchObject({ label: "occlusion culled", text: "0/280 · 156 tris · 0.00 ms · idle, runs 1 in 33" });
+    expect(occlusion({ tested: 88, culled: 5, triangles: 120, ms: 0.31, idle: false, backOff: 0 })).toMatchObject({ text: "5/88 · 120 tris · 0.31 ms" });
+  });
+
   it("shows the render cpu as the mean of the last frames where the host has one", () => {
     const rendering = {
       cpuMs: 1, gpuMs: null, gpuStatus: "unsupported", width: 8, height: 8, shadowDrawCalls: 0,

@@ -59,6 +59,11 @@ import {
  *      draws, then the lean one into scratch, whose queues must match in order: `rendererWork.leanPreparation.mismatches`),
  *      HAPTIC_PERF_VERIFY_OCCLUSION=1 (each world view frame that keeps its occlusion buffer also draws the occluders again
  *      and filters once more, whose list must match in order: `occlusion.keptMismatches` of `keptChecks`),
+ *      HAPTIC_PERF_OCCLUSION_EVERY_FRAME=1 (the world view runs its occlusion filter on every frame instead of backing off
+ *      while it culls nothing: the comparison for `occlusion.skippedFrames`),
+ *      HAPTIC_PERF_OCCLUSION_PARITY=1 (with HAPTIC_PERF_VIEWS, each held view, paused: the canvas drawn while occlusion
+ *      backs off against one with the filter every frame, and a second backing-off frame as the control; each pair's
+ *      `differing` must be 0: the view's step `occlusion parity`),
  *      HAPTIC_PERF_DEVICE (`<width>x<height>@<scale>`, e.g. `1180x788@2`: the page's CSS viewport and device scale factor),
  *      HAPTIC_PERF_VIEWS (comma list of the Feature Test Check's Profile views, light|heavy|mirror: Play holds each in
  *      turn with `possess` instead of sampling the camera tour, and each view reports its GL pass structure and, with
@@ -106,6 +111,10 @@ const VERIFY_BATCHES = process.env.HAPTIC_PERF_VERIFY_BATCHES === "1";
 const VERIFY_DRAW_LISTS = process.env.HAPTIC_PERF_VERIFY_DRAW_LISTS === "1";
 /** After the windows, with the game paused: the Scene Layers' picture and picks with the retained draw list and on Babylon's full path. */
 const LAYER_PARITY = process.env.HAPTIC_PERF_LAYER_PARITY === "1";
+/** The world view runs its occlusion filter on every frame instead of backing off while it culls nothing. */
+const OCCLUSION_EVERY_FRAME = process.env.HAPTIC_PERF_OCCLUSION_EVERY_FRAME === "1";
+/** With HAPTIC_PERF_VIEWS, each held view, paused: the canvas with occlusion backing off and with it run every frame. */
+const OCCLUSION_PARITY = process.env.HAPTIC_PERF_OCCLUSION_PARITY === "1";
 /** Leaves Engine Settings' Half Rate When Idle on, to measure the idle editor viewport as a user has it by default. */
 const IDLE_HALF_RATE = process.env.HAPTIC_PERF_IDLE_HALF_RATE === "1";
 /** Each shadow caster walk of the change journal in Play is followed by the full walk (the measured frames carry its cost). */
@@ -157,6 +166,8 @@ type PlayHost = {
     verifySharedOutlineCulls: (enabled: boolean) => void;
     verifyLeanPreparation: (enabled: boolean) => void;
     verifyKeptOcclusionBuffers: (enabled: boolean) => void;
+    forceOcclusionEveryFrame: (enabled: boolean) => void;
+    requestPausedRedraw: () => { accepted: boolean; reason?: string } | null;
   };
 };
 
@@ -413,6 +424,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (VERIFY_OUTLINES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifySharedOutlineCulls(true));
   if (VERIFY_PREPARATION) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyLeanPreparation(true));
   if (VERIFY_OCCLUSION) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyKeptOcclusionBuffers(true));
+  if (OCCLUSION_EVERY_FRAME) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.forceOcclusionEveryFrame(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
@@ -538,12 +550,65 @@ async function measureHeld(page: Page) {
   };
 }
 
+/**
+ * With the game paused, the canvas of a paused frame drawn while occlusion backs off (an idle frame, or a running one
+ * where the view culls) against one drawn with the filter run every frame, and a second backing-off frame as the control.
+ * Backing off only adds hidden meshes to what draws, so every pair must match pixel for pixel.
+ */
+async function occlusionParity(page: Page) {
+  type Occlusion = { idle: boolean; culled: number; tested: number; backOff: number } | null;
+  await runConsoleCommand(page, "pause");
+  await page.waitForTimeout(1500);
+  const canvas = page.getByTestId("play-canvas");
+  const drawnFrames = () => page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.presentation?.drawn ?? 0);
+  const frame = async (forced: boolean) => {
+    await page.evaluate((value) => (globalThis as unknown as PlayHost).__hapticPlayTest!.forceOcclusionEveryFrame(value), forced);
+    let occlusion: Occlusion = null, redraws = 0;
+    for (; redraws < 48; redraws++) {
+      const before = await drawnFrames();
+      const request = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.requestPausedRedraw());
+      if (!request?.accepted) throw new Error(`paused redraw refused: ${request?.reason ?? "no session"}`);
+      await expect.poll(drawnFrames, { timeout: 10_000, intervals: [50] }).toBeGreaterThan(before);
+      occlusion = await page.evaluate(() => ((globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.occlusion ?? null) as Occlusion);
+      // Forced: a running frame; backing off: an idle frame, unless the view culls and so never idles.
+      if (!occlusion || (forced ? !occlusion.idle : occlusion.idle || occlusion.culled > 0)) break;
+    }
+    return { shot: (await canvas.screenshot()).toString("base64"), occlusion, redraws: redraws + 1 };
+  };
+  const backingOff = await frame(false);
+  const forced = await frame(true);
+  const again = await frame(false);
+  await page.evaluate((value) => (globalThis as unknown as PlayHost).__hapticPlayTest!.forceOcclusionEveryFrame(value), OCCLUSION_EVERY_FRAME);
+  await runConsoleCommand(page, "resume");
+  const compare = (a: string, b: string) => page.evaluate(async ([first, second]) => {
+    const load = async (base64: string) => {
+      const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
+      const surface = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = surface.getContext("2d")!;
+      context.drawImage(bitmap, 0, 0);
+      return context.getImageData(0, 0, bitmap.width, bitmap.height);
+    };
+    const [x, y] = await Promise.all([load(first!), load(second!)]);
+    let differing = 0;
+    for (let index = 0; index < x.data.length; index += 4)
+      if (x.data[index] !== y.data[index] || x.data[index + 1] !== y.data[index + 1] || x.data[index + 2] !== y.data[index + 2]) differing += 1;
+    return { pixels: x.width * x.height, differing };
+  }, [a, b]);
+  return {
+    backingOffVsForced: await compare(backingOff.shot, forced.shot),
+    backingOffVsBackingOff: await compare(backingOff.shot, again.shot),
+    states: { backingOff: backingOff.occlusion, forced: forced.occlusion, again: again.occlusion },
+    redraws: { backingOff: backingOff.redraws, forced: forced.redraws, again: again.redraws },
+  };
+}
+
 /** Each Profile view held in turn, its baseline and each variant between baselines (A B A C A). */
 async function measureViews(page: Page) {
   const results: Record<string, unknown> = {};
   for (const view of VIEWS) {
     await runConsoleCommand(page, `possess "${FEATURE_TEST_PROFILE_VIEWS[view].name}"`);
     const steps: Array<{ label: string } & Record<string, unknown>> = [{ label: "baseline", ...await measureHeld(page) }];
+    if (OCCLUSION_PARITY) steps.push({ label: "occlusion parity", ...await occlusionParity(page) });
     for (const variant of VARIANTS) {
       for (const command of variant.commands) await runConsoleCommand(page, command);
       steps.push({ label: variant.label, ...await measureHeld(page) });

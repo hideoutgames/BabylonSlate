@@ -15,7 +15,7 @@ import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-sc
 import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
   verifyCaptureActorLists, verifyLayerDrawLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
-  verifyLeanPreparation, verifyKeptOcclusionBuffers, drawLayersFullPath,
+  verifyLeanPreparation, verifyKeptOcclusionBuffers, forceOcclusionEveryFrame, drawLayersFullPath,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1289,6 +1289,10 @@ function PlayOverlayView({
         verifyLeanPreparation: (enabled: boolean) => void;
         /** Has each world view frame that keeps its occlusion buffer also draw the occluders again and filter once more, which must agree (`occlusion.keptMismatches`). */
         verifyKeptOcclusionBuffers: (enabled: boolean) => void;
+        /** Has the world view run its occlusion filter on every frame instead of backing off while it culls nothing (comparisons). */
+        forceOcclusionEveryFrame: (enabled: boolean) => void;
+        /** Draws one frame of the paused session's view (`requestPausedRedraw`), as after a render-only change. */
+        requestPausedRedraw: () => { accepted: boolean; reason?: string } | null;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1323,6 +1327,8 @@ function PlayOverlayView({
       verifySharedOutlineCulls,
       verifyLeanPreparation,
       verifyKeptOcclusionBuffers,
+      forceOcclusionEveryFrame,
+      requestPausedRedraw: () => sessionRef.current?.handle.requestPausedRedraw() ?? null,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
@@ -1538,7 +1544,7 @@ function PlayOverlayView({
           {rendering?.occlusion ? <canvas ref={occlusionCanvasRef} className="block h-32 w-64 [image-rendering:pixelated]" /> : null}
           <SelectableText>
             {rendering?.occlusion
-              ? `occlusion culled ${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.occluders} occluders`
+              ? `occlusion culled ${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.occluders} occluders${rendering.occlusion.idle ? " · idle" : ""}`
               : "occlusion culling off"}
           </SelectableText>
         </div>

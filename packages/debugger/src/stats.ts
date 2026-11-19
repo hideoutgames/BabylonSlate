@@ -54,7 +54,7 @@ export type StatsHudRendering = {
   readbackMs: number | null;
   autoLod: { meshes: number; reduced: number };
   /** The world view's last frame culled by occlusion; null or absent while it does not. */
-  occlusion?: { tested: number; culled: number; triangles: number; ms: number } | null;
+  occlusion?: { tested: number; culled: number; triangles: number; ms: number; idle?: boolean; backOff?: number } | null;
   qualityLimits: readonly string[];
   /** Play: shaders first drawn since the scene presented, and the frames that held them. */
   firstDraws?: { draws: number; loadCompiled: number; stalls: number; worstFrameMs: number } | null;
@@ -211,7 +211,9 @@ function groupMetrics(group: StatGroup, input: StatsHudInput, overBudget: boolea
           rendering.occlusion ? {
             id: "occlusion",
             label: "occlusion culled",
-            text: `${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.triangles} tris · ${ms(rendering.occlusion.ms)}`,
+            // Idle: backing off, as its last runs culled nothing; the counts are the last run's.
+            text: `${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.triangles} tris · ${ms(rendering.occlusion.ms)}${
+              rendering.occlusion.idle ? ` · idle, runs 1 in ${(rendering.occlusion.backOff ?? 0) + 1}` : ""}`,
             raw: rendering.occlusion.culled,
           } : null,
           rendering.firstDraws ? {

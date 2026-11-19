@@ -273,12 +273,15 @@ export type RenderDiagnostics = {
   /** The Scene's instance pool (`SceneInstancePool.diagnostics`): groups, retained groups, pooled members and re-keys; null without one. */
   instancePool: InstancePoolDiagnostics | null;
   /**
-   * The world view's last frame culled by occlusion (meshes tested and culled, occluders, their triangles, ms), and since
-   * its first frame the frames that kept their occlusion buffer, the kept buffers checked by drawing again and those whose
-   * list differed (`verifyKeptOcclusionBuffers`); null while it does not cull.
+   * The world view's last frame culled by occlusion (meshes tested and culled, occluders, their triangles, ms; on an idle
+   * frame the last run's counts and 0 ms), whether that frame was idle (backing off while its runs cull nothing) and the
+   * frames it skips after each run (0: every frame), and since its first frame the frames skipped, the frames that kept
+   * their occlusion buffer, the kept buffers checked by drawing again and those whose list differed
+   * (`verifyKeptOcclusionBuffers`); null while it does not cull (off).
    */
   occlusion: {
     tested: number; culled: number; occluders: number; triangles: number; ms: number;
+    idle: boolean; backOff: number; skippedFrames: number;
     keptBuffers: number; keptChecks: number; keptMismatches: number;
   } | null;
   /** Live scene resource counts; cachedTextures is the Engine texture cache. */
@@ -407,6 +410,7 @@ function occlusionCounts(scene: Scene): RenderDiagnostics["occlusion"] {
   const last = sceneOcclusionDiagnostics(scene);
   return last && {
     tested: last.tested, culled: last.culled, occluders: last.occluders, triangles: last.triangles, ms: last.ms,
+    idle: last.idle, backOff: last.backOff, skippedFrames: last.skippedFrames,
     keptBuffers: last.keptBuffers, keptChecks: last.keptChecks, keptMismatches: last.keptMismatches,
   };
 }
