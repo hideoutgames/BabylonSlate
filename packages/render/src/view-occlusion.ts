@@ -32,6 +32,9 @@ import { RENDERING_GROUP } from "./sorting";
  *   is in front), and, on WebGL2, a mesh whose
  *   colour pass Effect has not drawn yet: its first draw links the program, which must not wait for it to come into view.
  * - Only perspective cameras, and never in a frame drawn without view culling (`skipFrustumClipping`).
+ * - A frame whose occluders, in drawing order, have the shapes and world matrices the buffer was drawn with, seen with the
+ *   same view-projection, near plane, winding parity and eye, keeps the buffer instead of drawing them again: the
+ *   rasteriser is deterministic, so it would write the same depths (`verifyKeptOcclusionBuffers` checks it).
  * - Nothing of Babylon's state changes: the filter writes its own list, so shadows, captures, mirrors, probes, picking
  *   and outline masks, which build their own lists, still see every mesh.
  */
@@ -211,6 +214,21 @@ export interface ViewOcclusionDiagnostics {
   triangles: number;
   /** The filter's time in the last frame, in milliseconds. */
   ms: number;
+  /** Frames, since the view's first, that kept the buffer their occluders were drawn into before (not reset per frame). */
+  keptBuffers: number;
+  /** Kept buffers checked by drawing the occluders again (`verifyKeptOcclusionBuffers`), and those whose list then differed. */
+  keptChecks: number;
+  keptMismatches: number;
+}
+
+let verifyingKeptBuffers = false;
+
+/**
+ * While on, every frame that keeps its occlusion buffer also draws the occluders again and filters a second time; a list
+ * that differs from the kept buffer's, in membership or order, counts in `keptMismatches`, and the redrawn one is used.
+ */
+export function verifyKeptOcclusionBuffers(enabled: boolean): void {
+  verifyingKeptBuffers = enabled;
 }
 
 /**
@@ -249,11 +267,23 @@ export class ViewOcclusion {
   private readonly inverse = new Matrix();
   private readonly eye = new Vector3();
   private readonly flat = new Float64Array(24);
-  readonly diagnostics: ViewOcclusionDiagnostics = { tested: 0, culled: 0, occluders: 0, triangles: 0, ms: 0 };
+  readonly diagnostics: ViewOcclusionDiagnostics = {
+    tested: 0, culled: 0, occluders: 0, triangles: 0, ms: 0, keptBuffers: 0, keptChecks: 0, keptMismatches: 0,
+  };
   /** The meshes the last filtered frame left out. */
   readonly culled = new Set<AbstractMesh>();
   /** The occluders the buffer holds, since the frame that drew them; null when it holds none. */
   private drawn: { occluders: number; triangles: number } | null = null;
+  /**
+   * What the buffer was last drawn from (`holdsSameOccluders`): the view-projection, near plane, winding parity and eye,
+   * then each occluder's world matrix, in drawing order, beside its mesh and shape.
+   */
+  private inputs = new Float64Array(64);
+  private readonly inputMeshes: AbstractMesh[] = [];
+  private readonly inputShapes: OccluderShape[] = [];
+  private inputCount = -1;
+  /** The kept buffer's list while a verifying frame filters again (`checkKept`). */
+  private readonly checkList: AbstractMesh[] = [];
 
   /** The buffer's view depths (`sceneOcclusionBuffer`). */
   depthBuffer(): { width: number; height: number; depth: Float32Array } {
@@ -280,9 +310,12 @@ export class ViewOcclusion {
         diagnostics.occluders = this.drawn.occluders;
         diagnostics.triangles = this.drawn.triangles;
       } else {
+        const held = this.drawn;
         this.drawn = null;
-        if (!this.drawOccluders(meshes, camera)) return meshes;
+        const occluders = this.drawOccluders(meshes, camera, held);
+        if (!occluders) return meshes;
         this.drawn = { occluders: diagnostics.occluders, triangles: diagnostics.triangles };
+        if (occluders === "kept" && verifyingKeptBuffers) return this.checkKept(meshes, camera, scene.getEngine(), renderPassId);
       }
       return this.cull(meshes, scene.getEngine(), renderPassId);
     } finally {
@@ -290,7 +323,11 @@ export class ViewOcclusion {
     }
   }
 
-  private drawOccluders(meshes: readonly AbstractMesh[], camera: Camera): boolean {
+  /**
+   * Draws the occluders among `meshes` into the buffer, or keeps the buffer when it already holds them (`held`, the
+   * occluders it was drawn with, and `holdsSameOccluders`); false when there are none.
+   */
+  private drawOccluders(meshes: readonly AbstractMesh[], camera: Camera, held: { occluders: number; triangles: number } | null): false | "drawn" | "kept" {
     const { candidates, coverage, order } = this;
     candidates.length = coverage.length = order.length = 0;
     const eye = camera.globalPosition;
@@ -313,8 +350,24 @@ export class ViewOcclusion {
     if (candidates.length === 0) return false;
     order.sort((a, b) => coverage[b]! - coverage[a]!);
     this.viewProjection(camera);
-    this.buffer.begin(this.matrix, camera.minZ);
     const diagnostics = this.diagnostics;
+    if (this.holdsSameOccluders(camera) && held) {
+      diagnostics.occluders = held.occluders;
+      diagnostics.triangles = held.triangles;
+      diagnostics.keptBuffers += 1;
+      // A verifying frame draws them again (`checkKept`).
+      if (!verifyingKeptBuffers) candidates.length = 0;
+      return "kept";
+    }
+    this.rasterizeOccluders(camera);
+    return "drawn";
+  }
+
+  /** Draws the ordered candidates into a cleared buffer, the largest first, up to the triangle budget. */
+  private rasterizeOccluders(camera: Camera): void {
+    const { candidates, order, diagnostics } = this;
+    diagnostics.occluders = diagnostics.triangles = 0;
+    this.buffer.begin(this.matrix, camera.minZ);
     for (const index of order) {
       if (diagnostics.triangles + 12 > OCCLUDER_TRIANGLE_BUDGET) break;
       const mesh = candidates[index]!;
@@ -324,7 +377,64 @@ export class ViewOcclusion {
     }
     this.buffer.finish();
     candidates.length = 0;
-    return true;
+  }
+
+  /**
+   * Whether drawing this frame's ordered candidates would write what the buffer holds: the same view-projection, near
+   * plane, winding parity and eye (a Model's box reads it), and the same occluders in the same order with the same shapes
+   * and world matrices. Everything the rasteriser reads is among them and it is deterministic. Records this frame's
+   * inputs as what the buffer is drawn from, whichever the answer.
+   */
+  private holdsSameOccluders(camera: Camera): boolean {
+    const { candidates, order, inputMeshes, inputShapes } = this;
+    const length = 21 + order.length * 16;
+    if (this.inputs.length < length) {
+      const grown = new Float64Array(length * 2);
+      grown.set(this.inputs);
+      this.inputs = grown;
+    }
+    const inputs = this.inputs, matrix = this.matrix, eye = camera.globalPosition;
+    let same = this.inputCount === order.length;
+    for (let index = 0; index < 16; index++) {
+      if (inputs[index] !== matrix[index]) { inputs[index] = matrix[index]!; same = false; }
+    }
+    if (inputs[16] !== camera.minZ) { inputs[16] = camera.minZ; same = false; }
+    if (inputs[17] !== this.viewParity) { inputs[17] = this.viewParity; same = false; }
+    if (inputs[18] !== eye.x) { inputs[18] = eye.x; same = false; }
+    if (inputs[19] !== eye.y) { inputs[19] = eye.y; same = false; }
+    if (inputs[20] !== eye.z) { inputs[20] = eye.z; same = false; }
+    for (let rank = 0; rank < order.length; rank++) {
+      const mesh = candidates[order[rank]!]!, shape = occluderShape(mesh)!;
+      if (inputMeshes[rank] !== mesh || inputShapes[rank] !== shape) {
+        inputMeshes[rank] = mesh;
+        inputShapes[rank] = shape;
+        same = false;
+      }
+      const world = (shape.frame ?? mesh).getWorldMatrix().m, base = 21 + rank * 16;
+      for (let index = 0; index < 16; index++) {
+        if (inputs[base + index] !== world[index]) { inputs[base + index] = world[index]!; same = false; }
+      }
+    }
+    inputMeshes.length = inputShapes.length = this.inputCount = order.length;
+    return same;
+  }
+
+  /** Filters with the kept buffer, then draws the occluders again and filters once more; counts a list that differs. */
+  private checkKept(meshes: readonly AbstractMesh[], camera: Camera, engine: AbstractEngine, renderPassId: number): readonly AbstractMesh[] {
+    const check = this.checkList, diagnostics = this.diagnostics;
+    const kept = this.cull(meshes, engine, renderPassId);
+    check.length = 0;
+    for (const mesh of kept) check.push(mesh);
+    const occluders = diagnostics.occluders, triangles = diagnostics.triangles;
+    diagnostics.tested = diagnostics.culled = 0;
+    this.culled.clear();
+    this.rasterizeOccluders(camera);
+    const drawn = this.cull(meshes, engine, renderPassId);
+    diagnostics.keptChecks += 1;
+    let differs = drawn.length !== check.length || occluders !== diagnostics.occluders || triangles !== diagnostics.triangles;
+    for (let index = 0; !differs && index < drawn.length; index++) differs = drawn[index] !== check[index];
+    if (differs) diagnostics.keptMismatches += 1;
+    return drawn;
   }
 
   /** Draws `shape` with `mesh`'s world matrix; returns the triangles drawn. */

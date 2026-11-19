@@ -15,7 +15,7 @@ import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-sc
 import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
   verifyCaptureActorLists, verifyLayerDrawLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
-  verifyLeanPreparation, drawLayersFullPath,
+  verifyLeanPreparation, verifyKeptOcclusionBuffers, drawLayersFullPath,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1287,6 +1287,8 @@ function PlayOverlayView({
         verifySharedOutlineCulls: (enabled: boolean) => void;
         /** Has each lean object and geometry pass also run Babylon's preparation, whose queues it must match (`rendererWork.leanPreparation.mismatches`). */
         verifyLeanPreparation: (enabled: boolean) => void;
+        /** Has each world view frame that keeps its occlusion buffer also draw the occluders again and filter once more, which must agree (`occlusion.keptMismatches`). */
+        verifyKeptOcclusionBuffers: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1320,6 +1322,7 @@ function PlayOverlayView({
       verifyMirrorFootprintCrops,
       verifySharedOutlineCulls,
       verifyLeanPreparation,
+      verifyKeptOcclusionBuffers,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,

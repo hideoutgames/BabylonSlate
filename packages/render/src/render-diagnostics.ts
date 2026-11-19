@@ -272,8 +272,15 @@ export type RenderDiagnostics = {
   autoLod: ReturnType<typeof autoLodDiagnostics>;
   /** The Scene's instance pool (`SceneInstancePool.diagnostics`): groups, retained groups, pooled members and re-keys; null without one. */
   instancePool: InstancePoolDiagnostics | null;
-  /** The world view's last frame culled by occlusion (meshes tested and culled, occluders, their triangles, ms); null while it does not cull. */
-  occlusion: { tested: number; culled: number; occluders: number; triangles: number; ms: number } | null;
+  /**
+   * The world view's last frame culled by occlusion (meshes tested and culled, occluders, their triangles, ms), and since
+   * its first frame the frames that kept their occlusion buffer, the kept buffers checked by drawing again and those whose
+   * list differed (`verifyKeptOcclusionBuffers`); null while it does not cull.
+   */
+  occlusion: {
+    tested: number; culled: number; occluders: number; triangles: number; ms: number;
+    keptBuffers: number; keptChecks: number; keptMismatches: number;
+  } | null;
   /** Live scene resource counts; cachedTextures is the Engine texture cache. */
   resources: {
     meshes: number;
@@ -398,5 +405,8 @@ export function lightsDebugText(diagnostics: RenderDiagnostics): string | null {
 
 function occlusionCounts(scene: Scene): RenderDiagnostics["occlusion"] {
   const last = sceneOcclusionDiagnostics(scene);
-  return last && { tested: last.tested, culled: last.culled, occluders: last.occluders, triangles: last.triangles, ms: last.ms };
+  return last && {
+    tested: last.tested, culled: last.culled, occluders: last.occluders, triangles: last.triangles, ms: last.ms,
+    keptBuffers: last.keptBuffers, keptChecks: last.keptChecks, keptMismatches: last.keptMismatches,
+  };
 }

@@ -57,6 +57,8 @@ import {
  *      walking every occluder, and counts each that disagrees: `rendererWork.outlineCull.mismatches`),
  *      HAPTIC_PERF_VERIFY_PREPARATION=1 (each lean object and geometry pass in Play runs Babylon's own preparation, which
  *      draws, then the lean one into scratch, whose queues must match in order: `rendererWork.leanPreparation.mismatches`),
+ *      HAPTIC_PERF_VERIFY_OCCLUSION=1 (each world view frame that keeps its occlusion buffer also draws the occluders again
+ *      and filters once more, whose list must match in order: `occlusion.keptMismatches` of `keptChecks`),
  *      HAPTIC_PERF_DEVICE (`<width>x<height>@<scale>`, e.g. `1180x788@2`: the page's CSS viewport and device scale factor),
  *      HAPTIC_PERF_VIEWS (comma list of the Feature Test Check's Profile views, light|heavy|mirror: Play holds each in
  *      turn with `possess` instead of sampling the camera tour, and each view reports its GL pass structure and, with
@@ -117,6 +119,8 @@ const VERIFY_MIRROR_CROP = process.env.HAPTIC_PERF_VERIFY_MIRROR_CROP === "1";
 const VERIFY_OUTLINES = process.env.HAPTIC_PERF_VERIFY_OUTLINES === "1";
 /** Each lean object and geometry pass in Play also runs Babylon's preparation (the measured frames carry its cost). */
 const VERIFY_PREPARATION = process.env.HAPTIC_PERF_VERIFY_PREPARATION === "1";
+/** Each world view frame that keeps its occlusion buffer also draws the occluders again (the measured frames carry its cost). */
+const VERIFY_OCCLUSION = process.env.HAPTIC_PERF_VERIFY_OCCLUSION === "1";
 const DEVICE = /^(\d+)x(\d+)@(\d+(?:\.\d+)?)$/.exec(process.env.HAPTIC_PERF_DEVICE ?? "");
 type ProfileViewName = keyof typeof FEATURE_TEST_PROFILE_VIEWS;
 const VIEWS = (process.env.HAPTIC_PERF_VIEWS ?? "").split(",").map((view) => view.trim())
@@ -152,6 +156,7 @@ type PlayHost = {
     verifyMirrorFootprintCrops: (enabled: boolean) => void;
     verifySharedOutlineCulls: (enabled: boolean) => void;
     verifyLeanPreparation: (enabled: boolean) => void;
+    verifyKeptOcclusionBuffers: (enabled: boolean) => void;
   };
 };
 
@@ -407,6 +412,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (VERIFY_MIRROR_CROP) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorFootprintCrops(true));
   if (VERIFY_OUTLINES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifySharedOutlineCulls(true));
   if (VERIFY_PREPARATION) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyLeanPreparation(true));
+  if (VERIFY_OCCLUSION) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyKeptOcclusionBuffers(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
