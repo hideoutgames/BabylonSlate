@@ -97,7 +97,6 @@ describe("utility helper nodes", () => {
     ["vector.clampSize", { vector: v(3, 4, 0), min: 0, max: 2.5 }, close(1.5, 2, 0)],
     ["vector.clampSize", { vector: v(0.3, 0.4, 0), min: 1, max: 5 }, close(0.6, 0.8, 0)],
     ["vector.clampSize", { vector: v(0, 0, 0), min: 1, max: 5 }, v(0, 0, 0)],
-    ["vector.negate", { vector: v(1, -2, 3) }, v(-1, 2, -3)],
     // The short way from yaw 170 to -170 crosses 180.
     ["rotator.interpTo", { current: { pitch: 10, yaw: 170, roll: 0 }, target: { pitch: 20, yaw: -170, roll: 0 }, deltaTime: 0.1, interpSpeed: 5 },
       { pitch: 15, yaw: 180, roll: 0 }],

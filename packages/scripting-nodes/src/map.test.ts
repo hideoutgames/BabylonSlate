@@ -59,6 +59,14 @@ function runLog(source: string): string[] {
 }
 
 describe("map nodes", () => {
+  it.each([
+    { properties: {}, pins: ["key0", "value0"] },
+    { properties: { count: 0 }, pins: [] },
+  ])("Make Map with $properties has $pins.length pair pins", ({ properties, pins }) => {
+    const def = createDefaultNodeRegistry().get("map.make")!;
+    expect(def.pins(properties).map((pin) => pin.id)).toEqual([...pins, "out"]);
+  });
+
   it("Make Map exposes dynamic K/V pair pins from count", () => {
     const def = createDefaultNodeRegistry().get("map.make")!;
     const pins = def.pins({ count: 2 });

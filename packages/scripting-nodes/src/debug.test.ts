@@ -89,7 +89,7 @@ describe("Print and Print String", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "add", "math.add_int", { "default:a": 1, "default:b": 2 }),
+        node(registry, "add", "math.add", { aType: "int", bType: "int", "default:a": 1, "default:b": 2 }),
         node(registry, "print", "debug.print"),
       ],
       edges: [

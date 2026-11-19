@@ -244,6 +244,169 @@ describe("Reroute insertion", () => {
   });
 });
 
+describe("Format with Reroute knots", () => {
+  /**
+   * Event → Log; Get.Value feeds Log.First and Add.A, Add.Sum feeds Log.Second. Format puts Get
+   * and Add on one row, so Get's wire into Log.First would run through Add.
+   */
+  function detourGraph(): GraphDocument {
+    const pin = (id: string, kind: "exec" | "data", direction: "in" | "out"): SerializedPin => ({
+      id,
+      name: id,
+      kind,
+      direction,
+      type: kind === "exec" ? { kind: "exec" } : { kind: "float" },
+    });
+    return {
+      nodes: [
+        { id: "event", type: "event.begin", position: { x: 0, y: 0 }, data: { title: "Event", __pins: [pin("then", "exec", "out")] } },
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 400, y: 300 },
+          data: { title: "Log", __pins: [pin("exec", "exec", "in"), pin("first", "data", "in"), pin("second", "data", "in"), pin("then", "exec", "out")] },
+        },
+        { id: "get", type: "math.get", position: { x: 50, y: 500 }, data: { title: "Get", __pure: true, __pins: [pin("value", "data", "out")] } },
+        {
+          id: "add",
+          type: "math.add",
+          position: { x: 900, y: 700 },
+          data: { title: "Add", __pure: true, __pins: [pin("a", "data", "in"), pin("sum", "data", "out")] },
+        },
+      ],
+      edges: [
+        wire("event", "then", "log", "exec"),
+        wire("get", "value", "log", "first"),
+        wire("get", "value", "add", "a"),
+        wire("add", "sum", "log", "second"),
+      ],
+    };
+  }
+
+  function formatFromEvent(container: HTMLElement, getByTestId: (id: string) => HTMLElement): void {
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="event"]')!);
+    fireEvent.click(getByTestId("graph-format"));
+  }
+
+  it("moves the nodes and carries a blocked wire around through knots in one change, then changes nothing", () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = renderGraph({ initialGraph: detourGraph(), reroute, onChange });
+    formatFromEvent(container, getByTestId);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const graph = lastGraph(onChange);
+    const knots = graph.nodes.filter((node) => node.type === "flow.reroute");
+    expect(knots.length).toBeGreaterThan(0);
+    for (const knot of knots) expect(knot.data).toMatchObject({ __reroute: true, __pins: reroutePins });
+    // Get.Value reaches Log.First through every knot, in one chain; nothing else changed.
+    const chain: string[] = [];
+    let wire = graph.edges.find((edge) => edge.source === "get" && edge.target !== "add");
+    while (wire && knots.some((knot) => knot.id === wire!.target)) {
+      chain.push(wire.target);
+      const from = wire.target;
+      expect(wire.targetHandle).toBe("in");
+      wire = graph.edges.find((edge) => edge.source === from);
+      expect(wire?.sourceHandle).toBe("out");
+    }
+    expect(wire).toMatchObject({ target: "log", targetHandle: "first" });
+    expect(new Set(chain)).toEqual(new Set(knots.map((knot) => knot.id)));
+    expect(edgeEnds(graph).filter((ends) => !ends.includes("reroute"))).toEqual([
+      "add.sum>log.second",
+      "event.then>log.exec",
+      "get.value>add.a",
+    ]);
+    const at = (id: string) => graph.nodes.find((node) => node.id === id)!.position;
+    // Get and Add share the first parameter row, which starts under Log's First lane.
+    expect(at("get").y).toBe(at("add").y);
+    expect(at("add").x).toBeGreaterThan(at("get").x);
+    // The last knot sits level with Log's First pin (row 1: 116 below its top), so the wire runs
+    // level into it, one pin row under the exec wire.
+    const last = chain[chain.length - 1]!;
+    expect(at(last).y + 35 / 2).toBe(at("log").y + 116);
+    const selected = Array.from(container.querySelectorAll(".react-flow__node.selected")).map((element) => element.getAttribute("data-id"));
+    expect(selected).toEqual(["event"]);
+
+    fireEvent.click(getByTestId("graph-format"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a lower exec branch into a knot beside its parent when the direct wire would cross a block", () => {
+    const pin = (id: string, kind: "exec" | "data", direction: "in" | "out"): SerializedPin => ({
+      id,
+      name: id,
+      kind,
+      direction,
+      type: kind === "exec" ? { kind: "exec" } : { kind: "float" },
+    });
+    // Sequence: Then 0 → Print (Message ← Mid ← Source), Then 1 → Log (Value ← the same Source).
+    // Log must sit right of Source, so a direct Then 1 wire would cross Source's column.
+    const graph: GraphDocument = {
+      nodes: [
+        { id: "event", type: "event.begin", position: { x: 0, y: 0 }, data: { title: "Event", __pins: [pin("then", "exec", "out")] } },
+        {
+          id: "sequence",
+          type: "flow.sequence",
+          position: { x: 300, y: 300 },
+          data: { title: "Sequence", __pins: [pin("exec", "exec", "in"), pin("then0", "exec", "out"), pin("then1", "exec", "out")] },
+        },
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 900, y: 0 },
+          data: { title: "Print", __pins: [pin("exec", "exec", "in"), pin("message", "data", "in")] },
+        },
+        { id: "mid", type: "math.mid", position: { x: 40, y: 700 }, data: { title: "Mid", __pure: true, __pins: [pin("v", "data", "in"), pin("out", "data", "out")] } },
+        { id: "source", type: "math.source", position: { x: 80, y: 900 }, data: { title: "Source", __pure: true, __pins: [pin("out", "data", "out")] } },
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 600, y: 600 },
+          data: { title: "Log", __pins: [pin("exec", "exec", "in"), pin("value", "data", "in")] },
+        },
+      ],
+      edges: [
+        wire("event", "then", "sequence", "exec"),
+        wire("sequence", "then0", "print", "exec"),
+        wire("sequence", "then1", "log", "exec"),
+        wire("mid", "out", "print", "message"),
+        wire("source", "out", "mid", "v"),
+        wire("source", "out", "log", "value"),
+      ],
+    };
+    const onChange = vi.fn();
+    const { container, getByTestId } = renderGraph({ initialGraph: graph, reroute, onChange });
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="event"]')!);
+    fireEvent.click(getByTestId("graph-format"));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const formatted = lastGraph(onChange);
+    const knots = formatted.nodes.filter((node) => node.type === "flow.reroute");
+    expect(knots).toHaveLength(1);
+    const knot = knots[0]!;
+    expect(edgeEnds(formatted)).toEqual(expect.arrayContaining([`sequence.then1>${knot.id}.in`, `${knot.id}.out>log.exec`]));
+    expect(edgeEnds(formatted)).not.toContain("sequence.then1>log.exec");
+    const at = (id: string) => formatted.nodes.find((node) => node.id === id)!.position;
+    // In the lane a gap (120) right of the Sequence (320 wide when unmeasured), level with Log's exec pin.
+    expect(knot.position.x).toBe(at("sequence").x + 320 + 120);
+    expect(knot.position.y + 35 / 2).toBe(at("log").y + 72);
+
+    fireEvent.click(getByTestId("graph-format"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("only moves the nodes without a reroute row", () => {
+    const onChange = vi.fn();
+    const { container, getByTestId } = renderGraph({ initialGraph: detourGraph(), onChange });
+    formatFromEvent(container, getByTestId);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const graph = lastGraph(onChange);
+    expect(graph.nodes.map((node) => node.id)).toEqual(["event", "log", "get", "add"]);
+    expect(edgeEnds(graph)).toEqual(edgeEnds(detourGraph()));
+    expect(graph.nodes.find((node) => node.id === "get")!.position).not.toEqual({ x: 50, y: 500 });
+  });
+});
+
 describe("Reroute knot connections", () => {
   it("refuses tapping an exec output onto a knot that already feeds a data-only pin", async () => {
     const restore = stubMeasuredGraphLayout();

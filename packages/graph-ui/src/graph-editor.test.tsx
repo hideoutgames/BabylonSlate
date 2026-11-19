@@ -10,7 +10,7 @@ import {
   GraphEditor,
   type GraphNodeDrag,
 } from "./graph-editor";
-import type { GraphDocument } from "./graph-types";
+import type { GraphDocument, PaletteNode, PinConversion, SerializedPin } from "./graph-types";
 import { isAssignable, type PinType } from "@haptic/scripting";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
 import type { PinCompatibilityRule } from "./graph-connect";
@@ -1605,7 +1605,7 @@ describe("GraphEditor", () => {
       onChange.mockClear();
 
       act(() => {
-        dragHandle(source!, { x: 22, y: 22 }, { x: 80, y: 22 });
+        dragHandle(source!, { x: 22, y: 22 }, { x: 55, y: 22 });
       });
 
       expect(onChange).toHaveBeenCalled();
@@ -1627,7 +1627,7 @@ describe("GraphEditor", () => {
       const source = second.container.querySelector(selector)!;
       mockHandleRect(source, { left: 500, top: 0, width: 44, height: 44 });
       onChange.mockClear();
-      act(() => dragHandle(source, { x: 522, y: 22 }, { x: 580, y: 22 }));
+      act(() => dragHandle(source, { x: 522, y: 22 }, { x: 555, y: 22 }));
       expect(second.queryByTestId("node-palette-body")).toBeNull();
       expect(onChange.mock.calls.at(-1)?.[0].edges).toEqual([]);
     } finally {
@@ -1988,6 +1988,43 @@ describe("GraphEditor", () => {
     }
   });
 
+  it.each([
+    // Between the nodes, 62px from log-b's exec input (302, 22): a release there snap-connects, so the wire stays.
+    { at: { x: 240, y: 22 }, cancels: false },
+    // Far from every pin: a release there opens Add Node, so a second pointer cancels.
+    { at: farDrop, cancels: true },
+  ])("cancels on a second pointer in zone-add-node mode only where a release would open Add Node ($at.x)", ({ at, cancels }) => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          connectEndMode="zone-add-node"
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      const pane = container.querySelector(".react-flow__pane");
+      expect(pane).not.toBeNull();
+      onChange.mockClear();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, at, () => {
+          dispatchPointerEvent(pane!, "pointerdown", { clientX: 600, clientY: 300, pointerId: 2 });
+          dispatchPointerEvent(pane!, "pointerup", { clientX: 600, clientY: 300, pointerId: 2 });
+        });
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+      const edges = (onChange.mock.calls.at(-1)?.[0] as GraphDocument | undefined)?.edges ?? [];
+      expect(edges).toEqual(cancels ? [] : [
+        expect.objectContaining({ source: "log-a", sourceHandle: "execOut", target: "log-b", targetHandle: "execIn" }),
+      ]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("does not open Add Node or break wires after a second-pointer cancel", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
@@ -2022,6 +2059,101 @@ describe("GraphEditor", () => {
     } finally {
       restoreLayout();
     }
+  });
+
+  describe("touch hold on a pin", () => {
+    const touchList = (point: { x: number; y: number }) => [{ identifier: 7, clientX: point.x, clientY: point.y } as Touch];
+    const touch = (target: EventTarget, type: "touchstart" | "touchmove" | "touchend", point: { x: number; y: number }) => {
+      target.dispatchEvent(
+        new TouchEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          touches: type === "touchend" ? [] : touchList(point),
+          changedTouches: touchList(point),
+        }),
+      );
+    };
+    /** A finger down on the pin, as a browser reports it: a pointer event, then a touch event. */
+    const press = (source: Element, point: { x: number; y: number }) => {
+      const down = new MouseEvent("pointerdown", { bubbles: true, cancelable: true, clientX: point.x, clientY: point.y });
+      Object.defineProperty(down, "pointerId", { value: 7 });
+      Object.defineProperty(down, "pointerType", { value: "touch" });
+      Object.defineProperty(down, "isPrimary", { value: true });
+      source.dispatchEvent(down);
+      touch(source, "touchstart", point);
+    };
+    const move = (point: { x: number; y: number }) => {
+      dispatchPointerEvent(document.body, "pointermove", { clientX: point.x, clientY: point.y, pointerId: 7 });
+      touch(document, "touchmove", point);
+    };
+    const lift = (source: Element, point: { x: number; y: number }) => {
+      dispatchPointerEvent(document.body, "pointerup", { clientX: point.x, clientY: point.y, pointerId: 7 });
+      touch(document, "touchend", point);
+      fireEvent.click(source);
+    };
+
+    it.each([
+      ["after the wire began", true],
+      ["before the wire began", false],
+    ])("opens the pin menu and ends the press with no action %s", (_, jitter) => {
+      vi.useFakeTimers();
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const onChange = vi.fn();
+        const { container, queryByTestId } = renderTapToConnect(
+          <GraphEditor initialGraph={graphWithWiredPins()} paletteNodes={pinDragPalette} onChange={onChange} />,
+        );
+        const source = mockPinDragLayout(container);
+        onChange.mockClear();
+        act(() => {
+          press(source, { x: 22, y: 22 });
+          // A finger is never quite still: past XYFlow's 1px wire threshold, inside the hold's slop.
+          if (jitter) move({ x: 25, y: 24 });
+        });
+        act(() => {
+          vi.advanceTimersByTime(500);
+        });
+        expect(screen.getAllByTestId("context-menu-panel")).toHaveLength(1);
+        expect(screen.getByTestId("context-menu-item-break-pin-links")).toBeTruthy();
+        act(() => {
+          move(farDrop);
+          lift(source, farDrop);
+        });
+        expect(queryByTestId("node-palette-body")).toBeNull();
+        expect(queryByTestId("pending-connection-wire")).toBeNull();
+        expect(onChange).not.toHaveBeenCalled();
+        expect(source.className).not.toContain("ring-primary");
+        expect(container.querySelectorAll(".react-flow__node.selected")).toHaveLength(0);
+      } finally {
+        restoreLayout();
+      }
+    });
+
+    it("draws a wire as before when the finger moves before the hold", () => {
+      vi.useFakeTimers();
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const { container, getByTestId } = render(
+          <GraphEditor initialGraph={graphWithWiredPins()} paletteNodes={pinDragPalette} />,
+        );
+        const source = mockPinDragLayout(container);
+        act(() => {
+          press(source, { x: 22, y: 22 });
+          move(farDrop);
+        });
+        act(() => {
+          vi.advanceTimersByTime(500);
+        });
+        expect(screen.queryByTestId("context-menu-panel")).toBeNull();
+        act(() => {
+          dispatchPointerEvent(document.body, "pointerup", { clientX: farDrop.x, clientY: farDrop.y, pointerId: 7 });
+          touch(document, "touchend", farDrop);
+        });
+        expect(getByTestId("node-palette-body")).toBeTruthy();
+      } finally {
+        restoreLayout();
+      }
+    });
   });
 
   it("ends a pin drag whose touch is cancelled, so a later release does nothing", () => {
@@ -2191,6 +2323,34 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("snap-connects in zone-add-node mode on a release beyond the cancel zone but within reach of a state pin", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          connectEndMode="zone-add-node"
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      onChange.mockClear();
+      // log-b's exec input is centred at (302, 22); release 60px to its right.
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, { x: 362, y: 22 });
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([
+        expect.objectContaining({ source: "log-a", sourceHandle: "execOut", target: "log-b", targetHandle: "execIn" }),
+      ]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("snap-connects onto an occupied pin in zone-add-node mode without queuing a second wire", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
@@ -2347,7 +2507,7 @@ describe("GraphEditor", () => {
       const source = mockPinDragLayout(container);
       onChange.mockClear();
       act(() => {
-        dragHandle(source, { x: 22, y: 22 }, { x: 80, y: 22 });
+        dragHandle(source, { x: 22, y: 22 }, { x: 55, y: 22 });
       });
       expect(queryByTestId("node-palette-body")).toBeNull();
       const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
@@ -2376,7 +2536,7 @@ describe("GraphEditor", () => {
       const source = mockPinDragLayout(container);
       onChange.mockClear();
       act(() => {
-        dragHandle(source, { x: 22, y: 22 }, { x: 80, y: 22 });
+        dragHandle(source, { x: 22, y: 22 }, { x: 55, y: 22 });
       });
       expect(edgeBreaksAtPin).toHaveBeenCalledWith(expect.objectContaining({ target: "log-c" }), "log-a", "execOut");
       const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
@@ -4425,12 +4585,15 @@ describe("GraphEditor", () => {
 
     expect(onChange).toHaveBeenCalled();
     const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    // Both cards are estimated at the same width; the getter's column sits between Log A and Log B.
+    const step = estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X;
     expect(lastGraph.nodes.find((node) => node.id === "get")?.position).toEqual({
-      x: 0,
-      y: 40 + estimateGraphNodeSize(debugLogPins).height + FORMAT_GAP_Y,
+      x: step,
+      // Under Message, Log B's second pin row: its bottom at 50 + 2 × 44, then the gap.
+      y: 40 + 138 + FORMAT_GAP_Y,
     });
     expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
-      x: estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X,
+      x: step * 2,
       y: 40,
     });
   });
@@ -5358,45 +5521,57 @@ describe("GraphEditor", () => {
     expect(wrap).toHaveBeenCalled();
   });
 
-  it("opens the selected node menu from the canvas pane", async () => {
-    const wrap = vi.fn();
-    const { getByTestId, container } = render(
+  it("opens Add Node from an empty-pane right-click with a node selected, leaving the selection and node menu alone", async () => {
+    const nodeItems = vi.fn(() => [{ id: "wrap", label: "Wrap In Sequence", testId: "bt-menu-wrap", onSelect: () => undefined }]);
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "root",
+          type: "bt.node",
+          position: { x: 0, y: 0 },
+          data: { title: "Selector", kind: "selector", classId: "bt.composite.selector" },
+        },
+      ],
+      edges: [],
+    };
+    const { container, queryByTestId, rerender } = render(
       <GraphEditor
-        initialGraph={{
-          nodes: [
-            {
-              id: "root",
-              type: "bt.node",
-              position: { x: 0, y: 0 },
-              data: {
-                title: "Selector",
-                kind: "selector",
-                classId: "bt.composite.selector",
-              },
-            },
-          ],
-          edges: [],
-        }}
+        initialGraph={graph}
         nodeTypes={treeNodeTypes}
         focusedNodeId="root"
-        contextMenuItemsForNode={() => [
-          {
-            id: "wrap",
-            label: "Wrap In Sequence",
-            testId: "bt-menu-wrap",
-            onSelect: wrap,
-          },
-        ]}
+        paletteNodes={pinDragPalette}
+        contextMenuItemsForNode={nodeItems}
       />,
     );
     await waitFor(() => {
-      expect(getByTestId("bt-node-root")).toBeTruthy();
+      expect(queryByTestId("bt-node-root")).toBeTruthy();
     });
+    const selected = () => [...container.querySelectorAll(".react-flow__node.selected")].map((node) => node.getAttribute("data-id"));
+    expect(selected()).toEqual(["root"]);
     const pane = container.querySelector(".react-flow__pane");
     expect(pane).not.toBeNull();
-    fireEvent.contextMenu(pane!);
-    fireEvent.click(getByTestId("bt-menu-wrap"));
-    expect(wrap).toHaveBeenCalled();
+    fireEvent.contextMenu(pane!, { clientX: 200, clientY: 150 });
+    expect(queryByTestId("node-palette")).not.toBeNull();
+    expect(queryByTestId("bt-menu-wrap")).toBeNull();
+    expect(nodeItems).not.toHaveBeenCalled();
+    expect(selected()).toEqual(["root"]);
+
+    // Read-only: an empty-pane right-click still opens nothing.
+    fireEvent.keyDown(screen.getByTestId("node-palette-search"), { key: "Escape" });
+    rerender(
+      <GraphEditor
+        initialGraph={graph}
+        nodeTypes={treeNodeTypes}
+        focusedNodeId="root"
+        paletteNodes={pinDragPalette}
+        contextMenuItemsForNode={nodeItems}
+        readOnly
+      />,
+    );
+    fireEvent.contextMenu(pane!, { clientX: 200, clientY: 150 });
+    expect(queryByTestId("node-palette")).toBeNull();
+    expect(queryByTestId("bt-menu-wrap")).toBeNull();
+    expect(nodeItems).not.toHaveBeenCalled();
   });
 
   it("selects a node added from the palette after the pane click cleared selection", async () => {
@@ -6335,5 +6510,217 @@ describe("Add Node history", () => {
     } finally {
       restoreLayout();
     }
+  });
+});
+
+describe("pin conversion", () => {
+  const actorOut = {
+    id: "self",
+    name: "Self",
+    kind: "data" as const,
+    direction: "out" as const,
+    type: { kind: "objectRef", classId: "Actor" },
+  };
+  const vectorOut = { ...actorOut, id: "vector", name: "Vector", type: { kind: "vec3" } };
+  const locationIn = {
+    id: "location",
+    name: "Location",
+    kind: "data" as const,
+    direction: "in" as const,
+    type: { kind: "vec3" },
+  };
+  const getLocation: PaletteNode = {
+    id: "test.getLocation",
+    title: "Get Location",
+    category: "transform",
+    pure: true,
+    pins: [
+      { id: "target", name: "Target", kind: "data", direction: "in", type: { kind: "objectRef", classId: "Actor" } },
+      { id: "out", name: "Out", kind: "data", direction: "out", type: { kind: "vec3" } },
+    ],
+  };
+  const toVector: PinConversion = { label: "Convert to Vector3", paletteNode: getLocation, inPinId: "target", outPinId: "out" };
+  const conversion = () =>
+    vi.fn((source: SerializedPin, target: SerializedPin) =>
+      source.type.kind === "objectRef" && target.type.kind === "vec3" ? toVector : null);
+
+  function conversionGraph(edges: GraphDocument["edges"] = []): GraphDocument {
+    return {
+      nodes: [
+        { id: "actor", type: "test.actor", position: { x: 0, y: 0 }, data: { __pins: [actorOut] } },
+        { id: "vector", type: "test.vector", position: { x: 0, y: 200 }, data: { __pins: [vectorOut] } },
+        { id: "mover", type: "test.mover", position: { x: 600, y: 0 }, data: { __pins: [locationIn] } },
+      ],
+      edges,
+    };
+  }
+
+  type End = { node: string; pin: string; side: "left" | "right" };
+  const handleOf = (container: HTMLElement, end: End) =>
+    container.querySelector(`[data-id="${end.node}"] [data-handleid="${end.pin}"][data-handlepos="${end.side}"]`)!;
+
+  /** Drags a wire between two handles on a measured layout, from `from` to `to`. */
+  function dragBetween(container: HTMLElement, from: End, to: End) {
+    const flow = container.querySelector(".react-flow");
+    mockHandleRect(flow!, { left: 0, top: 0, width: 1000, height: 600 });
+    const start = handleOf(container, from);
+    const end = handleOf(container, to);
+    expect(start).not.toBeNull();
+    expect(end).not.toBeNull();
+    mockHandleRect(start, { left: from.side === "right" ? 0 : 600, top: 0, width: 44, height: 44 });
+    mockHandleRect(end, { left: to.side === "right" ? 0 : 600, top: 0, width: 44, height: 44 });
+    const centre = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    };
+    // XYFlow takes the handle under the pointer as the drop target.
+    document.elementFromPoint = () => end;
+    try {
+      act(() => {
+        dragHandle(start, centre(start), centre(end));
+      });
+    } finally {
+      delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+    }
+  }
+
+  function tapBetween(container: HTMLElement, from: End, to: End) {
+    fireEvent.click(handleOf(container, from));
+    fireEvent.click(handleOf(container, to));
+  }
+
+  const actorEnd: End = { node: "actor", pin: "self", side: "right" };
+  const vectorEnd: End = { node: "vector", pin: "vector", side: "right" };
+  const moverEnd: End = { node: "mover", pin: "location", side: "left" };
+
+  function expectConverted(graph: GraphDocument) {
+    const added = graph.nodes.filter((node) => !["actor", "vector", "mover"].includes(node.id));
+    expect(added).toEqual([
+      expect.objectContaining({
+        type: "test.getLocation",
+        data: expect.objectContaining({ title: "Get Location", __pure: true, __pins: getLocation.pins }),
+      }),
+    ]);
+    const converter = added[0]!.id;
+    expect(graph.edges).toEqual([
+      expect.objectContaining({ source: "actor", sourceHandle: "self", target: converter, targetHandle: "target" }),
+      expect.objectContaining({ source: converter, sourceHandle: "out", target: "mover", targetHandle: "location" }),
+    ]);
+  }
+
+  function expectUnchanged(onChange: ReturnType<typeof vi.fn>) {
+    const last = onChange.mock.calls.at(-1)?.[0] as GraphDocument | undefined;
+    expect(last?.nodes.length ?? 3).toBe(3);
+    expect(last?.edges ?? []).toEqual([]);
+  }
+
+  it("inserts the host's converter node, wired on both sides, in one change when a wire is dropped on a pin it does not fit", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container } = render(
+        <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={conversion()} />,
+      );
+      onChange.mockClear();
+      dragBetween(container, actorEnd, moverEnd);
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expectConverted(onChange.mock.calls[0]![0] as GraphDocument);
+      // The selection stays as it was: the inserted node is not selected.
+      expect(container.querySelectorAll(".react-flow__node.selected")).toHaveLength(0);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("inserts the converter when the wire is dragged from the input", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container } = render(
+        <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={conversion()} />,
+      );
+      dragBetween(container, moverEnd, actorEnd);
+      expectConverted(onChange.mock.calls.at(-1)![0] as GraphDocument);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("replaces the wire already on an exclusive input", () => {
+    const onChange = vi.fn();
+    const { container } = renderTapToConnect(
+      <GraphEditor
+        initialGraph={conversionGraph([
+          { id: "old", source: "vector", sourceHandle: "vector", target: "mover", targetHandle: "location" },
+        ])}
+        onChange={onChange}
+        pinConversion={conversion()}
+      />,
+    );
+    tapBetween(container, actorEnd, moverEnd);
+    expectConverted(onChange.mock.calls.at(-1)![0] as GraphDocument);
+  });
+
+  it("converts with Tap To Connect, from either end", () => {
+    const onChange = vi.fn();
+    const { container } = renderTapToConnect(
+      <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={conversion()} />,
+    );
+    tapBetween(container, moverEnd, actorEnd);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expectConverted(onChange.mock.calls[0]![0] as GraphDocument);
+  });
+
+  it("refuses the drop as before without a host conversion", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container } = render(<GraphEditor initialGraph={conversionGraph()} onChange={onChange} />);
+      dragBetween(container, actorEnd, moverEnd);
+      expectUnchanged(onChange);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("creates nothing on a read-only canvas", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const pinConversion = conversion();
+      const { container } = render(
+        <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={pinConversion} readOnly />,
+      );
+      dragBetween(container, actorEnd, moverEnd);
+      expect(onChange).not.toHaveBeenCalled();
+      expect(pinConversion).not.toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("wires a directly compatible pair without consulting the conversion", () => {
+    const onChange = vi.fn();
+    const pinConversion = conversion();
+    const { container } = renderTapToConnect(
+      <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={pinConversion} />,
+    );
+    tapBetween(container, vectorEnd, moverEnd);
+    const last = onChange.mock.calls.at(-1)![0] as GraphDocument;
+    expect(last.nodes).toHaveLength(3);
+    expect(last.edges).toEqual([
+      expect.objectContaining({ source: "vector", sourceHandle: "vector", target: "mover", targetHandle: "location" }),
+    ]);
+    expect(pinConversion).not.toHaveBeenCalled();
+  });
+
+  it("creates nothing when the converter's pins would not carry the wire", () => {
+    const onChange = vi.fn();
+    const mismatched: PinConversion = { ...toVector, inPinId: "out", outPinId: "target" };
+    const { container } = renderTapToConnect(
+      <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={() => mismatched} />,
+    );
+    tapBetween(container, actorEnd, moverEnd);
+    expectUnchanged(onChange);
   });
 });

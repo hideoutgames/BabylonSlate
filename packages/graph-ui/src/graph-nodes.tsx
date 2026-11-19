@@ -51,6 +51,7 @@ import { NodeRenameField, useNodeTitleGestures, useRenameValue } from "./node-ti
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
 import { PinDefaultEditor } from "./pin-default-editor";
+import { NodeAddPinButton } from "./node-add-pin-button";
 import { isPinWired, passesReference } from "./pin-connections";
 
 export type CanvasNode = Node<Record<string, unknown>>;
@@ -239,6 +240,7 @@ function PinHandle({
       position={isSource ? Position.Right : Position.Left}
       aria-label={label ?? humanizePropertyLabel(pin.name)}
       data-pin-type={pin.type.kind}
+      data-graph-pin=""
       data-error={hasError ? "true" : undefined}
       className={cn(
         "!relative !top-auto !right-auto !left-auto !translate-x-0 !translate-y-0",
@@ -379,6 +381,7 @@ function PinRow({
       <div
         className="flex shrink-0 items-center gap-1"
         data-pin-side={incoming ? "in" : undefined}
+        data-pin-cell={incoming ? "" : undefined}
         data-pin-id={incoming?.id}
       >
         {incoming ? (
@@ -416,6 +419,7 @@ function PinRow({
       <div
         className="flex shrink-0 items-center justify-end gap-1"
         data-pin-side={outgoing ? "out" : undefined}
+        data-pin-cell={outgoing ? "" : undefined}
         data-pin-id={outgoing?.id}
       >
         {outgoing ? (
@@ -768,6 +772,7 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
             />
             </div>
           ))}
+          <NodeAddPinButton nodeId={id} data={data} />
         </div>
         {renderNodeBody?.(id, data)}
       </BlueprintNodeShell>

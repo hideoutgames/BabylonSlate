@@ -16,6 +16,7 @@ Closing a document with unsaved changes asks whether to save. When you reopen th
 
 - Drag a window's tab to dock it beside, above or below another window, or into another window's tab group. On a touch screen, hold the tab first.
 - Drag the divider between windows to resize them.
+- When a window closes or is hidden, the window that shared its divider takes its space; every other window keeps its size.
 - Each document keeps its own arrangement.
 
 ## The Windows menu

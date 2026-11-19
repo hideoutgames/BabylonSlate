@@ -36,6 +36,7 @@ export {
   resolveNodeType,
 } from "./graph-nodes";
 export type { CanvasNode } from "./graph-nodes";
+export { NodeAddPinButton } from "./node-add-pin-button";
 export {
   animGraphEdgeTypes,
   animGraphNodeTypes,

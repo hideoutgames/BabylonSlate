@@ -55,20 +55,20 @@ describe("math nodes", () => {
   });
 
   it.each([
-    ["math.div_int", 5, 2, 2],
-    ["math.div_int", -5, 2, -2],
-    ["math.div_int", 5, -2, -2],
-    ["math.div_int", 6, 2, 3],
-    ["math.div_int", 5, 0, 0],
-    ["math.mod_int", -5, 3, -2],
-    ["math.mod_int", 5, 0, 0],
+    ["math.div", 5, 2, 2],
+    ["math.div", -5, 2, -2],
+    ["math.div", 5, -2, -2],
+    ["math.div", 6, 2, 3],
+    ["math.div", 5, 0, 0],
+    ["math.mod", -5, 3, -2],
+    ["math.mod", 5, 0, 0],
   ] as const)(
-    "%s of %s and %s is %s (truncating, 0 for a zero divisor)", (typeId, a, b, expected) => {
+    "Integer %s of %s and %s is %s (truncating, 0 for a zero divisor)", (typeId, a, b, expected) => {
       const registry = createDefaultNodeRegistry();
       const graph: LogicGraph = {
         id: "division", kind: "event",
         nodes: [node(registry, "begin", "flow.event.beginPlay"),
-          node(registry, "divide", typeId, { "default:a": a, "default:b": b }),
+          node(registry, "divide", typeId, { aType: "int", bType: "int", "default:a": a, "default:b": b }),
           node(registry, "log", "debug.log")],
         edges: [
           { id: "exec", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "log", targetPinId: "execIn" },
@@ -292,7 +292,9 @@ describe("math nodes", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "sub", "math.sub_int", {
+        node(registry, "sub", "math.sub", {
+          aType: "int",
+          bType: "int",
           "default:a": 5,
           "default:b": 2,
         }),

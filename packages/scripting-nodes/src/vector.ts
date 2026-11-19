@@ -5,50 +5,14 @@ import {
   VEC2,
   VEC3,
   VEC4,
-  type PinType,
 } from "@haptic/scripting";
-import { ARITHMETIC_SEARCH_ALIASES } from "./arithmetic-search-aliases";
 import { hoistedCall } from "./hoisted-helper";
 
 type Ctx = Parameters<NodeDefinition["codegen"]>[0];
-const OP_NAMES = { "+": "add", "-": "sub", "*": "mul", "/": "div" } as const;
 
 const AXES2 = ["x", "y"] as const;
 const AXES3 = ["x", "y", "z"] as const;
 const AXES4 = ["x", "y", "z", "w"] as const;
-
-/**
- * Each helper binds its inputs once (`a`, `b`, `v`, `s`, `t`), so an impure
- * input such as Random Float is sampled once and every component sees it. The
- * helper is a module-scope function named for its operation and axes
- * (`__vec_add_xyz`), so a node evaluates with one call.
- */
-function componentWise(
-  ctx: Ctx,
-  a: string,
-  b: string,
-  op: "+" | "-" | "*" | "/",
-  axes: readonly string[],
-): string {
-  return hoistedCall(
-    ctx,
-    `__vec_${OP_NAMES[op]}_${axes.join("")}`,
-    "a, b",
-    // A zero component of the divisor yields 0 for that component, as Divide does on Floats.
-    `({ ${axes.map((axis) => op === "/" ? `${axis}: b.${axis} === 0 ? 0 : a.${axis} / b.${axis}` : `${axis}: a.${axis} ${op} b.${axis}`).join(", ")} })`,
-    [a, b],
-  );
-}
-
-function scaleExpr(ctx: Ctx, v: string, s: string, axes: readonly string[]): string {
-  return hoistedCall(
-    ctx,
-    `__vec_scale_${axes.join("")}`,
-    "v, s",
-    `({ ${axes.map((axis) => `${axis}: v.${axis} * s`).join(", ")} })`,
-    [v, s],
-  );
-}
 
 function lerpExpr(ctx: Ctx, a: string, b: string, t: string, axes: readonly string[]): string {
   return hoistedCall(
@@ -112,54 +76,6 @@ function lengthSquaredExpr(ctx: Ctx, v: string, axes: readonly string[]): string
   );
 }
 
-function binaryVec(
-  id: string,
-  title: string,
-  type: PinType,
-  op: "+" | "-" | "*" | "/",
-  axes: readonly string[],
-): NodeDefinition {
-  return {
-    id,
-    title,
-    category: "vector",
-    searchAliases: ARITHMETIC_SEARCH_ALIASES[op],
-    pure: true,
-    pins: () => [
-      pin("a", "A", "in", type),
-      pin("b", "B", "in", type),
-      pin("out", "Out", "out", type),
-    ],
-    codegen: (ctx) => ({
-      out: componentWise(ctx, ctx.input("a"), ctx.input("b"), op, axes),
-    }),
-  };
-}
-
-function scaleVec(
-  id: string,
-  title: string,
-  type: PinType,
-  axes: readonly string[],
-  vectorPinId = "v",
-): NodeDefinition {
-  return {
-    id,
-    title,
-    category: "vector",
-    searchAliases: ["*", "×", "v * s"],
-    pure: true,
-    pins: () => [
-      pin(vectorPinId, "V", "in", type),
-      pin("s", "S", "in", FLOAT),
-      pin("out", "Out", "out", type),
-    ],
-    codegen: (ctx) => ({
-      out: scaleExpr(ctx, ctx.input(vectorPinId), ctx.input("s"), axes),
-    }),
-  };
-}
-
 export const vectorNodes: NodeDefinition[] = [
   {
     id: "vector.make3",
@@ -191,36 +107,6 @@ export const vectorNodes: NodeDefinition[] = [
       const v = ctx.input("in");
       return { x: `(${v}).x`, y: `(${v}).y`, z: `(${v}).z` };
     },
-  },
-  {
-    id: "vector.add3",
-    searchAliases: ["+","a + b","plus","sum"],
-    title: "Add Vector3",
-    category: "vector",
-    pure: true,
-    pins: () => [
-      pin("a", "a", "in", VEC3),
-      pin("b", "b", "in", VEC3),
-      pin("out", "out", "out", VEC3),
-    ],
-    codegen: (ctx) => ({
-      out: componentWise(ctx, ctx.input("a"), ctx.input("b"), "+", AXES3),
-    }),
-  },
-  {
-    id: "vector.scale3",
-    searchAliases: ["*","×","v * s"],
-    title: "Scale Vector3",
-    category: "vector",
-    pure: true,
-    pins: () => [
-      pin("v", "v", "in", VEC3),
-      pin("s", "s", "in", FLOAT),
-      pin("out", "out", "out", VEC3),
-    ],
-    codegen: (ctx) => ({
-      out: scaleExpr(ctx, ctx.input("v"), ctx.input("s"), AXES3),
-    }),
   },
   {
     id: "vector.make2",
@@ -289,9 +175,6 @@ export const vectorNodes: NodeDefinition[] = [
       };
     },
   },
-  binaryVec("vector.sub3", "Subtract Vector3", VEC3, "-", AXES3),
-  binaryVec("vector.mul3", "Multiply Vector3", VEC3, "*", AXES3),
-  binaryVec("vector.div3", "Divide Vector3", VEC3, "/", AXES3),
   {
     id: "vector.dot3",
     searchAliases: ["·","dot","dot(a,b)","a · b"],
@@ -395,11 +278,6 @@ export const vectorNodes: NodeDefinition[] = [
       out: lerpExpr(ctx, ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES3),
     }),
   },
-  binaryVec("vector.add2", "Add Vector2", VEC2, "+", AXES2),
-  binaryVec("vector.sub2", "Subtract Vector2", VEC2, "-", AXES2),
-  binaryVec("vector.mul2", "Multiply Vector2", VEC2, "*", AXES2),
-  binaryVec("vector.div2", "Divide Vector2", VEC2, "/", AXES2),
-  scaleVec("vector.scale2", "Scale Vector2", VEC2, AXES2),
   {
     id: "vector.dot2",
     searchAliases: ["·","dot","dot(a,b)","a · b"],
@@ -482,11 +360,6 @@ export const vectorNodes: NodeDefinition[] = [
       out: lerpExpr(ctx, ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES2),
     }),
   },
-  binaryVec("vector.add4", "Add Vector4", VEC4, "+", AXES4),
-  binaryVec("vector.sub4", "Subtract Vector4", VEC4, "-", AXES4),
-  binaryVec("vector.mul4", "Multiply Vector4", VEC4, "*", AXES4),
-  binaryVec("vector.div4", "Divide Vector4", VEC4, "/", AXES4),
-  scaleVec("vector.scale4", "Scale Vector4", VEC4, AXES4),
   {
     id: "vector.dot4",
     searchAliases: ["·","dot","dot(a,b)","a · b"],

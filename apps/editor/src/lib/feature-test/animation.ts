@@ -1042,7 +1042,7 @@ async function saveVelociraptor(ctx: FeatureTestContext, graphGuid: string): Pro
       gNode("z", "math.mul", 600, 320, { "default:b": radius }),
       gNode("offset", "vector.make3", 800, 240, { "default:y": 0 }),
       getVar("get-origin", origin, 800, 400),
-      gNode("at", "vector.add3", 1000, 240),
+      gNode("at", "math.add", 1000, 240, { aType: "vec3", bType: "vec3" }),
       gNode("move", "transform.setLocation", 1200, 80),
       gNode("degrees", "math.mul", 400, 460, { "default:b": 180 / Math.PI }),
       gNode("heading", "math.add", 600, 460, { "default:b": 90 }),

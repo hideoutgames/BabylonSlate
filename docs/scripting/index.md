@@ -28,7 +28,7 @@ The pages in this section cover Class graphs.
 
 Open **Add Node** in any of these ways:
 
-- Double-tap or right-click (long-press on touch) empty canvas.
+- Double-tap or right-click (long-press on touch) empty canvas, even while nodes are selected; the selection stays as it is.
 - Tap **Add Node** (**+**) in the graph toolbar. The node appears in the middle of the canvas, or in the nearest free spot when something is already there.
 - Drag a wire from a pin and release it on empty canvas. The wire stays in place while **Add Node** is open, and the new node connects to that pin; closing the menu removes the wire.
 
@@ -42,10 +42,12 @@ In Class, Material and Particle graphs, Add Node learns from the nodes you add f
 - A data input takes one wire. Connecting a new wire replaces the old one.
 - An execution output drives one wire; an execution input accepts several. Connecting a second wire from an execution output replaces the first and shows **Replaced the existing wire. Use a Sequence to run several.** To run several nodes in order, wire the output to a [Sequence](class/sequence.md).
 - While you drag a wire over a pin it cannot connect to, a label gives the reason, such as **Float does not connect to Vector3**.
+- In Classes and [Scene scripts](scene-scripts.md), a wire from an actor or a component also connects to a **Vector3**, **Rotator**, **Transform** or **String** input. Over that input the wire shows **Convert to** and the input's type, such as **Convert to Vector3**, and connecting adds the node that reads the value between the two pins, wired on both sides. An actor gets **Get Actor Location**, **Get Actor Rotation**, **Get Actor Transform** or **Get Actor Name**; a component gets **Get Component World Location**, **Get Component World Rotation**, **Get Component World Transform** or **Get Display Name**. A component without a transform of its own, such as [Movement](../components/movement.md), converts only to **String**. One undo removes the node and both wires.
 - Most unconnected data inputs show an inline value you can edit on the node or in the **Inspector**. Object and actor inputs must be wired, unless the node's page says an unconnected one uses the actor running the graph.
-- Shake a node while dragging it to disconnect all its wires.
+- Shake a node back and forth in place while dragging it to disconnect all its wires.
+- With a mouse, a pin's half of its row (its pin, name and inline value) is highlighted while the pointer is over it. Right-click a pin or its name (hold it on touch) for the pin's own menu: **Break Links** removes every wire on that pin, and some nodes add actions for the pin: **Convert Pin** changes the type of a math operand, and **Add Pin** and **Remove Pin** grow or shrink the inputs of **Make Array** and **Make Map** and the outputs of **Sequence**. The pin stays highlighted while its menu is open. A pin with nothing to offer opens the node menu instead.
 
-The graph toolbar also has icon buttons for **Copy**, **Paste**, **Delete**, **Break Links** (removes the wires of the selected nodes), **Cut Links** (see [Cut Links](#cut-links)) and **Format** (tidies the selected chains); hover or long-press one to see its name. The zoom controls at the bottom left show the zoom level; tap it to return to 100%.
+The graph toolbar also has icon buttons for **Copy**, **Paste**, **Delete**, **Break Links** (removes the wires of the selected nodes), **Cut Links** (see [Cut Links](#cut-links)) and **Format** (lays out the selected chains, see [Format](#format)); hover or long-press one to see its name. The zoom controls at the bottom left show the zoom level; tap it to return to 100%.
 
 Where a node can be renamed, such as a custom event or an Animation Graph state, double-click its title (double-tap on touch) to edit the name in place; press Enter to keep it or Esc to cancel.
 
@@ -58,6 +60,20 @@ A **Reroute** node is a small knot that bends a wire around other nodes. Double-
 - A knot takes the type of the wire it carries: any data type, or execution in Class graphs. Its pins show that type's colour and shape.
 - Knots are available in Class, Scene, Animation Object, transition rule and state pose graphs, and in Particle Graphs. Material graphs use Named Reroutes instead ([Material](../assets/material.md#named-reroutes)).
 - Knots change only how the graph looks. They cost nothing when the game runs and the debugger never stops on one; hovering a pin or wire next to one shows the value of the wire's real source.
+- **Format** adds knots of its own to carry wires around nodes, and moves the knots already on a wire it lays out ([Format](#format)).
+
+## Format
+
+Select one or more nodes and press **Format** in the graph toolbar to lay out the chains they start. Nodes that are not part of those chains stay where they are.
+
+- Execution runs left to right on rows, each node level with the one before it. Outputs keep their order: on a **Branch**, **True** stays on the row and **False** starts the next one; on a **Sequence**, **Then 0** stays and each later output starts its own row. A node where branches join sits after all of them.
+- A branch's row starts below everything between it and the node it branches from, so its execution wire drops beside that node and then runs level into the row. Several lower branches drop side by side, the lowest nearest the node, so the drops never meet or cross.
+- The nodes that feed an execution node's inputs sit in columns to its left. Each sits level with the pin it feeds wherever it fits clear of the execution wire and of other nodes, so its wire runs straight; otherwise it takes the nearest free spot below. Several nodes feeding neighbouring pins of one node, such as three **Make Int** nodes into **Item 0**, **Item 1** and **Item 2**, fan out evenly around those pins, the middle one level. A lower branch row's inputs may use the free space under earlier columns.
+- A value that also feeds a node farther away stays level with its neighbour; the far wire takes a Reroute knot instead.
+- Two wires between the same two nodes keep their pins' order, so they never cross on the way.
+- Wires run level and change height only over a short stretch. A long or steep wire, or one that would run through or close past another node, run on top of another wire, or cross one, gets Reroute knots: one beside the node it leaves, or two with the long run in a free lane. Where it can, the last knot sits level with the pin the wire feeds, so the wire runs straight into it, even if that takes one more knot, and a knot on a branch's execution wire sits level with the execution input of the node it leads to. Format picks the route with the fewest knots, then the fewest crossings. A chain of knots that carries one wire into one input moves to that wire's new route; Format never deletes a knot. Graphs without Reroute nodes, such as Material graphs, get no knots.
+- Nodes keep some room between them: wider gaps between columns, and branch rows a little further apart than the nodes inside a row.
+- The whole layout, knots included, is one change, so one **Undo** reverts it. Pressing **Format** again with the same selection changes nothing.
 
 ## Cut Links
 

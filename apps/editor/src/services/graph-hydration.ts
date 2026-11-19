@@ -26,8 +26,9 @@ import { animEventNodeTitle } from "../lib/anim-graph-events";
 import { ANIM_POSE_SAVE_CACHED_TYPE, ANIM_POSE_USE_CACHED_TYPE, cachedPoseNodeTitle } from "@haptic/anim-graph";
 import { engineEventTypeClassIds } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
-import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
+import { createDefaultNodeRegistry, isNumericOperatorNode } from "@haptic/scripting-nodes";
 import { isDataGraphNode } from "../lib/data-graph";
+import { addPinControlFor } from "../lib/graph-pin-lists";
 import {
   classHierarchyFromParentOf,
   editorLatentFunctions,
@@ -42,6 +43,7 @@ import {
   hydratedNodeTitle,
   refreshInputEvent,
   refreshVariableReferenceAccess,
+  retypeNumericOperatorNodes,
   shouldRegeneratePins,
   type HydrateGraphOptions,
 } from "./graph-node-refresh";
@@ -361,12 +363,13 @@ export function hydrateSerializedGraphForEditor(
         ),
       };
     });
+  const typedNodes = retypeNumericOperatorNodes(nodes, graph.edges, nodeRegistry) as typeof nodes;
   return {
     ...graph,
-    nodes,
+    nodes: typedNodes,
     edges: pruneIncompatibleEdges(
-      pruneEdgesToMissingPins(graph.edges, nodes),
-      nodes,
+      pruneEdgesToMissingPins(graph.edges, typedNodes),
+      typedNodes,
       classHierarchyFromParentOf(parentOf),
     ),
   };
@@ -409,6 +412,10 @@ function withVisualMeta(
   if (typeId === REROUTE_NODE_TYPE) {
     next.__reroute = true;
   }
+  // Below its maximum, a growable pin list shows the node's Add Pin control.
+  const addPin = addPinControlFor(typeId, data);
+  if (addPin) next.__addPin = addPin;
+  else delete next.__addPin;
   return next;
 }
 
@@ -530,5 +537,23 @@ export function materializeLogicGraph(
       }
       return true;
     });
+  retypeLogicNumericOperators(logic, content.edges, registry);
   return logic;
+}
+
+/** Operand types follow their wires here exactly as they do on the canvas (`retypeNumericOperatorNodes`). */
+function retypeLogicNumericOperators(
+  logic: LogicGraph,
+  edges: SerializedGraph["edges"],
+  registry: NodeRegistry,
+): void {
+  if (!logic.nodes.some((node) => isNumericOperatorNode(node.typeId))) return;
+  const view = logic.nodes.map((node) => ({ id: node.id, type: node.typeId, data: { ...node.properties, __pins: node.pins } }));
+  const typed = retypeNumericOperatorNodes(view, edges, registry);
+  if (typed === view) return;
+  typed.forEach((entry, index) => {
+    if (entry === view[index]) return;
+    const { __pins, ...properties } = entry.data;
+    logic.nodes[index] = { ...logic.nodes[index]!, properties, pins: __pins as GraphPin[] };
+  });
 }

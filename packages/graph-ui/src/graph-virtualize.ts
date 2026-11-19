@@ -1,4 +1,4 @@
-import { isRerouteNodeData } from "./graph-types";
+import { addPinOf, isRerouteNodeData } from "./graph-types";
 
 export const GRAPH_VIRTUALIZE_OVERSCAN_PX = 400;
 /** A Reroute knot at Large Pins 1 with a mouse (`.graph-reroute-knot` in graph-editor.css). */
@@ -7,8 +7,11 @@ export const REROUTE_KNOT_SIZE = { width: 80, height: 35 } as const;
 export const GRAPH_NODE_FALLBACK_WIDTH = 320;
 export const GRAPH_NODE_FALLBACK_HEIGHT = 120;
 /** Title bar plus the pin list padding above the first 44px pin row. */
-const GRAPH_NODE_CHROME_HEIGHT = 50;
-const GRAPH_PIN_ROW_HEIGHT = 44;
+export const GRAPH_NODE_CHROME_HEIGHT = 50;
+/** One pin row (`PinRow`, `min-h-[var(--touch-target,44px)]`). */
+export const GRAPH_PIN_ROW_HEIGHT = 44;
+/** From an unmeasured node's top edge to the middle of its first pin row. */
+export const GRAPH_FIRST_PIN_ROW_CENTER_Y = GRAPH_NODE_CHROME_HEIGHT + GRAPH_PIN_ROW_HEIGHT / 2;
 
 export type GraphVirtualizeViewport = {
   x: number;
@@ -36,7 +39,8 @@ export type GraphVirtualizeEdge = {
 
 /**
  * Size of a node that has never been measured (never mounted). Input and
- * output pins share rows, so the longer of the two columns sets the height.
+ * output pins share rows, so the longer of the two columns sets the height;
+ * an Add Pin control (`__addPin`) is one more row below them.
  */
 export function estimateGraphNodeSize(
   pins?: ReadonlyArray<{ direction?: string }>,
@@ -53,7 +57,8 @@ export function estimateGraphNodeSize(
     width: GRAPH_NODE_FALLBACK_WIDTH,
     height: Math.max(
       GRAPH_NODE_FALLBACK_HEIGHT,
-      GRAPH_NODE_CHROME_HEIGHT + Math.max(inputs, outputs) * GRAPH_PIN_ROW_HEIGHT,
+      GRAPH_NODE_CHROME_HEIGHT +
+        (Math.max(inputs, outputs) + (addPinOf(data) ? 1 : 0)) * GRAPH_PIN_ROW_HEIGHT,
     ),
   };
 }

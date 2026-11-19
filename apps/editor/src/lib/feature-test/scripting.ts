@@ -753,7 +753,7 @@ async function saveScoreSubsystem(ctx: FeatureTestContext): Promise<void> {
       [ADD_SCORE.id]: fnGraph(ADD_SCORE, {
         nodes: [
           getVar("add-get-score", SCORE, 280, 260),
-          gNode("add-sum", "math.add_int", 480, 260),
+          gNode("add-sum", "math.add", 480, 260, { aType: "int", bType: "int" }),
           setVar("add-set-score", SCORE, 520, 120),
         ],
         edges: [
@@ -828,7 +828,7 @@ async function savePulseComponent(ctx: FeatureTestContext): Promise<void> {
       printText("ready", 240, 0, "ft-script-component", "FT_ScriptPulseComponent Begin Play"),
       gNode("tick", "flow.event.tick", 0, 200),
       getVar("get-ticks", ticks, 0, 340),
-      gNode("next-ticks", "math.add_int", 240, 340, { "default:b": 1 }),
+      gNode("next-ticks", "math.add", 240, 340, { aType: "int", bType: "int", "default:b": 1 }),
       setVar("set-ticks", ticks, 480, 200),
     ],
     edges: [
@@ -945,7 +945,7 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
       // Pulse: count, add score through the Game Subsystem, print.
       gNode(pulse.id, "flow.event.custom", 0, 860, { title: "Event Pulse", name: pulse.name, pins: pulse.pins }),
       getVar("get-pulses", pulseCount, 0, 1020),
-      gNode("next-pulse", "math.add_int", 220, 1020, { "default:b": 1 }),
+      gNode("next-pulse", "math.add", 220, 1020, { aType: "int", bType: "int", "default:b": 1 }),
       setVar("set-pulses", pulseCount, 440, 860),
       gNode("score-subsystem", "subsystem.get", 440, 1060, { classId: CLASS.scoreSubsystem }),
       callOn("add-score", 700, 860, CLASS.scoreSubsystem, ADD_SCORE, { "default:Amount": 1 }),
@@ -971,7 +971,7 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
       }),
       gNode("nudge-axes", "vector.break2", 260, 1620),
       gNode("nudge-vector", "vector.make3", 460, 1620, { "default:y": 0 }),
-      gNode("nudge-scale", "vector.scale3", 660, 1620, { "default:s": NUDGE_STEP }),
+      gNode("nudge-scale", "math.mul", 660, 1620, { aType: "vec3", bType: "float", "default:b": NUDGE_STEP }),
       gNode("nudge-self", "actor.getSelf", 660, 1780),
       gNode("nudge", "transform.addWorldOffset", 900, 1500),
       // Tick: Elapsed += dt, ComputeWave(Elapsed), yaw += dt * SpinSpeed * Rate * (1 + wave).
@@ -1030,7 +1030,7 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
       gWire("on-nudge", "value", "nudge-axes", "in"),
       gWire("nudge-axes", "x", "nudge-vector", "x"),
       gWire("nudge-axes", "y", "nudge-vector", "z"),
-      gWire("nudge-vector", "out", "nudge-scale", "v"),
+      gWire("nudge-vector", "out", "nudge-scale", "a"),
       gWire("nudge-scale", "out", "nudge", "offset"),
       gWire("nudge-self", "out", "nudge", "target"),
 
@@ -1119,7 +1119,7 @@ async function saveSceneWatcher(ctx: FeatureTestContext): Promise<void> {
     nodes: [
       gNode("spawned", "flow.event.sceneActorSpawned", 0, 0),
       getVar("get-spawned", spawnedActors, 0, 160),
-      gNode("next-spawned", "math.add_int", 220, 160, { "default:b": 1 }),
+      gNode("next-spawned", "math.add", 220, 160, { aType: "int", bType: "int", "default:b": 1 }),
       setVar("set-spawned", spawnedActors, 440, 0),
       cast("as-spawned", 680, 0, CLASS.spawned),
       gNode("spawned-branch", "flow.branch", 920, 0),
@@ -1852,7 +1852,7 @@ async function saveSaveProbe(ctx: FeatureTestContext, types: ScriptingTypes, fon
       gNode("stored-speed", "saveGame.getField", 2100, 1280, savedSpeed),
       gNode("assert-speed", "debug.assertEqual", 2100, 1140, { "default:expected": SPEED_MODES[2], "default:message": "The SavedSpeed Save Field lost its Enum member" }),
       gNode("stored-visits", "saveGame.getField", 220, 220, VISITS_FIELD),
-      gNode("next-visits", "math.add_int", 440, 220, { "default:b": 1 }),
+      gNode("next-visits", "math.add", 440, 220, { aType: "int", bType: "int", "default:b": 1 }),
       setVar("set-visits", visits, 660, 0),
       gNode("store-visits", "saveGame.setField", 900, 0, VISITS_FIELD),
       gNode("save", "saveGame.saveGame", 1140, 0),
@@ -2049,12 +2049,12 @@ async function saveSpawnCommand(ctx: FeatureTestContext): Promise<void> {
       commandRun("ft_spawn", "Spawn FT_ScriptSpawned actors in the Scripting zone", [
         { name: "count", type: "int", optional: true, defaultValue: SPAWN_COMMAND_DEFAULT_COUNT },
       ]),
-      gNode("last-index", "math.sub_int", 220, 200, { "default:b": 1 }),
+      gNode("last-index", "math.sub", 220, 200, { aType: "int", bType: "int", "default:b": 1 }),
       gNode("loop", "flow.forLoop", 440, 0, { "default:firstIndex": 0 }),
-      gNode("column", "math.mod_int", 680, 200, { "default:b": 10 }),
-      gNode("row-raw", "math.div_int", 680, 320, { "default:b": 10 }),
-      gNode("row", "math.mod_int", 880, 320, { "default:b": 10 }),
-      gNode("layer", "math.div_int", 680, 440, { "default:b": 100 }),
+      gNode("column", "math.mod", 680, 200, { aType: "int", bType: "int", "default:b": 10 }),
+      gNode("row-raw", "math.div", 680, 320, { aType: "int", bType: "int", "default:b": 10 }),
+      gNode("row", "math.mod", 880, 320, { aType: "int", bType: "int", "default:b": 10 }),
+      gNode("layer", "math.div", 680, 440, { aType: "int", bType: "int", "default:b": 100 }),
       gNode("x-step", "math.mul", 1080, 200, { "default:b": spacing }),
       gNode("x", "math.add", 1280, 200, { "default:b": origin[0] }),
       gNode("y-step", "math.mul", 1080, 440, { "default:b": spacing }),
@@ -2160,7 +2160,7 @@ async function saveEditorClasses(ctx: FeatureTestContext): Promise<void> {
       logLine("open-log", 240, 160, "FeatureTest scene opened"),
       gNode("scene-saved", "flow.event.sceneSaved", 0, 320),
       getVar("get-saves", saves, 0, 480),
-      gNode("next-saves", "math.add_int", 220, 480, { "default:b": 1 }),
+      gNode("next-saves", "math.add", 220, 480, { aType: "int", bType: "int", "default:b": 1 }),
       setVar("set-saves", saves, 440, 320),
       format("saved-text", 660, 480, "FeatureTest scene saved {count} times this session"),
       logLine("saved-log", 880, 320),

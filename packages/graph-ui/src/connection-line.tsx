@@ -8,11 +8,11 @@ import { useMemo, type CSSProperties } from "react";
 import { Badge } from "@haptic/ui/components/badge";
 import {
   collectDisplayConnectPins,
+  connectEndAction,
   containerPointerToClient,
   graphNodeIdAtClientPoint,
   isClientPointOverGraphNode,
-  screenCentersForSafePins,
-  shouldOpenAddNodeOnConnectEnd,
+  screenPinsForSafeRefs,
   type ConnectEndMode,
   type PinCompatibilityRule,
 } from "./graph-connect";
@@ -42,6 +42,8 @@ export type GraphConnectionLineViewProps = {
   connectionLineKind?: "default" | "animTransition";
   /** Why the pin under the wire refuses it; shown next to the pointer. */
   refusal?: string | null;
+  /** The node a release on the pin under the wire inserts (`Convert to Vector3`); it replaces the other hints. */
+  conversion?: string | null;
   /** Whether the node under the pointer takes the wire as a new pin (shows **+ Add Pin**). */
   acceptsPinDrop?: (targetNodeId: string, source: GraphPinDragSource) => boolean;
 };
@@ -71,6 +73,28 @@ function hintOffset(
   };
 }
 
+function connectEndHintAction(
+  pointer: { x: number; y: number },
+  fromNodeId: string,
+  pins: ReturnType<typeof screenPinsForSafeRefs>,
+  mode: ConnectEndMode,
+) {
+  const safePins: Array<{ x: number; y: number }> = [];
+  const snapPins: Array<{ x: number; y: number }> = [];
+  for (const pin of pins) {
+    safePins.push({ x: pin.x, y: pin.y });
+    if (pin.nodeId !== fromNodeId) snapPins.push({ x: pin.x, y: pin.y });
+  }
+  return connectEndAction({
+    hasTargetHandle: false,
+    pointerOverNode: false,
+    pointerOverSourceHandle: false,
+    pointer,
+    safePins,
+    snapPins,
+  }, mode);
+}
+
 export function GraphConnectionLineView({
   fromX,
   fromY,
@@ -90,6 +114,7 @@ export function GraphConnectionLineView({
   pinCompatibility,
   connectionLineKind = "default",
   refusal = null,
+  conversion = null,
   acceptsPinDrop,
 }: GraphConnectionLineViewProps) {
   const declaredPin = pinOnDraggedNode(fromNode, fromHandle.id);
@@ -130,6 +155,7 @@ export function GraphConnectionLineView({
       ? graphNodeIdAtClientPoint(pointer, root)
       : null;
   const showAddPin =
+    !conversion &&
     declaredPin !== undefined &&
     pinDropNodeId !== null &&
     pinDropNodeId !== fromNode.id &&
@@ -138,17 +164,13 @@ export function GraphConnectionLineView({
       pin: declaredPin,
       type: pinDisplayType(fromNode.id, declaredPin.id) ?? declaredPin.type,
     });
-  // Measure the DOM only when the zone decides the hint.
-  const showHint = !declaredPin || toHandle || showAddPin
+  // Measure the DOM only when the zone decides the hint. The release decision itself picks it, so the hint
+  // never promises Add Node where a release would break wires or snap-connect.
+  const showHint = !declaredPin || toHandle || showAddPin || conversion
     ? false
     : connectEndMode === "add-node" ||
       (!isClientPointOverGraphNode(pointer, root) &&
-        shouldOpenAddNodeOnConnectEnd({
-          hasTargetHandle: false,
-          pointerOverNode: false,
-          pointer,
-          safePins: screenCentersForSafePins(root, safeRefs),
-        }));
+        connectEndHintAction(pointer, fromNode.id, screenPinsForSafeRefs(root, safeRefs), connectEndMode) === "add-node");
   const badge = hintOffset(fromX, fromY, toX, toY);
   const hintLabel =
     connectEndMode === "zone-add-node" ? "Release to Add Node" : "Tap to Cancel";
@@ -161,7 +183,26 @@ export function GraphConnectionLineView({
         className="react-flow__connection-path"
         style={{ ...connectionLineStyle, ...pinStyle }}
       />
-      {refusal ? (
+      {conversion ? (
+        <foreignObject
+          x={badge.x}
+          y={badge.y - 10}
+          width={180}
+          height={24}
+          overflow="visible"
+          className="pointer-events-none"
+        >
+          <Badge
+            variant="default"
+            data-testid="convert-hint"
+            aria-hidden="true"
+            className="pointer-events-none whitespace-nowrap shadow-md"
+          >
+            {conversion}
+          </Badge>
+        </foreignObject>
+      ) : null}
+      {refusal && !conversion ? (
         <foreignObject
           x={badge.x}
           y={badge.y - 10}
@@ -226,7 +267,7 @@ export function GraphConnectionLineView({
 export function GraphConnectionLine(props: ConnectionLineComponentProps) {
   const nodes = useStore((state) => state.nodes);
   const flow = useStore((state) => state.domNode);
-  const { acceptsPinDrop, connectEndMode, connectionLineKind, connectionRefusal, pinCompatibility, pinDisplayType } = useGraphEditorContext();
+  const { acceptsPinDrop, connectEndMode, connectionLineKind, connectionRefusal, pinCompatibility, pinConversionLabel, pinDisplayType } = useGraphEditorContext();
   const fromNodeId = props.fromNode.id;
   const fromPinId = props.fromHandle.id;
   const toNodeId = props.toNode?.id;
@@ -242,6 +283,17 @@ export function GraphConnectionLine(props: ConnectionLineComponentProps) {
           ) ?? null)
         : null,
     [connectionRefusal, fromNodeId, fromPinId, props.connectionStatus, toNodeId, toPinId],
+  );
+  // A release on this pin inserts a converter node; asked once per pin, like the refusal.
+  const conversion = useMemo(
+    () =>
+      props.connectionStatus !== "invalid" && fromPinId && toNodeId && toPinId
+        ? (pinConversionLabel?.(
+            { nodeId: fromNodeId, pinId: fromPinId },
+            { nodeId: toNodeId, pinId: toPinId },
+          ) ?? null)
+        : null,
+    [fromNodeId, fromPinId, pinConversionLabel, props.connectionStatus, toNodeId, toPinId],
   );
   const pointer = flow
     ? containerPointerToClient(props.pointer, flow)
@@ -266,6 +318,7 @@ export function GraphConnectionLine(props: ConnectionLineComponentProps) {
       pinCompatibility={pinCompatibility}
       connectionLineKind={connectionLineKind}
       refusal={refusal}
+      conversion={conversion}
       acceptsPinDrop={acceptsPinDrop}
     />
   );

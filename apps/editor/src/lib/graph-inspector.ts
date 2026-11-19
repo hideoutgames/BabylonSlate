@@ -55,10 +55,14 @@ import {
   type TypeSchemas,
   type StructField,
 } from "@haptic/scripting";
+import { growablePinList } from "./graph-pin-lists";
 import {
-  SEQUENCE_DEFAULT_OUTPUTS,
-  SEQUENCE_MAX_OUTPUTS,
-  sequenceOutputCount,
+  isNumericOperandType,
+  numericOperandChoices,
+  numericOperandTypePatch,
+  numericOperands,
+  numericOperandType,
+  numericOperandTypeName,
 } from "@haptic/scripting-nodes";
 
 export function connectedInputPinIds(
@@ -868,31 +872,72 @@ export function inputEventPropertyRows(
   return rows;
 }
 
-/** Make Array and Make Map build at most this many item inputs or pairs. */
-const MAKE_CONTAINER_MAX_COUNT = 32;
+/** A growable pin list's count row; its limits and default come from {@link growablePinList}. */
+function pinListCountRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  label: string,
+  onPatch: (patch: Record<string, unknown>) => void,
+): PropertyRow[] {
+  const list = growablePinList(typeId);
+  if (!list) return [];
+  return [
+    {
+      kind: "number",
+      id: list.property,
+      label,
+      value: list.count(data),
+      defaultValue: list.defaultCount,
+      min: list.min,
+      max: list.max,
+      precision: 0,
+      sensitivity: 0.1,
+      onChange: (value) => {
+        if (!Number.isFinite(value)) return;
+        onPatch({ [list.property]: Math.max(list.min, Math.min(list.max, Math.floor(value))) });
+      },
+    },
+  ];
+}
 
+/** Make Array's **Items** and Make Map's **Pairs** rows. */
 export function containerConstructorPropertyRows(
   typeId: string,
   data: Record<string, unknown>,
   onPatch: (patch: Record<string, unknown>) => void,
 ): PropertyRow[] {
   if (typeId !== "array.make" && typeId !== "map.make") return [];
-  const raw = typeof data.count === "number" && Number.isFinite(data.count)
-    ? data.count
-    : 0;
-  return [
-    {
-      kind: "number",
-      id: "count",
-      label: typeId === "array.make" ? "Items" : "Pairs",
-      value: Math.max(0, Math.min(MAKE_CONTAINER_MAX_COUNT, Math.floor(raw))),
-      defaultValue: 0,
-      min: 0,
-      max: MAKE_CONTAINER_MAX_COUNT,
-      onChange: (value) =>
-        onPatch({ count: Math.max(0, Math.min(MAKE_CONTAINER_MAX_COUNT, Math.floor(value))) }),
-    },
-  ];
+  return pinListCountRows(typeId, data, typeId === "array.make" ? "Items" : "Pairs", onPatch);
+}
+
+/**
+ * A numeric operator's **A Type** and **B Type** rows (**Value Type** on Negate), for each unwired
+ * operand: a wired one takes its wire's type. Each lists only the types valid against the other
+ * operand. A pick drops the operand's stored value, which was of the old type.
+ */
+export function numericOperandPropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+  wired: (pinId: string) => boolean,
+): PropertyRow[] {
+  const operands = numericOperands(typeId);
+  return operands.flatMap((operand, index): PropertyRow[] => {
+    if (wired(operand.pinId)) return [];
+    const other = operands.length === 2 ? operands[1 - index] : undefined;
+    const current = numericOperandType(data, operand.property);
+    return [{
+      kind: "enum",
+      id: operand.property,
+      label: other ? `${operand.pinId.toUpperCase()} Type` : "Value Type",
+      value: current,
+      options: numericOperandChoices(typeId, other ? numericOperandType(data, other.property) : undefined)
+        .map((type) => ({ value: type, label: numericOperandTypeName(type) })),
+      onChange: (value) => {
+        if (value !== current && isNumericOperandType(value)) onPatch(numericOperandTypePatch(operand, value));
+      },
+    }];
+  });
 }
 
 /** The Sequence node's **Outputs** row: how many Then outputs it runs, in order. */
@@ -902,20 +947,7 @@ export function sequencePropertyRows(
   onPatch: (patch: Record<string, unknown>) => void,
 ): PropertyRow[] {
   if (typeId !== "flow.sequence") return [];
-  return [
-    {
-      kind: "number",
-      id: "count",
-      label: "Outputs",
-      value: sequenceOutputCount(data),
-      defaultValue: SEQUENCE_DEFAULT_OUTPUTS,
-      min: 1,
-      max: SEQUENCE_MAX_OUTPUTS,
-      precision: 0,
-      sensitivity: 0.1,
-      onChange: (value) => onPatch({ count: sequenceOutputCount({ count: value }) }),
-    },
-  ];
+  return pinListCountRows(typeId, data, "Outputs", onPatch);
 }
 
 export function isFlowSwitchTypeId(typeId: string): boolean {

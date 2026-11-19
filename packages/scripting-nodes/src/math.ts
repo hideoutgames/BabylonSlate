@@ -5,75 +5,8 @@ import {
   INT,
   BOOL,
 } from "@haptic/scripting";
-import { ARITHMETIC_SEARCH_ALIASES } from "./arithmetic-search-aliases";
+import { numericOperatorNodes } from "./numeric-operators";
 import { hoistedCall } from "./hoisted-helper";
-
-/**
- * Divide Int truncates toward zero and Modulo Int keeps the dividend's sign.
- * A zero divisor yields 0, so an Int pin never carries Infinity or NaN.
- */
-function intDivisionExpr(
-  ctx: Parameters<NodeDefinition["codegen"]>[0],
-  a: string,
-  b: string,
-  op: "/" | "%",
-): string {
-  const result = op === "/" ? "Math.trunc(a / b)" : "a % b";
-  return hoistedCall(
-    ctx,
-    op === "/" ? "__math_divInt" : "__math_modInt",
-    "a, b",
-    `(b === 0 ? 0 : ${result})`,
-    [a, b],
-  );
-}
-
-function binary(
-  id: string,
-  title: string,
-  op: string,
-  type: typeof FLOAT | typeof INT = FLOAT,
-): NodeDefinition {
-  return {
-    id,
-    title,
-    category: "math",
-    searchAliases: ARITHMETIC_SEARCH_ALIASES[op],
-    pure: true,
-    referentiallyTransparent: true,
-    pins: () => [
-      pin("a", "a", "in", type),
-      pin("b", "b", "in", type),
-      pin("out", "out", "out", type),
-    ],
-    codegen: (ctx) => ({
-      out: op === "/" || op === "%"
-        ? type === INT
-          ? intDivisionExpr(ctx, ctx.input("a"), ctx.input("b"), op)
-          : floatDivisionExpr(ctx, ctx.input("a"), ctx.input("b"), op)
-        : `(${ctx.input("a")} ${op} ${ctx.input("b")})`,
-    }),
-  };
-}
-
-/**
- * Divide and Modulo on Floats. A zero divisor yields 0, as on Ints: no math node hands NaN or
- * Infinity to the nodes after it for an input outside its domain.
- */
-function floatDivisionExpr(
-  ctx: Parameters<NodeDefinition["codegen"]>[0],
-  a: string,
-  b: string,
-  op: "/" | "%",
-): string {
-  return hoistedCall(
-    ctx,
-    op === "/" ? "__math_div" : "__math_mod",
-    "a, b",
-    `(b === 0 ? 0 : a ${op} b)`,
-    [a, b],
-  );
-}
 
 /** The default Tolerance of every Nearly Equal node: the largest difference that still counts as equal. */
 export const NEARLY_EQUAL_TOLERANCE = 0.0001;
@@ -146,28 +79,7 @@ const TRIG_NODES: NodeDefinition[] = [
 ];
 
 export const mathNodes: NodeDefinition[] = [
-  binary("math.add", "Add", "+"),
-  binary("math.sub", "Subtract", "-"),
-  binary("math.mul", "Multiply", "*"),
-  binary("math.div", "Divide", "/"),
-  binary("math.mod", "Modulo", "%"),
-  binary("math.add_int", "Add Int", "+", INT),
-  binary("math.sub_int", "Subtract Int", "-", INT),
-  binary("math.mul_int", "Multiply Int", "*", INT),
-  binary("math.div_int", "Divide Int", "/", INT),
-  binary("math.mod_int", "Modulo Int", "%", INT),
-  {
-    id: "math.negate",
-    searchAliases: ["-","−","-x","negation"],
-    title: "Negate",
-    category: "math",
-    pure: true,
-    pins: () => [
-      pin("in", "in", "in", FLOAT),
-      pin("out", "out", "out", FLOAT),
-    ],
-    codegen: (ctx) => ({ out: `(-(${ctx.input("in")}))` }),
-  },
+  ...numericOperatorNodes,
   {
     id: "math.abs",
     searchAliases: ["abs","abs(x)","|x|"],

@@ -164,11 +164,14 @@ describe("vector nodes", () => {
     expect(Math.hypot(...axes.map((axis) => logged[0]![axis]!))).toBeCloseTo(1, 12);
   });
 
+  const VEC3_PAIR = { aType: "vec3", bType: "vec3" };
   it.each([
-    ["vector.add3", "a"], ["vector.sub3", "a"], ["vector.mul3", "b"], ["vector.div3", "a"],
-    ["vector.scale3", "v"], ["vector.dot3", "b"], ["vector.cross3", "a"], ["vector.length3", "v"],
-    ["vector.lengthSquared3", "v"], ["vector.distance3", "b"], ["vector.lerp3", "a"],
-  ] as const)("%s reads a changing Vector3 on pin %s once", (typeId, pinId) => {
+    ["math.add", "a", VEC3_PAIR], ["math.sub", "a", VEC3_PAIR], ["math.mul", "b", VEC3_PAIR], ["math.div", "a", VEC3_PAIR],
+    ["math.mul", "a", { aType: "vec3", bType: "float" }], ["math.div", "b", { aType: "float", bType: "vec3" }],
+    ["math.sub", "a", { aType: "vec3", bType: "float" }], ["math.negate", "in", { inType: "vec3" }],
+    ["vector.dot3", "b", {}], ["vector.cross3", "a", {}], ["vector.length3", "v", {}],
+    ["vector.lengthSquared3", "v", {}], ["vector.distance3", "b", {}], ["vector.lerp3", "a", {}],
+  ] as const)("%s reads a changing Vector3 on pin %s once", (typeId, pinId, properties) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "once",
@@ -177,7 +180,7 @@ describe("vector nodes", () => {
         node(registry, "begin", "flow.event.beginPlay"),
         ...["x", "y", "z"].map((axis) => node(registry, `r${axis}`, "math.random")),
         node(registry, "make", "vector.make3"),
-        node(registry, "op", typeId),
+        node(registry, "op", typeId, { ...properties }),
         node(registry, "log", "debug.log"),
       ],
       edges: [
@@ -295,7 +298,7 @@ describe("vector nodes", () => {
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "js", "debug.executeJavaScript", { body: "ctx.ran = true;" }),
-        node(registry, "add", "vector.add3"),
+        node(registry, "add", "math.add", { aType: "vec3", bType: "vec3" }),
         node(registry, "log", "debug.log"),
       ],
       edges: [

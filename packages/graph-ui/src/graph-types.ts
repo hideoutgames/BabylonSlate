@@ -37,6 +37,11 @@ export type SerializedPin = {
   singleLink?: boolean;
   /** Drawn at the right end of the title bar instead of in a pin row (a custom event's Output Delegate). */
   placement?: "header";
+  /**
+   * Further types a host's connection rule may let a wire bring into this input, which the host
+   * then retypes the pin to. The canvas only keeps it with the pin.
+   */
+  accepts?: Array<{ kind: string; [key: string]: unknown }>;
 };
 
 export type GraphEdge = SerializedGraph["edges"][number];
@@ -98,6 +103,19 @@ export type PaletteNode = {
   bundle?: PaletteBundle;
 };
 
+/**
+ * A node the editor inserts between two pins that do not connect directly (`GraphEditor.pinConversion`):
+ * the output wires into its `inPinId` and its `outPinId` wires into the input.
+ */
+export type PinConversion = {
+  /** Shown on the live wire over the input, such as `Convert to Vector3`. */
+  label: string;
+  /** The Add Node row the inserted node is built from. */
+  paletteNode: PaletteNode;
+  inPinId: string;
+  outPinId: string;
+};
+
 export type PaletteBundle = {
   /** Placed at the new node's position plus `offset`, unselected. */
   nodes: ReadonlyArray<{ key: string; node: PaletteNode; offset: { x: number; y: number } }>;
@@ -140,4 +158,22 @@ export function hasSerializedPins(
  */
 export function isRerouteNodeData(data: Record<string, unknown> | undefined | null): boolean {
   return data?.__reroute === true;
+}
+
+/**
+ * A node's **+ Add Pin** control, from the editor-only `__addPin` key that hosts stamp (as they
+ * stamp `__pure`) on a node whose pin list can grow; absent at its maximum. `side` puts it under
+ * the inputs (`in`) or outputs (`out`); `label` is the host's wording.
+ */
+export interface GraphAddPin {
+  side: "in" | "out";
+  label: string;
+}
+
+/** The node's Add Pin control, or undefined when its data declares none. */
+export function addPinOf(data: Record<string, unknown> | undefined | null): GraphAddPin | undefined {
+  const value = data?.__addPin;
+  if (!value || typeof value !== "object") return undefined;
+  const { side, label } = value as Partial<GraphAddPin>;
+  return (side === "in" || side === "out") && typeof label === "string" && label ? { side, label } : undefined;
 }

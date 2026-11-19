@@ -14,12 +14,14 @@ import {
   inputEventPropertyRows,
   inspectorLiteralPinDefaults,
   logNodePropertyRows,
+  numericOperandPropertyRows,
   pinDefaultPropertyRows,
   sequencePropertyRows,
   structNodePropertyRows,
   tagNodePropertyRows,
 } from "../lib/graph-inspector";
 import { dataGraphAssetPickPatch } from "../lib/data-graph";
+import { numericOperands } from "@haptic/scripting-nodes";
 import { edgesIntoNodeThroughKnots, isRerouteNode } from "../lib/reroute-wires";
 import { timelineProxyPickerRows, type TimelineScriptClipAsset } from "../lib/timeline-script-catalog";
 import type { InspectorCatalogs } from "./use-inspector-catalogs";
@@ -41,6 +43,7 @@ export const GRAPH_NODE_ROW_SECTIONS = [
   { section: "struct", testId: "inspector-struct-properties" },
   { section: "data", testId: "inspector-data-properties" },
   { section: "containerConstructor", testId: "inspector-container-constructor" },
+  { section: "numericOperands", testId: "inspector-numeric-operands" },
   { section: "sequence", testId: "inspector-sequence" },
   { section: "tagCases", testId: "inspector-tag-cases" },
   { section: "animPose", testId: "inspector-anim-pose" },
@@ -78,8 +81,24 @@ function enumSourceGraph(graph: SerializedGraph, nodeId: string): SerializedGrap
   return { ...graph, edges: edgesIntoNodeThroughKnots(graph, nodeId) };
 }
 
+/**
+ * A numeric operator's shown operand types are derived from its wires, and the saved node may
+ * not hold them yet: every edit saves them with the patch, so it never reverts them.
+ */
+function withNumericOperandTypes(node: GraphNode, update: (patch: Record<string, unknown>) => void) {
+  const operands = numericOperands(node.type);
+  if (operands.length === 0) return update;
+  const shown: Record<string, unknown> = {};
+  for (const operand of operands) {
+    shown[operand.property] = node.data[operand.property];
+    shown[pinDefaultPropertyKey(operand.pinId)] = node.data[pinDefaultPropertyKey(operand.pinId)];
+  }
+  return (patch: Record<string, unknown>) => update({ ...shown, ...patch });
+}
+
 export function graphNodeInspectorRows(node: GraphNode, env: GraphNodeRowsEnv) {
-  const { graph, inspectGraph, hydratedInspectGraph, catalogs, updateNodeData } = env;
+  const { graph, inspectGraph, hydratedInspectGraph, catalogs } = env;
+  const updateNodeData = withNumericOperandTypes(node, env.updateNodeData);
   const { dataAssets, enumMembers, objectClassEntries, pickerAssets, typeCatalog, typeSchemas } = catalogs;
   // Wires into this node are read through Reroute knots, as they compile: an input fed only by a
   // knot that nothing feeds reads its literal.
@@ -141,6 +160,7 @@ export function graphNodeInspectorRows(node: GraphNode, env: GraphNodeRowsEnv) {
     struct: structNodePropertyRows(node.type, node.data, updateNodeData, typeCatalog.structures, typeCatalog.dataDefinitions),
     data: dataNodePropertyRows(node.type, node.data, updateNodeData, typeCatalog.dataDefinitions),
     containerConstructor: containerConstructorPropertyRows(node.type, node.data, updateNodeData),
+    numericOperands: numericOperandPropertyRows(node.type, node.data, updateNodeData, dataPinWired),
     sequence: sequencePropertyRows(node.type, node.data, updateNodeData),
     tagCases: tagNodePropertyRows(node.type, node.data, updateNodeData, env.tags),
     animPose: animPoseNodePropertyRows(node.type, node.data, updateNodeData, {

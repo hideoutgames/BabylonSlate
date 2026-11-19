@@ -112,7 +112,7 @@ describe("GraphConnectionLineView", () => {
       fromNode: { id: "source", data: { __pins: [floatOut] } },
       fromHandle: { id: "value" },
       nodes: [{ id: "source", data: { __pins: [floatOut] } }, { id: "target", data: { __pins: [colorIn] } }],
-      pointer: { x: 340, y: 0 },
+      pointer: { x: 320, y: 0 },
       pinCompatibility: (from, to) => from.type.kind === "float" && to.type.kind === "vec3",
     });
     expect(queryByTestId("add-node-hint")).toBeNull();
@@ -174,13 +174,42 @@ describe("GraphConnectionLineView", () => {
     expect(getByTestId("add-node-hint").textContent).toBe("Release to Add Node");
   });
 
-  it("hides the hint near the source pin", () => {
+  it("hides the hint near the source pin and shows it just outside the cancel zone", () => {
     mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
-    const { queryByTestId } = renderLine({
-      toX: 40,
-      pointer: { x: 40, y: 0 },
+    const near = renderLine({
+      toX: 30,
+      pointer: { x: 30, y: 0 },
     });
-    expect(queryByTestId("add-node-hint")).toBeNull();
+    expect(near.queryByTestId("add-node-hint")).toBeNull();
+    near.unmount();
+
+    const { getByTestId } = renderLine({
+      toX: 60,
+      pointer: { x: 60, y: 0 },
+    });
+    expect(getByTestId("add-node-hint").textContent).toBe("Tap to Cancel");
+  });
+
+  it("hides Release to Add Node where a zone-add-node release would snap-connect", () => {
+    mountHandles([
+      { nodeId: "source", pinId: "execOut", x: 0, y: 0 },
+      { nodeId: "log", pinId: "execIn", x: 200, y: 0 },
+    ]);
+    // 60px from a compatible pin on another node: outside the cancel zone, inside the snap radius.
+    const snapping = renderLine({
+      connectEndMode: "zone-add-node",
+      toX: 260,
+      pointer: { x: 260, y: 0 },
+    });
+    expect(snapping.queryByTestId("add-node-hint")).toBeNull();
+    snapping.unmount();
+
+    const { getByTestId } = renderLine({
+      connectEndMode: "zone-add-node",
+      toX: 60,
+      pointer: { x: 60, y: 0 },
+    });
+    expect(getByTestId("add-node-hint").textContent).toBe("Release to Add Node");
   });
 
   it("hides the hint near a compatible pin", () => {
@@ -257,6 +286,7 @@ describe("GraphConnectionLine refusal lookup", () => {
   function renderContainer(
     connectionRefusal: GraphEditorContextValue["connectionRefusal"],
     overrides: Partial<ConnectionLineComponentProps> = {},
+    context: Partial<GraphEditorContextValue> = {},
   ) {
     const props = {
       connectionLineStyle: {},
@@ -277,7 +307,7 @@ describe("GraphConnectionLine refusal lookup", () => {
     } as unknown as ConnectionLineComponentProps;
     const tree = (next: ConnectionLineComponentProps) => (
       <ReactFlowProvider>
-        <GraphEditorProvider value={{ ...baseContext, connectionRefusal }}>
+        <GraphEditorProvider value={{ ...baseContext, connectionRefusal, ...context }}>
           <svg>
             <GraphConnectionLine {...next} />
           </svg>
@@ -311,5 +341,48 @@ describe("GraphConnectionLine refusal lookup", () => {
     const open = renderContainer(connectionRefusal, { toHandle: null, toNode: null });
     expect(open.queryByTestId("connection-refusal")).toBeNull();
     expect(connectionRefusal).not.toHaveBeenCalled();
+  });
+
+  it("shows the conversion a release on the hovered pin makes, asking once per pin", () => {
+    const pinConversionLabel = vi.fn(() => "Convert to Vector3");
+    const { getByTestId, queryByTestId, move } = renderContainer(
+      undefined,
+      { connectionStatus: "valid", fromHandle: { id: "value" } as ConnectionLineComponentProps["fromHandle"] },
+      { pinConversionLabel },
+    );
+    expect(getByTestId("convert-hint").textContent).toBe("Convert to Vector3");
+    expect(queryByTestId("connection-refusal")).toBeNull();
+    expect(pinConversionLabel).toHaveBeenCalledWith(
+      { nodeId: "source", pinId: "value" },
+      { nodeId: "log", pinId: "message" },
+    );
+    move();
+    move();
+    expect(pinConversionLabel).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows no conversion over a pin that connects directly, or off any pin", () => {
+    const pinConversionLabel = vi.fn(() => null);
+    const direct = renderContainer(undefined, { connectionStatus: "valid" }, { pinConversionLabel });
+    expect(direct.queryByTestId("convert-hint")).toBeNull();
+    direct.unmount();
+    const offPin = vi.fn(() => "Convert to Vector3");
+    const open = renderContainer(undefined, { toHandle: null, toNode: null, connectionStatus: null }, { pinConversionLabel: offPin });
+    expect(open.queryByTestId("convert-hint")).toBeNull();
+    expect(offPin).not.toHaveBeenCalled();
+  });
+});
+
+describe("GraphConnectionLineView conversion", () => {
+  it("replaces the refusal and the other hints with the conversion badge", () => {
+    const { getByTestId, queryByTestId } = renderLine({
+      toHandle: { id: "message" },
+      refusal: "String does not connect to Vector3",
+      conversion: "Convert to Vector3",
+    });
+    expect(getByTestId("convert-hint").textContent).toBe("Convert to Vector3");
+    expect(queryByTestId("connection-refusal")).toBeNull();
+    expect(queryByTestId("add-node-hint")).toBeNull();
+    expect(queryByTestId("add-pin-hint")).toBeNull();
   });
 });

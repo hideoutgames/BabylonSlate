@@ -51,14 +51,13 @@ import { Separator } from "@haptic/ui/components/separator";
 import { IslandIconButton } from "./island-icon-button";
 import {
   AssetOpenProvider,
-  ContextMenuOverlay,
   doubleTapWindowMs,
   normalizeChord,
-  useContextMenu,
   useEditorReadOnly,
   type NestedMenuItem,
 } from "@haptic/editor-kit";
 import {
+  addPinOf,
   hasSerializedPins,
   isRerouteNodeData,
   type GraphDiagnostic,
@@ -66,6 +65,7 @@ import {
   type GraphPinDrop,
   type NavigateRequest,
   type PaletteNode,
+  type PinConversion,
   type SerializedPin,
 } from "./graph-types";
 import type { PinTypeNames } from "./pin-default-preview";
@@ -105,14 +105,13 @@ import type { GraphRunTrace } from "./run-trace";
 import {
   collectDisplayConnectPins,
   connectEndAction,
+  connectEndDecisionAt,
   connectEventPointerId,
   containerPointerToClient,
   edgesAfterConnect,
   edgesTouchingNodes,
   edgeTouchesPin,
   graphNodeIdAtClientPoint,
-  isClientPointOverGraphNode,
-  isClientPointOverHandle,
   nearestSnapConnectPin,
   finalizeOrientedConnection,
   paletteConnectPin,
@@ -121,11 +120,9 @@ import {
   pinsAreCompatible,
   replacesExecOutputWire,
   screenPinsForSafeRefs,
-  screenCentersForSafePins,
   type ConnectEndMode,
   type PinCompatibilityRule,
   type OrientedConnection,
-  shouldOpenAddNodeOnConnectEnd,
   shouldCancelConnectOnSecondaryPointer,
   shouldCancelConnectionOnSecondaryPointer,
 } from "./graph-connect";
@@ -141,12 +138,14 @@ import {
   resolveGraphViewport,
   type GraphViewport,
 } from "./graph-viewport";
-import { formatGraphNodes } from "./graph-format";
+import { formatGraphNodes, formatPinOffsetKey } from "./graph-format";
 import { freeNodePosition } from "./graph-placement";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
+  GRAPH_FIRST_PIN_ROW_CENTER_Y,
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
   estimateGraphNodeSize,
+  graphNodeSize,
   graphNodesBounds,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
@@ -309,12 +308,13 @@ export interface GraphEditorProps {
    */
   nodeDragHandle?: string;
   /**
-   * Connect-end policy. Default opens Add Node on a far empty-canvas drop
-   * and keeps the 96px near-pin wire-break. Behaviour trees use `add-node`
-   * so a short drag off a handle opens Add Node and never breaks structural
-   * edges. Animation Graph State Machine uses `zone-add-node` (far release
-   * opens Add State, a release near a state's pin snap-connects, and any
-   * other release breaks the pin's links as the default mode does).
+   * Connect-end policy. Default opens Add Node on an empty-canvas drop at
+   * least 40px (`CONNECT_END_CANCEL_PX`) from the source pin and every
+   * compatible pin, and breaks the pin's wires on a release closer than that.
+   * Behaviour trees use `add-node` so a short drag off a handle opens Add Node
+   * and never breaks structural edges. Animation Graph State Machine uses
+   * `zone-add-node` (a release within 96px, `CONNECT_END_SNAP_PX`, of a
+   * state's pin snap-connects, otherwise it behaves as the default mode).
    */
   connectEndMode?: ConnectEndMode;
   /**
@@ -324,6 +324,11 @@ export interface GraphEditorProps {
   edgeBreaksAtPin?: (edge: { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }, nodeId: string, pinId: string) => boolean;
   /** Node bodies that take a dragged wire as a new pin (function Input and Output nodes). */
   pinDrop?: GraphPinDrop;
+  /**
+   * A node's **+ Add Pin** control was pressed: the host adds one pin to that node's growable list.
+   * The control shows on nodes whose data carries `__addPin` (`addPinOf`), never read-only.
+   */
+  onAddPin?: (nodeId: string) => void;
   /** Replace existing edges into the same target handle (tree parent pin). */
   replaceIncomingOnConnect?: boolean;
   /** One visual edge per source→target pair (Animation Graph transitions). */
@@ -362,6 +367,12 @@ export interface GraphEditorProps {
    * above the graph's own Copy, Paste, Duplicate, Delete and Break Links.
    */
   contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
+  /**
+   * Host actions for a pin's menu (a right-click on a script-style pin), read once each time it opens. They
+   * follow the graph's own Break Links (shown when the pin has wires and the graph is editable). With no
+   * items at all the right-click opens the node's menu instead.
+   */
+  contextMenuItemsForPin?: (nodeId: string, pinId: string) => NestedMenuItem[];
   /** The node whose output the host previews, tagged and ringed in the warning colour (Material **Preview Node**). */
   previewedNode?: GraphPreviewedNode | null;
   contextMenuItemsForAttachment?: (
@@ -371,6 +382,14 @@ export interface GraphEditorProps {
   onAttachmentDoubleClick?: (nodeId: string, attachmentId: string) => void;
   /** Host connection rule (material numeric conversion). Defaults to exact kinds. */
   pinCompatibility?: PinCompatibilityRule;
+  /**
+   * A node to insert between a data output and a data input that `pinCompatibility` refuses (Script graphs: an
+   * Actor reference into a Vector3 input inserts Get Actor Location). The wire is then accepted, its live end shows
+   * the conversion's `label`, and connecting adds the node wired on both sides as one change. `source` is the output
+   * and `target` the input, with wildcard-resolved types. Called while a wire hovers a pin, so return quickly and
+   * keep each `paletteNode` the same object between calls. Node Connection Assistant and Add Node never convert.
+   */
+  pinConversion?: (source: SerializedPin, target: SerializedPin) => PinConversion | null;
   /**
    * Learn Add Node picks made from a dragged pin and rank them first next time
    * (Engine Settings **Add Node History**). Unset keeps the default order.
@@ -488,6 +507,78 @@ function paletteCanvasNode(
   );
 }
 
+type RerouteKnotSetup = {
+  paletteNode: PaletteNode;
+  nodes: CanvasNode[];
+  displayTypes: PinDisplayLookup;
+  pinCompatibility: PinCompatibilityRule | undefined;
+  knownTypes: NodeTypes;
+  dragHandle: string | undefined;
+  edgeType: string | undefined;
+  /** Node ids in use; the knot's id is added. */
+  taken: Set<string>;
+};
+
+/**
+ * A Reroute knot with its top-left corner at `position` and the two wires that replace `edge`
+ * through it, or null for a wire the knot cannot carry.
+ */
+function rerouteKnotOnEdge(
+  edge: Edge,
+  position: { x: number; y: number },
+  selected: boolean,
+  setup: RerouteKnotSetup,
+): { knot: CanvasNode; wires: [Edge, Edge] } | null {
+  const { paletteNode, nodes, displayTypes, pinCompatibility } = setup;
+  if (!edge.sourceHandle || !edge.targetHandle) return null;
+  const inPin = paletteNode.pins?.find((pin) => pin.direction === "in");
+  const outPin = paletteNode.pins?.find((pin) => pin.direction === "out");
+  const sourcePin = pinOnNode(nodes, edge.source, edge.sourceHandle);
+  const targetPin = pinOnNode(nodes, edge.target, edge.targetHandle);
+  if (!inPin || !outPin || !sourcePin || !targetPin) return null;
+  if (
+    !pinsAreCompatible(overlayPin(sourcePin, edge.source, displayTypes), inPin, pinCompatibility) ||
+    !pinsAreCompatible(outPin, overlayPin(targetPin, edge.target, displayTypes), pinCompatibility)
+  ) {
+    return null;
+  }
+  const id = uniqueNodeId(`${paletteNode.id}-${Date.now()}`, setup.taken);
+  setup.taken.add(id);
+  const knot = paletteCanvasNode(paletteNode, id, position, selected, setup.knownTypes, setup.dragHandle);
+  const wire = (source: string, sourceHandle: string, target: string, targetHandle: string): Edge => ({
+    id: createEdgeId(source, sourceHandle, target, targetHandle),
+    source,
+    sourceHandle,
+    target,
+    targetHandle,
+    ...(setup.edgeType ? { type: setup.edgeType } : {}),
+  });
+  return {
+    knot,
+    wires: [
+      wire(edge.source, edge.sourceHandle, knot.id, inPin.id),
+      wire(knot.id, outPin.id, edge.target, edge.targetHandle),
+    ],
+  };
+}
+
+/** Measured handle centres of a mounted node, as `FormatNode.pinOffsets`. */
+function measuredPinOffsets(
+  bounds: InternalNode["internals"]["handleBounds"] | undefined,
+): Record<string, number> | undefined {
+  if (!bounds) return undefined;
+  const offsets: Record<string, number> = {};
+  for (const [direction, handles] of [
+    ["out", bounds.source],
+    ["in", bounds.target],
+  ] as const) {
+    for (const handle of handles ?? []) {
+      if (handle.id) offsets[formatPinOffsetKey(direction, handle.id)] = handle.y + handle.height / 2;
+    }
+  }
+  return offsets;
+}
+
 /** What a Cut Links click lands on: a wire, a pin, or a node (only a Reroute knot is cut). */
 type CutTarget =
   | { kind: "edge"; edgeId: string }
@@ -509,6 +600,34 @@ function cutTargetOf(target: EventTarget | null): CutTarget | null {
   }
   const nodeId = target.closest(".react-flow__node")?.getAttribute("data-id");
   return nodeId ? { kind: "node", nodeId } : null;
+}
+
+/**
+ * The script-style pin (`PinHandle`) a menu gesture began on: anywhere in its hit area, or its
+ * name in a pin row. `cell` is what its highlight is drawn behind: the row's half for the pin
+ * (`data-pin-cell`), else the hit area. The inline default editor is not a pin target.
+ */
+function pinMenuTargetOf(target: EventTarget | null): { nodeId: string; pinId: string; cell: Element } | null {
+  if (!(target instanceof Element)) return null;
+  let handle = target.closest(".react-flow__handle[data-graph-pin]");
+  if (!handle) {
+    const cell = target.closest("[data-pin-label]")?.closest("[data-pin-cell]");
+    const pinId = cell?.getAttribute("data-pin-id");
+    handle = pinId
+      ? [...cell!.querySelectorAll(".react-flow__handle[data-graph-pin]")].find((entry) => entry.getAttribute("data-handleid") === pinId) ?? null
+      : null;
+  }
+  const nodeId = handle?.getAttribute("data-nodeid");
+  const pinId = handle?.getAttribute("data-handleid");
+  if (!handle || !nodeId || !pinId) return null;
+  return { nodeId, pinId, cell: handle.closest("[data-pin-cell]") ?? handle };
+}
+
+/** Menu groups in order, empty ones left out, with a separator between each. */
+function joinMenuGroups(groups: NestedMenuItem[][]): NestedMenuItem[] {
+  return groups
+    .filter((group) => group.length > 0)
+    .flatMap((group, index) => index === 0 ? group : [{ type: "separator" as const, id: `menu-group-${index}` }, ...group]);
 }
 
 function asConnection(connection: Connection | Edge): Connection {
@@ -923,6 +1042,7 @@ function GraphEditorCanvas({
   connectEndMode = "default",
   edgeBreaksAtPin,
   pinDrop,
+  onAddPin,
   replaceIncomingOnConnect = false,
   uniqueDirectedPairOnConnect = false,
   singleExecOutputOnConnect = false,
@@ -933,10 +1053,12 @@ function GraphEditorCanvas({
   deleteKeyCode,
   nodesFocusable = true,
   contextMenuItemsForNode,
+  contextMenuItemsForPin,
   previewedNode = null,
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
   pinCompatibility,
+  pinConversion,
   addNodeHistoryScope,
   pinTypeNames,
   onCanvasApi,
@@ -1027,6 +1149,8 @@ function GraphEditorCanvas({
   } | null>(null);
   const [paletteAnchor, setPaletteAnchor] = useState<{ x: number; y: number } | null>(null);
   const [paletteModal, setPaletteModal] = useState(false);
+  // True from opening a pin's menu until the next press (`claimPinMenuGesture`).
+  const pinMenuGestureRef = useRef(false);
   const connectDragRef = useRef<{
     pointerId: number;
     pointer: { x: number; y: number };
@@ -1091,10 +1215,6 @@ function GraphEditorCanvas({
   useLayoutEffect(() => {
     pinDisplayTypesRef.current = pinDisplayTypes;
     pinDisplaySourceRef.current = { nodes, edges, types: pinDisplayTypes };
-  });
-  const paneMenu = useContextMenu({
-    items: [],
-    enabled: Boolean(contextMenuItemsForNode) && !readOnly,
   });
 
   const errorDiagnostics = useMemo(
@@ -1282,6 +1402,13 @@ function GraphEditorCanvas({
     return true;
   }, []);
   const hasTitleRename = Boolean(onNodeTitleDoubleClick);
+  // Add Pin reads the host's latest callback, so a new callback each render hands nodes no new context.
+  const onAddPinRef = useRef(onAddPin);
+  useLayoutEffect(() => {
+    onAddPinRef.current = onAddPin;
+  });
+  const addPin = useCallback((nodeId: string) => onAddPinRef.current?.(nodeId), []);
+  const addPinEnabled = Boolean(onAddPin) && !readOnly;
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
@@ -1355,6 +1482,142 @@ function GraphEditorCanvas({
     [emitChange],
   );
 
+  // A data output and input `pinCompatibility` refuses but the host bridges with a converter node: the oriented
+  // ends, their pins as they connect, and the host's conversion. Null for anything else, before the host is asked.
+  const conversionFor = useCallback(
+    (connection: Connection | Edge) => {
+      if (!pinConversion || readOnly) return null;
+      const current = graphStateRef.current.nodes;
+      const next = orientThenNormalize(asConnection(connection), current, normalizeConnection);
+      if (!next?.source || !next.target || !next.sourceHandle || !next.targetHandle) return null;
+      const storedSource = pinOnNode(current, next.source, next.sourceHandle);
+      const storedTarget = pinOnNode(current, next.target, next.targetHandle);
+      if (!storedSource || !storedTarget) return null;
+      const displayTypes = pinDisplayTypesRef.current;
+      const sourcePin = overlayPin(storedSource, next.source, displayTypes);
+      const targetPin = overlayPin(storedTarget, next.target, displayTypes);
+      if (
+        sourcePin.kind !== "data" ||
+        targetPin.kind !== "data" ||
+        sourcePin.direction !== "out" ||
+        targetPin.direction !== "in" ||
+        pinsAreCompatible(sourcePin, targetPin, pinCompatibility)
+      ) {
+        return null;
+      }
+      const disabled = (nodeId: string) => {
+        const node = current.find((entry) => entry.id === nodeId);
+        return node !== undefined && isDisabledNode(node);
+      };
+      if (disabled(next.source) || disabled(next.target)) return null;
+      const ends = {
+        source: next.source,
+        sourceHandle: next.sourceHandle,
+        target: next.target,
+        targetHandle: next.targetHandle,
+      };
+      if (canConnect && !canConnect(ends)) return null;
+      const conversion = pinConversion(sourcePin, targetPin);
+      return conversion ? { ...ends, sourcePin, targetPin, conversion } : null;
+    },
+    [canConnect, normalizeConnection, pinCompatibility, pinConversion, readOnly],
+  );
+
+  // A pin's centre in flow coordinates: its measured handle, else the middle of its node's side.
+  const pinFlowPoint = useCallback(
+    (nodeId: string, pinId: string, direction: "in" | "out") => {
+      const internal = storeApi.getState().nodeLookup.get(nodeId);
+      const handles = direction === "out"
+        ? internal?.internals.handleBounds?.source
+        : internal?.internals.handleBounds?.target;
+      const handle = handles?.find((entry) => entry.id === pinId);
+      if (internal && handle) {
+        const origin = internal.internals.positionAbsolute;
+        return { x: origin.x + handle.x + handle.width / 2, y: origin.y + handle.y + handle.height / 2 };
+      }
+      const node = graphStateRef.current.nodes.find((entry) => entry.id === nodeId);
+      if (!node) return null;
+      const size = graphNodeSize(node);
+      return {
+        x: node.position.x + (direction === "out" ? size.width : 0),
+        y: node.position.y + size.height / 2,
+      };
+    },
+    [storeApi],
+  );
+
+  // Connects two pins through the host's converter node, placed between them with its pin row on the wire:
+  // one graph change, the selection unchanged. Nothing changes when either half would not connect.
+  const insertConversion = useCallback(
+    (found: NonNullable<ReturnType<typeof conversionFor>>) => {
+      const { paletteNode, inPinId, outPinId } = found.conversion;
+      const inPin = paletteNode.pins?.find((pin) => pin.id === inPinId && pin.direction === "in");
+      const outPin = paletteNode.pins?.find((pin) => pin.id === outPinId && pin.direction === "out");
+      if (
+        !inPin ||
+        !outPin ||
+        !pinsAreCompatible(found.sourcePin, inPin, pinCompatibility) ||
+        !pinsAreCompatible(outPin, found.targetPin, pinCompatibility)
+      ) {
+        return;
+      }
+      const from = pinFlowPoint(found.source, found.sourceHandle, "out");
+      const to = pinFlowPoint(found.target, found.targetHandle, "in");
+      if (!from || !to) return;
+      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const size = estimateGraphNodeSize(paletteNode.pins, paletteNode.defaultData);
+      const center = {
+        x: (from.x + to.x) / 2,
+        y: (from.y + to.y) / 2 - GRAPH_FIRST_PIN_ROW_CENTER_Y + size.height / 2,
+      };
+      const position = snapPositionToGrid(freeNodePosition(center, size, currentNodes), nodeSnapGrid);
+      const converter = paletteCanvasNode(
+        paletteNode,
+        uniqueNodeId(`${paletteNode.id}-${Date.now()}`, new Set(currentNodes.map((node) => node.id))),
+        position,
+        false,
+        knownTypes,
+        nodeDragHandle,
+      );
+      const nextNodes = [...currentNodes, converter];
+      const pinFor = (nodeId: string, pinId: string) =>
+        connectPinOnNode(nextNodes, pinDisplayTypesRef.current, nodeId, pinId);
+      const options = {
+        replaceIncoming: replaceIncomingOnConnect,
+        uniqueDirectedPair: uniqueDirectedPairOnConnect,
+        singleExecOutput: singleExecOutputOnConnect,
+      };
+      const edgeType = defaultEdgeOptions.type ? { type: defaultEdgeOptions.type } : {};
+      const wire = (source: string, sourceHandle: string, target: string, targetHandle: string): Edge => ({
+        id: createEdgeId(source, sourceHandle, target, targetHandle),
+        source,
+        sourceHandle,
+        target,
+        targetHandle,
+        ...edgeType,
+      });
+      const nextEdges = edgesAfterConnect(
+        edgesAfterConnect(currentEdges, wire(found.source, found.sourceHandle, converter.id, inPinId), pinFor, options),
+        wire(converter.id, outPinId, found.target, found.targetHandle),
+        pinFor,
+        options,
+      );
+      commitGraph(nextNodes, nextEdges);
+    },
+    [
+      commitGraph,
+      defaultEdgeOptions.type,
+      knownTypes,
+      nodeDragHandle,
+      nodeSnapGrid,
+      pinCompatibility,
+      pinFlowPoint,
+      replaceIncomingOnConnect,
+      singleExecOutputOnConnect,
+      uniqueDirectedPairOnConnect,
+    ],
+  );
+
   const addEdge = useCallback(
     (
       source: string,
@@ -1362,6 +1625,11 @@ function GraphEditorCanvas({
       target: string,
       targetHandle: string,
     ) => {
+      const converted = conversionFor({ source, sourceHandle, target, targetHandle });
+      if (converted) {
+        insertConversion(converted);
+        return;
+      }
       const sourceNode = graphStateRef.current.nodes.find(
         (node) => node.id === source,
       );
@@ -1422,8 +1690,10 @@ function GraphEditorCanvas({
       });
     },
     [
+      conversionFor,
       defaultEdgeOptions.type,
       emitChange,
+      insertConversion,
       noteReplacedWire,
       replaceIncomingOnConnect,
       uniqueDirectedPairOnConnect,
@@ -1431,7 +1701,8 @@ function GraphEditorCanvas({
     ],
   );
 
-  const isValidConnection = useCallback(
+  // Whether two pins connect with a plain wire. Node Connection Assistant uses only this: it never converts.
+  const isDirectConnection = useCallback(
     (connection: Connection | Edge) => {
       const incoming = asConnection(connection);
       const next = orientThenNormalize(
@@ -1489,6 +1760,28 @@ function GraphEditorCanvas({
       });
     },
     [canConnect, normalizeConnection, pinCompatibility],
+  );
+
+  // A dragged or tapped connection: a plain wire, or one the host bridges with a converter node.
+  const isValidConnection = useCallback(
+    (connection: Connection | Edge) =>
+      isDirectConnection(connection) || conversionFor(connection) !== null,
+    [conversionFor, isDirectConnection],
+  );
+
+  // The conversion label for a wire dragged from one pin over another (either may be the output), or null.
+  const pinConversionLabel = useCallback(
+    (
+      from: { nodeId: string; pinId: string },
+      to: { nodeId: string; pinId: string },
+    ): string | null =>
+      conversionFor({
+        source: from.nodeId,
+        sourceHandle: from.pinId,
+        target: to.nodeId,
+        targetHandle: to.pinId,
+      })?.conversion.label ?? null,
+    [conversionFor],
   );
 
   // Read while a dragged wire hovers a pin XYFlow reports as invalid; it names
@@ -1595,7 +1888,7 @@ function GraphEditorCanvas({
             )
           )
             return false;
-          return isValidConnection(connection);
+          return isDirectConnection(connection);
         },
       });
       // Resolve the whole proposed batch, so two unused pins in one wildcard
@@ -1619,7 +1912,7 @@ function GraphEditorCanvas({
                   );
             resolvedEdges = proposedEdges;
           }
-          if (!isValidConnection(connection)) continue;
+          if (!isDirectConnection(connection)) continue;
           if (
             proposedEdges.some(
               (edge) =>
@@ -1674,7 +1967,7 @@ function GraphEditorCanvas({
       });
     },
     [
-      isValidConnection,
+      isDirectConnection,
       interactions,
       nodesDraggable,
       normalizeConnection,
@@ -1832,7 +2125,7 @@ function GraphEditorCanvas({
           );
           resolvedEdges = nextEdges;
         }
-        if (!isValidConnection(connection)) continue;
+        if (!isDirectConnection(connection)) continue;
         if (
           nextEdges.some(
             (edge) =>
@@ -1881,7 +2174,7 @@ function GraphEditorCanvas({
       nodeSnapGrid,
       nodesDraggable,
       readOnly,
-      isValidConnection,
+      isDirectConnection,
       replaceIncomingOnConnect,
       uniqueDirectedPairOnConnect,
     ],
@@ -2026,12 +2319,24 @@ function GraphEditorCanvas({
     [addEdge, connectDraggedToNode, normalizeConnection, readOnly],
   );
 
+  // The gesture ends with no action: a later release only lets XYFlow tidy
+  // up, and the next move ends its drag because the connection is gone.
+  const endConnectSession = useCallback(
+    (session: NonNullable<typeof connectDragRef.current>) => {
+      session.connectEndHandled = true;
+      pendingPinRef.current = null;
+      setPendingPin(null);
+      storeApi.getState().cancelConnection();
+    },
+    [storeApi],
+  );
+
   const handleConnectStart = useCallback(
     (event: MouseEvent | TouchEvent, params: OnConnectStartParams) => {
       if (readOnly) return;
       if (!params.nodeId || !params.handleId) return;
       const point = clientPoint(event);
-      connectDragRef.current = {
+      const session = {
         pointerId: connectEventPointerId(event),
         pointer: point ?? { x: 0, y: 0 },
         nodeId: params.nodeId,
@@ -2039,8 +2344,11 @@ function GraphEditorCanvas({
         connectEndHandled: false,
         connectCommitted: false,
       };
+      connectDragRef.current = session;
+      // The press already opened this pin's menu (`claimPinMenuGesture`): no wire.
+      if (pinMenuGestureRef.current) endConnectSession(session);
     },
-    [readOnly],
+    [endConnectSession, readOnly],
   );
 
   const handleConnectEnd = useCallback(
@@ -2188,21 +2496,13 @@ function GraphEditorCanvas({
         nodeId: fromNode.id,
         pinId,
       }, located);
-      const decision = {
-        hasTargetHandle: Boolean(state.toHandle),
-        pointerOverNode: isClientPointOverGraphNode(point, root),
-        pointerOverSourceHandle: isClientPointOverHandle(
-          point,
-          fromNode.id,
-          pinId,
-          root,
-        ),
-        pointer: point,
-        safePins: located.map((entry) => ({ x: entry.x, y: entry.y })),
-        snapPins: located
-          .filter((entry) => entry.nodeId !== fromNode.id)
-          .map((entry) => ({ x: entry.x, y: entry.y })),
-      };
+      const decision = connectEndDecisionAt(
+        root,
+        point,
+        { nodeId: fromNode.id, pinId },
+        Boolean(state.toHandle),
+        located,
+      );
       const action = connectEndAction(decision, connectEndMode);
       if (action === "connect" && snap) {
         if (commitDraggedToNode(snap.nodeId, snap.pinId)) {
@@ -2421,52 +2721,32 @@ function GraphEditorCanvas({
       if (!paletteNode || readOnly || cutToolRef.current) return false;
       const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
       const edge = currentEdges.find((entry) => entry.id === edgeId);
-      if (!edge?.sourceHandle || !edge.targetHandle) return false;
-      const inPin = paletteNode.pins?.find((pin) => pin.direction === "in");
-      const outPin = paletteNode.pins?.find((pin) => pin.direction === "out");
-      const sourcePin = pinOnNode(currentNodes, edge.source, edge.sourceHandle);
-      const targetPin = pinOnNode(currentNodes, edge.target, edge.targetHandle);
-      if (!inPin || !outPin || !sourcePin || !targetPin) return false;
-      const displayTypes = pinDisplayTypesRef.current;
-      if (
-        !pinsAreCompatible(overlayPin(sourcePin, edge.source, displayTypes), inPin, pinCompatibility) ||
-        !pinsAreCompatible(outPin, overlayPin(targetPin, edge.target, displayTypes), pinCompatibility)
-      ) {
-        return false;
-      }
+      if (!edge) return false;
       const size = estimateGraphNodeSize(paletteNode.pins, { __reroute: true });
       const point = screenToFlowPosition(client);
       const position = snapPositionToGrid(
         { x: point.x - size.width / 2, y: point.y - size.height / 2 },
         nodeSnapGrid,
       );
-      const taken = new Set(currentNodes.map((node) => node.id));
-      const knot = paletteCanvasNode(
+      const built = rerouteKnotOnEdge(edge, position, true, {
         paletteNode,
-        uniqueNodeId(`${paletteNode.id}-${Date.now()}`, taken),
-        position,
-        true,
+        nodes: currentNodes,
+        displayTypes: pinDisplayTypesRef.current,
+        pinCompatibility,
         knownTypes,
-        nodeDragHandle,
-      );
-      const edgeType = defaultEdgeOptions.type ? { type: defaultEdgeOptions.type } : {};
-      const wire = (source: string, sourceHandle: string, target: string, targetHandle: string): Edge => ({
-        id: createEdgeId(source, sourceHandle, target, targetHandle),
-        source,
-        sourceHandle,
-        target,
-        targetHandle,
-        ...edgeType,
+        dragHandle: nodeDragHandle,
+        edgeType: defaultEdgeOptions.type,
+        taken: new Set(currentNodes.map((node) => node.id)),
       });
+      if (!built) return false;
       commitGraph(
         [
           ...currentNodes.map((node) => (node.selected ? { ...node, selected: false } : node)),
-          knot,
+          built.knot,
         ],
         [
           ...withoutEdgeSelection(currentEdges.filter((entry) => entry.id !== edgeId)),
-          wire(edge.source, edge.sourceHandle, knot.id, inPin.id),
-          wire(knot.id, outPin.id, edge.target, edge.targetHandle),
+          ...built.wires,
         ],
       );
       return true;
@@ -2710,31 +2990,33 @@ function GraphEditorCanvas({
     removeGraphElements(selected, new Set());
   }, [removeGraphElements]);
 
+  // The wires a break at a pin removes: the same links a wire released on empty canvas breaks.
+  const pinLinkIds = useCallback((nodeId: string, pinId: string): Set<string> => {
+    const breaks = edgeBreaksAtPinRef.current ?? edgeTouchesPin;
+    return new Set(
+      graphStateRef.current.edges
+        .filter((edge) => breaks(edge, nodeId, pinId))
+        .map((edge) => edge.id),
+    );
+  }, []);
+
   // Cut Links on a tap: a wire, every wire on a pin, or a Reroute knot with its wires, as one
   // graph change. One Use turns the tool off after a tap that removed something.
   const cutAt = useCallback(
     (target: CutTarget): boolean => {
-      const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const { nodes: currentNodes } = graphStateRef.current;
       let removed = false;
       if (target.kind === "edge") {
         removed = removeGraphElements(new Set(), new Set([target.edgeId]));
       } else if (target.kind === "pin") {
-        const breaks = edgeBreaksAtPinRef.current ?? edgeTouchesPin;
-        removed = removeGraphElements(
-          new Set(),
-          new Set(
-            currentEdges
-              .filter((edge) => breaks(edge, target.nodeId, target.pinId))
-              .map((edge) => edge.id),
-          ),
-        );
+        removed = removeGraphElements(new Set(), pinLinkIds(target.nodeId, target.pinId));
       } else if (isRerouteNodeData(currentNodes.find((node) => node.id === target.nodeId)?.data)) {
         removed = removeGraphElements(new Set([target.nodeId]), new Set());
       }
       if (removed && cutOneShotRef.current) setCutToolOn(false);
       return removed;
     },
-    [removeGraphElements],
+    [pinLinkIds, removeGraphElements],
   );
   const cutAtRef = useRef(cutAt);
   useLayoutEffect(() => {
@@ -2970,12 +3252,17 @@ function GraphEditorCanvas({
   }, []);
 
 
+  // Moves the nodes and adds the knots Format asks for as one graph change (one undo step); the
+  // selection stays as it was. A Format that changes nothing emits nothing.
   const formatSelection = useCallback(() => {
-    const selected = graphStateRef.current.nodes
+    const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    const selected = currentNodes
       .filter((node) => node.selected)
       .map((node) => node.id);
     if (selected.length === 0) return;
-    const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    const paletteNode = readOnly ? undefined : rerouteRef.current?.paletteNode;
+    const displayTypes = pinDisplayTypesRef.current;
+    const lookup = storeApi.getState().nodeLookup;
     const formatted = formatGraphNodes(
       currentNodes.map((node) => ({
         id: node.id,
@@ -2984,37 +3271,78 @@ function GraphEditorCanvas({
         height: node.measured?.height ?? node.height,
         pins: hasSerializedPins(node.data) ? node.data.__pins : undefined,
         reroute: isRerouteNodeData(node.data),
+        addPin: addPinEnabled ? addPinOf(node.data) : undefined,
+        pinOffsets: measuredPinOffsets(lookup.get(node.id)?.internals.handleBounds),
       })),
       currentEdges.map((edge) => ({
+        id: edge.id,
         source: edge.source,
         target: edge.target,
         sourceHandle: edge.sourceHandle ?? undefined,
         targetHandle: edge.targetHandle ?? undefined,
       })),
       selected,
-      displayTypeLookup(pinDisplayTypesRef.current),
+      {
+        displayType: displayTypeLookup(displayTypes),
+        insertKnots: Boolean(paletteNode),
+        ...(paletteNode ? { knotSize: estimateGraphNodeSize(paletteNode.pins, { __reroute: true }) } : {}),
+      },
     );
     const positions = new Map(
-      formatted.map((node) => [node.id, node.position]),
+      formatted.nodes.map((node) => [node.id, node.position]),
     );
-    setNodes((current) => {
-      let changed = false;
-      const next = current.map((node) => {
-        const position = positions.get(node.id);
-        if (
-          !position ||
-          (position.x === node.position.x && position.y === node.position.y)
-        ) {
-          return node;
-        }
-        changed = true;
-        return { ...node, position };
-      });
-      if (!changed) return current;
-      emitChange(next, graphStateRef.current.edges);
-      return next;
+    let changed = false;
+    const nextNodes = currentNodes.map((node) => {
+      const position = positions.get(node.id);
+      if (
+        !position ||
+        (position.x === node.position.x && position.y === node.position.y)
+      ) {
+        return node;
+      }
+      changed = true;
+      return { ...node, position };
     });
-  }, [emitChange]);
+    const knots: CanvasNode[] = [];
+    const wires: Edge[] = [];
+    const replaced = new Set<string>();
+    if (paletteNode && formatted.knots.length > 0) {
+      const edgesById = new Map(currentEdges.map((edge) => [edge.id, edge]));
+      const setup: RerouteKnotSetup = {
+        paletteNode,
+        nodes: currentNodes,
+        displayTypes,
+        pinCompatibility,
+        knownTypes,
+        dragHandle: nodeDragHandle,
+        edgeType: defaultEdgeOptions.type,
+        taken: new Set(currentNodes.map((node) => node.id)),
+      };
+      for (const { edge, positions } of formatted.knots) {
+        const wire = edge.id === undefined ? undefined : edgesById.get(edge.id);
+        if (!wire || replaced.has(wire.id)) continue;
+        // Chain the knots source to target: each splits the wire left from the knot before it.
+        let rest: Edge = wire;
+        for (const position of positions) {
+          const built = rerouteKnotOnEdge(rest, position, false, setup);
+          if (!built) break;
+          replaced.add(wire.id);
+          knots.push(built.knot);
+          setup.nodes = [...setup.nodes, built.knot];
+          wires.push(built.wires[0]);
+          rest = built.wires[1];
+        }
+        if (rest !== wire) wires.push(rest);
+      }
+    }
+    if (!changed && knots.length === 0) return;
+    commitGraph(
+      [...nextNodes, ...knots],
+      replaced.size > 0
+        ? [...currentEdges.filter((edge) => !replaced.has(edge.id)), ...wires]
+        : currentEdges,
+    );
+  }, [addPinEnabled, commitGraph, defaultEdgeOptions.type, knownTypes, nodeDragHandle, pinCompatibility, readOnly, storeApi]);
 
   // Copy, Paste, Duplicate, Delete and Break Links for the selection, with their keys.
   const graphItems = useCallback(
@@ -3124,9 +3452,7 @@ function GraphEditorCanvas({
         : [];
       const groups = [hostItems, breakpointItems];
       if (!readOnly) groups.push(graphItems(currentNodes, currentEdges));
-      return groups
-        .filter((group) => group.length > 0)
-        .flatMap((group, index) => index === 0 ? group : [{ type: "separator" as const, id: `menu-group-${index}` }, ...group]);
+      return joinMenuGroups(groups);
     },
     [
       breakpoints,
@@ -3136,12 +3462,70 @@ function GraphEditorCanvas({
       readOnly,
     ],
   );
+  // The menu of a script-style pin: Break Links (when it has wires and the graph is editable),
+  // then the host's items. It leaves the selection alone.
+  const resolvePinMenu = useCallback(
+    (nodeId: string, pinId: string): NestedMenuItem[] => {
+      const builtIn: NestedMenuItem[] = [];
+      if (!readOnly && !hiddenToolbar.has("breakLinks") && pinLinkIds(nodeId, pinId).size > 0) {
+        builtIn.push({
+          id: "break-pin-links",
+          label: "Break Links",
+          onSelect: () => { removeGraphElements(new Set(), pinLinkIds(nodeId, pinId)); },
+        });
+      }
+      return joinMenuGroups([builtIn, contextMenuItemsForPin?.(nodeId, pinId) ?? []]);
+    },
+    [contextMenuItemsForPin, hiddenToolbar, pinLinkIds, readOnly, removeGraphElements],
+  );
+
+  // A pin's menu, opened by a right-click or a touch hold on its glyph or name, claims the gesture
+  // that opened it: a wire XYFlow began for that press ends with no action, one it has yet to begin
+  // never starts, and the release click neither picks a tap-to-connect pin nor selects the node.
+  // The claim lasts until the next press (`pinMenuGestureRef`).
+  const claimPinMenuGesture = useCallback(() => {
+    pinMenuGestureRef.current = true;
+    const session = connectDragRef.current;
+    if (session && !session.connectEndHandled) endConnectSession(session);
+  }, [endConnectSession]);
+  useEffect(() => {
+    const root = wrapperRef.current;
+    if (!root) return;
+    const onPointerDown = () => { pinMenuGestureRef.current = false; };
+    const onClick = (event: MouseEvent) => {
+      if (!pinMenuGestureRef.current) return;
+      pinMenuGestureRef.current = false;
+      event.stopPropagation();
+      event.preventDefault();
+    };
+    root.addEventListener("pointerdown", onPointerDown, true);
+    root.addEventListener("click", onClick, true);
+    return () => {
+      root.removeEventListener("pointerdown", onPointerDown, true);
+      root.removeEventListener("click", onClick, true);
+    };
+  }, []);
+
+  const resolveMenuAt = useCallback(
+    (nodeId: string, target: EventTarget | null): { items: NestedMenuItem[]; pinCell?: Element } => {
+      const pin = pinMenuTargetOf(target);
+      if (pin && pin.nodeId === nodeId) {
+        const items = resolvePinMenu(nodeId, pin.pinId);
+        if (items.length > 0) {
+          claimPinMenuGesture();
+          return { items, pinCell: pin.cell };
+        }
+      }
+      return { items: resolveNodeMenu(nodeId) };
+    },
+    [claimPinMenuGesture, resolveNodeMenu, resolvePinMenu],
+  );
   const nodeMenu = useMemo(
     () => ({
-      enabled: !readOnly || Boolean(contextMenuItemsForNode) || Boolean(breakpoints),
-      resolve: resolveNodeMenu,
+      enabled: !readOnly || Boolean(contextMenuItemsForNode) || Boolean(contextMenuItemsForPin) || Boolean(breakpoints),
+      resolve: resolveMenuAt,
     }),
-    [breakpoints, contextMenuItemsForNode, readOnly, resolveNodeMenu],
+    [breakpoints, contextMenuItemsForNode, contextMenuItemsForPin, readOnly, resolveMenuAt],
   );
 
 
@@ -3198,14 +3582,7 @@ function GraphEditorCanvas({
       ) {
         return;
       }
-      const selected = graphStateRef.current.nodes.find((node) => node.selected);
-      if (selected && contextMenuItemsForNode) {
-        const items = contextMenuItemsForNode(selected.id);
-        if (items.length > 0) {
-          paneMenu.openMenuAt(event.clientX, event.clientY, items);
-          return;
-        }
-      }
+      // Empty canvas always offers Add Node, whatever is selected; node actions live on the node's own menu.
       if (paletteNodes && paletteNodes.length > 0) {
         const point = { x: event.clientX, y: event.clientY };
         setPendingConnect({ position: screenToFlowPosition(point) });
@@ -3215,9 +3592,7 @@ function GraphEditorCanvas({
       }
     },
     [
-      contextMenuItemsForNode,
       paletteNodes,
-      paneMenu.openMenuAt,
       readOnly,
       screenToFlowPosition,
     ],
@@ -3273,17 +3648,6 @@ function GraphEditorCanvas({
   }, []);
 
   useEffect(() => {
-    // The gesture ends with no action: a later release only lets XYFlow tidy
-    // up, and the next move ends its drag because the connection is gone.
-    const endConnectSession = (
-      session: NonNullable<typeof connectDragRef.current>,
-    ) => {
-      session.connectEndHandled = true;
-      pendingPinRef.current = null;
-      setPendingPin(null);
-      storeApi.getState().cancelConnection();
-    };
-
     const onMove = (event: Event) => {
       const session = connectDragRef.current;
       if (!session) return;
@@ -3351,23 +3715,29 @@ function GraphEditorCanvas({
         inProgress: connection.inProgress,
         pointer: connection.inProgress ? connection.pointer : null,
       }, wrapperRef.current ?? document);
-      const inAddNodeZone = shouldOpenAddNodeOnConnectEnd({
-        hasTargetHandle: Boolean(
-          connection.inProgress && connection.toHandle,
+      // The release's own decision, snap pins included: a second pointer cancels exactly where a
+      // release would open Add Node, and a release that would snap-connect keeps the wire.
+      const root = wrapperRef.current ?? document;
+      const located = screenPinsForSafeRefs(
+        root,
+        collectDisplayConnectPins(
+          graphStateRef.current.nodes,
+          session.nodeId,
+          pin,
+          displayTypeLookup(pinDisplayTypesRef.current),
+          pinCompatibilityRef.current,
         ),
-        pointerOverNode: isClientPointOverGraphNode(pointer, wrapperRef.current ?? document),
-        pointer,
-        safePins: screenCentersForSafePins(
-          wrapperRef.current ?? document,
-          collectDisplayConnectPins(
-            graphStateRef.current.nodes,
-            session.nodeId,
-            pin,
-            displayTypeLookup(pinDisplayTypesRef.current),
-            pinCompatibilityRef.current,
-          ),
+      );
+      const inAddNodeZone = connectEndAction(
+        connectEndDecisionAt(
+          root,
+          pointer,
+          { nodeId: session.nodeId, pinId: session.pinId },
+          Boolean(connection.inProgress && connection.toHandle),
+          located,
         ),
-      });
+        connectEndModeRef.current,
+      ) === "add-node";
       if (
         !shouldCancelConnectOnSecondaryPointer({
           connectionActive: true,
@@ -3398,7 +3768,7 @@ function GraphEditorCanvas({
       document.removeEventListener("touchstart", onSecondaryPointerDown, true);
       document.removeEventListener("touchcancel", onTouchCancel, true);
     };
-  }, [storeApi]);
+  }, [endConnectSession, storeApi]);
 
   const pinDisplayType = useCallback(
     (nodeId: string, pinId: string) =>
@@ -3555,7 +3925,9 @@ function GraphEditorCanvas({
       renderNodeBody,
       nodeMenu,
       connectionRefusal,
+      pinConversionLabel: pinConversion ? pinConversionLabel : undefined,
       acceptsPinDrop: pinDrop?.accepts,
+      onAddPin: addPinEnabled ? addPin : undefined,
       runTrace,
       breakpoints,
       describeNode,
@@ -3594,7 +3966,11 @@ function GraphEditorCanvas({
       renderNodeBody,
       nodeMenu,
       connectionRefusal,
+      pinConversion,
+      pinConversionLabel,
       pinDrop,
+      addPinEnabled,
+      addPin,
       runTrace,
       breakpoints,
       describeNode,
@@ -3873,7 +4249,6 @@ function GraphEditorCanvas({
           presentation={paletteModal ? "modal" : "popup"}
         />
         )}
-        <ContextMenuOverlay menu={paneMenu.menu} onClose={paneMenu.closeMenu} />
       </div>
     </GraphEditorProvider>
   );

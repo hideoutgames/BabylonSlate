@@ -205,12 +205,7 @@ const VECTOR_NODES: NodeDefinition[] = [
   helperNode("vector.nearlyEqual", "Nearly Equal Vector3", "vector", [...ab(VEC3), ["tolerance", "Tolerance", FLOAT, NEARLY_EQUAL_TOLERANCE]], out(BOOL),
     "__util_nearlyEqual3", "a, b, t", "(Math.abs(a.x - b.x) <= t && Math.abs(a.y - b.y) <= t && Math.abs(a.z - b.z) <= t)",
     "True when every axis of A and B differs by no more than Tolerance.", ["equal", "approximately"]),
-  helperNode("vector.negate", "Negate Vector3", "vector", [["vector", "Vector", VEC3]], out(VEC3),
-    "__util_negate3", "v", VEC("-v.x", "-v.y", "-v.z"), "Vector pointing the opposite way.", ["invert", "reverse", "opposite"]),
   ...([[VEC2, "Vector2", "2", ["x", "y"]], [VEC4, "Vector4", "4", ["x", "y", "z", "w"]]] as const).flatMap(([type, label, suffix, axes]) => [
-    helperNode(`vector.negate${suffix}`, `Negate ${label}`, "vector", [["vector", "Vector", type]], out(type),
-      `__util_negate${suffix}`, "v", `({ ${axes.map((axis) => `${axis}: -v.${axis}`).join(", ")} })`,
-      "Vector pointing the opposite way.", ["invert", "reverse", "opposite"]),
     helperNode(`vector.nearlyEqual${suffix}`, `Nearly Equal ${label}`, "vector", [...ab(type), ["tolerance", "Tolerance", FLOAT, NEARLY_EQUAL_TOLERANCE]], out(BOOL),
       `__util_nearlyEqual${suffix}`, "a, b, t", `(${axes.map((axis) => `Math.abs(a.${axis} - b.${axis}) <= t`).join(" && ")})`,
       "True when every axis of A and B differs by no more than Tolerance.", ["equal", "approximately"]),

@@ -13,10 +13,16 @@ import {
 const K: PinType = { kind: "resolvingWildcard", group: "K" };
 const V: PinType = { kind: "resolvingWildcard", group: "V" };
 
-function pairCount(properties: Record<string, unknown>): number {
-  const raw = Number(properties.count ?? 0);
+/** The most item inputs a Make Array node, or key and value pairs a Make Map node, can have. */
+export const MAKE_CONTAINER_MAX_COUNT = 32;
+/** Key and value pairs of a new Make Map node, and of one whose `count` is missing. */
+export const MAKE_MAP_DEFAULT_PAIRS = 1;
+
+/** Make Map pairs: a whole `count` from 0 to {@link MAKE_CONTAINER_MAX_COUNT}; {@link MAKE_MAP_DEFAULT_PAIRS} when it is missing, none when it is not a number. */
+export function makeMapPairCount(properties: Record<string, unknown>): number {
+  const raw = Number(properties.count ?? MAKE_MAP_DEFAULT_PAIRS);
   if (!Number.isFinite(raw)) return 0;
-  return Math.max(0, Math.min(32, Math.floor(raw)));
+  return Math.max(0, Math.min(MAKE_CONTAINER_MAX_COUNT, Math.floor(raw)));
 }
 
 /** Pin kinds whose runtime values are plain data objects, compared by value. */
@@ -102,7 +108,7 @@ export const mapNodes: NodeDefinition[] = [
     category: "map",
     pure: true,
     pins: (properties) => {
-      const count = pairCount(properties);
+      const count = makeMapPairCount(properties);
       const pins = [];
       for (let i = 0; i < count; i++) {
         pins.push(pin(`key${i}`, `Key ${i}`, "in", K));
@@ -112,7 +118,7 @@ export const mapNodes: NodeDefinition[] = [
       return pins;
     },
     codegen: (ctx) => {
-      const count = pairCount(ctx.node.properties);
+      const count = makeMapPairCount(ctx.node.properties);
       const pairs: string[] = [];
       for (let i = 0; i < count; i++) {
         pairs.push(`[${ctx.input(`key${i}`)}, ${ctx.input(`value${i}`)}]`);

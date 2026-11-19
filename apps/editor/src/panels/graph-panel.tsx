@@ -45,6 +45,7 @@ import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { applyDataGraphAssetPicks } from "../lib/data-graph";
 import { prepareClassGraphPaste } from "../lib/graph-paste";
 import { acceptsFunctionPinDrop, addFunctionPinFromDrop } from "../lib/function-pin-drop";
+import { useScriptGraphPinActions } from "../lib/use-script-graph-pin-actions";
 import {
   DEFAULT_FUNCTION_PINS,
   addClassMember,
@@ -896,6 +897,33 @@ export function GraphPanel(
     return meshMaterialGuidsOf({ components });
   }, [graphContent, otherClassGraphs, parentClass, parentOf]);
 
+  // A canvas edit (or a pin action's whole next graph) into the open slice: Event Graph or function.
+  const commitCanvasGraph = useCallback((next: SerializedGraph) => {
+    if (!doc) return;
+    const edited = applyDataGraphAssetPicks(graph, next, dataAssets);
+    const current = graphContent ?? { nodes: [], edges: [] };
+    const merged: SerializedGraph = activeFunctionId
+      ? {
+          ...current,
+          functionGraphs: {
+            ...current.functionGraphs,
+            [activeFunctionId]: {
+              nodes: edited.nodes,
+              edges: edited.edges,
+            },
+          },
+        }
+      : adoptBoundEventSignatures({
+          ...edited,
+          members: edited.members ?? current.members,
+          components: edited.components ?? current.components,
+          functionGraphs: current.functionGraphs,
+        }, classId);
+    applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, merged));
+  }, [activeFunctionId, classId, dataAssets, doc, documentActions, documentId, graph, graphContent]);
+  // Add Pin, Convert to <Type> wires and the pin menu, each one change through the canvas's commit.
+  const pinActions = useScriptGraphPinActions({ graph, commit: commitCanvasGraph, hierarchy });
+
   const showLibraryEmpty = functionLibraryShowsEventGraphEmpty({
     parentClass,
     parentOf,
@@ -937,7 +965,9 @@ export function GraphPanel(
             paletteNodes={paletteNodes}
             onPaletteOpenChange={setPaletteOpen}
             pinCompatibility={pinCompatibility}
+            pinConversion={pinActions.pinConversion}
             pinDrop={pinDrop}
+            onAddPin={pinActions.onAddPin}
             reroute={reroute}
             renamingNodeId={renamingNodeId}
             renamingNodeValue={renamingNodeValue}
@@ -952,32 +982,11 @@ export function GraphPanel(
             // An empty click in a function's tab selects the function itself.
             onEmptyCanvasClick={functionMember ? () => setSelectedMemberId(functionMember.id) : undefined}
             contextMenuItemsForNode={contextMenuItemsForNode}
+            contextMenuItemsForPin={pinActions.contextMenuItemsForPin}
             preparePaste={preparePaste}
             preparePaletteNode={preparePaletteNode}
             onPaletteNodeAdded={onPaletteNodeAdded}
-            onChange={(next) => {
-              if (!doc) return;
-              const edited = applyDataGraphAssetPicks(graph, next, dataAssets);
-              const current = graphContent ?? { nodes: [], edges: [] };
-              const merged: SerializedGraph = activeFunctionId
-                ? {
-                    ...current,
-                    functionGraphs: {
-                      ...current.functionGraphs,
-                      [activeFunctionId]: {
-                        nodes: edited.nodes,
-                        edges: edited.edges,
-                      },
-                    },
-                  }
-                : adoptBoundEventSignatures({
-                    ...edited,
-                    members: edited.members ?? current.members,
-                    components: edited.components ?? current.components,
-                    functionGraphs: current.functionGraphs,
-                  }, classId);
-              applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, merged));
-            }}
+            onChange={commitCanvasGraph}
           />
           </div>
         </GraphPinDefaultHostContext.Provider>

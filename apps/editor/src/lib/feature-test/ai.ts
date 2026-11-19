@@ -592,9 +592,9 @@ async function saveBtClasses(ctx: FeatureTestContext): Promise<AiClassIds> {
         gNode("activate", "bt.event.activate", 0, 0),
         gNode("self", "actor.getSelf", 0, 220),
         gNode("location", "transform.getLocation", 220, 220),
-        // Add Vector3 copies the live position so the key does not follow the actor.
-        gNode("home", "vector.add3", 460, 160, { "default:b": zero }),
-        gNode("patrol", "vector.add3", 460, 320, { "default:b": navPoint(PATROL_LANE) }),
+        // Add copies the live position so the key does not follow the actor.
+        gNode("home", "math.add", 460, 160, { aType: "vec3", bType: "vec3", "default:b": zero }),
+        gNode("patrol", "math.add", 460, 320, { aType: "vec3", bType: "vec3", "default:b": navPoint(PATROL_LANE) }),
         gNode("set-home", "bt.blackboard.set", 300, 0, { "default:key": KEY.homePoint }),
         gNode("set-patrol", "bt.blackboard.set", 580, 0, { "default:key": KEY.patrolPoint }),
         gNode("set-flag", "bt.blackboard.set", 860, 0, { "default:key": KEY.homeSet, "default:value": true }),
@@ -663,7 +663,7 @@ async function saveBtClasses(ctx: FeatureTestContext): Promise<AiClassIds> {
         gNode("tick", "bt.event.tick", 0, 0),
         gNode("self", "actor.getSelf", 0, 200),
         gNode("location", "transform.getLocation", 220, 200),
-        gNode("copy", "vector.add3", 460, 200, { "default:b": zero }),
+        gNode("copy", "math.add", 460, 200, { aType: "vec3", bType: "vec3", "default:b": zero }),
         gNode("set-seen", "bt.blackboard.set", 300, 0, { "default:key": KEY.lastSeen }),
       ],
       edges: [
