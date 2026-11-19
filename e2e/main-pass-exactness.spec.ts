@@ -128,8 +128,21 @@ test("the post chain's full-screen clears and the output copy's change no pixel"
   test.setTimeout(300_000);
   const current = await run(page, false, true);
   const reference = await run(page, true, true);
-  const summary = { renderer: current.renderer, passes: { current: current.glFrame.passes, reference: reference.glFrame.passes } };
+  const sha = (bytes: number[]) => createHash("sha256").update(Uint8Array.from(bytes)).digest("hex");
+  const digest = ({ view, captures, atlas }: typeof current.still) =>
+    ({ view: sha(view), fast: sha(captures.fast), highQuality: sha(captures.highQuality), atlas });
+  const summary = {
+    renderer: current.renderer, passes: { current: current.glFrame.passes, reference: reference.glFrame.passes },
+    current: { still: digest(current.still), moved: digest(current.moved) }, reference: { still: digest(reference.still), moved: digest(reference.moved) },
+  };
   await testInfo.attach("main-pass-exactness-chain", { body: JSON.stringify(summary), contentType: "application/json" });
+  if (process.env.HAPTIC_MAIN_PASS_PROOF_OUT) {
+    writeFileSync(`${process.env.HAPTIC_MAIN_PASS_PROOF_OUT}.chain.json`, JSON.stringify(summary));
+    // The images themselves, to locate a difference.
+    writeFileSync(`${process.env.HAPTIC_MAIN_PASS_PROOF_OUT}.chain.images.json`,
+      JSON.stringify({ current: { still: current.still.captures, moved: current.moved.captures, view: current.moved.view },
+        reference: { still: reference.still.captures, moved: reference.moved.captures, view: reference.moved.view } }));
+  }
   console.log(`chain still frame passes, reference:\n${reference.glFrame.passes.join("\n")}\ncurrent:\n${current.glFrame.passes.join("\n")}`);
   expectSameImages(current, reference);
   expectFullScreenClears(current, reference);
