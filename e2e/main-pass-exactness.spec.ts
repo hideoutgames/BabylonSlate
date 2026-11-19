@@ -61,6 +61,11 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
   console.log(`main pass exactness proof on ${current.renderer}: shadow texels per still frame ${current.stillTexelsPerFrame} (reference ${reference.stillTexelsPerFrame})`);
   console.log(`still frame passes, reference:\n${reference.glFrame.passes.join("\n")}\ncurrent:\n${current.glFrame.passes.join("\n")}`);
   console.log(`GL calls per still frame that differ (current vs reference): ${JSON.stringify(calls)}`);
+  console.log(`shadow tiles drawn, current vs reference: moved (4 frames) ${current.movedCounters.tiles} vs ${reference.movedCounters.tiles}, rewritten (1 frame) ${current.rewrittenTiles} vs ${reference.rewrittenTiles}`);
+  // The rewritten frame redraws only what the notified writes reach, each sun cascade on its own: fewer tiles than the
+  // reference, which redraws every cascade of every map that draws.
+  expect(current.rewrittenTiles).toBeGreaterThan(0);
+  expect(current.rewrittenTiles).toBeLessThan(reference.rewrittenTiles);
   // The reference redraws the High Quality capture's own sun map in every still frame; the savings draw none.
   expect(reference.stillTexelsPerFrame).toBeGreaterThan(0);
   expect(current.stillTexelsPerFrame).toBe(0);

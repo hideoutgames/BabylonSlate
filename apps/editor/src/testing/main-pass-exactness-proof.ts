@@ -448,7 +448,9 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     const positions = Float32Array.from(chunk.getVerticesData(VertexBuffer.PositionKind)!);
     for (let at = 1; at < positions.length; at += 3) positions[at] = positions[at]! * 1.5;
     chunk.updateVerticesData(VertexBuffer.PositionKind, positions);
+    const tilesBefore = counts.tiles;
     frame();
+    const rewrittenTiles = counts.tiles - tilesBefore;
     const rewritten = await read();
     captures.dispose();
     view.dispose();
@@ -460,7 +462,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     await released;
-    return { still, moved, rewritten, stillTexelsPerFrame, glFrame, movedCounters, renderer: engine.getGlInfo().renderer };
+    return { still, moved, rewritten, rewrittenTiles, stillTexelsPerFrame, glFrame, movedCounters, renderer: engine.getGlInfo().renderer };
   } finally {
     block._buildBlock = build;
     controller.applyViewRefresh = applyViewRefresh;
