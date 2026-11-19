@@ -49,16 +49,20 @@ function boxesMeet(a: Box, b: Box, clearance: number): boolean {
  *
  * 1. When the gap between the source's right edge and the target's left edge holds the converter plus `FORMAT_GAP_X`
  *    on each side, it goes in the middle of that gap and nothing moves.
- * 2. Otherwise, when the source is wholly left of the target, the source and the nodes that only feed it (its
- *    upstream nodes whose every wire stays inside that set and that have no exec pin; an exec source moves alone)
- *    move left by the shortfall, and the converter goes one gap left of the target. The source's other wires stretch.
- * 3. When that move would bring a moved node onto another node, the converter's spot would still be taken, or the
- *    source is not wholly left of the target, nothing moves: the converter goes one gap left of the target.
+ * 2. Otherwise, when the source is wholly left of the target, the converter goes one gap left of the target and the
+ *    source moves left by the shortfall, with the nodes that only feed it (upstream nodes whose every wire stays inside
+ *    the set and that have no exec pin; an exec source starts alone) and, transitively, every other node a moving
+ *    node would come within `NODE_PLACEMENT_GAP` of (and was not already that close beside). All of them move by the same
+ *    amount, so their layout is kept; the source's other wires stretch.
+ * 3. When the source is not wholly left of the target, or the push would reach the target or a node whose left edge
+ *    is at or right of the converter's slot, nothing moves: the converter goes one gap left of the target.
  *
  * In every case the converter is then pushed straight down, never up, to the first spot clear of every node.
- * With a snap grid, the converter and every moved node land on it, moved nodes going left by at least the shortfall.
+ * With a snap grid the converter lands on it and moved nodes move by a whole number of grid cells.
  *
- * Cost: O(nodes + edges) to find the feeders, O(moved × nodes) to check the move, O(nodes log nodes) to push down.
+ * Cost: O(nodes + edges) to find the feeders; O(nodes log nodes) to sort the boxes by their left edge, then per moved
+ * node a binary search plus the boxes whose left edge lies in the x band it sweeps through, so
+ * O((moved + pushed) × (log nodes + band)); O(nodes log nodes) to push the converter down.
  */
 export function placeConversion({
   nodes,
@@ -92,24 +96,67 @@ export function placeConversion({
   }
 
   const x = snap(besideTarget, "floor");
-  const shortfall = fitsLeft - x;
-  const moved = privateFeeders(from, target, byId, edges);
+  const shift = snap(fitsLeft - x, "ceil");
+  const fixed = (node: ConversionPlacementNode) => node.id === target || node.x >= x;
+  const moved = pushedLeft(nodes, byId, privateFeeders(from, target, byId, edges), shift, fixed);
+  if (!moved) return { position: below(x, nodes), moves: [] };
   const moves = [...moved].map((id) => {
     const node = byId.get(id)!;
-    return { id, position: { x: snap(node.x - shortfall, "floor"), y: snap(node.y, "round") } };
+    return { id, position: { x: node.x - shift, y: node.y } };
   });
-  const after = new Map(moves.map(({ id, position }) => [id, { ...byId.get(id)!, ...position }]));
-  const blocked = nodes.some(
-    (other) =>
-      !moved.has(other.id) &&
-      moves.some(({ id }) => boxesMeet(after.get(id)!, other, NODE_PLACEMENT_GAP) && !boxesMeet(byId.get(id)!, other, NODE_PLACEMENT_GAP)),
-  );
-  const shifted = nodes.map((node) => after.get(node.id) ?? node);
-  const spot = { x, y: levelY, width: converter.width, height: converter.height };
-  if (blocked || shifted.some((node) => boxesMeet(spot, node, NODE_PLACEMENT_GAP))) {
-    return { position: below(x, nodes), moves: [] };
+  const shifted = nodes.map((node) => (moved.has(node.id) ? { ...node, x: node.x - shift } : node));
+  return { position: below(x, shifted), moves };
+}
+
+/**
+ * `start` plus every node it pushes when the set moves `shift` left: a node joins when a moving box would come within
+ * `NODE_PLACEMENT_GAP` of it and was not already that close beside it (above or below), and then pushes in turn. Null when it would push a node
+ * `fixed` keeps in place. Each node joins at most once, so there are at most `nodes.length` rounds; each round
+ * binary-searches the boxes sorted by left edge for the band its box sweeps through.
+ */
+function pushedLeft(
+  nodes: readonly ConversionPlacementNode[],
+  byId: ReadonlyMap<string, ConversionPlacementNode>,
+  start: ReadonlySet<string>,
+  shift: number,
+  fixed: (node: ConversionPlacementNode) => boolean,
+): Set<string> | null {
+  const gap = NODE_PLACEMENT_GAP;
+  const sorted = [...nodes].sort((a, b) => a.x - b.x);
+  const widest = sorted.reduce((most, node) => Math.max(most, node.width), 0);
+  const firstAtOrRightOf = (value: number) => {
+    let low = 0;
+    let high = sorted.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (sorted[middle]!.x < value) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  };
+  const moved = new Set(start);
+  const order = [...start];
+  for (let round = 0; round < order.length; round++) {
+    if (round >= nodes.length) throw new Error("placeConversion: a push joined more nodes than the graph holds");
+    const node = byId.get(order[round]!)!;
+    const after = { ...node, x: node.x - shift };
+    // A box it can meet starts within the sweep from its new left edge (less the widest box) to its old right edge.
+    for (
+      let index = firstAtOrRightOf(after.x - gap - widest);
+      index < sorted.length && sorted[index]!.x < node.x + node.width + gap;
+      index++
+    ) {
+      const other = sorted[index]!;
+      // A neighbour already that close above or below stays alongside as the box slides left; one wholly to its left
+      // would be run into, however close it already was.
+      const alongside = boxesMeet(node, other, gap) && other.x + other.width > node.x;
+      if (moved.has(other.id) || alongside || !boxesMeet(after, other, gap)) continue;
+      if (fixed(other)) return null;
+      moved.add(other.id);
+      order.push(other.id);
+    }
   }
-  return { position: { x, y: levelY }, moves };
+  return moved;
 }
 
 /**

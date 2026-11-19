@@ -88,17 +88,76 @@ describe("placeConversion", () => {
     expect(placed.moves).toEqual([{ id: "source", position: { x: -160, y: 0 } }]);
   });
 
-  it("moves nothing when the move would bring a moved node onto another, and goes below the pair instead", () => {
-    // `wall` sits just left of the source: moving the source 160 left would land on it. The converter keeps x = 160
-    // and is pushed down past the source (bottom 100, plus the 24 placement gap).
+  const sortedMoves = (placed: ReturnType<typeof placeConversion>) =>
+    [...placed.moves].sort((a, b) => a.id.localeCompare(b.id));
+
+  it("pushes a neighbour in the way left by the same amount instead of giving up", () => {
+    // `wall` (-200..-50) sits 50 left of the source: the source moving 160 left would land on it, so it moves 160 too.
     const placed = place([box("source", 0, 0), box("target", 600, 0), box("wall", -200, 0, false, 150)]);
+    expect(placed.position).toEqual({ x: 160, y: 0 });
+    expect(sortedMoves(placed)).toEqual([
+      { id: "source", position: { x: -160, y: 0 } },
+      { id: "wall", position: { x: -360, y: 0 } },
+    ]);
+  });
+
+  it("pushes a chain of neighbours, exec nodes included, each by the same amount", () => {
+    // Each 30 left of the next: the source hits `near`, `near` hits the exec node `far`; `aside`, 200 below `far`, is
+    // never in the way.
+    const placed = place([
+      box("source", 0, 0),
+      box("target", 600, 0),
+      box("near", -180, 20, false, 150),
+      box("far", -360, -10, true, 150),
+      box("aside", -560, 190),
+    ]);
+    expect(placed.position).toEqual({ x: 160, y: 0 });
+    expect(sortedMoves(placed)).toEqual([
+      { id: "far", position: { x: -520, y: -10 } },
+      { id: "near", position: { x: -340, y: 20 } },
+      { id: "source", position: { x: -160, y: 0 } },
+    ]);
+  });
+
+  it("leaves a neighbour already close above the source where it is, but pushes one already close to its left", () => {
+    const placed = place([
+      box("source", 0, 0),
+      box("target", 600, 0),
+      box("above", -100, -110),
+      box("left", -170, 0, false, 150),
+    ]);
+    expect(sortedMoves(placed)).toEqual([
+      { id: "left", position: { x: -330, y: 0 } },
+      { id: "source", position: { x: -160, y: 0 } },
+    ]);
+  });
+
+  it("settles a long chain, every node in it joining once", () => {
+    // Forty 150-wide nodes 30 apart behind the source: each is pushed by the one to its right.
+    const chain = Array.from({ length: 40 }, (_, index) => box(`n${index}`, -180 * (index + 1), 0, false, 150));
+    const placed = place([box("source", 0, 0), box("target", 600, 0), ...chain]);
+    expect(placed.moves).toHaveLength(41);
+    expect(placed.moves.find((move) => move.id === "n39")?.position).toEqual({ x: -7360, y: 0 });
+  });
+
+  it.each([
+    ["the target", box("feeder", 900, 0)],
+    ["a node at or right of the converter's slot", box("feeder", 520, 300)],
+  ])("moves nothing when the push would reach %s, and puts the converter one gap left of the target", (_case, feeder) => {
+    // The source's only feeder sits so that moving it 160 left runs it into the target, or into `post` (left edge 300,
+    // right of the slot at 160).
+    const placed = place(
+      [box("source", 0, 0), box("target", 600, 0), feeder, box("post", 300, 300)],
+      [{ source: "feeder", target: "source" }],
+    );
     expect(placed).toEqual({ position: { x: 160, y: 124 }, moves: [] });
   });
 
-  it("moves nothing when a node outside the moved set holds the converter's spot", () => {
+  it("keeps the moves and pushes the converter down when a node it cannot push holds the converter's spot", () => {
+    // `between` (y -20..40) is in the slot but nothing moving runs into it: the converter goes below it, 40 + 24.
     const placed = place([box("source", 0, 0), box("target", 600, 0), box("between", 260, -20, true, 100, 60)]);
-    expect(placed.moves).toEqual([]);
-    expect(placed.position).toEqual({ x: 160, y: 124 });
+    expect(placed.moves).toEqual([{ id: "source", position: { x: -160, y: 0 } }]);
+    expect(placed.position).toEqual({ x: 160, y: 64 });
   });
 
   it.each([
@@ -120,22 +179,23 @@ describe("placeConversion", () => {
   });
 
   it("levels the converter's output, not its first row, with the target pin", () => {
-    // Output on the second row: 50 of chrome, one 44 row, half a row.
+    // Output on the second row: 44 further down than the first row.
     const placed = place([box("source", 0, 0), box("target", 1000, 0)], [], { converter: { ...converter, outY: 116 } });
     expect(placed.position).toEqual({ x: 440, y: -44 });
   });
 
-  it("lands every moved node and the converter on the snap grid, moving nodes at least the shortfall", () => {
-    // Converter: x floor(160 / 16) * 16 = 160; y round((77 - 72) / 16) * 16 = 0. Shortfall 203 + 120 - 160 = 163,
-    // so the source goes from 3 to floor(-160 / 16) * 16 = -160 and the feeder from -382 to floor(-545 / 16) * 16 = -560.
+  it("lands the converter on the snap grid and moves nodes by whole grid cells covering the shortfall", () => {
+    // Converter: x floor(160 / 16) * 16 = 160; y round((77 - 72) / 16) * 16 = 0. Shortfall 208 + 120 - 160 = 168,
+    // rounded up to 11 cells = 176, so grid-aligned nodes stay aligned: the source goes from 16 to -160 and the feeder
+    // from -384 to -560.
     const placed = place(
-      [box("source", 3, 5), box("target", 600, 0), box("feeder", -382, 3)],
+      [box("source", 16, 0, false, 192), box("target", 608, 0), box("feeder", -384, 32)],
       [{ source: "feeder", target: "source" }],
-      { targetPoint: { x: 600, y: 77 }, snapGrid: 16 },
+      { targetPoint: { x: 608, y: 77 }, snapGrid: 16 },
     );
     expect(placed.position).toEqual({ x: 160, y: 0 });
-    expect([...placed.moves].sort((a, b) => a.id.localeCompare(b.id))).toEqual([
-      { id: "feeder", position: { x: -560, y: 0 } },
+    expect(sortedMoves(placed)).toEqual([
+      { id: "feeder", position: { x: -560, y: 32 } },
       { id: "source", position: { x: -160, y: 0 } },
     ]);
   });
