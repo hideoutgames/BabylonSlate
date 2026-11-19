@@ -79,6 +79,8 @@ import { enterDrawPass, leaveDrawPass, observeTaskDrawPass, type DrawPass } from
 import { worldDebugOff } from "./world-debug";
 import { timeParticleAnimation } from "./particle-animation-pass";
 import { installSampleDiscard, markLastSampleWriters } from "./sample-discard";
+import { startFullScreenPassesWithClear } from "./full-target-clear";
+import { installInstanceUploads } from "./instance-uploads";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import {
   ManagedShadowObjectRendererTask,
@@ -596,6 +598,8 @@ export class ForwardSceneFrameGraph {
     this.seedsFromSceneDepth = options.seedsFromSceneDepth === true && !options.auxiliary;
     this.scopedStrictProbes = options.scopedStrictProbes === true && !options.auxiliary;
     this.leanPreparation = options.leanPreparation === true && !options.auxiliary;
+    // A batch drawn again with the instance data its buffers already hold this frame uploads nothing.
+    installInstanceUploads(scene);
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = (reason: SceneReadinessDirtyReason) => () => this.markReadinessDirty(reason);
@@ -1880,6 +1884,8 @@ export class ForwardSceneFrameGraph {
           const texture = textures.getTextureFromHandle(handle);
           return texture && texture.samples > 1 ? texture : null;
         });
+        // Full-screen passes start from a clear of their colour target, not a load of it (`full-target-clear.ts`).
+        startFullScreenPassesWithClear(this.graph.tasks);
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
       const started = performance.now();
