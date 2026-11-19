@@ -45,8 +45,9 @@ import {
  *      HAPTIC_PERF_VERIFY_DRAW_LISTS=1 (every fourth frame of each Scene Layer takes Babylon's full path, whose sorted
  *      lists must equal the layer's retained draw list: `layerWork[].drawList.mismatches`),
  *      HAPTIC_PERF_LAYER_PARITY=1 (after the windows, with the game paused, the play canvas and the overlay picks over the Scene
- *      Layers' interactive controls with the retained draw lists and with every layer frame on Babylon's full path:
- *      `play.layerParity`, whose differing pixels and picks must be 0),
+ *      Layers' interactive controls with the retained draw lists and with every layer frame on Babylon's full path, each
+ *      frame redrawn after its switch (a paused view holds its picture) until the draw list counters show it took its
+ *      path: `play.layerParity`, whose differing pixels and picks must be 0, `paths.*.took` true, else the step fails),
  *      HAPTIC_PERF_IDLE_HALF_RATE=1 (the editor viewport keeps Half Rate When Idle on; the route turns it off otherwise),
  *      HAPTIC_PERF_VERIFY_JOURNAL=1 (Play follows each shadow caster walk of the change journal with the full walk, which
  *      must find nothing more: `rendererWork.shadowJournal.mismatches` and `missedKinds`),
@@ -60,13 +61,22 @@ import {
  *      walking every occluder, and counts each that disagrees: `rendererWork.outlineCull.mismatches`),
  *      HAPTIC_PERF_VERIFY_PREPARATION=1 (each lean object and geometry pass in Play runs Babylon's own preparation, which
  *      draws, then the lean one into scratch, whose queues must match in order: `rendererWork.leanPreparation.mismatches`),
+ *      HAPTIC_PERF_VERIFY_OCCLUSION=1 (each world view frame that keeps its occlusion buffer also draws the occluders again
+ *      and filters once more, whose list must match in order: `occlusion.keptMismatches` of `keptChecks`),
+ *      HAPTIC_PERF_OCCLUSION_EVERY_FRAME=1 (the world view runs its occlusion filter on every frame instead of backing off
+ *      while it culls nothing: the comparison for `occlusion.skippedFrames`),
+ *      HAPTIC_PERF_OCCLUSION_PARITY=1 (with HAPTIC_PERF_VIEWS, each held view, paused: the canvas drawn while occlusion
+ *      backs off against one with the filter every frame, and a second backing-off frame as the control; each pair's
+ *      `differing` must be 0: the view's step `occlusion parity`),
  *      HAPTIC_PERF_VERIFY_MIRROR_WORK=1 (each Mirror cull made from its render's shared candidates also walks the whole
  *      Scene, `rendererWork.mirrorCulls.mismatches`, and each light cluster block kept across another camera's turn is
  *      built afresh to compare, `rendererWork.lightClusters.mismatches`),
  *      HAPTIC_PERF_MIRROR_UNSHARED=1 (Play's Mirror culls each walk the whole Scene and light clusters build at every
  *      camera's turn, as before that work was shared: the old path, to measure against),
  *      HAPTIC_PERF_MIRROR_PARITY=1 (after the windows, held at the Profile mirror view with the game paused, the play canvas
- *      with the Mirrors' shared work and on the old path, compared pixel by pixel: `play.mirrorParity`),
+ *      with the Mirrors' shared work and on the old path, compared pixel by pixel, each frame redrawn after its switch
+ *      with every reflection drawn again; `paths.*` holds each frame's Mirror culls, candidate walks, reflection draws
+ *      and cluster builds, and `took` must be true, else the step fails: `play.mirrorParity`),
  *      HAPTIC_PERF_DEVICE (`<width>x<height>@<scale>`, e.g. `1180x788@2`: the page's CSS viewport and device scale factor),
  *      HAPTIC_PERF_VIEWS (comma list of the Feature Test Check's Profile views, light|heavy|mirror: Play holds each in
  *      turn with `possess` instead of sampling the camera tour, and each view reports its GL pass structure and, with
@@ -121,6 +131,10 @@ const VERIFY_BATCHES = process.env.HAPTIC_PERF_VERIFY_BATCHES === "1";
 const VERIFY_DRAW_LISTS = process.env.HAPTIC_PERF_VERIFY_DRAW_LISTS === "1";
 /** After the windows, with the game paused: the Scene Layers' picture and picks with the retained draw list and on Babylon's full path. */
 const LAYER_PARITY = process.env.HAPTIC_PERF_LAYER_PARITY === "1";
+/** The world view runs its occlusion filter on every frame instead of backing off while it culls nothing. */
+const OCCLUSION_EVERY_FRAME = process.env.HAPTIC_PERF_OCCLUSION_EVERY_FRAME === "1";
+/** With HAPTIC_PERF_VIEWS, each held view, paused: the canvas with occlusion backing off and with it run every frame. */
+const OCCLUSION_PARITY = process.env.HAPTIC_PERF_OCCLUSION_PARITY === "1";
 /** Leaves Engine Settings' Half Rate When Idle on, to measure the idle editor viewport as a user has it by default. */
 const IDLE_HALF_RATE = process.env.HAPTIC_PERF_IDLE_HALF_RATE === "1";
 /** Each shadow caster walk of the change journal in Play is followed by the full walk (the measured frames carry its cost). */
@@ -134,6 +148,8 @@ const VERIFY_MIRROR_CROP = process.env.HAPTIC_PERF_VERIFY_MIRROR_CROP === "1";
 const VERIFY_OUTLINES = process.env.HAPTIC_PERF_VERIFY_OUTLINES === "1";
 /** Each lean object and geometry pass in Play also runs Babylon's preparation (the measured frames carry its cost). */
 const VERIFY_PREPARATION = process.env.HAPTIC_PERF_VERIFY_PREPARATION === "1";
+/** Each world view frame that keeps its occlusion buffer also draws the occluders again (the measured frames carry its cost). */
+const VERIFY_OCCLUSION = process.env.HAPTIC_PERF_VERIFY_OCCLUSION === "1";
 /** Mirror culls from shared candidates and kept light cluster blocks are also made the old way (the measured frames carry its cost). */
 const VERIFY_MIRROR_WORK = process.env.HAPTIC_PERF_VERIFY_MIRROR_WORK === "1";
 /** Play runs the Mirrors' culls and the light clusters unshared, as before. */
@@ -184,8 +200,12 @@ type PlayHost = {
     verifyMirrorFootprintCrops: (enabled: boolean) => void;
     verifySharedOutlineCulls: (enabled: boolean) => void;
     verifyLeanPreparation: (enabled: boolean) => void;
+    verifyKeptOcclusionBuffers: (enabled: boolean) => void;
+    forceOcclusionEveryFrame: (enabled: boolean) => void;
+    requestPausedRedraw: () => { accepted: boolean; reason?: string } | null;
     verifyMirrorSharedWork: (enabled: boolean) => void;
     unshareMirrorWork: (enabled: boolean) => void;
+    redrawMirrorReflections: () => void;
   };
 };
 
@@ -454,6 +474,8 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (VERIFY_MIRROR_CROP) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorFootprintCrops(true));
   if (VERIFY_OUTLINES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifySharedOutlineCulls(true));
   if (VERIFY_PREPARATION) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyLeanPreparation(true));
+  if (VERIFY_OCCLUSION) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyKeptOcclusionBuffers(true));
+  if (OCCLUSION_EVERY_FRAME) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.forceOcclusionEveryFrame(true));
   if (VERIFY_MIRROR_WORK) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorSharedWork(true));
   if (MIRROR_UNSHARED) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.unshareMirrorWork(true));
   if (QUALITY) {
@@ -501,35 +523,91 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   };
 }
 
+const playDrawnFrames = (page: Page) =>
+  page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.presentation?.drawn ?? 0);
+
+/**
+ * Draws one frame of the paused view (`requestPausedRedraw`) and waits until it has drawn. A paused Play view holds its
+ * picture: without this, a screenshot after a switch shows the frame drawn before it.
+ */
+async function pausedRedraw(page: Page): Promise<void> {
+  const before = await playDrawnFrames(page);
+  const request = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.requestPausedRedraw());
+  if (!request?.accepted) throw new Error(`paused redraw refused: ${request?.reason ?? "no session"}`);
+  await expect.poll(() => playDrawnFrames(page), { timeout: 10_000, intervals: [50] }).toBeGreaterThan(before);
+}
+
+/** Frames the paused view drew by itself over `ms`: 0 shows it holds its picture until asked. */
+async function drawnWhilePaused(page: Page, ms: number): Promise<number> {
+  const before = await playDrawnFrames(page);
+  await page.waitForTimeout(ms);
+  return (await playDrawnFrames(page)) - before;
+}
+
+type DrawListCounts = Array<{ retained: number; full: number; checked: number; fallback: number } | null>;
+
 /**
  * With the game paused: the play canvas twice with the Scene Layers' retained draw lists (the second shows what a paused
  * frame changes by itself), then with every layer frame on Babylon's full path, compared pixel by pixel; and the
- * overlay picks at points over every interactive control on both paths.
+ * overlay picks at points over every interactive control on both paths. Each screenshot follows a paused redraw whose
+ * draw list counters show the path it took (every layer's frame retained, or every one on the full path); a frame on
+ * another path (a periodic check, a fallback) is drawn again. The step fails if a path was never taken.
  */
 async function layerParity(page: Page) {
   await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyLayerDrawLists(false));
   await runConsoleCommand(page, "pause");
   await page.waitForTimeout(1500);
+  const drawnUnasked = await drawnWhilePaused(page, 2000);
   const canvas = page.getByTestId("play-canvas");
-  const shot = async () => (await canvas.screenshot()).toString("base64");
-  const retained = await shot();
-  await page.waitForTimeout(500);
-  const retainedAgain = await shot();
+  const counts = () => page.evaluate(() => {
+    type Work = { drawList?: { retainedFrames: number; fullPathFrames: number; checkedFrames: number; fallbackFrames: number } | null };
+    const layers = ((globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.layerWork ?? []) as Work[];
+    return layers.map((layer) => layer.drawList
+      ? { retained: layer.drawList.retainedFrames, full: layer.drawList.fullPathFrames, checked: layer.drawList.checkedFrames, fallback: layer.drawList.fallbackFrames }
+      : null);
+  }) as Promise<DrawListCounts>;
+  const capture = async (path: "retained" | "full") => {
+    let paths: DrawListCounts = [], took = false, redraws = 0;
+    while (!took && redraws < 12) {
+      const before = await counts();
+      await pausedRedraw(page);
+      const after = await counts();
+      redraws += 1;
+      paths = after.map((count, index) => {
+        const was = before[index];
+        return count && was ? { retained: count.retained - was.retained, full: count.full - was.full, checked: count.checked - was.checked, fallback: count.fallback - was.fallback } : null;
+      });
+      const layers = paths.filter((delta) => delta !== null);
+      took = layers.length > 0 && layers.every((delta) => path === "retained"
+        ? delta.retained > 0 && delta.full === 0 && delta.checked === 0 && delta.fallback === 0
+        : delta.full > 0 && delta.retained === 0);
+    }
+    return { shot: (await canvas.screenshot()).toString("base64"), paths, took, redraws };
+  };
+  const retained = await capture("retained");
+  const retainedAgain = await capture("retained");
   const targets = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.sceneLayerHitTargets());
   const pick = () => page.evaluate((points) => (globalThis as unknown as PlayHost).__hapticPlayTest!.sceneLayerPickHits(points), targets);
   const retainedHits = await pick();
   await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.drawLayersFullPath(true));
-  await page.waitForTimeout(1500);
-  const full = await shot();
+  const full = await capture("full");
   const fullHits = await pick();
   await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.drawLayersFullPath(false));
   await runConsoleCommand(page, "resume");
+  expect.soft({ retained: retained.took, retainedAgain: retainedAgain.took, full: full.took }, "layer parity: each compared frame took its path")
+    .toEqual({ retained: true, retainedAgain: true, full: true });
   const compare = (a: string, b: string) => comparePixels(page, a, b);
   const pickDifferences = targets.flatMap((target, index) =>
     JSON.stringify(retainedHits[index]) === JSON.stringify(fullHits[index]) ? [] : [{ ...target, retained: retainedHits[index], full: fullHits[index] }]);
   return {
-    retainedVsRetained: await compare(retained, retainedAgain),
-    retainedVsFull: await compare(retained, full),
+    retainedVsRetained: await compare(retained.shot, retainedAgain.shot),
+    retainedVsFull: await compare(retained.shot, full.shot),
+    drawnWhilePausedUnasked: drawnUnasked,
+    paths: {
+      retained: { took: retained.took, redraws: retained.redraws, layers: retained.paths },
+      retainedAgain: { took: retainedAgain.took, redraws: retainedAgain.redraws, layers: retainedAgain.paths },
+      full: { took: full.took, redraws: full.redraws, layers: full.paths },
+    },
     targets: targets.length,
     controls: new Set(targets.map((target) => `${target.layerId}/${target.mesh}`)).size,
     pointsHit: retainedHits.filter((hits) => hits.length > 0).length,
@@ -559,7 +637,9 @@ function comparePixels(page: Page, a: string, b: string) {
 /**
  * Held at the Profile mirror view with the game paused: the play canvas twice on the path the Play runs (the second
  * shows what a paused frame changes by itself), then on the other one (`unshareMirrorWork`), compared pixel by pixel,
- * with the verifiers' counts as they stand then.
+ * with the verifiers' counts as they stand then. Each screenshot follows a paused redraw in which every Mirror draws its
+ * reflection again (`redrawMirrorReflections`); its counters show the path it took: the reflections drew, and unshared
+ * every cull walked the Scene, while shared the culls walked it fewer times than they culled. The step fails otherwise.
  */
 async function mirrorParity(page: Page) {
   await runConsoleCommand(page, `possess "${FEATURE_TEST_PROFILE_VIEWS.mirror.name}"`);
@@ -567,24 +647,47 @@ async function mirrorParity(page: Page) {
   await page.waitForTimeout(SETTLE_MS);
   await runConsoleCommand(page, "pause");
   await page.waitForTimeout(1500);
+  const drawnUnasked = await drawnWhilePaused(page, 2000);
   const canvas = page.getByTestId("play-canvas");
-  const shot = async () => (await canvas.screenshot()).toString("base64");
   const unshare = (enabled: boolean) => page.evaluate((value) => (globalThis as unknown as PlayHost).__hapticPlayTest!.unshareMirrorWork(value), enabled);
-  const first = await shot();
-  await page.waitForTimeout(500);
-  const again = await shot();
-  await unshare(!MIRROR_UNSHARED);
-  await page.waitForTimeout(1500);
-  const other = await shot();
+  const work = () => page.evaluate(() => {
+    type Work = { mirrorCulls?: { culls: number; walks: number; draws: number }; lightClusters?: { builds: number } };
+    const rendererWork = ((globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.rendererWork ?? {}) as Work;
+    return {
+      culls: rendererWork.mirrorCulls?.culls ?? 0, walks: rendererWork.mirrorCulls?.walks ?? 0, draws: rendererWork.mirrorCulls?.draws ?? 0,
+      builds: rendererWork.lightClusters?.builds ?? 0,
+    };
+  });
+  const capture = async (unshared: boolean) => {
+    await unshare(unshared);
+    await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.redrawMirrorReflections());
+    const before = await work();
+    await pausedRedraw(page);
+    const after = await work();
+    const delta = { culls: after.culls - before.culls, walks: after.walks - before.walks, draws: after.draws - before.draws, clusterBuilds: after.builds - before.builds };
+    const took = delta.draws > 0 && delta.culls > 0 && (unshared ? delta.walks === delta.culls : delta.walks < delta.culls);
+    return { shot: (await canvas.screenshot()).toString("base64"), unshared, delta, took };
+  };
+  const first = await capture(MIRROR_UNSHARED);
+  const again = await capture(MIRROR_UNSHARED);
+  const other = await capture(!MIRROR_UNSHARED);
   await unshare(MIRROR_UNSHARED);
-  const work = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.rendererWork ?? null) as Record<string, unknown> | null;
+  const rendererWork = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.rendererWork ?? null) as Record<string, unknown> | null;
   await runConsoleCommand(page, "resume");
+  expect.soft({ first: first.took, again: again.took, other: other.took }, "mirror parity: each compared frame took its path")
+    .toEqual({ first: true, again: true, other: true });
   return {
     unshared: MIRROR_UNSHARED,
-    sameVsSame: await comparePixels(page, first, again),
-    sameVsOther: await comparePixels(page, first, other),
-    mirrorCulls: work?.mirrorCulls ?? null,
-    lightClusters: work?.lightClusters ?? null,
+    sameVsSame: await comparePixels(page, first.shot, again.shot),
+    sameVsOther: await comparePixels(page, first.shot, other.shot),
+    drawnWhilePausedUnasked: drawnUnasked,
+    paths: {
+      first: { unshared: first.unshared, took: first.took, ...first.delta },
+      again: { unshared: again.unshared, took: again.took, ...again.delta },
+      other: { unshared: other.unshared, took: other.took, ...other.delta },
+    },
+    mirrorCulls: rendererWork?.mirrorCulls ?? null,
+    lightClusters: rendererWork?.lightClusters ?? null,
   };
 }
 
@@ -624,12 +727,47 @@ async function measureHeld(page: Page) {
   };
 }
 
+/**
+ * With the game paused, the canvas of a paused frame drawn while occlusion backs off (an idle frame, or a running one
+ * where the view culls) against one drawn with the filter run every frame, and a second backing-off frame as the control.
+ * Backing off only adds hidden meshes to what draws, so every pair must match pixel for pixel.
+ */
+async function occlusionParity(page: Page) {
+  type Occlusion = { idle: boolean; culled: number; tested: number; backOff: number } | null;
+  await runConsoleCommand(page, "pause");
+  await page.waitForTimeout(1500);
+  const canvas = page.getByTestId("play-canvas");
+  const frame = async (forced: boolean) => {
+    await page.evaluate((value) => (globalThis as unknown as PlayHost).__hapticPlayTest!.forceOcclusionEveryFrame(value), forced);
+    let occlusion: Occlusion = null, redraws = 0;
+    for (; redraws < 48; redraws++) {
+      await pausedRedraw(page);
+      occlusion = await page.evaluate(() => ((globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.occlusion ?? null) as Occlusion);
+      // Forced: a running frame; backing off: an idle frame, unless the view culls and so never idles.
+      if (!occlusion || (forced ? !occlusion.idle : occlusion.idle || occlusion.culled > 0)) break;
+    }
+    return { shot: (await canvas.screenshot()).toString("base64"), occlusion, redraws: redraws + 1 };
+  };
+  const backingOff = await frame(false);
+  const forced = await frame(true);
+  const again = await frame(false);
+  await page.evaluate((value) => (globalThis as unknown as PlayHost).__hapticPlayTest!.forceOcclusionEveryFrame(value), OCCLUSION_EVERY_FRAME);
+  await runConsoleCommand(page, "resume");
+  return {
+    backingOffVsForced: await comparePixels(page, backingOff.shot, forced.shot),
+    backingOffVsBackingOff: await comparePixels(page, backingOff.shot, again.shot),
+    states: { backingOff: backingOff.occlusion, forced: forced.occlusion, again: again.occlusion },
+    redraws: { backingOff: backingOff.redraws, forced: forced.redraws, again: again.redraws },
+  };
+}
+
 /** Each Profile view held in turn, its baseline and each variant between baselines (A B A C A). */
 async function measureViews(page: Page) {
   const results: Record<string, unknown> = {};
   for (const view of VIEWS) {
     await runConsoleCommand(page, `possess "${FEATURE_TEST_PROFILE_VIEWS[view].name}"`);
     const steps: Array<{ label: string } & Record<string, unknown>> = [{ label: "baseline", ...await measureHeld(page) }];
+    if (OCCLUSION_PARITY) steps.push({ label: "occlusion parity", ...await occlusionParity(page) });
     for (const variant of VARIANTS) {
       for (const command of variant.commands ?? []) await runConsoleCommand(page, command);
       await callHooks(page, variant.hooks);

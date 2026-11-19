@@ -18,7 +18,7 @@ export { sceneWaterQuality, sceneWaterQualityRevision, sceneWaterQualityDeviceCl
 export { clampWaterQualityToDevice, type WaterQualityDeviceClamp, type WaterDeviceCapabilities, type WaterDeviceView } from "./water-quality-device";
 export { waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera, type WaterPlanarReflection, type WaterPlanarReflectionDiagnostics } from "./water-planar-reflection";
 export {
-  mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyMirrorSharedCulls, walkMirrorCullsUnshared, type MirrorDiagnostics,
+  mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyMirrorSharedCulls, walkMirrorCullsUnshared, redrawMirrorReflections, type MirrorDiagnostics,
 } from "./mirrors";
 export { forceClusterRebuilds, verifyLightClusterSlots } from "./haptic-lights";
 export { verifyCaptureActorLists } from "./render-target-capture-state";
@@ -140,6 +140,7 @@ export type { RenderPerformanceSample } from "./render-performance";
 
 export { engineAdapterInfo, lightsDebugText } from "./render-diagnostics";
 export { drawOcclusionOverlay } from "./occlusion-overlay";
+export { forceOcclusionEveryFrame, verifyKeptOcclusionBuffers } from "./view-occlusion";
 export { estimateTextureMemory } from "./texture-memory-estimate";
 export { formatGlErrorTrace, glErrorTraceActive, glErrorTraceEntries, installGlErrorTrace, type GlErrorTraceEntry } from "./gl-error-trace";
 export { captureShadowDiagnostics, type ShadowDiagnosticOptions, type ShadowDiagnostics } from "./shadow-diagnostics";

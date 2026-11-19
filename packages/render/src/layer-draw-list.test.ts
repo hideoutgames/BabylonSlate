@@ -8,7 +8,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sceneDrawBatcher } from "./draw-batching";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { layerDrawListWork, verifyLayerDrawLists } from "./layer-draw-list";
+import { drawLayersFullPath, layerDrawListWork, verifyLayerDrawLists } from "./layer-draw-list";
 import { setSceneDrawBatching } from "./overlay-draw-batcher";
 import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
@@ -81,6 +81,23 @@ function batchedX(scene: Scene): number[] {
 }
 
 describe("layer draw list", () => {
+  it("counts each frame drawLayersFullPath sends down Babylon's full path, so a parity check can tell its frames apart", async () => {
+    const { frames, work } = await layer((scene) => {
+      quad(scene, "q0", -3, 0);
+      quad(scene, "q1", 0, 2);
+    });
+    const before = { ...work() };
+    frames();
+    expect([work().retainedFrames - before.retainedFrames, work().fullPathFrames - before.fullPathFrames]).toEqual([1, 0]);
+    drawLayersFullPath(true);
+    try {
+      frames(2);
+    } finally {
+      drawLayersFullPath(false);
+    }
+    expect([work().retainedFrames - before.retainedFrames, work().fullPathFrames - before.fullPathFrames]).toEqual([1, 2]);
+  });
+
   it("hands the batcher Babylon's back-to-front order while Babylon reads only the meshes the batcher draws", async () => {
     // Distances to the camera at (0, 0, -10): q0 10.44, q1 12, q2 11.40.
     const { scene, frames, work } = await layer((scene) => {

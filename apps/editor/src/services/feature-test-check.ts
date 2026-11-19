@@ -1022,9 +1022,10 @@ export interface FeatureTestBenchmarkSample {
   view?: string;
   /**
    * Occlusion culling while sampled (`stat draws`' occlusion row), the median of each: meshes tested and culled,
-   * occluder triangles rasterised and the culling's ms; absent while the view did not cull.
+   * occluder triangles rasterised and the culling's ms; `idle`, the share of readings on a frame that skipped the
+   * filter while it backed off (its runs culled nothing; absent when none did); absent while the view did not cull.
    */
-  occlusion?: { tested: number; culled: number; triangles: number; ms: number };
+  occlusion?: { tested: number; culled: number; triangles: number; ms: number; idle?: number };
   /** GPU-busy time per frame from fences while sampled (`gpubusy`); absent where unmeasured. */
   gpuBusy?: NonNullable<RenderDiagnostics["gpuBusy"]>;
   /** The Engine's GPU backpressure while sampled (`framesinflight`): its mode and the renders it skipped; absent where unmeasured. */
@@ -2358,7 +2359,7 @@ async function sampleWithCounters(
   const draws: number[] = [];
   const passes = new Map<DrawPass, number[]>();
   const passMs = new Map<DrawPass, number[]>();
-  const occlusion = { tested: [] as number[], culled: [] as number[], triangles: [] as number[], ms: [] as number[] };
+  const occlusion = { tested: [] as number[], culled: [] as number[], triangles: [] as number[], ms: [] as number[], idle: 0 };
   let sampling = true;
   const done = frames.finally(() => { sampling = false; });
   while (sampling) {
@@ -2386,6 +2387,7 @@ async function sampleWithCounters(
         occlusion.culled.push(rendering.occlusion.culled);
         occlusion.triangles.push(rendering.occlusion.triangles);
         occlusion.ms.push(rendering.occlusion.ms);
+        if (rendering.occlusion.idle) occlusion.idle += 1;
       }
     }
     await Promise.race([done, deps.sleep(500, signal)]);
@@ -2395,6 +2397,7 @@ async function sampleWithCounters(
     frames: await done, draws: counterStats(draws), cpu: counterStats(cpu), gpu: counterStats(gpu), compiling,
     occlusion: occlusion.tested.length ? {
       tested: median(occlusion.tested), culled: median(occlusion.culled), triangles: median(occlusion.triangles), ms: median(occlusion.ms),
+      ...(occlusion.idle ? { idle: occlusion.idle / occlusion.tested.length } : {}),
     } : null,
     drawPasses: passes.size ? Object.fromEntries([...passes].map(([pass, counts]) => [pass, median(counts)])) : null,
     drawPassMs: passMs.size ? Object.fromEntries([...passMs].map(([pass, times]) => [pass, median(times)])) : null,

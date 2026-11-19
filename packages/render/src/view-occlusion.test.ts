@@ -19,8 +19,10 @@ import { normalizeRenderingQuality } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import {
   allowSceneOcclusionCulling, OCCLUDER_TRIANGLE_BUDGET, primitiveOccluderShape, sceneOcclusionBuffer, sceneOcclusionCulling,
-  sceneOcclusionDiagnostics, setOccluderMode, setSceneOcclusionFrozen, registerModelOccluder, ViewOcclusion,
+  sceneOcclusionDiagnostics, setOccluderMode, setSceneOcclusionFrozen, registerModelOccluder, verifyKeptOcclusionBuffers, ViewOcclusion,
+  forceOcclusionEveryFrame,
 } from "./view-occlusion";
+import { OcclusionBuffer } from "./occlusion-raster";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -337,5 +339,127 @@ describe("ViewOcclusion", () => {
     }
     expect(names(filter([...small, wall, hidden]))).not.toContain("hidden");
     expect(occlusion.diagnostics.triangles).toBeLessThanOrEqual(OCCLUDER_TRIANGLE_BUDGET);
+  });
+});
+
+describe("ViewOcclusion backing off while it culls nothing", () => {
+  afterEach(() => forceOcclusionEveryFrame(false));
+
+  /** Whether each of `frames` filtered frames skipped the filter. */
+  const idleFrames = (filter: () => unknown, occlusion: ViewOcclusion, frames: number) =>
+    Array.from({ length: frames }, () => { filter(); return occlusion.diagnostics.idle; });
+
+  it("skips after four quiet runs, then probes after 2, 4, 8, 16 and at most 32 skipped frames", () => {
+    const { wall, beside, filter, occlusion } = view();
+    const list = [wall, beside];
+    const idle = idleFrames(() => filter(list), occlusion, 4 + 2 + 1 + 4 + 1 + 8 + 1 + 16 + 1 + 32 + 1 + 32 + 1);
+    // Runs (false) and skips (true), frame by frame.
+    const expected = [
+      false, false, false, false, ...Array(2).fill(true), false, ...Array(4).fill(true), false, ...Array(8).fill(true), false,
+      ...Array(16).fill(true), false, ...Array(32).fill(true), false, ...Array(32).fill(true), false,
+    ];
+    expect(idle).toEqual(expected);
+    expect(occlusion.diagnostics).toMatchObject({ backOff: 32, skippedFrames: 94 });
+  });
+
+  it("passes the frustum's list on unfiltered while idle, keeping the last run's counts", () => {
+    const { wall, hidden, beside, filter, occlusion } = view();
+    const quiet = [wall, beside];
+    for (let run = 0; run < 4; run++) filter(quiet);
+    const rasterize = vi.spyOn(OcclusionBuffer.prototype, "rasterize");
+    // The hidden box enters the list while the filter is idle: it is drawn, as with occlusion off.
+    const list = [wall, hidden, beside];
+    expect(filter(list)).toBe(list);
+    expect(occlusion.diagnostics).toMatchObject({ idle: true, culled: 0, tested: 2, ms: 0 });
+    expect(occlusion.culled.size).toBe(0);
+    expect(rasterize).not.toHaveBeenCalled();
+  });
+
+  it("returns to every frame as soon as a probe culls", () => {
+    const { wall, hidden, beside, filter, occlusion } = view();
+    const list = [wall, hidden, beside];
+    hidden.position.set(-9, 0, 12);
+    // Four quiet runs, then the first of two idle frames.
+    for (let frame = 0; frame < 5; frame++) filter(list);
+    expect(occlusion.diagnostics.idle).toBe(true);
+    // Behind the wall again: drawn on the idle frame left, then the probe culls it, and the filter runs every frame.
+    hidden.position.set(0, 0, 12);
+    const idle = idleFrames(() => filter(list), occlusion, 8);
+    expect(idle).toEqual([true, false, false, false, false, false, false, false]);
+    expect(names(filter(list))).toEqual(["wall", "beside"]);
+    expect(occlusion.diagnostics.backOff).toBe(0);
+  });
+
+  it("backs off per view: a view that culls keeps running while another idles", () => {
+    const { camera, wall, hidden, beside, filter, occlusion } = view();
+    const other = new ViewOcclusion();
+    const quiet = [wall, beside], culling = [wall, hidden, beside];
+    for (let frame = 0; frame < 6; frame++) {
+      filter(quiet);
+      expect(names(other.filter(culling, camera, camera.renderPassId))).toEqual(["wall", "beside"]);
+    }
+    expect(occlusion.diagnostics.idle).toBe(true);
+    expect(other.diagnostics).toMatchObject({ idle: false, backOff: 0, skippedFrames: 0 });
+  });
+
+  it("runs every frame while forced, and while frozen", () => {
+    const { scene, wall, beside, filter, occlusion } = view();
+    forceOcclusionEveryFrame(true);
+    expect(idleFrames(() => filter([wall, beside]), occlusion, 12)).not.toContain(true);
+    forceOcclusionEveryFrame(false);
+    setSceneOcclusionFrozen(scene, true);
+    expect(idleFrames(() => filter([wall, beside]), occlusion, 12)).not.toContain(true);
+    setSceneOcclusionFrozen(scene, false);
+  });
+});
+
+describe("ViewOcclusion's kept buffer", () => {
+  afterEach(() => verifyKeptOcclusionBuffers(false));
+
+  it("keeps the buffer while the occluders and the view are unchanged, with the same list and counts", () => {
+    const { filter, occlusion } = view();
+    const rasterize = vi.spyOn(OcclusionBuffer.prototype, "rasterize");
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    expect(rasterize).toHaveBeenCalledTimes(2);
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    expect(rasterize).toHaveBeenCalledTimes(2);
+    expect(occlusion.diagnostics).toMatchObject({ tested: 3, culled: 1, occluders: 2, triangles: 24, keptBuffers: 2 });
+  });
+
+  it("draws again when an occluder moves, so a mesh it no longer hides comes back", () => {
+    const { wall, filter, occlusion } = view();
+    const rasterize = vi.spyOn(OcclusionBuffer.prototype, "rasterize");
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    wall.position.set(20, 0, 5);
+    expect(names(filter())).toEqual(["wall", "hidden", "beside"]);
+    expect(rasterize.mock.calls.length).toBeGreaterThan(2);
+    expect(occlusion.diagnostics.keptBuffers).toBe(0);
+  });
+
+  it("draws again when the camera moves, and when the occluders it draws change", () => {
+    const { camera, hidden, beside, wall, filter, occlusion } = view();
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    // Sideways past the wall's edge: the hidden box shows.
+    camera.position.set(9, 0, 0);
+    expect(names(filter())).toContain("hidden");
+    camera.position.set(0, 0, 0);
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    // Without the wall in the list nothing hides the box.
+    const list = [hidden, beside];
+    expect(filter(list)).toBe(list);
+    // The wall back: drawn afresh, not kept from two frames ago.
+    expect(names(filter([wall, hidden, beside]))).toEqual(["wall", "beside"]);
+    expect(occlusion.diagnostics.keptBuffers).toBe(0);
+  });
+
+  it("while verifying, draws a kept buffer's occluders again and counts no mismatch", () => {
+    const { filter, occlusion } = view();
+    verifyKeptOcclusionBuffers(true);
+    const rasterize = vi.spyOn(OcclusionBuffer.prototype, "rasterize");
+    filter();
+    expect(names(filter())).toEqual(["wall", "beside"]);
+    expect(rasterize).toHaveBeenCalledTimes(4);
+    expect(occlusion.diagnostics).toMatchObject({ keptBuffers: 1, keptChecks: 1, keptMismatches: 0, culled: 1, occluders: 2 });
   });
 });

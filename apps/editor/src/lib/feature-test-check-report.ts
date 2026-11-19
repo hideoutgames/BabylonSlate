@@ -502,7 +502,8 @@ function deltaText(delta: BaselineDelta | null): string {
 /** Occlusion culling while sampled, as `stat draws` shows it. */
 function occlusionText(sample: FeatureTestBenchmarkSample): string {
   return sample.occlusion
-    ? `occlusion culled ${sample.occlusion.culled}/${sample.occlusion.tested} · ${sample.occlusion.triangles} tris · ${sample.occlusion.ms.toFixed(2)} ms`
+    ? `occlusion culled ${sample.occlusion.culled}/${sample.occlusion.tested} · ${sample.occlusion.triangles} tris · ${sample.occlusion.ms.toFixed(2)} ms${
+      sample.occlusion.idle ? ` · idle ${Math.round(sample.occlusion.idle * 100)}%` : ""}`
     : "";
 }
 

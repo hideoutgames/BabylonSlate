@@ -314,7 +314,7 @@ describe("formatFeatureTestCheckReport", () => {
         scene("FT_Occlusion", 1, [
           sample("rooms baseline 1", null, "true", { ...rooms, occlusion: { tested: 480, culled: 212, triangles: 1520, ms: 0.42 } }),
           sample("rooms occlusion off", null, "true", { ...rooms, settings: { ...settings("true"), "geometry.occlusion": "false" } }),
-          sample("rooms baseline 2", null, "true", rooms),
+          sample("rooms baseline 2", null, "true", { ...rooms, occlusion: { tested: 280, culled: 0, triangles: 156, ms: 0, idle: 0.94 } }),
         ]),
         // 4 against 18.5 and 2 against 19 save 31.5 ms of an 18 ms frame.
         scene("FT_World", 2, [sample("baseline 1", 18, "false", saturated), sample("shadows off", 4, "false"), sample("baseline 2", 19, "false", saturated),
@@ -347,6 +347,8 @@ describe("formatFeatureTestCheckReport", () => {
     expect(occlusion).toContain("+0.0ms +0%*");
     expect(occlusion).toMatch(/575 {11}geometry\.occlusion=false$/);
     expect(lines.find((line) => line.startsWith("    rooms baseline 1 "))).toMatch(/occlusion culled 212\/480 · 1520 tris · 0\.42 ms$/);
+    // Backing off while it culled nothing: idle on most readings.
+    expect(lines.find((line) => line.startsWith("    rooms baseline 2 "))).toMatch(/occlusion culled 0\/280 · 156 tris · 0\.00 ms · idle 94%$/);
   });
 
   it("states a warm device and the verdicts only when they apply", () => {

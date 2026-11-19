@@ -121,6 +121,9 @@ export interface MirrorDiagnostics {
   readonly cullChecks: number;
   /** Those whose list differed from the whole walk's, in content or order. Must stay 0. */
   readonly cullMismatches: number;
+  /** Culls so far, and the candidate walks of the Scene they made: one per render and kind when shared, one per cull when not. */
+  readonly culls: number;
+  readonly candidateWalks: number;
 }
 
 let verifyingPolls = false;
@@ -159,6 +162,16 @@ let unshared = false;
 /** Test and proof hook: each Mirror cull walks the whole Scene again, as before its render shared the candidates. */
 export function walkMirrorCullsUnshared(enabled: boolean): void {
   unshared = enabled;
+}
+
+let redrawGeneration = 0;
+
+/**
+ * Test and proof hook: every Mirror surface draws its reflection again on its next render, whatever it shows, so a
+ * paused frame compared across two paths draws the reflections on each (`MirrorDiagnostics.draws` counts them).
+ */
+export function redrawMirrorReflections(): void {
+  redrawGeneration++;
 }
 
 /** NDC slack before a left-out mesh's bounds count as reaching the footprint: a box touching its edge is either side. */
@@ -253,6 +266,10 @@ class SceneMirrors {
   cropMisses = 0;
   cullChecks = 0;
   cullMismatches = 0;
+  candidateCulls = 0;
+  candidateWalks = 0;
+  /** The `redrawMirrorReflections` request each surface last took. */
+  private readonly redrawsSeen = new WeakMap<Surface, number>();
   private readonly scene: Scene;
   private beforeRender: Observer<Scene> | null = null;
   /** The owner's renders, and whether Reflection Shadows is on in this one. */
@@ -354,7 +371,7 @@ class SceneMirrors {
       shadowPasses: shadowChangeSequence(this.scene),
       sunShadowViews: this.surfaces.filter((surface) => surface.target?.sunShadows.holdsMaps).length,
       skippedPolls: this.skippedPolls, pollMismatches: this.pollMismatches, cropChecks: this.cropChecks, cropMisses: this.cropMisses,
-      cullChecks: this.cullChecks, cullMismatches: this.cullMismatches,
+      cullChecks: this.cullChecks, cullMismatches: this.cullMismatches, culls: this.candidateCulls, candidateWalks: this.candidateWalks,
     };
   }
 
@@ -525,6 +542,12 @@ class SceneMirrors {
       mark(sun);
       return !dirty && !sun && !moved;
     };
+    // A surface first seen takes the requests made so far as taken; a later one draws it again.
+    const seen = this.redrawsSeen.get(surface);
+    if (seen !== redrawGeneration) {
+      this.redrawsSeen.set(surface, redrawGeneration);
+      if (seen !== undefined) surface.dirty = true;
+    }
     let current: boolean;
     if (moved && !surface.drawnEmpty) {
       this.skippedPolls++;
@@ -612,7 +635,9 @@ class SceneMirrors {
    */
   private candidatesFor(still: boolean, layerMask: number, excluded: (mesh: AbstractMesh) => boolean): readonly AbstractMesh[] {
     const list = still ? this.stillCandidates : this.candidates;
+    this.candidateCulls++;
     if (unshared || (still ? this.stillCandidatesAt : this.candidatesAt) !== this.culls) {
+      this.candidateWalks++;
       collectPlanarMirrorCandidates(this.scene, list, layerMask, excluded);
       if (still) this.stillCandidatesAt = this.culls;
       else this.candidatesAt = this.culls;

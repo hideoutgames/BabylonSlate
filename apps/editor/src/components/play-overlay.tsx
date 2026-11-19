@@ -16,6 +16,7 @@ import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
   verifyCaptureActorLists, verifyLayerDrawLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
   verifyLeanPreparation, drawLayersFullPath, forceClusterRebuilds, verifyLightClusterSlots, verifyMirrorSharedCulls, walkMirrorCullsUnshared,
+  verifyKeptOcclusionBuffers, forceOcclusionEveryFrame, redrawMirrorReflections,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1292,8 +1293,16 @@ function PlayOverlayView({
         verifyMirrorSharedWork: (enabled: boolean) => void;
         /** Has Mirror culls walk the whole Scene each and light clusters build at every camera's turn, as before they were shared. */
         unshareMirrorWork: (enabled: boolean) => void;
+        /** Has every Mirror surface draw its reflection again on its next render (paused parity checks). */
+        redrawMirrorReflections: () => void;
         /** Has each lean object and geometry pass also run Babylon's preparation, whose queues it must match (`rendererWork.leanPreparation.mismatches`). */
         verifyLeanPreparation: (enabled: boolean) => void;
+        /** Has each world view frame that keeps its occlusion buffer also draw the occluders again and filter once more, which must agree (`occlusion.keptMismatches`). */
+        verifyKeptOcclusionBuffers: (enabled: boolean) => void;
+        /** Has the world view run its occlusion filter on every frame instead of backing off while it culls nothing (comparisons). */
+        forceOcclusionEveryFrame: (enabled: boolean) => void;
+        /** Draws one frame of the paused session's view (`requestPausedRedraw`), as after a render-only change. */
+        requestPausedRedraw: () => { accepted: boolean; reason?: string } | null;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1328,7 +1337,11 @@ function PlayOverlayView({
       verifySharedOutlineCulls,
       verifyMirrorSharedWork: (enabled: boolean) => { verifyMirrorSharedCulls(enabled); verifyLightClusterSlots(enabled); },
       unshareMirrorWork: (enabled: boolean) => { walkMirrorCullsUnshared(enabled); forceClusterRebuilds(enabled); },
+      redrawMirrorReflections,
       verifyLeanPreparation,
+      verifyKeptOcclusionBuffers,
+      forceOcclusionEveryFrame,
+      requestPausedRedraw: () => sessionRef.current?.handle.requestPausedRedraw() ?? null,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
@@ -1544,7 +1557,7 @@ function PlayOverlayView({
           {rendering?.occlusion ? <canvas ref={occlusionCanvasRef} className="block h-32 w-64 [image-rendering:pixelated]" /> : null}
           <SelectableText>
             {rendering?.occlusion
-              ? `occlusion culled ${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.occluders} occluders`
+              ? `occlusion culled ${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.occluders} occluders${rendering.occlusion.idle ? " · idle" : ""}`
               : "occlusion culling off"}
           </SelectableText>
         </div>

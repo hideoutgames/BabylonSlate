@@ -16,7 +16,8 @@ import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSetti
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import {
-  createMirrorSurfaceMesh, mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyMirrorSharedCulls, walkMirrorCullsUnshared,
+  createMirrorSurfaceMesh, mirrorDiagnostics, redrawMirrorReflections, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyMirrorSharedCulls,
+  walkMirrorCullsUnshared,
 } from "./mirrors";
 import { ReflectedContent } from "./reflected-content";
 import { setPlanarFootprintCulling } from "./planar-mirror";
@@ -237,6 +238,33 @@ it("walks the scene once for a due reflection, and again for a second one drawn 
   camera.position.x += 0.1;
   expect(drawsOver(1)).toBe(2);
   expect(listed()).toEqual([["mirror:mirror", ["box"]], ["mirror:far", []]]);
+});
+
+it("draws every kept reflection again on its next render after redrawMirrorReflections, and counts culls and their walks", () => {
+  const { scene, drawsOver } = settledMirror();
+  mirror(scene, "far", new Vector3(0, 1, 5));
+  drawsOver(4);
+  // Nothing changed: both reflections are kept.
+  expect(drawsOver(2)).toBe(0);
+  const shared = mirrorDiagnostics(scene)!;
+  redrawMirrorReflections();
+  expect(drawsOver(1)).toBe(2);
+  expect(drawsOver(1)).toBe(0);
+  const drawn = mirrorDiagnostics(scene)!;
+  expect(drawn.draws - shared.draws).toBe(2);
+  // Shared, the render's culls walked the Scene fewer times than they culled.
+  expect(drawn.candidateWalks - shared.candidateWalks).toBeLessThan(drawn.culls - shared.culls);
+  walkMirrorCullsUnshared(true);
+  try {
+    redrawMirrorReflections();
+    expect(drawsOver(1)).toBe(2);
+  } finally {
+    walkMirrorCullsUnshared(false);
+  }
+  const unshared = mirrorDiagnostics(scene)!;
+  // Unshared, every cull walked.
+  expect(unshared.candidateWalks - drawn.candidateWalks).toBe(unshared.culls - drawn.culls);
+  expect(unshared.culls - drawn.culls).toBeGreaterThan(0);
 });
 
 it("checks the culls that share their render's walk against the whole walk when verifying, and counts a list that differs", () => {

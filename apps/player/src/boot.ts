@@ -663,7 +663,7 @@ function initializePlayer(
       occlusionOverlay: occlusion && {
         buffer: occlusion.buffer,
         text: rendering?.occlusion
-          ? `occlusion culled ${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.occluders} occluders`
+          ? `occlusion culled ${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.occluders} occluders${rendering.occlusion.idle ? " · idle" : ""}`
           : "occlusion culling off",
       },
       ...(statsVisible ? {
