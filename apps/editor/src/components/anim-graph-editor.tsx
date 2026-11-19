@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   ANIM_STATE_LAYOUT_GAP_X,
+  facingTransitionSides,
   animGraphMembersFromVariables,
   animPaletteNodes,
   createDefaultAnimGraph,
@@ -31,6 +32,7 @@ import {
   persistTransitionRuleGraph,
   validateAnimGraph,
   animCachedPoseNames,
+  animAliasStates,
   type AnimClipCatalogEntry,
   type AnimGraphDimension,
   type AnimGraphDocument,
@@ -61,6 +63,8 @@ import {
   GraphEditor,
   animGraphEdgeTypes,
   animGraphNodeTypes,
+  formatStateMachineLayout,
+  type GraphFormatLayout,
   type PaletteNode,
 } from "@haptic/graph-ui";
 import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type BreakpointLocation } from "@haptic/bridge";
@@ -671,6 +675,23 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
       : undefined,
     [breakpointLabel, breakpointStore, editBreakpoint, graphGuid],
   );
+  // Format lays the State Machine out in layers from its entry state; a State Alias sits one layer after the nearest
+  // state it stands for. The change it emits next (synchronously, if anything moved) also turns the laid-out states'
+  // transitions to the sides their states now face.
+  const formattedIdsRef = useRef<ReadonlySet<string> | null>(null);
+  const formatLayout = useCallback<GraphFormatLayout>((input) => {
+    const current = latestDocRef.current().stateMachine;
+    const aliases = new Map((current.aliases ?? []).map((alias) => [alias.id, animAliasStates(current, alias)]));
+    const placed = formatStateMachineLayout(input, {
+      entryId: current.entryStateId,
+      aliasStates: (node) => aliases.get(node.id),
+    });
+    formattedIdsRef.current = new Set(placed.map((row) => row.id));
+    queueMicrotask(() => {
+      formattedIdsRef.current = null;
+    });
+    return placed;
+  }, []);
   // A stop in the State Machine (from a breakpoint or the Breakpoints window) shows it, and a stop at a transition
   // selects it, so Details show it.
   const focusOnMachine = focusDiagnostic?.assetGuid === graphGuid && focusDiagnostic?.graphId === ANIM_STATE_MACHINE_DEBUG_GRAPH_ID;
@@ -921,6 +942,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
           }}
           connectDraggedToNode={(drag) => (aliasIds.has(drag.toNodeId) ? null : animTransitionFromDrag(drag))}
           edgeBreaksAtPin={animTransitionOnSide}
+          formatLayout={formatLayout}
           onSelectionChange={(nodeIds) => {
             queueMicrotask(() => setSelectedIds(nodeIds));
           }}
@@ -943,9 +965,12 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
           }}
           onChange={(next) => {
             const keepSelection = selectedIds;
+            const formattedIds = formattedIdsRef.current;
+            formattedIdsRef.current = null;
             queueMicrotask(() => {
               const current = latestDoc();
-              const updated = serializedToStateMachine(next, current.stateMachine, dimension);
+              const canvas = serializedToStateMachine(next, current.stateMachine, dimension);
+              const updated = formattedIds ? faceFormattedTransitions(canvas, formattedIds) : canvas;
               const kept = keepSelection.filter((id) =>
                 updated.states.some((row) => row.id === id),
               );
@@ -1088,6 +1113,23 @@ export function AnimStateGraphPanel(props: IDockviewPanelProps<Partial<AnimState
       </div>
     </PanelFrame>
   );
+}
+
+/** After Format, each transition between laid-out states leaves and enters by the sides its states face. */
+function faceFormattedTransitions(machine: AnimStateMachine, ids: ReadonlySet<string>): AnimStateMachine {
+  const nodes = new Map<string, { position: { x: number; y: number } }>(
+    [...machine.states, ...(machine.aliases ?? [])].map((row) => [row.id, row]),
+  );
+  return {
+    ...machine,
+    transitions: machine.transitions.map((transition) => {
+      if (!ids.has(transition.fromStateId) || !ids.has(transition.toStateId)) return transition;
+      const sides = facingTransitionSides(nodes.get(transition.fromStateId), nodes.get(transition.toStateId));
+      return sides.sourceHandle === transition.sourceHandle && sides.targetHandle === transition.targetHandle
+        ? transition
+        : { ...transition, ...sides };
+    }),
+  };
 }
 
 let scriptReroute: { paletteNode: PaletteNode } | undefined;

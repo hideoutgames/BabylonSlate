@@ -507,30 +507,37 @@ describe("BehaviourTreeEditor", () => {
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["None"]);
   });
 
-  it("renders the default selector/sequence/succeed tree and Auto Arrange", () => {
+  it("renders the default selector/sequence/succeed tree with Format in the toolbar", () => {
     renderTree(createDefaultBehaviourTree("Patrol"));
     expect(screen.getByTestId("behaviour-tree-editor")).toBeTruthy();
     expect(screen.getByTestId("bt-node-root")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("bt-auto-arrange"));
-    expect(store.applyAssetDocumentChange).toHaveBeenCalled();
+    expect(screen.getByTestId("graph-format")).toHaveProperty("disabled", false);
     expect(screen.queryByTestId("graph-break-links")).toBeNull();
-    expect(screen.queryByTestId("graph-format")).toBeNull();
     expect(screen.queryByTestId("graph-copy")).toBeNull();
     expect(screen.queryByTestId("graph-paste")).toBeNull();
   });
 
-  it("auto-arranges positions without changing children order", () => {
+  it("formats the tree top-down in one change without changing the order it runs in", async () => {
     const doc = treeWithMisorderedSiblings();
     renderTree(doc);
-    fireEvent.click(screen.getByTestId("bt-auto-arrange"));
+    const commits = () => store.applyAssetDocumentChange.mock.calls.filter((call) => call[0] === DOC_ID).length;
+    const before = commits();
+    fireEvent.click(screen.getByTestId("graph-format"));
+    await waitFor(() => expect(commits()).toBe(before + 1));
     const next = lastCommit();
-    expect(next.nodes.find((node) => node.id === "sequence")?.children).toEqual([
-      "task",
-      "wait",
-    ]);
-    expect(next.editorPositions?.wait?.x).toBeGreaterThan(
-      next.editorPositions?.task?.x ?? 0,
-    );
+    expect(next.nodes.map((node) => [node.id, node.children])).toEqual(doc.nodes.map((node) => [node.id, node.children]));
+    const positions = next.editorPositions!;
+    // The root stays; Wait runs second, so it lands right of Succeed, both one level below their Sequence.
+    expect(positions.root).toEqual({ x: 0, y: 0 });
+    expect(positions.wait!.x).toBeGreaterThan(positions.task!.x);
+    expect(positions.wait!.y).toBe(positions.task!.y);
+    expect(positions.task!.y).toBeGreaterThan(positions.sequence!.y);
+    expect(positions.sequence!.y).toBeGreaterThan(positions.root!.y);
+
+    // A second Format finds everything in place and commits nothing.
+    fireEvent.click(screen.getByTestId("graph-format"));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(commits()).toBe(before + 1);
   });
 
   it("links a Blackboard asset from the Blackboard dock", async () => {

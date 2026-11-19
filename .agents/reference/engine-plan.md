@@ -346,7 +346,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 
 ## AI
 
-- **Behaviour trees** are React Flow graphs in `graph-ui` with parent-child edges; sibling order is `children[]`, never wire topology. Decorators and services render as attached rows, not nodes. Positions (`editorPositions`) are optional; Auto Arrange never changes `children[]`; the runtime ignores positions.
+- **Behaviour trees** are React Flow graphs in `graph-ui` with parent-child edges; sibling order is `children[]`, never wire topology. Decorators and services render as attached rows, not nodes. Positions (`editorPositions`) are optional; Format lays the tree out in `children[]` order and never changes it; the runtime ignores positions.
 - Composites (Selector, Sequence, Parallel), tasks, decorators (gate entry, can abort Self / Lower Priority / Both) and services (interval tick). Every kind is an `Object` subclass implemented with visual scripting.
 - Tree structure is data interpreted by a deterministic explicit-stack evaluator in the worker; node logic is compiled JS. Abort semantics get a table-driven test matrix.
 - Blackboard keys use the pin type system; trees and blackboards are separate assets. `BehaviourTreeComponent` attaches to any Actor (no AI controller concept).

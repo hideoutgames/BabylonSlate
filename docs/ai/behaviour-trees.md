@@ -16,7 +16,7 @@ The tree editor has four windows: **Graph**, **Blackboard**, the **Inspector** f
 - Children run from left to right. Drag a node sideways to change its place; the number on each node shows its order.
 - Long-press a node for **Add Decorator**, **Wrap In Sequence**, **Duplicate** and **Delete**. The root cannot be duplicated or deleted.
 - **Duplicate** on a node that is part of a selection copies every selected node with its children, each next to its original. A selected node under another selected node goes along with that copy.
-- **Auto Arrange** tidies the layout without changing the order.
+- **Format** in the Graph toolbar lays the tree out top-down: each parent centred above its children, children left to right in the order they run, subtrees packed close. With nothing selected, or the root selected, it lays out the whole tree; otherwise the branches under the selected nodes. The order the tree runs in never changes, nodes that are not part of the laid-out branches stay where they are, and one **Undo** reverts it.
 - Select a node to edit its settings in the **Inspector**, where **Add Decorator** and **Add Service** attach extra rows to it.
 
 | Composite | Runs |

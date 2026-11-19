@@ -153,17 +153,6 @@ export function keepEditorPositionsFor(
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
-export function arrangeBehaviourTree(
-  doc: BehaviourTreeDocument,
-): BehaviourTreeDocument {
-  const computed = computeBehaviourTreeLayout(doc);
-  const editorPositions: Record<string, BtEditorPosition> = {};
-  for (const [id, pos] of computed) {
-    editorPositions[id] = { x: pos.x, y: pos.y };
-  }
-  return withEditorPositions(doc, editorPositions);
-}
-
 export function applyNodePositions(
   doc: BehaviourTreeDocument,
   positions: Readonly<Record<string, { x: number; y?: number }>>,
