@@ -3,7 +3,7 @@ import type { runRetainedShadowProof } from "../apps/editor/src/testing/retained
 
 type Proof = typeof runRetainedShadowProof;
 
-test("shadow maps drawn from the shared caster buffer match Babylon's own draws pixel for pixel, in far fewer calls", async ({ page }, testInfo) => {
+test("shadow maps drawn from the shared caster buffer match Babylon's own draws pixel for pixel and texel for texel", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -25,6 +25,9 @@ test("shadow maps drawn from the shared caster buffer match Babylon's own draws 
     // The scene does cast shadows: a blank or unshadowed pair would match too.
     expect(image.dark).toBeGreaterThan(500);
     expect(image).toMatchObject({ differing: 0, largest: 0 });
+    // The maps themselves hold the same depth, every texel's bits: an image can hide a difference in them.
+    expect(image.atlasWritten).toBeGreaterThan(0);
+    expect(image.atlasDiffering).toBe(0);
   }
   // Every caster of the scene is rigid and opaque, the two instances too: at the end all ten are retained (nine, two
   // arrivals, one gone), and none in the run that turns it off.
@@ -33,8 +36,9 @@ test("shadow maps drawn from the shared caster buffer match Babylon's own draws 
   expect(result.retained.casters!.vertices).toBeGreaterThan(4096);
   expect(result.retained.casters!.drawn).toBeGreaterThan(result.retained.casters!.calls);
   expect(result.drawnByBabylon.casters).toMatchObject({ casters: 0, calls: 0 });
-  // The frames after the first stage redraw the maps their changes reach: a call per map layer and cull state against
-  // a draw per caster and layer.
+  // The frames after the first stage redraw the maps their changes reach: a draw per map layer, cull state and
+  // geometry part (its casters as instances) against Babylon's draw per mesh and layer (a mesh's instances batched),
+  // so never more; the copies of one geometry drew as instances of one draw.
   expect(result.retained.mapDraws).toBeGreaterThan(0);
-  expect(result.retained.mapDraws * 2).toBeLessThan(result.drawnByBabylon.mapDraws);
+  expect(result.retained.mapDraws).toBeLessThanOrEqual(result.drawnByBabylon.mapDraws);
 });

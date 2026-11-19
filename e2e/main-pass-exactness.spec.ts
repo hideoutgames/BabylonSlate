@@ -47,6 +47,7 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
     ({ view: sha(view), fast: sha(captures.fast), highQuality: sha(captures.highQuality), atlas });
   const summary = {
     renderer: current.renderer, stillTexelsPerFrame: { current: current.stillTexelsPerFrame, reference: reference.stillTexelsPerFrame },
+    movedCounters: { current: current.movedCounters, reference: reference.movedCounters },
     current: { still: digest(current.still), moved: digest(current.moved) }, reference: { still: digest(reference.still), moved: digest(reference.moved) },
   };
   await testInfo.attach("main-pass-exactness", { body: JSON.stringify(summary), contentType: "application/json" });
@@ -55,6 +56,15 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
   // The reference redraws the High Quality capture's own sun map in every still frame; the savings draw none.
   expect(reference.stillTexelsPerFrame).toBeGreaterThan(0);
   expect(current.stillTexelsPerFrame).toBe(0);
+  // The moved frames took the shadow stage's lean path: tiles of one page share a bind (the point light's faces), the
+  // retained casters drew as instances of fewer draws, and every row they read was uploaded before the first map.
+  for (const counters of [current.movedCounters, reference.movedCounters]) {
+    expect(counters.passes).toBeGreaterThan(0);
+    expect(counters.passes).toBeLessThan(counters.tiles);
+    expect(counters.retainedDraws).toBeGreaterThan(0);
+    expect(counters.casterDraws).toBeGreaterThanOrEqual(counters.retainedDraws);
+    expect(counters.lateUploads).toBe(0);
+  }
   for (const stage of ["still", "moved"] as const) {
     const images = current[stage];
     const before = reference[stage];

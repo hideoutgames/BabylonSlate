@@ -657,10 +657,10 @@ describe("formatFeatureTestCheckReport", () => {
       };
       return formatFeatureTestCheckReport(report, environment).split("\n").filter((line) => line.startsWith("  Shadow casters:"));
     };
-    const stats = { casters: 209, draws: 240, vertices: 90_000, indices: 300_000, multiDraw: true, calls: 40, drawn: 500 };
-    expect(casters(stats)).toEqual(["  Shadow casters: 209 drawn from the shared buffer, a map layer in one call · 12.5 caster draws a call"]);
-    // Without the extension each caster is a call, and before any map drew there is no ratio.
-    expect(casters({ ...stats, multiDraw: false, calls: 0, drawn: 0 })).toEqual(["  Shadow casters: 209 drawn from the shared buffer, one call each (no WEBGL_multi_draw)"]);
+    const stats = { casters: 209, draws: 240, parts: 31, vertices: 90_000, indices: 300_000, calls: 40, drawn: 500, lateUploads: 0 };
+    expect(casters(stats)).toEqual(["  Shadow casters: 209 drawn from the shared buffer in 31 parts · 12.5 caster draws a draw"]);
+    // Before any map drew there is no ratio; rows uploaded inside the stage are counted.
+    expect(casters({ ...stats, parts: 1, calls: 0, drawn: 0, lateUploads: 3 })).toEqual(["  Shadow casters: 209 drawn from the shared buffer in 1 part · 3 late row uploads"]);
     // A view that retains none and a Scene without such casters have no line.
     expect(casters(null)).toEqual([]);
     expect(casters({ ...stats, casters: 0 })).toEqual([]);

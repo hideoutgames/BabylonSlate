@@ -93,8 +93,11 @@ const atlases = new WeakMap<Scene, Atlas>();
 const placeholders = new WeakMap<Scene, RenderTargetTexture>();
 const generations = new WeakMap<Scene, number>();
 
-/** What has been drawn into a Scene's atlas since it was first made: map passes, their tiles and the tiles' texels. */
-export interface ShadowAtlasDrawCounts { maps: number; tiles: number; texels: number }
+/**
+ * What has been drawn into a Scene's atlas since it was first made: map passes, their tiles and the tiles' texels, and
+ * the times a page was bound for them (`passes`: consecutive tiles of a render on one page share one).
+ */
+export interface ShadowAtlasDrawCounts { maps: number; tiles: number; texels: number; passes: number }
 const drawCounts = new WeakMap<Scene, ShadowAtlasDrawCounts>();
 
 /** How many atlases the Scene has made or taken over: it grows each time the Scene's atlas texture is created. */
@@ -105,7 +108,7 @@ export function shadowAtlasGeneration(scene: Scene): number {
 /** The Scene's cumulative atlas draws (`ShadowAtlasDrawCounts`); a reader takes the difference between two reads. */
 export function shadowAtlasDrawCounts(scene: Scene): Readonly<ShadowAtlasDrawCounts> {
   let counts = drawCounts.get(scene);
-  if (!counts) drawCounts.set(scene, counts = { maps: 0, tiles: 0, texels: 0 });
+  if (!counts) drawCounts.set(scene, counts = { maps: 0, tiles: 0, texels: 0, passes: 0 });
   return counts;
 }
 
@@ -312,6 +315,43 @@ export function shadowAtlasTexture(scene: Scene): RenderTargetTexture {
   return placeholder;
 }
 
+type BindingEngine = AbstractEngine & {
+  _currentFramebuffer: WebGLFramebuffer | null;
+  _integerMRTAttachmentsMask: number;
+  _bindUnboundFramebuffer(framebuffer: WebGLFramebuffer | null): void;
+};
+type AtlasWrapper = RenderTargetWrapper & { _framebuffer: WebGLFramebuffer | null };
+
+/**
+ * The page a tile pass left bound and attached when it ended (`AtlasTileTarget._unbindFrameBuffer`): Babylon is told
+ * the target was unbound, as its own unbind would, but the GL binding stays the atlas framebuffer (`_currentFramebuffer`
+ * says so, so any other bind through the Engine binds for real). The next tile pass on that page binds nothing.
+ */
+let heldPage: { wrapper: AtlasWrapper; page: number } | null = null;
+/** Engines whose shadow stage is drawing its maps (`holdShadowAtlasPages`): a map's last pass may hold its page too. */
+const openStages = new WeakSet<AbstractEngine>();
+
+/**
+ * Opens a shadow stage on the Scene's Engine: until `release`, the last pass of each atlas map leaves its page bound, so
+ * consecutive maps on one page (a sun's last cascades and a spot light's tile) draw in one render pass. Between two maps
+ * the stage runs no draw and binds nothing; anything that binds a framebuffer through the Engine ends the hold. `release`
+ * binds the default framebuffer where a page is still held, as the last map's unbind would have; a stage a failed draw
+ * left open is released by the next one.
+ */
+export function holdShadowAtlasPages(scene: Scene): { release(): void } {
+  const engine = scene.getEngine();
+  const release = () => {
+    openStages.delete(engine);
+    const held = heldPage;
+    heldPage = null;
+    const binding = engine as BindingEngine;
+    if (held && binding._currentFramebuffer === held.wrapper._framebuffer && binding._currentRenderTarget === null) binding._bindUnboundFramebuffer(null);
+  };
+  if (openStages.has(engine)) release();
+  openStages.add(engine);
+  return { release };
+}
+
 /**
  * A light's tiles as one render target: the atlas's framebuffer and depth texture, drawn one pass per tile (a sun's
  * cascades and a point light's faces are its layers), each bound to its tile's page of the atlas. It never owns the
@@ -343,9 +383,53 @@ class AtlasTileTarget extends RenderTargetTexture {
 
   override set is2DArray(_value: boolean) {}
 
-  // A pass draws into its tile's page: that layer of the atlas.
+  /** The tile whose pass is bound now (the render's pass index). */
+  private tile = 0;
+
+  /**
+   * A pass draws into its tile's page: that layer of the atlas. A pass on the page the last one held (`heldPage`), with
+   * nothing bound since, binds nothing: Babylon is told the target is bound, as its bind would, and the page's tiles are
+   * one render pass on a driver that ends one at every change of the bound framebuffer or its attachment (ANGLE's Metal
+   * backend), which loads and stores the whole page. Only its viewport and its tile's clear differ (`drawIntoTiles`); the
+   * GL state Babylon caches is as the last pass left it, so nothing is wiped. Only these passes bind the atlas
+   * framebuffer, so `heldPage` says what it has attached.
+   */
   override _bindFrameBuffer(faceIndex = 0, layer = 0): void {
-    super._bindFrameBuffer(faceIndex, this.tiles[layer]!.layer);
+    const held = heldPage;
+    heldPage = null;
+    this.tile = layer;
+    const page = this.tiles[layer]!.layer;
+    const wrapper = this._renderTarget as AtlasWrapper | null;
+    const engine = this.getScene()?.getEngine() as BindingEngine | undefined;
+    if (wrapper && engine && held?.wrapper === wrapper && held.page === page && engine._currentRenderTarget === null &&
+      engine._currentFramebuffer === wrapper._framebuffer) {
+      engine._currentRenderTarget = wrapper;
+      engine._integerMRTAttachmentsMask = 0;
+      return;
+    }
+    super._bindFrameBuffer(faceIndex, page);
+    const scene = this.getScene();
+    if (scene && atlases.get(scene)?.target === this.atlas) (shadowAtlasDrawCounts(scene) as ShadowAtlasDrawCounts).passes += 1;
+  }
+
+  /**
+   * A pass ends holding its page (`heldPage`) while the render has a tile to come, or, in a shadow stage
+   * (`holdShadowAtlasPages`), after its last: Babylon's unbind without its default framebuffer bind. A next tile on
+   * another page then only attaches that page.
+   */
+  protected override _unbindFrameBuffer(engine: AbstractEngine, faceIndex: number): void {
+    const wrapper = this._renderTarget as AtlasWrapper | null;
+    const page = this.tiles[this.tile]!.layer;
+    const more = this.is2DArray && this.tile + 1 < this.tiles.length;
+    const binding = engine as BindingEngine;
+    if (wrapper && binding._currentRenderTarget === wrapper && (more || openStages.has(engine))) {
+      binding._currentRenderTarget = null;
+      binding._integerMRTAttachmentsMask = 0;
+      heldPage = { wrapper, page };
+      this.onAfterRenderObservable.notifyObservers(faceIndex);
+      return;
+    }
+    super._unbindFrameBuffer(engine, faceIndex);
   }
 
   override getSize() {

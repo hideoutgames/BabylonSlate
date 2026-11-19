@@ -6,10 +6,12 @@ import type { FrameMarker } from "./gpu-busy-probe";
 function gpu() {
   const queue: { finished: boolean | null; disposed: boolean }[] = [];
   let frame = 0;
+  /** Markers asked whether they finished: each ask is a fence poll, a round trip to the GPU process on WebKit. */
+  const polls = { count: 0 };
   const gate = new FrameBackpressure((submitted): FrameMarker => {
     const entry = { finished: false as boolean | null, disposed: false };
     queue.push(entry);
-    return { submitted, done: () => entry.finished, dispose: () => { entry.disposed = true; } };
+    return { submitted, done: () => { polls.count += 1; return entry.finished; }, dispose: () => { entry.disposed = true; } };
   }, () => frame);
   /** One Engine frame: each view asks to render, then the frame ends. */
   const run = (views = 1) => {
@@ -19,7 +21,7 @@ function gpu() {
     gate.frameEnd();
     return rendered;
   };
-  return { gate, queue, run };
+  return { gate, queue, run, polls };
 }
 
 describe("frame backpressure", () => {
@@ -74,6 +76,28 @@ describe("frame backpressure", () => {
     run();
     // One frame then two queued; the third skipped; after the first finished, two again.
     expect(gate.stats().inFlightCounts).toEqual([0, 1, 2, 0, 0, 0]);
+  });
+
+  it("polls the markers at most once an Engine frame of two views, whether the GPU keeps up, lags a frame or is at the limit", () => {
+    const { queue, run, polls } = gpu();
+    const pollsOf = (finish: () => void) => {
+      finish();
+      const before = polls.count;
+      const rendered = run(2);
+      return { rendered, polls: polls.count - before };
+    };
+    const finishAll = () => { for (const entry of queue) if (entry.finished === false) entry.finished = true; };
+    const finishOldest = () => { queue.find((entry) => entry.finished === false)!.finished = true; };
+    const rendered = { rendered: true, polls: 1 };
+    // The GPU keeps up: every marker has finished by the next frame.
+    run(2);
+    expect([pollsOf(finishAll), pollsOf(finishAll), pollsOf(finishAll)]).toEqual([rendered, rendered, rendered]);
+    // It falls a frame behind, then stays there: two markers are queued at each frame start and the older one finished.
+    expect(pollsOf(() => {})).toEqual(rendered);
+    expect(queue.filter((entry) => !entry.disposed)).toHaveLength(2);
+    expect([pollsOf(finishOldest), pollsOf(finishOldest), pollsOf(finishOldest)]).toEqual([rendered, rendered, rendered]);
+    // At the limit with nothing finishing, both views ask and the frame is skipped after one poll.
+    expect([pollsOf(() => {}), pollsOf(() => {})]).toEqual([{ rendered: false, polls: 1 }, { rendered: false, polls: 1 }]);
   });
 
   it("says whether a view rendered in the Engine frame that is ending", () => {

@@ -38,6 +38,8 @@ export class FrameBackpressure {
   private readonly depths = [0, 0, 0, 0, 0, 0];
   /** The last Engine frame a view rendered in (`renderedThisFrame`). */
   private renderedFrame = -1;
+  /** The last Engine frame whose loop polled the markers (`retire`). */
+  private polledFrame = -1;
 
   private readonly submit: ((submitted: number) => FrameMarker | null) | null;
   private readonly frameId: () => number;
@@ -69,7 +71,8 @@ export class FrameBackpressure {
    */
   admit(loading = false): boolean {
     if (!loading && this.limit !== "off" && this.submit) {
-      this.retire();
+      // Only a queue at its limit can hold this frame back: polled until it is below the limit, once an Engine frame.
+      if (this.outstanding.length >= this.limit && this.polledFrame !== this.frameId()) this.retire(this.limit);
       if (this.outstanding.length >= this.limit) {
         const frame = this.frameId();
         if (frame !== this.skippedFrame) { this.skippedFrame = frame; this.skips += 1; }
@@ -88,7 +91,7 @@ export class FrameBackpressure {
     if (this.limit === "off" || !this.submit) return;
     const marker = this.submit(this.now());
     if (!marker) return;
-    this.retire();
+    if (this.polledFrame !== this.frameId()) this.retire();
     this.outstanding.push(marker);
     this.depths[Math.min(this.outstanding.length, this.depths.length - 1)] += 1;
   }
@@ -105,8 +108,14 @@ export class FrameBackpressure {
 
   dispose(): void { this.drop(); }
 
-  private retire(): void {
-    while (this.outstanding.length) {
+  /**
+   * Polls the markers in submission order, retiring the finished ones, until one is unfinished or the queue is below
+   * `below`. Each poll can be a synchronous round trip to the GPU process (WebKit), so the frame loop polls at most once
+   * an Engine frame (`polledFrame`): in `admit` when the queue is at its limit, else at the frame end.
+   */
+  private retire(below = 1): void {
+    this.polledFrame = this.frameId();
+    while (this.outstanding.length >= below) {
       // A marker that cannot tell (a lost context) no longer holds frames back.
       if (this.outstanding[0]!.done() === false) break;
       this.outstanding.shift()!.dispose();

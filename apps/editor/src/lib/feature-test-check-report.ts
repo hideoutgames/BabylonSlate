@@ -112,12 +112,14 @@ function layerBatchesText(stats: LayerBatches): string {
 
 type RetainedShadows = NonNullable<RenderDiagnostics["shadowRetained"]>;
 /**
- * The shadow casters the maps draw from one shared buffer, how a map layer draws them, and how many caster draws a
- * call has stood for since the Scene's first map.
+ * The shadow casters the maps draw from one shared buffer and the geometry parts they draw (a map layer draws each
+ * part once, its casters as instances), how many caster draws a draw has stood for since the Scene's first map, and the
+ * layers that uploaded rows inside the shadow stage.
  */
 function retainedShadowsText(stats: RetainedShadows): string {
-  const each = stats.calls ? ` · ${(stats.drawn / stats.calls).toFixed(1)} caster draws a call` : "";
-  return `${stats.casters} drawn from the shared buffer, ${stats.multiDraw ? "a map layer in one call" : "one call each (no WEBGL_multi_draw)"}${each}`;
+  const each = stats.calls ? ` · ${(stats.drawn / stats.calls).toFixed(1)} caster draws a draw` : "";
+  const late = stats.lateUploads ? ` · ${stats.lateUploads} late row uploads` : "";
+  return `${stats.casters} drawn from the shared buffer in ${stats.parts} part${stats.parts === 1 ? "" : "s"}${each}${late}`;
 }
 
 /** How many causes a report names; the rest are counted. */

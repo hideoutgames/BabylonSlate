@@ -1,10 +1,10 @@
 /**
  * Test-build-only oracle for retained shadow casters (`RetainedShadowCasters`): one scene of rigid casters under a
  * shadowed sun, spot light and point light, drawn through the Forward FrameGraph twice, once with its maps drawing the
- * casters from the shared buffer and once with Babylon drawing each. The two images must be the same pixel for pixel
- * at every stage (the settled scene; a caster moved; casters added, removed, hidden, mirrored and stretched; a caster
- * faded, which Babylon then draws; that caster back in the shared buffer), and the retained run must spend far fewer
- * draw calls on its maps.
+ * casters from the shared buffer and once with Babylon drawing each. The two images and the two shadow atlases (every
+ * texel's depth bits) must be the same at every stage (the settled scene; a caster moved; casters added, removed,
+ * hidden, mirrored and stretched; a caster faded, which Babylon then draws; that caster back in the shared buffer), and
+ * the retained run must spend no more draw calls on its maps.
  *
  * The scene sits kilometres from the origin, so the floating origin's offset is in every matrix a map reads.
  */

@@ -37,12 +37,18 @@ import { isSmoothNormalShadowCaster } from "./shadow-bias";
  * mesh whose Material leaves its vertices where they are is drawn by the one stock depth program, and differs from the
  * next only in its world matrix and index range.
  *
- * So such casters are retained: their positions and normals live in one vertex buffer, their matrices in one data
- * texture, and a map layer draws those it lists in one `multiDrawElements` call per cull state (`CALL_DRAWS` draws a
- * call at most), each draw finding its matrix through `gl_DrawID`. Where the extension is missing the same buffer is
- * drawn one caster at a time, a uniform naming the draw. The vertex stage is Babylon's own (its normal bias and depth
- * metric chunks, its fragment shader, the generator's own defines), and the cull state and normal matrix are chosen as
- * Babylon's draw of the caster chooses them, so a retained caster writes the depth Babylon's draw of it would.
+ * So such casters are retained: each geometry's positions and normals live once in one vertex buffer and its indices
+ * in one index buffer, their matrices in one data texture, and a map layer draws those it lists with one
+ * `drawElementsInstanced` per cull state and shared part (an index range: every caster of one geometry and part draws
+ * the same one), each instance finding its matrix through a uniform list of the layer's slots (`RETAINED_CALL_DRAWS`
+ * a list at most) and `gl_InstanceID`. A real instanced draw, not a multi-draw a driver may loop over (ANGLE runs
+ * `multiDrawElements` as one draw per entry). The target is depth only, so the order of the layer's casters cannot
+ * change a texel. The vertex stage is Babylon's own (its normal bias and depth metric chunks, its fragment shader, the
+ * generator's own defines), and the cull state and normal matrix are chosen as Babylon's draw of the caster chooses
+ * them, so a retained caster writes the depth Babylon's draw of it would.
+ *
+ * The rows a frame's maps read are written and uploaded before its first map binds its target (`prepareFrame`), so no
+ * upload lands inside a render pass after a draw sampled the texture (a driver may end the pass to blit it).
  *
  * Everything else keeps Babylon's path: skinned, morphed and cut-out casters, thin instances, levels of detail and a
  * Material with its own depth variant.
@@ -50,11 +56,8 @@ import { isSmoothNormalShadowCaster } from "./shadow-bias";
 
 const VERTEX = "hapticRetainedShadow";
 const SAMPLER = "hapticRetainedDraws";
-const DRAW_UNIFORM = "hapticRetainedDraw";
+const BASE_UNIFORM = "hapticRetainedBase";
 const SLOTS_UNIFORM = "hapticRetainedSlots";
-const MULTI_DRAW_DEFINE = "HAPTIC_RETAINED_MULTI_DRAW";
-const MULTI_DRAW_EXTENSION = "#extension GL_ANGLE_multi_draw : require";
-const MULTI_DRAW_DEFINE_LINE = `#define ${MULTI_DRAW_DEFINE}`;
 
 /** Whether two define lists hold the same lines in the same order. */
 function sameStrings(a: readonly string[], b: readonly string[]): boolean {
@@ -81,18 +84,12 @@ attribute vec3 normal;
 #include<__decl__shadowMapVertex>
 #include<shadowMapVertexExtraDeclaration>
 uniform highp sampler2D ${SAMPLER};
-#ifdef ${MULTI_DRAW_DEFINE}
 uniform ivec4 ${SLOTS_UNIFORM}[${RETAINED_CALL_DRAWS / 4}];
-#else
-uniform int ${DRAW_UNIFORM};
-#endif
+uniform int ${BASE_UNIFORM};
 void main(void)
 {
-#ifdef ${MULTI_DRAW_DEFINE}
-int retainedDraw=${SLOTS_UNIFORM}[gl_DrawID/4][gl_DrawID%4];
-#else
-int retainedDraw=${DRAW_UNIFORM};
-#endif
+int retainedIndex=${BASE_UNIFORM}+gl_InstanceID;
+int retainedDraw=${SLOTS_UNIFORM}[retainedIndex/4][retainedIndex%4];
 ivec2 retainedAt=ivec2((retainedDraw%${DRAWS_PER_ROW})*${TEXELS},retainedDraw/${DRAWS_PER_ROW});
 mat4 finalWorld=mat4(texelFetch(${SAMPLER},retainedAt,0),texelFetch(${SAMPLER},retainedAt+ivec2(1,0),0),texelFetch(${SAMPLER},retainedAt+ivec2(2,0),0),texelFetch(${SAMPLER},retainedAt+ivec2(3,0),0));
 vec4 retainedShape=texelFetch(${SAMPLER},retainedAt+ivec2(4,0),0);
@@ -106,8 +103,14 @@ gl_Position=viewProjection*worldPos;
 #include<shadowMapVertexMetric>
 }`;
 
+/**
+ * `parts`: the shared parts (index ranges) the retained draws use, the most draws a layer can need. `calls` and
+ * `drawn`: since the Scene's first map, the draws made and the caster draws they stood for. `lateUploads`: layers that
+ * found rows written since the frame's upload (`prepareFrame`) and uploaded them before drawing: a caster first met
+ * inside the stage, a change of floating origin between maps, or a pass outside a walked frame.
+ */
 export type RetainedShadowDiagnostics = {
-  casters: number; draws: number; vertices: number; indices: number; multiDraw: boolean; calls: number; drawn: number;
+  casters: number; draws: number; parts: number; vertices: number; indices: number; calls: number; drawn: number; lateUploads: number;
 };
 
 const disabledScenes = new WeakSet<Scene>();
@@ -194,8 +197,6 @@ type Gpu = {
   lease: ManagedRenderLease;
 };
 
-type MultiDraw = { multiDrawElementsWEBGL(mode: number, counts: Int32Array, countsOffset: number, type: number, offsets: Int32Array, offsetsOffset: number, drawCount: number): void };
-
 type GeneratorInternals = {
   _prepareShadowDefines(subMesh: unknown, useInstances: boolean, defines: string[], isTransparent: boolean): string[];
   _cachedDirection: { x: number; y: number; z: number };
@@ -213,7 +214,12 @@ const GROUPS = 8;
 const NORMAL_STUB_MESH = { isVerticesDataPresent: () => true };
 const NORMAL_STUB = { getMesh: () => NORMAL_STUB_MESH };
 
-function grown<T extends Float32Array | Uint32Array | Int32Array>(array: T, needed: number): T {
+/** A layer's draws sort by part, then slot: `part * SLOT_SPAN + slot`, exact in a double. */
+const SLOT_SPAN = 2 ** 22;
+/** The shared indices a retained part may reach: a part's key (`partFor`) is exact below it. */
+const PART_INDICES = 2 ** 26;
+
+function grown<T extends Float32Array | Float64Array | Uint32Array | Int32Array>(array: T, needed: number): T {
   if (needed <= array.length) return array;
   let capacity = Math.max(array.length, 256);
   while (capacity < needed) capacity *= 2;
@@ -232,8 +238,6 @@ export class RetainedShadowCasters {
   private readonly scene: Scene;
   private readonly engine: ThinEngine;
   private readonly state: (mesh: AbstractMesh) => RetainedCasterState | undefined;
-  /** The extension that draws a layer's casters in one call; null where it is missing or its program failed. */
-  private multiDraw: MultiDraw | null;
   private readonly casters = new Map<AbstractMesh, Caster>();
   /** Indexed geometries' ranges, and those of geometries a mesh draws without indices (its vertices in order). */
   private readonly geometries = new Map<Geometry, GeometryRange>();
@@ -246,15 +250,17 @@ export class RetainedShadowCasters {
   private wasted = 0;
   private gpu: Gpu | null = null;
   private scratch = new Uint32Array(0);
-  /** Per slot: its draw's index count and its byte offset in the indices. */
+  /** Per slot: its draw's index count, its byte offset in the indices, and the part (index range) those name. */
   private counted = new Int32Array(0);
   private offsets = new Int32Array(0);
+  private partOf = new Int32Array(0);
+  /** Each index range's part, keyed by `rangeKey`, numbered in order of arrival. */
+  private readonly parts = new Map<number, number>();
   private slotCount = 0;
   private readonly freeSlots: number[] = [];
-  /** One call's draws: their slots (the uniform array), index counts and byte offsets. */
+  /** A cull state's draws in a layer, sorted by part (`SLOT_SPAN`); and one list's slots (the uniform array). */
+  private order = new Float64Array(0);
   private readonly callSlots = new Int32Array(RETAINED_CALL_DRAWS);
-  private readonly callCounts = new Int32Array(RETAINED_CALL_DRAWS);
-  private readonly callOffsets = new Int32Array(RETAINED_CALL_DRAWS);
   private rows = new Float32Array(0);
   /** The texture rows written since the last upload; none while `dirtyTo` is below `dirtyFrom`. */
   private dirtyFrom = Infinity;
@@ -281,13 +287,16 @@ export class RetainedShadowCasters {
   private frame = 0;
   private frames = 0;
   private sceneFrame = -1;
+  /** The walked frame whose casters `prepareFrame` resolved and uploaded. */
+  private prepared = 0;
   private readonly frameEnd: Nullable<Observer<Scene>>;
   private refused = false;
   private disposed = false;
   private readonly restored: Nullable<Observer<AbstractEngine>>;
-  /** Draw calls made, and the caster draws they stood for. */
+  /** Draw calls made, the caster draws they stood for, and the uploads a layer made itself (`RetainedShadowDiagnostics`). */
   private calls = 0;
   private drawn = 0;
+  private lateUploads = 0;
 
   /** Null where retained draws cannot work (Babylon's path stays): an engine without WebGL2. */
   static create(scene: Scene, state: (mesh: AbstractMesh) => RetainedCasterState | undefined): RetainedShadowCasters | null {
@@ -300,13 +309,9 @@ export class RetainedShadowCasters {
     this.scene = scene;
     this.engine = scene.getEngine() as ThinEngine;
     this.state = state;
-    this.multiDraw = (this.engine._gl.getExtension("WEBGL_multi_draw") as MultiDraw | null) ?? null;
     this.frameEnd = scene.onAfterRenderObservable.add(() => { this.frame = 0; });
     // A restored context has none of the old one's buffers: they are built again from what the casters hold.
-    this.restored = this.engine.onContextRestoredObservable.add(() => {
-      this.multiDraw = (this.engine._gl.getExtension("WEBGL_multi_draw") as MultiDraw | null) ?? null;
-      this.forgetGpu(false);
-    });
+    this.restored = this.engine.onContextRestoredObservable.add(() => this.forgetGpu(false));
   }
 
   /**
@@ -321,13 +326,7 @@ export class RetainedShadowCasters {
       scene.clipPlane2 || scene.clipPlane3 || scene.clipPlane4 || scene.clipPlane5 || scene.clipPlane6) return false;
     const program = this.programFor(generator);
     if (!program?.effect.isReady()) return false;
-    // Under a floating origin Babylon uploads a world matrix less the eye's position: every row follows the eye.
-    const origin = scene.floatingOriginOffset;
-    if (origin.x !== this.originX || origin.y !== this.originY || origin.z !== this.originZ || scene.useRightHandedSystem !== this.rightHanded) {
-      this.originX = origin.x; this.originY = origin.y; this.originZ = origin.z;
-      this.rightHanded = scene.useRightHandedSystem;
-      this.stamp += 1;
-    }
+    this.followOrigin();
     let layer = this.layers.get(generator);
     if (!layer) this.layers.set(generator, (layer = { slots: Array.from({ length: GROUPS }, () => new Int32Array(0)), counts: new Array<number>(GROUPS).fill(0), planes: null }));
     layer.planes = planes;
@@ -346,6 +345,71 @@ export class RetainedShadowCasters {
     this.sceneFrame = this.scene.getFrameId();
   }
 
+  /**
+   * Before the walked frame's first map binds its target (the maps' `onBeforeBindObservable`; later calls in the frame
+   * do nothing): describes every caster as its first layer would, writes the rows that changed, and uploads them, so
+   * the frame's layers list without writing a row and no upload lands in a render pass. A caster first met inside the
+   * stage, or rows a layer writes again (a floating origin that moved between maps), are uploaded by that layer's draw
+   * as before (`lateUploads`).
+   */
+  prepareFrame(): void {
+    const frame = this.walkedFrame();
+    if (!frame || frame === this.prepared || this.disposed || this.refused || disabledScenes.has(this.scene)) return;
+    this.prepared = frame;
+    this.followOrigin();
+    for (const [mesh, caster] of this.casters)
+      if (caster.seen !== frame || (caster.listed && caster.stamp !== this.stamp)) this.resolve(mesh, frame);
+    this.upload();
+  }
+
+  /** The walked frame (`beginFrame`) while the Scene's frame it began in lasts, else 0. */
+  private walkedFrame(): number {
+    return this.frame && this.scene.getFrameId() === this.sceneFrame ? this.frame : 0;
+  }
+
+  /** Under a floating origin Babylon uploads a world matrix less the eye's position: every row follows the eye. */
+  private followOrigin(): void {
+    const scene = this.scene, origin = scene.floatingOriginOffset;
+    if (origin.x !== this.originX || origin.y !== this.originY || origin.z !== this.originZ || scene.useRightHandedSystem !== this.rightHanded) {
+      this.originX = origin.x; this.originY = origin.y; this.originZ = origin.z;
+      this.rightHanded = scene.useRightHandedSystem;
+      this.stamp += 1;
+    }
+  }
+
+  /**
+   * Describes `mesh` for walked frame `frame` (0 outside one) and writes its rows where they changed. Its entry when a
+   * layer may list it now, else null; either way its entry remembers the answer for the frame's other layers.
+   */
+  private resolve(mesh: AbstractMesh, frame: number): Caster | null {
+    const caster = this.describe(mesh);
+    // Babylon's own list draws nothing of a hidden mesh: left in it, the mesh stays undrawn.
+    const listed = !!caster && mesh.isEnabled() && mesh.isVisible && !mesh.isBlocked;
+    if (listed) {
+      const world = (frame ? this.state(mesh)?.world : null) ?? mesh.getWorldMatrix();
+      if (world !== caster.world || world.updateFlag !== caster.worldFlag || caster.stamp !== this.stamp || this.unevenFor(mesh, caster) !== caster.uneven)
+        this.writeWorld(mesh, caster, world);
+    }
+    // A caster that cannot be retained keeps its entry, without draws.
+    const entry = caster ?? this.casters.get(mesh);
+    if (entry) {
+      entry.seen = frame;
+      entry.listed = listed;
+    }
+    return listed ? caster : null;
+  }
+
+  /** Uploads the rows written since the last upload; false when there were none. */
+  private upload(): boolean {
+    const texture = this.texture;
+    if (this.dirtyTo < this.dirtyFrom || !texture) return false;
+    const from = this.dirtyFrom, count = Math.min(this.dirtyTo, this.textureRows - 1) - from + 1;
+    if (count > 0) this.engine.updateTextureData(texture.getInternalTexture()!, this.rows.subarray(from * WIDTH * 4, (from + count) * WIDTH * 4), 0, from, WIDTH, count);
+    this.dirtyFrom = Infinity;
+    this.dirtyTo = -1;
+    return count > 0;
+  }
+
   /** Forgets what `generator`'s layer listed and has not drawn: a pass that lists nothing draws nothing retained. */
   discard(generator: ShadowGenerator): void {
     this.current = null;
@@ -356,27 +420,13 @@ export class RetainedShadowCasters {
   take(mesh: AbstractMesh): boolean {
     const layer = this.current;
     if (!layer) return false;
-    // A frame's layers ask the same casters: what the first found of one holds for the others (`beginFrame`).
-    const frame = this.frame && this.scene.getFrameId() === this.sceneFrame ? this.frame : 0;
+    // A frame's layers ask the same casters: what the first found of one (or `prepareFrame`) holds for the others.
+    const frame = this.walkedFrame();
     let caster = frame ? this.casters.get(mesh) ?? null : null;
     if (!caster || caster.seen !== frame || (caster.listed && caster.stamp !== this.stamp)) {
-      caster = this.describe(mesh);
-      // Babylon's own list draws nothing of a hidden mesh: left in it, the mesh stays undrawn.
-      const listed = !!caster && mesh.isEnabled() && mesh.isVisible && !mesh.isBlocked;
-      if (listed) {
-        const world = (frame ? this.state(mesh)?.world : null) ?? mesh.getWorldMatrix();
-        if (world !== caster!.world || world.updateFlag !== caster!.worldFlag || caster!.stamp !== this.stamp || this.unevenFor(mesh, caster!) !== caster!.uneven)
-          this.writeWorld(mesh, caster!, world);
-      }
-      // A caster that cannot be retained keeps its entry, without draws.
-      const entry = caster ?? this.casters.get(mesh);
-      if (entry) {
-        entry.seen = frame;
-        entry.listed = listed;
-      }
-      if (!listed) return false;
+      caster = this.resolve(mesh, frame);
+      if (!caster) return false;
     } else if (!caster.listed) return false;
-    caster = caster!;
     const group = caster.group;
     // A mesh of several parts leaves out those outside the map; an instance's parts carry its source's boxes.
     const planes = caster.draws.length > 1 && !caster.source ? layer.planes : null;
@@ -406,12 +456,8 @@ export class RetainedShadowCasters {
     }
     const engine = this.engine, gl = engine._gl, scene = this.scene, effect = program.effect;
     program.vao ??= engine.recordVertexArrayObject({ [VertexBuffer.PositionKind]: gpu.positions, [VertexBuffer.NormalKind]: gpu.normals }, gpu.indices, effect);
-    if (this.dirtyTo >= this.dirtyFrom) {
-      const from = this.dirtyFrom, count = Math.min(this.dirtyTo, this.textureRows - 1) - from + 1;
-      if (count > 0) engine.updateTextureData(texture.getInternalTexture()!, this.rows.subarray(from * WIDTH * 4, (from + count) * WIDTH * 4), 0, from, WIDTH, count);
-      this.dirtyFrom = Infinity;
-      this.dirtyTo = -1;
-    }
+    // Rows the frame's upload missed (`prepareFrame`): uploaded now, as the layer's draws must read them.
+    if (this.upload()) this.lateUploads += 1;
     const internals = generator as unknown as GeneratorInternals;
     engine.enableEffect(program.wrapper);
     // The uniforms Babylon's own draw of a caster sets (`ShadowGenerator._renderSubMeshForShadowMap`).
@@ -428,8 +474,8 @@ export class RetainedShadowCasters {
     sceneBuffer.bindUniformBuffer();
     effect.setTexture(SAMPLER, texture);
     engine.bindVertexArrayObject(program.vao, gpu.indices);
-    const counted = this.counted, offsets = this.offsets;
-    let indices = 0;
+    const counted = this.counted, offsets = this.offsets, partOf = this.partOf, callSlots = this.callSlots;
+    let indices = 0, calls = 0;
     for (let group = 0; group < GROUPS; group += 1) {
       const count = layer.counts[group]!;
       if (!count) continue;
@@ -439,34 +485,29 @@ export class RetainedShadowCasters {
       if (generator.forceBackFacesOnly) engine.setState(true, 0, false, true, cullBackFaces);
       else engine.setState((group & 1) !== 0, 0, false, (group & 2) !== 0, cullBackFaces);
       engine.applyStates();
-      if (this.multiDraw) {
-        const callSlots = this.callSlots, callCounts = this.callCounts, callOffsets = this.callOffsets;
-        for (let from = 0; from < count; from += RETAINED_CALL_DRAWS) {
-          const draws = Math.min(RETAINED_CALL_DRAWS, count - from);
-          for (let index = 0; index < draws; index += 1) {
-            const slot = slots[from + index]!;
-            callSlots[index] = slot;
-            callCounts[index] = counted[slot]!;
-            callOffsets[index] = offsets[slot]!;
-            indices += counted[slot]!;
-          }
-          effect.setIntArray4(SLOTS_UNIFORM, callSlots);
-          this.multiDraw.multiDrawElementsWEBGL(gl.TRIANGLES, callCounts, 0, gl.UNSIGNED_INT, callOffsets, 0, draws);
-          engine._drawCalls.addCount(1, false);
-          this.calls += 1;
+      // The draws of one part side by side: one instanced draw each run.
+      const order = this.order = grown(this.order, count);
+      for (let index = 0; index < count; index += 1) order[index] = partOf[slots[index]!]! * SLOT_SPAN + slots[index]!;
+      order.subarray(0, count).sort();
+      for (let from = 0; from < count; from += RETAINED_CALL_DRAWS) {
+        const listed = Math.min(RETAINED_CALL_DRAWS, count - from);
+        for (let index = 0; index < listed; index += 1) callSlots[index] = order[from + index]! % SLOT_SPAN;
+        effect.setIntArray4(SLOTS_UNIFORM, callSlots);
+        for (let first = 0; first < listed;) {
+          const slot = callSlots[first]!, part = partOf[slot]!;
+          let end = first + 1;
+          while (end < listed && partOf[callSlots[end]!] === part) end += 1;
+          effect.setInt(BASE_UNIFORM, first);
+          gl.drawElementsInstanced(gl.TRIANGLES, counted[slot]!, gl.UNSIGNED_INT, offsets[slot]!, end - first);
+          indices += counted[slot]! * (end - first);
+          calls += 1;
+          first = end;
         }
-      } else {
-        for (let index = 0; index < count; index += 1) {
-          const slot = slots[index]!;
-          effect.setInt(DRAW_UNIFORM, slot);
-          gl.drawElements(gl.TRIANGLES, counted[slot]!, gl.UNSIGNED_INT, offsets[slot]!);
-          indices += counted[slot]!;
-        }
-        engine._drawCalls.addCount(count, false);
-        this.calls += count;
       }
       this.drawn += count;
     }
+    engine._drawCalls.addCount(calls, false);
+    this.calls += calls;
     // Babylon counts a draw's indices; the maps' triangle count reads them.
     scene._activeIndices.addCount(indices, false);
     layer.counts.fill(0);
@@ -488,8 +529,16 @@ export class RetainedShadowCasters {
    */
   diagnostics(): RetainedShadowDiagnostics {
     let casters = 0, draws = 0;
-    for (const caster of this.casters.values()) if (caster.draws.length) { casters += 1; draws += caster.draws.length; }
-    return { casters, draws, vertices: this.vertices, indices: this.indexCount, multiDraw: this.multiDraw !== null, calls: this.calls, drawn: this.drawn };
+    const parts = new Set<number>();
+    for (const caster of this.casters.values()) {
+      if (!caster.draws.length) continue;
+      casters += 1;
+      draws += caster.draws.length;
+      for (const draw of caster.draws) parts.add(this.partOf[draw.slot]!);
+    }
+    return {
+      casters, draws, parts: parts.size, vertices: this.vertices, indices: this.indexCount, calls: this.calls, drawn: this.drawn, lateUploads: this.lateUploads,
+    };
   }
 
   dispose(): void {
@@ -565,13 +614,14 @@ export class RetainedShadowCasters {
         const start = partStart(part, inOrder), count = partCount(part, inOrder);
         // A part that is not whole triangles of its geometry is left to Babylon, and the mesh with it: so is a mesh
         // the draws' data texture has no room for.
-        const slot = start < 0 || count <= 0 || count % 3 !== 0 || start + count > range.indexCount ? -1 : this.slot();
+        const slot = start < 0 || count <= 0 || count % 3 !== 0 || start + count > range.indexCount || range.indexBase + start + count >= PART_INDICES ? -1 : this.slot();
         if (slot < 0) {
           this.freeDraws(caster);
           return null;
         }
         this.counted[slot] = count;
         this.offsets[slot] = (range.indexBase + start) * 4;
+        this.partOf[slot] = this.partFor(range.indexBase + start, count);
         caster.draws.push({ slot, part });
       }
       caster.inOrder = inOrder;
@@ -609,11 +659,24 @@ export class RetainedShadowCasters {
   private slot(): number {
     const free = this.freeSlots.pop();
     if (free !== undefined) return free;
-    if (!this.reserveRows(Math.ceil((this.slotCount + 1) / DRAWS_PER_ROW))) return -1;
+    if (this.slotCount >= SLOT_SPAN || !this.reserveRows(Math.ceil((this.slotCount + 1) / DRAWS_PER_ROW))) return -1;
     const slot = this.slotCount++;
     this.counted = grown(this.counted, this.slotCount);
     this.offsets = grown(this.offsets, this.slotCount);
+    this.partOf = grown(this.partOf, this.slotCount);
     return slot;
+  }
+
+  /**
+   * The part a draw of `count` indices from index `first` of the shared buffer draws: every draw of the same range is
+   * the same part, drawn as instances of one draw.
+   */
+  private partFor(first: number, count: number): number {
+    // Exact in a double, and one key per range: both below PART_INDICES (`describe`).
+    const key = first * PART_INDICES + count;
+    let part = this.parts.get(key);
+    if (part === undefined) this.parts.set(key, (part = this.parts.size));
+    return part;
   }
 
   /** Makes the data texture hold `rows` rows of draws; false when the rendering budget has no room for it. */
@@ -696,9 +759,15 @@ export class RetainedShadowCasters {
     this.vertices = vertices;
     this.indexCount = indices;
     this.wasted = 0;
+    this.parts.clear();
     for (const caster of this.casters.values()) {
       const range = caster.range;
-      if (range) for (const draw of caster.draws) this.offsets[draw.slot] = (range.indexBase + partStart(draw.part, caster.inOrder)) * 4;
+      if (!range) continue;
+      for (const draw of caster.draws) {
+        const first = range.indexBase + partStart(draw.part, caster.inOrder);
+        this.offsets[draw.slot] = first * 4;
+        this.partOf[draw.slot] = this.partFor(first, this.counted[draw.slot]!);
+      }
     }
     const gpu = this.gpu;
     if (!gpu) return;
@@ -805,7 +874,6 @@ export class RetainedShadowCasters {
     const defines = this.definesScratch;
     defines.length = 0;
     (generator as unknown as GeneratorInternals)._prepareShadowDefines(NORMAL_STUB, false, defines, false);
-    if (this.multiDraw) defines.unshift(MULTI_DRAW_EXTENSION, MULTI_DRAW_DEFINE_LINE);
     const last = this.lastPrograms.get(generator);
     if (last && this.programs.get(last.key) === last.program && sameStrings(last.defines, defines))
       return this.refused ? null : last.program;
@@ -814,17 +882,16 @@ export class RetainedShadowCasters {
     if (!program) {
       const effect = this.engine.createEffect({ vertex: VERTEX, fragment: "shadowMap" }, {
         attributes: [VertexBuffer.PositionKind, VertexBuffer.NormalKind],
-        uniformsNames: ["viewProjection", "lightDataSM", "depthValuesSM", "biasAndScaleSM", DRAW_UNIFORM, SLOTS_UNIFORM],
+        uniformsNames: ["viewProjection", "lightDataSM", "depthValuesSM", "biasAndScaleSM", BASE_UNIFORM, SLOTS_UNIFORM],
         uniformBuffersNames: ["Scene", "Mesh"],
         samplers: [SAMPLER],
         defines: key,
         fallbacks: null,
         onCompiled: null,
         onError: (_effect, errors) => {
-          // Without `gl_DrawID` the same buffer still draws, a caster at a time; without that, Babylon's path does.
-          if (this.multiDraw) this.multiDraw = null;
-          else this.refused = true;
-          console.warn(`[render] Retained shadow casters ${this.refused ? "are off" : "draw one at a time"}: their program failed to compile: ${errors}`);
+          // Babylon's path draws every caster from then on.
+          this.refused = true;
+          console.warn(`[render] Retained shadow casters are off: their program failed to compile: ${errors}`);
         },
       }, this.engine);
       const wrapper = new DrawWrapper(this.engine);
@@ -864,6 +931,7 @@ export class RetainedShadowCasters {
     this.slotCount = 0;
     this.freeSlots.length = 0;
     this.counted.fill(0);
+    this.parts.clear();
     this.dirtyFrom = Infinity;
     this.dirtyTo = -1;
     this.current = null;

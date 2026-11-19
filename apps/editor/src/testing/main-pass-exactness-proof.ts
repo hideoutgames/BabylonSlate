@@ -40,7 +40,7 @@ import { createMirrorSurfaceMesh, mirrorDiagnostics } from "../../../../packages
 import { allowSceneScreenShadows } from "../../../../packages/render/src/render-settings";
 import { setSceneRenderSettings } from "../../../../packages/render/src/scene-render-mode";
 import { shadowAtlasDrawCounts } from "../../../../packages/render/src/shadow-atlas";
-import { SceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import { findSceneShadowController, SceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
 
 /**
@@ -267,10 +267,20 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
       atlas: await readShadowAtlasPages(scene),
     });
     const still = await read();
-    // A caster moves: every map that reaches it draws again, and the images follow.
+    // A caster moves: every map that reaches it draws again, and the images follow. The path they took, counted: tiles
+    // drawn against the times a page was bound for them, and the retained casters' draws, the caster draws those stood
+    // for and the rows a layer uploaded itself.
+    const retainedBefore = findSceneShadowController(scene)?.retainedCasters() ?? null;
+    const atlasBefore = { tiles: counts.tiles, passes: counts.passes };
     box.position.x += 0.4;
     box.rotation.y += 0.3;
     for (let index = 0; index < 4; index++) frame();
+    const retainedAfter = findSceneShadowController(scene)?.retainedCasters() ?? null;
+    const movedCounters = {
+      tiles: counts.tiles - atlasBefore.tiles, passes: counts.passes - atlasBefore.passes,
+      retainedDraws: (retainedAfter?.calls ?? 0) - (retainedBefore?.calls ?? 0), casterDraws: (retainedAfter?.drawn ?? 0) - (retainedBefore?.drawn ?? 0),
+      lateUploads: (retainedAfter?.lateUploads ?? 0) - (retainedBefore?.lateUploads ?? 0),
+    };
     const moved = await read();
     captures.dispose();
     view.dispose();
@@ -282,7 +292,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     await released;
-    return { still, moved, stillTexelsPerFrame, renderer: engine.getGlInfo().renderer };
+    return { still, moved, stillTexelsPerFrame, movedCounters, renderer: engine.getGlInfo().renderer };
   } finally {
     block._buildBlock = build;
     controller.applyViewRefresh = applyViewRefresh;

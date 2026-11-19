@@ -23,23 +23,16 @@ import { markSmoothNormalShadowCaster } from "./shadow-bias";
 import { RETAINED_CALL_DRAWS, RetainedShadowCasters, setRetainedShadowCasters, type RetainedCasterState } from "./shadow-retained-casters";
 
 type Upload = { buffer: "vertices" | "indices"; at: number; data: number[] };
-type Call = { counts: number[]; offsets: number[]; slots: number[] };
+/** One instanced draw: the indices it draws, and per instance the slot the shader reads (`base + gl_InstanceID`). */
+type Call = { count: number; offset: number; slots: number[] };
 
 /** Gives `engine` a WebGL2 context that records what the shared buffers are sent and what is drawn from them. */
-function recordingContext(engine: NullEngine, options: { multiDraw?: boolean } = {}) {
+function recordingContext(engine: NullEngine) {
   const uploads: Upload[] = [];
   const calls: Call[] = [];
-  const single: { count: number; offset: number; slot: number }[] = [];
   const constants = new Map<string, number>([["NO_ERROR", 0]]);
   let sentSlots: number[] = [];
-  let sentDraw = -1;
-  const extension = {
-    multiDrawElementsWEBGL: (_mode: number, counts: Int32Array, _from: number, _type: number, offsets: Int32Array, _at: number, draws: number) => {
-      // As the context does: a call cannot draw more than its lists hold.
-      if (draws > counts.length || draws > offsets.length) throw new Error("INVALID_OPERATION: more draws than the lists hold");
-      calls.push({ counts: Array.from(counts.subarray(0, draws)), offsets: Array.from(offsets.subarray(0, draws)), slots: sentSlots.slice(0, draws) });
-    },
-  };
+  let sentBase = -1;
   const constant = (key: string) => {
     if (!constants.has(key)) constants.set(key, 0x9000 + constants.size);
     return constants.get(key)!;
@@ -48,12 +41,16 @@ function recordingContext(engine: NullEngine, options: { multiDraw?: boolean } =
     get(_target, key) {
       if (typeof key !== "string") return undefined;
       if (/^[A-Z][A-Z0-9_]*$/.test(key)) return constant(key);
-      if (key === "getExtension") return (name: string) => name === "WEBGL_multi_draw" && options.multiDraw !== false ? extension : null;
       if (key === "bufferSubData")
         return (target: number, at: number, data: Float32Array | Uint32Array, from: number, length: number) => {
           uploads.push({ buffer: target === constants.get("ELEMENT_ARRAY_BUFFER") ? "indices" : "vertices", at, data: Array.from(data.subarray(from, from + length)) });
         };
-      if (key === "drawElements") return (_mode: number, count: number, _type: number, offset: number) => { single.push({ count, offset, slot: sentDraw }); };
+      if (key === "drawElementsInstanced")
+        return (_mode: number, count: number, _type: number, offset: number, instances: number) => {
+          // As the shader does: an instance past the uniform list would read no slot.
+          if (sentBase < 0 || sentBase + instances > sentSlots.length) throw new Error("instances past the uniform slot list");
+          calls.push({ count, offset, slots: sentSlots.slice(sentBase, sentBase + instances) });
+        };
       if (key === "getError") return () => 0;
       if (key === "checkFramebufferStatus") return () => constant("FRAMEBUFFER_COMPLETE");
       return () => ({});
@@ -61,18 +58,18 @@ function recordingContext(engine: NullEngine, options: { multiDraw?: boolean } =
   });
   Object.assign(engine, { _webGLVersion: 2, _gl: gl });
   vi.spyOn(engine, "setIntArray4").mockImplementation((_uniform, array) => { sentSlots = Array.from(array); return true; });
-  vi.spyOn(engine, "setInt").mockImplementation((_uniform, value) => { sentDraw = value; return true; });
+  vi.spyOn(engine, "setInt").mockImplementation((_uniform, value) => { sentBase = value; return true; });
   const rows: { row: number; data: number[] }[] = [];
   vi.spyOn(engine, "updateTextureData").mockImplementation((_texture, data, _x, y) => { rows.push({ row: y, data: Array.from(data as Float32Array) }); });
   const states = vi.spyOn(engine, "setState");
   // NullEngine keeps no attribute state to record a vertex array against.
   const arrays = vi.spyOn(engine, "recordVertexArrayObject").mockImplementation(() => ({}) as WebGLVertexArrayObject);
-  return { uploads, calls, single, rows, states, arrays };
+  return { uploads, calls, rows, states, arrays };
 }
 
-function host(options: { multiDraw?: boolean } = {}) {
+function host() {
   const engine = new NullEngine();
-  const { uploads, calls, single, rows, states, arrays } = recordingContext(engine, options);
+  const { uploads, calls, rows, states, arrays } = recordingContext(engine);
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 2, -10), scene);
   scene.activeCamera = camera;
@@ -103,7 +100,7 @@ function host(options: { multiDraw?: boolean } = {}) {
     const upload = rows.at(-1)!;
     return upload.data.slice(slot * 20, slot * 20 + 20);
   };
-  return { engine, scene, camera, sun, generator, retained, vouch, vouched, box, pass, uploads, calls, single, rows, rowOf, states, arrays };
+  return { engine, scene, camera, sun, generator, retained, vouch, vouched, box, pass, uploads, calls, rows, rowOf, states, arrays };
 }
 
 afterEach(() => { vi.restoreAllMocks(); });
@@ -117,7 +114,7 @@ describe("RetainedShadowCasters", () => {
     engine.dispose();
   });
 
-  it("draws the casters a layer lists in one call, from one buffer, each by its own slot", () => {
+  it("draws the casters a layer lists from one buffer, a draw per geometry part, each by its own slot", () => {
     const { engine, scene, retained, box, pass, uploads, calls, rowOf } = host();
     const a = box("a", 2), b = box("b", -3);
     const drawsBefore = engine._drawCalls.current, indicesBefore = scene.getActiveIndices();
@@ -130,30 +127,37 @@ describe("RetainedShadowCasters", () => {
     expect(indices.map((upload) => upload.at)).toEqual([0, 36 * 4]);
     expect(indices[0]!.data).toEqual(Array.from(a.getIndices()!));
     expect(indices[1]!.data).toEqual(Array.from(b.getIndices()!).map((index) => index + 24));
-    // One call draws both, each draw naming its slot, whose row holds its matrix.
-    expect(calls).toEqual([{ counts: [36, 36], offsets: [0, 36 * 4], slots: [0, 1] }]);
+    // Two geometries, a draw each, each naming its slot, whose row holds its matrix.
+    expect(calls).toEqual([{ count: 36, offset: 0, slots: [0] }, { count: 36, offset: 36 * 4, slots: [1] }]);
     expect(rowOf(0).slice(0, 16)).toEqual(Array.from(a.getWorldMatrix().m));
     expect(rowOf(1).slice(0, 16)).toEqual(Array.from(b.getWorldMatrix().m));
     // Has normals; evenly scaled.
     expect(rowOf(0).slice(16)).toEqual([1, 0, 0, 0]);
-    // The call is counted as Babylon counts a draw: one draw call, and the indices drawn.
-    expect(engine._drawCalls.current - drawsBefore).toBe(1);
+    // The draws are counted as Babylon counts them: two draw calls, and the indices drawn.
+    expect(engine._drawCalls.current - drawsBefore).toBe(2);
     expect(scene.getActiveIndices() - indicesBefore).toBe(72);
-    expect(retained.diagnostics()).toMatchObject({ casters: 2, draws: 2, vertices: 48, indices: 72, multiDraw: true, calls: 1, drawn: 2 });
+    expect(retained.diagnostics()).toMatchObject({ casters: 2, draws: 2, parts: 2, vertices: 48, indices: 72, calls: 2, drawn: 2 });
   });
 
-  it("draws an instance from its source's geometry, at its own matrix", () => {
-    const { vouch, box, pass, uploads, calls, rowOf } = host();
+  it("draws an instance from its source's geometry, at its own matrix, in its source's draw", () => {
+    const { engine, scene, vouch, box, pass, uploads, calls, rowOf, retained } = host();
     const source = box("source");
     const copy = source.createInstance("copy");
     copy.position.set(4, 0, 1);
     copy.computeWorldMatrix(true);
     vouch(copy);
-    expect(pass([source, copy]).taken).toEqual([true, true]);
-    // One geometry in the buffers; two slots that draw the same indices.
-    expect(uploads.filter((upload) => upload.buffer === "indices")).toHaveLength(1);
-    expect(calls).toEqual([{ counts: [36, 36], offsets: [0, 0], slots: [0, 1] }]);
-    expect(rowOf(1).slice(12, 15)).toEqual([4, 0, 1]);
+    const own = box("own", -4);
+    const drawsBefore = engine._drawCalls.current, indicesBefore = scene.getActiveIndices();
+    // Listed apart: the copy after a caster of another geometry.
+    expect(pass([source, own, copy]).taken).toEqual([true, true, true]);
+    // Two geometries in the buffers; the two slots that draw the same indices are instances of one draw.
+    expect(uploads.filter((upload) => upload.buffer === "indices")).toHaveLength(2);
+    expect(calls).toEqual([{ count: 36, offset: 0, slots: [0, 2] }, { count: 36, offset: 36 * 4, slots: [1] }]);
+    expect(rowOf(2).slice(12, 15)).toEqual([4, 0, 1]);
+    // Two draw calls, which drew three casters' indices.
+    expect(engine._drawCalls.current - drawsBefore).toBe(2);
+    expect(scene.getActiveIndices() - indicesBefore).toBe(108);
+    expect(retained.diagnostics()).toMatchObject({ casters: 3, draws: 3, parts: 2, calls: 2, drawn: 3 });
   });
 
   it("leaves to Babylon every caster whose draw is not its static geometry at one matrix", () => {
@@ -192,7 +196,7 @@ describe("RetainedShadowCasters", () => {
     mesh.isVisible = false;
     // Babylon's list keeps it, and draws nothing of a hidden mesh.
     expect(pass([mesh, other]).taken).toEqual([false, true]);
-    expect(calls).toEqual([{ counts: [36], offsets: [36 * 4], slots: [1] }]);
+    expect(calls).toEqual([{ count: 36, offset: 36 * 4, slots: [1] }]);
     mesh.isVisible = true;
     mesh.setEnabled(false);
     expect(pass([mesh, other]).taken).toEqual([false, true]);
@@ -203,7 +207,7 @@ describe("RetainedShadowCasters", () => {
     blocked.mockRestore();
     calls.length = 0;
     expect(pass([mesh, other]).taken).toEqual([true, true]);
-    expect(calls).toEqual([{ counts: [36, 36], offsets: [0, 36 * 4], slots: [0, 1] }]);
+    expect(calls).toEqual([{ count: 36, offset: 0, slots: [0] }, { count: 36, offset: 36 * 4, slots: [1] }]);
     // Nothing was sent again for it.
     expect(uploads).toHaveLength(sent);
     expect(retained.diagnostics()).toMatchObject({ casters: 2, vertices: 48 });
@@ -265,17 +269,85 @@ describe("RetainedShadowCasters", () => {
     const { scene, retained, box, pass, rows, sun } = host();
     const mesh = box("mesh");
     const other = new ShadowGenerator(64, sun);
-    retained.beginFrame();
     pass([mesh]);
-    const sent = rows.length;
+    retained.beginFrame();
+    retained.prepareFrame();
+    pass([mesh]);
+    const sent = rows.length, late = retained.diagnostics().lateUploads;
     pass([mesh], null, other);
     expect(rows).toHaveLength(sent);
     vi.spyOn(scene, "floatingOriginOffset", "get").mockReturnValue(new Vector3(5, 0, 0));
     expect(pass([mesh], null, other).taken).toEqual([true]);
     expect(rows.length).toBeGreaterThan(sent);
+    // That layer uploaded the rows itself, before its draw read them.
+    expect(retained.diagnostics().lateUploads).toBe(late + 1);
   });
 
-  it("draws each cull state in a call of its own, with the state Babylon's draw of the caster sets", () => {
+  it("writes and uploads a walked frame's rows before its first map binds, once, so its layers upload none", () => {
+    const { scene, retained, vouch, box, pass, rows, rowOf, calls, sun } = host();
+    const mover = box("mover", 1), still = box("still", -1), hidden = box("hidden", 3);
+    hidden.isVisible = false;
+    const other = new ShadowGenerator(64, sun);
+    // A first frame lists them all: their entries exist from then on.
+    retained.beginFrame();
+    pass([mover, still, hidden]);
+    const late = retained.diagnostics().lateUploads;
+    hidden.isVisible = true;
+    // The next frame: the mover moved (the walk saw it change) and the hidden caster shows.
+    mover.position.x = 6;
+    mover.computeWorldMatrix(true);
+    vouch(mover);
+    scene.incrementRenderId();
+    retained.beginFrame();
+    rows.length = 0;
+    calls.length = 0;
+    const world = vi.spyOn(mover, "getWorldMatrix");
+    retained.prepareFrame();
+    expect(rows).toHaveLength(1);
+    expect(rowOf(0).slice(12, 15)).toEqual([6, 0, 0]);
+    expect(rowOf(2).slice(12, 15)).toEqual([3, 0, 0]);
+    const asked = world.mock.calls.length;
+    // Its maps' layers list what it found and write no row: nothing is uploaded inside their passes.
+    retained.prepareFrame();
+    expect(pass([mover, still, hidden]).taken).toEqual([true, true, true]);
+    expect(pass([mover, hidden], null, other).taken).toEqual([true, true]);
+    expect(rows).toHaveLength(1);
+    expect(world.mock.calls.length).toBe(asked);
+    expect(calls.flatMap((call) => call.slots)).toEqual([0, 1, 2, 0, 2]);
+    expect(retained.diagnostics().lateUploads).toBe(late);
+    // A caster first met inside the stage is described by its layer, which uploads its row before drawing it.
+    const arrival = box("arrival", 9);
+    expect(pass([arrival], null, other).taken).toEqual([true]);
+    expect(rows).toHaveLength(2);
+    expect(retained.diagnostics().lateUploads).toBe(late + 1);
+    // Outside a walked frame there is nothing to prepare: a pass asks for itself.
+    scene.onAfterRenderObservable.notifyObservers(scene);
+    mover.position.x = 7;
+    mover.computeWorldMatrix(true);
+    retained.prepareFrame();
+    expect(rows).toHaveLength(2);
+  });
+
+  it("prepares a frame as the frame's first layer would list: hidden, unvouched and turned-off casters are not taken", () => {
+    const { scene, retained, vouched, box, pass, rows } = host();
+    const shown = box("shown"), hidden = box("hidden", 2), dropped = box("dropped", 4);
+    hidden.isVisible = false;
+    pass([shown, hidden, dropped]);
+    vouched.delete(dropped);
+    retained.beginFrame();
+    retained.prepareFrame();
+    expect(pass([shown, hidden, dropped]).taken).toEqual([true, false, false]);
+    // Turned off for the Scene, nothing is prepared or uploaded.
+    setRetainedShadowCasters(scene, false);
+    rows.length = 0;
+    shown.position.x = 1;
+    shown.computeWorldMatrix(true);
+    retained.beginFrame();
+    retained.prepareFrame();
+    expect(rows).toEqual([]);
+  });
+
+  it("draws each cull state in draws of its own, with the state Babylon's draw of the caster sets", () => {
     const { scene, generator, box, pass, calls, states } = host();
     const plain = box("plain");
     const mirrored = box("mirrored", 3);
@@ -299,7 +371,8 @@ describe("RetainedShadowCasters", () => {
       [true, 0, false, false, true],
       [true, 0, false, true, true],
     ]);
-    expect(calls.map((call) => call.slots)).toEqual([[3], [2], [0], [1, 4]]);
+    // The last state's two casters are two geometries: a draw each.
+    expect(calls.map((call) => call.slots)).toEqual([[3], [2], [0], [1], [4]]);
     // A right-handed Scene turns every side once more.
     scene.useRightHandedSystem = true;
     states.mockClear();
@@ -338,11 +411,13 @@ describe("RetainedShadowCasters", () => {
     // none of them is judged.
     const planes = [new Plane(-1, 0, 0, 10)];
     expect(pass([mesh, copy], planes).taken).toEqual([true, true]);
-    expect(calls).toEqual([{ counts: [36, 36, 36], offsets: [0, 0, 36 * 4], slots: [0, 2, 3] }]);
+    // The near part of the mesh and of its copy are instances of one draw; the copy's far part is a draw of its own, its
+    // slot read past the first draw's in the uniform list.
+    expect(calls).toEqual([{ count: 36, offset: 0, slots: [0, 2] }, { count: 36, offset: 36 * 4, slots: [3] }]);
     // Without planes every part is listed.
     calls.length = 0;
     pass([mesh]);
-    expect(calls).toEqual([{ counts: [36, 36], offsets: [0, 36 * 4], slots: [0, 1] }]);
+    expect(calls).toEqual([{ count: 36, offset: 0, slots: [0] }, { count: 36, offset: 36 * 4, slots: [1] }]);
   });
 
   it("writes a caster's row again only when its matrix or the floating origin moves", () => {
@@ -388,7 +463,7 @@ describe("RetainedShadowCasters", () => {
     expect([0, 1, 2, 3].map((slot) => rowOf(slot)[17])).toEqual([1, 1, 1, 1]);
   });
 
-  it("splits a long list into calls of the slots one uniform array holds", () => {
+  it("splits a long list into draws of the slots one uniform array holds", () => {
     const { vouch, box, pass, calls, retained } = host();
     const source = box("source");
     const meshes: AbstractMesh[] = [source];
@@ -399,20 +474,10 @@ describe("RetainedShadowCasters", () => {
       meshes.push(vouch(copy));
     }
     pass(meshes);
-    expect(calls.map((call) => call.counts.length)).toEqual([RETAINED_CALL_DRAWS, 40]);
+    // One geometry: a draw of as many instances as the list holds, then one of the rest.
+    expect(calls.map((call) => [call.count, call.offset, call.slots.length])).toEqual([[36, 0, RETAINED_CALL_DRAWS], [36, 0, 40]]);
     expect(calls[1]!.slots).toEqual(Array.from({ length: 40 }, (_, index) => RETAINED_CALL_DRAWS + index));
-    expect(retained.diagnostics()).toMatchObject({ calls: 2, drawn: RETAINED_CALL_DRAWS + 40 });
-  });
-
-  it("draws one caster at a time from the same buffer where a layer cannot be drawn in one call", () => {
-    const { engine, retained, box, pass, calls, single } = host({ multiDraw: false });
-    const a = box("a"), b = box("b", 3);
-    const before = engine._drawCalls.current;
-    expect(pass([a, b]).taken).toEqual([true, true]);
-    expect(calls).toEqual([]);
-    expect(single).toEqual([{ count: 36, offset: 0, slot: 0 }, { count: 36, offset: 36 * 4, slot: 1 }]);
-    expect(engine._drawCalls.current - before).toBe(2);
-    expect(retained.diagnostics()).toMatchObject({ multiDraw: false, calls: 2, drawn: 2 });
+    expect(retained.diagnostics()).toMatchObject({ parts: 1, calls: 2, drawn: RETAINED_CALL_DRAWS + 40 });
   });
 
   it("deals a released caster's slot again, and packs the buffers once most of them is freed", () => {
@@ -443,7 +508,7 @@ describe("RetainedShadowCasters", () => {
     expect(sentIndices.map((upload) => upload.at)).toEqual([0, 36 * 4, 72 * 4]);
     expect(sentIndices[1]!.data).toEqual(Array.from(last.getIndices()!).map((index) => index + 24));
     // `next` has the slot `large` gave back.
-    expect(calls).toEqual([{ counts: [36, 36, 36], offsets: [0, 36 * 4, 72 * 4], slots: [1, 2, 0] }]);
+    expect(calls).toEqual([{ count: 36, offset: 0, slots: [1] }, { count: 36, offset: 36 * 4, slots: [2] }, { count: 36, offset: 72 * 4, slots: [0] }]);
   });
 
   it("writes every range again into larger buffers when the casters outgrow them", () => {
@@ -539,7 +604,7 @@ describe("RetainedShadowCasters", () => {
     // Then only the fifth row, which the rest of the new draws are on, is sent.
     expect(rows.map((upload) => [upload.row, upload.data.length])).toEqual([[4, 1020 * 4]]);
     expect(rows[0]!.data.slice(12, 15)).toEqual([816, 0, 0]);
-    expect(calls.reduce((sum, call) => sum + call.counts.length, 0)).toBe(900);
+    expect(calls.reduce((sum, call) => sum + call.slots.length, 0)).toBe(900);
   });
 
   it("frees the place of geometry its mesh replaced with data it cannot retain", () => {
@@ -617,7 +682,7 @@ describe("RetainedShadowCasters", () => {
     calls.length = 0;
     expect(pass([mesh, other]).taken).toEqual([true, true]);
     expect(uploads).toHaveLength(sent);
-    expect(calls).toEqual([{ counts: [36, 36], offsets: [0, 36 * 4], slots: [0, 1] }]);
+    expect(calls).toEqual([{ count: 36, offset: 0, slots: [0] }, { count: 36, offset: 36 * 4, slots: [1] }]);
   });
 
   it("parks a caster that gains levels of detail, though the scheduler saw no change", () => {
@@ -653,7 +718,7 @@ describe("RetainedShadowCasters", () => {
     expect(pass([mesh]).taken).toEqual([true]);
     expect(uploads[0]).toMatchObject({ buffer: "vertices", at: 24 * 12 });
     expect(uploads[0]!.data).toEqual(moved);
-    expect(calls).toEqual([{ counts: [36], offsets: [36 * 4], slots: [0] }]);
+    expect(calls).toEqual([{ count: 36, offset: 36 * 4, slots: [0] }]);
     expect(retained.diagnostics()).toMatchObject({ casters: 1, draws: 1, vertices: 48 });
     // The old range is freed: once most of the buffers is, the next geometry packs them.
     const large = new Mesh("large", scene);
@@ -689,7 +754,7 @@ describe("RetainedShadowCasters", () => {
     expect(retained.diagnostics()).toMatchObject({ casters: 0, vertices: 0 });
     expect(pass([b, a]).taken).toEqual([true, true]);
     expect(uploads.filter((upload) => upload.buffer === "indices").map((upload) => upload.at)).toEqual([0, 36 * 4]);
-    expect(calls).toEqual([{ counts: [36, 36], offsets: [0, 36 * 4], slots: [0, 1] }]);
+    expect(calls).toEqual([{ count: 36, offset: 0, slots: [0] }, { count: 36, offset: 36 * 4, slots: [1] }]);
     expect(rows).toHaveLength(1);
   });
 
@@ -746,7 +811,7 @@ describe("a Scene's shadow maps", () => {
     const drawPass = () => (map as unknown as { _objectRenderer: { onBeforeRenderingManagerRenderObservable: { notifyObservers(pass: number): void } } })
       ._objectRenderer.onBeforeRenderingManagerRenderObservable.notifyObservers(0);
     drawPass();
-    expect(calls).toEqual([{ counts: [36], offsets: [0], slots: [0] }]);
+    expect(calls).toEqual([{ count: 36, offset: 0, slots: [0] }]);
     // A pass that lists nothing (the sun has no such cascade) draws nothing of the list a probe left before it.
     map.getCustomRenderList!(0, map.renderList!, map.renderList!.length);
     expect(map.getCustomRenderList!(9, map.renderList!, map.renderList!.length)).toBeNull();
