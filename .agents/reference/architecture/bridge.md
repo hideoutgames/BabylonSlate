@@ -80,7 +80,7 @@ Seq-lock: writer sets `seq` odd, writes header + rows, sets `seq` even; reader s
 
 ## Sessions and Stop
 
-- `GameSessionOwner` admits one session: mode `play` | `simulate` | `preview`, monotonic generation, abort signal. Preparation re-checks the ticket after every await. The next session waits for `PlaySessionResult.released`; an unconfirmed release quarantines admission until reload.
+- `GameSessionOwner` admits one session: mode `play` | `simulate` | `preview`, monotonic generation, abort signal. Preparation re-checks the ticket after every await. The next session waits for `PlaySessionResult.released`; an unconfirmed release quarantines admission until reload. The signal is aborted with an `AbortError` whose stack is formatted at once (`endSession`): the editor keeps the last ticket after Stop, and an unformatted stack keeps every aborting frame's function and receiver, which held that session's view, canvas and worker.
 - Worker Stop posts `stop` and keeps the worker (and its save storage server) until `runtimeStopped` or `WORKER_STOP_TIMEOUT_MS` = 3000, then terminates, so End Play saves cannot interleave with the next session. The exported player terminates at Stop.
 - A runtime that stops itself (console `quit`) emits `sessionEnded` after its End Play and On Game End work; the worker holds it until its save writes are answered. Editor Play, Simulation and Preview Build then stop through their normal Stop path, and a standalone player stops itself.
 - After Stop, editor Play applies no queued commands or snapshots; logs and diagnostics still arrive. Worker uncaught errors emit the same `diagnostic` shape as the in-process `reportError`.

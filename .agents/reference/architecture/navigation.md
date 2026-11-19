@@ -9,7 +9,8 @@ Recast navmesh bake, Scene `navmesh` chunk, runtime crowd/obstacles/cost volumes
 - Play never generates a navmesh; it only imports baked bytes. Export never auto-bakes.
 - `worldToRecast` / `recastToWorld` are the only 2D axis remap (world `(x, y)` ↔ Recast `(x, 0, y)`); no other code touches Recast axes.
 - A navmesh is not a Content Browser asset: bytes live in the Scene's `navmesh` chunk.
-- Recast loads only through `initNavigation` (`init()` with no implementation, so tests and the dev server run the compat build's embedded wasm). Builds resolve that import to the package's file build and ship its wasm once, as `recast/recast-navigation.wasm`, which every Recast chunk fetches; the build fails unless the compat build embeds exactly that wasm ([exporter files](exporter.md#files-and-catalog)).
+- Recast's module has a 64 MiB WebAssembly memory fixed in its binary. A context that keeps navmeshes, queries or crowds (the Play worker, through `initNavigation`) keeps the module for good; short work that leaves no Recast object (the main thread's navmesh overlay decoding a bake into debug triangles) runs in `withNavigation`, which loads the module and unloads it once no such work is left, unless something pinned it; a bake (`generateNavMesh`) loads it without pinning.
+- Recast loads only through `initNavigation` or `withNavigation` (`init()` with no implementation, so tests and the dev server run the compat build's embedded wasm). Builds resolve that import to the package's file build and ship its wasm once, as `recast/recast-navigation.wasm`, which every Recast chunk fetches; the build fails unless the compat build embeds exactly that wasm ([exporter files](exporter.md#files-and-catalog)).
 
 ## Ownership
 

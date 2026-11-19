@@ -4,7 +4,8 @@ import { applyOccluderProperty } from "./view-occlusion";
 import { Quaternion, Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Geometry } from "@babylonjs/core/Meshes/geometry";
+import { CreateSphereVertexData } from "@babylonjs/core/Meshes/Builders/sphereBuilder";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { resolveOverlayLayout } from "@haptic/core";
@@ -118,12 +119,24 @@ export function clearSceneMeshes(scene: Scene): void {
   });
 }
 
+/** Each Scene's one origin pick sphere geometry, which every actor's origin root draws and picks with. */
+const originGeometries = new WeakMap<Scene, Geometry>();
+
+/**
+ * The actor's origin root: an invisible pick proxy, the sphere `MeshBuilder.CreateSphere` makes at its default 32
+ * segments, sharing the Scene's one sphere geometry (`originGeometries`) instead of holding its own copy of the vertex
+ * data. The geometry goes with the last root that draws it, and the next root makes it again.
+ */
 function createOriginRootMesh(scene: Scene, actor: SerializedActor): Mesh {
-  const root = MeshBuilder.CreateSphere(
-    editorMeshName(actor.id),
-    { diameter: EDITOR_ORIGIN_PICK_DIAMETER },
-    scene,
-  );
+  const side = Mesh._GetDefaultSideOrientation(undefined);
+  let geometry = originGeometries.get(scene);
+  if (!geometry || geometry.isDisposed()) {
+    geometry = new Geometry(Geometry.RandomId(), scene, CreateSphereVertexData({ diameter: EDITOR_ORIGIN_PICK_DIAMETER, sideOrientation: side }), false);
+    originGeometries.set(scene, geometry);
+  }
+  const root = new Mesh(editorMeshName(actor.id), scene);
+  root._originalBuilderSideOrientation = side;
+  geometry.applyToMesh(root);
   root.metadata = {
     ...(root.metadata ?? {}),
     editorActorOrigin: true,

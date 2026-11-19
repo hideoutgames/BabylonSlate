@@ -48,4 +48,6 @@ export {
   createNavigationBackend,
   generateNavMesh,
   initNavigation,
+  navigationLoaded,
+  withNavigation,
 } from "./recast-backend";
