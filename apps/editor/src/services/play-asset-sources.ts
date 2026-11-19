@@ -327,6 +327,21 @@ type PlayAssetSourceOptions = {
   fontModes?: import("@haptic/render").CommandFontModes;
 };
 
+/**
+ * A cache entry's `dispose`, made at module scope. The cache keeps an entry past its Play for the next one; a function
+ * made inside `acquirePlayAssetSources` closes over that acquisition's whole scope (its options, the Play session's
+ * signal and abort reason, whose captured stack holds the session's objects, and the game content read), so every kept
+ * entry kept a past Play alive.
+ */
+function compiledScriptsDisposer(value: { bundles: unknown[]; diagnostics: unknown[] }): () => void {
+  return () => { value.bundles.length = 0; value.diagnostics.length = 0; };
+}
+
+/** As `compiledScriptsDisposer`, for the packed content entry. */
+function packedContentDisposer(value: Parameters<typeof releasePackedContent>[0]): () => void {
+  return () => releasePackedContent(value);
+}
+
 /** A background bake/save may invalidate a snapshot; retry the complete owned acquisition. */
 export async function acquirePlayAssetSources(
   host: PlayAssetSourceHost,
@@ -641,7 +656,7 @@ async function acquirePlayAssetSourcesAttempt(
         const value = { bundles, diagnostics: [...result.diagnostics] };
         return {
           value, sourceBytes: 0, decodedBytes: JSON.stringify(value).length * 2,
-          dispose: () => { value.bundles.length = 0; value.diagnostics.length = 0; },
+          dispose: compiledScriptsDisposer(value),
         };
       },
     }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false }) : { bundles: [], diagnostics: [] };
@@ -659,7 +674,7 @@ async function acquirePlayAssetSourcesAttempt(
         // entries. A metadata cache entry must never prolong their residency.
         const value = packedContentFromGame({ ...game, navmeshBytes: new Map(), audioReverbBytes: new Map(), complexMeshes: new Map() });
         value.audioLibrary.sourceRevisions = new Map(audioRevisions);
-        return { value, sourceBytes: 0, decodedBytes: cpuBytes, dispose: () => releasePackedContent(value) };
+        return { value, sourceBytes: 0, decodedBytes: cpuBytes, dispose: packedContentDisposer(value) };
       },
     }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false }) : packedContentFromGame(game);
     // Each asset was read, or its catalog checked against storage, at its revision during this acquisition (or

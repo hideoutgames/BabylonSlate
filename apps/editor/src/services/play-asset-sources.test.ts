@@ -1,3 +1,5 @@
+import v8 from "node:v8";
+import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import { createActor, createDocumentRef, createEmptyProject, documentId, SCENE_SCHEMA_VERSION } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -108,6 +110,37 @@ async function sceneSaveDuringCompilationFixture() {
   const saveScene = async (name: string, reverb: number) => { await writeScene(name, reverb); await registry.reindexPath("assets/scene.hasset"); };
   return { storage, registry, loading, scopes, host, saveScene };
 }
+
+describe("what the loading cache keeps after a Play", () => {
+  /** V8's collector, for a reachability check (`--expose-gc` set at run time). */
+  function collector(): () => void {
+    v8.setFlagsFromString("--expose-gc");
+    return runInNewContext("gc") as () => void;
+  }
+
+  it("keeps the prepared content, never the acquisition that made it (its options, signal and abort reason)", async () => {
+    const gc = collector();
+    const current = await formatFixture({ scene: SCENE_SCHEMA_VERSION, material: MATERIAL_PAYLOAD_VERSION });
+    // A Play's acquisition: its options and signal are the session's, aborted with a reason as Play stops.
+    const acquire = async () => {
+      const controller = new AbortController();
+      const options = { consumer: "Play Scene", signal: controller.signal };
+      const prepared = await acquirePlayAssetSources(current.host, ["scene"], options);
+      prepared.release();
+      controller.abort(new Error("Play stopped"));
+      return { options: new WeakRef(options), signal: new WeakRef(controller.signal) };
+    };
+    const refs = await acquire();
+    // The released entries stay cached for the next Play.
+    expect(current.loading.snapshot().entries.length).toBeGreaterThan(0);
+    for (let pass = 0; pass < 3; pass += 1) {
+      gc();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect([refs.options.deref(), refs.signal.deref()]).toEqual([undefined, undefined]);
+    current.loading.dispose();
+  });
+});
 
 describe("Play source ownership", () => {
   it("uses fixed unsaved scene dependencies without writing or reusing another working document's packed content", async () => {

@@ -5,6 +5,18 @@ import type { DocumentTransition } from "./document-transition-gate";
 export type GameSessionMode = "play" | "simulate" | "preview";
 export type GameSessionLifecycle = "idle" | "preparing" | "running" | "paused" | "stopping" | "retention-resolution" | "failure";
 
+/**
+ * Aborts a session's signal with the reason an argument-less `abort()` gives (an `AbortError` DOMException), its stack
+ * formatted at once. An unformatted stack keeps every frame's function and receiver alive for as long as the reason is:
+ * the editor keeps the last session's ticket, and through it the aborting frames held that session's Play view, canvas
+ * and worker after Stop.
+ */
+function endSession(controller: AbortController): void {
+  const reason = new DOMException("signal is aborted without reason", "AbortError");
+  void reason.stack;
+  controller.abort(reason);
+}
+
 export interface GameSessionTicket {
   readonly generation: number;
   readonly mode: GameSessionMode;
@@ -139,7 +151,7 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
   fail(ticket: GameSessionTicket, error: unknown, quarantined = false): void {
     if (!this.owns(ticket)) return;
     const mustQuarantine = quarantined || Boolean(this.current!.stop);
-    this.current!.abort.abort();
+    endSession(this.current!.abort);
     this.publish({ ...this.state, lifecycle: "failure", quarantined: mustQuarantine,
       error: error instanceof Error ? error.message : String(error) });
   }
@@ -154,18 +166,18 @@ export class GameSessionOwner<Result extends GameSessionStopResult> {
         this.completeRelease(ticket, release.quarantined);
         return undefined;
       });
-      current.abort.abort();
+      endSession(current.abort);
       this.publish({ ...this.state, lifecycle: "stopping" });
       return current.stopping;
     }
     if (!current.stop) {
       this.current = null;
-      current.abort.abort();
+      endSession(current.abort);
       this.publish({ ...this.state, mode: null, lifecycle: "idle", quarantined: false, error: null });
       return Promise.resolve(undefined);
     }
     const stopNative = (): Promise<Result | undefined> => {
-      current.abort.abort();
+      endSession(current.abort);
       this.publish({ ...this.state, lifecycle: "stopping" });
       return Promise.resolve().then(current.stop!).then((result) => {
         const released = current.releaseBarrier

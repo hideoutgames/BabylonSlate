@@ -1,3 +1,5 @@
+import v8 from "node:v8";
+import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetSessionTrail, sessionTrail } from "@haptic/core";
 import { GameSessionOwner, transitionClosesSessionSource, type GameSessionStopResult } from "./game-session-owner";
@@ -14,6 +16,28 @@ function deferred<T>() {
 // This is the actual admission/release authority; only the native release promise
 // is controlled to reproduce teardown races without constructing a GPU context.
 describe("game session ownership", () => {
+  it("keeps nothing the stopping frames held alive through the ended ticket's abort reason", async () => {
+    v8.setFlagsFromString("--expose-gc");
+    const gc = runInNewContext("gc") as () => void;
+    const owner = new GameSessionOwner<GameSessionStopResult>();
+    const ticket = owner.begin("play")!;
+    owner.attach(ticket, () => ({ released: Promise.resolve({ quarantined: false }) }));
+    // A Play view that stops its session: the editor keeps the ticket after Stop, never the view.
+    const view = await (async () => {
+      const state = { canvas: new Uint8Array(1024) };
+      const presenter = { close() { void state.canvas; return owner.stop(ticket); } };
+      await presenter.close();
+      return new WeakRef(state);
+    })();
+    for (let pass = 0; pass < 3; pass += 1) {
+      gc();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(ticket.signal.aborted).toBe(true);
+    expect((ticket.signal.reason as DOMException).name).toBe("AbortError");
+    expect(view.deref()).toBeUndefined();
+  });
+
   it("keeps every other mode out until actual release, and stops exactly once", async () => {
     const owner = new GameSessionOwner<GameSessionStopResult>();
     const release = deferred<{ quarantined: boolean }>();
