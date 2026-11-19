@@ -14,7 +14,9 @@ import {
 } from "@haptic/shader-graph";
 import { materialUnavailable, type MaterialLibrary } from "./material-library";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { OwnedPostProcess } from "./owned-post-process";
+import { fragmentDiscards } from "./full-target-clear";
 import { LOGICAL_SCENE_SAMPLERS, type LogicalSceneBuffer } from "./logical-scene-texture-block";
 import type { PostProcessStackDiagnostic } from "./post-process-material";
 
@@ -241,6 +243,17 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
         context.copyTexture(this.options.sourceTexture),
       );
     }
+  }
+
+  /**
+   * Whether this frame's pass writes every pixel and channel of its output (`full-target-clear.ts`): the copy that
+   * stands in for an unready or failed effect always does; the authored effect does unless it blends or may discard
+   * (a Custom GLSL node can).
+   */
+  coversOutput(): boolean {
+    const postProcess = this.postProcess;
+    if (!this.isReady() || this.failed || !postProcess) return true;
+    return postProcess.alphaMode === Constants.ALPHA_DISABLE && !fragmentDiscards(postProcess.getEffect());
   }
 
   private executePostProcess(context: FrameGraphRenderContext): void {

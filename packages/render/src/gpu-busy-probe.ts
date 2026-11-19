@@ -8,10 +8,12 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
  * frame's completion: the GPU runs frames in order, so when it is still busy with the previous frame the next one starts
  * there. Off, it does nothing.
  *
- * Resolution: WebGL2 fences are polled without blocking (`clientWaitSync` with a zero timeout) from a zero-delay timer
- * while one is outstanding, so a completion is stamped up to one poll late. Browsers clamp nested timers to about 4 ms,
- * which bounds each frame's error; the error does not accumulate (completion times are absolute), so medians over many
- * frames are stable and comparable between steps. `stats().pollMs` reports the mean poll gap actually seen.
+ * Resolution: WebGL2 fences are polled without blocking (`clientWaitSync` with a zero timeout) once per Engine frame,
+ * as it begins, while one is outstanding: no timer task of its own runs. A completion is stamped at the first frame
+ * start after it, so it is read at frame granularity: a frame whose GPU work ends before the next frame starts reads
+ * the time from its end to that start at least (an upper bound), and a GPU that runs behind is stamped once per frame,
+ * so its frames read the frame period, as a saturated GPU's do. The error does not accumulate (completion times are
+ * absolute), so medians over many frames stay comparable between steps. `stats().pollMs` reports the mean poll gap.
  */
 export interface GpuBusyStats {
   /** Frames whose completion was observed. */
@@ -58,17 +60,14 @@ export class GpuBusyProbe {
   private polls = 0;
   private pollSpan = 0;
   private lastPoll = 0;
-  private pollScheduled = false;
 
   private readonly submit: (submitted: number) => Marker | null;
   private readonly now: () => number;
-  private readonly schedule: (callback: () => void) => void;
   private readonly rendered: () => boolean;
 
   constructor(
     submit: (submitted: number) => Marker | null,
     now: () => number = () => performance.now(),
-    schedule: (callback: () => void) => void = (callback) => { setTimeout(callback, 0); },
     /**
      * Whether the ending Engine frame rendered anything. A frame that rendered nothing (a frame cap's off slot, a held
      * or skipped frame) is not measured: its marker would signal right after the previous frame's and count as a frame
@@ -78,7 +77,6 @@ export class GpuBusyProbe {
   ) {
     this.submit = submit;
     this.now = now;
-    this.schedule = schedule;
     this.rendered = rendered;
   }
 
@@ -101,6 +99,11 @@ export class GpuBusyProbe {
 
   get measuring(): boolean { return this.active; }
 
+  /** Call once at the start of every Engine frame: reads the markers completed since the last frame's start. */
+  frameStart(): void {
+    if (this.active && this.outstanding.length) this.poll();
+  }
+
   /** Call once at the end of every Engine frame. */
   frameEnd(): void {
     if (!this.active || !this.rendered()) return;
@@ -108,12 +111,10 @@ export class GpuBusyProbe {
     const marker = this.submit(this.now());
     if (!marker) return;
     this.outstanding.push(marker);
-    this.requestPoll();
   }
 
-  /** Reads completed markers in submission order. Called by the probe's own timer; exposed for tests. */
+  /** Reads completed markers in submission order (`frameStart`). */
   poll(): void {
-    this.pollScheduled = false;
     const now = this.now();
     if (this.lastPoll > 0) { this.polls += 1; this.pollSpan += now - this.lastPoll; }
     this.lastPoll = now;
@@ -129,8 +130,7 @@ export class GpuBusyProbe {
       this.lastCompletion = now;
       if (this.count < MAX_FRAMES) this.busy[this.count++] = Math.max(0, now - started);
     }
-    if (this.outstanding.length) this.requestPoll();
-    else this.lastPoll = 0;
+    if (!this.outstanding.length) this.lastPoll = 0;
   }
 
   stats(): GpuBusyStats | null {
@@ -148,15 +148,8 @@ export class GpuBusyProbe {
     this.stop();
   }
 
-  private requestPoll(): void {
-    if (this.pollScheduled) return;
-    this.pollScheduled = true;
-    this.schedule(() => this.poll());
-  }
-
   private drop(): void {
     for (const marker of this.outstanding.splice(0)) marker.dispose();
-    this.pollScheduled = false;
     this.lastPoll = 0;
   }
 }
@@ -186,10 +179,8 @@ export function engineFrameMarkers(engine: AbstractEngine): ((submitted: number)
 }
 
 /** A probe whose markers are WebGL2 fences, polled without blocking. */
-export function createFenceGpuBusyProbe(
-  gl: FenceContext, now?: () => number, schedule?: (callback: () => void) => void, rendered?: () => boolean,
-): GpuBusyProbe {
-  return new GpuBusyProbe((submitted) => fenceFrameMarker(gl, submitted), now, schedule, rendered);
+export function createFenceGpuBusyProbe(gl: FenceContext, now?: () => number, rendered?: () => boolean): GpuBusyProbe {
+  return new GpuBusyProbe((submitted) => fenceFrameMarker(gl, submitted), now, rendered);
 }
 
 const probes = new WeakMap<AbstractEngine, GpuBusyProbe | null>();
@@ -203,12 +194,14 @@ export function engineGpuBusyProbe(engine: AbstractEngine, rendered?: () => bool
   let probe: GpuBusyProbe | null = null;
   const gl = (engine as unknown as { _gl?: WebGL2RenderingContext; webGLVersion?: number })._gl;
   const version = (engine as unknown as { webGLVersion?: number }).webGLVersion;
-  if (gl && version === 2 && typeof gl.fenceSync === "function") probe = createFenceGpuBusyProbe(gl, undefined, undefined, rendered);
+  if (gl && version === 2 && typeof gl.fenceSync === "function") probe = createFenceGpuBusyProbe(gl, undefined, rendered);
   probes.set(engine, probe);
   if (probe) {
-    const observer = engine.onEndFrameObservable.add(() => probe!.frameEnd());
+    const begin = engine.onBeginFrameObservable.add(() => probe!.frameStart());
+    const end = engine.onEndFrameObservable.add(() => probe!.frameEnd());
     engine.onDisposeObservable.addOnce(() => {
-      engine.onEndFrameObservable.remove(observer);
+      engine.onBeginFrameObservable.remove(begin);
+      engine.onEndFrameObservable.remove(end);
       probe!.dispose();
     });
   }

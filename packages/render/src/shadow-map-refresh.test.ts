@@ -8,6 +8,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
 import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Scene } from "@babylonjs/core/scene";
 import { Skeleton } from "@babylonjs/core/Bones/skeleton";
@@ -26,6 +27,9 @@ import { attachModelLods, generateModelLods } from "./model-lod";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { createLandscapeMesh, updateLandscapeMesh } from "./landscape-mesh";
+import { createSpriteQuad, setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
+import { createTilemapMeshes, updateSceneTilemapAnimations } from "./tilemap-mesh";
+import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile, type TilemapPayload } from "@haptic/assets";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { verifyRenderChangeJournal } from "./render-change-journal";
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo";
@@ -33,7 +37,7 @@ import { setLatticeBinding } from "./lattice-deformer-binding";
 import { followPose, updatePoseBounds } from "./pose-bounds";
 import { skinnedRig, skinnedStrip } from "./skinned-test-fixtures";
 import { ReflectedContent } from "./reflected-content";
-import type { AtlasCascadedShadowGenerator } from "./shadow-atlas";
+import { shadowAtlasDrawCounts, type AtlasCascadedShadowGenerator } from "./shadow-atlas";
 import { HAPTIC_SHADOW_VIEW_VEC4S, hapticLightBuffer, hapticShadowViews, writeHapticLights } from "./haptic-lights";
 import type { AtlasShadow } from "./shadow-atlas";
 
@@ -191,6 +195,41 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(0);
     updateLandscapeMesh(root, { ...properties, heights: properties.heights.map((_, index) => (index === 4 ? 1 : 0)) });
     for (const chunk of chunks) chunk.material = material;
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    root.dispose();
+  });
+
+  it("caches sprite quads and animated tilemap chunks, whose owners notify every write, and redraws in the frame one is rewritten", async () => {
+    const { scene, material, controller, render } = await fixture();
+    const sprite = createSpriteQuad(scene, "sprite", { pivot: { x: 0.5, y: 0.5 }, width: 100, height: 100 });
+    sprite.material = material;
+    controller.setParticipation(sprite, { castShadows: true });
+    // Its buffers are updatable: without its owner's word it would redraw every frame.
+    expect(sprite.getVertexBuffer(VertexBuffer.PositionKind)!.isUpdatable()).toBe(true);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    setSpriteQuadSize(sprite, 2, 1, { x: 0.5, y: 0.5 });
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    setSpriteQuadUvs(sprite, { u0: 0, v0: 0, u1: 0.5, v1: 0.5 });
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    sprite.dispose();
+    expect(render()).toBe(6);
+
+    const tileset = normalizeTilesetPayload({ atlasWidth: 32, atlasHeight: 16, tileWidth: 16, tileHeight: 16, tiles: [{ id: 2, animation: [2, 1] }] });
+    let tilemap: TilemapPayload = { ...createDefaultTilemapPayload(), chunkSize: 2, tilesets: [{ guid: "atlas", firstGid: 1, tileCount: 2 }] };
+    tilemap = setTile(tilemap, "layer-1", 0, 0, 2);
+    const root = createTilemapMeshes(scene, "tiles", tilemap, new Map([["atlas", tileset]]), 1, 1);
+    const chunk = root.getChildMeshes().find((mesh) => mesh.name.endsWith(":anim")) as Mesh;
+    chunk.material = material;
+    controller.setParticipation(chunk, { castShadows: true });
+    expect(chunk.getVertexBuffer(VertexBuffer.UVKind)!.isUpdatable()).toBe(true);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    // The next animation frame rewrites its UVs.
+    updateSceneTilemapAnimations(scene, 100);
     expect(render()).toBe(6);
     expect(render()).toBe(0);
     root.dispose();
@@ -612,6 +651,61 @@ describe("local shadow refresh", () => {
     expect(render()).toBe(6);
   });
 
+  it("keeps a spot map cached while casters in its range but outside its cone move or animate, and redraws for one that can reach it", async () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16, maxTextureSize: 4096 });
+    const scene = new Scene(engine);
+    const camera = new UniversalCamera("camera", new Vector3(0, 2, -10), scene);
+    camera.setTarget(Vector3.Zero());
+    scene.activeCamera = camera;
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, localMapSize: 256, maxLocalLights: 1 }) });
+    const material = new StandardMaterial("opaque", scene);
+    const under = MeshBuilder.CreateBox("under", {}, scene);
+    under.material = material;
+    // 6 m up, pointing down, 40 degrees wide: its map's square frustum reaches about 27 degrees off its axis at the corners.
+    const light = new SpotLight("spot", new Vector3(0, 6, 0), new Vector3(0, -1, 0), (40 * Math.PI) / 180, 2, scene);
+    light.range = 20;
+    // Within its range, level with it and well off its axis; one changes on every frame by itself.
+    const beside = MeshBuilder.CreateBox("beside", {}, scene);
+    beside.position.set(8, 5, 0);
+    beside.material = material;
+    const animated = MeshBuilder.CreateBox("animated", {}, scene);
+    animated.position.set(-8, 5, 0);
+    animated.material = material;
+    animated.onBeforeRenderObservable.add(() => {});
+    const controller = sceneShadowController(scene);
+    refreshLikeTheGraph(scene, controller);
+    controller.register(light, true);
+    controller.sync();
+    const generator = controller.generator(light)!;
+    const map = generator.getShadowMap()!;
+    const bind = map._bindFrameBuffer.bind(map);
+    const passes = vi.spyOn(map, "_bindFrameBuffer").mockImplementation((...args) => bind(...args));
+    await material.forceCompilationAsync(under);
+    await generator.forceCompilationAsync();
+    const render = () => {
+      const before = passes.mock.calls.length;
+      scene.render();
+      return passes.mock.calls.length - before;
+    };
+    // Drawn, and drawn again once every caster's shadow shader is ready.
+    expect(render()).toBe(1);
+    render();
+    expect(render()).toBe(0);
+    beside.position.z += 1;
+    animated.position.z += 1;
+    expect([render(), render()]).toEqual([0, 0]);
+    // On the floor toward a corner of the map, about 34 degrees off the axis: its edge reaches into the map's frustum,
+    // though not into the light's 20 degree cone.
+    beside.position.set(2.8, 0, 2.8);
+    expect(render()).toBe(1);
+    expect(render()).toBe(0);
+    beside.position.set(8, 5, 0);
+    expect(render()).toBe(1);
+    expect(render()).toBe(0);
+  });
+
   it("keeps local maps cached while the floating render origin moves, sampled from the new origin", async () => {
     const { scene, camera, light, generator, render } = await fixture(true);
     expect(render()).toBe(6);
@@ -888,6 +982,30 @@ describe("cascaded sun refresh", () => {
     near.onBeforeRenderObservable.remove(hook);
     settle();
     expect(render()).toBe(0);
+  });
+
+  it("redraws only the cascades a caster that changes on its own reaches, keeping the other's tile, and every cascade when the camera moves", async () => {
+    const { scene, camera, material, generator } = await cascadedSun();
+    const counts = shadowAtlasDrawCounts(scene);
+    /** The cascade tiles one scene frame cleared and drew. */
+    const tiles = () => {
+      const before = counts.tiles;
+      scene.render();
+      return counts.tiles - before;
+    };
+    // Thirty units ahead, beyond the first cascade's split; a render hook makes its shadow change on its own.
+    const far = MeshBuilder.CreateBox("far animated caster", { size: 2 }, scene);
+    far.position.set(0, 1, 30);
+    far.material = material;
+    far.onBeforeRenderObservable.add(() => {});
+    sceneShadowController(scene).setParticipation(far, { castShadows: true });
+    tiles();
+    tiles();
+    expect([tiles(), tiles(), tiles()]).toEqual([1, 1, 1]);
+    expect([generator.numCascades, (generator as AtlasCascadedShadowGenerator).keepsCascade(0)]).toEqual([2, true]);
+    // A moved camera refits every cascade: both are drawn, then the first is kept again.
+    camera.position.x += 1;
+    expect([tiles(), tiles()]).toEqual([2, 1]);
   });
 
   it("draws a skinned caster into the cascades its pose reaches, once its bounds follow its skeleton", async () => {

@@ -24,6 +24,7 @@ import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelp
 import "@babylonjs/core/Shaders/postprocess.vertex";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
 import { ManagedShadowObjectRendererTask } from "./framegraph-managed-shadows";
+import { fragmentDiscards } from "./full-target-clear";
 import { LightNeutralObjectRendererTask } from "./light-neutral-tasks";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease,
@@ -288,6 +289,9 @@ class WaterSceneCopyTask extends FrameGraphTask {
   override getClassName(): string { return "WaterSceneCopyTask"; }
 
   override isReady(): boolean { return this.wrapper.isReady(); }
+
+  /** The copy writes every pixel and channel of its target once its effect is ready (`full-target-clear.ts`). */
+  coversOutput(): boolean { return this.wrapper.isReady() && !fragmentDiscards(this.wrapper.effect); }
 
   override record(): void {
     const graph = this._frameGraph;

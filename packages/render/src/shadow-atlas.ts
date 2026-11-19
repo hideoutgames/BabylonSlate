@@ -483,6 +483,9 @@ function filterReach(shadow: ShadowGenerator, size: number, correction: Vector3 
   return 2 * texels / size;
 }
 
+/** Whether a render leaves a pass out: no, kept (its tile holds what a redraw would draw), or left for a later render. */
+type PassDeferral = false | "kept" | "later";
+
 /**
  * Draws `map`'s passes into its tiles of `placed`, an atlas: each pass binds its tile's page, its viewport is its tile,
  * set once the framebuffer is bound (the object renderer sets the camera's before the bind), and its tile clears only
@@ -495,7 +498,7 @@ function filterReach(shadow: ShadowGenerator, size: number, correction: Vector3 
  */
 function drawIntoTiles(
   map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShadow, placed: Atlas, drawing: (pass: number) => void,
-  deferral?: { defers(pass: number): boolean; drawn(pass: number): void },
+  deferral?: { defers(pass: number): PassDeferral; began(pass: number, deferral: PassDeferral): void; drawn(pass: number): void },
 ): void {
   const scene = map.getScene()!;
   const atlas = placed.target;
@@ -510,7 +513,8 @@ function drawIntoTiles(
   let pass = 0;
   let cleared = false;
   let partial = false;
-  // A pass left out of this render (`deferral`): its tile keeps its depth and the view it was drawn with.
+  // A pass left out of this render (`deferral`): its tile keeps its depth and the view it was drawn with. One left for
+  // later (`"later"`) makes the render incomplete; a kept one (`"kept"`) holds what a redraw would draw.
   let deferring = false;
   let deferred = false;
   map.ignoreCameraViewport = false;
@@ -526,9 +530,11 @@ function drawIntoTiles(
       });
     }
     scene.getEngine().setViewport(viewports[layer]!);
-    deferring = deferral?.defers(layer) === true;
+    const left = deferral?.defers(layer) ?? false;
+    deferral?.began(layer, left);
+    deferring = left !== false;
     if (deferring) {
-      deferred = true;
+      if (left === "later") deferred = true;
       return;
     }
     drawing(layer);
@@ -832,6 +838,8 @@ export function createAtlasShadowGenerator(light: SpotLight | PointLight, size: 
 
 /** The first cascade `shadowdebug farcascades off` draws on alternate frames: the first two hold the near shadows. */
 const FIRST_DEFERRED_CASCADE = 2;
+/** Every cascade's bit (`AtlasCascadedShadowGenerator.staleCascades`): Babylon's cascaded maps hold at most four. */
+const ALL_CASCADES = 0xf;
 
 /**
  * The sun's cascaded shadow generator drawing each cascade into its own tile of the Scene's atlas, built with its
@@ -849,6 +857,14 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
    * is initialised, which Babylon's constructor does before this class's own fields would be.
    */
   declare private cascadeDrawn: boolean[];
+  /**
+   * Per cascade (a bit each), whether its tile must be drawn at the map's next render: every cascade, until a refresh
+   * that knows which changed says otherwise (`refreshCascades`). A drawn pass clears its bit; any other reset of the
+   * map's refresh counter (a pass that skipped a caster not ready, a debug switch, a new refresh rate) sets them all.
+   */
+  declare private staleCascades: number;
+  /** A refresh with its own cascade mask is resetting the map's refresh counter (`refreshCascades`). */
+  declare private selectiveRefresh: boolean;
   /** The share of the shadow distance's far end over which the shadow fades out (`ShadowSettings.fadeFraction`). */
   fadeFraction = 0;
   /** Automatic bias (`ShadowSettings.autoBias`): receivers compare against their own plane (receiver-plane PCF). */
@@ -951,8 +967,54 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
           ratio(max[0]!.y - min[0]!.y, max[index]!.y - min[index]!.y),
           ratio(max[index]!.z - min[index]!.z, max[0]!.z - min[0]!.z)));
       }
-    }, { defers: (cascade) => this.defersCascade(cascade), drawn: (cascade) => { cascadeDrawn[cascade] = true; } });
+    }, {
+      defers: (cascade) => this.cascadeDeferral(cascade),
+      began: (cascade, deferral) => { this.keptPass = deferral === "kept" ? cascade : -1; },
+      drawn: (cascade) => {
+        cascadeDrawn[cascade] = true;
+        this.staleCascades &= ~(1 << cascade);
+      },
+    });
+    this.staleCascades = ALL_CASCADES;
+    this.selectiveRefresh = false;
+    // Every reset passes through the map's object renderer: the map's own, a new refresh rate, and a mesh found not
+    // ready in a pass.
+    const renderer = (this._shadowMap as unknown as { _objectRenderer: { resetRefreshCounter(): void } })._objectRenderer;
+    const reset = renderer.resetRefreshCounter.bind(renderer);
+    renderer.resetRefreshCounter = () => {
+      if (!this.selectiveRefresh) this.staleCascades = ALL_CASCADES;
+      reset();
+    };
   }
+
+  /**
+   * Marks the cascades of `mask` (a bit each) to be drawn at the map's next render, and runs `refresh` (which sets the
+   * map's refresh rate or resets its counter) without marking the others: `ShadowMapRefresh` knows which cascades'
+   * casters, fit, light and camera changed, and a cascade none of them did keeps its tile (`keepsCascade`).
+   */
+  refreshCascades(mask: number, refresh: () => void): void {
+    this.staleCascades |= mask;
+    this.refreshFrame = this._scene.getEngine().frameId;
+    this.selectiveRefresh = true;
+    try {
+      refresh();
+    } finally {
+      this.selectiveRefresh = false;
+    }
+  }
+
+  /**
+   * Whether a render leaves `cascade`'s tile as it is, holding exactly the depth a redraw would draw: it was drawn
+   * whole, and nothing that reaches it changed since, as a refresh in this Engine frame found (`refreshCascades`; any
+   * other reset marks every cascade). A render with no refresh in its frame draws every cascade.
+   */
+  keepsCascade(cascade: number): boolean {
+    return this.cascadeDrawn[cascade] === true && (this.staleCascades & (1 << cascade)) === 0 &&
+      this.refreshFrame === this._scene.getEngine().frameId;
+  }
+
+  /** The Engine frame of the last `refreshCascades`. */
+  private refreshFrame = -1;
 
   /**
    * Debug (`shadowdebug farcascades off`): whether `cascade` is left out of a render in this Engine frame. The
@@ -963,6 +1025,26 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
   defersCascade(cascade: number): boolean {
     return cascade >= FIRST_DEFERRED_CASCADE && this.cascadeDrawn[cascade] === true &&
       (this._scene.getEngine().frameId & 1) === 1 && shadowDebugOff(this._scene, "farcascades");
+  }
+
+  /**
+   * Whether the pass that just began (a render's, or a readiness probe's) is `cascade`'s and keeps its tile
+   * (`keepsCascade`): its caster list is then empty. Asked once per pass, by its caster list, which follows the pass's
+   * start.
+   */
+  takesKeptPass(cascade: number): boolean {
+    const kept = this.keptPass === cascade;
+    this.keptPass = -1;
+    return kept;
+  }
+
+  /** The pass that began keeping its tile, until its caster list asks (`takesKeptPass`); -1 for none. */
+  private keptPass = -1;
+
+  /** How a render treats `cascade`'s pass: left for later (`defersCascade`), kept (`keepsCascade`), or drawn. */
+  private cascadeDeferral(cascade: number): PassDeferral {
+    if (this.defersCascade(cascade)) return "later";
+    return this.keepsCascade(cascade) ? "kept" : false;
   }
 
   protected override _applyFilterValues(): void {}

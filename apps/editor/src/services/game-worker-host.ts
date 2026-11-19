@@ -82,6 +82,7 @@ function spawnGameWorkerHost(): GameWorkerHost {
     ),
     { type: "module" },
   );
+  liveWorkers.add(worker);
 
   const commandHandlers: Array<(command: CommandMessage) => void> = [];
   const snapshotHandlers: Array<(buffer: Float32Array) => void> = [];
@@ -173,7 +174,15 @@ function spawnGameWorkerHost(): GameWorkerHost {
     terminate: () => {
       terminated = true;
       clearTimeout(startTimer);
+      liveWorkers.delete(worker);
       worker.terminate();
     },
   };
+}
+
+/** The game workers spawned and not terminated: a Feature Test Check wraps their message handlers (`frame-attribution.ts`). */
+const liveWorkers = new Set<Worker>();
+
+export function liveGameWorkers(): Iterable<Worker> {
+  return liveWorkers;
 }

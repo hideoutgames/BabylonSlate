@@ -42,6 +42,8 @@ import {
 import { FEATURE_TEST_AB_DEPS } from "../lib/feature-test-ab-deps";
 import { FEATURE_TEST_CHECK_SCENES } from "../services/feature-test-check-scenes";
 import { FeatureTestCheckStatus } from "./feature-test-check-status";
+import { installFrameAttribution } from "../services/frame-attribution";
+import { liveGameWorkers } from "../services/game-worker-host";
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
 import {
@@ -76,6 +78,16 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     const abort = () => { clearTimeout(timer); reject(signal.reason); };
     signal.addEventListener("abort", abort, { once: true });
   });
+}
+
+/** Whether an animation frame callback is an Engine's render loop (Babylon's bound render function). */
+function isRenderCallback(callback: unknown): boolean {
+  // Indexed: asked for every animation frame callback while a Check runs, so it makes no iterator.
+  const engines = EngineStore.Instances;
+  for (let index = 0; index < engines.length; index++) {
+    if ((engines[index] as unknown as { _boundRenderFunction?: unknown })._boundRenderFunction === callback) return true;
+  }
+  return false;
 }
 
 /** requestAnimationFrame intervals for `durationMs`; a hidden page samples nothing. */
@@ -269,6 +281,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       now: () => performance.now(),
       sleep,
       onProgress: (message) => { markSessionTrail(`check: ${message}`); setPhase({ kind: "running", message }); },
+      attributeFrames: () => installFrameAttribution({ isRenderCallback, workers: liveGameWorkers }),
     };
     try {
       const report = await runFeatureTestCheck({
