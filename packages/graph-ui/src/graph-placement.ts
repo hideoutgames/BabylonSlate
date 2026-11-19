@@ -13,14 +13,17 @@ type Size = { width: number; height: number };
  * spot is taken, the grid of footprint-sized slots around it is searched
  * nearest first (below, above, right, left, then outward) for one clear of
  * every existing node. Existing nodes count at their measured size, else the
- * pin-row estimate.
+ * pin-row estimate. `blocked` are further areas in flow units a new node must
+ * stay clear of, such as the part of the canvas under the toolbar.
  */
 export function freeNodePosition(
   center: Point,
   size: Size,
   existing: readonly GraphVirtualizeNode[],
+  blocked: readonly (Point & Size)[] = [],
 ): Point {
   const boxes = existing.map((node) => ({ ...node.position, ...graphNodeSize(node) }));
+  for (const area of blocked) boxes.push(area);
   const origin = { x: center.x - size.width / 2, y: center.y - size.height / 2 };
   const stepX = size.width + NODE_PLACEMENT_GAP;
   const stepY = size.height + NODE_PLACEMENT_GAP;

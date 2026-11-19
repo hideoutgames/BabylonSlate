@@ -2642,10 +2642,22 @@ function GraphEditorCanvas({
           x: (bounds?.left ?? 0) + (bounds?.width ?? 0) / 2,
           y: (bounds?.top ?? 0) + (bounds?.height ?? 0) / 2,
         });
+        // Canvas overlays (the toolbar) cover part of the view: a node placed under one cannot be
+        // seen or pressed, so those areas count as taken.
+        const covered = [...(wrapperRef.current?.querySelectorAll<HTMLElement>("[data-graph-overlay]") ?? [])].flatMap(
+          (overlay) => {
+            const rect = overlay.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return [];
+            const from = screenToFlowPosition({ x: rect.left, y: rect.top });
+            const to = screenToFlowPosition({ x: rect.right, y: rect.bottom });
+            return [{ x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y }];
+          },
+        );
         position = freeNodePosition(
           center,
           estimateGraphNodeSize(paletteNode.pins, paletteNode.defaultData),
           graphStateRef.current.nodes,
+          covered,
         );
       }
       const takenIds = new Set(graphStateRef.current.nodes.map((node) => node.id));
