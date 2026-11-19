@@ -51,6 +51,7 @@ import { retainAreaLightLookup } from "../../../../packages/render/src/area-ligh
 import { OwnedRectAreaLight } from "../../../../packages/render/src/area-rect-light";
 import { LogicalGeometryTask } from "../../../../packages/render/src/framegraph-logical-buffers";
 import { ManagedShadowObjectRendererTask } from "../../../../packages/render/src/framegraph-managed-shadows";
+import { pendingDriverEffects } from "../../../../packages/render/src/driver-compile";
 import { fullTargetClear } from "../../../../packages/render/src/full-target-clear";
 import { drawGeometryDepthSeed } from "../../../../packages/render/src/geometry-depth-seed";
 import { setMeshInstanceParameters } from "../../../../packages/render/src/instance-parameters";
@@ -405,12 +406,38 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
         throw new Error(`The scene did not settle: ${JSON.stringify({ captures: captures.diagnostics(), mirrors: mirrorDiagnostics(scene) })}`);
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
+    // Timing never decides an image: a capture view's preparation and a program's link finish asynchronously, and a
+    // view not ready for a frame keeps its previous image, so one run could read a capture a frame behind the other.
+    // A frame counts only when no program was compiling as it started, the view drew it ready, and every capture
+    // published an image of it; the images are read only after such frames, with nothing compiling.
+    let drawn = 0;
+    const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 16));
+    const quiet = async (limit: number) => {
+      while (pendingDriverEffects(engine).length) {
+        if (performance.now() > limit) throw new Error("Programs were still compiling.");
+        await tick();
+      }
+    };
+    const settledFrame = async () => {
+      const limit = performance.now() + 30_000;
+      for (;;) {
+        await quiet(limit);
+        const published = captures.diagnostics().map((entry) => entry.draws);
+        const result = frame();
+        drawn += 1;
+        const captured = captures.diagnostics().every((entry, index) => entry.draws === published[index]! + 1);
+        if (result.rendered && result.readyForPresentation && captured && !pendingDriverEffects(engine).length) return;
+        if (performance.now() > limit) throw new Error(`A frame did not settle: ${JSON.stringify(captures.diagnostics())}`);
+        await tick();
+      }
+    };
     // A still stretch: the frames' shadow texels drawn, then the images.
-    for (let index = 0; index < 4; index++) frame();
+    for (let index = 0; index < 4; index++) await settledFrame();
     const counts = shadowAtlasDrawCounts(scene);
     const before = counts.texels;
-    for (let index = 0; index < 4; index++) frame();
-    const stillTexelsPerFrame = (counts.texels - before) / 4;
+    drawn = 0;
+    for (let index = 0; index < 4; index++) await settledFrame();
+    const stillTexelsPerFrame = (counts.texels - before) / drawn;
     const read = async (): Promise<MainPassExactnessImages> => ({
       view: await readView(engine),
       captures: Object.fromEntries(await Promise.all(QUALITIES.map(async (quality) => [quality, await readCapture(outputs[quality])] as const))) as
@@ -419,6 +446,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     });
     const still = await read();
     // A still frame's GL calls and passes.
+    await quiet(performance.now() + 30_000);
     const glFrame = measureFrame(engine, frame);
     // A caster moves: every map that reaches it draws again, and the images follow. The path they took, counted: tiles
     // drawn against the times a page was bound for them, and the retained casters' draws, the caster draws those stood
@@ -429,7 +457,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     box.rotation.y += 0.3;
     // An instance moves too: its batch's rows change.
     posts[2]!.position.z += 0.5;
-    for (let index = 0; index < 4; index++) frame();
+    for (let index = 0; index < 4; index++) await settledFrame();
     const retainedAfter = findSceneShadowController(scene)?.retainedCasters() ?? null;
     const movedCounters = {
       tiles: counts.tiles - atlasBefore.tiles, passes: counts.passes - atlasBefore.passes,
