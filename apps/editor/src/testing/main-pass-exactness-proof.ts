@@ -10,8 +10,8 @@
  * Babylon's clears and then its own, binding its target three times, and keeps its depth, and the light block binds its
  * inputs for geometry pass programs that compile no lighting (`HapticLightingBlock.readsBindings`), every full-screen pass
  * loads its colour target instead of starting from a clear (`fullTargetClear`), and an instanced batch uploads its rows
- * and per-instance values at every draw (no `Scene._instanceUploads`). `chain` adds bloom, volumetric lighting and an FSR
- * upscale, and draws the world at half the backbuffer's size, so the chain ends at the view's size and an output copy
+ * and per-instance values at every draw (no `Scene._instanceUploads`). `chain` adds bloom, volumetric lighting, FXAA in
+ * place of multisampling and an FSR upscale, and draws the world at half the backbuffer's size, so the chain ends at the view's size and an output copy
  * fills the backbuffer. Both draw instances of one box with a per-instance colour. The spec compares
  * the two runs' frames, capture images and shadow atlas pages (every texel's depth bits) byte for byte, after a still
  * stretch and after a caster moves, and each run's GL calls and pass structure in one still frame
@@ -283,7 +283,8 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
         ...(options.chain ? { bloom: { enabled: true }, volumetricLighting: { enabled: true }, upscaling: { enabled: true, renderScale: 0.75 } } : {}),
       }),
       cel: normalizeCelShadingSettings({ outlinesEnabled: false }),
-      quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }),
+      // The chain antialiases with FXAA, a post-process stage, instead of multisampling.
+      quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high", ...(options.chain ? { antiAliasing: "fxaa" as const } : {}) } }),
       shadows: normalizeShadowSettings({ cascades: 2, mapSize: 512, distance: 30, screenShadows: "high" }),
     });
     // The world at half the backbuffer: the chain ends at the view's size and its output copy fills the backbuffer.
