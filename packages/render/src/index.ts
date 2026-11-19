@@ -36,6 +36,7 @@ export * from "./scene-loader";
 export * from "./viewport";
 export * from "./perf-ceilings";
 export * from "./resource-cache";
+export { parkedShadowAtlasTextures } from "./shadow-atlas";
 export * from "./scene-texture-references";
 export * from "./render-scheduler";
 export * from "./snapshot-sync";

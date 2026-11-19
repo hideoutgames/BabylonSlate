@@ -4,6 +4,7 @@ import type { DebugInspectSnapshot } from "@haptic/object-model";
 import {
   describeEngineTexture,
   internalTexturesHeldByScene,
+  parkedShadowAtlasTextures,
   texturesHeldForHandover,
   type EngineHandle,
 } from "@haptic/render";
@@ -179,7 +180,9 @@ export function applyPlayBreakpoints(
  * viewport) draws on the shared Engine and creates its own default checker and
  * BRDF table, which it releases when it closes. Nor is one the ResourceCache
  * holds, with no lease on it, for the editor's views that reload after Play
- * (`handOverTextures`): their load leases it or flushes it. A texture no live
+ * (`handOverTextures`): their load leases it or flushes it. Nor is the shadow
+ * atlas the Play Scene parked on the Engine for the next Scene
+ * (`parkedShadowAtlasTextures`), which frees it unless it takes it. A texture no live
  * Scene references, or that only one of `playScenes` does, stays retained.
  */
 export function texturesRetainedAfterPlay(
@@ -191,7 +194,7 @@ export function texturesRetainedAfterPlay(
   const placeholders = new Set([native._emptyTexture, native._emptyCubeTexture, native._emptyTexture3D, native._emptyTexture2DArray]);
   const created = engine.getLoadedTexturesCache().filter((texture) => !before.has(texture) && !placeholders.has(texture));
   if (created.length === 0) return created;
-  const heldByOthers = new Set<unknown>(texturesHeldForHandover(engine));
+  const heldByOthers = new Set<unknown>([...texturesHeldForHandover(engine), ...parkedShadowAtlasTextures(engine)]);
   for (const scene of engine.scenes) {
     if (playScenes.has(scene)) continue;
     for (const texture of internalTexturesHeldByScene(scene)) heldByOthers.add(texture);
