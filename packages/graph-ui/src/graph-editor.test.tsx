@@ -4668,8 +4668,8 @@ describe("GraphEditor", () => {
     const step = estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X;
     expect(lastGraph.nodes.find((node) => node.id === "get")?.position).toEqual({
       x: step,
-      // Under Message, Log B's second pin row: its bottom at 50 + 2 × 44, then the gap.
-      y: 40 + 138 + FORMAT_GAP_Y,
+      // Under Message, Log B's second pin row: its bottom at 47 + 2 × 44, then the gap.
+      y: 40 + 135 + FORMAT_GAP_Y,
     });
     expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
       x: step * 2,
@@ -6791,6 +6791,80 @@ describe("pin conversion", () => {
       expect.objectContaining({ source: "vector", sourceHandle: "vector", target: "mover", targetHandle: "location" }),
     ]);
     expect(pinConversion).not.toHaveBeenCalled();
+  });
+
+  // Unmeasured one-row nodes: 320 x 96 estimates (47 to the first row, 44 per row, 5 below), pins at the middle of
+  // each side (y 48). The 280 gap between Actor's right edge (320) and Mover (600) is 280 short of 320 + 2 x 120, so Actor
+  // moves 280 left and the converter goes at 600 - 120 - 320 = 160, its Out (69 below its top) level with Location: 48 - 69.
+  const position = (graph: GraphDocument, id: string) => graph.nodes.find((node) => node.id === id)?.position;
+  const converterOf = (graph: GraphDocument) => graph.nodes.find((node) => !["actor", "vector", "mover"].includes(node.id))!;
+
+  it("moves the source left to make room and puts the converter beside the target in the same change", () => {
+    const onChange = vi.fn();
+    const { container } = renderTapToConnect(
+      <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={conversion()} />,
+    );
+    tapBetween(container, actorEnd, moverEnd);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const graph = onChange.mock.calls[0]![0] as GraphDocument;
+    expectConverted(graph);
+    expect(position(graph, "actor")).toEqual({ x: -280, y: 0 });
+    expect(position(graph, "vector")).toEqual({ x: 0, y: 200 });
+    expect(position(graph, "mover")).toEqual({ x: 600, y: 0 });
+    expect(converterOf(graph).position).toEqual({ x: 160, y: -21 });
+    expect(container.querySelectorAll(".react-flow__node.selected")).toHaveLength(0);
+  });
+
+  it("levels the converter's output pin, not its first row, with the target pin", () => {
+    const onChange = vi.fn();
+    const twoOutputs: PaletteNode = {
+      ...getLocation,
+      pins: [
+        getLocation.pins![0]!,
+        { id: "first", name: "First", kind: "data", direction: "out", type: { kind: "float" } },
+        getLocation.pins![1]!,
+      ],
+    };
+    const { container } = renderTapToConnect(
+      <GraphEditor
+        initialGraph={conversionGraph()}
+        onChange={onChange}
+        pinConversion={() => ({ ...toVector, paletteNode: twoOutputs })}
+      />,
+    );
+    tapBetween(container, actorEnd, moverEnd);
+    // Out is on the second row, 47 + 44 + 22 = 113 below the top, so the top is 48 - 113.
+    expect(converterOf(onChange.mock.calls[0]![0] as GraphDocument).position).toEqual({ x: 160, y: -65 });
+  });
+
+  it("puts the moved source back when the host undoes the conversion", async () => {
+    const before = conversionGraph();
+    const onChange = vi.fn();
+    let replaceSnapshot: (graph: GraphDocument) => void = () => {};
+    function ControlledHost() {
+      const [snapshot, setSnapshot] = useState(before);
+      useEffect(() => {
+        replaceSnapshot = setSnapshot;
+      }, []);
+      return (
+        <GraphEditor
+          initialGraph={snapshot}
+          onChange={(next) => {
+            onChange(next);
+            setSnapshot(next);
+          }}
+          pinConversion={conversion()}
+        />
+      );
+    }
+    const { container } = renderTapToConnect(<ControlledHost />);
+    const actorTransform = () => (container.querySelector('.react-flow__node[data-id="actor"]') as HTMLElement).style.transform;
+    tapBetween(container, actorEnd, moverEnd);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(actorTransform()).toContain("-280px"));
+    act(() => replaceSnapshot(before));
+    await waitFor(() => expect(container.querySelectorAll(".react-flow__node")).toHaveLength(3));
+    expect(actorTransform()).toBe("translate(0px,0px)");
   });
 
   it("creates nothing when the converter's pins would not carry the wire", () => {

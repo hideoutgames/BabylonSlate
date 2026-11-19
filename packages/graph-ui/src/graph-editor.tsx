@@ -89,6 +89,7 @@ import {
   type CanvasNode,
   graphNodeTypes,
   resolveNodeType,
+  zipPinRows,
 } from "./graph-nodes";
 import { styleFlowEdges } from "./edge-style";
 import { edgeStyleForPin } from "./node-theme";
@@ -141,13 +142,14 @@ import {
 import { formatGraphNodes, formatPinOffsetKey } from "./graph-format";
 import type { GraphFormatLayout } from "./format-layout";
 import { freeNodePosition } from "./graph-placement";
+import { placeConversion } from "./graph-conversion-placement";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
-  GRAPH_FIRST_PIN_ROW_CENTER_Y,
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
   estimateGraphNodeSize,
   graphNodeSize,
   graphNodesBounds,
+  graphPinRowCenterY,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
 import {
@@ -746,6 +748,15 @@ function indexById<T extends { id: string }>(entries: readonly T[]): Map<string,
   const index = new Map<string, T>();
   for (const entry of entries) if (!index.has(entry.id)) index.set(entry.id, entry);
   return index;
+}
+
+/** An unmounted palette node's output pin centre below its top, from the pin rows it will render (`zipPinRows`). */
+function estimatedOutPinCenterY(paletteNode: PaletteNode, outPinId: string): number {
+  const rows = zipPinRows((paletteNode.pins ?? []).filter((pin) => pin.placement !== "header"), {
+    declaredOrder: paletteNode.defaultData?.__declaredPinOrder === true,
+  });
+  const row = Math.max(0, rows.findIndex((entry) => entry.out?.id === outPinId));
+  return graphPinRowCenterY(row);
 }
 
 function pinOnNode(
@@ -1556,8 +1567,8 @@ function GraphEditorCanvas({
     [storeApi],
   );
 
-  // Connects two pins through the host's converter node, placed between them with its pin row on the wire:
-  // one graph change, the selection unchanged. Nothing changes when either half would not connect.
+  // Connects two pins through the host's converter node, placed by `placeConversion` (which may move the source
+  // and its private feeders left to make room): one graph change, the selection unchanged. Nothing changes when either half would not connect.
   const insertConversion = useCallback(
     (found: NonNullable<ReturnType<typeof conversionFor>>) => {
       const { paletteNode, inPinId, outPinId } = found.conversion;
@@ -1575,12 +1586,24 @@ function GraphEditorCanvas({
       const to = pinFlowPoint(found.target, found.targetHandle, "in");
       if (!from || !to) return;
       const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
-      const size = estimateGraphNodeSize(paletteNode.pins, paletteNode.defaultData);
-      const center = {
-        x: (from.x + to.x) / 2,
-        y: (from.y + to.y) / 2 - GRAPH_FIRST_PIN_ROW_CENTER_Y + size.height / 2,
-      };
-      const position = snapPositionToGrid(freeNodePosition(center, size, currentNodes), nodeSnapGrid);
+      const { position, moves } = placeConversion({
+        nodes: currentNodes.map((node) => ({
+          id: node.id,
+          ...node.position,
+          ...graphNodeSize(node),
+          exec: !hasSerializedPins(node.data) || node.data.__pins.some((pin) => pin.kind === "exec"),
+        })),
+        edges: currentEdges,
+        source: found.source,
+        sourcePoint: from,
+        target: found.target,
+        targetPoint: to,
+        converter: {
+          ...estimateGraphNodeSize(paletteNode.pins, paletteNode.defaultData),
+          outY: estimatedOutPinCenterY(paletteNode, outPinId),
+        },
+        snapGrid: nodeSnapGrid,
+      });
       const converter = paletteCanvasNode(
         paletteNode,
         uniqueNodeId(`${paletteNode.id}-${Date.now()}`, new Set(currentNodes.map((node) => node.id))),
@@ -1589,7 +1612,14 @@ function GraphEditorCanvas({
         knownTypes,
         nodeDragHandle,
       );
-      const nextNodes = [...currentNodes, converter];
+      const movedTo = new Map(moves.map((move) => [move.id, move.position]));
+      const nextNodes = [
+        ...currentNodes.map((node) => {
+          const moved = movedTo.get(node.id);
+          return moved ? { ...node, position: moved } : node;
+        }),
+        converter,
+      ];
       const pinFor = (nodeId: string, pinId: string) =>
         connectPinOnNode(nextNodes, pinDisplayTypesRef.current, nodeId, pinId);
       const options = {
