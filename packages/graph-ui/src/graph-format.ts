@@ -14,9 +14,6 @@ export const FORMAT_GAP_Y = 64;
 /** Branch rows sit a little further apart than nodes within a block. */
 const ROW_GAP = FORMAT_GAP_Y * 1.5;
 
-// A selected pure root's forward data walk keeps its compact diagonal while it
-// is small; taller walks use rows.
-const HELIX_MAX_HEIGHT = 320;
 // Clearance between a wire or a knot and the box of another node.
 const WIRE_CLEARANCE = 8;
 /** A direct wire this close to another node is crowding it: Format routes it around with a knot. */
@@ -264,13 +261,20 @@ function chainWalkKind(startId: string, graph: GraphIndex): ChainWalk {
   return pins.some((pin) => pin.kind === "exec") ? "exec" : "data";
 }
 
+/**
+ * What a selected node formats: an exec node its exec chain (forward), a node without exec pins
+ * what feeds it (its upstream data, up to nodes with exec pins), which it owns as a sink.
+ */
 function collectChain(startId: string, graph: GraphIndex): string[] {
   if (!graph.byId.has(startId)) return [];
-  const outgoing = graph.outgoing[chainWalkKind(startId, graph)];
+  const next =
+    chainWalkKind(startId, graph) === "exec"
+      ? (id: string) => graph.outgoing.exec.get(id) ?? []
+      : (id: string) => (graph.dataInputs.get(id) ?? []).filter((source) => chainWalkKind(source, graph) === "data");
   const order = [startId];
   const visited = new Set(order);
   for (let index = 0; index < order.length; index++) {
-    for (const target of outgoing.get(order[index]!) ?? []) {
+    for (const target of next(order[index]!)) {
       if (visited.has(target)) continue;
       visited.add(target);
       order.push(target);
@@ -339,55 +343,6 @@ function layoutTree(
     }
   }
   return { roots, order, children, forward, ranks };
-}
-
-function treeHeights(
-  tree: LayoutTree,
-  graph: GraphIndex,
-  diagonal: boolean,
-): Map<string, number> {
-  const heights = new Map<string, number>();
-  for (let index = tree.order.length - 1; index >= 0; index--) {
-    const id = tree.order[index]!;
-    const height = nodeSize(graph.byId.get(id)!).height;
-    const children = tree.children.get(id) ?? [];
-    const childHeight =
-      children.reduce(
-        (total, child) => total + heights.get(child)! + FORMAT_GAP_Y,
-        0,
-      ) - (children.length > 0 ? FORMAT_GAP_Y : 0);
-    heights.set(
-      id,
-      diagonal && children.length > 0
-        ? height + FORMAT_GAP_Y + childHeight
-        : Math.max(height, childHeight),
-    );
-  }
-  return heights;
-}
-
-function treeRows(
-  tree: LayoutTree,
-  graph: GraphIndex,
-  diagonal: boolean,
-): Map<string, number> {
-  const heights = treeHeights(tree, graph, diagonal);
-  const rows = new Map<string, number>();
-  let rootY = 0;
-  for (const root of tree.roots) {
-    rows.set(root, rootY);
-    rootY += heights.get(root)! + FORMAT_GAP_Y;
-  }
-  for (const id of tree.order) {
-    let y =
-      rows.get(id)! +
-      (diagonal ? nodeSize(graph.byId.get(id)!).height + FORMAT_GAP_Y : 0);
-    for (const child of tree.children.get(id) ?? []) {
-      rows.set(child, y);
-      y += heights.get(child)! + FORMAT_GAP_Y;
-    }
-  }
-  return rows;
 }
 
 function claimDataInputs(
@@ -592,7 +547,7 @@ type Layout = {
   boxes: BoxList<Obstacle>;
   /** Straight wires and escape lanes, as zero-height boxes. */
   lanes: BoxList<Box>;
-  /** Boxes of chains formatted earlier. */
+  /** Boxes of chains formatted earlier, and of nodes Format leaves where they are. */
   earlier: BoxList<Obstacle>;
 };
 
@@ -630,6 +585,26 @@ function levelWithParent(layout: Layout, block: ParameterBlock, id: string): { t
   if (!edge) return undefined;
   const y = parentAt.y + pinY(graph.byId.get(parentId)!, "in", edge.targetHandle);
   return { top: y - pinY(graph.byId.get(id)!, "out", edge.sourceHandle), y, edge };
+}
+
+/** The run of `group` (siblings feeding one node) whose input pins are consecutive, around `id`. */
+function consecutivePins(layout: Layout, block: ParameterBlock, group: readonly string[], id: string): string[] {
+  const { graph } = layout;
+  const parentId = block.parent.get(id)!;
+  const inputs = (graph.byId.get(parentId)!.pins ?? []).filter((pin) => pin.direction === "in" && pin.kind !== "exec" && pin.placement !== "header");
+  const indexOf = (member: string) => {
+    const edge = (graph.dataEdgesIn.get(parentId) ?? []).find((entry) => entry.source === member);
+    return inputs.findIndex((pin) => pin.id === edge?.targetHandle);
+  };
+  const indexed = group.map((member) => ({ member, index: indexOf(member) })).sort((a, b) => a.index - b.index);
+  // Pins a host does not list (no `pins`) count as consecutive, as before.
+  if (indexed.some((entry) => entry.index < 0)) return [...group];
+  const at = indexed.findIndex((entry) => entry.member === id);
+  let first = at;
+  let last = at;
+  while (first > 0 && indexed[first - 1]!.index === indexed[first]!.index - 1) first--;
+  while (last < indexed.length - 1 && indexed[last + 1]!.index === indexed[last]!.index + 1) last++;
+  return indexed.slice(first, last + 1).map((entry) => entry.member);
 }
 
 /**
@@ -695,10 +670,16 @@ function placeMember(
   const parentId = block.parent.get(id)!;
   const parentAt = located(layout, parentId)!;
   if (top === undefined) {
-    // Siblings in one column whose level spots overlap share a centred fan.
+    // Siblings in one column that feed consecutive pins of one node, and whose level spots
+    // overlap, share a centred fan (three Make Ints into Item 0..2, not Base Color and Emissive).
     if (!fans.has(id)) {
       const column = block.columnLeft.get(id);
-      const group = block.order.filter((other) => block.parent.get(other) === parentId && block.columnLeft.get(other) === column);
+      const group = consecutivePins(
+        layout,
+        block,
+        block.order.filter((other) => block.parent.get(other) === parentId && block.columnLeft.get(other) === column),
+        id,
+      );
       for (const [member, fanTop] of (group.length > 1 ? fanTops(layout, block, group) : undefined) ?? []) fans.set(member, fanTop);
     }
     const wire = levelWithParent(layout, block, id);
@@ -744,8 +725,11 @@ function placeMember(
 /**
  * The heights a block may take below its owner: level wires wherever a member keeps
  * `2 × WIRE_CLEARANCE` below the owner's exec input wire, otherwise from the owner's lane floor.
+ * A sink's block has no floor for level wires and otherwise starts at the sink's top.
  */
 function blockFloors(node: FormatNode, top: number): Floors {
+  // A sink (no exec pins) has no exec wire to keep clear: its first input can be level with its pin.
+  if (!(node.pins ?? []).some((pin) => pin.kind === "exec")) return { level: -Infinity, rest: top };
   const rest = top + laneFloor(node);
   const execIn = (node.pins ?? []).filter((pin) => pin.kind === "exec" && pin.direction === "in" && pin.placement !== "header");
   if (execIn.length === 0) return { level: rest, rest };
@@ -805,12 +789,20 @@ function layoutChain(
   startIds: readonly string[],
   graph: GraphIndex,
   placed: Map<string, Position>,
+  fixed: ReadonlyMap<string, Position>,
   knot: { width: number; height: number },
 ): void {
   const startId = startIds[0]!;
   const start = graph.byId.get(startId)!;
   const origin = placed.get(startId) ?? start.position;
   const walk = chainWalkKind(startId, graph);
+  const earlier = boxList([...placed, ...fixed].map(([id, position]) => ({ id, ...boxAt(graph, id, position) })));
+  if (walk === "data") {
+    const layout: Layout = { graph, positions: new Map(), placed, boxes: boxList(), lanes: boxList(), earlier };
+    layoutSinks(layout, startIds);
+    settle(layout, placed);
+    return;
+  }
   // Exec branches follow their output pins (True before False, Then 0 before Then 1), which a
   // repeat Format sees the same way; data walks follow the nodes' positions.
   const outputOrder = new Map<string, number>();
@@ -841,23 +833,21 @@ function layoutChain(
   const chainOrder = [...tree.order].sort(
     (a, b) => tree.ranks.get(a)! - tree.ranks.get(b)!,
   );
-  const layout: Layout = {
-    graph,
-    positions: new Map(),
-    placed,
-    boxes: boxList(),
-    lanes: boxList(),
-    earlier: boxList([...placed].map(([id, position]) => ({ id, ...boxAt(graph, id, position) }))),
-  };
-  if (walk === "exec") {
-    layoutExecChain(layout, tree, blocks, ownerOf, chainOrder, origin, knot);
-  } else {
-    layoutDataWalk(layout, tree, blocks, chainOrder, origin, startId);
-  }
+  const layout: Layout = { graph, positions: new Map(), placed, boxes: boxList(), lanes: boxList(), earlier };
+  layoutExecChain(layout, tree, blocks, ownerOf, chainOrder, origin, knot);
+  settle(layout, placed);
+}
+
+/**
+ * Moves a laid-out chain down, as one, below the chains formatted before it that it would overlap,
+ * and records its positions. (Members already keep clear of nodes Format leaves where they are.)
+ */
+function settle(layout: Layout, placed: Map<string, Position>): void {
+  const { graph } = layout;
   const moving = [...layout.positions].filter(([id]) => !placed.has(id));
   const offset = clearVerticalOffset(
     moving.map(([id, position]) => boxAt(graph, id, position)),
-    layout.earlier.items,
+    [...placed].map(([id, position]) => boxAt(graph, id, position)),
   );
   for (const [id, position] of moving) {
     placed.set(id, { x: position.x, y: position.y + offset });
@@ -865,44 +855,39 @@ function layoutChain(
 }
 
 /**
- * A selected pure root's forward data walk: rank columns, its small-tree diagonal or rows, then
- * the parameter blocks of its nodes.
+ * Sinks (nodes without exec pins, each owning what feeds it): each sink stays where it is, or for
+ * a later sink of the group that shares inputs with an earlier one, moves below what the group has
+ * placed; its upstream nodes not claimed yet (not by an earlier sink, chain or exec node) form its
+ * parameter block, laid out by the same rules as an exec node's: longest-path columns to its left,
+ * members level with the pins they feed where they fit, centred fans.
  */
-function layoutDataWalk(
-  layout: Layout,
-  tree: LayoutTree,
-  blocks: ReadonlyMap<string, ParameterBlock>,
-  chainOrder: readonly string[],
-  origin: Position,
-  startId: string,
-): void {
+function layoutSinks(layout: Layout, sinks: readonly string[]): void {
   const { graph, placed } = layout;
-  const widths: number[] = [];
-  const inputWidths: number[] = [];
-  const fixedColumns: number[] = [];
-  for (const id of tree.order) {
-    const rank = tree.ranks.get(id)!;
-    widths[rank] = Math.max(widths[rank] ?? 0, nodeSize(graph.byId.get(id)!).width);
-    inputWidths[rank] = Math.max(inputWidths[rank] ?? 0, blocks.get(id)!.left);
-    const fixed = placed.get(id);
-    if (fixed) fixedColumns[rank] = Math.max(fixedColumns[rank] ?? -Infinity, fixed.x);
-  }
-  const columns = [origin.x];
-  for (let rank = 1; rank < widths.length; rank++) {
-    columns[rank] = Math.max(
-      columns[rank - 1]! + widths[rank - 1]! + FORMAT_GAP_X + inputWidths[rank]!,
-      fixedColumns[rank] ?? -Infinity,
-    );
-  }
-  const diagonal = treeHeights(tree, graph, true).get(startId)! <= HELIX_MAX_HEIGHT;
-  const rows = treeRows(tree, graph, diagonal);
-  for (const id of tree.order) {
-    addBox(layout, id, placed.get(id) ?? {
-      x: columns[tree.ranks.get(id)!]!,
-      y: origin.y + rows.get(id)!,
-    });
-  }
-  for (const owner of chainOrder) placeBlock(layout, owner, blocks.get(owner)!);
+  const claimed = new Set([...placed.keys(), ...sinks]);
+  sinks.forEach((sink, index) => {
+    const members = new Set<string>();
+    const stack = [...(graph.dataInputs.get(sink) ?? [])].reverse();
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (claimed.has(id) || chainWalkKind(id, graph) === "exec") continue;
+      claimed.add(id);
+      members.add(id);
+      stack.push(...[...(graph.dataInputs.get(id) ?? [])].reverse());
+    }
+    const block = parameterBlock(sink, members, graph);
+    let at = placed.get(sink) ?? graph.byId.get(sink)!.position;
+    if (index > 0 && !placed.has(sink)) {
+      const width = nodeSize(graph.byId.get(sink)!).width;
+      let bottom = -Infinity;
+      forBoxesAcross(layout.boxes, at.x - block.left, at.x + width, (box) => {
+        if (box.x >= at.x + width || box.x + box.width <= at.x - block.left) return;
+        bottom = Math.max(bottom, box.y + box.height);
+      });
+      if (Number.isFinite(bottom)) at = { x: at.x, y: Math.max(at.y, bottom + ROW_GAP) };
+    }
+    addBox(layout, sink, at);
+    placeBlock(layout, sink, block);
+  });
 }
 
 /**
@@ -1722,6 +1707,7 @@ function cheaper(cost: readonly number[], than: readonly number[]): boolean {
 function routeWires(
   graph: GraphIndex,
   positions: ReadonlyMap<string, Position>,
+  fixed: ReadonlyMap<string, Position>,
   lanes: LaneGraph,
   knotNodes: ReadonlyMap<string, FormatNode>,
   insertKnots: boolean,
@@ -1729,7 +1715,7 @@ function routeWires(
 ): { moved: Map<string, Position>; knots: FormatKnot[] } {
   const moved = new Map<string, Position>();
   const knots: FormatKnot[] = [];
-  const obstacles = obstaclesOf(graph, positions);
+  const obstacles = obstaclesOf(graph, new Map([...fixed, ...positions]));
   let placedKnots = 0;
   const index: WireIndex = { runs: boxList(), cells: new Map(), byNode: new Map(), byPair: new Map(), query: 0 };
   const endsOf = new Map<FormatEdge, { from: Point; to: Point }>();
@@ -1959,7 +1945,7 @@ function formatNodes(
   selectedIds: readonly string[],
   options: FormatOptions,
 ): FormatResult {
-  if (selectedIds.length === 0) return { nodes, knots: [] };
+  if (nodes.length === 0) return { nodes, knots: [] };
   const { displayType, insertKnots = false, knotSize = REROUTE_KNOT_SIZE } = options;
   // A Reroute's any-kind pins take the kind their wires bound them to, so an exec knot sits on
   // the exec row and a data knot is a pure node or a lane knot.
@@ -1972,13 +1958,30 @@ function formatNodes(
     : nodes;
   const lanes = collapseLaneKnots(effective, edges);
   const graph = indexGraph(lanes.nodes, lanes.edges);
-  const roots = formatChainRoots(selectedIds, graph);
+  // Nothing selected formats the whole graph: every exec chain, and every sink with what feeds it.
+  const roots = formatChainRoots(selectedIds.length > 0 ? selectedIds : [...graph.byId.keys()], graph);
   if (roots.length === 0) return { nodes, knots: [] };
   const positions = new Map<string, Position>();
   const remaining = new Set(roots);
   const chains = new Map(
     roots.map((root) => [root, new Set(collectChain(root, graph))]),
   );
+  // Nodes no root reaches (an exec chain with the data feeding it, or a sink's upstream) stay
+  // where they are, and layout and wires keep clear of them like any other node.
+  const reached = new Set<string>();
+  for (const chain of chains.values()) {
+    const stack = [...chain];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (reached.has(id)) continue;
+      reached.add(id);
+      for (const source of graph.dataInputs.get(id) ?? []) {
+        if (!reached.has(source) && !graph.incomingExec.has(source)) stack.push(source);
+      }
+    }
+  }
+  const fixed = new Map<string, Position>();
+  for (const [id, node] of graph.byId) if (!reached.has(id)) fixed.set(id, node.position);
   for (const root of roots) {
     if (
       !remaining.delete(root) ||
@@ -1998,11 +2001,12 @@ function formatNodes(
     }
     // Selected roots which meet at a join share ranks and lanes. Disconnected
     // roots remain separate blocks, anchored at their own original positions.
-    layoutChain(group, graph, positions, knotSize);
+    layoutChain(group, graph, positions, fixed, knotSize);
   }
   const routed = routeWires(
     graph,
     positions,
+    fixed,
     lanes,
     new Map(effective.map((node) => [node.id, node])),
     insertKnots,
