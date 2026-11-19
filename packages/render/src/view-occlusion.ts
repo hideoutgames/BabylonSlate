@@ -38,8 +38,7 @@ import { RENDERING_GROUP } from "./sorting";
  * - A view whose filter culls nothing backs off: after `QUIET_RUNS` such runs in a row it skips the filter (candidates,
  *   occluder raster and tests) and passes the frustum's list on unfiltered, as with occlusion off, for `FIRST_BACK_OFF`
  *   frames, doubling after each probe that again culls nothing up to `MAX_BACK_OFF`; a run that culls returns it to every
- *   frame. While the camera's view changes, a skip is cut to `FIRST_BACK_OFF` frames, so a moving view probes within a
- *   few frames. Occlusion only ever leaves out meshes opaque occluders hide, so this changes how many hidden meshes draw, never
+ *   frame. Occlusion only ever leaves out meshes opaque occluders hide, so this changes how many hidden meshes draw, never
  *   the picture. A frozen view runs every frame; `forceOcclusionEveryFrame` turns backing off off.
  * - Nothing of Babylon's state changes: the filter writes its own list, so shadows, captures, mirrors, probes, picking
  *   and outline masks, which build their own lists, still see every mesh.
@@ -89,11 +88,10 @@ function occluderMode(mesh: AbstractMesh): OccluderMode {
 /** Triangles drawn as occluders per frame, the largest on screen first. */
 export const OCCLUDER_TRIANGLE_BUDGET = 3000;
 /**
- * An occluder whose bounding sphere's radius spans fewer buffer texels is not drawn: its coverage, eroded by a texel
- * all round, would hide little more than a texel. Each one drawn costs a raster of at most 12 triangles, bounded by
- * `OCCLUDER_TRIANGLE_BUDGET`.
+ * An occluder whose bounding sphere's radius spans fewer buffer texels is not drawn: small ones cost a raster and an
+ * erosion each and seldom hide a whole box (until the tuning pass measures it on device).
  */
-const MIN_OCCLUDER_TEXELS = 8;
+const MIN_OCCLUDER_TEXELS = 16;
 const BUFFER_WIDTH = 256;
 const BUFFER_HEIGHT = 128;
 
@@ -316,8 +314,6 @@ export class ViewOcclusion {
   private quietRuns = 0;
   private backOff = 0;
   private skipLeft = 0;
-  /** The camera's view matrix as the last frame found it: a change is a moving view. */
-  private readonly lastView = new Float64Array(16);
 
   /** The buffer's view depths (`sceneOcclusionBuffer`). */
   depthBuffer(): { width: number; height: number; depth: Float32Array } {
@@ -343,14 +339,6 @@ export class ViewOcclusion {
     sceneDiagnostics.set(scene, diagnostics);
     sceneViews.set(scene, this);
     const frozen = frozenScenes.has(scene) && !!this.drawn;
-    // A moving view may come to see something hidden: its skip is cut to the first back-off's, so it probes within a
-    // few frames, while a held one keeps the long skip.
-    const view = camera.getViewMatrix().m, seen = this.lastView;
-    let moved = false;
-    for (let index = 0; index < 16; index++) {
-      if (seen[index] !== view[index]) { seen[index] = view[index]!; moved = true; }
-    }
-    if (moved && this.skipLeft > FIRST_BACK_OFF) this.skipLeft = FIRST_BACK_OFF;
     // Backing off: the frustum's list, unfiltered as with occlusion off; the last run's counts stay for the readers.
     if (this.skipLeft > 0 && !frozen && !forcingEveryFrame) {
       this.skipLeft -= 1;

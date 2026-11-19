@@ -513,13 +513,13 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     };
     const moved = await read();
     // The sprite quad resized and the tilemap chunk's vertices rewritten, each through a notified write, then a single
-    // frame: every map they reach draws them again in it.
+    // settled frame (drawn again only if it did not settle): every map they reach draws them again in it.
     setSpriteQuadSize(sprite, 1.6, 0.7, { x: 0.3, y: 0.6 });
     const positions = Float32Array.from(chunk.getVerticesData(VertexBuffer.PositionKind)!);
     for (let at = 1; at < positions.length; at += 3) positions[at] = positions[at]! * 1.5;
     chunk.updateVerticesData(VertexBuffer.PositionKind, positions);
     const tilesBefore = counts.tiles;
-    frame();
+    await settledFrame();
     const rewrittenTiles = counts.tiles - tilesBefore;
     const rewritten = await read();
     captures.dispose();

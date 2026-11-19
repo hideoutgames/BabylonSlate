@@ -1556,7 +1556,13 @@ export async function runFeatureTestCheck(options: {
   });
   const partial = () => report(false);
   // What ran in long frames, wrapped only while the Check runs.
-  const attribution = options.deps.attributeFrames?.() ?? null;
+  // A browser that refuses a wrap leaves the long frames unmeasured; the Check itself still runs.
+  let attribution: FrameAttribution | null = null;
+  try {
+    attribution = options.deps.attributeFrames?.() ?? null;
+  } catch {
+    attribution = null;
+  }
   const deps: FeatureTestCheckDeps = {
     ...options.deps,
     onProgress: (message) => {

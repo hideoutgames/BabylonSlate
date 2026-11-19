@@ -98,8 +98,8 @@ describe("ViewOcclusion", () => {
     expect(names(kept)).toEqual(["wall", "beside"]);
     expect(kept).not.toBe(meshes);
     expect(meshes).toEqual(input);
-    // Each of the three boxes is large enough on screen to draw as an occluder: none hides itself.
-    expect(occlusion.diagnostics).toMatchObject({ tested: 3, culled: 1, occluders: 3, triangles: 36 });
+    // The far crate is too small on screen to draw as an occluder.
+    expect(occlusion.diagnostics).toMatchObject({ tested: 3, culled: 1, occluders: 2, triangles: 24 });
   });
 
   it("rewrites its own list in place for the passes drawing it, so Babylon runs no pass over the Scene's meshes", () => {
@@ -153,7 +153,7 @@ describe("ViewOcclusion", () => {
     camera.position.set(0, 0, 22);
     camera.setTarget(hidden.position);
     expect(names(filter())).toEqual(["wall", "beside"]);
-    expect(occlusion.diagnostics).toMatchObject({ culled: 1, occluders: 3 });
+    expect(occlusion.diagnostics).toMatchObject({ culled: 1, occluders: 2 });
     setSceneOcclusionFrozen(scene, false);
     expect(names(filter())).toContain("hidden");
   });
@@ -295,9 +295,9 @@ describe("ViewOcclusion", () => {
     expect(names(never.filter())).toContain("hidden");
     // A post far away, too small on screen to draw as an occluder, right in front of a smaller box.
     const small = view();
-    small.wall.position.set(0, 0, 120);
+    small.wall.position.set(0, 0, 60);
     small.wall.scaling.set(4, 4, 0.2);
-    small.hidden.position.set(0, 0, 130);
+    small.hidden.position.set(0, 0, 70);
     small.hidden.scaling.set(0.4, 0.4, 0.4);
     expect(names(small.filter())).toContain("hidden");
     setOccluderMode(small.wall, "always");
@@ -362,20 +362,6 @@ describe("ViewOcclusion backing off while it culls nothing", () => {
     expect(occlusion.diagnostics).toMatchObject({ backOff: 32, skippedFrames: 94 });
   });
 
-  it("cuts a long skip short while the camera moves, and keeps the long skip while it is held", () => {
-    const { camera, wall, beside, filter, occlusion } = view();
-    const list = [wall, beside];
-    // Runs and skips up to the run that starts the 32-frame skips.
-    idleFrames(() => filter(list), occlusion, 4 + 2 + 1 + 4 + 1 + 8 + 1 + 16 + 1);
-    expect(occlusion.diagnostics.backOff).toBe(32);
-    expect(idleFrames(() => filter(list), occlusion, 3)).toEqual([true, true, true]);
-    // The camera moves once: the skip left is cut to two frames, then the filter probes again.
-    camera.position.x += 0.1;
-    expect(idleFrames(() => filter(list), occlusion, 3)).toEqual([true, true, false]);
-    // Held again, and still culling nothing: back to the long skip.
-    expect(idleFrames(() => filter(list), occlusion, 32)).toEqual(Array(32).fill(true));
-  });
-
   it("passes the frustum's list on unfiltered while idle, keeping the last run's counts", () => {
     const { wall, hidden, beside, filter, occlusion } = view();
     const quiet = [wall, beside];
@@ -434,11 +420,11 @@ describe("ViewOcclusion's kept buffer", () => {
     const { filter, occlusion } = view();
     const rasterize = vi.spyOn(OcclusionBuffer.prototype, "rasterize");
     expect(names(filter())).toEqual(["wall", "beside"]);
-    expect(rasterize).toHaveBeenCalledTimes(3);
+    expect(rasterize).toHaveBeenCalledTimes(2);
     expect(names(filter())).toEqual(["wall", "beside"]);
     expect(names(filter())).toEqual(["wall", "beside"]);
-    expect(rasterize).toHaveBeenCalledTimes(3);
-    expect(occlusion.diagnostics).toMatchObject({ tested: 3, culled: 1, occluders: 3, triangles: 36, keptBuffers: 2 });
+    expect(rasterize).toHaveBeenCalledTimes(2);
+    expect(occlusion.diagnostics).toMatchObject({ tested: 3, culled: 1, occluders: 2, triangles: 24, keptBuffers: 2 });
   });
 
   it("draws again when an occluder moves, so a mesh it no longer hides comes back", () => {
@@ -447,7 +433,7 @@ describe("ViewOcclusion's kept buffer", () => {
     expect(names(filter())).toEqual(["wall", "beside"]);
     wall.position.set(20, 0, 5);
     expect(names(filter())).toEqual(["wall", "hidden", "beside"]);
-    expect(rasterize.mock.calls.length).toBeGreaterThan(3);
+    expect(rasterize.mock.calls.length).toBeGreaterThan(2);
     expect(occlusion.diagnostics.keptBuffers).toBe(0);
   });
 
@@ -473,7 +459,7 @@ describe("ViewOcclusion's kept buffer", () => {
     const rasterize = vi.spyOn(OcclusionBuffer.prototype, "rasterize");
     filter();
     expect(names(filter())).toEqual(["wall", "beside"]);
-    expect(rasterize).toHaveBeenCalledTimes(6);
-    expect(occlusion.diagnostics).toMatchObject({ keptBuffers: 1, keptChecks: 1, keptMismatches: 0, culled: 1, occluders: 3 });
+    expect(rasterize).toHaveBeenCalledTimes(4);
+    expect(occlusion.diagnostics).toMatchObject({ keptBuffers: 1, keptChecks: 1, keptMismatches: 0, culled: 1, occluders: 2 });
   });
 });
