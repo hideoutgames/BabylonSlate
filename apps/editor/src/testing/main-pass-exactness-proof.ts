@@ -8,7 +8,11 @@
  * Babylon's preparation instead of the lean one (`leanPreparation`); each view's clear is a render pass of its own
  * before its objects pass (`ManagedShadowObjectRendererTask.startClear`), the spatial geometry pass prepares through
  * Babylon's clears and then its own, binding its target three times, and keeps its depth, and the light block binds its
- * inputs for geometry pass programs that compile no lighting (`HapticLightingBlock.readsBindings`). The spec compares
+ * inputs for geometry pass programs that compile no lighting (`HapticLightingBlock.readsBindings`), every full-screen pass
+ * loads its colour target instead of starting from a clear (`fullTargetClear`), and an instanced batch uploads its rows
+ * and per-instance values at every draw (no `Scene._instanceUploads`). `chain` adds bloom, volumetric lighting and an FSR
+ * upscale, and draws the world at half the backbuffer's size, so the chain ends at the view's size and an output copy
+ * fills the backbuffer. Both draw instances of one box with a per-instance colour. The spec compares
  * the two runs' frames, capture images and shadow atlas pages (every texel's depth bits) byte for byte, after a still
  * stretch and after a caster moves, and each run's GL calls and pass structure in one still frame
  * (`GlSignatureRecorder`).
@@ -47,7 +51,10 @@ import { retainAreaLightLookup } from "../../../../packages/render/src/area-ligh
 import { OwnedRectAreaLight } from "../../../../packages/render/src/area-rect-light";
 import { LogicalGeometryTask } from "../../../../packages/render/src/framegraph-logical-buffers";
 import { ManagedShadowObjectRendererTask } from "../../../../packages/render/src/framegraph-managed-shadows";
+import { fullTargetClear } from "../../../../packages/render/src/full-target-clear";
 import { drawGeometryDepthSeed } from "../../../../packages/render/src/geometry-depth-seed";
+import { setMeshInstanceParameters } from "../../../../packages/render/src/instance-parameters";
+import { setSceneOutputScale } from "../../../../packages/render/src/scene-output-scale";
 import { GlSignatureRecorder, installGlSignature } from "../../../../packages/render/src/gpu-frame-probe";
 import { HapticLightingBlock } from "../../../../packages/render/src/haptic-lighting-block";
 import { createMirrorSurfaceMesh, mirrorDiagnostics } from "../../../../packages/render/src/mirrors";
@@ -195,11 +202,15 @@ function referenceClears(): () => void {
   const lighting = HapticLightingBlock.prototype;
   const readsBindings = lighting.readsBindings;
   lighting.readsBindings = () => true;
+  // Every full-screen pass loads its target again instead of starting from a clear.
+  const clearTarget = fullTargetClear.clear;
+  fullTargetClear.clear = () => {};
   return () => {
     objects.record = record;
     geometry._prepareRendering = prepare;
     geometry.discardDepth = discardDepth;
     lighting.readsBindings = readsBindings;
+    fullTargetClear.clear = clearTarget;
   };
 }
 
@@ -232,7 +243,7 @@ function measureFrame(engine: AbstractEngine, frame: () => unknown): MainPassExa
   return { calls, passes: stats?.structures[0]?.passes ?? [], passCount: stats?.passes ?? 0, invalidates: stats?.invalidates ?? 0 };
 }
 
-export async function runMainPassExactnessProof(options: { reference: boolean; largeWorld?: boolean }) {
+export async function runMainPassExactnessProof(options: { reference: boolean; largeWorld?: boolean; chain?: boolean }) {
   const block = HapticLightingBlock.prototype as unknown as { _buildBlock(state: NodeMaterialBuildState): unknown };
   const build = block._buildBlock;
   const controller = SceneShadowController.prototype as unknown as { applyViewRefresh(generator: ShadowGenerator): void };
@@ -267,11 +278,16 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     setSceneRenderSettings(scene, {
       mode: "pbr",
       // Ambient occlusion and reflections: the geometry pass writes normals and reflectivity beside the view depth.
-      effects: normalizeRenderEffectsSettings({ ambientOcclusion: { enabled: true }, reflections: { enabled: true } }),
+      effects: normalizeRenderEffectsSettings({
+        ambientOcclusion: { enabled: true }, reflections: { enabled: true },
+        ...(options.chain ? { bloom: { enabled: true }, volumetricLighting: { enabled: true }, upscaling: { enabled: true, renderScale: 0.75 } } : {}),
+      }),
       cel: normalizeCelShadingSettings({ outlinesEnabled: false }),
       quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }),
       shadows: normalizeShadowSettings({ cascades: 2, mapSize: 512, distance: 30, screenShadows: "high" }),
     });
+    // The world at half the backbuffer: the chain ends at the view's size and its output copy fills the backbuffer.
+    if (options.chain) setSceneOutputScale(scene, 0.5);
     const camera = new FreeCamera("Main Camera", new Vector3(0, 3.2, -7), scene);
     camera.setTarget(new Vector3(0, 0.6, 1.5));
     camera.minZ = 0.1;
@@ -306,6 +322,27 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     const ball = MeshBuilder.CreateSphere("ball", { diameter: 1.2, segments: 20 }, scene);
     ball.position.set(1.5, 0.6, 2);
     ball.material = glossy;
+    // Instances of one box, each with its own colour (a Per Instance parameter): every pass draws them as one batch,
+    // from one buffer of world rows and one of colours.
+    const tintDocument = createDefaultMaterialDocument("tinted");
+    const tint = tintDocument.nodes.find((node) => node.id === "baseColor")!;
+    tint.type = "param.color";
+    tint.properties = { name: "Tint", value: [0.7, 0.7, 0.7, 1], perInstance: true };
+    tintDocument.edges.find((edge) => edge.sourceNodeId === "baseColor")!.sourcePinId = "rgb";
+    const tintPlan = lowerMaterialDocument(tintDocument);
+    if (!tintPlan.ok) throw new Error("tinted did not lower");
+    const tintCompiled = compileMaterialPlan(tintPlan.plan, { scene, name: "tinted" });
+    if (!tintCompiled.ok) throw new Error("tinted did not compile");
+    await tintCompiled.ready;
+    const post = MeshBuilder.CreateBox("post", { width: 0.35, height: 1.4, depth: 0.35 }, scene);
+    post.material = tintCompiled.material;
+    post.position.set(-3, 0.7, 2.5);
+    const posts = [post, ...[[-0.4, 3.5, [0.9, 0.2, 0.2]], [0.6, 3.8, [0.2, 0.8, 0.3]], [2.6, 0.5, [0.2, 0.4, 0.95]]].map(([x, z, color], index) => {
+      const instance = post.createInstance(`post ${index}`);
+      instance.position.set(x as number, 0.7, z as number);
+      setMeshInstanceParameters(instance, tintCompiled.material, new Map([["Tint", { kind: "color" as const, value: [...(color as number[]), 1] as [number, number, number, number] }]]));
+      return instance;
+    })];
 
     const lights: Light[] = [];
     const authored = (light: Light, color: number[], intensity: number, castShadows: boolean, outerAngle = 70, innerAngle = 40) => {
@@ -337,6 +374,8 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     mirror.rotation.y = Math.PI / 4;
 
     const view = new SceneRenderCoordinator(scene, { leanPreparation: !options.reference });
+    // Every draw of an instanced batch fills and uploads its buffers again.
+    if (options.reference) scene._instanceUploads = undefined;
     const captures = new RenderTargetCaptures(scene);
     captures.setAssets(
       new Map(QUALITIES.map((quality) => [quality, { mode: "SceneColor" as const, width: CAPTURE_SIZE, height: CAPTURE_SIZE }])),
@@ -387,6 +426,8 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     const atlasBefore = { tiles: counts.tiles, passes: counts.passes };
     box.position.x += 0.4;
     box.rotation.y += 0.3;
+    // An instance moves too: its batch's rows change.
+    posts[2]!.position.z += 0.5;
     for (let index = 0; index < 4; index++) frame();
     const retainedAfter = findSceneShadowController(scene)?.retainedCasters() ?? null;
     const movedCounters = {
