@@ -83,8 +83,8 @@ import {
 } from "./shadow-map-factory";
 import { ShadowViewMaps, type ViewShadows } from "./shadow-view-maps";
 import {
-  AtlasCascadedShadowGenerator, AtlasShadowGenerator, liveShadowAtlasEdge, releaseEmptyShadowAtlas, SHADOW_ATLAS_BYTES_PER_TEXEL,
-  shadowAtlasBytes, shadowAtlasRenderTarget,
+  AtlasCascadedShadowGenerator, AtlasShadowGenerator, discardParkedShadowAtlas, liveShadowAtlasEdge, parkedShadowAtlasEdge,
+  releaseEmptyShadowAtlas, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasBytes, shadowAtlasRenderTarget,
 } from "./shadow-atlas";
 import { ShadowCasterVariants } from "./shadow-caster-variants";
 import { shadowMapChanges } from "./shadow-change-journal";
@@ -748,6 +748,15 @@ export class SceneShadowController {
       if (held && liveShadowAtlasEdge(scene) === 0) this.atlasReleasedFrame = engine.frameId;
     }
     const heldEdge = liveShadowAtlasEdge(scene);
+    // The atlas a disposed Scene parked on the Engine (`discardParkedShadowAtlas`) waits for a Scene that asks for shadows:
+    // one that asks for none frees it at once, and one that holds no atlas frees one of another edge a frame before it
+    // makes its own, as for its own atlas below.
+    if (parkedShadowAtlasEdge(engine) !== 0) {
+      let asks = false;
+      for (const entry of this.entries.values()) if (entry.requested) asks = true;
+      if (!settings.enabled || !asks) discardParkedShadowAtlas(engine);
+      else if (heldEdge === 0 && discardParkedShadowAtlas(engine, atlasEdge)) this.atlasReleasedFrame = engine.frameId;
+    }
     const donors: Entry[] = [];
     for (const entry of this.entries.values()) {
       if (entry.status === "active" && entry.generator &&

@@ -35,7 +35,7 @@ import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, shadowAtlasBytes, shadowAtlasGeneration, shadowAtlasTexture } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, PARKED_SHADOW_ATLAS_MS, shadowAtlasBytes, shadowAtlasGeneration, shadowAtlasTexture } from "./shadow-atlas";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
 import { builtInWaterMaterial } from "./water-template";
 import { PlanarMirrorCamera } from "./planar-mirror";
@@ -47,9 +47,9 @@ afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
 });
 /** `beforeController` runs on the bare Scene, before anything observes its meshes. */
-function fixture(beforeController?: (scene: Scene) => void) {
+/** A NullEngine with the shipped Engine's shadow features, releasing textures from its cache as WebGL does. */
+function shadowEngine(): NullEngine {
   const engine = new NullEngine();
-  engines.push(engine);
   Object.assign(engine.getCaps(), {
     maxTexturesImageUnits: 16,
     maxTextureSize: 4096,
@@ -67,6 +67,11 @@ function fixture(beforeController?: (scene: Scene) => void) {
     const index = cache.indexOf(texture);
     if (index !== -1) cache.splice(index, 1);
   };
+  return engine;
+}
+function fixture(beforeController?: (scene: Scene) => void) {
+  const engine = shadowEngine();
+  engines.push(engine);
   const scene = new Scene(engine);
   scene.activeCamera = new UniversalCamera(
     "camera",
@@ -342,6 +347,129 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     expect(shadowAtlasBytes(scene)).toBe(0);
     expect(atlasTextureEdge(scene)).toBe(1);
+  });
+  describe("an atlas handed from a disposed Scene to the next Scene of its Engine", () => {
+    /** Another Scene on `engine`, set up as the fixture's, with a sun that asks for shadows unless `asks` is false. */
+    function nextScene(engine: NullEngine, profile: "medium" | "high" = "medium", asks = true) {
+      const scene = new Scene(engine);
+      scene.activeCamera = new UniversalCamera("camera", new Vector3(0, 2, -10), scene);
+      updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ profile, cascades: 1, maxLocalLights: 1 }) });
+      const controller = sceneShadowController(scene);
+      const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+      controller.register(sun, asks);
+      return { scene, controller, sun };
+    }
+    /** Counts the atlas depth textures made (each allocates the whole atlas). */
+    function countAtlasAllocations(): { made: number } {
+      const count = { made: 0 };
+      const makeDepth = RenderTargetTexture.prototype.createDepthStencilTexture;
+      vi.spyOn(RenderTargetTexture.prototype, "createDepthStencilTexture").mockImplementation(function (
+        this: RenderTargetTexture, ...args: Parameters<typeof makeDepth>
+      ) {
+        if (this.name === "hapticShadowAtlas") count.made += 1;
+        return makeDepth.apply(this, args);
+      });
+      return count;
+    }
+    /** Textures the Engine has released (`_releaseTexture`: an InternalTexture's last reference went). */
+    const released = new WeakSet<InternalTexture>();
+    function watchReleases(engine: NullEngine): NullEngine {
+      const release = engine._releaseTexture.bind(engine);
+      engine._releaseTexture = (texture) => {
+        released.add(texture);
+        release(texture);
+      };
+      return engine;
+    }
+    const live = (_engine: NullEngine, texture: InternalTexture | null) => texture !== null && !released.has(texture);
+
+    it("draws the next Scene's maps into the same depth texture, allocating no second atlas, and again after that Scene goes", () => {
+      const allocations = countAtlasAllocations();
+      const first = nextScene(watchReleases(shadowEngine()));
+      const engine = first.scene.getEngine() as NullEngine;
+      first.controller.sync();
+      const wrapper = shadowAtlasTexture(first.scene).renderTarget!;
+      const depth = wrapper.depthStencilTexture;
+      expect([allocations.made, live(engine, depth)]).toEqual([1, true]);
+      first.scene.dispose();
+      // Parked: no Scene holds it, and its depth texture lives on.
+      expect(live(engine, depth)).toBe(true);
+
+      const second = nextScene(engine);
+      second.controller.sync();
+      const map = second.controller.generator(second.sun)!.getShadowMap()!;
+      expect(shadowAtlasTexture(second.scene).getScene()).toBe(second.scene);
+      expect(shadowAtlasTexture(second.scene).renderTarget).toBe(wrapper);
+      expect(map.renderTarget).toBe(wrapper);
+      expect(shadowAtlasBytes(second.scene)).toBe(4096 ** 2 * 4);
+      expect(allocations.made).toBe(1);
+
+      second.scene.dispose();
+      const third = nextScene(engine);
+      third.controller.sync();
+      expect([shadowAtlasTexture(third.scene).renderTarget, allocations.made, live(engine, depth)]).toEqual([wrapper, 1, true]);
+      // With its last Scene the Engine frees it.
+      third.scene.dispose();
+      engine.dispose();
+      expect(live(engine, depth)).toBe(false);
+    });
+
+    it("frees a parked atlas no Scene takes within PARKED_SHADOW_ATLAS_MS, and the next Scene makes its own", () => {
+      vi.useFakeTimers();
+      try {
+        const allocations = countAtlasAllocations();
+        const { scene, controller } = fixture();
+        const engine = watchReleases(scene.getEngine() as NullEngine);
+        const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+        controller.register(sun, true);
+        controller.sync();
+        const depth = shadowAtlasTexture(scene).renderTarget!.depthStencilTexture;
+        scene.dispose();
+        vi.advanceTimersByTime(PARKED_SHADOW_ATLAS_MS - 1);
+        expect(live(engine, depth)).toBe(true);
+        vi.advanceTimersByTime(1);
+        expect(live(engine, depth)).toBe(false);
+        const next = nextScene(engine);
+        next.controller.sync();
+        expect([allocations.made, shadowAtlasBytes(next.scene)]).toEqual([2, 4096 ** 2 * 4]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("frees a parked atlas of another edge in one frame and makes the new one in a later frame", () => {
+      const allocations = countAtlasAllocations();
+      const first = nextScene(watchReleases(shadowEngine()), "high");
+      const engine = first.scene.getEngine() as NullEngine;
+      engines.push(engine);
+      Object.assign(engine.getCaps(), { maxTextureSize: 8192 });
+      first.controller.sync();
+      const depth = shadowAtlasTexture(first.scene).renderTarget!.depthStencilTexture;
+      expect(shadowAtlasBytes(first.scene)).toBe(8192 ** 2 * 4);
+      first.scene.dispose();
+      endFrame(first.scene);
+
+      const second = nextScene(engine, "medium");
+      second.controller.sync();
+      expect([live(engine, depth), shadowAtlasBytes(second.scene), allocations.made]).toEqual([false, 0, 1]);
+      expect(second.controller.diagnostics().map(({ status, reason }) => ({ status, reason })))
+        .toEqual([{ status: "budget-limited", reason: "shadow atlas resizing" }]);
+      endFrame(second.scene);
+      second.controller.sync();
+      expect([shadowAtlasBytes(second.scene), allocations.made]).toEqual([4096 ** 2 * 4, 2]);
+    });
+
+    it("frees a parked atlas when the next Scene to sync asks for no shadow", () => {
+      const first = nextScene(watchReleases(shadowEngine()));
+      const engine = first.scene.getEngine() as NullEngine;
+      engines.push(engine);
+      first.controller.sync();
+      const depth = shadowAtlasTexture(first.scene).renderTarget!.depthStencilTexture;
+      first.scene.dispose();
+      const second = nextScene(engine, "medium", false);
+      second.controller.sync();
+      expect([live(engine, depth), shadowAtlasBytes(second.scene)]).toEqual([false, 0]);
+    });
   });
   it("frees the atlas of a changed edge in one frame and makes the new one in a later frame, never in the same one", () => {
     const { scene, controller } = fixture();

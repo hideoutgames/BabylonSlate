@@ -154,6 +154,17 @@ export type RenderDiagnostics = {
      */
     mirrorCrop?: { checks: number; misses: number };
     /**
+     * While `verifyMirrorSharedCulls` is on: Mirror culls made from the candidates their render shares that also walked
+     * the whole Scene (`checks`), and those whose lists differed (`mismatches`, which must stay 0). Absent without Mirrors.
+     */
+    mirrorCulls?: { checks: number; mismatches: number };
+    /**
+     * The Scene's light cluster blocks, one per drawing camera (`slots`), the builds so far (`builds`), and while
+     * `verifyLightClusterSlots` is on, blocks kept across another camera's turn that were built afresh to compare
+     * (`checks`) and differed (`mismatches`, which must stay 0). Absent before the first lit draw.
+     */
+    lightClusters?: { slots: number; builds: number; checks: number; mismatches: number };
+    /**
      * The view's strict outline cull (`SharedOutlineView.cullDiagnostics`): periodic checks of its kept candidate split
      * against a fresh one and those that replaced it (`splitChecks`, `healedSplits`), and while
      * `verifySharedOutlineCulls` is on, culls also made the full way (`checks`) and those that disagreed (`mismatches`,

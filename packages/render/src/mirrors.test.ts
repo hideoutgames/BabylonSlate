@@ -15,7 +15,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSettings, parseMirrorProperties } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
-import { createMirrorSurfaceMesh, mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops } from "./mirrors";
+import {
+  createMirrorSurfaceMesh, mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyMirrorSharedCulls, walkMirrorCullsUnshared,
+} from "./mirrors";
 import { ReflectedContent } from "./reflected-content";
 import { setPlanarFootprintCulling } from "./planar-mirror";
 import { isReflectionCamera } from "./reflection-camera";
@@ -36,9 +38,9 @@ vi.mock("./planar-mirror", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./planar-mirror")>();
   return {
     ...actual,
-    collectPlanarMirrorMeshes: (...args: Parameters<typeof actual.collectPlanarMirrorMeshes>) => {
+    collectPlanarMirrorCandidates: (...args: Parameters<typeof actual.collectPlanarMirrorCandidates>) => {
       walks.count++;
-      actual.collectPlanarMirrorMeshes(...args);
+      actual.collectPlanarMirrorCandidates(...args);
     },
   };
 });
@@ -210,7 +212,21 @@ it("walks the scene once for a due reflection, and again for a second one drawn 
   drawsOver(4);
   const listed = () => passes.at(-1)!.map((pass) => [pass.target, pass.meshes]);
   camera.position.x += 0.1;
+  walks.count = 0;
   expect(drawsOver(1)).toBe(2);
+  expect(listed()).toEqual([["mirror:mirror", ["box"]], ["mirror:far", ["box"]]]);
+  // The two currency checks share one walk; the second draw walks again after the first one's pass.
+  expect(walks.count).toBe(2);
+  // Unshared, each cull walks: both checks and the second draw.
+  walkMirrorCullsUnshared(true);
+  camera.position.x += 0.1;
+  walks.count = 0;
+  try {
+    expect(drawsOver(1)).toBe(2);
+  } finally {
+    walkMirrorCullsUnshared(false);
+  }
+  expect(walks.count).toBe(3);
   expect(listed()).toEqual([["mirror:mirror", ["box"]], ["mirror:far", ["box"]]]);
   const render = vi.spyOn(RenderTargetTexture.prototype, "render");
   const record = render.getMockImplementation()!;
@@ -221,6 +237,32 @@ it("walks the scene once for a due reflection, and again for a second one drawn 
   camera.position.x += 0.1;
   expect(drawsOver(1)).toBe(2);
   expect(listed()).toEqual([["mirror:mirror", ["box"]], ["mirror:far", []]]);
+});
+
+it("checks the culls that share their render's walk against the whole walk when verifying, and counts a list that differs", () => {
+  const { scene, camera, box, passes, drawsOver } = settledMirror();
+  mirror(scene, "far", new Vector3(0, 1, 5));
+  drawsOver(4);
+  verifyMirrorSharedCulls(true);
+  try {
+    camera.position.x += 0.1;
+    expect(drawsOver(1)).toBe(2);
+    // Two currency checks and the second draw's cull, each compared with the whole walk: all agree.
+    expect(mirrorDiagnostics(scene)).toMatchObject({ cullChecks: 3, cullMismatches: 0 });
+    // Something written between the two currency checks (the still view asks the first surface's content there, and
+    // nothing the owner runs there writes) leaves the shared candidates stale for the second; the verifier sees it.
+    let hidden = false;
+    vi.spyOn(ReflectedContent.prototype, "changed").mockImplementation(() => {
+      if (!hidden) { hidden = true; box.isVisible = false; }
+      return true;
+    });
+    expect(drawsOver(1)).toBe(2);
+    expect(mirrorDiagnostics(scene)).toMatchObject({ cullChecks: 6, cullMismatches: 1 });
+    // The second draw culls afresh after the first pass, so it draws what is there now.
+    expect(passes.at(-1)!.map((pass) => pass.meshes)).toEqual([["box"], []]);
+  } finally {
+    verifyMirrorSharedCulls(false);
+  }
 });
 
 it("keeps the reflection of unlit Text 3D and sprites, and redraws it once when what an unlit mesh binds changes", () => {

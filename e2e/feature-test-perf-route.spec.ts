@@ -1,6 +1,9 @@
-import { writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
 import { FEATURE_TEST_PROFILE_VIEWS } from "../apps/editor/src/lib/feature-test/layout";
+import { glLiveObjects, installGlMemoryLedger, readGlMemoryLedger } from "./gl-memory-ledger";
 import { clickPlayAndWaitForOverlay, runConsoleCommand } from "./play";
 import { distribution, graphicsAdapter } from "./play-performance-fixture";
 import {
@@ -64,14 +67,28 @@ import {
  *      HAPTIC_PERF_OCCLUSION_PARITY=1 (with HAPTIC_PERF_VIEWS, each held view, paused: the canvas drawn while occlusion
  *      backs off against one with the filter every frame, and a second backing-off frame as the control; each pair's
  *      `differing` must be 0: the view's step `occlusion parity`),
+ *      HAPTIC_PERF_VERIFY_MIRROR_WORK=1 (each Mirror cull made from its render's shared candidates also walks the whole
+ *      Scene, `rendererWork.mirrorCulls.mismatches`, and each light cluster block kept across another camera's turn is
+ *      built afresh to compare, `rendererWork.lightClusters.mismatches`),
+ *      HAPTIC_PERF_MIRROR_UNSHARED=1 (Play's Mirror culls each walk the whole Scene and light clusters build at every
+ *      camera's turn, as before that work was shared: the old path, to measure against),
+ *      HAPTIC_PERF_MIRROR_PARITY=1 (after the windows, held at the Profile mirror view with the game paused, the play canvas
+ *      with the Mirrors' shared work and on the old path, compared pixel by pixel: `play.mirrorParity`),
  *      HAPTIC_PERF_DEVICE (`<width>x<height>@<scale>`, e.g. `1180x788@2`: the page's CSS viewport and device scale factor),
  *      HAPTIC_PERF_VIEWS (comma list of the Feature Test Check's Profile views, light|heavy|mirror: Play holds each in
  *      turn with `possess` instead of sampling the camera tour, and each view reports its GL pass structure and, with
  *      HAPTIC_PERF_GPU_PASSES=1, its GPU time per stage and pass from timer queries, `gpuprobe timers`),
- *      HAPTIC_PERF_VARIANTS (with HAPTIC_PERF_VIEWS: a JSON list of `{ label, commands, restore? }`; each view measures
- *      its baseline, then each variant followed by its restore and the baseline again, A B A C A),
+ *      HAPTIC_PERF_VARIANTS (with HAPTIC_PERF_VIEWS: a JSON list of `{ label, commands?, restore?, hooks?, restoreHooks? }`;
+ *      `hooks` name boolean Play test hooks to call, such as `{ "unshareMirrorWork": true }`; each view measures its
+ *      baseline, then each variant followed by its restore and the baseline again, A B A C A),
  *      HAPTIC_PERF_HOLD_MS (default 3000: each held view's measured window; it reports its animation frames' rate,
- *      `averageFps`, beside `drawnFps`, and the view's attempted, drawn and held frames, `view`).
+ *      `averageFps`, beside `drawnFps`, and the view's attempted, drawn and held frames, `view`),
+ *      HAPTIC_PERF_MEMORY=1 (with HAPTIC_PERF_OUT: a memory timeline beside the report, `<out>.memory.json`: what the page
+ *      asked WebGL to allocate every 250 ms (`gl-memory-ledger.ts`), each allocation or release of 4 MiB or more, the
+ *      live objects at the phase marks, and the phase marks in epoch milliseconds; the editor settles again after the
+ *      last Play; on Windows `perf-process-sampler.ps1` also samples the browser, GPU and renderer processes' dedicated GPU
+ *      memory and private bytes into `<out>.gpu.csv`), HAPTIC_PERF_MEMORY_SAMPLER (another sampler script for it, started
+ *      with `-Out <out>.gpu.csv -Stop <file> -Pids <pids> -IntervalMs 250` and stopped when the stop file appears).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -130,15 +147,30 @@ const VERIFY_OUTLINES = process.env.HAPTIC_PERF_VERIFY_OUTLINES === "1";
 const VERIFY_PREPARATION = process.env.HAPTIC_PERF_VERIFY_PREPARATION === "1";
 /** Each world view frame that keeps its occlusion buffer also draws the occluders again (the measured frames carry its cost). */
 const VERIFY_OCCLUSION = process.env.HAPTIC_PERF_VERIFY_OCCLUSION === "1";
+/** Mirror culls from shared candidates and kept light cluster blocks are also made the old way (the measured frames carry its cost). */
+const VERIFY_MIRROR_WORK = process.env.HAPTIC_PERF_VERIFY_MIRROR_WORK === "1";
+/** Play runs the Mirrors' culls and the light clusters unshared, as before. */
+const MIRROR_UNSHARED = process.env.HAPTIC_PERF_MIRROR_UNSHARED === "1";
+/** After the windows: the paused mirror view with the shared Mirror work and on the old path. */
+const MIRROR_PARITY = process.env.HAPTIC_PERF_MIRROR_PARITY === "1";
 const DEVICE = /^(\d+)x(\d+)@(\d+(?:\.\d+)?)$/.exec(process.env.HAPTIC_PERF_DEVICE ?? "");
 type ProfileViewName = keyof typeof FEATURE_TEST_PROFILE_VIEWS;
 const VIEWS = (process.env.HAPTIC_PERF_VIEWS ?? "").split(",").map((view) => view.trim())
   .filter((view): view is ProfileViewName => view in FEATURE_TEST_PROFILE_VIEWS);
 const GPU_PASSES = process.env.HAPTIC_PERF_GPU_PASSES === "1";
 const HOLD_MS = number("HAPTIC_PERF_HOLD_MS", 3_000, 1_000);
-type Variant = { label: string; commands: string[]; restore?: string[] };
+type Variant = {
+  label: string; commands?: string[]; restore?: string[]; hooks?: Record<string, boolean>; restoreHooks?: Record<string, boolean>;
+};
 const VARIANTS = JSON.parse(process.env.HAPTIC_PERF_VARIANTS ?? "[]") as Variant[];
 if (DEVICE) test.use({ viewport: { width: Number(DEVICE[1]), height: Number(DEVICE[2]) }, deviceScaleFactor: Number(DEVICE[3]) });
+const MEMORY = process.env.HAPTIC_PERF_MEMORY === "1" && !!process.env.HAPTIC_PERF_OUT;
+/** Phase marks of the memory timeline, in epoch milliseconds, with the live WebGL objects of 4 MiB or more at some. */
+const marks: Array<{ label: string; epochMs: number; live?: unknown }> = [];
+async function mark(page: Page, label: string, live = false): Promise<void> {
+  if (!MEMORY) return;
+  marks.push({ label, epochMs: Date.now(), ...(live ? { live: await glLiveObjects(page, 4 * 1024 ** 2) } : {}) });
+}
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -168,8 +200,19 @@ type PlayHost = {
     verifyKeptOcclusionBuffers: (enabled: boolean) => void;
     forceOcclusionEveryFrame: (enabled: boolean) => void;
     requestPausedRedraw: () => { accepted: boolean; reason?: string } | null;
+    verifyMirrorSharedWork: (enabled: boolean) => void;
+    unshareMirrorWork: (enabled: boolean) => void;
   };
 };
+
+/** Calls each named boolean Play test hook (`__hapticPlayTest[name](value)`). */
+async function callHooks(page: Page, hooks: Record<string, boolean> | undefined): Promise<void> {
+  if (!hooks) return;
+  await page.evaluate((entries) => {
+    const host = (globalThis as unknown as { __hapticPlayTest: Record<string, (value: boolean) => void> }).__hapticPlayTest;
+    for (const [name, value] of entries) host[name]!(value);
+  }, Object.entries(hooks));
+}
 
 /** Install long-task observation before the editor boots. */
 async function recordLongTasks(page: Page): Promise<void> {
@@ -400,10 +443,13 @@ async function samplePlay(page: Page, durationMs: number) {
 async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   const started = Date.now();
   const linksSince = await pageNow(page);
+  await mark(page, "play: click");
   await clickPlayAndWaitForOverlay(page);
+  await mark(page, "play: overlay shown");
   await expect(page.getByTestId("play-blocked-dialog")).toHaveCount(0);
   await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 180_000 });
   const loadedAt = await pageNow(page);
+  await mark(page, "play: loaded", true);
   await expect(page.getByTestId("play-canvas")).toBeVisible({ timeout: 60_000 });
   await expect
     .poll(
@@ -412,6 +458,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
     )
     .toBeGreaterThan(30);
   const playBootMs = Date.now() - started;
+  await mark(page, "play: ticking", true);
   // The share of the boot spent compiling what Play may spawn, before the first frame.
   const spawnableWarm = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.spawnableWarm() ?? null);
   if (VERIFY_SCOPED) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyScopedReadinessProbes(true));
@@ -425,6 +472,8 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (VERIFY_PREPARATION) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyLeanPreparation(true));
   if (VERIFY_OCCLUSION) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyKeptOcclusionBuffers(true));
   if (OCCLUSION_EVERY_FRAME) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.forceOcclusionEveryFrame(true));
+  if (VERIFY_MIRROR_WORK) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorSharedWork(true));
+  if (MIRROR_UNSHARED) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.unshareMirrorWork(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
@@ -454,14 +503,20 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
     writeFileSync(`${process.env.HAPTIC_PERF_OUT}.${scene}-play.cpuprofile`, JSON.stringify(profile));
   }
   const parity = LAYER_PARITY ? await layerParity(page) : null;
+  const mirror = MIRROR_PARITY ? await mirrorParity(page) : null;
   const liveObjects = await page.evaluate(
     () => (globalThis as unknown as PlayHost).__hapticPlayTest?.liveObjectCounts() ?? null,
   );
   const programs = await programLinks(page, linksSince, loadedAt, await pageNow(page));
+  await mark(page, "play: stop click", true);
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
+  await mark(page, "play: closed", true);
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
-  return { playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects, ...(parity ? { layerParity: parity } : {}) };
+  return {
+    playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects,
+    ...(parity ? { layerParity: parity } : {}), ...(mirror ? { mirrorParity: mirror } : {}),
+  };
 }
 
 /**
@@ -487,7 +542,23 @@ async function layerParity(page: Page) {
   const fullHits = await pick();
   await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.drawLayersFullPath(false));
   await runConsoleCommand(page, "resume");
-  const compare = (a: string, b: string) => page.evaluate(async ([first, second]) => {
+  const compare = (a: string, b: string) => comparePixels(page, a, b);
+  const pickDifferences = targets.flatMap((target, index) =>
+    JSON.stringify(retainedHits[index]) === JSON.stringify(fullHits[index]) ? [] : [{ ...target, retained: retainedHits[index], full: fullHits[index] }]);
+  return {
+    retainedVsRetained: await compare(retained, retainedAgain),
+    retainedVsFull: await compare(retained, full),
+    targets: targets.length,
+    controls: new Set(targets.map((target) => `${target.layerId}/${target.mesh}`)).size,
+    pointsHit: retainedHits.filter((hits) => hits.length > 0).length,
+    pickDifferences: pickDifferences.length,
+    firstPickDifferences: pickDifferences.slice(0, 4),
+  };
+}
+
+/** Pixels whose colour differs between two PNG screenshots (base64), compared in the page. */
+function comparePixels(page: Page, a: string, b: string) {
+  return page.evaluate(async ([first, second]) => {
     const load = async (base64: string) => {
       const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
       const surface = new OffscreenCanvas(bitmap.width, bitmap.height);
@@ -501,16 +572,37 @@ async function layerParity(page: Page) {
       if (x.data[index] !== y.data[index] || x.data[index + 1] !== y.data[index + 1] || x.data[index + 2] !== y.data[index + 2]) differing += 1;
     return { pixels: x.width * x.height, differing };
   }, [a, b]);
-  const pickDifferences = targets.flatMap((target, index) =>
-    JSON.stringify(retainedHits[index]) === JSON.stringify(fullHits[index]) ? [] : [{ ...target, retained: retainedHits[index], full: fullHits[index] }]);
+}
+
+/**
+ * Held at the Profile mirror view with the game paused: the play canvas twice on the path the Play runs (the second
+ * shows what a paused frame changes by itself), then on the other one (`unshareMirrorWork`), compared pixel by pixel,
+ * with the verifiers' counts as they stand then.
+ */
+async function mirrorParity(page: Page) {
+  await runConsoleCommand(page, `possess "${FEATURE_TEST_PROFILE_VIEWS.mirror.name}"`);
+  await waitForViewDrawing(page);
+  await page.waitForTimeout(SETTLE_MS);
+  await runConsoleCommand(page, "pause");
+  await page.waitForTimeout(1500);
+  const canvas = page.getByTestId("play-canvas");
+  const shot = async () => (await canvas.screenshot()).toString("base64");
+  const unshare = (enabled: boolean) => page.evaluate((value) => (globalThis as unknown as PlayHost).__hapticPlayTest!.unshareMirrorWork(value), enabled);
+  const first = await shot();
+  await page.waitForTimeout(500);
+  const again = await shot();
+  await unshare(!MIRROR_UNSHARED);
+  await page.waitForTimeout(1500);
+  const other = await shot();
+  await unshare(MIRROR_UNSHARED);
+  const work = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.rendererWork ?? null) as Record<string, unknown> | null;
+  await runConsoleCommand(page, "resume");
   return {
-    retainedVsRetained: await compare(retained, retainedAgain),
-    retainedVsFull: await compare(retained, full),
-    targets: targets.length,
-    controls: new Set(targets.map((target) => `${target.layerId}/${target.mesh}`)).size,
-    pointsHit: retainedHits.filter((hits) => hits.length > 0).length,
-    pickDifferences: pickDifferences.length,
-    firstPickDifferences: pickDifferences.slice(0, 4),
+    unshared: MIRROR_UNSHARED,
+    sameVsSame: await comparePixels(page, first, again),
+    sameVsOther: await comparePixels(page, first, other),
+    mirrorCulls: work?.mirrorCulls ?? null,
+    lightClusters: work?.lightClusters ?? null,
   };
 }
 
@@ -580,23 +672,9 @@ async function occlusionParity(page: Page) {
   const again = await frame(false);
   await page.evaluate((value) => (globalThis as unknown as PlayHost).__hapticPlayTest!.forceOcclusionEveryFrame(value), OCCLUSION_EVERY_FRAME);
   await runConsoleCommand(page, "resume");
-  const compare = (a: string, b: string) => page.evaluate(async ([first, second]) => {
-    const load = async (base64: string) => {
-      const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
-      const surface = new OffscreenCanvas(bitmap.width, bitmap.height);
-      const context = surface.getContext("2d")!;
-      context.drawImage(bitmap, 0, 0);
-      return context.getImageData(0, 0, bitmap.width, bitmap.height);
-    };
-    const [x, y] = await Promise.all([load(first!), load(second!)]);
-    let differing = 0;
-    for (let index = 0; index < x.data.length; index += 4)
-      if (x.data[index] !== y.data[index] || x.data[index + 1] !== y.data[index + 1] || x.data[index + 2] !== y.data[index + 2]) differing += 1;
-    return { pixels: x.width * x.height, differing };
-  }, [a, b]);
   return {
-    backingOffVsForced: await compare(backingOff.shot, forced.shot),
-    backingOffVsBackingOff: await compare(backingOff.shot, again.shot),
+    backingOffVsForced: await comparePixels(page, backingOff.shot, forced.shot),
+    backingOffVsBackingOff: await comparePixels(page, backingOff.shot, again.shot),
     states: { backingOff: backingOff.occlusion, forced: forced.occlusion, again: again.occlusion },
     redraws: { backingOff: backingOff.redraws, forced: forced.redraws, again: again.redraws },
   };
@@ -610,9 +688,11 @@ async function measureViews(page: Page) {
     const steps: Array<{ label: string } & Record<string, unknown>> = [{ label: "baseline", ...await measureHeld(page) }];
     if (OCCLUSION_PARITY) steps.push({ label: "occlusion parity", ...await occlusionParity(page) });
     for (const variant of VARIANTS) {
-      for (const command of variant.commands) await runConsoleCommand(page, command);
+      for (const command of variant.commands ?? []) await runConsoleCommand(page, command);
+      await callHooks(page, variant.hooks);
       steps.push({ label: variant.label, ...await measureHeld(page) });
       for (const command of variant.restore ?? []) await runConsoleCommand(page, command);
+      await callHooks(page, variant.restoreHooks);
       steps.push({ label: "baseline", ...await measureHeld(page) });
     }
     results[view] = steps;
@@ -643,6 +723,38 @@ async function waitForSceneView(page: Page): Promise<void> {
 }
 
 test.skip(!ENABLED, "FeatureTest performance route; set HAPTIC_PERF_FEATURE_TEST=1 to run it.");
+
+/** Stops the process sampler and writes the memory timeline, `<out>.memory.json`. */
+async function writeMemoryTimeline(page: Page, stopSampler: (() => Promise<void>) | null): Promise<void> {
+  await stopSampler?.();
+  const ledger = await readGlMemoryLedger(page, 0);
+  writeFileSync(`${process.env.HAPTIC_PERF_OUT}.memory.json`, JSON.stringify({ marks, processes: samplerProcesses, ledger }));
+}
+
+/** The browser's processes the sampler watches, from the browser's own process list. */
+let samplerProcesses: Array<{ type: string; id: number }> = [];
+
+/**
+ * Starts `HAPTIC_PERF_MEMORY_SAMPLER` (a PowerShell script) on the browser's processes, writing `<out>.gpu.csv`;
+ * returns what stops it and waits for it to exit. Without the script, only the process list is recorded.
+ */
+async function startProcessSampler(page: Page): Promise<(() => Promise<void>) | null> {
+  const browserCdp = await page.context().browser()!.newBrowserCDPSession();
+  const { processInfo } = await browserCdp.send("SystemInfo.getProcessInfo");
+  await browserCdp.detach();
+  samplerProcesses = processInfo.map(({ type, id }) => ({ type, id }));
+  const script = process.env.HAPTIC_PERF_MEMORY_SAMPLER ?? (process.platform === "win32" ? fileURLToPath(new URL("./perf-process-sampler.ps1", import.meta.url)) : null);
+  if (!script || !existsSync(script)) return null;
+  const out = `${process.env.HAPTIC_PERF_OUT}.gpu.csv`;
+  const stop = `${process.env.HAPTIC_PERF_OUT}.gpu.stop`;
+  const pids = samplerProcesses.filter(({ type }) => type === "browser" || type === "GPU" || type === "renderer").map(({ id }) => id);
+  const child = spawn("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Out", out, "-Stop", stop, "-Pids", pids.join(","), "-IntervalMs", "250"], { stdio: "ignore" });
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  return async () => {
+    writeFileSync(stop, "");
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 10_000))]);
+  };
+}
 
 
 /** Project Settings > Rendering > Pipeline: Large World Rendering on, staged until Done. */
@@ -677,6 +789,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   });
   await recordLongTasks(page);
   await recordProgramLinks(page);
+  if (MEMORY) await installGlMemoryLedger(page, 250);
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
     // The route measures the editor viewport while it sits idle; full rate keeps runs comparable.
@@ -687,6 +800,8 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   await cdp.send("Performance.enable");
 
   const createToInteractiveMs = await createFeatureTestProject(page);
+  // After the page's first navigation, which may move it to another renderer process.
+  const stopSampler = MEMORY ? await startProcessSampler(page) : null;
   if (LARGE_WORLD) await turnOnLargeWorldRendering(page);
   // The editor document starts at Homepage boot, so this covers boot plus creation.
   const bootAndCreateLongTasks = await longTasksSince(page, 0);
@@ -697,8 +812,11 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   for (const scene of SCENES) {
     let step = "opening it";
     try {
+      await mark(page, `${scene}: open`);
       const { readyMs: sceneReadyMs, loadRetries } = await openFeatureTestScene(page, scene);
+      await mark(page, `${scene}: ready`);
       await page.waitForTimeout(SETTLE_MS);
+      await mark(page, `${scene}: editor settled`, true);
       const viewport = [];
       for (let index = 0; index < EDITOR_SAMPLES; index += 1) {
         const { result, busy } = await busyFraction(cdp, () => measureViewport(page, SAMPLE_MS));
@@ -710,6 +828,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
         if (index > 0) {
           step = `the editor's reload before Play ${index + 1}`;
           await waitForSceneView(page);
+          await mark(page, "editor: view ready after Play", true);
           await page.waitForTimeout(SETTLE_MS);
         }
         step = `Play ${index + 1}`;
@@ -720,13 +839,20 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
       // The next scene opens over the editor's reloaded view.
       step = "the editor's reload after the last Play";
       await waitForSceneView(page);
+      await mark(page, "editor: view ready after Play", true);
+      if (MEMORY) {
+        await page.waitForTimeout(SETTLE_MS);
+        await mark(page, "editor: settled after Play", true);
+      }
       scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: plays[0], ...(PLAYS > 1 ? { repeatPlays: plays.slice(1) } : {}) };
     } catch (error) {
       console.log(`[feature-test-perf] ${scene}: ${step} failed; last console problems:\n${consoleProblems.join("\n")}`);
+      if (MEMORY) await writeMemoryTimeline(page, stopSampler).catch(() => {});
       throw error;
     }
   }
 
+  if (MEMORY) await writeMemoryTimeline(page, stopSampler);
   const reopenToInteractiveMs = REOPEN ? await reopenFeatureTestProject(page) : null;
   const report = {
     qualification:

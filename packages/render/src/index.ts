@@ -17,7 +17,10 @@ export type { RenderShadingSettings } from "./render-settings";
 export { sceneWaterQuality, sceneWaterQualityRevision, sceneWaterQualityDeviceClamp } from "./render-settings";
 export { clampWaterQualityToDevice, type WaterQualityDeviceClamp, type WaterDeviceCapabilities, type WaterDeviceView } from "./water-quality-device";
 export { waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera, type WaterPlanarReflection, type WaterPlanarReflectionDiagnostics } from "./water-planar-reflection";
-export { mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, type MirrorDiagnostics } from "./mirrors";
+export {
+  mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyMirrorSharedCulls, walkMirrorCullsUnshared, type MirrorDiagnostics,
+} from "./mirrors";
+export { forceClusterRebuilds, verifyLightClusterSlots } from "./haptic-lights";
 export { verifyCaptureActorLists } from "./render-target-capture-state";
 export { setPlanarFootprintCulling } from "./planar-mirror";
 export * from "./canvas-drawing-buffer";
@@ -33,6 +36,7 @@ export * from "./scene-loader";
 export * from "./viewport";
 export * from "./perf-ceilings";
 export * from "./resource-cache";
+export { parkedShadowAtlasTextures } from "./shadow-atlas";
 export * from "./scene-texture-references";
 export * from "./render-scheduler";
 export * from "./snapshot-sync";

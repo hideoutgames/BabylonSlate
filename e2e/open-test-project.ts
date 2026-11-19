@@ -154,6 +154,8 @@ export async function selectContentBrowserAssetsFolder(
   page: Page,
 ): Promise<void> {
   const tree = page.getByTestId("content-browser-folder-tree");
+  // A phone-width editor has no folder tree: its Content Browser opens on the project's assets folder.
+  if (await page.getByTestId("content-browser-browse-folders").isVisible()) return;
   await expect(tree).toBeVisible();
   await tree.evaluate((element) => {
     element.scrollTop = 0;

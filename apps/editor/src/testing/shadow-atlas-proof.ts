@@ -3,7 +3,11 @@
  * Material under a shadowed sun (four cascades over the visible ground), a shadowed spot light and a shadowed point
  * light, with volumetric lighting marching all three, at the highest filter quality with PCF and then with Contact
  * Hardening. Each capture is the presented frame's bytes, so two builds' frames can be compared byte for byte, and each
- * map's tiles, so a capture shows that every map drew.
+ * map's tiles, so a capture shows that every map drew. Then the Scene is disposed and the scene built again, its casters
+ * moved, in a new Scene of the same Engine, which takes the first Scene's atlas over (`shadow-atlas.ts`, `ParkedAtlas`)
+ * with the depth the first Scene left in it; then that Scene is disposed, its parked atlas freed, and the moved scene built
+ * a third time on a fresh atlas. The second and third PCF frames (`handOver`) must be the same, byte for byte: nothing
+ * samples the depth an atlas brings from another Scene.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { Engine } from "@babylonjs/core/Engines/engine";
@@ -23,6 +27,7 @@ import {
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings, largeWorldEngineOptions } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
+import { discardParkedShadowAtlas } from "../../../../packages/render/src/shadow-atlas";
 
 export type ShadowAtlasCapture = {
   filter: "pcf" | "pcss";
@@ -44,6 +49,44 @@ export async function runShadowAtlasProof(options: { largeWorld?: boolean } = {}
   engine.setSize(canvas.width, canvas.height);
   const sampling: Record<string, number> = {};
   const stopRecording = recordShadowSampling(engine, sampling);
+  try {
+    const first = await shadowedScene(engine, canvas);
+    let captures: ShadowAtlasCapture[];
+    let atlas: unknown;
+    try {
+      captures = [await first.capture("pcf"), await first.capture("pcss")];
+      atlas = first.atlas();
+    } finally {
+      await first.dispose();
+    }
+    const moved = async () => {
+      const scene = await shadowedScene(engine, canvas, 1.5);
+      try {
+        return { frame: (await scene.capture("pcf")).frame, atlas: scene.atlas() };
+      } finally {
+        await scene.dispose();
+      }
+    };
+    const taken = await moved();
+    const parked = discardParkedShadowAtlas(engine);
+    const fresh = await moved();
+    const handOver = {
+      sameAtlas: atlas !== null && taken.atlas === atlas, freshAtlas: parked && fresh.atlas !== atlas,
+      frame: taken.frame, freshFrame: fresh.frame,
+    };
+    return { captures, handOver, sampling, renderer: engine.getGlInfo().renderer };
+  } finally {
+    stopRecording();
+    engine.dispose();
+    canvas.remove();
+  }
+}
+
+/**
+ * The proof's scene in a new Scene of `engine`, its casters `shift` metres to the right: what captures its frame, its
+ * atlas's render target, and its disposal.
+ */
+async function shadowedScene(engine: Engine, canvas: HTMLCanvasElement, shift = 0) {
   const scene = new Scene(engine);
   try {
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
@@ -86,7 +129,7 @@ export async function runShadowAtlasProof(options: { largeWorld?: boolean } = {}
     // Casters along the view, one or more in each cascade's slice.
     [[-1.5, 0], [1.5, 3], [-2, 7], [2.5, 12], [-3, 20], [3, 30], [0, 38]].forEach(([x, z], index) => {
       const box = MeshBuilder.CreateBox(`box${index}`, { width: 1 + z! / 20, height: 1.5 + z! / 15, depth: 1 + z! / 20 }, scene);
-      box.position.set(x!, (1.5 + z! / 15) / 2, z!);
+      box.position.set(x! + shift, (1.5 + z! / 15) / 2, z!);
       box.rotation.y = 0.3 * index;
       box.material = lit;
     });
@@ -138,15 +181,18 @@ export async function runShadowAtlasProof(options: { largeWorld?: boolean } = {}
         cascadeEnds: [...((sun.getShadowGenerator() as unknown as { cascadeEnds?: number[] } | null)?.cascadeEnds ?? [])],
       };
     };
-    const captures = [await capture("pcf"), await capture("pcss")];
-    graph.dispose();
-    await graph.whenReleased();
-    return { captures, sampling, renderer: engine.getGlInfo().renderer };
-  } finally {
-    stopRecording();
+    return {
+      capture,
+      atlas: () => sun.getShadowGenerator()?.getShadowMap()?.renderTarget ?? null,
+      dispose: async () => {
+        graph.dispose();
+        await graph.whenReleased();
+        scene.dispose();
+      },
+    };
+  } catch (error) {
     scene.dispose();
-    engine.dispose();
-    canvas.remove();
+    throw error;
   }
 }
 

@@ -448,7 +448,7 @@ describe("formatFeatureTestCheckReport", () => {
             { ...sample("heavy warm-up 2", 42, 10, { drawPasses: undefined, atMs: 10_000 }), label: "warm-up 2", baseline: false, warmup: true, view: "heavy" },
             sample("light baseline 1", 20, 6),
             // Its two baselines differ by 4 ms, more than its own 3 ms change.
-            sample("light post off", 19, 6, { settings: { ...settings, "post.enabled": "false" } }),
+            sample("light world hidden", 19, 6, { settings: { ...settings, "post.enabled": "false" } }),
             sample("light baseline 2", 24, 6),
             sample("heavy baseline 1", 40, 10, { atMs: 60_000 }),
             sample("heavy world drawn once", 34, 9, { settings: noShadows, shadowAtlas: { edge: 0, maps: [] } }),
@@ -472,7 +472,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Drift first to last visit: gpu busy +2.0ms +5% · cpu +1.0ms +9%; discount a step's change by the drift around it");
     // Against (20 + 24) / 2 in gpu busy; the baselines' spread is past the change.
     // Each row's world size and level beside the backbuffer the layers and the output draw into.
-    expect(row("light post off")).toMatch(/-3\.0ms -14% {5}\+0\.0ms \+0% {6}885x591@1\.33 \/ 2360x1576 {2}post\.enabled=false · overlaps · UNSETTLED: its baselines differ by 4\.0 ms, more than its change$/);
+    expect(row("light world hidden")).toMatch(/-3\.0ms -14% {5}\+0\.0ms \+0% {6}885x591@1\.33 \/ 2360x1576 {2}post\.enabled=false · overlaps · UNSETTLED: its baselines differ by 4\.0 ms, more than its change/);
     // A shadow step's atlas and maps.
     expect(row("heavy world drawn once")).toMatch(/-7\.0ms -17% .*shadows=off · overlaps · no shadow atlas$/);
     expect(row("heavy shadow passes off")).toMatch(/-5\.0ms -12% .*shadows\.debug=passes · overlaps · atlas 8192 · maps 2048x4, 2048x6$/);
@@ -485,7 +485,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Not ranked, straddling a state change: none");
     expect(lines.slice(ranking + 1, ranking + 6)).toEqual([
       "    light:",
-      "      1. [FAST] light post off: -3.0ms -14% (20.0 > 19.0 > 24.0) · cpu +0.0ms +0% · overlaps · UNSETTLED",
+      "      1. [FAST] light world hidden: -3.0ms -14% (20.0 > 19.0 > 24.0) · cpu +0.0ms +0% · overlaps · UNSETTLED",
       "    heavy:",
       "      1. [FAST] heavy world drawn once: -7.0ms -17% (40.0 > 34.0 > 42.0) · cpu -1.5ms -14% · overlaps",
       "      2. [FAST] heavy shadow passes off: -5.0ms -12% (42.0 > 36.0 > 40.0) · cpu -1.5ms -14% · overlaps",

@@ -96,8 +96,8 @@ A Breakdown takes about 10 minutes, or 20 with the comparison; keep the device a
 
 Profile shows what each feature costs the GPU at your device's own quality settings, and where the draw calls go. It plays the main scene as Play does, without changing the quality level or the frame rate cap, and holds the camera still at three fixed views while it measures: a light one (few objects), a heavy one (many objects, no mirror in sight) and one facing the mirrors and capture screens. At each view it measures every change between two unchanged measurements from the same view, without moving the camera:
 
-- light view: the world hidden, every surface one flat colour, lighting off, shadow lookups off, local lights off, half resolution, every Scene Layer hidden (so nothing is drawn at the screen's full resolution), shadow maps not redrawn, all four effects that need the extra scene pass off, post-processing off, every extra scene pass off at once (the world drawn once), and the low shadow filter
-- heavy view: the world hidden, shadow maps not redrawn, all four effects that need the extra scene pass off, and the world drawn once
+- light view: the world hidden, lighting off, shadow lookups off, local lights off, shadow maps not redrawn, all four effects that need the extra scene pass off, and every extra scene pass off at once (the world drawn once)
+- heavy view: the world hidden, shadow maps not redrawn, all four effects that need the extra scene pass off together and then one at a time (ambient occlusion, reflections, volumetric lighting and screen-space shadows), and the world drawn once
 - mirror view: captures off, mirrors showing no reflection, and the world drawn once
 
 Profile never turns shadows off as a whole or changes the shadow level, so the shadow textures stay as they are and a device with little memory is not asked to allocate them again.

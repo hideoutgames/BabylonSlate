@@ -2,6 +2,7 @@ import type { Camera } from "@babylonjs/core/Cameras/camera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWrapper";
+import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import type { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
@@ -96,7 +97,7 @@ const generations = new WeakMap<Scene, number>();
 export interface ShadowAtlasDrawCounts { maps: number; tiles: number; texels: number }
 const drawCounts = new WeakMap<Scene, ShadowAtlasDrawCounts>();
 
-/** How many atlases the Scene has made: it grows each time the atlas's depth target is created. */
+/** How many atlases the Scene has made or taken over: it grows each time the Scene's atlas texture is created. */
 export function shadowAtlasGeneration(scene: Scene): number {
   return generations.get(scene) ?? 0;
 }
@@ -132,11 +133,120 @@ function depthTarget(name: string, edge: number, page: number, scene: Scene): Re
 }
 
 /**
- * The Scene's atlas at `edge` texels, made with its first tile and disposed with the Scene, or replaced once no tile
- * is left in it (a quality level of another edge rebuilds every atlas map, whose allocation keys carry the edge; the
- * shadow controller releases the old atlas an Engine frame before it builds into the new one, so this replaces only
- * an atlas it did not). A shadow allocation that fails disposes the textures it made, the atlas among them when that
- * tile was its first: the next tile makes it again.
+ * How long an atlas a disposed Scene left (`parkSceneAtlas`) waits for the next Scene of its Engine. Overlay Play
+ * disposes the editor's Scene as it starts and the editor loads its Scene again as Play stops: the next Scene's first
+ * shadow sync comes about one to four seconds later on a desktop and later on a phone.
+ */
+export const PARKED_SHADOW_ATLAS_MS = 10_000;
+
+/**
+ * An atlas whose Scene was disposed while it held no tile, kept for the next Scene of its Engine whose first atlas has
+ * its edge and pages (`sceneAtlas`): one Engine-wide hand-over instead of a release and an allocation of the same size
+ * (256 MiB at High) at every Play start and stop, and no fresh texture's first use, which on ANGLE D3D11 showed a
+ * transient of about its size. It is the render target wrapper (framebuffer and depth texture
+ * array), not the Scene's texture object. At most one is kept per Engine. It is freed by `discardParkedShadowAtlas`, after
+ * `PARKED_SHADOW_ATLAS_MS`, on a context loss and with the Engine (a Scene without lights runs no shadow sync, so after
+ * one only the timer frees it); no ledger counts it, as no Scene holds it.
+ */
+type ParkedAtlas = { wrapper: RenderTargetWrapper; edge: number; page: number; release: () => void };
+const parked = new WeakMap<AbstractEngine, ParkedAtlas>();
+
+/** The edge of the atlas parked on `engine` (`ParkedAtlas`), else 0. */
+export function parkedShadowAtlasEdge(engine: AbstractEngine): number {
+  return parked.get(engine)?.edge ?? 0;
+}
+
+/** The textures of the atlas parked on `engine`, which no Scene holds (a Play session's texture check leaves them out). */
+export function parkedShadowAtlasTextures(engine: AbstractEngine): InternalTexture[] {
+  const wrapper = parked.get(engine)?.wrapper;
+  if (!wrapper) return [];
+  return [...new Set([wrapper.depthStencilTexture, ...(wrapper.textures ?? [])])].filter((texture): texture is InternalTexture => !!texture);
+}
+
+/** Takes the atlas parked on `engine`, if any, out of its keeping: its timer and observers stop. */
+function unpark(engine: AbstractEngine): ParkedAtlas | undefined {
+  const kept = parked.get(engine);
+  if (!kept) return undefined;
+  parked.delete(engine);
+  kept.release();
+  return kept;
+}
+
+/**
+ * Frees the atlas parked on `engine` unless its edge is `keepEdge` (0 frees any). True when it freed one: like an atlas of
+ * another edge in its own Scene, the caller builds the new atlas in a later Engine frame, so the two never live in the
+ * same frame.
+ */
+export function discardParkedShadowAtlas(engine: AbstractEngine, keepEdge = 0): boolean {
+  const kept = parked.get(engine);
+  if (!kept || kept.edge === keepEdge) return false;
+  unpark(engine)!.wrapper.dispose();
+  return true;
+}
+
+type TargetInternals = { _renderTarget: RenderTargetWrapper | null; _texture: unknown };
+
+/**
+ * Disposes the Scene's atlas texture as its Scene is disposed, parking its wrapper on the Engine (`ParkedAtlas`) while no
+ * tile is in it and the context is live; otherwise it goes with the texture.
+ */
+function parkSceneAtlas(scene: Scene, atlas: Atlas): void {
+  const engine = scene.getEngine();
+  const wrapper = atlas.target.renderTarget;
+  if (!wrapper || !atlas.tiles.empty || engine.isDisposed || (engine as unknown as { _contextWasLost: boolean })._contextWasLost) {
+    atlas.target.dispose();
+    return;
+  }
+  discardParkedShadowAtlas(engine);
+  const target = atlas.target as unknown as TargetInternals;
+  target._renderTarget = null;
+  target._texture = null;
+  atlas.target.dispose();
+  const discard = () => {
+    if (parked.get(engine)?.wrapper === wrapper) discardParkedShadowAtlas(engine);
+  };
+  const timer = setTimeout(discard, PARKED_SHADOW_ATLAS_MS);
+  const lost = engine.onContextLostObservable.add(discard);
+  const disposed = engine.onDisposeObservable.add(discard);
+  parked.set(engine, {
+    wrapper, edge: atlas.tiles.edge, page: atlas.tiles.pageEdge,
+    release: () => {
+      clearTimeout(timer);
+      engine.onContextLostObservable.remove(lost);
+      engine.onDisposeObservable.remove(disposed);
+    },
+  });
+}
+
+/**
+ * The Scene's new atlas texture: the Engine's parked atlas (`ParkedAtlas`) when it has this edge and paging, behind a
+ * texture of this Scene made as `depthTarget` makes one but allocating nothing, else a new one (a parked atlas of other
+ * pages is freed first). Its depth is the last Scene's, which nothing samples: every map clears its tiles before its
+ * first draw, and receivers sample a map neutrally until it has drawn (`neutralUntilRendered`).
+ */
+function takeAtlasTarget(scene: Scene, edge: number, page: number): RenderTargetTexture {
+  const engine = scene.getEngine();
+  const kept = parked.get(engine);
+  if (!kept || kept.edge !== edge || kept.page !== page) {
+    if (kept) discardParkedShadowAtlas(engine);
+    return depthTarget("hapticShadowAtlas", edge, page, scene);
+  }
+  unpark(engine);
+  const target = new RenderTargetTexture("hapticShadowAtlas", { width: page, height: page, layers: (edge / page) ** 2 }, scene,
+    { generateMipMaps: false, doNotChangeAspectRatio: true, noColorAttachment: true, generateDepthBuffer: false, delayAllocation: true });
+  const internals = target as unknown as TargetInternals;
+  internals._renderTarget = kept.wrapper;
+  internals._texture = kept.wrapper.texture;
+  return target;
+}
+
+/**
+ * The Scene's atlas at `edge` texels, made with its first tile (or taken over from the Engine's parked atlas,
+ * `takeAtlasTarget`) and parked or disposed with the Scene (`parkSceneAtlas`), or replaced once no tile is left in it (a
+ * quality level of another edge rebuilds every atlas map, whose allocation keys carry the edge; the shadow controller
+ * releases the old atlas, its own or a parked one, an Engine frame before it builds into the new one, so this replaces
+ * only an atlas it did not). A shadow allocation that fails disposes the textures it made, the atlas among them when
+ * that tile was its first: the next tile makes it again.
  */
 function sceneAtlas(scene: Scene, edge: number, sizes: readonly number[]): Atlas {
   const page = shadowAtlasPageEdge(edge, sizes);
@@ -152,11 +262,15 @@ function sceneAtlas(scene: Scene, edge: number, sizes: readonly number[]): Atlas
     atlas = undefined;
   }
   if (!atlas) {
-    const target = depthTarget("hapticShadowAtlas", edge, page, scene);
-    atlas = { target, tiles: new ShadowAtlasAllocator(edge, page) };
+    const target = takeAtlasTarget(scene, edge, page);
+    const made: Atlas = atlas = { target, tiles: new ShadowAtlasAllocator(edge, page) };
     atlases.set(scene, atlas);
     generations.set(scene, shadowAtlasGeneration(scene) + 1);
-    disposeWithScene(scene, target, () => atlases.delete(scene));
+    const sceneDisposed = scene.onDisposeObservable.addOnce(() => parkSceneAtlas(scene, made));
+    target.onDisposeObservable.addOnce(() => {
+      scene.onDisposeObservable.remove(sceneDisposed);
+      atlases.delete(scene);
+    });
   }
   return atlas;
 }
