@@ -164,8 +164,8 @@ const BLOCK = NODE_W + FORMAT_GAP_X;
 // The lane after a node that branches to a lower row past parameter blocks: a knot and a gap.
 const KNOT_LANE = REROUTE_KNOT_SIZE.width + FORMAT_GAP_X;
 // A block's top below a consumer whose first data input is on the second pin row (after the
-// exec row): that row's estimated bottom (50 + 2 × 44) plus the 64 gap.
-const LANE = 202;
+// exec row): that row's estimated bottom (47 + 2 × 44) plus the 64 gap.
+const LANE = 199;
 // Branch rows sit one and a half gaps apart, a little further than nodes within a block.
 const ROW_GAP = 96;
 
@@ -310,8 +310,8 @@ describe("formatGraphNodes", () => {
   });
 
   it("counts an unmeasured node's Add Pin control as one more pin row when stacking below it", () => {
-    // `upper` is unmeasured with one pin row per side: 120 tall (the fallback minimum), 138 with
-    // the Add Pin row (50 + 2 × 44). `lower` feeds the next input and clears it by the gap.
+    // `upper` is unmeasured with one pin row per side: 47 + 44 + 5 = 96 tall, 140 with
+    // the Add Pin row (47 + 2 × 44 + 5). `lower` feeds the next input and clears it by the gap.
     const stacked = (addPin: FormatNode["addPin"]) => {
       const nodes: FormatNode[] = [
         node("a", 0, 0),
@@ -327,8 +327,8 @@ describe("formatGraphNodes", () => {
       const next = layout(nodes, edges, ["a"]);
       return pos(next, "lower").y - pos(next, "upper").y;
     };
-    expect(stacked(undefined)).toBe(120 + FORMAT_GAP_Y);
-    expect(stacked({ side: "in", label: "Add Pin" })).toBe(138 + FORMAT_GAP_Y);
+    expect(stacked(undefined)).toBe(96 + FORMAT_GAP_Y);
+    expect(stacked({ side: "in", label: "Add Pin" })).toBe(140 + FORMAT_GAP_Y);
   });
 
   it("places a nested data input further left on its consumer's row, its wire level", () => {
@@ -904,8 +904,8 @@ describe("formatGraphNodes with Reroute knots", () => {
     ];
     const next = layout(nodes, edges, ["a"], { displayType: bound("exec") });
     expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
-    // In the gap after a, centred on b's exec pin (estimated 50 + 22 below b's top).
-    expect(pos(next, "knot")).toEqual({ x: 10 + NODE_W, y: 20 + 72 - REROUTE_KNOT_SIZE.height / 2 });
+    // In the gap after a, centred on b's exec pin (estimated 47 + 22 below b's top).
+    expect(pos(next, "knot")).toEqual({ x: 10 + NODE_W, y: 20 + 69 - REROUTE_KNOT_SIZE.height / 2 });
   });
 
   const knotNode = (id: string, x: number, y: number): FormatNode => ({
@@ -941,10 +941,10 @@ describe("formatGraphNodes with Reroute knots", () => {
     }
     expect(pos(result.nodes, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 });
     expect(pos(result.nodes, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
-    // In the gap after get, centred on b's Value pin (estimated at 50 + 44 + 22 below b's top).
+    // In the gap after get, centred on b's Value pin (estimated at 47 + 44 + 22 below b's top).
     expect(pos(result.nodes, "knot")).toEqual({
       x: 10 + EXEC_STEP + NODE_W,
-      y: 20 + 116 - REROUTE_KNOT_SIZE.height / 2,
+      y: 20 + 113 - REROUTE_KNOT_SIZE.height / 2,
     });
     expect(result.knots).toEqual([]);
   });
@@ -996,8 +996,8 @@ describe("formatGraphNodes with Reroute knots", () => {
     });
     const knotStep = REROUTE_KNOT_SIZE.width + FORMAT_GAP_X;
     expect(pos(result.nodes, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK + knotStep, y: 20 });
-    // Level with b.Value (50 + 44 + 22 below b's top): a knot's pins sit at half its height.
-    expect(pos(result.nodes, "knot")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 + 116 - REROUTE_KNOT_SIZE.height / 2 });
+    // Level with b.Value (47 + 44 + 22 below b's top): a knot's pins sit at half its height.
+    expect(pos(result.nodes, "knot")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 + 113 - REROUTE_KNOT_SIZE.height / 2 });
     expect(pos(result.nodes, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
     expect(result.knots).toEqual([]);
   });

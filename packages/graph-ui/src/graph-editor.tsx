@@ -144,12 +144,11 @@ import { freeNodePosition } from "./graph-placement";
 import { placeConversion } from "./graph-conversion-placement";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
-  GRAPH_NODE_CHROME_HEIGHT,
-  GRAPH_PIN_ROW_HEIGHT,
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
   estimateGraphNodeSize,
   graphNodeSize,
   graphNodesBounds,
+  graphPinRowCenterY,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
 import {
@@ -748,7 +747,7 @@ function estimatedOutPinCenterY(paletteNode: PaletteNode, outPinId: string): num
     declaredOrder: paletteNode.defaultData?.__declaredPinOrder === true,
   });
   const row = Math.max(0, rows.findIndex((entry) => entry.out?.id === outPinId));
-  return GRAPH_NODE_CHROME_HEIGHT + row * GRAPH_PIN_ROW_HEIGHT + GRAPH_PIN_ROW_HEIGHT / 2;
+  return graphPinRowCenterY(row);
 }
 
 function pinOnNode(

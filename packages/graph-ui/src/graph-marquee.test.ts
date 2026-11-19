@@ -112,7 +112,7 @@ describe("nodesIntersectingMarquee", () => {
     const nodes: MarqueeNode[] = [
       { ...node("tall", 0, 0), data: { __pins: pins } },
     ];
-    // Six 44px rows under the title reach 314px; the lower pins are hit.
+    // Six 44px rows under the title reach 316px (47 above, 5 below); the lower pins are hit.
     expect(
       nodesIntersectingMarquee(nodes, { x: 250, y: 250, width: 40, height: 40 }),
     ).toEqual(["tall"]);
@@ -120,7 +120,7 @@ describe("nodesIntersectingMarquee", () => {
       nodesIntersectingMarquee(nodes, { x: 321, y: 0, width: 20, height: 20 }),
     ).toEqual([]);
     expect(
-      nodesIntersectingMarquee(nodes, { x: 0, y: 315, width: 20, height: 20 }),
+      nodesIntersectingMarquee(nodes, { x: 0, y: 317, width: 20, height: 20 }),
     ).toEqual([]);
   });
 });

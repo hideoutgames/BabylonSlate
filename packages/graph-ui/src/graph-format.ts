@@ -2,9 +2,10 @@ import type { GraphAddPin, SerializedPin } from "./graph-types";
 import { pinWithDisplayType } from "./graph-connect";
 import {
   estimateGraphNodeSize,
-  GRAPH_NODE_CHROME_HEIGHT,
   GRAPH_NODE_FALLBACK_WIDTH,
+  GRAPH_NODE_TITLE_HEIGHT,
   GRAPH_PIN_ROW_HEIGHT,
+  graphPinRowCenterY,
   REROUTE_KNOT_SIZE,
 } from "./graph-virtualize";
 
@@ -143,7 +144,7 @@ function pinY(node: FormatNode, direction: "in" | "out", pinId: string | undefin
   if (node.reroute) return nodeSize(node).height / 2;
   const pins = node.pins ?? [];
   const pin = pins.find((entry) => entry.id === pinId && entry.direction === direction);
-  if (pin?.placement === "header") return GRAPH_NODE_CHROME_HEIGHT / 2;
+  if (pin?.placement === "header") return GRAPH_NODE_TITLE_HEIGHT / 2;
   let row = 0;
   if (pin) {
     const side = pins.filter((entry) => entry.direction === direction && entry.placement !== "header");
@@ -152,7 +153,7 @@ function pinY(node: FormatNode, direction: "in" | "out", pinId: string | undefin
       ? exec.indexOf(pin)
       : exec.length + side.filter((entry) => entry.kind !== "exec").indexOf(pin);
   }
-  return GRAPH_NODE_CHROME_HEIGHT + row * GRAPH_PIN_ROW_HEIGHT + GRAPH_PIN_ROW_HEIGHT / 2;
+  return graphPinRowCenterY(row);
 }
 
 /**

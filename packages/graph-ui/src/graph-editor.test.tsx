@@ -4589,8 +4589,8 @@ describe("GraphEditor", () => {
     const step = estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X;
     expect(lastGraph.nodes.find((node) => node.id === "get")?.position).toEqual({
       x: step,
-      // Under Message, Log B's second pin row: its bottom at 50 + 2 × 44, then the gap.
-      y: 40 + 138 + FORMAT_GAP_Y,
+      // Under Message, Log B's second pin row: its bottom at 47 + 2 × 44, then the gap.
+      y: 40 + 135 + FORMAT_GAP_Y,
     });
     expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
       x: step * 2,
@@ -6714,9 +6714,9 @@ describe("pin conversion", () => {
     expect(pinConversion).not.toHaveBeenCalled();
   });
 
-  // Unmeasured nodes: 320 x 120 estimates, pins at the middle of each side (y 60). The 280 gap between Actor's right
-  // edge (320) and Mover (600) is 280 short of 320 + 2 x 120, so Actor moves 280 left and the converter goes one gap
-  // left of Mover, at 600 - 120 - 320 = 160, its output (72 below its top) level with Location: y 60 - 72 = -12.
+  // Unmeasured one-row nodes: 320 x 96 estimates (47 to the first row, 44 per row, 5 below), pins at the middle of
+  // each side (y 48). The 280 gap between Actor's right edge (320) and Mover (600) is 280 short of 320 + 2 x 120, so Actor
+  // moves 280 left and the converter goes at 600 - 120 - 320 = 160, its Out (69 below its top) level with Location: 48 - 69.
   const position = (graph: GraphDocument, id: string) => graph.nodes.find((node) => node.id === id)?.position;
   const converterOf = (graph: GraphDocument) => graph.nodes.find((node) => !["actor", "vector", "mover"].includes(node.id))!;
 
@@ -6732,7 +6732,7 @@ describe("pin conversion", () => {
     expect(position(graph, "actor")).toEqual({ x: -280, y: 0 });
     expect(position(graph, "vector")).toEqual({ x: 0, y: 200 });
     expect(position(graph, "mover")).toEqual({ x: 600, y: 0 });
-    expect(converterOf(graph).position).toEqual({ x: 160, y: -12 });
+    expect(converterOf(graph).position).toEqual({ x: 160, y: -21 });
     expect(container.querySelectorAll(".react-flow__node.selected")).toHaveLength(0);
   });
 
@@ -6754,8 +6754,8 @@ describe("pin conversion", () => {
       />,
     );
     tapBetween(container, actorEnd, moverEnd);
-    // Out is on the second row: 50 of chrome, one 44 row and half a row below the top, so the top is 60 - 116.
-    expect(converterOf(onChange.mock.calls[0]![0] as GraphDocument).position).toEqual({ x: 160, y: -56 });
+    // Out is on the second row, 47 + 44 + 22 = 113 below the top, so the top is 48 - 113.
+    expect(converterOf(onChange.mock.calls[0]![0] as GraphDocument).position).toEqual({ x: 160, y: -65 });
   });
 
   it("puts the moved source back when the host undoes the conversion", async () => {
