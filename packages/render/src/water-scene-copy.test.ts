@@ -33,7 +33,6 @@ import { builtInWaterMaterial } from "./water-template";
 
 const DEFAULT_TASKS = [
   "Forward admitted shadows",
-  "Forward clear",
   "Forward cull",
   "Forward objects",
 ];
@@ -168,7 +167,7 @@ function frames(graph: ForwardSceneFrameGraph, run: () => void) {
   };
 }
 
-it("keeps the default five-task graph when no built-in water could sample a copy", async () => {
+it("keeps the default graph when no built-in water could sample a copy", async () => {
   const { scene, camera } = host();
   box(scene, "opaque");
   // A custom-material water surface without water nodes cannot sample the copy.
@@ -215,13 +214,24 @@ it("copies a multisampled world view's resolved scene, depth included, and draws
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   // No own pair: the copy samples the view's own multisampled scene targets once the objects resolve them.
   expect(graph.taskNames()).toEqual([
-    "Forward admitted shadows", "Forward clear", "Forward cull", "Water split", "Forward objects", "Water scene copy",
+    "Forward admitted shadows", "Forward cull", "Water split", "Forward objects", "Water scene copy",
     "Forward transparent", "Multisample output",
   ]);
   expect(Object.fromEntries(renderers)).toEqual({
     "Forward objects": { resolveDepth: true, samples: 2 },
     "Forward transparent": { resolveDepth: false, samples: 2 },
   });
+  await settle(graph, camera);
+  // The objects pass clears the scene targets as it starts; the transparent pass draws over what it left.
+  const clears: (string | undefined)[] = [];
+  vi.spyOn(FrameGraphRenderContext.prototype, "clearAttachments").mockImplementation(function (this: FrameGraphRenderContext) {
+    clears.push((this as unknown as { _currentRenderTarget?: { name: string } })._currentRenderTarget?.name);
+  });
+  const work = frames(graph, () => {
+    for (let frame = 0; frame < 2; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  });
+  expect(work).toEqual({ frames: 2, visibleFrames: 2, copies: 2 });
+  expect(clears).toEqual(["Forward objects", "Forward objects"]);
   graph.dispose();
 });
 

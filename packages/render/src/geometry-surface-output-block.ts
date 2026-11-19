@@ -105,6 +105,13 @@ const GEOMETRY_DATA_OUTPUTS = ["PREPASS_DEPTH", "PREPASS_REFLECTIVITY", "PREPASS
 export const GEOMETRY_PASS_WITHOUT_COLOR =
   `defined(PREPASS) && !defined(PREPASS_COLOR) && (${GEOMETRY_DATA_OUTPUTS.map((define) => `(defined(${define}) && ${define}_INDEX == 0)`).join(" || ")})`;
 
+/** Whether a program compiled with `defines` (an Effect's) meets `GEOMETRY_PASS_WITHOUT_COLOR`, as its preprocessor reads it. */
+export function isGeometryPassWithoutColor(defines: string): boolean {
+  const defined = (name: string) => new RegExp(`^#define ${name}(?: |$)`, "m").test(defines);
+  return defined("PREPASS") && !defined("PREPASS_COLOR") &&
+    GEOMETRY_DATA_OUTPUTS.some((define) => defined(define) && new RegExp(`^#define ${define}_INDEX 0$`, "m").test(defines));
+}
+
 /** Writes `value` to the geometry output `define` names (`PREPASS_WORLD_NORMAL` and so on), where the pass has one. */
 export function geometryOutputWrite(define: string, value: string): string {
   let code = "";

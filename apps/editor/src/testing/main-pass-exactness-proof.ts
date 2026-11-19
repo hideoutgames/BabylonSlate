@@ -1,12 +1,16 @@
 /**
  * Test-build-only proof that the main colour pass's and the captures' GPU savings change no pixel: one fixed scene,
  * drawn through the production scene view with a Fast and a High Quality Render Target Capture and a Mirror, under a
- * shadowed sun, shadowed spot and point lights, two rect lights (one facing away from most of the view) and
- * Screen-Space Shadows. `reference` draws it as before the savings: the light block's rect loop visits every rect light
- * and fetches the LTC tables per light, a spot light's shadow is looked up outside its cone, and a capture's own sun
- * maps redraw every time, and the view's object and geometry passes take Babylon's preparation instead of the lean one
- * (`leanPreparation`). The spec compares the two runs' frames and
- * capture images byte for byte, after a still stretch and after a caster moves.
+ * shadowed sun, shadowed spot and point lights, two rect lights (one facing away from most of the view), ambient
+ * occlusion, Real-Time Reflections and Screen-Space Shadows. `reference` draws it as before the savings: the light
+ * block's rect loop visits every rect light and fetches the LTC tables per light, a spot light's shadow is looked up
+ * outside its cone, and a capture's own sun maps redraw every time, and the view's object and geometry passes take
+ * Babylon's preparation instead of the lean one (`leanPreparation`); each view's clear is a render pass of its own
+ * before its objects pass (`ManagedShadowObjectRendererTask.startClear`), the spatial geometry pass prepares through
+ * Babylon's clears and then its own, binding its target three times, and keeps its depth, and the light block binds its
+ * inputs for geometry pass programs that compile no lighting (`HapticLightingBlock.readsBindings`). The spec compares
+ * the two runs' frames and capture images byte for byte, after a still stretch and after a caster moves, and each run's
+ * GL calls and pass structure in one still frame (`GlSignatureRecorder`).
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
@@ -33,8 +37,17 @@ import {
 import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, RenderTargetCaptures, largeWorldEngineOptions } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
+import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
+import type { FrameGraphRenderTarget } from "@babylonjs/core/FrameGraph/frameGraphRenderTarget";
+import { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
+import type { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { retainAreaLightLookup } from "../../../../packages/render/src/area-light-resources";
 import { OwnedRectAreaLight } from "../../../../packages/render/src/area-rect-light";
+import { LogicalGeometryTask } from "../../../../packages/render/src/framegraph-logical-buffers";
+import { ManagedShadowObjectRendererTask } from "../../../../packages/render/src/framegraph-managed-shadows";
+import { drawGeometryDepthSeed } from "../../../../packages/render/src/geometry-depth-seed";
+import { GlSignatureRecorder, installGlSignature } from "../../../../packages/render/src/gpu-frame-probe";
 import { HapticLightingBlock } from "../../../../packages/render/src/haptic-lighting-block";
 import { createMirrorSurfaceMesh, mirrorDiagnostics } from "../../../../packages/render/src/mirrors";
 import { allowSceneScreenShadows } from "../../../../packages/render/src/render-settings";
@@ -121,6 +134,101 @@ async function readCapture(texture: BaseTexture): Promise<number[]> {
 
 export type MainPassExactnessImages = { view: number[]; captures: Record<Shown, number[]> };
 
+/** One frame's GL calls by function, and its passes as the GL signature lists them. */
+export type MainPassExactnessFrame = { calls: Record<string, number>; passes: string[]; passCount: number; invalidates: number };
+
+type ObjectsTaskInternals = { record(...args: unknown[]): unknown; startClear: FrameGraphClearTextureTask | undefined };
+type GeometryTaskInternals = Pick<FrameGraphGeometryRendererTask, "textureDescriptions" | "camera" | "targetTexture" | "depthTest" | "depthWrite"> &
+  Pick<LogicalGeometryTask, "seed" | "clearsDepth"> & {
+    _prepareRendering(context: FrameGraphRenderContext, depthEnabled: boolean): number[];
+    discardDepth(): void;
+    pass: { frameGraphRenderTarget: FrameGraphRenderTarget } | undefined;
+    _frameGraph: { engine: AbstractEngine };
+  };
+
+/**
+ * The view's clear, geometry pass and light block bindings as before the savings; returns the restore. Each view's clear
+ * task records its render pass ahead of the objects pass's, in that task; the geometry pass prepares through Babylon's
+ * clears (the view depth to zero), binds its target again for the far plane and the depth, and keeps its depth.
+ */
+function referenceClears(): () => void {
+  const objects = ManagedShadowObjectRendererTask.prototype as unknown as ObjectsTaskInternals;
+  const record = objects.record;
+  objects.record = function (this: ObjectsTaskInternals, ...args: unknown[]) {
+    const clear = this.startClear;
+    if (!clear) return record.apply(this, args);
+    this.startClear = undefined;
+    try {
+      clear.record();
+      return record.apply(this, args);
+    } finally { this.startClear = clear; }
+  };
+  const geometry = LogicalGeometryTask.prototype as unknown as GeometryTaskInternals;
+  const prepare = geometry._prepareRendering;
+  const discardDepth = geometry.discardDepth;
+  const babylonPrepare = (FrameGraphGeometryRendererTask.prototype as unknown as GeometryTaskInternals)._prepareRendering;
+  geometry._prepareRendering = function (this: GeometryTaskInternals, context, depthEnabled) {
+    const layout = babylonPrepare.call(this, context, depthEnabled);
+    if (this.pass && this.textureDescriptions.some((texture) => texture.type === Constants.PREPASS_DEPTH_TEXTURE_TYPE)) {
+      const far = Math.min(65000, this.camera?.maxZ || 65000);
+      const targets = this.targetTexture === undefined ? 0 : Array.isArray(this.targetTexture) ? this.targetTexture.length : 1;
+      const depth = new Array<boolean>(targets).fill(false)
+        .concat(this.textureDescriptions.map((texture) => texture.type === Constants.PREPASS_DEPTH_TEXTURE_TYPE));
+      context.bindRenderTarget(this.pass.frameGraphRenderTarget);
+      context.clearColorAttachments(new Color4(far, 0, 0, 1), this._frameGraph.engine.buildTextureLayout(depth));
+      if (this.seed) {
+        drawGeometryDepthSeed(context, this._frameGraph.engine, this.seed, this.camera, far);
+        context.setDepthStates(this.depthTest && depthEnabled, this.depthWrite && depthEnabled);
+      } else if (this.clearsDepth) {
+        this._frameGraph.engine.setDepthWrite(true);
+        context.clear(null, false, true, false);
+        context.setDepthStates(this.depthTest && depthEnabled, this.depthWrite && depthEnabled);
+      }
+      context.restoreDefaultFramebuffer();
+    }
+    return layout;
+  };
+  geometry.discardDepth = () => {};
+  const lighting = HapticLightingBlock.prototype;
+  const readsBindings = lighting.readsBindings;
+  lighting.readsBindings = () => true;
+  return () => {
+    objects.record = record;
+    geometry._prepareRendering = prepare;
+    geometry.discardDepth = discardDepth;
+    lighting.readsBindings = readsBindings;
+  };
+}
+
+/** Draws one frame (`frame`) and returns its GL calls by function and its pass structure. */
+function measureFrame(engine: AbstractEngine, frame: () => unknown): MainPassExactnessFrame {
+  const gl = (engine as unknown as { _gl: WebGL2RenderingContext })._gl;
+  const recorder = new GlSignatureRecorder();
+  const uninstall = installGlSignature(gl, recorder);
+  const calls: Record<string, number> = {};
+  const own = gl as unknown as Record<string, unknown>;
+  const restores: (() => void)[] = [];
+  for (const name of Object.getOwnPropertyNames(WebGL2RenderingContext.prototype)) {
+    if (name === "constructor" || typeof Object.getOwnPropertyDescriptor(WebGL2RenderingContext.prototype, name)?.value !== "function") continue;
+    const call = own[name] as (...args: unknown[]) => unknown;
+    const previous = Object.getOwnPropertyDescriptor(gl, name);
+    own[name] = (...args: unknown[]) => {
+      calls[name] = (calls[name] ?? 0) + 1;
+      return call.apply(gl, args);
+    };
+    restores.push(() => { if (previous) Object.defineProperty(gl, name, previous); else delete own[name]; });
+  }
+  recorder.start();
+  recorder.beginFrame();
+  try { frame(); } finally {
+    recorder.endFrame();
+    for (const restore of restores.reverse()) restore();
+    uninstall();
+  }
+  const stats = recorder.stats();
+  return { calls, passes: stats?.structures[0]?.passes ?? [], passCount: stats?.passes ?? 0, invalidates: stats?.invalidates ?? 0 };
+}
+
 export async function runMainPassExactnessProof(options: { reference: boolean; largeWorld?: boolean }) {
   const block = HapticLightingBlock.prototype as unknown as { _buildBlock(state: NodeMaterialBuildState): unknown };
   const build = block._buildBlock;
@@ -142,6 +250,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     // A capture's own sun maps keep the refresh rate they were made with: every frame.
     controller.applyViewRefresh = () => {};
   }
+  const restoreClears = options.reference ? referenceClears() : () => {};
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
   document.getElementById("root")!.append(canvas);
@@ -154,7 +263,8 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     allowSceneScreenShadows(scene, () => true);
     setSceneRenderSettings(scene, {
       mode: "pbr",
-      effects: normalizeRenderEffectsSettings({}),
+      // Ambient occlusion and reflections: the geometry pass writes normals and reflectivity beside the view depth.
+      effects: normalizeRenderEffectsSettings({ ambientOcclusion: { enabled: true }, reflections: { enabled: true } }),
       cel: normalizeCelShadingSettings({ outlinesEnabled: false }),
       quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }),
       shadows: normalizeShadowSettings({ cascades: 2, mapSize: 512, distance: 30, screenShadows: "high" }),
@@ -264,6 +374,8 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
         Record<Shown, number[]>,
     });
     const still = await read();
+    // A still frame's GL calls and passes.
+    const glFrame = measureFrame(engine, frame);
     // A caster moves: every map that reaches it draws again, and the images follow.
     box.position.x += 0.4;
     box.rotation.y += 0.3;
@@ -279,10 +391,11 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     await released;
-    return { still, moved, stillTexelsPerFrame, renderer: engine.getGlInfo().renderer };
+    return { still, moved, stillTexelsPerFrame, glFrame, renderer: engine.getGlInfo().renderer };
   } finally {
     block._buildBlock = build;
     controller.applyViewRefresh = applyViewRefresh;
+    restoreClears();
     scene.dispose();
     engine.dispose();
     canvas.remove();

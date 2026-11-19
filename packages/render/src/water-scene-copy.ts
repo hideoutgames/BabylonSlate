@@ -371,7 +371,10 @@ export interface WaterSceneCopyGraphOptions {
   /** Full output size. */
   width: number;
   height: number;
-  /** The view's "Forward clear", "Forward cull" and main "Forward objects" tasks. */
+  /**
+   * The view's "Forward clear", "Forward cull" and main "Forward objects" tasks. The clear is a task of the graph only in
+   * the own-pair form (`splitsClear`); otherwise the objects pass clears with its settings as it starts.
+   */
   clear: FrameGraphClearTextureTask;
   cull: FrameGraphCullObjectsTask;
   objects: ManagedShadowObjectRendererTask;
@@ -390,8 +393,8 @@ export interface WaterSceneCopyGraphOptions {
  * Opaque/transparent split with one packed scene copy between, owned by the
  * enclosing view graph:
  *
- *   Forward clear → Forward cull → Water split → Forward objects (opaque only
- *   while copy-sampling water is visible) → Water scene copy → Forward
+ *   Forward cull → Water split → Forward objects (clearing as it starts; opaque
+ *   only while copy-sampling water is visible) → Water scene copy → Forward
  *   transparent
  *
  * With no sampleable output the own-pair form keeps the direct path for
@@ -403,7 +406,7 @@ export interface WaterSceneCopyGraphOptions {
  * visible copy-sampling water runs only empty disabled passes.
  */
 export class WaterSceneCopyGraph {
-  /** Runs after "Forward cull": before "Forward clear" when `splitsClear`, else just before the object pass. */
+  /** Runs after "Forward cull": before the "Forward clear" task when `splitsClear`, else just before the object pass. */
   readonly split: FrameGraphTask;
   /** The split also switches "Forward clear", so it must run before it (the own-pair form). */
   readonly splitsClear: boolean;

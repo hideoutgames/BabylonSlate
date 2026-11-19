@@ -39,7 +39,7 @@ import { spatialEffectsUnsupported } from "./spatial-effects";
 import { isWaterSurfaceMesh } from "./water-surface-block";
 import { waterDebugOff } from "./water-debug";
 import { shadowAtlasTexture } from "./shadow-atlas";
-import { GEOMETRY_PASS_WITHOUT_COLOR } from "./geometry-surface-output-block";
+import { GEOMETRY_PASS_WITHOUT_COLOR, isGeometryPassWithoutColor } from "./geometry-surface-output-block";
 
 const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentForm", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
 
@@ -115,6 +115,21 @@ function screenShadowEffect(effect: Effect): boolean {
     screenShadowEffects.set(effect, reads);
   }
   return reads;
+}
+
+const unlitGeometryEffects = new WeakMap<Effect, boolean>();
+
+/**
+ * Whether `effect` is a geometry pass program without a colour output (`GEOMETRY_PASS_WITHOUT_COLOR`): it compiles no
+ * lighting, so it reads nothing the block binds. Decided once per Effect.
+ */
+function unlitGeometryEffect(effect: Effect): boolean {
+  let unlit = unlitGeometryEffects.get(effect);
+  if (unlit === undefined) {
+    unlit = isGeometryPassWithoutColor(effect.defines);
+    unlitGeometryEffects.set(effect, unlit);
+  }
+  return unlit;
 }
 
 const celEffects = new WeakMap<Effect, boolean>();
@@ -290,6 +305,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
    * - The Scene's light and cluster blocks, whose binding points other programs reuse.
    */
   bindReceiver(effect: Effect, mesh: AbstractMesh): void {
+    if (!this.readsBindings(effect)) return;
     const scene = mesh.getScene();
     bindHapticLights(scene, effect);
     bindHapticClusters(scene, effect);
@@ -304,8 +320,17 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     }
   }
 
+  /**
+   * Whether `effect` reads any of the block's bindings. A geometry pass program without a colour output compiles no
+   * lighting (`unlitGeometryEffect`): its draws bind none of them, neither textures nor uniforms, light and cluster
+   * blocks or receiver terms.
+   */
+  readsBindings(effect: Effect): boolean {
+    return !unlitGeometryEffect(effect);
+  }
+
   override bind(effect: Effect, _nodeMaterial: NodeMaterial, mesh?: Mesh): void {
-    if (!mesh) return;
+    if (!mesh || !this.readsBindings(effect)) return;
     const scene = mesh.getScene();
     // A CEL program declares neither the split-sum table nor the atlas's plain read (Contact Hardening's).
     const cel = celEffect(effect);

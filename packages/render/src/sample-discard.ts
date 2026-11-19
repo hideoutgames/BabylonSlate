@@ -8,7 +8,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
  * switch until it is decided as behaviour.
  *
  * Every frame graph render pass resolves its multisampled targets as it unbinds them, so a target is resolved after
- * "Forward clear", again after "Forward objects" and after any later pass that draws into it again (water's "Forward
+ * "Forward objects" (which clears it as it starts) and after any later pass that draws into it again (water's "Forward
  * transparent" reloads the samples). Only the render pass that writes a multisampled texture last in the graph's order
  * (`lastSampleWriters`, enabled and disabled passes both counted as writers) discards it, after its own resolve; and a
  * colour it does not resolve (`resolveMSAAColors` off: `MultisamplePresentTask` reads the samples) only after that

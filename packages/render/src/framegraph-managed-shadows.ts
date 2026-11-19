@@ -7,8 +7,13 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
-import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import { backbufferColorTextureHandle, type FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
+import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
+import type { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
+import type { Nullable } from "@babylonjs/core/types";
 import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/shadowGeneratorTask";
 import { findSceneShadowController } from "./shadow-controller";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
@@ -36,6 +41,10 @@ const SHADOW_DRAW: BorrowedDrawPolicy = {
   wrapDrawFailure: false,
   message: "Managed shadow draw state restoration failed.",
 };
+
+/** What a pass clears as it starts (`ManagedShadowObjectRendererTask.startClear`): a clear task's settings. */
+export type PassStartClear = Pick<FrameGraphClearTextureTask,
+  "color" | "clearColor" | "convertColorToLinearSpace" | "clearDepth" | "clearStencil" | "stencilValue">;
 
 /** Official object renderer with the pinned, protected shadow-binding hook exposed. */
 export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTask {
@@ -75,6 +84,16 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   }
 
   private releaseWarmPasses: (() => void) | undefined;
+
+  /**
+   * Set before the task records, on a view's main object pass only: the pass clears its target and depth as it starts,
+   * with these settings (the view's clear task's, read each frame, as that task would clear), instead of a clear task
+   * before it, a render pass of its own that stores the cleared target for this one to load.
+   */
+  startClear: PassStartClear | undefined;
+  /** The attachments the start clear clears, built as the pass records (as `FrameGraphClearTextureTask` builds them). */
+  private startClearLayout: number[] | undefined;
+  private readonly startClearColor = new Color4();
 
   constructor(...args: ConstructorParameters<typeof FrameGraphObjectRendererTask>) {
     super(...args);
@@ -127,6 +146,26 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   /** Forget the meshes probed ahead, so the next scan probes them ahead again: after a readiness invalidation. */
   forgetCompilesAhead(): void {
     this.requestedAhead.clear();
+  }
+
+  override record(...args: Parameters<FrameGraphObjectRendererTask["record"]>): FrameGraphRenderPass {
+    const pass = super.record(...args);
+    const targets = this._getTargetHandles();
+    this.startClearLayout = this.startClear ? this._frameGraph.engine.buildTextureLayout(new Array<boolean>(targets.length).fill(true),
+      this.targetTexture === backbufferColorTextureHandle && !this._frameGraph.textureManager.backBufferTextureOverriden) : undefined;
+    return pass;
+  }
+
+  protected override _prepareRendering(context: FrameGraphRenderContext, depthEnabled: boolean): Nullable<number[]> {
+    const clear = this.startClear;
+    if (clear && this.startClearLayout && (clear.clearColor || clear.clearDepth || clear.clearStencil)) {
+      const color = this.startClearColor.copyFrom(clear.color);
+      if (clear.convertColorToLinearSpace) color.toLinearSpaceToRef(color);
+      // A clear honours the depth write mask, which the passes before this one may leave off.
+      if (clear.clearDepth) this._frameGraph.engine.setDepthWrite(true);
+      context.clearAttachments(color, this.startClearLayout, !!clear.clearColor, !!clear.clearDepth, !!clear.clearStencil, clear.stencilValue);
+    }
+    return super._prepareRendering(context, depthEnabled);
   }
 
   override isReady(): boolean {
