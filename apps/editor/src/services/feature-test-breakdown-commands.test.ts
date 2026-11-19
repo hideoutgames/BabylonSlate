@@ -54,7 +54,7 @@ describe("Feature Test measurement commands", () => {
     const registry = createCommandRegistry({ includeDebug: true });
     const commands = measuredCommands();
     expect(commands.some(({ line }) => line.startsWith("quality postprocessing antialiasing"))).toBe(true);
-    expect(commands.some(({ line }) => line === "scenelayers off")).toBe(true);
+    expect(commands.some(({ source, line }) => source === "profile heavy ambient occlusion off" && line === "quality postprocessing ambientOcclusion off")).toBe(true);
     expect(commands.some(({ line }) => line === "worlddebug world off")).toBe(true);
     expect(commands.some(({ line }) => line === "shadowdebug passes off")).toBe(true);
     expect(commands.filter(({ line }) => line.startsWith("worlddebug ")).length).toBeGreaterThan(4);
