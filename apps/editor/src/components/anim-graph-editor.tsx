@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   ANIM_STATE_LAYOUT_GAP_X,
-  facingTransitionSides,
   animGraphMembersFromVariables,
   animPaletteNodes,
   createDefaultAnimGraph,
@@ -64,6 +63,7 @@ import {
   animGraphEdgeTypes,
   animGraphNodeTypes,
   formatStateMachineLayout,
+  formatStateMachineSides,
   type GraphFormatLayout,
   type PaletteNode,
 } from "@haptic/graph-ui";
@@ -676,9 +676,9 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     [breakpointLabel, breakpointStore, editBreakpoint, graphGuid],
   );
   // Format lays the State Machine out in layers from its entry state; a State Alias sits one layer after the nearest
-  // state it stands for. The change it emits next (synchronously, if anything moved) also turns the laid-out states'
-  // transitions to the sides their states now face.
-  const formattedIdsRef = useRef<ReadonlySet<string> | null>(null);
+  // state it stands for. The change it emits next (synchronously, if anything moved) also gives each transition
+  // between laid-out states the sides the layout measured its wire on.
+  const formattedSidesRef = useRef<FormattedSides | null>(null);
   const formatLayout = useCallback<GraphFormatLayout>((input) => {
     const current = latestDocRef.current().stateMachine;
     const aliases = new Map((current.aliases ?? []).map((alias) => [alias.id, animAliasStates(current, alias)]));
@@ -686,9 +686,9 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
       entryId: current.entryStateId,
       aliasStates: (node) => aliases.get(node.id),
     });
-    formattedIdsRef.current = new Set(placed.map((row) => row.id));
+    formattedSidesRef.current = formattedTransitionSides(current, input.nodes, placed);
     queueMicrotask(() => {
-      formattedIdsRef.current = null;
+      formattedSidesRef.current = null;
     });
     return placed;
   }, []);
@@ -965,12 +965,12 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
           }}
           onChange={(next) => {
             const keepSelection = selectedIds;
-            const formattedIds = formattedIdsRef.current;
-            formattedIdsRef.current = null;
+            const formattedSides = formattedSidesRef.current;
+            formattedSidesRef.current = null;
             queueMicrotask(() => {
               const current = latestDoc();
               const canvas = serializedToStateMachine(next, current.stateMachine, dimension);
-              const updated = formattedIds ? faceFormattedTransitions(canvas, formattedIds) : canvas;
+              const updated = formattedSides ? withFormattedSides(canvas, formattedSides) : canvas;
               const kept = keepSelection.filter((id) =>
                 updated.states.some((row) => row.id === id),
               );
@@ -1115,19 +1115,41 @@ export function AnimStateGraphPanel(props: IDockviewPanelProps<Partial<AnimState
   );
 }
 
-/** After Format, each transition between laid-out states leaves and enters by the sides its states face. */
-function faceFormattedTransitions(machine: AnimStateMachine, ids: ReadonlySet<string>): AnimStateMachine {
-  const nodes = new Map<string, { position: { x: number; y: number } }>(
-    [...machine.states, ...(machine.aliases ?? [])].map((row) => [row.id, row]),
+/** Format's sides per transition, by `from\0to`. */
+type FormattedSides = ReadonlyMap<string, { sourceHandle: string; targetHandle: string }>;
+
+/** The sides Format gives every transition between two laid-out states, at their new positions. */
+function formattedTransitionSides(
+  machine: AnimStateMachine,
+  nodes: Parameters<GraphFormatLayout>[0]["nodes"],
+  placed: ReturnType<GraphFormatLayout>,
+): FormattedSides {
+  const sizes = new Map(nodes.map((node) => [node.id, node]));
+  const boxes = new Map(
+    placed.flatMap((row) => {
+      const node = sizes.get(row.id);
+      return node ? [[row.id, { ...row.position, width: node.width, height: node.height }] as const] : [];
+    }),
   );
+  const sides = new Map<string, { sourceHandle: string; targetHandle: string }>();
+  for (const transition of machine.transitions) {
+    const from = boxes.get(transition.fromStateId);
+    const to = boxes.get(transition.toStateId);
+    if (!from || !to) continue;
+    const { source, target } = formatStateMachineSides(from, to);
+    sides.set(`${transition.fromStateId}\0${transition.toStateId}`, { sourceHandle: `${source}-out`, targetHandle: `${target}-in` });
+  }
+  return sides;
+}
+
+function withFormattedSides(machine: AnimStateMachine, sides: FormattedSides): AnimStateMachine {
   return {
     ...machine,
     transitions: machine.transitions.map((transition) => {
-      if (!ids.has(transition.fromStateId) || !ids.has(transition.toStateId)) return transition;
-      const sides = facingTransitionSides(nodes.get(transition.fromStateId), nodes.get(transition.toStateId));
-      return sides.sourceHandle === transition.sourceHandle && sides.targetHandle === transition.targetHandle
+      const next = sides.get(`${transition.fromStateId}\0${transition.toStateId}`);
+      return !next || (next.sourceHandle === transition.sourceHandle && next.targetHandle === transition.targetHandle)
         ? transition
-        : { ...transition, ...sides };
+        : { ...transition, ...next };
     }),
   };
 }
