@@ -426,7 +426,7 @@ export class ForwardSceneFrameGraph {
       ...(shadowJournal ? { shadowJournal } : {}),
       ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...(mirrors ? { mirrorCrop: { checks: mirrors.cropChecks, misses: mirrors.cropMisses } } : {}),
-      ...(mirrors ? { mirrorCulls: { checks: mirrors.cullChecks, mismatches: mirrors.cullMismatches } } : {}),
+      ...(mirrors ? { mirrorCulls: { checks: mirrors.cullChecks, mismatches: mirrors.cullMismatches, culls: mirrors.culls, walks: mirrors.candidateWalks, draws: mirrors.draws } } : {}),
       ...(lightClusters ? { lightClusters } : {}),
       ...(this.outlineView ? { outlineCull: this.outlineView.cullDiagnostics() } : {}),
       ...(leanPreparation ? { leanPreparation } : {}),

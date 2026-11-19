@@ -82,6 +82,8 @@ export type LayerDrawListFallback =
 export interface LayerDrawListWork {
   retainedFrames: number;
   fallbackFrames: number;
+  /** Frames drawn on Babylon's full path because `drawLayersFullPath` asked for it (proofs and parity checks). */
+  fullPathFrames: number;
   fallbacks: Partial<Record<LayerDrawListFallback, number>>;
   checkedFrames: number;
   fullReads: number;
@@ -205,7 +207,7 @@ export class LayerDrawList {
   private readonly restoreCandidates: () => void;
   private readonly drawableCandidates: () => ISmartArrayLike<AbstractMesh>;
   private readonly work: LayerDrawListWork = {
-    retainedFrames: 0, fallbackFrames: 0, fallbacks: {}, checkedFrames: 0, fullReads: 0, rereads: 0, reposes: 0, fullReadReasons: {}, relists: 0, keptOrders: 0,
+    retainedFrames: 0, fallbackFrames: 0, fullPathFrames: 0, fallbacks: {}, checkedFrames: 0, fullReads: 0, rereads: 0, reposes: 0, fullReadReasons: {}, relists: 0, keptOrders: 0,
     heals: 0, mismatches: 0, mismatchDetails: [],
   };
   /** The objects pass it fills, its graph and camera, and whether the graph's cull feeds nothing else. */
@@ -314,6 +316,7 @@ export class LayerDrawList {
     const renderer = this.renderer;
     if (!renderer || !this.graph || this.scene.frameGraph !== this.graph) return this.drawableCandidates();
     if (fullPath) {
+      this.work.fullPathFrames += 1;
       this.valid = false;
       this.moved.length = 0;
       this.reader.drain(ignore);

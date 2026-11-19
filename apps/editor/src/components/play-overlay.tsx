@@ -16,7 +16,7 @@ import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
   verifyCaptureActorLists, verifyLayerDrawLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
   verifyLeanPreparation, drawLayersFullPath, forceClusterRebuilds, verifyLightClusterSlots, verifyMirrorSharedCulls, walkMirrorCullsUnshared,
-  verifyKeptOcclusionBuffers, forceOcclusionEveryFrame,
+  verifyKeptOcclusionBuffers, forceOcclusionEveryFrame, redrawMirrorReflections,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1293,6 +1293,8 @@ function PlayOverlayView({
         verifyMirrorSharedWork: (enabled: boolean) => void;
         /** Has Mirror culls walk the whole Scene each and light clusters build at every camera's turn, as before they were shared. */
         unshareMirrorWork: (enabled: boolean) => void;
+        /** Has every Mirror surface draw its reflection again on its next render (paused parity checks). */
+        redrawMirrorReflections: () => void;
         /** Has each lean object and geometry pass also run Babylon's preparation, whose queues it must match (`rendererWork.leanPreparation.mismatches`). */
         verifyLeanPreparation: (enabled: boolean) => void;
         /** Has each world view frame that keeps its occlusion buffer also draw the occluders again and filter once more, which must agree (`occlusion.keptMismatches`). */
@@ -1335,6 +1337,7 @@ function PlayOverlayView({
       verifySharedOutlineCulls,
       verifyMirrorSharedWork: (enabled: boolean) => { verifyMirrorSharedCulls(enabled); verifyLightClusterSlots(enabled); },
       unshareMirrorWork: (enabled: boolean) => { walkMirrorCullsUnshared(enabled); forceClusterRebuilds(enabled); },
+      redrawMirrorReflections,
       verifyLeanPreparation,
       verifyKeptOcclusionBuffers,
       forceOcclusionEveryFrame,

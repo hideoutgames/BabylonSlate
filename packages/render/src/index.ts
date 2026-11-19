@@ -18,7 +18,7 @@ export { sceneWaterQuality, sceneWaterQualityRevision, sceneWaterQualityDeviceCl
 export { clampWaterQualityToDevice, type WaterQualityDeviceClamp, type WaterDeviceCapabilities, type WaterDeviceView } from "./water-quality-device";
 export { waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera, type WaterPlanarReflection, type WaterPlanarReflectionDiagnostics } from "./water-planar-reflection";
 export {
-  mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyMirrorSharedCulls, walkMirrorCullsUnshared, type MirrorDiagnostics,
+  mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyMirrorSharedCulls, walkMirrorCullsUnshared, redrawMirrorReflections, type MirrorDiagnostics,
 } from "./mirrors";
 export { forceClusterRebuilds, verifyLightClusterSlots } from "./haptic-lights";
 export { verifyCaptureActorLists } from "./render-target-capture-state";

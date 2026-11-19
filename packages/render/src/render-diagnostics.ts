@@ -155,9 +155,11 @@ export type RenderDiagnostics = {
     mirrorCrop?: { checks: number; misses: number };
     /**
      * While `verifyMirrorSharedCulls` is on: Mirror culls made from the candidates their render shares that also walked
-     * the whole Scene (`checks`), and those whose lists differed (`mismatches`, which must stay 0). Absent without Mirrors.
+     * the whole Scene (`checks`), and those whose lists differed (`mismatches`, which must stay 0); the culls so far and
+     * the candidate walks of the Scene they made (`walks`: one per render and kind when shared, one per cull when
+     * `walkMirrorCullsUnshared`), and the reflections drawn so far (`draws`). Absent without Mirrors.
      */
-    mirrorCulls?: { checks: number; mismatches: number };
+    mirrorCulls?: { checks: number; mismatches: number; culls: number; walks: number; draws: number };
     /**
      * The Scene's light cluster blocks, one per drawing camera (`slots`), the builds so far (`builds`), and while
      * `verifyLightClusterSlots` is on, blocks kept across another camera's turn that were built afresh to compare
