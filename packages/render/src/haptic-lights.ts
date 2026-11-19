@@ -1,4 +1,5 @@
 import type { DataBuffer } from "@babylonjs/core/Buffers/dataBuffer";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
@@ -74,22 +75,35 @@ uvec4 hapticClusterMasks[${CLUSTER_COUNT / 2}];
 
 /** A shadowed local light's map this frame and its first shadow view. */
 type ShadowedLight = { shadow: AtlasShadowGenerator; first: number };
+/**
+ * One drawing camera's light clusters: the block as written (`HAPTIC_CLUSTERS_GLSL`), its GPU buffer, and what it was
+ * built from. Each camera keeps its own, so views that take turns in a frame (the scene view, its Mirrors' and
+ * captures' cameras) each build only when their own view or the local lights change.
+ */
+type ClusterSlot = {
+  words: Float32Array; masks: Uint32Array; header: Float32Array; buffer: DataBuffer | null;
+  /** The light revision (`SceneLights.clusterRevision`) the block was last built from. */
+  built: number;
+  /** The view the block was last built for (`recordClusterView`). */
+  view: Float64Array;
+  /** The render id the slot was last checked at: a pass's draws draw one view, so its later binds check nothing. */
+  frame: number;
+};
 type SceneLights = {
   buffer: UniformBuffer; rects: RectAreaLight[]; layers: number[]; limits: string[];
   /** The shadowed sun this frame and the map of it last written, the rendering camera's (`sunShadowMap`). */
   shadowed: ShadowedLight[]; sun: DirectionalLight | null; sunWritten: AtlasCascadedShadowGenerator | null;
   shadowViews: Float32Array; sunShadow: Float32Array;
-  /** The clusters' block as written (`HAPTIC_CLUSTERS_GLSL`), its GPU buffer and the local lights it was built from. */
-  clusterWords: Float32Array; clusterMasks: Uint32Array; clusterHeader: Float32Array; clusterBuffer: DataBuffer | null;
+  /** The local lights the clusters are built from. */
   clusterLights: ClusterLight[];
   /** Bumped when `clusterLights` change (`writeHapticLights`) or culling is switched (`setHapticLightCulling`). */
   clusterRevision: number;
-  /** The revision and camera the clusters were last built for. */
-  clusterBuilt: number; clusterCamera: Camera | null;
-  /** The view the clusters were last built for (`recordClusterView`). */
-  clusterView: Float64Array;
-  /** The render id the clusters were last checked at: a pass's draws draw one view, so its later binds check nothing. */
-  clusterFrame: number;
+  /** Each drawing camera's clusters (`null`: draws with no active camera), kept until the camera is disposed. */
+  clusterSlots: Map<Camera | null, ClusterSlot>;
+  /** The camera whose slot was built or checked last: what the one shared block of the old path held (`forceClusterRebuilds`). */
+  clusterLastCamera: Camera | null;
+  /** Builds, and while verifying (`verifyLightClusterSlots`) slots kept for another camera's turn that were checked and disagreed. */
+  clusterBuilds: number; clusterChecks: number; clusterMismatches: number;
 };
 const scenes = new WeakMap<Scene, SceneLights>();
 /** The view inputs a build reads: the view and projection matrices, the depth range, the floating origin and whether it culls. */
@@ -118,15 +132,11 @@ function sceneLights(scene: Scene): SceneLights {
     buffer.create();
     // Rect area lights read Babylon's LTC tables, always bound, so a rect light arriving compiles nothing.
     const releaseLookup = retainAreaLightLookup(scene);
-    // Uploaded as raw words through a Float32Array view, so no mask passes through a JavaScript number.
-    const clusterWords = new Float32Array(CLUSTER_BLOCK_WORDS);
     lights = {
       buffer, rects: [], layers: [], limits: [], shadowed: [], sun: null, sunWritten: null,
       shadowViews: new Float32Array(HAPTIC_SHADOW_VIEWS * HAPTIC_SHADOW_VIEW_VEC4S * 4), sunShadow: new Float32Array(16),
-      clusterWords, clusterMasks: new Uint32Array(clusterWords.buffer, CLUSTER_HEADER_FLOATS * 4),
-      clusterHeader: clusterWords.subarray(0, CLUSTER_HEADER_FLOATS),
-      clusterBuffer: scene.getEngine().createUniformBuffer(clusterWords, "HapticClusters"), clusterLights: [],
-      clusterRevision: 0, clusterBuilt: -1, clusterCamera: null, clusterView: new Float64Array(CLUSTER_VIEW_INPUTS), clusterFrame: -1,
+      clusterLights: [], clusterRevision: 0, clusterSlots: new Map(), clusterLastCamera: null,
+      clusterBuilds: 0, clusterChecks: 0, clusterMismatches: 0,
     };
     scenes.set(scene, lights);
     // A map draws after the block's write, with the views it is then sampled by.
@@ -144,14 +154,14 @@ function sceneLights(scene: Scene): SceneLights {
     });
     const engine = scene.getEngine();
     const restored = engine.onContextRestoredObservable.add(() => {
-      state.clusterBuffer = engine.createUniformBuffer(state.clusterWords, "HapticClusters");
+      for (const slot of state.clusterSlots.values()) slot.buffer = engine.createUniformBuffer(slot.words, "HapticClusters");
     });
     scene.onDisposeObservable.addOnce(() => {
       scene.onActiveCameraChanged.remove(cameraChanged);
       engine.onContextRestoredObservable.remove(restored);
       buffer.dispose();
-      if (state.clusterBuffer) engine._releaseBuffer(state.clusterBuffer);
-      state.clusterBuffer = null;
+      for (const slot of state.clusterSlots.values()) releaseClusterSlot(engine, slot);
+      state.clusterSlots.clear();
       releaseLookup();
     });
   }
@@ -198,37 +208,123 @@ function recordClusterView(scene: Scene, inputs: Float64Array): boolean {
   return changed;
 }
 
+/** A camera's cluster block, its buffer, and nothing built yet. */
+function createClusterSlot(scene: Scene): ClusterSlot {
+  // Uploaded as raw words through a Float32Array view, so no mask passes through a JavaScript number.
+  const words = new Float32Array(CLUSTER_BLOCK_WORDS);
+  return {
+    words, masks: new Uint32Array(words.buffer, CLUSTER_HEADER_FLOATS * 4), header: words.subarray(0, CLUSTER_HEADER_FLOATS),
+    buffer: scene.getEngine().createUniformBuffer(words, "HapticClusters"), built: -1, view: new Float64Array(CLUSTER_VIEW_INPUTS), frame: -1,
+  };
+}
+
+function releaseClusterSlot(engine: AbstractEngine, slot: ClusterSlot): void {
+  if (slot.buffer) engine._releaseBuffer(slot.buffer);
+  slot.buffer = null;
+}
+
+/** `camera`'s cluster slot, made at its first draw and released with the camera. */
+function clusterSlot(scene: Scene, state: SceneLights, camera: Camera | null): ClusterSlot {
+  let slot = state.clusterSlots.get(camera);
+  if (slot) return slot;
+  const made = createClusterSlot(scene);
+  state.clusterSlots.set(camera, made);
+  camera?.onDisposeObservable.addOnce(() => {
+    if (state.clusterSlots.get(camera) !== made) return;
+    state.clusterSlots.delete(camera);
+    if (state.clusterLastCamera === camera) state.clusterLastCamera = null;
+    releaseClusterSlot(scene.getEngine(), made);
+  });
+  slot = made;
+  return slot;
+}
+
+/** Scratch block for the slot verifier (`verifyLightClusterSlots`). */
+let verifyWords: Float32Array | null = null;
+
 /**
- * Builds `state`'s clusters for the view the Scene is drawing (its current view and projection, the active camera's
- * depth range) from its local lights as last written, and uploads them. Read, not computed: a camera's matrices update
- * only where its view sets them. No view (or no culling): a header that sends every position to every light.
+ * Builds the clusters for the view the Scene is drawing (its current view and projection, the active camera's depth
+ * range) from `state`'s local lights as last written, into `masks` and `header`. Read, not computed: a camera's matrices
+ * update only where its view sets them. No view (or no culling): a header that sends every position to every light.
  */
-function writeClusters(scene: Scene, state: SceneLights): void {
+function buildClusters(scene: Scene, state: SceneLights, masks: Uint32Array, header: Float32Array): void {
   const camera = scene.activeCamera;
-  state.clusterCamera = camera;
-  state.clusterBuilt = state.clusterRevision;
   const view = camera && !unculledScenes.has(scene)
     ? { view: scene.getViewMatrix(), projection: scene.getProjectionMatrix(), near: camera.minZ, far: camera.maxZ }
     : null;
-  buildLightClusters(state.clusterMasks, state.clusterHeader, state.clusterLights, view, scene.floatingOriginOffset);
-  if (state.clusterBuffer) scene.getEngine().updateUniformBuffer(state.clusterBuffer, state.clusterWords);
+  buildLightClusters(masks, header, state.clusterLights, view, scene.floatingOriginOffset);
+}
+
+/** Builds `slot`'s clusters for the view the Scene is drawing and uploads them. */
+function writeClusters(scene: Scene, state: SceneLights, slot: ClusterSlot): void {
+  slot.built = state.clusterRevision;
+  state.clusterBuilds++;
+  buildClusters(scene, state, slot.masks, slot.header);
+  if (slot.buffer) scene.getEngine().updateUniformBuffer(slot.buffer, slot.words);
+}
+
+/**
+ * The verifier: builds the clusters `slot` keeps afresh into scratch and counts a disagreement, bit for bit
+ * (`clusterMismatches`).
+ */
+function checkClusterSlot(scene: Scene, state: SceneLights, slot: ClusterSlot): void {
+  verifyWords ??= new Float32Array(CLUSTER_BLOCK_WORDS);
+  buildClusters(scene, state, new Uint32Array(verifyWords.buffer, CLUSTER_HEADER_FLOATS * 4), verifyWords.subarray(0, CLUSTER_HEADER_FLOATS));
+  state.clusterChecks++;
+  const fresh = new Uint32Array(verifyWords.buffer), kept = new Uint32Array(slot.words.buffer);
+  for (let index = 0; index < fresh.length; index++) {
+    if (fresh[index] !== kept[index]) {
+      state.clusterMismatches++;
+      return;
+    }
+  }
+}
+
+let verifyingClusterSlots = false;
+let forcingClusterRebuilds = false;
+
+/**
+ * Debugging aid: each time a camera's clusters are kept although another camera's were built or bound since (where one
+ * shared block would have been built again), they are also built afresh and compared bit for bit
+ * (`RenderDiagnostics.rendererWork.lightClusters.mismatches`, which must stay 0).
+ */
+export function verifyLightClusterSlots(enabled: boolean): void {
+  verifyingClusterSlots = enabled;
+}
+
+/**
+ * Test and proof hook: builds a camera's clusters again whenever another camera drew since, as one shared block did,
+ * so a measurement or a picture comparison can run that path.
+ */
+export function forceClusterRebuilds(enabled: boolean): void {
+  forcingClusterRebuilds = enabled;
+}
+
+/** The Scene's cluster builds, and the verifier's checks and mismatches (`verifyLightClusterSlots`); null before any block. */
+export function lightClusterDiagnostics(scene: Scene): { slots: number; builds: number; checks: number; mismatches: number } | null {
+  const state = scenes.get(scene);
+  return state ? { slots: state.clusterSlots.size, builds: state.clusterBuilds, checks: state.clusterChecks, mismatches: state.clusterMismatches } : null;
 }
 
 /** Bind the clusters' block for a draw with `effect`, which reads it. */
 export function bindHapticClusters(scene: Scene, effect: Effect): void {
   const state = sceneLights(scene);
-  // The clusters follow the drawing view (a capture's), checked at each pass's first draw and built only when the
-  // view, its camera or the local lights differ from the last build's: the buffer already holds what a build from the
-  // same inputs writes, so the passes of one view, and frames of a still one, build once. Masks built for another view
-  // stay correct, only coarser.
+  // The clusters follow the drawing view (a capture's, a Mirror's): each camera keeps its own block, checked at each
+  // pass's first draw and built only when its view or the local lights differ from its last build's. The block already
+  // holds what a build from the same inputs writes, so the passes of one view, and frames of a still one, build once,
+  // also while other views draw between them.
   const renderId = scene.getRenderId();
   const camera = scene.activeCamera;
-  if (state.clusterFrame !== renderId || state.clusterCamera !== camera || state.clusterBuilt !== state.clusterRevision) {
-    state.clusterFrame = renderId;
-    const viewChanged = recordClusterView(scene, state.clusterView);
-    if (viewChanged || state.clusterCamera !== camera || state.clusterBuilt !== state.clusterRevision) writeClusters(scene, state);
+  const slot = clusterSlot(scene, state, camera);
+  const turned = state.clusterLastCamera !== camera;
+  state.clusterLastCamera = camera;
+  if (slot.frame !== renderId || slot.built !== state.clusterRevision || turned) {
+    slot.frame = renderId;
+    const viewChanged = recordClusterView(scene, slot.view);
+    if (viewChanged || slot.built !== state.clusterRevision || (turned && forcingClusterRebuilds)) writeClusters(scene, state, slot);
+    else if (turned && verifyingClusterSlots) checkClusterSlot(scene, state, slot);
   }
-  const buffer = state.clusterBuffer;
+  const buffer = slot.buffer;
   if (buffer) effect.bindUniformBuffer(buffer, "HapticClusters");
 }
 

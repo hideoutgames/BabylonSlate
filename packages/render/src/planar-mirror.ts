@@ -445,13 +445,12 @@ export function drawsInsidePlanes(mesh: AbstractMesh, planes: Plane[]): boolean 
 }
 
 /**
- * Pre-culled opaque list for a mirror pass (ObjectRenderer does not cull an explicit list): enabled, visible meshes
- * in the view's layers with geometry and an opaque material, inside `planes` (the skybox and always-active meshes
- * follow the camera and always pass), never helpers, lines, blended meshes or what `excluded` names.
+ * The part of a mirror pass's cull no view or plane changes, into `out` in the Scene's order: enabled, visible meshes in
+ * the view's layers with geometry and an opaque material, never helpers, lines, blended meshes or what `excluded` names.
+ * The passes of one Scene render share it while nothing has drawn since (`SceneMirrors`).
  */
-export function collectPlanarMirrorMeshes(
-  scene: Scene, list: AbstractMesh[], layerMask: number, planes: Plane[], excluded: (mesh: AbstractMesh) => boolean,
-  note = true,
+export function collectPlanarMirrorCandidates(
+  scene: Scene, out: AbstractMesh[], layerMask: number, excluded: (mesh: AbstractMesh) => boolean,
 ): void {
   const meshes = admittedSceneMeshes(scene) ?? scene.meshes;
   let count = 0;
@@ -469,12 +468,45 @@ export function collectPlanarMirrorMeshes(
       } else opaque = !material.needAlphaBlendingForMesh(mesh);
       if (!opaque) continue;
     }
-    if (!drawsInsidePlanes(mesh, planes)) continue;
-    list[count++] = mesh;
+    out[count++] = mesh;
+  }
+  out.length = count;
+}
+
+/**
+ * Keeps, in order, the `candidates` (`collectPlanarMirrorCandidates`) a pass through `planes` draws, into `list`, and
+ * tells the Scene's captures what the pass lists unless `note` is false.
+ */
+export function cullPlanarMirrorCandidates(
+  scene: Scene, candidates: readonly AbstractMesh[], list: AbstractMesh[], planes: Plane[], note = true,
+): void {
+  let count = 0;
+  for (let i = 0; i < candidates.length; i++) {
+    const mesh = candidates[i]!;
+    if (drawsInsidePlanes(mesh, planes)) list[count++] = mesh;
   }
   list.length = count;
   // A capture whose image one of these shows keeps drawing while a reflection shows it.
   if (note) notePassListed(scene, list);
+}
+
+const collected: AbstractMesh[] = [];
+
+/**
+ * Pre-culled opaque list for a mirror pass (ObjectRenderer does not cull an explicit list): the candidates
+ * (`collectPlanarMirrorCandidates`) inside `planes` (the skybox and always-active meshes follow the camera and always
+ * pass).
+ */
+export function collectPlanarMirrorMeshes(
+  scene: Scene, list: AbstractMesh[], layerMask: number, planes: Plane[], excluded: (mesh: AbstractMesh) => boolean,
+  note = true,
+): void {
+  collectPlanarMirrorCandidates(scene, collected, layerMask, excluded);
+  try {
+    cullPlanarMirrorCandidates(scene, collected, list, planes, note);
+  } finally {
+    collected.length = 0;
+  }
 }
 
 const floatingOriginScenes = new WeakMap<Scene, () => Scene | undefined>();

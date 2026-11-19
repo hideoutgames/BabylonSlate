@@ -8,7 +8,8 @@ import { readEngineDrawCalls, type DrawCallEngine } from "./draw-calls";
  * - `geometry`: the geometry pass the spatial effects (AO, SSR, volumetrics) read, and `Screen shadows`
  * - `shadows`: `Forward admitted shadows`, the shadow maps
  * - `captures`: Render Target Captures, Fast ones before the graph and High or Full Quality views after the shadow maps
- * - `mirrors`, `probes`: Mirror and Reflection Probe passes
+ * - `mirrors`, `probes`: Mirror and Reflection Probe passes; `mirrors` holds all of a Scene render's Mirror work
+ *   (placement, currency checks, culls, content asks and the reflections' sun maps besides the passes)
  * - `water`: the water scene copy and its output, planar reflections and the FFT simulations
  * - `outlines`: `Shared outlines`
  * - `post`: post-process stages and a chain's output copy
@@ -17,7 +18,7 @@ import { readEngineDrawCalls, type DrawCallEngine } from "./draw-calls";
  * - `readiness`: the frame's readiness work around the graph's draw (membership sync, shadow admission, strict probes)
  * - `particles`: CPU particle animation (each system's `animate`, which Babylon runs inside `Scene.render`)
  * - `observers`: the Scene's before-render stage (camera updates and the `onBeforeRenderObservable` observers) outside
- *   the owner passes they open (Mirror update checks, capture eligibility, glyph atlas uploads)
+ *   the owner passes they open (capture eligibility, glyph atlas uploads)
  * - `other`: the rest (clears, a view's own output copy without a chain, editor overlays, animations, world matrices,
  *   the frame graph's own overhead)
  *
