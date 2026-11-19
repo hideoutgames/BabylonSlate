@@ -5,8 +5,8 @@
  * Screen-Space Shadows. `reference` draws it as before the savings: the light block's rect loop visits every rect light
  * and fetches the LTC tables per light, a spot light's shadow is looked up outside its cone, and a capture's own sun
  * maps redraw every time, and the view's object and geometry passes take Babylon's preparation instead of the lean one
- * (`leanPreparation`). The spec compares the two runs' frames and
- * capture images byte for byte, after a still stretch and after a caster moves.
+ * (`leanPreparation`). The spec compares the two runs' frames, capture images and shadow atlas pages (every texel's
+ * depth bits) byte for byte, after a still stretch and after a caster moves.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
@@ -41,6 +41,7 @@ import { allowSceneScreenShadows } from "../../../../packages/render/src/render-
 import { setSceneRenderSettings } from "../../../../packages/render/src/scene-render-mode";
 import { shadowAtlasDrawCounts } from "../../../../packages/render/src/shadow-atlas";
 import { SceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
 
 /**
  * The light block's functions as before the savings, from the current ones (`HAPTIC_LIGHTING_FUNCTIONS_GLSL`): each
@@ -119,7 +120,8 @@ async function readCapture(texture: BaseTexture): Promise<number[]> {
   return Array.from(pixels as Uint8Array);
 }
 
-export type MainPassExactnessImages = { view: number[]; captures: Record<Shown, number[]> };
+/** The view's frame, the captures' images and the shadow atlas's pages (their depth bits, digested). */
+export type MainPassExactnessImages = { view: number[]; captures: Record<Shown, number[]>; atlas: ShadowAtlasPageDigest[] };
 
 export async function runMainPassExactnessProof(options: { reference: boolean; largeWorld?: boolean }) {
   const block = HapticLightingBlock.prototype as unknown as { _buildBlock(state: NodeMaterialBuildState): unknown };
@@ -262,6 +264,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
       view: await readView(engine),
       captures: Object.fromEntries(await Promise.all(QUALITIES.map(async (quality) => [quality, await readCapture(outputs[quality])] as const))) as
         Record<Shown, number[]>,
+      atlas: await readShadowAtlasPages(scene),
     });
     const still = await read();
     // A caster moves: every map that reaches it draws again, and the images follow.

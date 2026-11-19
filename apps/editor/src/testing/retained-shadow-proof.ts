@@ -25,6 +25,7 @@ import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/sh
 import { sceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { setRetainedShadowCasters, type RetainedShadowDiagnostics } from "../../../../packages/render/src/shadow-retained-casters";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
+import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
 
 const WIDTH = 200;
 const HEIGHT = 150;
@@ -32,8 +33,9 @@ const HEIGHT = 150;
 const PLACE = new Vector3(40_000, 0, -25_000);
 
 type Run = {
-  /** The image at each stage. */
+  /** The image at each stage, and the shadow atlas's pages then (every texel's depth bits, digested). */
   images: number[][];
+  atlases: ShadowAtlasPageDigest[][];
   retained: RetainedShadowDiagnostics | null;
   /** Draw calls the maps made over the frames after the first stage settled. */
   mapDraws: number;
@@ -117,8 +119,10 @@ async function drawRun(engine: AbstractEngine, retain: boolean): Promise<Run> {
     const settle = async () => {
       let last = await draw();
       for (let frame = 0; frame < 12; frame++) last = await draw();
+      atlases.push(await readShadowAtlasPages(scene));
       return last;
     };
+    const atlases: ShadowAtlasPageDigest[][] = [];
     const images = [await settle()];
     mapDraws = 0;
     // A caster moves and turns.
@@ -149,7 +153,7 @@ async function drawRun(engine: AbstractEngine, retain: boolean): Promise<Run> {
     engine.beginFrame();
     engine.endFrame();
     await graph.whenReleased();
-    return { images, retained, mapDraws };
+    return { images, atlases, retained, mapDraws };
   } finally {
     scene.dispose();
   }
@@ -176,7 +180,11 @@ export async function runRetainedShadowProof() {
         largest = Math.max(largest, delta);
         if (image[pixel * 4]! + image[pixel * 4 + 1]! + image[pixel * 4 + 2]! < 90) dark += 1;
       }
-      return { differing, largest, dark };
+      // The maps themselves, every texel's depth bits: the pages that differ, and the texels that hold depth.
+      const pages = retained.atlases[index]!, babylonPages = drawnByBabylon.atlases[index]!;
+      const atlasDiffering = pages.filter((page, at) => page.sha256 !== babylonPages[at]?.sha256).length + Math.abs(pages.length - babylonPages.length);
+      const atlasWritten = pages.reduce((sum, page) => sum + page.written, 0);
+      return { differing, largest, dark, atlasDiffering, atlasWritten };
     });
     // Each stage changes the image: a run whose stages drew alike would compare equal too.
     const changed = retained.images.slice(1).map((image, index) => image.some((value, at) => value !== retained.images[index]![at]));

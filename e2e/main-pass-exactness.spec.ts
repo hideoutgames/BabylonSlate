@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import type { runMainPassExactnessProof } from "../apps/editor/src/testing/main-pass-exactness-proof";
 import { SOFTWARE_GL_ARGS } from "./software-gl";
@@ -6,6 +8,8 @@ import { SOFTWARE_GL_ARGS } from "./software-gl";
 const SOFTWARE_GL = process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || Boolean(process.env.CI);
 if (SOFTWARE_GL) test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 // HAPTIC_LARGE_WORLD=1 builds the proof's Engine with Large World Rendering (Babylon's floating origin) on.
+// HAPTIC_MAIN_PASS_PROOF_OUT (an absolute path) also receives the digests of every image and atlas page, to compare two
+// builds byte for byte.
 const LARGE_WORLD = process.env.HAPTIC_LARGE_WORLD === "1";
 
 type Proof = typeof runMainPassExactnessProof;
@@ -38,10 +42,15 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
   test.setTimeout(300_000);
   const current = await run(page, false);
   const reference = await run(page, true);
-  await testInfo.attach("main-pass-exactness", {
-    body: JSON.stringify({ renderer: current.renderer, stillTexelsPerFrame: { current: current.stillTexelsPerFrame, reference: reference.stillTexelsPerFrame } }),
-    contentType: "application/json",
-  });
+  const sha = (bytes: number[]) => createHash("sha256").update(Uint8Array.from(bytes)).digest("hex");
+  const digest = ({ view, captures, atlas }: typeof current.still) =>
+    ({ view: sha(view), fast: sha(captures.fast), highQuality: sha(captures.highQuality), atlas });
+  const summary = {
+    renderer: current.renderer, stillTexelsPerFrame: { current: current.stillTexelsPerFrame, reference: reference.stillTexelsPerFrame },
+    current: { still: digest(current.still), moved: digest(current.moved) }, reference: { still: digest(reference.still), moved: digest(reference.moved) },
+  };
+  await testInfo.attach("main-pass-exactness", { body: JSON.stringify(summary), contentType: "application/json" });
+  if (process.env.HAPTIC_MAIN_PASS_PROOF_OUT) writeFileSync(process.env.HAPTIC_MAIN_PASS_PROOF_OUT, JSON.stringify(summary));
   console.log(`main pass exactness proof on ${current.renderer}: shadow texels per still frame ${current.stillTexelsPerFrame} (reference ${reference.stillTexelsPerFrame})`);
   // The reference redraws the High Quality capture's own sun map in every still frame; the savings draw none.
   expect(reference.stillTexelsPerFrame).toBeGreaterThan(0);
@@ -56,5 +65,8 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
       expect(new Set(images.captures[quality]).size, `${stage} ${quality}`).toBeGreaterThan(16);
       expect(differences(images.captures[quality], before.captures[quality]), `${stage} ${quality}`).toEqual({ count: 0, first: [] });
     }
+    // The shadow maps themselves, every texel's depth bits: a frame can hide a difference in them. Some pages hold depth.
+    expect(images.atlas.some((page) => page.written > 0), `${stage} atlas`).toBe(true);
+    expect(images.atlas, `${stage} atlas`).toEqual(before.atlas);
   }
 });
