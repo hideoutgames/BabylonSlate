@@ -250,7 +250,9 @@ describe("runFeatureTestCheck", () => {
     });
     const main = report.scenes[0];
     expect(main.play.commands.map((command) => command.line)).toContain("ft_spawn 10");
-    expect(main.play.firstDraws?.draws).toBe(main.play.commands.length);
+    // The fake first draws one shader per console line: the scene's commands and, before them, the frame-end fence
+    // sample's `framesinflight off` and the mode put back.
+    expect(main.play.firstDraws?.draws).toBe(main.play.commands.length + 2);
   });
 
   it("fails a scene on a failed command or a session error, but not on warnings", async () => {
@@ -1746,10 +1748,11 @@ describe("Profile", { timeout: 30_000 }, () => {
     // The fake's tick index stands still: no game tick over Play's sample.
     expect(quick.ticksPerSecond).toBe(0);
     expect(quick.firstDrawsBeforeSweep).toBeUndefined();
-    // The fake first draws one shader per command: none before the sweep, then the cap, four tiers and the cap.
+    // The fake first draws one shader per console line: before the sweep the frame-end fence sample's two, then the cap,
+    // four tiers and the cap.
     const benchmark = await run("benchmark");
-    expect(benchmark.firstDrawsBeforeSweep!.draws).toBe(0);
-    expect(benchmark.firstDraws!.draws).toBe(7);
+    expect(benchmark.firstDrawsBeforeSweep!.draws).toBe(2);
+    expect(benchmark.firstDraws!.draws).toBe(9);
   });
 
   it("still ends the sweep at a step after which the view draws no frame, and restores the session and the tour camera", async () => {
