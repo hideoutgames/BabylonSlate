@@ -27,7 +27,8 @@ import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } fro
 import { retainAreaLightLookup } from "./area-light-resources";
 import { environmentPlaceholderCube, HapticLightingBlock } from "./haptic-lighting-block";
 import {
-  HAPTIC_LIGHT_MAXIMUM, HAPTIC_SHADOW_VIEW_VEC4S, bindHapticClusters, hapticLightBuffer, setHapticLightCulling,
+  HAPTIC_LIGHT_MAXIMUM, HAPTIC_SHADOW_VIEW_VEC4S, bindHapticClusters, forceClusterRebuilds, hapticLightBuffer, lightClusterDiagnostics,
+  setHapticLightCulling, verifyLightClusterSlots,
 } from "./haptic-lights";
 import { CLUSTER_COUNT, CLUSTER_HEADER_FLOATS } from "./light-clusters";
 
@@ -686,26 +687,87 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(pointBits(uploads[1]!)).toBe(false);
     pass();
     expect(uploads).toHaveLength(2);
-    // So does a moved view, and another camera drawing.
+    // So does a moved view, and another camera drawing, into a block of its own.
     camera.position.z = -6;
     viewOf(camera);
     pass();
     expect(uploads).toHaveLength(3);
+    const viewBuffer = clusterBuffer;
     const other = new FreeCamera("other", new Vector3(0, 0, -6), scene);
+    other.setTarget(new Vector3(0, 0, -20));
     scene.activeCamera = other;
     viewOf(other);
     pass();
     expect(uploads).toHaveLength(4);
+    expect(clusterBuffer).not.toBe(viewBuffer);
+    // Views that take turns keep their own blocks: the first view's still view builds nothing when it draws again
+    // (its block holds the light it reaches), nor does the other's.
     scene.activeCamera = camera;
     viewOf(camera);
     pass();
-    expect(uploads).toHaveLength(5);
+    expect(uploads).toHaveLength(4);
+    expect(clusterBuffer).toBe(viewBuffer);
+    scene.activeCamera = other;
+    viewOf(other);
+    pass();
+    expect(uploads).toHaveLength(4);
+    // The old path (one block for every view) builds again at each turn.
+    forceClusterRebuilds(true);
+    try {
+      scene.activeCamera = camera;
+      viewOf(camera);
+      pass();
+      expect(uploads).toHaveLength(5);
+    } finally {
+      forceClusterRebuilds(false);
+    }
     // And a culling switch, which builds the header that sends every position to every light.
     setHapticLightCulling(scene, false);
     pass();
     expect(uploads).toHaveLength(6);
     pass();
     expect(uploads).toHaveLength(6);
+    // A disposed camera gives its block back.
+    const slots = lightClusterDiagnostics(scene)!.slots;
+    other.dispose();
+    expect(lightClusterDiagnostics(scene)!.slots).toBe(slots - 1);
+  });
+
+  it("checks a block kept across another view's turn against a fresh build when verifying, and counts one that differs", () => {
+    const { engine, scene } = host();
+    const camera = scene.activeCamera as FreeCamera;
+    const lamp = new PointLight("lamp", new Vector3(0, 0, 2), scene);
+    lamp.range = 4;
+    syncSceneLighting(scene);
+    const blocks = new Map<unknown, Float32Array>();
+    let bound: unknown;
+    const effect = { bindUniformBuffer: (buffer: unknown, name: string) => { if (name === "HapticClusters") bound = buffer; } } as unknown as Effect;
+    vi.spyOn(engine, "updateUniformBuffer").mockImplementation((buffer, elements) => {
+      if (elements.length === CLUSTER_HEADER_FLOATS + CLUSTER_COUNT * 2) blocks.set(buffer, elements as Float32Array);
+    });
+    const other = new FreeCamera("other", new Vector3(0, 0, -6), scene);
+    const draw = (with_: FreeCamera) => {
+      scene.activeCamera = with_;
+      scene.setTransformMatrix(with_.getViewMatrix(true), with_.getProjectionMatrix(true));
+      scene.incrementRenderId();
+      bindHapticClusters(scene, effect);
+    };
+    verifyLightClusterSlots(true);
+    try {
+      draw(camera);
+      const first = bound;
+      draw(other);
+      draw(camera);
+      draw(other);
+      expect(lightClusterDiagnostics(scene)).toMatchObject({ builds: 2, checks: 2, mismatches: 0 });
+      // A kept block that no longer holds what its inputs build is a mismatch.
+      const words = new Uint32Array(blocks.get(first)!.buffer);
+      words[CLUSTER_HEADER_FLOATS] = words[CLUSTER_HEADER_FLOATS]! ^ 1;
+      draw(camera);
+      expect(lightClusterDiagnostics(scene)).toMatchObject({ builds: 2, checks: 3, mismatches: 1 });
+    } finally {
+      verifyLightClusterSlots(false);
+    }
   });
 
   it("draws the preview studio rig whole: one directional key and one fill", () => {

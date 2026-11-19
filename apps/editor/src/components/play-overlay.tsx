@@ -14,8 +14,8 @@ import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
-  verifyCaptureActorLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
-  verifyLeanPreparation,
+  verifyCaptureActorLists, verifyLayerDrawLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
+  verifyLeanPreparation, drawLayersFullPath, forceClusterRebuilds, verifyLightClusterSlots, verifyMirrorSharedCulls, walkMirrorCullsUnshared,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1249,6 +1249,11 @@ function PlayOverlayView({
         presentedImage: () => ReturnType<PlaySession["handle"]["samplePresentedImage"]>;
         /** Turns the game view's draws into no-ops or back, as a Check's measurement does (`stubWebGlDraws`). */
         stubWebGlDraws: (on: boolean) => boolean;
+        /** Has every Scene Layer frame take Babylon's full path, to compare its picture and picks with the retained path's. */
+        drawLayersFullPath: (enabled: boolean) => void;
+        /** Points in pick space over the Scene Layers' interactive controls, and the overlay hits at given points. */
+        sceneLayerHitTargets: () => Array<{ layerId: string; mesh: string; x: number; y: number }>;
+        sceneLayerPickHits: (points: ReadonlyArray<{ x: number; y: number }>) => string[][];
         scalability: () => ReturnType<PlaySession["handle"]["scalabilityStatus"]>;
         renderTasks: () => string[];
         /** Every Render Target capture output, with what shows it. */
@@ -1265,6 +1270,11 @@ function PlayOverlayView({
          * and each layer's drawable mesh list against a full filter (`layerWork[].drawable.mismatches`).
          */
         verifyRetainedOverlayBatches: (enabled: boolean) => void;
+        /**
+         * Has every fourth frame of each Scene Layer take Babylon's full path and compare its sorted lists with the
+         * layer's retained draw list (`layerWork[].drawList.mismatches`).
+         */
+        verifyLayerDrawLists: (enabled: boolean) => void;
         /** Follows every shadow caster walk of the change journal with the full walk, which must find nothing more (`rendererWork.shadowJournal.mismatches`). */
         verifyRenderChangeJournal: (enabled: boolean) => void;
         /** Has Mirror surfaces also ask what changed on every render, as before a moved view skipped it (`rendererWork.mirrorPolls.mismatches`). */
@@ -1275,6 +1285,13 @@ function PlayOverlayView({
         verifyMirrorFootprintCrops: (enabled: boolean) => void;
         /** Has each strict outline cull also cull the full way, which must agree (`rendererWork.outlineCull.mismatches`). */
         verifySharedOutlineCulls: (enabled: boolean) => void;
+        /**
+         * Has each Mirror cull from its render's shared candidates also walk the whole Scene (`rendererWork.mirrorCulls.mismatches`),
+         * and each light cluster block kept across another camera's turn also build afresh (`rendererWork.lightClusters.mismatches`).
+         */
+        verifyMirrorSharedWork: (enabled: boolean) => void;
+        /** Has Mirror culls walk the whole Scene each and light clusters build at every camera's turn, as before they were shared. */
+        unshareMirrorWork: (enabled: boolean) => void;
         /** Has each lean object and geometry pass also run Babylon's preparation, whose queues it must match (`rendererWork.leanPreparation.mismatches`). */
         verifyLeanPreparation: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
@@ -1288,6 +1305,9 @@ function PlayOverlayView({
       rendering: () => sessionRef.current?.handle.renderDiagnostics() ?? null,
       presentedImage: () => sessionRef.current?.handle.samplePresentedImage() ?? Promise.resolve(null),
       stubWebGlDraws: (on) => sessionRef.current?.handle.stubWebGlDraws(on) ?? false,
+      drawLayersFullPath,
+      sceneLayerHitTargets: () => sessionRef.current?.handle.sceneLayerHitTargets() ?? [],
+      sceneLayerPickHits: (points) => sessionRef.current?.handle.sceneLayerPickHits(points) ?? [],
       scalability: () => sessionRef.current?.handle.scalabilityStatus(),
       renderTasks: () => sessionRef.current?.handle.renderTaskNames() ?? [],
       captures: () => sessionRef.current?.handle.renderTargetCaptureDiagnostics() ?? [],
@@ -1300,11 +1320,14 @@ function PlayOverlayView({
       spawnableWarm: () => sessionRef.current?.handle.spawnableWarmStats() ?? null,
       verifyScopedReadinessProbes,
       verifyRetainedOverlayBatches,
+      verifyLayerDrawLists,
       verifyRenderChangeJournal,
       verifyMirrorContentPolls,
       verifyCaptureActorLists,
       verifyMirrorFootprintCrops,
       verifySharedOutlineCulls,
+      verifyMirrorSharedWork: (enabled: boolean) => { verifyMirrorSharedCulls(enabled); verifyLightClusterSlots(enabled); },
+      unshareMirrorWork: (enabled: boolean) => { walkMirrorCullsUnshared(enabled); forceClusterRebuilds(enabled); },
       verifyLeanPreparation,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],

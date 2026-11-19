@@ -6,7 +6,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { SmartArray } from "@babylonjs/core/Misc/smartArray";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { RenderingGroup } from "@babylonjs/core/Rendering/renderingGroup";
-import { sceneDrawBatcher } from "./draw-batching";
+import { isPresortedPass, noteSortedPass, sceneDrawBatcher } from "./draw-batching";
 import { isMeshFrameReady } from "./scene-perf";
 import { waterDebugOff } from "./water-debug";
 import { isWaterSurfaceMesh } from "./water-mesh-surface";
@@ -40,7 +40,8 @@ function drawsDepthPrePass(mesh: AbstractMesh): boolean {
  * clipping and state changes as Babylon's (`RenderingGroup._RenderSorted`), allocation-free, and draws each pre-pass
  * under `renderPassId`, so each variant keeps its own stable draw wrapper. Per-pass material overrides
  * (`setMaterialForRenderPass`) are not mirrored into the pre-pass; the passes that use this set none. A Scene that
- * batches its draws (`sceneDrawBatcher`, Scene Layers) hands the sorted list to its batcher.
+ * batches its draws (`sceneDrawBatcher`, Scene Layers) hands the sorted list to its batcher, and a list a Scene Layer's
+ * retained draw list put in place in draw order (`setPresortedPass`) is handed over as it is.
  */
 export class TransparentDepthPrePass {
   /** Render pass id of the pre-pass draws (the colour draws keep their pass's own). */
@@ -65,10 +66,17 @@ export class TransparentDepthPrePass {
     if (scene.useOrderIndependentTransparency && scene.depthPeelingRenderer) {
       // As Babylon does: depth peeling draws what it can and the rest is sorted.
       const excluded = scene.depthPeelingRenderer.render(subMeshes);
-      this.drawSorted(excluded.data, excluded.length, group);
+      this.drawSorted(excluded, excluded.data, excluded.length, group);
       return;
     }
-    this.drawSorted(subMeshes.data, subMeshes.length, group);
+    const batcher = isPresortedPass(subMeshes) ? sceneDrawBatcher(scene) : undefined;
+    if (batcher) {
+      if (subMeshes.length === 0) return;
+      this.setGroup(group);
+      batcher.draw(subMeshes.data, subMeshes.length, true, this.drawOne);
+      return;
+    }
+    this.drawSorted(subMeshes, subMeshes.data, subMeshes.length, group);
   };
 
   /**
@@ -114,7 +122,13 @@ export class TransparentDepthPrePass {
     subMesh.render(true);
   };
 
-  private drawSorted(data: readonly SubMesh[], count: number, group: RenderingGroup | undefined): void {
+  /** What the group drawing now asks of its pre-passes. */
+  private setGroup(group: RenderingGroup | undefined): void {
+    this.prePass = !(group as SortedGroup | undefined)?.disableDepthPrePass;
+    this.waterPrePass = !waterDebugOff(this.scene, "prepass");
+  }
+
+  private drawSorted(list: object, data: readonly SubMesh[], count: number, group: RenderingGroup | undefined): void {
     if (count === 0) return;
     const scene = this.scene;
     const camera = scene.activeCamera, eye = camera ? camera.globalPosition : Vector3.ZeroReadOnly;
@@ -128,11 +142,11 @@ export class TransparentDepthPrePass {
     }
     const sortedGroup = group as SortedGroup | undefined;
     (sorted as SubMesh[]).sort(sortedGroup?._transparentSortCompareFn ?? RenderingGroup.defaultTransparentSortCompare);
-    this.prePass = !sortedGroup?.disableDepthPrePass;
-    this.waterPrePass = !waterDebugOff(scene, "prepass");
+    this.setGroup(group);
     try {
       const batcher = scene._activeMeshesFrozenButKeepClipping ? undefined : sceneDrawBatcher(scene);
       if (batcher) {
+        noteSortedPass(scene, list, sorted as SubMesh[], count);
         batcher.draw(sorted as SubMesh[], count, true, this.drawOne);
         return;
       }

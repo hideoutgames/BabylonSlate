@@ -3512,6 +3512,10 @@ function initializeEngine(
       ? Promise.resolve(null)
       : new Promise<PresentedImageSample | null>((resolve) => { presentedImageRequests.push(resolve); }),
     stubWebGlDraws: (on) => !disposed && !contextLost && stubWebGlDraws(engine, on),
+    sceneLayerHitTargets: () => sceneLayerCompositor?.hitTargets() ?? [],
+    sceneLayerPickHits: (points) => points.map(({ x, y }) => (sceneLayerCompositor?.pickHits(x, y, {
+      minTargetPx: options.touchMinTargetPx ?? 44, canvasCssHeight: pointerCanvas().height,
+    }) ?? []).map((hit) => `${hit.layerId}/${hit.actorGuid}/${hit.componentId ?? ""}/${hit.controlMeshName ?? hit.joystickMeshName ?? ""}/${hit.hitTest}`)),
     captureFrame: () => {
       if (disposed || contextLost) return Promise.reject(new Error("The game view is unavailable."));
       if (performanceFeed.active) return Promise.reject(new Error("Stop performance recording before capturing a frame."));

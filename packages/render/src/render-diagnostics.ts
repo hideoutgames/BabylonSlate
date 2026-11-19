@@ -20,6 +20,7 @@ import type { GpuProbeSnapshot } from "./gpu-probe-engine";
 import type { DrawPassCounts } from "./draw-passes";
 import type { OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
 import type { LayerDrawableMeshWork } from "./layer-drawable-meshes";
+import type { LayerDrawListWork } from "./layer-draw-list";
 import type { LeanPreparationWork } from "./lean-render-preparation";
 import type { RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
@@ -153,6 +154,17 @@ export type RenderDiagnostics = {
      */
     mirrorCrop?: { checks: number; misses: number };
     /**
+     * While `verifyMirrorSharedCulls` is on: Mirror culls made from the candidates their render shares that also walked
+     * the whole Scene (`checks`), and those whose lists differed (`mismatches`, which must stay 0). Absent without Mirrors.
+     */
+    mirrorCulls?: { checks: number; mismatches: number };
+    /**
+     * The Scene's light cluster blocks, one per drawing camera (`slots`), the builds so far (`builds`), and while
+     * `verifyLightClusterSlots` is on, blocks kept across another camera's turn that were built afresh to compare
+     * (`checks`) and differed (`mismatches`, which must stay 0). Absent before the first lit draw.
+     */
+    lightClusters?: { slots: number; builds: number; checks: number; mismatches: number };
+    /**
      * The view's strict outline cull (`SharedOutlineView.cullDiagnostics`): periodic checks of its kept candidate split
      * against a fresh one and those that replaced it (`splitChecks`, `healedSplits`), and while
      * `verifySharedOutlineCulls` is on, culls also made the full way (`checks`) and those that disagreed (`mismatches`,
@@ -172,11 +184,13 @@ export type RenderDiagnostics = {
    * marking its readiness each frame. Empty where the view composites no layer. `batching` is how its draw batcher kept
    * its work between frames, and what its verifier found (`OverlayBatchWork`); null where the layer does not batch.
    * `drawable` is how the list of its meshes that can draw was kept, and what its checks against a full filter found
-   * and healed (`LayerDrawableMeshWork`: `mismatches` must stay 0).
+   * and healed (`LayerDrawableMeshWork`: `mismatches` must stay 0). `drawList` is how its retained draw list was kept,
+   * which frames took Babylon's full path and why, and what its checks against that path found (`LayerDrawListWork`:
+   * `mismatches` must stay 0).
    */
   layerWork?: Array<{
     layerId: string; meshes: number; work: NonNullable<RenderDiagnostics["rendererWork"]>; batching?: OverlayBatchWork | null;
-    drawable?: LayerDrawableMeshWork | null;
+    drawable?: LayerDrawableMeshWork | null; drawList?: LayerDrawListWork | null;
   }>;
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;

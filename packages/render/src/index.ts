@@ -17,7 +17,10 @@ export type { RenderShadingSettings } from "./render-settings";
 export { sceneWaterQuality, sceneWaterQualityRevision, sceneWaterQualityDeviceClamp } from "./render-settings";
 export { clampWaterQualityToDevice, type WaterQualityDeviceClamp, type WaterDeviceCapabilities, type WaterDeviceView } from "./water-quality-device";
 export { waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera, type WaterPlanarReflection, type WaterPlanarReflectionDiagnostics } from "./water-planar-reflection";
-export { mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, type MirrorDiagnostics } from "./mirrors";
+export {
+  mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyMirrorSharedCulls, walkMirrorCullsUnshared, type MirrorDiagnostics,
+} from "./mirrors";
+export { forceClusterRebuilds, verifyLightClusterSlots } from "./haptic-lights";
 export { verifyCaptureActorLists } from "./render-target-capture-state";
 export { setPlanarFootprintCulling } from "./planar-mirror";
 export * from "./canvas-drawing-buffer";
@@ -25,6 +28,7 @@ export * from "./draw-calls";
 export { DRAW_PASSES, type DrawPass, type DrawPassCounts } from "./draw-passes";
 export type { OverlayAloneReason, OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
 export { verifyRetainedOverlayBatches } from "./overlay-draw-batcher";
+export { drawLayersFullPath, verifyLayerDrawLists } from "./layer-draw-list";
 export type { InstancePoolDiagnostics, InstancingIneligibility } from "./instance-pool";
 export * from "./ktx2-transcoder";
 export * from "./gltf-mesh-decoders";

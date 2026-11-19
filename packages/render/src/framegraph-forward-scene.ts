@@ -55,8 +55,10 @@ import { drawingMesh } from "./instance-source";
 import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { layerDrawableMeshes } from "./layer-drawable-meshes";
+import { attachLayerDrawList, type LayerDrawList } from "./layer-draw-list";
 import { findSceneShadowController } from "./shadow-controller";
 import { mirrorDiagnostics } from "./mirrors";
+import { lightClusterDiagnostics } from "./haptic-lights";
 import { sceneLightingSettledWithoutLights, syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
@@ -277,6 +279,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   worldOverSceneDepth = false;
   /** A world view's occlusion culling, and the colour pass whose first draws keep a mesh in the list. */
   occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
+  /** A Scene Layer's retained draw list (`layer-draw-list.ts`): a frame drawn from it culls no mesh. */
+  drawList: LayerDrawList | null = null;
 
   /** The whole cull is the `cull` pass: Babylon's frustum cull, the hidden-mesh and occlusion filters, the world list. */
   override _execute(): void {
@@ -303,6 +307,13 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     settlePlayViewCulling(scene);
     // A Scene Layer's drawable meshes, which its scene objects hold, brought up to date in place as the cull reads them.
     layerDrawableMeshes(scene);
+    if (this.drawList?.retainsFrame()) {
+      // The objects pass draws the retained lists: its render list is what the batcher draws.
+      this.outputObjectList.meshes = this.drawList.outputMeshes;
+      this.outputObjectList.particleSystems = this.objectList.particleSystems;
+      this.outputObjectList.spriteManagers = this.objectList.spriteManagers;
+      return;
+    }
     const target = this.camera.outputRenderTarget?.renderTarget;
     if (!target) {
       super._execute();
@@ -409,11 +420,14 @@ export class ForwardSceneFrameGraph {
     const mirrors = mirrorDiagnostics(this.scene);
     const captureLists = captureActorListDiagnostics(this.scene);
     const leanPreparation = leanPreparationDiagnostics(this.scene);
+    const lightClusters = lightClusterDiagnostics(this.scene);
     return {
       ...(captureLists ? { captureActorLists: { ...captureLists } } : {}),
       ...(shadowJournal ? { shadowJournal } : {}),
       ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...(mirrors ? { mirrorCrop: { checks: mirrors.cropChecks, misses: mirrors.cropMisses } } : {}),
+      ...(mirrors ? { mirrorCulls: { checks: mirrors.cullChecks, mismatches: mirrors.cullMismatches } } : {}),
+      ...(lightClusters ? { lightClusters } : {}),
       ...(this.outlineView ? { outlineCull: this.outlineView.cullDiagnostics() } : {}),
       ...(leanPreparation ? { leanPreparation } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
@@ -1813,6 +1827,9 @@ export class ForwardSceneFrameGraph {
           }
           this.graph.addTask(this.outputCopy);
         }
+        // A Scene Layer draws from its retained draw list when the objects pass alone reads the cull.
+        this.cull.drawList = attachLayerDrawList(scene, this.graph, this.objects.objectRenderer, () => this.cull?.camera,
+          !this.auxiliary && !this.water && !this.effectsGraph && !occlusion && !this.outlineTask && !this.postProcessGraph?.geometryTasks.length);
         this.observeDrawPasses();
         if (this.leanPreparation) {
           // The water split's opaque pass draws through the objects' renderer; its transparent pass keeps Babylon's.
