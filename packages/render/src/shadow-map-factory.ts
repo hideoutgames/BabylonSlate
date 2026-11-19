@@ -305,8 +305,9 @@ export function createShadowGenerator(
         casters.length = 0;
         return casters;
       }
-      // `shadowdebug farcascades off`: a far cascade left out of this frame's render draws no caster either.
-      if (generator instanceof AtlasCascadedShadowGenerator && generator.defersCascade(layer)) {
+      // `shadowdebug farcascades off`: a far cascade left out of this frame's render draws no caster either, nor does a
+      // cascade whose tile this pass keeps (`keepsCascade`).
+      if (generator instanceof AtlasCascadedShadowGenerator && (generator.takesKeptPass(layer) || generator.defersCascade(layer))) {
         casters.length = 0;
         return casters;
       }

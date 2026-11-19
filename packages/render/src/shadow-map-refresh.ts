@@ -3,6 +3,8 @@ import { Camera } from "@babylonjs/core/Cameras/camera";
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
 import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { IShadowLight } from "@babylonjs/core/Lights/shadowLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { Matrix, type Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -17,12 +19,12 @@ import { canCacheShadowMaterial, canCacheShadowMaterialFor, canCacheShadowMesh }
 import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
 import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
 import { hasRevisionTrackedLandscapeGeometry } from "./landscape-mesh";
-import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
+import { geometryRevision, hasOwnerNotifiedGeometry, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
 import { geometryBufferLayout, journalFollows, openRenderChangeReader, RenderChange, verifiesRenderChangeJournal, type RenderChangeReader } from "./render-change-journal";
 import { shadowMapChanges, type ShadowChangeRegion } from "./shadow-change-journal";
-import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
+import { casterWithinShadowRange, deformsWithinBounds, hasDeformingShadowBounds, spotShadowCone, type ShadowCone } from "./shadow-mesh-policy";
 
 /** Reused scalar/object snapshot; unchanged frames allocate no signature arrays. */
 class Snapshot {
@@ -70,6 +72,9 @@ const MAX_MISSED_KINDS = 8;
 
 /** Entries the change log keeps; a stage further behind reads every caster. */
 const MAX_CHANGE_LOG = 1 << 14;
+
+/** Every cascade's bit: a cascaded map has at most four. */
+const ALL_CASCADES = 0xf;
 
 /** How the caster walks went, counted since the refresh was made (`ShadowMapRefresh.journalDiagnostics`). */
 export interface ShadowJournalDiagnostics {
@@ -261,24 +266,25 @@ function reachesCascade(
 }
 
 /**
- * Whether a caster's bounding sphere reaches a cascade that draws it: the first whatever its size, a later one when it
- * is not too small for its texels (`castsIntoCascade`, the caster list's own test). Run per caster and cascade each
- * frame, so it allocates nothing.
+ * The cascades (a bit each) a caster's bounding sphere reaches and that draw it: the first whatever its size, a later
+ * one when it is not too small for its texels (`castsIntoCascade`, the caster list's own test). Run per caster and
+ * cascade each frame, so it allocates nothing.
  */
-function drawnIntoCascade(
+function cascadesDrawnInto(
   matrices: readonly ArrayLike<number>[],
   scales: Float64Array,
   center: Vector3,
   radius: number,
   sizes: readonly number[],
   minTexels: number,
-): boolean {
-  if (!minTexels) return reachesCascade(matrices, scales, center, radius);
+): number {
+  let reached = 0;
   for (let cascade = 0; cascade < matrices.length; cascade++)
     if (reachesCascadeRectangle(matrices[cascade]!, scales, cascade, center, radius) &&
       // The cascade's axis scales are those `castsIntoCascade` takes the larger of (`cascadeTexelScale`).
-      (cascade === 0 || castsIntoCascade(Math.max(scales[2 * cascade]!, scales[2 * cascade + 1]!), radius, sizes[cascade]!, minTexels))) return true;
-  return false;
+      (!minTexels || cascade === 0 || castsIntoCascade(Math.max(scales[2 * cascade]!, scales[2 * cascade + 1]!), radius, sizes[cascade]!, minTexels)))
+      reached |= 1 << cascade;
+  return reached;
 }
 
 function addSeen(entry: SeenCaster, region: ShadowChangeRegion): void {
@@ -335,6 +341,13 @@ export class ShadowMapRefresh {
   private readonly cascadeSkipped = new WeakMap<RenderTargetTexture, number>();
   /** The cascaded refresh running found nothing changed since the frames it skipped. */
   private cascadeQuiet = false;
+  /**
+   * The cascades (a bit each) the cascaded refresh running must redraw: those whose casters changed, entered or left,
+   * or change on their own, and every one when the camera, fit, light or settings changed (`trackCascades`).
+   */
+  private cascadeChanges = ALL_CASCADES;
+  /** Per cascaded map, each cascade's casters as it last read them (`trackCascades`). */
+  private readonly cascadeCasters = new WeakMap<RenderTargetTexture, Snapshot[]>();
   /** Scratch for a full walk after a journal walk: each automatic-LOD caster's level as the journal walk found it. */
   private readonly lodCheck = new Map<AbstractMesh, number>();
   private readonly stats: ShadowJournalDiagnostics = {
@@ -981,8 +994,7 @@ export class ShadowMapRefresh {
         numbers[at + 4] = part.materialIndex;
       }
     }
-    // A landscape chunk's updatable buffers change only through notified vertex updates, never its indices.
-    const trackedDynamic = !!mesh && (hasRevisionTrackedDynamicMesh(mesh) || hasRevisionTrackedLandscapeGeometry(mesh));
+    const trackedDynamic = !!mesh && this.tracksGeometryWrites(mesh);
     const trackedCable = !!mesh && hasRevisionTrackedCableGeometry(mesh);
     const buffers = geometry ? this.geometryState(geometry) : null;
     // A mesh with neither geometry nor parts (an empty root or volume) draws nothing; parts without geometry stay unknown.
@@ -1000,6 +1012,16 @@ export class ShadowMapRefresh {
     shared.safeMaterial = canCacheShadowMesh(source) && this.materialGate(material, source.hasVertexAlpha, walk);
     if (changed) shared.revision = ++this.sharedRevision;
     return shared;
+  }
+
+  /**
+   * Whether every write to `mesh`'s updatable buffers is a notified one, so its geometry revision follows its shadow:
+   * a dynamic runtime mesh's owned buffers, a landscape chunk's vertex updates (never its indices), and a mesh whose
+   * owner routes every write through notified updates (`markOwnerNotifiedGeometry`: a sprite quad's resizes and frames,
+   * an animated tilemap chunk's UVs).
+   */
+  private tracksGeometryWrites(mesh: Mesh): boolean {
+    return hasRevisionTrackedDynamicMesh(mesh) || hasRevisionTrackedLandscapeGeometry(mesh) || hasOwnerNotifiedGeometry(mesh);
   }
 
   /** `canCacheShadowMaterialFor(material, hasVertexAlpha)`, read at most once per walk for each value of `hasVertexAlpha`. */
@@ -1076,20 +1098,22 @@ export class ShadowMapRefresh {
       !!generator.customShaderOptions;
     const localMap = !continuous && !cascadedSun;
     this.cascadeQuiet = false;
+    // Every cascade, unless `trackCascades` finds which changed.
+    this.cascadeChanges = ALL_CASCADES;
     if (continuous) {
       region.addAll();
     } else if (cascadedSun) {
       continuous = this.trackCascades(cascadedSun, map, state, seen, region);
     } else {
       if (state.changed) region.addAll();
-      // A local map re-renders once when a caster within its range changes,
+      // A local map re-renders once when a caster within its range (and a spot light's cone) changes,
       // enters or leaves, or changes the level the camera draws; unrelated
       // casters elsewhere in the scene do not touch it.
       const range = "range" in light && Number.isFinite(light.range) ? light.range : Infinity;
       // Its casters are kept, and updated from the walk's changes (`applyLocal`): the snapshot holds the light alone.
       state.end();
       const lightChanged = state.changed;
-      const local = this.applyLocal(map, lightChanged, position, range, seen, region);
+      const local = this.applyLocal(map, lightChanged, position, range, this.shadowCone(light, direction), seen, region);
       continuous = local.continuous;
       if (local.changed) state.changed = true;
     }
@@ -1105,8 +1129,15 @@ export class ShadowMapRefresh {
     const rate = continuous
       ? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME
       : RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
-    if (map.refreshRate !== rate) map.refreshRate = rate;
-    else if (!continuous && state.changed) map.resetRefreshCounter();
+    const refresh = () => {
+      if (map.refreshRate !== rate) map.refreshRate = rate;
+      else if (!continuous && state.changed) map.resetRefreshCounter();
+    };
+    // An atlas sun map redraws only the cascades this refresh found changed (`trackCascades`); the others keep their
+    // tiles. Any other reset of its counter redraws every cascade.
+    if (cascadedSun instanceof AtlasCascadedShadowGenerator) {
+      cascadedSun.refreshCascades(continuous || state.changed ? this.cascadeChanges : 0, refresh);
+    } else refresh();
     // No completion observer: readiness probes also emit onAfterUnbind without
     // drawing. Babylon consumes the refresh only at its real target-render gate,
     // and retries automatically when a caster's shader is not ready.
@@ -1126,6 +1157,14 @@ export class ShadowMapRefresh {
    * rule: one that cannot reach any cascade's light-space rectangle is not drawn
    * into the map. Deforming geometry is drawn whatever its bounds, so it
    * reaches within the shadow distance of the camera as well.
+   *
+   * Per cascade, it also reads the casters that cascade draws, and sets
+   * `cascadeChanges` to the cascades whose casters changed, entered or left,
+   * or change on their own (a deforming one counting in every cascade), or to
+   * all of them when anything before the casters changed: an atlas map redraws
+   * only those (`AtlasCascadedShadowGenerator.refreshCascades`). A cascade
+   * left out keeps a tile drawn with the same fit, camera, light, settings
+   * and casters, which is the depth a redraw would draw.
    */
   private trackCascades(
     generator: CascadedShadowGenerator, map: RenderTargetTexture, state: Snapshot, seen: Map<AbstractMesh, SeenCaster>, region: ShadowChangeRegion,
@@ -1188,15 +1227,25 @@ export class ShadowMapRefresh {
       quiet = !state.changed && this.changeCursor() === skipped;
     }
     this.cascadeQuiet = quiet;
+    // What changed before the casters (the camera, a setting, the light, the fit) redraws every cascade.
+    const everywhere = state.changed;
+    const count = generator.numCascades;
+    const all = (1 << count) - 1;
+    const cascades = this.cascadeSnapshots(map, count);
+    for (const snapshot of cascades) snapshot.begin();
+    // The cascades reached by a caster that changes on its own.
+    let live = 0;
     let continuous = false;
     const eye = camera?.globalPosition;
     const orthographic = camera?.mode === Camera.ORTHOGRAPHIC_CAMERA;
     for (const [mesh, record] of this.casters) {
+      let reach = all;
       if (matrices.length) {
         const sphere = mesh.getBoundingInfo().boundingSphere;
         const center = sphere.centerWorld;
         const radius = sphere.radiusWorld;
-        if (!drawnIntoCascade(matrices, this.cascadeScales, center, radius, sizes, minTexels)) {
+        reach = cascadesDrawnInto(matrices, this.cascadeScales, center, radius, sizes, minTexels);
+        if (!reach) {
           // Deforming geometry is drawn into the cascades whatever its bounds: no
           // plane culls it, and its skin can leave its bind-pose bounds anywhere.
           // So a visible one within the shadow distance of the camera (or near a
@@ -1210,16 +1259,46 @@ export class ShadowMapRefresh {
             // Not negated: a non-finite distance reaches.
             if (dx * dx + dy * dy + dz * dz > limit * limit) continue;
           }
+          reach = all;
+        } else if (record.sourceShared?.thin || (record.unsafe && hasDeformingShadowBounds(mesh) && !deformsWithinBounds(mesh))) {
+          // Its own bounds are not what the caster lists cull it by: thin instances are culled as a batch, by bounds
+          // that hold every instance, and deforming geometry is drawn into every cascade (it changes on its own, so is
+          // unsafe whenever it is shown). Each cascade counts it.
+          reach = all;
         }
       }
       const level = this.lodLevels.get(mesh);
       this.note(seen, mesh, record, level, quiet && !record.unsafe ? null : region);
-      if (record.unsafe) continuous = true;
+      if (record.unsafe) {
+        continuous = true;
+        live |= reach;
+      }
       state.value(mesh);
       state.value(record.revision);
       if (level !== undefined) state.value(level);
+      for (let cascade = 0; cascade < count; cascade++) {
+        if (!(reach & (1 << cascade))) continue;
+        const snapshot = cascades[cascade]!;
+        snapshot.value(mesh);
+        snapshot.value(record.revision);
+        if (level !== undefined) snapshot.value(level);
+      }
     }
+    let changes = live;
+    for (let cascade = 0; cascade < count; cascade++) {
+      const snapshot = cascades[cascade]!;
+      snapshot.end();
+      if (snapshot.changed) changes |= 1 << cascade;
+    }
+    this.cascadeChanges = everywhere ? ALL_CASCADES : changes;
     return continuous;
+  }
+
+  /** A cascaded map's per-cascade caster snapshots (`trackCascades`), made afresh when its cascade count changes. */
+  private cascadeSnapshots(map: RenderTargetTexture, count: number): Snapshot[] {
+    let snapshots = this.cascadeCasters.get(map);
+    if (snapshots?.length !== count) this.cascadeCasters.set(map, (snapshots = Array.from({ length: count }, () => new Snapshot())));
+    return snapshots;
   }
 
   /**
@@ -1232,8 +1311,8 @@ export class ShadowMapRefresh {
    * map draws continuously and whether its casters changed (what the snapshot's caster values were).
    */
   private applyLocal(
-    map: RenderTargetTexture, lightChanged: boolean, position: Vector3, range: number, seen: Map<AbstractMesh, SeenCaster>,
-    region: ShadowChangeRegion,
+    map: RenderTargetTexture, lightChanged: boolean, position: Vector3, range: number, cone: ShadowCone | null,
+    seen: Map<AbstractMesh, SeenCaster>, region: ShadowChangeRegion,
   ): { continuous: boolean; changed: boolean } {
     let kept = this.localRanges.get(map);
     if (!kept) this.localRanges.set(map, (kept = { cursor: 0, members: new Map(), live: new Set(), valid: false }));
@@ -1252,15 +1331,15 @@ export class ShadowMapRefresh {
     if (incremental) {
       for (const record of kept.live) queue(record);
       this.stats.localVisited += visits.length;
-      for (const record of visits) if (this.readLocal(kept, record, position, range, seen, region)) changed = true;
+      for (const record of visits) if (this.readLocal(kept, record, position, range, cone, seen, region)) changed = true;
     }
     if (!incremental || this.check) {
-      const misses = incremental ? this.checkLocal(kept, visit, position, range, seen) : 0;
+      const misses = incremental ? this.checkLocal(kept, visit, position, range, cone, seen) : 0;
       if (incremental) this.noteStageMiss("localCasters", misses);
       if (!incremental || misses) {
         // Read every caster: a heal also redraws everywhere, where a stale answer may have left a change out.
         if (misses) region.addAll();
-        if (this.scanLocal(kept, position, range, seen, region) || misses) changed = true;
+        if (this.scanLocal(kept, position, range, cone, seen, region) || misses) changed = true;
         this.stats.localScans++;
       }
     }
@@ -1269,14 +1348,23 @@ export class ShadowMapRefresh {
     return { continuous, changed };
   }
 
+  /**
+   * The cone a spot light's map can hold anything in (`spotShadowCone`, from its shadow direction and field of view):
+   * its casters are tested against it as well as against its range. Null for any other light.
+   */
+  private shadowCone(light: IShadowLight, direction: Vector3 | null): ShadowCone | null {
+    return light instanceof SpotLight && direction ? spotShadowCone(direction, light.angle * (light.shadowAngleScale || 1)) : null;
+  }
+
   /** Reads one caster for a local map's kept casters (`applyLocal`); true when they changed. */
   private readLocal(
-    kept: LocalRange, record: Caster, position: Vector3, range: number, seen: Map<AbstractMesh, SeenCaster>, region: ShadowChangeRegion,
+    kept: LocalRange, record: Caster, position: Vector3, range: number, cone: ShadowCone | null, seen: Map<AbstractMesh, SeenCaster>,
+    region: ShadowChangeRegion,
   ): boolean {
     const mesh = record.mesh;
     const current = !record.removed && this.casters.get(mesh) === record;
     const member = kept.members.get(record);
-    if (!current || !casterWithinShadowRange(mesh, position, range)) {
+    if (!current || !casterWithinShadowRange(mesh, position, range, cone)) {
       if (!member) return false;
       kept.members.delete(record);
       kept.live.delete(record);
@@ -1298,12 +1386,14 @@ export class ShadowMapRefresh {
   }
 
   /** Reads every caster for a local map's kept casters, replacing them; true when they changed. */
-  private scanLocal(kept: LocalRange, position: Vector3, range: number, seen: Map<AbstractMesh, SeenCaster>, region: ShadowChangeRegion): boolean {
+  private scanLocal(
+    kept: LocalRange, position: Vector3, range: number, cone: ShadowCone | null, seen: Map<AbstractMesh, SeenCaster>, region: ShadowChangeRegion,
+  ): boolean {
     const members = new Map<Caster, LocalMember>();
     let changed = false;
     kept.live.clear();
     for (const [mesh, record] of this.casters) {
-      if (!casterWithinShadowRange(mesh, position, range)) continue;
+      if (!casterWithinShadowRange(mesh, position, range, cone)) continue;
       const level = this.lodLevels.get(mesh);
       this.note(seen, mesh, record, level, region);
       if (record.unsafe || level !== undefined) kept.live.add(record);
@@ -1323,11 +1413,13 @@ export class ShadowMapRefresh {
    * casters in range, their revisions and levels, and for those not read this frame (`visit`) the box and bounds the
    * map holds of them. Returns how many disagree.
    */
-  private checkLocal(kept: LocalRange, visit: number, position: Vector3, range: number, seen: Map<AbstractMesh, SeenCaster>): number {
+  private checkLocal(
+    kept: LocalRange, visit: number, position: Vector3, range: number, cone: ShadowCone | null, seen: Map<AbstractMesh, SeenCaster>,
+  ): number {
     let misses = 0, members = 0;
     const box = this.checkBox;
     for (const [mesh, record] of this.casters) {
-      if (!casterWithinShadowRange(mesh, position, range)) continue;
+      if (!casterWithinShadowRange(mesh, position, range, cone)) continue;
       members++;
       const member = kept.members.get(record);
       if (!member || member.revision !== record.revision || member.level !== this.lodLevels.get(mesh)) {

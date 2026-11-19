@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createFenceGpuBusyProbe, type FenceContext } from "./gpu-busy-probe";
 
 /** A WebGL2 fence API whose fences signal when the test says the GPU finished them. */
@@ -25,52 +25,64 @@ function fakeGl() {
 
 function fixture() {
   let now = 0;
-  const pending: Array<() => void> = [];
   const gl = fakeGl();
-  const probe = createFenceGpuBusyProbe(gl.gl, () => now, (callback) => pending.push(callback));
-  // The polls queued so far only: an outstanding fence re-arms one.
-  const runPolls = () => { for (const callback of pending.splice(0)) callback(); };
-  return { probe, gl, at: (t: number) => { now = t; }, runPolls, pending };
+  const probe = createFenceGpuBusyProbe(gl.gl, () => now);
+  return { probe, gl, at: (t: number) => { now = t; } };
 }
 
 describe("GpuBusyProbe", () => {
   it("measures only Engine frames that rendered, so a frame cap's empty frames do not read as frames of no GPU time", () => {
     let now = 0;
     let rendered = false;
-    const pending: Array<() => void> = [];
     const gl = fakeGl();
-    const probe = createFenceGpuBusyProbe(gl.gl, () => now, (callback) => pending.push(callback), () => rendered);
+    const probe = createFenceGpuBusyProbe(gl.gl, () => now, () => rendered);
     probe.start();
     // An empty frame submits no fence; the rendered one after it is measured from its own submission.
     probe.frameEnd();
-    expect(pending).toHaveLength(0);
+    expect(gl.flushes()).toBe(0);
     rendered = true;
     now = 10;
     probe.frameEnd();
     gl.signal(0);
     now = 40;
-    for (const callback of pending.splice(0)) callback();
+    probe.frameStart();
     expect(probe.stats()).toMatchObject({ frames: 1, medianMs: 30 });
   });
 
   it("does nothing until started", () => {
-    const { probe, pending } = fixture();
+    const { probe, gl } = fixture();
     probe.frameEnd();
-    expect(pending).toHaveLength(0);
+    probe.frameStart();
+    expect(gl.flushes()).toBe(0);
     expect(probe.stats()).toBeNull();
   });
 
-  it("times a frame from its submission when the GPU was idle, and flushes the fence at once", () => {
-    const { probe, gl, at, runPolls } = fixture();
+  it("reads its fences only as an Engine frame starts, with no timer of its own, timing a frame from its submission when the GPU was idle", () => {
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    const { probe, gl, at } = fixture();
     probe.start();
     at(100); probe.frameEnd();
     expect(gl.flushes()).toBe(1);
-    at(104); runPolls();
-    expect(probe.stats()).toBeNull();
+    // Done on the GPU at 105, but read when the next frame starts.
     gl.signal(0);
-    at(112); probe.poll();
+    at(112); probe.frameStart();
     expect(probe.stats()).toMatchObject({ frames: 1, medianMs: 12, p95Ms: 12 });
     expect(gl.deleted).toEqual([0]);
+    expect(timers).not.toHaveBeenCalled();
+    timers.mockRestore();
+  });
+
+  it("reads one completion per frame start while the GPU runs behind: a frame queued behind another reads from that one's completion", () => {
+    const { probe, gl, at } = fixture();
+    probe.start();
+    at(0); probe.frameEnd();
+    at(16); probe.frameStart(); probe.frameEnd();
+    // The GPU finishes one frame per 16 ms period, each found as the next frame starts.
+    gl.signal(0);
+    at(32); probe.frameStart(); probe.frameEnd();
+    gl.signal(1);
+    at(48); probe.frameStart();
+    expect(probe.stats()).toMatchObject({ frames: 2, medianMs: 24, pollMs: 16 });
   });
 
   it("starts a frame queued behind a busy GPU at the previous frame's completion, not at its own submission", () => {

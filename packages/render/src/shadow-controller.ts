@@ -39,6 +39,7 @@ import {
   drawsNoShadow,
   neverCastsShadows,
   participatesInShadows,
+  spotShadowCone,
   type ShadowParticipation,
 } from "./shadow-mesh-policy";
 import { ShadowCasterList } from "./shadow-caster-list";
@@ -1059,11 +1060,15 @@ export class SceneShadowController {
   }
 }
 
-/** Whether a caster at `mesh` can draw into `generator`'s map: a local light's within its range (its cone unchecked), a sun's always. */
+/**
+ * Whether a caster at `mesh` can draw into `generator`'s map: a local light's within its range (and a spot light's
+ * shadow cone, `spotShadowCone`), a sun's always.
+ */
 function reaches(generator: ShadowGenerator, mesh: AbstractMesh): boolean {
   const light = generator.getLight();
-  return light instanceof DirectionalLight || !("range" in light) || !Number.isFinite(light.range) ||
-    casterWithinShadowRange(mesh, (light as LocalShadowLight).getAbsolutePosition(), light.range as number);
+  if (light instanceof DirectionalLight || !("range" in light) || !Number.isFinite(light.range)) return true;
+  const cone = light instanceof SpotLight ? spotShadowCone(light.getShadowDirection(0), light.angle * (light.shadowAngleScale || 1)) : null;
+  return casterWithinShadowRange(mesh, (light as LocalShadowLight).getAbsolutePosition(), light.range as number, cone);
 }
 
 /** Internal renderer lookup; observing a scene never installs a second owner. */
