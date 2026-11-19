@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { Position } from "@xyflow/react";
 import type { FormatLayoutEdge, FormatLayoutNode } from "./format-layout";
-import { formatStateMachineLayout } from "./format-state-machine-layout";
-import { ANIM_TRANSITION_MIN_STUB } from "./anim-transition-path";
+import { formatStateMachineLayout, formatStateMachineSides } from "./format-state-machine-layout";
+import { ANIM_TRANSITION_MIN_STUB, animTransitionPath, type AnimStateSide } from "./anim-transition-path";
 
 function state(id: string, x: number, y: number, width = 200, height = 88): FormatLayoutNode {
   return { id, position: { x, y }, width, height, data: {} };
@@ -20,33 +21,71 @@ function at(nodes: FormatLayoutNode[], id: string): FormatLayoutNode {
   return nodes.find((entry) => entry.id === id)!;
 }
 
-function centre(entry: FormatLayoutNode) {
-  return { x: entry.position.x + entry.width / 2, y: entry.position.y + entry.height / 2 };
+const POSITION: Record<AnimStateSide, Position> = {
+  top: Position.Top,
+  right: Position.Right,
+  bottom: Position.Bottom,
+  left: Position.Left,
+};
+
+/** Where the editor's wire meets a side: its midpoint, 2px outside the card (the plates and the wire's insets). */
+function wireEnd(entry: FormatLayoutNode, side: AnimStateSide) {
+  const { x, y } = entry.position;
+  if (side === "top") return { x: x + entry.width / 2, y: y - 2 };
+  if (side === "bottom") return { x: x + entry.width / 2, y: y + entry.height + 2 };
+  if (side === "left") return { x: x - 2, y: y + entry.height / 2 };
+  return { x: x + entry.width + 2, y: y + entry.height / 2 };
 }
 
-/** Whether the straight line between two points enters the box, sampled finely (independent of the layout's clip). */
-function lineEntersBox(a: { x: number; y: number }, b: { x: number; y: number }, box: FormatLayoutNode): boolean {
+/** The wire the editor draws for a transition after Format: the real path function's cubic, sampled finely. */
+function drawnWire(nodes: FormatLayoutNode[], row: FormatLayoutEdge): Array<{ x: number; y: number }> {
+  const from = at(nodes, row.source);
+  const to = at(nodes, row.target);
+  const box = (entry: FormatLayoutNode) => ({ ...entry.position, width: entry.width, height: entry.height });
+  const sides = formatStateMachineSides(box(from), box(to));
+  const source = wireEnd(from, sides.source);
+  const target = wireEnd(to, sides.target);
+  const { path } = animTransitionPath({
+    sourceX: source.x,
+    sourceY: source.y,
+    sourcePosition: POSITION[sides.source],
+    targetX: target.x,
+    targetY: target.y,
+    targetPosition: POSITION[sides.target],
+  });
+  const numbers = path.match(/-?\d+(?:\.\d+)?(?:e-?\d+)?/g)!.map(Number);
+  const [p0x, p0y, c1x, c1y, c2x, c2y, p3x, p3y] = numbers as [number, number, number, number, number, number, number, number];
+  const points: Array<{ x: number; y: number }> = [];
   for (let step = 0; step <= 400; step += 1) {
     const t = step / 400;
-    const x = a.x + (b.x - a.x) * t;
-    const y = a.y + (b.y - a.y) * t;
-    if (x > box.position.x && x < box.position.x + box.width && y > box.position.y && y < box.position.y + box.height) {
-      return true;
-    }
+    const u = 1 - t;
+    points.push({
+      x: u * u * u * p0x + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * p3x,
+      y: u * u * u * p0y + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * p3y,
+    });
   }
-  return false;
+  return points;
 }
 
-/** Transitions whose straight centre-to-centre line runs through a state other than its two ends. */
-function throughThirdState(nodes: FormatLayoutNode[], edges: FormatLayoutEdge[]): string[] {
-  const hits: string[] = [];
+/** The least distance from any drawn wire to a state it does not connect, and the wires closer than 32 to one. */
+function wireClearance(nodes: FormatLayoutNode[], edges: FormatLayoutEdge[]) {
+  let least = Infinity;
+  const tooClose: string[] = [];
   for (const row of edges) {
+    const wire = drawnWire(nodes, row);
     for (const other of nodes) {
       if (other.id === row.source || other.id === row.target) continue;
-      if (lineEntersBox(centre(at(nodes, row.source)), centre(at(nodes, row.target)), other)) hits.push(`${row.id} through ${other.id}`);
+      let distance = Infinity;
+      for (const point of wire) {
+        const dx = Math.max(other.position.x - point.x, 0, point.x - (other.position.x + other.width));
+        const dy = Math.max(other.position.y - point.y, 0, point.y - (other.position.y + other.height));
+        distance = Math.min(distance, Math.hypot(dx, dy));
+      }
+      least = Math.min(least, distance);
+      if (distance < 32) tooClose.push(`${row.id} near ${other.id}`);
     }
   }
-  return hits;
+  return { least, tooClose };
 }
 
 function overlapping(nodes: FormatLayoutNode[]): string[] {
@@ -67,6 +106,16 @@ function overlapping(nodes: FormatLayoutNode[]): string[] {
   }
   return pairs;
 }
+
+describe("formatStateMachineSides", () => {
+  it("joins states in different columns by their facing left and right sides, and one column by top and bottom", () => {
+    const box = (x: number, y: number) => ({ x, y, width: 200, height: 88 });
+    expect(formatStateMachineSides(box(0, 0), box(300, 400))).toEqual({ source: "right", target: "left" });
+    expect(formatStateMachineSides(box(300, 400), box(0, 0))).toEqual({ source: "left", target: "right" });
+    expect(formatStateMachineSides(box(0, 0), box(100, 400))).toEqual({ source: "bottom", target: "top" });
+    expect(formatStateMachineSides(box(100, 400), box(0, 0))).toEqual({ source: "top", target: "bottom" });
+  });
+});
 
 describe("formatStateMachineLayout", () => {
   it("puts each state in the column of its shortest distance from the entry, which keeps its place", () => {
@@ -98,11 +147,26 @@ describe("formatStateMachineLayout", () => {
     expect(gap).toBeGreaterThanOrEqual(2 * ANIM_TRANSITION_MIN_STUB);
   });
 
-  it("moves a middle state off a long back transition's straight path", () => {
+  it("keeps a long back transition's drawn wire 32 units clear of the states between its ends", () => {
     const nodes = [state("entry", 0, 0), state("x", 400, 0), state("y", 800, 0), state("z", 1200, 0)];
     const edges = [edge("entry", "x"), edge("x", "y"), edge("y", "z"), edge("z", "entry")];
     const result = apply(nodes, formatStateMachineLayout({ nodes, edges, selectedIds: [] }, { entryId: "entry" }));
-    expect(throughThirdState(result, edges)).toEqual([]);
+    expect(wireClearance(result, edges).tooClose).toEqual([]);
+    expect(overlapping(result)).toEqual([]);
+  });
+
+  it("opens a lane for a back transition past a column of states", () => {
+    // land -> entry runs back over the middle columns, each holding two states.
+    const nodes = [
+      state("entry", 0, 0), state("jump", 400, -100), state("walk", 400, 100), state("fall", 800, -100),
+      state("run", 800, 100), state("land", 1200, 0),
+    ];
+    const edges = [
+      edge("entry", "jump"), edge("entry", "walk"), edge("jump", "fall"), edge("walk", "run"), edge("fall", "land"),
+      edge("run", "land"), edge("land", "entry"),
+    ];
+    const result = apply(nodes, formatStateMachineLayout({ nodes, edges, selectedIds: [] }, { entryId: "entry" }));
+    expect(wireClearance(result, edges).tooClose).toEqual([]);
     expect(overlapping(result)).toEqual([]);
   });
 
@@ -115,7 +179,19 @@ describe("formatStateMachineLayout", () => {
     expect(at(result, "c").position.y).toBeLessThan(at(result, "d").position.y);
   });
 
-  it("puts states the entry cannot reach in one row below, in their current left-to-right order", () => {
+  it("puts a state that only leads into the machine one layer before the earliest state it leads to", () => {
+    const nodes = [state("entry", 0, 0), state("a", 0, 300), state("lead", 900, 900), state("first", 500, 900)];
+    const edges = [edge("entry", "a"), edge("lead", "a"), edge("first", "entry")];
+    const result = apply(nodes, formatStateMachineLayout({ nodes, edges, selectedIds: [] }, { entryId: "entry" }));
+    // lead goes to a (layer 1), so it shares the entry's column; first leads to the entry, so it sits left of it.
+    expect(at(result, "entry").position).toEqual({ x: 0, y: 0 });
+    expect(at(result, "lead").position.x).toBe(at(result, "entry").position.x);
+    expect(at(result, "first").position.x + 200).toBeLessThan(at(result, "entry").position.x);
+    expect(overlapping(result)).toEqual([]);
+    expect(wireClearance(result, edges).tooClose).toEqual([]);
+  });
+
+  it("puts states with no transition into the machine in one row below, in their current left-to-right order", () => {
     const nodes = [state("entry", 0, 0), state("a", 0, 200), state("late", 900, -500), state("early", 100, 900)];
     const edges = [edge("entry", "a"), edge("early", "late")];
     const result = apply(nodes, formatStateMachineLayout({ nodes, edges, selectedIds: [] }, { entryId: "entry" }));
@@ -163,18 +239,20 @@ describe("formatStateMachineLayout", () => {
     expect(placed.map((row) => row.id).sort()).toEqual(["a", "b", "entry"]);
   });
 
-  it("lays out a larger machine with cycles, pairs and an unreachable state cleanly, and moves nothing the second time", () => {
-    const ids = ["idle", "walk", "run", "jump", "fall", "land", "crouch", "slide", "orphan"];
+  it("lays out a larger machine with cycles, pairs and a leading state 32 units clear, and moves nothing the second time", () => {
+    const ids = ["idle", "walk", "run", "jump", "fall", "land", "crouch", "slide", "hidden", "lonely"];
     const nodes = ids.map((id, index) => state(id, (index * 389) % 1100, (index * 241) % 700, 200 + (index % 3) * 30, 88));
     const edges = [
       edge("idle", "walk"), edge("walk", "idle"), edge("walk", "run"), edge("run", "walk"), edge("idle", "jump"),
       edge("run", "jump"), edge("jump", "fall"), edge("fall", "land"), edge("land", "idle"), edge("idle", "crouch"),
       edge("crouch", "slide"), edge("run", "slide"), edge("slide", "crouch"), edge("crouch", "idle"),
+      edge("hidden", "idle"),
     ];
     const once = apply(nodes, formatStateMachineLayout({ nodes, edges, selectedIds: [] }, { entryId: "idle" }));
     expect(overlapping(once)).toEqual([]);
-    expect(throughThirdState(once, edges)).toEqual([]);
+    expect(wireClearance(once, edges).tooClose).toEqual([]);
     expect(at(once, "idle").position).toEqual(at(nodes, "idle").position);
+    expect(at(once, "hidden").position.x + at(once, "hidden").width).toBeLessThan(at(once, "idle").position.x);
     const twice = formatStateMachineLayout({ nodes: once, edges, selectedIds: [] }, { entryId: "idle" });
     expect(apply(once, twice).map((entry) => entry.position)).toEqual(once.map((entry) => entry.position));
   });
