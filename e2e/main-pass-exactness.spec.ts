@@ -59,15 +59,15 @@ function expectSameImages(current: Run, reference: Run) {
 }
 
 /**
- * Every full-screen pass starts from a clear of its colour target at its own viewport, where the reference loads it: a
- * pass of one draw that clears nothing first is gone, and as many passes as the reference loaded now clear first.
+ * Every full-screen pass of the frame graphs starts from a clear of its colour target at its own viewport, where the
+ * reference loads it. One pass of one draw still loads: the Fast capture's display conversion, drawn outside the graphs.
  */
 function expectFullScreenClears(current: Run, reference: Run) {
-  const loaded = reference.glFrame.passes.filter((pass) => /^\S+ v\S+ x1$/.test(pass));
+  const loads = (run: Run) => run.glFrame.passes.filter((pass) => /^\S+ v\S+ x1$/.test(pass));
   const cleared = current.glFrame.passes.filter((pass) => /^\S+ v(\S+) c@\1 x1$/.test(pass));
-  expect(loaded.length).toBeGreaterThan(0);
-  expect(current.glFrame.passes.filter((pass) => /^\S+ v\S+ x1$/.test(pass)), current.glFrame.passes.join("\n")).toEqual([]);
-  expect(cleared.length, current.glFrame.passes.join("\n")).toBe(loaded.length);
+  expect(cleared.length).toBeGreaterThan(0);
+  expect(loads(current), current.glFrame.passes.join("\n")).toHaveLength(1);
+  expect(cleared.length + loads(current).length, current.glFrame.passes.join("\n")).toBe(loads(reference).length);
   // An instanced batch drawn again with the rows and colours its buffers hold uploads neither again.
   expect(current.glFrame.calls.bufferSubData ?? 0).toBeLessThan(reference.glFrame.calls.bufferSubData ?? 0);
 }
