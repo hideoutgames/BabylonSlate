@@ -10,7 +10,6 @@ import {
   BT_NODE_TYPE,
   BT_PARENT_HANDLE,
   applyNodePositions,
-  arrangeBehaviourTree,
   behaviourTreeToSerialized,
   hydrateBehaviourTreeForEditor,
   layoutBehaviourTree,
@@ -261,33 +260,6 @@ describe("behaviour tree serialize", () => {
       "a",
       "b",
     ]);
-  });
-
-  it("arranges nodes without changing sibling order", () => {
-    const tree: BehaviourTreeDocument = {
-      name: "Arrange",
-      rootId: "root",
-      blackboardGuid: null,
-      editorPositions: {
-        root: { x: 900, y: 10 },
-        a: { x: 10, y: 400 },
-        b: { x: 800, y: 20 },
-      },
-      nodes: [
-        node("root", "selector", "bt.composite.selector", ["a", "b"]),
-        node("a", "task", "bt.task.succeed"),
-        node("b", "task", "bt.task.fail"),
-      ],
-    };
-    const arranged = arrangeBehaviourTree(tree);
-    expect(arranged.nodes.find((entry) => entry.id === "root")?.children).toEqual([
-      "a",
-      "b",
-    ]);
-    expect(arranged.editorPositions?.a?.x).toBeLessThan(arranged.editorPositions?.b?.x ?? 0);
-    expect(arranged.editorPositions?.root?.y).toBeLessThan(
-      arranged.editorPositions?.a?.y ?? 0,
-    );
   });
 
   it("persists moved positions and reorders siblings in one document", () => {

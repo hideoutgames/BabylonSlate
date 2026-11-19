@@ -533,6 +533,44 @@ describe("AnimGraphEditor", () => {
     expect(machineOf(lastCommit()).aliases).toEqual([{ id: "struck", name: "Struck", position: { x: 0, y: 400 }, anyState: false, stateIds: ["idle", "run"] }]);
   });
 
+  it("formats the State Machine in layers from the entry state in one change", async () => {
+    const doc = locoGraph();
+    const machine = machineOf(doc);
+    machine.states.find((row) => row.id === "run")!.position = { x: -500, y: 700 };
+    machine.states.push({
+      id: "jump",
+      name: "Jump",
+      position: { x: -900, y: -300 },
+      stateGraph: createStateGraph("3d", { assetGuid: "anim-1", clipName: "Walk", durationMs: 400 }),
+    });
+    for (const [id, fromStateId, toStateId] of [["run-to-jump", "run", "jump"], ["jump-to-idle", "jump", "idle"]] as const) {
+      machine.transitions.push({ id, fromStateId, toStateId, blendSeconds: 0.25, priority: 0, ruleGraph: createDefaultTransitionRuleGraph() });
+    }
+    const entryPosition = machine.states.find((row) => row.id === machine.entryStateId)!.position;
+    renderAnimGraph(doc);
+    await waitFor(() => expect(screen.getByTestId("anim-state-node-jump")).toBeTruthy());
+    const before = store.applyAssetDocumentChange.mock.calls.length;
+    fireEvent.click(screen.getByTestId("graph-format"));
+    await waitFor(() => expect(store.applyAssetDocumentChange.mock.calls.length).toBe(before + 1));
+    const next = machineOf(lastCommit());
+    const x = (id: string) => next.states.find((row) => row.id === id)!.position!.x;
+    expect(next.states.find((row) => row.id === "idle")!.position).toEqual(entryPosition);
+    expect(x("run")).toBeGreaterThan(x("idle"));
+    expect(x("jump")).toBeGreaterThan(x("run"));
+    // The same states and transitions, each transition now on the sides its states face.
+    expect(next.states.map((row) => [row.id, row.name])).toEqual(machine.states.map((row) => [row.id, row.name]));
+    expect(next.entryStateId).toBe(machine.entryStateId);
+    expect(next.transitions.map(({ sourceHandle, targetHandle, ...row }) => [row, sourceHandle, targetHandle])).toEqual([
+      [machine.transitions[0], "right-out", "left-in"],
+      [machine.transitions[1], "right-out", "left-in"],
+      [machine.transitions[2], "left-out", "right-in"],
+    ]);
+
+    fireEvent.click(screen.getByTestId("graph-format"));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(store.applyAssetDocumentChange.mock.calls.length).toBe(before + 1);
+  });
+
   it("shows the rows two selected states share and adds typed math to each state's Speed in one change", async () => {
     const doc = locoGraph();
     machineOf(doc).states[1]!.stateGraph = createStateGraph("3d", { assetGuid: "anim-1", playRate: 2 });

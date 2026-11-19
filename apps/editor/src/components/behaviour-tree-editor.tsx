@@ -18,7 +18,6 @@ import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
   addService,
-  arrangeBehaviourTree,
   behaviourTreeToSerialized,
   BT_CHILDREN_HANDLE,
   BT_COMPOSITE_CATALOG,
@@ -71,7 +70,16 @@ import {
   type Vector3Value,
 } from "@haptic/editor-kit";
 import { BT_DEBUG_GRAPH_ID } from "@haptic/bridge";
-import { GraphEditor, GraphKeybindsContext, breakpointMenuItems, treeEdgeOptions, treeNodeTypes, type PaletteNode } from "@haptic/graph-ui";
+import {
+  GraphEditor,
+  GraphKeybindsContext,
+  breakpointMenuItems,
+  formatTreeLayout,
+  treeEdgeOptions,
+  treeNodeTypes,
+  type GraphFormatLayout,
+  type PaletteNode,
+} from "@haptic/graph-ui";
 import { defaultJsValue } from "@haptic/scripting";
 import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
@@ -95,11 +103,10 @@ import { sessionReportNodeTitle } from "../lib/session-report-locations";
 import { useBehaviourTreeRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 
-const BT_HIDDEN_TOOLBAR_ACTIONS: Array<"copy" | "paste" | "breakLinks" | "format"> = [
+const BT_HIDDEN_TOOLBAR_ACTIONS: Array<"copy" | "paste" | "breakLinks"> = [
   "copy",
   "paste",
   "breakLinks",
-  "format",
 ];
 
 function catalogPalette(entries: readonly BtCatalogEntry[]): PaletteNode[] {
@@ -602,23 +609,16 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
     [setAttachmentId, setSelectedId, setSelectedIds],
   );
 
-  const toolbarExtra = useMemo(
-    () => (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        data-testid="bt-auto-arrange"
-        onClick={() => {
-          const { doc, commit } = latest.current;
-          commit(arrangeBehaviourTree(doc));
-        }}
-      >
-        Auto Arrange
-      </Button>
-    ),
-    [],
-  );
+  // Format lays the tree out top-down in its stored child order, so the order it runs in never changes.
+  const formatLayout = useCallback<GraphFormatLayout>((input) => {
+    const { doc } = latest.current;
+    const childIndex = new Map<string, number>();
+    for (const node of doc.nodes) node.children.forEach((childId, index) => childIndex.set(childId, index));
+    return formatTreeLayout(input, {
+      rootId: doc.rootId,
+      compareSiblings: (a, b) => (childIndex.get(a.id) ?? 0) - (childIndex.get(b.id) ?? 0),
+    });
+  }, []);
 
   const onChange = useCallback<NonNullable<ComponentProps<typeof GraphEditor>["onChange"]>>(
     (graph, meta) => {
@@ -668,7 +668,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           contextMenuItemsForAttachment={attachmentMenu}
           hiddenToolbarActions={BT_HIDDEN_TOOLBAR_ACTIONS}
           onSelectionChange={onSelectionChange}
-          toolbarExtra={toolbarExtra}
+          formatLayout={formatLayout}
           onChange={onChange}
         />
       </div>

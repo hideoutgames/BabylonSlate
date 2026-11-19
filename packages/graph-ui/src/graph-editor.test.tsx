@@ -13,6 +13,7 @@ import {
 import type { GraphDocument, PaletteNode, PinConversion, SerializedPin } from "./graph-types";
 import { isAssignable, type PinType } from "@haptic/scripting";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
+import type { GraphFormatLayout } from "./format-layout";
 import type { PinCompatibilityRule } from "./graph-connect";
 import { estimateGraphNodeSize } from "./graph-virtualize";
 import { treeNodeTypes } from "./tree-node";
@@ -4482,6 +4483,84 @@ describe("GraphEditor", () => {
     expect(node).not.toBeNull();
     fireEvent.click(node!);
     expect(getByTestId("graph-format")).toHaveProperty("disabled", false);
+  });
+
+  describe("host Format layout", () => {
+    const twoLogs = (): GraphDocument => ({
+      nodes: [
+        { id: "log-a", type: "debug.log", position: { x: 0, y: 40 }, data: { message: "A", __pins: debugLogPins } },
+        { id: "log-b", type: "debug.log", position: { x: 12, y: 180 }, data: { message: "B", __pins: debugLogPins } },
+      ],
+      edges: [
+        { id: "e:log-a:execOut:log-b:execIn", source: "log-a", target: "log-b", sourceHandle: "execOut", targetHandle: "execIn" },
+      ],
+    });
+
+    it("lays out the whole graph with nothing selected and moves what it returns in one change", () => {
+      const onChange = vi.fn();
+      const formatLayout = vi.fn(() => [
+        { id: "log-a", position: { x: 0, y: 40 } },
+        { id: "log-b", position: { x: 400, y: 40 } },
+        { id: "missing", position: { x: 9, y: 9 } },
+      ]);
+      const { container, getByTestId } = render(
+        <GraphEditor initialGraph={twoLogs()} onChange={onChange} formatLayout={formatLayout} />,
+      );
+      onChange.mockClear();
+      expect(getByTestId("graph-format")).toHaveProperty("disabled", false);
+      fireEvent.click(getByTestId("graph-format"));
+
+      expect(formatLayout).toHaveBeenCalledTimes(1);
+      const input = (formatLayout.mock.calls[0] as unknown as [Parameters<GraphFormatLayout>[0]])[0];
+      expect(input.selectedIds).toEqual([]);
+      expect(input.nodes.map((node) => node.id)).toEqual(["log-a", "log-b"]);
+      expect(input.nodes[1]).toMatchObject({ position: { x: 12, y: 180 }, data: { message: "B" } });
+      expect(input.nodes[1]!.width).toBeGreaterThan(0);
+      expect(input.nodes[1]!.height).toBeGreaterThan(0);
+      expect(input.edges).toEqual([
+        { id: "e:log-a:execOut:log-b:execIn", source: "log-a", target: "log-b", sourceHandle: "execOut", targetHandle: "execIn" },
+      ]);
+      expect(onChange).toHaveBeenCalledTimes(1);
+      const graph = onChange.mock.calls[0]![0] as GraphDocument;
+      expect(graph.nodes.map((node) => [node.id, node.position])).toEqual([
+        ["log-a", { x: 0, y: 40 }],
+        ["log-b", { x: 400, y: 40 }],
+      ]);
+      expect(graph.edges).toHaveLength(1);
+      expect(container.querySelectorAll(".react-flow__node")).toHaveLength(2);
+
+      // The same positions again: nothing moves, so nothing is emitted.
+      fireEvent.click(getByTestId("graph-format"));
+      expect(formatLayout).toHaveBeenCalledTimes(2);
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    it("passes the selection and leaves it selected", () => {
+      const formatLayout = vi.fn(() => [{ id: "log-b", position: { x: 300, y: 300 } }]);
+      const { container, getByTestId } = render(<GraphEditor initialGraph={twoLogs()} formatLayout={formatLayout} />);
+      fireEvent.click(container.querySelector('[data-id="log-a"]')!);
+      fireEvent.click(getByTestId("graph-format"));
+      const input = (formatLayout.mock.calls[0] as unknown as [Parameters<GraphFormatLayout>[0]])[0];
+      expect(input.selectedIds).toEqual(["log-a"]);
+      expect(container.querySelector('[data-id="log-a"]')?.classList.contains("selected")).toBe(true);
+      expect(container.querySelector('[data-id="log-b"]')?.classList.contains("selected")).toBe(false);
+    });
+
+    it("never runs read-only or while nodes cannot be dragged", () => {
+      const onChange = vi.fn();
+      const formatLayout = vi.fn(() => [{ id: "log-b", position: { x: 300, y: 300 } }]);
+      const readOnly = render(<GraphEditor initialGraph={twoLogs()} readOnly formatLayout={formatLayout} />);
+      expect(readOnly.queryByTestId("graph-format")).toBeNull();
+      readOnly.unmount();
+      const { getByTestId } = render(
+        <GraphEditor initialGraph={twoLogs()} nodesDraggable={false} onChange={onChange} formatLayout={formatLayout} />,
+      );
+      onChange.mockClear();
+      expect(getByTestId("graph-format")).toHaveProperty("disabled", true);
+      fireEvent.click(getByTestId("graph-format"));
+      expect(formatLayout).not.toHaveBeenCalled();
+      expect(onChange).not.toHaveBeenCalled();
+    });
   });
 
   it("formats the then-chain to the right of a single selected node", () => {

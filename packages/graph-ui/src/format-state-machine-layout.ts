@@ -189,13 +189,14 @@ class LayeredGeometry {
   private readonly columnWidth: number[] = [];
   /** Indexes into `segments` of the transitions at each state. */
   private readonly touching = new Map<string, number[]>();
+  private readonly layers: FormatLayoutNode[][];
+  private readonly segments: readonly Segment[];
+  private readonly stateGap: number;
 
-  constructor(
-    private readonly layers: FormatLayoutNode[][],
-    private readonly segments: readonly Segment[],
-    private readonly layerGap: number,
-    private readonly stateGap: number,
-  ) {
+  constructor(layers: FormatLayoutNode[][], segments: readonly Segment[], layerGap: number, stateGap: number) {
+    this.layers = layers;
+    this.segments = segments;
+    this.stateGap = stateGap;
     let x = 0;
     layers.forEach((layer, index) => {
       let width = 0;
