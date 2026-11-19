@@ -1143,12 +1143,202 @@ describe("formatGraphNodes cost", () => {
     expect(work(large) / work(small)).toBeLessThan(7);
   });
 
+  it("grows about linearly with the size of a sink's expression tree", () => {
+    // A 300-node expression into one sink: a chain of operators, each with a sub-expression on
+    // its second input that also reads the previous one's leaf (a shared sub-expression).
+    const three: SerializedPin[] = [...twoInOut.slice(0, 2), { id: "c", name: "c", kind: "data", direction: "in", type: { kind: "float" } }, ...dataOutPins];
+    const expression = (count: number) => {
+      const nodes: FormatNode[] = [];
+      const edges: FormatEdge[] = [];
+      for (let index = 0; index < count / 3; index++) {
+        nodes.push(node(`op${index}`, (index * 53) % 900, (index * 31) % 700, three), node(`mul${index}`, 0, 0, three), node(`leaf${index}`, 0, 0, dataOutPins));
+        if (index > 0) edges.push(dataEdge(`op${index}`, `op${index - 1}`, "a"));
+        edges.push(dataEdge(`mul${index}`, `op${index}`, "b"), dataEdge(`leaf${index}`, `mul${index}`, "a"));
+        if (index > 0) edges.push(dataEdge(`leaf${index - 1}`, `mul${index}`, "b"));
+      }
+      return { nodes, edges };
+    };
+    const sinkWork = (count: number, insertKnots: boolean) => {
+      const { nodes, edges } = expression(count);
+      const counter = { tests: 0 };
+      formatGraphNodes(nodes, edges, ["op0"], { insertKnots, work: counter });
+      return counter.tests;
+    };
+    // About 4.2 times now; scanning every placed box again gives 11, every laid wire 9.7 (7.7 and
+    // 6.6 with knots).
+    expect(sinkWork(300, false) / sinkWork(75, false)).toBeLessThan(6);
+    expect(sinkWork(300, true) / sinkWork(75, true)).toBeLessThan(5.5);
+  });
+
   it("counts nothing unless asked and leaves the layout unchanged", () => {
     const graph = chain(30, 12);
     const counter = { tests: 0 };
     const counted = formatGraphNodes(graph.nodes, graph.edges, ["n0"], { insertKnots: true, work: counter });
     expect(counter.tests).toBeGreaterThan(0);
     expect(formatGraphNodes(graph.nodes, graph.edges, ["n0"], { insertKnots: true })).toEqual(counted);
+  });
+});
+
+// A node as the editor measured it (Feature Test graphs): its size and its pins' handle centres,
+// keyed `in:<pin>` / `out:<pin>`; every pin is a data pin.
+function measured(id: string, x: number, y: number, width: number, height: number, offsets: Record<string, number>): FormatNode {
+  const pins: SerializedPin[] = Object.keys(offsets).map((key) => {
+    const [direction, pinId] = key.split(":") as ["in" | "out", string];
+    return { id: pinId, name: pinId, kind: "data", direction, type: { kind: "float" } };
+  });
+  const pinOffsets = Object.fromEntries(Object.entries(offsets).map(([key, value]) => {
+    const [direction, pinId] = key.split(":") as ["in" | "out", string];
+    return [formatPinOffsetKey(direction, pinId), value];
+  }));
+  return { id, position: { x, y }, width, height, pins, pinOffsets };
+}
+
+function wireOf(source: string, sourceHandle: string, target: string, targetHandle: string): FormatEdge {
+  return { id: `${source}.${sourceHandle}>${target}.${targetHandle}`, source, sourceHandle, target, targetHandle };
+}
+
+/** Every wire runs left to right: each source ends at least a column gap before what it feeds. */
+function expectLeftToRight(nodes: readonly FormatNode[], edges: readonly FormatEdge[]): void {
+  for (const edge of edges) {
+    const source = byIdOf(nodes, edge.source);
+    expect(source.position.x + sizeOf(source).width + FORMAT_GAP_X, `${edge.source} → ${edge.target}`).toBeLessThanOrEqual(byIdOf(nodes, edge.target).position.x);
+  }
+}
+
+describe("formatGraphNodes on a Material graph", () => {
+  // FT_MatSurface: Albedo and a tiled UV into a Texture Sample, tinted by a Material Function with
+  // Tint and Brightness, into Base Color; Metallic and Roughness parameters; an Emissive Color
+  // pulsed by a second function into Emissive. Sizes and pin centres as the editor measures them.
+  const nodes: FormatNode[] = [
+    measured("albedo", 0, 0, 320, 96, { "out:out": 69 }),
+    measured("uv", 0, 120, 320, 96, { "out:uv": 69 }),
+    measured("tintColor", 0, 260, 320, 184, { "out:out": 69, "out:rgb": 113, "out:a": 157 }),
+    measured("brightness", 0, 460, 320, 96, { "out:out": 69 }),
+    measured("roughness", 0, 600, 320, 96, { "out:out": 69 }),
+    measured("metallic", 0, 740, 320, 96, { "out:out": 69 }),
+    measured("glow", 0, 880, 320, 184, { "out:out": 69, "out:rgb": 113, "out:a": 157 }),
+    measured("tiling", 400, 120, 410, 228, { "in:uv": 69, "out:out": 69, "in:tiling": 113, "in:rotation": 157, "in:offset": 201 }),
+    measured("sample", 900, 0, 320, 360, { "in:texture": 69, "out:rgba": 69, "in:uv": 113, "out:rgb": 113, "out:r": 157, "out:g": 201, "out:b": 245, "out:a": 289, "out:textureOut": 333 }),
+    measured("tint", 1300, 100, 320, 184, { "in:color": 69, "out:result": 69, "in:tint": 113, "in:brightness": 157 }),
+    measured("pulse", 1300, 900, 322, 140, { "in:color": 69, "out:result": 69, "in:speed": 113 }),
+    measured("output", 1800, 300, 525, 592, {
+      "in:baseColor": 94, "in:metallic": 138, "in:specular": 182, "in:roughness": 226, "in:environmentInfluence": 270,
+      "in:normal": 314, "in:emissive": 383, "in:opacity": 452, "in:alphaClip": 496, "in:worldPositionOffset": 565,
+    }),
+  ];
+  const edges = [
+    wireOf("albedo", "out", "sample", "texture"),
+    wireOf("uv", "uv", "tiling", "uv"),
+    wireOf("tiling", "out", "sample", "uv"),
+    wireOf("sample", "rgb", "tint", "color"),
+    wireOf("tintColor", "rgb", "tint", "tint"),
+    wireOf("brightness", "out", "tint", "brightness"),
+    wireOf("tint", "result", "output", "baseColor"),
+    wireOf("roughness", "out", "output", "roughness"),
+    wireOf("metallic", "out", "output", "metallic"),
+    wireOf("glow", "rgb", "pulse", "color"),
+    wireOf("pulse", "result", "output", "emissive"),
+  ];
+  const at = (list: readonly FormatNode[], id: string, direction: "in" | "out", pin: string) => handleY(byIdOf(list, id), direction, pin);
+  const result = formatGraphNodes(nodes, edges, ["output"]);
+
+  it("lays everything feeding the output out to its left, the output in place", () => {
+    const next = result.nodes;
+    expect(pos(next, "output")).toEqual({ x: 1800, y: 300 });
+    expectLeftToRight(next, edges);
+    expectNoBoxOverlaps(next);
+    expectWiresClear(next, edges);
+    // Base Color's source runs level into it: a sink has no exec wire to keep clear.
+    expect(at(next, "tint", "out", "result")).toBe(at(next, "output", "in", "baseColor"));
+    // Texture Sample, Tint and Brightness feed consecutive pins: a centred fan, Tint level.
+    expect(at(next, "tintColor", "out", "rgb")).toBe(at(next, "tint", "in", "tint"));
+    expect(at(next, "albedo", "out", "out")).toBe(at(next, "sample", "in", "texture"));
+    // Material graphs have no knots to add.
+    expect(result.knots).toEqual([]);
+    expect(formatGraphNodes(next, edges, ["output"]).nodes).toEqual(next);
+  });
+
+  it("formats the same with nothing selected, and from a middle node only what feeds it", () => {
+    expect(formatGraphNodes(nodes, edges, []).nodes).toEqual(result.nodes);
+    const fromTint = formatGraphNodes(nodes, edges, ["tint"]).nodes;
+    for (const id of ["tint", "output", "roughness", "metallic", "glow", "pulse"]) expect(pos(fromTint, id)).toEqual(pos(nodes, id));
+    for (const id of ["sample", "tiling", "uv", "albedo", "tintColor", "brightness"]) expect(pos(fromTint, id)).not.toEqual(pos(nodes, id));
+    expectLeftToRight(fromTint, edges.filter((edge) => edge.target !== "output" && edge.source !== "glow"));
+    expectNoBoxOverlaps(fromTint);
+  });
+
+  it("stacks two disconnected sink trees in their top-to-bottom order without overlap", () => {
+    const extra = [measured("note", 1800, 0, 320, 140, { "in:value": 69 }), measured("value", 1000, -400, 320, 96, { "out:out": 69 })];
+    const both = formatGraphNodes([...nodes, ...extra], [...edges, wireOf("value", "out", "note", "value")], []).nodes;
+    expectNoBoxOverlaps(both);
+    // The tree above (Note) keeps its place; the output's tree stays below it.
+    expect(pos(both, "note")).toEqual({ x: 1800, y: 0 });
+    expect(at(both, "value", "out", "out")).toBe(at(both, "note", "in", "value"));
+    expect(pos(both, "output").y).toBeGreaterThanOrEqual(pos(both, "note").y + 140);
+  });
+});
+
+describe("formatGraphNodes on a Particle graph", () => {
+  // FT_FxGlowGraph: the Particle spine Create Particle → Sphere Shape → Apply Velocity → Gravity →
+  // Update Color → Emitter Output, with Wind Strength, a Random size through a knot, a colour from
+  // Initial Color × Gradient(Normalized Age), and Glow Rate into Emit Rate. Measured sizes.
+  const nodes: FormatNode[] = [
+    measured("create", 400, 300, 389, 360, { "in:emitPower": 69, "out:out": 69, "in:lifetime": 113, "in:color": 157, "in:deadColor": 201, "in:size": 245, "in:scale": 289, "in:angle": 333 }),
+    measured("shape", 900, 300, 446, 316, { "in:particle": 69, "out:out": 69, "in:radius": 113, "in:radiusRange": 157, "in:directionRandomizer": 201, "in:direction1": 245, "in:direction2": 289 }),
+    measured("velocity", 1100, 300, 350, 96, { "in:particle": 69, "out:out": 69 }),
+    measured("gravity", 1500, 300, 459, 140, { "in:particle": 69, "out:out": 69, "in:acceleration": 113 }),
+    measured("updateColor", 1700, 300, 350, 140, { "in:particle": 69, "out:out": 69, "in:color": 113 }),
+    measured("output", 2100, 300, 320, 140, { "in:particle": 69, "in:emitRate": 113 }),
+    measured("initialColor", 900, 700, 320, 96, { "out:out": 69 }),
+    measured("normalizedAge", 400, 900, 320, 96, { "out:out": 69 }),
+    measured("gradient", 900, 900, 320, 96, { "in:ratio": 69, "out:out": 69 }),
+    measured("multiply", 1300, 800, 320, 140, { "in:a": 69, "out:out": 69, "in:b": 113 }),
+    measured("glowRate", 1900, 600, 320, 96, { "out:out": 69 }),
+    measured("windStrength", 0, 300, 320, 96, { "out:out": 69 }),
+    measured("sizeRandom", 0, 600, 378, 140, { "in:min": 69, "out:out": 69, "in:max": 113 }),
+    { id: "sizeKnot", position: { x: 300, y: 600 }, pins: knotPins, reroute: true },
+  ];
+  const edges = [
+    wireOf("create", "out", "shape", "particle"),
+    wireOf("shape", "out", "velocity", "particle"),
+    wireOf("velocity", "out", "gravity", "particle"),
+    wireOf("gravity", "out", "updateColor", "particle"),
+    wireOf("updateColor", "out", "output", "particle"),
+    wireOf("normalizedAge", "out", "gradient", "ratio"),
+    wireOf("initialColor", "out", "multiply", "a"),
+    wireOf("gradient", "out", "multiply", "b"),
+    wireOf("multiply", "out", "updateColor", "color"),
+    wireOf("sizeRandom", "out", "sizeKnot", "in"),
+    wireOf("sizeKnot", "out", "create", "size"),
+    wireOf("windStrength", "out", "create", "emitPower"),
+    wireOf("glowRate", "out", "output", "emitRate"),
+  ];
+  const at = (list: readonly FormatNode[], id: string, direction: "in" | "out", pin: string) => handleY(byIdOf(list, id), direction, pin);
+  const result = formatGraphNodes(nodes, edges, ["output"], { insertKnots: true });
+  const knotted = withKnots(result, edges);
+
+  it("runs the Particle spine level into Emitter Output, the values below their consumers", () => {
+    const next = result.nodes;
+    expect(pos(next, "output")).toEqual({ x: 2100, y: 300 });
+    const spine = ["create", "shape", "velocity", "gravity", "updateColor"];
+    for (const id of spine) expect(at(next, id, "out", "out")).toBe(at(next, "output", "in", "particle"));
+    for (let index = 1; index < spine.length; index++) {
+      expect(pos(next, spine[index - 1]!).x + byIdOf(next, spine[index - 1]!).width! + FORMAT_GAP_X).toBeLessThanOrEqual(pos(next, spine[index]!).x);
+    }
+    expect(at(next, "windStrength", "out", "out")).toBe(at(next, "create", "in", "emitPower"));
+    expect(at(next, "initialColor", "out", "out")).toBe(at(next, "multiply", "in", "a"));
+    expectNoBoxOverlaps(knotted.nodes);
+    expectWiresClear(knotted.nodes, knotted.edges);
+    expectFinalKnotsLevel(result);
+  });
+
+  it("moves the existing knot with its wire and changes nothing when formatted again with knots", () => {
+    const knot = byIdOf(result.nodes, "sizeKnot");
+    expect(knot.position.y + REROUTE_KNOT_SIZE.height / 2).toBe(at(result.nodes, "create", "in", "size"));
+    const again = formatGraphNodes(knotted.nodes, knotted.edges, ["output"], { insertKnots: true });
+    expect(again.knots).toEqual([]);
+    expect(again.nodes).toEqual(knotted.nodes);
+    expect(formatGraphNodes(nodes, edges, [], { insertKnots: true })).toEqual(result);
   });
 });
 
