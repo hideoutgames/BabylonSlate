@@ -9,8 +9,9 @@
  * before its objects pass (`ManagedShadowObjectRendererTask.startClear`), the spatial geometry pass prepares through
  * Babylon's clears and then its own, binding its target three times, and keeps its depth, and the light block binds its
  * inputs for geometry pass programs that compile no lighting (`HapticLightingBlock.readsBindings`). The spec compares
- * the two runs' frames and capture images byte for byte, after a still stretch and after a caster moves, and each run's
- * GL calls and pass structure in one still frame (`GlSignatureRecorder`).
+ * the two runs' frames, capture images and shadow atlas pages (every texel's depth bits) byte for byte, after a still
+ * stretch and after a caster moves, and each run's GL calls and pass structure in one still frame
+ * (`GlSignatureRecorder`).
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
@@ -53,7 +54,8 @@ import { createMirrorSurfaceMesh, mirrorDiagnostics } from "../../../../packages
 import { allowSceneScreenShadows } from "../../../../packages/render/src/render-settings";
 import { setSceneRenderSettings } from "../../../../packages/render/src/scene-render-mode";
 import { shadowAtlasDrawCounts } from "../../../../packages/render/src/shadow-atlas";
-import { SceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import { findSceneShadowController, SceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
 
 /**
  * The light block's functions as before the savings, from the current ones (`HAPTIC_LIGHTING_FUNCTIONS_GLSL`): each
@@ -132,7 +134,8 @@ async function readCapture(texture: BaseTexture): Promise<number[]> {
   return Array.from(pixels as Uint8Array);
 }
 
-export type MainPassExactnessImages = { view: number[]; captures: Record<Shown, number[]> };
+/** The view's frame, the captures' images and the shadow atlas's pages (their depth bits, digested). */
+export type MainPassExactnessImages = { view: number[]; captures: Record<Shown, number[]>; atlas: ShadowAtlasPageDigest[] };
 
 /** One frame's GL calls by function, and its passes as the GL signature lists them. */
 export type MainPassExactnessFrame = { calls: Record<string, number>; passes: string[]; passCount: number; invalidates: number };
@@ -372,14 +375,25 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
       view: await readView(engine),
       captures: Object.fromEntries(await Promise.all(QUALITIES.map(async (quality) => [quality, await readCapture(outputs[quality])] as const))) as
         Record<Shown, number[]>,
+      atlas: await readShadowAtlasPages(scene),
     });
     const still = await read();
     // A still frame's GL calls and passes.
     const glFrame = measureFrame(engine, frame);
-    // A caster moves: every map that reaches it draws again, and the images follow.
+    // A caster moves: every map that reaches it draws again, and the images follow. The path they took, counted: tiles
+    // drawn against the times a page was bound for them, and the retained casters' draws, the caster draws those stood
+    // for and the rows a layer uploaded itself.
+    const retainedBefore = findSceneShadowController(scene)?.retainedCasters() ?? null;
+    const atlasBefore = { tiles: counts.tiles, passes: counts.passes };
     box.position.x += 0.4;
     box.rotation.y += 0.3;
     for (let index = 0; index < 4; index++) frame();
+    const retainedAfter = findSceneShadowController(scene)?.retainedCasters() ?? null;
+    const movedCounters = {
+      tiles: counts.tiles - atlasBefore.tiles, passes: counts.passes - atlasBefore.passes,
+      retainedDraws: (retainedAfter?.calls ?? 0) - (retainedBefore?.calls ?? 0), casterDraws: (retainedAfter?.drawn ?? 0) - (retainedBefore?.drawn ?? 0),
+      lateUploads: (retainedAfter?.lateUploads ?? 0) - (retainedBefore?.lateUploads ?? 0),
+    };
     const moved = await read();
     captures.dispose();
     view.dispose();
@@ -391,7 +405,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     await released;
-    return { still, moved, stillTexelsPerFrame, glFrame, renderer: engine.getGlInfo().renderer };
+    return { still, moved, stillTexelsPerFrame, glFrame, movedCounters, renderer: engine.getGlInfo().renderer };
   } finally {
     block._buildBlock = build;
     controller.applyViewRefresh = applyViewRefresh;

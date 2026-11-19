@@ -35,7 +35,12 @@ import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, PARKED_SHADOW_ATLAS_MS, shadowAtlasBytes, shadowAtlasGeneration, shadowAtlasRenderTarget, shadowAtlasTexture } from "./shadow-atlas";
+import {
+  AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, holdShadowAtlasPages, isAtlasShadow, PARKED_SHADOW_ATLAS_MS, shadowAtlasBytes,
+  shadowAtlasDrawCounts, shadowAtlasGeneration, shadowAtlasRenderTarget, shadowAtlasTexture,
+} from "./shadow-atlas";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
 import { builtInWaterMaterial } from "./water-template";
 import { PlanarMirrorCamera } from "./planar-mirror";
@@ -94,6 +99,35 @@ function prepareShadowLayers(generator: ShadowGenerator): void {
   scene.updateTransformMatrix(true);
   const map = generator.getShadowMap()!;
   map.render();
+}
+
+/**
+ * Gives a NullEngine WebGL's framebuffer binding as Babylon's ThinEngine keeps it (`_currentFramebuffer`, a bind only
+ * when it changes, a layer attached at every bind), recording the GL calls it makes.
+ */
+function recordFramebuffers(engine: AbstractEngine): string[] {
+  const gl: string[] = [];
+  const binding = engine as unknown as {
+    _currentFramebuffer: { name: string } | null; _cachedViewport: Viewport | null; _bindUnboundFramebuffer(framebuffer: { name: string } | null): void;
+  };
+  binding._currentFramebuffer = null;
+  binding._bindUnboundFramebuffer = (framebuffer) => {
+    if (binding._currentFramebuffer === framebuffer) return;
+    gl.push(`bind ${framebuffer?.name ?? "default"}`);
+    binding._currentFramebuffer = framebuffer;
+  };
+  engine.bindFramebuffer = (target, _face, width, height, full, _lod, layer = 0) => {
+    engine._currentRenderTarget = target;
+    binding._bindUnboundFramebuffer((target as unknown as { _framebuffer?: { name: string } })._framebuffer ?? null);
+    gl.push(`attach ${layer}`);
+    if (binding._cachedViewport && !full) engine.setViewport(binding._cachedViewport, width, height);
+  };
+  engine.unBindFramebuffer = (_target, _mips, before) => {
+    engine._currentRenderTarget = null;
+    before?.();
+    binding._bindUnboundFramebuffer(null);
+  };
+  return gl;
 }
 
 /** The edge of what the light block samples: its pages' edge times their count along an edge (the stand-in's is 1). */
@@ -263,6 +297,61 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     expect((spot.getShadowGenerator() as AtlasShadowGenerator).tile.layer).toBe(1);
     expect(render().clears).toEqual(["0 page", "4 tile", "5 tile"]);
+  });
+
+  it("binds an atlas page once for consecutive tile passes on it, across the maps of a shadow stage", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ maxLocalLights: 2 }) });
+    const lamp = new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, scene);
+    controller.register(lamp, true);
+    controller.register(spot, true);
+    controller.sync();
+    const faces = lamp.getShadowGenerator() as AtlasShadowGenerator, tile = spot.getShadowGenerator() as AtlasShadowGenerator;
+    // Four faces fill the first page; the last two and the spot light's tile share the second.
+    expect([...faces.tiles.map((entry) => entry.layer), tile.tile.layer]).toEqual([0, 0, 0, 0, 1, 1, 1]);
+    const gl = recordFramebuffers(engine);
+    const atlas = shadowAtlasTexture(scene).renderTarget as unknown as { _framebuffer: unknown };
+    atlas._framebuffer = { name: "atlas" };
+    const ended: string[] = [];
+    faces.getShadowMap()!.onAfterRenderObservable.add((face) => ended.push(`face ${face}`));
+    tile.getShadowMap()!.onAfterRenderObservable.add(() => ended.push("spot"));
+    const passes = () => shadowAtlasDrawCounts(scene).passes;
+    // One map: the second page is attached without binding the framebuffer again, and the render ends unbound.
+    let before = passes();
+    prepareShadowLayers(faces);
+    expect(gl.splice(0)).toEqual(["bind atlas", "attach 0", "attach 1", "bind default"]);
+    expect(passes() - before).toBe(2);
+    expect(engine._currentRenderTarget).toBeNull();
+    // Each pass's end is still told, its clear and its viewport still its tile's.
+    expect(ended.splice(0)).toEqual(["face 0", "face 0", "face 0", "face 0", "face 0", "face 0"]);
+    // A stage: the spot light's tile follows the faces on the second page without a bind; the stage ends unbound.
+    before = passes();
+    const stage = holdShadowAtlasPages(scene);
+    prepareShadowLayers(faces);
+    prepareShadowLayers(tile);
+    expect(gl).toEqual(["bind atlas", "attach 0", "attach 1"]);
+    stage.release();
+    expect(gl.splice(0)).toEqual(["bind atlas", "attach 0", "attach 1", "bind default"]);
+    expect(passes() - before).toBe(2);
+    expect(ended.splice(0)).toHaveLength(7);
+    expect(engine._currentRenderTarget).toBeNull();
+    // Anything bound between the maps ends the hold: the next map binds its page again.
+    const other = { _framebuffer: { name: "other" } };
+    const again = holdShadowAtlasPages(scene);
+    prepareShadowLayers(faces);
+    engine.bindFramebuffer(other as never);
+    engine.unBindFramebuffer(other as never);
+    prepareShadowLayers(tile);
+    again.release();
+    expect(gl.splice(0)).toEqual([
+      "bind atlas", "attach 0", "attach 1", "bind other", "attach 0", "bind default", "bind atlas", "attach 1", "bind default",
+    ]);
+    expect(engine._currentRenderTarget).toBeNull();
+    // A map drawn outside a stage after it ends its render unbound, as Babylon's does.
+    prepareShadowLayers(tile);
+    expect(gl.splice(0)).toEqual(["bind atlas", "attach 1", "bind default"]);
   });
 
   it("gives a level's first cascade its larger tile and its last cascades tiles of half the edge, never the first two and never below the floor", () => {

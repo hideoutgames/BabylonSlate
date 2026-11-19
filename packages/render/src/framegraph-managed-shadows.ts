@@ -16,6 +16,7 @@ import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { Nullable } from "@babylonjs/core/types";
 import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/shadowGeneratorTask";
 import { findSceneShadowController } from "./shadow-controller";
+import { holdShadowAtlasPages } from "./shadow-atlas";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { shadowPassesOff } from "./shadow-debug";
@@ -443,6 +444,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
       this.bind();
       if (!this.scene.shadowsEnabled || !this.scene.renderTargetsEnabled)
         return;
+      // Consecutive maps on one atlas page draw in one render pass: nothing below binds between them.
+      const pages = holdShadowAtlasPages(this.scene);
       for (const entry of this.borrowed) {
         // A view draws only its own maps; the scene view drew the shared ones.
         if (this.view && entry.generator.camera !== this.view) continue;
@@ -493,6 +496,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
         if (!viewMap && !map._shouldRender()) continue;
         draw();
       }
+      pages.release();
       // Do not sample an allocation replaced during another shadow's callback.
       // It has not participated in this pass and needs fresh preparation.
       if (this.borrowed.some((entry) => !this.isCurrent(entry))) {
