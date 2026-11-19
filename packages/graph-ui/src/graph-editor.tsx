@@ -89,6 +89,7 @@ import {
   type CanvasNode,
   graphNodeTypes,
   resolveNodeType,
+  zipPinRows,
 } from "./graph-nodes";
 import { styleFlowEdges } from "./edge-style";
 import { edgeStyleForPin } from "./node-theme";
@@ -139,14 +140,16 @@ import {
   type GraphViewport,
 } from "./graph-viewport";
 import { formatGraphNodes, formatPinOffsetKey } from "./graph-format";
+import type { GraphFormatLayout } from "./format-layout";
 import { freeNodePosition } from "./graph-placement";
+import { placeConversion } from "./graph-conversion-placement";
 import { findProximityConnections, type ProximityPin } from "./graph-proximity";
 import {
-  GRAPH_FIRST_PIN_ROW_CENTER_Y,
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
   estimateGraphNodeSize,
   graphNodeSize,
   graphNodesBounds,
+  graphPinRowCenterY,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
 import {
@@ -281,6 +284,14 @@ export interface GraphEditorProps {
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;
   hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "cutLinks" | "format">;
+  /**
+   * The host's own Format layout, in place of the Script graph formatter: Format passes it every node (measured size,
+   * else the estimate, and its data), every wire and the selected ids (empty with nothing selected, which the layout
+   * decides on), then moves the nodes it returns as one graph change (one undo step). Unknown ids and unchanged
+   * positions are skipped; nothing moved emits nothing. It never adds or removes nodes or wires, never changes the
+   * selection, and does nothing read-only or while nodes cannot be dragged. Keep its identity stable.
+   */
+  formatLayout?: GraphFormatLayout;
   /**
    * Double-click or double-tap a wire to split it with a Reroute knot built from this Add Node row
    * (its `nodeType`, `pins` and `defaultData`, which stamps `__reroute: true`), centred where it was
@@ -739,6 +750,15 @@ function indexById<T extends { id: string }>(entries: readonly T[]): Map<string,
   return index;
 }
 
+/** An unmounted palette node's output pin centre below its top, from the pin rows it will render (`zipPinRows`). */
+function estimatedOutPinCenterY(paletteNode: PaletteNode, outPinId: string): number {
+  const rows = zipPinRows((paletteNode.pins ?? []).filter((pin) => pin.placement !== "header"), {
+    declaredOrder: paletteNode.defaultData?.__declaredPinOrder === true,
+  });
+  const row = Math.max(0, rows.findIndex((entry) => entry.out?.id === outPinId));
+  return graphPinRowCenterY(row);
+}
+
 function pinOnNode(
   nodes: CanvasNode[],
   nodeId: string,
@@ -1038,6 +1058,7 @@ function GraphEditorCanvas({
   selectedAttachmentId = null,
   onAttachmentSelect,
   hiddenToolbarActions = NO_HIDDEN_TOOLBAR_ACTIONS,
+  formatLayout,
   nodeDragHandle,
   connectEndMode = "default",
   edgeBreaksAtPin,
@@ -1546,8 +1567,8 @@ function GraphEditorCanvas({
     [storeApi],
   );
 
-  // Connects two pins through the host's converter node, placed between them with its pin row on the wire:
-  // one graph change, the selection unchanged. Nothing changes when either half would not connect.
+  // Connects two pins through the host's converter node, placed by `placeConversion` (which may move the source
+  // and its private feeders left to make room): one graph change, the selection unchanged. Nothing changes when either half would not connect.
   const insertConversion = useCallback(
     (found: NonNullable<ReturnType<typeof conversionFor>>) => {
       const { paletteNode, inPinId, outPinId } = found.conversion;
@@ -1565,12 +1586,24 @@ function GraphEditorCanvas({
       const to = pinFlowPoint(found.target, found.targetHandle, "in");
       if (!from || !to) return;
       const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
-      const size = estimateGraphNodeSize(paletteNode.pins, paletteNode.defaultData);
-      const center = {
-        x: (from.x + to.x) / 2,
-        y: (from.y + to.y) / 2 - GRAPH_FIRST_PIN_ROW_CENTER_Y + size.height / 2,
-      };
-      const position = snapPositionToGrid(freeNodePosition(center, size, currentNodes), nodeSnapGrid);
+      const { position, moves } = placeConversion({
+        nodes: currentNodes.map((node) => ({
+          id: node.id,
+          ...node.position,
+          ...graphNodeSize(node),
+          exec: !hasSerializedPins(node.data) || node.data.__pins.some((pin) => pin.kind === "exec"),
+        })),
+        edges: currentEdges,
+        source: found.source,
+        sourcePoint: from,
+        target: found.target,
+        targetPoint: to,
+        converter: {
+          ...estimateGraphNodeSize(paletteNode.pins, paletteNode.defaultData),
+          outY: estimatedOutPinCenterY(paletteNode, outPinId),
+        },
+        snapGrid: nodeSnapGrid,
+      });
       const converter = paletteCanvasNode(
         paletteNode,
         uniqueNodeId(`${paletteNode.id}-${Date.now()}`, new Set(currentNodes.map((node) => node.id))),
@@ -1579,7 +1612,14 @@ function GraphEditorCanvas({
         knownTypes,
         nodeDragHandle,
       );
-      const nextNodes = [...currentNodes, converter];
+      const movedTo = new Map(moves.map((move) => [move.id, move.position]));
+      const nextNodes = [
+        ...currentNodes.map((node) => {
+          const moved = movedTo.get(node.id);
+          return moved ? { ...node, position: moved } : node;
+        }),
+        converter,
+      ];
       const pinFor = (nodeId: string, pinId: string) =>
         connectPinOnNode(nextNodes, pinDisplayTypesRef.current, nodeId, pinId);
       const options = {
@@ -2602,10 +2642,22 @@ function GraphEditorCanvas({
           x: (bounds?.left ?? 0) + (bounds?.width ?? 0) / 2,
           y: (bounds?.top ?? 0) + (bounds?.height ?? 0) / 2,
         });
+        // Canvas overlays (the toolbar) cover part of the view: a node placed under one cannot be
+        // seen or pressed, so those areas count as taken.
+        const covered = [...(wrapperRef.current?.querySelectorAll<HTMLElement>("[data-graph-overlay]") ?? [])].flatMap(
+          (overlay) => {
+            const rect = overlay.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return [];
+            const from = screenToFlowPosition({ x: rect.left, y: rect.top });
+            const to = screenToFlowPosition({ x: rect.right, y: rect.bottom });
+            return [{ x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y }];
+          },
+        );
         position = freeNodePosition(
           center,
           estimateGraphNodeSize(paletteNode.pins, paletteNode.defaultData),
           graphStateRef.current.nodes,
+          covered,
         );
       }
       const takenIds = new Set(graphStateRef.current.nodes.map((node) => node.id));
@@ -3256,10 +3308,11 @@ function GraphEditorCanvas({
   // selection stays as it was. A Format that changes nothing emits nothing.
   const formatSelection = useCallback(() => {
     const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    // With nothing selected, Format lays out the whole graph.
     const selected = currentNodes
       .filter((node) => node.selected)
       .map((node) => node.id);
-    if (selected.length === 0) return;
+    if (currentNodes.length === 0) return;
     const paletteNode = readOnly ? undefined : rerouteRef.current?.paletteNode;
     const displayTypes = pinDisplayTypesRef.current;
     const lookup = storeApi.getState().nodeLookup;
@@ -3343,6 +3396,35 @@ function GraphEditorCanvas({
         : currentEdges,
     );
   }, [addPinEnabled, commitGraph, defaultEdgeOptions.type, knownTypes, nodeDragHandle, pinCompatibility, readOnly, storeApi]);
+
+  // A host's Format layout: the nodes it returns move as one graph change; nothing else changes.
+  const formatWithLayout = useCallback(() => {
+    if (!formatLayout || !nodesDraggable) return;
+    const { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+    const placed = formatLayout({
+      nodes: currentNodes.map((node) => {
+        const { width, height } = graphNodeSize(node);
+        return { id: node.id, position: node.position, width, height, data: node.data };
+      }),
+      edges: currentEdges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+        ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+      })),
+      selectedIds: currentNodes.filter((node) => node.selected).map((node) => node.id),
+    });
+    const positions = new Map(placed.map((row) => [row.id, row.position]));
+    let changed = false;
+    const nextNodes = currentNodes.map((node) => {
+      const position = positions.get(node.id);
+      if (!position || (position.x === node.position.x && position.y === node.position.y)) return node;
+      changed = true;
+      return { ...node, position: { x: position.x, y: position.y } };
+    });
+    if (changed) commitGraph(nextNodes, currentEdges);
+  }, [commitGraph, formatLayout, nodesDraggable]);
 
   // Copy, Paste, Duplicate, Delete and Break Links for the selection, with their keys.
   const graphItems = useCallback(
@@ -4084,9 +4166,13 @@ function GraphEditorCanvas({
             <Separator orientation="vertical" />
             <IslandIconButton
               label="Format"
-              hint="Format Selection: Exec Runs Left To Right, Data Hangs Below"
-              disabled={selectedNodes.length === 0}
-              onClick={formatSelection}
+              hint={
+                formatLayout
+                  ? "Format: Lays Out The Selection, Or The Whole Graph When Nothing Is Selected"
+                  : "Format Selection Or Whole Graph: Exec Runs Left To Right, Inputs Flow In From The Left"
+              }
+              disabled={formatLayout ? !nodesDraggable : nodes.length === 0}
+              onClick={formatLayout ? formatWithLayout : formatSelection}
               data-testid="graph-format"
             >
               <WaypointsIcon />

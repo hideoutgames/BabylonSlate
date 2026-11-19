@@ -5,13 +5,24 @@ export const GRAPH_VIRTUALIZE_OVERSCAN_PX = 400;
 export const REROUTE_KNOT_SIZE = { width: 80, height: 35 } as const;
 /** Blueprint node shells are at least `min-w-80` wide. */
 export const GRAPH_NODE_FALLBACK_WIDTH = 320;
+/** An unmeasured node whose pins are unknown (a host node type without `__pins`). */
 export const GRAPH_NODE_FALLBACK_HEIGHT = 120;
-/** Title bar plus the pin list padding above the first 44px pin row. */
-export const GRAPH_NODE_CHROME_HEIGHT = 50;
-/** One pin row (`PinRow`, `min-h-[var(--touch-target,44px)]`). */
+// Pin node geometry at Large Pins 1, as measured in the editor (`PinNode` in graph-nodes.tsx): a 42px title bar,
+// then the pin list (`py-1` plus the 1px border) holding one 44px row per pin pair, so a pure node with one row is 96
+// tall with its handles 69 below its top, and each further row adds 44.
+/** The title bar, where header pins sit. */
+export const GRAPH_NODE_TITLE_HEIGHT = 42;
+/** From a node's top edge to the top of its first pin row. */
+export const GRAPH_PIN_LIST_TOP = 47;
+/** From the bottom of the last pin row (or the Add Pin row) to the node's bottom edge. */
+export const GRAPH_PIN_LIST_BOTTOM = 5;
+/** One pin row (`PinRow`, `min-h-[var(--touch-target,44px)]`); the Add Pin control takes one more. */
 export const GRAPH_PIN_ROW_HEIGHT = 44;
-/** From an unmeasured node's top edge to the middle of its first pin row. */
-export const GRAPH_FIRST_PIN_ROW_CENTER_Y = GRAPH_NODE_CHROME_HEIGHT + GRAPH_PIN_ROW_HEIGHT / 2;
+
+/** From an unmeasured node's top edge to the centre of pin row `row` (0 is the first), where its handles sit. */
+export function graphPinRowCenterY(row: number): number {
+  return GRAPH_PIN_LIST_TOP + row * GRAPH_PIN_ROW_HEIGHT + GRAPH_PIN_ROW_HEIGHT / 2;
+}
 
 export type GraphVirtualizeViewport = {
   x: number;
@@ -39,27 +50,27 @@ export type GraphVirtualizeEdge = {
 
 /**
  * Size of a node that has never been measured (never mounted). Input and
- * output pins share rows, so the longer of the two columns sets the height;
- * an Add Pin control (`__addPin`) is one more row below them.
+ * output pins share rows, so the longer of the two columns sets the height
+ * (header pins sit in the title bar); an Add Pin control (`__addPin`) is one
+ * more row below them. Unknown pins take the fallback height.
  */
 export function estimateGraphNodeSize(
-  pins?: ReadonlyArray<{ direction?: string }>,
+  pins?: ReadonlyArray<{ direction?: string; placement?: string }>,
   data?: Record<string, unknown>,
 ): { width: number; height: number } {
   if (isRerouteNodeData(data)) return { ...REROUTE_KNOT_SIZE };
+  if (!pins) return { width: GRAPH_NODE_FALLBACK_WIDTH, height: GRAPH_NODE_FALLBACK_HEIGHT };
   let inputs = 0;
   let outputs = 0;
-  for (const pin of pins ?? []) {
+  for (const pin of pins) {
+    if (pin.placement === "header") continue;
     if (pin.direction === "out") outputs += 1;
     else inputs += 1;
   }
+  const rows = Math.max(inputs, outputs) + (addPinOf(data) ? 1 : 0);
   return {
     width: GRAPH_NODE_FALLBACK_WIDTH,
-    height: Math.max(
-      GRAPH_NODE_FALLBACK_HEIGHT,
-      GRAPH_NODE_CHROME_HEIGHT +
-        (Math.max(inputs, outputs) + (addPinOf(data) ? 1 : 0)) * GRAPH_PIN_ROW_HEIGHT,
-    ),
+    height: GRAPH_PIN_LIST_TOP + rows * GRAPH_PIN_ROW_HEIGHT + GRAPH_PIN_LIST_BOTTOM,
   };
 }
 

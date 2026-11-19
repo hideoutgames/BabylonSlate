@@ -13,6 +13,7 @@ import {
 import type { GraphDocument, PaletteNode, PinConversion, SerializedPin } from "./graph-types";
 import { isAssignable, type PinType } from "@haptic/scripting";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
+import type { GraphFormatLayout } from "./format-layout";
 import type { PinCompatibilityRule } from "./graph-connect";
 import { estimateGraphNodeSize } from "./graph-virtualize";
 import { treeNodeTypes } from "./tree-node";
@@ -4484,6 +4485,84 @@ describe("GraphEditor", () => {
     expect(getByTestId("graph-format")).toHaveProperty("disabled", false);
   });
 
+  describe("host Format layout", () => {
+    const twoLogs = (): GraphDocument => ({
+      nodes: [
+        { id: "log-a", type: "debug.log", position: { x: 0, y: 40 }, data: { message: "A", __pins: debugLogPins } },
+        { id: "log-b", type: "debug.log", position: { x: 12, y: 180 }, data: { message: "B", __pins: debugLogPins } },
+      ],
+      edges: [
+        { id: "e:log-a:execOut:log-b:execIn", source: "log-a", target: "log-b", sourceHandle: "execOut", targetHandle: "execIn" },
+      ],
+    });
+
+    it("lays out the whole graph with nothing selected and moves what it returns in one change", () => {
+      const onChange = vi.fn();
+      const formatLayout = vi.fn(() => [
+        { id: "log-a", position: { x: 0, y: 40 } },
+        { id: "log-b", position: { x: 400, y: 40 } },
+        { id: "missing", position: { x: 9, y: 9 } },
+      ]);
+      const { container, getByTestId } = render(
+        <GraphEditor initialGraph={twoLogs()} onChange={onChange} formatLayout={formatLayout} />,
+      );
+      onChange.mockClear();
+      expect(getByTestId("graph-format")).toHaveProperty("disabled", false);
+      fireEvent.click(getByTestId("graph-format"));
+
+      expect(formatLayout).toHaveBeenCalledTimes(1);
+      const input = (formatLayout.mock.calls[0] as unknown as [Parameters<GraphFormatLayout>[0]])[0];
+      expect(input.selectedIds).toEqual([]);
+      expect(input.nodes.map((node) => node.id)).toEqual(["log-a", "log-b"]);
+      expect(input.nodes[1]).toMatchObject({ position: { x: 12, y: 180 }, data: { message: "B" } });
+      expect(input.nodes[1]!.width).toBeGreaterThan(0);
+      expect(input.nodes[1]!.height).toBeGreaterThan(0);
+      expect(input.edges).toEqual([
+        { id: "e:log-a:execOut:log-b:execIn", source: "log-a", target: "log-b", sourceHandle: "execOut", targetHandle: "execIn" },
+      ]);
+      expect(onChange).toHaveBeenCalledTimes(1);
+      const graph = onChange.mock.calls[0]![0] as GraphDocument;
+      expect(graph.nodes.map((node) => [node.id, node.position])).toEqual([
+        ["log-a", { x: 0, y: 40 }],
+        ["log-b", { x: 400, y: 40 }],
+      ]);
+      expect(graph.edges).toHaveLength(1);
+      expect(container.querySelectorAll(".react-flow__node")).toHaveLength(2);
+
+      // The same positions again: nothing moves, so nothing is emitted.
+      fireEvent.click(getByTestId("graph-format"));
+      expect(formatLayout).toHaveBeenCalledTimes(2);
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    it("passes the selection and leaves it selected", () => {
+      const formatLayout = vi.fn(() => [{ id: "log-b", position: { x: 300, y: 300 } }]);
+      const { container, getByTestId } = render(<GraphEditor initialGraph={twoLogs()} formatLayout={formatLayout} />);
+      fireEvent.click(container.querySelector('[data-id="log-a"]')!);
+      fireEvent.click(getByTestId("graph-format"));
+      const input = (formatLayout.mock.calls[0] as unknown as [Parameters<GraphFormatLayout>[0]])[0];
+      expect(input.selectedIds).toEqual(["log-a"]);
+      expect(container.querySelector('[data-id="log-a"]')?.classList.contains("selected")).toBe(true);
+      expect(container.querySelector('[data-id="log-b"]')?.classList.contains("selected")).toBe(false);
+    });
+
+    it("never runs read-only or while nodes cannot be dragged", () => {
+      const onChange = vi.fn();
+      const formatLayout = vi.fn(() => [{ id: "log-b", position: { x: 300, y: 300 } }]);
+      const readOnly = render(<GraphEditor initialGraph={twoLogs()} readOnly formatLayout={formatLayout} />);
+      expect(readOnly.queryByTestId("graph-format")).toBeNull();
+      readOnly.unmount();
+      const { getByTestId } = render(
+        <GraphEditor initialGraph={twoLogs()} nodesDraggable={false} onChange={onChange} formatLayout={formatLayout} />,
+      );
+      onChange.mockClear();
+      expect(getByTestId("graph-format")).toHaveProperty("disabled", true);
+      fireEvent.click(getByTestId("graph-format"));
+      expect(formatLayout).not.toHaveBeenCalled();
+      expect(onChange).not.toHaveBeenCalled();
+    });
+  });
+
   it("formats the then-chain to the right of a single selected node", () => {
     const onChange = vi.fn();
     const graph: GraphDocument = {
@@ -4589,8 +4668,8 @@ describe("GraphEditor", () => {
     const step = estimateGraphNodeSize(debugLogPins).width + FORMAT_GAP_X;
     expect(lastGraph.nodes.find((node) => node.id === "get")?.position).toEqual({
       x: step,
-      // Under Message, Log B's second pin row: its bottom at 50 + 2 × 44, then the gap.
-      y: 40 + 138 + FORMAT_GAP_Y,
+      // Under Message, Log B's second pin row: its bottom at 47 + 2 × 44, then the gap.
+      y: 40 + 135 + FORMAT_GAP_Y,
     });
     expect(lastGraph.nodes.find((node) => node.id === "log-b")?.position).toEqual({
       x: step * 2,
@@ -6712,6 +6791,80 @@ describe("pin conversion", () => {
       expect.objectContaining({ source: "vector", sourceHandle: "vector", target: "mover", targetHandle: "location" }),
     ]);
     expect(pinConversion).not.toHaveBeenCalled();
+  });
+
+  // Unmeasured one-row nodes: 320 x 96 estimates (47 to the first row, 44 per row, 5 below), pins at the middle of
+  // each side (y 48). The 280 gap between Actor's right edge (320) and Mover (600) is 280 short of 320 + 2 x 120, so Actor
+  // moves 280 left and the converter goes at 600 - 120 - 320 = 160, its Out (69 below its top) level with Location: 48 - 69.
+  const position = (graph: GraphDocument, id: string) => graph.nodes.find((node) => node.id === id)?.position;
+  const converterOf = (graph: GraphDocument) => graph.nodes.find((node) => !["actor", "vector", "mover"].includes(node.id))!;
+
+  it("moves the source left to make room and puts the converter beside the target in the same change", () => {
+    const onChange = vi.fn();
+    const { container } = renderTapToConnect(
+      <GraphEditor initialGraph={conversionGraph()} onChange={onChange} pinConversion={conversion()} />,
+    );
+    tapBetween(container, actorEnd, moverEnd);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const graph = onChange.mock.calls[0]![0] as GraphDocument;
+    expectConverted(graph);
+    expect(position(graph, "actor")).toEqual({ x: -280, y: 0 });
+    expect(position(graph, "vector")).toEqual({ x: 0, y: 200 });
+    expect(position(graph, "mover")).toEqual({ x: 600, y: 0 });
+    expect(converterOf(graph).position).toEqual({ x: 160, y: -21 });
+    expect(container.querySelectorAll(".react-flow__node.selected")).toHaveLength(0);
+  });
+
+  it("levels the converter's output pin, not its first row, with the target pin", () => {
+    const onChange = vi.fn();
+    const twoOutputs: PaletteNode = {
+      ...getLocation,
+      pins: [
+        getLocation.pins![0]!,
+        { id: "first", name: "First", kind: "data", direction: "out", type: { kind: "float" } },
+        getLocation.pins![1]!,
+      ],
+    };
+    const { container } = renderTapToConnect(
+      <GraphEditor
+        initialGraph={conversionGraph()}
+        onChange={onChange}
+        pinConversion={() => ({ ...toVector, paletteNode: twoOutputs })}
+      />,
+    );
+    tapBetween(container, actorEnd, moverEnd);
+    // Out is on the second row, 47 + 44 + 22 = 113 below the top, so the top is 48 - 113.
+    expect(converterOf(onChange.mock.calls[0]![0] as GraphDocument).position).toEqual({ x: 160, y: -65 });
+  });
+
+  it("puts the moved source back when the host undoes the conversion", async () => {
+    const before = conversionGraph();
+    const onChange = vi.fn();
+    let replaceSnapshot: (graph: GraphDocument) => void = () => {};
+    function ControlledHost() {
+      const [snapshot, setSnapshot] = useState(before);
+      useEffect(() => {
+        replaceSnapshot = setSnapshot;
+      }, []);
+      return (
+        <GraphEditor
+          initialGraph={snapshot}
+          onChange={(next) => {
+            onChange(next);
+            setSnapshot(next);
+          }}
+          pinConversion={conversion()}
+        />
+      );
+    }
+    const { container } = renderTapToConnect(<ControlledHost />);
+    const actorTransform = () => (container.querySelector('.react-flow__node[data-id="actor"]') as HTMLElement).style.transform;
+    tapBetween(container, actorEnd, moverEnd);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(actorTransform()).toContain("-280px"));
+    act(() => replaceSnapshot(before));
+    await waitFor(() => expect(container.querySelectorAll(".react-flow__node")).toHaveLength(3));
+    expect(actorTransform()).toBe("translate(0px,0px)");
   });
 
   it("creates nothing when the converter's pins would not carry the wire", () => {

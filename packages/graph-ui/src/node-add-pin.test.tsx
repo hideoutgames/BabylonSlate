@@ -126,13 +126,13 @@ describe("node Add Pin control", () => {
 describe("Add Pin size estimate", () => {
   it("counts the control as one more pin row for an unmeasured node", () => {
     const pins = [{ direction: "in" }, { direction: "in" }, { direction: "in" }, { direction: "out" }];
-    // Title bar 50 + 44 per row: three rows, then four with the control.
-    expect(estimateGraphNodeSize(pins).height).toBe(182);
-    expect(estimateGraphNodeSize(pins, { __addPin: { side: "in", label: "Add Pin" } }).height).toBe(226);
+    // 47 above the rows, 44 per row and 5 below: three rows, then four with the control.
+    expect(estimateGraphNodeSize(pins).height).toBe(184);
+    expect(estimateGraphNodeSize(pins, { __addPin: { side: "in", label: "Add Pin" } }).height).toBe(228);
     expect(graphNodesBounds([{
       id: "make",
       position: { x: 0, y: 0 },
       data: { __pins: pins, __addPin: { side: "out", label: "Add Pin" } },
-    }])?.height).toBe(226);
+    }])?.height).toBe(228);
   });
 });

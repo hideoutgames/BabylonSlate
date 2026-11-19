@@ -59,7 +59,6 @@ export {
   BT_NODE_TYPE,
   BT_PARENT_HANDLE,
   applyNodePositions,
-  arrangeBehaviourTree,
   behaviourTreeToSerialized,
   btEdgeId,
   hydrateBehaviourTreeForEditor,

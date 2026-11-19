@@ -74,28 +74,33 @@ function cubicMidpoint(
   };
 }
 
-export function animTransitionPath({
+export type AnimTransitionCurve = {
+  source: { x: number; y: number };
+  sourceControl: { x: number; y: number };
+  targetControl: { x: number; y: number };
+  target: { x: number; y: number };
+};
+
+/** The cubic Bézier a transition wire draws, as its four points. */
+export function animTransitionCurve({
   sourceX,
   sourceY,
   sourcePosition,
   targetX,
   targetY,
   targetPosition,
-}: AnimTransitionPathParams): AnimTransitionPath {
-  const sourceControl = controlPoint(
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-  );
-  const targetControl = controlPoint(
-    targetX,
-    targetY,
-    sourceX,
-    sourceY,
-    targetPosition,
-  );
+}: AnimTransitionPathParams): AnimTransitionCurve {
+  return {
+    source: { x: sourceX, y: sourceY },
+    sourceControl: controlPoint(sourceX, sourceY, targetX, targetY, sourcePosition),
+    targetControl: controlPoint(targetX, targetY, sourceX, sourceY, targetPosition),
+    target: { x: targetX, y: targetY },
+  };
+}
+
+export function animTransitionPath(params: AnimTransitionPathParams): AnimTransitionPath {
+  const { sourceX, sourceY, targetX, targetY } = params;
+  const { sourceControl, targetControl } = animTransitionCurve(params);
   const mid = cubicMidpoint(
     sourceX,
     sourceY,
@@ -126,4 +131,52 @@ export function animTransitionPath({
     labelY: mid.y,
     angle: (Math.atan2(tangentY, tangentX) * 180) / Math.PI,
   };
+}
+
+export type AnimStateSide = "top" | "right" | "bottom" | "left";
+
+const SIDE_POSITIONS: Record<AnimStateSide, Position> = {
+  top: Position.Top,
+  right: Position.Right,
+  bottom: Position.Bottom,
+  left: Position.Left,
+};
+
+/**
+ * Where a transition wire meets a state card's side: the side's midpoint, 2px outside the border (the side plates
+ * stick out, and the wire's ends are pulled back onto the border, see `AnimTransitionEdge`).
+ */
+export function animTransitionEnd(
+  box: { x: number; y: number; width: number; height: number },
+  side: AnimStateSide,
+): { x: number; y: number } {
+  switch (side) {
+    case "top":
+      return { x: box.x + box.width / 2, y: box.y - 2 };
+    case "bottom":
+      return { x: box.x + box.width / 2, y: box.y + box.height + 2 };
+    case "left":
+      return { x: box.x - 2, y: box.y + box.height / 2 };
+    case "right":
+      return { x: box.x + box.width + 2, y: box.y + box.height / 2 };
+  }
+}
+
+/** The curve a transition draws between two state boxes leaving and entering by the given sides. */
+export function animTransitionCurveBetween(
+  from: { x: number; y: number; width: number; height: number },
+  sourceSide: AnimStateSide,
+  to: { x: number; y: number; width: number; height: number },
+  targetSide: AnimStateSide,
+): AnimTransitionCurve {
+  const source = animTransitionEnd(from, sourceSide);
+  const target = animTransitionEnd(to, targetSide);
+  return animTransitionCurve({
+    sourceX: source.x,
+    sourceY: source.y,
+    sourcePosition: SIDE_POSITIONS[sourceSide],
+    targetX: target.x,
+    targetY: target.y,
+    targetPosition: SIDE_POSITIONS[targetSide],
+  });
 }

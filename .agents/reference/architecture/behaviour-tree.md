@@ -23,7 +23,7 @@ Behaviour Tree and Blackboard documents, the deterministic evaluator, runtime ta
 - Each node has one parent: the evaluator uses the first parent a depth-first walk reaches and drops back-references (`bt.multiple_parents`, `bt.cycle` diagnostics).
 - Kinds: `selector`, `sequence`, `parallel`, `task`. Custom `BTComposite` subclasses are data: `kind` comes from ancestry (`kindForCatalogClassId`; bare `BTComposite` → sequence). There is no scripted composite VM.
 - Default document: selector root → sequence → `bt.task.succeed`. Files: `.bt.hasset`, `.blackboard.hasset`.
-- `editorPositions` is optional editor data; runtime ignores it. A finished move writes positions and re-sorts siblings by X; Auto Arrange writes positions and never changes `children[]`. Each finished move is its own undo step (no shared merge key).
+- `editorPositions` is optional editor data; runtime ignores it. A finished move writes positions and re-sorts siblings by X. Format (`GraphEditor.formatLayout` = `formatTreeLayout` with the document's `rootId` and stored child order) writes positions in `children[]` order, so the re-sort by X keeps `children[]` unchanged; with nothing or the root selected it lays out the whole tree, else the selected subtrees. Each finished move is its own undo step (no shared merge key).
 
 ## Evaluator rules
 

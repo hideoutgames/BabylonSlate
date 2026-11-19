@@ -164,8 +164,8 @@ const BLOCK = NODE_W + FORMAT_GAP_X;
 // The lane after a node that branches to a lower row past parameter blocks: a knot and a gap.
 const KNOT_LANE = REROUTE_KNOT_SIZE.width + FORMAT_GAP_X;
 // A block's top below a consumer whose first data input is on the second pin row (after the
-// exec row): that row's estimated bottom (50 + 2 × 44) plus the 64 gap.
-const LANE = 202;
+// exec row): that row's estimated bottom (47 + 2 × 44) plus the 64 gap.
+const LANE = 199;
 // Branch rows sit one and a half gaps apart, a little further than nodes within a block.
 const ROW_GAP = 96;
 
@@ -289,9 +289,17 @@ describe("formatGraphNodes", () => {
     expect(pos(next, "c")).toEqual({ x: 200 + EXEC_STEP, y: 40 });
   });
 
-  it("returns the input nodes when nothing is selected", () => {
+  it("formats the whole graph when nothing is selected, leaving an isolated node where it is", () => {
     const nodes = [node("a", 0, 0)];
-    expect(layout(nodes, [], [])).toBe(nodes);
+    expect(layout(nodes, [], [])).toEqual(nodes);
+    const chain = [node("start", 10, 20), node("next", 0, 300), node("value", 0, -300, dataOutPins), node("sink", 900, 900, dataInPins), node("source", 0, 0, dataOutPins)];
+    const edges = [execEdge("start", "next"), dataEdge("source", "sink")];
+    const next = layout(chain, edges, []);
+    expect(pos(next, "next")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
+    // The sink keeps its place and what feeds it comes in from the left, level with its pin.
+    expect(pos(next, "sink")).toEqual({ x: 900, y: 900 });
+    expect(pos(next, "source")).toEqual({ x: 900 - EXEC_STEP, y: 900 });
+    expect(pos(next, "value")).toEqual({ x: 0, y: -300 });
   });
 
   it("places a data input below-left of a subsequent then-chain node, not on the exec row", () => {
@@ -310,8 +318,8 @@ describe("formatGraphNodes", () => {
   });
 
   it("counts an unmeasured node's Add Pin control as one more pin row when stacking below it", () => {
-    // `upper` is unmeasured with one pin row per side: 120 tall (the fallback minimum), 138 with
-    // the Add Pin row (50 + 2 × 44). `lower` feeds the next input and clears it by the gap.
+    // `upper` is unmeasured with one pin row per side: 47 + 44 + 5 = 96 tall, 140 with
+    // the Add Pin row (47 + 2 × 44 + 5). `lower` feeds the next input and clears it by the gap.
     const stacked = (addPin: FormatNode["addPin"]) => {
       const nodes: FormatNode[] = [
         node("a", 0, 0),
@@ -327,8 +335,8 @@ describe("formatGraphNodes", () => {
       const next = layout(nodes, edges, ["a"]);
       return pos(next, "lower").y - pos(next, "upper").y;
     };
-    expect(stacked(undefined)).toBe(120 + FORMAT_GAP_Y);
-    expect(stacked({ side: "in", label: "Add Pin" })).toBe(138 + FORMAT_GAP_Y);
+    expect(stacked(undefined)).toBe(96 + FORMAT_GAP_Y);
+    expect(stacked({ side: "in", label: "Add Pin" })).toBe(140 + FORMAT_GAP_Y);
   });
 
   it("places a nested data input further left on its consumer's row, its wire level", () => {
@@ -459,7 +467,7 @@ describe("formatGraphNodes", () => {
     expectNoOverlaps(next);
   });
 
-  it("stacks data-out branches of a selected pure node below-right of the source", () => {
+  it("formats only what feeds a selected pure node, never what it feeds", () => {
     const nodes = [
       node("get", 10, 20, dataOutPins),
       node("first", 0, 200, dataInPins),
@@ -469,32 +477,26 @@ describe("formatGraphNodes", () => {
       dataEdge("get", "first"),
       dataEdge("get", "second"),
     ];
-    const next = layout(nodes, edges, ["get"]);
-    expect(pos(next, "get")).toEqual({ x: 10, y: 20 });
-    expect(pos(next, "second")).toEqual({
-      x: 10 + EXEC_STEP,
-      y: 20 + HANG_Y,
-    });
-    expect(pos(next, "first")).toEqual({
-      x: 10 + EXEC_STEP,
-      y: 20 + HANG_Y + NODE_H + FORMAT_GAP_Y,
-    });
-    expectNoOverlaps(next);
+    expect(layout(nodes, edges, ["get"])).toEqual(nodes);
+    // Selecting a consumer brings the source in from the left, level with its pin.
+    const next = layout(nodes, edges, ["first"]);
+    expect(pos(next, "first")).toEqual({ x: 0, y: 200 });
+    expect(pos(next, "get")).toEqual({ x: -EXEC_STEP, y: 200 });
+    expect(pos(next, "second")).toEqual({ x: 0, y: 0 });
   });
 
-  it("does not pull exec successors when formatting from a pure node", () => {
+  it("does not pull exec consumers or successors when formatting from a pure node", () => {
     const nodes = [
-      node("get", 10, 20, dataOutPins),
+      node("source", 500, 500, dataOutPins),
+      node("get", 10, 20, dataThruPins),
       node("print", 200, 50, execWithValueIn),
       node("later", 400, 80),
     ];
-    const edges = [dataEdge("get", "print"), execEdge("print", "later")];
+    const edges = [dataEdge("source", "get", "in"), dataEdge("get", "print"), execEdge("print", "later")];
     const next = layout(nodes, edges, ["get"]);
     expect(pos(next, "get")).toEqual({ x: 10, y: 20 });
-    expect(pos(next, "print")).toEqual({
-      x: 10 + EXEC_STEP,
-      y: 20 + HANG_Y,
-    });
+    expect(pos(next, "source")).toEqual({ x: 10 - EXEC_STEP, y: 20 });
+    expect(pos(next, "print")).toEqual({ x: 200, y: 50 });
     expect(pos(next, "later")).toEqual({ x: 400, y: 80 });
   });
 
@@ -775,28 +777,30 @@ describe("formatGraphNodes", () => {
     expect(layout(next, edges, ["consumer"])).toEqual(next);
   });
 
-  it("compacts a long selected pure chain while keeping a data merge after every predecessor", () => {
+  it("lays a long pure chain out level from its sink, every source left of what it feeds", () => {
     const nodes = [
       ...Array.from({ length: 9 }, (_, index) =>
         node(`pure${index}`, 0, index * 100, dataThruPins),
       ),
-      node("merge", 0, -100, dataThruPins),
+      node("merge", 0, -100, twoDataInPins.filter((pin) => pin.kind === "data")),
     ];
     const edges = [
       ...Array.from({ length: 8 }, (_, index) =>
         dataEdge(`pure${index}`, `pure${index + 1}`, "in"),
       ),
-      dataEdge("pure0", "merge", "in"),
-      dataEdge("pure8", "merge", "in"),
+      dataEdge("pure0", "merge", "second"),
+      dataEdge("pure8", "merge", "first"),
     ];
-    const next = layout(nodes, edges, ["pure0"]);
+    const next = layout(nodes, edges, ["merge"]);
+    expect(pos(next, "merge")).toEqual({ x: 0, y: -100 });
     for (const edge of edges) {
       expect(pos(next, edge.source).x + NODE_W + FORMAT_GAP_X)
         .toBeLessThanOrEqual(pos(next, edge.target).x);
     }
-    expect(new Set(next.map((entry) => entry.position.y)).size).toBeLessThanOrEqual(2);
+    // The chain into First runs level all the way.
+    for (let index = 0; index < 9; index++) expect(pos(next, `pure${index}`).y).toBe(-100);
     expectNoOverlaps(next);
-    expect(layout(next, edges, ["pure0"])).toEqual(next);
+    expect(layout(next, edges, ["merge"])).toEqual(next);
   });
 
   it("formats a selected execution cycle once instead of discarding all selected roots", () => {
@@ -865,7 +869,7 @@ describe("formatGraphNodes", () => {
     expect(layout(next, edges, ["first", "second"])).toEqual(next);
   });
 
-  it("honors both selected pure and execution walks without moving shared nodes twice", () => {
+  it("honors both selected sinks and execution walks without moving shared nodes twice", () => {
     const nodes = [
       node("pure", 0, 0, dataOutPins),
       node("consumer", 100, 100, execWithValueIn),
@@ -877,13 +881,14 @@ describe("formatGraphNodes", () => {
       dataEdge("pure", "otherConsumer"),
       execEdge("consumer", "after"),
     ];
-    const next = layout(nodes, edges, ["pure", "consumer"]);
+    const next = layout(nodes, edges, ["otherConsumer", "consumer"]);
     expect(pos(next, "consumer")).toEqual({ x: 100, y: 100 });
     expect(pos(next, "after")).toEqual({ x: 100 + EXEC_STEP, y: 100 });
-    expect(pos(next, "otherConsumer").x).toBeGreaterThan(pos(next, "pure").x);
-    expect(pos(next, "otherConsumer")).not.toEqual(pos(nodes, "otherConsumer"));
+    // Pure is the exec node's parameter (exec chains go first); the sink keeps its place.
+    expect(pos(next, "pure")).toEqual({ x: 100 - EXEC_STEP, y: 100 + LANE });
+    expect(pos(next, "otherConsumer")).toEqual({ x: 0, y: -200 });
     expectNoOverlaps(next);
-    expect(layout(next, edges, ["consumer", "pure"])).toEqual(next);
+    expect(layout(next, edges, ["consumer", "otherConsumer"])).toEqual(next);
   });
 });
 
@@ -904,8 +909,8 @@ describe("formatGraphNodes with Reroute knots", () => {
     ];
     const next = layout(nodes, edges, ["a"], { displayType: bound("exec") });
     expect(pos(next, "b")).toEqual({ x: 10 + EXEC_STEP, y: 20 });
-    // In the gap after a, centred on b's exec pin (estimated 50 + 22 below b's top).
-    expect(pos(next, "knot")).toEqual({ x: 10 + NODE_W, y: 20 + 72 - REROUTE_KNOT_SIZE.height / 2 });
+    // In the gap after a, centred on b's exec pin (estimated 47 + 22 below b's top).
+    expect(pos(next, "knot")).toEqual({ x: 10 + NODE_W, y: 20 + 69 - REROUTE_KNOT_SIZE.height / 2 });
   });
 
   const knotNode = (id: string, x: number, y: number): FormatNode => ({
@@ -941,10 +946,10 @@ describe("formatGraphNodes with Reroute knots", () => {
     }
     expect(pos(result.nodes, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 });
     expect(pos(result.nodes, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
-    // In the gap after get, centred on b's Value pin (estimated at 50 + 44 + 22 below b's top).
+    // In the gap after get, centred on b's Value pin (estimated at 47 + 44 + 22 below b's top).
     expect(pos(result.nodes, "knot")).toEqual({
       x: 10 + EXEC_STEP + NODE_W,
-      y: 20 + 116 - REROUTE_KNOT_SIZE.height / 2,
+      y: 20 + 113 - REROUTE_KNOT_SIZE.height / 2,
     });
     expect(result.knots).toEqual([]);
   });
@@ -996,8 +1001,8 @@ describe("formatGraphNodes with Reroute knots", () => {
     });
     const knotStep = REROUTE_KNOT_SIZE.width + FORMAT_GAP_X;
     expect(pos(result.nodes, "b")).toEqual({ x: 10 + EXEC_STEP + BLOCK + knotStep, y: 20 });
-    // Level with b.Value (50 + 44 + 22 below b's top): a knot's pins sit at half its height.
-    expect(pos(result.nodes, "knot")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 + 116 - REROUTE_KNOT_SIZE.height / 2 });
+    // Level with b.Value (47 + 44 + 22 below b's top): a knot's pins sit at half its height.
+    expect(pos(result.nodes, "knot")).toEqual({ x: 10 + EXEC_STEP + BLOCK, y: 20 + 113 - REROUTE_KNOT_SIZE.height / 2 });
     expect(pos(result.nodes, "get")).toEqual({ x: 10 + EXEC_STEP, y: 20 + LANE });
     expect(result.knots).toEqual([]);
   });
@@ -1138,12 +1143,202 @@ describe("formatGraphNodes cost", () => {
     expect(work(large) / work(small)).toBeLessThan(7);
   });
 
+  it("grows about linearly with the size of a sink's expression tree", () => {
+    // A 300-node expression into one sink: a chain of operators, each with a sub-expression on
+    // its second input that also reads the previous one's leaf (a shared sub-expression).
+    const three: SerializedPin[] = [...twoInOut.slice(0, 2), { id: "c", name: "c", kind: "data", direction: "in", type: { kind: "float" } }, ...dataOutPins];
+    const expression = (count: number) => {
+      const nodes: FormatNode[] = [];
+      const edges: FormatEdge[] = [];
+      for (let index = 0; index < count / 3; index++) {
+        nodes.push(node(`op${index}`, (index * 53) % 900, (index * 31) % 700, three), node(`mul${index}`, 0, 0, three), node(`leaf${index}`, 0, 0, dataOutPins));
+        if (index > 0) edges.push(dataEdge(`op${index}`, `op${index - 1}`, "a"));
+        edges.push(dataEdge(`mul${index}`, `op${index}`, "b"), dataEdge(`leaf${index}`, `mul${index}`, "a"));
+        if (index > 0) edges.push(dataEdge(`leaf${index - 1}`, `mul${index}`, "b"));
+      }
+      return { nodes, edges };
+    };
+    const sinkWork = (count: number, insertKnots: boolean) => {
+      const { nodes, edges } = expression(count);
+      const counter = { tests: 0 };
+      formatGraphNodes(nodes, edges, ["op0"], { insertKnots, work: counter });
+      return counter.tests;
+    };
+    // About 4.2 times now; scanning every placed box again gives 11, every laid wire 9.7 (7.7 and
+    // 6.6 with knots).
+    expect(sinkWork(300, false) / sinkWork(75, false)).toBeLessThan(6);
+    expect(sinkWork(300, true) / sinkWork(75, true)).toBeLessThan(5.5);
+  });
+
   it("counts nothing unless asked and leaves the layout unchanged", () => {
     const graph = chain(30, 12);
     const counter = { tests: 0 };
     const counted = formatGraphNodes(graph.nodes, graph.edges, ["n0"], { insertKnots: true, work: counter });
     expect(counter.tests).toBeGreaterThan(0);
     expect(formatGraphNodes(graph.nodes, graph.edges, ["n0"], { insertKnots: true })).toEqual(counted);
+  });
+});
+
+// A node as the editor measured it (Feature Test graphs): its size and its pins' handle centres,
+// keyed `in:<pin>` / `out:<pin>`; every pin is a data pin.
+function measured(id: string, x: number, y: number, width: number, height: number, offsets: Record<string, number>): FormatNode {
+  const pins: SerializedPin[] = Object.keys(offsets).map((key) => {
+    const [direction, pinId] = key.split(":") as ["in" | "out", string];
+    return { id: pinId, name: pinId, kind: "data", direction, type: { kind: "float" } };
+  });
+  const pinOffsets = Object.fromEntries(Object.entries(offsets).map(([key, value]) => {
+    const [direction, pinId] = key.split(":") as ["in" | "out", string];
+    return [formatPinOffsetKey(direction, pinId), value];
+  }));
+  return { id, position: { x, y }, width, height, pins, pinOffsets };
+}
+
+function wireOf(source: string, sourceHandle: string, target: string, targetHandle: string): FormatEdge {
+  return { id: `${source}.${sourceHandle}>${target}.${targetHandle}`, source, sourceHandle, target, targetHandle };
+}
+
+/** Every wire runs left to right: each source ends at least a column gap before what it feeds. */
+function expectLeftToRight(nodes: readonly FormatNode[], edges: readonly FormatEdge[]): void {
+  for (const edge of edges) {
+    const source = byIdOf(nodes, edge.source);
+    expect(source.position.x + sizeOf(source).width + FORMAT_GAP_X, `${edge.source} → ${edge.target}`).toBeLessThanOrEqual(byIdOf(nodes, edge.target).position.x);
+  }
+}
+
+describe("formatGraphNodes on a Material graph", () => {
+  // FT_MatSurface: Albedo and a tiled UV into a Texture Sample, tinted by a Material Function with
+  // Tint and Brightness, into Base Color; Metallic and Roughness parameters; an Emissive Color
+  // pulsed by a second function into Emissive. Sizes and pin centres as the editor measures them.
+  const nodes: FormatNode[] = [
+    measured("albedo", 0, 0, 320, 96, { "out:out": 69 }),
+    measured("uv", 0, 120, 320, 96, { "out:uv": 69 }),
+    measured("tintColor", 0, 260, 320, 184, { "out:out": 69, "out:rgb": 113, "out:a": 157 }),
+    measured("brightness", 0, 460, 320, 96, { "out:out": 69 }),
+    measured("roughness", 0, 600, 320, 96, { "out:out": 69 }),
+    measured("metallic", 0, 740, 320, 96, { "out:out": 69 }),
+    measured("glow", 0, 880, 320, 184, { "out:out": 69, "out:rgb": 113, "out:a": 157 }),
+    measured("tiling", 400, 120, 410, 228, { "in:uv": 69, "out:out": 69, "in:tiling": 113, "in:rotation": 157, "in:offset": 201 }),
+    measured("sample", 900, 0, 320, 360, { "in:texture": 69, "out:rgba": 69, "in:uv": 113, "out:rgb": 113, "out:r": 157, "out:g": 201, "out:b": 245, "out:a": 289, "out:textureOut": 333 }),
+    measured("tint", 1300, 100, 320, 184, { "in:color": 69, "out:result": 69, "in:tint": 113, "in:brightness": 157 }),
+    measured("pulse", 1300, 900, 322, 140, { "in:color": 69, "out:result": 69, "in:speed": 113 }),
+    measured("output", 1800, 300, 525, 592, {
+      "in:baseColor": 94, "in:metallic": 138, "in:specular": 182, "in:roughness": 226, "in:environmentInfluence": 270,
+      "in:normal": 314, "in:emissive": 383, "in:opacity": 452, "in:alphaClip": 496, "in:worldPositionOffset": 565,
+    }),
+  ];
+  const edges = [
+    wireOf("albedo", "out", "sample", "texture"),
+    wireOf("uv", "uv", "tiling", "uv"),
+    wireOf("tiling", "out", "sample", "uv"),
+    wireOf("sample", "rgb", "tint", "color"),
+    wireOf("tintColor", "rgb", "tint", "tint"),
+    wireOf("brightness", "out", "tint", "brightness"),
+    wireOf("tint", "result", "output", "baseColor"),
+    wireOf("roughness", "out", "output", "roughness"),
+    wireOf("metallic", "out", "output", "metallic"),
+    wireOf("glow", "rgb", "pulse", "color"),
+    wireOf("pulse", "result", "output", "emissive"),
+  ];
+  const at = (list: readonly FormatNode[], id: string, direction: "in" | "out", pin: string) => handleY(byIdOf(list, id), direction, pin);
+  const result = formatGraphNodes(nodes, edges, ["output"]);
+
+  it("lays everything feeding the output out to its left, the output in place", () => {
+    const next = result.nodes;
+    expect(pos(next, "output")).toEqual({ x: 1800, y: 300 });
+    expectLeftToRight(next, edges);
+    expectNoBoxOverlaps(next);
+    expectWiresClear(next, edges);
+    // Base Color's source runs level into it: a sink has no exec wire to keep clear.
+    expect(at(next, "tint", "out", "result")).toBe(at(next, "output", "in", "baseColor"));
+    // Texture Sample, Tint and Brightness feed consecutive pins: a centred fan, Tint level.
+    expect(at(next, "tintColor", "out", "rgb")).toBe(at(next, "tint", "in", "tint"));
+    expect(at(next, "albedo", "out", "out")).toBe(at(next, "sample", "in", "texture"));
+    // Material graphs have no knots to add.
+    expect(result.knots).toEqual([]);
+    expect(formatGraphNodes(next, edges, ["output"]).nodes).toEqual(next);
+  });
+
+  it("formats the same with nothing selected, and from a middle node only what feeds it", () => {
+    expect(formatGraphNodes(nodes, edges, []).nodes).toEqual(result.nodes);
+    const fromTint = formatGraphNodes(nodes, edges, ["tint"]).nodes;
+    for (const id of ["tint", "output", "roughness", "metallic", "glow", "pulse"]) expect(pos(fromTint, id)).toEqual(pos(nodes, id));
+    for (const id of ["sample", "tiling", "uv", "albedo", "tintColor", "brightness"]) expect(pos(fromTint, id)).not.toEqual(pos(nodes, id));
+    expectLeftToRight(fromTint, edges.filter((edge) => edge.target !== "output" && edge.source !== "glow"));
+    expectNoBoxOverlaps(fromTint);
+  });
+
+  it("stacks two disconnected sink trees in their top-to-bottom order without overlap", () => {
+    const extra = [measured("note", 1800, 0, 320, 140, { "in:value": 69 }), measured("value", 1000, -400, 320, 96, { "out:out": 69 })];
+    const both = formatGraphNodes([...nodes, ...extra], [...edges, wireOf("value", "out", "note", "value")], []).nodes;
+    expectNoBoxOverlaps(both);
+    // The tree above (Note) keeps its place; the output's tree stays below it.
+    expect(pos(both, "note")).toEqual({ x: 1800, y: 0 });
+    expect(at(both, "value", "out", "out")).toBe(at(both, "note", "in", "value"));
+    expect(pos(both, "output").y).toBeGreaterThanOrEqual(pos(both, "note").y + 140);
+  });
+});
+
+describe("formatGraphNodes on a Particle graph", () => {
+  // FT_FxGlowGraph: the Particle spine Create Particle → Sphere Shape → Apply Velocity → Gravity →
+  // Update Color → Emitter Output, with Wind Strength, a Random size through a knot, a colour from
+  // Initial Color × Gradient(Normalized Age), and Glow Rate into Emit Rate. Measured sizes.
+  const nodes: FormatNode[] = [
+    measured("create", 400, 300, 389, 360, { "in:emitPower": 69, "out:out": 69, "in:lifetime": 113, "in:color": 157, "in:deadColor": 201, "in:size": 245, "in:scale": 289, "in:angle": 333 }),
+    measured("shape", 900, 300, 446, 316, { "in:particle": 69, "out:out": 69, "in:radius": 113, "in:radiusRange": 157, "in:directionRandomizer": 201, "in:direction1": 245, "in:direction2": 289 }),
+    measured("velocity", 1100, 300, 350, 96, { "in:particle": 69, "out:out": 69 }),
+    measured("gravity", 1500, 300, 459, 140, { "in:particle": 69, "out:out": 69, "in:acceleration": 113 }),
+    measured("updateColor", 1700, 300, 350, 140, { "in:particle": 69, "out:out": 69, "in:color": 113 }),
+    measured("output", 2100, 300, 320, 140, { "in:particle": 69, "in:emitRate": 113 }),
+    measured("initialColor", 900, 700, 320, 96, { "out:out": 69 }),
+    measured("normalizedAge", 400, 900, 320, 96, { "out:out": 69 }),
+    measured("gradient", 900, 900, 320, 96, { "in:ratio": 69, "out:out": 69 }),
+    measured("multiply", 1300, 800, 320, 140, { "in:a": 69, "out:out": 69, "in:b": 113 }),
+    measured("glowRate", 1900, 600, 320, 96, { "out:out": 69 }),
+    measured("windStrength", 0, 300, 320, 96, { "out:out": 69 }),
+    measured("sizeRandom", 0, 600, 378, 140, { "in:min": 69, "out:out": 69, "in:max": 113 }),
+    { id: "sizeKnot", position: { x: 300, y: 600 }, pins: knotPins, reroute: true },
+  ];
+  const edges = [
+    wireOf("create", "out", "shape", "particle"),
+    wireOf("shape", "out", "velocity", "particle"),
+    wireOf("velocity", "out", "gravity", "particle"),
+    wireOf("gravity", "out", "updateColor", "particle"),
+    wireOf("updateColor", "out", "output", "particle"),
+    wireOf("normalizedAge", "out", "gradient", "ratio"),
+    wireOf("initialColor", "out", "multiply", "a"),
+    wireOf("gradient", "out", "multiply", "b"),
+    wireOf("multiply", "out", "updateColor", "color"),
+    wireOf("sizeRandom", "out", "sizeKnot", "in"),
+    wireOf("sizeKnot", "out", "create", "size"),
+    wireOf("windStrength", "out", "create", "emitPower"),
+    wireOf("glowRate", "out", "output", "emitRate"),
+  ];
+  const at = (list: readonly FormatNode[], id: string, direction: "in" | "out", pin: string) => handleY(byIdOf(list, id), direction, pin);
+  const result = formatGraphNodes(nodes, edges, ["output"], { insertKnots: true });
+  const knotted = withKnots(result, edges);
+
+  it("runs the Particle spine level into Emitter Output, the values below their consumers", () => {
+    const next = result.nodes;
+    expect(pos(next, "output")).toEqual({ x: 2100, y: 300 });
+    const spine = ["create", "shape", "velocity", "gravity", "updateColor"];
+    for (const id of spine) expect(at(next, id, "out", "out")).toBe(at(next, "output", "in", "particle"));
+    for (let index = 1; index < spine.length; index++) {
+      expect(pos(next, spine[index - 1]!).x + byIdOf(next, spine[index - 1]!).width! + FORMAT_GAP_X).toBeLessThanOrEqual(pos(next, spine[index]!).x);
+    }
+    expect(at(next, "windStrength", "out", "out")).toBe(at(next, "create", "in", "emitPower"));
+    expect(at(next, "initialColor", "out", "out")).toBe(at(next, "multiply", "in", "a"));
+    expectNoBoxOverlaps(knotted.nodes);
+    expectWiresClear(knotted.nodes, knotted.edges);
+    expectFinalKnotsLevel(result);
+  });
+
+  it("moves the existing knot with its wire and changes nothing when formatted again with knots", () => {
+    const knot = byIdOf(result.nodes, "sizeKnot");
+    expect(knot.position.y + REROUTE_KNOT_SIZE.height / 2).toBe(at(result.nodes, "create", "in", "size"));
+    const again = formatGraphNodes(knotted.nodes, knotted.edges, ["output"], { insertKnots: true });
+    expect(again.knots).toEqual([]);
+    expect(again.nodes).toEqual(knotted.nodes);
+    expect(formatGraphNodes(nodes, edges, [], { insertKnots: true })).toEqual(result);
   });
 });
 

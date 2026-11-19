@@ -12,7 +12,7 @@ Or select Textures, right-click one and choose **Create Material**. Textures nam
 
 Double-tap a Material to open it.
 
-- **Graph**: place nodes with **Add Node** and wire them into the output node for the Material's domain.
+- **Graph**: place nodes with **Add Node** and wire them into the output node for the Material's domain. **Format** in the graph toolbar lays out what feeds the output, flowing in from the left ([Format](../scripting/index.md#format)).
 - **Preview**: the Material on a shape. Pick **Cube**, **Sphere**, **Cylinder**, **Cone**, **Plane** or **Custom** to preview on one of your Models. A key light from the upper right and a soft fill light the shape, as they light thumbnails. The default sky behind the shape also lights it, so metallic and glossy Materials reflect it.
 - **Inspector**: the Material's settings, or the selected node's properties. With several nodes selected, it shows the properties and input defaults they all have, such as **A** and **B** for an **Add** and a **Multiply**, with **Mixed Values** where they differ. An edit changes every selected node, and typing a sum such as `Mixed Values+4` changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)).
 - **Compiler Results**: problems with the graph. Tap one to jump to its node, or double-tap it to also bring **Graph** forward. Right-click or hold one to copy it.

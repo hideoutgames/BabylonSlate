@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   estimateGraphNodeSize,
   graphNodesBounds,
+  graphPinRowCenterY,
   GRAPH_NODE_FALLBACK_HEIGHT,
   GRAPH_NODE_FALLBACK_WIDTH,
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
@@ -140,6 +141,28 @@ describe("selectVisibleGraphElements", () => {
     expect(GRAPH_VIRTUALIZE_OVERSCAN_PX).toBeGreaterThan(0);
     expect(GRAPH_NODE_FALLBACK_WIDTH).toBeGreaterThan(0);
     expect(GRAPH_NODE_FALLBACK_HEIGHT).toBeGreaterThan(0);
+  });
+});
+
+describe("unmeasured pin node geometry", () => {
+  // Measured in the editor at Large Pins 1: Get Actor Location (one row) is 96 tall with both handles 69 below its
+  // top; Set Actor Location (three rows) is 184 tall with handles at 69, 113 and 157; Make Array (one row plus its
+  // Add Pin control) is 140 tall.
+  it("estimates a node's height from its pin rows as the editor renders them", () => {
+    expect(estimateGraphNodeSize([{ direction: "in" }, { direction: "out" }]).height).toBe(96);
+    const setLocation = [{ direction: "in" }, { direction: "out" }, { direction: "in" }, { direction: "in" }];
+    expect(estimateGraphNodeSize(setLocation).height).toBe(184);
+    expect(estimateGraphNodeSize([{ direction: "in" }, { direction: "out" }], { __addPin: { side: "in", label: "Add Pin" } }).height)
+      .toBe(140);
+  });
+
+  it("puts each pin row's handle centre where the editor draws it", () => {
+    expect([0, 1, 2].map(graphPinRowCenterY)).toEqual([69, 113, 157]);
+  });
+
+  it("keeps header pins out of the row count and unknown pins at the fallback height", () => {
+    expect(estimateGraphNodeSize([{ direction: "in", placement: "header" }, { direction: "out" }]).height).toBe(96);
+    expect(estimateGraphNodeSize(undefined).height).toBe(GRAPH_NODE_FALLBACK_HEIGHT);
   });
 });
 
