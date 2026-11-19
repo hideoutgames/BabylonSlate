@@ -1,4 +1,5 @@
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import { describe, expect, it, afterEach } from "vitest";
 import {
@@ -255,6 +256,29 @@ describe("scene-loader", () => {
 
     const child = scene.getMeshByName(editorMeshName("child"));
     expect(child?.parent?.name).toBe(editorMeshName("parent"));
+  });
+
+  it("gives every actor's origin pick proxy the 32-segment sphere CreateSphere makes, from one shared geometry", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(scene, sceneWithActors([createActor("a", "A"), createActor("b", "B")]));
+    const a = scene.getMeshByName(editorMeshName("a")) as Mesh;
+    const b = scene.getMeshByName(editorMeshName("b")) as Mesh;
+    const reference = MeshBuilder.CreateSphere("reference", { diameter: 0.75 }, scene);
+    reference.setEnabled(false);
+    const referenceVertices = reference.getTotalVertices();
+    expect(a.geometry).not.toBeNull();
+    expect(b.geometry).toBe(a.geometry);
+    expect(a.getVerticesData("position")).toEqual(reference.getVerticesData("position"));
+    expect(a.getVerticesData("normal")).toEqual(reference.getVerticesData("normal"));
+    expect(a.getIndices()).toEqual(reference.getIndices());
+    expect(a._originalBuilderSideOrientation).toBe(reference._originalBuilderSideOrientation);
+    // The geometry goes with its last proxy; a later actor makes it again.
+    const geometry = a.geometry!;
+    a.dispose();
+    b.dispose();
+    expect(geometry.isDisposed()).toBe(true);
+    applySceneToBabylonScene(scene, sceneWithActors([createActor("c", "C")]));
+    expect(scene.getMeshByName(editorMeshName("c"))!.getTotalVertices()).toBe(referenceVertices);
   });
 
   it("represents actors without a mesh as a default billboard at the origin", () => {
