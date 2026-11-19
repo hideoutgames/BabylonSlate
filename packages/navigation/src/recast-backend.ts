@@ -67,9 +67,54 @@ const COST_VOLUME_QUERY_POLYS = 512;
 
 let recastReady: Promise<void> | null = null;
 
+/** Loads this context's Recast module for good: a caller that keeps Recast objects alive pins it (`withNavigation`). */
 export function initNavigation(): Promise<void> {
+  pinned = true;
+  return loadNavigation();
+}
+
+function loadNavigation(): Promise<void> {
   recastReady ??= init();
   return recastReady;
+}
+
+/** Callers of `withNavigation` whose work has not finished. */
+let scopedUsers = 0;
+/** Whether a caller of `initNavigation` keeps the module: then `withNavigation` never unloads it. */
+let pinned = false;
+
+/**
+ * Runs `work` with the Recast module loaded, and unloads it once no such work is left (`unloadNavigation`): for a
+ * context whose only Recast use is short work that leaves no Recast object alive (the main thread's navmesh overlay,
+ * which decodes a bake into debug triangles). The module's memory is 64 MiB, fixed in its binary; the next work loads it
+ * again. A context that keeps navmeshes, queries or crowds alive (the Play worker) calls `initNavigation` instead, which
+ * keeps the module loaded from then on.
+ */
+export async function withNavigation<T>(work: () => T | Promise<T>): Promise<T> {
+  scopedUsers += 1;
+  try {
+    await loadNavigation();
+    return await work();
+  } finally {
+    scopedUsers -= 1;
+    if (scopedUsers === 0 && !pinned) unloadNavigation();
+  }
+}
+
+/** Whether the Recast module is loaded (or loading) in this context. */
+export function navigationLoaded(): boolean {
+  return recastReady !== null;
+}
+
+/**
+ * Drops this context's Recast module, its WebAssembly memory with it, so the next `initNavigation` loads a new one.
+ * Only for a context with no Recast object alive: one would point into the dropped memory.
+ */
+function unloadNavigation(): void {
+  if (!recastReady) return;
+  const raw = Raw as unknown as Record<string, unknown>;
+  for (const key of Object.keys(raw)) if (key !== "isNull" && key !== "destroy") delete raw[key];
+  recastReady = null;
 }
 
 /**
@@ -128,7 +173,8 @@ export function unwrapTileCacheBytes(bytes: Uint8Array): Uint8Array | null {
 export async function generateNavMesh(
   input: NavMeshGenerateInput,
 ): Promise<Uint8Array> {
-  await initNavigation();
+  // A bake keeps no Recast object: it loads the module without pinning it (`withNavigation`).
+  await loadNavigation();
   const config = toRecastConfig({ ...DEFAULT_NAV_MESH_SETTINGS, ...input.settings });
   if (input.settings?.supportDynamicObstacles) return generateTileCacheBytes(input, config);
   const result = input.settings?.tiled

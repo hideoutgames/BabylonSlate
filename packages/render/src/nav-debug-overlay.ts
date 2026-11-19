@@ -6,8 +6,8 @@ import type { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Rendering/edgesRenderer";
 import {
   blockerWorldMatrix,
-  initNavigation,
   navMeshDebugPrimitives,
+  withNavigation,
 } from "@haptic/navigation";
 import type { PhysicsWorldKind, SerializedActor } from "@haptic/core";
 import {
@@ -108,9 +108,9 @@ export class NavMeshDebugOverlay {
     const positions: number[] = [];
     const indices: number[] = [];
     if (bytes && bytes.byteLength > 0) {
-      await initNavigation();
-      if (generation !== this.generation) return;
-      const primitives = navMeshDebugPrimitives(bytes);
+      // The main thread keeps no Recast object: the module (64 MiB) loads for the decode and unloads after it.
+      const primitives = await withNavigation(() => generation === this.generation ? navMeshDebugPrimitives(bytes) : null);
+      if (!primitives || generation !== this.generation) return;
       for (const primitive of primitives) {
         if (primitive.type !== "tris") continue;
         const start = positions.length / 3;
