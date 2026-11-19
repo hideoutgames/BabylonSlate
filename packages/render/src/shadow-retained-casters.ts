@@ -254,7 +254,7 @@ export class RetainedShadowCasters {
   private counted = new Int32Array(0);
   private offsets = new Int32Array(0);
   private partOf = new Int32Array(0);
-  /** Each index range's part, keyed by `rangeKey`, numbered in order of arrival. */
+  /** Each index range's part, keyed as `partFor` keys it, numbered in order of arrival. */
   private readonly parts = new Map<number, number>();
   private slotCount = 0;
   private readonly freeSlots: number[] = [];
