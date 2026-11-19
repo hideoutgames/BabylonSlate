@@ -187,6 +187,8 @@ export class SpatialEffectsGraph {
       // The pass clears its depth itself (`clearsDepth`): a clear task would be a render pass of its own.
       this.geometry.depthTexture = target("Spatial Geometry Z", 1, true);
       this.geometry.clearsDepth = true;
+      // Nothing reads that depth after the pass, and the next frame clears or seeds it again.
+      this.geometry.discardsDepth = true;
       this.geometry.size = { width, height };
       this.geometry.sizeIsPercentage = false;
       this.geometry.textureDescriptions = [

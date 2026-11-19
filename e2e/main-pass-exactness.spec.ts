@@ -38,11 +38,20 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
   test.setTimeout(300_000);
   const current = await run(page, false);
   const reference = await run(page, true);
+  // GL calls per still frame by function, where the two runs differ.
+  const calls = Object.fromEntries([...new Set([...Object.keys(current.glFrame.calls), ...Object.keys(reference.glFrame.calls)])]
+    .map((name) => [name, { current: current.glFrame.calls[name] ?? 0, reference: reference.glFrame.calls[name] ?? 0 }] as const)
+    .filter(([, count]) => count.current !== count.reference));
   await testInfo.attach("main-pass-exactness", {
-    body: JSON.stringify({ renderer: current.renderer, stillTexelsPerFrame: { current: current.stillTexelsPerFrame, reference: reference.stillTexelsPerFrame } }),
+    body: JSON.stringify({
+      renderer: current.renderer, stillTexelsPerFrame: { current: current.stillTexelsPerFrame, reference: reference.stillTexelsPerFrame },
+      passes: { current: current.glFrame.passes, reference: reference.glFrame.passes }, calls,
+    }),
     contentType: "application/json",
   });
   console.log(`main pass exactness proof on ${current.renderer}: shadow texels per still frame ${current.stillTexelsPerFrame} (reference ${reference.stillTexelsPerFrame})`);
+  console.log(`still frame passes, reference:\n${reference.glFrame.passes.join("\n")}\ncurrent:\n${current.glFrame.passes.join("\n")}`);
+  console.log(`GL calls per still frame that differ (current vs reference): ${JSON.stringify(calls)}`);
   // The reference redraws the High Quality capture's own sun map in every still frame; the savings draw none.
   expect(reference.stillTexelsPerFrame).toBeGreaterThan(0);
   expect(current.stillTexelsPerFrame).toBe(0);
@@ -57,4 +66,17 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
       expect(differences(images.captures[quality], before.captures[quality]), `${stage} ${quality}`).toEqual({ count: 0, first: [] });
     }
   }
+  // The new paths ran (the runs' frames differ otherwise too: the reference's capture sun maps and Mirror redraw).
+  // Each view's clear pass is gone: no pass holds a clear alone, and every pass that clears the scene draws into it.
+  const clearOnly = (passes: string[]) => passes.filter((pass) => /^\S+ v\S+ cds@\S+$/.test(pass)).length;
+  expect(clearOnly(reference.glFrame.passes)).toBeGreaterThan(0);
+  expect(clearOnly(current.glFrame.passes)).toBe(0);
+  // Each geometry pass clears its other attachments, then its view depth at the far plane with its depth in one
+  // clear, never to zero first, and discards its depth after its draws; the reference's cleared four times.
+  const geometry = current.glFrame.passes.filter((pass) => / cd@\S+/.test(pass) && !/ cds@/.test(pass));
+  const referenceGeometry = reference.glFrame.passes.filter((pass) => / c@\S+ c@\S+ c@\S+ d@\S+/.test(pass));
+  expect(geometry.length).toBeGreaterThan(0);
+  expect(geometry.length).toBe(referenceGeometry.length);
+  expect(geometry.every((pass) => / c@\S+ cd@\S+ x\d+ inv1$/.test(pass)), geometry.join("\n")).toBe(true);
+  expect(current.glFrame.invalidates - reference.glFrame.invalidates).toBe(geometry.length);
 });

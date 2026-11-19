@@ -1684,20 +1684,19 @@ export class ForwardSceneFrameGraph {
         } else if (this.preparedOutlineView) {
           composeOutline(this.postProcessGraph?.outputTexture ?? (outlineOnOutput ? undefined : this.ownScene?.color) ?? color);
         }
+        // The scene colour and depth the objects draw into. The view's clear settings: the objects pass clears them as
+        // it starts, unless the water split's own-pair form runs this as a task of its own (below).
+        const drawColor = this.postProcessGraph?.sceneColorTexture ?? this.effectsGraph?.sceneColorTexture ?? this.ownScene?.color ?? color;
+        const drawDepth = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ?? this.ownScene?.depth ?? depth;
         this.clear = new FrameGraphClearTextureTask(
           "Forward clear",
           this.graph,
         );
-        this.clear.targetTexture =
-          this.postProcessGraph?.sceneColorTexture ??
-          this.effectsGraph?.sceneColorTexture ??
-          this.ownScene?.color ??
-          color;
-        this.clear.depthTexture = this.postProcessGraph?.depthTexture ?? this.effectsGraph?.depthTexture ??
-          this.ownScene?.depth ?? depth;
+        this.clear.targetTexture = drawColor;
+        this.clear.depthTexture = drawDepth;
         // Every auxiliary path, and every one into a target without depth (own targets, an authored or a settings
         // chain), has its own depth: the backbuffer's is not the target's.
-        if ((this.auxiliary || (output.color && !output.depth)) && this.clear.depthTexture === depth)
+        if ((this.auxiliary || (output.color && !output.depth)) && drawDepth === depth)
           throw new Error("A view drawing into a target without depth requires its own scene depth.");
         // The authored clear color is display-space; a Scene Linear scene
         // color holds linear HDR that the Display Color stage encodes once.
@@ -1722,8 +1721,8 @@ export class ForwardSceneFrameGraph {
           // target. Recompute projection after binding, as Scene.render does.
           { doNotChangeAspectRatio: false },
         );
-        this.objects.targetTexture = this.clear.outputTexture;
-        this.objects.depthTexture = this.clear.outputDepthTexture;
+        this.objects.targetTexture = drawColor;
+        this.objects.depthTexture = drawDepth;
         this.objects.isMainObjectRenderer = true;
         // Alpha-tested draws turn alpha-to-coverage on for themselves (`alpha-to-coverage.ts`); nothing after the pass keeps it.
         guardAlphaToCoverageBlending(scene.getEngine());
@@ -1772,12 +1771,14 @@ export class ForwardSceneFrameGraph {
         if (!this.auxiliary) this.shadows.onAfterTaskExecute.add(() => drawSceneAuxiliaryViews(scene));
         this.graph.addTask(this.shadows);
         if (this.water?.splitsClear) {
-          // The own-pair split switches the output clear: decide before it runs.
+          // The own-pair split switches the output clear, a task of its own then: decide before it runs.
           this.graph.addTask(this.cull);
           this.graph.addTask(this.water.split);
           this.graph.addTask(this.clear);
         } else {
-          this.graph.addTask(this.clear);
+          // Nothing reads or draws the scene targets before the objects pass: it clears them as it starts, so a
+          // tile-based GPU neither stores a cleared target nor loads it again.
+          this.objects.startClear = this.clear;
           this.graph.addTask(this.cull);
         }
         for (const task of this.postProcessGraph?.geometryTasks ?? []) this.graph.addTask(task);
