@@ -56,6 +56,39 @@ import { setSceneRenderSettings } from "../../../../packages/render/src/scene-re
 import { shadowAtlasDrawCounts } from "../../../../packages/render/src/shadow-atlas";
 import { findSceneShadowController, SceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
+import { AtlasCascadedShadowGenerator } from "../../../../packages/render/src/shadow-atlas";
+import { ShadowMapRefresh } from "../../../../packages/render/src/shadow-map-refresh";
+import { hasOwnerNotifiedGeometry } from "../../../../packages/render/src/geometry-revision";
+import { createSpriteQuad, setSpriteQuadSize } from "../../../../packages/render/src/sprite-quad";
+import { createTilemapMeshes } from "../../../../packages/render/src/tilemap-mesh";
+
+/**
+ * The shadow maps' savings as before them, from the current; returns the restore. Every cascade of a sun's atlas map
+ * redraws whenever the map does (`AtlasCascadedShadowGenerator.keepsCascade`), a mesh whose owner notifies its writes
+ * (a sprite quad, a tilemap chunk) changes on its own, and a spot light's casters are tested against its range alone.
+ */
+function referenceShadowRefresh(): () => void {
+  const cascades = AtlasCascadedShadowGenerator.prototype;
+  const keepsCascade = cascades.keepsCascade;
+  cascades.keepsCascade = () => false;
+  const refresh = ShadowMapRefresh.prototype as unknown as {
+    tracksGeometryWrites(mesh: Mesh): boolean;
+    shadowCone(...args: unknown[]): unknown;
+  };
+  const tracksGeometryWrites = refresh.tracksGeometryWrites;
+  const shadowCone = refresh.shadowCone;
+  refresh.tracksGeometryWrites = function (this: unknown, mesh: Mesh) {
+    return !hasOwnerNotifiedGeometry(mesh) && tracksGeometryWrites.call(this, mesh);
+  };
+  refresh.shadowCone = () => null;
+  return () => {
+    cascades.keepsCascade = keepsCascade;
+    refresh.tracksGeometryWrites = tracksGeometryWrites;
+    refresh.shadowCone = shadowCone;
+  };
+}
 
 /**
  * The light block's functions as before the savings, from the current ones (`HAPTIC_LIGHTING_FUNCTIONS_GLSL`): each
@@ -254,6 +287,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     controller.applyViewRefresh = () => {};
   }
   const restoreClears = options.reference ? referenceClears() : () => {};
+  const restoreShadowRefresh = options.reference ? referenceShadowRefresh() : () => {};
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
   document.getElementById("root")!.append(canvas);
@@ -332,6 +366,19 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     rect("ceiling panel", new Vector3(0.5, 3, 2), -Math.PI / 2, 0, [1, 1, 0.95]);
     rect("wall panel", new Vector3(-2.5, 1.5, 5.8), 0, Math.PI, [0.6, 0.8, 1]);
 
+    // A sprite quad and an animated tilemap chunk, opaque, casting: their owners write their updatable buffers through
+    // notified updates only, so their shadows are cached until such a write.
+    const sprite = createSpriteQuad(scene, "sprite", { pivot: { x: 0.5, y: 0.5 }, width: 120, height: 120 });
+    sprite.position.set(-3.2, 1.2, 2.6);
+    sprite.material = rough;
+    const tileset = normalizeTilesetPayload({ atlasWidth: 32, atlasHeight: 16, tileWidth: 16, tileHeight: 16, tiles: [{ id: 2, animation: [2, 1] }] });
+    let tilemap = { ...createDefaultTilemapPayload(), chunkSize: 2, tilesets: [{ guid: "atlas", firstGid: 1, tileCount: 2 }] };
+    tilemap = setTile(setTile(tilemap, "layer-1", 0, 0, 2), "layer-1", 1, 0, 2);
+    const tiles = createTilemapMeshes(scene, "tilemap", tilemap, new Map([["atlas", tileset]]), 0.8, 0.8);
+    tiles.position.set(-0.6, 1.4, 4.2);
+    const chunk = tiles.getChildMeshes().find((mesh) => mesh.name.endsWith(":anim")) as Mesh;
+    chunk.material = rough;
+
     const mirror = createMirrorSurfaceMesh(scene, "mirror", parseMirrorProperties({ width: 3, height: 2 }));
     mirror.position.set(3.2, 1.2, 4);
     mirror.rotation.y = Math.PI / 4;
@@ -395,6 +442,14 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
       lateUploads: (retainedAfter?.lateUploads ?? 0) - (retainedBefore?.lateUploads ?? 0),
     };
     const moved = await read();
+    // The sprite quad resized and the tilemap chunk's vertices rewritten, each through a notified write, then a single
+    // frame: every map they reach draws them again in it.
+    setSpriteQuadSize(sprite, 1.6, 0.7, { x: 0.3, y: 0.6 });
+    const positions = Float32Array.from(chunk.getVerticesData(VertexBuffer.PositionKind)!);
+    for (let at = 1; at < positions.length; at += 3) positions[at] = positions[at]! * 1.5;
+    chunk.updateVerticesData(VertexBuffer.PositionKind, positions);
+    frame();
+    const rewritten = await read();
     captures.dispose();
     view.dispose();
     let settled = false;
@@ -405,11 +460,12 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     await released;
-    return { still, moved, stillTexelsPerFrame, glFrame, movedCounters, renderer: engine.getGlInfo().renderer };
+    return { still, moved, rewritten, stillTexelsPerFrame, glFrame, movedCounters, renderer: engine.getGlInfo().renderer };
   } finally {
     block._buildBlock = build;
     controller.applyViewRefresh = applyViewRefresh;
     restoreClears();
+    restoreShadowRefresh();
     scene.dispose();
     engine.dispose();
     canvas.remove();

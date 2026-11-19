@@ -1,5 +1,6 @@
 import type { DrawPass, RenderDiagnostics, WebGlCallGroup, WebGlCallTotals } from "@haptic/render";
 import type { PlaySessionResult } from "./play-session";
+import type { FrameAttribution, LongFrameAttribution } from "./frame-attribution";
 import type { PlayProbe, ViewportProbe } from "./runtime-probes";
 import { RENDER_QUALITY_PROFILES, SHADOW_PROFILES } from "@haptic/core";
 import { describeError } from "../lib/diagnostic-info";
@@ -123,6 +124,13 @@ export interface FeatureTestBreakdownStep {
    * is the cost of that work; it ranks after the steps that save.
    */
   adds?: boolean;
+  /**
+   * Profile: the row is sampled with the Check's own samplers off (`gpubusy off`, no GPU probes, no half-second
+   * diagnostics reads): only its animation frames and what ran in its long ones. Each later row turns them on again.
+   */
+  samplersOff?: boolean;
+  /** Profile: windows the step is measured in, each between two baselines (`PROFILE_STEP_REPEATS` when absent). */
+  repeats?: number;
 }
 
 const POST_FIELDS = [
@@ -331,8 +339,8 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  * steps have compiled, and a memory-limited device kills the page. `shadow tiles half` plans its smaller maps in the
  * level's atlas, which stays the same object.
  *
- * `light` (few draws) takes the world hidden, the shadow map passes and their splits, the geometry effects together and
- * the world drawn once. `heavy` (many draws, no Mirror on screen; the control view) takes what follows the draws rather
+ * `light` (few draws) takes the world hidden, the shadow map passes and their splits, the geometry effects together,
+ * the world drawn once, and one window with the Check's own samplers off (`samplersOff`). `heavy` (many draws, no Mirror on screen; the control view) takes what follows the draws rather
  * than the pixels: the world hidden, the shadow map passes, the geometry effects together and the geometry pass drawn
  * twice, whole and scissored (where it draws the most), and the world drawn once. `mirror` (both Mirrors and the capture monitors on screen) takes
  * the captures, the Mirrors' reflection and the world drawn once.
@@ -381,11 +389,13 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
     restore: ["shadowdebug passes on", captures],
     fields: ["shadows.debug", ...GEOMETRY_EFFECT_FIELDS, "captures", "geometry.mirrors"], overlaps: true,
   };
+  // The Check's own samplers off for one window: whether they cause long frames (the iPhone's at any load).
+  const samplersOff: FeatureTestBreakdownStep = { label: "samplers off", commands: [], samplersOff: true, repeats: 1 };
   return {
     views: [
       {
         name: "light", enter: [possessProfileView("light")], steps: [
-          worldHidden, shadowPassesOff, sunPassesOff, localPassesOff, halfTiles, geometryOff, once,
+          worldHidden, shadowPassesOff, sunPassesOff, localPassesOff, halfTiles, geometryOff, once, samplersOff,
         ],
       },
       {
@@ -511,7 +521,7 @@ export function interleavedSequence(views: readonly FeatureTestBreakdownView[]):
     };
     sequence.push(baseline());
     for (const step of view.steps) {
-      for (let repeat = 0; repeat < PROFILE_STEP_REPEATS; repeat++) sequence.push({ ...step, label: `${prefix}${step.label}`, ...tag }, baseline());
+      for (let repeat = 0; repeat < (step.repeats ?? PROFILE_STEP_REPEATS); repeat++) sequence.push({ ...step, label: `${prefix}${step.label}`, ...tag }, baseline());
     }
   }
   return sequence;
@@ -1073,6 +1083,10 @@ export interface FeatureTestBenchmarkSample {
    * after its window and probes, before the next step; absent elsewhere and where unmeasured.
    */
   webGl?: WebGlCallSample;
+  /** The window's long frames by what ran in them (`frame-attribution.ts`); absent where unmeasured. */
+  longFrames?: LongFrameAttribution;
+  /** Sampled with the Check's own samplers off (`FeatureTestBreakdownStep.samplersOff`): frames only. */
+  samplersOff?: boolean;
 }
 
 type GpuProbeDiagnostics = NonNullable<RenderDiagnostics["gpuProbe"]>;
@@ -1246,6 +1260,8 @@ export interface FeatureTestCheckSceneResult {
     /** Where Play's load stood when it timed out or the run was cancelled (`playStartState`). */
     phase: string | null;
     frames: FrameStats | null;
+    /** Play's sampled window's long frames by what ran in them (`frame-attribution.ts`); absent where unmeasured. */
+    longFrames?: LongFrameAttribution | null;
     /**
      * The render loop's frames in the last second as the sample ended (the Play view's scheduler, `renderedFps`, which
      * the Stats HUD shows as FPS); not the game's tick rate, which is `ticksPerSecond`.
@@ -1385,6 +1401,13 @@ export interface FeatureTestCheckDeps {
   now: () => number;
   sleep: (ms: number, signal: AbortSignal) => Promise<void>;
   onProgress?: (message: string) => void;
+  /**
+   * Wraps the main thread's callback sources for the Check's length (`installFrameAttribution`), on the clock of `now`;
+   * the Check stops it as it ends. Absent where unmeasured.
+   */
+  attributeFrames?: () => FrameAttribution;
+  /** Set by the Check while its attribution runs: the long frames between two readings of `now`. */
+  longFrames?: (fromMs: number, toMs: number) => LongFrameAttribution;
 }
 
 export interface FeatureTestCheckTimeouts {
@@ -1532,28 +1555,35 @@ export async function runFeatureTestCheck(options: {
     ...(breakdown ? { breakdown } : {}),
   });
   const partial = () => report(false);
+  // What ran in long frames, wrapped only while the Check runs.
+  const attribution = options.deps.attributeFrames?.() ?? null;
   const deps: FeatureTestCheckDeps = {
     ...options.deps,
     onProgress: (message) => {
       options.deps.onProgress?.(message);
       options.onStep?.(message, partial());
     },
+    ...(attribution ? { longFrames: (fromMs: number, toMs: number) => attribution.read(fromMs, toMs) } : {}),
   };
   let cancelled = false;
-  for (const scene of options.scenes) {
-    if (signal.aborted) { cancelled = true; break; }
-    const result = emptySceneResult(scene);
-    if (breakdown?.passes.length) result.pass = breakdown.passes.length;
-    scenes.push(result);
-    try {
-      await checkScene(result, mode, deps, signal, limits, breakdown?.method ?? FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD);
-    } catch (error) {
-      if (!signal.aborted) throw error;
-      cancelled = true;
-      result.problems.push("Cancelled while checking this scene.");
-      deps.play()?.stop();
-      break;
+  try {
+    for (const scene of options.scenes) {
+      if (signal.aborted) { cancelled = true; break; }
+      const result = emptySceneResult(scene);
+      if (breakdown?.passes.length) result.pass = breakdown.passes.length;
+      scenes.push(result);
+      try {
+        await checkScene(result, mode, deps, signal, limits, breakdown?.method ?? FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD);
+      } catch (error) {
+        if (!signal.aborted) throw error;
+        cancelled = true;
+        result.problems.push("Cancelled while checking this scene.");
+        deps.play()?.stop();
+        break;
+      }
     }
+  } finally {
+    attribution?.stop();
   }
   return report(cancelled);
 }
@@ -1643,9 +1673,11 @@ async function checkScene(
     const workBefore = play.snapshot().rendering?.rendererWork;
     const ticksBefore = { tick: play.tickIndex(), at: deps.now() };
     const sampled = await sampleWithCounters(play, deps.sampleFrames(limits.playSampleMs, signal), deps, signal);
-    const ticked = deps.now() - ticksBefore.at;
+    const sampledUntil = deps.now();
+    const ticked = sampledUntil - ticksBefore.at;
     result.play.ticksPerSecond = ticked > 0 ? ((play.tickIndex() - ticksBefore.tick) * 1000) / ticked : null;
     result.play.frames = sampled.frames;
+    result.play.longFrames = deps.longFrames?.(ticksBefore.at, sampledUntil) ?? null;
     result.play.counters = { draws: sampled.draws, cpuMs: sampled.cpu, gpuMs: sampled.gpu, drawPasses: sampled.drawPasses, drawPassMs: sampled.drawPassMs };
     result.play.runtimeFps = play.runtimeFps();
     result.play.snapshot = play.snapshot();
@@ -2141,20 +2173,32 @@ async function benchmarkProfiles(
    * Samples the view as it is now into a sample labelled `label`; `failed` collects what went wrong. A Profile row also
    * carries its GPU probes; `serial` false leaves the perturbing one out (a hold window that another follows).
    */
-  const measure = (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }, serial = true) =>
-    probed(serial, () => measureWindow(label, failed, sampleMs, settled));
-  const measureWindow = async (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) => {
+  const measure = (
+    label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }, serial = true, samplersOff = false,
+  ) => samplersOff ? measureWindow(label, failed, sampleMs, settled, true) : probed(serial, () => measureWindow(label, failed, sampleMs, settled));
+  /**
+   * `samplersOff`: the GPU-busy probe stops polling for the window, and only its animation frames are sampled (no
+   * half-second diagnostics reads); the next window's `gpubusy on` starts the probe again.
+   */
+  const measureWindow = async (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }, samplersOff = false) => {
     const firstDrawsBefore = play.snapshot().rendering?.firstDraws?.draws ?? 0;
     const skippedBefore = play.snapshot().rendering?.frameBackpressure?.skipped ?? 0;
     const depthsBefore = play.snapshot().rendering?.frameBackpressure?.inFlightCounts;
-    if (interleaved) gpuBusy = (await run("gpubusy on")).success;
+    if (interleaved && samplersOff) {
+      if (gpuBusy) await run("gpubusy off");
+      gpuBusy = false;
+    } else if (interleaved) gpuBusy = (await run("gpubusy on")).success;
     const presentedBefore = presentationCounts(play);
     const workBefore = play.snapshot().rendering?.rendererWork;
     const sampleStarted = deps.now();
     const atMs = sampleStarted - sweepStarted;
-    const sampled = await sampleWithCounters(play, deps.sampleFrames(sampleMs, signal), deps, signal);
+    const sampled = samplersOff
+      ? { frames: await deps.sampleFrames(sampleMs, signal), draws: null, cpu: null, gpu: null, compiling: 0, occlusion: null, drawPasses: null, drawPassMs: null }
+      : await sampleWithCounters(play, deps.sampleFrames(sampleMs, signal), deps, signal);
+    const sampleEnded = deps.now();
+    const longFrames = deps.longFrames?.(sampleStarted, sampleEnded);
     const presentedAfter = presentationCounts(play);
-    const sampleMsTaken = deps.now() - sampleStarted;
+    const sampleMsTaken = sampleEnded - sampleStarted;
     const memory = await readHostMemory(deps);
     const snapshot = play.snapshot();
     const rendering = snapshot.rendering;
@@ -2198,6 +2242,8 @@ async function benchmarkProfiles(
         unsettled: { firstDraws: (rendering?.firstDraws?.draws ?? 0) - firstDrawsBefore, compiling: sampled.compiling, settleMs: settled.ms },
         ...(sampled.occlusion ? { occlusion: sampled.occlusion } : {}),
       } : {}),
+      ...(longFrames ? { longFrames } : {}),
+      ...(samplersOff ? { samplersOff: true } : {}),
     };
     return sample;
   };
@@ -2283,7 +2329,7 @@ async function benchmarkProfiles(
       // them would measure their compiles, not the step.
       const settled = steady ? await settle() : { quiet: true, ms: 0 };
       if (!settled.quiet) failed.push(unsettledNote("step"));
-      const sample = await measure(step.label, failed, mode === "profile" ? limits.profileStepSampleMs : limits.playSampleMs, settled);
+      const sample = await measure(step.label, failed, mode === "profile" ? limits.profileStepSampleMs : limits.playSampleMs, settled, true, step.samplersOff === true);
       if (interleaved) {
         sample.baseline = step.baseline === true;
         if (step.view) sample.view = step.view;

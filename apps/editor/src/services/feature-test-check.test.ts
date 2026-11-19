@@ -1202,7 +1202,7 @@ describe("Profile", { timeout: 30_000 }, () => {
     const plan = featureTestProfilePlan(SESSION);
     const splits = ["sun shadow passes off", "local shadow passes off", "shadow tiles half"];
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once"]],
+      ["light", ['possess "Profile Light Camera"'], ["world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once", "samplers off"]],
       ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "geometry pass drawn twice", "geometry pass drawn twice, scissored", "world drawn once"]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["captures off", "mirrors environment", "world drawn once"]],
     ]);
@@ -1492,7 +1492,7 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(samples.every((sample, index) => index === 0 || sample.atMs! > samples[index - 1]!.atMs!)).toBe(true);
     // Every row's window is recorded by the GPU probes, which come off before its restore. This Engine reports none, so
     // no serial probe is asked for.
-    expect(editor.commands.filter((line) => line.startsWith("gpuprobe"))).toEqual(samples.flatMap(() => ["gpuprobe on", "gpuprobe off"]));
+    expect(editor.commands.filter((line) => line.startsWith("gpuprobe"))).toEqual(samples.flatMap((sample) => sample.samplersOff ? [] : ["gpuprobe on", "gpuprobe off"]));
     expect(editor.commands.slice(editor.commands.indexOf("shadowdebug sunpasses off"), editor.commands.indexOf("shadowdebug sunpasses off") + 5))
       .toEqual(["shadowdebug sunpasses off", "gpuprobe on", "gpubusy on", "gpuprobe off", "quality reset"]);
     const commands = editor.commands.filter((line) => !line.startsWith("gpuprobe"));
@@ -1507,7 +1507,8 @@ describe("Profile", { timeout: 30_000 }, () => {
     // Each step's commands, its sample, then `quality reset`, the held resolution and its own restore before the next baseline.
     expect(commands.slice(at("shadowdebug sunpasses off"), at("shadowdebug sunpasses on") + 1))
       .toEqual(["shadowdebug sunpasses off", "gpubusy on", "quality reset", "quality resolution scale 0.75", "shadowdebug sunpasses on"]);
-    expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length);
+    // Every row but the one sampled with the samplers off, which turns the probe off for its window.
+    expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length - 1);
     // Back to the session's quality, its Dynamic Resolution included, and the tour camera.
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", 'possess "Main Camera"']);
     // Each row's draws per pass and shadow atlas, as the step left them.
@@ -1524,6 +1525,64 @@ describe("Profile", { timeout: 30_000 }, () => {
       resolution: { scale: 0.75, floor: true, levelBefore: 1 },
       frameCap: 30,
     });
+  });
+
+  it("samples one light row with its own samplers off, turns them on again for the next, and gives Play and every row its window's long frames", async () => {
+    const { editor, deps } = profileEditor({ tier: "high" });
+    // Snapshot reads made while a row's frames are sampled (the half-second diagnostics reads).
+    let sampling = false;
+    const readsInWindow: number[] = [];
+    const reads = { count: 0 };
+    const windows: Array<[number, number]> = [];
+    let attribution: "none" | "running" | "stopped" = "none";
+    const measured: FeatureTestCheckDeps = {
+      ...deps,
+      play: () => {
+        const play = deps.play();
+        return play && { ...play, snapshot: () => { if (sampling) reads.count += 1; return play.snapshot(); } };
+      },
+      sampleFrames: async (ms, signal) => {
+        sampling = true;
+        reads.count = 0;
+        const stats = await deps.sampleFrames(ms, signal);
+        await deps.sleep(ms, signal);
+        sampling = false;
+        readsInWindow.push(reads.count);
+        return stats;
+      },
+      attributeFrames: () => {
+        attribution = "running";
+        return {
+          read: (fromMs, toMs) => {
+            windows.push([fromMs, toMs]);
+            return { ms: toMs - fromMs, frames: 180, three: { render: 1 }, four: { none: 2 } };
+          },
+          stop: () => { attribution = "stopped"; },
+        };
+      },
+    };
+    const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps: measured, signal: new AbortController().signal });
+    expect(attribution).toBe("stopped");
+    const [main] = report.scenes;
+    const samples = main!.play.benchmark;
+    const index = samples.findIndex((sample) => sample.samplersOff);
+    expect(samples.filter((sample) => sample.samplersOff).map((sample) => sample.label)).toEqual(["light samplers off"]);
+    const row = samples[index]!;
+    // Frames only: no CPU, GPU-busy or probe readings.
+    expect([row.cpuMs, row.gpuBusy, row.gpuProbe, row.frames?.frames]).toEqual([null, undefined, undefined, 60]);
+    // After the editor's and Play's windows, one per sample: this row's window read no diagnostics, the next did.
+    expect(readsInWindow).toHaveLength(2 + samples.length);
+    expect(readsInWindow[2 + index]).toBe(0);
+    expect(readsInWindow[2 + index + 1]).toBeGreaterThan(0);
+    // The GPU-busy probe stops before the row's window, without a GPU probe, and the next row's window starts it again.
+    const at = editor.commands.indexOf("gpubusy off");
+    expect(editor.commands.slice(at, at + 5)).toEqual(["gpubusy off", "quality reset", "quality resolution scale 0.75", "gpuprobe on", "gpubusy on"]);
+    expect(editor.commands.lastIndexOf("gpubusy off")).toBe(editor.commands.length - 3);
+    // Every window's long frames, read over that window on the Check's clock: Play's and each row's.
+    expect(main!.play.longFrames).toMatchObject({ frames: 180, three: { render: 1 }, four: { none: 2 } });
+    expect(samples.every((sample) => sample.longFrames?.frames === 180)).toBe(true);
+    expect(windows).toHaveLength(1 + samples.length);
+    expect(windows.slice(1).every(([from, to], row) => to - from >= (samples[row]!.warmup ? 5_000 : 3_000))).toBe(true);
   });
 
   /** Every fourth attempt held, as a scene that steadily holds frames does. */
@@ -1610,11 +1669,11 @@ describe("Profile", { timeout: 30_000 }, () => {
     const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, signal: new AbortController().signal, deps: probing });
     const samples = report.scenes[0]!.play.benchmark;
     // Every row carries the window's probes.
-    expect(samples.every((sample) => sample.gpuProbe?.signature?.modal === "a1b2c3d4" && sample.gpuProbe.shadows?.atlasEdge === 8192 && sample.gpuProbe.raf?.perSecond === 60)).toBe(true);
+    expect(samples.every((sample) => sample.samplersOff || (sample.gpuProbe?.signature?.modal === "a1b2c3d4" && sample.gpuProbe.shadows?.atlasEdge === 8192 && sample.gpuProbe.raf?.perSecond === 60))).toBe(true);
     // Serialised frames follow every row but the warm-up windows.
     const unprobed = samples.filter((sample) => !sample.gpuProbe?.serial).map((sample) => sample.label);
-    expect(unprobed).toEqual(["warm-up 1", "warm-up 2", silent, silent]);
-    expect(editor.commands.filter((line) => line === "gpuprobe serial")).toHaveLength(samples.length - 2);
+    expect(unprobed).toEqual(["warm-up 1", "warm-up 2", "light samplers off", silent, silent]);
+    expect(editor.commands.filter((line) => line === "gpuprobe serial")).toHaveLength(samples.length - 3);
     // Each result is its own row's: the id it was given grows row by row.
     const ids = samples.flatMap((sample) => sample.gpuProbe?.serial ? [sample.gpuProbe.serial.id] : []);
     expect(ids.every((id, index) => index === 0 || id > ids[index - 1]!)).toBe(true);

@@ -53,7 +53,8 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
     renderer: current.renderer, stillTexelsPerFrame: { current: current.stillTexelsPerFrame, reference: reference.stillTexelsPerFrame },
     movedCounters: { current: current.movedCounters, reference: reference.movedCounters },
     passes: { current: current.glFrame.passes, reference: reference.glFrame.passes }, calls,
-    current: { still: digest(current.still), moved: digest(current.moved) }, reference: { still: digest(reference.still), moved: digest(reference.moved) },
+    current: { still: digest(current.still), moved: digest(current.moved), rewritten: digest(current.rewritten) },
+    reference: { still: digest(reference.still), moved: digest(reference.moved), rewritten: digest(reference.rewritten) },
   };
   await testInfo.attach("main-pass-exactness", { body: JSON.stringify(summary), contentType: "application/json" });
   if (process.env.HAPTIC_MAIN_PASS_PROOF_OUT) writeFileSync(process.env.HAPTIC_MAIN_PASS_PROOF_OUT, JSON.stringify(summary));
@@ -73,7 +74,8 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
     // Under Large World Rendering a capture's own camera moves the floating origin, whose rows its maps upload again.
     if (!LARGE_WORLD) expect(counters.lateUploads).toBe(0);
   }
-  for (const stage of ["still", "moved"] as const) {
+  // `rewritten`: one frame after a sprite quad's and a tilemap chunk's notified geometry writes, which the maps follow.
+  for (const stage of ["still", "moved", "rewritten"] as const) {
     const images = current[stage];
     const before = reference[stage];
     // Not blank: the view and each capture show the lit scene.

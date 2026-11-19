@@ -58,7 +58,7 @@ With **Occlusion Culling** on (the **Geometry** group of Scalability), Play and 
 - A Mesh component's **Occluder** chooses per object: **Auto**, **Always** (even when small on screen) or **Never**.
 - A shape hides things only while it is opaque, fills enough of the screen, and is not see-through or animated by its material.
 - Objects are only skipped when no part of them could be in view. Shadows, reflections, captures and picking still include them.
-- When a view keeps finding nothing to skip, occlusion culling checks less often, up to once every 33 frames, and draws everything in view in between. It goes back to every frame as soon as it skips something. The picture is the same either way; `stat draws` then shows the occlusion row as **idle**.
+- When a view keeps finding nothing to skip, occlusion culling checks less often, up to once every 33 frames, and draws everything in view in between. While the camera moves, it checks again within a few frames. It goes back to every frame as soon as it skips something. The picture is the same either way; `stat draws` then shows the occlusion row as **idle**.
 - Scene viewports in the editor always cull, whatever the project setting says. To turn that off, clear **Occlusion Culling** under **Engine Settings** > **Viewport**. The editor setting does not change the project setting.
 - In Play, `quality geometry occlusion on` or `off` switches it for the session, and `stat draws` shows how many objects it skipped and what that cost. `showocclusion on` shows the solid shapes it uses, and `freezeocclusion on` keeps the current view's result while you move with `freecam`, so you can see what it skipped.
 

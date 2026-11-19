@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RenderDiagnostics } from "@haptic/render";
 import type { FeatureTestBenchmarkSample, FeatureTestCheckReport, FeatureTestCheckSceneResult, SampledGpuProbe } from "../services/feature-test-check";
 import { formatFeatureTestCheckReport, type FeatureTestCheckEnvironment } from "./feature-test-check-report";
+import type { LongFrameAttribution } from "../services/frame-attribution";
 
 const environment: FeatureTestCheckEnvironment = {
   appVersion: "1.2.3", userAgent: "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)", platform: "iPad",
@@ -288,7 +289,7 @@ describe("formatFeatureTestCheckReport", () => {
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     const row = (label: string) => lines.find((line) => line.startsWith(`    ${label} `))!;
-    expect(lines).toContain("  Timing: gpu busy polled every 4.2 ms (each frame up to one poll late)");
+    expect(lines).toContain("  Timing: gpu busy read as each Engine frame starts, every 4.2 ms (completion read at frame granularity: a frame whose GPU work ends before the next frame starts reads at least the time to that start)");
     expect(lines).toContain("  preserveDrawingBuffer: off (live)");
     // 14 against the mean of 20 and 22, though every frame lasted two display intervals.
     expect(row("shadows off")).toMatch(/0\/100\/0\/0 {7}14\.0 \(17\) {5}-7\.0ms -33% {7}8\.0ms/);
@@ -500,6 +501,43 @@ describe("formatFeatureTestCheckReport", () => {
       "      1. [FAST] heavy world drawn once: -7.0ms -17% (40.0 > 34.0 > 42.0) · cpu -1.5ms -14% · overlaps",
       "      2. [FAST] heavy shadow passes off: -5.0ms -12% (42.0 > 36.0 > 40.0) · cpu -1.5ms -14% · overlaps",
     ]);
+  });
+
+  it("says per second how many of Play's and each Profile row's frames were long, split by what ran in them, the samplers-off row among them", () => {
+    const long = (ms: number, three: LongFrameAttribution["three"], four: LongFrameAttribution["four"]): LongFrameAttribution =>
+      ({ ms, frames: 180, three, four });
+    const sample = (label: string, extra: Partial<FeatureTestBenchmarkSample>): FeatureTestBenchmarkSample => ({
+      label, baseline: / baseline /.test(` ${label}`), view: label.split(" ")[0],
+      frames: { frames: 180, durationMs: 3000, fps: 60, medianMs: 16.7, meanMs: 16.7, vsync: [0.9, 0, 0.02, 0.08], p95Ms: 67, maxMs: 90, stalls: 0 },
+      runtimeFps: null, cpuMs: 8, gpuMs: null, drawCalls: 300, resolution: null, failed: [], ...extra,
+    });
+    const report: FeatureTestCheckReport = {
+      mode: "profile", startedAt: 0, durationMs: 60_000, cancelled: false, pageErrors: [],
+      scenes: [{
+        name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
+        editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: 60, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
+          longFrames: long(5000, { render: 2 }, { none: 25, timer250: 3 }),
+          benchmark: [
+            sample("light baseline 1", { longFrames: long(3000, {}, { none: 15, port: 3 }) }),
+            sample("light samplers off", { cpuMs: null, samplersOff: true, longFrames: long(3000, { commit: 3 }, { none: 18 }) }),
+            sample("light baseline 2", {}),
+          ] },
+        session: null,
+      }],
+    };
+    const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    // Per second over the window: 2 frames of three intervals in 5 s, 28 of four or more.
+    expect(lines).toContain("  Long frames: 3x 0.4/s (render 0.4) · 4+x 5.6/s (timer 250 0.6, none of ours 5.0)");
+    expect(lines.find((line) => line.startsWith("  (long frames = "))).toMatch(/Safari's clock steps in about 1 ms/);
+    const header = lines.findIndex((line) => line.startsWith("  Long frames per row ("));
+    expect(lines[header]).toMatch(/samplers off = the row sampled with the GPU busy probe not polling/);
+    // Only the rows that measured them.
+    expect(lines.slice(header + 1, header + 3)).toEqual([
+      "    light baseline 1            3x 0/s · 4+x 6.0/s (port 1.0, none of ours 5.0)",
+      "    light samplers off          3x 1.0/s (DOM commit 1.0) · 4+x 6.0/s (none of ours 6.0)",
+    ]);
+    expect(lines[header + 3]).not.toMatch(/light baseline 2/);
   });
 
   it("reports a Profile's GPU probes: each row's serial stages and window counters, the distinct frame structures, and steps ranked in serial frame time", () => {

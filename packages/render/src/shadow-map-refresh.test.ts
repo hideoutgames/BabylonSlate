@@ -37,7 +37,7 @@ import { setLatticeBinding } from "./lattice-deformer-binding";
 import { followPose, updatePoseBounds } from "./pose-bounds";
 import { skinnedRig, skinnedStrip } from "./skinned-test-fixtures";
 import { ReflectedContent } from "./reflected-content";
-import type { AtlasCascadedShadowGenerator } from "./shadow-atlas";
+import { shadowAtlasDrawCounts, type AtlasCascadedShadowGenerator } from "./shadow-atlas";
 import { HAPTIC_SHADOW_VIEW_VEC4S, hapticLightBuffer, hapticShadowViews, writeHapticLights } from "./haptic-lights";
 import type { AtlasShadow } from "./shadow-atlas";
 
@@ -982,6 +982,30 @@ describe("cascaded sun refresh", () => {
     near.onBeforeRenderObservable.remove(hook);
     settle();
     expect(render()).toBe(0);
+  });
+
+  it("redraws only the cascades a caster that changes on its own reaches, keeping the other's tile, and every cascade when the camera moves", async () => {
+    const { scene, camera, material, generator } = await cascadedSun();
+    const counts = shadowAtlasDrawCounts(scene);
+    /** The cascade tiles one scene frame cleared and drew. */
+    const tiles = () => {
+      const before = counts.tiles;
+      scene.render();
+      return counts.tiles - before;
+    };
+    // Thirty units ahead, beyond the first cascade's split; a render hook makes its shadow change on its own.
+    const far = MeshBuilder.CreateBox("far animated caster", { size: 2 }, scene);
+    far.position.set(0, 1, 30);
+    far.material = material;
+    far.onBeforeRenderObservable.add(() => {});
+    sceneShadowController(scene).setParticipation(far, { castShadows: true });
+    tiles();
+    tiles();
+    expect([tiles(), tiles(), tiles()]).toEqual([1, 1, 1]);
+    expect([generator.numCascades, (generator as AtlasCascadedShadowGenerator).keepsCascade(0)]).toEqual([2, true]);
+    // A moved camera refits every cascade: both are drawn, then the first is kept again.
+    camera.position.x += 1;
+    expect([tiles(), tiles()]).toEqual([2, 1]);
   });
 
   it("draws a skinned caster into the cascades its pose reaches, once its bounds follow its skeleton", async () => {
