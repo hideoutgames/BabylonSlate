@@ -207,15 +207,17 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     .list()
     .find((asset) => asset.rootId === "project" && asset.header.type === "InputAction" && asset.header.name === "Confirm");
   const activateInputGuid = requireRef(confirm?.header.guid, "the Basic 3D Confirm Input Action");
-  // Scene Layer post-processing: every layer draws into one target that this pass grades before it is blended over the
-  // world. A slight desaturation without the vignette, which would fade the HUD's edges.
+  // Scene Layer post-processing: authored but off. Main is the performance benchmark, and an enabled pass adds a
+  // full-screen target, copy, pass and blend per frame (every layer drawn into one target the pass grades before it is
+  // blended over the world). Switched on, it is a slight desaturation without the vignette, which would fade the HUD's
+  // edges. See the Feature Test reference's Known gaps for how to turn it on.
   const layerGrade = requireRef(ctx.assets.materials.postProcess, "the post-process Material");
   // Enter / Face Button Right activate HUD focus; Space stays Jump.
   ctx.patchSettings((settings) => ({
     ...settings,
     focusNavigation: { ...settings.focusNavigation, enabled: true, activateInputGuid, wrap: true },
     sceneLayerPostProcessStack: [{
-      id: FEATURE_TEST_SCENE_LAYER_POST_PROCESS_ENTRY_ID, materialGuid: layerGrade, enabled: true,
+      id: FEATURE_TEST_SCENE_LAYER_POST_PROCESS_ENTRY_ID, materialGuid: layerGrade, enabled: false,
       parameters: { Desaturation: { kind: "float", value: 0.15 }, Vignette: { kind: "float", value: 0 } },
     }],
   }));
