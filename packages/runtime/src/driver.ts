@@ -554,7 +554,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.ragdolls = createRagdolls(this);
     this.uiControls = createUIControls(this);
     this.overlay = createOverlay(this, options);
-    this.layers = createLayers(this);
+    this.layers = createLayers(this, options);
 
     // 6. World input.
     this.worldInput = createRuntimeInput(this);
@@ -696,15 +696,12 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     return { world: () => this.world, emit: (command) => this.emit(command), frameId: () => this.frameId };
   }
 
-  registerSceneLayerPostProcess(layerGuid: string, materialGuid: string): void {
-    this.layers.registerPostProcess(layerGuid, materialGuid);
+  registerSceneLayerPostProcess(materialGuid: string): void {
+    this.layers.registerPostProcess(materialGuid);
   }
 
-  unregisterSceneLayerPostProcess(
-    layerGuid: string,
-    materialGuid: string,
-  ): void {
-    this.layers.unregisterPostProcess(layerGuid, materialGuid);
+  unregisterSceneLayerPostProcess(materialGuid: string): void {
+    this.layers.unregisterPostProcess(materialGuid);
   }
 
   applySceneLayerResize(

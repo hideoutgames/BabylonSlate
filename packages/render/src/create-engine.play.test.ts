@@ -186,7 +186,6 @@ function spawnOverlayButton(
     assetGuid: "hud-asset",
     zOrder: 0,
     ownerSceneGuid: null,
-    postProcessStack: [],
     canvas,
   });
   handle.applyCommand({
@@ -655,6 +654,13 @@ describe("Play createEngine view", () => {
     });
   });
 
+  /** The Scene the Scene Layer post-processing passes run in: the one drawing the layers' shared target full screen. */
+  function sceneLayerPassScene(engine: NullEngine): Scene {
+    const scene = engine.scenes.find((candidate) => !candidate.isDisposed && candidate.getMeshByName("sceneLayerPostProcessInput"));
+    if (!scene) throw new Error("No Scene Layer post-processing Scene.");
+    return scene;
+  }
+
   function sharedEngine(): NullEngine {
     // Production FrameGraph ownership; only absent NullEngine driver calls are adapted.
     const engine = adaptNullEngineFrameGraph(new NullEngine());
@@ -685,7 +691,7 @@ describe("Play createEngine view", () => {
     Object.assign(engine.getCaps(), { maxAnisotropy: 16 });
     const { handle } = playHandle(engine);
     handle.setLocalQualityOverrides({ textures: { anisotropy: 2 } });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const layerScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
     const world = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, handle.scene);
     const overlay = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layerScene);
@@ -863,7 +869,7 @@ describe("Play createEngine view", () => {
     expect(holds).toEqual([true]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(true);
     // A SceneLayer created mid-hold joins the pause instead of running its clock.
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const layerScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
     expect(isSceneGameTimePaused(layerScene)).toBe(true);
     // The frame that finds the effects ready must still draw.
@@ -1335,7 +1341,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
     handle.applyCommand({ type: "sceneLayerLoading", layerId: "global", layerLoadId: 1, assetGuid: "overlay" });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "global", assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "global", assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const layer = engine.scenes.at(-1)!;
     await handle.prewarmSceneMaterials({ layerId: "global", layerLoadId: 1 });
     const layerFrames = vi.fn();
@@ -1387,7 +1393,7 @@ describe("Play createEngine view", () => {
       handle.applyCommand({ type: "spawn", slotId, actorGuid: `particle-${slotId}`, classId: "Actor", sceneLayerId: layer });
       handle.applyCommand({ type: "assignParticle", slotId, actorGuid: `particle-${slotId}`, componentId: "particle", particleSystemGuid: "system" });
     };
-    const createLayer = () => handle.applyCommand({ type: "sceneLayerCreate", layerId: "particles", assetGuid: "layer", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    const createLayer = () => handle.applyCommand({ type: "sceneLayerCreate", layerId: "particles", assetGuid: "layer", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     assign(1);
     assign(2, "particles");
     expect(handle.scene.particleSystems).toHaveLength(1);
@@ -2098,7 +2104,7 @@ describe("Play createEngine view", () => {
     const render = () => renderViews(engine);
     const addLayer = (layerId: string, layerLoadId: number) => {
       handle.applyCommand({ type: "sceneLayerLoading", layerId, layerLoadId, assetGuid: "overlay" });
-      handle.applyCommand({ type: "sceneLayerCreate", layerId, assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+      handle.applyCommand({ type: "sceneLayerCreate", layerId, assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
       return engine.scenes.at(-1)!;
     };
     const global = addLayer("global", 1);
@@ -2487,7 +2493,7 @@ describe("Play createEngine view", () => {
     const callback = runRenderLoop.mock.calls[0]![0]!;
     const none = { single: 0, material: 0, transform: 0, vertexColor: 0, other: 0, unmatched: 0 };
     expect(handle.renderDiagnostics().layerBatches).toEqual({ visuals: 0, draws: 0, batches: 0, batched: 0, alone: none });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const layer = handle.sceneLayerScenes().find((entry) => entry.layerId === "hud")!.scene;
     const visual = MeshBuilder.CreatePlane("visual", { size: 1 }, layer).subMeshes[0]!;
     // The layer's passes, as its batcher draws them: `passes` of one visual each.
@@ -2751,7 +2757,7 @@ describe("Play createEngine view", () => {
     await handle.prewarmSceneMaterials();
     frame();
     handle.applyCommand({ type: "sceneLayerLoading", layerId: "overlay", layerLoadId: 1, assetGuid: "overlay" });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const owner = { layerId: "overlay", layerLoadId: 1 };
     await handle.prewarmSceneMaterials(owner);
     let worldReady = false;
@@ -2980,7 +2986,7 @@ describe("Play createEngine view", () => {
 
     it("keeps a Scene Layer actor's visual when frames draw before the snapshots of the ticks that freed and reused its slot", () => {
       const { handle, frame } = play();
-      handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+      handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
       const layer = handle.sceneLayerScenes()[0]!.scene;
       const inLayer = SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY;
       const spawnCard = (actorGuid: string) => {
@@ -3421,7 +3427,7 @@ describe("Play createEngine view", () => {
     }
   });
 
-  it("routes editor, Play and layer post effects through their coordinators", async () => {
+  it("routes editor, Play and Scene Layer post effects through their coordinators", async () => {
     const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
     const options = { sharedEngine: sharedEngine(), materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]), postProcessStack: [{ id: "pass", materialGuid: "pp", enabled: true }] };
     const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, editor: true });
@@ -3433,24 +3439,30 @@ describe("Play createEngine view", () => {
     const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, playMode: true });
     handles.push(play);
     expect(attach.mock.calls.some(([value]) => value.scene === play.scene && value.camera === play.scene.activeCamera)).toBe(true);
-    play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: options.postProcessStack });
+    play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
+    play.applyCommand({ type: "sceneLayerPostProcess", postProcessStack: options.postProcessStack });
     const layer = play.sceneLayerScenes()[0]!.scene;
-    expect(attach.mock.calls.some(([value]) => value.scene === layer && value.camera === layer.activeCamera)).toBe(true);
+    // The passes run once over every layer, in a Scene of their own; no layer's renderer attaches them.
+    const passes = sceneLayerPassScene(options.sharedEngine);
+    expect(attach.mock.calls.some(([value]) => value.scene === passes && value.camera === passes.activeCamera)).toBe(true);
+    expect(attach.mock.calls.some(([value]) => value.scene === layer)).toBe(false);
   });
 
-  it("runs a SceneLayer's post effects at full resolution whatever the Post Processing tier", () => {
+  it("runs the Scene Layer post effects at full resolution whatever the Post Processing tier", () => {
     const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
     const stack = [{ id: "pass", materialGuid: "pp", enabled: true }];
+    const engine = sharedEngine();
     const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
-      sharedEngine: sharedEngine(), playMode: true, postProcessStack: stack,
+      sharedEngine: engine, playMode: true, postProcessStack: stack,
       materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]),
     });
     handles.push(play);
     // The first override only establishes the quality baseline.
     play.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.5 } });
     play.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.25 } });
-    play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: stack });
-    const layer = play.sceneLayerScenes()[0]!.scene;
+    play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
+    play.applyCommand({ type: "sceneLayerPostProcess", postProcessStack: stack });
+    const layer = sceneLayerPassScene(engine);
     const scales = (scene: Scene) => attach.mock.calls.filter(([value]) => value.scene === scene).map(([value]) => value.resolutionScale);
     expect(scales(play.scene).at(-1)).toBe(0.25);
     expect(scales(layer)).toEqual([1]);
@@ -3885,17 +3897,19 @@ describe("Play createEngine view", () => {
     handle.setPostProcessingEnabled(false); expect(values(handle.scene)).toEqual([]);
     handle.setPostProcessingEnabled(true); await handle.prewarmSceneMaterials(); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
     handle.applyCommand({ type: "sceneLayerLoading", layerId: "overlay", layerLoadId: 1, assetGuid: "overlay-asset" });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: authored });
-    const layer = handle.sceneLayerScenes()[0]!.scene;
-    const layerOwner = { kind: "sceneLayer" as const, layerId: "overlay", layerLoadId: 1 };
-    write(layerOwner, "first", 0.6); await handle.prewarmSceneMaterials({ layerId: "overlay", layerLoadId: 1 }); expect(values(layer)).toEqual([0.25, 0.5]);
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerPostProcess", postProcessStack: authored });
+    const layer = sceneLayerPassScene(engine);
+    // The Scene Layer stack outlives layers and Scenes: a write names only its pass.
+    const layersOwner = { kind: "sceneLayers" as const };
+    write(layersOwner, "first", 0.6); await handle.prewarmSceneMaterials({ layerId: "overlay", layerLoadId: 1 }); expect(values(layer)).toEqual([0.6, 0.5]);
     await present({ layerId: "overlay", layerLoadId: 1 });
-    write(layerOwner, "first", 0.6); write(layerOwner, "disabled", 0.8);
-    handle.applyCommand({ type: "sceneLayerPostProcess", layerId: "overlay", postProcessStack: authored.map((entry) => ({ ...entry, enabled: true })) });
+    write(layersOwner, "disabled", 0.8);
+    handle.applyCommand({ type: "sceneLayerPostProcess", postProcessStack: authored.map((entry) => ({ ...entry, enabled: true })) });
     await handle.prewarmSceneMaterials({ layerId: "overlay", layerLoadId: 1 });
     expect(values(layer)).toEqual([0.6, 0.5, 0.8]); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
     write({ ...worldOwner, sceneLoadId: 0 }, "first", 0.1);
-    write({ ...layerOwner, layerLoadId: 0 }, "first", 0.1);
+    write(layersOwner, "missing", 0.1);
     expect(values(layer)).toEqual([0.6, 0.5, 0.8]); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
     handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 2 });
     const reloaded = createDefaultScene(); reloaded.settings.postProcessStack = authored;
@@ -3909,8 +3923,9 @@ describe("Play createEngine view", () => {
     handle.loadScene(reloaded);
     await handle.prewarmSceneMaterials();
     expect(values(handle.scene)).toEqual([0.25, 0.5]);
-    handle.applyCommand({ type: "sceneLayerRemove", layerId: "overlay" }); write(layerOwner, "first", 0.1);
+    handle.applyCommand({ type: "sceneLayerRemove", layerId: "overlay" }); write(layersOwner, "first", 0.1);
     expect(handle.sceneLayerScenes()).toEqual([]);
+    expect(values(layer)).toEqual([0.1, 0.5, 0.8]);
     expect({ document, authored }).toEqual(before);
   });
 
@@ -3951,7 +3966,7 @@ describe("Play createEngine view", () => {
       assetGuid: "hud-asset",
       zOrder: 1,
       ownerSceneGuid: null,
-      postProcessStack: [], canvas: layerCanvas(32, 18),
+      canvas: layerCanvas(32, 18),
     });
     expect(handle.postProcessPassCount()).toBe(worldPasses);
     const overlay = handle.sceneLayerScenes()[0];
@@ -3976,7 +3991,7 @@ describe("Play createEngine view", () => {
       assetGuid: "hud",
       zOrder: 0,
       ownerSceneGuid: null,
-      postProcessStack: [], canvas: layerCanvas(32, 18),
+      canvas: layerCanvas(32, 18),
     });
     handle.applyCommand({
       type: "sceneLayerCreate",
@@ -3984,7 +3999,7 @@ describe("Play createEngine view", () => {
       assetGuid: "hud",
       zOrder: 3,
       ownerSceneGuid: null,
-      postProcessStack: [], canvas: layerCanvas(32, 18),
+      canvas: layerCanvas(32, 18),
     });
     handle.applyCommand({
       type: "spawn",
@@ -4035,7 +4050,7 @@ describe("Play createEngine view", () => {
     handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "wrong", progress: 1 });
     handle.applyCommand({ type: "setOverlayVisualStyle", slotId: 4, componentId: "rich", style: { opacity: 0.4, tint: [0.2, 0.5, 1, 0.5] } });
     handle.applyCommand({ type: "setOverlayVisualStyle", slotId: 4, componentId: "wrong", style: { opacity: 0, tint: [0, 0, 0, 0] } });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "late", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "late", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const layer = handle.sceneLayerScenes()[0]!.scene;
     const root = layer.getMeshByName("actor-4")!;
     expect(root.getChildMeshes().map((glyph) => glyph.visibility)).toEqual([0.5, 0.5]);
@@ -4048,7 +4063,7 @@ describe("Play createEngine view", () => {
 
   const overlaySpawn = { type: "spawn", slotId: 4, actorGuid: "banner", classId: "SceneLayerActor", sceneLayerId: "front" } as const;
   const overlayCreate = (ownerSceneGuid: string | null = null) =>
-    ({ type: "sceneLayerCreate", layerId: "front", assetGuid: "hud", zOrder: 3, ownerSceneGuid, postProcessStack: [], canvas: layerCanvas(32, 18) }) as const;
+    ({ type: "sceneLayerCreate", layerId: "front", assetGuid: "hud", zOrder: 3, ownerSceneGuid, canvas: layerCanvas(32, 18) }) as const;
   const overlayAssign = (meshKind: string) => ({ type: "assignMesh", slotId: 4, meshAssetGuid: null, meshKind }) as const;
 
   it.each([
@@ -4070,7 +4085,7 @@ describe("Play createEngine view", () => {
       expect(handle.scene.getMeshByName("actor-4")).toBeNull();
     }
     expect(handle.sceneLayerScenes()).toHaveLength(0);
-    handle.applyCommand({ ...overlayCreate(), postProcessStack: [] });
+    handle.applyCommand(overlayCreate());
     const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
     expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
@@ -4087,7 +4102,7 @@ describe("Play createEngine view", () => {
       playMode: true,
     });
     handles.push(handle);
-    handle.applyCommand({ ...overlayCreate(ownerSceneGuid), postProcessStack: [] });
+    handle.applyCommand(overlayCreate(ownerSceneGuid));
     if (spawn) handle.applyCommand(overlaySpawn);
     handle.applyCommand({ ...overlayAssign(meshKind), actorGuid: "banner", sceneLayerId: "front" });
     const overlay = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
@@ -4133,7 +4148,7 @@ describe("Play createEngine view", () => {
       assetGuid: "hud",
       zOrder: 0,
       ownerSceneGuid: "world-a",
-      postProcessStack: [], canvas: layerCanvas(32, 18),
+      canvas: layerCanvas(32, 18),
     });
     handle.applyCommand({
       type: "spawn",
@@ -4265,7 +4280,7 @@ describe("Play createEngine view", () => {
       assetGuid: "hud",
       zOrder: 0,
       ownerSceneGuid: null,
-      postProcessStack: [], canvas: layerCanvas(32, 18),
+      canvas: layerCanvas(32, 18),
     });
     handle.applyCommand({
       type: "spawn",
@@ -4720,7 +4735,7 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     handle.setSize(640, 360);
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [],
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null,
       canvas: {
         design: { sizeMode: "fullscreen", customSizePx: { width: 400, height: 300 }, rootAnchor: "center", scaling: "fitToScreen" },
         rect: { width: 6.4, height: 3.6, center: [0, 0] },
@@ -5979,7 +5994,7 @@ describe("Play createEngine view", () => {
     expect(hardwareScaling).toBe(2);
     expect(sceneOutputScale(handle.scene)).toBe(1);
     expect(world()).toEqual([200, 150]);
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     handle.resize();
     expect(setSize).toHaveBeenLastCalledWith(800, 600);
     expect(hardwareScaling).toBe(0.5);
@@ -6371,7 +6386,7 @@ describe("Play createEngine view", () => {
     expect(events).toContain("onPressEnd");
     expect(events).not.toContain("onClick");
     expect(scrolls.at(-1)?.deltaY).toBeCloseTo(0.4921875);
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "modal", assetGuid: "modal-asset", zOrder: 10, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(9, 9) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "modal", assetGuid: "modal-asset", zOrder: 10, ownerSceneGuid: null, canvas: layerCanvas(9, 9) });
     const modalScene = handle.sceneLayerScenes().find(layer => layer.layerId === "modal")!.scene;
     const blocker = MeshBuilder.CreatePlane("modal-blocker", { size: 4 }, modalScene);
     blocker.metadata = { overlayActorGuid: "modal", overlayHitTest: "block" };

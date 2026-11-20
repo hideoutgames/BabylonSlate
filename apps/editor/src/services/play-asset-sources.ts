@@ -8,7 +8,7 @@ import {
   compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID,
   normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload, normalizeSkeletonPayload, withSkeletonSockets,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
-  type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
+  type IndexedAsset, type ModelPayload, type RegistryLoadedAsset, sceneLayerPostProcessAssetGuids,
 } from "@haptic/assets";
 import { packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@haptic/exporter";
 import { editorBuildPlatform } from "@haptic/vfs";
@@ -268,7 +268,8 @@ function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promi
  */
 export function requiredProjectAssets(registry: AssetRegistry, project: ProjectDocument): string[] {
   const settings = project.settings;
-  const roots = [settings.audio.audioMixerGuid, ...renderEffectsAssetGuids(settings.render.effects)];
+  const roots = [settings.audio.audioMixerGuid, ...renderEffectsAssetGuids(settings.render.effects),
+    ...sceneLayerPostProcessAssetGuids(settings.sceneLayerPostProcessStack)];
   const classes = registry.list().filter(asset => asset.header.type === "Class");
   // Game Instance and parentClass settings name compile class ids.
   const byId = new Map(classes.map(asset => [classIdFromClassAsset(asset), asset] as const));
@@ -388,6 +389,7 @@ async function acquirePlayAssetSourcesAttempt(
       platform: editorBuildPlatform(), collisionPresets: project.settings.physics.collisionPresets,
       audioMixerGuid: project.settings.audio.audioMixerGuid ?? undefined,
       globalFallback: project.settings.fonts.globalFallback,
+      sceneLayerPostProcessStack: project.settings.sceneLayerPostProcessStack,
       assets: [],
     },
     scripts: [], scenes: new Map(), sceneLayers: new Map(), textureBytes: new Map(), areaEmissions: new Map(),

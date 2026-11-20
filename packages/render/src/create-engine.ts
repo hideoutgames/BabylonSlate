@@ -1364,6 +1364,11 @@ function initializeEngine(
         onLayerView: (layerId, view) => options.onSceneLayerView?.(layerId, view),
         postProcessingEnabled: () => postProcessingEnabled,
         isLayerReady: (layerId) => layerLoads.get(layerId)?.ready !== false,
+        // The Scene Layer post-processing passes' Scene follows the world's settings and keeps full quality, as layer Scenes do.
+        preparePostProcessScene: (layerScene) => {
+          followSceneRenderSettings(layerScene, scene);
+          pinFullRenderQuality(layerScene);
+        },
         attachLayerPostProcess: (layer, stack, renderer) => {
           return renderer.attachPostProcess({
             scene: layer.scene,
@@ -3246,10 +3251,7 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "sceneLayerPostProcess") {
-        sceneLayerCompositor?.setPostProcess(
-          command.layerId,
-          command.postProcessStack,
-        );
+        sceneLayerCompositor?.setPostProcess(command.postProcessStack);
         scheduler.invalidate("asset");
       }
       if (command.type === "sceneLayerLayout") {
@@ -3367,7 +3369,6 @@ function initializeEngine(
         };
         const applied = applyPostProcessParameterCommand(command, {
           world: { sceneAssetGuid: worldSceneAssetGuid, sceneLoadId: worldLoadId, ready: !worldLoading },
-          layer: (id) => layerLoads.get(id),
           setWorld: (write) => {
             if (!postProcessStack.some((entry) => entry.id === write.entryId && entry.materialGuid === write.materialAssetGuid) || !validParameter() ||
               !postProcessParameters.set(postProcessStack, write.entryId, write.materialAssetGuid, write.parameterName, write.parameter)) return false;
@@ -3375,7 +3376,7 @@ function initializeEngine(
             renderTargetCaptures.setPostProcessParameter(write.entryId, write.parameterName, write.parameter);
             return true;
           },
-          setLayer: (id, write) => sceneLayerCompositor?.setPostProcessParameter(id, write.entryId, write.materialAssetGuid, write.parameterName, write.parameter, validParameter) ?? false,
+          setLayers: (write) => sceneLayerCompositor?.setPostProcessParameter(write.entryId, write.materialAssetGuid, write.parameterName, write.parameter, validParameter) ?? false,
         });
         if (applied) scheduler.invalidate("asset");
       }

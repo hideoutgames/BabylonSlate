@@ -8,6 +8,7 @@ import {
   PostProcessMaterialObject,
   Scene,
   SceneLayer,
+  SceneLayerPostProcessing,
   SceneSubsystem,
   type EngineObject,
   type LifecycleHooks,
@@ -84,6 +85,8 @@ export class OwnerAdmission {
     if (owner instanceof PostProcessMaterialObject)
       return owner.isCurrent() && this.canRun(owner.owner);
     if (owner === world.gameInstance) return true;
+    // The Scene Layer post-processing belongs to the session, as the Game Instance does.
+    if (owner instanceof SceneLayerPostProcessing) return owner === world.sceneLayerPostProcessing;
     const actor = owner instanceof Actor ? owner : owner instanceof ActorComponent ? owner.owner
       : owner instanceof MaterialObject ? owner.component.owner : null;
     if (actor) return actor.world === world && this.canTickActor(actor);

@@ -29,6 +29,7 @@ import {
   type ExportPreset,
   type PluginEnableOverride,
   type RenderProjectSettings,
+  type SceneLayerPostProcessEntry,
   isErr,
   isOk,
   type Result,
@@ -41,6 +42,7 @@ import {
   resolveAssetCatalogDependencies,
   resolvePluginEnabled,
   resolvePluginGraph,
+  sceneLayerPostProcessAssetGuids,
   type IndexedAsset,
   type PluginGraphInput,
 } from "@haptic/assets";
@@ -85,13 +87,15 @@ export function exportRootSettings(settings: {
   gameInstanceClass?: string | null;
   audioMixerGuid?: string | null;
   renderSettings: RenderProjectSettings;
+  sceneLayerPostProcessStack?: readonly SceneLayerPostProcessEntry[];
   alwaysPackageFolders?: readonly string[];
 }): Pick<ExportRootInput, "saveGameDefinitionGuid" | "gameInstanceClass" | "audioMixerGuid" | "renderAssetGuids" | "alwaysPackageFolders"> {
   return {
     saveGameDefinitionGuid: settings.saveGameDefinitionGuid,
     gameInstanceClass: settings.gameInstanceClass,
     audioMixerGuid: settings.audioMixerGuid,
-    renderAssetGuids: [...renderEffectsAssetGuids(settings.renderSettings.effects), ...(settings.defaultFontGuid ? [settings.defaultFontGuid] : [])],
+    renderAssetGuids: [...renderEffectsAssetGuids(settings.renderSettings.effects),
+      ...sceneLayerPostProcessAssetGuids(settings.sceneLayerPostProcessStack), ...(settings.defaultFontGuid ? [settings.defaultFontGuid] : [])],
     alwaysPackageFolders: settings.alwaysPackageFolders,
   };
 }
@@ -148,6 +152,8 @@ export type CollectExportGameParams = {
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+  /** Project Scene Layer post-processing passes: a closure root, written to `game.json`. */
+  sceneLayerPostProcessStack?: SceneLayerPostProcessEntry[];
   tagRegistry?: TagRegistry;
   playerFiles: Map<string, Uint8Array>;
   /** Game libraries of enabled gameplay Extensions, dependencies first. */
@@ -348,6 +354,7 @@ export async function collectAndExportGame(
       gameInstanceClass: params.gameInstanceClass,
       audioMixerGuid: params.audioMixerGuid,
       renderSettings: params.renderSettings,
+      sceneLayerPostProcessStack: params.sceneLayerPostProcessStack,
       alwaysPackageFolders: params.alwaysPackageFolders,
     }),
     assets: params.assets,
@@ -639,6 +646,7 @@ export async function collectAndExportGame(
     loopCount: params.loopCount,
     inputAssets,
     focusNavigation: params.focusNavigation,
+    sceneLayerPostProcessStack: params.sceneLayerPostProcessStack,
     scripts,
     ...(params.extensionLibraries?.length ? { extensionLibraries: params.extensionLibraries } : {}),
     assets: exportAssets,

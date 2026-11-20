@@ -9,12 +9,12 @@ import type { AttachedPostProcessStack } from "./post-process-material";
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
-import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import type { CommandMessage } from "@haptic/bridge";
@@ -44,8 +44,12 @@ import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+import { createDepthTextureTarget } from "./depth-texture-target";
 
-/** A layer's output over the world: its target's colour, blended by its alpha, without fog. */
+/**
+ * A full-screen texture without fog: the layers' shared target drawn into the passes' Scene, and the passes' output
+ * blended by its alpha over the world.
+ */
 const SCENE_LAYER_BLIT: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: false, role: "world" };
 import {
   overlayMinTargetWorldSize,
@@ -71,15 +75,26 @@ export interface SceneLayerView {
   cameraState: LayerCameraState;
 }
 
+/** The Scene the Scene Layer post-processing passes run in, and the camera that views its full-screen input. */
+export interface SceneLayerPostProcessView {
+  scene: Scene;
+  camera: Camera;
+}
+
+type AttachedLayerPostProcess = Pick<AttachedPostProcessStack, "dispose"> & Partial<Pick<AttachedPostProcessStack, "setParameter">>;
+
 export interface SceneLayerCompositorOptions {
   engine: AbstractEngine;
   postProcessingEnabled?: () => boolean;
   isLayerReady?: (layerId: string) => boolean;
+  /** Attaches the shared stack's enabled passes to the renderer of the Scene they run in. */
   attachLayerPostProcess?: (
-    layer: SceneLayerView,
+    view: SceneLayerPostProcessView,
     stack: SceneLayerPostProcessEntry[],
     renderer: SceneRenderCoordinator,
-  ) => Pick<AttachedPostProcessStack, "dispose"> & Partial<Pick<AttachedPostProcessStack, "setParameter">> | null;
+  ) => AttachedLayerPostProcess | null;
+  /** The passes' Scene, as it is built: it follows the world's settings and keeps full quality, as layer Scenes do. */
+  preparePostProcessScene?: (scene: Scene) => void;
   /**
    * The output in design pixels over Pixels Per Unit, in layer units (`sceneLayerOutputDesignSize`): what Fullscreen
    * and True Pixel Size frame. Without it a layer frames its canvas widened to the output's aspect.
@@ -110,50 +125,88 @@ type LayerRecord = SceneLayerView & {
   /** Null until the first bind. */
   hudPose: HudCameraPose | null;
   renderer: SceneRenderCoordinator;
-  postProcessStack: SceneLayerPostProcessEntry[];
-  rtt: RenderTargetTexture | null;
-  /** The blit plane, drawing the layer's target with the unlit Material. */
-  blitPlane: Mesh | null;
-  blitScene: Scene | null;
-  parameters: PostProcessParameterState;
+  /**
+   * While the Scene Layer post-processing has passes: this layer's Scene's view of the shared target (its colour and
+   * depth textures), the camera's output. Null while layers draw straight over the world.
+   */
+  view: RenderTargetTexture | null;
   retirements: PostProcessRetirement;
-  presented: boolean;
   /** Cached strict layer readiness; invalidated by renderer dirtiness/rebuild. */
   probedReady: boolean;
-  blitReady: boolean;
-  fallback: { scene: Scene; release(): void } | null;
-  attachedPostProcess: ReturnType<NonNullable<SceneLayerCompositorOptions["attachLayerPostProcess"]>>;
   /** Play Camera Shake On Scene Layer: created with the layer's first shake. */
   shake: CameraShakeView | null;
 };
 
 /**
+ * The Scene Layer post-processing while it has enabled passes: one transparent target at the output's size that every
+ * layer draws into, in draw order, and a Scene that draws it full screen through the passes into `output`, which a blit
+ * blends over the world. One target and one pass chain whatever the number of layers.
+ */
+type LayerStack = {
+  width: number;
+  height: number;
+  /** Owns the shared target, its full-screen plane, the passes' camera and their output. */
+  scene: Scene;
+  camera: UniversalCamera;
+  /** Colour (alpha kept) and a depth texture; each layer's `view` wraps the same two textures. */
+  target: RenderTargetTexture;
+  /** Colour only: the passes' chain draws through its own scene targets and copies its result here. */
+  output: RenderTargetTexture;
+  renderer: SceneRenderCoordinator;
+  attached: AttachedLayerPostProcess | null;
+  /** Blends `output` over the world. */
+  blitScene: Scene;
+  blitReady: boolean;
+  /** Cached strict readiness of the passes' renderer; invalidated by its dirtiness or replacement. */
+  probedReady: boolean;
+  /** `output` holds a composite drawn over the world: a frame that cannot draw a new one shows it again. */
+  presented: boolean;
+  /** Renderers this stack replaced (a pass list change), released before its Scene. */
+  retirements: PostProcessRetirement;
+};
+
+/**
  * Play-only overlay stack: extra unlit orthographic Scenes on the shared
- * Engine, drawn after the world camera (and its post-process).
+ * Engine, drawn after the world camera (and its post-process). The Scene
+ * Layer post-processing (`setPostProcess`) applies to all layers combined.
  */
 export class SceneLayerCompositor {
   private readonly engine: AbstractEngine;
   private readonly isLayerReady: (layerId: string) => boolean;
   private readonly postProcessingEnabled: () => boolean;
   private readonly attachLayerPostProcess?: SceneLayerCompositorOptions["attachLayerPostProcess"];
+  private readonly preparePostProcessScene?: SceneLayerCompositorOptions["preparePostProcessScene"];
   private readonly screen: () => { width: number; height: number } | null;
   private readonly onLayerView?: SceneLayerCompositorOptions["onLayerView"];
   private readonly byId = new Map<string, LayerRecord>();
   private readonly slotLayer = new Map<number, string>();
   private readonly slotActor = new Map<number, string>();
   private readonly retiredLayers = new PostProcessRetirement();
-  /** Every Scene this compositor built and has not yet disposed: layers, blit Scenes, and retired generations still releasing. */
+  /** Every Scene this compositor built and has not yet disposed: layers, the passes' and blit Scenes, and retired generations still releasing. */
   private readonly ownedSceneSet = new Set<Scene>();
   /** Draw order, rebuilt only when layers are created or removed. */
   private sortedCache: LayerRecord[] | null = null;
   private outputWidth = 0;
   private outputHeight = 0;
+  /** The Scene Layer post-processing every layer shares, as the runtime last sent it. */
+  private postProcessStack: SceneLayerPostProcessEntry[] = [];
+  /** Live Material parameter writes on its passes, replayed when the passes are attached again. */
+  private readonly parameters = new PostProcessParameterState();
+  /** Null while the stack has no enabled pass (or post-processing is off): layers then draw straight over the world. */
+  private stack: LayerStack | null = null;
+  /**
+   * The last composite of a stack that was replaced (a resize) or ended, shown in place of the layers while their new
+   * renderers prepare, until a frame presents without it.
+   */
+  private held: { scene: Scene; release(): void } | null = null;
+  private heldDrawn = false;
 
   constructor(options: SceneLayerCompositorOptions) {
     this.engine = options.engine;
     this.isLayerReady = options.isLayerReady ?? (() => true);
     this.postProcessingEnabled = options.postProcessingEnabled ?? (() => true);
     this.attachLayerPostProcess = options.attachLayerPostProcess;
+    this.preparePostProcessScene = options.preparePostProcessScene;
     this.screen = options.screen ?? (() => null);
     this.onLayerView = options.onLayerView;
   }
@@ -198,25 +251,17 @@ export class SceneLayerCompositor {
       viewBounds: { width: 1, height: 1, center: [0, 0] },
       cameraState: { ...(command.camera ?? DEFAULT_LAYER_CAMERA_STATE) },
       hudPose: null,
-      postProcessStack: command.postProcessStack.map((entry) => ({ ...entry })),
-      rtt: null,
-      blitPlane: null,
-      blitScene: null,
-      attachedPostProcess: null,
+      view: null,
       shake: null,
-      parameters: new PostProcessParameterState(),
       retirements: new PostProcessRetirement(),
-      presented: false,
       probedReady: false,
-      blitReady: false,
-      fallback: null,
     };
     layer.viewBounds = this.layerView(layer);
     if (layer.design.sizeMode === "desired") layer.contentChanges = watchContent(scene);
     this.bindHudCamera(layer);
     this.byId.set(command.layerId, layer);
     this.sortedCache = null;
-    this.rebuildPostProcess(layer, false);
+    if (this.stack) this.bindStackView(layer, this.stack);
     return layer;
   }
 
@@ -243,8 +288,7 @@ export class SceneLayerCompositor {
     layer.shake = null;
     layer.contentChanges?.release();
     layer.contentChanges = null;
-    this.releaseFallback(layer);
-    this.releasePostProcess(layer);
+    this.retireLayerRenderer(layer);
     // Bounded cleanup reports stay separate from actual release: the Scene is
     // disposed only after every retired generation confirmed native release.
     const reported = layer.retirements.whenDisposed();
@@ -271,14 +315,14 @@ export class SceneLayerCompositor {
     }
   }
 
-  setPostProcess(
-    layerId: string,
-    stack: readonly SceneLayerPostProcessEntry[],
-  ): void {
-    const layer = this.byId.get(layerId);
-    if (!layer) return;
-    layer.postProcessStack = stack.map((entry) => ({ ...entry }));
-    this.rebuildPostProcess(layer);
+  /**
+   * The Scene Layer post-processing every layer shares (`sceneLayerPostProcess`). With enabled passes all layers draw
+   * into one transparent target that the passes run over before it is blended over the world; without any, layers
+   * draw straight over the world. Kept across layer creation and removal.
+   */
+  setPostProcess(stack: readonly SceneLayerPostProcessEntry[]): void {
+    this.postProcessStack = stack.map((entry) => ({ ...entry }));
+    this.rebuildStack();
   }
 
   /** Shake a layer's view (`setCameraShake`); picks keep the unshaken camera. */
@@ -297,17 +341,20 @@ export class SceneLayerCompositor {
     this.bindHudCamera(layer, true);
   }
 
-  setPostProcessParameter(layerId: string, entryId: string, materialGuid: string, name: string, value: MaterialParameterValue, validate: () => boolean): boolean {
-    const layer = this.byId.get(layerId);
-    if (!layer || !this.isLayerReady(layerId) || !layer.postProcessStack.some((entry) => entry.id === entryId && entry.materialGuid === materialGuid) || !validate() || !layer.parameters.set(layer.postProcessStack, entryId, materialGuid, name, value)) return false;
-    layer.attachedPostProcess?.setParameter?.(entryId, name, value);
+  /**
+   * A live Material parameter write on one of the shared stack's passes: kept for that pass whether or not it is
+   * enabled now, and applied to the attached passes without rebuilding them.
+   */
+  setPostProcessParameter(entryId: string, materialGuid: string, name: string, value: MaterialParameterValue, validate: () => boolean): boolean {
+    if (!this.postProcessStack.some((entry) => entry.id === entryId && entry.materialGuid === materialGuid) || !validate() ||
+      !this.parameters.set(this.postProcessStack, entryId, materialGuid, name, value)) return false;
+    this.stack?.attached?.setParameter?.(entryId, name, value);
     return true;
   }
 
+  /** Post-processing was switched on or off (`postprocessing`): the stack runs again, or layers draw straight over the world. */
   refreshPostProcess(): void {
-    for (const layer of this.byId.values()) {
-      this.rebuildPostProcess(layer);
-    }
+    this.rebuildStack();
   }
 
   noteSpawn(
@@ -393,12 +440,9 @@ export class SceneLayerCompositor {
       this.bindHudCamera(layer, true);
       // The runtime frames a Desired layer by its reported view, which a new screen can change.
       if (layer.contentChanges && !sameRect(previous, layer.viewBounds)) this.onLayerView?.(layer.layerId, layer.viewBounds);
-      if (layer.rtt) {
-        const previous = layer.rtt.getSize();
-        if (previous.width !== width || previous.height !== height)
-          this.rebuildPostProcess(layer);
-      }
     }
+    // The shared target keeps the output's device pixels.
+    if (this.stack && (this.stack.width !== width || this.stack.height !== height)) this.rebuildStack();
   }
 
   /** The screen in layer units: the host's design-pixel output, else the canvas widened to the output's aspect. */
@@ -440,27 +484,30 @@ export class SceneLayerCompositor {
     this.onLayerView?.(layer.layerId, layer.viewBounds);
   }
 
-  /** Restarts every layer's preparation and clears what it latched (a restored graphics context). */
+  /** Restarts every layer's preparation, and the passes', and clears what they latched (a restored graphics context). */
   invalidate(): void {
     for (const layer of this.byId.values()) {
       layer.renderer.invalidate();
       layer.probedReady = false;
     }
+    if (this.stack) {
+      this.stack.renderer.invalidate();
+      this.stack.probedReady = false;
+    }
   }
 
   retainResources(): () => void {
     const releases = [...this.byId.values()].map((layer) => layer.renderer.retainResources());
+    if (this.stack) releases.push(this.stack.renderer.retainResources());
     return () => { for (const release of releases) release(); };
   }
 
   /**
-   * Prepares the layer's current renderer. A post-process rebuild, resize or
-   * re-create during the wait replaces it, and preparation follows the
-   * replacement; a removed layer has nothing left to prepare. The caller's
-   * `assertCurrent` cancels, and an error of a renderer that is still current
-   * (a timeout, a missing camera) rejects. Each replacement brings fresh
-   * bounds, so following one more starts no later than
-   * `SCENE_PREPARATION_CEILING_MS` after the first pass began.
+   * Prepares the layer's current renderer, then the shared post-processing passes' while there are any. A
+   * post-process rebuild, resize or re-create during the wait replaces either, and preparation follows the
+   * replacement; a removed layer has nothing left to prepare. The caller's `assertCurrent` cancels, and an error of a
+   * renderer that is still current (a timeout, a missing camera) rejects. Each replacement brings fresh bounds, so
+   * following one more starts no later than `SCENE_PREPARATION_CEILING_MS` after the first pass began.
    */
   async prepare(layerId: string, assertCurrent: () => void): Promise<void> {
     this.resize();
@@ -473,83 +520,137 @@ export class SceneLayerCompositor {
       this.measureContent(layer, true);
       this.bindHudCamera(layer, true);
       const renderer = layer.renderer;
+      const stack = this.stack;
+      const passes = stack?.renderer;
+      const current = () => this.byId.get(layerId) === layer && layer.renderer === renderer &&
+        this.stack === stack && stack?.renderer === passes;
       try {
         await renderer.prepare(assertCurrent);
+        assertCurrent();
+        if (passes && current()) await passes.prepare(assertCurrent);
       } catch (error) {
         assertCurrent();
-        if (this.byId.get(layerId) !== layer || layer.renderer !== renderer) continue;
+        if (!current()) continue;
         throw error;
       }
       assertCurrent();
-      if (this.byId.get(layerId) === layer && layer.renderer === renderer) return;
+      if (current()) return;
     }
   }
 
   render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {
     this.resize();
+    this.heldDrawn = false;
+    if (this.stack) this.renderThroughStack(this.stack, presentingLayers, draw);
+    else this.renderDirect(presentingLayers, draw);
+  }
+
+  /** No passes: each layer draws straight over the world, clearing only depth and stencil. */
+  private renderDirect(presentingLayers: ReadonlySet<string>, draw: (layerId: string, render: () => boolean, fallback: () => void) => void): void {
+    let drawn = 0;
+    let presentable = 0;
     for (const record of this.orderedLayers()) {
       if (!this.isLayerReady(record.layerId) && !presentingLayers.has(record.layerId)) continue;
       this.measureContent(record);
       this.bindHudCamera(record);
+      drawn += 1;
       draw(record.layerId, () => {
-        let readyForPresentation: boolean;
-        if (record.rtt) {
-          record.scene.autoClear = true;
-          const frameCapture = activeRenderFrameCapture(this.engine);
-          const result = frameCapture
-            ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },
-              () => record.renderer.render())
-            : record.renderer.render();
-          if (!record.blitReady && record.blitScene)
-            record.blitReady = isSceneFrameReady(record.blitScene);
-          if (!result.rendered || !result.readyForPresentation || !record.blitScene || !record.blitReady) {
-            this.blitFallback(record);
-            return false;
-          }
-          this.blit(record);
-          readyForPresentation = record.blitReady;
-          if (readyForPresentation) {
-            record.presented = true;
-            this.releaseFallback(record);
-          }
-        } else {
-          record.scene.autoClear = false;
-          record.scene.autoClearDepthAndStencil = this.depthClears;
-          const frameCapture = activeRenderFrameCapture(this.engine);
-          const result = frameCapture
-            ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },
-              () => record.renderer.render())
-            : record.renderer.render();
-          if (!result.rendered) {
-            this.blitFallback(record);
-            return false;
-          }
-          readyForPresentation = result.readyForPresentation;
-          if (readyForPresentation) this.releaseFallback(record);
+        record.scene.autoClear = false;
+        record.scene.autoClearDepthAndStencil = this.depthClears;
+        const result = this.renderLayer(record);
+        if (!result.rendered) {
+          this.drawHeld();
+          return false;
         }
-        return readyForPresentation;
-      }, () => { this.blitFallback(record); });
+        if (result.readyForPresentation) presentable += 1;
+        return result.readyForPresentation;
+      }, () => { this.drawHeld(); });
     }
+    // The ended stack's last composite stands in until every layer presents without it.
+    if (this.held && drawn > 0 && presentable === drawn) this.releaseHeld();
+  }
+
+  /**
+   * Passes: the layers draw into the shared transparent target in draw order (the first one drawn clears it), the
+   * passes run over it, and the result is blended over the world. A layer that cannot draw shows the last composite
+   * instead, so no layer drops out of a frame; one that is not presenting yet (`fallback`) is left out until it is.
+   */
+  private renderThroughStack(stack: LayerStack, presentingLayers: ReadonlySet<string>, draw: (layerId: string, render: () => boolean, fallback: () => void) => void): void {
+    let attempted = false;
+    let cleared = false;
+    let failed = false;
+    let passesReady = false;
+    try { passesReady = this.stackReady(stack); } catch { passesReady = false; }
+    for (const record of this.orderedLayers()) {
+      if (!this.isLayerReady(record.layerId) && !presentingLayers.has(record.layerId)) continue;
+      this.measureContent(record);
+      this.bindHudCamera(record);
+      attempted = true;
+      draw(record.layerId, () => {
+        record.scene.autoClear = !cleared;
+        record.scene.autoClearDepthAndStencil = !cleared || this.depthClears;
+        const result = this.renderLayer(record);
+        if (!result.rendered) {
+          failed = true;
+          return false;
+        }
+        cleared = true;
+        return result.readyForPresentation && passesReady;
+      }, () => {});
+    }
+    if (!attempted) return;
+    if (!cleared || failed) {
+      this.drawStackHeld(stack);
+      return;
+    }
+    stack.scene.autoClear = true;
+    stack.scene.autoClearDepthAndStencil = true;
+    const capture = activeRenderFrameCapture(this.engine);
+    const result = capture
+      ? capture.stage(stack.scene, { name: "SceneLayer post-processing", kind: "composition" }, () => stack.renderer.render())
+      : stack.renderer.render();
+    if (!stack.blitReady) stack.blitReady = isSceneFrameReady(stack.blitScene);
+    if (!result.rendered || !stack.blitReady) {
+      this.drawStackHeld(stack);
+      return;
+    }
+    this.blitStack(stack, false);
+    stack.presented = true;
+    if (result.readyForPresentation) this.releaseHeld();
+  }
+
+  private renderLayer(record: LayerRecord): ReturnType<SceneRenderCoordinator["render"]> {
+    const frameCapture = activeRenderFrameCapture(this.engine);
+    return frameCapture
+      ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },
+        () => record.renderer.render())
+      : record.renderer.render();
   }
 
   isReady(layerId?: string): boolean {
     if (layerId && !this.byId.has(layerId)) return false;
+    let checked = false;
     for (const record of this.byId.values()) {
       if (layerId ? record.layerId !== layerId : !this.isLayerReady(record.layerId)) continue;
+      checked = true;
       // Strict probes are cached per layer; the renderer's dirty flag re-opens
-      // them after scene or rendering-definition changes. The coordinator's
-      // probe already covers the layer's output target via customRenderTargets.
+      // them after scene or rendering-definition changes.
       if (record.probedReady && !record.renderer.readinessDirty) continue;
-      const ready =
-        record.renderer.isReady() &&
-        (!record.rtt ||
-          (!!record.blitScene &&
-            (record.blitReady ||
-              (record.blitReady = isSceneFrameReady(record.blitScene)))));
+      const ready = record.renderer.isReady();
       record.probedReady = ready;
       if (!ready) return false;
     }
-    return true;
+    // A layer reaches the screen only through the passes while there are any.
+    return !checked || !this.stack || this.stackReady(this.stack);
+  }
+
+  /** The passes' renderer is strictly ready and the blit can draw its output. Cached until either changes. */
+  private stackReady(stack: LayerStack): boolean {
+    if (stack.probedReady && !stack.renderer.readinessDirty) return true;
+    const ready = stack.renderer.isReady() &&
+      (stack.blitReady || (stack.blitReady = isSceneFrameReady(stack.blitScene)));
+    stack.probedReady = ready;
+    return ready;
   }
 
   pickHits(
@@ -734,6 +835,9 @@ export class SceneLayerCompositor {
 
   dispose(): Promise<void> {
     this.clear();
+    if (this.stack) this.retireStack(this.stack, false);
+    this.stack = null;
+    this.releaseHeld();
     const retired = this.retiredLayers.whenDisposed();
     // Callers that own shared resources await this; ignored teardown still has
     // its failures reported at the individual quarantined owner boundary.
@@ -811,58 +915,118 @@ export class SceneLayerCompositor {
     layer.camera.orthoRight = halfW;
   }
 
-  private rebuildPostProcess(layer: LayerRecord, replaceRenderer = true): void {
-    if (replaceRenderer) {
-      this.releasePostProcess(layer, true);
-      layer.renderer = layerRenderer(layer.scene);
-    }
-    const enabledStack = layer.parameters.effective(layer.postProcessStack).filter((entry) => entry.enabled);
-    if (
-      !this.postProcessingEnabled() ||
-      enabledStack.length === 0
-    ) {
-      layer.camera.outputRenderTarget = null;
-      layer.scene.autoClear = false;
-      layer.scene.autoClearDepthAndStencil = true;
+  /**
+   * Applies the shared stack as it is now. No enabled pass (or post-processing off): layers draw straight over the
+   * world. Passes at the same output size: only the passes' renderer is replaced, and the layers keep drawing into the
+   * same target. Otherwise a new target replaces the old one and every layer's renderer follows it; the old composite
+   * stays on screen (`held`) while they prepare.
+   */
+  private rebuildStack(): void {
+    const enabled = this.parameters.effective(this.postProcessStack).filter((entry) => entry.enabled);
+    const current = this.stack;
+    if (!this.postProcessingEnabled() || enabled.length === 0) {
+      if (!current) return;
+      this.stack = null;
+      this.retireStack(current, true);
+      for (const layer of this.byId.values()) this.replaceLayerRenderer(layer, null);
       return;
     }
     const width = Math.max(1, this.engine.getRenderWidth(true));
     const height = Math.max(1, this.engine.getRenderHeight(true));
-    // Colour only: the layer's graph draws through its chain's scene colour and depth (or its own pair) and copies
-    // colour here, so a depth attachment would never be drawn into. The graph borrows the colour; the host retains it.
-    layer.rtt = new RenderTargetTexture(`sceneLayerRtt:${layer.layerId}`, { width, height }, layer.scene, {
-      generateMipMaps: false, generateDepthBuffer: false,
-    });
-    // The unlit Material reads a texture's alpha only when the texture advertises it.
-    // The layer clear is transparent; preserve world pixels outside its content.
-    layer.rtt.hasAlpha = true;
-    layer.camera.outputRenderTarget = layer.rtt;
-    layer.scene.autoClear = true;
-    layer.attachedPostProcess =
-      this.attachLayerPostProcess?.(layer, enabledStack, layer.renderer) ?? null;
-    this.prepareBlit(layer);
+    if (current && current.width === width && current.height === height) {
+      this.attachPasses(current, enabled, true);
+      return;
+    }
+    const next = this.buildStack(width, height);
+    this.stack = next;
+    if (current) this.retireStack(current, true);
+    this.attachPasses(next, enabled, false);
+    for (const layer of this.byId.values()) this.replaceLayerRenderer(layer, next);
   }
 
-  private releasePostProcess(layer: LayerRecord, keepPresented = false): void {
-    const attached = layer.attachedPostProcess;
-    const renderer = layer.renderer;
-    const rtt = layer.rtt;
-    const blitScene = layer.blitScene;
-    let outputReleased = Promise.resolve();
-    if (keepPresented && layer.presented && rtt && blitScene) {
-      this.releaseFallback(layer);
-      outputReleased = new Promise<void>((release) => {
-        layer.fallback = { scene: blitScene, release };
-      });
+  /** The shared target, the Scene that draws it full screen through the passes, and the blit over the world. */
+  private buildStack(width: number, height: number): LayerStack {
+    const scene = this.ownScene(new Scene(this.engine));
+    scene.autoClear = true;
+    scene.autoClearDepthAndStencil = true;
+    scene.clearColor = new Color4(0, 0, 0, 0);
+    scene.skipPointerMovePicking = true;
+    scene.lightsEnabled = false;
+    this.preparePostProcessScene?.(scene);
+    const camera = fullScreenCamera("sceneLayerPostProcessCamera", scene);
+    // Every layer draws here through its own view, with depth cleared before each layer as over the world. A layer's
+    // graph needs a depth texture to draw into a target directly; without one it would copy over the others.
+    const target = createDepthTextureTarget("sceneLayerTarget", { width, height }, scene);
+    // Transparent where no layer drew: the unlit Material reads a texture's alpha only when the texture advertises it.
+    target.hasAlpha = true;
+    const input = MeshBuilder.CreatePlane("sceneLayerPostProcessInput", { size: 2 }, scene);
+    const copy = setUnlitMaterial(input, SCENE_LAYER_BLIT, {
+      texture: target, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
+    });
+    // Over the passes' transparent clear, premultiplied blending (one, one minus source alpha) writes the layers'
+    // colour and alpha unchanged, so the passes see exactly what the layers drew. Only this Scene uses this instance.
+    copy.alphaMode = Constants.ALPHA_PREMULTIPLIED;
+    // Colour only: the passes' graph draws through its chain's scene colour and depth and copies its result here.
+    const output = new RenderTargetTexture("sceneLayerPostProcessOutput", { width, height }, scene, {
+      generateMipMaps: false, generateDepthBuffer: false,
+    });
+    output.hasAlpha = true;
+    camera.outputRenderTarget = output;
+    return {
+      width, height, scene, camera, target, output,
+      renderer: new SceneRenderCoordinator(scene),
+      attached: null,
+      blitScene: this.createBlitScene(output),
+      blitReady: false,
+      probedReady: false,
+      presented: false,
+      retirements: new PostProcessRetirement(),
+    };
+  }
+
+  /**
+   * Attaches the enabled passes to the stack's renderer; `replace` first retires the renderer holding the previous
+   * passes and makes a fresh one. Until the new one draws, `output` keeps the last composite, which frames show again.
+   */
+  private attachPasses(stack: LayerStack, enabled: SceneLayerPostProcessEntry[], replace: boolean): void {
+    if (replace) {
+      this.retireRenderer(stack.renderer, stack.attached, stack.retirements, "Scene Layer post-processing");
+      stack.renderer = new SceneRenderCoordinator(stack.scene);
     }
-    layer.presented = false;
-    layer.probedReady = false;
-    layer.blitReady = false;
-    layer.attachedPostProcess = null;
-    layer.camera.outputRenderTarget = null;
-    layer.rtt = null;
-    layer.blitScene = null;
-    layer.blitPlane = null;
+    stack.probedReady = false;
+    stack.attached = this.attachLayerPostProcess?.({ scene: stack.scene, camera: stack.camera }, enabled, stack.renderer) ?? null;
+  }
+
+  /**
+   * Ends a stack: its passes' renderer and those it replaced are released before its Scenes (the shared target, the
+   * input plane, the output and the blit). Each layer's view holds the target's textures until that layer's own
+   * renderer released them. `keepPresented` keeps its last composite on screen as `held` until a frame presents
+   * without it.
+   */
+  private retireStack(stack: LayerStack, keepPresented: boolean): void {
+    let heldReleased = Promise.resolve();
+    if (keepPresented && stack.presented) {
+      this.releaseHeld();
+      heldReleased = new Promise<void>((release) => { this.held = { scene: stack.blitScene, release }; });
+    }
+    this.retireRenderer(stack.renderer, stack.attached, stack.retirements, "Scene Layer post-processing");
+    stack.attached = null;
+    stack.camera.outputRenderTarget = null;
+    const reported = stack.retirements.whenDisposed();
+    const released = (async () => {
+      await stack.retirements.whenReleased();
+      await heldReleased;
+      stack.blitScene.dispose();
+      stack.scene.dispose();
+    })();
+    this.retiredLayers.add({ whenDisposed: () => reported, whenReleased: () => released });
+    void released.catch((error: unknown) => {
+      console.warn(`[render] Scene Layer post-processing target is quarantined until actual release: ${String(error)}`);
+    });
+  }
+
+  /** Retires `renderer` and the passes attached to it into `retirements`: bounded cleanup reports apart from actual release. */
+  private retireRenderer(renderer: SceneRenderCoordinator, attached: AttachedLayerPostProcess | null, retirements: PostProcessRetirement, owner: string): void {
     const reports: Promise<void>[] = [];
     try { attached?.dispose(); } catch (error) { reports.push(Promise.reject(error)); }
     try { reports.push(renderer.retire()); } catch (error) { reports.push(Promise.reject(error)); }
@@ -871,80 +1035,127 @@ export class SceneLayerCompositor {
     const reported = Promise.all(reports).then(
       () => {},
       (error: unknown) => {
-        throw new Error(`SceneLayer ${layer.layerId} retirement failed`, { cause: error });
+        throw new Error(`${owner} retirement failed`, { cause: error });
       },
     );
-    const released = (async () => {
-      await renderer.whenReleased();
-      await outputReleased;
-      blitScene?.dispose();
-      rtt?.dispose();
-    })();
-    layer.retirements.add({ whenDisposed: () => reported, whenReleased: () => released });
+    const released = renderer.whenReleased();
+    retirements.add({ whenDisposed: () => reported, whenReleased: () => released });
     void reported.catch((error: unknown) => {
-      console.warn(`[render] SceneLayer ${layer.layerId} cleanup report is uncertain: ${String(error)}`);
+      console.warn(`[render] ${owner} cleanup report is uncertain: ${String(error)}`);
     });
+  }
+
+  /**
+   * A layer's output follows the stack: a fresh renderer draws into the new target's view (or straight over the world),
+   * and the old renderer and view are released once that renderer has released them.
+   */
+  private replaceLayerRenderer(layer: LayerRecord, stack: LayerStack | null): void {
+    this.retireLayerRenderer(layer);
+    layer.renderer = layerRenderer(layer.scene);
+    if (stack) this.bindStackView(layer, stack);
+    else {
+      layer.scene.autoClear = false;
+      layer.scene.autoClearDepthAndStencil = true;
+    }
+  }
+
+  private retireLayerRenderer(layer: LayerRecord): void {
+    const renderer = layer.renderer;
+    const view = layer.view;
+    layer.view = null;
+    layer.camera.outputRenderTarget = null;
+    layer.probedReady = false;
+    const retired = new PostProcessRetirement();
+    this.retireRenderer(renderer, null, retired, `SceneLayer ${layer.layerId}`);
+    const released = (async () => {
+      await retired.whenReleased();
+      view?.dispose();
+    })();
+    layer.retirements.add({ whenDisposed: () => retired.whenDisposed(), whenReleased: () => released });
     void released.catch((error: unknown) => {
       console.warn(`[render] SceneLayer ${layer.layerId} target is quarantined until actual release: ${String(error)}`);
     });
   }
 
-  private releaseFallback(layer: LayerRecord): void {
-    layer.fallback?.release();
-    layer.fallback = null;
-  }
-
-  private blitFallback(layer: LayerRecord): void {
-    const fallback = layer.fallback;
-    if (fallback && !fallback.scene.isDisposed && isSceneFrameReady(fallback.scene)) {
-      const capture = activeRenderFrameCapture(this.engine);
-      if (capture) capture.stage(fallback.scene, { name: "SceneLayer held output", kind: "composition",
-        sceneId: layer.layerId, detail: "Previously coherent layer output; no new layer frame was produced." }, () => fallback.scene.render());
-      else fallback.scene.render();
-    }
-  }
-
-  private prepareBlit(layer: LayerRecord): void {
-    if (!layer.rtt) return;
-    if (!layer.blitScene) {
-      const blitScene = this.ownScene(new Scene(this.engine));
-      blitScene.autoClear = false;
-      blitScene.autoClearDepthAndStencil = false;
-      blitScene.skipPointerMovePicking = true;
-      blitScene.lightsEnabled = false;
-      const camera = new UniversalCamera(
-        "sceneLayerBlitCamera",
-        new Vector3(0, 0, -1),
-        blitScene,
-      );
-      camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-      camera.orthoLeft = -1;
-      camera.orthoRight = 1;
-      camera.orthoTop = 1;
-      camera.orthoBottom = -1;
-      blitScene.activeCamera = camera;
-      const plane = MeshBuilder.CreatePlane(
-        "sceneLayerBlitPlane",
-        { size: 2 },
-        blitScene,
-      );
-      layer.blitScene = blitScene;
-      layer.blitPlane = plane;
-    }
-    // The layer's colour over the world, blended by its alpha.
-    if (layer.blitPlane) setUnlitMaterial(layer.blitPlane, SCENE_LAYER_BLIT, {
-      texture: layer.rtt, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
+  /**
+   * The layer's Scene draws into the shared target through a view of its own Scene (a renderer's output belongs to
+   * its Scene): the same colour and depth textures, each referenced once more so the view's disposal releases only
+   * its own reference.
+   */
+  private bindStackView(layer: LayerRecord, stack: LayerStack): void {
+    const color = stack.target.getInternalTexture();
+    const depth = stack.target.depthStencilTexture;
+    if (!color) return;
+    const view = new RenderTargetTexture(`sceneLayerView:${layer.layerId}`, { width: stack.width, height: stack.height }, layer.scene, {
+      generateMipMaps: false, generateDepthBuffer: false, colorAttachment: color,
     });
+    color.incrementReferences();
+    if (depth && view.renderTarget) {
+      view.renderTarget.setDepthStencilTexture(depth, false);
+      depth.incrementReferences();
+    }
+    view.hasAlpha = true;
+    layer.view = view;
+    layer.camera.outputRenderTarget = view;
   }
 
-  /** Draws the blit plane as `rebuildPostProcess` bound it: the layer's target changes only through that rebuild. */
-  private blit(layer: LayerRecord): void {
-    if (!layer.blitScene) return;
-    const capture = activeRenderFrameCapture(this.engine);
-    if (capture) capture.stage(layer.blitScene, { name: "SceneLayer output composition", kind: "composition",
-      sceneId: layer.layerId }, () => layer.blitScene?.render());
-    else layer.blitScene.render();
+  private createBlitScene(texture: RenderTargetTexture): Scene {
+    const blitScene = this.ownScene(new Scene(this.engine));
+    blitScene.autoClear = false;
+    blitScene.autoClearDepthAndStencil = false;
+    blitScene.skipPointerMovePicking = true;
+    blitScene.lightsEnabled = false;
+    fullScreenCamera("sceneLayerBlitCamera", blitScene);
+    const plane = MeshBuilder.CreatePlane("sceneLayerBlitPlane", { size: 2 }, blitScene);
+    // The passes' colour over the world, blended by its alpha.
+    setUnlitMaterial(plane, SCENE_LAYER_BLIT, {
+      texture, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
+    });
+    return blitScene;
   }
+
+  /** Blends the stack's output over the world: this frame's composite, or (`held`) the last one again. */
+  private blitStack(stack: LayerStack, held: boolean): void {
+    const capture = activeRenderFrameCapture(this.engine);
+    if (capture) capture.stage(stack.blitScene, held
+      ? { name: "SceneLayer held output", kind: "composition", detail: "Previously coherent Scene Layer output; no new composite was produced." }
+      : { name: "SceneLayer output composition", kind: "composition" }, () => stack.blitScene.render());
+    else stack.blitScene.render();
+  }
+
+  /** No new composite this frame: the stack's last one, else the one an ended stack left. */
+  private drawStackHeld(stack: LayerStack): void {
+    if (stack.presented && stack.blitReady) this.blitStack(stack, true);
+    else this.drawHeld();
+  }
+
+  /** An ended stack's last composite, at most once a frame. */
+  private drawHeld(): void {
+    const held = this.held;
+    if (!held || this.heldDrawn || held.scene.isDisposed || !isSceneFrameReady(held.scene)) return;
+    this.heldDrawn = true;
+    const capture = activeRenderFrameCapture(this.engine);
+    if (capture) capture.stage(held.scene, { name: "SceneLayer held output", kind: "composition",
+      detail: "Previously coherent Scene Layer output; no new layer frame was produced." }, () => held.scene.render());
+    else held.scene.render();
+  }
+
+  private releaseHeld(): void {
+    this.held?.release();
+    this.held = null;
+  }
+}
+
+/** An orthographic camera framing a 2 × 2 plane at the origin: a full-screen draw. */
+function fullScreenCamera(name: string, scene: Scene): UniversalCamera {
+  const camera = new UniversalCamera(name, new Vector3(0, 0, -1), scene);
+  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+  camera.orthoLeft = -1;
+  camera.orthoRight = 1;
+  camera.orthoTop = 1;
+  camera.orthoBottom = -1;
+  scene.activeCamera = camera;
+  return camera;
 }
 
 type OverlayMeshMetadata = {

@@ -24,9 +24,11 @@ import type {
   LayerCamera,
   MaterialInstanceObject,
   PostProcessMaterialObject,
+  PostProcessOwner,
   Scene,
   SceneCameraManager,
   SceneLayer,
+  SceneLayerPostProcessing,
   TimelineClipInstance,
   TimelineClipObject,
   TimelineObject,
@@ -352,14 +354,12 @@ export interface ScriptHostServices {
   getCurrentSceneLayerActor?(target: unknown): Actor | null;
   setFocusTarget?(target: unknown): boolean;
   clearFocusTarget?(target: unknown): void;
-  registerSceneLayerPostProcess?(
-    layerGuid: string,
-    materialGuid: string,
-  ): RegisteredPostProcess<SceneLayer> | null;
-  unregisterSceneLayerPostProcess?(
-    layerGuid: string,
-    materialGuid: string,
-  ): void;
+  /** Register Scene Layer Post-Processing: a new pass after the shared Scene Layer stack's passes. */
+  registerSceneLayerPostProcess?(materialGuid: string): RegisteredPostProcess<SceneLayerPostProcessing> | null;
+  /** Unregister Scene Layer Post-Processing: removes the shared stack's first pass using the Material. */
+  unregisterSceneLayerPostProcess?(materialGuid: string): void;
+  /** The session's Scene Layer post-processing, which every Scene Layer shares. */
+  sceneLayerPostProcessing?(): SceneLayerPostProcessing;
   /** Register Scene Post-Processing on the current Scene. */
   registerScenePostProcess?(materialGuid: string): RegisteredPostProcess<Scene> | null;
   /** Unregister Scene Post-Processing on the current Scene. */
@@ -460,7 +460,7 @@ export interface ScriptHostServices {
     parameterName: string,
     parameter: MaterialParameterValue,
   ): void;
-  getPostProcessEntry?(owner: Scene | SceneLayer, entryId: string): PostProcessMaterialObject | null;
+  getPostProcessEntry?(owner: PostProcessOwner, entryId: string): PostProcessMaterialObject | null;
   getMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): MaterialParameterValue | null;
   resetMaterialParameter?(material: MaterialInstanceObject, name: string, kind: MaterialParameterValue["kind"]): boolean;
   possessCamera?(target: unknown, blend?: { seconds: number; curve: string }): void;

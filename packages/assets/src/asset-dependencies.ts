@@ -167,6 +167,28 @@ function declaredLoading(stored: Row[], declared: readonly unknown[] | undefined
 }
 
 /**
+ * What the Project Settings Scene Layer post-processing passes ship and Play loads at start: each enabled pass's
+ * Material and the Textures its parameter overrides name, in pass order, once each. A disabled pass ships nothing,
+ * as a disabled Scene pass does (`collectAssetDependencyMetadata`); a script can still add its Material at run time
+ * through Register Scene Layer Post-Processing, whose node names it.
+ */
+export function sceneLayerPostProcessAssetGuids(stack: unknown): string[] {
+  const guids = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === "string" && value.trim() && !value.startsWith("engine:")) guids.add(value);
+  };
+  for (const pass of rows(stack)) {
+    if (pass.enabled === false) continue;
+    add(pass.materialGuid);
+    for (const parameter of Object.values(row(pass.parameters))) {
+      const spec = row(parameter);
+      if (spec.kind === "texture") add(spec.textureAssetGuid);
+    }
+  }
+  return [...guids];
+}
+
+/**
  * Collect both graphs in the same pass. Required wins when a GUID occurs in both
  * roles: e.g. a visible mesh and a prefab variable may reference the same model.
  */

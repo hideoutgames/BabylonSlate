@@ -50,10 +50,9 @@ function documents() {
     { id: "wrong-domain", materialGuid: "surface", enabled: true },
   ];
   const layer = createDefaultSceneLayer();
-  layer.settings.postProcessStack = structuredClone(
-    scene.settings.postProcessStack,
-  );
-  return { scene, layer };
+  // The Project Settings Scene Layer post-processing every layer shares.
+  const layerPasses = structuredClone(scene.settings.postProcessStack);
+  return { scene, layer, layerPasses };
 }
 function writes(commands: CommandMessage[]) {
   return commands.filter(
@@ -273,8 +272,8 @@ describe("Post Process owner reads and resets", () => {
     }
   });
 
-  it("requires ready Scene and Layer owners and invalidates handles across same-asset reload and removal", async () => {
-    const { scene, layer } = documents();
+  it("requires ready Scene and Layer owners, invalidates Scene handles across same-asset reload, and keeps Scene Layer handles past layer removal", async () => {
+    const { scene, layer, layerPasses } = documents();
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -283,6 +282,7 @@ describe("Post Process owner reads and resets", () => {
       playSceneGuid: "world",
       sceneLibrary: { world: scene },
       sceneLayerLibrary: { overlay: layer },
+      sceneLayerPostProcessStack: layerPasses,
       deferSceneModelsReady: true,
       materialParameterCatalog: catalog,
       materialTextureAssetGuids: ["default-image", "saved-image"],
@@ -326,17 +326,17 @@ describe("Post Process owner reads and resets", () => {
       expect(gi.getVariable("handle")).toBeNull();
       runtime.notifySceneLayerReady(overlay.guid, 1);
       probe({ owner: overlay });
-      const oldLayer = gi.getVariable("handle");
-      expect(writes(commands).at(-1)?.owner).toEqual({
-        kind: "sceneLayer",
-        layerId: overlay.guid,
-        layerLoadId: 1,
-      });
+      // A ready layer names the passes every layer shares; the write names only that stack.
+      const layersHandle = gi.getVariable("handle");
+      expect(layersHandle).not.toBeNull();
+      expect(writes(commands).at(-1)?.owner).toEqual({ kind: "sceneLayers" });
+      expect(gi.getVariable("read")).toEqual({ found: true, value: 0.25 });
       runtime.removeSceneLayer(overlay.guid);
+      // The Scene Layer post-processing belongs to the session: its pass outlives the layer that named it.
+      probe({ handle: layersHandle });
+      expect(writes(commands).at(-1)?.owner).toEqual({ kind: "sceneLayers" });
+      expect(gi.getVariable("read")).toEqual({ found: true, value: 0.8 });
       const count = writes(commands).length;
-      probe({ handle: oldLayer });
-      expect(writes(commands)).toHaveLength(count);
-      expect(gi.getVariable("read")).toEqual({ found: false, value: 0 });
       runtime.executeConsoleCommand("changescene world");
       runtime.notifySceneModelsReady("world", 2);
       probe({ handle: old });
