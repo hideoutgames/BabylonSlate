@@ -20,6 +20,9 @@ import { layerDrawableMeshes } from "./layer-drawable-meshes";
 import { sceneShadowController } from "./shadow-controller";
 import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
+import { isTargetedLayerScene } from "./layer-composite";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { Material } from "@babylonjs/core/Materials/material";
 
 
 describe("SceneLayerCompositor", () => {
@@ -438,6 +441,74 @@ describe("SceneLayerCompositor", () => {
     compositor.setPostProcess("hud", []);
     expect(layer.camera.outputRenderTarget).toBeNull();
     expect(layer.scene.autoClear).toBe(false);
+  });
+
+  it("marks a layer targeted while its post-processing runs, through every change of stack or switch", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    let enabled = true;
+    const compositor = new SceneLayerCompositor({ engine, postProcessingEnabled: () => enabled, attachLayerPostProcess: () => ({ dispose() {} }) });
+    const layer = compositor.create({
+      type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18),
+      postProcessStack: [{ materialGuid: "grade", enabled: true }],
+    });
+    const plain = compositor.create({
+      type: "sceneLayerCreate", layerId: "plain", assetGuid: "plain", zOrder: 1, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: [],
+    });
+    expect(isTargetedLayerScene(layer.scene)).toBe(true);
+    expect(isTargetedLayerScene(plain.scene)).toBe(false);
+    // Its blit composites the target's premultiplied colour and coverage.
+    const blit = engine.scenes.find((scene) => scene.getMeshByName("sceneLayerBlitPlane"))!.getMeshByName("sceneLayerBlitPlane")!;
+    expect(blit.material!.alphaMode).toBe(Constants.ALPHA_PREMULTIPLIED);
+    compositor.setPostProcess("hud", [{ materialGuid: "grade", enabled: false }]);
+    expect(isTargetedLayerScene(layer.scene)).toBe(false);
+    compositor.setPostProcess("hud", [{ materialGuid: "grade", enabled: true }]);
+    expect(isTargetedLayerScene(layer.scene)).toBe(true);
+    enabled = false;
+    compositor.refreshPostProcess();
+    expect(isTargetedLayerScene(layer.scene)).toBe(false);
+    enabled = true;
+    compositor.refreshPostProcess();
+    expect(isTargetedLayerScene(layer.scene)).toBe(true);
+    expect(isTargetedLayerScene(plain.scene)).toBe(false);
+  });
+
+  it("draws a post-processed layer's ordinary blending premultiplied and leaves a direct layer's as it is", async () => {
+    const engine = adaptNullEngineFrameGraph(new NullEngine({
+      renderWidth: 640, renderHeight: 360, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 1,
+    }));
+    engines.push(engine);
+    // NullEngine omits the raw upload-ready flag that a WebGL2 Engine sets.
+    const upload = engine.createRawTexture.bind(engine);
+    vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
+      const texture = upload(...args); texture.isReady = true; return texture;
+    });
+    const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: () => ({ dispose() {} }) });
+    const drawn: string[] = [];
+    for (const [layerId, stack] of [["targeted", [{ materialGuid: "grade", enabled: true }]], ["direct", []]] as const) {
+      const layer = compositor.create({ type: "sceneLayerCreate", layerId, assetGuid: layerId, zOrder: layerId === "direct" ? 0 : 1, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: [...stack] });
+      for (const [name, alphaMode] of [["glass", Constants.ALPHA_COMBINE], ["glow", Constants.ALPHA_ADD]] as const) {
+        const mesh = MeshBuilder.CreatePlane(`${layerId}-${name}`, { size: 1 }, layer.scene);
+        const material = new StandardMaterial(name, layer.scene);
+        material.disableLighting = true;
+        material.transparencyMode = Material.MATERIAL_ALPHABLEND;
+        material.alphaMode = alphaMode;
+        mesh.material = material;
+        mesh.position.x = name === "glass" ? -2 : 2;
+        mesh.onBeforeDrawObservable.add(() => drawn.push(`${mesh.name}:${engine.getAlphaMode()}`));
+      }
+      await compositor.prepare(layerId, () => {});
+    }
+    engine.beginFrame();
+    compositor.render();
+    engine.endFrame();
+    expect([...drawn].sort()).toEqual([
+      `direct-glass:${Constants.ALPHA_COMBINE}`, `direct-glow:${Constants.ALPHA_ADD}`,
+      `targeted-glass:${Constants.ALPHA_LAYER_ACCUMULATE}`, `targeted-glow:${Constants.ALPHA_ADD}`,
+    ]);
+    // Nothing after the layer's own draw is premultiplied.
+    engine.setAlphaMode(Constants.ALPHA_COMBINE);
+    expect(engine.getAlphaMode()).toBe(Constants.ALPHA_COMBINE);
   });
 
   it("resizes layer targets at the frame boundary and waits for every retired graph before Scene disposal", async () => {

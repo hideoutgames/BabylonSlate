@@ -15,12 +15,11 @@ export type MaterialBlendMode =
   | "multiply";
 
 /**
- * The Blend Modes a domain offers. Text draws on Scene Layers, whose post-processed layers composite through a
- * transparent target, so it has no Multiply; Particle and Post Process have none (emitters own blending, a pass replaces
- * the image).
+ * The Blend Modes a domain offers. Text always blends (Translucent, Additive or Multiply); Particle and Post Process
+ * have none (emitters own blending, a pass replaces the image).
  */
 export function materialBlendModesFor(domain: MaterialDomain): readonly MaterialBlendMode[] {
-  if (domain === "text") return ["translucent", "additive"];
+  if (domain === "text") return ["translucent", "additive", "multiply"];
   if (domain === "particle" || domain === "postProcess") return [];
   return ["opaque", "masked", "translucent", "additive", "multiply"];
 }
@@ -492,7 +491,7 @@ export function normalizeMaterialDocument(
     domain,
     shadingModel: domain === "text" || record.shadingModel === "unlit" ? "unlit" : "pbr",
     blendMode:
-      domain === "text" ? (record.blendMode === "additive" ? "additive" : "translucent") : record.blendMode === "masked" ||
+      domain === "text" ? (record.blendMode === "additive" || record.blendMode === "multiply" ? record.blendMode : "translucent") : record.blendMode === "masked" ||
       record.blendMode === "translucent" ||
       record.blendMode === "additive" ||
       record.blendMode === "multiply"

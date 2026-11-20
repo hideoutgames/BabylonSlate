@@ -9,6 +9,7 @@ import type { AttachedPostProcessStack } from "./post-process-material";
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -44,8 +45,9 @@ import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+import { beginPremultipliedLayerContent, endPremultipliedLayerContent, setTargetedLayerScene } from "./layer-composite";
 
-/** A layer's output over the world: its target's colour, blended by its alpha, without fog. */
+/** A layer's output over the world: its target's premultiplied colour and coverage, without fog. */
 const SCENE_LAYER_BLIT: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: false, role: "world" };
 import {
   overlayMinTargetWorldSize,
@@ -496,10 +498,17 @@ export class SceneLayerCompositor {
         if (record.rtt) {
           record.scene.autoClear = true;
           const frameCapture = activeRenderFrameCapture(this.engine);
-          const result = frameCapture
-            ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },
-              () => record.renderer.render())
-            : record.renderer.render();
+          // The target holds premultiplied colour and coverage, which the blit composites as such.
+          beginPremultipliedLayerContent(this.engine);
+          let result: ReturnType<SceneRenderCoordinator["render"]>;
+          try {
+            result = frameCapture
+              ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },
+                () => record.renderer.render())
+              : record.renderer.render();
+          } finally {
+            endPremultipliedLayerContent(this.engine);
+          }
           if (!record.blitReady && record.blitScene)
             record.blitReady = isSceneFrameReady(record.blitScene);
           if (!result.rendered || !result.readyForPresentation || !record.blitScene || !record.blitReady) {
@@ -824,8 +833,11 @@ export class SceneLayerCompositor {
       layer.camera.outputRenderTarget = null;
       layer.scene.autoClear = false;
       layer.scene.autoClearDepthAndStencil = true;
+      setTargetedLayerScene(layer.scene, false);
       return;
     }
+    // Before any of its Multiply visuals draws: they blend for a target from now on (`layerMultiplyAlphaMode`).
+    setTargetedLayerScene(layer.scene, true);
     const width = Math.max(1, this.engine.getRenderWidth(true));
     const height = Math.max(1, this.engine.getRenderHeight(true));
     // Colour only: the layer's graph draws through its chain's scene colour and depth (or its own pair) and copies
@@ -931,10 +943,14 @@ export class SceneLayerCompositor {
       layer.blitScene = blitScene;
       layer.blitPlane = plane;
     }
-    // The layer's colour over the world, blended by its alpha.
-    if (layer.blitPlane) setUnlitMaterial(layer.blitPlane, SCENE_LAYER_BLIT, {
-      texture: layer.rtt, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
-    });
+    // The layer's premultiplied colour over the world, which shows through by one minus its coverage. The blit Scene's
+    // unlit instance draws this plane alone; the held output draws the same Scene, so it composites the same way.
+    if (layer.blitPlane) {
+      setUnlitMaterial(layer.blitPlane, SCENE_LAYER_BLIT, {
+        texture: layer.rtt, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
+      });
+      if (layer.blitPlane.material) layer.blitPlane.material.alphaMode = Constants.ALPHA_PREMULTIPLIED;
+    }
   }
 
   /** Draws the blit plane as `rebuildPostProcess` bound it: the layer's target changes only through that rebuild. */

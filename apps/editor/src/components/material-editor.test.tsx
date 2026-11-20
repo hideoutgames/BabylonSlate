@@ -337,6 +337,18 @@ describe("Material details panel", () => {
     expect(screen.queryByTestId("property-blendMode")).toBeNull();
   });
 
+  it("offers a Text Material Translucent, Additive and Multiply, and commits Multiply", async () => {
+    harness.content = createDefaultMaterialDocument("Ink", "text") as unknown as Record<string, unknown>;
+    render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.queryByTestId("property-shadingModel")).toBeNull();
+    fireEvent.click(screen.getByTestId("property-blendMode"));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Translucent", "Additive", "Multiply"]);
+    const multiply = screen.getByRole("option", { name: "Multiply" });
+    fireEvent.pointerDown(multiply, { pointerType: "mouse" });
+    fireEvent.click(multiply);
+    expect(lastCommit().blendMode).toBe("multiply");
+  });
+
   it("hides material settings and shows node details when a node is selected", () => {
     harness.selectedNodeId = "output";
     render(<MaterialDetailsPanel {...panelProps} />);

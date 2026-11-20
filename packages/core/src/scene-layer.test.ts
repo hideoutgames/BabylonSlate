@@ -111,7 +111,8 @@ describe("SceneLayer schema", () => {
       { id: "pass", materialGuid: "pp", enabled: true },
     ]);
     expect(scene.actors).toHaveLength(1);
-    expect(scene.settings.environmentColor).toEqual([0, 0, 0]);
+    // A neutral mid grey preview background, so a Multiply visual shows what it does in the editor.
+    expect(scene.settings.environmentColor).toEqual([0.5, 0.5, 0.5]);
     expect(scene.overlayEditor).toBe(true);
   });
 
