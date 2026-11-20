@@ -3,7 +3,8 @@
  * one pass: one fragment program writes each march's target as a colour attachment of its own (`ScreenShadowsGraph`).
  * Each march's code is its own pass's, moved: its declarations, functions and main's body come from the same generator
  * as its own shader (`MarchSource`), and only how the body ends a pixel differs (`MarchEnds`). So every target holds the
- * bytes its own pass wrote, while a tile-based GPU loads, clears and stores one pass instead of three.
+ * bytes its own pass wrote, while a tile-based GPU loads, clears and stores one pass instead of three. An opt-in,
+ * `worlddebug mergedmarches on`, until a native GPU proves that: by default each march draws in its own pass.
  */
 
 /** How a march's main body ends a pixel. */

@@ -9,16 +9,25 @@ export const WORLD_DEBUG_NO_LOCAL_LIGHTS_DEFINE = "HAPTIC_DEBUG_NO_LOCAL_LIGHTS"
 /** The surface output's define for `shading` off: the colour is one constant. */
 export const WORLD_DEBUG_FLAT_DEFINE = "HAPTIC_DEBUG_FLAT";
 
-/** Per Scene, the parts a Play session's `worlddebug` switched off; never saved. Scene Layers' own Scenes never have any. */
-const off = new WeakMap<Scene, ReadonlySet<WorldDebugPart>>();
+/**
+ * Per Scene, the parts a Play session's `worlddebug` switched away from their default; never saved. Scene Layers' own
+ * Scenes never have any.
+ */
+const switched = new WeakMap<Scene, ReadonlySet<WorldDebugPart>>();
 const NONE: ReadonlySet<WorldDebugPart> = new Set();
+
+/**
+ * The parts off by default: `mergedmarches`, the merged half-resolution march pass, an opt-in until a native GPU proves
+ * it (`merged-marches.ts`).
+ */
+const DEFAULT_OFF: ReadonlySet<WorldDebugPart> = new Set(["mergedmarches"]);
 
 /** The parts that change only the view's graph (`liveSceneEffectsKey`), never a Material's program. */
 const GRAPH_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "mergedmarches"]);
 
 /** Whether `part` of the world is switched off for `scene`. */
 export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
-  return (off.get(scene) ?? NONE).has(part);
+  return DEFAULT_OFF.has(part) !== (switched.get(scene) ?? NONE).has(part);
 }
 
 /**
@@ -29,11 +38,10 @@ export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
  * half-resolution marches in one pass or in their own (`SpatialEffectsGraph`).
  */
 export function setSceneWorldDebug(scene: Scene, part: WorldDebugPart, enabled: boolean): boolean {
-  const current = off.get(scene) ?? NONE;
-  if (current.has(part) === !enabled) return false;
-  const next = new Set(current);
-  if (enabled) next.delete(part); else next.add(part);
-  off.set(scene, next);
+  if (worldDebugOff(scene, part) === !enabled) return false;
+  const next = new Set(switched.get(scene) ?? NONE);
+  if (next.has(part)) next.delete(part); else next.add(part);
+  switched.set(scene, next);
   if (!GRAPH_PARTS.has(part)) for (const material of scene.materials) material.markDirty(true);
   markSceneReadinessDirty(scene, "renderSettings");
   return true;
@@ -47,8 +55,12 @@ export function geometryRepeat(scene: Scene): "none" | "full" | "scissor" {
   return worldDebugOff(scene, "geometryonce") ? "full" : worldDebugOff(scene, "geometryoncescissor") ? "scissor" : "none";
 }
 
-/** `RenderDiagnostics.settings`' `world.debug`: the parts switched off, in `WORLD_DEBUG_PARTS` order, or `none`. */
+/**
+ * `RenderDiagnostics.settings`' `world.debug`: the parts switched from their default, in `WORLD_DEBUG_PARTS` order (a
+ * part off by default as `<part> on`), or `none`.
+ */
 export function worldDebugFingerprint(scene: Scene): string {
-  const parts = WORLD_DEBUG_PARTS.filter((part) => worldDebugOff(scene, part));
+  const parts = WORLD_DEBUG_PARTS.filter((part) => (switched.get(scene) ?? NONE).has(part))
+    .map((part) => DEFAULT_OFF.has(part) ? `${part} on` : part);
   return parts.length ? parts.join(",") : "none";
 }

@@ -61,7 +61,7 @@ import {
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { managedRenderReservations } from "./managed-render-resources";
-import { setSceneWorldDebug } from "./world-debug";
+import { setSceneWorldDebug, worldDebugFingerprint } from "./world-debug";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator, shadowAtlasGeneration, shadowAtlasTexture } from "./shadow-atlas";
@@ -2214,9 +2214,8 @@ it.each([
   ["reflections", { reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } }, false],
   ["Screen-Space Shadows", {}, true],
 ] as const)("keeps a geometry pass that also feeds %s before the objects with every mesh", async (_name, effects, screenShadows) => {
-  // No light here casts shadows: the march idles, yet stays planned, and its pass runs for the fog march merged into
-  // it (`merged-marches.ts`), which keeps the geometry pass running. Normals, reflectivity and caster marks come only
-  // from the meshes' own draws, and the objects read the shadows.
+  // No light here casts shadows: the march idles (the fog keeps the geometry pass running), yet stays planned.
+  // Normals, reflectivity and caster marks come only from the meshes' own draws, and the objects read the shadows.
   const { graph, skipped } = await fogHost(effects, undefined, (scene) => {
     opaqueAndBlended(scene);
     if (!screenShadows) return;
@@ -2225,15 +2224,16 @@ it.each([
   }, { seedsFromSceneDepth: true });
   const tasks = graph.taskNames();
   expect(tasks.indexOf("Spatial Geometry")).toBeLessThan(tasks.indexOf("Forward objects"));
-  expect(skipped()).toEqual([]);
+  expect(skipped()).toEqual(screenShadows ? ["Screen shadows"] : []);
   expect(spatialGeometry(graph).objectList.meshes.map((mesh) => mesh.name)).toEqual(["opaque", "blended"]);
   graph.dispose();
 });
 
 /** A world view with Screen-Space Shadows at High and no Fog Volume: a sun (shadowed as `shadowed` says) over a plane. */
 async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFAULT_RENDER_EFFECTS> = {}, nullEngine?: NullEngine,
-  quality?: ReturnType<typeof normalizeRenderingQuality>) {
+  quality?: ReturnType<typeof normalizeRenderingQuality>, mergedMarches = false) {
   const { engine, scene, camera } = host(nullEngine);
+  if (mergedMarches) setSceneWorldDebug(scene, "mergedmarches", true);
   Object.assign(engine.getCaps(), {
     maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
     textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
@@ -2315,8 +2315,17 @@ it("idles Screen-Space Shadows and the geometry pass for an orthographic camera,
   graph.dispose();
 });
 
-it("keeps the geometry pass and the merged pass for ambient occlusion while Screen-Space Shadows idle, reading none", async () => {
+it("keeps the geometry pass for ambient occlusion while Screen-Space Shadows idle", async () => {
   const { graph, frame } = await screenShadowsHost(false, { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
+  expect(graph.taskNames()).not.toContain(MERGED_MARCHES_NAME);
+  expect(frame()).toEqual({ skipped: ["Screen shadows"], reads: false });
+  graph.dispose();
+});
+
+// The merged march pass (`merged-marches.ts`) is an opt-in, `worlddebug mergedmarches on`, until a native GPU proves it.
+it("keeps the geometry pass and the merged pass for ambient occlusion while Screen-Space Shadows idle, reading none", async () => {
+  const { graph, frame } = await screenShadowsHost(false, { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } },
+    undefined, undefined, true);
   expect(graph.taskNames()).toContain(MERGED_MARCHES_NAME);
   expect(frame()).toEqual({ skipped: [], reads: false });
   graph.dispose();
@@ -2324,7 +2333,7 @@ it("keeps the geometry pass and the merged pass for ambient occlusion while Scre
 
 it("keeps ambient occlusion in a pass of its own where its target's size is not the Screen-Space Shadows target's", async () => {
   const { graph, frame } = await screenShadowsHost(false,
-    { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, resolutionScale: 1 } });
+    { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, resolutionScale: 1 } }, undefined, undefined, true);
   expect(graph.taskNames()).toEqual(expect.arrayContaining(["Screen shadows", "Scene Ambient Occlusion"]));
   expect(graph.taskNames()).not.toContain(MERGED_MARCHES_NAME);
   expect(frame()).toEqual({ skipped: ["Screen shadows"], reads: false });
@@ -2338,8 +2347,8 @@ const MARCHES = {
   volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true },
 };
 
-it("marches ambient occlusion and fog in the Screen-Space Shadows pass before the objects, each into its own target", async () => {
-  const { graph, frame } = await screenShadowsHost(true, MARCHES, undefined, HIGH);
+it("marches ambient occlusion and fog in the Screen-Space Shadows pass before the objects, each into its own target, once merged", async () => {
+  const { graph, frame } = await screenShadowsHost(true, MARCHES, undefined, HIGH, true);
   const tasks = graph.taskNames();
   expect(tasks.slice(tasks.indexOf("Spatial Geometry"), tasks.indexOf("Forward objects") + 1))
     .toEqual(["Spatial Geometry", MERGED_MARCHES_NAME, "Forward objects"]);
@@ -2358,22 +2367,27 @@ it("marches ambient occlusion and fog in the Screen-Space Shadows pass before th
   graph.dispose();
 });
 
-it("draws each march in a pass of its own with worlddebug mergedmarches off, rebuilding the graph, and merges again once on", async () => {
+it("draws each march in a pass of its own by default, merges them with worlddebug mergedmarches on, rebuilding the graph, and separates them again once off", async () => {
   const { scene, camera, graph, frame } = await screenShadowsHost(true, MARCHES, undefined, HIGH);
-  const builds = graph.diagnostics().graphBuilds;
-  setSceneWorldDebug(scene, "mergedmarches", false);
-  await graph.prepare(camera);
-  const tasks = graph.taskNames();
-  expect(tasks).not.toContain(MERGED_MARCHES_NAME);
-  expect(tasks.slice(tasks.indexOf("Spatial Geometry"), tasks.indexOf("Forward objects") + 1))
+  expect(worldDebugFingerprint(scene)).toBe("none");
+  const separate = graph.taskNames();
+  expect(separate).not.toContain(MERGED_MARCHES_NAME);
+  expect(separate.slice(separate.indexOf("Spatial Geometry"), separate.indexOf("Forward objects") + 1))
     .toEqual(["Spatial Geometry", "Screen shadows", "Forward objects"]);
-  expect(tasks.indexOf("Scene Ambient Occlusion")).toBeGreaterThan(tasks.indexOf("Forward objects"));
-  expect(tasks.indexOf("Scene Volumetric Lighting")).toBeGreaterThan(tasks.indexOf("Forward objects"));
-  expect(graph.diagnostics().graphBuilds).toBeGreaterThan(builds);
+  expect(separate.indexOf("Scene Ambient Occlusion")).toBeGreaterThan(separate.indexOf("Forward objects"));
+  expect(separate.indexOf("Scene Volumetric Lighting")).toBeGreaterThan(separate.indexOf("Forward objects"));
   expect(frame()).toEqual({ skipped: [], reads: true });
+  const builds = graph.diagnostics().graphBuilds;
   setSceneWorldDebug(scene, "mergedmarches", true);
+  expect(worldDebugFingerprint(scene)).toBe("mergedmarches on");
   await graph.prepare(camera);
   expect(graph.taskNames()).toContain(MERGED_MARCHES_NAME);
+  expect(graph.diagnostics().graphBuilds).toBeGreaterThan(builds);
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  setSceneWorldDebug(scene, "mergedmarches", false);
+  expect(worldDebugFingerprint(scene)).toBe("none");
+  await graph.prepare(camera);
+  expect(graph.taskNames()).toEqual(separate);
   graph.dispose();
 });
 
@@ -2382,6 +2396,7 @@ it("skips the merged pass and the geometry pass while neither its fog nor its sc
   const { camera, graph, skipped } = await fogHost({}, undefined, (scene) => {
     allowSceneScreenShadows(scene, () => true);
     updateSceneRenderingSettings(scene, undefined, undefined, { screenShadows: "high" });
+    setSceneWorldDebug(scene, "mergedmarches", true);
   });
   expect(graph.taskNames()).toContain(MERGED_MARCHES_NAME);
   const builds = graph.diagnostics().graphBuilds;

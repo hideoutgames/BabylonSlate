@@ -5,9 +5,9 @@
  * (every surface one constant colour). Two size the geometry pass the screen-space effects read by drawing it once
  * more, the picture unchanged: `geometryonce` (off: a second geometry pass, the same meshes into scratch targets nothing
  * reads, right before the real one) and `geometryoncescissor` (off: that second pass under a 1x1 scissor, so it keeps
- * its draws and vertices and drops its fragments). `mergedmarches` (off: the ambient occlusion and volumetric marches
- * each in a pass of their own instead of in the Screen-Space Shadows pass, the picture unchanged) sizes and checks that
- * merge. Debug only, never saved.
+ * its draws and vertices and drops its fragments). `mergedmarches` is off by default, unlike the others: on, the ambient
+ * occlusion and volumetric marches draw in the Screen-Space Shadows pass instead of passes of their own, an opt-in that
+ * awaits a native-GPU proof that the picture is unchanged. Debug only, never saved.
  */
 export const WORLD_DEBUG_PARTS = [
   "world", "lighting", "shadowtaps", "locallights", "shading", "geometryonce", "geometryoncescissor", "mergedmarches",

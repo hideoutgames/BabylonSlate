@@ -169,8 +169,8 @@ export function liveSceneEffectsKey(
   if (!camera || !hasSpatialEffects(plan)) return state.effectsKey;
   const size = camera.outputRenderTarget?.getSize();
   const engine = scene.getEngine();
-  // The geometry repeat (`geometryRepeat`) adds a task and its targets, and `worlddebug mergedmarches off` gives the
-  // merged marches passes of their own: the graph builds again with them or without them.
+  // The geometry repeat (`geometryRepeat`) adds a task and its targets, and `worlddebug mergedmarches` merges the
+  // half-resolution marches into one pass or not: the graph builds again with them or without them.
   return `${state.effectsKey}:${camera.uniqueId}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}:${geometryRepeat(scene)}:${worldDebugOff(scene, "mergedmarches") ? "separate" : "merged"}`;
 }
 

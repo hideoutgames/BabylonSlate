@@ -13,7 +13,7 @@ const LARGE_WORLD = process.env.HAPTIC_LARGE_WORLD === "1";
 type Proof = typeof runEffectsComposeProof;
 type Capture = Awaited<ReturnType<Proof>>;
 
-async function run(page: Page, variant: EffectsComposeVariant, separateMarches: boolean): Promise<Capture> {
+async function run(page: Page, variant: EffectsComposeVariant, mergedMarches: boolean): Promise<Capture> {
   const errors: string[] = [];
   const listener = (message: { type(): string; text(): string }) => {
     if (["warning", "error"].includes(message.type()) &&
@@ -25,11 +25,11 @@ async function run(page: Page, variant: EffectsComposeVariant, separateMarches: 
   // A page of its own per run: nothing compiled in one is reused by the other.
   await page.goto("/?test=1&effectsComposeProof=1");
   await page.waitForFunction(() => typeof (window as unknown as { __effectsComposeProof?: unknown }).__effectsComposeProof === "function");
-  const result = await page.evaluate(({ name, largeWorld, separate }) =>
-    (window as unknown as { __effectsComposeProof: Proof }).__effectsComposeProof(name, largeWorld, separate),
-  { name: variant, largeWorld: LARGE_WORLD, separate: separateMarches });
+  const result = await page.evaluate(({ name, largeWorld, merged }) =>
+    (window as unknown as { __effectsComposeProof: Proof }).__effectsComposeProof(name, largeWorld, merged),
+  { name: variant, largeWorld: LARGE_WORLD, merged: mergedMarches });
   page.off("console", listener);
-  expect(errors, `${variant}${separateMarches ? " separate" : ""}`).toEqual([]);
+  expect(errors, `${variant}${mergedMarches ? " merged" : ""}`).toEqual([]);
   return result;
 }
 
@@ -48,13 +48,17 @@ const VARIANTS: { variant: EffectsComposeVariant; read: Target[] }[] = [
 
 const MERGED = "Half-resolution marches";
 
+/**
+ * The merged march pass is an opt-in (`worlddebug mergedmarches on`) until a native GPU proves it: the default graph
+ * draws each march in its own pass, and this compares that default with the merged pass.
+ */
 test("the ambient occlusion and volumetric marches drawn in the Screen-Space Shadows pass write the bytes their own passes write", async ({ page }) => {
   test.setTimeout(900_000);
   const summary: Record<string, unknown> = {};
   for (const { variant, read } of VARIANTS) {
-    const merged = await run(page, variant, false);
-    const separate = await run(page, variant, true);
-    // The merged run draws the three marches in one pass before the objects; the separate run in three, as before.
+    const separate = await run(page, variant, false);
+    const merged = await run(page, variant, true);
+    // The default (separate) run draws the three marches in three passes; the merged run in one before the objects.
     expect(merged.tasks, variant).toContain(MERGED);
     expect(merged.tasks.filter((name) => ["Screen shadows", "Scene Ambient Occlusion", "Scene Volumetric Lighting"].includes(name)), variant).toEqual([]);
     expect(separate.tasks, variant).not.toContain(MERGED);

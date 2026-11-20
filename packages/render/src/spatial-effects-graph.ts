@@ -258,8 +258,8 @@ export class SpatialEffectsGraph {
           this.compileFailure.for("Spatial Geometry Depth Seed"));
         this.seeded = true;
       }
-      // With Screen-Space Shadows, the ambient occlusion and volumetric marches of the same target size draw in their
-      // pass (`merged-marches.ts`), unless `worlddebug mergedmarches off` keeps a pass for each.
+      // With Screen-Space Shadows and `worlddebug mergedmarches on` (off by default, until a native GPU proves the merge),
+      // the ambient occlusion and volumetric marches of the same target size draw in their pass (`merged-marches.ts`).
       const marchSize = plan.screenShadows && !worldDebugOff(graph.scene, "mergedmarches")
         ? { width: Math.ceil(width / SCREEN_SHADOW_SCALE), height: Math.ceil(height / SCREEN_SHADOW_SCALE) }
         : undefined;

@@ -7,8 +7,8 @@
  * the Screen-Space Shadows target, the ambient occlusion and volumetric marches' targets, and the GL passes and texels
  * covered of the frame (`GlSignatureRecorder`), so a spec can compare two builds' frames and structure. The `marches`
  * variants plan Screen-Space Shadows beside ambient occlusion and volumetric lighting, whose half-resolution marches
- * then draw in one pass (`merged-marches.ts`); `separateMarches` draws them in passes of their own instead
- * (`worlddebug mergedmarches off`), so a spec can compare the two byte for byte. `marches-fog-idle` has no density and
+ * draw in passes of their own by default and in one pass with `mergedMarches` (`worlddebug mergedmarches on`,
+ * `merged-marches.ts`), so a spec can compare the two byte for byte. `marches-fog-idle` has no density and
  * no Fog Volume (the fog march idles), `marches-sun-unshadowed` a sun that casts no shadows (the screen shadows idle).
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
@@ -89,7 +89,7 @@ function png(pixels: Uint8Array): string {
   return canvas.toDataURL("image/png");
 }
 
-export async function runEffectsComposeProof(variant: EffectsComposeVariant, largeWorld = false, separateMarches = false): Promise<EffectsComposeCapture> {
+export async function runEffectsComposeProof(variant: EffectsComposeVariant, largeWorld = false, mergedMarches = false): Promise<EffectsComposeCapture> {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
@@ -106,7 +106,7 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
     camera.maxZ = 60;
     scene.activeCamera = camera;
     allowSceneScreenShadows(scene, () => true);
-    if (separateMarches) setSceneWorldDebug(scene, "mergedmarches", false);
+    if (mergedMarches) setSceneWorldDebug(scene, "mergedmarches", true);
     const marches = variant.startsWith("marches");
     const ao = variant === "ao" || variant === "ao-fog" || variant === "all" || marches;
     const reflections = variant === "reflections" || variant === "all" || variant === "marches";
