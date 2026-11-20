@@ -501,7 +501,7 @@ describe("SceneLayerCompositor", () => {
     it("keeps live parameter writes for the shared stack's passes and refuses passes it does not hold", () => {
       const { engine } = world();
       const setParameter = vi.fn(() => true);
-      const attach = vi.fn((_view: unknown, _stack: unknown, _renderer: unknown) => ({ dispose() {}, setParameter }));
+      const attach = vi.fn((...args: unknown[]) => { void args; return { dispose() {}, setParameter }; });
       const stacked = new SceneLayerCompositor({ engine, attachLayerPostProcess: attach });
       stacked.setPostProcess([{ id: "glow", materialGuid: "glow", enabled: true }, { id: "tint", materialGuid: "tint", enabled: false }]);
       const value = { kind: "float" as const, value: 0.5 };
