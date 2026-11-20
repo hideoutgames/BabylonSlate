@@ -32,6 +32,7 @@ import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes
 import { clearDecals, removeDecals, sceneDecalTextureGuids, setDecalTextureResolver, upsertDecals } from "./decal-pass";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
+import { isFoliageDistanceOnlySceneEdit } from "./foliage-mesh";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
 import { setSceneWorldDebug, worldDebugFingerprint } from "./world-debug";
@@ -1828,6 +1829,11 @@ function initializeEngine(
     if (editorSync && sameScene &&
       (isDeformerOnlySceneEdit(editorSync.serializedScene(), sceneData) ||
         isFogVolumeOnlySceneEdit(editorSync.serializedScene(), sceneData))) {
+      editorSync.apply(sceneData);
+      return;
+    }
+    // A Foliage distance edit applies to the existing cells (`applyFoliageDistances`): no rebuild, no new variant.
+    if (editorSync && sameScene && isFoliageDistanceOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
       editorSync.apply(sceneData);
       return;
     }

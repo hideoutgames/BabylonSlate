@@ -180,7 +180,7 @@ async function meadow(editor: boolean) {
     spy.mockRestore();
     return ranges[0];
   };
-  return { scene, camera, near: at(5), mid: at(50), far: at(100), casts, fade };
+  return { scene, camera, root, near: at(5), mid: at(50), far: at(100), casts, fade };
 }
 
 it("distance-culls, shadow-culls and fades Play's foliage cells from the frame's camera, scaled by quality, without readiness", async () => {
@@ -202,6 +202,68 @@ it("distance-culls, shadow-culls and fades Play's foliage cells from the frame's
   expect([mid, far].map(casts)).toEqual([false, true]);
   expect(fade(far)).toEqual([0, 0]);
   expect(readiness).toEqual([]);
+});
+
+it("applies new distances to Play's existing cells in the next frame", async () => {
+  const { applyFoliageDistances } = await import("./foliage-mesh");
+  const { scene, root, near, mid, far, casts, fade } = await meadow(false);
+  scene.render();
+  applyFoliageDistances(root, {
+    batches: [{
+      modelGuid: "grass", materialGuid: "grass-material", cullDistance: 200, fadeRange: 0, shadowDistance: 100,
+      transforms: [5, 50, 100].map((x) => ({ ...identitySerializedTransform(), position: [x, 0, 0] })),
+    }],
+  });
+  scene.render();
+  // Low quality: cull 150 m, no fade, shadows to 75 m.
+  expect([near, mid, far].map((cell) => cell.isEnabled())).toEqual([true, true, true]);
+  expect([near, mid, far].map(casts)).toEqual([true, true, false]);
+  expect(fade(mid)).toEqual([0, 0]);
+});
+
+it("applies a Foliage distance edit to the editor's foliage in place, through undo, and rebuilds for any other edit", async () => {
+  const { isFoliageDistanceOnlySceneEdit } = await import("./foliage-mesh");
+  const { scene, engine } = createTestEngine();
+  const sync = new EditorSceneSync(scene);
+  disposers.push(() => { sync.dispose(); scene.dispose(); engine.dispose(); });
+  sync.setMeshAssets({ modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) });
+  const transforms = [identitySerializedTransform(), { ...identitySerializedTransform(), position: [40, 0, 0] as [number, number, number] }];
+  const model = { modelGuid: "tree", materialGuid: null, weight: 1, minScale: 1, maxScale: 1, cullDistance: 120, fadeRange: 15, shadowDistance: 45 };
+  const document = (cullDistance: number, positions = transforms) => {
+    const base = createDefaultScene();
+    return {
+      ...base,
+      settings: { ...base.settings, foliageGroups: [{ id: "trees", name: "Trees", models: [{ ...model, cullDistance }] }] },
+      actors: [createActor("stroke", "Stroke", { components: [{ id: "foliage", classId: "FoliageComponent", properties: {
+        groupId: "trees", batches: [{ modelGuid: "tree", materialGuid: null, cullDistance, fadeRange: 15, shadowDistance: 45, transforms: positions }],
+      } }] })],
+    };
+  };
+  const original = document(120);
+  sync.apply(original);
+  await sync.whenEditorModelsReady();
+  const root = sync.meshForComponent("stroke", "foliage")!;
+  const cells = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances);
+  expect(cells).toHaveLength(2);
+  const edited = document(30);
+  expect(isFoliageDistanceOnlySceneEdit(original, edited)).toBe(true);
+  sync.apply(edited);
+  await sync.whenEditorModelsReady();
+  expect(sync.meshForComponent("stroke", "foliage")).toBe(root);
+  expect(cells.every((cell) => !cell.isDisposed())).toBe(true);
+  // Undo applies the earlier document the same way.
+  expect(isFoliageDistanceOnlySceneEdit(edited, original)).toBe(true);
+  sync.apply(original);
+  await sync.whenEditorModelsReady();
+  expect(sync.meshForComponent("stroke", "foliage")).toBe(root);
+  // Moving an instance, or any other group setting, is not a distance edit.
+  const moved = document(120, [identitySerializedTransform(), { ...identitySerializedTransform(), position: [41, 0, 0] }]);
+  expect(isFoliageDistanceOnlySceneEdit(original, moved)).toBe(false);
+  const reweighted = { ...original, settings: { ...original.settings, foliageGroups: [{ id: "trees", name: "Trees", models: [{ ...model, weight: 2 }] }] } };
+  expect(isFoliageDistanceOnlySceneEdit(original, reweighted)).toBe(false);
+  sync.apply(moved);
+  await sync.whenEditorModelsReady();
+  expect(sync.meshForComponent("stroke", "foliage")).not.toBe(root);
 });
 
 it("never culls or fades foliage cells in an editor view, however far its camera", async () => {
