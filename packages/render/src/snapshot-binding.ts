@@ -72,6 +72,12 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
    */
   liveSlotPasses?: Map<number, number>;
   liveSlotPass?: number;
+  /**
+   * The overlay slots the last apply pass found, kept and pruned like `liveSlots` (stamped with the pass in
+   * `overlaySlotPasses`). Only that pass's leftover sweep reads it, which copies what it keeps.
+   */
+  overlaySlots?: Set<number>;
+  overlaySlotPasses?: Map<number, number>;
   /** Reused structural-pass results, indexed by the current snapshot actor. */
   snapshotMeshes: Array<Mesh | null>;
   /** Slot ids observed in an applied snapshot; gates absence-retire so

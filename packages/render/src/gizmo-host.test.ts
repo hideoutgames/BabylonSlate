@@ -55,6 +55,21 @@ describe("gizmo screen-scale clamp", () => {
       -(1.8 * GIZMO_MIN_CAMERA_DISTANCE),
     );
   });
+
+  it("clamps the handles on the first frame after a mesh is attached at the camera", () => {
+    const { scene } = createHandle();
+    scene.activeCamera = new FreeCamera("cam", Vector3.Zero(), scene);
+    const mesh = MeshBuilder.CreateBox("box", { size: 1 }, scene);
+    const host = createGizmoHost(scene, { tool: "translate" });
+    const utility = host.positionGizmo.gizmoLayer.utilityLayerScene;
+    const handle = host.positionGizmo.xGizmo;
+    utility.onBeforeRenderObservable.notifyObservers(utility);
+    host.attachTo(mesh);
+    utility.onBeforeRenderObservable.notifyObservers(utility);
+    // Babylon scales the handle by its distance along the view, zero here.
+    expect(Math.abs(handle._rootMesh.scaling.x)).toBeCloseTo(handle.scaleRatio * GIZMO_MIN_CAMERA_DISTANCE);
+    host.dispose();
+  });
 });
 
 describe("gizmo tool override", () => {

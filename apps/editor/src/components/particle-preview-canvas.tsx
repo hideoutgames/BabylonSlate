@@ -34,6 +34,7 @@ import { useDocumentActions, useRegistryState } from "../context/document-contex
 import { useOptionalPlay } from "../context/play-context";
 import { textureUploadSignature } from "../lib/texture-upload-signature";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
+import { createPreviewFrameLoop, type PreviewFrameLoop } from "../lib/preview-loop";
 import {
   ParticlePreviewSurface,
   type ParticlePreviewState,
@@ -199,11 +200,17 @@ export function ParticlePreviewCanvas({
   showSkybox = false,
   onPickMaterial,
   onDiagnostics,
+  active = true,
 }: {
   library: ParticleLibrary;
   systemGuid: string;
   testId: string;
   showSkybox?: boolean;
+  /**
+   * Whether the preview is on screen (`usePreviewLoopActive`); it requests no frames otherwise, so the
+   * simulation holds, and the scene's wall clock caps the first step after the pause.
+   */
+  active?: boolean;
   /** Offers Pick Material on the No Material state (Basic emitter preview). */
   onPickMaterial?: () => void;
   /**
@@ -218,6 +225,9 @@ export function ParticlePreviewCanvas({
   ) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const loopRef = useRef<PreviewFrameLoop | null>(null);
   const play = useOptionalPlay();
   const { collectPlayMaterialLibrary, collectPlayTextureBytes, collectPlayModelBytes } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
@@ -351,7 +361,7 @@ export function ParticlePreviewCanvas({
     let host: MaterialPreviewScene | null = null;
     let presenter: MaterialPreviewPresenter | null = null;
     let materials: ReturnType<typeof createParticleMaterialResolver> | null = null;
-    let frame = 0;
+    let loop: PreviewFrameLoop | null = null;
     let stopRestoreWatch: (() => void) | null = null;
     const overlay = watchBlockingEditorOverlay();
     const disposePreview = () => {
@@ -453,11 +463,12 @@ export function ParticlePreviewCanvas({
       presenter.present();
       setBooted(true);
       setUpdating(false);
-      const tick = () => {
-        presenter?.present();
-        frame = window.requestAnimationFrame(tick);
-      };
-      frame = window.requestAnimationFrame(tick);
+      const view = presenter;
+      loop = loopRef.current = createPreviewFrameLoop(
+        () => view.present(),
+        () => view.present({ force: true }),
+      );
+      loop.setActive(activeRef.current);
     })().catch((error: unknown) => {
       // The cleanup already disposed this run; the shared refs may hold a newer run's preview.
       if (cancelled) return;
@@ -472,7 +483,8 @@ export function ParticlePreviewCanvas({
     });
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(frame);
+      loop?.dispose();
+      if (loopRef.current === loop) loopRef.current = null;
       clearTimeout(debounceRef.current);
       debounceRef.current = undefined;
       disposePreview();
@@ -491,6 +503,8 @@ export function ParticlePreviewCanvas({
     collectPlayModelBytes,
     showSkybox,
   ]);
+
+  useEffect(() => loopRef.current?.setActive(active), [active]);
 
   // The scene keeps the bytes it uploaded. A saved Texture change (a Usage
   // change, a finished encode) starts a new scene, the way Retry does.

@@ -570,7 +570,9 @@ export function createGizmoHost(
     axis.dragBehavior.onDragEndObservable.add(endDrag);
   }
 
+  // Babylon rescales the handles only while a gizmo is attached, in an observer that runs before this one.
   const clampHandleScale = () => {
+    if (!attached) return;
     for (const axis of axisHandles) {
       const mesh = axis._rootMesh;
       mesh.scaling.set(

@@ -65,6 +65,7 @@ export function AnimPreview3DView({
   getState,
   subscribe,
   emptyText,
+  active = true,
   "data-testid": testId,
 }: {
   preview: AnimPreviewModel;
@@ -73,6 +74,8 @@ export function AnimPreview3DView({
   subscribe: (listener: () => void) => () => void;
   /** Shown when no Model can be previewed. */
   emptyText: string;
+  /** Whether the preview is on screen; its canvas requests no frames otherwise. */
+  active?: boolean;
   "data-testid"?: string;
 }) {
   const { source, modelPayload, model, clips, readModelBytes, skeletonKind } = preview;
@@ -89,6 +92,7 @@ export function AnimPreview3DView({
           showBones={showBones}
           getState={getState}
           subscribe={subscribe}
+          active={active}
         />
       ) : (
         <p className="p-3 text-sm text-muted-foreground" data-testid="anim-preview-empty">

@@ -290,8 +290,10 @@ function reconcileSnapshotVisuals(
   binding.snapshotMeshes.length = count;
   // World copies of all overlay slots are dropped in one pass, when one can
   // exist (`sweepWorldOverlayLeftovers`). It also runs when a later slot
-  // throws, so earlier slots keep their per-slot cleanup.
-  let overlaySlots: Set<number> | undefined;
+  // throws, so earlier slots keep their per-slot cleanup. The binding's set is
+  // reused like `live`: stamped here, pruned to this pass's slots before the sweep.
+  const overlaySlots = (binding.overlaySlots ??= new Set());
+  const overlayPasses = (binding.overlaySlotPasses ??= new Map());
   let movedOrHid = false;
   let completed = false;
   try {
@@ -327,7 +329,10 @@ function reconcileSnapshotVisuals(
         applyMaterialToActorMeshes(binding, actor.slotId, mesh);
         binding.onVisualChanged?.(actor.slotId);
       }
-      if (wantsOverlay) (overlaySlots ??= new Set()).add(actor.slotId);
+      if (wantsOverlay) {
+        overlayPasses.set(actor.slotId, pass);
+        if (!overlaySlots.has(actor.slotId)) overlaySlots.add(actor.slotId);
+      }
       binding.snapshotMeshes[i] = mesh;
       // Seen only once applied: a scene lookup or visual build that throws
       // leaves a command-built visual protected from a stale buffer.
@@ -340,7 +345,12 @@ function reconcileSnapshotVisuals(
       live.delete(slotId);
       livePasses.delete(slotId);
     }
-    sweepWorldOverlayLeftovers(scene, binding, overlaySlots, movedOrHid || !completed);
+    for (const slotId of overlaySlots) {
+      if (overlayPasses.get(slotId) === pass) continue;
+      overlaySlots.delete(slotId);
+      overlayPasses.delete(slotId);
+    }
+    sweepWorldOverlayLeftovers(scene, binding, overlaySlots.size > 0 ? overlaySlots : undefined, movedOrHid || !completed);
   }
   for (const slotId of binding.meshes.keys()) {
     // A command-built visual not yet seen must survive a stale buffer.
@@ -538,6 +548,8 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.meshes.clear();
   binding.liveSlots.clear();
   binding.liveSlotPasses?.clear();
+  binding.overlaySlots?.clear();
+  binding.overlaySlotPasses?.clear();
   binding.snapshotMeshes.length = 0;
   binding.seenSlots.clear();
   binding.despawnedSlots.clear();
@@ -589,11 +601,25 @@ function composeSlotPartTransform(
   return scratchComposedPart;
 }
 
-function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
+/**
+ * True when writing `actor` would leave `mesh` as it is: its local TRS equals the row (`===`, so NaN always writes),
+ * its world matrix was computed from that TRS (`isSynchronized`: no TRS, parent or pivot change since), and it is
+ * frozen exactly when the write would freeze it. A visual that copied its predecessor's TRS (a migration, a staged
+ * replacement) has not computed or frozen it yet, so it still takes its first write.
+ */
+function holdsActorTransform(mesh: Mesh, actor: ActorSlot): boolean {
   const rotation = mesh.rotationQuaternion;
-  if (mesh.position.x === actor.position.x && mesh.position.y === actor.position.y && mesh.position.z === actor.position.z
+  return mesh.position.x === actor.position.x && mesh.position.y === actor.position.y && mesh.position.z === actor.position.z
     && mesh.scaling.x === actor.scale.x && mesh.scaling.y === actor.scale.y && mesh.scaling.z === actor.scale.z
-    && rotation?.x === actor.rotation.x && rotation.y === actor.rotation.y && rotation.z === actor.rotation.z && rotation.w === actor.rotation.w) return;
+    && rotation?.x === actor.rotation.x && rotation.y === actor.rotation.y && rotation.z === actor.rotation.z
+    && rotation.w === actor.rotation.w
+    && mesh.isSynchronized()
+    && mesh.isWorldMatrixFrozen === shouldFreezeStaticWorldMatrix(mesh);
+}
+
+function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
+  // Babylon's setters mark the node dirty whatever the value, so an unchanged row writes nothing.
+  if (holdsActorTransform(mesh, actor)) return;
   scratchPos.set(actor.position.x, actor.position.y, actor.position.z);
   scratchScale.set(actor.scale.x, actor.scale.y, actor.scale.z);
   scratchQuat.set(

@@ -1806,6 +1806,79 @@ describe("createPlayMesh", () => {
     expect(emitter.getWorldMatrix().getTranslation().asArray()).toEqual([5, 1, 0]);
   });
 
+  it("leaves an actor whose row is unchanged undirtied, and writes a changed, displaced, shown or rebuilt one", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene, engine } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.meshKinds.set(0, "box");
+    const row = {
+      slotId: 0,
+      position: { x: 2, y: 1, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: SNAPSHOT_FLAG_VISIBLE,
+    };
+    let frameId = 0;
+    const apply = () => {
+      frameId += 1;
+      applySnapshotToScene(scene, binding, { frameId, tickIndex: frameId, actorCount: 1, actors: [row] });
+    };
+    apply();
+    const mesh = binding.meshes.get(0)!;
+    let recomputes = 0;
+    mesh.onAfterWorldMatrixUpdateObservable.add(() => { recomputes += 1; });
+    // The next tick's row is bit-identical: nothing marks the node for recomputation, before or at render.
+    apply();
+    mesh.computeWorldMatrix();
+    expect(recomputes).toBe(0);
+    expect(mesh.isWorldMatrixFrozen).toBe(true);
+
+    // A scale-only change is written.
+    row.scale.y = 2;
+    apply();
+    expect(recomputes).toBeGreaterThan(0);
+    expect(mesh.getWorldMatrix().m[5]).toBe(2);
+
+    // Something else moved the node between ticks: the unchanged row puts it back.
+    mesh.position.x = 9;
+    apply();
+    expect(mesh.position.x).toBe(2);
+    expect(mesh.getWorldMatrix().getTranslation().asArray()).toEqual([2, 1, 0]);
+
+    // A visibility-only change applies, and leaves the pose alone.
+    recomputes = 0;
+    row.flags = 0;
+    apply();
+    mesh.computeWorldMatrix();
+    expect(mesh.isVisible).toBe(false);
+    expect(recomputes).toBe(0);
+    row.flags = SNAPSHOT_FLAG_VISIBLE;
+    apply();
+    expect(mesh.isVisible).toBe(true);
+
+    // The engine now draws the node whatever the view (a particle emitter): an unchanged row still lifts its freeze.
+    drawWhateverTheView(mesh);
+    apply();
+    expect(mesh.isWorldMatrixFrozen).toBe(false);
+    expect(mesh.getWorldMatrix().getTranslation().asArray()).toEqual([2, 1, 0]);
+
+    // A slot rebound to a new node whose TRS already equals the row (a layer migration copies it) still takes its
+    // first write: its world matrix is computed and frozen at once, not left at the origin until a later render.
+    const layer = new Scene(engine);
+    binding.sceneForSlot = () => layer;
+    row.flags = SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY;
+    apply();
+    const rebuilt = binding.meshes.get(0)!;
+    expect(rebuilt).not.toBe(mesh);
+    expect(rebuilt.getScene()).toBe(layer);
+    expect(rebuilt.isVisible).toBe(true);
+    expect(rebuilt.isWorldMatrixFrozen).toBe(true);
+    expect(rebuilt.getWorldMatrix().getTranslation().asArray()).toEqual([2, 1, 0]);
+    expect(rebuilt.getWorldMatrix().m[5]).toBe(2);
+    layer.dispose();
+  });
+
   it("rebuilds a slot visual when assignMesh arrives after the first snapshot", () => {
     const handle = createTestEngine();
     handles.push(handle);
@@ -2356,6 +2429,36 @@ describe("createPlayMesh", () => {
     expect(scene.meshes.length).toBe(count);
     apply(3, [1, 2]);
     expect(leftover.isDisposed()).toBe(true);
+    overlay.dispose();
+  });
+
+  it("keeps the world visual of a slot that leaves the overlay, while other overlay slots remain and once none do", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene, engine } = handle;
+    const overlay = new Scene(engine);
+    const binding = createSnapshotSceneBinding();
+    for (const slotId of [1, 2]) binding.meshKinds.set(slotId, "box");
+    binding.sceneForSlot = () => overlay;
+    const apply = (frameId: number, overlaySlotIds: number[]) => applySnapshotToScene(scene, binding, {
+      frameId, tickIndex: frameId, actorCount: 2, actors: [1, 2].map((slotId) => ({
+        slotId, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+        flags: SNAPSHOT_FLAG_VISIBLE | (overlaySlotIds.includes(slotId) ? SNAPSHOT_FLAG_OVERLAY : 0) })) });
+    apply(1, [1, 2]);
+    expect(binding.meshes.get(1)!.getScene()).toBe(overlay);
+    // Slot 1 returns to the world; its world visual is named like a leftover of the overlay slot it was.
+    apply(2, [2]);
+    const world1 = binding.meshes.get(1)!;
+    expect(world1.getScene()).toBe(scene);
+    expect(world1.isDisposed()).toBe(false);
+    // A later pass with nothing moved keeps it too.
+    apply(3, [2]);
+    expect(world1.isDisposed()).toBe(false);
+    apply(4, []);
+    const world2 = binding.meshes.get(2)!;
+    expect(world2.getScene()).toBe(scene);
+    expect([world1, world2].map((mesh) => mesh.isDisposed())).toEqual([false, false]);
+    expect(binding.meshes.get(1)).toBe(world1);
     overlay.dispose();
   });
 

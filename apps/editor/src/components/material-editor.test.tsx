@@ -55,6 +55,8 @@ let assetRegistry: AssetRegistry;
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "material:assets/Rock.material.hasset" }),
+  // The Preview window's visibility check: outside a workspace it counts as shown.
+  useOptionalDocumentWorkspace: () => null,
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -85,6 +87,7 @@ vi.mock("../context/material-editing-context", () => ({
     focusNode: harness.focusNode,
     requestRender: harness.requestRender,
     attachPreviewCanvas: vi.fn(),
+    setPreviewShown: vi.fn(),
     previewZoomDrive: () => harness.zoomDrive,
     frameBudgetMs: 1000 / 60,
     previewNode: harness.previewNode,

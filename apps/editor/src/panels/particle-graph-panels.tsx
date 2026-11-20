@@ -102,6 +102,7 @@ import { useRevealResultWindow } from "../lib/use-reveal-result-window";
 import { primaryDockPanel } from "../shell/window-catalog";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { useSpawnPreviewEmitters } from "../lib/use-spawn-preview-emitters";
+import { usePreviewLoopActive } from "../lib/preview-loop";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
 import { newParticleParameterId, particleParameterValueRow } from "../lib/particle-parameter-rows";
@@ -1100,11 +1101,14 @@ export function ParticleGraphPreview({
   errorCount,
   onChange,
   onBuildDiagnostics,
+  active = true,
 }: {
   document: ParticleGraphDocument;
   previewDocument: ParticleGraphDocument | null;
   errorCount: number;
   onChange: Commit;
+  /** Whether the preview is on screen; its canvas requests no frames otherwise. */
+  active?: boolean;
   /** The running build's service diagnostics and the library that build ran. */
   onBuildDiagnostics?: (
     diagnostics: readonly ParticleGraphBuildDiagnostic[],
@@ -1130,6 +1134,7 @@ export function ParticleGraphPreview({
             testId="particle-graph-preview-canvas"
             onPickMaterial={() => setPicking(true)}
             onDiagnostics={onBuildDiagnostics}
+            active={active}
           />
         ) : (
           <ParticlePreviewSurface
@@ -1401,8 +1406,8 @@ export function ParticleGraphCanvasPanel(_props: IDockviewPanelProps) {
   );
 }
 
-export function ParticleGraphPreviewPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function ParticleGraphPreviewPanel(props: IDockviewPanelProps) {
+  const active = usePreviewLoopActive(props.api);
   const editing = useParticleGraphEditing();
   const { reportBuildDiagnostics } = editing;
   // Tag each report with the build that produced it, so a late report from the
@@ -1422,6 +1427,7 @@ export function ParticleGraphPreviewPanel(_props: IDockviewPanelProps) {
         errorCount={editing.errorCount}
         onChange={editing.commit}
         onBuildDiagnostics={onBuildDiagnostics}
+        active={active}
       />
     </PanelFrame>
   );

@@ -25,6 +25,7 @@ import { useProjectState } from "../context/document-context";
 import type { AnimationPreviewClock } from "../lib/animation-preview-clock";
 import { useModelSlotMaterials } from "../lib/use-model-slot-materials";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
+import { createPreviewFrameLoop, type PreviewFrameLoop } from "../lib/preview-loop";
 
 /** The loaded clip: its length in its file's frames and, at the file's frame rate, in ms. */
 export type AnimationPreviewClip = { frames: number; durationMs: number };
@@ -49,6 +50,7 @@ export function AnimationPreviewCanvas({
   sourceClipBytes = null,
   onBonesOnlyChange,
   onClip,
+  active = true,
 }: {
   sourceBytes: Uint8Array;
   /** The Model's slots, drawn with their Materials. */
@@ -62,8 +64,13 @@ export function AnimationPreviewCanvas({
   onBonesOnlyChange?: (bonesOnly: boolean) => void;
   /** The loaded clip; null while none is loaded. */
   onClip?: (clip: AnimationPreviewClip | null) => void;
+  /** Whether the preview is on screen (`usePreviewLoopActive`); it requests no frames otherwise. */
+  active?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const loopRef = useRef<PreviewFrameLoop | null>(null);
   const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
   const zoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const play = useOptionalPlay();
@@ -114,7 +121,7 @@ export function AnimationPreviewCanvas({
     let sourceLoaded: { dispose: () => void; animationGroups: AnimationGroup[] } | null =
       null;
     let stopRestoreWatch: (() => void) | null = null;
-    const raf = { id: 0 };
+    let loop: PreviewFrameLoop | null = null;
     const overlay = watchBlockingEditorOverlay();
     void (async () => {
       try {
@@ -178,21 +185,21 @@ export function AnimationPreviewCanvas({
         setBonesOnly(!loaded.hasMesh);
         onBonesOnlyChangeRef.current?.(!loaded.hasMesh);
         setPreviewGeneration((value) => value + 1);
-        // Each frame poses the clip at the clock's playhead when it moved, then redraws.
+        // Each frame poses the clip at the clock's playhead when it moved, then redraws. The clock
+        // owns time, so a paused loop resumes at the playhead it holds.
         let applied = Number.NaN;
-        const tick = () => {
-          if (cancelled) return;
+        const view = presenter;
+        loop = loopRef.current = createPreviewFrameLoop(() => {
           const at = clockRef.current.normalised();
           if (clip && rig && at !== applied) {
             applied = at;
             applyPoseClip(rig, clip, clip.from + at * (clip.to - clip.from));
-            presenter?.present({ force: true });
+            view.present({ force: true });
           } else {
-            presenter?.present();
+            view.present();
           }
-          raf.id = window.requestAnimationFrame(tick);
-        };
-        raf.id = window.requestAnimationFrame(tick);
+        }, () => view.present({ force: true }));
+        loop.setActive(activeRef.current);
       } catch (error) {
         console.warn("[render] Animation preview failed", error);
         stopRestoreWatch?.();
@@ -211,7 +218,8 @@ export function AnimationPreviewCanvas({
     })();
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(raf.id);
+      loop?.dispose();
+      if (loopRef.current === loop) loopRef.current = null;
       overlay.dispose();
       setClipLoaded(false);
       bonesRef.current?.dispose();
@@ -229,6 +237,8 @@ export function AnimationPreviewCanvas({
       presenterRef.current = null;
     };
   }, [clipName, engine, sourceBytes, sourceClipBytes, releaseMaterials]);
+
+  useEffect(() => loopRef.current?.setActive(active), [active]);
 
   useEffect(() => {
     const host = hostRef.current;

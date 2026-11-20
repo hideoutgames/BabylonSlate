@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { ComponentProps } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
@@ -234,6 +234,41 @@ describe("Particle preview recovery", () => {
     overlay.removeAttribute("data-open");
     overlay.setAttribute("data-closed", "");
     await waitFor(() => expect(suspended()).toBe(false));
+  });
+
+  it("requests no frames while inactive, and draws a forced frame once active again", async () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 1;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(nextFrame, callback);
+      return nextFrame++;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+    onTestFinished(() => { vi.unstubAllGlobals(); });
+    const library = libraryFor(withMaterial);
+    const at = (active: boolean) => (
+      <ParticlePreviewCanvas library={library} systemGuid="preview-sys" testId="particle-canvas" active={active} />
+    );
+    const view = render(at(false));
+    await screen.findByTestId("particle-preview-restart");
+    const presenter = harness.presenters.at(-1)!;
+    expect(frames.size).toBe(0);
+
+    presenter.present.mockClear();
+    view.rerender(at(true));
+    // A settled frame does not redraw by itself, so showing the preview forces one.
+    expect(presenter.present).toHaveBeenCalledWith({ force: true });
+    expect(frames.size).toBe(1);
+    act(() => {
+      const queued = [...frames.values()];
+      frames.clear();
+      for (const callback of queued) callback(0);
+    });
+    expect(presenter.present).toHaveBeenLastCalledWith();
+    expect(frames.size).toBe(1);
+
+    view.rerender(at(false));
+    expect(frames.size).toBe(0);
   });
 
   it("idles once the service needs no frames and draws one more for changes it cannot signal", async () => {

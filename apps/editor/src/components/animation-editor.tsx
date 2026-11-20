@@ -45,7 +45,7 @@ import { PlaybackScrubber, PlaybackSpeedSelect } from "./playback-controls";
 import { ModelSourceReadError } from "./model-editor";
 import { asRecord } from "../lib/as-record";
 import { AnimationPreviewClock, animationPreviewFrameAt } from "../lib/animation-preview-clock";
-import { useDockPanelShown } from "../lib/use-dock-panel-shown";
+import { usePreviewLoopActive } from "../lib/preview-loop";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
 import { animationRootMotionFrom } from "../lib/animation-root-motion";
 
@@ -56,7 +56,7 @@ function skeletonAttachPointLists(payload: unknown): { bones: string[]; sockets:
 }
 
 export function AnimationPreviewPanel(props: IDockviewPanelProps) {
-  const shown = useDockPanelShown(props.api);
+  const active = usePreviewLoopActive(props.api);
   const { documentId } = useDocumentWorkspace();
   const { assetRegistry } = useRegistryState();
   const doc = useOpenDocument(documentId);
@@ -97,7 +97,7 @@ export function AnimationPreviewPanel(props: IDockviewPanelProps) {
         skeletonKind={skeletonKind}
         showBones={showBones}
         onShowBonesChange={setShowBones}
-        active={shown}
+        active={active}
       />
     </PanelFrame>
   );
@@ -211,7 +211,7 @@ export function AnimationPreview({
   skeletonKind?: SkeletonKind | null;
   showBones?: boolean;
   onShowBonesChange?: (value: boolean) => void;
-  /** Whether the preview is on screen; time advances only then. */
+  /** Whether the preview is on screen (`usePreviewLoopActive`); time advances and frames draw only then. */
   active?: boolean;
 }) {
   // A Model with nothing to draw (an animation library) always shows its bones.
@@ -278,6 +278,7 @@ export function AnimationPreview({
           showBones={showBones}
           onBonesOnlyChange={setBonesOnly}
           onClip={setClip}
+          active={active}
           sourceClipBytes={
             payload.sourceAnimationGuid ? sourceClipBytes : null
           }
