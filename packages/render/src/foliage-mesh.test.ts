@@ -133,14 +133,14 @@ it("keeps an unchanged foliage visual across applies and rebuilds it when its pr
 
 it("distance-culls foliage cells, drops distant shadows, and sets dither fade bands scaled by lodDistanceScale", async () => {
   const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
-  const { applyRenderSettings } = await import("./render-settings");
+  const { updateSceneRenderingSettings } = await import("./render-settings");
   const { updateFoliageDistances } = await import("./foliage-mesh");
   const { engine, scene } = createTestEngine();
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   const camera = new FreeCamera("cam", new Vector3(0, 2, 0), scene);
   scene.activeCamera = camera;
   // Low quality uses lodDistanceScale = 0.75.
-  applyRenderSettings(scene, { quality: { level: "low", custom: {} } });
+  updateSceneRenderingSettings(scene, { project: { quality: { level: "low", custom: {} } } });
 
   const assets = { modelSources: new Map([["grass", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) };
   const root = createFoliageMesh(scene, "meadow", {

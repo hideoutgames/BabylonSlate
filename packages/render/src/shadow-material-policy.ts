@@ -13,6 +13,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { FoliageFadePlugin } from "./foliage-fade";
 import { TextureQualityPlugin } from "./texture-quality";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
 import { hasMeshLatticeDeformer, isCageOnlyShadowWrapper } from "./lattice-deformer-binding";
@@ -37,7 +38,7 @@ export function registerCacheableShadowMaterial(material: NodeMaterial): void {
   });
 }
 
-// Installed Babylon 9.29's native plugins, Slate's mip bias and Standard fog change
+// Installed Babylon 9.29's native plugins, Slate's mip bias, foliage fade and Standard fog change
 // surface shading, not vertices. Alpha coverage is rejected separately below.
 // Exact constructors reject derived/custom plugins even when they use a native name.
 const nativePlugins = new Set<unknown>([
@@ -48,6 +49,7 @@ const nativePlugins = new Set<unknown>([
   PBRIridescenceConfiguration,
   PBRSheenConfiguration,
   PBRSubSurfaceConfiguration,
+  FoliageFadePlugin,
   TextureQualityPlugin,
   LatticeDeformerPlugin,
 ]);
