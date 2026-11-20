@@ -590,6 +590,9 @@ function measuredPinOffsets(
   return offsets;
 }
 
+/** Client px between the points a Cut Links drag tests along its path: under a wire's hit width. */
+const CUT_SWIPE_STEP_PX = 4;
+
 /** What a Cut Links click lands on: a wire, a pin, or a node (only a Reroute knot is cut). */
 type CutTarget =
   | { kind: "edge"; edgeId: string }
@@ -1391,6 +1394,7 @@ function GraphEditorCanvas({
   const cutTool = cutToolOn && !readOnly && !hiddenToolbar.has("cutLinks");
   if (cutToolOn && !cutTool) setCutToolOn(false);
   const cutToolRef = useRef(cutTool);
+  const cutTrailRef = useRef<SVGPolylineElement | null>(null);
   const cutOneShotRef = useRef(interactions.cutToolOneShot === true);
   const edgeBreaksAtPinRef = useRef(edgeBreaksAtPin);
   const rerouteRef = useRef(reroute);
@@ -3052,27 +3056,34 @@ function GraphEditorCanvas({
     );
   }, []);
 
-  // Cut Links on a tap: a wire, every wire on a pin, or a Reroute knot with its wires, as one
-  // graph change. One Use turns the tool off after a tap that removed something.
-  const cutAt = useCallback(
-    (target: CutTarget): boolean => {
+  // Cut Links: wires, every wire on a pin, and Reroute knots with their wires, as one graph
+  // change. One Use turns the tool off after a cut that removed something.
+  const cutTargets = useCallback(
+    (targets: readonly CutTarget[]): boolean => {
       const { nodes: currentNodes } = graphStateRef.current;
-      let removed = false;
-      if (target.kind === "edge") {
-        removed = removeGraphElements(new Set(), new Set([target.edgeId]));
-      } else if (target.kind === "pin") {
-        removed = removeGraphElements(new Set(), pinLinkIds(target.nodeId, target.pinId));
-      } else if (isRerouteNodeData(currentNodes.find((node) => node.id === target.nodeId)?.data)) {
-        removed = removeGraphElements(new Set([target.nodeId]), new Set());
+      const nodeIds = new Set<string>();
+      const edgeIds = new Set<string>();
+      for (const target of targets) {
+        if (target.kind === "edge") {
+          edgeIds.add(target.edgeId);
+        } else if (target.kind === "pin") {
+          for (const id of pinLinkIds(target.nodeId, target.pinId)) edgeIds.add(id);
+        } else if (isRerouteNodeData(currentNodes.find((node) => node.id === target.nodeId)?.data)) {
+          nodeIds.add(target.nodeId);
+        }
       }
+      const removed = removeGraphElements(nodeIds, edgeIds);
       if (removed && cutOneShotRef.current) setCutToolOn(false);
       return removed;
     },
     [pinLinkIds, removeGraphElements],
   );
+  const cutAt = useCallback((target: CutTarget): boolean => cutTargets([target]), [cutTargets]);
+  const cutTargetsRef = useRef(cutTargets);
   const cutAtRef = useRef(cutAt);
   useLayoutEffect(() => {
     cutAtRef.current = cutAt;
+    cutTargetsRef.current = cutTargets;
   });
 
   // While Cut Links is on, a click on a wire, a pin or a knot cuts instead of selecting, and a
@@ -3704,11 +3715,96 @@ function GraphEditorCanvas({
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
+    // With Cut Links on, the held drag is a blade: what its path crosses is marked and cut as
+    // one graph change on release. Everything is imperative, so the drag renders nothing.
+    let swipe: {
+      last: { x: number; y: number };
+      trail: string[];
+      targets: Map<string, CutTarget>;
+      marked: Element[];
+    } | null = null;
+    const endSwipe = () => {
+      if (!swipe) return;
+      for (const element of swipe.marked) element.removeAttribute("data-cut-pending");
+      swipe = null;
+      const trail = cutTrailRef.current;
+      trail?.setAttribute("points", "");
+      trail?.closest("div")?.setAttribute("hidden", "");
+    };
+    const swipeHit = (x: number, y: number) => {
+      if (!swipe || typeof document.elementFromPoint !== "function") return;
+      const element = document.elementFromPoint(x, y);
+      if (!element || !wrapper.contains(element)) return;
+      const target = cutTargetOf(element);
+      if (!target) return;
+      if (target.kind === "node") {
+        const node = graphStateRef.current.nodes.find((entry) => entry.id === target.nodeId);
+        if (!isRerouteNodeData(node?.data)) return;
+      }
+      const key =
+        target.kind === "edge"
+          ? `edge:${target.edgeId}`
+          : target.kind === "pin"
+            ? `pin:${target.nodeId}:${target.pinId}`
+            : `node:${target.nodeId}`;
+      if (swipe.targets.has(key)) return;
+      swipe.targets.set(key, target);
+      const marked =
+        target.kind === "edge"
+          ? element.closest("[data-cut-edge-id], .react-flow__edge")
+          : target.kind === "pin"
+            ? element.closest(".react-flow__handle")
+            : element.closest(".react-flow__node");
+      if (marked) {
+        marked.setAttribute("data-cut-pending", "");
+        swipe.marked.push(marked);
+      }
+    };
+    const swipeTo = (point: { x: number; y: number }) => {
+      if (!swipe) return;
+      const from = swipe.last;
+      const steps = Math.max(1, Math.ceil(Math.hypot(point.x - from.x, point.y - from.y) / CUT_SWIPE_STEP_PX));
+      for (let step = 1; step <= steps; step += 1) {
+        const t = step / steps;
+        swipeHit(from.x + (point.x - from.x) * t, from.y + (point.y - from.y) * t);
+      }
+      swipe.last = point;
+      const origin = wrapper.getBoundingClientRect();
+      swipe.trail.push(`${point.x - origin.left},${point.y - origin.top}`);
+      const trail = cutTrailRef.current;
+      trail?.setAttribute("points", swipe.trail.join(" "));
+      trail?.closest("div")?.removeAttribute("hidden");
+    };
     const handle = attachGraphPaneMarquee(wrapper, {
       onArmedChange: setMarqueeArmed,
-      onMarqueeRect: setMarqueeScreen,
+      onMarqueePoint: (point, startClient) => {
+        if (!swipe) {
+          if (!cutToolRef.current) return;
+          const origin = wrapper.getBoundingClientRect();
+          swipe = {
+            last: startClient,
+            trail: [`${startClient.x - origin.left},${startClient.y - origin.top}`],
+            targets: new Map(),
+            marked: [],
+          };
+        }
+        swipeTo(point);
+      },
+      onMarqueeRect: (rect) => {
+        if (rect && swipe) return;
+        // A drag that ends without a release (a second finger) cuts nothing.
+        if (!rect) endSwipe();
+        setMarqueeScreen(rect);
+      },
       onMarqueeEnd: (startClient, endClient) => {
         skipPaneClickRef.current = true;
+        if (swipe) {
+          swipeTo(endClient);
+          const targets = [...swipe.targets.values()];
+          endSwipe();
+          cutTargetsRef.current(targets);
+          return;
+        }
         const from = screenToFlowPositionRef.current(startClient);
         const to = screenToFlowPositionRef.current(endClient);
         const ids = new Set(
@@ -4290,6 +4386,26 @@ function GraphEditorCanvas({
             >
               <AlertDescription>{notice.message}</AlertDescription>
             </Alert>
+          </div>
+        )}
+        {readOnly || hiddenToolbar.has("cutLinks") ? null : (
+          <div
+            data-testid="graph-cut-trail"
+            className="pointer-events-none absolute inset-0 z-30 overflow-hidden"
+            aria-hidden
+            hidden
+          >
+            <svg className="size-full">
+              <polyline
+                ref={cutTrailRef}
+                fill="none"
+                stroke="var(--destructive)"
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
         )}
         {marqueeScreen ? (

@@ -85,8 +85,9 @@ Select one or more nodes and press **Format** in the graph toolbar to lay out wh
 - Click or tap a wire to remove it.
 - Click or tap a pin to remove every wire on it.
 - Click or tap a Reroute knot to delete it with its wires.
+- Hold empty space, then drag across wires, pins and Reroute knots to cut everything the drag crosses when you release. This replaces the selection rectangle while the tool is on. The drag draws a dashed red line, and one **Undo** restores everything it cut.
 
-What a click would remove turns red as you hover it. Other nodes and the canvas work as usual, so you can still select, move and pan. Press **Cut Links** again, or <kbd>Esc</kbd>, to turn the tool off; its shortcut is <kbd>Alt</kbd>+<kbd>X</kbd>. To have it turn off after each cut, set **Cut Links Tool** to **One Use** in **Engine Settings > Graph**.
+What a click would remove turns red as you hover it, and so does everything a drag has crossed. Other nodes and the canvas work as usual, so you can still select, move and pan. Press **Cut Links** again, or <kbd>Esc</kbd>, to turn the tool off; its shortcut is <kbd>Alt</kbd>+<kbd>X</kbd>. To have it turn off after each cut, set **Cut Links Tool** to **One Use** in **Engine Settings > Graph**.
 
 **Engine Settings > Graph** controls **Add Node History**, **Read-Only Pin Defaults**, **Cut Links Tool** and **Graph Default Zoom**. **Engine Settings > Accessibility** controls the **Node Connection Assistant** (suggests wires when you move a node near compatible pins), its **Connection Distance (Pixels)** (48 by default), **Shake Nodes To Disconnect**, **Snapped Nodes**, and pin options such as **Large Pins** and **Pin Type Letters**; see [Accessibility](../editor/settings.md#accessibility). Turning **Add Node History** off restores the default order and stops learning without deleting what was learned; **Clear Add Node History** deletes it.
 

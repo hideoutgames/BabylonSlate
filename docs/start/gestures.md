@@ -42,7 +42,7 @@ Class, Material, Animation Graph, Behaviour Tree and Particle Graph editors shar
 | Double-tap a wire | Split it with a **Reroute** knot, in graphs that have them. |
 | Double-tap a node's title | Rename it in place, where the node can be renamed. |
 | Tap a wire, a pin or a Reroute knot with **Cut Links** on | Remove the wire, every wire on the pin, or the knot and its wires. |
-| Hold empty space, then drag | Draw a selection rectangle. |
+| Hold empty space, then drag | Draw a selection rectangle. With **Cut Links** on, cut every wire, pin and Reroute knot the drag crosses. |
 | Tap a pin, then a pin on the other side | Connect them, when **Tap To Connect Pins** is on in **Engine Settings > Accessibility**. Either side can go first; tap the first pin again, or anything else, to cancel. Panning and zooming keep it. |
 | Drag from a pin | Draw a wire. Release over empty space to open Add Node and connect the new node. |
 | Tap empty space | Clear the selection. |

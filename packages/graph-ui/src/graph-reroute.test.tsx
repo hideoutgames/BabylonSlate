@@ -1,13 +1,34 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DRAG_ARM_MS } from "@haptic/editor-kit";
 import { GraphEditor, type GraphEditorProps } from "./graph-editor";
 import type { GraphDocument, PaletteNode, SerializedPin } from "./graph-types";
 import { GraphInteractionSettingsContext, type GraphInteractionSettings } from "./graph-interaction-settings";
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
+
+function pointer(target: Element, type: "pointerdown" | "pointermove" | "pointerup", clientX: number, clientY: number, pointerId = 1): void {
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY });
+  Object.defineProperty(event, "pointerId", { value: pointerId });
+  target.dispatchEvent(event);
+}
+
+/** jsdom has no hit testing: each element covers 4px either side of its x, as a real drag would cross it. */
+function stubElementFromPoint(hits: ReadonlyArray<readonly [x: number, element: Element]>, otherwise: Element): () => void {
+  const previous = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: (x: number) => hits.find(([at]) => Math.abs(x - at) <= 4)?.[1] ?? otherwise,
+  });
+  return () => {
+    if (previous) Object.defineProperty(document, "elementFromPoint", previous);
+    else delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+  };
+}
 
 /** Nodes measure 180 × 80, so React Flow mounts their handles and draws wires; jsdom has no layout. */
 function stubMeasuredGraphLayout(): () => void {
@@ -543,6 +564,76 @@ describe("Cut Links", () => {
       expect(onChange).toHaveBeenCalledTimes(2);
     } finally {
       restore();
+    }
+  });
+
+  it("cuts everything a held drag crosses as one change, in place of the selection rectangle", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    let restoreHits = () => {};
+    try {
+      const onChange = vi.fn();
+      const onSelectionChange = vi.fn();
+      const { container, getByTestId, queryByTestId } = renderGraph({ initialGraph: wiredGraph(), onChange, onSelectionChange });
+      const dataWire = await findWire(container, DATA_WIRE);
+      const posePin = container.querySelector('.react-flow__node[data-id="output"] .react-flow__handle[data-handleid="pose"]')!;
+      const node = container.querySelector('.react-flow__node[data-id="log"]')!;
+      const pane = container.querySelector(".react-flow__pane")!;
+      // The drag runs from x 20 to 300: a wire at 100, a pin at 200, an ordinary node at 260.
+      restoreHits = stubElementFromPoint([[100, dataWire], [200, posePin], [260, node]], pane);
+      toggle(getByTestId);
+      vi.useFakeTimers();
+      act(() => {
+        pointer(pane, "pointerdown", 20, 20);
+        vi.advanceTimersByTime(DRAG_ARM_MS);
+      });
+      act(() => pointer(pane, "pointermove", 150, 20));
+      expect(queryByTestId("graph-marquee")).toBeNull();
+      expect(getByTestId("graph-cut-trail").hasAttribute("hidden")).toBe(false);
+      expect(dataWire.hasAttribute("data-cut-pending")).toBe(true);
+      expect(onChange).not.toHaveBeenCalled();
+      act(() => {
+        pointer(pane, "pointermove", 300, 20);
+        pointer(pane, "pointerup", 300, 20);
+      });
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(edgeEnds(lastGraph(onChange))).toEqual(["make.then>log.exec"]);
+      expect(lastGraph(onChange).nodes).toHaveLength(4);
+      expect(getByTestId("graph-cut-trail").hasAttribute("hidden")).toBe(true);
+      expect(container.querySelector("[data-cut-pending]")).toBeNull();
+      expect(onSelectionChange.mock.calls.every(([ids]) => (ids as string[]).length === 0)).toBe(true);
+    } finally {
+      restoreHits();
+      restoreLayout();
+    }
+  });
+
+  it("cuts nothing when a second finger ends the held drag", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    let restoreHits = () => {};
+    try {
+      const onChange = vi.fn();
+      const { container, getByTestId } = renderGraph({ initialGraph: wiredGraph(), onChange });
+      const dataWire = await findWire(container, DATA_WIRE);
+      const pane = container.querySelector(".react-flow__pane")!;
+      restoreHits = stubElementFromPoint([[100, dataWire]], pane);
+      toggle(getByTestId);
+      vi.useFakeTimers();
+      act(() => {
+        pointer(pane, "pointerdown", 20, 20);
+        vi.advanceTimersByTime(DRAG_ARM_MS);
+      });
+      act(() => pointer(pane, "pointermove", 150, 20));
+      expect(dataWire.hasAttribute("data-cut-pending")).toBe(true);
+      act(() => {
+        pointer(pane, "pointerdown", 200, 200, 2);
+        pointer(pane, "pointerup", 150, 20);
+      });
+      expect(onChange).not.toHaveBeenCalled();
+      expect(dataWire.hasAttribute("data-cut-pending")).toBe(false);
+      expect(getByTestId("graph-cut-trail").hasAttribute("hidden")).toBe(true);
+    } finally {
+      restoreHits();
+      restoreLayout();
     }
   });
 
