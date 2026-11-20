@@ -32,6 +32,9 @@ import { ownedActorProbeScript } from "./scene-scripts";
 import { FEATURE_TEST_EASING_CURVE_CLASS, featureTestCameraShakes } from "./scripting";
 import { withFeatureTestHudPulse } from "./timeline";
 
+/** The Entry ID of the Project Settings Scene Layer post-processing pass the HUD layers share. */
+export const FEATURE_TEST_SCENE_LAYER_POST_PROCESS_ENTRY_ID = "ft-scene-layer-post-grade";
+
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
 const FEATURE_TEST_SCENE_LAYERS_FOLDER = "SceneLayers";
 
@@ -204,10 +207,17 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     .list()
     .find((asset) => asset.rootId === "project" && asset.header.type === "InputAction" && asset.header.name === "Confirm");
   const activateInputGuid = requireRef(confirm?.header.guid, "the Basic 3D Confirm Input Action");
+  // Scene Layer post-processing: every layer draws into one target that this pass grades before it is blended over the
+  // world. A slight desaturation without the vignette, which would fade the HUD's edges.
+  const layerGrade = requireRef(ctx.assets.materials.postProcess, "the post-process Material");
   // Enter / Face Button Right activate HUD focus; Space stays Jump.
   ctx.patchSettings((settings) => ({
     ...settings,
     focusNavigation: { ...settings.focusNavigation, enabled: true, activateInputGuid, wrap: true },
+    sceneLayerPostProcessStack: [{
+      id: FEATURE_TEST_SCENE_LAYER_POST_PROCESS_ENTRY_ID, materialGuid: layerGrade, enabled: true,
+      parameters: { Desaturation: { kind: "float", value: 0.15 }, Vignette: { kind: "float", value: 0 } },
+    }],
   }));
 }
 
