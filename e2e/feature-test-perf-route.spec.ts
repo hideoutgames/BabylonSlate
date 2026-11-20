@@ -480,8 +480,6 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (MIRROR_UNSHARED) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.unshareMirrorWork(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
-    // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
-    await runConsoleCommand(page, "quality resolution reset");
   }
   if (FRAMECAP) await runConsoleCommand(page, `framecap ${FRAMECAP}`);
   for (const command of COMMANDS) await runConsoleCommand(page, command);

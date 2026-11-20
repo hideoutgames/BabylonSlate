@@ -30,7 +30,7 @@ export function scalabilityGraphDefinitions(): { name: string; graph: LogicGraph
     graphCommand("qual_aa", [["scalability.setAntiAliasing", { "default:mode": "fxaa" }]]),
     graphCommand("qual_settings", [
       ["scalability.setResolution", { "default:width": 400, "default:height": 240 }],
-      ["scalability.setResolutionQuality", { "default:settings": { scale: 0.75, minScale: 0.75, dynamic: false, targetFps: 30 } }],
+      ["scalability.setResolutionQuality", { "default:settings": { scale: 0.75 } }],
       ["scalability.setFrameCap", { "default:fps": 24 }],
       ["scalability.setShadowsEnabled", { "default:enabled": false }],
       ["scalability.setShadowQuality", { "default:settings": { distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filter: "pcf", filterQuality: "low", softness: 0.08, autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 } }],

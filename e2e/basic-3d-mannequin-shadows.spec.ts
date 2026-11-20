@@ -44,7 +44,7 @@ test(`Basic 3D mannequin ${variant.mode} ${variant.profile} keeps shadows with c
   const initial = (await page.evaluate(() => window.__hapticViewportTest.shadowDiagnostics()))!;
   const settings: RenderShadingSettings = {
     mode: variant.mode, shadows: initial.requestedShadows,
-    quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
+    quality: normalizeRenderingQuality({ resolution: { scale: 1 } }),
     // The edge metric reads a shadowed pixel's remaining light as error; the template's Skybox lighting
     // fills shadows, so measure the sun's shadow geometry alone.
     environmentLighting: normalizeEnvironmentLightingSettings({ enabled: false }),

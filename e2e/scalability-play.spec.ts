@@ -33,7 +33,7 @@ test("saved Class scalability graphs compile and run with confirmed events in ed
   page.on("pageerror", (error) => errors.push(error.message));
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!)) as ProjectDocument;
-  project.settings.render = normalizeRenderProjectSettings({ mode: "cel", shadows: { enabled: false }, quality: { resolution: { dynamic: false, scale: 0.8, minScale: 0.8 }, postprocessing: { antiAliasing: "fxaa" } }, customResolution: true, width: 480, height: 270, blackBars: true });
+  project.settings.render = normalizeRenderProjectSettings({ mode: "cel", shadows: { enabled: false }, quality: { resolution: { scale: 0.8 }, postprocessing: { antiAliasing: "fxaa" } }, customResolution: true, width: 480, height: 270, blackBars: true });
   project.settings.playFrameCap = 30;
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const version = createDefaultMigrationRegistry().currentVersion("Class");

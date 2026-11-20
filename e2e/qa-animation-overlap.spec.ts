@@ -245,29 +245,6 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
     ),
   ).toBe(true);
   await openMainScene(page);
-  // H16 verifies animation poses, not the resolution valve: on SwiftShader the
-  // presentation-pressure valve eventually steps the raster down mid-session
-  // (CI: 1024x576 at the baseline, 960x540 later), which changes the tan-pixel
-  // signature. Pin a fixed raster so the captures stay comparable.
-  await page.getByTestId("settings-menu").click();
-  await page.getByTestId("project-settings").click();
-  await page.getByTestId("settings-modal-category-rendering").click();
-  const scalability = page
-    .getByTestId("settings-modal")
-    .getByRole("button", { name: "Scalability", exact: true });
-  // Sub-categories start open; a collapse remembered on this device is reopened.
-  if ((await scalability.getAttribute("aria-expanded")) !== "true") await scalability.click();
-  // The label also targets the hidden native checkbox; address the switch role.
-  const dynamicResolution = page.getByRole("switch", {
-    name: "Dynamic Resolution",
-    exact: true,
-  });
-  if ((await dynamicResolution.getAttribute("aria-checked")) !== "false")
-    await dynamicResolution.click();
-  await page
-    .getByTestId("settings-modal")
-    .getByRole("button", { name: "Done", exact: true })
-    .click();
   await clickPlayAndWaitForOverlay(page);
   await page.evaluate(() =>
     (
@@ -333,8 +310,8 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
     });
     throw error;
   }
-  // With the valve pinned the raster cannot drift between captures; a changed
-  // level means the project setting never reached the Play session.
+  // The raster's level is static: a changed level between captures would
+  // confound the pixel signature.
   const finalDebug = await playDebugReadout(page);
   expect(finalDebug.rendering?.scalingLevel).toBe(
     idleDebug.rendering?.scalingLevel,

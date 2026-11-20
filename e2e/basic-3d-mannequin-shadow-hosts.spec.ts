@@ -94,7 +94,7 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
     await dilation(0);
     const initial = (await diagnostics(canvas, host))!;
     for (const mode of ["pbr", "cel"] as const) {
-      const render: RenderShadingSettings = { mode, shadows: initial.requestedShadows, quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }) };
+      const render: RenderShadingSettings = { mode, shadows: initial.requestedShadows, quality: normalizeRenderingQuality({ resolution: { scale: 1 } }) };
       await settings(canvas, host, render);
       const state = (await diagnostics(canvas, host))!;
       const size = await canvas.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));

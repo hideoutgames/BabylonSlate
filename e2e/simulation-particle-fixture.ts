@@ -50,7 +50,7 @@ export async function simulationParticleProject() {
   ];
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
   // Pixel hashes compare redraws: a fixed render resolution, so slow software-GL frames (MSAA) never rescale one.
-  project.settings.render.quality = { ...project.settings.render.quality, resolution: { scale: 1, dynamic: false, minScale: 1, targetFps: 60 } };
+  project.settings.render.quality = { ...project.settings.render.quality, resolution: { scale: 1 } };
   // The pixel checks classify pure red particles: no tone curve, which rolls overlapping additive particles toward white.
   project.settings.render.effects = { ...project.settings.render.effects, colorPipeline: { mode: "legacyDisplay" }, toneMapping: "none" };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
