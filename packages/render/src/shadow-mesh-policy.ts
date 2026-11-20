@@ -114,12 +114,24 @@ export function casterWithinShadowRange(mesh: AbstractMesh, position: Vector3, r
  */
 export type ShadowCone = { x: number; y: number; z: number; cos: number; sin: number };
 
+const sharedCone: ShadowCone = { x: 0, y: 0, z: 1, cos: 0, sin: 1 };
+
+/**
+ * Asked per spot light each frame, so every call answers with the same cone, which the next call rewrites: read it
+ * before asking again.
+ */
 export function spotShadowCone(direction: Vector3, fov: number): ShadowCone | null {
+  const cone = sharedCone;
   const length = direction.length();
   // The square frustum's corners lie atan(√2 tan(fov / 2)) off its axis.
   const half = Math.atan(Math.SQRT2 * Math.tan(fov / 2));
   if (!(length > 0) || !(fov > 0) || !(fov < Math.PI) || !(half < Math.PI / 2)) return null;
-  return { x: direction.x / length, y: direction.y / length, z: direction.z / length, cos: Math.cos(half), sin: Math.sin(half) };
+  cone.x = direction.x / length;
+  cone.y = direction.y / length;
+  cone.z = direction.z / length;
+  cone.cos = Math.cos(half);
+  cone.sin = Math.sin(half);
+  return cone;
 }
 
 /**
