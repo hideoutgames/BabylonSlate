@@ -82,12 +82,12 @@ describe("audio payloads", () => {
     ).toBe("streamed");
 
     const shortClip = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00]);
-    const [shortImport] = await importAudio(shortClip, { fileName: "jump.mp3" });
+    const [shortImport] = await importAudio(shortClip, { fileName: "jump.mp3", existingGuids: new Set() });
     expect(normalizeAudioPayload(shortImport!.payload).playbackMode).toBe("decoded");
 
     const longMusic = new Uint8Array(AUDIO_AUTO_STREAM_MIN_BYTES);
     longMusic.set([0x49, 0x44, 0x33, 0x04]);
-    const [longImport] = await importAudio(longMusic, { fileName: "theme.mp3" });
+    const [longImport] = await importAudio(longMusic, { fileName: "theme.mp3", existingGuids: new Set() });
     expect(normalizeAudioPayload(longImport!.payload).playbackMode).toBe("streamed");
   });
 
