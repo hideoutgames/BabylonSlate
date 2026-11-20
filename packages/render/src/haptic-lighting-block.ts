@@ -452,3 +452,87 @@ export function followLightingDefines(material: NodeMaterial): void {
   listeners.add(listener);
   material.onDisposeObservable.addOnce(() => listeners.delete(listener));
 }
+
+export const HAPTIC_LIGHTING_UNIFORMS: readonly string[] = [
+  ...VECTOR4_UNIFORMS,
+  "hapticEnvironmentMatrix",
+  "hapticShadowReceiver",
+  ...CEL_UNIFORMS,
+];
+
+export const HAPTIC_LIGHTING_SAMPLERS: readonly string[] = [
+  "hapticEnvironmentSampler",
+  "hapticEnvironmentBrdfSampler",
+  "hapticAreaLtcSampler",
+  "hapticAreaEmissionSampler",
+  HAPTIC_SHADOW_ATLAS,
+  HAPTIC_SHADOW_ATLAS_DEPTH,
+];
+
+/**
+ * Bind Haptic's single light, cluster, shadow atlas, area-light, environment, and CEL uniforms
+ * onto a custom lit `Effect` (such as projected decals) so it matches surface shading with zero
+ * per-light shader defines.
+ */
+export function bindHapticLightingUniforms(
+  scene: Scene,
+  effect: Effect,
+  cel: boolean,
+  receiveShadows: boolean,
+): void {
+  effect.setTexture("hapticAreaLtcSampler", areaLightLtcTexture(scene));
+  effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
+  effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
+  if (!cel) {
+    plainDepthSampler(scene.getEngine());
+    effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS_DEPTH, shadowAtlasTexture(scene));
+  }
+  bindHapticLights(scene, effect);
+  bindHapticClusters(scene, effect);
+  effect.setFloat("hapticShadowReceiver", receiveShadows ? 1 : 0);
+  if (cel) {
+    bindCelSettings(effect, scene);
+    return;
+  }
+  effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
+  const environment = environmentCube(scene);
+  if (!environment) {
+    effect.setTexture("hapticEnvironmentSampler", environmentPlaceholder(scene));
+    effect.setFloat4("hapticEnvironment", 1, 0, 0, 0);
+    return;
+  }
+  effect.setTexture("hapticEnvironmentSampler", environment);
+  effect.setMatrix("hapticEnvironmentMatrix", environment.getReflectionTextureMatrix());
+  effect.setFloat4(
+    "hapticEnvironment",
+    environment.getSize().width,
+    environment.lodGenerationScale,
+    environment.lodGenerationOffset,
+    scene.iblIntensity * environment.level,
+  );
+  const box = environment as CubeTexture;
+  effect.setFloat4(
+    "hapticEnvironmentForm",
+    box.boundingBoxSize ? 1 : 0,
+    environment.coordinatesMode === Constants.TEXTURE_INVCUBIC_MODE ? -1 : 1,
+    (scene.useRightHandedSystem ? !environment.invertZ : environment.invertZ) ? -1 : 1,
+    environment.isRGBD ? 2 : environment.gammaSpace ? 1 : 0,
+  );
+  if (box.boundingBoxSize) {
+    const origin = scene.floatingOriginOffset;
+    effect.setFloat4(
+      "hapticEnvironmentBoxPosition",
+      box.boundingBoxPosition.x - origin.x,
+      box.boundingBoxPosition.y - origin.y,
+      box.boundingBoxPosition.z - origin.z,
+      0,
+    );
+    effect.setFloat4("hapticEnvironmentBoxSize", box.boundingBoxSize.x, box.boundingBoxSize.y, box.boundingBoxSize.z, 0);
+  }
+  const harmonics = renderingHarmonics(environment.sphericalPolynomial);
+  for (let index = 0; index < HAPTIC_IRRADIANCE_KEYS.length; index++) {
+    const value = harmonics?.[HAPTIC_IRRADIANCE_KEYS[index]!];
+    effect.setFloat4(HAPTIC_IRRADIANCE_UNIFORMS[index]!, value?.x ?? 0, value?.y ?? 0, value?.z ?? 0, 0);
+  }
+}
+

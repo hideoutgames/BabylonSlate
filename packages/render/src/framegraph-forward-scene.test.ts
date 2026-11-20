@@ -2454,3 +2454,48 @@ it("sizes every screen-space target of the world view from its render scale; onl
     graph.dispose();
   }
 });
+
+it("splits ForwardSceneFrameGraph for projected decals only while decals exist and allocates own sampleable targets", async () => {
+  const { DECAL_CLASS_ID, RENDER_QUALITY_PROFILES, decalBindings } = await import("@haptic/core");
+  const { clearDecals, upsertDecals } = await import("./decal-pass");
+  const { scene, camera } = host();
+  camera.position.set(0, 2, -10);
+  camera.setTarget(new Vector3(0, 0, 0));
+  updateSceneRenderingSettings(scene, {
+    effects: { ...DEFAULT_RENDER_EFFECTS, toneMapping: { ...DEFAULT_RENDER_EFFECTS.toneMapping, enabled: false } },
+    quality: {
+      ...RENDER_QUALITY_PROFILES.low,
+      postprocessing: { ...RENDER_QUALITY_PROFILES.low.postprocessing, antiAliasing: "off" },
+    },
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  const taskNames = () => (graph as unknown as { graph: FrameGraph }).graph.tasks.map((task) => task.name);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const baseTasks = taskNames();
+    expect(baseTasks).not.toContain("Decal split");
+    expect(baseTasks).not.toContain("Forward decals");
+    expect(baseTasks).not.toContain("Forward transparent");
+
+    const root = new TransformNode("decal-actor", scene);
+    upsertDecals(scene, "decal-actor", root, decalBindings([
+      { id: "d1", classId: DECAL_CLASS_ID, properties: { textureGuid: "scorch" } },
+    ]));
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const decalTasks = taskNames();
+    expect(decalTasks).toContain("Decal split");
+    expect(decalTasks).toContain("Forward decals");
+    expect(decalTasks).toContain("Forward transparent");
+    expect(decalTasks.indexOf("Forward objects")).toBeLessThan(decalTasks.indexOf("Forward decals"));
+    expect(decalTasks.indexOf("Forward decals")).toBeLessThan(decalTasks.indexOf("Forward transparent"));
+
+    clearDecals(scene);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const clearedTasks = taskNames();
+    expect(clearedTasks).not.toContain("Decal split");
+    expect(clearedTasks).not.toContain("Forward decals");
+  } finally {
+    graph.dispose();
+  }
+});
+

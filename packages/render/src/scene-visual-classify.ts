@@ -54,6 +54,7 @@ export const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "TimelineProxyShapeComponent",
   "WaterRemovalVolumeComponent",
   "FogVolumeComponent",
+  "DecalComponent",
   "ReflectionProbeComponent",
 ]);
 
@@ -291,7 +292,7 @@ export function needsOriginRoot(
     visuals.some((component) => component.classId === "CableComponent" || component.classId === MIRROR_CLASS_ID) ||
     visuals.some((component) => component.classId === "DynamicRuntimeMeshComponent") ||
     visuals.some((component) => waterKindForClass(component.classId) !== null || component.classId === "WaterRemovalVolumeComponent" || component.classId === "SplineComponent") ||
-    visuals.some((component) => component.classId === "FogVolumeComponent" || component.classId === "ReflectionProbeComponent") ||
+    visuals.some((component) => component.classId === "FogVolumeComponent" || component.classId === "DecalComponent" || component.classId === "ReflectionProbeComponent") ||
     visuals.some((component) => component.classId === "LandscapeComponent" || component.classId === "FoliageComponent") ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||

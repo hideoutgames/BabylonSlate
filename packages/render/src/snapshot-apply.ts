@@ -1,4 +1,5 @@
 import { setFogVolumesVisible } from "./fog-volumes";
+import { setDecalsVisible } from "./decal-pass";
 import { sampleSceneWaterFrame } from "./water-mesh";
 import { sampleCableFrame } from "./cable-mesh";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -162,6 +163,7 @@ export function retirePlaySlot(
   binding.outlines.delete(slotId);
   binding.deformers.delete(slotId);
   binding.fogVolumes.delete(slotId);
+  binding.decals.delete(slotId);
   binding.reflectionProbes.delete(slotId);
   binding.areaLights.get(slotId)?.dispose();
   binding.areaLights.delete(slotId);
@@ -236,6 +238,7 @@ export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
     ...binding.outlines.keys(),
     ...binding.deformers.keys(),
     ...binding.fogVolumes.keys(),
+    ...binding.decals.keys(),
     ...binding.reflectionProbes.keys(),
     ...binding.areaLights.keys(),
     ...binding.lights2D.keys(),
@@ -363,6 +366,7 @@ export function applySnapshotToScene(
   const unheldIllumination = unheldIlluminationSlots(binding);
   const hasUnheldIllumination = unheldIllumination.size > 0;
   const hasFogVolumes = binding.fogVolumes.size > 0;
+  const hasDecals = binding.decals.size > 0;
   const hasSlotLightGroups = binding.areaLights.size > 0 || binding.lights2D.size > 0 || binding.occluders2D.size > 0;
   for (let i = 0; i < count; i++) {
     const actor = snapshot.actors[i]!;
@@ -371,6 +375,9 @@ export function applySnapshotToScene(
     writeActorTransform(mesh, actor);
     const fogVolumes = hasFogVolumes ? binding.fogVolumes.get(actor.slotId) : undefined;
     if (fogVolumes) setFogVolumesVisible(scene, fogVolumes.actorId,
+      (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE);
+    const decals = hasDecals ? binding.decals.get(actor.slotId) : undefined;
+    if (decals) setDecalsVisible(scene, decals.actorId,
       (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE);
     if (hasSlotLightGroups) {
       binding.areaLights.get(actor.slotId)?.setWorld(mesh.getWorldMatrix());
@@ -502,6 +509,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.outlines.clear();
   binding.deformers.clear();
   binding.fogVolumes.clear();
+  binding.decals.clear();
   binding.reflectionProbes.clear();
   binding.onVisualChanged = undefined;
   disposePendingVisualReplacements(binding);

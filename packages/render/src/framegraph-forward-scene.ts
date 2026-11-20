@@ -21,6 +21,7 @@ import { endAlphaToCoverage, guardAlphaToCoverageBlending } from "./alpha-to-cov
 import { sceneMultisampleCount, sceneRenderingSettings, sceneWaterQualityRevision } from "./render-settings";
 import { isBuiltInWaterMesh } from "./water-mesh";
 import { WaterSceneCopyGraph, waterSceneCopyDemand } from "./water-scene-copy";
+import { DecalSplitGraph, FrameGraphDecalTask, sceneDecalHost, sceneHasDecals } from "./decal-pass";
 import { MultisamplePresentTask, presentsMultisampleByBlit } from "./multisample-present";
 import type { AttachedPostProcessStack, AttachPostProcessStackOptions } from "./post-process-material";
 import { Constants } from "@babylonjs/core/Engines/constants";
@@ -458,6 +459,10 @@ export class ForwardSceneFrameGraph {
   /** waterSceneCopyDemand when the graph was planned; -1 before any plan. */
   private preparedWaterDemand = -1;
   private water: WaterSceneCopyGraph | undefined;
+  /** sceneHasDecals when the graph was planned. */
+  private preparedDecalDemand = false;
+  private decalSplit: DecalSplitGraph | undefined;
+  private decalTask: FrameGraphDecalTask | undefined;
   /** Copy-sampling water draws only in the water split's pass: the camera and main object pass probes skip it. */
   private readonly skipCopyWater = (mesh: AbstractMesh): boolean => this.water?.drawsInCopyPass(mesh) === true;
   private retirement: Promise<void> | undefined;
@@ -1146,7 +1151,7 @@ export class ForwardSceneFrameGraph {
     // A settings change stales a prepared graph like a stack revision; with
     // no graph yet there is no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
-      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera))) {
+      (!this.graph || this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera) && this.decalMatches())) {
       // Outline membership or style alone: probe the outline task, not the scene.
       if (!this.graph || !this.outlineDirtyFlag) return true;
       if (!this.pending && this.outlineTask) {
@@ -1160,7 +1165,7 @@ export class ForwardSceneFrameGraph {
     if (
       this.graph && !this.pending &&
       this.preparedPostProcessRevision === this.postProcessRevision &&
-      this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera)
+      this.preparedEffectsKey === this.effectsKey(camera) && this.outlineMatches() && this.waterMatches(camera) && this.decalMatches()
     ) {
       this.assignCamera(camera);
       this.syncSceneInputs();
@@ -1312,7 +1317,7 @@ export class ForwardSceneFrameGraph {
     if (this.pending) return { path: "frameGraph", ready: false };
     if (!this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-      !outputCurrent)
+      !this.decalMatches() || !outputCurrent)
       return { path: "frameGraph", ready: false, preparationRequired: true };
     this.assignCamera(camera);
     this.syncSceneInputs();
@@ -1339,7 +1344,7 @@ export class ForwardSceneFrameGraph {
       (this.pending ||
       !this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
-      !outputCurrent
+      !this.decalMatches() || !outputCurrent
         ? "FrameGraph preparation is required."
         : undefined);
     if (this.graph && !outputCurrent) this.markReadinessDirty("output");
@@ -1568,6 +1573,7 @@ export class ForwardSceneFrameGraph {
       const renderSize = upscaledRenderSize(this.viewEffectsPlan(), viewSize.width, viewSize.height);
       if (this.preparedPostProcessRevision !== this.postProcessRevision ||
         this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
+        !this.decalMatches() ||
         this.outputColor !== output.color || this.outputDepth !== output.depth || this.preparedScale !== output.scale ||
         (this.postProcessGraph || this.effectsGraph || this.outlineTask || this.ownScene) &&
           (this.preparedWidth !== output.width || this.preparedHeight !== output.height))
@@ -1583,6 +1589,7 @@ export class ForwardSceneFrameGraph {
       const effectsKey = this.effectsKey(camera);
       const waterRevision = sceneWaterQualityRevision(scene);
       const waterDemand = waterSceneCopyDemand(scene, camera);
+      const decalDemand = sceneHasDecals(scene);
       if (!this.graph) {
         this.graph = new FrameGraph(scene);
         this.preparedOutlineView = this.outlineView?.active ? this.outlineView : undefined;
@@ -1649,8 +1656,10 @@ export class ForwardSceneFrameGraph {
         // An auxiliary view without a chain still draws offscreen: only the
         // final copy writes its output, which a material in view may sample.
         // So does a scaled view (the copy fills its full-size output), a multisampled one (the output, the
-        // backbuffer created without antialiasing, is single-sample), and one whose output target has no depth.
-        if ((this.auxiliary || output.scale !== 1 || samples > 1 || (output.color && !output.depth)) && !this.postProcessGraph && !effectsPlan)
+        // backbuffer created without antialiasing, is single-sample), one whose output target has no depth,
+        // and one with projected decals sampling opaque scene depth when the output has no sampleable non-stencil depth.
+        const decalNeedsOwnTargets = decalDemand && !(output.color && output.depth && !HasStencilAspect(output.depth.format));
+        if ((this.auxiliary || output.scale !== 1 || samples > 1 || (output.color && !output.depth) || decalNeedsOwnTargets) && !this.postProcessGraph && !effectsPlan)
           this.ownScene = this.declareOwnSceneTargets(this.graph, renderSize.width, renderSize.height, samples);
         const engine = scene.getEngine();
         /** Whether the view's own multisampled colour presents by one blit to the backbuffer (`MultisamplePresentTask`). */
@@ -1663,7 +1672,7 @@ export class ForwardSceneFrameGraph {
         // pair presents by one blit (nothing else reads the scene colour after the objects pass) it composes onto the
         // backbuffer after that blit: no resolve and no output copy.
         const outlineOnOutput = !!this.preparedOutlineView && !effectsPlan && !this.postProcessGraph && !!this.ownScene &&
-          presentsByBlit(this.ownScene, waterDemand > 0);
+          presentsByBlit(this.ownScene, waterDemand > 0 || decalDemand);
         // A scene view whose backbuffer is larger than the view ends its chain at the view's size (`fsrdebug output
         // device` ends it at the backbuffer's).
         const chainAtView = sceneRenderingSettings(scene).fsrOutputAtView && !this.auxiliary && !output.color &&
@@ -1742,6 +1751,7 @@ export class ForwardSceneFrameGraph {
         }
         // A seeded spatial geometry pass samples it too.
         if (this.effectsGraph?.spatial?.seeded && samples > 1) this.objects.resolveMSAADepth = true;
+        if (decalDemand && samples > 1) this.objects.resolveMSAADepth = true;
         if (waterDemand > 0) {
           // The water scene copy samples the scene depth after this pass: resolve it too.
           if (samples > 1) this.objects.resolveMSAADepth = true;
@@ -1752,13 +1762,39 @@ export class ForwardSceneFrameGraph {
           const sampleable = sceneColor != null && sceneDepth != null
             ? { color: sceneColor, depth: sceneDepth }
             : output.color && output.depth && !HasStencilAspect(output.depth.format) ? { color, depth } : undefined;
+          let extraSplitDemand: (() => boolean) | undefined;
+          if (decalDemand && sampleable) {
+            const decalTask = new FrameGraphDecalTask("Forward decals", this.graph);
+            decalTask.camera = camera;
+            decalTask.targetTexture = sampleable.color;
+            decalTask.depthTexture = sampleable.depth;
+            decalTask.disabled = true;
+            this.decalTask = decalTask;
+            extraSplitDemand = () => {
+              const dt = Math.max(0, scene.getEngine().getDeltaTime() / 1000);
+              const active = sceneDecalHost(scene).prepare(decalTask.camera, dt);
+              decalTask.disabled = !active;
+              return active;
+            };
+          }
           this.water = WaterSceneCopyGraph.create({
             frameGraph: this.graph, camera, scale: waterDemand, width: renderSize.width, height: renderSize.height,
             clear: this.clear, cull: this.cull, objects: this.objects, scene: sampleable,
             output: { color, texture: Boolean(output.color) },
+            extraSplitDemand,
+          });
+        } else if (decalDemand) {
+          this.decalSplit = new DecalSplitGraph({
+            frameGraph: this.graph,
+            camera,
+            cull: this.cull,
+            objects: this.objects,
+            targetColor: drawColor,
+            targetDepth: drawDepth,
           });
         }
         this.water?.transparent.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
+        this.decalSplit?.transparent.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
         this.objects.neverDraws = this.water && this.skipCopyWater;
         // Screen-Space Shadows draw before the objects, which read them (as does the water split's own opaque pass, which
         // draws through the objects' renderer and so its render pass).
@@ -1770,6 +1806,7 @@ export class ForwardSceneFrameGraph {
         }
         this.shadows = new ManagedShadowsTask(this.graph, scene, this.objects, { view: this.auxiliary ? camera : undefined });
         for (const receiver of this.water?.shadowReceivers ?? []) this.shadows.addReceiver(receiver);
+        for (const receiver of this.decalSplit?.shadowReceivers ?? []) this.shadows.addReceiver(receiver);
         // The scene view draws its auxiliary views here: after Babylon's
         // evaluation and its own shadow maps, before its own objects.
         if (!this.auxiliary) this.shadows.onAfterTaskExecute.add(() => drawSceneAuxiliaryViews(scene));
@@ -1795,9 +1832,13 @@ export class ForwardSceneFrameGraph {
           if (spatialGeometry.screenShadows) this.graph.addTask(spatialGeometry.screenShadows.task);
         }
         if (this.water && !this.water.splitsClear) this.graph.addTask(this.water.split);
+        if (this.decalSplit) this.graph.addTask(this.decalSplit.split);
         this.graph.addTask(this.objects);
+        // Projected decals run right after opaque+alpha-test objects and before water copy / transparents.
+        if (this.decalTask) this.graph.addTask(this.decalTask);
         // The opaque copy and transparent pass precede every chain and the output copy.
         for (const task of this.water?.afterObjects ?? []) this.graph.addTask(task);
+        for (const task of this.decalSplit?.afterObjects ?? []) this.graph.addTask(task);
         if (spatialGeometry?.seeded) {
           if (spatialGeometry.geometryProbe) this.graph.addTask(spatialGeometry.geometryProbe);
           this.graph.addTask(spatialGeometry.geometry);
@@ -1812,7 +1853,7 @@ export class ForwardSceneFrameGraph {
           (this.postProcessGraph ? this.outlineTask?.outputTexture ?? this.postProcessGraph.outputTexture : undefined) ??
           (this.ownScene ? this.outlineTask?.outputTexture ?? this.ownScene.color : undefined);
         const own = this.ownScene;
-        if (own && (outlineOnOutput || (!this.outlineTask && presentsByBlit(own, this.water !== undefined)))) {
+        if (own && (outlineOnOutput || (!this.outlineTask && presentsByBlit(own, this.water !== undefined || decalDemand)))) {
           // The objects pass is the scene colour's last writer and nothing samples its resolve: one blit from the
           // multisampled colour to the backbuffer replaces the resolve and the output copy.
           this.objects.resolveMSAAColors = false;
@@ -1838,7 +1879,7 @@ export class ForwardSceneFrameGraph {
         }
         // A Scene Layer draws from its retained draw list when the objects pass alone reads the cull.
         this.cull.drawList = attachLayerDrawList(scene, this.graph, this.objects.objectRenderer, () => this.cull?.camera,
-          !this.auxiliary && !this.water && !this.effectsGraph && !occlusion && !this.outlineTask && !this.postProcessGraph?.geometryTasks.length);
+          !this.auxiliary && !this.water && !this.decalSplit && !this.effectsGraph && !occlusion && !this.outlineTask && !this.postProcessGraph?.geometryTasks.length);
         this.observeDrawPasses();
         if (this.leanPreparation) {
           // The water split's opaque pass draws through the objects' renderer; its transparent pass keeps Babylon's.
@@ -1932,6 +1973,7 @@ export class ForwardSceneFrameGraph {
       this.preparedEffectsKey = effectsKey;
       this.preparedWaterRevision = waterRevision;
       this.preparedWaterDemand = waterDemand;
+      this.preparedDecalDemand = decalDemand;
       this.preparedWidth = width;
       this.preparedHeight = height;
       this.preparedScale = output.scale;
@@ -2021,11 +2063,17 @@ export class ForwardSceneFrameGraph {
       this.preparedWaterDemand === waterSceneCopyDemand(this.scene, camera);
   }
 
+  private decalMatches(): boolean {
+    return this.preparedDecalDemand === sceneHasDecals(this.scene);
+  }
+
   /** Every camera-bound task of the prepared graph follows the frame's camera. */
   private assignCamera(camera: Camera): void {
     this.objects!.camera = camera;
     this.cull!.camera = camera;
     this.water?.setCamera(camera);
+    this.decalSplit?.setCamera(camera);
+    if (this.decalTask) this.decalTask.camera = camera;
   }
 
   private output(camera: Camera) {
@@ -2164,6 +2212,7 @@ export class ForwardSceneFrameGraph {
       if (geometry) geometry.objectList = this.cull!.objectList;
       if (spatial) spatial.objectList = spatial.seed ? this.sceneDepthLacks(this.cull!.objectList) : this.cull!.objectList;
       this.water?.beginProbe(this.cull!.objectList);
+      this.decalSplit?.beginProbe(this.cull!.objectList);
       const passed = withSceneReadinessState(this.scene, () => {
         const camera = this.objects!.camera;
         // Keep scene-owned camera/material/pass readiness alongside the task's
@@ -2181,6 +2230,7 @@ export class ForwardSceneFrameGraph {
       if (!passed) this.noteFailedProbe();
       return passed;
     } finally {
+      this.decalSplit?.endProbe();
       this.water?.endProbe();
       this.objects!.objectList = objectList;
       if (geometry && geometryObjects) geometry.objectList = geometryObjects;
@@ -2382,6 +2432,9 @@ export class ForwardSceneFrameGraph {
     this.preparedWaterRevision = -1;
     this.preparedWaterDemand = -1;
     this.water = undefined;
+    this.preparedDecalDemand = false;
+    this.decalSplit = undefined;
+    this.decalTask = undefined;
     this.ownScene = undefined;
     this.outputCopy = undefined;
     this.objects = undefined;

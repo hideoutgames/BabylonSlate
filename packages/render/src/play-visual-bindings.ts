@@ -7,6 +7,7 @@ import { AreaRectLightGroup } from "./area-rect-light";
 import { Light2DGroup, Occluder2DGroup } from "./light-2d-group";
 import type { CreateEngineOptions } from "./create-engine-types";
 import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { removeDecals, spawnDynamicDecal, upsertDecals } from "./decal-pass";
 import { markLatticeComponentRoot } from "./lattice-deformer";
 import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
 import { setSceneStaticMeshes } from "./scene-static-meshes";
@@ -101,6 +102,20 @@ export function createPlayVisualBindings({
     upsertFogVolumes(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
     runtimeFogActorBySlot.set(slotId, authored.actorId);
   };
+  const runtimeDecalActorBySlot = new Map<number, string>();
+  const refreshRuntimeDecals = (slotId: number) => {
+    if (options.editor) return;
+    const root = worldSlotRoot(slotId);
+    const authored = binding.decals.get(slotId);
+    const previous = runtimeDecalActorBySlot.get(slotId);
+    if (previous && (!root || !authored || authored.actorId !== previous)) {
+      removeDecals(scene, previous);
+      runtimeDecalActorBySlot.delete(slotId);
+    }
+    if (!authored || !root) return;
+    upsertDecals(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
+    runtimeDecalActorBySlot.set(slotId, authored.actorId);
+  };
   // Play reflection probes: authored per slot on the binding, static actors from the authored play scene.
   const runtimeProbeActorBySlot = new Map<number, string>();
   let playStaticActors = new Set<string>();
@@ -156,6 +171,7 @@ export function createPlayVisualBindings({
     refreshRuntimeDeformers(slotId);
     refreshRuntimeOutline(slotId);
     refreshRuntimeFogVolumes(slotId);
+    refreshRuntimeDecals(slotId);
     refreshRuntimeReflectionProbes(slotId);
   };
   // A visual whose pooled leaf left the pool (a Material no group draws) draws a new mesh: what keyed the leaf follows.
@@ -208,6 +224,18 @@ export function createPlayVisualBindings({
     binding.fogVolumes.set(command.slotId, { actorId: command.actorId, bindings: command.volumes });
     refreshRuntimeFogVolumes(command.slotId);
     scheduler.invalidate("asset");
+  }
+  if (command.type === "setDecals") {
+    markSnapshotStale();
+    binding.decals.set(command.slotId, { actorId: command.actorId, bindings: command.decals });
+    refreshRuntimeDecals(command.slotId);
+    scheduler.invalidate("asset");
+  }
+  if (command.type === "spawnDecal") {
+    if (!options.editor) {
+      spawnDynamicDecal(scene, command.decal);
+      scheduler.invalidate("asset");
+    }
   }
   if (command.type === "setLights2D") {
     let group = binding.lights2D.get(command.slotId);

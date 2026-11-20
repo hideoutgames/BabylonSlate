@@ -5,7 +5,7 @@
  */
 import {
   isOverlayLayoutClass, isUIControl2DClass, LIGHT_2D_CLASS_ID, MIRROR_CLASS_ID, parseSurfaceShadingMode, overlayPanelDestFromScale, parseCableProperties,
-  parseFogVolumeProperties, parseMirrorProperties, parseOverlayLayoutProperties, parseOverlayPanelProperties,
+  parseFogVolumeProperties, parseDecalProperties, parseMirrorProperties, parseOverlayLayoutProperties, parseOverlayPanelProperties,
   parseReflectionProbeProperties, parseSkyboxFaces, parseSkyboxSize, parseSpringArmProperties, parseText2DProperties,
   parseText3DProperties, SKYBOX_FACE_KEYS, SPRING_ARM_COMPONENT_CLASS_ID, waterKindForClass, type SerializedActor,
   type SerializedComponent,
@@ -51,6 +51,10 @@ function componentVisualKind(
   if (component.classId === "FogVolumeComponent") {
     const volume = parseFogVolumeProperties(component.properties);
     return `fogVolume:${volume.shape}:${volume.size.join(",")}`;
+  }
+  if (component.classId === "DecalComponent") {
+    const decal = parseDecalProperties(component.properties);
+    return `decal:${decal.size.join(",")}`;
   }
   if (component.classId === "ReflectionProbeComponent") return `reflectionProbe:${parseReflectionProbeProperties(component.properties).size.join(",")}`;
   if (component.classId === "LandscapeComponent") return `landscape:${component.properties.subdivisions}`;

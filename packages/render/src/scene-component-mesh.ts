@@ -32,6 +32,7 @@ import {
   type EditorVolumeKind,
 } from "./editor-volume";
 import { createFogVolumeGuide, createReflectionProbeGuide } from "./fog-volume-guide";
+import { createDecalGuide } from "./decal-guide";
 import { createFoliageMesh } from "./foliage-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createModelActorRoot } from "./glb-anim";
@@ -270,6 +271,7 @@ function createComponentMesh(
   }
   if (component.classId === "WaterRemovalVolumeComponent") return createWaterRemovalMesh(scene, name, component.properties, { editor: true });
   if (component.classId === "FogVolumeComponent") return createFogVolumeGuide(scene, name, component.properties);
+  if (component.classId === "DecalComponent") return createDecalGuide(scene, name, component.properties);
   if (component.classId === "ReflectionProbeComponent") return createReflectionProbeGuide(scene, name, component.properties);
   if (component.classId === "LandscapeComponent") return createLandscapeMesh(scene, name, component.properties, assets);
   if (component.classId === "FoliageComponent") return createFoliageMesh(scene, name, component.properties, assets);
