@@ -84,13 +84,14 @@ export class PhysicsHosting {
       const source = sources.get(actor);
       return source === undefined ? "none" : this.host.isStaticSource(source) ? "static" : "simulated";
     };
-    for (const [actor, source] of sources) {
-      if (!this.host.isStaticSource(source)) continue;
+    // `forEach`, not `for...of`: a pair array per source, every tick, is the garbage this pass would make most.
+    sources.forEach((source, actor) => {
+      if (!this.host.isStaticSource(source)) return;
       // The memoized ancestor walk comes first, so only statics under a
       // simulated body pay for a second component scan.
       const host = this.simulatedAncestor(actor, motion, this.host.findLiveActor, memo);
       if (host && this.host.hasSolidCollision(actor)) this.hostActor(actor, host);
-    }
+    });
     memo.clear();
     // The pass rebuilds hosting every tick; only a different assignment changes what channels ignore.
     let changed = previous.size !== this.hostByActor.size;

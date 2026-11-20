@@ -61,6 +61,16 @@ export class ShadowCasterList {
   private cursor = 0;
   private readonly added: AbstractMesh[] = [];
   private readonly scratch = new Float64Array(6);
+  /** While `prepare` reads the changed casters: its `walked`, and how many it read. */
+  private changedWalked: ((mesh: AbstractMesh) => { readonly shown: boolean } | undefined) | undefined;
+  private changedReads = 0;
+  /** Reads a caster the walk changed or `add` added (`prepare`), made once: a frame's `prepare` makes no function. */
+  private readonly readChanged = (mesh: AbstractMesh): void => {
+    const place = this.places.get(mesh);
+    if (place === undefined) return;
+    this.read(place, this.changedWalked);
+    this.changedReads++;
+  };
 
   add(mesh: AbstractMesh): void {
     if (this.places.has(mesh)) return;
@@ -112,18 +122,15 @@ export class ShadowCasterList {
       this.states = states;
     }
     if (kept) {
-      let read = 0;
-      const readMesh = (mesh: AbstractMesh) => {
-        const place = this.places.get(mesh);
-        if (place === undefined) return;
-        this.read(place, walked);
-        read++;
-      };
-      kept = changes!.forEachChangeSince(this.cursor, (mesh) => readMesh(mesh));
+      this.changedWalked = walked;
+      this.changedReads = 0;
+      kept = changes!.forEachChangeSince(this.cursor, this.readChanged);
       if (kept) {
-        for (const mesh of this.added) readMesh(mesh);
-        changes!.noteStage("prepared", read);
+        const added = this.added;
+        for (let index = 0; index < added.length; index += 1) this.readChanged(added[index]!);
+        changes!.noteStage("prepared", this.changedReads);
       }
+      this.changedWalked = undefined;
     }
     if (!kept) {
       for (let index = 0; index < count; index += 1) this.read(index, walked);
@@ -134,10 +141,16 @@ export class ShadowCasterList {
       for (let index = 0; index < count; index += 1) {
         // What a caster that draws nothing holds is not kept: no query reads it.
         if (!this.draws[index]) continue;
-        const state = states[index]!;
-        box.set(boxes.subarray(index * 6, index * 6 + 6));
+        const state = states[index]!, at = index * 6;
+        for (let value = 0; value < 6; value += 1) box[value] = boxes[at + value]!;
         this.read(index, walked);
-        if (states[index] !== state || (state === 1 && !box.every((value, at) => value === boxes[index * 6 + at]))) misses++;
+        if (states[index] !== state) misses++;
+        else if (state === 1)
+          for (let value = 0; value < 6; value += 1)
+            if (box[value] !== boxes[at + value]) {
+              misses++;
+              break;
+            }
       }
       changes!.noteStageMiss("preparedCasters", misses);
     }
@@ -218,13 +231,16 @@ export class ShadowCasterList {
    * compares with).
    */
   queryPlanes(planes: readonly Plane[], result: AbstractMesh[] = [], everyCaster = false): AbstractMesh[] {
-    result.length = 0;
+    // Written over in place and shortened after: emptied first, the list would give up its storage and make it again
+    // as it grew, every layer of every frame.
+    let listed = 0;
     const meshes = this.meshes, draws = this.draws;
     if (!this.prepared || everyCaster) {
       for (let index = 0; index < meshes.length; index += 1) {
         const mesh = meshes[index]!;
-        if ((everyCaster || draws[index]) && this.holds(mesh, planes)) result.push(mesh);
+        if ((everyCaster || draws[index]) && this.holds(mesh, planes)) result[listed++] = mesh;
       }
+      result.length = listed;
       return result;
     }
     // The planes as numbers: a caster's box is tested against each without touching an object.
@@ -242,8 +258,9 @@ export class ShadowCasterList {
             nz * (nz >= 0 ? boxes[at + 5]! : boxes[at + 2]!) + numbers[p + 3]! < 0) continue casters;
         }
       }
-      result.push(meshes[index]!);
+      result[listed++] = meshes[index]!;
     }
+    result.length = listed;
     return result;
   }
 

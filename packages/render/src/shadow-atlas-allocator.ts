@@ -98,7 +98,10 @@ function release(node: Node, tile: ShadowAtlasTile): boolean {
   return !node.children && !node.tile;
 }
 
+/** Asked for every page an atlas map's render clears, each frame: walks the children without a closure per node. */
 function only(node: Node, tiles: ReadonlySet<ShadowAtlasTile>): boolean {
   if (node.tile) return tiles.has(node.tile);
-  return !node.children || node.children.every((child) => only(child, tiles));
+  const children = node.children;
+  if (children) for (let index = 0; index < children.length; index++) if (!only(children[index]!, tiles)) return false;
+  return true;
 }
