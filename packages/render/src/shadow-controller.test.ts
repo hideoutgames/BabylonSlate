@@ -2265,7 +2265,7 @@ describe("view sun shadow maps", () => {
     controller.register(spot, true);
     controller.sync();
     const atlas = shadowAtlasRenderTarget(scene);
-    const full = { sun: [4096, 2048, 2048, 1024], spot: [2048] };
+    const full = { sun: [2048, 2048, 2048, 1024], spot: [2048] };
     const sizes = () => ({ sun: tileSizes(controller.generator(sun)), spot: tileSizes(controller.generator(spot)) });
     expect([atlasTextureEdge(scene), shadowAtlasGeneration(scene), sizes()]).toEqual([8192, 1, full]);
     // As a Profile step runs it: the switch, the frames it is measured over, then the switch back and the frames after.
@@ -2274,7 +2274,7 @@ describe("view sun shadow maps", () => {
       endFrame(scene);
       controller.sync();
       expect(shadowAtlasRenderTarget(scene)).toBe(atlas);
-      expect([shadowAtlasGeneration(scene), sizes()]).toEqual([1, { sun: [2048, 1024, 1024, 512], spot: [1024] }]);
+      expect([shadowAtlasGeneration(scene), sizes()]).toEqual([1, { sun: [1024, 1024, 1024, 512], spot: [1024] }]);
     }
     expect(controller.setDebug("fulltiles", true)).toBe(true);
     for (let frame = 0; frame < 3; frame++) {
