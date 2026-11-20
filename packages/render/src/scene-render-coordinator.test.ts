@@ -1327,6 +1327,29 @@ describe("selection outline changes", () => {
     renderer.dispose();
   });
 
+  it("builds the graph again for the first selection beside an authored outline, and keeps the selection's targets after", async () => {
+    const { renderer, outlines } = outlinedScene();
+    await renderer.prepare();
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    // Only the authored outline's group has targets: no selection mask, depth or passes.
+    expect(renderer.sharedOutlineDiagnostics()).toEqual({ drawingPassCount: 2, renderRecordCount: 3 });
+    const { graphBuilds } = renderer.diagnostics();
+    outlines.setSelection(["a"]);
+    expect(renderer.render()).toMatchObject({ rendered: false });
+    await renderer.prepare();
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    expect(renderer.diagnostics().graphBuilds).toBe(graphBuilds + 1);
+    expect(renderer.sharedOutlineDiagnostics()).toEqual({ drawingPassCount: 3, renderRecordCount: 5 });
+    // Clearing and selecting again keep the graph: the selection's targets stay until the graph is next built.
+    outlines.setSelection([]);
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    expect(renderer.sharedOutlineDiagnostics()).toEqual({ drawingPassCount: 2, renderRecordCount: 3 });
+    outlines.setSelection(["b"]);
+    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    expect(renderer.diagnostics().graphBuilds).toBe(graphBuilds + 1);
+    renderer.dispose();
+  });
+
   it("probes the scene again when a selection gives an instance source its identity stream", async () => {
     const { renderer, outlines } = outlinedScene(false);
     outlines.setSelection(["a"]);
