@@ -67,22 +67,14 @@ export class PhysicsReadback {
    */
   readBack(recompose: boolean): void {
     const poses = this.bodyPoses;
-    poses.clear();
-    this.readbackWorld.clear();
+    // Both are emptied as the last readback ends: clearing an empty one would only make it a new table.
+    if (poses.size) poses.clear();
+    if (this.readbackWorld.size) this.readbackWorld.clear();
     try {
       // Poses are read into pooled objects: every consumer below copies the values and `poses` is cleared on exit.
-      const pool = this.posePool;
-      let used = 0;
-      for (const [actorId, bodyId] of this.host.bodies) {
-        if (this.host.isStaticBody(actorId)) continue;
-        // A body whose actor left the World during the step (or was replaced under its guid) has nothing to write back.
-        if (this.host.findLiveActor(actorId) !== this.host.bodyOwners.get(actorId)) continue;
-        const pose = (pool[used] ??= { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } });
-        if (!this.host.backend.readBodyTransform(bodyId, pose)) continue;
-        poses.set(actorId, pose);
-        used++;
-      }
-      const world = recompose
+      this.posesUsed = 0;
+      this.host.bodies.forEach(this.readPose);
+      this.world = recompose
         ? physicsWorldTransforms(
             this.host.candidateActors(),
             this.findReadbackActor,
@@ -92,29 +84,58 @@ export class PhysicsReadback {
             this.recomposition,
           )
         : undefined;
-      for (const [actorId, transform] of poses) {
-        const actor = this.host.bodyOwners.get(actorId);
-        if (!actor || actor.destroyed) continue;
-        let local: PhysicsTransform;
-        if (world) local = actorLocalPhysicsTransform(transform, actor, world);
-        else {
-          const parentId = actorParentGuid(actor);
-          const parent = parentId ? this.findReadbackActor(parentId) : undefined;
-          // A body's resolved pose never reads its own local position or
-          // rotation, so writing earlier bodies cannot change a later ancestor.
-          local =
-            parent && !parent.destroyed
-              ? localPhysicsTransform(transform, this.readbackPose(parent), actor.transform)
-              : transform;
-        }
-        Object.assign(actor.transform.position, local.position);
-        Object.assign(actor.transform.rotation, local.rotation);
-      }
+      poses.forEach(this.writePose);
     } finally {
+      this.world = undefined;
       poses.clear();
-      this.readbackWorld.clear();
+      if (this.readbackWorld.size) this.readbackWorld.clear();
     }
   }
+
+  // The readback's steps for each body, made once and handed to `forEach`: a `for...of` over a Map makes a pair
+  // array per entry, for every body, every step.
+  /** Pool entries `readPose` has filled this readback. */
+  private posesUsed = 0;
+  /** This readback's whole-world recomposition, while it writes poses (`writePose`). */
+  private world: ActorTransformMap | undefined;
+
+  private readonly readPose = (bodyId: string, actorId: string): void => {
+    const host = this.host;
+    if (host.isStaticBody(actorId)) return;
+    // A body whose actor left the World during the step (or was replaced under its guid) has nothing to write back.
+    if (host.findLiveActor(actorId) !== host.bodyOwners.get(actorId)) return;
+    const pose = (this.posePool[this.posesUsed] ??= { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } });
+    if (!host.backend.readBodyTransform(bodyId, pose)) return;
+    this.bodyPoses.set(actorId, pose);
+    this.posesUsed++;
+  };
+
+  private readonly writePose = (transform: PhysicsTransform, actorId: string): void => {
+    const actor = this.host.bodyOwners.get(actorId);
+    if (!actor || actor.destroyed) return;
+    const world = this.world;
+    let local: PhysicsTransform;
+    if (world) local = actorLocalPhysicsTransform(transform, actor, world);
+    else {
+      const parentId = actorParentGuid(actor);
+      const parent = parentId ? this.findReadbackActor(parentId) : undefined;
+      // A body's resolved pose never reads its own local position or
+      // rotation, so writing earlier bodies cannot change a later ancestor.
+      local =
+        parent && !parent.destroyed
+          ? localPhysicsTransform(transform, this.readbackPose(parent), actor.transform)
+          : transform;
+    }
+    // Field by field: `Object.assign` lists the source's keys each call.
+    const position = actor.transform.position, rotation = actor.transform.rotation;
+    position.x = local.position.x;
+    position.y = local.position.y;
+    position.z = local.position.z;
+    rotation.x = local.rotation.x;
+    rotation.y = local.rotation.y;
+    rotation.z = local.rotation.z;
+    rotation.w = local.rotation.w;
+  };
 
   /**
    * Post-step world pose of a readback ancestor: a simulated body's native pose

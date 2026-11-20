@@ -309,7 +309,8 @@ export class PhysicsWorldSync {
     );
     this.passStale = false;
     const sources = this.passSources;
-    sources.clear();
+    // Both are emptied as the last pass ends: clearing an empty one would only make it a new table.
+    if (sources.size) sources.clear();
     for (const actor of candidates) {
       if (actor.destroyed) continue;
       if (!this.actorFilter(actor) || this.suppressedActors.has(actor)) continue;
@@ -320,15 +321,8 @@ export class PhysicsWorldSync {
     // its children leave or regain are reconciled in the same pass.
     if (this.hosting.assign(sources)) this.invalidateChannels();
     const live = this.liveActors;
-    live.clear();
-    for (const [actor, source] of sources) {
-      // A hosted actor keeps a body of its own only for its trigger colliders.
-      if (this.hosting.isHosted(actor.guid) && !hasTriggerCollider(actor)) continue;
-      live.add(actor.guid);
-      this.reconcileActor(actor, source, this.passWorldTransform);
-      // After hosting settled, so a host reports the contacts of the children it hosts.
-      if (this.bodyByActor.has(actor.guid)) this.refreshContactReporting(actor);
-    }
+    if (live.size) live.clear();
+    sources.forEach(this.reconcileSource);
     // Hosted IDs are host-qualified, so retiring bodies last cannot collide
     // with shapes that moved onto or off a compound in this pass.
     for (const actorId of this.bodyByActor.keys()) {
@@ -336,7 +330,7 @@ export class PhysicsWorldSync {
     }
     live.clear();
     sources.clear();
-    this.syncConstraints((actor) => this.passWorldTransform(actor).scale);
+    this.syncConstraints(this.passWorldScale);
   }
 
   /**
@@ -506,6 +500,21 @@ export class PhysicsWorldSync {
   /** An actor's pose in the last pre-step composition. */
   private readonly passWorldTransform = (actor: Actor): Transform =>
     this.worldTransforms.get(actor.guid) ?? actor.transform;
+
+  private readonly passWorldScale = (actor: Actor): Vec3 => this.passWorldTransform(actor).scale;
+
+  /**
+   * `syncFromWorld`'s step for each classified source, made once and handed to `forEach`: a `for...of` over the
+   * sources would make a pair array per actor every tick.
+   */
+  private readonly reconcileSource = (source: ActorComponent | null, actor: Actor): void => {
+    // A hosted actor keeps a body of its own only for its trigger colliders.
+    if (this.hosting.isHosted(actor.guid) && !hasTriggerCollider(actor)) return;
+    this.liveActors.add(actor.guid);
+    this.reconcileActor(actor, source, this.passWorldTransform);
+    // After hosting settled, so a host reports the contacts of the children it hosts.
+    if (this.bodyByActor.has(actor.guid)) this.refreshContactReporting(actor);
+  };
 
   private syncConstraints(worldScale: (actor: Actor) => Vec3): void {
     this.constraints.sync({
