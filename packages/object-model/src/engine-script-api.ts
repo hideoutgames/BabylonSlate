@@ -425,6 +425,15 @@ const GET_MATERIAL: EngineScriptFunction = {
   pins: [{ name: "material", typeId: "object", typeClassId: "MaterialObject", direction: "out" }],
 };
 
+/** A Post Processing Panel's Get Material: its pass's Material Object, as a mesh's Get Material returns its own. */
+const GET_PANEL_MATERIAL: EngineScriptFunction = {
+  name: "Get Material",
+  runtime: "getMaterialObject",
+  description: "The Material Object of this panel's pass, for the Set Material Parameter nodes. Empty while the panel has no Material; get it again after the panel gets another Material.",
+  searchAliases: ["material object", "material instance", "material parameter", "post process"],
+  pins: [{ name: "material", typeId: "object", typeClassId: "MaterialObject", direction: "out" }],
+};
+
 /** ParticleComponent parameter functions: the component's own runtime values, as the particle parameter nodes set them. */
 const PARTICLE_PARAMETER_NAME: EngineScriptPin = { name: "name", typeId: "string", direction: "in", defaultValue: "" };
 const PARTICLE_PARAMETER_FUNCTIONS: EngineScriptFunction[] = [
@@ -1281,6 +1290,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       // Its pass's live parameters, written with the Material Parameter nodes.
       { name: "Material Object", typeId: "object", typeClassId: "MaterialObject", propertyKey: "materialObject", getOnly: true },
     ],
+    functions: [GET_PANEL_MATERIAL],
   },
 ];
 

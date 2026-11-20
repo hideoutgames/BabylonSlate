@@ -67,7 +67,7 @@ export class SceneLayerPostProcessPanels {
     }
     if (world.structuralRevision === this.readRevision && signature === this.readSignature) return;
     let complete = true;
-    const layers = new Map<string, SceneLayerPostProcessPanelPayload[]>();
+    const layers = new Map<string, Array<{ payload: SceneLayerPostProcessPanelPayload; component: ActorComponent }>>();
     const layerIds = new Set<string>();
     for (const actor of panels.keys()) layerIds.add(actor.sceneLayerId!);
     for (const layerId of layerIds) {
@@ -78,20 +78,19 @@ export class SceneLayerPostProcessPanels {
     // A content actor still without a render slot is read again on the next publish.
     this.readRevision = complete ? world.structuralRevision : -1;
     this.readSignature = signature;
-    for (const [layerId, payloads] of layers) {
-      const key = JSON.stringify(payloads.map((payload) =>
+    for (const [layerId, entries] of layers) {
+      const key = JSON.stringify(entries.map(({ payload }) =>
         [payload.slotId, payload.componentId, payload.materialGuid, payload.contentSlotIds, payload.parentSlotId]));
       if (this.sent.get(layerId) === key) continue;
       this.sent.set(layerId, key);
-      for (const payload of payloads) {
-        const component = [...panels.values()].find((entry) => entry.guid === payload.componentId);
-        const material = component?.getVariable("materialObject");
+      for (const { payload, component } of entries) {
+        const material = component.getVariable("materialObject");
         if (material instanceof MaterialObject) {
           payload.parameters = this.host.parameters(material) ?? {};
           this.host.resend(material);
         }
       }
-      this.host.emit({ type: "sceneLayerPostProcessPanels", layerId, panels: payloads });
+      this.host.emit({ type: "sceneLayerPostProcessPanels", layerId, panels: entries.map(({ payload }) => payload) });
     }
     for (const layerId of [...this.sent.keys()]) {
       if (layers.has(layerId)) continue;
@@ -106,7 +105,9 @@ export class SceneLayerPostProcessPanels {
     this.readRevision = -1;
   }
 
-  private layerPanels(layerId: string, panels: ReadonlyMap<Actor, ActorComponent>): { payloads: SceneLayerPostProcessPanelPayload[]; complete: boolean } {
+  private layerPanels(layerId: string, panels: ReadonlyMap<Actor, ActorComponent>): {
+    payloads: Array<{ payload: SceneLayerPostProcessPanelPayload; component: ActorComponent }>; complete: boolean;
+  } {
     const world = this.host.world;
     const actors = sceneLayerActors(world, layerId);
     /** Each actor's nearest panel actor, itself included; null under none. */
@@ -156,7 +157,7 @@ export class SceneLayerPostProcessPanels {
       depths.set(panel, depth);
       return depth;
     };
-    const entries: Array<{ payload: SceneLayerPostProcessPanelPayload; depth: number; order: number }> = [];
+    const entries: Array<{ payload: SceneLayerPostProcessPanelPayload; component: ActorComponent; depth: number; order: number }> = [];
     let order = 0;
     for (const actor of actors) {
       const component = panels.get(actor);
@@ -166,6 +167,7 @@ export class SceneLayerPostProcessPanels {
       const outer = outerOf(actor);
       const depth = depthOf(actor);
       entries.push({
+        component,
         depth,
         order: order++,
         payload: {
@@ -180,6 +182,6 @@ export class SceneLayerPostProcessPanels {
     }
     // Inner panels first: an outer panel's content draws an inner panel's result.
     entries.sort((a, b) => b.depth - a.depth || a.order - b.order);
-    return { payloads: entries.map((entry) => entry.payload), complete };
+    return { payloads: entries.map(({ payload, component }) => ({ payload, component })), complete };
   }
 }
