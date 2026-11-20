@@ -12,7 +12,7 @@ import { Button } from "@haptic/ui/components/button";
 import { PauseIcon, PlayIcon, RotateCcwIcon, StepForwardIcon } from "lucide-react";
 import { useDocumentActions } from "../context/document-context";
 import { useAnimGraphPreview } from "../context/anim-graph-preview-context";
-import { useDockPanelShown } from "../lib/use-dock-panel-shown";
+import { usePreviewLoopActive } from "../lib/preview-loop";
 import { useAnimPreviewModel } from "../lib/use-anim-preview-model";
 import { variableDefaultPropertyRows } from "../lib/graph-inspector";
 import { useAnimGraphDocument } from "./anim-graph-editor";
@@ -53,7 +53,7 @@ function usePreviewClock(api: IDockviewPanelProps["api"]) {
   const { doc, graphGuid } = useAnimGraphDocument();
   const session = useAnimGraphPreview();
   const { collectPlayPreviewScripts } = useDocumentActions();
-  const shown = useDockPanelShown(api);
+  const shown = usePreviewLoopActive(api);
 
   useEffect(() => {
     if (!graphGuid) return;
@@ -138,6 +138,7 @@ function Preview3D({ api }: { api: IDockviewPanelProps["api"] }) {
   const getState = useCallback(() => session.getSnapshot().state, [session]);
   const firedEvents = useCallback(() => session.getSnapshot().state?.events, [session]);
   const flashes = useFiredEventFlashes(session.subscribe, firedEvents);
+  const active = usePreviewLoopActive(api);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PreviewTransport
@@ -158,6 +159,7 @@ function Preview3D({ api }: { api: IDockviewPanelProps["api"] }) {
           getState={getState}
           subscribe={session.subscribe}
           emptyText={doc.skeletonGuid ? "No Model is on the graph's Skeleton." : "Set the graph's Skeleton to preview it."}
+          active={active}
           data-testid="anim-preview-3d"
         />
         <AnimEventFlashes flashes={flashes} data-testid="anim-preview-events" />

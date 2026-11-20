@@ -41,6 +41,7 @@ import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { particleParameterValueRow } from "../lib/particle-parameter-rows";
 import { asRecord } from "../lib/as-record";
+import { usePreviewLoopActive } from "../lib/preview-loop";
 
 const EMITTER_TYPES: string[] = [...PARTICLE_EMITTER_ASSET_TYPES];
 
@@ -54,12 +55,12 @@ function useSystemDocument() {
   return { payload: asRecord(doc?.content), onChange };
 }
 
-export function ParticleSystemPreviewPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function ParticleSystemPreviewPanel(props: IDockviewPanelProps) {
+  const active = usePreviewLoopActive(props.api);
   const { payload } = useSystemDocument();
   return (
     <PanelFrame data-testid="particle-system-preview-panel">
-      <ParticleSystemPreview payload={payload} />
+      <ParticleSystemPreview payload={payload} active={active} />
     </PanelFrame>
   );
 }
@@ -174,8 +175,11 @@ function systemParameters(system: ParticleSystemPayload, emitters: ReadonlyMap<s
 
 export function ParticleSystemPreview({
   payload,
+  active = true,
 }: {
   payload: Record<string, unknown>;
+  /** Whether the preview is on screen; its canvas requests no frames otherwise. */
+  active?: boolean;
 }) {
   const system = normalizeParticleSystemPayload(payload);
   const { emitters, loadError, retry } = useSystemEmitters(system);
@@ -207,6 +211,7 @@ export function ParticleSystemPreview({
         systemGuid={PREVIEW_SYSTEM_GUID}
         testId="particle-system-preview-canvas"
         showSkybox={system.previewSkybox}
+        active={active}
       />
     );
 

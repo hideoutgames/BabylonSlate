@@ -73,6 +73,7 @@ import { Badge } from "@haptic/ui/components/badge";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { asRecord } from "../lib/as-record";
+import { usePreviewLoopActive } from "../lib/preview-loop";
 
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -137,12 +138,12 @@ function useEmitterDocument() {
   return { documentId, payload: asRecord(doc?.content), onChange };
 }
 
-export function ParticleEmitterPreviewPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function ParticleEmitterPreviewPanel(props: IDockviewPanelProps) {
+  const active = usePreviewLoopActive(props.api);
   const { payload, onChange } = useEmitterDocument();
   return (
     <PanelFrame data-testid="particle-emitter-preview-panel">
-      <ParticleEmitterPreview payload={payload} onChange={onChange} />
+      <ParticleEmitterPreview payload={payload} onChange={onChange} active={active} />
     </PanelFrame>
   );
 }
@@ -165,9 +166,12 @@ export function ParticleEmitterDetailsPanel(_props: IDockviewPanelProps) {
 export function ParticleEmitterPreview({
   payload,
   onChange,
+  active = true,
 }: {
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
+  /** Whether the preview is on screen; its canvas requests no frames otherwise. */
+  active?: boolean;
 }) {
   const emitter = normalizeParticleEmitterPayload(payload);
   const [picking, setPicking] = useState(false);
@@ -179,6 +183,7 @@ export function ParticleEmitterPreview({
           systemGuid={PREVIEW_SYSTEM_GUID}
           testId="particle-emitter-preview-canvas"
           onPickMaterial={() => setPicking(true)}
+          active={active}
         />
       </div>
       <ParticleMaterialPicker
