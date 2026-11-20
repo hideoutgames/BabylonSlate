@@ -76,7 +76,7 @@ describe("compiled Class Graph scalability", () => {
       edge("changed", "execOut", "log", "execIn"), edge("changed", "settings", "revision", "in"), edge("revision", "appliedRevision", "revisionText", "in"), edge("revisionText", "out", "log", "message"), edge("resetEvent", "execOut", "reset", "execIn")] });
     try {
       const snapshot = runtime.getScalability();
-      expect(snapshot.requested).toMatchObject({ frameCap: 20, render: { quality: { resolution: { scale: 0.5, dynamic: false }, postprocessing: { antiAliasing: "msaa2" } } } });
+      expect(snapshot.requested).toMatchObject({ frameCap: 20, render: { quality: { resolution: { scale: 0.5 }, postprocessing: { antiAliasing: "msaa2" } } } });
       runtime.applyScalabilityStatus({ revision: snapshot.result.revision, status: "applied", message: "Ready", effective: snapshot.requested });
       const logs = commands.filter((command) => command.type === "log");
       expect(logs).toHaveLength(1);

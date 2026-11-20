@@ -973,13 +973,13 @@ export const PIXEL_ART_DESIGN_SIZES = [
 /**
  * Create Project's Pixel Art Optimized: Pixel-Perfect Mode with Nearest Texture Filtering, Custom Resolution with
  * Upscaling Pixelated (Black Bars as chosen: off extends the view to fill the window), the world at full resolution
- * without Dynamic Resolution, and no Anti-Aliasing, so edges stay on the pixel grid. All stay ordinary settings.
+ * and no Anti-Aliasing, so edges stay on the pixel grid. All stay ordinary settings.
  */
 export function pixelArtProjectSettings(settings: ProjectSettings): ProjectSettings {
   const render = applyProjectQualityPatch(
     { ...settings.render, customResolution: true, upscaling: "pixelated" },
     {
-      resolution: { scale: 1, minScale: 1, dynamic: false, preset: "custom" },
+      resolution: { scale: 1, preset: "custom" },
       postprocessing: { antiAliasing: "off", preset: "custom" },
     },
   );

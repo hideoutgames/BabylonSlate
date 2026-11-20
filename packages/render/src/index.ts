@@ -127,7 +127,7 @@ export * from "./particle-preview";
 export * from "./convert-obj-to-glb";
 export * from "./convert-stl-to-glb";
 export * from "./node-rig";
-export type { RenderDiagnostics } from "./render-diagnostics";
+export type { FramePressureSample, RenderDiagnostics } from "./render-diagnostics";
 export type { SceneReadinessDirtyReason } from "./scene-readiness-signal";
 export { verifyScopedReadinessProbes } from "./readiness-scope";
 export { verifyRenderChangeJournal } from "./render-change-journal";

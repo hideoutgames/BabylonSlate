@@ -421,11 +421,11 @@ describe("runFeatureTestCheck", () => {
     expect(measured.filter((_, index) => index % 2 === 1).map((sample) => sample.label))
       .toEqual(FEATURE_TEST_BREAKDOWN_STEPS.map((step) => step.label));
     expect(measured.at(-1)!.label).toBe(`baseline ${FEATURE_TEST_BREAKDOWN_STEPS.length + 1}`);
-    // Each step is sampled after its own commands only: the previous step was undone (back to the Medium tier at the
-    // project's fixed resolution) first, and a baseline changes nothing.
+    // Each step is sampled after its own commands only: the previous step was undone (back to the Medium tier) first,
+    // and a baseline changes nothing.
     const commands = editor.commands;
     const at = (line: string) => commands.indexOf(line);
-    const tier = ["quality reset", "quality medium", "quality resolution reset"];
+    const tier = ["quality reset", "quality medium"];
     expect(commands.slice(at("quality shadows enabled off") + 1, at("quality shadows medium"))).toEqual(["gpubusy on", ...tier, "gpubusy on", ...tier]);
     expect(commands.slice(at("postprocessing off") + 1, at("rendertargets off"))).toEqual(["gpubusy on", ...tier, "postprocessing on", "gpubusy on", ...tier]);
     // GPU-busy time is restarted for every sample and stopped at the end.
@@ -433,7 +433,7 @@ describe("runFeatureTestCheck", () => {
     // iOS paces frames to the display: a lifted cap only queues frames behind the GPU. The tier applies before the
     // warm-up, so the warm-up runs at the baselines' settings. The session ends on the last baseline: nothing follows
     // its sample but the cap.
-    expect(commands.slice(0, 5)).toEqual(["framecap", "framecap 60", "quality medium", "quality resolution reset", "gpubusy on"]);
+    expect(commands.slice(0, 4)).toEqual(["framecap", "framecap 60", "quality medium", "gpubusy on"]);
     expect(commands.slice(-3)).toEqual(["gpubusy on", "gpubusy off", "framecap 30"]);
   });
 
@@ -521,7 +521,7 @@ describe("runFeatureTestCheck", () => {
     const measured = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup);
     expect(measured.filter((sample) => !sample.baseline).map((sample) => sample.label)).toEqual([
       "MSAA 2x", "MSAA 4x", "AA fxaa", "shadow filter high", "post-processing", "AO", "SSR", "water detail medium", "water detail high",
-      "water refraction", "screen-space water reflection", "planar water reflection", "captures", "resolution 1.0",
+      "water refraction", "screen-space water reflection", "planar water reflection", "captures", "resolution 0.85",
     ]);
     const base = FEATURE_TEST_BREAKDOWN_BASES["add-one"].commands;
     const commands = editor.commands;
@@ -1348,10 +1348,10 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(profileRanking(cpu)[0]!.steps).toMatchObject([{ label: "light local lights off", basis: "serial", repeats: 1 }]);
   });
 
-  it("holds Dynamic Resolution's floor where it is on, else the session's scale", () => {
-    expect(profileResolutionPin({ "resolution.scale": "1", "resolution.dynamic": "on 0.75" })).toEqual({ scale: 0.75, floor: true });
-    expect(profileResolutionPin({ "resolution.scale": "0.85", "resolution.dynamic": "off" })).toEqual({ scale: 0.85, floor: false });
-    expect(profileResolutionPin(undefined)).toEqual({ scale: 1, floor: false });
+  it("holds the session's scale, or full resolution without a fingerprint", () => {
+    expect(profileResolutionPin({ "resolution.scale": "0.85" })).toEqual({ scale: 0.85 });
+    expect(profileResolutionPin({ "resolution.scale": "nope" })).toEqual({ scale: 1 });
+    expect(profileResolutionPin(undefined)).toEqual({ scale: 1 });
   });
 
   it("changes, with every step at every tier, only its own fields, or nothing where the tier already holds its value", () => {
@@ -1497,19 +1497,19 @@ describe("Profile", { timeout: 30_000 }, () => {
       .toEqual(["shadowdebug sunpasses off", "gpuprobe on", "gpubusy on", "gpuprobe off", "quality reset"]);
     const commands = editor.commands.filter((line) => !line.startsWith("gpuprobe"));
     const at = (line: string) => commands.indexOf(line);
-    // No tier and no frame cap: the session's own. High's Dynamic Resolution held at its floor, then the camera at the
-    // control view, before the warm-up.
+    // No tier and no frame cap: the session's own. High's scale held, then the camera at the control view, before the
+    // warm-up.
     // The cap is only read.
     expect(commands.filter((line) => line.startsWith("framecap") || /^quality (low|medium|high|ultra)$/.test(line))).toEqual(["framecap"]);
     // Before the sweep, Play's frames are read once with the frame-end fence off, and the session's mode put back.
-    expect(commands.slice(0, 8)).toEqual(["framesinflight off", "framesinflight 2", "framecap", "quality resolution scale 0.75", 'possess "Profile Heavy Camera"', "gpubusy on", "gpubusy on", 'possess "Profile Light Camera"']);
-    expect(samples.every((sample) => sample.settings!["resolution.scale"] === "0.75" || /resolution (1\.0|0\.5)$/.test(sample.label))).toBe(true);
+    expect(commands.slice(0, 8)).toEqual(["framesinflight off", "framesinflight 2", "framecap", "quality resolution scale 1", 'possess "Profile Heavy Camera"', "gpubusy on", "gpubusy on", 'possess "Profile Light Camera"']);
+    expect(samples.every((sample) => sample.settings!["resolution.scale"] === "1" || /resolution (0\.85|0\.5)$/.test(sample.label))).toBe(true);
     // Each step's commands, its sample, then `quality reset`, the held resolution and its own restore before the next baseline.
     expect(commands.slice(at("shadowdebug sunpasses off"), at("shadowdebug sunpasses on") + 1))
-      .toEqual(["shadowdebug sunpasses off", "gpubusy on", "quality reset", "quality resolution scale 0.75", "shadowdebug sunpasses on"]);
+      .toEqual(["shadowdebug sunpasses off", "gpubusy on", "quality reset", "quality resolution scale 1", "shadowdebug sunpasses on"]);
     // Every row but the one sampled with the samplers off, which turns the probe off for its window.
     expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length - 1);
-    // Back to the session's quality, its Dynamic Resolution included, and the tour camera.
+    // Back to the session's quality and the tour camera.
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", 'possess "Main Camera"']);
     // Each row's draws per pass and shadow atlas, as the step left them.
     const row = (label: string) => rows.find((sample) => sample.label === label)!;
@@ -1522,7 +1522,7 @@ describe("Profile", { timeout: 30_000 }, () => {
       endChanges: [],
       // This view reports no presentation counts.
       holdRate: null,
-      resolution: { scale: 0.75, floor: true, levelBefore: 1 },
+      resolution: { scale: 1, levelBefore: 1 },
       frameCap: 30,
     });
   });

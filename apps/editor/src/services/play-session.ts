@@ -801,7 +801,6 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
         buildId: build ? `${build.packageVersion}:${build.runNumber}.${build.runAttempt}` : null,
         sceneId: sceneLoads.currentSceneGuid() ?? options.sceneAssetGuid ?? "play-scene",
         runtimeHost: runtimeMode, quality: JSON.stringify(render ?? {}), frameCap: Number.isFinite(frameCap) ? frameCap : null,
-        dynamicResolution: render?.quality?.resolution?.dynamic === true,
         enabledDiagnostics: ["performance"], gpuTiming: "unavailable" };
     },
     observeFrames: (listener) => handle.observePerformance(listener),

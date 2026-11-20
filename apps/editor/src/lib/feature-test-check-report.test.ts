@@ -452,7 +452,7 @@ describe("formatFeatureTestCheckReport", () => {
         play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: 22, ticksPerSecond: 60, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
           profile: {
             instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 }, endChanges: [], holdRate: { heldPerSecond: 2.36, share: 0.234 },
-            resolution: { scale: 0.75, floor: true, levelBefore: 1.25 },
+            resolution: { scale: 0.75, levelBefore: 1.25 },
           },
           benchmark: [
             { ...sample("heavy warm-up 1", 44, 11, { drawPasses: undefined, atMs: 0 }), label: "warm-up 1", baseline: false, warmup: true, view: "heavy" },
@@ -477,7 +477,7 @@ describe("formatFeatureTestCheckReport", () => {
     // The render loop's own count and the game's tick rate, which the loop does not set.
     expect(lines).toContain("  Play: loaded in 2.0 s · no frames sampled · render loop 22 fps (last second) · game 60 ticks/s");
     expect(lines).toContain("  Restored: every setting as before the first step");
-    expect(lines).toContain("  Resolution held: scale 0.75 (level 1.33) for every row, Dynamic Resolution's floor at this tier, where a GPU-bound device sits, with Dynamic Resolution off; Play was at scaling level 1.25 before");
+    expect(lines).toContain("  Resolution held: scale 0.75 (level 1.33) for every row, the session's own scale; Play was at scaling level 1.25 before");
     // The control view's visits, unchanged, at their times into the sweep, and its change over the run.
     expect(lines).toContain("  Drift (heavy view, revisited unchanged; at m:ss into the sweep, gpu busy / cpu ms): warm-up 1 0:00 44.0/11.0 · warm-up 2 0:10 42.0/10.0 · heavy baseline 1 1:00 40.0/10.0 · heavy baseline 2 1:20 42.0/11.0 · heavy baseline 3 1:40 40.0/10.0 · heavy drift 5:00 46.0/12.0");
     expect(lines).toContain("  Drift first to last visit: gpu busy +2.0ms +5% · cpu +1.0ms +9%; discount a step's change by the drift around it");

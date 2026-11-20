@@ -36,14 +36,11 @@ class FakeCanvas {
 /**
  * The project's High level with every screen effect on, as the Feature Test main scene plays: multisampled scene
  * colour and depth, the geometry pass with ambient occlusion, reflections, volumetrics and Screen-Space Shadows, bloom.
- * Dynamic resolution is off: it reads wall-clock frame intervals, which on a loaded runner exceed the 60 fps budget
- * and would raise the level and resize the view mid-step, whatever the quality change under test.
  */
 const HIGH: RenderProjectSettings = (() => {
   const high = applyProjectQualityPatch(normalizeRenderProjectSettings({}), qualityPresetPatch("high"));
   const on = <T extends { enabled: boolean }>(effect: T) => ({ ...effect, enabled: true });
-  const quality = normalizeRenderingQuality(high.quality);
-  return { ...high, quality: { ...quality, resolution: { ...quality.resolution, dynamic: false } },
+  return { ...high, quality: normalizeRenderingQuality(high.quality),
     effects: { ...DEFAULT_RENDER_EFFECTS, bloom: on(DEFAULT_RENDER_EFFECTS.bloom),
     ambientOcclusion: on(DEFAULT_RENDER_EFFECTS.ambientOcclusion), reflections: on(DEFAULT_RENDER_EFFECTS.reflections),
     volumetricLighting: on(DEFAULT_RENDER_EFFECTS.volumetricLighting) } };
@@ -184,11 +181,11 @@ describe("Play quality changes", () => {
     expect(session.snapshot()).toMatchObject({ appliedRevision: 1, effective: { render: { shadows: { reflections: false, preset: "custom" } } } });
     expect(await step("quality reset")).toEqual(nothing);
     expect(session.snapshot()).toMatchObject({ appliedRevision: 2, effective: { render: { shadows: { reflections: false, preset: "high" } } } });
-    // A game's Set Scalability writes the target frame rate the level already has: the resolution group turns Custom,
-    // then back. The resolution level dynamic resolution (here Engine Settings) moved the view to stays.
+    // A game's Set Scalability writes the Resolution Scale the level already has: the resolution group turns Custom,
+    // then back. The resolution level Engine Settings moved the view to since stays.
     play.scaling.setSettingsLevel(1.25);
     await frames(10);
-    expect(await step(() => session.request({ kind: "patch", render: { quality: { resolution: { targetFps: 60 } } } }))).toEqual(nothing);
+    expect(await step(() => session.request({ kind: "patch", render: { quality: { resolution: { scale: 1 } } } }))).toEqual(nothing);
     expect(session.snapshot()).toMatchObject({ appliedRevision: 3, effective: { render: { quality: { resolution: { preset: "custom" } } } } });
     expect(await step("quality reset")).toEqual(nothing);
     expect(play.scaling.getLevel()).toBe(1.25);

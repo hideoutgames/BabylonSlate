@@ -667,7 +667,7 @@ function instancePoolText(pool: NonNullable<FeatureTestCheckSceneResult["play"][
 function heldResolutionText(held: NonNullable<FeatureTestCheckSceneResult["play"]["profile"]>["resolution"] | null): string {
   if (!held) return "not pinned";
   const before = held.levelBefore === null ? "" : `; Play was at scaling level ${held.levelBefore.toFixed(2)} before`;
-  return `scale ${held.scale} (level ${(1 / held.scale).toFixed(2)}) for every row, ${held.floor ? "Dynamic Resolution's floor at this tier, where a GPU-bound device sits" : "the session's own scale"}, with Dynamic Resolution off${before}`;
+  return `scale ${held.scale} (level ${(1 / held.scale).toFixed(2)}) for every row, the session's own scale${before}`;
 }
 
 /** Minutes and seconds into the sweep: `2:05`. */

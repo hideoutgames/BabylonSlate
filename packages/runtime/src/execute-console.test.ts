@@ -339,7 +339,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(runtime.executeConsoleCommand("quality low").success).toBe(true);
     expect(runtime.executeConsoleCommand("quality resolution scale 0.5").success).toBe(true);
     expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(3);
-    expect(commands.at(-1)).toMatchObject({ type: "setScalability", transaction: { overrides: { quality: { resolution: { scale: 0.5, dynamic: false } } } } });
+    expect(commands.at(-1)).toMatchObject({ type: "setScalability", transaction: { overrides: { quality: { resolution: { scale: 0.5 } } } } });
     expect(runtime.executeConsoleCommand("quality resolution").output).toContain('"scale":0.5');
     expect(runtime.executeConsoleCommand("quality resolution scale 8").success).toBe(false);
     expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(3);

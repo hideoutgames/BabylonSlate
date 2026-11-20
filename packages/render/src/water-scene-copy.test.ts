@@ -734,7 +734,7 @@ it("follows a backbuffer resize in place, keeping every task and render pass id"
   const before = passes();
   const { renderPassId } = graph.waterSceneCopyDiagnostics()!;
   const { revision } = waterSceneCopyForPass(scene, renderPassId)!;
-  // NullEngine owns no canvas; its options are the backbuffer boundary (a dynamic-resolution step).
+  // NullEngine owns no canvas; its options are the backbuffer boundary (a Resolution Scale change).
   options.renderWidth = 256;
   options.renderHeight = 160;
   expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });

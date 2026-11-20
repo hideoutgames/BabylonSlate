@@ -24,9 +24,6 @@ export const SCALABILITY_FIELD_OWNERS = {
   },
   resolution: {
     scale: "resolution",
-    dynamic: "resolution",
-    minScale: "resolution",
-    targetFps: "resolution",
   },
   textures: {
     lodBias: "textures",

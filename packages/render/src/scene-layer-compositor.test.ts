@@ -758,7 +758,7 @@ describe("SceneLayerCompositor", () => {
     expect(compositor.pickHits(missX, 128, floor)).toEqual([]);
   });
 
-  it("maps the pointer through pick space when dynamic resolution raises the hardware scaling level", () => {
+  it("maps the pointer through pick space when Resolution Scale raises the hardware scaling level", () => {
     const { engine, compositor } = world();
     // A 128 px drawing buffer at level 2 is picked like a 256 px canvas.
     vi.spyOn(engine, "getRenderWidth").mockReturnValue(128);

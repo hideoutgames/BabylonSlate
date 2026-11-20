@@ -1624,7 +1624,7 @@ describe("Play createEngine view", () => {
     });
     handle.setSize(480, 270);
     handle.setRenderSettings(normalizeRenderProjectSettings({
-      quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
+      quality: { resolution: { scale: 0.8 } },
     }));
     await handle.prewarmSceneMaterials();
     expect(resize).toHaveBeenCalledWith(384, 216);
@@ -1713,7 +1713,7 @@ describe("Play createEngine view", () => {
     });
     const { handle: editor } = editorHandle(engine);
     editor.setRenderSettings(normalizeRenderProjectSettings({
-      quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
+      quality: { resolution: { scale: 0.8 } },
     }));
     await editor.prewarmSceneMaterials();
     expect(hardwareScaling).toBe(1.25);
@@ -1721,7 +1721,7 @@ describe("Play createEngine view", () => {
     for (let cycle = 0; cycle < 2; cycle += 1) {
       const { handle: play } = playHandle(engine);
       play.setRenderSettings(normalizeRenderProjectSettings({
-        quality: { resolution: { scale: 0.5, minScale: 0.5, dynamic: false } },
+        quality: { resolution: { scale: 0.5 } },
       }));
       await play.prewarmSceneMaterials();
       expect(hardwareScaling).toBe(2);
@@ -3242,56 +3242,9 @@ describe("Play createEngine view", () => {
     const pressure = handle.renderDiagnostics().pressure;
     expect(pressure?.cpuMs).toBeGreaterThanOrEqual(0);
     // Editor viewports are free-running: presented-frame intervals measure
-    // host event-loop contention, not frame cost, and must not feed the valve.
+    // host event-loop contention, not frame cost, and are not reported.
     expect(pressure?.presentationMs).toBeNull();
     expect(pressure?.gpuMs).toBeNull();
-  });
-
-  it("lets only the sole rendering view drive the Engine-wide scaling valve", async () => {
-    const engine = sharedEngine();
-    const { handle: scene } = editorHandle(engine);
-    const { handle: prefab } = editorHandle(engine);
-    await scene.prewarmSceneMaterials();
-    await prefab.prewarmSceneMaterials();
-    const sceneValve = vi.spyOn(scene.scaling, "noteFramePressure");
-    const prefabValve = vi.spyOn(prefab.scaling, "noteFramePressure");
-    const frame = () => {
-      engine.onBeginFrameObservable.notifyObservers(engine);
-      renderViews(engine);
-      engine.onEndFrameObservable.notifyObservers(engine);
-    };
-    frame();
-    frame();
-    // Both views presented, but neither owns the shared scale alone.
-    expect(scene.renderDiagnostics().pressure?.cpuMs).toBeGreaterThanOrEqual(0);
-    expect(sceneValve).not.toHaveBeenCalled();
-    expect(prefabValve).not.toHaveBeenCalled();
-    prefab.setRegisterViewEnabled(false);
-    scene.scheduler.invalidate("asset");
-    frame();
-    expect(sceneValve).toHaveBeenCalled();
-    expect(prefabValve).not.toHaveBeenCalled();
-    // RTT previews register no view, yet draw into the same Engine frame.
-    scene.setRegisterViewEnabled(false);
-    const previews = [0, 1].map(() => createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, present: "rtt" }));
-    handles.push(...previews);
-    for (const preview of previews) await preview.prewarmSceneMaterials();
-    const previewValves = previews.map((preview) => vi.spyOn(preview.scaling, "noteFramePressure"));
-    const frames = async (until: () => boolean) => {
-      for (let attempt = 0; attempt < 20 && !until(); attempt += 1) {
-        engine.onBeginFrameObservable.notifyObservers(engine);
-        if (!renderViews(engine)) engine._renderFrame();
-        engine.onEndFrameObservable.notifyObservers(engine);
-        await new Promise<void>((resolve) => setTimeout(resolve, 20));
-      }
-    };
-    await frames(() => previews.every((preview) => preview.renderDiagnostics().pressure !== null));
-    expect(previews.map((preview) => preview.renderDiagnostics().pressure?.cpuMs)).toEqual([expect.any(Number), expect.any(Number)]);
-    expect(previewValves.map((valve) => valve.mock.calls.length)).toEqual([0, 0]);
-    // Hiding one preview leaves the other as the Engine's only rendering view.
-    previews[1]!.scheduler.setVisible(false);
-    await frames(() => previewValves[0]!.mock.calls.length > 0);
-    expect(previewValves[0]).toHaveBeenCalled();
   });
 
   it("rebinds editor MeshComponent materials after setMaterialDocuments", () => {
@@ -3395,7 +3348,7 @@ describe("Play createEngine view", () => {
     expect(handle.scene.clearColor.a).toBe(1);
   });
 
-  it("does not drop a hardware scaling tier on WebGL context restore", () => {
+  it("keeps the scaling level across a WebGL context restore", () => {
     const engine = sharedEngine();
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
@@ -3408,11 +3361,11 @@ describe("Play createEngine view", () => {
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
     });
-    handle.scaling.setLevel(1.25);
+    handle.scaling.setSettingsLevel(1.25);
     expect(handle.scaling.getLevel()).toBe(1.25);
     engine.onContextLostObservable.notifyObservers(engine);
     engine.onContextRestoredObservable.notifyObservers(engine);
-    expect(handle.scaling.getLevel()).toBe(1);
+    expect(handle.scaling.getLevel()).toBe(1.25);
     expect(logs.some((message) => /context lost/i.test(message))).toBe(true);
     expect(logs.some((message) => /context restored/i.test(message))).toBe(
       true,
@@ -3430,23 +3383,6 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     expect(handle.scaling.getLevel()).toBe(1.5);
-  });
-
-  it("uses the view frame cap as the scaling valve target", () => {
-    const engine = sharedEngine();
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: engine,
-      playMode: true,
-      hardwareScalingLevel: 1,
-      frameCap: 30,
-    });
-    handles.push(handle);
-    // 20ms is slow vs 60fps (16.7ms) but cheap vs a 30fps cap (33ms).
-    for (let i = 0; i < 40; i++) {
-      handle.scaling.noteFramePressure({ presentationMs: null, cpuMs: 20, gpuMs: null });
-    }
-    expect(handle.scaling.getLevel()).toBe(1);
   });
 
   it.each([false, true])("keeps post-process materials and passes after asynchronous readiness (Play: %s)", async (playMode) => {
@@ -5041,7 +4977,7 @@ describe("Play createEngine view", () => {
     const editorEngine = sharedEngine();
     const editorLoop = vi.spyOn(editorEngine, "runRenderLoop");
     const editor = editorHandle(editorEngine);
-    const command = scalabilityCommand({ quality: { resolution: { scale: 0.5, minScale: 0.5 } } });
+    const command = scalabilityCommand({ quality: { resolution: { scale: 0.5 } } });
     play.handle.applyCommand(command);
     editor.handle.applyCommand(command);
     // Transactions apply at the next frame boundary of the owning view.
@@ -6036,7 +5972,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas, { sharedEngine: engine, playMode: true });
     handles.push(handle);
     const world = () => { const { width, height } = handle.renderDiagnostics(); return [width, height]; };
-    handle.setLocalQualityOverrides({ resolution: { scale: 0.5, minScale: 0.25, dynamic: true } });
+    handle.setLocalQualityOverrides({ resolution: { scale: 0.5 } });
     handle.resize();
     // No layer: the backbuffer is the world's size, as in the editor.
     expect(setSize).toHaveBeenLastCalledWith(200, 150);
@@ -6048,8 +5984,8 @@ describe("Play createEngine view", () => {
     expect(setSize).toHaveBeenLastCalledWith(800, 600);
     expect(hardwareScaling).toBe(0.5);
     expect(world()).toEqual([200, 150]);
-    // Dynamic resolution steps scale the world alone.
-    handle.scaling.setLevel(2.5);
+    // A level change scales the world alone.
+    handle.scaling.setSettingsLevel(2.5);
     expect(world()).toEqual([160, 120]);
     expect(hardwareScaling).toBe(0.5);
     handle.resize();
@@ -6074,7 +6010,7 @@ describe("Play createEngine view", () => {
     Object.assign(canvas, { clientWidth: 400, clientHeight: 300, ownerDocument: { defaultView: { devicePixelRatio: 2 } } });
     const handle = createEngine(canvas, { sharedEngine: engine, editor: true, fullQuality: true });
     handles.push(handle);
-    handle.setLocalQualityOverrides({ resolution: { scale: 0.5, minScale: 0.5, dynamic: false }, textures: { anisotropy: 2 }, geometry: { autoLod: true } });
+    handle.setLocalQualityOverrides({ resolution: { scale: 0.5 }, textures: { anisotropy: 2 }, geometry: { autoLod: true } });
     handle.resize();
     expect(setSize).toHaveBeenLastCalledWith(800, 600);
     expect(hardwareScaling).toBe(2);

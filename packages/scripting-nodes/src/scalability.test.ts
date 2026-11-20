@@ -23,7 +23,7 @@ function runBeginPlay(nodes: NodeSpec[], edges: EdgeSpec[], ctx: Record<string, 
 }
 
 describe("scalability nodes", () => {
-  it("Set Render Scale writes one sample of Scale as scale and minimum", () => {
+  it("Set Render Scale writes one sample of Scale as the scale", () => {
     let samples = 0;
     const requests: unknown[] = [];
     runBeginPlay(
@@ -33,7 +33,7 @@ describe("scalability nodes", () => {
     );
     expect(samples).toBe(1);
     expect(requests).toEqual([
-      { kind: "patch", render: { quality: { resolution: { scale: 0.25, minScale: 0.25, dynamic: false } } } },
+      { kind: "patch", render: { quality: { resolution: { scale: 0.25 } } } },
     ]);
   });
 

@@ -29,7 +29,7 @@ export interface SharedOutlineContribution {
   kind: "global" | "component" | "selection";
   targets: readonly SharedOutlineTarget[];
   color: readonly [number, number, number];
-  /** Actual output pixels; independent of DPR and dynamic-resolution requests. */
+  /** Actual output pixels; independent of DPR and resolution-scale requests. */
   width: number;
   throughMeshes?: boolean;
   /** Global CEL only. Camera-to-surface distances, evaluated per mask sample. */
