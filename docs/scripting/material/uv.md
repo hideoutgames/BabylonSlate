@@ -20,6 +20,7 @@ Returns the texture coordinates of the surface, particle quad or text glyph bein
 
 ## Notes
 
-- Available in Surface, Landscape, Particle and Text materials. Use [**Screen UV**](screen-uv.md) in Post Process materials.
+- Available in Surface, Landscape, Particle, Text and Decal materials. Use [**Screen UV**](screen-uv.md) in Post Process materials.
+- In Decal materials, it is the decal's projected coordinates: 0 to 1 across its box's local X and Z, on both channels.
 - In Text materials, the component's **Material UV** setting chooses whole-text or per-glyph coordinates.
 - UV Channel applies to Surface materials. Particles and text glyphs have one set of coordinates, which both channels read. A mesh without a second set reads (0, 0) on UV 1.

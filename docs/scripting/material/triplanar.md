@@ -32,4 +32,4 @@ Samples a texture along the three world axes and blends the results by the surfa
 
 - The texture is placed by world position, so it stays put when the mesh moves and lines up across neighbouring meshes.
 - Costs three texture samples.
-- Only in Surface and Landscape materials, in the fragment stage.
+- Only in Surface, Landscape and Decal materials, in the fragment stage.
