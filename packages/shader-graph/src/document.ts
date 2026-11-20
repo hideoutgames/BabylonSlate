@@ -16,7 +16,7 @@ export type MaterialBlendMode =
 
 /**
  * The Blend Modes a domain offers. Text always blends (Translucent, Additive or Multiply); Particle and Post Process
- * have none (emitters own blending, a pass replaces the image).
+ * have none (emitters own blending, a pass replaces the image, and a Post Process Material always stores Opaque).
  */
 export function materialBlendModesFor(domain: MaterialDomain): readonly MaterialBlendMode[] {
   if (domain === "text") return ["translucent", "additive", "multiply"];
@@ -490,8 +490,9 @@ export function normalizeMaterialDocument(
     name: asString(record.name, fallbackName),
     domain,
     shadingModel: domain === "text" || record.shadingModel === "unlit" ? "unlit" : "pbr",
+    // A post-process pass replaces the image, so it has no Blend Mode: always Opaque.
     blendMode:
-      domain === "text" ? (record.blendMode === "additive" || record.blendMode === "multiply" ? record.blendMode : "translucent") : record.blendMode === "masked" ||
+      domain === "text" ? (record.blendMode === "additive" || record.blendMode === "multiply" ? record.blendMode : "translucent") : domain === "postProcess" ? "opaque" : record.blendMode === "masked" ||
       record.blendMode === "translucent" ||
       record.blendMode === "additive" ||
       record.blendMode === "multiply"

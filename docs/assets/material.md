@@ -55,7 +55,7 @@ With no node selected, the **Inspector** shows these settings. Some apply to onl
 | --- | --- |
 | Domain | **Surface** (meshes and models), **Landscape**, **Post Process** (full-screen passes), **Particle**, **Text** (2D text in Scene Layers) or **Decal** (projected by a [Decal](../components/decal.md) or [Spawn Decal](../scripting/class/spawn-decal.md)). Changing it removes nodes the new domain does not support; between Surface and Decal the output node keeps the wires both outputs have. |
 | Shading Model | **PBR** (lit) or **Unlit**. Surface, Landscape and Decal. |
-| Blend Mode | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (Surface, Landscape and Decal); Text offers **Translucent**, **Additive** and **Multiply**. Multiply darkens what is behind by the colour, scaled by Opacity; on Scene Layers see [Multiply on Scene Layers](#multiply-on-scene-layers). Not shown for Particle; particle emitters set their own blending. |
+| Blend Mode | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (Surface, Landscape and Decal); Text offers **Translucent**, **Additive** and **Multiply**. Multiply darkens what is behind by the colour, scaled by Opacity; on Scene Layers see [Multiply on Scene Layers](#multiply-on-scene-layers). Not shown for Particle or Post Process: particle emitters set their own blending, and a post-process pass replaces the picture. |
 | Alpha Cutoff | Masked only. Pixels with lower opacity are cut out. Under [MSAA](../graphics/post-processing.md#anti-aliasing) the cut-out edges are smoothed (not on decals). |
 | Two Sided | Draws back faces too. Surface and Landscape. |
 | Default Normals | **Model Normals** or **Flat Normals**, used when the Normal input is unconnected. Surface and Landscape. |
@@ -73,6 +73,22 @@ A Surface Material (on a **2D Material**, a material **2D Panel** and the other 
 - **With [Scene Layer post-processing](../scenes/scene-layers.md#scene-layer-post-processing) on**: Multiply only darkens. The colour is replaced by its brightness, a grey, and everything drawn beneath it, the layers below and what shows through them, is darkened by that grey before the passes run. A grey Material looks the same either way; a coloured one loses its hue here.
 
 The editor's Scene Layer view draws the layer over a neutral mid grey, so a Multiply visual shows what it does there; in the game the world is beneath it.
+
+## Where each domain goes
+
+Every Material field takes Materials of one domain, and its picker lists only those, with the Material Instances whose root Material has that domain.
+
+| Domain | Fields |
+| --- | --- |
+| Surface | **Material** on a Mesh, Dynamic Runtime Mesh, Cable or Mirror; a Model's material slots; a Foliage Model's **Material Override**; a Water's **Custom Material**; Scene Layer **Material** fields (2D Material, 2D Panel, 2D Joystick and the 2D controls' part Materials); the **Set Material Instance** node |
+| Landscape | **Landscape Material** |
+| Decal | **Material** on a Decal; the **Spawn Decal** node |
+| Text | **Text Material** on 2D Text and 2D Rich Text |
+| Particle | an emitter's **Material** |
+| Post Process | **Post-Process Passes** (Scene and Scene Layers); the **Material** of a Scene Layer post-processing panel; the Register and Unregister Post-Processing nodes |
+
+- Paste refuses a Material of another domain, as the picker does.
+- A field that already holds a Material of another domain, for example after its Material's **Domain** changed, shows an error under it until you pick another. A node pin that does shows an error in **Compiler Results**.
 
 ## Notes
 

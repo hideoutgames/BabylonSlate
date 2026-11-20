@@ -23,6 +23,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { useSceneTools } from "../context/scene-tools-context";
 import { isMaterialAssetType, materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import { materialDomainMatches, materialSlotRowState } from "../lib/material-asset-filters";
 import { landscapeCellSizeDescription } from "../lib/landscape-property-rows";
 
 const NEW_LANDSCAPE_SIZE = 64;
@@ -153,7 +154,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
       { id: "size", label: "Size", kind: "vector3", axes: ["W", "D"], value: [data.width, data.depth, 0], onChange: ([width, depth]) => setData({ ...data, width: Math.min(4096, Math.max(1, width)), depth: Math.min(4096, Math.max(1, depth)) }) },
       { id: "cells", label: "Cells", kind: "number", value: data.subdivisions, min: 4, max: 256, sensitivity: 1, description: landscapeCellSizeDescription(data), onChange: (value) => setData(resizeLandscape(data, value)) },
       { id: "landscape-collisions", label: "Landscape Collisions", kind: "boolean", value: data.collisionsEnabled, onChange: (collisionsEnabled) => setData({ ...data, collisionsEnabled }) },
-      { id: "material", label: "Landscape Material", kind: "asset", value: data.materialGuid, displayLabel: materials.find((m) => m.guid === data.materialGuid)?.name, displayType: "Material", visual: { assetType: "Material" }, placeholder: "Default", onPick: () => setMaterialPicker(true), onChange: (materialGuid) => setData({ ...data, materialGuid }) },
+      { id: "material", label: "Landscape Material", kind: "asset", value: data.materialGuid, displayLabel: materials.find((m) => m.guid === data.materialGuid)?.name, displayType: "Material", visual: { assetType: "Material" }, placeholder: "Default", assetTypes: ["Material", "MaterialInstance"], ...materialSlotRowState("landscape", data.materialGuid, (guid) => domains[guid]), onPick: () => setMaterialPicker(true), onChange: (materialGuid) => setData({ ...data, materialGuid }) },
     ]} /> : <>
       <PropertySectionTitle>Landscape</PropertySectionTitle>
       <p className="px-2 py-3 text-xs text-muted-foreground" data-testid="landscape-settings-empty">Select a landscape in Landscape Outliner to edit its size, cells, and Material.</p>
@@ -174,10 +175,8 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
   const update = (next: FoliageGroup) => setGroups(groups.map((entry) => entry.id === next.id ? next : entry));
   const assets = (assetRegistry?.list() ?? []).map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
   const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
-  const surfaceMaterials = new Set((assetRegistry?.list() ?? []).filter((entry) => isMaterialAssetType(entry.header.type)).filter((entry) => {
-    const domain = domains[entry.header.guid];
-    return domain === undefined || domain === "surface";
-  }).map((entry) => entry.header.guid));
+  const domainOf = (guid: string) => domains[guid];
+  const surfaceMaterials = new Set((assetRegistry?.list() ?? []).filter((entry) => isMaterialAssetType(entry.header.type) && materialDomainMatches(domains[entry.header.guid], "surface")).map((entry) => entry.header.guid));
   const pickerAssets = assets.filter((asset) => picker === "model" ? asset.type === "Model" : surfaceMaterials.has(asset.guid));
   const totalWeight = group?.models.reduce((sum, model) => sum + Math.max(0, model.weight), 0) ?? 0;
   const createGroup = () => {
@@ -233,7 +232,7 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
                 const minScale = Math.min(100, Math.max(0.01, min)); const maxScale = Math.min(100, Math.max(0.01, max));
                 updateModel(index, min !== model.minScale ? { minScale, maxScale: Math.max(minScale, maxScale) } : { maxScale, minScale: Math.min(minScale, maxScale) });
               } },
-              { id: "material", label: "Material Override", kind: "asset", value: model.materialGuid, displayLabel: assets.find((asset) => asset.guid === model.materialGuid)?.name, displayType: "Material", visual: { assetType: "Material" }, placeholder: "Model Materials", onPick: () => setPicker(index), onChange: (materialGuid) => updateModel(index, { materialGuid }) },
+              { id: "material", label: "Material Override", kind: "asset", value: model.materialGuid, displayLabel: assets.find((asset) => asset.guid === model.materialGuid)?.name, displayType: "Material", visual: { assetType: "Material" }, placeholder: "Model Materials", assetTypes: ["Material", "MaterialInstance"], ...materialSlotRowState("surface", model.materialGuid, domainOf), onPick: () => setPicker(index), onChange: (materialGuid) => updateModel(index, { materialGuid }) },
               { id: "cullDistance", label: "Cull Distance", description: "0 never culls.", kind: "number", unit: "m", value: model.cullDistance, min: 0, max: 10000, onChange: (cullDistance) => updateModel(index, { cullDistance }) },
               { id: "fadeRange", label: "Fade Range", kind: "number", unit: "m", value: model.fadeRange, min: 0, max: 1000, onChange: (fadeRange) => updateModel(index, { fadeRange }) },
               { id: "shadowDistance", label: "Shadow Distance", description: "0 follows Cull Distance.", kind: "number", unit: "m", value: model.shadowDistance, min: 0, max: 10000, onChange: (shadowDistance) => updateModel(index, { shadowDistance }) },

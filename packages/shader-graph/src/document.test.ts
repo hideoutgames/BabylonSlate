@@ -244,6 +244,12 @@ describe("switching material domain", () => {
     expect(materialBlendModesFor("postProcess")).toEqual([]);
   });
 
+  it("stores no Blend Mode of its own for a Post Process Material, loaded or switched to", () => {
+    expect(normalizeMaterialDocument({ ...createDefaultMaterialDocument("P", "postProcess"), blendMode: "masked" }).blendMode).toBe("opaque");
+    const translucent = { ...createDefaultMaterialDocument("S"), blendMode: "translucent" as const };
+    expect(setMaterialDomain(translucent, "postProcess").blendMode).toBe("opaque");
+  });
+
   it("replaces the surface terminal with the post-process terminal", () => {
     const doc = setMaterialDomain(
       createDefaultMaterialDocument("Rock"),
