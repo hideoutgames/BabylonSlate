@@ -133,17 +133,26 @@ test("A Post Processing Panel without a Material draws as a plain parent; with o
     ({ id, classId: "2DMaterialComponent", properties: { materialGuid }, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [scale[0], scale[1], 1] } });
   const placed = (position: [number, number], scale: [number, number]) =>
     ({ position: [position[0], position[1], 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [scale[0], scale[1], 1] as [number, number, number] });
-  // The panel actor's Class: a Post Processing Panel without a Material and the steps graph.
+  // The panel actor's Class: a Post Processing Panel without a Material, which its graph reaches, and the steps graph.
+  // Play draws a layer document's actors with the components the document holds (the editor copies a Class's
+  // components into its instances), so the instance carries the same panel.
+  const postProcessingPanel: SerializedComponent =
+    { id: PANEL_COMPONENT_ID, classId: "2DPostProcessingPanelComponent", properties: { enabled: true, materialGuid: null } };
   files.set(MAIN_CLASS_FILE, await encodeAssetDocument({
     guid: CLASS_GUID, type: "Class", name: "Main", version: versions.currentVersion("Class"),
-    payload: { ...PANEL_STEPS_GRAPH, components: [{ id: PANEL_COMPONENT_ID, classId: "2DPostProcessingPanelComponent", properties: { enabled: true, materialGuid: null } }] } as unknown as Record<string, unknown>,
+    payload: { ...PANEL_STEPS_GRAPH, components: [postProcessingPanel] } as unknown as Record<string, unknown>,
   }, { parentClass: "SceneLayerActor", dependencies: [GAIN_GUID] }));
   /** The same actors in both layers; only the frame differs: a plain parent, or the panel Class. */
   const actors = (frameClass: string): SerializedActor[] => [
     // Scale 8 × 6 is the panel's size; the child halves it back.
-    createActor("frame", "Frame", { classId: frameClass, transform: placed([-4, 0], [8, 6]) }),
+    createActor("frame", "Frame", { classId: frameClass, transform: placed([-4, 0], [8, 6]),
+      components: frameClass === "main" ? [postProcessingPanel] : [] }),
     createActor("icon", "Icon", { classId: "SceneLayerActor", parentId: "frame", transform: placed([0.4, 0], [0.5, 0.5]), components: [quad("blue", BLUE_GUID, [1, 1])] }),
     createActor("side", "Side", { classId: "SceneLayerActor", transform: placed([4, 0], [1, 1]), components: [quad("green", GREEN_GUID, [4, 3])] }),
+    // Editor Play loads the Materials a layer's components name, not one a script names first: a switched-off panel
+    // with nothing under it names Gain in both layers, so the script's Material is loaded. It draws nothing.
+    createActor("spare", "Spare", { classId: "SceneLayerActor", transform: placed([12, 6], [1, 1]),
+      components: [{ id: "spare-panel", classId: "2DPostProcessingPanelComponent", properties: { enabled: false, materialGuid: GAIN_GUID } }] }),
   ];
   const layer = async (guid: string, name: string, frameClass: string, dependencies: string[]) => {
     const document = createDefaultSceneLayer();
@@ -153,7 +162,7 @@ test("A Post Processing Panel without a Material draws as a plain parent; with o
       guid, type: "SceneLayer", name, version: versions.currentVersion("SceneLayer"), payload: document as unknown as Record<string, unknown>,
     }, { dependencies }));
   };
-  await layer(PLAIN_LAYER_GUID, "Plain", "SceneLayerActor", [BLUE_GUID, GREEN_GUID]);
+  await layer(PLAIN_LAYER_GUID, "Plain", "SceneLayerActor", [BLUE_GUID, GREEN_GUID, GAIN_GUID]);
   await layer(PANEL_LAYER_GUID, "Paneled", "main", [CLASS_GUID, BLUE_GUID, GREEN_GUID, GAIN_GUID]);
   const scene = async (guid: string, file: string, name: string, layerGuid: string) => {
     const document = createDefaultScene();
@@ -191,9 +200,10 @@ test("A Post Processing Panel without a Material draws as a plain parent; with o
   };
   // The world alone, for the pixels outside every layer.
   await command("scenelayers off");
-  await settledFrame(page, "world", plain);
+  // Kept by its hash: capturing "world" again once the layers are back would overwrite the world-only frame.
+  const world = await settledFrame(page, "world", plain);
   await command("scenelayers on");
-  expect(await settledFrame(page, "plain-again", await capture(page, "world"))).toBe(plain);
+  expect(await settledFrame(page, "plain-again", world)).toBe(plain);
 
   // (a) The same layer with the frame a Post Processing Panel without a Material: byte for byte the plain parent's.
   await command(`changescene ${PANEL_SCENE_GUID}`);

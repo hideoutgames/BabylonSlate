@@ -15,9 +15,11 @@ const PANEL = {
   variableName: "Post Processing Panel", scope: "member", implicitSelf: true, typeId: "object",
   typeClassId: "2DPostProcessingPanelComponent", componentId: PANEL_COMPONENT_ID,
 };
-/** A variable of that component, read or written through its Target pin. */
-const panelVariable = (variableName: string, propertyKey: string, typeId: string, typeClassId: string, extra: Record<string, unknown> = {}) =>
-  ({ variableName, propertyKey, scope: "member", typeId, typeClassId, classId: "2DPostProcessingPanelComponent", ...extra });
+/** A variable of that component, read or written through its Target pin, by its engine member id as the editor names it. */
+const panelVariable = (variableName: string, propertyKey: string, typeId: string, typeClassId: string, extra: Record<string, unknown> = {}) => ({
+  variableName, variableId: `engine:2DPostProcessingPanelComponent:var:${propertyKey}`, propertyKey, scope: "member", typeId, typeClassId,
+  classId: "2DPostProcessingPanelComponent", ...extra,
+});
 
 /**
  * The panel actor's Class graph: Begin Play prints Panel ready, then each key press runs the next step. 0 gives the

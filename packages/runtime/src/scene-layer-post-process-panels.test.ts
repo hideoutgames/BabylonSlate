@@ -25,7 +25,7 @@ function hud(): SerializedSceneLayer {
       createActor("plain", "Plain", { classId: "SceneLayerActor", components: [texture("t")] }),
       createActor("off", "Off", { classId: "SceneLayerActor", components: [panel("pp", { enabled: false, materialGuid: "blur" })] }),
       createActor("off-child", "Off Child", { classId: "SceneLayerActor", parentId: "off", components: [texture("t")] }),
-      createActor("empty", "Empty", { classId: "SceneLayerActor", components: [panel("pp", {})] }),
+      createActor("empty", "Empty", { classId: "PanelOwner", components: [panel("pp", {})] }),
     ],
   };
 }
@@ -49,8 +49,9 @@ async function panelRuntime() {
       'const material = (ctx) => ctx.callComponentFunction(ctx.getComponentById(ctx.self, "pp"), "getMaterialObject", {}).material;',
       'export function strength(ctx) { ctx.setMaterialFloatParameter(material(ctx), "Strength", 2); }',
       'export function off(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self, "pp"), "enabled", false); }',
+      'export function giveMaterial(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self, "pp"), "materialGuid", "wobble"); }',
     ].join("\n"),
-    entryPoints: ["strength", "off"].map((name) => ({ name, event: name, isAsync: false })),
+    entryPoints: ["strength", "off", "giveMaterial"].map((name) => ({ name, event: name, isAsync: false })),
   }]);
   runtime.realizePlayWorld();
   const layer = runtime.createSceneLayer("hud", 0)!;
@@ -81,6 +82,17 @@ describe("Scene Layer Post Processing Panels", () => {
       runtime.tick();
       runtime.tick();
       expect(panelLists()).toHaveLength(1);
+    } finally { runtime.stop(); }
+  });
+
+  it("sends a panel once a script gives it a Material", async () => {
+    const { runtime, actor, slot, panelLists } = await panelRuntime();
+    try {
+      runtime.invokeScriptEvent("PanelOwner", "giveMaterial", actor("empty"));
+      runtime.tick();
+      expect(panelLists().at(-1)!.panels.map((entry) => [entry.slotId, entry.materialGuid, entry.contentSlotIds]))
+        .toEqual([[slot("badge"), "wobble", [slot("badge"), slot("pip")]], [slot("frame"), "blur", [slot("frame"), slot("icon")]],
+          [slot("empty"), "wobble", [slot("empty")]]]);
     } finally { runtime.stop(); }
   });
 
