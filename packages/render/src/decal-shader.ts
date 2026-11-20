@@ -140,9 +140,10 @@ varying vec3 vTangent;
 varying vec4 vTintOpacity;
 varying vec4 vDecalParams;
 
+// How much of the decal the scene's fog keeps, for a fogged scene (the caller skips it without fog: mode 0). One exit:
+// D3D11's HLSL compiler (ANGLE on Windows) crashes the GPU process linking this program when the function returns early.
 float decalFogKeep(vec3 viewPos) {
   float mode = sceneFogInfo.x;
-  if (mode < 0.5) return 1.0;
   float dist = length(viewPos);
   float f = 1.0;
   if (mode < 1.5) {
