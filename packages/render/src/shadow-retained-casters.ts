@@ -24,6 +24,7 @@ import type { FloatArray, IndicesArray, Nullable } from "@babylonjs/core/types";
 import "@babylonjs/core/Shaders/shadowMap.fragment";
 import "@babylonjs/core/Shaders/shadowMap.vertex";
 import { beginManagedRenderAllocation, type ManagedRenderLease } from "./managed-render-resources";
+import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { isAutoLodMaster } from "./model-lod";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { isSmoothNormalShadowCaster } from "./shadow-bias";
@@ -559,7 +560,8 @@ export class RetainedShadowCasters {
   /**
    * `mesh`'s entry when its draws can be retained, described again only when the scheduler saw it change. Retained:
    * a rigid mesh, or an instance of one, with static geometry held on the CPU, one opaque Material with the stock
-   * vertex stage (the scheduler's safe caster), triangles, no levels of detail and the map's own normal bias.
+   * vertex stage (the scheduler's safe caster), triangles, no levels of detail, no lattice cage and the map's own
+   * normal bias.
    */
   private describe(mesh: AbstractMesh): Caster | null {
     const state = this.state(mesh);
@@ -581,7 +583,10 @@ export class RetainedShadowCasters {
     const geometry = source instanceof Mesh ? source.geometry : null;
     const material = mesh.material ?? this.scene.defaultMaterial;
     const parts = source.subMeshes;
+    // A caged caster can be safe (its cage is tracked), but the shared buffer draws its undeformed geometry: the cage's
+    // depth is drawn by its Material's lattice wrapper. A cage's arrival or departure moves the caster's revision.
     const retainable = state.safe && source instanceof Mesh && !!geometry && !!parts?.length && !levels && !isAutoLodMaster(source) &&
+      !hasMeshLatticeDeformer(mesh) && !hasMeshLatticeDeformer(source) &&
       !source.hasThinInstances && source.overrideRenderingFillMode === null &&
       material.fillMode === Material.TriangleFillMode && !isSmoothNormalShadowCaster(mesh) && !isSmoothNormalShadowCaster(source);
     const inOrder = retainable && (source as Mesh).isUnIndexed;

@@ -12,9 +12,10 @@
  * loads its colour target instead of starting from a clear (`fullTargetClear`), and an instanced batch uploads its rows
  * and per-instance values at every draw (no `Scene._instanceUploads`). `chain` adds bloom, volumetric lighting, FXAA in
  * place of multisampling and an FSR upscale, and draws the world at half the backbuffer's size, so the chain ends at the view's size and an output copy
- * fills the backbuffer. Both draw instances of one box with a per-instance colour. The spec compares
+ * fills the backbuffer. Both draw instances of one box with a per-instance colour, a translucent caster (which draws no
+ * shadow depth) and a lattice-caged box (whose cage the maps track). The spec compares
  * the two runs' frames, capture images and shadow atlas pages (every texel's depth bits) byte for byte, after a still
- * stretch and after a caster moves, and each run's GL calls and pass structure in one still frame
+ * stretch and after casters move and the cage bends and turns, and each run's GL calls and pass structure in one still frame
  * (`GlSignatureRecorder`).
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
@@ -39,7 +40,9 @@ import {
   createDefaultRenderTargetCaptureProperties, normalizeCelShadingSettings, normalizeRenderEffectsSettings, normalizeRenderingQuality,
   normalizeShadowSettings, parseMirrorProperties, type RenderTargetCaptureQuality,
 } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, RenderTargetCaptures, largeWorldEngineOptions } from "@haptic/render";
+import {
+  applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, RenderTargetCaptures, largeWorldEngineOptions, setMeshLatticeDeformer,
+} from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
@@ -330,12 +333,16 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     camera.maxZ = 80;
     scene.activeCamera = camera;
 
-    const material = async (name: string, color: number[], metallic: number, roughness: number): Promise<Material> => {
+    const material = async (name: string, color: number[], metallic: number, roughness: number, opacity = 1): Promise<Material> => {
       const doc = createDefaultMaterialDocument(name);
       doc.nodes.find((node) => node.id === "baseColor")!.properties.value = color;
       const output = doc.nodes.find((node) => node.id === "output")!.properties;
       output[materialPinDefaultPropertyKey("metallic")] = [metallic];
       output[materialPinDefaultPropertyKey("roughness")] = [roughness];
+      if (opacity < 1) {
+        doc.blendMode = "translucent";
+        output[materialPinDefaultPropertyKey("opacity")] = [opacity];
+      }
       const lowered = lowerMaterialDocument(doc);
       if (!lowered.ok) throw new Error(`${name} did not lower`);
       const compiled = compileMaterialPlan(lowered.plan, { scene, name });
@@ -358,6 +365,25 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     const ball = MeshBuilder.CreateSphere("ball", { diameter: 1.2, segments: 20 }, scene);
     ball.position.set(1.5, 0.6, 2);
     ball.material = glossy;
+    // A translucent caster: Babylon's shadow passes draw none of its parts, so no map redraws for it.
+    const glass = MeshBuilder.CreateSphere("glass", { diameter: 0.9, segments: 16 }, scene);
+    glass.position.set(0.3, 0.45, 0.4);
+    glass.material = await material("glass", [0.35, 0.65, 0.95], 0, 0.1, 0.45);
+    // A lattice-caged box under a component root: its shadow follows the cage, the root and the box, which the maps
+    // track, so a sun cascade it does not reach keeps its tile when the cage changes.
+    const cageRoot = new Mesh("cage root", scene);
+    cageRoot.position.set(2.8, 0, 3.6);
+    const caged = MeshBuilder.CreateBox("caged", { size: 0.9 }, scene);
+    caged.parent = cageRoot;
+    caged.position.y = 0.45;
+    caged.material = await material("caged", [0.75, 0.6, 0.5], 0, 0.6);
+    const cage = (twist: number) => ({
+      enabled: true, resolution: [2, 2, 2] as [number, number, number], strength: 1, fitToMesh: true,
+      boundsMin: [-1, -1, -1] as [number, number, number], boundsMax: [1, 1, 1] as [number, number, number],
+      // The top four controls slide along X by `twist`, the bottom four not: a shear.
+      offsets: Array.from({ length: 24 }, (_, index) => index % 3 === 0 && Math.floor(index / 3) % 4 >= 2 ? twist : 0),
+    });
+    setMeshLatticeDeformer(cageRoot, cage(0.35));
     // Instances of one box, each with its own colour (a Per Instance parameter): every pass draws them as one batch,
     // from one buffer of world rows and one of colours.
     const tintDocument = createDefaultMaterialDocument("tinted");
@@ -504,6 +530,11 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     box.rotation.y += 0.3;
     // An instance moves too: its batch's rows change.
     posts[2]!.position.z += 0.5;
+    // The cage bends further and its root turns: the caged box's shadow changes with neither its own matrix nor its
+    // geometry changing. The glass moves, which redraws nothing.
+    setMeshLatticeDeformer(cageRoot, cage(-0.3));
+    cageRoot.rotation.y += 0.4;
+    glass.position.x -= 0.3;
     for (let index = 0; index < 4; index++) await settledFrame();
     const retainedAfter = findSceneShadowController(scene)?.retainedCasters() ?? null;
     const movedCounters = {

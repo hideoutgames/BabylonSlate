@@ -21,7 +21,7 @@ import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
 import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
 import { hasRevisionTrackedLandscapeGeometry } from "./landscape-mesh";
 import { geometryRevision, hasOwnerNotifiedGeometry, unwatchGeometry, watchGeometry } from "./geometry-revision";
-import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
+import { activeMeshLatticeBinding, type LatticeBinding } from "./lattice-deformer-binding";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
 import { geometryBufferLayout, journalFollows, openRenderChangeReader, RenderChange, verifiesRenderChangeJournal, type RenderChangeReader } from "./render-change-journal";
 import { shadowMapChanges, type ShadowChangeRegion } from "./shadow-change-journal";
@@ -60,7 +60,10 @@ class Snapshot {
 }
 
 /** What each value of a caster's own snapshot is (`ShadowMapRefresh.walkCaster`), to name what a journal walk missed. */
-const CASTER_VALUES = ["transform", "enabled", "isVisible", "visibility", "shadowDistance", "source", "material", "materialState", "safeMaterial", "safeMesh"];
+const CASTER_VALUES = [
+  "transform", "enabled", "isVisible", "visibility", "shadowDistance", "source", "material", "materialState", "safeMaterial", "safeMesh",
+  "cage", "cageRevision",
+];
 
 /**
  * Every this many frames the full walk follows the journal's: a change the journal missed is found within that many
@@ -137,7 +140,12 @@ type Caster = {
   billboard: number;
   infinite: boolean;
   autoLod: boolean;
-  lattice: boolean;
+  /**
+   * An instance's own active lattice cage and its revision (`LatticeBinding.revision`), as its last walk found them:
+   * compared every walk. A mesh's own cage is its source's, which the source's poll follows (`SourceState.cage`).
+   */
+  cage: LatticeBinding | null;
+  cageRevision: number;
   /** Visible with automatic levels of detail: the level the camera draws is read every walk (`lodLevels`). */
   lod: boolean;
   /**
@@ -189,6 +197,9 @@ type SourceState = {
   geometry: Geometry | null;
   watchRevision: number | undefined;
   sideOrientation: number | undefined;
+  /** Its active lattice cage and the cage's revision (`LatticeBinding.revision`): its deformation, beside its own matrix. */
+  cage: LatticeBinding | undefined;
+  cageRevision: number;
   skeleton: unknown;
   morphTargetManager: unknown;
   /** Its thin-instance count, or -1 without thin instances; then its buffers and its user buffers in key order. */
@@ -747,7 +758,8 @@ export class ShadowMapRefresh {
         billboard: 0,
         infinite: false,
         autoLod: false,
-        lattice: false,
+        cage: null,
+        cageRevision: 0,
         lod: false,
         seen: 0,
         dirty: walk,
@@ -783,7 +795,8 @@ export class ShadowMapRefresh {
       mesh.infiniteDistance !== record.infinite ||
       isAutoLodMaster(mesh) !== record.autoLod ||
       (record.instance &&
-        ((mesh as InstancedMesh).sourceMesh !== record.source || hasMeshLatticeDeformer(mesh) !== record.lattice))
+        ((mesh as InstancedMesh).sourceMesh !== record.source || (activeMeshLatticeBinding(mesh) ?? null) !== record.cage)) ||
+      (record.cage !== null && record.cage.revision() !== record.cageRevision)
     )
       record.dirty = walk;
     // Only its world matrix: unless the journal, drained next, names it too, it reads that alone (`moveCaster`).
@@ -878,11 +891,13 @@ export class ShadowMapRefresh {
     state.value(shared.revision);
     state.value(material);
     state.value(materialShared.revision);
-    // An instance caches as its source does (`canCacheShadowMaterial`), unless a cage deforms the instance itself.
-    const lattice = record.instance && hasMeshLatticeDeformer(mesh);
+    // An instance caches as its source does (`canCacheShadowMaterial`), while its own cage is its source's and widened
+    // its bounds. A mesh's own cage is its source's, in the source's record.
+    const cage = record.instance ? activeMeshLatticeBinding(mesh) ?? null : null;
+    const cageRevision = cage ? cage.revision() : 0;
     const safeMaterial = shared.material !== material
       ? canCacheShadowMaterial(material, mesh)
-      : shared.safeMaterial && !lattice;
+      : shared.safeMaterial && (!record.instance || (cage === (shared.cage ?? null) && (!cage || cage.widens(mesh))));
     state.value(safeMaterial);
     // Automatic LOD levels are immutable index buffers that mirror this
     // mesh's material. Only maps that can see this caster track its level.
@@ -894,6 +909,8 @@ export class ShadowMapRefresh {
       mesh.billboardMode === Mesh.BILLBOARDMODE_NONE &&
       (source === mesh ? autoLod || !shared.levels : !shared.levels);
     state.value(safeMesh);
+    state.value(cage);
+    state.value(cageRevision);
     state.end();
     if (state.changed) {
       record.revision++;
@@ -908,7 +925,8 @@ export class ShadowMapRefresh {
     record.billboard = mesh.billboardMode;
     record.infinite = mesh.infiniteDistance;
     record.autoLod = autoLod;
-    record.lattice = lattice;
+    record.cage = cage;
+    record.cageRevision = cageRevision;
     record.lod = visible && autoLod;
     if (record.lod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
     return state.first;
@@ -1018,7 +1036,7 @@ export class ShadowMapRefresh {
     if (!shared) {
       shared = {
         revision: 0, walk: 0, changed: 0, used: 0, read: false, geometry,
-        watchRevision: undefined, sideOrientation: undefined, skeleton: null, morphTargetManager: null,
+        watchRevision: undefined, sideOrientation: undefined, cage: undefined, cageRevision: 0, skeleton: null, morphTargetManager: null,
         thinCount: -1, thinMatrix: null, thinPrevious: null, thinUser: [], parts: undefined, partObjects: [], partNumbers: [],
         rigid: false, levels: false, thin: false, material, safeMaterial: false,
       };
@@ -1040,6 +1058,12 @@ export class ShadowMapRefresh {
     const sideOrientation = mesh ? mesh.sideOrientation : undefined;
     if (shared.sideOrientation !== sideOrientation) changed = true;
     shared.sideOrientation = sideOrientation;
+    // Its cage's deformation (controls, parts, root matrix) is part of what it draws; its own matrix is each caster's.
+    const cage = activeMeshLatticeBinding(source);
+    const cageRevision = cage ? cage.revision() : 0;
+    if (shared.cage !== cage || shared.cageRevision !== cageRevision) changed = true;
+    shared.cage = cage;
+    shared.cageRevision = cageRevision;
     if (shared.skeleton !== source.skeleton) changed = true;
     shared.skeleton = source.skeleton;
     if (shared.morphTargetManager !== source.morphTargetManager) changed = true;

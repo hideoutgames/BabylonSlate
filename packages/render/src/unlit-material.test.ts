@@ -19,6 +19,7 @@ import { unlitBinding, unlitTexelGrid } from "./unlit-material-blocks";
 import { ensureLatticeShadowAdapter, releaseLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { hasStockVertexStage } from "./shadow-material-policy";
+import { drawsOnlyBlended } from "./shadow-mesh-policy";
 import { isUnlitMaterial, setUnlitMaterial, unlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
 
 const handles: Array<{ dispose: () => void }> = [];
@@ -307,6 +308,11 @@ describe("unlit Material", () => {
     applyOverlayVisualStyle(meshes[5]!, { opacity: 0.5 });
     expect(meshes.map((mesh) => material.needAlphaBlendingForMesh(mesh))).toEqual([false, true, true, false, true, true]);
     expect(meshes.map((mesh) => material.needAlphaTestingForMesh(mesh))).toEqual([false, false, false, true, true, false]);
+    // A shadow map reads the same rules per caster: the blended ones draw nothing into it, the cutout draws its quad.
+    expect(meshes.map((mesh) => drawsOnlyBlended(mesh))).toEqual([false, true, true, false, true, true]);
+    // The stock depth program alpha-tests only by the Material's alpha-test texture, which an unlit Material has none
+    // of: a cutout's depth is its geometry's whatever texture it samples, so a texture swap leaves its shadow as it is.
+    expect(material.getAlphaTestTexture()).toBeNull();
   });
 
   it("writes alpha-to-coverage under MSAA only for a cutout whose texture is filtered", () => {
