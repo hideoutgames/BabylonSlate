@@ -128,9 +128,11 @@ test("Scene Layer post-processing draws every layer into one target its passes g
 
   const panel = (id: string, materialGuid: string, x: number): SerializedComponent =>
     ({ id, classId: "2DMaterialComponent", properties: { materialGuid }, transform: { position: [x, 0, 0], rotation: [0, 0, 0, 1], scale: [8, 6, 1] } });
+  // A scene or layer actor carries its own components; its Class's are what a new instance copies.
+  const backPanel = panel("blue", BLUE_GUID, -4);
   files.set(MAIN_CLASS_FILE, await encodeAssetDocument({
     guid: CLASS_GUID, type: "Class", name: "Main", version: versions.currentVersion("Class"),
-    payload: { ...STEPS_GRAPH, components: [panel("blue", BLUE_GUID, -4)] } as unknown as Record<string, unknown>,
+    payload: { ...STEPS_GRAPH, components: [backPanel] } as unknown as Record<string, unknown>,
   }, { parentClass: "SceneLayerActor", dependencies: [BLUE_GUID, GAIN_GUID] }));
   const layer = async (guid: string, name: string, actor: ReturnType<typeof createActor>, dependencies: string[]) => {
     const document = createDefaultSceneLayer();
@@ -140,7 +142,7 @@ test("Scene Layer post-processing draws every layer into one target its passes g
       guid, type: "SceneLayer", name, version: versions.currentVersion("SceneLayer"), payload: document as unknown as Record<string, unknown>,
     }, { dependencies }));
   };
-  await layer(BACK_LAYER_GUID, "Back", createActor("back", "Back", { classId: "main" }), [CLASS_GUID, BLUE_GUID]);
+  await layer(BACK_LAYER_GUID, "Back", createActor("back", "Back", { classId: "main", components: [backPanel] }), [CLASS_GUID, BLUE_GUID]);
   await layer(FRONT_LAYER_GUID, "Front", createActor("front", "Front", { classId: "SceneLayerActor", components: [panel("green", GREEN_GUID, 2)] }), [GREEN_GUID]);
   const scene = createDefaultScene();
   scene.actors = scene.actors.filter((actor) => actor.id === scene.settings.defaultCameraActorId);
@@ -177,9 +179,9 @@ test("Scene Layer post-processing draws every layer into one target its passes g
     await expect(page.getByTestId("debug-console-input")).toHaveValue("");
   };
   await command("scenelayers off");
-  await settledFrame(page, "world", direct);
+  const world = await settledFrame(page, "world", direct);
   await command("scenelayers on");
-  expect(await settledFrame(page, "direct-again", await capture(page, "world"))).toBe(direct);
+  expect(await settledFrame(page, "direct-again", world)).toBe(direct);
   const coverage = await worldPixelChanges(page, "direct", "world", "direct");
   // The layers cover part of the view and leave the rest to the world.
   expect(coverage.world).toBeGreaterThan(coverage.total * 0.3);
