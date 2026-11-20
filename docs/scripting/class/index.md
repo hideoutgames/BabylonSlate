@@ -880,6 +880,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Capture Near Clip](set-capture-near-clip.md) | Sets the near clip distance of a capture actor's camera. |
 | [Set Capture Only Actors](set-capture-only-actors.md) | Sets whether a capture draws only the actors in its list. |
 | [Set Capture Render Target](set-capture-render-target.md) | Changes the Render Target that a Render Target Capture actor draws into. |
+| [Spawn Decal](spawn-decal.md) | Projects a pooled runtime decal onto opaque world surfaces at a location and orientation. |
 
 ## Scalability
 
