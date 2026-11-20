@@ -330,8 +330,9 @@ export class MaterialLibrary {
 
     const textures = materialTextureBindings(this.options.acquireTexture ? (guid, filter) => this.options.acquireTexture!(guid, scene, filter) : undefined, this.options.textureIdentity);
     let compiled: ReturnType<typeof compileMaterialPlan>;
-    // Instances compile under their root Material's name so generated block
-    // names, and therefore the shader text, match and the GPU program is shared.
+    // Any two Materials of one graph shape and values share a GPU program (the compiler names no block after its
+    // Material). Instances still compile under their root Material's name: a particle build shares its program only
+    // with builds of the same name (`shareParticleProgram`).
     const programGuid = doc.instanceOf ?? assetGuid;
     const materialName = unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`;
     let retireUnlinkable: (diagnostic: MaterialDiagnostic) => void = () => {};

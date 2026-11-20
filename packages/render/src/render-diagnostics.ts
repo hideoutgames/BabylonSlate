@@ -18,6 +18,7 @@ import type { FrameBackpressureStats } from "./frame-backpressure";
 import type { GpuProbeSnapshot } from "./gpu-probe-engine";
 import type { DrawPassCounts } from "./draw-passes";
 import type { OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
+import type { LayerFrameStats } from "./layer-frame-stats";
 import type { LayerDrawableMeshWork } from "./layer-drawable-meshes";
 import type { LayerDrawListWork } from "./layer-draw-list";
 import type { LeanPreparationWork } from "./lean-render-preparation";
@@ -73,6 +74,12 @@ export type RenderDiagnostics = {
    * rest drew on their own (`OverlayBatchStats`); all zero where it drew none.
    */
   layerBatches?: OverlayBatchStats;
+  /**
+   * The Scene Layer work of the view's last drawn frame (`LayerFrameStats`): the layer Scenes rendered, the layer pass's
+   * time and the part of it in batched passes, its clears, framebuffer changes and uploads, and the same for the work
+   * done before the world; all zero where it drew none.
+   */
+  layerFrame?: LayerFrameStats;
   /**
    * GPU-busy time per Engine frame while the `gpubusy` debug command measures (`gpu-busy-probe.ts`); null when it has
    * not measured a frame or the Engine has no fences.

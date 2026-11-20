@@ -270,6 +270,51 @@ describe("material lowering", () => {
     expect(first.plan.hash).not.toBe(changed.plan.hash);
   });
 
+  it("splits the hash into the graph's shape, whatever its node ids, and the values it binds", () => {
+    const plan = (doc: MaterialDocument) => {
+      const lowered = lowerMaterialDocument(doc);
+      if (!lowered.ok) throw new Error(lowered.diagnostics.map((row) => row.code).join(", "));
+      return lowered.plan;
+    };
+    /** A Base Color parameter times a texture's colour, with the parameter's name, default and texture given. */
+    const textured = (options: { ids?: string; name?: string; tint?: number[]; texture?: string; filter?: "nearest"; literal?: number } = {}) => {
+      const doc = createDefaultMaterialDocument();
+      const id = (base: string) => `${options.ids ?? ""}${base}`;
+      const tint = doc.nodes.find((node) => node.id === "baseColor")!;
+      tint.type = "param.color";
+      tint.properties = { name: options.name ?? "Tint", value: options.tint ?? [1, 1, 1, 1] };
+      doc.nodes.push(
+        { id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: options.texture ?? "stone", ...(options.filter ? { filter: options.filter } : {}) } },
+        { id: "mul", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+        { id: "half", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [options.literal ?? 0.5] } },
+      );
+      doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+      doc.edges.push(
+        { id: "e1", sourceNodeId: "baseColor", sourcePinId: "rgb", targetNodeId: "mul", targetPinId: "a" },
+        { id: "e2", sourceNodeId: "sample", sourcePinId: "rgb", targetNodeId: "mul", targetPinId: "b" },
+        { id: "e3", sourceNodeId: "mul", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
+        { id: "e4", sourceNodeId: "half", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" },
+      );
+      doc.nodes = doc.nodes.map((node) => ({ ...node, id: id(node.id) }));
+      doc.edges = doc.edges.map((edge) => ({ ...edge, id: id(edge.id), sourceNodeId: id(edge.sourceNodeId), targetNodeId: id(edge.targetNodeId) }));
+      return plan(doc);
+    };
+    const base = textured();
+    const renamed = textured({ ids: "imported7_" });
+    // The ids are content to the full hash (diagnostics anchor to them); the program and the values never see them.
+    expect(renamed.hash).not.toBe(base.hash);
+    expect([renamed.programHash, renamed.valueHash]).toEqual([base.programHash, base.valueHash]);
+    // A parameter's name and default, a texture and its filter are bound values: one program.
+    for (const values of [textured({ name: "Colour" }), textured({ tint: [0.2, 0.4, 0.6, 1] }), textured({ texture: "moss" }), textured({ filter: "nearest" })]) {
+      expect(values.programHash).toBe(base.programHash);
+      expect(values.valueHash).not.toBe(base.valueHash);
+    }
+    // A literal is code, and so is the shape.
+    const literal = textured({ literal: 0.25 });
+    expect([literal.programHash === base.programHash, literal.valueHash]).toEqual([false, base.valueHash]);
+    expect(plan(surfaceWithMultiply()).programHash).not.toBe(plan(createDefaultMaterialDocument()).programHash);
+  });
+
   it("compiles a parameter marked Per Instance apart from the same parameter unmarked", () => {
     const tinted = (perInstance: boolean) => {
       const doc = createDefaultMaterialDocument();
@@ -283,6 +328,8 @@ describe("material lowering", () => {
     expect(marked.ok && unmarked.ok).toBe(true);
     if (!marked.ok || !unmarked.ok) return;
     expect(marked.plan.hash).not.toBe(unmarked.plan.hash);
+    // An attribute is code, not a bound value.
+    expect(marked.plan.programHash).not.toBe(unmarked.plan.programHash);
     expect(isPerInstanceParameter("param.color", { perInstance: true })).toBe(true);
     expect([isPerInstanceParameter("param.texture", { perInstance: true }), isPerInstanceParameter("param.float", {})]).toEqual([false, false]);
   });

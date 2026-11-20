@@ -19,6 +19,7 @@ import {
 import { MaterialLibrary } from "./material-library";
 import { AuthoredPostProcessTask } from "./framegraph-post-process";
 import type { PostProcessStackDiagnostic } from "./post-process-material";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 const dispose: Array<() => void> = [];
 afterEach(() => {
@@ -337,12 +338,12 @@ it("hot rebuilds without retaining old apply callbacks and ignores queued update
     (entry) => entry instanceof NodeMaterial,
   ) as NodeMaterial;
   expect(
-    material.attachedBlocks.find((block) => block.name === "gain"),
+    material.attachedBlocks.find((block) => block.name === nodeBlockName(revised, "gain")),
   ).toBeInstanceOf(InputBlock);
   expect(
     (
       material.attachedBlocks.find(
-        (block) => block.name === "gain",
+        (block) => block.name === nodeBlockName(revised, "gain"),
       ) as InputBlock
     ).value,
   ).toBe(0.75);

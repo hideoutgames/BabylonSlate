@@ -2,6 +2,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import { currentDrawPass, type DrawPass } from "./draw-passes";
+import { materialProgramCensus, type MaterialProgramCensus } from "./material-program-census";
 
 /**
  * Late first draws: Effects drawn for the first time on an Engine once a Play world view presents, and how long the
@@ -44,9 +45,10 @@ export type FirstDrawPasses = Partial<Record<DrawPass, number>>;
  * The programs an Engine holds now: how many, how many of them it has never drawn (compiled for nothing so far: each
  * cost a compile), and the drawn ones by the pass that first drew each. And what they are variants of: the shaders
  * they compile (a Material's build, a pass's own shader), the most programs one shader has, and the defines that
- * differ between programs of one shader (`splitBy`: each cause with the shaders it splits, most first).
+ * differ between programs of one shader (`splitBy`: each cause with the shaders it splits, most first). `materials` is the
+ * Material compiler's census: its builds against the distinct programs they share (`material-program-census.ts`).
  */
-export type ProgramInventory = { programs: number; neverDrawn: number; passes: FirstDrawPasses } & ProgramVariants;
+export type ProgramInventory = { programs: number; neverDrawn: number; passes: FirstDrawPasses; materials: MaterialProgramCensus } & ProgramVariants;
 
 /** A define that differs between programs of one shader, the defines that split the same shaders, and how many shaders that is. */
 export type ProgramSplit = { define: string; with: string[]; shaders: number };
@@ -57,6 +59,8 @@ export type FirstDrawStats = {
   draws: number;
   /** Of those, Effects the Engine already held when counting began: compiled by the load and not drawn by it. */
   loadCompiled: number;
+  /** The Effects (programs) the Engine held when counting last began: what the load compiled, every view's included. */
+  loadPrograms: number;
   /** Frames that held a first draw. */
   frames: number;
   /** Of those frames, the ones longer than `FIRST_DRAW_STALL_MS`. */
@@ -239,7 +243,7 @@ export function programInventory(engine: AbstractEngine): ProgramInventory | nul
   }
   if (!tracker.variants || tracker.variants.held !== held || tracker.variants.programs !== effects.length)
     tracker.variants = { held, programs: effects.length, value: programVariants(effects) };
-  return { ...counts, ...tracker.variants.value };
+  return { ...counts, materials: materialProgramCensus(engine), ...tracker.variants.value };
 }
 
 export function effectDrawnOn(engine: AbstractEngine, effect: Effect): boolean | undefined {
@@ -251,7 +255,7 @@ export function openFirstDrawStats(engine: AbstractEngine): FirstDrawSession | n
   const tracker = trackers.get(engine);
   if (!tracker) return null;
   const session: Session = {
-    stats: { draws: 0, loadCompiled: 0, frames: 0, stalls: 0, mostInFrame: 0, passes: {}, worstFrameMs: 0, longFrames: 0, longest: [] },
+    stats: { draws: 0, loadCompiled: 0, loadPrograms: 0, frames: 0, stalls: 0, mostInFrame: 0, passes: {}, worstFrameMs: 0, longFrames: 0, longest: [] },
     held: null, inFrame: 0, passesInFrame: {}, compilesInFrame: 0, frameStart: 0, engineEnd: null,
   };
   /** `whole` is false for the frame a pause cuts short: its first draws count, its length does not make it long. */
@@ -293,8 +297,9 @@ export function openFirstDrawStats(engine: AbstractEngine): FirstDrawSession | n
   return {
     resume() {
       if (session.held) return;
-      const compiled = (engine as unknown as DrawEngine)._compiledEffects ?? {};
-      session.held = new WeakSet(Object.values(compiled));
+      const compiled = Object.values((engine as unknown as DrawEngine)._compiledEffects ?? {});
+      session.held = new WeakSet(compiled);
+      session.stats.loadPrograms = compiled.length;
       session.inFrame = 0;
       session.passesInFrame = {};
       session.compilesInFrame = 0;
