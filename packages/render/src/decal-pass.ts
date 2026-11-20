@@ -533,9 +533,8 @@ export class SceneDecalHost {
     if (lit) {
       defines.push("#define DECAL_LIT");
       if (cel) defines.push("#define HAPTIC_CEL");
-      else defines.push("#define HAPTIC_ENVIRONMENT");
-      if (this.scene.getEngine().useExactSrgbConversions) defines.push("#define HAPTIC_EXACT_SRGB");
     }
+    if (this.scene.getEngine().useExactSrgbConversions) defines.push("#define HAPTIC_EXACT_SRGB");
     if (hasNormalMap) defines.push("#define DECAL_NORMAL_MAP");
     const uniforms = lit ? [...DECAL_BASE_UNIFORMS, ...HAPTIC_LIGHTING_UNIFORMS] : [...DECAL_BASE_UNIFORMS];
     const samplers = [

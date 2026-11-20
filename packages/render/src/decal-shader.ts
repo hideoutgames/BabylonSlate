@@ -100,6 +100,9 @@ uniform vec4 sceneFogInfo;
 uniform vec4 sceneFogColor;
 
 #ifdef DECAL_LIT
+#ifndef HAPTIC_CEL
+#define HAPTIC_ENVIRONMENT
+#endif
 ${envUniforms}
 uniform mat4 hapticEnvironmentMatrix;
 uniform float hapticShadowReceiver;
