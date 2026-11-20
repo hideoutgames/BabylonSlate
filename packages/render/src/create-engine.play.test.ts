@@ -655,12 +655,6 @@ describe("Play createEngine view", () => {
     });
   });
 
-  /**
-   * Full resolution, whatever the default tier's Resolution Scale: a scale below 1 resizes the world's graph when Scene
-   * Layers appear, which the views below do not test.
-   */
-  const FULL_RESOLUTION = normalizeRenderProjectSettings({ quality: { resolution: { scale: 1 } } });
-
   function sharedEngine(): NullEngine {
     // Production FrameGraph ownership; only absent NullEngine driver calls are adapted.
     const engine = adaptNullEngineFrameGraph(new NullEngine());
@@ -681,7 +675,6 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas, {
       sharedEngine: engine,
       playMode: true,
-      renderSettings: FULL_RESOLUTION,
     });
     handles.push(handle);
     return { handle, canvas };
@@ -848,7 +841,7 @@ describe("Play createEngine view", () => {
     const clock = frozenClock();
     const holds: boolean[] = [];
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, renderSettings: FULL_RESOLUTION, onCompileHold: (held) => holds.push(held) });
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onCompileHold: (held) => holds.push(held) });
     handles.push(handle);
     await handle.prewarmSceneMaterials();
     void handle.presentFirstFrame().catch(() => {});
@@ -900,7 +893,7 @@ describe("Play createEngine view", () => {
     // The driver boundary, under the Engine's own `createEffect` wrappers (Play installs them as it is created).
     vi.spyOn(engine, "createEffect").mockImplementation(((name: unknown, ...rest: unknown[]) =>
       name === "lit-variant" ? effect : create(name, ...rest)) as unknown as typeof engine.createEffect);
-    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, renderSettings: FULL_RESOLUTION, onCompileHold: (held) => holds.push(held) });
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onCompileHold: (held) => holds.push(held) });
     handles.push(handle);
     let requested = false;
     handle.scene.addIsReadyCheck({ isReady: () => {
@@ -1424,7 +1417,7 @@ describe("Play createEngine view", () => {
 
   function editorHandle(engine: NullEngine) {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, { sharedEngine: engine, renderSettings: FULL_RESOLUTION });
+    const handle = createEngine(canvas, { sharedEngine: engine });
     handles.push(handle);
     return { handle, canvas };
   }
@@ -3860,7 +3853,7 @@ describe("Play createEngine view", () => {
     ];
     const before = structuredClone({ document, authored });
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
-      sharedEngine: engine, playMode: true, renderSettings: FULL_RESOLUTION, materialDocuments: new Map([["gain", document]]), postProcessStack: authored,
+      sharedEngine: engine, playMode: true, materialDocuments: new Map([["gain", document]]), postProcessStack: authored,
     });
     handles.push(handle);
     const draw = () => renderViews(engine);
@@ -5262,13 +5255,13 @@ describe("Play createEngine view", () => {
       return compiled;
     };
     const editorView = async () => {
-      const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, renderSettings: FULL_RESOLUTION });
+      const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true });
       await present(editor);
       return editor;
     };
     /** Play with a particle emitter the editor's view does not draw, its program named by its Material's build. */
     const play = async () => {
-      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, renderSettings: FULL_RESOLUTION, materialDocuments, particleLibrary });
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, materialDocuments, particleLibrary });
       handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "sparks", classId: "Actor" });
       handle.applyCommand({ type: "assignParticle", slotId: 1, actorGuid: "sparks", componentId: "particle", particleSystemGuid: "system" });
       try {
@@ -6128,7 +6121,7 @@ describe("Play createEngine view", () => {
     });
     vi.spyOn(engine, "getRenderWidth").mockImplementation(() => source.width);
     vi.spyOn(engine, "getRenderHeight").mockImplementation(() => source.height);
-    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, renderSettings: FULL_RESOLUTION });
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
     handles.push(handle);
     let color = 0xff8040;
     handle.scene.onAfterRenderObservable.add(() => { source.pixel = color; });

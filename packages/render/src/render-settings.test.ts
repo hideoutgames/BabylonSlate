@@ -12,6 +12,7 @@ import {
 import {
   applyMaterialTextureAnisotropy, followSceneRenderSettings, sceneEffectsQualityLimits, sceneRenderingSettings, sceneWaterQuality, setSceneEffectsEnabled,
   allowSceneScreenShadows, sceneMultisampleCount, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, updateSceneRenderingSettings, pinFullRenderQuality,
+  resolveSceneRenderingQuality,
 } from "./render-settings";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 
@@ -23,6 +24,21 @@ function fixture() {
   engine.getCaps().maxAnisotropy = 16;
   return new Scene(engine);
 }
+
+it("draws a Scene given no project quality at full resolution, and one given a tier at that tier's scale", () => {
+  // An editor view or asset preview without the project's settings has no tier: not the default tier's 0.85.
+  const scene = fixture();
+  expect(resolveSceneRenderingQuality(scene).resolution.scale).toBe(1);
+  updateSceneRenderingSettings(scene, { mode: "pbr" });
+  expect(resolveSceneRenderingQuality(scene).resolution.scale).toBe(1);
+  sceneRenderingSettings(scene).localQualityOverrides = { resolution: { scale: 0.5 } };
+  expect(resolveSceneRenderingQuality(scene).resolution.scale).toBe(0.5);
+  sceneRenderingSettings(scene).localQualityOverrides = {};
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch("low")) });
+  expect(resolveSceneRenderingQuality(scene).resolution.scale).toBe(0.75);
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(undefined) });
+  expect(resolveSceneRenderingQuality(scene).resolution.scale).toBe(0.85);
+});
 
 it("renders the same CEL fade range as session readback after a runtime override lowers an inherited start", () => {
   const scene = fixture();
