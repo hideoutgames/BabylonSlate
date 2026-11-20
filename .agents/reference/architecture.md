@@ -119,7 +119,7 @@ Tests and delivery
 
 Budgets and defaults live in [engine-plan.md](engine-plan.md#baseline-device-and-performance-budget-rules). Rules for every change:
 
-- Render resolution is owned through `setHardwareScalingLevel` (`adaptToDeviceRatio: false`); the dynamic valve trusts presentation and GPU signals only for Play-mode handles, and editor viewports feed CPU cost only. The iPad baseline takes the same Anti-Aliasing tiers as every other device (Medium and above MSAA 4x); `DeviceProfile` has no sample cap.
+- Render resolution is owned through `setHardwareScalingLevel` (`adaptToDeviceRatio: false`) at a static level: 1 / Resolution Scale, or the Engine Settings level. `RenderDiagnostics.pressure` reports presentation and GPU time only for Play-mode handles; editor viewports report CPU cost only. The iPad baseline takes the same Anti-Aliasing tiers as every other device (Medium and above MSAA 4x); `DeviceProfile` has no sample cap.
 - `skipPointerMovePicking` stays on for every scene except overlay SceneLayer Play scenes.
 - Visible editor viewports render at the Engine Settings cap and freeze when hidden, obstructed, modal-covered, backgrounded or while Save All runs ([render.md](architecture/render.md)); never dirty-skip a visible viewport. Play uses the project frame cap.
 - Pause the render loop, game worker and encode queue on `visibilitychange` / app background. The encode queue also waits through Play, Preview Build and every blocking editor Scene load ([asset registry](architecture/asset-registry.md)).

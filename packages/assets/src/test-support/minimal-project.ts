@@ -8,6 +8,7 @@ import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
+  normalizeRenderingQuality,
   PROJECT_FILE,
   type ProjectStorage,
 } from "@haptic/core";
@@ -24,9 +25,14 @@ export async function minimalProjectFiles(
   project.metadata.createdAt = project.metadata.updatedAt =
     "2026-01-01T00:00:00.000Z";
   project.settings.startupSceneGuid = sceneGuid;
-  // Tests keep a light render workload instead of the High new-project default.
+  // Tests keep a light render workload instead of the High new-project default, at full resolution: the default
+  // tier's Resolution Scale would resize every view the tests measure.
   const { quality, shadows } = DEFAULT_RENDER_PROJECT_SETTINGS;
-  project.settings.render = { ...project.settings.render, quality, shadows };
+  project.settings.render = {
+    ...project.settings.render,
+    quality: normalizeRenderingQuality({ ...quality, resolution: { scale: 1 } }),
+    shadows,
+  };
   const scene = createDefaultScene();
   scene.actors = [
     createActor("actor-1", "Actor", {

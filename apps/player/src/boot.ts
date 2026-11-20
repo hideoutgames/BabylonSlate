@@ -1286,7 +1286,6 @@ function initializePlayer(
             sourceSha: null, buildId: null, sceneId: hostSceneGuid ?? startup,
             runtimeHost: worker ? "worker" as const : "in-process" as const,
             quality: JSON.stringify(render), frameCap: Number.isFinite(frameCap) ? frameCap : null,
-            dynamicResolution: render.quality?.resolution?.dynamic === true,
             enabledDiagnostics: ["performance"], gpuTiming: "unavailable" as const };
         },
         observeFrames: (listener) => handle.observePerformance(listener),

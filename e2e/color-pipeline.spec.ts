@@ -147,11 +147,9 @@ async function scalingLevel(page: Page): Promise<number | null> {
 }
 
 /**
- * The dynamic-resolution valve resizes the raster without touching the
- * backbuffer size or the task list, so a settled signature must cover both
- * pixels and the scaling level. Holding the signature for a window longer
- * than the valve's 30-frame step cooldown means a late step cannot land
- * between a baseline and its comparison capture.
+ * A scaling level change resizes the raster without touching the backbuffer
+ * size or the task list, so a settled signature must cover both pixels and
+ * the scaling level, held for a 3 s window.
  */
 async function settledFrame(
   page: Page,

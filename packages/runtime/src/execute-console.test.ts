@@ -64,7 +64,8 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
           expect(runtime.executeConsoleCommand(line).success).toBe(true);
       expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(4);
       expect(commands.at(-1)).toMatchObject({ type: "setScalability", transaction: { overrides: {} } });
-      expect(runtime.executeConsoleCommand("quality resolution").output).toContain('"scale":1');
+      // Back to the project's Medium tier.
+      expect(runtime.executeConsoleCommand("quality resolution").output).toContain('"scale":0.85');
     } finally { runtime.stop(); }
   });
   it.each([0, -1])("reports the effective fallback cap for framecap %s", (cap) => {
@@ -339,7 +340,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(runtime.executeConsoleCommand("quality low").success).toBe(true);
     expect(runtime.executeConsoleCommand("quality resolution scale 0.5").success).toBe(true);
     expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(3);
-    expect(commands.at(-1)).toMatchObject({ type: "setScalability", transaction: { overrides: { quality: { resolution: { scale: 0.5, dynamic: false } } } } });
+    expect(commands.at(-1)).toMatchObject({ type: "setScalability", transaction: { overrides: { quality: { resolution: { scale: 0.5 } } } } });
     expect(runtime.executeConsoleCommand("quality resolution").output).toContain('"scale":0.5');
     expect(runtime.executeConsoleCommand("quality resolution scale 8").success).toBe(false);
     expect(commands.filter((command) => command.type === "setScalability")).toHaveLength(3);

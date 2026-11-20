@@ -897,9 +897,9 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Post Processing Quality](set-post-processing-quality.md) | Scales the resolution of post-process passes that allow scalable resolution. |
 | [Set Render Mode](set-render-mode.md) | Switches between PBR and CEL rendering for the current session. |
 | [Set Render Resolution](set-render-resolution.md) | Locks the rendered output to a fixed width and height, with black bars if needed. |
-| [Set Render Scale](set-render-scale.md) | Sets a fixed render scale and turns off dynamic resolution. |
+| [Set Render Scale](set-render-scale.md) | Sets the render scale of the 3D world. |
 | [Set Rendering Effects](set-rendering-effects.md) | Sets the colour pipeline, tone mapping, exposure, bloom and vignette. |
-| [Set Resolution Quality](set-resolution-quality.md) | Sets render scale, dynamic resolution limits and the target frame rate. |
+| [Set Resolution Quality](set-resolution-quality.md) | Sets the render scale of the 3D world. |
 | [Set Scalability Preset](set-scalability-preset.md) | Applies a Low, Medium, High or Ultra quality tier to the current session. |
 | [Set Shadow Quality](set-shadow-quality.md) | Sets shadow map size, filtering, distance and the limits for local-light shadows. |
 | [Set Shadows Enabled](set-shadows-enabled.md) | Turns shadows on or off for the current session without losing their settings. |

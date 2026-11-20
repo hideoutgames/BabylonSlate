@@ -33,8 +33,7 @@ const medium = RENDER_QUALITY_PROFILES.medium, shadows = DEFAULT_SHADOW_SETTINGS
 /** Stable built-in types use the same property keys as runtime readback. */
 export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("ScalabilityResult", [number("revision", 0), choice("status", "ScalabilityStatus", "rebuildPending"), field("message", "string", "")]),
-  define("ResolutionQuality", [number("scale", medium.resolution.scale), bool("dynamic", medium.resolution.dynamic),
-    number("minScale", medium.resolution.minScale), number("targetFps", medium.resolution.targetFps)]),
+  define("ResolutionQuality", [number("scale", medium.resolution.scale)]),
   define("TextureQuality", [number("lodBias", medium.textures.lodBias), number("anisotropy", medium.textures.anisotropy),
     number("byteBudget", medium.textures.byteBudget)]),
   define("GeometryQuality", [bool("autoLod", medium.geometry.autoLod), number("lodDistanceScale", medium.geometry.lodDistanceScale),

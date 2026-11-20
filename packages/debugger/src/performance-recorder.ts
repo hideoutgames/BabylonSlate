@@ -59,7 +59,6 @@ export type PerformanceIdentity = {
   runtimeHost: "worker" | "in-process";
   quality: string;
   frameCap: number | null;
-  dynamicResolution: boolean;
   enabledDiagnostics: string[];
   /** A valid-query population, never fabricated per-frame alignment. */
   gpuTiming: "unavailable" | "disabled" | "unpaired";
@@ -383,7 +382,6 @@ function validIdentity(value: unknown): value is PerformanceIdentity {
     (identity.gpuReason !== undefined && (typeof identity.gpuReason !== "string" || identity.gpuReason.length > 4096)) ||
     (identity.gpuAttribution !== undefined && identity.gpuAttribution !== "engine-aggregate") ||
     (identity.gpuTiming === "unpaired" && identity.gpuAttribution !== "engine-aggregate") ||
-    typeof identity.dynamicResolution !== "boolean" ||
     !(identity.frameCap === null || finite(identity.frameCap)) ||
     !Array.isArray(identity.enabledDiagnostics) || identity.enabledDiagnostics.length > 32 ||
     !identity.enabledDiagnostics.every((item) => typeof item === "string" && item.length <= 256)) return false;
@@ -400,8 +398,8 @@ function metadataBytes(identity: PerformanceIdentity): number {
 }
 function copyIdentity(identity: PerformanceIdentity): PerformanceIdentity {
   const { sessionId, mode, sourceSha, buildId, sceneId, runtimeHost,
-    quality, frameCap, dynamicResolution, enabledDiagnostics, gpuTiming, gpuReason, gpuAttribution } = identity;
+    quality, frameCap, enabledDiagnostics, gpuTiming, gpuReason, gpuAttribution } = identity;
   return { sessionId, mode, sourceSha, buildId, sceneId, runtimeHost,
-    quality, frameCap, dynamicResolution, enabledDiagnostics: [...enabledDiagnostics], gpuTiming,
+    quality, frameCap, enabledDiagnostics: [...enabledDiagnostics], gpuTiming,
     ...(gpuReason !== undefined ? { gpuReason } : {}), ...(gpuAttribution !== undefined ? { gpuAttribution } : {}) };
 }

@@ -57,7 +57,7 @@ const LIVE_FIELDS = new Set([
   "cel.outlinesEnabled", "cel.outlineColor", "cel.outlineWidth",
   "cel.outlineDistanceFadeEnabled", "cel.outlineFadeStart", "cel.outlineFadeEnd",
   "shadows.softness", "shadows.autoBias", "shadows.depthBias", "shadows.normalBias",
-  "quality.textures.anisotropy", "quality.textures.byteBudget", "quality.resolution.targetFps",
+  "quality.textures.anisotropy", "quality.textures.byteBudget",
   "quality.geometry.autoLod", "quality.geometry.lodDistanceScale", "quality.geometry.occlusionCulling",
   "quality.geometry.mirrorReflections",
   "environmentLighting.enabled", "environmentLighting.intensity", "environmentLighting.rotationYDegrees",

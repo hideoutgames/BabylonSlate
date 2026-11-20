@@ -1,6 +1,5 @@
 import { readEngineDrawCalls } from "./draw-calls";
 import { managedRenderReservations } from "./managed-render-resources";
-import type { FramePressureSample } from "./hardware-scaling";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
 import { liveShadowAtlasEdge } from "./shadow-atlas";
@@ -28,6 +27,19 @@ import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./insta
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
 import { deviceTextureLimits } from "./device-profile";
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
+
+/**
+ * Per-view frame cost, measured across one rendered (non-loading) frame.
+ * `presentationMs` is the interval since the view's previous presented frame —
+ * `null` when that interval is unknown (skipped/capped/hidden/loading frames
+ * break the chain). `gpuMs` is the engine GPU frame time — `null` whenever it
+ * is unavailable or shared with sibling registered views. Unknown is never 0.
+ */
+export interface FramePressureSample {
+  presentationMs: number | null;
+  cpuMs: number;
+  gpuMs: number | null;
+}
 
 export type RenderDiagnostics = {
   /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere. */
@@ -233,9 +245,9 @@ export type RenderDiagnostics = {
   gpuMs: number | null;
   gpuStatus: "available" | "pending" | "unsupported";
   /**
-   * Last per-view pressure sample feeding the dynamic scaling valve (null
-   * before the first presented frame). `gpuMs` there is only attributed when
-   * this view is the Engine's sole rendering view.
+   * Last per-view frame cost sample (null before the first presented frame).
+   * `gpuMs` there is only attributed when this view is the Engine's sole
+   * rendering view.
    */
   pressure: FramePressureSample | null;
   /** Why `gpuMs` is this view's own cost, shared with siblings, or missing. */

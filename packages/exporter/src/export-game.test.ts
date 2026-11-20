@@ -124,7 +124,7 @@ describe("exportGame", () => {
     expect(restored.playFrameCap).toBe(60);
     expect(restored.render).toMatchObject({
       mode: "cel", width: 1366, height: 768,
-      quality: { textures: { anisotropy: 8 }, resolution: { scale: 1 } },
+      quality: { textures: { anisotropy: 8 }, resolution: { scale: 0.85 } },
     });
     expect(restored.render).not.toHaveProperty("editorProfile");
     expect(restored.render).not.toHaveProperty("localQualityOverrides");

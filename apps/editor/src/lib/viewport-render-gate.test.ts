@@ -315,19 +315,19 @@ describe("attachViewportRenderGate", () => {
 
 describe("applyLiveEngineSettings", () => {
   it("inherits project quality until local overrides are explicitly enabled, and restores inheritance", () => {
-    const handle = { setLocalQualityOverrides: vi.fn(), scaling: { setLevel: vi.fn() }, setTextureBudget: vi.fn() };
+    const handle = { setLocalQualityOverrides: vi.fn(), scaling: { setSettingsLevel: vi.fn() }, setTextureBudget: vi.fn() };
     const settings = { hardwareScalingLevel: 2, textureByteCeiling: 1024 * 1024 * 1024 };
     applyLiveEngineSettings(handle, settings);
     expect(handle.setLocalQualityOverrides).toHaveBeenLastCalledWith({});
-    expect(handle.scaling.setLevel).not.toHaveBeenCalled();
+    expect(handle.scaling.setSettingsLevel).not.toHaveBeenCalled();
     expect(handle.setTextureBudget).not.toHaveBeenCalled();
     applyLiveEngineSettings(handle, { ...settings, renderingOverridesEnabled: true });
-    expect(handle.setLocalQualityOverrides).toHaveBeenLastCalledWith({ resolution: { scale: 0.5, minScale: 0.5, dynamic: false }, textures: { byteBudget: 1024 * 1024 * 1024 } });
+    expect(handle.setLocalQualityOverrides).toHaveBeenLastCalledWith({ resolution: { scale: 0.5 }, textures: { byteBudget: 1024 * 1024 * 1024 } });
     applyLiveEngineSettings(handle, { ...settings, renderingOverridesEnabled: false });
     expect(handle.setLocalQualityOverrides).toHaveBeenLastCalledWith({});
   });
   it("applies hardware scaling and the post-processing gate without mutating a scene", () => {
-    const scaling = { setLevel: vi.fn(), setSettingsLevel: vi.fn() };
+    const scaling = { setSettingsLevel: vi.fn() };
     const handle = {
       scaling,
       scheduler: { setFrameCap: vi.fn(), setIdleHalfRate: vi.fn() },
@@ -343,12 +343,11 @@ describe("applyLiveEngineSettings", () => {
     expect(handle.scheduler.setFrameCap).toHaveBeenCalledWith(30);
     expect(handle.scheduler.setIdleHalfRate).toHaveBeenCalledWith(false);
     expect(scaling.setSettingsLevel).toHaveBeenCalledWith(1.5);
-    expect(scaling.setLevel).not.toHaveBeenCalled();
     expect(handle.setPostProcessingEnabled).toHaveBeenCalledWith(false);
   });
 
   it("does not apply viewportFrameCap or Half Rate When Idle onto a Play scheduler", () => {
-    const scaling = { setLevel: vi.fn(), setSettingsLevel: vi.fn() };
+    const scaling = { setSettingsLevel: vi.fn() };
     const handle = {
       scaling,
       scheduler: { setFrameCap: vi.fn(), setIdleHalfRate: vi.fn() },

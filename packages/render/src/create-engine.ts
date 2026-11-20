@@ -89,7 +89,7 @@ import { parseEasingCurve, setCustomEasingCurves, qualitySettingsFingerprint, qu
 import { captureView, ViewBlend } from "./view-blend";
 import { CameraShakeView } from "./camera-shake-view";
 import { isEnvironmentLightingReady } from "./environment-lighting";
-import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
+import { createRenderDiagnostics, type FramePressureSample, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
@@ -164,7 +164,7 @@ import {
   resourceCacheForEngine,
 } from "./resource-cache";
 import { largeWorldEngineOptions } from "./large-world";
-import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
+import { HardwareScalingController } from "./hardware-scaling";
 import { sceneViewRenderSize, setSceneOutputScale } from "./scene-output-scale";
 import {
   applyPlayFreeCamCommand,
@@ -721,16 +721,16 @@ function initializeEngine(
   let lockedViewSize: { width: number; height: number } | null = null;
   /** Play's output settings (resolution, Black Bars, Upscaling) as the runtime last applied them. */
   let playOutput: RenderProjectSettings | null = options.playMode ? normalizeRenderProjectSettings(options.renderSettings) : null;
-  /** Upscaling Pixelated draws the world at the full design size: Resolution Scale and Dynamic Resolution do not apply. */
+  /** Upscaling Pixelated draws the world at the full design size: Resolution Scale does not apply. */
   const effectiveResolution = (resolution: ResolutionQuality): ResolutionQuality =>
-    pixelatedUpscaling(playOutput) ? { ...resolution, scale: 1, minScale: 1, dynamic: false } : resolution;
+    pixelatedUpscaling(playOutput) ? { ...resolution, scale: 1 } : resolution;
   const scaledLockedViewSize = () => lockedViewSize ? {
     width: Math.max(1, Math.floor(lockedViewSize.width / engine.getHardwareScalingLevel())),
     height: Math.max(1, Math.floor(lockedViewSize.height / engine.getHardwareScalingLevel())),
   } : null;
   /**
-   * Play's world scale: the `HardwareScalingController` level (render scale,
-   * dynamic resolution, Engine Settings). Without Scene Layers it is the
+   * Play's world scale: the `HardwareScalingController` level (Resolution
+   * Scale or Engine Settings). Without Scene Layers it is the
    * Engine's level, so the backbuffer is the world's size, as in the editor.
    * With Scene Layers (`composited`) the backbuffer is the full output, the
    * view's device pixels or the locked resolution, for the layers, and the
@@ -918,8 +918,6 @@ function initializeEngine(
   }
   const settingsLevel = options.hardwareScalingLevel ?? 1;
   const scaling = new HardwareScalingController(engine, {
-    minLevel: settingsLevel,
-    maxLevel: 4,
     initialLevel: settingsLevel,
     apply: options.playMode && !presentRtt ? (level) => {
       worldLevel = level;
@@ -928,10 +926,6 @@ function initializeEngine(
       // A device-pixel view (a Scene Layer tab, a Pixel-Perfect 2D view) never writes the Engine-wide level.
       if (!deviceView()) engine.setHardwareScalingLevel(level);
     },
-    targetFrameMs:
-      options.frameCap && options.frameCap > 0
-        ? 1000 / options.frameCap
-        : 1000 / 60,
   });
   const snapshots = new SnapshotSampler(INITIAL_SNAPSHOT_CAPACITY);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
@@ -1306,8 +1300,8 @@ function initializeEngine(
     const quality = resolveSceneRenderingQuality(scene);
     const previous = appliedQuality;
     appliedQuality = quality;
-    // By value: a level label alone (Custom, then the level again) must not restart dynamic resolution at its floor,
-    // which would rebuild the view's graph at another size.
+    // By value: a level label alone (Custom, then the level again) changes nothing drawn, so it must not reapply the
+    // Resolution Scale over a level set since (Engine Settings), which would rebuild the view's graph at another size.
     if (qualityValuesKey(previous?.resolution) !== qualityValuesKey(quality.resolution)) {
       scaling.configureQuality(effectiveResolution(quality.resolution));
       syncLockedViewSize();
@@ -2008,7 +2002,7 @@ function initializeEngine(
   let lastRenderCpuMs = 0;
   /** `RenderDiagnostics.cpuMeanMs`: the mean of the last rendered frames' CPU time. */
   const renderCpuMean = new TrailingMean(RENDER_CPU_MEAN_FRAMES);
-  // Dynamic scaling input: whether this view presented the current and previous
+  // Frame cost sample: whether this view presented the current and previous
   // engine frames (non-loading), when the last presentation happened, and the
   // most recent pressure sample surfaced through diagnostics.
   let framePresented = false;
@@ -2291,7 +2285,7 @@ function initializeEngine(
         const water = sceneWaterQualityDeviceClamp(scene);
         quality.water = { ...quality.water, ...water.quality };
         const limits = [...water.limits,
-          ...(pixelatedFullResolution ? ["Upscaling Pixelated draws at full resolution: Resolution Scale and Dynamic Resolution do not apply."] : [])];
+          ...(pixelatedFullResolution ? ["Upscaling Pixelated draws at full resolution: Resolution Scale does not apply."] : [])];
         return { revision: transaction.revision, status: transaction.clamped || limits.length || quality.textures.anisotropy !== transaction.settings.render.quality?.textures.anisotropy ? "clamped" : "applied",
           message: limits.join(" ") || (transaction.clamped ? "Clamped rendering settings presented." : "Rendering settings presented."),
           effective: { frameCap: transaction.settings.frameCap, render: { ...transaction.settings.render,
@@ -2341,8 +2335,7 @@ function initializeEngine(
     stepViewBlend(frameStart);
     // Measure render cost only, not wall-clock gap since the previous
     // rendered frame — a frozen obstructed viewport can idle for seconds
-    // between frames, and feeding that gap to the scaling valve would read
-    // as a catastrophic frame time and drop quality for no reason.
+    // between frames, and that gap would read as a catastrophic frame time.
     const renderStart = performance.now();
     presentationStats.attempted += 1;
     if (measurePhases) presentationStats.preparationMs = renderStart - preparationStart;
@@ -2575,8 +2568,8 @@ function initializeEngine(
       const presentedAt = performance.now();
       // Only Play handles pace frames: their presented-frame interval measures
       // sustainable frame cost. Editor/prefab viewports are free-running, so
-      // the same interval mostly measures host event-loop contention and must
-      // not drive resolution scaling — they keep the cpuMs-only input.
+      // the same interval mostly measures host event-loop contention — they
+      // report cpuMs only.
       const presentationSignals = options.playMode === true;
       // GPU timing only means this view when it owns the Engine's render —
       // siblings would fold their cost into the same counter.
@@ -2592,10 +2585,6 @@ function initializeEngine(
       lastPressureSample.gpuMs = counter && counter.count > 0 ? counter.current / 1_000_000 : null;
       pressureSampled = true;
       lastPresentedAt = presentedAt;
-      // The scaling level is Engine-wide: only the sole rendering view drives
-      // it, so sibling views on a shared Engine cannot ratchet it against
-      // each other.
-      if (sole && !deviceView()) scaling.noteFramePressure(lastPressureSample);
       if (!registeredView) syncLockedViewSize();
     }
     previousFramePresented = framePresented;
@@ -2643,7 +2632,6 @@ function initializeEngine(
       type: "log",
       message: "WebGL context restored",
     });
-    scaling.noteRestore();
     // A preparation that ran while the context was lost failed (Babylon throws creating GPU resources then) and
     // latched its failure, which holds every later frame: restart the world's and the layers' preparation.
     worldRenderer.invalidate();

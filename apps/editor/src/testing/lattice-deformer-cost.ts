@@ -171,7 +171,7 @@ export async function runLatticeDeformerCost(options: LatticeDeformerCostOptions
     }
     const result = {
       adapter: engine.getInfo(), userAgent: navigator.userAgent, devicePixelRatio, elapsedMs: performance.now() - started,
-      workload: { vertexCounts, resolutions, modes, warmupMs, sampleMs, repetitions, width, height, samples: 1, dynamicResolution: false,
+      workload: { vertexCounts, resolutions, modes, warmupMs, sampleMs, repetitions, width, height, samples: 1,
         nominalDurationMs: vertexCounts.length * resolutions.length * modes.length * repetitions * (warmupMs + sampleMs),
         geometry: "One static subdivided ground, one StandardMaterial draw, no shadow/depth/outline/animation passes" },
       policy: {

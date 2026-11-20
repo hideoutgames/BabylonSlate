@@ -1,7 +1,6 @@
 import {
   createTag,
   normalizeProjectSettings,
-  normalizeRenderingQuality,
   type ProjectSettings,
 } from "@haptic/core";
 import { FEATURE_TEST_ROOT, type FeatureTestContext } from "./context";
@@ -15,26 +14,18 @@ export const FEATURE_TEST_TAGS = [
   "FeatureTest.Perf.Heavy",
 ] as const;
 
-/**
- * Base FeatureTest project settings, then every area's queued patch. Dynamic
- * resolution is off so performance runs measure a fixed workload.
- */
+/** Base FeatureTest project settings, then every area's queued patch. */
 export function applyFeatureTestProjectSettings(
   ctx: FeatureTestContext,
   base: ProjectSettings,
 ): ProjectSettings {
   let tags = base.tags;
-  const quality = normalizeRenderingQuality(base.render.quality);
   for (const path of FEATURE_TEST_TAGS) tags = createTag(tags, path).registry;
   let settings: ProjectSettings = {
     ...base,
     tags,
     alwaysPackageFolders: [...new Set([...(base.alwaysPackageFolders ?? []), `assets/${FEATURE_TEST_ROOT}`])],
     fonts: { ...base.fonts, defaultFontGuid: ctx.assets.fonts.onest || null },
-    render: {
-      ...base.render,
-      quality: { ...quality, resolution: { ...quality.resolution, dynamic: false } },
-    },
   };
   for (const patch of ctx.settingsPatches) settings = patch(settings);
   return normalizeProjectSettings(settings);

@@ -88,13 +88,8 @@ describe("rendering quality sessions", () => {
     expect(session.effective().shadows.distance).toBe(120);
     expect(session.effective().resolution.scale).toBe(0.5);
     session.execute(undefined, "reset");
-    expect(session.effective().resolution.scale).toBe(1);
-  });
-  it("fingerprints whether resolution may drop, and to what, so a report tells a dropped level from a set scale", () => {
-    const session = new RenderingQualitySession({ quality: RENDER_QUALITY_PROFILES.high });
-    expect(qualitySettingsFingerprint(session.effective())["resolution.dynamic"]).toBe("on 0.75");
-    session.execute("resolution", "scale", "0.5");
-    expect(qualitySettingsFingerprint(session.effective())["resolution.dynamic"]).toBe("off");
+    // Back to the inherited Medium tier's scale.
+    expect(session.effective().resolution.scale).toBe(0.85);
   });
   it("reports each chosen tier even when two tiers share a setting value", () => {
     const session = new RenderingQualitySession();

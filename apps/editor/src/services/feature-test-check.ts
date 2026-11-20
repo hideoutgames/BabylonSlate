@@ -76,8 +76,7 @@ export const FEATURE_TEST_BREAKDOWN_BASES: Readonly<Record<FeatureTestBreakdownM
   },
   "remove-one": {
     label: "medium",
-    // Tiers below Ultra turn dynamic resolution on, which a Feature Test project keeps off so the workload stays fixed.
-    commands: ["quality medium", "quality resolution reset"],
+    commands: ["quality medium"],
   },
   // Half resolution keeps a tablet's GPU below the point where it drops to its slower speed (SATURATED at full
   // resolution), so each water step's change is that part's own cost.
@@ -162,7 +161,7 @@ export const FEATURE_TEST_BREAKDOWN_STEPS: readonly FeatureTestBreakdownStep[] =
   { label: "MSAA 2x", commands: ["quality postprocessing antialiasing msaa2"], fields: ANTI_ALIASING_FIELDS, overlaps: true },
   { label: "post off", commands: ["postprocessing off"], restore: ["postprocessing on"], fields: ["post.enabled"] },
   { label: "captures off", commands: ["rendertargets off"], restore: ["rendertargets on"], fields: ["captures"] },
-  { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale", "resolution.dynamic"], overlaps: true },
+  { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale"], overlaps: true },
 ];
 
 /**
@@ -211,7 +210,7 @@ export const FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS: readonly FeatureTestBreakdown
     fields: ["water.reflections", "water.planarScale"],
   },
   { label: "captures", commands: ["rendertargets on"], fields: ["captures"] },
-  { label: "resolution 1.0", commands: [`quality resolution scale ${MEDIUM.resolution.scale}`], fields: ["resolution.scale", "resolution.dynamic"] },
+  { label: `resolution ${MEDIUM.resolution.scale}`, commands: [`quality resolution scale ${MEDIUM.resolution.scale}`], fields: ["resolution.scale"] },
 ];
 
 /** A `waterdebug` part off, undone by switching it back on (`quality reset` leaves debug switches as they are). */
@@ -291,15 +290,13 @@ export function profileState(settings: Readonly<Record<string, string>> | undefi
 }
 
 /**
- * The resolution a Profile holds for every row, from the session's fingerprint before it: with Dynamic Resolution on,
- * its floor (`resolution.dynamic`, `on <minScale>`: a GPU-bound device sits there, and a level that moves during the
- * run would confound every step), else the session's scale. `quality resolution scale` turns Dynamic Resolution off at
- * that scale; it is the Profile's base, applied again after every `quality reset`.
+ * The resolution a Profile holds for every row: the session's scale, from its fingerprint before it. `quality reset`
+ * clears a session's own scale, so `quality resolution scale` at it is the Profile's base, applied again after every
+ * reset.
  */
-export function profileResolutionPin(settings: Readonly<Record<string, string>> | undefined): { scale: number; floor: boolean } {
-  const dynamic = /^on (\S+)$/.exec(settings?.["resolution.dynamic"] ?? "")?.[1];
-  const scale = Number(dynamic ?? settings?.["resolution.scale"] ?? 1);
-  return { scale: Number.isFinite(scale) && scale > 0 ? scale : 1, floor: dynamic !== undefined };
+export function profileResolutionPin(settings: Readonly<Record<string, string>> | undefined): { scale: number } {
+  const scale = Number(settings?.["resolution.scale"] ?? 1);
+  return { scale: Number.isFinite(scale) && scale > 0 ? scale : 1 };
 }
 
 const GEOMETRY_EFFECT_FIELDS = ["post.ambientOcclusion", "post.reflections", "post.volumetricLighting", "shadows.screen"] as const;
@@ -1134,10 +1131,10 @@ export interface FeatureTestProfileResult {
    */
   holdRate: ProfileHoldRate | null;
   /**
-   * The resolution every row held (`profileResolutionPin`): its scale, whether that is Dynamic Resolution's floor, and
-   * the scaling level Play was at before the Profile pinned it; null when not reached.
+   * The resolution every row held (`profileResolutionPin`): its scale, and the scaling level Play was at before the
+   * Profile pinned it; null when not reached.
    */
-  resolution?: { scale: number; floor: boolean; levelBefore: number | null } | null;
+  resolution?: { scale: number; levelBefore: number | null } | null;
   /** Play's frame cap as the Profile found it (`framecap`); absent before it was read. */
   frameCap?: number;
 }
@@ -2076,8 +2073,8 @@ async function benchmarkProfiles(
   // Breakdown and Profile alternate baselines and steps, time the GPU with fences and fingerprint every sample.
   const interleaved = mode !== "benchmark";
   const plan = featureTestBreakdownPlan(sceneName, method);
-  // A Profile's base holds the resolution its session started at (`profileResolutionPin`), so a step's change is not a
-  // resolution drop; its fingerprint before that is what the end compares with.
+  // A Profile's base holds the resolution its session started at (`profileResolutionPin`), so `quality reset` does not
+  // change the scale every row draws at; its fingerprint before that is what the end compares with.
   const sessionSettings = mode === "profile" ? play.snapshot().rendering?.settings : undefined;
   const pin = mode === "profile" ? profileResolutionPin(sessionSettings) : null;
   if (pin && profile) profile.resolution = { ...pin, levelBefore: play.snapshot().rendering?.scalingLevel ?? null };
