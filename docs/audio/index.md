@@ -14,6 +14,7 @@ Double-tap an Audio asset to open it.
 
 | Setting | Description |
 | --- | --- |
+| Playback Mode | **Decoded** keeps uncompressed audio in memory for low-latency sound effects. **Streamed** reads encoded audio as it plays to save memory on music and long ambience. Large imports default to **Streamed**. |
 | Volume | Level from 0 to 1. Default 1. |
 | Loop | Repeats the sound until it is stopped. Off by default. |
 | Randomize Pitch | Picks a pitch between **Pitch Min** and **Pitch Max** each time the sound plays. |
@@ -53,7 +54,7 @@ Pausing Play also pauses its sounds.
 
 ## Audio budget
 
-**Engine Settings > Assets** limits how much audio the editor keeps loaded during Play:
+**Engine Settings > Assets** limits how much decoded audio the editor keeps loaded during Play. Sounds set to **Streamed** do not use the decoded audio budget.
 
 | Setting | Description |
 | --- | --- |

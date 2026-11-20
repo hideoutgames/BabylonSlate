@@ -145,14 +145,14 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 
 ### Audio
 
-- The imported `Audio` asset is the sound asset (MP3, WAV, OGG; import-only, no separate Sound type). Payload: `volume`, `loop`, nullable `audioChannelGuid` and `soundAttenuationGuid`.
+- The imported `Audio` asset is the sound asset (MP3, WAV, OGG; import-only, no separate Sound type). Payload: `volume`, `loop`, `playbackMode` (`"decoded"` | `"streamed"`), nullable `audioChannelGuid` and `soundAttenuationGuid`.
 - `AudioChannel` routes and holds effects but has no volume; parent cycles are rejected. `AudioMixer` is a user asset selected in Project Settings (default none). `SoundAttenuation` opts a sound into 3D playback.
 - The no-setup path is first-class: no mixer, channel or attenuation still plays at `assetVolume × callVolume`.
 - `outputGain = assetVolume × callVolume × channelGain × parentGains… × globalGain`, every factor clamped `0..1`. Set Channel/Global Volume replace session values, never edit assets, and reset on Stop or scene change.
-- One main-thread Babylon AudioV2 service in `render`, shared by overlay Play and the player; the worker only sends ordered commands. Decoded buffers are a guid-keyed, byte-accounted LRU separate from textures. A bounded pre-unlock queue starts after the first gesture. Decode or context failures report one diagnostic and the game continues.
+- One main-thread Babylon AudioV2 service in `render`, shared by overlay Play and the player; the worker only sends ordered commands. Decoded buffers are a guid-keyed, byte-accounted LRU separate from textures; streamed assets bypass the PCM LRU via AudioV2 `CreateStreamingSoundAsync` (ref-counted Blob URLs in Editor Play, standalone stream sidecar files in exports). A bounded pre-unlock queue starts after the first gesture. Decode or context failures report one diagnostic and the game continues.
 - `AudioComponent` is optional; Play Sound needs none. The listener is the active game camera.
 - Environmental reverb is a baked parametric bake (occupancy grid, sparse probes) feeding one shared bus, never runtime ray tracing or per-sound convolvers; a failed bake writes a marked dry fallback.
-- Out of scope: streaming music, microphone capture, waveform editing, DSP plugin code.
+- Out of scope: microphone capture, waveform editing, DSP plugin code.
 
 ### Particles
 

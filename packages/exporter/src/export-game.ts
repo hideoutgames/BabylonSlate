@@ -1,6 +1,6 @@
 import { SAFE_ZIP_MTIME } from "./zip-time";
 import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
-import { collectAssetDependencyMetadata, decodePackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
+import { collectAssetDependencyMetadata, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
   DEFAULT_FILE_COUNT_FAIL,
@@ -144,28 +144,68 @@ function inlineCssIntoIndex(files: Map<string, Uint8Array>): void {
 /** Asset hashes in flight ahead of the asset being written. */
 const HASH_CONCURRENCY = 4;
 
+function extensionForAudioMime(mime: string): string {
+  if (mime === "audio/mpeg") return "mp3";
+  if (mime === "audio/ogg") return "ogg";
+  if (mime === "audio/wav") return "wav";
+  return "bin";
+}
+
+function prepareExportedAsset(
+  files: Map<string, Uint8Array>,
+  asset: ExportAssetBytes,
+  indexInExport: number,
+): { bytes: Uint8Array; streamClips?: Record<string, string> } {
+  if (asset.type !== "Audio") return { bytes: asset.bytes };
+  const packed = decodePackedAudioAsset(asset.bytes);
+  if (!packed || packed.payload.playbackMode !== "streamed") return { bytes: asset.bytes };
+  const streamClips: Record<string, string> = {};
+  let extracted = 0;
+  for (const [clipIndex, clip] of packed.payload.clips.entries()) {
+    const clipBytes = packed.sources[clipIndex];
+    if (!clipBytes || clipBytes.byteLength === 0) continue;
+    const ext = extensionForAudioMime(mimeForAudioBytes(clipBytes));
+    const suffix = packed.payload.clips.length > 1 ? `-${clipIndex}` : "";
+    const streamPath = `assets/stream-${indexInExport}${suffix}.${ext}`;
+    files.set(streamPath, clipBytes);
+    streamClips[clip.chunkId] = streamPath;
+    extracted += 1;
+  }
+  if (extracted === 0) return { bytes: asset.bytes };
+  return {
+    bytes: encodePackedAudioAsset(packed.payload, []),
+    streamClips,
+  };
+}
+
 async function writeAssetFiles(
   files: Map<string, Uint8Array>,
   assets: readonly ExportAssetBytes[],
 ): Promise<GameAssetIndexEntry[]> {
   const index: GameAssetIndexEntry[] = [];
+  const prepared = assets.map((asset, indexInExport) =>
+    prepareExportedAsset(files, asset, indexInExport),
+  );
   // Hashes overlap, but each entry is still written and awaited in asset order,
   // so the first failing asset is the one that fails the export.
   const hashes: Promise<string>[] = [];
   for (const [indexInExport, asset] of assets.entries()) {
     while (hashes.length < Math.min(assets.length, indexInExport + HASH_CONCURRENCY)) {
-      const hash = sha256Hex(assets[hashes.length]!.bytes);
+      const hash = sha256Hex(prepared[hashes.length]!.bytes);
       // An abandoned hash must not surface as an unhandled rejection.
       hash.catch(() => {});
       hashes.push(hash);
     }
+    const entryBytes = prepared[indexInExport]!.bytes;
+    const streamClips = prepared[indexInExport]!.streamClips;
     // Asset IDs include namespaced sidecars (for example area-emission:guid).
     // Keep IDs in the manifest and use portable, collision-free file names.
     const path = `assets/data-${indexInExport}.bin`;
-    files.set(path, asset.bytes);
-    index.push({ ...indexEntry(asset, { path }), byteLength: asset.bytes.byteLength, revision: await hashes[indexInExport]!,
+    files.set(path, entryBytes);
+    index.push({ ...indexEntry(asset, { path }), byteLength: entryBytes.byteLength, revision: await hashes[indexInExport]!,
       dependencies: [...(asset.dependencies ?? [])], requiredDependencies: [...(asset.requiredDependencies ?? [])],
       ...(asset.startupRequired ? { startupRequired: true } : {}),
+      ...(streamClips ? { streamClips } : {}),
     });
   }
   return index;

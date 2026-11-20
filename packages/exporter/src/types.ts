@@ -117,6 +117,8 @@ export type GameAssetIndexEntry = {
   height?: number;
   /** A pixel Font's Pixel Size. */
   pixelSize?: number;
+  /** Standalone media file paths per clip chunkId for streamed Audio assets. */
+  streamClips?: Record<string, string>;
 };
 
 export type GameManifest = {

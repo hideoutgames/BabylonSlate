@@ -66,6 +66,10 @@ export type LoadedGame = {
   fontFamilies: Map<string, string>;
   audioBytes: Map<string, Uint8Array>;
   audioPayloads: Map<string, AudioPayload>;
+  /** Direct media URLs for exported streamed Audio clip sidecars when served over HTTP/app protocol. */
+  audioStreamUrls?: Map<string, string>;
+  /** Fallback reader for exported streamed Audio clip sidecars in memory/file exports without baseUrl. */
+  readAudioStreamClip?: (assetGuid: string, chunkId: string) => Promise<Uint8Array | null>;
   payloads: Map<string, Uint8Array>;
   decodedPayloads?: Map<string, unknown>;
   /** Cooked only for Models a prepared Scene/Class uses with Use Complex Collision. */
@@ -116,6 +120,8 @@ export async function loadGameFromFiles(
   const fontFamilies = new Map<string, string>();
   const audioBytes = new Map<string, Uint8Array>();
   const audioPayloads = new Map<string, AudioPayload>();
+  const audioStreamUrls = new Map<string, string>();
+  const audioStreamPaths = new Map<string, string>();
   const payloads = new Map<string, Uint8Array>();
   const decodedPayloads = new Map<string, unknown>();
   const complexMeshes = new Map<string, CollisionTriangleMesh>();
@@ -125,7 +131,18 @@ export async function loadGameFromFiles(
   const manifestLength = files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0;
   const readMetrics: StorageReadMetrics = { operations: 1, fullReads: 1, rangeReads: 0, requestedBytes: manifestLength, actualBytesRead: manifestLength };
   const entries = new Map(manifest.assets.map(entry => [entry.guid, entry]));
-  for (const entry of manifest.assets) if (entry.type === "Font") fontFamilies.set(entry.guid, entry.name?.trim() || entry.guid);
+  for (const entry of manifest.assets) {
+    if (entry.type === "Font") fontFamilies.set(entry.guid, entry.name?.trim() || entry.guid);
+    if (entry.type === "Audio" && entry.streamClips) {
+      for (const [chunkId, streamPath] of Object.entries(entry.streamClips)) {
+        const key = audioClipCacheKey(entry.guid, chunkId);
+        audioStreamPaths.set(key, streamPath);
+        if (options.baseUrl) {
+          audioStreamUrls.set(key, new URL(streamPath, options.baseUrl).href);
+        }
+      }
+    }
+  }
   const projectId = options.baseUrl ?? `memory-export:${manifest.project?.name ?? "game"}`;
   async function readResponse(entry: GameAssetIndexEntry, response: Response): Promise<Uint8Array> {
     readMetrics.operations++;
@@ -296,6 +313,17 @@ export async function loadGameFromFiles(
     fontFamilies,
     audioBytes,
     audioPayloads,
+    audioStreamUrls,
+    readAudioStreamClip: async (assetGuid, chunkId) => {
+      const streamPath = audioStreamPaths.get(audioClipCacheKey(assetGuid, chunkId));
+      if (!streamPath) return null;
+      const inMemory = files.get(streamPath);
+      if (inMemory) return inMemory;
+      if (options.readFile) {
+        return options.readFile(streamPath, options.signal ?? new AbortController().signal);
+      }
+      return null;
+    },
     payloads,
     decodedPayloads,
     complexMeshes,
@@ -439,7 +467,7 @@ export async function loadGameFromFiles(
 
 }
 
-/** Unpack one Audio clip into `game.audioBytes` on first playback. */
+/** Unpack one Audio clip into `game.audioBytes` on first playback (streamed clips stay unretained). */
 export function loadGameAudioClipBytes(
   game: LoadedGame,
   assetGuid: string,
@@ -456,11 +484,24 @@ export function loadGameAudioClipBytes(
   if (!packed) return null;
   const bytes = extractPackedAudioClipBytes(packed, chunkId);
   if (!bytes || bytes.byteLength === 0) return null;
-  game.audioBytes.set(cacheKey, bytes);
-  if (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
-    game.audioBytes.set(assetGuid, bytes);
+  if (game.audioPayloads.get(assetGuid)?.playbackMode !== "streamed") {
+    game.audioBytes.set(cacheKey, bytes);
+    if (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
+      game.audioBytes.set(assetGuid, bytes);
+    }
   }
   return bytes;
+}
+
+export function createGameAudioStreamUrlResolver(
+  game: LoadedGame,
+): (request: { assetGuid: string; chunkId: string; revision?: string }) => string | null {
+  const revisions = new Map(game.manifest.assets.map(entry => [entry.guid, entry.revision]));
+  return ({ assetGuid, chunkId, revision }) => {
+    const exportedRevision = revisions.get(assetGuid);
+    if (revision && exportedRevision && revision !== exportedRevision) return null;
+    return game.audioStreamUrls?.get(audioClipCacheKey(assetGuid, chunkId)) ?? null;
+  };
 }
 
 export function createGameAudioSourceLoader(
@@ -470,6 +511,8 @@ export function createGameAudioSourceLoader(
   return async ({ assetGuid, chunkId, revision }) => {
     const exportedRevision = revisions.get(assetGuid);
     if (revision && exportedRevision && revision !== exportedRevision) throw new Error(`Audio asset ${assetGuid} source revision is no longer available.`);
+    const streamedClip = await game.readAudioStreamClip?.(assetGuid, chunkId);
+    if (streamedClip && streamedClip.byteLength > 0) return streamedClip;
     const scope = game.assets.createScope(`audio:${assetGuid}:${chunkId}`);
     try {
       const prepared = await scope.acquire<{ publish: () => void }>(assetGuid);

@@ -1,3 +1,5 @@
+import type { AudioPlaybackMode } from "@haptic/assets";
+
 export type AudioPose = {
   x: number;
   y: number;
@@ -23,6 +25,11 @@ export type AudioPlayRequest = {
   voiceId: string;
   assetGuid: string;
   source: Uint8Array;
+  playbackMode?: AudioPlaybackMode;
+  /** Direct stream URL (exported sidecar) or ref-counted Blob URL when streaming. */
+  sourceUrl?: string;
+  /** Sniffed MIME type when creating a Blob URL from encoded bytes. */
+  mimeType?: string;
   gain: number;
   loop: boolean;
   spatial?: AudioSpatialPlayOptions | null;
@@ -76,6 +83,7 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   unlocked = false;
   paused = false;
   engineCreateCount = 0;
+  decodeCount = 0;
   plays: AudioPlayRequest[] = [];
   stopped: string[] = [];
   poses = new Map<string, AudioPose>();
@@ -99,6 +107,7 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   async decode(_assetGuid: string, bytes: Uint8Array): Promise<{ pcmBytes: number }> {
+    this.decodeCount += 1;
     return { pcmBytes: bytes.byteLength };
   }
 

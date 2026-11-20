@@ -328,6 +328,24 @@ export function AudioDetails({
     : {};
   const playbackRows: PropertyRow[] = [
     {
+      id: "playbackMode",
+      kind: "enum",
+      label: "Playback Mode",
+      description:
+        "Streamed reads encoded audio during playback to save memory on music and long ambience.",
+      value: audio.playbackMode,
+      defaultValue: "decoded",
+      options: [
+        { value: "decoded", label: "Decoded" },
+        { value: "streamed", label: "Streamed" },
+      ],
+      onChange: (value) =>
+        onChange?.({
+          ...audio,
+          playbackMode: value === "streamed" ? "streamed" : "decoded",
+        }),
+    },
+    {
       id: "volume",
       kind: "number",
       label: "Volume",

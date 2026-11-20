@@ -505,6 +505,8 @@ export interface CreateEngineOptions {
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   /** Load clip bytes on first `playSound` (overlay Play / player lazy path). */
   loadAudioSourceBytes?: import("./audio-service").AudioSourceBytesLoader;
+  /** Resolve a direct streamable URL for a streamed Audio clip (exported stream sidecars). */
+  resolveAudioStreamUrl?: import("./audio-service").AudioStreamUrlResolver;
   prepareAudioAsset?: import("./audio-service").AudioAssetPreparer;
   /** Mixer / channel / attenuation / Audio payloads for gain routing. */
   audioLibrary?: AudioLibrary;

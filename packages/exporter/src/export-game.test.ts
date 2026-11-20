@@ -1062,6 +1062,45 @@ describe("exportGame", () => {
       result.value.manifest.assets.find((entry) => entry.guid === "font-1")?.name,
     ).toBe("Display");
   });
+
+  it("writes standalone stream sidecar files and metadata-only envelopes for streamed Audio assets", async () => {
+    const { encodePackedAudioAsset, decodePackedAudioAsset } = await import("@haptic/assets");
+    const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0xaa, 0xbb, 0xcc]);
+    const wav = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45, 0x01]);
+    const result = await exportGame({
+      platform: "web",
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "bgm",
+          type: "Audio",
+          sceneGuid: "scene-1",
+          bytes: encodePackedAudioAsset({ playbackMode: "streamed", loop: true }, mp3),
+        },
+        {
+          guid: "sfx",
+          type: "Audio",
+          sceneGuid: "scene-1",
+          bytes: encodePackedAudioAsset({ playbackMode: "decoded" }, wav),
+        },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const bgmEntry = result.value.manifest.assets.find((entry) => entry.guid === "bgm")!;
+    const sfxEntry = result.value.manifest.assets.find((entry) => entry.guid === "sfx")!;
+    expect(bgmEntry.streamClips?.source).toMatch(/^assets\/stream-0\.mp3$/);
+    expect(result.value.files.get(bgmEntry.streamClips!.source!)).toEqual(mp3);
+    const bgmPacked = decodePackedAudioAsset(result.value.files.get(bgmEntry.path!)!)!;
+    expect(bgmPacked.payload.playbackMode).toBe("streamed");
+    expect(bgmPacked.source.byteLength).toBe(0);
+    expect(sfxEntry.streamClips).toBeUndefined();
+    expect(decodePackedAudioAsset(result.value.files.get(sfxEntry.path!)!)!.source).toEqual(wav);
+  });
 });
 
 
