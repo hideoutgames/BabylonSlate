@@ -2041,6 +2041,23 @@ it("writes the light block once per readiness while shadow admission changes not
   graph.dispose();
 });
 
+it("asks each shadow map the shadow task binds once per readiness probe, and still waits for one that is not ready", async () => {
+  const { camera, graph, sun, controller } = await shadowedFogHost();
+  expect(graph.readiness(camera)).not.toMatchObject({ preparationRequired: true });
+  const map = controller.generator(sun)!.getShadowMap()!;
+  const asked = vi.spyOn(map, "isReadyForRendering");
+  graph.markReadinessDirty();
+  expect(graph.readiness(camera)).toMatchObject({ ready: true });
+  expect(asked).toHaveBeenCalledOnce();
+  // The one ask still decides: a map whose casters are not ready holds the strict probe.
+  asked.mockClear();
+  asked.mockReturnValue(false);
+  graph.markReadinessDirty();
+  expect(graph.readiness(camera)).toMatchObject({ ready: false });
+  expect(asked).toHaveBeenCalledOnce();
+  graph.dispose();
+});
+
 it("keeps the geometry pass and the compose running for another spatial effect while the fog march is skipped", async () => {
   const { camera, graph, skipped } = await fogHost({ ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
   camera.rotation.y = Math.PI;

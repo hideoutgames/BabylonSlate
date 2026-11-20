@@ -68,6 +68,8 @@ let snapshotSkipped = false;
 // `postedRuntime` makes the next pump post the current pose again.
 let postedRuntime: RuntimeDriver | null = null;
 let postedSerial = 0;
+const snapshotMessage: Extract<BridgeWorkerMessage, { channel: "snapshot" }> = { channel: "snapshot", payload: new ArrayBuffer(0), generation: 0 };
+const snapshotTransfer: [ArrayBuffer] = [snapshotMessage.payload];
 // One-shot replies that describe a pose and were held by backpressure; each
 // is sent, in order, right after the next pose snapshot. Never dropped.
 let afterPose: CommandMessage[] = [];
@@ -89,11 +91,18 @@ let stopConsoleCapture: (() => void) | null = null;
 // Plain commands leave as one `commands` message instead of one clone each. The
 // queue is flushed where the emitting handler or tick ends and before every
 // other post (`post`), so the host sees the order separate posts would give.
+//
+// A post clones its message before it returns, so the batch's array and envelope are reused: two arrays take turns
+// (a command queued while one posts goes to the other), each written over from the start and cut to its count only
+// when it posts, as emptying it would make its storage again as it grew.
 let commandQueue: CommandMessage[] = [];
+let queuedCommands = 0;
+let spareCommandQueue: CommandMessage[] = [];
+const batchMessage: Extract<BridgeWorkerMessage, { channel: "commands" }> = { channel: "commands", payload: [] };
 let flushScheduled = false;
 
 function queueCommand(command: CommandMessage): void {
-  commandQueue.push(command);
+  commandQueue[queuedCommands++] = command;
   if (flushScheduled) return;
   flushScheduled = true;
   // Replies from promise and timer continuations have no handler end to flush them.
@@ -107,11 +116,16 @@ function flushScheduledCommands(): void {
 
 /** Never throws, so a flush on the way to a pose or a `finally` cannot lose that post or mask an error. */
 function flushCommands(): void {
-  if (commandQueue.length === 0) return;
+  if (queuedCommands === 0) return;
   const batch = commandQueue;
-  commandQueue = [];
+  // Its entries past the count are an earlier, longer batch's.
+  batch.length = queuedCommands;
+  commandQueue = spareCommandQueue;
+  spareCommandQueue = batch;
+  queuedCommands = 0;
   try {
-    postMessage({ channel: "commands", payload: batch } satisfies BridgeWorkerMessage);
+    batchMessage.payload = batch;
+    postMessage(batchMessage);
   } catch {
     // A command the structured clone rejects must not drop the rest of the
     // batch: send the others alone, in order, and report each failure as uncaught.
@@ -122,6 +136,9 @@ function flushCommands(): void {
         queueMicrotask(() => { throw error; });
       }
     }
+  } finally {
+    // Posted (cloned): the spare array keeps its storage, not the commands.
+    batch.fill(undefined as unknown as CommandMessage);
   }
 }
 
@@ -132,10 +149,20 @@ function post(message: BridgeWorkerMessage, transfer?: Transferable[]): void {
   else postMessage(message);
 }
 
+/** The envelope `postCommand` reuses: a post clones it before it returns. */
+const commandMessage: Extract<BridgeWorkerMessage, { channel: "command" }> = { channel: "command", payload: { type: "log", message: "", severity: "log", category: "console", frameId: 0 } };
+
+/** Posts one command with the buffers it moves (a per-frame transfer: ticks, cable frames, runtime mesh geometry). */
+function postCommand(command: CommandMessage, transfer: Transferable[]): void {
+  flushCommands();
+  commandMessage.payload = command;
+  postMessage(commandMessage, transfer);
+}
+
 function onCommand(command: CommandMessage): void {
   if (command.type === "performanceTicks") {
-    post({ channel: "command", payload: command },
-      [command.rows.buffer as ArrayBuffer, ...(command.scripts ? [command.scripts.buffer as ArrayBuffer] : [])]);
+    postCommand(command,
+      command.scripts ? [command.rows.buffer as ArrayBuffer, command.scripts.buffer as ArrayBuffer] : [command.rows.buffer as ArrayBuffer]);
     return;
   }
   if (sceneSnapshots.receive(command)) return;
@@ -151,11 +178,11 @@ function onCommand(command: CommandMessage): void {
   }
   const geometryTransfers = dynamicMeshTransferables(command);
   if (geometryTransfers) {
-    post({ channel: "command", payload: command }, geometryTransfers);
+    postCommand(command, geometryTransfers);
     return;
   }
   if (command.type === "cableFrame") {
-    post({ channel: "command", payload: command }, [command.data.buffer as ArrayBuffer]);
+    postCommand(command, [command.data.buffer as ArrayBuffer]);
     return;
   }
   if (command.type === "snapshotLayout") {
@@ -582,7 +609,10 @@ function publishSnapshot(): boolean {
   snapshotSkipped = false;
   postedRuntime = rt;
   postedSerial = serial;
-  post({ channel: "snapshot", payload: ab, generation: installedGeneration }, [ab]);
+  // The envelope and transfer list are reused: the post clones and detaches before it returns.
+  snapshotMessage.payload = snapshotTransfer[0] = ab;
+  snapshotMessage.generation = installedGeneration;
+  post(snapshotMessage, snapshotTransfer);
   releaseAfterPose();
   return true;
 }

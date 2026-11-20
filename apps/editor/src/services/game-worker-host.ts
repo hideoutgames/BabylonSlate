@@ -121,6 +121,17 @@ function spawnGameWorkerHost(): GameWorkerHost {
     for (const handler of commandHandlers) handler(command);
   };
 
+  const stopped = () => terminated;
+  // Per-frame posts reuse their envelope and transfer list: a post clones and detaches before it returns.
+  const recycleMessage: Extract<BridgeHostMessage, { channel: "recycleSnapshot" }> = { channel: "recycleSnapshot", payload: new ArrayBuffer(0) };
+  const recycleTransfer: [ArrayBuffer] = [recycleMessage.payload];
+  const recycle = (buffer: ArrayBuffer) => {
+    recycleMessage.payload = recycleTransfer[0] = buffer;
+    post(recycleMessage, recycleTransfer);
+  };
+  const inputMessage: Extract<BridgeHostMessage, { channel: "input" }> = { channel: "input", payload: new ArrayBuffer(0) };
+  const inputTransfer: [ArrayBuffer] = [new ArrayBuffer(0)];
+
   worker.onmessage = (event: MessageEvent<BridgeWorkerMessage>) => {
     const msg = event.data;
     if (msg.channel === "ready") {
@@ -133,13 +144,13 @@ function spawnGameWorkerHost(): GameWorkerHost {
       return;
     }
     if (msg.channel === "commands") {
-      dispatchCommandBatch(msg.payload, dispatchCommand, () => terminated);
+      dispatchCommandBatch(msg.payload, dispatchCommand, stopped);
       return;
     }
     if (msg.channel === "snapshot") {
       const ab = msg.payload;
       if (msg.generation !== installedGeneration) {
-        post({ channel: "recycleSnapshot", payload: ab }, [ab]);
+        recycle(ab);
         return;
       }
       const buffer = new Float32Array(ab);
@@ -150,7 +161,7 @@ function spawnGameWorkerHost(): GameWorkerHost {
       try {
         for (const handler of snapshotHandlers) handler(buffer);
       } finally {
-        post({ channel: "recycleSnapshot", payload: ab }, [ab]);
+        recycle(ab);
       }
     }
   };
@@ -159,7 +170,8 @@ function spawnGameWorkerHost(): GameWorkerHost {
     postControl: (message) => post({ channel: "control", payload: message }, controlTransferables(message)),
     pushInput: (events) => {
       const buffer = encodeInputEvents(events);
-      post({ channel: "input", payload: buffer }, [buffer]);
+      inputMessage.payload = inputTransfer[0] = buffer;
+      post(inputMessage, inputTransfer);
     },
     onCommand: (handler) => {
       commandHandlers.push(handler);

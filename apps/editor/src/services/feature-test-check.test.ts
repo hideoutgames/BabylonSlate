@@ -1202,7 +1202,7 @@ describe("Profile", { timeout: 30_000 }, () => {
     const plan = featureTestProfilePlan(SESSION);
     const splits = ["sun shadow passes off", "local shadow passes off", "shadow tiles half"];
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once", "samplers off"]],
+      ["light", ['possess "Profile Light Camera"'], ["samplers off", "world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once"]],
       ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "geometry pass drawn twice", "geometry pass drawn twice, scissored", "world drawn once"]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["captures off", "mirrors environment", "world drawn once"]],
     ]);
@@ -1247,11 +1247,14 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(other.views[0]!.steps.find((entry) => entry.label === "world hidden")!.restore)
       .toEqual(["worlddebug world on", "shadowdebug passes on", "rendertargets off", "postprocessing off"]);
     const sequence = featureTestProfileSequence(SESSION);
-    // Each step twice, each time between two baselines: A B A B A C A C A.
-    expect(sequence.slice(0, 9).map((entry) => entry.label)).toEqual([
-      "light baseline 1", "light world hidden", "light baseline 2", "light world hidden", "light baseline 3", "light shadow passes off",
-      "light baseline 4", "light shadow passes off", "light baseline 5",
+    // The samplers off row right after the first baseline, so a run that stops later still has it; then each step
+    // twice, each time between two baselines: A B A B A C A C A.
+    expect(sequence.slice(0, 11).map((entry) => entry.label)).toEqual([
+      "light baseline 1", "light samplers off", "light baseline 2", "light world hidden", "light baseline 3", "light world hidden",
+      "light baseline 4", "light shadow passes off", "light baseline 5", "light shadow passes off", "light baseline 6",
     ]);
+    // The 70 rows the reference states: light 16 baselines and 15 steps, heavy 13 and 12, mirror 7 and 6, and the drift.
+    expect(sequence).toHaveLength(70);
     // Only a view's first baseline moves the camera; every step sits between two baselines of its own view.
     expect(sequence.filter((entry) => entry.commands.some((line) => line.startsWith("possess"))).map((entry) => entry.label))
       .toEqual(["light baseline 1", "heavy baseline 1", "mirror baseline 1", "heavy drift"]);
@@ -1755,6 +1758,58 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(row("heavy baseline 1").work!.readinessBlockers).toEqual([]);
   });
 
+  it("marks the session trail after every command and at the end of every wait and settle, with the app's headroom and texture megabytes then", async () => {
+    const MIB = 1048576;
+    const editor = fakeEditor({});
+    const trail: string[] = [];
+    // The headroom falls by 1 MB with each command run, and the textures grow by 1 MB.
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      onProgress: (message) => trail.push(`progress ${message}`),
+      hostMemory: async () => ({ deviceAvailableBytes: null, appAvailableBytes: (900 - editor.commands.length) * MIB }),
+      textureBytes: () => (100 + editor.commands.length) * MIB,
+      markTrail: (stage) => trail.push(stage),
+    };
+    await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts: { commandMs: 0 }, signal: new AbortController().signal });
+    const from = trail.indexOf("progress main: measuring light world drawn once");
+    expect(from).toBeGreaterThan(-1);
+    const row = trail.slice(from + 1, trail.indexOf("progress main: measuring light baseline 15", from));
+    // Each of the step's commands, as it ran: the page that dies after one leaves it, and how much memory was left.
+    const commands = row.slice(0, 7).map((mark) => /^main: ran (.+) · app headroom (\d+) MB · textures (\d+) MB$/.exec(mark));
+    expect(commands.map((match) => match?.[1])).toEqual([
+      "shadowdebug passes off", "quality postprocessing ambientOcclusion off", "quality postprocessing reflections off",
+      "quality postprocessing volumetricLighting off", "quality shadows screen off", "rendertargets off", "quality geometry mirrors environment",
+    ]);
+    // Read after each command: the headroom falls and the textures grow with the commands run.
+    const headroom = commands.map((match) => Number(match![2]));
+    const textures = commands.map((match) => Number(match![3]));
+    expect(headroom.slice(1).map((value, index) => headroom[index]! - value)).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(textures.slice(1).map((value, index) => value - textures[index]!)).toEqual([1, 1, 1, 1, 1, 1]);
+    // Then the end of the wait for draws and of the settle, each with the memory then.
+    expect(row[7]).toMatch(/^main: waited for draws: steady · app headroom \d+ MB · textures \d+ MB$/);
+    expect(row[8]).toMatch(/^main: settled: quiet after \d+ s · app headroom \d+ MB · textures \d+ MB$/);
+    // Its undo: `quality reset`, the held resolution and the step's own restores.
+    expect(row.slice(9).map((mark) => mark.replace(/ · .*$/, ""))).toEqual([
+      "main: ran quality reset", "main: ran quality resolution scale 1", "main: ran shadowdebug passes on", "main: ran rendertargets on",
+    ]);
+    // The warm-up's waits are marked too.
+    const warmup = trail.indexOf("progress main: warming up (1)");
+    expect(trail.slice(warmup + 1, warmup + 3).map((mark) => mark.replace(/ · .*$/, ""))).toEqual([
+      "main: waited for draws: steady", expect.stringMatching(/^main: settled: quiet after \d+ s$/),
+    ]);
+  });
+
+  it("marks the trail without memory where neither the headroom nor the textures are known", async () => {
+    const editor = fakeEditor({});
+    const trail: string[] = [];
+    await runFeatureTestCheck({
+      mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, timeouts: { commandMs: 0 }, signal: new AbortController().signal,
+      deps: { ...editor.deps, hostMemory: async () => ({ deviceAvailableBytes: 512 * 1048576, appAvailableBytes: null }), markTrail: (stage) => trail.push(stage) },
+    });
+    expect(trail).toContain("main: ran shadowdebug sunpasses off");
+    expect(trail.every((mark) => !mark.includes(" · "))).toBe(true);
+  });
+
   it("samples a step that raises the hold rate past the margin once the wait's bound passes, says so, and goes on", async () => {
     // Shadow passes off holds three attempts in four.
     const { deps, waits, timeouts } = holdingView((attempt, commands) => shadowsOff(commands) ? attempt % 4 !== 0 : ONE_IN_FOUR(attempt));
@@ -1853,8 +1908,8 @@ describe("Profile", { timeout: 30_000 }, () => {
       "heavy shadow passes off", "heavy baseline 5", "heavy geometry effects off", "heavy geometry effects off",
       "heavy geometry pass drawn twice", "heavy baseline 8",
     ]);
-    // The step's undo failed: the baseline after it says so and fails the scene.
-    expect(main!.problems[0]).toBe("light baseline 2: postprocessing on failed: Refused.");
+    // The step's undo failed (light world hidden, after the samplers off row): the baseline after it says so and fails the scene.
+    expect(main!.problems[0]).toBe("light baseline 3: postprocessing on failed: Refused.");
     expect(main!.play.profile!.endChanges).toEqual(["post.enabled=false"]);
   });
 

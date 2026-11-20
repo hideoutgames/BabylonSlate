@@ -23,7 +23,9 @@ import {
   createBabylonParticleSystem,
   gpuParticlesSupported,
   particleLifetimeBound,
+  prewarmParticleMaterial,
 } from "./particle-system-factory";
+import { onSceneReadinessDirty } from "./scene-readiness-signal";
 import { SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { installTimerClock } from "./virtual-clock-test-fixtures";
 
@@ -280,6 +282,55 @@ describe("particle-system-factory", () => {
     }
     system.dispose();
     library.dispose();
+  });
+
+  it("binds a Material whose build has completed at once, with no readiness check or mark for the bind", async () => {
+    const { scene } = host();
+    const library = new MaterialLibrary();
+    const acquired = library.acquire(scene, "particle-source", createDefaultMaterialDocument("Sparks", "particle"));
+    if (materialUnavailable(acquired)) throw new Error("Particle fixture must compile");
+    const effectCreation = vi.spyOn(acquired.material, "createEffectForParticles");
+    const checks = vi.spyOn(scene, "addIsReadyCheck");
+    const reasons: string[] = [];
+    const stop = onSceneReadinessDirty(scene, (reason) => reasons.push(reason));
+    // A spawn trigger warms its Material before the first spawn.
+    const warmed = prewarmParticleMaterial(acquired.material);
+    // Not yet built: the bind waits for the build behind a readiness check, and marks its start and end.
+    const early = createBabylonParticleSystem("early", scene, 16, false);
+    const pending = bindParticleMaterial(early, acquired.material);
+    expect(effectCreation).not.toHaveBeenCalled();
+    await warmed;
+    await pending;
+    expect(effectCreation).toHaveBeenCalledWith(early);
+    expect(checks).toHaveBeenCalledOnce();
+    expect(reasons).toEqual(["particleBind", "particleCancel"]);
+    // Built: each later bind creates the system's effects before it returns, and holds or marks nothing.
+    for (const name of ["spawned", "another"]) {
+      const system = createBabylonParticleSystem(name, scene, 16, false);
+      const bound = bindParticleMaterial(system, acquired.material);
+      expect(effectCreation).toHaveBeenLastCalledWith(system);
+      await expect(bound).resolves.toBeUndefined();
+      system.dispose();
+    }
+    expect(effectCreation).toHaveBeenCalledTimes(3);
+    expect(checks).toHaveBeenCalledOnce();
+    expect(reasons).toEqual(["particleBind", "particleCancel"]);
+    stop();
+    early.dispose();
+    library.dispose();
+  });
+
+  it("rejects the bind of a built Material whose effects cannot be created, holding no readiness check", async () => {
+    const { scene } = host();
+    const material = new NodeMaterial("built", scene);
+    material.mode = NodeMaterialModes.Particle;
+    material.createEffectForParticles = () => { throw new Error("controlled effect failure"); };
+    await prewarmParticleMaterial(material);
+    const system = createBabylonParticleSystem("failed", scene, 16, false);
+    const checks = vi.spyOn(scene, "addIsReadyCheck");
+    await expect(bindParticleMaterial(system, material)).rejects.toThrow("controlled effect failure");
+    expect(checks).not.toHaveBeenCalled();
+    system.dispose();
   });
 
   it("does not bind an obsolete material after replacement or system disposal", async () => {

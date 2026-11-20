@@ -143,12 +143,22 @@ function compilingEffects(): number {
   return compiling;
 }
 
+/** Textures every Engine holds now, and their estimated GPU bytes. */
+function engineTextureMemory(): { textures: number; bytes: number } {
+  let textures = 0;
+  let bytes = 0;
+  for (const engine of EngineStore.Instances) {
+    const memory = estimateTextureMemory(engine);
+    textures += memory.textures;
+    bytes += memory.bytes;
+  }
+  return { textures, bytes };
+}
+
 /** Shader programs, textures and memory every Engine holds now, and the Play view's drawn and held frames. */
 async function sampleCheckResources(atMs: number, step: string): Promise<FeatureTestCheckResources> {
   let effects = 0;
   let compiling = 0;
-  let textures = 0;
-  let textureBytes = 0;
   for (const engine of EngineStore.Instances) {
     // Babylon 9.29 keeps every compiled Effect in `_compiledEffects` until it is released.
     const compiled = (engine as AbstractEngine & { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
@@ -156,10 +166,8 @@ async function sampleCheckResources(atMs: number, step: string): Promise<Feature
       effects += 1;
       if (!effect.isReady()) compiling += 1;
     }
-    const memory = estimateTextureMemory(engine);
-    textures += memory.textures;
-    textureBytes += memory.bytes;
   }
+  const { textures, bytes: textureBytes } = engineTextureMemory();
   const presentation = playProbes.get(PLAY_PROBE_KEY)?.snapshot().rendering?.presentation;
   const host = await getHostMemoryStats().catch(() => null);
   return {
@@ -278,6 +286,8 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       sampleFrames,
       compiling: compilingEffects,
       hostMemory: async () => hostMemoryOf(await getHostMemoryStats()),
+      textureBytes: () => engineTextureMemory().bytes,
+      markTrail: (stage) => markSessionTrail(`check: ${stage}`),
       now: () => performance.now(),
       sleep,
       onProgress: (message) => { markSessionTrail(`check: ${message}`); setPhase({ kind: "running", message }); },

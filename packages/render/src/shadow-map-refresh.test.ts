@@ -626,6 +626,47 @@ describe("local shadow refresh", () => {
     expect([...drawn]).toEqual(["caster"]);
   });
 
+  it("follows a moving light's casters in place, making no kept caster or seen entry anew each frame", async () => {
+    // The break: a light that moves every frame (one on a player) reads every caster each frame (`scanLocal`), which
+    // made a Map and an object per caster in range, and an entry per caster entering it: garbage every frame.
+    const { scene, light, map, material, controller, render } = await fixture();
+    light.range = 10;
+    const other = MeshBuilder.CreateBox("other caster", {}, scene);
+    other.position.set(4, 3, 0);
+    other.material = material;
+    controller.setParticipation(other, { castShadows: true });
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    const refresh = (controller as unknown as { refresh: ShadowMapRefresh }).refresh as unknown as {
+      localRanges: WeakMap<object, { members: Map<object, object> }>;
+      seen: WeakMap<object, Map<object, object>>;
+    };
+    const members = refresh.localRanges.get(map)!.members;
+    const kept = [...members.values()];
+    expect(kept).toHaveLength(2);
+    for (const x of [0.5, 1, 1.5]) {
+      light.position.x = x;
+      expect(render()).toBe(6);
+    }
+    expect(refresh.localRanges.get(map)!.members).toBe(members);
+    expect([...members.values()].every((member, index) => member === kept[index])).toBe(true);
+    // The light leaves the other caster out of range: it leaves the kept casters, and its moves no longer redraw.
+    const seenOther = refresh.seen.get(map)!.get(other);
+    expect(seenOther).toBeDefined();
+    light.position.x = -8;
+    expect(render()).toBe(6);
+    expect(members.size).toBe(1);
+    expect(refresh.seen.get(map)!.has(other)).toBe(false);
+    other.position.y += 1;
+    expect(render()).toBe(0);
+    // Back in range, it is kept again, in the entry it left.
+    light.position.x = 0;
+    expect(render()).toBe(6);
+    expect(members.size).toBe(2);
+    expect(refresh.seen.get(map)!.get(other)).toBe(seenOther);
+    expect(render()).toBe(0);
+  });
+
   it("keeps a local map cached while casters outside its range move or animate", async () => {
     const { scene, light, material, render } = await fixture();
     light.range = 10;
@@ -977,6 +1018,18 @@ describe("cascaded sun refresh", () => {
   it("keeps the cascades cached while nothing that shapes them changes", async () => {
     const { render } = await cascadedSun();
     expect([render(), render(), render()]).toEqual([0, 0, 0]);
+  });
+
+  it("hands the atlas one refresh for every frame, which still redraws for a change", async () => {
+    // The break: a refresh closure made for every map on every frame.
+    const sun = await cascadedSun();
+    const refreshCascades = vi.spyOn(sun.generator as AtlasCascadedShadowGenerator, "refreshCascades");
+    expect(sun.render()).toBe(0);
+    sun.near.position.z += 1;
+    expect(sun.render()).toBe(1);
+    sun.settle();
+    expect(refreshCascades.mock.calls.length).toBeGreaterThan(2);
+    expect(new Set(refreshCascades.mock.calls.map((call) => call[1])).size).toBe(1);
   });
 
   it.each([

@@ -240,6 +240,22 @@ it("walks the scene once for a due reflection, and again for a second one drawn 
   expect(listed()).toEqual([["mirror:mirror", ["box"]], ["mirror:far", []]]);
 });
 
+it("shares the render's walk with a first draw that culls before any pass, and walks again only after a pass", () => {
+  const { scene, camera, passes, drawsOver } = settledMirror();
+  camera.position.x += 0.1;
+  // A new mirror has no image: it draws first, culling before any sun map or pass has run, so it shares the walk the
+  // kept one's currency check made; the kept one draws after that pass and walks again.
+  mirror(scene, "far", new Vector3(0, 1, 5));
+  walks.count = 0;
+  const before = mirrorDiagnostics(scene)!;
+  expect(drawsOver(1)).toBe(2);
+  expect(passes.at(-1)!.map((pass) => [pass.target, pass.meshes])).toEqual([["mirror:far", ["box"]], ["mirror:mirror", ["box"]]]);
+  const after = mirrorDiagnostics(scene)!;
+  // Two culls (the currency check and the new mirror's), one of them redone by the second draw after the first pass.
+  expect(after.culls - before.culls).toBe(3);
+  expect(walks.count).toBe(2);
+});
+
 it("draws every kept reflection again on its next render after redrawMirrorReflections, and counts culls and their walks", () => {
   const { scene, drawsOver } = settledMirror();
   mirror(scene, "far", new Vector3(0, 1, 5));
