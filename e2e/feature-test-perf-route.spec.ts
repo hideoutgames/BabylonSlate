@@ -432,6 +432,7 @@ async function samplePlay(page: Page, durationMs: number) {
       rendererWork: rendering.rendererWork ?? null,
       layerWork: rendering.layerWork ?? null,
       layerBatches: rendering.layerBatches ?? null,
+      layerFrame: rendering.layerFrame ?? null,
       shadowRetained: rendering.shadowRetained ?? null,
       shadowPasses: rendering.shadowPasses ?? null,
       occlusion: rendering.occlusion ?? null,
