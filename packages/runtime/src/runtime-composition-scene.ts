@@ -216,6 +216,7 @@ export function createOverlay(rt: RuntimeComposition, options: RuntimeDriverOpti
     audioParticles: rt.audioParticles,
     texturePixelSizes: options.texturePixelSizes ?? {},
     designResolution: sceneLayerDesignResolution(options.renderSettings),
+    materialParameters: () => rt.materialParameters,
   }, {
     stopped: () => rt.stopped,
     saveBoundaryActive: () => rt.boundaries.saveBoundaryActive,

@@ -28,6 +28,7 @@ import {
   parseSkyboxSize,
   parseSpringArmProperties,
   parseText2DProperties,
+  POST_PROCESSING_PANEL_CLASS_ID,
   parseText3DProperties,
   SPRING_ARM_COMPONENT_CLASS_ID,
   supportsOverlayVisualStyle,
@@ -307,7 +308,8 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       const componentAssetGuid =
         primary.assetGuid ?? primary.getVariable("assetGuid");
       const assetGuid =
-        overlayPanel
+        primary.classId === POST_PROCESSING_PANEL_CLASS_ID ? null
+        : overlayPanel
           ? overlayPanel.source === "material"
             ? overlayPanel.materialGuid
             : overlayPanel.textureGuid
@@ -476,6 +478,8 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
   ): void {
     for (const component of renderables) {
       if (component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent") continue;
+      // Its Material is a pass the Scene Layer compositor runs (`sceneLayerPostProcessPanels`), never a surface.
+      if (component.classId === POST_PROCESSING_PANEL_CLASS_ID) continue;
       const material = component.getVariable("materialObject");
       // The renderer may have rebuilt the slot and lost earlier writes, so the next write of each parameter is sent.
       if (material instanceof MaterialObject) this.host.materialParameters().resend(material);
@@ -614,6 +618,8 @@ function isPlayRenderable(
   if (component.destroyed || component.getVariable("editorOnly") === true) return false;
   if (isUIControl2DClass(component.classId)) return !!component.owner?.sceneLayerId;
   if (isOverlayLayoutClass(component.classId)) return true;
+  // An empty node that carries the panel actor's pose, from which the compositor frames the panel.
+  if (component.classId === POST_PROCESSING_PANEL_CLASS_ID) return !!component.owner?.sceneLayerId;
   if (component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent" || component.classId === SPRING_ARM_COMPONENT_CLASS_ID) return true;
   if (waterKindForClass(component.classId) || component.classId === "WaterRemovalVolumeComponent") return true;
   if (component.classId === "2DButtonComponent") return !skipButtonMesh;
@@ -701,6 +707,7 @@ function playShadingOf(component: ActorComponent): { shadingMode?: "3d" | "unlit
 function playMeshKindOf(component: ActorComponent): string | null {
   if (isUIControl2DClass(component.classId)) return "2dcontrol";
   if (isOverlayLayoutClass(component.classId)) return "2dlayout";
+  if (component.classId === POST_PROCESSING_PANEL_CLASS_ID) return "2dpostprocesspanel";
   if (component.classId === "CableComponent") return "cable";
   if (component.classId === "MirrorComponent") return "mirror";
   if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";

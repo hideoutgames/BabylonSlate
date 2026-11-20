@@ -5,6 +5,7 @@
  */
 import {
   isOverlayLayoutClass, isUIControl2DClass, LIGHT_2D_CLASS_ID, MIRROR_CLASS_ID, parseSurfaceShadingMode, overlayPanelDestFromScale, parseCableProperties,
+  POST_PROCESSING_PANEL_CLASS_ID,
   parseFogVolumeProperties, parseDecalProperties, parseMirrorProperties, parseOverlayLayoutProperties, parseOverlayPanelProperties,
   parseReflectionProbeProperties, parseSkyboxFaces, parseSkyboxSize, parseSpringArmProperties, parseText2DProperties,
   parseText3DProperties, SKYBOX_FACE_KEYS, SPRING_ARM_COMPONENT_CLASS_ID, waterKindForClass, type SerializedActor,
@@ -31,6 +32,7 @@ function componentVisualKind(
     const props = parseOverlayLayoutProperties(component.properties, component.classId);
     return `layout:${component.classId}:${component.properties.layoutResolvedWidth ?? props.width}:${component.properties.layoutResolvedHeight ?? props.height}`;
   }
+  if (component.classId === POST_PROCESSING_PANEL_CLASS_ID) return "postProcessingPanel";
   if (component.classId === "SceneStreamingComponent") return editorBillboardKind("default");
   const asset = stringProp(component.properties.assetGuid) ?? "";
   if (component.classId === "CableComponent") {

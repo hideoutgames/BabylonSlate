@@ -4,6 +4,7 @@ import {
   normalizeScenePostProcessStack,
   normalizeMaterialInstanceOverrides,
   normalizeSuppressedComponentSourceIds,
+  POST_PROCESSING_PANEL_CLASS_ID,
   type MaterialInstanceOverrides,
   type ScenePostProcessEntry,
   normalizeSceneLayerCanvasDesign,
@@ -355,9 +356,9 @@ export class ActorComponent extends EngineObject {
   // run before the constructor body's first `getVariable`.
   /** Overlay visuals read a default Opacity and Tint while they hold none. */
   private readonly overlayStyleDefaults = supportsOverlayVisualStyle(this.classId);
-  /** Mesh classes answer `materialObject` with their material instance. */
+  /** Mesh classes answer `materialObject` with their material instance; a Post Processing Panel with its pass's. */
   private readonly materialObjectClass =
-    this.classId === "MeshComponent" || this.classId === "DynamicRuntimeMeshComponent";
+    this.classId === "MeshComponent" || this.classId === "DynamicRuntimeMeshComponent" || this.classId === POST_PROCESSING_PANEL_CLASS_ID;
 
   override callOnCreation(): void {
     if (this.creationCalled || this.destroyed || !this.owner?.world) return;

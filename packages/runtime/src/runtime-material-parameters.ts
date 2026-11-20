@@ -3,16 +3,22 @@ import {
   isFiniteMaterialParameterValue,
   normalizeMaterialParameterCatalog,
   normalizeMaterialParameterOverrides,
+  POST_PROCESSING_PANEL_CLASS_ID,
   type MaterialParameterCatalog,
   type MaterialParameterValue,
 } from "@haptic/core";
 import {
-  MaterialObject,
   PostProcessMaterialObject,
   type MaterialInstanceObject,
 } from "@haptic/object-model";
 
 type Definition = MaterialParameterCatalog[string];
+
+/** The Material domain a reference's parameters come from: a post-process pass's, a Post Processing Panel's, or a surface. */
+function materialDomainOf(material: MaterialInstanceObject): "surface" | "postProcess" {
+  if (material instanceof PostProcessMaterialObject) return "postProcess";
+  return material.component.classId === POST_PROCESSING_PANEL_CLASS_ID ? "postProcess" : "surface";
+}
 type State = {
   /** The catalog definition the defaults came from; a replaced definition rebuilds the state. */
   definition: Definition;
@@ -195,11 +201,7 @@ export class RuntimeMaterialParameters {
     if (!Object.hasOwn(this.catalog, material.materialAssetGuid))
       return undefined;
     const definition = this.catalog[material.materialAssetGuid]!;
-    if (
-      definition.domain !==
-      (material instanceof MaterialObject ? "surface" : "postProcess")
-    )
-      return undefined;
+    if (definition.domain !== materialDomainOf(material)) return undefined;
     const previous = this.states.get(material);
     if (previous?.definition === definition) return previous;
     const authored =

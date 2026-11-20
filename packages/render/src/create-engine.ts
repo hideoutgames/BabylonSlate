@@ -1362,6 +1362,8 @@ function initializeEngine(
           return { width: output.width / ppu, height: output.height / ppu };
         },
         onLayerView: (layerId, view) => options.onSceneLayerView?.(layerId, view),
+        // Post Processing Panels draw the meshes of their content actors' slots.
+        slotRoot: (slotId) => binding.meshes.get(slotId),
         postProcessingEnabled: () => postProcessingEnabled,
         isLayerReady: (layerId) => layerLoads.get(layerId)?.ready !== false,
         // The Scene Layer post-processing passes' Scene follows the world's settings and keeps full quality, as layer Scenes do.
@@ -3254,6 +3256,10 @@ function initializeEngine(
         sceneLayerCompositor?.setPostProcess(command.postProcessStack);
         scheduler.invalidate("asset");
       }
+      if (command.type === "sceneLayerPostProcessPanels") {
+        sceneLayerCompositor?.setPostProcessPanels(command.layerId, command.panels);
+        scheduler.invalidate("asset");
+      }
       if (command.type === "sceneLayerLayout") {
         overlayLayouts.apply(command);
         scheduler.invalidate("snapshot");
@@ -3356,7 +3362,13 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "setMaterialParameter") {
-        applySetMaterialParameter(binding, command);
+        // A Post Processing Panel's Material Object writes to its pass; any other to the slot's surface.
+        const panelWrite = sceneLayerCompositor?.setPostProcessPanelParameter(command.slotId, command.componentId ?? undefined, command.materialAssetGuid,
+          command.parameterName, command.parameter, () => {
+            const document = materialDocuments.get(command.materialAssetGuid);
+            return document?.domain === "postProcess" && materialLibrary.acceptsParameter(document, command.parameterName, command.parameter);
+          }) ?? false;
+        if (!panelWrite) applySetMaterialParameter(binding, command);
         scheduler.invalidate("asset");
       }
       if (command.type === "setGlobalParameter") {
@@ -4112,6 +4124,7 @@ function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
     case "2dbutton":
     case "2dpanel":
     case "2dlayout":
+    case "2dpostprocesspanel":
     case "2dpainter":
     case "2dtext":
     case "2drichtext":

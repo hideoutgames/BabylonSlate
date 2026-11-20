@@ -99,6 +99,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "sceneLayerClear",
   "sceneLayerLayout",
   "sceneLayerPostProcess",
+  "sceneLayerPostProcessPanels",
   "scenePostProcess",
   "sceneLayerCamera",
   "sceneCamera",

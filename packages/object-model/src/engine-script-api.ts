@@ -1273,6 +1273,15 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       HIT_TEST,
     ],
   },
+  {
+    classId: "2DPostProcessingPanelComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Material", typeId: "asset", typeClassId: "Material", propertyKey: "materialGuid" },
+      // Its pass's live parameters, written with the Material Parameter nodes.
+      { name: "Material Object", typeId: "object", typeClassId: "MaterialObject", propertyKey: "materialObject", getOnly: true },
+    ],
+  },
 ];
 
 const BY_CLASS_ID = new Map(
