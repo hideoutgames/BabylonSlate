@@ -52,8 +52,8 @@ function functionEntry(functions: FunctionRecord, guid: string): FunctionEntry {
 }
 
 /** Every function the document reaches, by guid; null when one is not a plain own document. */
-function reachedFunctions(doc: MaterialDocument, functions: FunctionRecord): Map<string, FunctionEntry> | null {
-  const reached = new Map<string, FunctionEntry>();
+function reachedFunctions(doc: MaterialDocument, functions: FunctionRecord): Map<string, Exclude<FunctionEntry, "opaque">> | null {
+  const reached = new Map<string, Exclude<FunctionEntry, "opaque">>();
   const pending = callsOf(doc);
   while (pending.length) {
     const guid = pending.pop()!;
