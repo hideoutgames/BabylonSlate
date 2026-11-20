@@ -244,7 +244,7 @@ describe("Particle preview recovery", () => {
       return nextFrame++;
     });
     vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
-    onTestFinished(() => vi.unstubAllGlobals());
+    onTestFinished(() => { vi.unstubAllGlobals(); });
     const library = libraryFor(withMaterial);
     const at = (active: boolean) => (
       <ParticlePreviewCanvas library={library} systemGuid="preview-sys" testId="particle-canvas" active={active} />
