@@ -9,6 +9,7 @@ export const SCALABILITY_FIELD_OWNERS = {
     distance: "shadows",
     fadeFraction: "shadows",
     mapSize: "shadows",
+    firstCascadeScale: "shadows",
     cascades: "shadows",
     filter: "shadows",
     filterQuality: "shadows",

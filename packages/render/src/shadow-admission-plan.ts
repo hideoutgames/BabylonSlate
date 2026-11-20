@@ -3,7 +3,7 @@ import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import type { Light } from "@babylonjs/core/Lights/light";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
-import { SHADOW_CAPACITY_PROFILES, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
+import { SHADOW_CAPACITY_PROFILES, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { isDirectionalLightExcluded } from "./light-policy";
 import {
   ENGINE_SHADOW_BUDGET,
@@ -245,7 +245,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
     return true;
   });
   const halved = SHADOW_HALF_TILE_CASCADES[settings.profile];
-  const firstScale = SHADOW_FIRST_CASCADE_SCALE[settings.profile];
+  const firstScale = settings.firstCascadeScale;
   // A planned sun grows the atlas for its tiles at the size it asks for, or the one a failed allocation left it.
   const sun = planned.find((decision) => decision.entry.light instanceof DirectionalLight);
   const sunRecovery = sun && !sun.dropRecovery ? sun.entry.recovery : null;
@@ -287,6 +287,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
       entry.generator &&
       !entry.resetAllocation &&
       entry.settings?.profile === settings.profile &&
+      (!directional || entry.settings.firstCascadeScale === settings.firstCascadeScale) &&
       (directional ? entry.settings.mapSize : entry.settings.localMapSize) ===
         authoredSize
     )

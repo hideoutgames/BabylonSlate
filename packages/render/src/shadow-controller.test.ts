@@ -28,7 +28,7 @@ import {
   sceneRenderingSettings,
   updateSceneRenderingSettings,
 } from "./render-settings";
-import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, SHADOW_CAPACITY_PROFILES, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES } from "@haptic/core";
+import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, SHADOW_CAPACITY_PROFILES, SHADOW_HALF_TILE_CASCADES } from "@haptic/core";
 import { ENGINE_SHADOW_BUDGET } from "./shadow-admission";
 import { managedRenderReservations } from "./managed-render-resources";
 import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
@@ -354,10 +354,10 @@ describe("shared shadow lifecycle", () => {
     expect(gl.splice(0)).toEqual(["bind atlas", "attach 1", "bind default"]);
   });
 
-  it("gives a level's first cascade its larger tile and its last cascades tiles of half the edge, never the first two and never below the floor", () => {
+  it("gives a level's first cascade the map size and its last cascades tiles of half the edge, never the first two and never below the floor", () => {
     expect((["low", "medium", "high", "ultra"] as const).map((level) =>
-      cascadeTileSizes(2048, 4, SHADOW_HALF_TILE_CASCADES[level], SHADOW_FIRST_CASCADE_SCALE[level]))).toEqual([
-      [2048, 2048, 2048, 2048], [2048, 2048, 2048, 1024], [4096, 2048, 2048, 1024], [2048, 2048, 1024, 1024],
+      cascadeTileSizes(2048, 4, SHADOW_HALF_TILE_CASCADES[level], normalizeShadowSettings({ profile: level }).firstCascadeScale))).toEqual([
+      [2048, 2048, 2048, 2048], [2048, 2048, 2048, 1024], [2048, 2048, 2048, 1024], [2048, 2048, 1024, 1024],
     ]);
     // The first two hold the near shadows; a 256 tile is the floor; a stand-in's smaller tiles stay as they are.
     expect([cascadeTileSizes(2048, 1, 2), cascadeTileSizes(2048, 2, 2), cascadeTileSizes(2048, 3, 2), cascadeTileSizes(512, 3, 1),
@@ -690,16 +690,17 @@ describe("shared shadow lifecycle", () => {
   });
   // The sun, admitted first, leaves the atlas room for the planned point light's six faces at the level's local size:
   // Medium's 4096 atlas keeps 10.5 M texels for its three 2048 cascades (9.4 M, the last at half edge), High's 8192
-  // atlas 41.9 M for four 2048 ones (26.2 M, the first at twice and the last at half edge), and Ultra's exactly the
-  // 41.9 M its four 4096 ones take, its last two at half edge.
+  // atlas 41.9 M for four 2048 ones (13.6 M, the last at half edge; 26.2 M with the first at twice the edge), and
+  // Ultra's exactly the 41.9 M its four 4096 ones take, its last two at half edge.
   it.each([
-    ["medium", 2048, [2048, 2048, 1024]],
-    ["high", 2048, [4096, 2048, 2048, 1024]],
-    ["ultra", 4096, [4096, 4096, 2048, 2048]],
-  ] as const)("admits the %s sun beside a local shadow light at the largest cascades the atlas holds after the light's faces (%i)", (level, mapSize, tiles) => {
+    ["medium", {}, 2048, [2048, 2048, 1024]],
+    ["high", {}, 2048, [2048, 2048, 2048, 1024]],
+    ["high", { firstCascadeScale: 2 }, 2048, [4096, 2048, 2048, 1024]],
+    ["ultra", {}, 4096, [4096, 4096, 2048, 2048]],
+  ] as const)("admits the %s sun %j beside a local shadow light at the largest cascades the atlas holds after the light's faces (%i)", (level, custom, mapSize, tiles) => {
     const { scene, controller } = fixture();
     Object.assign(scene.getEngine().getCaps(), { maxTextureSize: 16384 });
-    const shadows = normalizeShadowSettings(qualityPresetPatch(level).shadows);
+    const shadows = normalizeShadowSettings({ ...qualityPresetPatch(level).shadows, ...custom });
     updateSceneRenderingSettings(scene, { shadows });
     const sun = new DirectionalLight("sun", Vector3.Down(), scene);
     controller.register(sun, true);
@@ -714,6 +715,30 @@ describe("shared shadow lifecycle", () => {
     expect(controller.diagnostics().find((entry) => entry.name === "point")).toMatchObject({
       status: "active", mapSize: shadows.localMapSize, reason: null,
     });
+  });
+  it("rebuilds the sun's map with its first cascade at twice the map size and back as First Cascade Detail changes", () => {
+    const { scene, controller } = fixture();
+    Object.assign(scene.getEngine().getCaps(), { maxTextureSize: 16384 });
+    const firstCascade = (firstCascadeScale?: 1 | 2) => updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ ...qualityPresetPatch("high").shadows, ...(firstCascadeScale ? { firstCascadeScale } : {}) }),
+    });
+    const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+    controller.register(sun, true);
+    firstCascade();
+    controller.sync();
+    // High's own first cascade has the map size's edge.
+    const high = controller.generator(sun);
+    expect(tileSizes(high)).toEqual([2048, 2048, 2048, 1024]);
+    firstCascade(2);
+    controller.sync();
+    const twice = controller.generator(sun);
+    expect(twice).not.toBe(high);
+    expect(tileSizes(twice)).toEqual([4096, 2048, 2048, 1024]);
+    expect(atlasTextureEdge(scene)).toBe(8192);
+    firstCascade(1);
+    controller.sync();
+    expect(controller.generator(sun)).not.toBe(twice);
+    expect(tileSizes(controller.generator(sun))).toEqual([2048, 2048, 2048, 1024]);
   });
   describe("an 8192 Directional Map Size", () => {
     const MIB = 1024 ** 2;

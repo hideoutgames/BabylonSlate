@@ -47,7 +47,7 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("PostProcessingQuality", [number("resolutionScale", medium.postprocessing.resolutionScale)]),
   define("LightingQuality", [choice("localLightMode", "LightBudgetMode", medium.lighting.localLightMode), number("maxLocalLights", medium.lighting.maxLocalLights)]),
   define("ShadowQuality", [bool("enabled", shadows.enabled), number("distance", shadows.distance), number("fadeFraction", shadows.fadeFraction),
-    number("mapSize", shadows.mapSize), number("cascades", shadows.cascades), choice("filter", "ShadowFilter", shadows.filter),
+    number("mapSize", shadows.mapSize), number("firstCascadeScale", shadows.firstCascadeScale), number("cascades", shadows.cascades), choice("filter", "ShadowFilter", shadows.filter),
     choice("filterQuality", "ShadowFilterQuality", shadows.filterQuality), number("softness", shadows.softness), bool("autoBias", shadows.autoBias),
     number("depthBias", shadows.depthBias), number("normalBias", shadows.normalBias), choice("localLightMode", "LightBudgetMode", shadows.localLightMode),
     number("maxLocalLights", shadows.maxLocalLights), number("localMapSize", shadows.localMapSize),

@@ -18,7 +18,7 @@ describe("Shadow atlas tiles", () => {
   });
 
   it("places tiles where one quadtree over the whole edge would, its quarters the pages in order", () => {
-    // High's sun (4096, 2048, 2048, 1024) then a 2048 spot map: the first cascade fills the first page, the rest share
+    // High's sun with First Cascade Detail at twice the map size (4096, 2048, 2048, 1024) then a 2048 spot map: the first cascade fills the first page, the rest share
     // the second, and the spot map takes the second page's last quarter, as the single atlas placed them.
     const atlas = new ShadowAtlasAllocator(8192, 4096);
     expect([4096, 2048, 2048, 1024, 2048].map((size) => atlas.allocate(size))).toEqual([

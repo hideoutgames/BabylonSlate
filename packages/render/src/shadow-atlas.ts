@@ -634,15 +634,16 @@ export function placeInPrivateAtlas<T>(atlas: PrivateShadowAtlas, build: () => T
 
 /**
  * The tile edge of each of a sun's `cascades` at map size `size` in an `edge`-texel atlas: the first takes `firstScale`
- * times the edge (`SHADOW_FIRST_CASCADE_SCALE`), the scale halved while that tile would be wider than half the atlas's
+ * times the edge (`ShadowSettings.firstCascadeScale`), the scale halved while that tile would be wider than half the atlas's
  * edge, down to the map size; the last `halved` take half the edge, never the first two, which hold the shadows near
  * the camera (the second starts a few metres out), down to the 256-texel floor admitted maps keep and never more than
  * `size` (a caster-variant stand-in's tiles are smaller still; `SHADOW_HALF_TILE_CASCADES`).
  *
  * The clamp keeps a Custom map size from asking for a first tile the atlas cannot hold beside the other cascades and
- * local maps (High's 2 at 8192 would be the whole 16384 atlas): it takes at most a quarter of the atlas, so at 8192 every
+ * local maps (a scale of 2 at 8192 would be the whole 16384 atlas): it takes at most a quarter of the atlas, so at 8192 every
  * level's cascades leave at least three 4096 quadrants, room for the level's own local lights as spot maps; point
- * lights past that halve the sun as the reserve in `planShadowAdmission` says. The levels' own sizes keep their scale.
+ * lights past that halve the sun as the reserve in `planShadowAdmission` says. A scale of 2 at High's own map size (an
+ * 8192 atlas) keeps it; at Low and Medium (a 4096 atlas) it does not.
  */
 export function cascadeTileSizes(size: number, cascades: number, halved: number, firstScale = 1, edge = Infinity): number[] {
   let scale = firstScale;

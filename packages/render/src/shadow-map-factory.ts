@@ -12,7 +12,7 @@ import type { BoundingBox } from "@babylonjs/core/Culling/boundingBox";
 import { Plane } from "@babylonjs/core/Maths/math.plane";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
-import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
+import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasRenderTarget, shadowTileSize } from "./shadow-atlas";
 import { readinessProbeListScope } from "./readiness-scope";
 import { shadowDebugOff } from "./shadow-debug";
@@ -162,7 +162,7 @@ export function createShadowGenerator(
   const camera = view ?? undefined;
   // The controller registers directional, point and spot lights only.
   const generator = atlasShadowGenerator(entry.light as LocalShadowLight | DirectionalLight, mapSize, settings.cascades, atlasEdge, camera,
-    SHADOW_HALF_TILE_CASCADES[settings.profile], SHADOW_FIRST_CASCADE_SCALE[settings.profile]);
+    SHADOW_HALF_TILE_CASCADES[settings.profile], settings.firstCascadeScale);
   const slot = { entry, view: view !== null };
   context.slots.set(generator, slot);
   if (generator instanceof CascadedShadowGenerator) {

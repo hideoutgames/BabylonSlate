@@ -31,6 +31,7 @@ const options: Partial<Record<keyof ShadowSettings, Record<string, string>>> = {
   filter: { pcf: "PCF", pcss: "Contact Hardening (PCSS)" },
   filterQuality: { low: "Low", medium: "Medium", high: "High" },
   screenShadows: { off: "Off", low: "Low", medium: "Medium", high: "High" },
+  firstCascadeScale: { 1: "Map Size", 2: "Twice Map Size" },
   mapSize: { 256: "256", 512: "512", 1024: "1024", 2048: "2048", 4096: "4096", 8192: "8192" },
   localMapSize: {
     256: "256",
@@ -61,6 +62,11 @@ const fields: {
     key: "mapSize",
     label: "Directional Map Size",
     hint: "Resolution per cascade. Larger maps use more GPU memory and time; 8192 needs a 1 GiB shadow atlas.",
+  },
+  {
+    key: "firstCascadeScale",
+    label: "First Cascade Detail",
+    hint: "Twice gives the cascade nearest the camera four times the texels, where the shadow atlas has room for it.",
   },
   {
     key: "cascades",
