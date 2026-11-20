@@ -125,6 +125,7 @@ Scene Layers share one list of post-process passes, made from post-process Mater
 - The passes always run at full resolution; a pass has no **Scalable** switch.
 - In the game the list starts as the project sets it. [Register Scene Layer Post-Processing](../scripting/class/register-scene-layer-post-processing.md) adds a pass and [Unregister Scene Layer Post-Processing](../scripting/class/unregister-scene-layer-post-processing.md) removes one. Changes last until the game stops: through scene changes, and while no layer is shown.
 - To animate a project pass, copy its **Entry ID** (the **#** button beside its Material) and use [Get Post Process Entry](../scripting/class/get-post-process-entry.md) with any Scene Layer as **Owner**.
+- To post-process only part of a layer, such as one menu or icon, put it under a [Post Processing Panel](../components/post-processing-panel.md). Its Material runs over what is inside the panel's rectangle first; these passes then run over everything, the panel's result included.
 
 ## Things to know
 

@@ -266,6 +266,32 @@ export function parseOverlayPanelProperties(
   };
 }
 
+/** The Post Processing Panel: its content draws through a post-process Material into a target the size of its rectangle. */
+export const POST_PROCESSING_PANEL_CLASS_ID = "2DPostProcessingPanelComponent";
+
+export type PostProcessingPanelProperties = {
+  /** Off, the panel is a plain container: its content draws straight into the layer. */
+  enabled: boolean;
+  /** A post-process Material or Material Instance; none makes the panel a plain container too. */
+  materialGuid: string | null;
+};
+
+export function parsePostProcessingPanelProperties(value: unknown): PostProcessingPanelProperties {
+  const source = (value ?? {}) as Record<string, unknown>;
+  return {
+    enabled: source.enabled !== false,
+    materialGuid: optionalGuid(source.materialGuid),
+  };
+}
+
+/**
+ * Whether a Post Processing Panel's content goes through its Material: enabled with a Material set. Otherwise the
+ * panel costs nothing and draws its content as any parent actor does.
+ */
+export function postProcessingPanelActive(properties: PostProcessingPanelProperties): boolean {
+  return properties.enabled && properties.materialGuid !== null;
+}
+
 /**
  * A Scene's Layer Camera Width × Height widened or heightened to the viewport
  * aspect, so it stays whole and centred and its content keeps its proportions.

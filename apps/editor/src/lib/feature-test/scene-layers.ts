@@ -120,6 +120,8 @@ interface LayerRefs {
   /** Multiply: the Surface stain (`FT_MatOverlayMultiply`) and the Text ink (`FT_MatTextMultiply`). */
   multiplyMaterial: string;
   textMultiplyMaterial: string;
+  /** The post-process grade, which the Texture Icon's Post Processing Panel names, switched off. */
+  postProcessMaterial: string;
   panelTexture: string;
   /** The optional one-shot Audio asset, which the rich text's reveal plays. */
   sound: string | null;
@@ -157,6 +159,7 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     overlayMaterial,
     multiplyMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.overlayMultiply),
     textMultiplyMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.textMultiply),
+    postProcessMaterial: requireRef(ctx.assets.materials.postProcess, "the post-process Material"),
     panelTexture: requireRef(ctx.assets.textures.colormapPixelArt, "the pixel art colormap Texture"),
     sound: ctx.assets.audio.oneShot,
     icons: {
@@ -783,8 +786,13 @@ function addWidgetRow(refs: LayerRefs, add: AddActor): void {
     ui(`${row}-box`, "2DHorizontalBoxComponent", { width: 13.8, height: 0.6, gap: 0.21, verticalAlignment: "center" }),
     ui(`${row}-padding`, "2DPaddingComponent", { paddingLeft: 0.18, paddingRight: 0.18 }, undefined, `${row}-box`),
   ], { position: [0, -3.93], folderId: "ft-ui-folder-widgets" }));
+  // A Post Processing Panel round the icon, authored switched off like the Scene Layer pass: main is the performance
+  // benchmark, and an enabled panel adds a target and a pass every frame. See the Feature Test reference's Known gaps.
   add(layerActor("ft-ui-texture", "Texture Icon", [
     ui("ft-ui-texture-image", "2DTextureComponent", { textureGuid: refs.icons.camera }, at(0, 0, 0, 0.6)),
+    ui("ft-ui-texture-post-process", "2DPostProcessingPanelComponent", {
+      enabled: false, materialGuid: refs.postProcessMaterial,
+    }),
   ], { parentId: row }));
   add(layerActor("ft-ui-material", "Material Swatch", [
     ui("ft-ui-material-quad", "2DMaterialComponent", { materialGuid: refs.overlayMaterial }, at(0, 0, 0, 0.54)),

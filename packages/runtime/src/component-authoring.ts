@@ -175,6 +175,8 @@ export function defaultComponentAuthoringProperties(
       return { materialGuid: null, hitTest: "ignore" };
     case "2DTextureComponent":
       return { textureGuid: null, hitTest: "ignore" };
+    case "2DPostProcessingPanelComponent":
+      return { enabled: true, materialGuid: null };
     case "2DPanelComponent":
       return {
         source: "texture",

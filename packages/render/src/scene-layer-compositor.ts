@@ -17,7 +17,7 @@ import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
-import type { CommandMessage } from "@haptic/bridge";
+import type { CommandMessage, SceneLayerPostProcessPanelPayload } from "@haptic/bridge";
 import {
   parseSceneLayerHitTest,
   normalizeSceneLayerCanvasDesign,
@@ -46,6 +46,9 @@ import { configureCutoutSorting } from "./sorting";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 import { beginPremultipliedLayerContent, endPremultipliedLayerContent, setTargetedLayerScene } from "./layer-composite";
 import { createDepthTextureTarget } from "./depth-texture-target";
+import { isPostProcessPanelResult, POST_PROCESS_PANEL_ENTRY_ID, ScenePostProcessPanels, type PostProcessPanelView } from "./post-process-panels";
+import type { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
+import type { FrameGraphObjectList } from "@babylonjs/core/FrameGraph/frameGraphObjectList";
 
 /**
  * A full-screen texture without fog: the layers' shared target drawn into the passes' Scene, and the passes' output
@@ -103,6 +106,8 @@ export interface SceneLayerCompositorOptions {
   screen?: () => { width: number; height: number } | null;
   /** A Desired layer's view changed after its content was measured. */
   onLayerView?: (layerId: string, view: SceneLayerRect) => void;
+  /** An actor slot's root in its layer's Scene, with the actor's visuals beneath it: Post Processing Panels draw them. */
+  slotRoot?: (slotId: number) => AbstractMesh | null | undefined;
 }
 
 const scratchTarget = new Vector3();
@@ -136,6 +141,8 @@ type LayerRecord = SceneLayerView & {
   probedReady: boolean;
   /** Play Camera Shake On Scene Layer: created with the layer's first shake. */
   shake: CameraShakeView | null;
+  /** Its Post Processing Panels: created with the first list the runtime sends for it; null costs nothing. */
+  panels: ScenePostProcessPanels | null;
 };
 
 /**
@@ -179,6 +186,7 @@ export class SceneLayerCompositor {
   private readonly preparePostProcessScene?: SceneLayerCompositorOptions["preparePostProcessScene"];
   private readonly screen: () => { width: number; height: number } | null;
   private readonly onLayerView?: SceneLayerCompositorOptions["onLayerView"];
+  private readonly slotRoot: (slotId: number) => AbstractMesh | null | undefined;
   private readonly byId = new Map<string, LayerRecord>();
   private readonly slotLayer = new Map<number, string>();
   private readonly slotActor = new Map<number, string>();
@@ -210,6 +218,7 @@ export class SceneLayerCompositor {
     this.preparePostProcessScene = options.preparePostProcessScene;
     this.screen = options.screen ?? (() => null);
     this.onLayerView = options.onLayerView;
+    this.slotRoot = options.slotRoot ?? (() => null);
   }
 
   create(command: SceneLayerCreateCommand): SceneLayerView {
@@ -254,6 +263,7 @@ export class SceneLayerCompositor {
       hudPose: null,
       view: null,
       shake: null,
+      panels: null,
       retirements: new PostProcessRetirement(),
       probedReady: false,
     };
@@ -287,6 +297,8 @@ export class SceneLayerCompositor {
     this.sortedCache = null;
     layer.shake?.dispose();
     layer.shake = null;
+    layer.panels?.release();
+    layer.panels = null;
     layer.contentChanges?.release();
     layer.contentChanges = null;
     this.retireLayerRenderer(layer);
@@ -356,6 +368,62 @@ export class SceneLayerCompositor {
   /** Post-processing was switched on or off (`postprocessing`): the stack runs again, or layers draw straight over the world. */
   refreshPostProcess(): void {
     this.rebuildStack();
+  }
+
+  /**
+   * A layer's Post Processing Panels (`sceneLayerPostProcessPanels`): each enabled panel with a Material draws its
+   * content through its Material at its place in the layer (`ScenePostProcessPanels`). An empty list ends them all.
+   */
+  setPostProcessPanels(layerId: string, panels: readonly SceneLayerPostProcessPanelPayload[]): void {
+    const layer = this.byId.get(layerId);
+    if (!layer) return;
+    if (!layer.panels && panels.length === 0) return;
+    layer.panels ??= new ScenePostProcessPanels(layer.scene, {
+      slotRoot: (slotId) => this.slotLayer.get(slotId) === layerId ? this.slotRoot(slotId) : null,
+      createView: (camera, objects, stack) => this.panelView(layer, camera, objects, stack),
+    });
+    layer.panels.set(panels);
+  }
+
+  /**
+   * A live parameter write on a Post Processing Panel's Material Object (`setMaterialParameter` for its slot and
+   * component): false when the slot holds no such panel with that Material, so the write is a surface's.
+   */
+  setPostProcessPanelParameter(slotId: number, componentId: string | undefined, materialGuid: string, name: string, value: MaterialParameterValue, validate: () => boolean): boolean {
+    const layerId = this.slotLayer.get(slotId);
+    const panels = layerId ? this.byId.get(layerId)?.panels : null;
+    if (!panels?.holds(slotId, componentId, materialGuid)) return false;
+    // A write the Material does not accept is dropped, never handed to a surface.
+    return !validate() || panels.setParameter(slotId, componentId, materialGuid, name, value);
+  }
+
+  /**
+   * A panel's view: an auxiliary view of the layer's Scene that draws the panel's content with its camera, inside the
+   * layer's own frame, through the panel's one pass into its output. Its renderer is retired with the layer's.
+   */
+  private panelView(layer: LayerRecord, camera: TargetCamera, objects: FrameGraphObjectList, stack: SceneLayerPostProcessEntry[]): PostProcessPanelView {
+    const renderer = new SceneRenderCoordinator(layer.scene, { waterPlanarReflections: false, auxiliary: { camera, objects, screenEffects: true } });
+    let attached: AttachedLayerPostProcess | null = null;
+    try {
+      attached = this.attachLayerPostProcess?.({ scene: layer.scene, camera }, stack, renderer) ?? null;
+    } catch (error) {
+      renderer.dispose();
+      throw error;
+    }
+    if (!attached) {
+      renderer.dispose();
+      throw new Error("its Material cannot run as a pass here");
+    }
+    return {
+      render: () => renderer.render(false).rendered,
+      setParameter: (name, value) => { attached?.setParameter?.(POST_PROCESS_PANEL_ENTRY_ID, name, value); },
+      retire: () => {
+        const retired = new PostProcessRetirement();
+        this.retireRenderer(renderer, attached, retired, `Post Processing Panel of SceneLayer ${layer.layerId}`);
+        layer.retirements.add({ whenDisposed: () => retired.whenDisposed(), whenReleased: () => retired.whenReleased() });
+        return retired.whenReleased();
+      },
+    };
   }
 
   noteSpawn(
@@ -490,6 +558,8 @@ export class SceneLayerCompositor {
     for (const layer of this.byId.values()) {
       layer.renderer.invalidate();
       layer.probedReady = false;
+      // Their views are built again with the next frame.
+      layer.panels?.invalidate();
     }
     if (this.stack) {
       this.stack.renderer.invalidate();
@@ -626,6 +696,8 @@ export class SceneLayerCompositor {
   }
 
   private renderLayer(record: LayerRecord): ReturnType<SceneRenderCoordinator["render"]> {
+    // Its panels frame themselves with the camera as bound for this frame, before the layer's cull reads the masks.
+    record.panels?.beforeRender(record.camera, this.outputWidth, this.outputHeight, this.postProcessingEnabled());
     const frameCapture = activeRenderFrameCapture(this.engine);
     return frameCapture
       ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },
@@ -704,7 +776,12 @@ export class SceneLayerCompositor {
         layer.viewBounds.height / layer.cameraState.zoom,
       );
       const touch = minWorld > 0;
-      const pickable = (mesh: AbstractMesh) => mesh.isEnabled() && mesh.isVisible && mesh.isPickable && overlayClipAllowsPoint(mesh, pickWorld.x, pickWorld.y);
+      const panels = layer.panels;
+      // Content a Post Processing Panel draws is hit only where it shows: inside the panel's rectangle.
+      const panelAllows = (mesh: AbstractMesh) => !panels ||
+        panels.allowsPick(mesh, canvasX * this.outputWidth / pickSize.width, canvasY * this.outputHeight / pickSize.height, this.outputHeight);
+      const pickable = (mesh: AbstractMesh) => mesh.isEnabled() && mesh.isVisible && mesh.isPickable && overlayClipAllowsPoint(mesh, pickWorld.x, pickWorld.y) &&
+        panelAllows(mesh);
       // The ray pick already offers every mesh of the scene to its predicate, in
       // scene order. Collect the interactive ones on that pass instead of walking
       // scene.meshes a second time per pointer event. Metadata, parents and the
@@ -1230,7 +1307,8 @@ function watchContent(scene: Scene): ContentWatch {
 export function sceneLayerContentBounds(scene: Scene, computeMatrices = false): SceneLayerContentBounds | null {
   let bounds: SceneLayerContentBounds | null = null;
   for (const mesh of scene.meshes) {
-    if (!mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0 || isColliderVisualMesh(mesh)) continue;
+    if (!mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0 || isColliderVisualMesh(mesh) ||
+      isPostProcessPanelResult(mesh)) continue;
     // A frame's own render computed most matrices; one moved since is computed here, as that render would.
     mesh.computeWorldMatrix(computeMatrices);
     const { minimumWorld: min, maximumWorld: max } = mesh.getBoundingInfo().boundingBox;

@@ -6,7 +6,9 @@ import {
   normalizeSceneLayerActorDesign,
   normalizeSceneLayerSpawnList,
   parseOverlayPanelProperties,
+  parsePostProcessingPanelProperties,
   parseSceneLayerAnchor,
+  postProcessingPanelActive,
   sceneLayerActorFrameBounds,
   sceneLayerCanvasToLayer,
   sceneLayerRelativeAnchorWorldPosition,
@@ -290,6 +292,27 @@ describe("2DPanel properties", () => {
   it("keeps margins as 0-1 source fractions", () => {
     expect(parseOverlayPanelProperties({ marginLeft: 0.5 }).marginLeft).toBe(0.5);
     expect(parseOverlayPanelProperties({ marginRight: 10 }).marginRight).toBe(1);
+  });
+});
+
+describe("Post Processing Panel properties", () => {
+  it.each([
+    { label: "nothing authored", value: undefined, expected: { enabled: true, materialGuid: null }, active: false },
+    { label: "a Material", value: { materialGuid: " mat-1 " }, expected: { enabled: true, materialGuid: "mat-1" }, active: true },
+    { label: "a blank Material", value: { materialGuid: "  " }, expected: { enabled: true, materialGuid: null }, active: false },
+    { label: "a non-string Material", value: { materialGuid: 7 }, expected: { enabled: true, materialGuid: null }, active: false },
+    { label: "switched off with a Material", value: { enabled: false, materialGuid: "mat-1" }, expected: { enabled: false, materialGuid: "mat-1" }, active: false },
+    { label: "a non-boolean Enabled", value: { enabled: 0, materialGuid: "mat-1" }, expected: { enabled: true, materialGuid: "mat-1" }, active: true },
+  ])("reads $label", ({ value, expected, active }) => {
+    const parsed = parsePostProcessingPanelProperties(value);
+    expect(parsed).toEqual(expected);
+    expect(postProcessingPanelActive(parsed)).toBe(active);
+  });
+
+  it("is kept in a Scene Layer document", () => {
+    const actor = { ...createActor("a1", "Panel"), components: [{ id: "p", classId: "2DPostProcessingPanelComponent", properties: { materialGuid: "mat-1" } }] };
+    expect(normalizeSceneLayer({ actors: [actor] }).actors[0]!.components.map((component) => component.classId))
+      .toEqual(["2DPostProcessingPanelComponent"]);
   });
 });
 

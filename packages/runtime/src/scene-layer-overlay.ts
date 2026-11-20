@@ -36,6 +36,8 @@ import { SceneLayerFocusNavigation } from "./scene-layer-focus";
 import { focusLayoutEntry, revealFocusedElement } from "./scene-layer-focus-layout";
 import { SceneLayerLayout } from "./scene-layer-layout";
 import { SceneLayerVirtualization } from "./scene-layer-virtualization";
+import { SceneLayerPostProcessPanels } from "./scene-layer-post-process-panels";
+import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import { sceneLayerActors } from "./world-layer-index";
 import type { ScriptHost, ScriptHostServices } from "./script-host";
 import type { UIControls2DRuntime } from "./ui-controls2d-runtime";
@@ -57,6 +59,8 @@ interface SceneLayerOverlayDeps {
   texturePixelSizes: Readonly<Record<string, { width: number; height: number }>>;
   /** The project's design resolution in pixels (`sceneLayerDesignResolution`): a Fullscreen canvas's size. */
   designResolution: { width: number; height: number };
+  /** Post Processing Panels hand the compositor their Material Objects' values. */
+  materialParameters: () => Pick<RuntimeMaterialParameters, "captureOverrides" | "resend">;
 }
 
 interface SceneLayerOverlayHost {
@@ -91,6 +95,7 @@ interface SceneLayerOverlayHost {
 export class SceneLayerOverlay {
   private readonly layout = new SceneLayerLayout();
   private readonly virtualization = new SceneLayerVirtualization();
+  private readonly postProcessPanels: SceneLayerPostProcessPanels;
   private actorGuids: ActorGuidIndex | null = null;
   private readonly focus: SceneLayerFocusNavigation;
   private readonly switchers: SceneLayerActorSwitchers;
@@ -116,6 +121,13 @@ export class SceneLayerOverlay {
     this.deps = deps;
     this.host = host;
     const { world, admission, uiControls } = deps;
+    this.postProcessPanels = new SceneLayerPostProcessPanels({
+      world,
+      slot: (actor) => host.slot(actor),
+      parameters: (material) => deps.materialParameters().captureOverrides(material),
+      resend: (material) => deps.materialParameters().resend(material),
+      emit: (command) => host.emit(command),
+    });
     this.switchers = new SceneLayerActorSwitchers({
       classes: world.classRegistry,
       alive: (actor) => !host.stopped() && !actor.destroyed && !host.removing(actor) &&
@@ -279,6 +291,8 @@ export class SceneLayerOverlay {
           return slotId === undefined ? [] : [{ ...entry, slotId, transform: transforms.get(key) }];
         }) });
       }
+      // After layout: virtualization may have spawned or retired panel content.
+      this.postProcessPanels.sync();
     } finally { this.applyingLayouts = false; }
   }
 
@@ -444,6 +458,7 @@ export class SceneLayerOverlay {
     this.measuredViews.delete(layerGuid);
     this.layout.remove(layerGuid);
     this.virtualization.remove(layerGuid);
+    this.postProcessPanels.forget(layerGuid);
     this.focus.refresh();
   }
 

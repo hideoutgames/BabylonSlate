@@ -4,7 +4,7 @@ import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWr
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { EffectRenderer, EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
 import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
-import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { InternalTextureSource, type InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
@@ -126,6 +126,8 @@ class Shelves {
 /** Whether the page can hold `internal`'s texels as they are, and has a cell size for them (see the module comment). */
 function copies(internal: InternalTexture): boolean {
   if (internal.isCube || internal.is3D || internal.is2DArray || internal.isMultiview || internal.samples > 1) return false;
+  // A render target's texels change as it is drawn (a Post Processing Panel's result): a copy would freeze them.
+  if (internal.source === InternalTextureSource.RenderTarget || internal.source === InternalTextureSource.MultiRenderTarget) return false;
   if (internal.type !== Constants.TEXTURETYPE_UNSIGNED_BYTE || internal._compression || internal._useSRGBBuffer || internal._isRGBD) return false;
   if (internal.format !== Constants.TEXTUREFORMAT_RGBA && internal.format !== Constants.TEXTUREFORMAT_RGB) return false;
   // A cell is copied by the size the texture records, which is its storage's for a single level only: Babylon leaves

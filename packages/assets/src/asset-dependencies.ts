@@ -149,6 +149,8 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "2DMaterialComponent": ["materialGuid"],
   "2DTextureComponent": ["textureGuid", "assetGuid"],
   "2DPanelComponent": ["textureGuid", "materialGuid"],
+  // Shipped whether the panel is enabled or not: a script can switch it on.
+  "2DPostProcessingPanelComponent": ["materialGuid"],
   "2DTextComponent": ["fontAssetGuid", "materialGuid"],
   "2DRichTextComponent": ["fontAssetGuid", "materialGuid", "appearSoundAssetGuid"],
   "2DJoystickComponent": ["backgroundMaterialGuid", "joystickMaterialGuid", "backgroundTextureGuid", "joystickTextureGuid"],
