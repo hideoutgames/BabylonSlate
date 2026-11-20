@@ -61,7 +61,7 @@ export class FoliageFadePlugin extends MaterialPluginBase {
     };
   }
 
-  override bindForSubMesh(
+  override hardBindForSubMesh(
     uniformBuffer: UniformBuffer,
     scene: Scene,
     _engine: unknown,

@@ -151,30 +151,38 @@ function extensionForAudioMime(mime: string): string {
   return "bin";
 }
 
-function prepareExportedAsset(
+async function prepareExportedAsset(
   files: Map<string, Uint8Array>,
   asset: ExportAssetBytes,
   indexInExport: number,
-): { bytes: Uint8Array; streamClips?: Record<string, string> } {
+): Promise<{
+  bytes: Uint8Array;
+  streamClips?: Record<string, string>;
+  streamRevisions?: Record<string, string>;
+}> {
   if (asset.type !== "Audio") return { bytes: asset.bytes };
   const packed = decodePackedAudioAsset(asset.bytes);
   if (!packed || packed.payload.playbackMode !== "streamed") return { bytes: asset.bytes };
   const streamClips: Record<string, string> = {};
+  const streamRevisions: Record<string, string> = {};
   let extracted = 0;
   for (const [clipIndex, clip] of packed.payload.clips.entries()) {
     const clipBytes = packed.sources[clipIndex];
     if (!clipBytes || clipBytes.byteLength === 0) continue;
     const ext = extensionForAudioMime(mimeForAudioBytes(clipBytes));
+    const clipHash = await sha256Hex(clipBytes);
     const suffix = packed.payload.clips.length > 1 ? `-${clipIndex}` : "";
-    const streamPath = `assets/stream-${indexInExport}${suffix}.${ext}`;
+    const streamPath = `assets/stream-${indexInExport}${suffix}-${clipHash.slice(0, 12)}.${ext}`;
     files.set(streamPath, clipBytes);
     streamClips[clip.chunkId] = streamPath;
+    streamRevisions[clip.chunkId] = clipHash;
     extracted += 1;
   }
   if (extracted === 0) return { bytes: asset.bytes };
   return {
     bytes: encodePackedAudioAsset(packed.payload, []),
     streamClips,
+    streamRevisions,
   };
 }
 
@@ -183,8 +191,8 @@ async function writeAssetFiles(
   assets: readonly ExportAssetBytes[],
 ): Promise<GameAssetIndexEntry[]> {
   const index: GameAssetIndexEntry[] = [];
-  const prepared = assets.map((asset, indexInExport) =>
-    prepareExportedAsset(files, asset, indexInExport),
+  const prepared = await Promise.all(
+    assets.map((asset, indexInExport) => prepareExportedAsset(files, asset, indexInExport)),
   );
   // Hashes overlap, but each entry is still written and awaited in asset order,
   // so the first failing asset is the one that fails the export.
@@ -198,6 +206,7 @@ async function writeAssetFiles(
     }
     const entryBytes = prepared[indexInExport]!.bytes;
     const streamClips = prepared[indexInExport]!.streamClips;
+    const streamRevisions = prepared[indexInExport]!.streamRevisions;
     // Asset IDs include namespaced sidecars (for example area-emission:guid).
     // Keep IDs in the manifest and use portable, collision-free file names.
     const path = `assets/data-${indexInExport}.bin`;
@@ -206,6 +215,7 @@ async function writeAssetFiles(
       dependencies: [...(asset.dependencies ?? [])], requiredDependencies: [...(asset.requiredDependencies ?? [])],
       ...(asset.startupRequired ? { startupRequired: true } : {}),
       ...(streamClips ? { streamClips } : {}),
+      ...(streamRevisions ? { streamRevisions } : {}),
     });
   }
   return index;

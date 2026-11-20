@@ -119,6 +119,8 @@ export type GameAssetIndexEntry = {
   pixelSize?: number;
   /** Standalone media file paths per clip chunkId for streamed Audio assets. */
   streamClips?: Record<string, string>;
+  /** SHA-256 hex digests per clip chunkId for exported streamed Audio sidecars. */
+  streamRevisions?: Record<string, string>;
 };
 
 export type GameManifest = {

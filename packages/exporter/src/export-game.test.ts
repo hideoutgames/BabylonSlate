@@ -1093,13 +1093,39 @@ describe("exportGame", () => {
     if (!result.ok) return;
     const bgmEntry = result.value.manifest.assets.find((entry) => entry.guid === "bgm")!;
     const sfxEntry = result.value.manifest.assets.find((entry) => entry.guid === "sfx")!;
-    expect(bgmEntry.streamClips?.source).toMatch(/^assets\/stream-0\.mp3$/);
+    expect(bgmEntry.streamClips?.source).toMatch(/^assets\/stream-0-[0-9a-f]{12}\.mp3$/);
+    expect(bgmEntry.streamRevisions?.source).toMatch(/^[0-9a-f]{64}$/);
     expect(result.value.files.get(bgmEntry.streamClips!.source!)).toEqual(mp3);
     const bgmPacked = decodePackedAudioAsset(result.value.files.get(bgmEntry.path!)!)!;
     expect(bgmPacked.payload.playbackMode).toBe("streamed");
     expect(bgmPacked.source.byteLength).toBe(0);
     expect(sfxEntry.streamClips).toBeUndefined();
+    expect(sfxEntry.streamRevisions).toBeUndefined();
     expect(decodePackedAudioAsset(result.value.files.get(sfxEntry.path!)!)!.source).toEqual(wav);
+
+    // Replacing streamed clip bytes must change both the sidecar path and streamRevisions digest.
+    const mp3Updated = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x11, 0x22, 0x33]);
+    const second = await exportGame({
+      platform: "web",
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "bgm",
+          type: "Audio",
+          sceneGuid: "scene-1",
+          bytes: encodePackedAudioAsset({ playbackMode: "streamed", loop: true }, mp3Updated),
+        },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    const bgmSecond = second.value.manifest.assets.find((entry) => entry.guid === "bgm")!;
+    expect(bgmSecond.streamClips?.source).not.toBe(bgmEntry.streamClips?.source);
+    expect(bgmSecond.streamRevisions?.source).not.toBe(bgmEntry.streamRevisions?.source);
   });
 });
 

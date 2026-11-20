@@ -232,7 +232,7 @@ export class AudioService {
   private library: AudioLibrary = emptyLibrary();
   private readonly sourceBytes = new Map<string, Uint8Array>();
   /** Ref-counted Blob URLs for streamed clips when no direct stream URL was provided. */
-  private readonly streamedUrls = new Map<string, { url: string; refs: number; bytes: number }>();
+  private readonly streamedUrls = new Map<string, { url: string; mimeType: string; refs: number; bytes: number }>();
   private readonly decodedLoads = new Map<string, Promise<Uint8Array>>();
   private readonly retiredClipKeys = new Set<string>();
   private readonly sourceLoads = new Map<string, Promise<Uint8Array | null>>();
@@ -378,8 +378,10 @@ export class AudioService {
               ...(revision ? { revision } : {}),
             })?.trim();
             if (!directUrl) {
+              const hadSource = this.sourceBytes.has(key);
               const source = await this.resolveSourceBytes(guid, clip.chunkId, key);
               if (!source?.byteLength) throw new Error(`Audio ${guid}, chunk ${clip.chunkId}: source bytes are missing.`);
+              if (this.loadSourceBytes && !hadSource) this.sourceBytes.delete(key);
             }
             if (key !== this.clipKey(guid, clip.chunkId) || !this.library.audio.has(guid))
               throw new Error(`Audio ${guid} changed during preload; retry the request.`);
@@ -929,22 +931,30 @@ export class AudioService {
       if (directUrl) {
         streamSourceUrl = directUrl;
       } else {
-        const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
-        if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;
-        if (!source || source.byteLength === 0) {
-          this.onDiagnostic?.({
-            code: "audio.missing_source",
-            message: "Audio source bytes are missing; playback skipped.",
-            assetGuid,
-          });
-          return;
+        const existingUrl = this.streamedUrls.get(cacheKey);
+        if (existingUrl) {
+          existingUrl.refs += 1;
+          streamSourceUrl = existingUrl.url;
+          streamMimeType = existingUrl.mimeType;
+          streamedUrlKey = cacheKey;
+        } else {
+          const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
+          if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;
+          if (!source || source.byteLength === 0) {
+            this.onDiagnostic?.({
+              code: "audio.missing_source",
+              message: "Audio source bytes are missing; playback skipped.",
+              assetGuid,
+            });
+            return;
+          }
+          decoded = source;
+          streamMimeType = mimeForAudioBytes(source);
+          // Pin/acquire the Blob URL before stopping a replaced voice so replaying the same clip reuses it.
+          const acquired = this.acquireStreamedUrl(cacheKey, source, streamMimeType);
+          streamSourceUrl = acquired.url;
+          streamedUrlKey = acquired.urlKey;
         }
-        decoded = source;
-        streamMimeType = mimeForAudioBytes(source);
-        // Pin/acquire the Blob URL before stopping a replaced voice so replaying the same clip reuses it.
-        const acquired = this.acquireStreamedUrl(cacheKey, source, streamMimeType);
-        streamSourceUrl = acquired.url;
-        streamedUrlKey = acquired.urlKey;
       }
     } else {
       const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
@@ -1099,7 +1109,8 @@ export class AudioService {
       return { urlKey: null };
     }
     const url = URL.createObjectURL(new Blob([source.slice()], { type: mimeType }));
-    this.streamedUrls.set(cacheKey, { url, refs: 1, bytes: source.byteLength });
+    this.streamedUrls.set(cacheKey, { url, mimeType, refs: 1, bytes: source.byteLength });
+    if (this.loadSourceBytes) this.sourceBytes.delete(cacheKey);
     return { url, urlKey: cacheKey };
   }
 
@@ -1116,7 +1127,7 @@ export class AudioService {
     } catch {
       /* keep tearing down */
     }
-    this.sourceBytes.delete(cacheKey);
+    if (this.loadSourceBytes) this.sourceBytes.delete(cacheKey);
   }
 
   /**

@@ -2527,4 +2527,75 @@ describe("AudioService with runtime Audio component commands", () => {
       createObjectURL.mockRestore();
     }
   });
+
+  it("releases lazily loaded streamed bytes after preload/Blob creation and preserves pre-seeded streamed bytes across replay", async () => {
+    const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x05, 0x06]);
+    const created: string[] = [];
+    const revoked: string[] = [];
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
+      const url = `blob:reuse-${created.length + 1}`;
+      created.push(url);
+      return url;
+    });
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation((url) => {
+      revoked.push(url);
+    });
+
+    // 1. Lazy loader path: preload does not pin bytes in sourceBytes, and an active Blob URL is reused without re-reading.
+    const lazyBackend = new FakeAudioPlaybackBackend();
+    const loadSourceBytes = vi.fn(async () => mp3);
+    const lazyService = new AudioService({ backend: lazyBackend, loadSourceBytes });
+    try {
+      lazyService.setLibrary(
+        library({ audio: { bgm: { ...createDefaultAudioPayload(), playbackMode: "streamed" } } }),
+      );
+      await lazyService.unlockAsync();
+      const release = await lazyService.preload(["bgm"]);
+      release();
+      expect(loadSourceBytes).toHaveBeenCalledTimes(1);
+
+      // First play loads once (because preload did not retain sourceBytes in JS heap).
+      lazyService.handleCommand({ type: "playSound", assetGuid: "bgm", voiceId: "v1", volume: 1, frameId: 1 });
+      await lazyService.flush();
+      expect(loadSourceBytes).toHaveBeenCalledTimes(2);
+      expect(created).toEqual(["blob:reuse-1"]);
+
+      // Second overlapping voice reuses the active Blob URL without calling loadSourceBytes again.
+      lazyService.handleCommand({ type: "playSound", assetGuid: "bgm", voiceId: "v2", volume: 1, frameId: 2 });
+      await lazyService.flush();
+      expect(loadSourceBytes).toHaveBeenCalledTimes(2);
+      expect(lazyBackend.plays[1]?.sourceUrl).toBe("blob:reuse-1");
+
+      lazyService.handleCommand({ type: "stopSound", voiceId: "v1" });
+      lazyService.handleCommand({ type: "stopSound", voiceId: "v2" });
+      await lazyService.flush();
+      expect(revoked).toEqual(["blob:reuse-1"]);
+    } finally {
+      lazyService.dispose();
+    }
+
+    // 2. Pre-seeded audioBytes path (no lazy loader): stopping and replaying must still find its source bytes.
+    const seededBackend = new FakeAudioPlaybackBackend();
+    const seededService = new AudioService({ backend: seededBackend });
+    try {
+      seededService.setLibrary(
+        library({ audio: { bgm: { ...createDefaultAudioPayload(), playbackMode: "streamed" } } }),
+      );
+      seededService.setSourceBytes("bgm", mp3);
+      await seededService.unlockAsync();
+      seededService.handleCommand({ type: "playSound", assetGuid: "bgm", voiceId: "s1", volume: 1, frameId: 1 });
+      await seededService.flush();
+      seededService.handleCommand({ type: "stopSound", voiceId: "s1" });
+      await seededService.flush();
+      seededService.handleCommand({ type: "playSound", assetGuid: "bgm", voiceId: "s2", volume: 1, frameId: 2 });
+      await seededService.flush();
+      expect(seededBackend.plays).toHaveLength(2);
+      expect(seededBackend.plays[1]?.voiceId).toBe("s2");
+    } finally {
+      seededService.dispose();
+      createObjectURL.mockRestore();
+      revokeObjectURL.mockRestore();
+    }
+  });
 });
+

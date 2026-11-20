@@ -268,4 +268,47 @@ it("swaps pre-built per-cell LOD geometries while sharing thin-instance matrix b
   expect(mid.geometry).toBe(midLod0Geometry);
 });
 
+it("updates FoliageFadePlugin uniforms per mesh across consecutive draws sharing a frozen material", async () => {
+  const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
+  const { CreateBox } = await import("@babylonjs/core/Meshes/Builders/boxBuilder");
+  const { engine, scene } = createTestEngine();
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  const camera = new FreeCamera("cam", new Vector3(1, 2, 3), scene);
+  camera.getViewMatrix();
+  scene.activeCamera = camera;
+
+  const material = new StandardMaterial("shared-foliage", scene);
+  const nearMesh = CreateBox("near", { size: 1 }, scene);
+  const fadeMesh = CreateBox("fade", { size: 1 }, scene);
+  nearMesh.material = material;
+  fadeMesh.material = material;
+  nearMesh.metadata = { slateFoliageFade: null };
+  fadeMesh.metadata = { slateFoliageFade: [85, 100] };
+
+  expect(material.isReadyForSubMesh(nearMesh, nearMesh.subMeshes[0]!, false)).toBe(true);
+  expect(material.isReadyForSubMesh(fadeMesh, fadeMesh.subMeshes[0]!, false)).toBe(true);
+  material.freeze();
+
+  const ubo = (material as unknown as { _uniformBuffer: { updateFloat2: (name: string, x: number, y: number) => void } })._uniformBuffer;
+  expect(ubo).toBeDefined();
+  const fadeCalls: Array<[number, number]> = [];
+  const origUpdateFloat2 = ubo!.updateFloat2.bind(ubo);
+  vi.spyOn(ubo!, "updateFloat2").mockImplementation((name: string, x: number, y: number) => {
+    if (name === "slateFoliageFade") fadeCalls.push([x, y]);
+    origUpdateFloat2(name, x, y);
+  });
+
+  // Consecutive binds on the same frozen material skip mustRebind; hardBindForSubMesh must still update each mesh.
+  material.bindForSubMesh(nearMesh.getWorldMatrix(), nearMesh, nearMesh.subMeshes[0]!);
+  material.bindForSubMesh(fadeMesh.getWorldMatrix(), fadeMesh, fadeMesh.subMeshes[0]!);
+  material.bindForSubMesh(nearMesh.getWorldMatrix(), nearMesh, nearMesh.subMeshes[0]!);
+
+  expect(fadeCalls).toEqual([
+    [0, 0],
+    [85, 100],
+    [0, 0],
+  ]);
+});
+
+
 
