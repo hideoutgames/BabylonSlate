@@ -1908,8 +1908,8 @@ describe("Profile", { timeout: 30_000 }, () => {
       "heavy shadow passes off", "heavy baseline 5", "heavy geometry effects off", "heavy geometry effects off",
       "heavy geometry pass drawn twice", "heavy baseline 8",
     ]);
-    // The step's undo failed: the baseline after it says so and fails the scene.
-    expect(main!.problems[0]).toBe("light baseline 2: postprocessing on failed: Refused.");
+    // The step's undo failed (light world hidden, after the samplers off row): the baseline after it says so and fails the scene.
+    expect(main!.problems[0]).toBe("light baseline 3: postprocessing on failed: Refused.");
     expect(main!.play.profile!.endChanges).toEqual(["post.enabled=false"]);
   });
 
