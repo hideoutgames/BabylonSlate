@@ -16,7 +16,10 @@ import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-re
 import { AtlasCascadedShadowGenerator, shadowTileSize } from "./shadow-atlas";
 import { SHADOW_FILTER_REACH_TEXELS } from "./shadow-filter";
 import { sceneRenderingSettings } from "./render-settings";
-import { customWrapper, SCREEN_SHADOW_SCALE } from "./spatial-effects";
+import { customWrapper, SCREEN_SHADOW_SCALE, type SpatialStage } from "./spatial-effects";
+import {
+  MERGED_MARCH_RUNS, MERGED_MARCHES_NAME, mergedMarchInputs, mergedMarchShader, type MarchEnds, type MarchSource, type MergedMarch,
+} from "./merged-marches";
 
 /**
  * Screen-Space Shadows: before the objects draw, a half-resolution pass (`SCREEN_SHADOW_SCALE`) marches once per 2 x 2
@@ -60,7 +63,20 @@ const MAX_STEPS = 16;
  * with none). The light block then knows the surface at its own pixel (`hapticScreenShadowLit`), as at full resolution.
  */
 function screenShadowsShader(): string {
-  return `varying vec2 vUV;
+  const { header, functions, body } = screenShadowsSource();
+  return `${header}${functions}void main() {
+${body}}
+`;
+}
+
+/**
+ * The march in parts (`MarchSource`), ending a pixel through `ends`: its own pass's `gl_FragColor = value; return;` early
+ * and `gl_FragColor = value;` last, unless the merged pass gives its own (`merged-marches.ts`).
+ */
+function screenShadowsSource(ends?: MarchEnds): MarchSource {
+  const early = ends ? ends.early : (value: string) => `gl_FragColor = ${value}; return;`;
+  const last = ends ? ends.last : (value: string) => `gl_FragColor = ${value};`;
+  const header = `varying vec2 vUV;
 uniform sampler2D depthSampler;
 uniform mat4 ssProjection;
 uniform mat4 ssInverseProjection;
@@ -70,7 +86,8 @@ uniform vec4 ssFade;
 uniform vec2 ssTexel;
 uniform vec4 ssCascadeEnds;
 uniform vec4 ssCascadeCaps;
-// The view-space point the depth texel at \`pixel\` shows (on the ray through its centre), and that depth.
+`;
+  const functions = `// The view-space point the depth texel at \`pixel\` shows (on the ray through its centre), and that depth.
 vec3 ssPoint(ivec2 pixel, ivec2 size, out float depth) {
   pixel = clamp(pixel, ivec2(0), size - ivec2(1));
   depth = abs(texelFetch(depthSampler, pixel, 0).r);
@@ -78,8 +95,8 @@ vec3 ssPoint(ivec2 pixel, ivec2 size, out float depth) {
   vec3 ray = unprojected.xyz / unprojected.w;
   return ray * (depth / max(abs(ray.z), 0.000001));
 }
-void main() {
-  ivec2 size = textureSize(depthSampler, 0);
+`;
+  const body = `  ivec2 size = textureSize(depthSampler, 0);
   ivec2 corner = ivec2(gl_FragCoord.xy) * ${SCREEN_SHADOW_SCALE};
   vec3 points[4];
   float depths[4];
@@ -90,7 +107,7 @@ void main() {
     float eye = depths[i] > 0.000001 ? length(points[i]) : -1.0;
     if (eye > farthest) { farthest = eye; marched = i; }
   }
-  if (marched < 0) { gl_FragColor = vec4(1.0, 0.0, 0.0, 0.0); return; }
+  if (marched < 0) { ${early("vec4(1.0, 0.0, 0.0, 0.0)")} }
   vec3 P = points[marched];
   float depth = depths[marched];
   float eye = length(P);
@@ -118,10 +135,10 @@ void main() {
     else if (valid && otherEye == 0.0) { other = i; otherEye = length(points[i]); }
   }
   float info = mask + 16.0 * float(marched) + 64.0 * float(other);
-  if (ssSun.w < 0.5 || planeless || eye >= ssFade.y) { gl_FragColor = vec4(1.0, eye, info, otherEye); return; }
+  if (ssSun.w < 0.5 || planeless || eye >= ssFade.y) { ${early("vec4(1.0, eye, info, otherEye)")} }
   vec3 L = ssSun.xyz;
   float NdotL = dot(N, L);
-  if (NdotL <= 0.0) { gl_FragColor = vec4(1.0, eye, info, otherEye); return; }
+  if (NdotL <= 0.0) { ${early("vec4(1.0, eye, info, otherEye)")} }
   float footprint = 2.0 * depth / ssFade.z;
   float reach = min(ssMarch.z, ssMarch.y * footprint);
   float bias = (0.004 * depth + 0.01) / max(NdotL, 0.25);
@@ -158,10 +175,19 @@ void main() {
     }
   }
   float fade = 1.0 - smoothstep(ssFade.x, ssFade.y, eye);
-  gl_FragColor = vec4(1.0 - occlusion * fade, eye, info, otherEye);
-}
+  ${last("vec4(1.0 - occlusion * fade, eye, info, otherEye)")}
 `;
+  return { header, functions, body };
 }
+
+/** The march as the merged pass takes it (`merged-marches.ts`), always its first: attachment 0 is its target. */
+export const SCREEN_SHADOWS_MARCH: MergedMarch = {
+  name: "Screen shadows",
+  uniforms: ["ssProjection", "ssInverseProjection", "ssSun", "ssMarch", "ssFade", "ssTexel", "ssCascadeEnds", "ssCascadeCaps"],
+  samplers: ["depthSampler"],
+  uniformBuffers: [],
+  source: screenShadowsSource,
+};
 
 const NO_CASCADES = [-1, -1, -1, -1] as const;
 
@@ -219,27 +245,44 @@ export function screenShadowsPlaceholder(scene: Scene): ThinTexture {
   return texture;
 }
 
+/** A march merged into the Screen-Space Shadows pass: its stage, its target, and whether it marches this frame. */
+export type MergedMarchStage = {
+  stage: SpatialStage;
+  output: FrameGraphTextureHandle;
+  /** Set before each frame by `SpatialEffectsGraph.syncIdle`, from the stage's `idle`. */
+  running: boolean;
+};
+
 class ScreenShadowsTask extends FrameGraphPostProcessTask {
   private retirement: OwnedEffectRetirement | undefined;
-  private readonly depth: FrameGraphTextureHandle;
+  /** The geometry buffers it samples, nearest, by sampler name. */
+  private readonly buffers: Record<string, FrameGraphTextureHandle>;
+  /** The merged marches' targets, colour attachments 1 on beside its own (`outputTexture`, attachment 0). */
+  private readonly attachments: FrameGraphTextureHandle[];
   private readonly bind: (effect: Effect) => void;
-  constructor(graph: FrameGraph, wrapper: ReturnType<typeof customWrapper>, depth: FrameGraphTextureHandle, bind: (effect: Effect) => void) {
+  constructor(graph: FrameGraph, wrapper: ReturnType<typeof customWrapper>, buffers: Record<string, FrameGraphTextureHandle>,
+    attachments: FrameGraphTextureHandle[], bind: (effect: Effect) => void) {
     super(wrapper.name, graph, wrapper);
-    this.depth = depth;
+    this.buffers = buffers;
+    this.attachments = attachments;
     this.bind = bind;
     this.depthTest = false;
   }
   override record() {
     const pass = super.record(true, undefined, (context) => {
       const effect = this.drawWrapper.effect!;
-      context.setTextureSamplingMode(this.depth, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
-      context.bindTextureHandle(effect, "depthSampler", this.depth);
+      for (const [name, handle] of Object.entries(this.buffers)) {
+        context.setTextureSamplingMode(handle, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
+        context.bindTextureHandle(effect, name, handle);
+      }
       this.bind(effect);
     });
-    pass.addDependencies(this.depth);
+    pass.addDependencies(Object.values(this.buffers));
+    const targets = this.attachments.length ? [this.outputTexture, ...this.attachments] : this.outputTexture;
+    pass.setRenderTarget(targets);
     // Idle (`ScreenShadowsGraph.sync`): Babylon runs the enabled passes of a disabled task that has no disabled pass.
     const idle = this._frameGraph.addRenderPass(`${this.name}_disabled`, true);
-    idle.setRenderTarget(this.outputTexture);
+    idle.setRenderTarget(targets);
     idle.setExecuteFunc(() => {});
     return pass;
   }
@@ -261,6 +304,12 @@ class ScreenShadowsTask extends FrameGraphPostProcessTask {
  * block takes as lit, as it would the march's 1. The sun starting to cast shadows creates no pipeline, only re-enables
  * the task. Nor does a level change: every level is the same program and target, so the march reads the Scene's current
  * level (`level` until its plan has one) when it draws.
+ *
+ * Given marches of its target's size (`merged-marches.ts`: the ambient occlusion and volumetric marches, which read only
+ * the geometry pass, the shadow atlas and the light block, all complete before the objects), the task is
+ * `MERGED_MARCHES_NAME`: one program writes its target as colour attachment 0 and each march's as the next, each march
+ * in a uniform branch of its own (`MERGED_MARCH_RUNS`). It then runs while any of them marches, and an idle one's
+ * attachment holds the pass's zero clear, which no reader samples.
  */
 export class ScreenShadowsGraph {
   readonly task: ScreenShadowsTask;
@@ -268,17 +317,31 @@ export class ScreenShadowsGraph {
   private readonly entries = new Map<number, PassEntry>();
   private readonly scene: Scene;
   private readonly camera: Camera;
+  private readonly marches: readonly MergedMarchStage[];
   private marching = true;
 
   constructor(
     graph: FrameGraph, camera: Camera, level: Exclude<ScreenShadowsQuality, "off">, depth: FrameGraphTextureHandle,
     width: number, height: number, failure?: EffectCompileFailure,
+    /**
+     * The marches drawn in this pass (`merged-marches.ts`), each into its own target, and the geometry buffers they
+     * sample (the view depth among them); none draws the march alone, into its target alone.
+     */
+    merged?: { buffers: Record<string, FrameGraphTextureHandle>; marches: MergedMarchStage[] },
   ) {
     const scene = graph.scene;
     this.scene = scene;
     this.camera = camera;
-    const wrapper = customWrapper(scene, "Screen shadows", screenShadowsShader(),
-      ["ssProjection", "ssInverseProjection", "ssSun", "ssMarch", "ssFade", "ssTexel", "ssCascadeEnds", "ssCascadeCaps"], ["depthSampler"], failure);
+    const own = SCREEN_SHADOWS_MARCH;
+    const marches = merged?.marches ?? [];
+    this.marches = marches;
+    let wrapper: ReturnType<typeof customWrapper>;
+    if (marches.length) {
+      const all = [own, ...marches.map(({ stage }) => stage.march!)];
+      const inputs = mergedMarchInputs(all);
+      wrapper = customWrapper(scene, MERGED_MARCHES_NAME, mergedMarchShader(all), inputs.uniforms, inputs.samplers, failure,
+        inputs.uniformBuffers);
+    } else wrapper = customWrapper(scene, own.name, screenShadowsShader(), [...own.uniforms], [...own.samplers], failure);
     const marchWidth = Math.ceil(width / SCREEN_SHADOW_SCALE), marchHeight = Math.ceil(height / SCREEN_SHADOW_SCALE);
     this.output = graph.textureManager.createRenderTargetTexture("Screen shadows", {
       size: { width: marchWidth, height: marchHeight },
@@ -293,7 +356,19 @@ export class ScreenShadowsGraph {
     });
     const inverse = new Matrix();
     const toSun = new Vector3();
-    this.task = new ScreenShadowsTask(graph, wrapper, depth, (effect) => {
+    const runs = [0, 0, 0, 0];
+    this.task = new ScreenShadowsTask(graph, wrapper, merged?.buffers ?? { depthSampler: depth }, marches.map(({ output }) => output), (effect) => {
+      if (marches.length) {
+        // Each march's branch: this one's while it marches, each merged one's while it runs (`sync`); an idle one
+        // binds only what its program needs to draw.
+        runs[0] = this.marching ? 1 : 0;
+        marches.forEach(({ stage, running }, index) => {
+          runs[index + 1] = running ? 1 : 0;
+          if (running) stage.bind(effect);
+          else stage.bindIdle?.(effect);
+        });
+        effect.setFloat4(MERGED_MARCH_RUNS, runs[0]!, runs[1]!, runs[2]!, runs[3]!);
+      }
       const projection = camera.getProjectionMatrix();
       projection.invertToRef(inverse);
       effect.setMatrix("ssProjection", projection);
@@ -327,14 +402,16 @@ export class ScreenShadowsGraph {
   }
 
   /**
-   * Whether the march runs this frame: a shadowed sun (the light block's, written before the frame) and a perspective
-   * camera. Before each frame's graph execution; idles the task and turns its readers off otherwise.
+   * Whether the pass runs this frame: the march runs with a shadowed sun (the light block's, written before the frame)
+   * and a perspective camera, and turns its readers off otherwise; the pass also runs while a merged march does (its
+   * `running`, set first). Before each frame's graph execution; idles the task when nothing in it marches.
    */
   sync(): boolean {
     this.marching = hapticShadowedSun(this.scene) !== null && this.camera.mode === Camera.PERSPECTIVE_CAMERA;
-    this.task.disabled = !this.marching;
+    const runs = this.marching || this.marches.some(({ running }) => running);
+    this.task.disabled = !runs;
     for (const entry of this.entries.values()) entry.marching = this.marching;
-    return this.marching;
+    return runs;
   }
 
   /** Attaches the built target to the registered passes; after each build. */

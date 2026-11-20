@@ -13,6 +13,9 @@ export const WORLD_DEBUG_FLAT_DEFINE = "HAPTIC_DEBUG_FLAT";
 const off = new WeakMap<Scene, ReadonlySet<WorldDebugPart>>();
 const NONE: ReadonlySet<WorldDebugPart> = new Set();
 
+/** The parts that change only the view's graph (`liveSceneEffectsKey`), never a Material's program. */
+const GRAPH_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "mergedmarches"]);
+
 /** Whether `part` of the world is switched off for `scene`. */
 export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
   return (off.get(scene) ?? NONE).has(part);
@@ -21,8 +24,9 @@ export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
 /**
  * Switches `part` on or off for `scene`; true when that changed it. A part a shader reads has every Material of the
  * Scene re-prepare its defines on its next draw (a part off compiles its variant; back on, the Material draws its own
- * program again). The geometry repeat parts change no program: they change the view's graph (`liveSceneEffectsKey`),
- * which builds again with or without the repeat pass (`geometryRepeat`).
+ * program again). The geometry repeat parts and `mergedmarches` change no Material's program: they change the view's
+ * graph (`liveSceneEffectsKey`), which builds again with or without the repeat pass (`geometryRepeat`), or with the
+ * half-resolution marches in one pass or in their own (`SpatialEffectsGraph`).
  */
 export function setSceneWorldDebug(scene: Scene, part: WorldDebugPart, enabled: boolean): boolean {
   const current = off.get(scene) ?? NONE;
@@ -30,7 +34,7 @@ export function setSceneWorldDebug(scene: Scene, part: WorldDebugPart, enabled: 
   const next = new Set(current);
   if (enabled) next.delete(part); else next.add(part);
   off.set(scene, next);
-  if (part !== "geometryonce" && part !== "geometryoncescissor") for (const material of scene.materials) material.markDirty(true);
+  if (!GRAPH_PARTS.has(part)) for (const material of scene.materials) material.markDirty(true);
   markSceneReadinessDirty(scene, "renderSettings");
   return true;
 }

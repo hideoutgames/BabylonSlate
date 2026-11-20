@@ -764,7 +764,7 @@ export class ForwardSceneFrameGraph {
 
   /**
    * Counts each task's draws to its pass (`RenderDiagnostics.drawPasses`): the shadow maps, the geometry pass and Screen
-   * Shadows, the outline, the post-process stages (and their output copy), the object passes, the water scene copy's
+   * Shadows (with the marches merged into their pass, `merged-marches.ts`), the outline, the post-process stages (and their output copy), the object passes, the water scene copy's
    * own tasks; clears and a chainless output copy are `other`. `Forward cull` brackets itself (`cull`, with the occlusion
    * filter that runs after Babylon's cull, which a task observer would end before) and its task observer is `cull` too,
    * so Babylon's frustum test inside it is not `other`; the readiness work around the
