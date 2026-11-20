@@ -29,7 +29,7 @@ async function layer(build: (scene: Scene) => void) {
   }));
   engines.push(engine);
   const compositor = new SceneLayerCompositor({ engine });
-  const { scene } = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+  const { scene } = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
   build(scene);
   await compositor.prepare("hud", () => {});
   /** The lists the layer's batcher is handed in each of `count` frames: the last frame's, by mesh name. */

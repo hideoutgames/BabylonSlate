@@ -99,6 +99,9 @@ class Journal {
   clear(): void {
     this.base = this.end;
     this.frontier = this.base;
+    // Every drain that every reader has caught up with ends here: an empty journal is left as it is, as clearing a Map
+    // makes it a new table.
+    if (!this.nodes.length) return;
     this.nodes.length = 0;
     this.kinds.length = 0;
     this.last.clear();
@@ -275,14 +278,22 @@ function accessor(prototype: object, name: string): Accessor & PropertyDescripto
 let installed = false;
 
 /**
+ * Installs the hooks once (`hook`). Kept apart from them because a function whose locals its closures capture makes
+ * their context on every call, before its first line runs: the hot callers (`geometryBufferLayout` once per polled
+ * source a frame, `journalFollows`) would allocate it each time.
+ */
+function install(): void {
+  if (!installed) hook();
+}
+
+/**
  * Pinned 9.29 adapter, installed once on the first reader: wraps the prototype methods and accessors where Babylon
  * writes what a visual draws, so each write notes its node in its Scene's journal. Prototype wrappers rather than a
  * hunk of the Babylon patch: they need no rebuild of the patched package, they stay out of every Scene without a
  * reader, and the pin review checks them in one place. Each wrapper calls the original first and notes only an actual
  * change where the write can be a no-op.
  */
-function install(): void {
-  if (installed) return;
+function hook(): void {
   installed = true;
   hookedPrototypes.add(Node.prototype).add(TransformNode.prototype).add(AbstractMesh.prototype).add(Mesh.prototype).add(InstancedMesh.prototype);
 

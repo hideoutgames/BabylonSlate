@@ -15,7 +15,7 @@ function editing(classId = "2DTextInputComponent", navigate?: (reverse: boolean)
   const engine = new NullEngine({ renderWidth: 800, renderHeight: 450, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 4 });
   dispose.push(() => engine.dispose());
   const compositor = new SceneLayerCompositor({ engine });
-  const layer = compositor.create({ type: "sceneLayerCreate", layerId: "controls", assetGuid: "controls", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+  const layer = compositor.create({ type: "sceneLayerCreate", layerId: "controls", assetGuid: "controls", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
   const mesh = createUIControl2DMesh(layer.scene, "control", { classId, properties: { text: "ABCD", value: 12, max: 100, width: 4, height: 1, ...extra } }, undefined, "field");
   mesh.metadata = { ...mesh.metadata, overlayActorGuid: "actor" };
   const canvas = document.createElement("canvas"); canvas.tabIndex = 0; document.body.append(canvas);

@@ -336,8 +336,9 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  * steps have compiled, and a memory-limited device kills the page. `shadow tiles half` plans its smaller maps in the
  * level's atlas, which stays the same object.
  *
- * `light` (few draws) takes the world hidden, the shadow map passes and their splits, the geometry effects together,
- * the world drawn once, and one window with the Check's own samplers off (`samplersOff`). `heavy` (many draws, no Mirror on screen; the control view) takes what follows the draws rather
+ * `light` (few draws) takes first one window with the Check's own samplers off (`samplersOff`), right after its first
+ * baseline so a run that stops later still has it, then the world hidden, the shadow map passes and their splits, the
+ * geometry effects together and the world drawn once. `heavy` (many draws, no Mirror on screen; the control view) takes what follows the draws rather
  * than the pixels: the world hidden, the shadow map passes, the geometry effects together and the geometry pass drawn
  * twice, whole and scissored (where it draws the most), and the world drawn once. `mirror` (both Mirrors and the capture monitors on screen) takes
  * the captures, the Mirrors' reflection and the world drawn once.
@@ -392,7 +393,7 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
     views: [
       {
         name: "light", enter: [possessProfileView("light")], steps: [
-          worldHidden, shadowPassesOff, sunPassesOff, localPassesOff, halfTiles, geometryOff, once, samplersOff,
+          samplersOff, worldHidden, shadowPassesOff, sunPassesOff, localPassesOff, halfTiles, geometryOff, once,
         ],
       },
       {
@@ -1395,6 +1396,14 @@ export interface FeatureTestCheckDeps {
   compiling?: () => number;
   /** The native host's memory counters; absent, or null, where it reports none. */
   hostMemory?: () => Promise<HostMemory | null>;
+  /** Estimated GPU bytes of every Engine's textures, render targets included (`estimateTextureMemory`); absent where unknown. */
+  textureBytes?: () => number;
+  /**
+   * Marks a stage in the session trail (`markSessionTrail`). Benchmark, Breakdown and Profile mark each command they
+   * run and the end of each wait for draws and settle, with the app's headroom and texture megabytes then
+   * (`trailMemoryText`), so a page killed for memory leaves the command it died after and the memory it had left.
+   */
+  markTrail?: (stage: string) => void;
   now: () => number;
   sleep: (ms: number, signal: AbortSignal) => Promise<void>;
   onProgress?: (message: string) => void;
@@ -1856,6 +1865,18 @@ async function readHostMemory(deps: FeatureTestCheckDeps): Promise<HostMemory | 
   return memory && (memory.deviceAvailableBytes !== null || memory.appAvailableBytes !== null) ? memory : null;
 }
 
+/**
+ * The memory a session trail mark carries: ` · app headroom 412 MB · textures 300 MB`, each part only where it is
+ * known; empty when neither is.
+ */
+export function trailMemoryText(memory: HostMemory | null, textureBytes: number | null): string {
+  const megabytes = (bytes: number) => `${Math.round(bytes / 1048576)} MB`;
+  return [
+    ...(memory?.appAvailableBytes != null ? [`app headroom ${megabytes(memory.appAvailableBytes)}`] : []),
+    ...(textureBytes !== null ? [`textures ${megabytes(textureBytes)}`] : []),
+  ].map((part) => ` · ${part}`).join("");
+}
+
 /** How much each of the world renderer's work counters grew between two `RenderDiagnostics.rendererWork` readings. */
 function rendererWorkSince(
   before: SampledRendererWork | undefined, after: SampledRendererWork | undefined,
@@ -2086,11 +2107,18 @@ async function benchmarkProfiles(
   // A Profile's plan depends on the session as its warm-up found it.
   let steps: readonly FeatureTestBreakdownSequenceStep[] = mode === "benchmark" ? FEATURE_TEST_BENCHMARK_PROFILES
     : breakdown ? breakdownSequence(plan.views) : [];
-  /** Runs `lines`, adding each failure to `failed`. */
+  /** Marks `stage` in the session trail with the memory the app has now (`FeatureTestCheckDeps.markTrail`). */
+  const markMemory = async (stage: string) => {
+    if (!deps.markTrail) return;
+    const memory = await readHostMemory(deps);
+    deps.markTrail(`${sceneName}: ${stage}${trailMemoryText(memory, deps.textureBytes?.() ?? null)}`);
+  };
+  /** Runs `lines`, adding each failure to `failed`, and marks the trail after each. */
   const runAll = async (lines: readonly string[], failed: string[]) => {
     for (const line of lines) {
       const command = await run(line);
       if (!command.success) failed.push(`${line} failed: ${sentence(command.output || "no output")}`);
+      await markMemory(`ran ${line}`);
     }
   };
   const pendingRestore: string[] = [];
@@ -2100,6 +2128,7 @@ async function benchmarkProfiles(
   const restore = async () => {
     if (!interleaved) return;
     await run("quality reset");
+    await markMemory("ran quality reset");
     await runAll(base.commands, carried);
     await runAll(pendingRestore.splice(0), carried);
   };
@@ -2111,6 +2140,11 @@ async function benchmarkProfiles(
    * `profileFirstWaitMs`. `note` says when a Profile's view still held more than that allows, against a known rate.
    */
   const waitForDraws = async (): Promise<DrawWait & { note: string | null }> => {
+    const drew = await waitForViewDraws();
+    await markMemory(`waited for draws: ${drew.outcome}`);
+    return drew;
+  };
+  const waitForViewDraws = async (): Promise<DrawWait & { note: string | null }> => {
     if (!profileMode) {
       return { outcome: await viewDrawsSteadily(play, deps, signal, limits.profileCompileMs) ? "steady" : "stopped", share: null, note: null };
     }
@@ -2130,7 +2164,11 @@ async function benchmarkProfiles(
     : `The view did not draw steadily within ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`;
   // A Profile bounds the wait for quiet shaders more tightly: a tablet's steady scene may never go quiet for long.
   const settleBoundMs = profileMode ? limits.profileSettleBoundMs : limits.profileCompileMs;
-  const settle = () => settleView(play, deps, signal, profileMode ? limits.profileStepSettleMs : limits.profileSettleMs, settleBoundMs);
+  const settle = async () => {
+    const settled = await settleView(play, deps, signal, profileMode ? limits.profileStepSettleMs : limits.profileSettleMs, settleBoundMs);
+    await markMemory(`settled: ${settled.quiet ? "quiet" : "still compiling"} after ${seconds(settled.ms)}`);
+    return settled;
+  };
   const unsettledNote = (what: string) =>
     `Shaders were still first drawn or compiling after ${seconds(settleBoundMs)}; this ${what}'s frames include them.`;
   // GPU-busy time per frame from fences, which display pacing does not quantise; restarted per sample.

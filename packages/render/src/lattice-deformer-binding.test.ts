@@ -6,7 +6,7 @@ import { markLatticeComponentRoot, meshLatticeBinding, setLatticeBinding, type L
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); vi.restoreAllMocks(); });
-function cage(): LatticeBinding { return { active: true, bindEffect: vi.fn(), bindBuffer: vi.fn() }; }
+function cage(): LatticeBinding { return { active: true, revision: () => 0, widens: () => false, bindEffect: vi.fn(), bindBuffer: vi.fn() }; }
 function component(scene: Scene, name: string) {
   const root = new Mesh(name, scene), part = new Mesh(`${name}-part`, scene);
   part.parent = root;

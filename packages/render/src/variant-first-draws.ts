@@ -95,6 +95,7 @@ function install(engine: AbstractEngine): WarmupState {
     // installation or returned since as drawn.
     if (effectDrawnOn(engine, effect) ?? known) return effect;
     // A variant linked as soon as it is requested (a synchronous driver) draws in this frame while it has room.
+    if (variantSwapsTolerated()) refreshBudget(engine, state);
     if (variantSwapsTolerated() && state.budget > 0 && effect.isReady()) {
       state.budget -= 1;
       state.settled.add(effect);
@@ -167,20 +168,25 @@ export function withFirstDrawRound<T>(engine: AbstractEngine, steady: boolean, r
   }
 }
 
+/** Every Engine frame starts with its own first-draw budget, whichever path asks first. */
+function refreshBudget(engine: AbstractEngine, state: WarmupState): void {
+  if (state.budgetFrame === engine.frameId) return;
+  state.budgetFrame = engine.frameId;
+  state.budget = FIRST_DRAWS_PER_FRAME;
+}
+
 /**
  * Admits up to the Engine frame's remaining first-draw budget of admissible cold Effects, oldest first. The budget is
  * per Engine frame: a frame's tolerant rounds, its views and the steady frame itself (`admitSteadyFirstDraws`) share it.
  */
 function admitColdEffects(engine: AbstractEngine, state: WarmupState): void {
-  if (state.budgetFrame !== engine.frameId) {
-    state.budgetFrame = engine.frameId;
-    state.budget = FIRST_DRAWS_PER_FRAME;
-  }
+  refreshBudget(engine, state);
   let budget = state.budget;
   for (const [effect, entry] of state.cold) {
     // A variant that failed to link, every fallback included, never turns ready (the mesh keeps its previous
-    // Effect for good): it leaves the queue without a first draw to spread.
-    if (effect.getCompilationError() && effect.allFallbacksProcessed()) {
+    // Effect for good), and a disposed one (its pass released by a re-planned graph) is never drawn: both leave the
+    // queue without a first draw to spread.
+    if ((effect.getCompilationError() && effect.allFallbacksProcessed()) || (effect as unknown as { _isDisposed?: boolean })._isDisposed) {
       warmUp(state, effect);
       continue;
     }

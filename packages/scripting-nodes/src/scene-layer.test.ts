@@ -125,27 +125,27 @@ describe("scene-layer nodes", () => {
   });
 
   it.each([
-    ["scene.registerPostProcess", "registerScenePostProcess"],
-    ["scene-layer.registerPostProcess", "registerSceneLayerPostProcess"],
-  ] as const)("hands %s's new pass to the next node as its Material Object", (typeId, method) => {
-    const layered = method === "registerSceneLayerPostProcess";
+    ["scene.registerPostProcess", "registerScenePostProcess", "scene.unregisterPostProcess", "unregisterScenePostProcess"],
+    // The Scene Layer nodes name no layer: every layer shares one stack.
+    ["scene-layer.registerPostProcess", "registerSceneLayerPostProcess", "scene-layer.unregisterPostProcess", "unregisterSceneLayerPostProcess"],
+  ] as const)("hands %s's new pass to the next node as its Material Object", (typeId, method, unregisterTypeId, unregisterMethod) => {
     const registry = createDefaultNodeRegistry();
+    expect(registry.get(typeId)!.pins({}).map((entry) => entry.id)).toEqual(["execIn", "execOut", "material", "pass"]);
+    expect(registry.get(unregisterTypeId)!.pins({}).map((entry) => entry.id)).toEqual(["execIn", "execOut", "material"]);
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "layer", "scene-layer.getOwningSceneLayer"),
         node(registry, "reg", typeId, { "default:material": "night" }),
         node(registry, "set", "material.setFloatParameter", { "default:name": "Darkness", "default:value": 0.6 }),
-        node(registry, "unreg", "scene.unregisterPostProcess", { "default:material": "day" }),
+        node(registry, "unreg", unregisterTypeId, { "default:material": "day" }),
       ],
       edges: [
         { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
         { id: "e2", sourceNodeId: "reg", sourcePinId: "execOut", targetNodeId: "set", targetPinId: "execIn" },
         { id: "e3", sourceNodeId: "reg", sourcePinId: "pass", targetNodeId: "set", targetPinId: "material" },
         { id: "e4", sourceNodeId: "set", sourcePinId: "execOut", targetNodeId: "unreg", targetPinId: "execIn" },
-        ...(layered ? [{ id: "e5", sourceNodeId: "layer", sourcePinId: "out", targetNodeId: "reg", targetPinId: "layer" }] : []),
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
@@ -156,12 +156,11 @@ describe("scene-layer nodes", () => {
     void onBeginPlay({
       [method]: (...args: unknown[]) => { calls.push(["register", ...args]); return pass; },
       setMaterialFloatParameter: (...args: unknown[]) => calls.push(["set", ...args]),
-      unregisterScenePostProcess: (guid: string) => calls.push(["unregister", guid]),
+      [unregisterMethod]: (...args: unknown[]) => calls.push(["unregister", ...args]),
       self: { guid: "hero" },
-      getOwningSceneLayer: () => "hud",
     });
     expect(calls).toEqual([
-      ["register", ...(layered ? ["hud"] : []), "night"],
+      ["register", "night"],
       ["set", pass, "Darkness", 0.6],
       ["unregister", "day"],
     ]);

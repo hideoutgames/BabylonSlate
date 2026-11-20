@@ -151,6 +151,8 @@ describe("worker entry snapshot transport", () => {
     vi.stubGlobal("self", host);
     const deliver = (data: BridgeHostMessage) => host.onmessage!({ data });
     const posts: Post[] = [];
+    // Each message as posted: a real post clones it, so what it carried is recorded now.
+    const envelopes: Array<{ message: BridgeWorkerMessage; list?: unknown; carried?: CommandMessage[] }> = [];
     let batch = 0;
     let readyPosts = 0;
     vi.stubGlobal("postMessage", (message: BridgeWorkerMessage) => {
@@ -158,6 +160,7 @@ describe("worker entry snapshot transport", () => {
         readyPosts++;
         return;
       }
+      envelopes.push(message.channel === "commands" ? { message, list: message.payload, carried: [...message.payload] } : { message });
       if (message.channel === "snapshot") {
         const frameId = readSnapshotHeader(new Float32Array(message.payload)).frameId;
         posts.push({ kind: "snapshot", frameId, buffer: message.payload });
@@ -200,7 +203,7 @@ describe("worker entry snapshot transport", () => {
     send({ type: "play" });
     await vi.waitFor(() => expect(frames.length).toBeGreaterThan(0));
     return {
-      deliver, posts, emitted, runtime, saveStorage: () => saveStorage, readyAtImport, readyPosts: () => readyPosts,
+      deliver, posts, envelopes, emitted, runtime, saveStorage: () => saveStorage, readyAtImport, readyPosts: () => readyPosts,
       runFrames(count: number) {
         for (let i = 0; i < count; i++) {
           now += 1000 / 60;
@@ -329,6 +332,40 @@ describe("worker entry snapshot transport", () => {
     const logs = commands.filter((post) => post.command.type === "log");
     expect(logs.map((post) => post.command.type === "log" && post.command.message)).toEqual(["first", "second"]);
     expect(new Set(commands.map((post) => post.batch)).size).toBe(1);
+  });
+
+  it("posts every frame's batch and pose in reused envelopes, each carrying exactly its own commands and buffer", async () => {
+    // The break: an array and an envelope made for each batch, and an envelope and transfer list for each pose, every
+    // frame. A post clones before it returns, so reuse is safe only if no batch loses, repeats or mixes commands.
+    const { deliver, envelopes, runtime, runFrames, snapshots } = await bootWorker(
+      { type: "load", sceneAssetGuid: "main", scene: { ...createDefaultScene(), actors: [createActor("prop", "Prop")] } });
+    runFrames(8);
+    for (const pose of snapshots()) deliver({ channel: "recycleSnapshot", payload: pose.buffer });
+    const advance = runtime.advance.bind(runtime);
+    let tick = 0;
+    vi.spyOn(runtime, "advance").mockImplementation((elapsed) => {
+      advance(elapsed);
+      runtime.reportLog(`tick ${++tick}`);
+      // A longer batch on some ticks: a later, shorter one carries none of its commands.
+      if (tick % 2) runtime.reportLog(`extra ${tick}`);
+    });
+    const from = envelopes.length;
+    let returned = snapshots().length;
+    for (let frame = 0; frame < 12; frame++) {
+      runFrames(1);
+      while (returned < snapshots().length) deliver({ channel: "recycleSnapshot", payload: snapshots()[returned++]!.buffer });
+    }
+    const batches = envelopes.slice(from).filter((entry) => entry.message.channel === "commands");
+    const logs = batches.flatMap((entry) => entry.carried!.flatMap((command) =>
+      command.type === "log" && /^(tick|extra) /.test(command.message) ? [command.message] : []));
+    const expected = Array.from({ length: tick }, (_, index) => index + 1).flatMap((at) => at % 2 ? [`tick ${at}`, `extra ${at}`] : [`tick ${at}`]);
+    expect(tick).toBeGreaterThan(3);
+    expect(logs).toEqual(expected);
+    expect(new Set(batches.map((entry) => entry.message)).size).toBe(1);
+    expect(new Set(batches.map((entry) => entry.list)).size).toBe(2);
+    const poses = envelopes.slice(from).filter((entry) => entry.message.channel === "snapshot");
+    expect(poses.length).toBeGreaterThan(1);
+    expect(new Set(poses.map((entry) => entry.message)).size).toBe(1);
   });
 
   it("flushes queued commands before the pose that releases a held reply, which then follows the pose alone", async () => {

@@ -7,6 +7,7 @@ import {
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightBuffer, selectHapticLights } from "./haptic-lights";
 import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
+import { onSceneReadinessDirty } from "./scene-readiness-signal";
 import { updateSceneRenderingSettings } from "./render-settings";
 import { createRenderDiagnostics } from "./render-diagnostics";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
@@ -402,6 +403,30 @@ describe("scene material lighting", () => {
     syncSceneLighting(scene);
     syncSceneLighting(scene);
     expect(writes).toHaveBeenCalledTimes(4);
+  });
+
+  it("stales the readiness of only the meshes whose Materials read Babylon's lights when the lights change", () => {
+    const scene = host(false);
+    const lowered = lowerMaterialDocument(createDefaultMaterialDocument());
+    if (!lowered.ok) throw new Error("Fixture material did not lower");
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "graph" });
+    if (!compiled.ok) throw new Error("Fixture material did not compile");
+    const graph = MeshBuilder.CreateBox("graph", {}, scene);
+    graph.material = compiled.material;
+    const standard = MeshBuilder.CreateBox("standard", {}, scene);
+    standard.material = new StandardMaterial("standard", scene);
+    syncSceneLighting(scene);
+    const marks: [string, string[] | undefined][] = [];
+    const stop = onSceneReadinessDirty(scene, (reason, scope) => {
+      if (reason === "sceneLighting") marks.push([reason, scope?.map((mesh) => mesh.name)]);
+    });
+    const lamp = new PointLight("lamp", new Vector3(0, 3, 0), scene);
+    syncSceneLighting(scene);
+    lamp.setEnabled(false);
+    syncSceneLighting(scene);
+    stop();
+    // The graph Material reads the light block as data: its variants hold no light define, so its readiness stands.
+    expect(marks).toEqual([["sceneLighting", ["standard"]], ["sceneLighting", ["standard"]]]);
   });
 
   it("keeps unlit materials unchanged", () => {

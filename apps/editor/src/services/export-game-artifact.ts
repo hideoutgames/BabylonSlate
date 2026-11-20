@@ -176,6 +176,7 @@ export async function exportProjectGameArtifact(
       exportDocument?.settings.infiniteLoopDetection,
     loopCount: exportDocument?.settings.loopCount,
     focusNavigation: exportDocument?.settings.focusNavigation,
+    sceneLayerPostProcessStack: exportDocument?.settings.sceneLayerPostProcessStack,
     tagRegistry: exportDocument?.settings.tags,
     playerFiles,
     platform: options.platform,

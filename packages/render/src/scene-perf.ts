@@ -541,12 +541,14 @@ function hasParentPendingData(scene: Scene): boolean {
  * its scene-owned checks so an unrelated preview cannot block this viewport.
  * This probe compiles each mesh's variant under the camera's own pass; `skipVariant` names meshes the view
  * never draws in that pass (copy-sampling water draws only in the water split's pass), whose other
- * readiness checks still run.
+ * readiness checks still run. `probedElsewhere` names shadow maps another probe of the same round asks whole (the
+ * view's shadow task, `ManagedShadowsTask.probesMap`): they are not asked twice.
  */
 export function isSceneFrameReady(
   scene: Scene,
   targets: readonly RenderTargetTexture[] = [],
   skipVariant?: (mesh: AbstractMesh) => boolean,
+  probedElsewhere?: (map: RenderTargetTexture) => boolean,
 ): boolean {
   if (scene.isDisposed) return false;
   return withSceneReadinessState(scene, () => {
@@ -625,7 +627,7 @@ export function isSceneFrameReady(
       if (admitted && !light.isEnabled()) continue;
       for (const generator of light.getShadowGenerators()?.values() ?? []) {
         const map = generator.getShadowMap();
-        if (!map) continue;
+        if (!map || probedElsewhere?.(map)) continue;
         renderTargets.add(map);
         shadowMaps.add(map);
       }

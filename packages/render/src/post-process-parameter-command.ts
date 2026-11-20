@@ -6,27 +6,26 @@ export type PostProcessParameterCommand = Extract<
 >;
 export interface PostProcessParameterTargets {
   world: { sceneAssetGuid: string | null; sceneLoadId: number; ready: boolean };
-  layer: (id: string) => { loadId: number; ready: boolean } | undefined;
   setWorld: (command: PostProcessParameterCommand) => boolean;
-  setLayer: (layerId: string, command: PostProcessParameterCommand) => boolean;
+  /** The Scene Layer post-processing every layer shares; it checks the pass is still in its stack. */
+  setLayers: (command: PostProcessParameterCommand) => boolean;
 }
 
-/** Commands captured by a departed or still-loading owner cannot mutate its replacement. */
+/**
+ * Commands captured by a departed or still-loading Scene cannot mutate its replacement. The Scene Layer stack outlives
+ * Scenes and layers, so a write to it needs only its pass (the entry and Material the owner checks).
+ */
 export function applyPostProcessParameterCommand(
   command: PostProcessParameterCommand,
   targets: PostProcessParameterTargets,
 ): boolean {
   const owner = command.owner;
-  if (owner.kind === "scene") {
-    if (
-      !targets.world.ready ||
-      targets.world.sceneLoadId !== owner.sceneLoadId ||
-      targets.world.sceneAssetGuid !== owner.sceneAssetGuid
-    )
-      return false;
-    return targets.setWorld(command);
-  }
-  const layer = targets.layer(owner.layerId);
-  if (!layer?.ready || layer.loadId !== owner.layerLoadId) return false;
-  return targets.setLayer(owner.layerId, command);
+  if (owner.kind === "sceneLayers") return targets.setLayers(command);
+  if (
+    !targets.world.ready ||
+    targets.world.sceneLoadId !== owner.sceneLoadId ||
+    targets.world.sceneAssetGuid !== owner.sceneAssetGuid
+  )
+    return false;
+  return targets.setWorld(command);
 }

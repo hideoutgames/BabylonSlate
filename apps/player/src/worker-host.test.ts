@@ -10,7 +10,9 @@ class FakeWorker {
   onmessageerror: ((event: MessageEvent) => void) | null = null;
   terminate = vi.fn();
   constructor() { FakeWorker.instance = this; }
-  postMessage(message: BridgeHostMessage) {
+  posted: Array<{ message: BridgeHostMessage; transfer: Transferable[] }> = [];
+  postMessage(message: BridgeHostMessage, transfer: Transferable[] = []) {
+    this.posted.push({ message, transfer });
     if (message.channel === "snapshotLayoutAck") FakeWorker.events.push(`ack ${message.generation}`);
   }
   receive(message: BridgeWorkerMessage) {
@@ -41,6 +43,53 @@ it("dispatches a commands batch in order exactly as the same commands sent one b
   // The layout is acknowledged before its handlers run, inside a batch too.
   expect(alone).toEqual(["a", "ack 3", "snapshotLayout", "b"]);
   expect(FakeWorker.events).toEqual(alone);
+});
+
+it("hands back each snapshot and sends each input in one reused envelope, moving that frame's own buffer", () => {
+  // The break: an envelope and a transfer list made for every snapshot handed back and every input pushed, each frame.
+  // A post clones and detaches before it returns, so the reuse is safe only if each post carries its own buffer.
+  const host = createPlayerWorkerHost();
+  const lengths: number[] = [];
+  host.onSnapshot((buffer) => lengths.push(buffer.length));
+  const worker = FakeWorker.instance;
+  const carried: Array<{ channel: string; payload: unknown; moved: Transferable[] }> = [];
+  const post = worker.postMessage.bind(worker);
+  vi.spyOn(worker, "postMessage").mockImplementation((message, transfer = []) => {
+    carried.push({ channel: message.channel, payload: "payload" in message ? message.payload : undefined, moved: [...transfer] });
+    post(message, transfer);
+  });
+  worker.receive({ channel: "command", payload: layout });
+  carried.length = 0;
+  worker.posted.length = 0;
+  const first = new ArrayBuffer(8);
+  const second = new ArrayBuffer(16);
+  // A pose of an older layout goes straight back too.
+  const stale = new ArrayBuffer(4);
+  worker.receive({ channel: "snapshot", payload: first, generation: 3 });
+  worker.receive({ channel: "snapshot", payload: stale, generation: 2 });
+  worker.receive({ channel: "snapshot", payload: second, generation: 3 });
+  expect(lengths).toEqual([2, 4]);
+  expect(carried.map((entry) => entry.channel)).toEqual(["recycleSnapshot", "recycleSnapshot", "recycleSnapshot"]);
+  [first, stale, second].forEach((buffer, index) => {
+    expect(carried[index]!.payload).toBe(buffer);
+    expect(carried[index]!.moved).toHaveLength(1);
+    expect(carried[index]!.moved[0]).toBe(buffer);
+  });
+  expect(new Set(worker.posted.map((entry) => entry.message)).size).toBe(1);
+  expect(new Set(worker.posted.map((entry) => entry.transfer)).size).toBe(1);
+
+  carried.length = 0;
+  worker.posted.length = 0;
+  host.pushInput([]);
+  host.pushInput([]);
+  expect(carried.map((entry) => entry.channel)).toEqual(["input", "input"]);
+  expect(carried[0]!.payload).not.toBe(carried[1]!.payload);
+  for (const entry of carried) {
+    expect(entry.moved).toHaveLength(1);
+    expect(entry.moved[0]).toBe(entry.payload);
+  }
+  expect(worker.posted[0]!.message).toBe(worker.posted[1]!.message);
+  expect(worker.posted[0]!.transfer).toBe(worker.posted[1]!.transfer);
 });
 
 it("hands the rest of a batch to nobody once a command's handler terminates the host", () => {

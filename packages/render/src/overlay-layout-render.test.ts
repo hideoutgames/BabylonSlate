@@ -173,7 +173,7 @@ describe("SceneLayer layout rendering", () => {
     vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
     const compositor = new SceneLayerCompositor({ engine });
     const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0,
-      ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(2, 2) });
+      ownerSceneGuid: null, canvas: layerCanvas(2, 2) });
     const renderer = new OverlayLayoutRenderer(id => id === "hud" ? layer.scene : undefined);
     cleanup.push(() => { renderer.dispose(); compositor.dispose(); scene.dispose(); engine.dispose(); });
     const root = new Mesh("actor-1", layer.scene);

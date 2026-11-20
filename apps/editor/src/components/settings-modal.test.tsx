@@ -205,7 +205,7 @@ vi.mock("../context/document-context", async () => {
   });
 });
 
-const RENDERING_SECTIONS = ["pipeline", "scalability", "shadows", "environment", "postProcessing", "cel", "resolution", "water", "playPreview"];
+const RENDERING_SECTIONS = ["pipeline", "scalability", "shadows", "environment", "postProcessing", "sceneLayerPostProcessing", "cel", "resolution", "water", "playPreview"];
 
 /** Collapses every Rendering sub-category except `open`, so jsdom renders only what a test uses. */
 function showRenderingSections(...open: string[]) {

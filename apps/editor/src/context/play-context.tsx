@@ -1270,6 +1270,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             audioProjectSettings={projectDocument?.settings.audio}
             inputAssets={playInputAssets}
             focusNavigation={projectDocument?.settings.focusNavigation}
+            sceneLayerPostProcessStack={projectDocument?.settings.sceneLayerPostProcessStack}
             sortingLayers={projectDocument?.settings.twoD.sortingLayers}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100

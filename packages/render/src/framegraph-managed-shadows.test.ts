@@ -9,6 +9,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { normalizeShadowSettings } from "@haptic/core";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
@@ -209,6 +210,38 @@ function cascadeBias(generator: CascadedShadowGenerator, authoredDepthBias: numb
   // PCF's quarter-texel raster correction over the depth interval, scaled for depth-clamped hardware depth.
   return { worldTexelSize, bias: Math.max(authoredDepthBias, Math.min(0.05, (0.25 * worldTexelSize) / depth / 1.5)) };
 }
+
+it("lists each of a map's layers, frame after frame, into that layer's own list", async () => {
+  // The break: one list shared by every face (or emptied before each query) gives up its storage and grows it again
+  // for every layer of every frame.
+  const { camera, mesh, map, graph, render } = await fixture("point");
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(render()).toBe(6);
+  // Each face's list as the face's own render asked for it (a face's planes are set only while it renders).
+  const list = map.getCustomRenderList!;
+  type Listed = { layer: number; list: AbstractMesh[]; held: AbstractMesh[] };
+  const frames: Listed[][] = [];
+  map.getCustomRenderList = (layer, ...rest) => {
+    const listed = list(layer, ...rest)!;
+    frames.at(-1)!.push({ layer, list: listed, held: listed.slice() });
+    return listed;
+  };
+  for (const x of [0.4, 0.8]) {
+    frames.push([]);
+    mesh.position.x = x;
+    expect(render()).toBe(6);
+  }
+  const [first, second] = frames as [Listed[], Listed[]];
+  expect(first.map((entry) => entry.layer)).toEqual([0, 1, 2, 3, 4, 5]);
+  expect(second.map((entry) => entry.layer)).toEqual([0, 1, 2, 3, 4, 5]);
+  expect(new Set(first.map((entry) => entry.list)).size).toBe(6);
+  second.forEach((entry, face) => expect(entry.list).toBe(first[face]!.list));
+  // Each face lists what its own planes hold: the box, off to one side of the light, in some faces and not in others.
+  const holding = second.filter((entry) => entry.held.includes(mesh)).length;
+  expect(holding).toBeGreaterThan(0);
+  expect(holding).toBeLessThan(6);
+  graph.dispose();
+});
 
 it("draws no map layer with shadow passes off, and binds each without its casters with casters off", async () => {
   const { camera, mesh, controller, map, graph, render } = await fixture("spot");

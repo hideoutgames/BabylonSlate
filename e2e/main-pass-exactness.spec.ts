@@ -41,7 +41,8 @@ function differences(a: number[], b: number[]) {
 type Run = Awaited<ReturnType<typeof run>>;
 
 /**
- * Each run's frames, capture images and atlas pages are the same bytes: still, after the casters moved, and
+ * Each run's frames, capture images and atlas pages are the same bytes: still, after the casters moved and a lattice
+ * cage bent and turned (the reference redraws every sun cascade, the savings only those the changes reach), and
  * (`rewritten`) one frame after a sprite quad's and a tilemap chunk's notified geometry writes, which the maps follow.
  */
 function expectSameImages(current: Run, reference: Run) {
@@ -103,7 +104,8 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
   // reference, which redraws every cascade of every map that draws.
   expect(current.rewrittenTiles).toBeGreaterThan(0);
   expect(current.rewrittenTiles).toBeLessThan(reference.rewrittenTiles);
-  // The reference redraws the High Quality capture's own sun map in every still frame; the savings draw none.
+  // The reference redraws the High Quality capture's own sun map in every still frame; the savings draw none, the
+  // translucent and the caged caster included.
   expect(reference.stillTexelsPerFrame).toBeGreaterThan(0);
   expect(current.stillTexelsPerFrame).toBe(0);
   // The moved frames took the shadow stage's lean path: tiles of one page share a bind (the point light's faces), the
