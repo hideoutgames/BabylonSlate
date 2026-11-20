@@ -26,6 +26,7 @@ export function runtimeOptionsFromLoadControl(
   | "traceByteBudget"
   | "renderSettings"
   | "focusNavigation"
+  | "sceneLayerPostProcessStack"
   | "pixelsPerUnit"
   | "pixelMatchedCameras"
   | "texturePixelSizes"
@@ -116,6 +117,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.assetCatalog ? { assetCatalog: msg.assetCatalog } : {}),
     ...(msg.extensionLibraries?.length ? { extensionLibraries: msg.extensionLibraries } : {}),
     focusNavigation: msg.focusNavigation,
+    ...(msg.sceneLayerPostProcessStack ? { sceneLayerPostProcessStack: msg.sceneLayerPostProcessStack } : {}),
     pixelsPerUnit: msg.pixelsPerUnit,
     ...(msg.pixelMatchedCameras ? { pixelMatchedCameras: true } : {}),
     texturePixelSizes: msg.texturePixelSizes,

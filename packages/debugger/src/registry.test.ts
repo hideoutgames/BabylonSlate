@@ -143,7 +143,7 @@ describe("createCommandRegistry", () => {
     host.setWorldDebug = (part, enabled) => host.calls.push(`${part}:${enabled}`);
     const debug = createCommandRegistry({ includeDebug: true });
     const release = createCommandRegistry({ includeDebug: false });
-    const parts = ["world", "lighting", "shadowtaps", "locallights", "shading", "geometryonce", "geometryoncescissor"];
+    const parts = ["world", "lighting", "shadowtaps", "locallights", "shading", "geometryonce", "geometryoncescissor", "mergedmarches"];
     for (const part of parts) {
       expect(debug.execute(`worlddebug ${part} off`, host)).toEqual({ success: true, output: `worlddebug ${part} off` });
       expect(debug.execute(`worlddebug ${part} on`, host)).toEqual({ success: true, output: `worlddebug ${part} on` });

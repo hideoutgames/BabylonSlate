@@ -31,7 +31,7 @@ Clear the selection to show **Scene Settings** in the **Inspector**.
 | Root Pivot | The point of the canvas on the layer's origin and on the matching point of the screen. Default **Center**. |
 | Canvas Scaling | **Fit To Screen** (the default) scales the canvas to the screen without stretching; **True Pixel Size** shows it at its pixel size. |
 | Camera Location | Where the layer's camera starts, as an offset from the view the canvas gives it. Default 0, 0. |
-| Post Processing | Post-process passes applied to this layer only. **Add Pass** picks a Material. |
+| Scene Layer Post-Processing | The project's passes shared by every layer, the same list as **Project Settings > Rendering > Scene Layer Post-Processing**. **Add Pass** picks a Material. See [Scene Layer post-processing](../scenes/scene-layers.md#scene-layer-post-processing). |
 
 ## Related
 

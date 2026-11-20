@@ -10,6 +10,8 @@ import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch }
 import { EffectCompileFailure } from "./effect-compile-failure";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { createSpatialStages, type SpatialStage } from "./spatial-effects";
+import { mergedMarchInputs, mergedMarchShader } from "./merged-marches";
+import { SCREEN_SHADOWS_MARCH } from "./screen-shadows";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); });
@@ -38,15 +40,15 @@ function spatialChain(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, mode = Ca
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   return {
     engine,
-    build: (failure?: EffectCompileFailure) => {
-      const stages = createSpatialStages(scene, camera, sceneRenderingSettings(scene).effectsPlan!, 64, 64, failure);
-      disposers.push(() => { for (const stage of stages) stage.wrapper.dispose(); });
+    build: (failure?: EffectCompileFailure, mergedMarchSize?: { width: number; height: number }) => {
+      const stages = createSpatialStages(scene, camera, sceneRenderingSettings(scene).effectsPlan!, 64, 64, failure, mergedMarchSize);
+      disposers.push(() => { for (const stage of stages) stage.wrapper?.dispose(); });
       return stages;
     },
   };
 }
 
-const named = (stages: SpatialStage[], name: string) => stages.findIndex((stage) => stage.wrapper.name === name);
+const named = (stages: SpatialStage[], name: string) => stages.findIndex((stage) => stage.name === name);
 
 const OCCLUSION = { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } };
 const REFLECTIONS = { reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } };
@@ -58,8 +60,8 @@ function compose(stages: SpatialStage[]) {
   const stage = composes[0]!;
   return {
     stage,
-    full: composes.map((each) => each.wrapper.name),
-    reads: Object.fromEntries(Object.entries(stage.reads ?? {}).map(([sampler, index]) => [sampler, stages[index]!.wrapper.name])),
+    full: composes.map((each) => each.name),
+    reads: Object.fromEntries(Object.entries(stage.reads ?? {}).map(([sampler, index]) => [sampler, stages[index]!.name])),
   };
 }
 
@@ -96,7 +98,7 @@ it.each([
 
 it("declares in the compose exactly the uniforms and samplers its Effect binds", () => {
   const stages = stagesFor({ ...OCCLUSION, ...REFLECTIONS, ...FOG });
-  const wrapper = compose(stages).stage.wrapper;
+  const wrapper = compose(stages).stage.wrapper!;
   const uniforms = wrapper.options.uniforms.filter((name) => name !== "scale").sort();
   const samplers = wrapper.options.samplers.sort();
   const fragment = ShaderStore.ShadersStore[`${wrapper.options.fragmentShader}FragmentShader`]!;
@@ -113,7 +115,7 @@ it("links each stage's program once: a chain built again draws the same Effects,
   const first = chain.build();
   // A load builds its view's graph more than once; each build creates the chain's stages again.
   const again = chain.build();
-  const effect = (stages: SpatialStage[], name: string) => stages[named(stages, name)]!.wrapper.effect;
+  const effect = (stages: SpatialStage[], name: string) => stages[named(stages, name)]!.wrapper!.effect;
   for (const name of ["Scene Ambient Occlusion", "Scene Ambient Occlusion Blur X", "Scene Volumetric Lighting",
     "Scene Effects Compose"]) {
     expect(effect(again, name)).toBe(effect(first, name));
@@ -152,7 +154,7 @@ it("reports a shared stage's failure to every chain that draws it, not only to t
 it("reports a failed volumetric march as the chain's compile failure", () => {
   const failure = new EffectCompileFailure();
   const stages = stagesFor({ volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true } }, failure);
-  const march = stages[named(stages, "Scene Volumetric Lighting")]!.wrapper.effect;
+  const march = stages[named(stages, "Scene Volumetric Lighting")]!.wrapper!.effect;
   // Babylon reports a shader error through the Effect's onError once its fallbacks are exhausted.
   march.onError?.(march, "march failed");
   expect(failure.message).toBe("Scene Volumetric Lighting failed to compile: march failed");
@@ -160,7 +162,7 @@ it("reports a failed volumetric march as the chain's compile failure", () => {
 
 it("declares in the volumetric march exactly the uniforms and samplers its Effect binds", () => {
   const stages = stagesFor({ volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 4 } });
-  const march = stages[named(stages, "Scene Volumetric Lighting")]!.wrapper;
+  const march = stages[named(stages, "Scene Volumetric Lighting")]!.wrapper!;
   // Babylon adds the post-process scale (read by its vertex shader) and the source texture (the march reads none).
   const uniforms = march.options.uniforms.filter((name) => name !== "scale").sort();
   const samplers = march.options.samplers.filter((name) => name !== "textureSampler").sort();
@@ -179,7 +181,7 @@ it("declares in the volumetric march exactly the uniforms and samplers its Effec
 it("gives the orthographic reflection compose the parallel view direction and the orthographic view position its trace uses", async () => {
   const source = async (mode: number) => {
     const stages = stagesFor(REFLECTIONS, undefined, mode);
-    const effect = stages[named(stages, "Scene Effects Compose")]!.wrapper.effect;
+    const effect = stages[named(stages, "Scene Effects Compose")]!.wrapper!.effect;
     await new Promise<void>((resolve) => effect.executeWhenCompiled(() => resolve()));
     return effect.fragmentSourceCode;
   };
@@ -189,4 +191,38 @@ it("gives the orthographic reflection compose the parallel view direction and th
   // Babylon's view-position helper (`computeViewPosFromUVDepth`): depth is linear in an orthographic projection.
   expect(orthographic).toMatch(/ndc\.z\s*=\s*projection\[2\]\.z\s*\*\s*depth\s*\+\s*projection\[3\]\.z/);
   expect(perspective).toMatch(/ndc\.z\s*=\s*projection\[2\]\.z\s*\+\s*projection\[3\]\.z\s*\/\s*depth/);
+});
+
+it.each([
+  ["the Screen-Space Shadows target's size", { width: 32, height: 32 }, ["Scene Ambient Occlusion", "Scene Volumetric Lighting"]],
+  ["another size", { width: 33, height: 32 }, []],
+  ["no Screen-Space Shadows", undefined, []],
+] as const)("draws the ambient occlusion and fog marches at %s in the merged pass, with no Effect of their own", (_name, size, merged) => {
+  const stages = spatialChain({ ...OCCLUSION, ...REFLECTIONS, ...FOG }).build(undefined, size);
+  expect(stages.filter((stage) => stage.march).map((stage) => stage.name)).toEqual(merged);
+  for (const stage of stages) expect(stage.wrapper === undefined, stage.name).toBe(stage.march !== undefined);
+  // Their readers follow as before: the blurs read the occlusion march, the compose the fog march's target.
+  const { reads } = compose(stages);
+  expect(reads).toEqual({
+    aoSampler: "Scene Ambient Occlusion Blur Y", reflectionSampler: "Scene Reflections Blur Y", fogSampler: "Scene Volumetric Lighting",
+  });
+});
+
+it("declares in the merged march program exactly the uniforms and samplers its Effect binds, with one end per march and no return", () => {
+  const stages = spatialChain({ ...OCCLUSION, ...FOG }).build(undefined, { width: 32, height: 32 });
+  const marches = [SCREEN_SHADOWS_MARCH, ...stages.flatMap((stage) => stage.march ? [stage.march] : [])];
+  expect(marches.map((march) => march.name)).toEqual(["Screen shadows", "Scene Ambient Occlusion", "Scene Volumetric Lighting"]);
+  const fragment = mergedMarchShader(marches);
+  const inputs = mergedMarchInputs(marches);
+  const glsl = [...fragment.matchAll(/uniform\s+(?:highp\s+)?(\w+)\s+(\w+)/g)];
+  expect(glsl.filter(([, type]) => !type!.startsWith("sampler")).map(([, , name]) => name).sort()).toEqual([...inputs.uniforms].sort());
+  expect(glsl.filter(([, type]) => type!.startsWith("sampler")).map(([, , name]) => name).sort()).toEqual([...inputs.samplers].sort());
+  expect(inputs.uniformBuffers).toEqual(["HapticLights"]);
+  // Each march writes its own attachment; none writes the single output, discards or returns from main, which would
+  // end the marches after it.
+  expect([...fragment.matchAll(/layout\(location = (\d)\) out vec4 (\w+);/g)].map(([, location, name]) => `${location}:${name}`))
+    .toEqual(["0:hapticMarch0", "1:hapticMarch1", "2:hapticMarch2"]);
+  const main = fragment.slice(fragment.indexOf("void main() {"));
+  expect(main).not.toMatch(/\breturn\b|gl_FragColor|\bdiscard\b/);
+  expect(main.split("{").length).toBe(main.split("}").length);
 });

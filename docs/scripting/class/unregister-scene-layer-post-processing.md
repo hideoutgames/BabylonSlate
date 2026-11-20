@@ -4,14 +4,13 @@ node: scene-layer.unregisterPostProcess
 
 # Unregister Scene Layer Post-Processing
 
-Removes a post-process Material from the effects applied to a Scene Layer.
+Removes a post-process Material from the passes every Scene Layer shares.
 
 ## Inputs
 
 | Pin | Type |
 | --- | --- |
 | In | Exec |
-| Layer | SceneLayer Reference |
 | Material | Material Asset |
 
 ## Outputs
@@ -22,4 +21,5 @@ Removes a post-process Material from the effects applied to a Scene Layer.
 
 ## Notes
 
-- If the Material is not in the layer's effects, an error is logged and play continues.
+- Removes the first pass that uses the Material, whether it came from **Project Settings > Rendering > Scene Layer Post-Processing** or from [Register Scene Layer Post-Processing](register-scene-layer-post-processing.md). The project setting itself is unchanged.
+- If no pass uses the Material, an error is logged and play continues.

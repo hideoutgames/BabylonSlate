@@ -24,7 +24,7 @@ With nothing selected, the **Inspector** shows the layer's settings:
 | Root Pivot | The point of the canvas that sits on the layer's origin (0, 0), and the point of the screen it lines up with in the game. Default **Center**. |
 | Canvas Scaling | **Fit To Screen** (the default) or **True Pixel Size**. See [Canvas size and scaling](#canvas-size-and-scaling). |
 | Camera Location | Where the layer's camera starts, as an offset from the view the canvas gives it. Default 0, 0. |
-| Post Processing | Post-process passes applied to this layer only. |
+| Scene Layer Post-Processing | The project's Scene Layer post-processing, shared by every layer. It is the same list as **Project Settings > Rendering > Scene Layer Post-Processing**: an edit here changes it there too. See [Scene Layer post-processing](#scene-layer-post-processing). |
 
 ## What goes on a layer
 
@@ -81,7 +81,7 @@ A Fullscreen canvas always fills the screen at one canvas pixel per design pixel
 - **With a scene**: in the scene's **Scene Settings**, tap **Add Layer** under **Scene Layers**, pick the asset, and set **Z-Order**. While its switch is on, the layer appears when the scene loads and goes away when the scene unloads.
 - **From a script**: [Create Scene Layer](../scripting/class/create-scene-layer.md) adds a layer and returns it. It stays across [Change Scene](../scripting/class/change-scene.md) until [Remove Scene Layer](../scripting/class/remove-scene-layer.md) or [Clear Scene Layer](../scripting/class/clear-scene-layer.md).
 
-Layers with a higher **Z-Order** draw on top. The same asset can be shown more than once. Add effects to a live layer with [Register Scene Layer Post-Processing](../scripting/class/register-scene-layer-post-processing.md).
+Layers with a higher **Z-Order** draw on top. The same asset can be shown more than once.
 
 ## Move the layer camera
 
@@ -116,11 +116,21 @@ An actor receives pointer events only after you add a **2D Button** to it. It th
 
 Respond with [Event On Focus Enter](../scripting/class/event-on-focus-enter.md), [Event On Focus Leave](../scripting/class/event-on-focus-leave.md) and [Event On Focus Activate](../scripting/class/event-on-focus-activate.md). The **Set Focus** and **Clear Focus** functions move focus from a script.
 
+## Scene Layer post-processing
+
+Scene Layers share one list of post-process passes, made from post-process Materials as a [scene's passes](../graphics/post-processing.md#scene-passes) are. Edit it in **Project Settings > Rendering > Scene Layer Post-Processing**, or in the **Inspector** of any Scene Layer: both show the same list.
+
+- With at least one enabled pass, every layer draws into one transparent image, in Z-Order. The passes run over that image once, and the result is blended over the world. The world itself is never changed by them.
+- With no enabled pass, layers draw straight over the world, with no extra cost.
+- The passes always run at full resolution; a pass has no **Scalable** switch.
+- In the game the list starts as the project sets it. [Register Scene Layer Post-Processing](../scripting/class/register-scene-layer-post-processing.md) adds a pass and [Unregister Scene Layer Post-Processing](../scripting/class/unregister-scene-layer-post-processing.md) removes one. Changes last until the game stops: through scene changes, and while no layer is shown.
+- To animate a project pass, copy its **Entry ID** (the **#** button beside its Material) and use [Get Post Process Entry](../scripting/class/get-post-process-entry.md) with any Scene Layer as **Owner**.
+
 ## Things to know
 
 - In Play, the layer is never stretched. If the screen's shape differs from the canvas, such as on an ultra-wide monitor, the layer keeps its proportions and the extra space appears beside the canvas ([Canvas size and scaling](#canvas-size-and-scaling)). Add a [2D Anchor](../components/2d-anchor.md) to keep an element at a screen edge or corner of the default view.
-- Layers draw after the world and its post-processing, so world effects never touch them. In the editor a layer has a neutral mid grey background; in the game it is transparent.
-- A layer with **Post Processing** blends its elements over what is beneath it just as a layer without: translucent edges, Additive glows and soft shadows look the same either way. A **Multiply** Material is the exception: on such a layer it only darkens, by the brightness of its colour ([Multiply on Scene Layers](../assets/material.md#multiply-on-scene-layers)).
+- Layers draw after the world and its post-processing, so world effects never touch them. In the editor a layer has a neutral mid grey background and shows no Scene Layer post-processing; in the game it is transparent.
+- With [Scene Layer post-processing](#scene-layer-post-processing) on, layers blend their elements over what is beneath them just as without it: translucent edges, Additive glows and soft shadows look the same either way. A **Multiply** Material is the exception: then it only darkens, by the brightness of its colour ([Multiply on Scene Layers](../assets/material.md#multiply-on-scene-layers)).
 - Layers always draw at full quality: at the screen's full device resolution, with full texture detail, full model detail and full-resolution post-processing. [Scalability](../graphics/index.md#scalability) and the render scale change only the world behind them.
 - A layer combines its elements into fewer draw calls without changing how it looks: elements that draw the same texture or the same Material share a draw call when nothing drawn between them overlaps them, whatever their position, rotation, scale, color, tint and opacity. Images up to 256 pixels on each side count as one texture, so icons, panels and sprites of different small images share a draw call too. The characters of a text share one as well, also when the text uses a Text Material. A mirrored element (a negative scale on one axis) and an element whose Material moves its vertices always draw on their own. The [Profiler](../debugging/profiler.md) can show far fewer draw calls for a layer than it has elements.
 - With **Enable Physics** off, Rigid Bodies stay where scripts put them and no hit or overlap events fire. With it on, bodies in different layers, or in a layer and the world, never collide.

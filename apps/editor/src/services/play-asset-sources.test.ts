@@ -463,6 +463,19 @@ describe("Play source ownership", () => {
     expect(storage.getReadMetrics()).toEqual(before);
   });
 
+  it("starts the enabled Scene Layer post-processing passes' Materials and the Textures their parameters name", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const project = createEmptyProject("Layers");
+    project.settings.sceneLayerPostProcessStack = [
+      { id: "glow-pass", materialGuid: "glow", enabled: true, parameters: { Mask: { kind: "texture", textureAssetGuid: "mask" } } },
+      { id: "off-pass", materialGuid: "off", enabled: false },
+    ];
+    expect(requiredProjectAssets(registry, project).sort()).toEqual(["glow", "mask"]);
+  });
+
   it("cancels stalled catalog preparation before acquiring an ownership scope", async () => {
     const registry = new AssetRegistry(new MemoryStorageAdapter());
     vi.spyOn(registry, "getAssetLocator").mockImplementation(() => new Promise(() => undefined));

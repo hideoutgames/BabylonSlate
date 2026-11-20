@@ -248,12 +248,20 @@ describe("FeatureTest starter", () => {
       if (material.blendMode === "multiply") multiply.set(asset.header.guid, material.domain);
     }
     const documents = await sceneDocuments();
-    const spawned = new Set(documents.flatMap((scene) => "viewportMode" in scene ? scene.settings.sceneLayers.map((entry) => entry.assetGuid) : []));
+    // A layer is post-processed where its Scene's script registers Scene Layer post-processing (the Project Setting's
+    // pass is authored off); every other spawned layer draws straight over the world.
+    const postProcessed = new Map<string, boolean>();
+    for (const scene of documents) {
+      if (!("viewportMode" in scene)) continue;
+      const registers = (scene.script?.nodes ?? []).some((node) => node.type === "scene-layer.registerPostProcess" &&
+        typeof node.data?.["default:material"] === "string");
+      for (const entry of scene.settings.sceneLayers) postProcessed.set(entry.assetGuid, registers);
+    }
     const layerGuids = new Map(assets.filter((entry) => entry.header.type === "SceneLayer").map((entry) => [entry.header.name, entry.header.guid]));
     const shown = { direct: new Set<string>(), targeted: new Set<string>(), overEarlier: false };
     for (const layer of documents) {
-      if ("viewportMode" in layer || !spawned.has(layerGuids.get(layer.name) ?? "")) continue;
-      const targeted = layer.settings.postProcessStack.some((entry) => entry.enabled);
+      const targeted = postProcessed.get(layerGuids.get(layer.name) ?? "");
+      if ("viewportMode" in layer || targeted === undefined) continue;
       // Root actors' rectangles (position and XY scale) and depth: a larger z draws first.
       const visuals = layer.actors.filter((actor) => !actor.parentId).flatMap((actor) => actor.components
         .filter((component) => component.classId === "2DMaterialComponent" || component.classId === "2DTextComponent")

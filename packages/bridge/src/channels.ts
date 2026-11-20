@@ -244,6 +244,8 @@ export type ControlMessage =
       /** Authored Input Action / Input Axis assets; omitted loads use the starter controls. */
       inputAssets?: import("@haptic/core").InputAssetDefinition[];
       focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+      /** Project Scene Layer post-processing: the passes the shared layer stack starts with. */
+      sceneLayerPostProcessStack?: import("@haptic/core").SceneLayerPostProcessEntry[];
       pixelsPerUnit?: number;
       /** Pixel-Perfect Mode with Nearest Texture Filtering: orthographic cameras are pixel-matched (`pixelMatchedView`). */
       pixelMatchedCameras?: boolean;
@@ -926,8 +928,9 @@ export type CommandMessage =
     }
   | {
       type: "setPostProcessMaterialParameter";
+      /** The main Scene's stack (for that load), or the Scene Layer stack every layer shares. */
       owner: { kind: "scene"; sceneAssetGuid: string; sceneLoadId: number }
-        | { kind: "sceneLayer"; layerId: string; layerLoadId: number };
+        | { kind: "sceneLayers" };
       entryId: string;
       materialAssetGuid: string;
       parameterName: string;
@@ -1305,7 +1308,6 @@ export type CommandMessage =
       assetGuid: string;
       zOrder: number;
       ownerSceneGuid: string | null;
-      postProcessStack: ScenePostProcessEntry[];
       /** The asset's canvas design and its rectangle in layer units (for Desired, the Fullscreen stand-in until measured). */
       canvas: {
         design: import("@haptic/core").SceneLayerCanvasDesign;
@@ -1317,11 +1319,11 @@ export type CommandMessage =
   | { type: "sceneLayerRemove"; layerId: string }
   | { type: "sceneLayerClear" }
   | { type: "sceneLayerLayout"; layerId: string; entries: Array<import("@haptic/core").OverlayLayoutEntry & { slotId: number; transform?: import("@haptic/core").SerializedTransform }> }
-  | {
-      type: "sceneLayerPostProcess";
-      layerId: string;
-      postProcessStack: ScenePostProcessEntry[];
-    }
+  /**
+   * The Scene Layer post-processing every layer shares: sent before the session's first `sceneLayerCreate` (the
+   * Project Setting's passes) and after Register or Unregister Scene Layer Post-Processing.
+   */
+  | { type: "sceneLayerPostProcess"; postProcessStack: ScenePostProcessEntry[] }
   /** The current Scene's post-process passes after Register or Unregister Scene Post-Processing. */
   | { type: "scenePostProcess"; postProcessStack: ScenePostProcessEntry[] }
   /** A Scene Layer instance's camera moved, turned or zoomed (scripts only; `sceneLayerCreate` carries its start pose). */

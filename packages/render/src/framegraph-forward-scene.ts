@@ -764,7 +764,7 @@ export class ForwardSceneFrameGraph {
 
   /**
    * Counts each task's draws to its pass (`RenderDiagnostics.drawPasses`): the shadow maps, the geometry pass and Screen
-   * Shadows, the outline, the post-process stages (and their output copy), the object passes, the water scene copy's
+   * Shadows (with the marches merged into their pass, `merged-marches.ts`), the outline, the post-process stages (and their output copy), the object passes, the water scene copy's
    * own tasks; clears and a chainless output copy are `other`. `Forward cull` brackets itself (`cull`, with the occlusion
    * filter that runs after Babylon's cull, which a task observer would end before) and its task observer is `cull` too,
    * so Babylon's frustum test inside it is not `other`; the readiness work around the
@@ -2220,7 +2220,10 @@ export class ForwardSceneFrameGraph {
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
         const sources = this.outlineView?.sourceRevision ?? 0;
         // An auxiliary view's own passes are its readiness; the scene view gates the scene.
-        const cameraReady = this.auxiliary || isSceneFrameReady(this.scene, [], this.water && this.skipCopyWater);
+        // The shadow task's probe below asks the maps it binds; the scene probe leaves them to it.
+        const shadows = this.shadows;
+        const cameraReady = this.auxiliary ||
+          isSceneFrameReady(this.scene, [], this.water && this.skipCopyWater, shadows && ((map) => shadows.probesMap(map)));
         const ready = this.graphReady() && cameraReady;
         // A mask admitting an instance source late dirties attributes that the
         // earlier probes already accepted; the next probe sees the final state.

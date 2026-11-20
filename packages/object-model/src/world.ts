@@ -16,6 +16,7 @@ import {
   Scene,
   SceneLayer,
   SceneCameraManager,
+  SceneLayerPostProcessing,
   SceneStreamingActor,
   SceneLayerActorSwitcher,
   SceneSubsystem,
@@ -144,6 +145,8 @@ export class World {
   currentScene: Scene | null = null;
   /** The session's Scene Camera Manager (fixed guid, never from `guidFactory`). */
   readonly sceneCameraManager = new SceneCameraManager();
+  /** The session's Scene Layer post-processing, shared by every Scene Layer (fixed guid, never from `guidFactory`). */
+  readonly sceneLayerPostProcessing = new SceneLayerPostProcessing();
   /** Session GameSubsystems in class-id order. */
   private gameSubsystems: GameSubsystem[] = [];
   /** Current main Scene's SceneSubsystems in class-id order. */
@@ -558,7 +561,6 @@ export class World {
     assetGuid: string;
     zOrder: number;
     ownerSceneGuid?: string | null;
-    postProcessStack?: ScenePostProcessEntry[];
     canvas?: import("@haptic/core").SceneLayerCanvasDesign;
     cameraLocation?: readonly [number, number] | null;
     tickOnPause?: boolean;

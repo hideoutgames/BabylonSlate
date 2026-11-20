@@ -537,6 +537,7 @@ function initializePlayer(
     globalParameterCatalog: content.globalParameterCatalog,
     assetCatalog: runtimeAssetCatalogFromManifest(manifest.assets),
     focusNavigation: manifest.focusNavigation,
+    sceneLayerPostProcessStack: manifest.sceneLayerPostProcessStack,
     pixelsPerUnit: content.pixelsPerUnit,
     ...(content.pixelPerfect === true && content.nearestTextures === true ? { pixelMatchedCameras: true } : {}),
     texturePixelSizes: Object.fromEntries(content.texturePixelSizes),

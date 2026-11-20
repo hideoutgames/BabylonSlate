@@ -104,6 +104,15 @@ export type RenderTargetCaptureDiagnostics = {
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
 /** How many captures' images may lie between an every-frame output and a view or reflection for it to keep drawing. */
 const SHOWN_THROUGH_CAPTURES = 3;
+/** What shows an every-frame output (`RenderTargetCaptures.findShown`), rewritten in place each frame. */
+type ShownEntry = { frame: number; depth: number; by: "view" | "reflection" | "another capture" };
+/** Whether `material` samples `texture`: a slot container when one of its children does. */
+function samplesTexture(material: Material, texture: CaptureTexture): boolean {
+  if (!(material instanceof MultiMaterial)) return material.hasTexture(texture);
+  const children = material.subMaterials;
+  for (let index = 0; index < children.length; index++) if (children[index]?.hasTexture(texture)) return true;
+  return false;
+}
 /** Above 512 × 512 a High or Full Quality capture warns once: it costs about a second camera at its size. */
 const VIEW_GUIDANCE_PIXELS = 512 * 512;
 /** A High or Full Quality capture no wider or taller than this draws one sun cascade of its own. */
@@ -278,9 +287,17 @@ export class RenderTargetCaptures {
    * Which every-frame outputs something shows (`findShown`): per Render Target, the last Engine frame in which a mesh
    * that samples it is drawn, and how many captures' images lie between it and a view or reflection (0: seen directly).
    */
-  private readonly shown = new Map<string, { frame: number; depth: number; by: "view" | "reflection" | "another capture" }>();
+  private readonly shown = new Map<string, ShownEntry>();
   /** The Scene's meshes that sample a capture's output this frame, each with the Render Targets it samples. */
   private readonly consumers = new Map<AbstractMesh, readonly string[]>();
+  /** This frame's output textures and the Render Target each shows (`findShown`), in the order of `textures`. */
+  private readonly frameTextures: CaptureTexture[] = [];
+  private readonly frameTargets: (string | undefined)[] = [];
+  /** The lists `materialSamples` answers with, reused from frame to frame; the first `sampleListsUsed` hold answers. */
+  private readonly sampleLists: string[][] = [];
+  private sampleListsUsed = 0;
+  /** Per Render Target, the one-entry answer for an unlit mesh bound to its output (`singleTarget`). */
+  private readonly singleTargets = new Map<string, readonly string[]>();
   /** Render Targets some mesh's Material samples this frame, and those a Material no mesh draws with samples. */
   private readonly placed = new Set<string>();
   private readonly unplaced = new Set<string>();
@@ -640,12 +657,23 @@ export class RenderTargetCaptures {
     // a reflection drawn meanwhile still marks the outputs its meshes sample (`noteListed`).
     const everyFrame = this.everyFrameCaptures();
     if (this.textures.size && everyFrame === "skipping") return;
-    this.consumers.clear();
-    this.materialTargets.clear();
-    this.placed.clear();
-    this.unplaced.clear();
+    // An empty Map or Set is left as it is: clearing one makes it a new table.
+    if (this.consumers.size) this.consumers.clear();
+    if (this.materialTargets.size) this.materialTargets.clear();
+    if (this.placed.size) this.placed.clear();
+    if (this.unplaced.size) this.unplaced.clear();
+    // The answers the cleared maps held are free again (`sampleList`).
+    this.sampleListsUsed = 0;
+    const textures = this.frameTextures;
+    const targets = this.frameTargets;
+    textures.length = targets.length = 0;
     // Only every-frame captures are held back: a Scene without one (many unlit sprites, no capture) asks no mesh.
     if (!this.textures.size || everyFrame === "none") return;
+    // Each output texture with the Render Target it shows, in the order of `textures`, read once for every mesh.
+    for (const [guid, texture] of this.textures) {
+      textures.push(texture);
+      targets.push(this.textureDefinitions.get(guid)?.renderTargetGuid ?? undefined);
+    }
     const frame = this.scene.getEngine().frameId;
     const camera = this.scene.activeCamera;
     // The camera's pose as it is now, not the matrices its last render left: this runs before the view's own update.
@@ -665,13 +693,25 @@ export class RenderTargetCaptures {
       if (mesh.getTotalVertices() === 0 || (mesh instanceof Mesh && isInstanceSource(mesh))) continue;
       if (camera && !(mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0 && (mesh.layerMask & camera.layerMask) !== 0 &&
         drawsInsidePlanes(mesh, this.viewPlanes))) continue;
-      for (const guid of sampled) this.shown.set(guid, { frame, depth: 0, by: "view" });
+      for (const guid of sampled) this.markShown(guid, frame, 0, "view");
     }
     for (const material of this.scene.materials) {
       // A mesh's Material was asked above, an unlit Material's image is its mesh's.
       if (this.materialTargets.has(material) || isUnlitMaterial(material)) continue;
-      for (const guid of this.materialSamples(material) ?? []) this.unplaced.add(guid);
+      const sampled = this.materialSamples(material);
+      if (sampled) for (const guid of sampled) this.unplaced.add(guid);
     }
+  }
+  /** Records that `guid`'s output is shown in `frame`, rewriting its entry in place. */
+  private markShown(guid: string, frame: number, depth: number, by: ShownEntry["by"]): void {
+    const entry = this.shown.get(guid);
+    if (!entry) {
+      this.shown.set(guid, { frame, depth, by });
+      return;
+    }
+    entry.frame = frame;
+    entry.depth = depth;
+    entry.by = by;
   }
   /**
    * The enabled every-frame captures this render: none, all sitting it out at their Update Rate, or some that may draw.
@@ -706,7 +746,7 @@ export class RenderTargetCaptures {
     if (isUnlitMaterial(material)) {
       const texture = unlitBinding(mesh).texture;
       const guid = texture instanceof CaptureTexture ? this.targetOf(texture) : undefined;
-      return guid ? [guid] : null;
+      return guid ? this.singleTarget(guid) : null;
     }
     const sampled = this.materialTargets.get(material);
     return sampled !== undefined ? sampled : this.materialSamples(material);
@@ -714,19 +754,38 @@ export class RenderTargetCaptures {
   /** The Render Targets `material` samples (a slot container: its children, asked with it), kept for the frame. */
   private materialSamples(material: Material): readonly string[] | null {
     let found: string[] | null = null;
-    const materials = material instanceof MultiMaterial ? material.subMaterials : [material];
-    for (const [guid, texture] of this.textures) {
-      const target = this.textureDefinitions.get(guid)?.renderTargetGuid;
+    const textures = this.frameTextures;
+    const targets = this.frameTargets;
+    for (let index = 0; index < textures.length; index++) {
+      const target = targets[index];
       if (!target || found?.includes(target)) continue;
-      if (materials.some((entry) => entry?.hasTexture(texture))) (found ??= []).push(target);
+      if (samplesTexture(material, textures[index]!)) (found ??= this.sampleList()).push(target);
     }
     this.materialTargets.set(material, found);
-    if (material instanceof MultiMaterial) for (const entry of materials) if (entry && !this.materialTargets.has(entry)) this.materialTargets.set(entry, null);
+    if (material instanceof MultiMaterial) for (const entry of material.subMaterials) if (entry && !this.materialTargets.has(entry)) this.materialTargets.set(entry, null);
     return found;
+  }
+  /**
+   * An empty list for one of this frame's answers (`materialSamples`). The lists are reused from frame to frame: the
+   * maps holding them (`consumers`, `materialTargets`) are cleared whenever `findShown` asks again.
+   */
+  private sampleList(): string[] {
+    const lists = this.sampleLists;
+    const list = lists[this.sampleListsUsed] ?? (lists[this.sampleListsUsed] = []);
+    this.sampleListsUsed++;
+    list.length = 0;
+    return list;
+  }
+  /** The one-entry answer for `guid` (an unlit mesh's binding), made once. */
+  private singleTarget(guid: string): readonly string[] {
+    let list = this.singleTargets.get(guid);
+    if (!list) this.singleTargets.set(guid, (list = [guid]));
+    return list;
   }
   /** The Render Target whose output `texture` shows. */
   private targetOf(texture: CaptureTexture): string | undefined {
-    for (const [guid, entry] of this.textures) if (entry === texture) return this.textureDefinitions.get(guid)?.renderTargetGuid ?? undefined;
+    const textures = this.frameTextures;
+    for (let index = 0; index < textures.length; index++) if (textures[index] === texture) return this.frameTargets[index];
     return undefined;
   }
   /**
@@ -746,7 +805,7 @@ export class RenderTargetCaptures {
       for (const guid of sampled) {
         if (guid === capture) continue;
         const entry = this.shown.get(guid);
-        if (!entry || entry.frame < frame || entry.depth > depth) this.shown.set(guid, { frame, depth, by: capture === undefined ? "reflection" : "another capture" });
+        if (!entry || entry.frame < frame || entry.depth > depth) this.markShown(guid, frame, depth, capture === undefined ? "reflection" : "another capture");
       }
     }
   }
@@ -1296,6 +1355,7 @@ export class RenderTargetCaptures {
     this.consumerScenes.clear();
     for (const texture of this.textures.values()) texture.dispose();
     this.textures.clear();
+    this.frameTextures.length = this.frameTargets.length = 0;
     this.fallback?.dispose();
     this.fallbackLease?.release();
     this.conversion?.dispose();

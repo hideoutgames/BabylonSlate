@@ -55,6 +55,7 @@ import {
 import { parseColliderProperties, parseConstraintProperties } from "@haptic/physics";
 import { engineScriptApiFor } from "@haptic/object-model";
 import { classGraph, gChain, gNode, gWire, printString } from "./graph";
+import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
 import { OWNED_COMPONENT_GET_NODE_ID, ownedGetNodeProperties } from "@haptic/scripting-nodes";
 import { animationObjectHearing, playerNode, playerState, poseGraph, stateMachineGraph } from "./anim-pose-graphs";
 import {
@@ -467,8 +468,12 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
   return { graph: graphGuid, slotAnimation: guids.jump };
 }
 
-/** `FT_2D`'s scene script: on Begin Play, Play Slot Animation plays the robot's Jump on the mascot's Action slot. */
-function robotSlotScript(mascot: { id: string; name: string; graphComponentId: string }, animation: string): SerializedGraph {
+/**
+ * `FT_2D`'s scene script: on Begin Play, Register Scene Layer Post-Processing adds `FT_MatLayerGrade`, so the scene's
+ * `FT_LayerGrade` layer draws through the shared target and its Multiply darkens by grey (the pass ends with the Play
+ * session), then Play Slot Animation plays the robot's Jump on the mascot's Action slot.
+ */
+function robotSlotScript(mascot: { id: string; name: string; graphComponentId: string }, animation: string, layerGrade: string): SerializedGraph {
   return classGraph({
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
@@ -487,9 +492,11 @@ function robotSlotScript(mascot: { id: string; name: string; graphComponentId: s
         "default:blendOutTime": 0,
       }),
       printString("report", 780, 0, `FT_2D script played Jump on ${mascot.name}'s ${ROBOT_SLOT} slot`),
+      gNode("layer-grade", "scene-layer.registerPostProcess", 240, -180, { "default:material": layerGrade }),
     ],
     edges: [
-      gWire("begin", "execOut", "play", "execIn"),
+      gWire("begin", "execOut", "layer-grade", "execIn"),
+      gWire("layer-grade", "execOut", "play", "execIn"),
       gWire("mascot-graph", "component", "play", "target"),
       gWire("play", "onCompleted", "report", "execIn"),
     ],
@@ -1134,6 +1141,7 @@ function buildScene(
   scene.script = robotSlotScript(
     { id: "ft-2d-anim-mascot", name: "Robot Mascot", graphComponentId: "ft-2d-anim-mascot-graph" },
     refs.slotAnimation,
+    featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.layerGrade),
   );
   add("animation", "ft-2d-anim-mascot", "Robot Mascot", [tileCenterX(0), tileBottomY(4) + robotHalfHeight, 0], [
     sprite("ft-2d-anim-mascot-sprite", refs.sprites.robotIdle, "UI", 0, { shadingMode: "unlit" }),

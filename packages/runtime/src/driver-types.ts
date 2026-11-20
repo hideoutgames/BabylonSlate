@@ -97,6 +97,8 @@ export interface RuntimeDriverOptions {
   /** Authored Input Action / Input Axis assets; the starter controls when omitted. */
   inputAssets?: InputAssetDefinition[];
   focusNavigation?: Partial<FocusNavigationSettings>;
+  /** Project Scene Layer post-processing: the passes the session's shared layer stack starts with (normalized there). */
+  sceneLayerPostProcessStack?: readonly import("@haptic/core").ScenePostProcessEntry[];
   /** Scene physics world kind (defaults to 3d). */
   physicsWorld?: PhysicsWorldKind;
   gravity?: [number, number, number];
@@ -284,9 +286,10 @@ export interface RuntimeDriver {
   registerScenePostProcess(materialGuid: string): RegisteredPostProcess<Scene> | null;
   /** Unregister Scene Post-Processing on the current Scene. */
   unregisterScenePostProcess(materialGuid: string): void;
-  registerSceneLayerPostProcess(layerGuid: string, materialGuid: string): void;
+  /** Register Scene Layer Post-Processing on the stack every Scene Layer shares. */
+  registerSceneLayerPostProcess(materialGuid: string): void;
+  /** Unregister Scene Layer Post-Processing from the stack every Scene Layer shares. */
   unregisterSceneLayerPostProcess(
-    layerGuid: string,
     materialGuid: string,
   ): void;
   applySceneLayerResize(

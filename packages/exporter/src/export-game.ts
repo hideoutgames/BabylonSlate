@@ -1,6 +1,6 @@
 import { SAFE_ZIP_MTIME } from "./zip-time";
-import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
-import { collectAssetDependencyMetadata, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
+import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, normalizeSceneLayerPostProcessStack, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
+import { collectAssetDependencyMetadata, sceneLayerPostProcessAssetGuids, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
   DEFAULT_FILE_COUNT_FAIL,
@@ -350,7 +350,9 @@ export async function exportGame(
       sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify(script)), requiredDependencies: [] });
   }
 
-  const projectAssetGuids = new Set(renderEffectsAssetGuids(options.renderSettings?.effects));
+  // Project-level assets Play reads from its first frame: the LUT and the Scene Layer post-processing passes.
+  const projectAssetGuids = new Set([...renderEffectsAssetGuids(options.renderSettings?.effects),
+    ...sceneLayerPostProcessAssetGuids(options.sceneLayerPostProcessStack)]);
   const prepared = dependencyCatalog(sourceAssets).map(asset => ({ ...asset,
     startupRequired: asset.startupRequired || projectAssetGuids.has(asset.guid) || asset.guid === options.audioMixerGuid ||
       (!!gameInstanceClass && classIdOf(asset) === gameInstanceClass) || asset.type === "InputAction" || asset.type === "InputAxis",
@@ -367,6 +369,7 @@ export async function exportGame(
     project: { name: options.project?.name ?? "", version: options.project?.version ?? "", buildNumber: options.project?.buildNumber ?? 1 },
     ...(options.inputAssets !== undefined ? { inputAssets: structuredClone(options.inputAssets) } : {}),
     focusNavigation: normalizeFocusNavigationSettings(options.focusNavigation),
+    sceneLayerPostProcessStack: normalizeSceneLayerPostProcessStack(options.sceneLayerPostProcessStack),
     startupSceneGuid: options.startupSceneGuid,
     ...(options.defaultFontGuid ? { defaultFontGuid: options.defaultFontGuid } : {}),
     globalFallback: normalizeGlobalFallback(options.globalFallback),
@@ -451,7 +454,7 @@ function normalizeGlobalFallback(value: unknown): string {
 
 /** Fields `exportGame` always writes; a manifest without one predates the current exporter. */
 const REQUIRED_MANIFEST_FIELDS = [
-  "project", "focusNavigation", "startupSceneGuid", "globalFallback", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
+  "project", "focusNavigation", "sceneLayerPostProcessStack", "startupSceneGuid", "globalFallback", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
   "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "garbageCollectionIntervalTicks", "touchMinTargetPx", "pixelsPerUnit",
   "pixelPerfect", "nearestTextures", "sortingLayers", "physicsWorld", "platform", "collisionPresets", "assets",
 ] as const satisfies readonly (keyof GameManifest)[];
@@ -490,6 +493,7 @@ export function parseGameManifest(source: string): GameManifest {
     ...parsed,
     render: normalizeRenderProjectSettings(parsed.render),
     focusNavigation: normalizeFocusNavigationSettings(parsed.focusNavigation),
+    sceneLayerPostProcessStack: normalizeSceneLayerPostProcessStack(parsed.sceneLayerPostProcessStack),
     playFrameCap: normalizePlayFrameCap(parsed.playFrameCap),
     garbageCollectionIntervalTicks: normalizeGarbageCollectionIntervalTicks(parsed.garbageCollectionIntervalTicks),
     project: { name: parsed.project!.name, version: parsed.project!.version, buildNumber: parsed.project!.buildNumber },

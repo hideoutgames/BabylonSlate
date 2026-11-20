@@ -200,6 +200,8 @@ export function playLoadControl(options: {
   /** Packaged authored assets the Asset Registry nodes query. */
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+  /** Project Scene Layer post-processing: the passes the session's shared layer stack starts with. */
+  sceneLayerPostProcessStack?: import("@haptic/core").SceneLayerPostProcessEntry[];
   pixelsPerUnit?: number;
   /** Pixel-Perfect Mode with Nearest Texture Filtering (`pixelMatchedCameras`). */
   pixelMatchedCameras?: boolean;
@@ -262,6 +264,7 @@ export function playLoadControl(options: {
     ...(options.timelineClipAssets ? { timelineClipAssets: options.timelineClipAssets } : {}),
     assetCatalog: options.assetCatalog,
     focusNavigation: options.focusNavigation,
+    ...(options.sceneLayerPostProcessStack ? { sceneLayerPostProcessStack: options.sceneLayerPostProcessStack } : {}),
     pixelsPerUnit: options.pixelsPerUnit,
     ...(options.pixelMatchedCameras ? { pixelMatchedCameras: true } : {}),
     texturePixelSizes: options.texturePixelSizes,

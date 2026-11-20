@@ -69,8 +69,8 @@ A Decal Material previews projected onto a floor and a ball. In its graph, [UV](
 
 A Surface Material (on a **2D Material**, a material **2D Panel** and the other 2D components that take one) or a Text Material set to **Multiply** works on a [Scene Layer](../scenes/scene-layers.md) too.
 
-- **Layers without post-processing**: everything already drawn beneath the visual, the world, lower layers and the layer's own earlier visuals, is multiplied by its colour times the component's **Tint**, scaled by Opacity and the Tint's alpha. White, or Opacity 0, leaves it unchanged. For text the colour is the Text Output's colour where the glyphs are.
-- **Layers with Post Processing**: Multiply only darkens. The colour is replaced by its brightness, a grey, and the layer's own content and what shows through it are darkened by that grey, before the layer's passes run. A grey Material looks the same on both kinds of layer; a coloured one loses its hue here.
+- **Without Scene Layer post-processing**: everything already drawn beneath the visual, the world, lower layers and the layer's own earlier visuals, is multiplied by its colour times the component's **Tint**, scaled by Opacity and the Tint's alpha. White, or Opacity 0, leaves it unchanged. For text the colour is the Text Output's colour where the glyphs are.
+- **With [Scene Layer post-processing](../scenes/scene-layers.md#scene-layer-post-processing) on**: Multiply only darkens. The colour is replaced by its brightness, a grey, and everything drawn beneath it, the layers below and what shows through them, is darkened by that grey before the passes run. A grey Material looks the same either way; a coloured one loses its hue here.
 
 The editor's Scene Layer view draws the layer over a neutral mid grey, so a Multiply visual shows what it does there; in the game the world is beneath it.
 

@@ -33,6 +33,9 @@ import { FEATURE_TEST_EASING_CURVE_CLASS, featureTestCameraShakes } from "./scri
 import { withFeatureTestHudPulse } from "./timeline";
 import { FEATURE_TEST_TWO_D_SCENE_NAME } from "./two-d";
 
+/** The Entry ID of the Project Settings Scene Layer post-processing pass the HUD layers share. */
+export const FEATURE_TEST_SCENE_LAYER_POST_PROCESS_ENTRY_ID = "ft-scene-layer-post-grade";
+
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
 const FEATURE_TEST_SCENE_LAYERS_FOLDER = "SceneLayers";
 
@@ -44,7 +47,7 @@ const FEATURE_TEST_SCENE_LAYER_NAMES = {
   overlayPhysics: "FT_OverlayPhysics",
   /** A Desired canvas at True Pixel Size, its top right in the screen's, spawned over the main scene at z-order 15. */
   badge: "FT_Badge",
-  /** A post-processed layer (its own grade) whose Multiply darkens by its grey, spawned over `FT_2D` at z-order 10. */
+  /** The Multiply showcase over `FT_2D` at z-order 10, where Scene Layer post-processing runs, so it darkens by grey. */
   layerGrade: "FT_LayerGrade",
   listItem: "FT_UIListItem",
   gridItem: "FT_UIGridItem",
@@ -117,8 +120,6 @@ interface LayerRefs {
   /** Multiply: the Surface stain (`FT_MatOverlayMultiply`) and the Text ink (`FT_MatTextMultiply`). */
   multiplyMaterial: string;
   textMultiplyMaterial: string;
-  /** `FT_LayerGrade`'s post-process (`FT_MatLayerGrade`). */
-  layerGradeMaterial: string;
   panelTexture: string;
   /** The optional one-shot Audio asset, which the rich text's reveal plays. */
   sound: string | null;
@@ -156,7 +157,6 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     overlayMaterial,
     multiplyMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.overlayMultiply),
     textMultiplyMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.textMultiply),
-    layerGradeMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.layerGrade),
     panelTexture: requireRef(ctx.assets.textures.colormapPixelArt, "the pixel art colormap Texture"),
     sound: ctx.assets.audio.oneShot,
     icons: {
@@ -209,24 +209,33 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     content: badgeLayer(refs),
     order: SCENE_SAVE_ORDER.sceneLayer,
   });
-  const layerGrade = await ctx.addSceneDocument({
+  const gradeLayer = await ctx.addSceneDocument({
     kind: "scene-layer",
     folder: FOLDER,
     name: NAMES.layerGrade,
     content: layerGradeLayer(refs),
     order: SCENE_SAVE_ORDER.sceneLayer,
   });
-  layerGuidsByContext.set(ctx, { hud: hud.guid, overlayPhysics: overlayPhysics.guid, badge: badge.guid, layerGrade: layerGrade.guid });
+  layerGuidsByContext.set(ctx, { hud: hud.guid, overlayPhysics: overlayPhysics.guid, badge: badge.guid, layerGrade: gradeLayer.guid });
 
   await bindJoystickToMove(ctx);
   const confirm = ctx.registry
     .list()
     .find((asset) => asset.rootId === "project" && asset.header.type === "InputAction" && asset.header.name === "Confirm");
   const activateInputGuid = requireRef(confirm?.header.guid, "the Basic 3D Confirm Input Action");
+  // Scene Layer post-processing: authored but off. Main is the performance benchmark, and an enabled pass adds a
+  // full-screen target, copy, pass and blend per frame (every layer drawn into one target the pass grades before it is
+  // blended over the world). Switched on, it is a slight desaturation without the vignette, which would fade the HUD's
+  // edges. See the Feature Test reference's Known gaps for how to turn it on.
+  const layerGrade = requireRef(ctx.assets.materials.postProcess, "the post-process Material");
   // Enter / Face Button Right activate HUD focus; Space stays Jump.
   ctx.patchSettings((settings) => ({
     ...settings,
     focusNavigation: { ...settings.focusNavigation, enabled: true, activateInputGuid, wrap: true },
+    sceneLayerPostProcessStack: [{
+      id: FEATURE_TEST_SCENE_LAYER_POST_PROCESS_ENTRY_ID, materialGuid: layerGrade, enabled: false,
+      parameters: { Desaturation: { kind: "float", value: 0.15 }, Vignette: { kind: "float", value: 0 } },
+    }],
   }));
 }
 
@@ -339,7 +348,7 @@ const MULTIPLY_QUAD = { width: 1.6, height: 0.7 } as const;
 /**
  * The Multiply showcase around `center`: a translucent backdrop drawn first (behind), the `FT_MatOverlayMultiply`
  * stain overlapping its right half and the world beside it, and a `FT_MatTextMultiply` label above. On a direct layer
- * (FT_HUD) the stain tints both and the ink darkens the world by its blue; on a post-processed one (FT_LayerGrade) both
+ * (FT_HUD) the stain tints both and the ink darkens the world by its blue; with Scene Layer post-processing on (FT_LayerGrade in FT_2D) both
  * darken by their grey.
  */
 function addMultiply(refs: LayerRefs, add: AddActor, id: string, label: string, [x, y]: readonly [number, number], folderId: string): void {
@@ -360,12 +369,12 @@ function addMultiply(refs: LayerRefs, add: AddActor, id: string, label: string, 
 }
 
 /**
- * `FT_LayerGrade`: the Multiply showcase on a layer with its own post-process stack (`FT_MatLayerGrade`), so the layer
- * draws through its target and its Multiply darkens by grey. The default Fullscreen canvas; spawned over `FT_2D`.
+ * `FT_LayerGrade`: the Multiply showcase spawned over `FT_2D`, whose scene script registers `FT_MatLayerGrade` as Scene
+ * Layer post-processing, so the layer draws through the shared target and its Multiply darkens by grey. The default
+ * Fullscreen canvas.
  */
 function layerGradeLayer(refs: LayerRefs): SerializedSceneLayer {
   const layer: SerializedSceneLayer = { ...createDefaultSceneLayer(), name: NAMES.layerGrade };
-  layer.settings.postProcessStack = [{ id: "ft-layer-grade-pass", materialGuid: refs.layerGradeMaterial, enabled: true }];
   layer.folders = [{ id: "ft-grade-folder-multiply", name: "Multiply", parentFolderId: null }];
   addMultiply(refs, (actor) => addLayerActor(layer, actor), "ft-grade-multiply", "Grey Multiply", [-6.4, 3.4], "ft-grade-folder-multiply");
   return layer;

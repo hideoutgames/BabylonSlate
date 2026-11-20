@@ -175,6 +175,9 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
       ["Color Grading LUT Lookup Table", "project-effects-color-grading"],
       ["FSR Upscaling Render Scale Sharpness Resolution", "project-effects-upscaling"],
     ]],
+    ["sceneLayerPostProcessing", "Scene Layer Post-Processing", [
+      ["Scene Layer Post-Process Passes HUD Material"],
+    ]],
     ["cel", "CEL Shading", [
       ["CEL Outlines", "project-cel-outlinesEnabled"],
       ["CEL Outline Color", "project-cel-outlineColor"],

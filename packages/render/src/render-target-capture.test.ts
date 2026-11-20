@@ -1031,6 +1031,32 @@ describe("an every-frame capture draws only while something shows its output", (
     expect(frame()).toBe(1);
   });
 
+  it("answers who shows each output from the same lists and entries every frame", () => {
+    // The break: a list per Material and an entry per shown output made on every frame (`materialSamples`,
+    // `findShown`), which the scene view's every frame reads.
+    const { scene, captures, screen, material, frame } = shown();
+    const state = captures as unknown as { consumers: Map<unknown, readonly string[]>; shown: Map<string, object> };
+    // A second screen, whose slot container samples the output through its child.
+    const slots = new MultiMaterial("slots", scene);
+    slots.subMaterials.push(material);
+    const second = MeshBuilder.CreatePlane("second", { size: 1 }, scene);
+    second.material = slots;
+    expect(frame()).toBe(1);
+    const answers = [state.consumers.get(screen), state.consumers.get(second)];
+    const entry = state.shown.get("target");
+    expect(answers).toEqual([["target"], ["target"]]);
+    expect([frame(), frame()]).toEqual([1, 1]);
+    expect([state.consumers.get(screen), state.consumers.get(second)]).toEqual(answers);
+    expect(state.consumers.get(screen)).toBe(answers[0]);
+    expect(state.consumers.get(second)).toBe(answers[1]);
+    expect(state.shown.get("target")).toBe(entry);
+    // A Material that stops sampling the output answers nothing in the next frame, and the reused lists follow.
+    slots.subMaterials.length = 0;
+    frame();
+    expect(state.consumers.has(second)).toBe(false);
+    expect(state.consumers.get(screen)).toEqual(["target"]);
+  });
+
   it("still draws a manual capture when asked, whatever shows it", () => {
     const { captures, root, settings, frame, place } = shown();
     frame();

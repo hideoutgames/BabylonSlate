@@ -16,7 +16,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { FoliageFadePlugin } from "./foliage-fade";
 import { TextureQualityPlugin } from "./texture-quality";
 import { LatticeDeformerPlugin } from "./lattice-deformer-native";
-import { hasMeshLatticeDeformer, isCageOnlyShadowWrapper } from "./lattice-deformer-binding";
+import { activeMeshLatticeBinding, isCageOnlyShadowWrapper } from "./lattice-deformer-binding";
 
 const compiled = new WeakSet<NodeMaterial>();
 const compiledShape = new WeakMap<
@@ -127,12 +127,16 @@ export function canCacheShadowMaterial(
 }
 
 /**
- * The mesh's part of `canCacheShadowMaterial`: no lattice cage on it or its source, and a source `Mesh` without
- * deformers, dynamic thin instances or render hooks, fully visible.
+ * The mesh's part of `canCacheShadowMaterial`: a source `Mesh` without deformers, dynamic thin instances or render
+ * hooks, fully visible. A lattice cage counts as no deformer when it widened the mesh's bounds to its hull
+ * (`LatticeBinding.widens`) and an instance's source draws with the same cage: what it draws then follows the cage's
+ * revision, the root's and the mesh's world matrices and the geometry, all of which the refresh scheduler tracks.
  */
 export function canCacheShadowMesh(mesh: AbstractMesh): boolean {
   const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
-  if (hasMeshLatticeDeformer(mesh) || (source !== mesh && hasMeshLatticeDeformer(source))) return false;
+  const cage = activeMeshLatticeBinding(mesh);
+  if (cage && !cage.widens(mesh)) return false;
+  if (source !== mesh && activeMeshLatticeBinding(source) !== cage) return false;
   return !(
     !(source instanceof Mesh) ||
     source.skeleton ||
@@ -161,7 +165,8 @@ export function canCacheShadowMaterialFor(material: Material, hasVertexAlpha: bo
   const mesh = fullyVisible[hasVertexAlpha ? 1 : 0];
   if (
     material.alpha !== 1 ||
-    // A wrapper only cages use draws this mesh, which has none, as the stock depth program does.
+    // A wrapper only cages use draws a mesh without one as the stock depth program does, and a caged mesh by its cage,
+    // which `canCacheShadowMesh` vouches for.
     (material.shadowDepthWrapper && !isCageOnlyShadowWrapper(material.shadowDepthWrapper)) ||
     (material.transparencyMode !== null &&
       material.transparencyMode !== Material.MATERIAL_OPAQUE) ||

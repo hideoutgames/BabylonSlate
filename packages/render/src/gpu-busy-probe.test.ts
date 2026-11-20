@@ -131,14 +131,37 @@ describe("GpuBusyProbe", () => {
     expect(gl.deleted).toEqual([0]);
   });
 
-  it("reports how often it polled, the resolution of each frame's time", () => {
+  it("reports how often Engine frames started, the resolution of each frame's time", () => {
     const { probe, gl, at } = fixture();
     probe.start();
     at(0); probe.frameEnd();
-    at(4); probe.poll();
-    at(8); probe.poll();
+    at(4); probe.frameStart();
+    at(8); probe.frameStart();
     gl.signal(0);
-    at(12); probe.poll();
+    at(12); probe.frameStart();
+    expect(probe.stats()!.pollMs).toBe(4);
+  });
+
+  it("counts the poll period from every frame start while active, even when every fence signalled before the next frame", () => {
+    const { probe, gl, at } = fixture();
+    probe.start();
+    at(0); probe.frameEnd();
+    gl.signal(0);
+    at(16); probe.frameStart(); probe.frameEnd();
+    gl.signal(1);
+    at(32); probe.frameStart();
+    expect(probe.stats()).toMatchObject({ frames: 2, pollMs: 16 });
+  });
+
+  it("does not count the gap across a restart toward the poll period", () => {
+    const { probe, gl, at } = fixture();
+    probe.start();
+    at(10); probe.frameStart();
+    probe.stop();
+    probe.start();
+    at(500); probe.frameStart(); probe.frameEnd();
+    gl.signal(0);
+    at(504); probe.frameStart();
     expect(probe.stats()!.pollMs).toBe(4);
   });
 

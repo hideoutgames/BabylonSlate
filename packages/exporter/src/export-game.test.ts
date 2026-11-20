@@ -102,6 +102,22 @@ describe("exportGame", () => {
     malformed.focusNavigation.repeatInterval = -10;
     expect(parseGameManifest(JSON.stringify(malformed)).focusNavigation?.repeatInterval).toBe(0.02);
   });
+  it("writes the Scene Layer post-processing passes and loads their enabled Materials and Textures at startup", async () => {
+    const asset = (guid: string, type: string) => ({ guid, type, sceneGuid: "scene-1", encoding: "json" as const, bytes: new TextEncoder().encode("{}"), requiredDependencies: [] });
+    const result = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], playerFiles: stubPlayer(),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      assets: [asset("glow", "Material"), asset("glow-mask", "Texture"), asset("off", "Material"), asset("other", "Material")],
+      sceneLayerPostProcessStack: [
+        { id: "glow-pass", materialGuid: "glow", enabled: true, parameters: { Mask: { kind: "texture", textureAssetGuid: "glow-mask" } } },
+        { id: "off-pass", materialGuid: "off", enabled: false },
+      ],
+    });
+    if (!result.ok) throw new Error(result.error);
+    const manifest = parseGameManifest(new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE)));
+    expect(manifest.sceneLayerPostProcessStack.map(entry => entry.id)).toEqual(["glow-pass", "off-pass"]);
+    const startup = new Map(manifest.assets.map(entry => [entry.guid, entry.startupRequired === true]));
+    expect(Object.fromEntries(startup)).toMatchObject({ glow: true, "glow-mask": true, off: false, other: false });
+  });
   it("normalizes the complete render contract at export and player read", async () => {
     const authored = {
       ...DEFAULT_RENDER_PROJECT_SETTINGS,
