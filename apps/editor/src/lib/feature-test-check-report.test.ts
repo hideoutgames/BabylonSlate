@@ -20,6 +20,7 @@ describe("formatFeatureTestCheckReport", () => {
       layerBatches: { visuals: 181, draws: 60, batches: 9, batched: 130, alone: { single: 1, material: 30, transform: 4, vertexColor: 0, other: 2, unmatched: 14 } },
       programs: {
         programs: 120, neverDrawn: 35, passes: { objects: 50, layers: 15, shadows: 20 }, shaders: 70, mostVariants: 6,
+        materials: { builds: 48, programs: 30, adopted: 18, sameShaderRebuilds: 2 },
         splitBy: [
           { define: "PREPASS", with: ["PREPASS_DEPTH", "SCENE_MRT_COUNT"], shaders: 30 }, { define: "INSTANCES", with: [], shaders: 4 },
           ...["A", "B", "C", "D", "E", "F", "G", "H"].map((define) => ({ define, with: [], shaders: 1 })),
@@ -54,7 +55,7 @@ describe("formatFeatureTestCheckReport", () => {
             frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "FrameGraph is not ready.": 1, "Scene is not ready to render.": 3 } },
             contextLosses: 0, imageBlack: [0, 0.031, null],
           },
-          firstDraws: { draws: 7, loadCompiled: 5, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4, longFrames: 6,
+          firstDraws: { draws: 7, loadCompiled: 5, loadPrograms: 140, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4, longFrames: 6,
             passes: { objects: 2, shadows: 4, outlines: 1 }, longest: [
               { ms: 240.2, engineMs: 31.5, firstDraws: 0, compiles: 0 },
               { ms: 180.4, engineMs: 170.1, firstDraws: 3, compiles: 1, passes: { objects: 1, shadows: 2 } },
@@ -91,7 +92,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(formatFeatureTestCheckReport(untimed, environment).split("\n").some((line) => line.startsWith("  CPU per pass"))).toBe(false);
     // The layers' visuals: 130 of the 181 drew in 9 batches; the 51 others took a draw each, by reason, the most first.
     expect(lines).toContain("  Scene Layers: 181 visuals in 60 draws · 130 in 9 batches · alone: 30 another Material, 14 nothing else drew the same, 4 mirrored, 2 other, 1 only draw of its pass");
-    expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · 70 shaders, at most 6 programs of one · by first pass: objects 50, shadows 20, layers 15");
+    expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · 70 shaders, at most 6 programs of one · by first pass: objects 50, shadows 20, layers 15 · Material builds 48 on 30 programs (18 adopted one, 2 rebuilt unchanged)");
     // What the further programs are for: the geometry pass's defines (two more with PREPASS) split 30 shaders, instancing 4.
     // 12 of a frame's 40 ms remain without its draws: 30%. Over 400 draw calls that is 30 µs each, and 70 µs for the draw.
     expect(lines).toContain("  CPU without draws: 12.0 ms of 40.0 ms a frame (30%); draws, clears and uniform uploads take the rest · per draw call 30 µs without and 70 µs for the draw");
@@ -103,7 +104,7 @@ describe("formatFeatureTestCheckReport", () => {
     // The eight that split most shaders are named and the rest counted.
     expect(lines).toContain("  Shaders split by define: PREPASS (+2) 30 · INSTANCES 4 · A 1 · B 1 · C 1 · D 1 · E 1 · F 1 · 2 more");
     // The passes that made the first draws, the most first.
-    expect(lines).toContain("  First draws after load: 7 (5 compiled by the load) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame · by pass: shadows 4, objects 2, outlines 1");
+    expect(lines).toContain("  First draws after load: 7 (5 compiled by the load, of 140 it compiled) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame · by pass: shadows 4, objects 2, outlines 1");
     expect(lines).toContain("  Long frames after load: 6 over 100 ms · longest 240 ms (engine 32 ms, 0 first draws, 0 compiles), 180 ms (engine 170 ms, 3 first draws: shadows 2, objects 1, 1 compile), 150 ms (engine 140 ms, 1 first draw: outlines 1, 2 compiles), 130 ms (engine 20 ms, 0 first draws, 0 compiles)");
     // 4200 ms over 140 checks, and over the 280 frames drawn.
     expect(lines).toContain("  Readiness probes: 140 in 280 drawn frames · 30.0 ms each · 15.0 ms per drawn frame");
@@ -114,7 +115,7 @@ describe("formatFeatureTestCheckReport", () => {
 
   it("tells what Play first drew after its load apart from what a sweep's quality changes first drew", () => {
     const reading = (draws: number, passes: Record<string, number>) => ({
-      draws, loadCompiled: 0, frames: draws, stalls: 0, mostInFrame: 1, worstFrameMs: 40, longFrames: 0, passes, longest: [],
+      draws, loadCompiled: 0, loadPrograms: 90, frames: draws, stalls: 0, mostInFrame: 1, worstFrameMs: 40, longFrames: 0, passes, longest: [],
     });
     const report: FeatureTestCheckReport = {
       mode: "benchmark", startedAt: Date.UTC(2026, 9, 28, 12), durationMs: 60_000, cancelled: false, pageErrors: [],
@@ -132,8 +133,8 @@ describe("formatFeatureTestCheckReport", () => {
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines).toContain("  Readiness probes: none in 300 drawn frames");
-    expect(lines).toContain("  First draws after load, before the sweep: 3 (0 compiled by the load) in 3 frames · 0 over 100 ms · worst 40 ms · most 1 in a frame · by pass: objects 3");
-    expect(lines).toContain("  First draws in the whole session, the sweep's quality changes included: 40 (0 compiled by the load) in 40 frames · 0 over 100 ms · worst 40 ms · most 1 in a frame · by pass: objects 20, shadows 12, post 8");
+    expect(lines).toContain("  First draws after load, before the sweep: 3 (0 compiled by the load, of 90 it compiled) in 3 frames · 0 over 100 ms · worst 40 ms · most 1 in a frame · by pass: objects 3");
+    expect(lines).toContain("  First draws in the whole session, the sweep's quality changes included: 40 (0 compiled by the load, of 90 it compiled) in 40 frames · 0 over 100 ms · worst 40 ms · most 1 in a frame · by pass: objects 20, shadows 12, post 8");
     expect(lines).toContain("  Long frames after load, before the sweep: 0 over 100 ms");
   });
 
@@ -182,7 +183,7 @@ describe("formatFeatureTestCheckReport", () => {
           ...entry, framesInFlight: { mode: 2 as const, skipped: [1, 0, 2, 9][index]! },
           drawPasses: { objects: 124, geometry: [0, 0, 81, 81][index]!, outlines: 101, layers: 98 },
           drawPassMs: { objects: [3.04, 3.1, 4.48, 4.5][index]!, geometry: [0, 0, 1.2, 1.2][index]!, outlines: 0.6, layers: 0.02, other: 0.3 },
-          programs: { programs: [280, 290, 310, 320][index]!, neverDrawn: [90, 92, 95, 96][index]!, passes: {}, shaders: 100, mostVariants: 9, splitBy: [] },
+          programs: { programs: [280, 290, 310, 320][index]!, neverDrawn: [90, 92, 95, 96][index]!, passes: {}, shaders: 100, mostVariants: 9, splitBy: [], materials: { builds: 40, programs: 20, adopted: 20, sameShaderRebuilds: 0 } },
         }))),
         scene("heavy", [sample("low", 59, 20), sample("medium", 35, 40), sample("high", 25, 60),
           sample("ultra", 20, 80)]),

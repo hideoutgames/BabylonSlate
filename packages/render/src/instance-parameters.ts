@@ -40,12 +40,17 @@ const materials = new WeakMap<Material, MaterialInstanceParameters>();
  * under a name and then draws another Material's Color under it would keep the one-component buffer.
  */
 export function instanceParameterAttribute(index: number, kind: InstanceParameter["kind"]): string {
+  return `instanceParameter${kind === "float" ? "Float" : "Color"}_${indexLetters(index)}`;
+}
+
+/** `index` in letters (a, b, … z, aa, ab, …): a shader symbol Babylon keeps whole, as it strips digits. */
+export function indexLetters(index: number): string {
   let letters = "";
   for (let rest = index; ; rest = Math.floor(rest / 26) - 1) {
     letters = String.fromCharCode(97 + (rest % 26)) + letters;
     if (rest < 26) break;
   }
-  return `instanceParameter${kind === "float" ? "Float" : "Color"}_${letters}`;
+  return letters;
 }
 
 /** The block a per-instance Float or Color parameter compiles to: an instanced attribute, never a uniform. */

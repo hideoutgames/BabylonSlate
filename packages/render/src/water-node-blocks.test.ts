@@ -21,6 +21,7 @@ import type { WaterField } from "./water-field";
 import { placeholderField, waterGridOffset } from "./water-material";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 import { builtInWaterMaterial } from "./water-template";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
@@ -643,8 +644,8 @@ describe("Water variant", () => {
     expect(base.getUniformNames().filter((name) => name.startsWith("slateWater"))).toEqual([]);
     expect((await programFor(drawn, lake)).getUniformNames()).toContain("slateWaterRemoval0");
     expect(result.setParameter("Shine", { kind: "float", value: 0.7 })).toBe(true);
-    expect(result.material.getBlockByName("shine")).toHaveProperty("value", 0.7);
-    expect(drawn.getBlockByName("shine")).toHaveProperty("value", 0.7);
+    expect(result.material.getBlockByName(nodeBlockName(shiny(), "shine"))).toHaveProperty("value", 0.7);
+    expect(drawn.getBlockByName(nodeBlockName(shiny(), "shine"))).toHaveProperty("value", 0.7);
   });
 
   it("follows a library rebind to the next generation's warmed water variant, and goes with the Material", async () => {

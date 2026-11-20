@@ -249,6 +249,23 @@ function surfaceDraws(scene: Scene, name: string): Mesh {
   return (leaf ? drawingMesh(leaf) : scene.getMeshByName(name)) as Mesh;
 }
 
+/**
+ * A Surface Material of a graph shape of its own, so it compiles programs of its own: Materials of one shape share them
+ * (`shareCompiledProgram`). `guid`'s last letter says how many One Minus nodes feed its Roughness (a: 1, b: 2, …).
+ */
+function surfaceDocument(guid: string): MaterialDocument {
+  const doc = createDefaultMaterialDocument(guid);
+  const output = doc.nodes.find((node) => node.type === "output.surface")!;
+  const steps = Math.max(1, guid.charCodeAt(guid.length - 1) - 96);
+  doc.edges = doc.edges.filter((edge) => !(edge.targetNodeId === output.id && edge.targetPinId === "roughness"));
+  for (let step = 0; step < steps; step++) {
+    doc.nodes.push({ id: `invert-${step}`, type: "math.oneMinus", position: { x: 0, y: 0 }, properties: step ? {} : { "default:value": [0.5] } });
+    if (step) doc.edges.push({ id: `invert-${step}-in`, sourceNodeId: `invert-${step - 1}`, sourcePinId: "out", targetNodeId: `invert-${step}`, targetPinId: "value" });
+  }
+  doc.edges.push({ id: "invert-out", sourceNodeId: `invert-${steps - 1}`, sourcePinId: "out", targetNodeId: output.id, targetPinId: "roughness" });
+  return doc;
+}
+
 function playWorld(
   model: Model, actors: Actor[], materials: string[] = [], subject = "actor-2", load = classesLoad([]),
   { instancing = INSTANCING_BY_DEFAULT, documents }: { instancing?: boolean; documents?: ReadonlyMap<string, MaterialDocument> } = {},
@@ -265,7 +282,7 @@ function playWorld(
     sharedEngine: engine,
     playMode: true,
     onCompileHold: (held) => holds.push(held),
-    materialDocuments: new Map(materials.map((guid) => [guid, documents?.get(guid) ?? createDefaultMaterialDocument(guid)])),
+    materialDocuments: new Map(materials.map((guid) => [guid, documents?.get(guid) ?? surfaceDocument(guid)])),
     // As editor Play passes its startup sources'.
     spawnableLights: spawnableLightsOfLoad(load),
   });
@@ -820,7 +837,7 @@ describe("compile holds after the first frame", () => {
       world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-c" });
       drawn.clear();
     }, async () => {
-      const documents = new Map([["surface-c", createDefaultMaterialDocument("surface-c")]]);
+      const documents = new Map([["surface-c", surfaceDocument("surface-c")]]);
       cleanups.push(await withClock(world.handle.acquireSceneSources({ materialDocuments: documents }, { prepare: true, warm: true })));
       for (let index = 0; index < 6; index++) await world.frame();
     });
@@ -834,7 +851,7 @@ describe("compile holds after the first frame", () => {
     // WebKit stall) are still ahead; the first-draw budget gives each its own frame, and each actor appears whole.
     const world = playWorld(model, [], ["surface-a"]);
     await settle(world);
-    const documents = new Map(["surface-c", "surface-d"].map((guid) => [guid, createDefaultMaterialDocument(guid)]));
+    const documents = new Map(["surface-c", "surface-d"].map((guid) => [guid, surfaceDocument(guid)]));
     cleanups.push(await withClock(world.handle.acquireSceneSources({ materialDocuments: documents }, { prepare: true, warm: true })));
     for (let index = 0; index < 6; index++) await world.frame();
     const before = world.handle.renderDiagnostics().firstDraws!;
@@ -868,7 +885,7 @@ describe("compile holds after the first frame", () => {
       drawn.clear();
     }, async () => {
       // A changed Material library prepares the view again; let it settle before the spawn.
-      world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
+      world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, surfaceDocument(guid)])));
       for (let index = 0; index < 6; index++) await world.frame();
     }, () => {
       // Only a pending compile leaves the mesh without a variant; a synchronous link draws it in its first frame.
@@ -895,6 +912,35 @@ describe("compile holds after the first frame", () => {
     });
   });
 
+  it.each(MODELS)("a spawned actor whose Material is another asset of a drawn Material's shape compiles and first-draws nothing: %s", async (model) => {
+    // The material gate: "copy-a" arrives after the load, but its graph is surface-a's, which the crate draws. It shares
+    // surface-a's programs (`shareCompiledProgram`): no Effect is created and none is first drawn. (The barrel may still
+    // wait a frame for its NodeMaterial's own build, which every new Material asset makes.)
+    const world = playWorld(model, [], ["surface-a"]);
+    world.handle.applyCommand({ type: "assignMaterial", slotId: 2, materialAssetGuid: "surface-a" });
+    const drawn = spawnDraws();
+    const barrel = () => {
+      const root = world.handle.scene.getMeshByName("actor-20");
+      return (root && pooledLeafOf(root)) ?? root;
+    };
+    let firstDrawsBefore = 0;
+    const record = await measure(world, () => {
+      world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
+      world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "copy-a" });
+      drawn.clear();
+    }, async () => {
+      world.handle.setMaterialDocuments(new Map(["surface-a", "copy-a"].map((guid) => [guid, surfaceDocument(guid)])));
+      for (let index = 0; index < 6; index++) await world.frame();
+      firstDrawsBefore = world.handle.renderDiagnostics().firstDraws!.draws;
+    }, () => drawn.clear());
+    for (let index = 0; index < 2; index++) await world.frame();
+    const mesh = barrel();
+    expect({
+      effects: record.effects, heldFrames: record.heldFrames, shown: !!mesh && !isRevealPending(mesh) && drawn.has(mesh.name),
+      firstDraws: world.handle.renderDiagnostics().firstDraws!.draws - firstDrawsBefore, material: mesh?.material?.name,
+    }, JSON.stringify(record)).toEqual({ effects: 0, heldFrames: 0, shown: true, firstDraws: 0, material: "material:copy-a" });
+  });
+
   it.each(MODELS)("a mesh hidden for a new Material when the view's graph is invalidated is still shown: %s", async (model) => {
     // A changed Material library invalidates the view right after the spawn: its new run probes strictly and must
     // neither wait for an admission only steady frames make nor leave the hidden mesh for a reveal they would make.
@@ -906,11 +952,11 @@ describe("compile holds after the first frame", () => {
       world.place({ slotId: 20, guid: "barrel", position: [2, 1, 1], assign: { meshAssetGuid: null, meshKind: "box" } });
       world.handle.applyCommand({ type: "assignMaterial", slotId: 20, materialAssetGuid: "surface-b" });
     }, async () => {
-      world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
+      world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, surfaceDocument(guid)])));
       for (let index = 0; index < 6; index++) await world.frame();
     }, () => {
       // After the frame that hid it, as a scene naming a new Material changes the library.
-      if (!invalidated) world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b", "surface-c"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
+      if (!invalidated) world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b", "surface-c"].map((guid) => [guid, surfaceDocument(guid)])));
       invalidated = true;
       drawn.clear();
     });
@@ -943,7 +989,7 @@ describe("compile holds after the first frame", () => {
       world.handle.applyCommand({ type: "assignMaterial", slotId: 20, componentId: "lid", materialAssetGuid: "surface-b" });
       drawn.clear();
     }, async () => {
-      world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, createDefaultMaterialDocument(guid)])));
+      world.handle.setMaterialDocuments(new Map(["surface-a", "surface-b"].map((guid) => [guid, surfaceDocument(guid)])));
       for (let index = 0; index < 6; index++) await world.frame();
       cleanups.push(onMeshRevealed(world.handle.scene, (mesh) => {
         const name = mesh.name.replace(/:drawn$/, "");

@@ -12,6 +12,7 @@
     "./light-block-engine": "./src/test-support/light-block-engine.ts",
     "./shared-outline-contributions": "./src/test-support/shared-outline-contributions.ts",
     "./test-engine": "./src/test-support/test-engine.ts",
+    "./material-node-blocks": "./src/test-support/material-node-blocks.ts",
     "./global-parameter-values": "./src/global-parameter-values.ts",
     "./render-scheduler": "./src/render-scheduler.ts",
     "./managed-render-resources": "./src/managed-render-resources.ts",
