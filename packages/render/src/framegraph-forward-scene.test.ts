@@ -2455,9 +2455,9 @@ it("sizes every screen-space target of the world view from its render scale; onl
   }
 });
 
-it("splits ForwardSceneFrameGraph for projected decals only while decals exist and allocates own sampleable targets", async () => {
+it("splits ForwardSceneFrameGraph for projected decals while the scene has authored decals or spawned any since its last clear", async () => {
   const { DECAL_CLASS_ID, RENDER_QUALITY_PROFILES, decalBindings } = await import("@haptic/core");
-  const { clearDecals, upsertDecals } = await import("./decal-pass");
+  const { clearDecals, sceneDecalHost, sceneDecalStats, spawnDynamicDecal, upsertDecals } = await import("./decal-pass");
   const { scene, camera } = host();
   camera.position.set(0, 2, -10);
   camera.setTarget(new Vector3(0, 0, 0));
@@ -2494,6 +2494,25 @@ it("splits ForwardSceneFrameGraph for projected decals only while decals exist a
     const clearedTasks = taskNames();
     expect(clearedTasks).not.toContain("Decal split");
     expect(clearedTasks).not.toContain("Forward decals");
+
+    // The first Spawn Decal adds the pass; expiry and later spawns reuse that graph until the decals are cleared.
+    const spawn = () => spawnDynamicDecal(scene, {
+      textureGuid: "impact", position: [0, 0, 0], rotation: [0, 0, 0, 1], size: [1, 1, 1], lifetime: 1,
+    });
+    spawn();
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const spawnedGraph = (graph as unknown as { graph: FrameGraph }).graph;
+    expect(taskNames()).toContain("Forward decals");
+    sceneDecalHost(scene).advanceTimers(2);
+    expect(sceneDecalStats(scene).dynamic).toBe(0);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    spawn();
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect((graph as unknown as { graph: FrameGraph }).graph).toBe(spawnedGraph);
+    expect(taskNames()).toContain("Forward decals");
+    clearDecals(scene);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(taskNames()).not.toContain("Forward decals");
   } finally {
     graph.dispose();
   }

@@ -1771,8 +1771,7 @@ export class ForwardSceneFrameGraph {
             decalTask.disabled = true;
             this.decalTask = decalTask;
             extraSplitDemand = () => {
-              const dt = Math.max(0, scene.getEngine().getDeltaTime() / 1000);
-              const active = sceneDecalHost(scene).prepare(decalTask.camera, dt);
+              const active = sceneDecalHost(scene).prepare(decalTask.camera);
               decalTask.disabled = !active;
               return active;
             };

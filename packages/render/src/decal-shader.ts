@@ -29,7 +29,7 @@ attribute vec4 decalInv3;
 attribute vec4 decalTintOpacity;
 attribute vec4 decalParams;
 
-uniform mat4 viewProjection;
+uniform mat4 decalViewProjection;
 
 varying mat4 vInvWorld;
 varying vec3 vProjAxis;
@@ -44,7 +44,7 @@ void main(void) {
   vTangent = normalize(world0.xyz);
   vTintOpacity = decalTintOpacity;
   vDecalParams = decalParams;
-  gl_Position = viewProjection * (world * vec4(position, 1.0));
+  gl_Position = decalViewProjection * (world * vec4(position, 1.0));
 }
 `;
 
@@ -88,8 +88,12 @@ uniform sampler2D albedoSampler;
 uniform sampler2D normalSampler;
 #endif
 
-uniform mat4 invViewProjection;
-uniform mat4 view;
+uniform mat4 decalInvViewProjection;
+uniform mat4 decalView;
+uniform mat4 decalAlbedoMatrix;
+#ifdef DECAL_NORMAL_MAP
+uniform mat4 decalNormalMatrix;
+#endif
 uniform vec2 invViewport;
 uniform vec2 depthRange;
 uniform float reverseDepth;
@@ -159,7 +163,7 @@ void main(void) {
   if (isSky) discard;
 
   vec4 clipPos = vec4(screenUV * 2.0 - 1.0, raw * depthRange.x + depthRange.y, 1.0);
-  vec4 worldH = invViewProjection * clipPos;
+  vec4 worldH = decalInvViewProjection * clipPos;
   if (abs(worldH.w) < 1e-6) discard;
   vec3 worldPos = worldH.xyz / worldH.w;
 
@@ -167,7 +171,8 @@ void main(void) {
   if (abs(localPos.x) > 0.5 || abs(localPos.y) > 0.5 || abs(localPos.z) > 0.5) discard;
 
   vec2 decalUV = localPos.xz + 0.5;
-  vec4 tex = texture2D(albedoSampler, decalUV);
+  // Each texture's UV transform, as Babylon's materials apply theirs (a KTX2 texture flips V there).
+  vec4 tex = texture2D(albedoSampler, (decalAlbedoMatrix * vec4(decalUV, 1.0, 0.0)).xy);
   float alpha = tex.a * vTintOpacity.a;
   if (alpha <= 0.004) discard;
 
@@ -177,12 +182,17 @@ void main(void) {
   float geomLen = length(geomN);
   if (geomLen < 1e-6) discard;
   geomN /= geomLen;
+  // The visible surface's outward normal faces the viewer: back along the pixel's ray, from the surface towards the
+  // near plane (perspective or orthographic alike).
+  vec4 nearH = decalInvViewProjection * vec4(clipPos.xy, (reverseDepth > 0.5 ? 1.0 : 0.0) * depthRange.x + depthRange.y, 1.0);
+  if (dot(geomN, nearH.xyz / nearH.w - worldPos) < 0.0) geomN = -geomN;
+  // Local +Y: the decal projects along -Y, onto surfaces facing back up +Y. Fade Angle is the surface normal's angle from
+  // +Y, so past 90 degrees it also reaches surfaces facing away from the projector (and 180 never fades).
   vec3 projAxis = normalize(vProjAxis);
-  if (dot(geomN, projAxis) < 0.0) geomN = -geomN;
 
   float facing = dot(geomN, projAxis);
   float cosFade = vDecalParams.y;
-  float angleWeight = smoothstep(cosFade - 0.08, cosFade + 0.08, facing);
+  float angleWeight = cosFade <= -0.9999 ? 1.0 : smoothstep(cosFade - 0.08, min(cosFade + 0.08, 1.0), facing);
   float depthFade = 1.0 - smoothstep(0.42, 0.5, abs(localPos.y));
   alpha *= angleWeight * depthFade;
   if (alpha <= 0.004) discard;
@@ -194,7 +204,7 @@ void main(void) {
   if (tLen > 1e-5) {
     T /= tLen;
     vec3 B = normalize(cross(geomN, T));
-    vec3 nTS = texture2D(normalSampler, decalUV).xyz * 2.0 - 1.0;
+    vec3 nTS = texture2D(normalSampler, (decalNormalMatrix * vec4(decalUV, 1.0, 0.0)).xy).xyz * 2.0 - 1.0;
     shadingN = normalize(T * nTS.x + B * nTS.y + geomN * max(nTS.z, 0.001));
   }
 #endif
@@ -212,7 +222,7 @@ void main(void) {
 #endif
 
   if (sceneFogInfo.x > 0.5 && blendModeId < 0.5) {
-    vec3 viewPos = (view * vec4(worldPos, 1.0)).xyz;
+    vec3 viewPos = (decalView * vec4(worldPos, 1.0)).xyz;
     float keep = decalFogKeep(viewPos);
     color = mix(sceneFogColor.rgb, color, keep);
   }

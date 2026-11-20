@@ -27,6 +27,7 @@ import { RenderingManager } from "@babylonjs/core/Rendering/renderingManager";
 import type { Scene } from "@babylonjs/core/scene";
 import {
   DEFAULT_DECAL_PROPERTIES,
+  isQualityLevel,
   normalizeDecalBlendMode,
   type DecalBinding,
   type DecalBlendMode,
@@ -39,7 +40,7 @@ import {
   HAPTIC_LIGHTING_UNIFORMS,
   bindHapticLightingUniforms,
 } from "./haptic-lighting-block";
-import { sceneRenderingSettings } from "./render-settings";
+import { resolveSceneRenderingQuality, sceneRenderingSettings } from "./render-settings";
 import { bindSceneFog, bindSceneFogColor } from "./scene-fog-block";
 import { ManagedShadowObjectRendererTask } from "./framegraph-managed-shadows";
 import { retireOwnedEffect } from "./owned-effect-retirement";
@@ -51,6 +52,8 @@ type PreparedDecal = {
   inverseWorld: Matrix;
   center: Vector3;
   radius: number;
+  /** Negative world determinant: the unit cube's winding flips, so its batch culls the other face (`render`). */
+  mirrored: boolean;
   properties: DecalProperties;
   opacityMultiplier: number;
 };
@@ -63,7 +66,6 @@ type AuthoredDecalEntry = PreparedDecal & {
 };
 
 type DynamicDecalEntry = PreparedDecal & {
-  alive: boolean;
   age: number;
   lifetime: number;
   fadeOutDuration: number;
@@ -74,6 +76,7 @@ type DecalBatch = {
   sortOrder: number;
   blendMode: DecalBlendMode;
   receiveLighting: boolean;
+  mirrored: boolean;
   textureGuid: string;
   normalTextureGuid: string | null;
   items: PreparedDecal[];
@@ -102,10 +105,14 @@ const DECAL_ATTRIBUTES = [
   "decalParams",
 ];
 
+// Not Babylon's `view` / `viewProjection`: its floating origin rewrites those by name from the Scene's own camera. The
+// pass uploads its camera's matrices itself, already relative to the eye (`render`).
 const DECAL_BASE_UNIFORMS = [
-  "viewProjection",
-  "invViewProjection",
-  "view",
+  "decalViewProjection",
+  "decalInvViewProjection",
+  "decalView",
+  "decalAlbedoMatrix",
+  "decalNormalMatrix",
   "invViewport",
   "depthRange",
   "reverseDepth",
@@ -148,9 +155,22 @@ function babylonAlphaMode(mode: DecalBlendMode): number {
       : Constants.ALPHA_COMBINE;
 }
 
-/** Capacity of the dynamic runtime decal ring buffer, scaled by quality tier. */
+/**
+ * Capacity of the dynamic decal pool: 64 on the Low and Medium Geometry tiers, 128 on High and Ultra. The tier is the
+ * Geometry quality's target (`profile`), else the tier its values match, else Medium, as Auto local lights pick theirs.
+ */
 export function maxDynamicDecalsForScene(scene: Scene): number {
-  return sceneRenderingSettings(scene).lodDistanceScale <= 1.25 ? 64 : 128;
+  const geometry = resolveSceneRenderingQuality(scene).geometry;
+  const tier = geometry.profile ?? (isQualityLevel(geometry.preset) ? geometry.preset : "medium");
+  return tier === "high" || tier === "ultra" ? 128 : 64;
+}
+
+/** `world` with the floating origin's eye taken from its translation (the engine's rule for an instance row). */
+function writeRelativeWorld(world: Matrix, eye: Vector3, out: Float32Array, offset: number): void {
+  world.copyToArray(out, offset);
+  out[offset + 12] = world.m[12]! - eye.x;
+  out[offset + 13] = world.m[13]! - eye.y;
+  out[offset + 14] = world.m[14]! - eye.z;
 }
 
 class DecalActorOwner {
@@ -203,6 +223,7 @@ class DecalActorOwner {
         bounds: new BoundingInfo(new Vector3(-0.5, -0.5, -0.5), new Vector3(0.5, 0.5, 0.5)),
         center: Vector3.Zero(),
         radius: 0,
+        mirrored: false,
         valid: false,
       });
     }
@@ -219,8 +240,10 @@ class DecalActorOwner {
       for (const decal of this.decals) {
         decal.local.multiplyToRef(rootWorld, this.world);
         decal.world.copyFrom(this.world);
-        decal.valid = Math.abs(this.world.determinant()) > 1e-8;
+        const determinant = this.world.determinant();
+        decal.valid = Math.abs(determinant) > 1e-8;
         if (!decal.valid) continue;
+        decal.mirrored = determinant < 0;
         this.world.invertToRef(decal.inverseWorld);
         decal.bounds.update(this.world);
         encloseDecal(decal, this.world);
@@ -237,12 +260,25 @@ class DecalActorOwner {
 export class SceneDecalHost {
   readonly scene: Scene;
   readonly owners = new Map<string, DecalActorOwner>();
+  /** Live dynamic decals, oldest first: expired ones leave at once, so a full pool evicts its front. */
   private readonly dynamicPool: DynamicDecalEntry[] = [];
-  private dynamicCursor = 0;
+  /**
+   * Set by the first Spawn Decal and kept until `clear`: the forward graph keeps its decal pass while it is set, so a
+   * scene spawning short-lived decals never rebuilds the graph as its pool empties and fills again.
+   */
+  private dynamicDemand = false;
+  /** Dynamic decals left the pool since `takeTextureRelease`: their textures may now be unused. */
+  private texturesReleased = false;
+  private paused = false;
+  private timeScale = 1;
+  /** The Engine frame whose time the dynamic lifetimes last took (`advanceClock`). */
+  private clockFrame = -1;
   private textureResolver: DecalTextureResolver | null = null;
   private readonly planes: Plane[] = Array.from({ length: 6 }, () => new Plane(0, 0, 0, 0));
   private readonly viewProjection = Matrix.Identity();
   private readonly invViewProjection = Matrix.Identity();
+  private readonly relativeView = Matrix.Identity();
+  private readonly eyeTranslation = Matrix.Identity();
   private readonly batches: DecalBatch[] = [];
   private readonly batchMap = new Map<string, DecalBatch>();
   private cube: Mesh | null = null;
@@ -275,12 +311,11 @@ export class SceneDecalHost {
     this.textureResolver = resolver;
   }
 
+  /** Whether the forward graph needs its decal pass: authored decals, or any Spawn Decal since the last `clear`. */
   hasAnyDecals(): boolean {
+    if (this.dynamicDemand) return true;
     for (const owner of this.owners.values()) {
       if (owner.decals.length > 0) return true;
-    }
-    for (const entry of this.dynamicPool) {
-      if (entry.alive) return true;
     }
     return false;
   }
@@ -294,11 +329,27 @@ export class SceneDecalHost {
       }
     }
     for (const entry of this.dynamicPool) {
-      if (!entry.alive) continue;
       if (entry.properties.textureGuid) guids.add(entry.properties.textureGuid);
       if (entry.properties.normalTextureGuid) guids.add(entry.properties.normalTextureGuid);
     }
     return guids;
+  }
+
+  /** Whether dynamic decals expired or were evicted since the last call, which clears it. */
+  takeTextureRelease(): boolean {
+    const released = this.texturesReleased;
+    this.texturesReleased = false;
+    return released;
+  }
+
+  /** Holds dynamic lifetimes while the game is paused, as particles hold. */
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+  }
+
+  /** The simulation time scale (slomo; 0 holds lifetimes like pause), as particles take it. */
+  setTimeScale(scale: number): void {
+    this.timeScale = Number.isFinite(scale) ? Math.max(0, scale) : 1;
   }
 
   upsertActor(actorId: string, node: TransformNode, bindings: readonly DecalBinding[], admitted = true): void {
@@ -340,20 +391,24 @@ export class SceneDecalHost {
     for (const owner of this.owners.values()) owner.dispose();
     this.owners.clear();
     this.dynamicPool.length = 0;
-    this.dynamicCursor = 0;
+    this.dynamicDemand = false;
+    this.texturesReleased = false;
     this.batches.length = 0;
     this.lastVisibleCount = 0;
     this.demandRevision += 1;
   }
 
+  /** Drops the oldest dynamic decals past `capacity`, so a quality downshift keeps the newest. */
+  private fitDynamicCapacity(capacity: number): void {
+    const excess = this.dynamicPool.length - capacity;
+    if (excess <= 0) return;
+    this.dynamicPool.splice(0, excess);
+    this.texturesReleased = true;
+  }
+
   spawnDynamic(request: DynamicDecalSpawnRequest): void {
     const textureGuid = typeof request.textureGuid === "string" ? request.textureGuid.trim() : "";
     if (!textureGuid) return;
-    const capacity = maxDynamicDecalsForScene(this.scene);
-    if (this.dynamicPool.length > capacity) {
-      this.dynamicPool.length = capacity;
-      this.dynamicCursor = this.dynamicCursor % capacity;
-    }
     const size: [number, number, number] = [
       request.size[0] > 0 ? request.size[0] : 1,
       request.size[1] > 0 ? request.size[1] : 1,
@@ -364,7 +419,8 @@ export class SceneDecalHost {
       Quaternion.FromArray(request.rotation),
       Vector3.FromArray(request.position),
     );
-    if (Math.abs(world.determinant()) <= 1e-8) return;
+    const determinant = world.determinant();
+    if (Math.abs(determinant) <= 1e-8) return;
     const inverseWorld = world.clone().invert();
     const bounds = new BoundingInfo(new Vector3(-0.5, -0.5, -0.5), new Vector3(0.5, 0.5, 0.5));
     bounds.update(world);
@@ -392,54 +448,70 @@ export class SceneDecalHost {
       inverseWorld,
       center,
       radius: Math.sqrt(farthest),
+      mirrored: determinant < 0,
       properties,
       opacityMultiplier: 1,
-      alive: true,
       age: 0,
       lifetime: typeof request.lifetime === "number" && Number.isFinite(request.lifetime) && request.lifetime > 0 ? request.lifetime : 0,
       fadeOutDuration: typeof request.fadeOutDuration === "number" && Number.isFinite(request.fadeOutDuration) && request.fadeOutDuration > 0 ? request.fadeOutDuration : 0,
     };
-    if (this.dynamicPool.length < capacity) {
-      this.dynamicPool.push(entry);
-    } else {
-      const slot = this.dynamicCursor % capacity;
-      this.dynamicPool[slot] = entry;
-      this.dynamicCursor = (slot + 1) % capacity;
+    // Expired decals have already left the pool, so a full pool evicts its oldest live decal, whatever its lifetime.
+    this.fitDynamicCapacity(maxDynamicDecalsForScene(this.scene) - 1);
+    this.dynamicPool.push(entry);
+    if (!this.dynamicDemand) {
+      this.dynamicDemand = true;
+      this.demandRevision += 1;
     }
-    this.demandRevision += 1;
   }
 
-  /** Advance dynamic timers by `deltaSeconds` (deterministic for tests and runtime). */
+  /** Ages dynamic decals by `deltaSeconds` of game time; expired ones leave the pool. */
   advanceTimers(deltaSeconds: number): void {
     if (!(deltaSeconds > 0)) return;
-    let expiredAny = false;
-    for (const entry of this.dynamicPool) {
-      if (!entry.alive || entry.lifetime <= 0) continue;
-      entry.age += deltaSeconds;
-      if (entry.age >= entry.lifetime) {
-        entry.alive = false;
-        entry.opacityMultiplier = 0;
-        expiredAny = true;
-      } else if (entry.fadeOutDuration > 0) {
-        const remaining = entry.lifetime - entry.age;
-        entry.opacityMultiplier = remaining < entry.fadeOutDuration ? Math.max(0, remaining / entry.fadeOutDuration) : 1;
+    const pool = this.dynamicPool;
+    let kept = 0;
+    for (let index = 0; index < pool.length; index++) {
+      const entry = pool[index]!;
+      if (entry.lifetime > 0) {
+        entry.age += deltaSeconds;
+        if (entry.age >= entry.lifetime) continue;
+        if (entry.fadeOutDuration > 0) {
+          const remaining = entry.lifetime - entry.age;
+          entry.opacityMultiplier = remaining < entry.fadeOutDuration ? Math.max(0, remaining / entry.fadeOutDuration) : 1;
+        }
       }
+      pool[kept++] = entry;
     }
-    if (expiredAny) this.demandRevision += 1;
+    if (kept === pool.length) return;
+    pool.length = kept;
+    this.texturesReleased = true;
+  }
+
+  /**
+   * Ages dynamic decals once per Engine frame, however many views prepare in it (a Render Target Capture, a second
+   * viewport), by the frame's time × the simulation time scale, and not at all while paused.
+   */
+  private advanceClock(): void {
+    const engine = this.scene.getEngine();
+    const frame = engine.frameId;
+    if (frame === this.clockFrame) return;
+    this.clockFrame = frame;
+    if (this.paused || this.timeScale <= 0) return;
+    this.advanceTimers((engine.getDeltaTime() / 1000) * this.timeScale);
   }
 
   /**
    * Cull decals against `camera` frustum + quality-scaled `cullDistance` and group into sorted
    * instanced batches. Returns `true` when at least one decal is visible this frame.
    */
-  prepare(camera: Camera, deltaSeconds = 0, force = false): boolean {
+  prepare(camera: Camera, force = false): boolean {
     const frameId = this.scene.getFrameId();
     if (!force && this.preparedFrameId === frameId && this.preparedCamera === camera) {
       return this.lastPreparedResult;
     }
     this.preparedFrameId = frameId;
     this.preparedCamera = camera;
-    this.advanceTimers(deltaSeconds);
+    this.advanceClock();
+    this.fitDynamicCapacity(maxDynamicDecalsForScene(this.scene));
 
     this.batches.length = 0;
     this.batchMap.clear();
@@ -460,7 +532,7 @@ export class SceneDecalHost {
       }
       if (sphereFrustumSide(this.planes, item.center, item.radius) < 0) return;
 
-      const key = `${item.properties.sortOrder}|${item.properties.blendMode}|${item.properties.receiveLighting ? 1 : 0}|${textureGuid}|${item.properties.normalTextureGuid ?? ""}`;
+      const key = `${item.properties.sortOrder}|${item.properties.blendMode}|${item.properties.receiveLighting ? 1 : 0}|${item.mirrored ? 1 : 0}|${textureGuid}|${item.properties.normalTextureGuid ?? ""}`;
       let batch = this.batchMap.get(key);
       if (!batch) {
         batch = {
@@ -468,6 +540,7 @@ export class SceneDecalHost {
           sortOrder: item.properties.sortOrder,
           blendMode: item.properties.blendMode,
           receiveLighting: item.properties.receiveLighting,
+          mirrored: item.mirrored,
           textureGuid,
           normalTextureGuid: item.properties.normalTextureGuid,
           items: [],
@@ -485,9 +558,7 @@ export class SceneDecalHost {
         if (decal.valid) admit(decal);
       }
     }
-    for (const entry of this.dynamicPool) {
-      if (entry.alive) admit(entry);
-    }
+    for (const entry of this.dynamicPool) admit(entry);
 
     this.batches.sort((a, b) => a.sortOrder - b.sortOrder);
     this.lastPreparedResult = this.batches.length > 0;
@@ -501,11 +572,9 @@ export class SceneDecalHost {
   stats(): SceneDecalStats {
     let authored = 0;
     for (const owner of this.owners.values()) authored += owner.decals.length;
-    let dynamic = 0;
-    for (const entry of this.dynamicPool) if (entry.alive) dynamic += 1;
     return {
       authored,
-      dynamic,
+      dynamic: this.dynamicPool.length,
       visible: this.lastVisibleCount,
       batches: this.batches.length,
       draws: this.totalDraws,
@@ -600,7 +669,18 @@ export class SceneDecalHost {
     if (!subMesh) return 0;
 
     context.setTextureSamplingMode(depthHandle, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
-    const view = camera.getViewMatrix();
+    // Large World Rendering: positions are relative to the floating origin's eye, as every other draw's and the
+    // HapticLights, clusters and shadow views are. The view takes the eye's translation first (in 64 bits), the
+    // instance rows lose it, and the depth reconstruction, OBB test, lighting and fog all work in that one space.
+    // Without it, every value is the camera's own, unchanged.
+    const relative = this.scene.floatingOriginMode;
+    const eye = this.scene.floatingOriginOffset;
+    let view = camera.getViewMatrix();
+    if (relative) {
+      Matrix.TranslationToRef(eye.x, eye.y, eye.z, this.eyeTranslation);
+      this.eyeTranslation.multiplyToRef(view, this.relativeView);
+      view = this.relativeView;
+    }
     view.multiplyToRef(camera.getProjectionMatrix(), this.viewProjection);
     if (Math.abs(this.viewProjection.determinant()) <= 1e-12) return 0;
     this.viewProjection.invertToRef(this.invViewProjection);
@@ -612,8 +692,6 @@ export class SceneDecalHost {
 
     engine.setDepthBuffer(false);
     engine.setDepthWrite(false);
-    // Front-face culling draws OBB back faces so entering a decal volume never near-clips it.
-    engine.setState(true, 0, false, false, false);
     try {
       for (const batch of this.batches) {
         const albedo = this.textureResolver?.(batch.textureGuid) ?? null;
@@ -627,13 +705,21 @@ export class SceneDecalHost {
         this.ensureBuffers(cube, count);
         for (let i = 0; i < count; i++) {
           const item = batch.items[i]!;
-          item.world.copyToArray(this.scratchWorld, i * 16);
           const inv = item.inverseWorld.m;
           const o4 = i * 4;
           this.scratchInv0[o4] = inv[0]!; this.scratchInv0[o4 + 1] = inv[1]!; this.scratchInv0[o4 + 2] = inv[2]!; this.scratchInv0[o4 + 3] = inv[3]!;
           this.scratchInv1[o4] = inv[4]!; this.scratchInv1[o4 + 1] = inv[5]!; this.scratchInv1[o4 + 2] = inv[6]!; this.scratchInv1[o4 + 3] = inv[7]!;
           this.scratchInv2[o4] = inv[8]!; this.scratchInv2[o4 + 1] = inv[9]!; this.scratchInv2[o4 + 2] = inv[10]!; this.scratchInv2[o4 + 3] = inv[11]!;
-          this.scratchInv3[o4] = inv[12]!; this.scratchInv3[o4 + 1] = inv[13]!; this.scratchInv3[o4 + 2] = inv[14]!; this.scratchInv3[o4 + 3] = inv[15]!;
+          if (relative) {
+            writeRelativeWorld(item.world, eye, this.scratchWorld, i * 16);
+            // The inverse of the relative world: an eye-relative point is first moved back by the eye (in 64 bits).
+            for (let c = 0; c < 4; c++) {
+              this.scratchInv3[o4 + c] = eye.x * inv[c]! + eye.y * inv[4 + c]! + eye.z * inv[8 + c]! + inv[12 + c]!;
+            }
+          } else {
+            item.world.copyToArray(this.scratchWorld, i * 16);
+            this.scratchInv3[o4] = inv[12]!; this.scratchInv3[o4 + 1] = inv[13]!; this.scratchInv3[o4 + 2] = inv[14]!; this.scratchInv3[o4 + 3] = inv[15]!;
+          }
           this.scratchTint[o4] = item.properties.tint[0];
           this.scratchTint[o4 + 1] = item.properties.tint[1];
           this.scratchTint[o4 + 2] = item.properties.tint[2];
@@ -654,21 +740,30 @@ export class SceneDecalHost {
         cube.thinInstancePartialBufferUpdate("decalParams", this.scratchParams.subarray(0, count * 4), 0);
 
         engine.enableEffect(effect);
+        // Front-face culling draws the OBB's far faces, so entering a decal volume never near-clips it. A mirrored
+        // world (negative determinant) flips the cube's winding, so its batch culls the other side.
+        engine.setState(true, 0, false, batch.mirrored, false);
         cube._bind(subMesh, effect, Material.TriangleFillMode);
-        effect.setMatrix("viewProjection", this.viewProjection);
-        effect.setMatrix("invViewProjection", this.invViewProjection);
-        effect.setMatrix("view", view);
+        effect.setMatrix("decalViewProjection", this.viewProjection);
+        effect.setMatrix("decalInvViewProjection", this.invViewProjection);
+        effect.setMatrix("decalView", view);
         effect.setFloat2("invViewport", 1 / Math.max(1, width), 1 / Math.max(1, height));
         effect.setFloat2("depthRange", 2, -1);
         effect.setFloat("reverseDepth", engine.useReverseDepthBuffer ? 1 : 0);
-        effect.setVector3("cameraPosition", camPos);
+        if (relative) effect.setFloat3("cameraPosition", camPos.x - eye.x, camPos.y - eye.y, camPos.z - eye.z);
+        else effect.setVector3("cameraPosition", camPos);
         effect.setFloat("sceneLinear", sceneLinear);
         effect.setFloat("blendModeId", blendModeId(batch.blendMode));
         bindSceneFog(effect, this.scene);
         bindSceneFogColor(effect, this.scene);
         context.bindTextureHandle(effect, "sceneDepth", depthHandle);
+        // The textures' own UV transform: KTX2 flips V there (`ResourceCache`); any other texture's is the identity.
         effect.setTexture("albedoSampler", albedo);
-        if (hasNormalMap && normal) effect.setTexture("normalSampler", normal);
+        effect.setMatrix("decalAlbedoMatrix", albedo.getTextureMatrix());
+        if (hasNormalMap && normal) {
+          effect.setTexture("normalSampler", normal);
+          effect.setMatrix("decalNormalMatrix", normal.getTextureMatrix());
+        }
         if (batch.receiveLighting) {
           bindHapticLightingUniforms(this.scene, effect, cel, true);
         }
@@ -747,6 +842,21 @@ export function clearDecals(scene: Scene): void {
 
 export function spawnDynamicDecal(scene: Scene, request: DynamicDecalSpawnRequest): void {
   sceneDecalHost(scene).spawnDynamic(request);
+}
+
+/** Holds or resumes dynamic decal lifetimes with the game's pause (Play's `applyPause`, as for particles). */
+export function setDecalTimePaused(scene: Scene, paused: boolean): void {
+  sceneDecalHost(scene).setPaused(paused);
+}
+
+/** Scales dynamic decal lifetimes by the simulation time scale (`setSimulationTimeScale`, as for particles). */
+export function setDecalTimeScale(scene: Scene, scale: number): void {
+  sceneDecalHost(scene).setTimeScale(scale);
+}
+
+/** Whether dynamic decals left `scene`'s pool since the last call: the owner's texture leases may now be prunable. */
+export function takeDecalTextureRelease(scene: Scene): boolean {
+  return hosts.get(scene)?.takeTextureRelease() ?? false;
 }
 
 /** FrameGraph render pass that projects all visible instanced decals onto opaque scene geometry. */
@@ -920,8 +1030,7 @@ export class DecalSplitGraph {
 
   private splitFrame(): void {
     const host = hosts.get(this.scene);
-    const dt = Math.max(0, this.scene.getEngine().getDeltaTime() / 1000);
-    const visible = host ? host.prepare(this.camera, dt) : false;
+    const visible = host ? host.prepare(this.camera) : false;
     const list = this.transparentMeshes;
     if (visible) {
       const culled = this.cull.outputObjectList;
