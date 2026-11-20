@@ -1,10 +1,13 @@
+import type { Material } from "@babylonjs/core/Materials/material";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { isSkyboxMesh } from "./skybox";
-import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
+import { hasBoundedLatticeDeformer, hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { isMirrorSurfaceMesh } from "./mirror-surface-state";
 import { followsPose } from "./pose-bounds";
 import { isWaterSurfaceMesh } from "./water-mesh-surface";
@@ -79,11 +82,54 @@ export function hasDeformingShadowBounds(mesh: AbstractMesh): boolean {
 }
 
 /**
+ * Whether every part of `mesh` needs alpha blending, so a shadow map draws nothing of it: Babylon's shadow generator
+ * sorts a map's parts as `RenderingGroup.dispatch` does and draws the blended ones only under `transparencyShadow`,
+ * which no Haptic map sets. Read as the map's dispatch reads it: each part's Material from the mesh that draws it (an
+ * instance's source), asked for the caster and for that mesh; a mesh with levels of detail (which may draw another
+ * mesh), a Material for a render pass, or a part without a Material says no. Cheap for a mesh that draws: its first
+ * part ends the read. Read again every walk (alpha, transparency, visibility and vertex alpha have no write point here).
+ */
+export function drawsOnlyBlended(mesh: AbstractMesh): boolean {
+  const parts = mesh.subMeshes;
+  if (!parts?.length) return false;
+  const drawn = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
+  for (let index = 0; index < parts.length; index++) {
+    const material = partMaterial(drawn, parts[index]!.materialIndex);
+    if (!material || !material.needAlphaBlendingForMesh(mesh) || (drawn !== mesh && !material.needAlphaBlendingForMesh(drawn))) return false;
+  }
+  return !(drawn instanceof Mesh && drawn.getLODLevels().length) && !drawn._internalAbstractMeshDataInfo._materialForRenderPass;
+}
+
+/** The Material a part of `mesh` draws with outside a render pass's own (`SubMesh.getMaterial`), without its side effects. */
+function partMaterial(mesh: AbstractMesh, materialIndex: number): Material | null {
+  const material = mesh.material ?? (mesh.getScene()._hasDefaultMaterial ? mesh.getScene().defaultMaterial : null);
+  if (material instanceof MultiMaterial) return material.getSubMaterial(materialIndex);
+  return material;
+}
+
+/**
+ * Whether a caster draws nothing into a map now: it draws nothing at all (`drawsNoShadow`), or only blended parts
+ * (`drawsOnlyBlended`) while no map draws blended parts (`blendedDraws`, a map's `transparencyShadow`).
+ */
+export function castsNoShadowDepth(mesh: AbstractMesh, blendedDraws: boolean): boolean {
+  return drawsNoShadow(mesh) || (!blendedDraws && drawsOnlyBlended(mesh));
+}
+
+/**
  * Whether `mesh`'s bounds hold what it draws although it deforms: a skinned mesh whose bounds follow its skeleton
- * (`pose-bounds.ts`), with any padding its Material asks for. A shadow list may then cull it by them.
+ * (`pose-bounds.ts`), with any padding its Material asks for, or a mesh whose only deformation is a lattice cage that
+ * widened its bounds to the cage's hull (`hasBoundedLatticeDeformer`). A shadow list may then cull it by them.
  */
 export function deformsWithinBounds(mesh: AbstractMesh): boolean {
-  return followsPose(mesh);
+  if (!hasMeshLatticeDeformer(mesh)) return followsPose(mesh);
+  // The cage's hull with the undeformed bounds holds the cage's deformation of the geometry, not another deformation.
+  return (
+    !mesh.skeleton &&
+    !mesh.morphTargetManager &&
+    !(mesh instanceof Mesh && mesh.bakedVertexAnimationManager) &&
+    !(Number(mesh.material?.metadata?.boundsPadding ?? 0) > 0) &&
+    hasBoundedLatticeDeformer(mesh)
+  );
 }
 
 /**

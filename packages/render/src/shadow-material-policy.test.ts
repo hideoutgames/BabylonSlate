@@ -185,7 +185,8 @@ describe("shadow material cache policy", () => {
   it("caches meshes without a cage while a cage's lattice wrapper is on their shared material", async () => {
     const { scene, mesh } = fixture();
     const caged = MeshBuilder.CreateBox("caged", {}, scene);
-    const cage = { active: true, bindEffect: () => {}, bindBuffer: () => {} };
+    let widened = false;
+    const cage = { active: true, revision: () => 0, widens: () => widened, bindEffect: () => {}, bindBuffer: () => {} };
     setLatticeBinding(caged, cage);
     const native = new StandardMaterial("native", scene);
     const compiled = await compiledMaterial(scene, createDefaultMaterialDocument());
@@ -193,9 +194,20 @@ describe("shadow material cache policy", () => {
     expect(ensureLatticeShadowAdapter(compiled)).toBe(true);
     for (const material of [native, compiled]) {
       expect(material.shadowDepthWrapper).not.toBeNull();
-      // The wrapper draws a mesh without an active cage as its own geometry; the caged one deforms.
+      // The wrapper draws a mesh without an active cage as its own geometry; the caged one deforms past its bounds
+      // until its cage widens them, after which the refresh tracks the cage like any other caster state.
+      widened = false;
       expect([canCacheShadowMaterial(material, mesh), canCacheShadowMaterial(material, caged)]).toEqual([true, false]);
+      widened = true;
+      expect([canCacheShadowMaterial(material, mesh), canCacheShadowMaterial(material, caged)]).toEqual([true, true]);
     }
+    // An instance drawn in a caged source's batch draws with that cage: it caches only under the same cage.
+    const instance = caged.createInstance("caged instance");
+    expect(canCacheShadowMaterial(native, instance)).toBe(false);
+    setLatticeBinding(instance, cage);
+    expect(canCacheShadowMaterial(native, instance)).toBe(true);
+    setLatticeBinding(instance);
+    widened = false;
     // A deformation that keeps the compiler's wrapper for every mesh is no longer the cage's alone.
     ensureAuthoredShadowDepthWrapper(compiled);
     expect(canCacheShadowMaterial(compiled, mesh)).toBe(false);
