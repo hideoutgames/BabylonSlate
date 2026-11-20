@@ -54,12 +54,19 @@ export function emitSceneFogFactor(state: NodeMaterialBuildState): void {
 export class SceneFogBlock extends NodeMaterialBlock {
   /** The input and output are display-space (the legacy CEL surface's): fogged in linear by the same rule between. */
   displaySpace = false;
+  /**
+   * What the fog takes the colour toward: the fog colour, or for a colour the blend adds (black) or multiplies the
+   * scene by (white), the value that leaves the scene as it is, so the fog hides the blended surface as it hides the
+   * scene behind it. Set before the build.
+   */
+  toward: "fog" | "black" | "white" = "fog";
   constructor(name: string) {
     super(name, NodeMaterialBlockTargets.Fragment);
     this.registerInput("input", Types.Color3);
     this.registerInput("worldPosition", Types.Vector4);
-    this.registerInput("view", Types.Matrix);
-    /** Optional: the view-space position transformed per vertex, as Standard's `vFogDistance` is; used in place of view × world position. */
+    // Optional only where View Position is connected instead.
+    this.registerInput("view", Types.Matrix, true);
+    /** Optional: the view-space position (per vertex, as Standard's `vFogDistance` is, or a decal's); used in place of view × world position. */
     this.registerInput("viewPosition", Types.Vector4, true);
     this.registerOutput("output", Types.Color3);
   }
@@ -89,7 +96,8 @@ export class SceneFogBlock extends NodeMaterialBlock {
     const output = this.output.associatedVariableName, input = this.input.associatedVariableName;
     const keep = state._getFreeVariableName("fogKeep");
     const linear = this.displaySpace ? `toLinearSpace(${input}.rgb)` : `${input}.rgb`;
-    const fogged = `${keep} * ${linear} + (1.0 - ${keep}) * ${SCENE_FOG_COLOR_UNIFORM}.rgb`;
+    const target = this.toward === "black" ? "vec3(0.0)" : this.toward === "white" ? "vec3(1.0)" : `${SCENE_FOG_COLOR_UNIFORM}.rgb`;
+    const fogged = `${keep} * ${linear} + (1.0 - ${keep}) * ${target}`;
     state.compilationString += `${state._declareOutput(this.output)} = ${input}.rgb;\n#ifdef FOG\n`
       + `${state._declareLocalVar(keep, Types.Float)} = sceneFogKeep(${this.viewPosition.isConnected ? this.viewPosition.associatedVariableName
         : `(${this.view.associatedVariableName} * vec4(${this.worldPosition.associatedVariableName}.xyz, 1.0))`}.xyz);\n`

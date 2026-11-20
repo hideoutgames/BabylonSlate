@@ -128,6 +128,10 @@ export interface MaterialPlumbing {
   screenUv?: NodeMaterialConnectionPoint;
   /** Clip-space transform vector input; connected after World Position Offset. */
   clipPosition?: NodeMaterialConnectionPoint;
+  /** The Decal domain's projection (`createDecalPlumbing`). */
+  decal?: import("./decal-projection-block").DecalProjectionBlock;
+  /** The drawn object's origin, eye-relative, where no world matrix gives it (a decal's). */
+  objectPosition?: NodeMaterialConnectionPoint;
 }
 
 interface BlockAdapterContext {
@@ -1242,6 +1246,13 @@ ADAPTERS["input.worldNormal"] = ({ name, plumbing }) => {
 
 /** The mesh's own origin in the scene: the world matrix applied to the local origin, the same for every pixel. */
 ADAPTERS["input.objectPosition"] = ({ name, plumbing }) => {
+  if (plumbing.objectPosition) {
+    if (!plumbing.worldOrigin) return { blocks: [], inputs: {}, outputs: { position: plumbing.objectPosition } };
+    const absolute = new AddBlock(`${name}_absolute`);
+    plumbing.objectPosition.connectTo(absolute.left);
+    plumbing.worldOrigin.connectTo(absolute.right);
+    return { blocks: [absolute], inputs: {}, outputs: { position: absolute.output } };
+  }
   if (!plumbing.world) throw new Error("Object Position is only available in a Surface material");
   const origin = createConstantBlock(`${name}_origin`, "vec3", [0, 0, 0]);
   const world = new TransformBlock(name);

@@ -2479,7 +2479,7 @@ it("splits ForwardSceneFrameGraph for projected decals while the scene has autho
 
     const root = new TransformNode("decal-actor", scene);
     upsertDecals(scene, "decal-actor", root, decalBindings([
-      { id: "d1", classId: DECAL_CLASS_ID, properties: { textureGuid: "scorch" } },
+      { id: "d1", classId: DECAL_CLASS_ID, properties: { materialGuid: "scorch" } },
     ]));
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
     const decalTasks = taskNames();
@@ -2497,7 +2497,7 @@ it("splits ForwardSceneFrameGraph for projected decals while the scene has autho
 
     // The first Spawn Decal adds the pass; expiry and later spawns reuse that graph until the decals are cleared.
     const spawn = () => spawnDynamicDecal(scene, {
-      textureGuid: "impact", position: [0, 0, 0], rotation: [0, 0, 0, 1], size: [1, 1, 1], lifetime: 1,
+      materialGuid: "impact", position: [0, 0, 0], rotation: [0, 0, 0, 1], size: [1, 1, 1], lifetime: 1,
     });
     spawn();
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
