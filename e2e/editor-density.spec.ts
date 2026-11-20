@@ -128,6 +128,14 @@ test.describe("Editor density and IA", () => {
       );
       expect(dockBox!.height).toBeGreaterThanOrEqual(coarse ? 26 : 18);
 
+      // The Viewport stays open in Focus, so leaving Focus keeps it mounted
+      // rather than rebuilding its canvas and reloading the Scene.
+      const viewportCanvas = page.getByTestId("viewport-canvas");
+      await expect(viewportCanvas).toBeVisible();
+      await viewportCanvas.evaluate((canvas) => {
+        canvas.dataset.focusProbe = "kept";
+      });
+
       const focus = page.getByTestId("focus-layout");
       await expect(focus).toBeEnabled();
       await focus.click();
@@ -137,6 +145,7 @@ test.describe("Editor density and IA", () => {
       await focus.click();
       await expect(focus).toHaveAttribute("aria-pressed", "false");
       await expect(page.getByTestId("scene-outliner-panel")).toBeVisible();
+      await expect(viewportCanvas).toHaveAttribute("data-focus-probe", "kept");
 
       await page.getByTestId("outliner-add-actor").click();
       await expect(page.getByTestId("place-actors-catalog")).toBeVisible();

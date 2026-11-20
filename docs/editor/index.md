@@ -27,7 +27,7 @@ Windows is unavailable for documents that have a single fixed view, including th
 
 ## Focus
 
-**Focus** (<kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>) hides every window except the document's main one, such as the viewport, graph or preview, so it can use the whole space. Choose **Focus** again to bring the other windows back.
+**Focus** (<kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>) hides every window except the document's main one, such as the viewport, graph or preview, so it can use the whole space. Choose **Focus** again to bring the other windows back; the windows that stayed open are not reloaded, so the viewport keeps its Scene and a running Simulation continues.
 
 To keep more windows visible in Focus, open **Engine Settings > Focus**. It lists each editor; add the windows that should stay.
 
