@@ -27,6 +27,7 @@ import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { bindTextMaterialGlyph, textMaterialGlyphBinding, type TextMaterialBinding } from "./text-material-block";
 import { isUnlitMaterial } from "./unlit-material";
 import { setUnlitBinding, UNLIT_TEXEL_WHOLE, unlitBinding, unlitTexelGrid, type UnlitBinding } from "./unlit-material-blocks";
+import { beginLayerBatch, endLayerBatch } from "./layer-frame-stats";
 
 /**
  * Draw batching for a Scene's sorted passes (Scene Layers): consecutive-in-effect draws of the unlit Material, or of an
@@ -785,6 +786,11 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     this.atlas = enabled ? new LayerImageAtlas(this.scene) : null;
   }
 
+  /** Copies the images the shared page was asked for into their cells now (`LayerImageAtlas.flush`). */
+  flushImagePages(): void {
+    this.atlas?.flush();
+  }
+
   /** The shared page's images and those drawn there. */
   get imagePages(): { images: number; drawn: number } {
     return this.atlas?.counts ?? { images: 0, drawn: 0 };
@@ -799,6 +805,16 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   }
 
   draw(sorted: readonly SubMesh[], count: number, transparent: boolean, drawOne: (subMesh: SubMesh) => void): void {
+    // The layer pass's batched time (`LayerFrameStats.batchMs`): upkeep and dispatch, apart from the Scene's own work.
+    const started = beginLayerBatch();
+    try {
+      this.drawPass(sorted, count, transparent, drawOne);
+    } finally {
+      endLayerBatch(started);
+    }
+  }
+
+  private drawPass(sorted: readonly SubMesh[], count: number, transparent: boolean, drawOne: (subMesh: SubMesh) => void): void {
     const scene = this.scene;
     this.startOutputs();
     if (this.disposed || scene.prePassRenderer) {
@@ -1745,6 +1761,15 @@ function drawsNow(entry: Entry): boolean {
 export function setSceneImagePages(scene: Scene, enabled: boolean): void {
   const batcher = sceneDrawBatcher(scene);
   if (batcher instanceof OverlayDrawBatcher) batcher.setImagePages(enabled);
+}
+
+/**
+ * Copies the images `scene`'s shared page was asked for into their cells: what the Scene's before-render work does,
+ * called early by a Scene Layer's work before the world draws (`SceneLayerCompositor.beforeWorld`).
+ */
+export function flushSceneImagePages(scene: Scene): void {
+  const batcher = sceneDrawBatcher(scene);
+  if (batcher instanceof OverlayDrawBatcher) batcher.flushImagePages();
 }
 
 /** The images on `scene`'s shared page and those drawn there; zeros for a Scene that does not batch. */

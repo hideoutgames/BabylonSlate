@@ -694,6 +694,33 @@ describe("formatFeatureTestCheckReport", () => {
     expect(layers({ visuals: 0, draws: 0, batches: 0, batched: 0, alone })).toEqual([]);
   });
 
+  it("splits a frame's Scene Layer work into batched passes and per-Scene work, with its clears, target switches and uploads, only where layers rendered", () => {
+    const work = (layerFrame: RenderDiagnostics["layerFrame"]) => {
+      const rendering = {
+        adapter: { vendor: null, renderer: null, version: null }, cpuMs: 1, gpuMs: null, gpuStatus: "unsupported",
+        width: 100, height: 100, scalingLevel: 1, qualityLimits: [], layerFrame,
+      } as unknown as RenderDiagnostics;
+      const report: FeatureTestCheckReport = {
+        mode: "quick", startedAt: 0, durationMs: 1000, cancelled: false, pageErrors: [],
+        scenes: [{
+          name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
+          editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+          play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null,
+            snapshot: { drawCalls: 5, meshes: 5, textures: 1, accountedBytes: 0, rendering }, presentation: null, firstDraws: null, commands: [], benchmark: [], logs: [] },
+          session: null,
+        }],
+      };
+      return formatFeatureTestCheckReport(report, environment).split("\n").filter((line) => line.startsWith("  Scene Layer work:"));
+    };
+    expect(work({ scenes: 3, ms: 3.25, batchMs: 1.25, clears: 3, depthClears: 3, targetSwitches: 0, uploads: 0, beforeWorld: { ms: 0.5, uploads: 2, targetSwitches: 2 } }))
+      .toEqual(["  Scene Layer work: 3 scenes in 3.25 ms (1.25 in batched passes, 2.00 per-Scene work) · 3 clears (3 of depth) · 0 target switches · 0 uploads · before the world: 0.50 ms, 2 uploads, 2 target switches"]);
+    expect(work({ scenes: 1, ms: 1, batchMs: 0.5, clears: 1, depthClears: 1, targetSwitches: 1, uploads: 1, beforeWorld: { ms: 0, uploads: 0, targetSwitches: 0 } }))
+      .toEqual(["  Scene Layer work: 1 scene in 1.00 ms (0.50 in batched passes, 0.50 per-Scene work) · 1 clear (1 of depth) · 1 target switch · 1 upload · before the world: 0.00 ms, 0 uploads, 0 target switches"]);
+    // A view that reports none, or whose layers rendered nothing, has no line.
+    expect(work(undefined)).toEqual([]);
+    expect(work({ scenes: 0, ms: 0, batchMs: 0, clears: 0, depthClears: 0, targetSwitches: 0, uploads: 0, beforeWorld: { ms: 0, uploads: 0, targetSwitches: 0 } })).toEqual([]);
+  });
+
   it("says how many shadow casters the maps draw from the shared buffer, and how, only where some are", () => {
     const casters = (shadowRetained: RenderDiagnostics["shadowRetained"]) => {
       const rendering = {

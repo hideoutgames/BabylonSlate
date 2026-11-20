@@ -250,6 +250,7 @@ import {
   beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, enterDrawPass, leaveDrawPass, publishDrawPassFrame,
 } from "./draw-passes";
 import { copyOverlayBatchStats, countOverlayBatches, emptyOverlayBatchStats } from "./overlay-draw-batcher";
+import { copyLayerFrameStats, emptyLayerFrameStats } from "./layer-frame-stats";
 import { GlobalParameterSession, globalParameterDefaults } from "./global-parameter-values";
 import { MaterialLibrary } from "./material-library";
 import { refreshText2DMaterials } from "./text2d-mesh";
@@ -399,6 +400,7 @@ function projectEngineOptions(largeWorldRendering: boolean): EngineOptions {
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
 /** A frame whose Scene Layers have drawn nothing yet. */
 const NO_LAYER_BATCHES = emptyOverlayBatchStats();
+const NO_LAYER_FRAME = emptyLayerFrameStats();
 
 function initializeEngine(
   canvas: HTMLCanvasElement,
@@ -2043,6 +2045,8 @@ function initializeEngine(
   const drawPasses = new DrawPassFrame(engine);
   /** How the view's Scene Layers drew (`RenderDiagnostics.layerBatches`): the frame being drawn, and the last one drawn. */
   const layerBatches = { current: emptyOverlayBatchStats(), last: emptyOverlayBatchStats() };
+  /** The Scene Layer work of the last frame the view drew (`RenderDiagnostics.layerFrame`). */
+  const layerFrame = emptyLayerFrameStats();
   /** `showocclusion`: hosts draw the world view's occlusion buffer over the view. */
   let occlusionOverlay = false;
   let lastRenderCpuMs = 0;
@@ -2099,7 +2103,7 @@ function initializeEngine(
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}),
       cpuMeanMs: renderCpuMean.mean(),
       backbuffer: { width: engine.getRenderWidth(true), height: engine.getRenderHeight(true) }, firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
-      drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last),
+      drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last), layerFrame: copyLayerFrameStats(layerFrame),
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, gpuProbe: existingGpuProbe(engine)?.snapshot() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       layerWork: sceneLayerCompositor?.diagnostics() ?? [],
       frameAdmission: { ...scheduler.gateState(), worldLoading,
@@ -2493,6 +2497,15 @@ function initializeEngine(
           if (pendingPresentations.get(key) === pending) cancelPresentation(error instanceof Error ? error : new Error(String(error)), key);
         });
       };
+      // The layers' atlas uploads and cell copies, before the world, so none falls in the backbuffer's pass after it.
+      if (sceneLayerCompositor && !layersHidden) {
+        enterDrawPass(engine, "layers", true);
+        try {
+          sceneLayerCompositor.beforeWorld(presentingLayers);
+        } finally {
+          leaveDrawPass(engine);
+        }
+      }
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
         const result = frameScope
           ? frameScope.capture.stage(scene, { name: "World output", kind: "composition", sceneId: lastSceneAssetGuid },
@@ -2578,6 +2591,7 @@ function initializeEngine(
     publishDrawPassFrame(drawPasses);
     existingGpuProbe(engine)?.frameDrawn();
     copyOverlayBatchStats(layerBatches.current, layerBatches.last);
+    copyLayerFrameStats(sceneLayerCompositor && !layersHidden ? sceneLayerCompositor.frameStats : NO_LAYER_FRAME, layerFrame);
     scheduler.noteRendered(frameStart, performance.now());
     // After `noteRendered`, so camera motion counts as activity (Half Rate When Idle) though the frame drew it.
     if (cameraMoved?.(scene.frameGraph?.findMainCamera() ?? scene.activeCamera)) scheduler.noteActivity();
