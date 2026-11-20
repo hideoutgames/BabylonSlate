@@ -523,6 +523,14 @@ export class ManagedShadowsTask extends FrameGraphTask {
     );
   }
 
+  /**
+   * Whether this task's own probe (`isReady`) asks `map` whole: a map its receivers bind, and the view's own when it is
+   * an auxiliary view's. The scene probe of the same readiness round leaves such a map to it (`isSceneFrameReady`).
+   */
+  probesMap(map: RenderTargetTexture): boolean {
+    return this.generators().some((generator) => generator.getShadowMap() === map && (!this.view || generator.camera === this.view));
+  }
+
   override isReady(): boolean {
     // A persistent graph can keep its maps while a light toggles shadows.
     // Install the current receiver binding before ObjectRenderer probes its
