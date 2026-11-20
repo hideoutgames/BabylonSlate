@@ -103,6 +103,7 @@ import { sceneDrawBatcher } from "./draw-batching";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { emptyDrawPasses, withDrawPass } from "./draw-passes";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
@@ -3870,7 +3871,7 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     const draw = () => renderViews(engine);
     const values = (scene: Scene) => scene.materials.filter((material): material is NodeMaterial => material instanceof NodeMaterial && material.name === "material:gain")
-      .map((material) => (material.getBlockByName("gain") as InputBlock).value);
+      .map((material) => (material.getBlockByName(nodeBlockName(document, "gain")) as InputBlock).value);
     const worldOwner = { kind: "scene" as const, sceneAssetGuid: "world", sceneLoadId: 1 };
     const write = (owner: Extract<import("@haptic/bridge").CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"], entryId: string, value: number) =>
       handle.applyCommand({ type: "setPostProcessMaterialParameter", owner, entryId, materialAssetGuid: "gain", parameterName: "Gain", parameter: { kind: "float", value } });

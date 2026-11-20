@@ -28,10 +28,12 @@ import {
   materialPinDefaultPropertyKey,
   createImportedMaterialDocument,
   newCustomGlslProperties,
+  setMaterialDomain,
   type MaterialDocument,
 } from "@haptic/shader-graph";
 import { isBoundedMaterial, isDrawBatchMaterial, isDrawBatchTextMaterial } from "./draw-batch-world-block";
-import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
+import { acquireAuthoredMaterialVariant, compileMaterialPlan, isGpuTextureSampleReady, MATERIAL_BLOCK_PREFIX, prewarmMaterial } from "./material-compiler";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 import { materialProgramCensus } from "./material-program-census";
 import { blockAdapterFor } from "./material-block-registry";
 import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
@@ -172,10 +174,10 @@ it("scales only indirect surface lighting with a live Environment Influence para
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   expect(await result.ready).toEqual([]);
   // The light block scales its environment terms by the input; its direct terms leave it out.
-  const lighting = result.material.getBlockByName("influence_lighting") as HapticLightingBlock;
-  expect(lighting.environmentInfluence.connectedPoint?.ownerBlock.name).toBe("environmentWeight");
+  const lighting = result.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_lighting`) as HapticLightingBlock;
+  expect(lighting.environmentInfluence.connectedPoint?.ownerBlock.name).toBe(nodeBlockName(doc, "environmentWeight"));
   expect(result.setParameter("Environment Weight", { kind: "float", value: 0.6 })).toBe(true);
-  expect(result.material.getBlockByName("environmentWeight")).toHaveProperty("value", 0.6);
+  expect(result.material.getBlockByName(nodeBlockName(doc, "environmentWeight"))).toHaveProperty("value", 0.6);
   result.dispose();
 });
 
@@ -187,7 +189,7 @@ it("gives the light block a Specular other than the default, constant or not", a
   const result = compileMaterialPlan(planFor(doc), { scene, name: "water" });
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   expect(await result.ready).toEqual([]);
-  const specular = (result.material.getBlockByName("water_lighting") as HapticLightingBlock).specular.connectedPoint?.ownerBlock as InputBlock;
+  const specular = (result.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_lighting`) as HapticLightingBlock).specular.connectedPoint?.ownerBlock as InputBlock;
   expect(specular.value).toBeCloseTo(0.255, 6);
   result.dispose();
 
@@ -198,14 +200,23 @@ it("gives the light block a Specular other than the default, constant or not", a
   expect(lowered.diagnostics).toEqual([]);
   const live = compileMaterialPlan(lowered.plan, { scene, name: "shiny" });
   if (!live.ok) throw new Error(JSON.stringify(live.diagnostics));
-  expect((live.material.getBlockByName("shiny_lighting") as HapticLightingBlock).specular.connectedPoint?.ownerBlock.name).toBe("shine");
+  expect((live.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_lighting`) as HapticLightingBlock).specular.connectedPoint?.ownerBlock.name).toBe(nodeBlockName(doc, "shine"));
   live.dispose();
   // The default reflectance is the block's own: no input.
   const plain = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "plain" });
   if (!plain.ok) throw new Error(JSON.stringify(plain.diagnostics));
-  expect((plain.material.getBlockByName("plain_lighting") as HapticLightingBlock).specular.isConnected).toBe(false);
+  expect((plain.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_lighting`) as HapticLightingBlock).specular.isConnected).toBe(false);
   plain.dispose();
 });
+
+/** `doc` with every node and edge id prefixed, as another Material's (an imported one's) ids would differ. */
+function renamedNodes(doc: MaterialDocument, prefix: string): MaterialDocument {
+  if (!prefix) return doc;
+  const id = (value: string) => `${prefix}${value}`;
+  doc.nodes = doc.nodes.map((node) => ({ ...node, id: id(node.id) }));
+  doc.edges = doc.edges.map((edge) => ({ ...edge, id: id(edge.id), sourceNodeId: id(edge.sourceNodeId), targetNodeId: id(edge.targetNodeId) }));
+  return doc;
+}
 
 /** Base Color driven by a Multiply so the graph is not a bare constant. */
 function multiplyMaterial(): MaterialDocument {
@@ -670,18 +681,19 @@ describe("material compiler", () => {
     expect(multiply?.outputs[0]?.isConnected).toBe(true);
   });
 
-  it("shares one GPU program between materials that differ only in parameter values", async () => {
+  it("shares one GPU program between Materials of one graph shape, whatever their names, node ids and parameter values", async () => {
     const scene = host();
-    const variant = (roughness: number) => {
-      const doc = createDefaultMaterialDocument();
-      doc.nodes.push({ id: "rough", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Roughness", value: [roughness] } });
-      doc.edges.push({ id: "rough-out", sourceNodeId: "rough", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
-      const result = compileMaterialPlan(planFor(doc), { scene, name: "material:parent" });
+    const variant = (roughness: number, name: string, ids = "") => {
+      const doc = renamedNodes(createDefaultMaterialDocument(), ids);
+      doc.nodes.push({ id: `${ids}rough`, type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Roughness", value: [roughness] } });
+      doc.edges.push({ id: "rough-out", sourceNodeId: `${ids}rough`, sourcePinId: "out", targetNodeId: `${ids}output`, targetPinId: "roughness" });
+      const result = compileMaterialPlan(planFor(doc), { scene, name });
       if (!result.ok) throw new Error("compile failed");
       disposers.push(() => result.dispose());
       return result;
     };
-    const [parent, instance] = [variant(0.2), variant(0.9)];
+    // Another Material asset (another name), imported with other node ids.
+    const [parent, instance] = [variant(0.2, "material:parent"), variant(0.9, "material:imported", "glb-3_")];
     const other = compileMaterialPlan(planFor(multiplyMaterial()), { scene, name: "material:parent" });
     if (!other.ok) throw new Error("compile failed");
     disposers.push(() => other.dispose());
@@ -700,6 +712,30 @@ describe("material compiler", () => {
     expect(meshes[1]!.subMeshes[0]!.effect).toBe(meshes[0]!.subMeshes[0]!.effect);
     expect(instance.getParameter("Roughness")).toEqual({ kind: "float", value: 0.9 });
     expect(parent.getParameter("Roughness")).toEqual({ kind: "float", value: 0.2 });
+  });
+
+  it.each([
+    ["Surface", () => createDefaultMaterialDocument(), false],
+    ["Scene Layer surface", () => createDefaultMaterialDocument(), true],
+    ["Decal", () => setMaterialDomain(createDefaultMaterialDocument(), "decal"), false],
+    ["Text", () => setMaterialDomain(createDefaultMaterialDocument(), "text"), true],
+  ] as const)("names no block after its Material, so a %s Material's twin elsewhere shares its program", async (kind, make, overlay) => {
+    const scene = host();
+    const [first, second] = [["material:first", ""], ["material:second", "other-"]].map(([name, ids]) => {
+      const result = compileMaterialPlan(planFor(renamedNodes(make(), ids!)), { scene, name: name!, overlay });
+      if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+      disposers.push(() => result.dispose());
+      return result;
+    });
+    await Promise.all([first!.ready, second!.ready]);
+    expect(second!.material.compiledShaders).toBe(first!.material.compiledShaders);
+    expect(second!.material.buildId).toBe(first!.material.buildId);
+    expect(materialProgramCensus(scene.getEngine())).toMatchObject({ builds: 2, programs: 1, adopted: 1 });
+    if (kind !== "Surface") return;
+    // Its auxiliary passes' programs too.
+    const [mine, twins] = [first!, second!].map((compiled) => acquireAuthoredMaterialVariant(compiled.material, "outlineMask")!);
+    await Promise.all([mine!.compiled.ready, twins!.compiled.ready]);
+    expect(twins!.compiled.material.buildId).toBe(mine!.compiled.material.buildId);
   });
 
   it("forgets a shared program once every material on it is disposed", async () => {
@@ -2569,7 +2605,7 @@ describe("material compiler", () => {
       block.name.endsWith("_worldPosDisplaced"),
     );
     const splitter = result.material.attachedBlocks.find(
-      (block) => block.name === "worldPos_xyz",
+      (block) => block.name === `${nodeBlockName(doc, "worldPos")}_xyz`,
     );
     expect(displaced).toBeDefined();
     expect(splitter).toBeDefined();
