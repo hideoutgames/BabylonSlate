@@ -29,6 +29,7 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { removeDecals, setDecalTextureResolver, upsertDecals } from "./decal-pass";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
@@ -39,7 +40,7 @@ import { discardsSamples, setDiscardSamples } from "./sample-discard";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
-import { normalizeRenderProjectSettings, normalizePlayFrameCap, pixelatedExtend, pixelatedLensExtent, pixelatedUpscaling, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, reflectionProbeStaticActors, type RenderProjectSettings, type ResolutionQuality, type ScalabilityAcknowledgement } from "@haptic/core";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, pixelatedExtend, pixelatedLensExtent, pixelatedUpscaling, playFramebufferSize, fogVolumeBindings, decalBindings, outlineBindings, deformerBindings, reflectionProbeStaticActors, type RenderProjectSettings, type ResolutionQuality, type ScalabilityAcknowledgement } from "@haptic/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
@@ -1547,7 +1548,7 @@ function initializeEngine(
         releaseMaterialInstance: (key, guid) => binding.releaseMaterialInstance?.(key, guid),
         validateMaterialParameter: (guid, name, value) => binding.validateMaterialParameter?.(guid, name, value) ?? false,
         onAfterApply: () => {
-          viewportShading?.apply(); syncEditorDeformers(); syncEditorOutlines(); syncEditorFogVolumes();
+          viewportShading?.apply(); syncEditorDeformers(); syncEditorOutlines(); syncEditorFogVolumes(); syncEditorDecals();
           editorToolsRef.current?.refreshSelectionGizmo();
         },
       })
@@ -1599,6 +1600,47 @@ function initializeEngine(
     editorFogActors.clear();
     for (const id of retained) editorFogActors.add(id);
   };
+  const editorDecalActors = new Set<string>();
+  const syncEditorDecals = () => {
+    const data = editorSync?.serializedScene();
+    if (!editorSync || !data) return;
+    const retained = new Set<string>();
+    for (const actor of data.actors) {
+      const root = editorSync.meshForActor(actor.id);
+      const decals = actor.visible ? decalBindings(actor.components) : [];
+      if (root && decals.length) {
+        upsertDecals(scene, actor.id, root, decals);
+        retained.add(actor.id);
+      }
+    }
+    for (const id of editorDecalActors) if (!retained.has(id)) removeDecals(scene, id);
+    editorDecalActors.clear();
+    for (const id of retained) editorDecalActors.add(id);
+  };
+  const decalTextureLeases = new Map<string, { source: unknown; lease: { resource: import("@babylonjs/core/Materials/Textures/baseTexture").BaseTexture; release(): void } }>();
+  const releaseDecalTextureLeases = () => {
+    for (const entry of decalTextureLeases.values()) entry.lease.release();
+    decalTextureLeases.clear();
+  };
+  scene.onDisposeObservable.addOnce(() => {
+    releaseDecalTextureLeases();
+    setDecalTextureResolver(scene, null);
+  });
+  setDecalTextureResolver(scene, (guid) => {
+    const source = binding.textureBytes?.get(guid);
+    if (!source || !binding.resourceCache) return null;
+    const cached = decalTextureLeases.get(guid);
+    if (cached && cached.source === source) return cached.lease.resource;
+    cached?.lease.release();
+    try {
+      const lease = binding.resourceCache.acquireTexture(guid, engine, source, { hasAlpha: true });
+      decalTextureLeases.set(guid, { source, lease });
+      return lease.resource;
+    } catch {
+      decalTextureLeases.delete(guid);
+      return null;
+    }
+  });
   const playVisuals = createPlayVisualBindings({
     options,
     scene,
@@ -1615,6 +1657,12 @@ function initializeEngine(
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = installTextureBytes(assets.textureBytes);
+      for (const [guid, entry] of [...decalTextureLeases.entries()]) {
+        if (binding.textureBytes?.get(guid) !== entry.source) {
+          entry.lease.release();
+          decalTextureLeases.delete(guid);
+        }
+      }
       binding.renderTargets = assets.renderTargets;
       binding.renderTargetTextures = assets.renderTargetTextures;
       renderTargetCaptures.setAssets(assets.renderTargets, assets.renderTargetTextures);

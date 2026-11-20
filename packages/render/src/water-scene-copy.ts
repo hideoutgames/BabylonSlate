@@ -391,6 +391,8 @@ export interface WaterSceneCopyGraphOptions {
   scene?: { color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle };
   /** The view's output colour, written by the own pair's final copy. */
   output: { color: FrameGraphTextureHandle; texture: boolean };
+  /** Optional extra consumer (such as projected decals) that also requires splitting opaque and transparent draws. */
+  extraSplitDemand?: () => boolean;
 }
 
 /**
@@ -439,6 +441,7 @@ export class WaterSceneCopyGraph {
   private readonly waterPasses: FrameGraphTask[] = [];
   private readonly refraction: boolean;
   private readonly screenSpace: boolean;
+  private readonly extraSplitDemand?: () => boolean;
   private lease: ManagedRenderLease;
   /** Leases of targets a resize replaced: released once the rebuilt targets are committed. */
   private readonly replacedLeases: ManagedRenderLease[] = [];
@@ -454,6 +457,7 @@ export class WaterSceneCopyGraph {
   private readonly probeList: FrameGraphObjectList = { meshes: null, particleSystems: null };
   private probing: FrameGraphObjectList | undefined;
   private visible: boolean | undefined;
+  private splitActive: boolean | undefined;
   private frames = 0;
   private visibleFrames = 0;
   private committed = false;
@@ -496,6 +500,7 @@ export class WaterSceneCopyGraph {
     const clamp = sceneWaterQualityDeviceClamp(scene);
     this.refraction = refractionDemand(clamp);
     this.screenSpace = screenSpaceDemand(clamp);
+    this.extraSplitDemand = options.extraSplitDemand;
     this.transparentList = { meshes: this.transparentMeshes, particleSystems: this.noParticles };
     const textures = graph.textureManager;
     const handles = specs.map((spec) => {
@@ -663,14 +668,16 @@ export class WaterSceneCopyGraph {
   private splitFrame(): void {
     const culled = this.cull.outputObjectList;
     const meshes = culled.meshes ?? this.scene.meshes;
-    let visible = false;
+    let waterVisible = false;
     for (let index = 0; index < meshes.length; index += 1) {
-      if (waterMeshSamplesSceneCopy(meshes[index]!, this.refraction, this.screenSpace)) { visible = true; break; }
+      if (waterMeshSamplesSceneCopy(meshes[index]!, this.refraction, this.screenSpace)) { waterVisible = true; break; }
     }
+    const extraVisible = this.extraSplitDemand?.() === true;
+    const splitActive = waterVisible || extraVisible;
     this.frames += 1;
     const list = this.transparentMeshes;
-    if (visible) {
-      this.visibleFrames += 1;
+    if (waterVisible) this.visibleFrames += 1;
+    if (splitActive) {
       let count = 0;
       for (let index = 0; index < meshes.length; index += 1) {
         const mesh = meshes[index]!;
@@ -693,21 +700,24 @@ export class WaterSceneCopyGraph {
       // Release references held for a pass that will not run.
       list.length = 0;
     }
-    this.apply(visible);
+    this.apply(waterVisible, splitActive);
   }
 
-  private apply(visible: boolean): void {
-    if (this.visible === visible) return;
-    this.visible = visible;
-    for (const task of this.waterPasses) task.disabled = !visible;
+  private apply(waterVisible: boolean, splitActive = waterVisible): void {
+    if (this.visible === waterVisible && this.splitActive === splitActive) return;
+    this.visible = waterVisible;
+    this.splitActive = splitActive;
+    for (const task of this.waterPasses) {
+      task.disabled = task === this.copy ? !waterVisible : !splitActive;
+    }
     // The opaque pass leaves transparents, particles and sprites to the transparent pass.
-    this.objects.renderTransparentMeshes = !visible;
-    this.objects.renderParticles = !visible;
-    this.objects.renderSprites = !visible;
+    this.objects.renderTransparentMeshes = !splitActive;
+    this.objects.renderParticles = !splitActive;
+    this.objects.renderSprites = !splitActive;
     if (this.ownTargets) {
       // The direct path draws the output exactly as before on frames without such water.
-      this.sceneClear.disabled = visible;
-      this.objects.disabled = visible;
+      this.sceneClear.disabled = splitActive;
+      this.objects.disabled = splitActive;
     }
   }
 

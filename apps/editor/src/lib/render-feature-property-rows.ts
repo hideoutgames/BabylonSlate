@@ -1,5 +1,6 @@
 import {
   OUTLINE_WIDTH_LIMITS,
+  parseDecalProperties,
   parseFogVolumeProperties,
   parseMirrorProperties,
   parseOutlineProperties,
@@ -118,6 +119,67 @@ export function fogVolumePropertyRows(
       value: properties.edgeFalloff, defaultValue: defaults.edgeFalloff, min: 0, max: 1, step: 0.01,
       description: "Fraction of the half-size used for soft edges. Zero gives a hard boundary; one fades from the center.",
       onChange: (next) => update("edgeFalloff", Math.min(1, Math.max(0, next))) },
+  ];
+}
+
+export function decalPropertyRows(
+  actorId: string,
+  component: SerializedComponent,
+  update: ComponentPropertyUpdate,
+  context: ComponentPropertyContext,
+): PropertyRow[] {
+  const properties = parseDecalProperties(component.properties);
+  const defaults = parseDecalProperties({});
+  return [
+    { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled",
+      value: properties.enabled, defaultValue: defaults.enabled,
+      description: "Projects along local -Y onto underlying opaque surfaces inside the box volume.",
+      onChange: (next) => update("enabled", next) },
+    { ...assetRow(actorId, component, "textureGuid", "Texture", ["Texture"], update, context, "Choose Decal Texture", "None"),
+      description: "RGBA texture projected onto world surfaces. Alpha controls coverage." },
+    { ...assetRow(actorId, component, "normalTextureGuid", "Normal Texture", ["Texture"], update, context, "Choose Normal Texture", "None"),
+      description: "Optional tangent-space normal map blended over the underlying surface normal when lit." },
+    { kind: "color", id: rowId(actorId, component.id, "tint"), label: "Tint",
+      value: properties.tint, defaultValue: defaults.tint,
+      description: "Multiplies the decal texture color.",
+      onChange: (next) => update("tint", next) },
+    { kind: "slider", id: rowId(actorId, component.id, "opacity"), label: "Opacity",
+      value: properties.opacity, defaultValue: defaults.opacity, min: 0, max: 1, step: 0.01,
+      description: "Overall decal opacity multiplier.",
+      onChange: (next) => update("opacity", Math.min(1, Math.max(0, next))) },
+    { kind: "slider", id: rowId(actorId, component.id, "roughness"), label: "Roughness",
+      value: properties.roughness, defaultValue: defaults.roughness, min: 0, max: 1, step: 0.01,
+      description: "Surface roughness used for direct and environment reflections when Receive Lighting is on.",
+      onChange: (next) => update("roughness", Math.min(1, Math.max(0, next))) },
+    { kind: "enum", id: rowId(actorId, component.id, "blendMode"), label: "Blend Mode",
+      value: properties.blendMode, defaultValue: defaults.blendMode,
+      options: [
+        { value: "alpha", label: "Alpha" },
+        { value: "multiply", label: "Multiply" },
+        { value: "additive", label: "Additive" },
+      ],
+      description: "How the decal combines with the underlying opaque scene color.",
+      onChange: (next) => update("blendMode", next === "multiply" || next === "additive" ? next : "alpha") },
+    { kind: "boolean", id: rowId(actorId, component.id, "receiveLighting"), label: "Receive Lighting",
+      value: properties.receiveLighting, defaultValue: defaults.receiveLighting,
+      description: "Shades the decal with scene lights, shadows, and environment lighting.",
+      onChange: (next) => update("receiveLighting", next) },
+    { kind: "vector3", id: rowId(actorId, component.id, "size"), label: "Size", unit: "scene units",
+      value: properties.size, defaultValue: defaults.size, sensitivity: 0.1,
+      description: "Local projection box extents: X width, Y projection depth, Z height.",
+      onChange: (next) => update("size", next.slice(0, 3).map((value) => Math.max(0.01, value))) },
+    { kind: "slider", id: rowId(actorId, component.id, "fadeAngle"), label: "Fade Angle",
+      value: properties.fadeAngle, defaultValue: defaults.fadeAngle, min: 1, max: 180, step: 1,
+      description: "Fades out where the receiving surface normal diverges past this angle from local +Y (degrees).",
+      onChange: (next) => update("fadeAngle", Math.min(180, Math.max(1, next))) },
+    { kind: "number", id: rowId(actorId, component.id, "sortOrder"), label: "Sort Order",
+      value: properties.sortOrder, defaultValue: defaults.sortOrder, sensitivity: 1, precision: 0,
+      description: "Higher values draw on top of lower-order overlapping decals.",
+      onChange: (next) => update("sortOrder", Math.round(next)) },
+    { kind: "number", id: rowId(actorId, component.id, "cullDistance"), label: "Cull Distance", unit: "scene units",
+      value: properties.cullDistance, defaultValue: defaults.cullDistance, min: 0, sensitivity: 1,
+      description: "Distance from the camera beyond which the decal stops drawing, scaled by Geometry quality. Zero never culls by distance.",
+      onChange: (next) => update("cullDistance", Math.max(0, next)) },
   ];
 }
 

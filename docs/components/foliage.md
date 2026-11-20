@@ -18,6 +18,9 @@ Each stroke adds an actor named after the group, such as **Foliage Group 1 Strok
 | --- | --- |
 | Weight | How often this Model is chosen, 0 to 100. Default 1. |
 | Scale Range | Minimum and maximum scale for each instance. Default 0.8 to 1.2. |
+| Cull Distance | Distance from the camera at which spatial cells stop drawing, scaled by Geometry quality. 0 never culls. Default 120. |
+| Fade Range | Width of the dithered fade-out band ending at **Cull Distance**, in scene units. Default 15. |
+| Shadow Distance | Distance beyond which foliage cells stop casting shadows, scaled by Geometry quality. 0 inherits **Cull Distance**. Default 45. |
 | Material Override | A Material to use instead of the Model's own. |
 
 ## Brush settings
@@ -37,6 +40,7 @@ In **Foliage Settings**:
 
 - World scenes only.
 - A Foliage component holds up to 20,000 instances. Paint more strokes for more.
+- Instances are grouped into 32 × 32 spatial cells. Each cell distance-culls, fades smoothly with a 4 × 4 Bayer screen-door dither, drops shadow casting past **Shadow Distance**, and automatically swaps to simplified Model LODs when **Auto LOD** is enabled in Geometry quality.
 - Foliage lands on any visible surface the brush can hit, such as a [Landscape](landscape.md) or a [Mesh](mesh.md).
 
 ## Related

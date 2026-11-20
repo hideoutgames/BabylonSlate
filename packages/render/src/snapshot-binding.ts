@@ -35,6 +35,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   outlines: Map<number, { actorId: string; bindings: import("@haptic/core").OutlineBinding[] }>;
   deformers: Map<number, { actorId: string; revision: number; bindings: import("@haptic/core").DeformerBinding[] }>;
   fogVolumes: Map<number, { actorId: string; bindings: import("@haptic/core").FogVolumeBinding[] }>;
+  decals: Map<number, { actorId: string; bindings: import("@haptic/core").DecalBinding[] }>;
   reflectionProbes: Map<number, { actorId: string; bindings: import("@haptic/core").ReflectionProbeBinding[] }>;
   onVisualChanged?: (slotId: number) => void;
   areaLights: Map<number, AreaRectLightGroup>;
@@ -248,6 +249,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     outlines: new Map(),
     deformers: new Map(),
     fogVolumes: new Map(),
+    decals: new Map(),
     reflectionProbes: new Map(),
     meshes: new SlotRootMap(),
     boneAttachments: new Map(),

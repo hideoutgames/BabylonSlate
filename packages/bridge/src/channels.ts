@@ -647,6 +647,8 @@ export type CommandMessage =
   | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@haptic/core").OutlineBinding[] }
   | { type: "setActorDeformers"; slotId: number; actorId: string; revision: number; deformers: import("@haptic/core").DeformerBinding[] }
   | { type: "setFogVolumes"; slotId: number; actorId: string; volumes: import("@haptic/core").FogVolumeBinding[] }
+  | { type: "setDecals"; slotId: number; actorId: string; decals: import("@haptic/core").DecalBinding[] }
+  | { type: "spawnDecal"; decal: import("@haptic/core").DynamicDecalSpawnRequest }
   | { type: "setReflectionProbes"; slotId: number; actorId: string; probes: import("@haptic/core").ReflectionProbeBinding[] }
   /** Recapture every reflection probe of the play world once its scene settles. */
   | { type: "recaptureReflectionProbes" }

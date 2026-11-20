@@ -457,6 +457,7 @@ function normalizeComponent(
       source.classId === "FoliageComponent" ? { ...parseFoliageProperties(source.properties) } :
       source.classId === MIRROR_CLASS_ID ? { ...parseMirrorProperties(source.properties) } :
       source.classId === "FogVolumeComponent" ? { ...parseFogVolumeProperties(source.properties) } :
+      source.classId === "DecalComponent" ? { ...parseDecalProperties(source.properties) } :
       source.classId === "ReflectionProbeComponent" ? { ...parseReflectionProbeProperties(source.properties) } :
       source.classId === "DeformerComponent" ? { ...parseDeformerProperties(source.properties) } :
       source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } :
@@ -977,6 +978,7 @@ export function wouldCreateComponentCycle(
 import { parseAreaRectLightProperties } from "./area-rect-light";
 import { LIGHT_2D_CLASS_ID, parseLight2DProperties } from "./light-2d";
 import { parseFogVolumeProperties } from "./fog-volume";
+import { parseDecalProperties } from "./decal";
 import { parseReflectionProbeProperties } from "./reflection-probe";
 import { parseOutlineProperties } from "./outline-component";
 import { parseDeformerProperties } from "./deformer-component";

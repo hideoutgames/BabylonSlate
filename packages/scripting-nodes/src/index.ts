@@ -19,6 +19,7 @@ import { registerPhysicsValidationRules } from "./physics";
 import { inputNodes } from "./input";
 import { audioNodes } from "./audio";
 import { particleNodes } from "./particles";
+import { decalNodes } from "./decals";
 import { globalParameterNodes } from "./global-parameters";
 import { sceneNodes } from "./scene";
 import { sceneStreamingNodes } from "./scene-streaming";
@@ -84,6 +85,7 @@ export * from "./water";
 export * from "./input";
 export * from "./audio";
 export * from "./particles";
+export * from "./decals";
 export * from "./scene";
 export * from "./scene-streaming";
 export * from "./asset-loading";
@@ -148,6 +150,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...inputNodes,
     ...audioNodes,
     ...particleNodes,
+    ...decalNodes,
     ...globalParameterNodes,
     ...sceneNodes,
     ...sceneStreamingNodes,

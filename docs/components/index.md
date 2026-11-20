@@ -30,6 +30,7 @@ A component gives an actor one ability: drawing a mesh, simulating a body, casti
 | [Hemispheric Fill Light](hemispheric-fill-light.md) | Soft fill light with one colour from above and another from below. |
 | [2D Light](light-2d.md) | Lights Sprites and Tilemaps in 2D: a Point light with an optional cone, or a Global light. |
 | [Fog Volume](fog-volume.md) | A local box or sphere of fog with soft edges. |
+| [Decal](decal.md) | Projects a texture onto underlying opaque world surfaces inside a box volume. |
 | [Reflection Probe](reflection-probe.md) | Captures the static scene so surfaces inside its box reflect their surroundings. |
 | [Outline](outline.md) | Draws a coloured silhouette around an actor. |
 | [Deformer](deformer.md) | Bends and squashes a Mesh with a lattice of control points. |

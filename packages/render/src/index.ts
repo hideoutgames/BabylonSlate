@@ -176,3 +176,23 @@ export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input
 export type { RuntimeTransformTools, RuntimeTransformToolsOptions, RuntimeTransformChange } from "./runtime-transform-tools";
 
 export { observeEngineGpuTiming, type EngineGpuTimingSample, type EngineGpuTimingObservation } from "./engine-gpu-timing";
+export {
+  SceneDecalHost,
+  FrameGraphDecalTask,
+  sceneDecalHost,
+  sceneHasDecals,
+  sceneDecalStats,
+  setDecalTextureResolver,
+  upsertDecals,
+  setDecalsVisible,
+  setDecalsAdmitted,
+  removeDecals,
+  clearDecals,
+  spawnDynamicDecal,
+  maxDynamicDecalsForScene,
+  type DecalTextureResolver,
+  type SceneDecalStats,
+} from "./decal-pass";
+export { createDecalGuide } from "./decal-guide";
+export { updateFoliageDistances, attachFoliageLodSet } from "./foliage-mesh";
+

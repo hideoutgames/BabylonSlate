@@ -817,7 +817,14 @@ function scatterIsland(
       if (height === null || height < spec.minHeight || slopeAt(island.data, x, z) > spec.maxSlope) continue;
       transforms.push(foliageTransform(x, height - 0.05, z, yaw, scale));
     }
-    return { modelGuid: requireRef(models[spec.model], `the ${spec.model} Model`), materialGuid: null, transforms };
+    return {
+      modelGuid: requireRef(models[spec.model], `the ${spec.model} Model`),
+      materialGuid: null,
+      cullDistance: 120,
+      fadeRange: 18,
+      shadowDistance: 45,
+      transforms,
+    };
   });
 }
 
@@ -827,6 +834,9 @@ function stressFoliage(models: Record<FeatureTestHolidayModel, string>): Foliage
   const batches = picks.map((model): FoliageBatch => ({
     modelGuid: requireRef(models[model], `the ${model} Model`),
     materialGuid: null,
+    cullDistance: 90,
+    fadeRange: 15,
+    shadowDistance: 35,
     transforms: [],
   }));
   const rng = createSeededRng(101);
@@ -855,6 +865,9 @@ function foliageGroup(models: Record<FeatureTestHolidayModel, string>): FoliageG
       weight: spec.count / 2,
       minScale: spec.minScale,
       maxScale: spec.maxScale,
+      cullDistance: 120,
+      fadeRange: 18,
+      shadowDistance: 45,
     })),
   };
 }

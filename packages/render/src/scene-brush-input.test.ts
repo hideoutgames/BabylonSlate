@@ -34,7 +34,7 @@ function fixture(mode: "landscape" | "foliage" = "landscape", options: { transfo
     scene: initial, mode, enabled: true, landscapeSelection: "land/surface", landscapeTool: "raise",
     landscapeBrush: { tool: "raise", radius: 4, strength: options.strength ?? 1, falloff: 0.5, height: 0, layer: 0 },
     foliageTool: "paint", foliageBrush: { radius: 3, density: 1, spacing: 0.5, maxSlope: 60, alignToNormal: true, randomYaw: true },
-    group: { id: "trees", name: "Trees", models: ["oak", "pine"].map((modelGuid) => ({ modelGuid, materialGuid: null, weight: 1, minScale: 1, maxScale: 1 })) },
+    group: { id: "trees", name: "Trees", models: ["oak", "pine"].map((modelGuid) => ({ modelGuid, materialGuid: null, weight: 1, minScale: 1, maxScale: 1, cullDistance: 120, fadeRange: 15, shadowDistance: 45 })) },
   };
   const committed: SerializedScene[] = [];
   let seed = 1;

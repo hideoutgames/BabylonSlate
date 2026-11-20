@@ -909,6 +909,23 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "DecalComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Texture", typeId: "asset", typeClassId: "Texture", propertyKey: "textureGuid" },
+      { name: "Normal Texture", typeId: "asset", typeClassId: "Texture", propertyKey: "normalTextureGuid" },
+      { name: "Tint", typeId: "color", propertyKey: "tint" },
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+      { name: "Roughness", typeId: "float", propertyKey: "roughness" },
+      { name: "Blend Mode", typeId: "string", propertyKey: "blendMode" },
+      { name: "Receive Lighting", typeId: "bool", propertyKey: "receiveLighting" },
+      { name: "Size", typeId: "vec3", propertyKey: "size" },
+      { name: "Fade Angle", typeId: "float", propertyKey: "fadeAngle" },
+      { name: "Sort Order", typeId: "int", propertyKey: "sortOrder" },
+      { name: "Cull Distance", typeId: "float", propertyKey: "cullDistance" },
+    ],
+  },
+  {
     classId: "MirrorComponent",
     variables: [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },

@@ -105,6 +105,7 @@ const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
   "camera.playWorldShake": "shake",
   "particles.spawnAtLocation": "system",
   "particles.spawnAttached": "system",
+  "decals.spawn": "texture",
   "audio.setChannelVolume": "channel",
   "scene.change": "scene",
   "scene-layer.create": "asset",
@@ -125,6 +126,7 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   DynamicRuntimeMeshComponent: ["materialGuid"],
   CableComponent: ["materialGuid"],
   MirrorComponent: ["materialGuid"],
+  DecalComponent: ["textureGuid", "normalTextureGuid"],
   SpriteComponent: ["assetGuid", "materialGuid"],
   TilemapComponent: ["assetGuid", "materialGuid"],
   LandscapeComponent: ["materialGuid"],
@@ -401,6 +403,7 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         if (!pins.length) {
           const pinId = BUILTIN_ASSET_PINS[nodeType];
           if (pinId) add(properties[`default:${pinId}`], needed);
+          if (nodeType === "decals.spawn") add(properties["default:normalTexture"], needed);
           if (nodeType === "literal.makeClass") addClass(properties["default:in"], needed);
         }
         if (nodeType.startsWith("data.")) {

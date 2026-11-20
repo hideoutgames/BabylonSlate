@@ -22,6 +22,7 @@ import {
   identitySerializedTransform,
   isSceneLayerAnchorActor,
   fogVolumeBindings,
+  decalBindings,
   reflectionProbeBindings,
   parseCableProperties,
 } from "@haptic/core";
@@ -227,7 +228,7 @@ function createActorOriginHierarchy(
       meshes.set(component.id, mesh);
     }
     const fogBindings = new Map<string, { transforms: SerializedTransform[]; error?: string }>(
-    [...fogVolumeBindings(actor.components), ...reflectionProbeBindings(actor.components)].map((binding) => [binding.id, binding]));
+    [...fogVolumeBindings(actor.components), ...decalBindings(actor.components), ...reflectionProbeBindings(actor.components)].map((binding) => [binding.id, binding]));
     for (const component of visuals) {
       const mesh = meshes.get(component.id);
       if (!mesh) continue;
@@ -498,7 +499,7 @@ export function applyComponentChildTransforms(
 ): void {
   if (!isEditorActorOrigin(mesh)) return;
   const fogBindings = new Map<string, { transforms: SerializedTransform[]; error?: string }>(
-    [...fogVolumeBindings(actor.components), ...reflectionProbeBindings(actor.components)].map((binding) => [binding.id, binding]));
+    [...fogVolumeBindings(actor.components), ...decalBindings(actor.components), ...reflectionProbeBindings(actor.components)].map((binding) => [binding.id, binding]));
   for (const component of visualComponentsOf(actor)) {
     const childName = editorComponentMeshName(actor.id, component.id);
     const child = childMeshesOf(mesh).find((entry) => entry.name === childName);

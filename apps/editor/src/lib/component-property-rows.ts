@@ -56,6 +56,7 @@ import { foliagePropertyRows, landscapePropertyRows } from "./landscape-property
 import { colliderPropertyRows, ragdollPropertyRows, rigidBodyPropertyRows } from "./physics-body-property-rows";
 import {
   fogVolumePropertyRows,
+  decalPropertyRows,
   mirrorPropertyRows,
   outlinePropertyRows,
   reflectionProbePropertyRows,
@@ -140,6 +141,7 @@ const COMPONENT_ROW_BUILDERS = {
   SkyboxComponent: skyboxPropertyRows,
   OutlineComponent: outlinePropertyRows,
   FogVolumeComponent: fogVolumePropertyRows,
+  DecalComponent: decalPropertyRows,
   MirrorComponent: mirrorPropertyRows,
   ReflectionProbeComponent: reflectionProbePropertyRows,
 
