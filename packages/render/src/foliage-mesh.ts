@@ -225,19 +225,19 @@ export function updateFoliageDistances(
 
     const shadowCulled = !withinCull || (effectiveShadow > 0 && dist > effectiveShadow);
     const metadata = (cell.mesh.metadata ?? (cell.mesh.metadata = {})) as Record<string, unknown>;
-    if (metadata.slateShadowDistanceCulled !== shadowCulled) {
-      metadata.slateShadowDistanceCulled = shadowCulled;
+    if (metadata.hapticShadowDistanceCulled !== shadowCulled) {
+      metadata.hapticShadowDistanceCulled = shadowCulled;
     }
 
     if (withinCull && effectiveCull > 0 && effectiveFadeRange > 0) {
       const fadeStart = Math.max(0, effectiveCull - effectiveFadeRange);
       if (centerDist + radius >= fadeStart) {
-        metadata.slateFoliageFade = [fadeStart, effectiveCull];
-      } else if (metadata.slateFoliageFade !== null) {
-        metadata.slateFoliageFade = null;
+        metadata.hapticFoliageFade = [fadeStart, effectiveCull];
+      } else if (metadata.hapticFoliageFade !== null) {
+        metadata.hapticFoliageFade = null;
       }
-    } else if (metadata.slateFoliageFade !== null) {
-      metadata.slateFoliageFade = null;
+    } else if (metadata.hapticFoliageFade !== null) {
+      metadata.hapticFoliageFade = null;
     }
 
     if (withinCull && cell.lods.length > 1) {
@@ -374,7 +374,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
           mesh.receiveShadows = true;
           mesh.isPickable = true;
           mesh.thinInstanceEnablePicking = true;
-          mesh.metadata = { foliageRoot: root, slateShadowDistanceCulled: false, slateFoliageFade: null };
+          mesh.metadata = { foliageRoot: root, hapticShadowDistanceCulled: false, hapticFoliageFade: null };
           const matrices = new Float32Array(transforms.length * 16);
           transforms.forEach((transform, i) => {
             modelMatrix.multiply(Matrix.Compose(Vector3.FromArray(transform.scale), Quaternion.FromArray(transform.rotation), Vector3.FromArray(transform.position))).copyToArray(matrices, i * 16);

@@ -176,16 +176,16 @@ it("distance-culls foliage cells, drops distant shadows without readiness churn,
   // Effective distances at Low (0.75): cull = 60 m, fadeStart = 45 m, shadow = 30 m.
   updateFoliageDistances(scene, camera, true);
   expect(near.isEnabled(false)).toBe(true);
-  expect(near.metadata?.slateShadowDistanceCulled).toBe(false);
-  expect(near.metadata?.slateFoliageFade).toBeNull();
+  expect(near.metadata?.hapticShadowDistanceCulled).toBe(false);
+  expect(near.metadata?.hapticFoliageFade).toBeNull();
 
   expect(mid.isEnabled(false)).toBe(true);
-  expect(mid.metadata?.slateShadowDistanceCulled).toBe(true);
-  expect(mid.metadata?.slateFoliageFade).toEqual([45, 60]);
+  expect(mid.metadata?.hapticShadowDistanceCulled).toBe(true);
+  expect(mid.metadata?.hapticFoliageFade).toEqual([45, 60]);
 
   expect(far.isEnabled(false)).toBe(false);
-  expect(far.metadata?.slateShadowDistanceCulled).toBe(true);
-  expect(far.metadata?.slateFoliageFade).toBeNull();
+  expect(far.metadata?.hapticShadowDistanceCulled).toBe(true);
+  expect(far.metadata?.hapticFoliageFade).toBeNull();
 
   // Hidden actor visibility is independent of distance culling (setEnabled vs isVisible).
   near.isVisible = false;
@@ -195,7 +195,7 @@ it("distance-culls foliage cells, drops distant shadows without readiness churn,
   camera.getViewMatrix();
   updateFoliageDistances(scene, camera, true);
   expect(far.isEnabled(false)).toBe(true);
-  expect(far.metadata?.slateShadowDistanceCulled).toBe(false);
+  expect(far.metadata?.hapticShadowDistanceCulled).toBe(false);
   expect(near.isEnabled(false)).toBe(false);
   expect(near.isVisible).toBe(false);
   expect(readinessEvents).toEqual([]);
@@ -282,8 +282,8 @@ it("updates FoliageFadePlugin uniforms per mesh across consecutive draws sharing
   const fadeMesh = CreateBox("fade", { size: 1 }, scene);
   nearMesh.material = material;
   fadeMesh.material = material;
-  nearMesh.metadata = { slateFoliageFade: null };
-  fadeMesh.metadata = { slateFoliageFade: [85, 100] };
+  nearMesh.metadata = { hapticFoliageFade: null };
+  fadeMesh.metadata = { hapticFoliageFade: [85, 100] };
 
   expect(material.isReadyForSubMesh(nearMesh, nearMesh.subMeshes[0]!, false)).toBe(true);
   expect(material.isReadyForSubMesh(fadeMesh, fadeMesh.subMeshes[0]!, false)).toBe(true);
@@ -294,7 +294,7 @@ it("updates FoliageFadePlugin uniforms per mesh across consecutive draws sharing
   const fadeCalls: Array<[number, number]> = [];
   const origUpdateFloat2 = ubo!.updateFloat2.bind(ubo);
   vi.spyOn(ubo!, "updateFloat2").mockImplementation((name: string, x: number, y: number) => {
-    if (name === "slateFoliageFade") fadeCalls.push([x, y]);
+    if (name === "hapticFoliageFade") fadeCalls.push([x, y]);
     origUpdateFloat2(name, x, y);
   });
 

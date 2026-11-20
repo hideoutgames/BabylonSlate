@@ -12,7 +12,7 @@ export type FoliageFadeRange = readonly [fadeStart: number, fadeEnd: number];
 
 /** Read the per-cell dither fade range `[fadeStart, cullDistance]` attached by `FoliageDistanceController`, or null. */
 export function foliageFadeForMesh(mesh: AbstractMesh | null | undefined): FoliageFadeRange | null {
-  const value = (mesh?.metadata as { slateFoliageFade?: unknown } | null | undefined)?.slateFoliageFade;
+  const value = (mesh?.metadata as { hapticFoliageFade?: unknown } | null | undefined)?.hapticFoliageFade;
   if (!Array.isArray(value) || value.length < 2) return null;
   const start = Number(value[0]);
   const end = Number(value[1]);
@@ -24,8 +24,8 @@ export function foliageFadeForMesh(mesh: AbstractMesh | null | undefined): Folia
  * Branchless 4x4 Bayer screen-door threshold in `(0, 1)` (works in all GLSL ES versions with no array indexing).
  * Every pixel in a 4x4 tile takes a unique value in `[0.5/16 .. 15.5/16]`.
  */
-export const SLATE_BAYER_4X4_GLSL = `
-float slateBayer4x4(vec2 fragCoord) {
+export const HAPTIC_BAYER_4X4_GLSL = `
+float hapticBayer4x4(vec2 fragCoord) {
   float x0 = mod(floor(fragCoord.x), 2.0);
   float y0 = mod(floor(fragCoord.y), 2.0);
   float x1 = mod(floor(fragCoord.x * 0.5), 2.0);
@@ -43,7 +43,7 @@ float slateBayer4x4(vec2 fragCoord) {
  */
 export class FoliageFadePlugin extends MaterialPluginBase {
   constructor(material: Material) {
-    super(material, "SlateFoliageFade", 215, {}, true, false);
+    super(material, "HapticFoliageFade", 215, {}, true, false);
     this.registerForExtraEvents = true;
     this._enable(true);
   }
@@ -55,8 +55,8 @@ export class FoliageFadePlugin extends MaterialPluginBase {
   override getUniforms() {
     return {
       ubo: [
-        { name: "slateFoliageFade", size: 2, type: "vec2" },
-        { name: "slateFoliageCamera", size: 3, type: "vec3" },
+        { name: "hapticFoliageFade", size: 2, type: "vec2" },
+        { name: "hapticFoliageCamera", size: 3, type: "vec3" },
       ],
     };
   }
@@ -69,23 +69,23 @@ export class FoliageFadePlugin extends MaterialPluginBase {
   ): void {
     const fade = foliageFadeForMesh(subMesh.getMesh());
     if (!fade) {
-      uniformBuffer.updateFloat2("slateFoliageFade", 0, 0);
+      uniformBuffer.updateFloat2("hapticFoliageFade", 0, 0);
       return;
     }
-    uniformBuffer.updateFloat2("slateFoliageFade", fade[0], fade[1]);
+    uniformBuffer.updateFloat2("hapticFoliageFade", fade[0], fade[1]);
     const cam = scene.activeCamera?.globalPosition;
-    uniformBuffer.updateFloat3("slateFoliageCamera", cam?.x ?? 0, cam?.y ?? 0, cam?.z ?? 0);
+    uniformBuffer.updateFloat3("hapticFoliageCamera", cam?.x ?? 0, cam?.y ?? 0, cam?.z ?? 0);
   }
 
   override getCustomCode(type: string) {
     if (type !== "fragment") return null;
     return {
-      CUSTOM_FRAGMENT_DEFINITIONS: SLATE_BAYER_4X4_GLSL,
+      CUSTOM_FRAGMENT_DEFINITIONS: HAPTIC_BAYER_4X4_GLSL,
       CUSTOM_FRAGMENT_MAIN_BEGIN: `
-if (slateFoliageFade.y > 0.0) {
-  float slateFoliageDist = distance(vPositionW, slateFoliageCamera);
-  float slateFoliageT = clamp((slateFoliageDist - slateFoliageFade.x) / max(0.001, slateFoliageFade.y - slateFoliageFade.x), 0.0, 1.0);
-  if (slateFoliageT > 0.0 && slateFoliageT >= slateBayer4x4(gl_FragCoord.xy)) {
+if (hapticFoliageFade.y > 0.0) {
+  float hapticFoliageDist = distance(vPositionW, hapticFoliageCamera);
+  float hapticFoliageT = clamp((hapticFoliageDist - hapticFoliageFade.x) / max(0.001, hapticFoliageFade.y - hapticFoliageFade.x), 0.0, 1.0);
+  if (hapticFoliageT > 0.0 && hapticFoliageT >= hapticBayer4x4(gl_FragCoord.xy)) {
     discard;
   }
 }
@@ -94,7 +94,7 @@ if (slateFoliageFade.y > 0.0) {
   }
 }
 
-registerPersistentMaterialPlugin("SlateFoliageFade", (material) =>
+registerPersistentMaterialPlugin("HapticFoliageFade", (material) =>
   material instanceof PBRBaseMaterial || material instanceof StandardMaterial
     ? new FoliageFadePlugin(material)
     : null,

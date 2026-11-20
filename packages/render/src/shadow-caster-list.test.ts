@@ -105,7 +105,7 @@ describe("shadow caster selection", () => {
       engine.dispose();
     }
   });
-  it("excludes casters marked slateShadowDistanceCulled from both prepared and direct queries", () => {
+  it("excludes casters marked hapticShadowDistanceCulled from both prepared and direct queries", () => {
     const engine = new NullEngine();
     try {
       const scene = new Scene(engine);
@@ -115,12 +115,12 @@ describe("shadow caster selection", () => {
       index.add(mesh);
       const planes = [new Plane(-1, 0, 0, 10)];
       expect(index.queryPlanes(planes)).toContain(mesh);
-      mesh.metadata = { slateShadowDistanceCulled: true };
+      mesh.metadata = { hapticShadowDistanceCulled: true };
       expect(index.queryPlanes(planes)).not.toContain(mesh);
       index.prepare();
       expect(index.queryPlanes(planes)).not.toContain(mesh);
       index.release();
-      mesh.metadata = { slateShadowDistanceCulled: false };
+      mesh.metadata = { hapticShadowDistanceCulled: false };
       index.prepare();
       expect(index.queryPlanes(planes)).toContain(mesh);
       index.release();

@@ -5,7 +5,7 @@ import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
 /** Distance-culled shadow casters (for example distant foliage cells) drop out of shadow draws without readiness churn. */
 export function isShadowDistanceCulled(mesh: AbstractMesh): boolean {
-  return (mesh.metadata as { slateShadowDistanceCulled?: boolean } | null | undefined)?.slateShadowDistanceCulled === true;
+  return (mesh.metadata as { hapticShadowDistanceCulled?: boolean } | null | undefined)?.hapticShadowDistanceCulled === true;
 }
 
 type Bounds = { min: Vector3; max: Vector3 };
