@@ -14,6 +14,7 @@ import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { AtlasCascadedShadowGenerator, shadowTileSize } from "./shadow-atlas";
+import { isShadowDistanceCulled } from "./shadow-caster-list";
 import { castsIntoCascade } from "./shadow-caster-size";
 import { canCacheShadowMaterial, canCacheShadowMaterialFor, canCacheShadowMesh } from "./shadow-material-policy";
 import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
@@ -796,7 +797,7 @@ export class ShadowMapRefresh {
       record.revision++;
       this.casterChanged?.(mesh);
     }
-    record.shown = enabled && mesh.isVisible;
+    record.shown = enabled && mesh.isVisible && !isShadowDistanceCulled(mesh);
     const visible = record.shown && mesh.visibility > 0;
     record.safe = safeMesh && safeMaterial;
     record.unsafe = visible && !record.safe;

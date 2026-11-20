@@ -3,6 +3,11 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
+/** Distance-culled shadow casters (for example distant foliage cells) drop out of shadow draws without readiness churn. */
+export function isShadowDistanceCulled(mesh: AbstractMesh): boolean {
+  return (mesh.metadata as { slateShadowDistanceCulled?: boolean } | null | undefined)?.slateShadowDistanceCulled === true;
+}
+
 type Bounds = { min: Vector3; max: Vector3 };
 
 /** The caster walk's changes (`ShadowMapRefresh`), from which `prepare` reads only the casters that changed. */
@@ -131,7 +136,7 @@ export class ShadowCasterList {
     const mesh = this.meshes[index]!, states = this.states, boxes = this.boxes;
     // The walk already asked whether the caster is enabled and visible; one it has not seen is asked here.
     const seen = walked?.(mesh);
-    if (seen ? !seen.shown || mesh.isDisposed() : !mesh.isVisible || mesh.isDisposed() || !mesh.isEnabled()) {
+    if (seen ? !seen.shown || mesh.isDisposed() : !mesh.isVisible || mesh.isDisposed() || !mesh.isEnabled() || isShadowDistanceCulled(mesh)) {
       states[index] = 0;
       return;
     }
@@ -261,7 +266,7 @@ export class ShadowCasterList {
 
   /** Whether `mesh` is shown and its world box is not wholly behind one of `planes`. */
   private holds(mesh: AbstractMesh, planes: readonly Plane[]): boolean {
-    if (!mesh.isVisible || mesh.isDisposed() || !mesh.isEnabled()) return false;
+    if (!mesh.isVisible || mesh.isDisposed() || !mesh.isEnabled() || isShadowDistanceCulled(mesh)) return false;
     if (hasDeformingShadowBounds(mesh)) return true;
     const box = mesh.getBoundingInfo().boundingBox, min = box.minimumWorld, max = box.maximumWorld;
     for (let index = 0; index < planes.length; index += 1) {

@@ -105,6 +105,30 @@ describe("shadow caster selection", () => {
       engine.dispose();
     }
   });
+  it("excludes casters marked slateShadowDistanceCulled from both prepared and direct queries", () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const index = new ShadowCasterList();
+      const mesh = MeshBuilder.CreateBox("foliage-cell", {}, scene);
+      mesh.computeWorldMatrix(true);
+      index.add(mesh);
+      const planes = [new Plane(-1, 0, 0, 10)];
+      expect(index.queryPlanes(planes)).toContain(mesh);
+      mesh.metadata = { slateShadowDistanceCulled: true };
+      expect(index.queryPlanes(planes)).not.toContain(mesh);
+      index.prepare();
+      expect(index.queryPlanes(planes)).not.toContain(mesh);
+      index.release();
+      mesh.metadata = { slateShadowDistanceCulled: false };
+      index.prepare();
+      expect(index.queryPlanes(planes)).toContain(mesh);
+      index.release();
+      index.dispose();
+    } finally {
+      engine.dispose();
+    }
+  });
   it("gives, of the meshes asked for and the instances they draw, the casters a whole query would", () => {
     const engine = new NullEngine();
     try {

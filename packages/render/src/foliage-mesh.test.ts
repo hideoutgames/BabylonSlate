@@ -130,3 +130,61 @@ it("keeps an unchanged foliage visual across applies and rebuilds it when its pr
   expect(rebuilt).not.toBe(first);
   expect(rebuilt.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)?.thinInstanceCount).toBe(2);
 });
+
+it("distance-culls foliage cells, drops distant shadows, and sets dither fade bands scaled by lodDistanceScale", async () => {
+  const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
+  const { applyRenderSettings } = await import("./render-settings");
+  const { updateFoliageDistances } = await import("./foliage-mesh");
+  const { engine, scene } = createTestEngine();
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  const camera = new FreeCamera("cam", new Vector3(0, 2, 0), scene);
+  scene.activeCamera = camera;
+  // Low quality uses lodDistanceScale = 0.75.
+  applyRenderSettings(scene, { quality: { level: "low", custom: {} } });
+
+  const assets = { modelSources: new Map([["grass", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) };
+  const root = createFoliageMesh(scene, "meadow", {
+    batches: [{
+      modelGuid: "grass",
+      materialGuid: null,
+      cullDistance: 80,
+      fadeRange: 20,
+      shadowDistance: 40,
+      transforms: [
+        { ...identitySerializedTransform(), position: [5, 0, 0] },
+        { ...identitySerializedTransform(), position: [50, 0, 0] },
+        { ...identitySerializedTransform(), position: [100, 0, 0] },
+      ],
+    }],
+  }, assets);
+  await foliagePreparation(root);
+
+  const cells = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances);
+  expect(cells).toHaveLength(3);
+  const byX = (targetX: number) => cells.find((cell) => Math.abs(cell.getBoundingInfo().boundingSphere.centerWorld.x - targetX) < 5)!;
+  const near = byX(5);
+  const mid = byX(50);
+  const far = byX(100);
+
+  // Effective distances at Low (0.75): cull = 60 m, fadeStart = 45 m, shadow = 30 m.
+  updateFoliageDistances(scene, camera, true);
+  expect(near.isEnabled(false)).toBe(true);
+  expect(near.metadata?.slateShadowDistanceCulled).toBe(false);
+  expect(near.metadata?.slateFoliageFade).toBeNull();
+
+  expect(mid.isEnabled(false)).toBe(true);
+  expect(mid.metadata?.slateShadowDistanceCulled).toBe(true);
+  expect(mid.metadata?.slateFoliageFade).toEqual([45, 60]);
+
+  expect(far.isEnabled(false)).toBe(false);
+  expect(far.metadata?.slateShadowDistanceCulled).toBe(true);
+  expect(far.metadata?.slateFoliageFade).toBeNull();
+
+  // Moving camera near the far cell restores drawing and shadows.
+  camera.position.set(95, 2, 0);
+  camera.getWorldMatrix();
+  updateFoliageDistances(scene, camera, true);
+  expect(far.isEnabled(false)).toBe(true);
+  expect(far.metadata?.slateShadowDistanceCulled).toBe(false);
+  expect(near.isEnabled(false)).toBe(false);
+});

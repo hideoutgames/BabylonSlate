@@ -22,3 +22,19 @@ it("persists groups and selects only positive-weight Models", () => {
   expect(chooseFoliageModel({ ...group, models: [] }, 0)).toBeNull();
   expect(normalizeFoliageGroups([{ id: "x", models: [{ modelGuid: "a", minScale: 2, maxScale: 1 }] }])[0]!.models[0]!.maxScale).toBe(2);
 });
+
+it("defaults, clamps, and propagates foliage cull, fade, and shadow distances", () => {
+  const group = normalizeFoliageGroups([{
+    id: "meadow",
+    models: [
+      { modelGuid: "grass", cullDistance: 60, fadeRange: 10, shadowDistance: 20 },
+      { modelGuid: "shrub", cullDistance: -5, fadeRange: 5000, shadowDistance: Number.NaN },
+    ],
+  }])[0]!;
+  expect(group.models[0]).toMatchObject({ cullDistance: 60, fadeRange: 10, shadowDistance: 20 });
+  expect(group.models[1]).toMatchObject({ cullDistance: 0, fadeRange: 1000, shadowDistance: 45 });
+
+  const properties = appendFoliageInstance({ groupId: "meadow", batches: [] }, group.models[0]!, identitySerializedTransform());
+  expect(properties.batches[0]).toMatchObject({ cullDistance: 60, fadeRange: 10, shadowDistance: 20 });
+  expect(parseFoliageProperties(properties).batches[0]).toMatchObject({ cullDistance: 60, fadeRange: 10, shadowDistance: 20 });
+});
