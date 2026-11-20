@@ -214,8 +214,8 @@ test("HapticLightingBlock shades graph Materials as its model predicts, and ligh
   // A spot light's, the sun's and a point light's shadows, drawn through the shadow controller and the frame graph
   // into the atlas: a floor pixel whose view of the light the box or the ball blocks draws as with the light off, any
   // other as with the light's shadow switched off, in both render modes, and the shadow compiles nothing.
-  // The sun's first of three cascades at High draws into a tile of twice the map size's edge and its last into one of
-  // half, sampled as the others are.
+  // The sun's first of three cascades at High, with First Cascade Detail at twice the map size, draws into a tile of
+  // twice the map size's edge and its last into one of half, sampled as the others are.
   const far = result.shadow["sun far tiles"].tiles;
   expect(far, JSON.stringify(far)).toEqual([far[1]! * 2, far[1]!, far[1]! / 2]);
   for (const [light, { blocked, modes }] of Object.entries(result.shadow)) {

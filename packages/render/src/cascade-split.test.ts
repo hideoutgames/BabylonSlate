@@ -72,7 +72,7 @@ afterEach(() => {
 });
 
 /** A scene whose sun the controller draws as a three-cascade atlas map over 250 m at `profile`. */
-function sunScene(profile: ShadowProfile, mode = Camera.PERSPECTIVE_CAMERA) {
+function sunScene(profile: ShadowProfile, mode = Camera.PERSPECTIVE_CAMERA, firstCascadeScale: 1 | 2 = 1) {
   const engine = new NullEngine({ renderWidth: 512, renderHeight: 256, textureSize: 256, deterministicLockstep: false, lockstepMaxSteps: 1 });
   engines.push(engine);
   Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16, maxTextureSize: 4096, textureHalfFloatRender: true });
@@ -85,7 +85,7 @@ function sunScene(profile: ShadowProfile, mode = Camera.PERSPECTIVE_CAMERA) {
   camera.mode = mode;
   scene.activeCamera = camera;
   updateSceneRenderingSettings(scene, {
-    shadows: normalizeShadowSettings({ profile, mapSize: 1024, cascades: 3, distance: 250, autoBias: false }),
+    shadows: normalizeShadowSettings({ profile, mapSize: 1024, cascades: 3, distance: 250, autoBias: false, firstCascadeScale }),
   });
   const light = new DirectionalLight("sun", new Vector3(0.3, -1, 0.4), scene);
   const controller = sceneShadowController(scene);
@@ -111,9 +111,9 @@ describe("the sun's drawn cascades", () => {
   });
 
   // Close-up shadows are drawn in the first cascade, where a texel is largest on screen.
-  it("draw a High sun's first cascade over the same slice as Medium's with twice the texels per metre", () => {
+  it("draw a High sun's first cascade at twice the map size over the same slice as Medium's with twice the texels per metre", () => {
     const medium = sunScene("medium").generator;
-    const high = sunScene("high").generator;
+    const high = sunScene("high", Camera.PERSPECTIVE_CAMERA, 2).generator;
     expect(high.cascadeEnds).toEqual(medium.cascadeEnds);
     expect(high.tiles.map((tile) => tile.size)).toEqual([2048, 1024, 512]);
     const ratios = high.cascadeDensity.map((cascade, index) => cascade.texelsPerMetre / medium.cascadeDensity[index]!.texelsPerMetre);

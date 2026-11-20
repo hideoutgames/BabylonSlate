@@ -122,6 +122,14 @@ describe("runtime scalability session", () => {
     expect(result.message).toContain("clamped");
     expect(settings.requested.render.quality?.water).toMatchObject({ reflections: "planar", fftSize: 128, meshDensity: 1.5, preset: "custom" });
   });
+  it("takes a First Cascade Detail of twice the map size as a rebuild into a Custom shadow group, and rejects other scales", () => {
+    const { settings, transactions } = session();
+    expect(settings.request({ kind: "patch", render: { shadows: { firstCascadeScale: 3 } } } as never).status).toBe("failed");
+    expect(transactions).toHaveLength(0);
+    expect(renderingApplicationPolicy("shadows.firstCascadeScale")).toBe("rebuild");
+    settings.request({ kind: "patch", render: { shadows: { firstCascadeScale: 2 } } });
+    expect(settings.requested.render.shadows).toMatchObject({ firstCascadeScale: 2, preset: "custom" });
+  });
   it("keeps overrides across scenes, while unoverridden scene fields follow their owner", () => {
     const { settings } = session();
     settings.request({ kind: "patch", render: { shadows: { enabled: false } }, frameCap: 20 });

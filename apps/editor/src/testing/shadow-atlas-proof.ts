@@ -108,7 +108,8 @@ async function shadowedScene(engine: Engine, canvas: HTMLCanvasElement, shift = 
       cel: normalizeCelShadingSettings({ outlinesEnabled: false }),
       quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }),
       shadows: normalizeShadowSettings({
-        profile: "high", cascades: 4, mapSize: 1024, localMapSize: 1024, maxLocalLights: 4, distance: 40, filter,
+        // First Cascade Detail at twice the map size: the pages hold a first cascade tile larger than the others.
+        profile: "high", cascades: 4, mapSize: 1024, firstCascadeScale: 2, localMapSize: 1024, maxLocalLights: 4, distance: 40, filter,
         filterQuality: "high", softness: 0.05, screenShadows: "off", reflections: false,
       }),
     });

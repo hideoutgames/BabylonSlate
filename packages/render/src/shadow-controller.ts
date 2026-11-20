@@ -21,7 +21,6 @@ import { TimingTools } from "@babylonjs/core/Misc/timingTools";
 import {
   componentCastsShadows,
   effectiveShadowSettings,
-  SHADOW_FIRST_CASCADE_SCALE,
   SHADOW_HALF_TILE_CASCADES,
   type SerializedComponent,
   type ShadowDebugPart,
@@ -762,7 +761,7 @@ export class SceneShadowController {
     for (const entry of this.entries.values()) {
       if (entry.status === "active" && entry.generator &&
         matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades, atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
-          SHADOW_FIRST_CASCADE_SCALE[settings.profile])) {
+          settings.firstCascadeScale)) {
         if (entry.standby) {
           entry.standby = false;
           entry.admittedAt = selectionTime;
@@ -797,7 +796,7 @@ export class SceneShadowController {
         continue;
       const index = donors.findIndex((donor) =>
         matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades, atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
-          SHADOW_FIRST_CASCADE_SCALE[settings.profile]) &&
+          settings.firstCascadeScale) &&
         (donor.generator as AtlasShadowGenerator).canMoveTo(entry.light as LocalShadowLight));
       if (index < 0) continue;
       const [donor] = donors.splice(index, 1) as [Entry];
@@ -924,7 +923,7 @@ export class SceneShadowController {
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
           entry.key = allocationKey(mapSize, entry.light, settings.cascades, atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
-          SHADOW_FIRST_CASCADE_SCALE[settings.profile]);
+          settings.firstCascadeScale);
           entry.failedKey = "";
           if (entry.recovery)
             entry.reason = "shadow map reduced after allocation failure";

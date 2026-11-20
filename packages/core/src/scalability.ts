@@ -1,6 +1,6 @@
 import { normalizePlayFrameCap, normalizeRenderProjectSettings, type RenderProjectSettings } from "./project";
 import { RenderingQualitySession, qualityPresetPatch, qualitySettingPatch, QUALITY_GROUPS, isQualityLevel, WATER_REFLECTION_MODES, WATER_SHADING_DETAILS, type QualityGroup, type QualityOverrides } from "./render-quality";
-import type { ShadowOverrides } from "./shadows";
+import { SHADOW_FIRST_CASCADE_SCALES, type ShadowOverrides } from "./shadows";
 import { MIRROR_REFLECTS } from "./mirror";
 import { normalizeCelShadingOverrides, normalizeCelShadingSettings, type CelShadingOverrides } from "./cel-shading";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
@@ -44,7 +44,7 @@ export type ScalabilityRequest =
 
 const ENUMS: Record<string, readonly unknown[]> = {
   mode: ["pbr", "cel"], "cel.lightMixing": ["strongest", "additive", "blend"],
-  "shadows.filter": ["pcf", "pcss"], "shadows.filterQuality": ["low", "medium", "high"],
+  "shadows.filter": ["pcf", "pcss"], "shadows.firstCascadeScale": SHADOW_FIRST_CASCADE_SCALES, "shadows.filterQuality": ["low", "medium", "high"],
   "shadows.localLightMode": ["auto", "manual"], "quality.lighting.localLightMode": ["auto", "manual"],
   "quality.water.shadingDetail": WATER_SHADING_DETAILS, "quality.water.reflections": WATER_REFLECTION_MODES,
   "quality.geometry.mirrorReflections": MIRROR_REFLECTS,

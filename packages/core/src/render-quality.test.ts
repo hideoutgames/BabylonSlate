@@ -16,6 +16,7 @@ import {
 import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
   normalizeProjectSettings,
+  normalizeRenderProjectSettings,
 } from "./project";
 
 describe("rendering quality sessions", () => {
@@ -38,6 +39,14 @@ describe("rendering quality sessions", () => {
       localLightMode: "auto",
       mapSize: 4096,
     });
+  });
+  it("resets a project's First Cascade Detail of twice the map size to the level's when a level is applied", () => {
+    const session = new RenderingQualitySession({ shadows: { profile: "high", firstCascadeScale: 2 } });
+    expect(qualityGroupLabel(session.effective(), "shadows")).toBe("custom");
+    session.execute("shadows", "high");
+    expect(session.effective().shadows).toMatchObject({ firstCascadeScale: 1, preset: "high" });
+    expect(applyProjectQualityPatch(normalizeRenderProjectSettings({ shadows: { profile: "high", firstCascadeScale: 2 } }), qualityPresetPatch("high"))
+      .shadows).toMatchObject({ firstCascadeScale: 1, preset: "high" });
   });
   it("sets the shadow filter quality from the console and refuses one that does not exist", () => {
     const session = new RenderingQualitySession({ shadows: { profile: "high" } });
