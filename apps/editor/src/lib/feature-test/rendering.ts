@@ -523,18 +523,30 @@ async function saveDynamicMesh(ctx: FeatureTestContext): Promise<PlacedClass> {
   return { ref, components };
 }
 
-/** Spawns a pooled runtime decal at its own location on Begin Play via the Spawn Decal node. */
+/**
+ * Spawns a pooled runtime decal of a Decal Material Instance at its own location on Begin Play via the Spawn Decal
+ * node, beside a Decal component of its own on a plate of its own (a decal in a Prefab, which its Prefab Preview shows).
+ */
 async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
-  const decalTexture = ctx.assets.textures.colormap;
+  const decalMaterial = requireRef(ctx.assets.materials.decalLitInstance, "the decal Material Instance");
+  const components = [
+    // A plate of its own for its decal to land on, so the Prefab Preview (which has no floor) shows it.
+    { ...meshComp("prefab-decal-plate", "box"), transform: tf([1.6, -0.02, 0], { scale: [1.4, 0.04, 1.4] }) },
+    comp("prefab-decal", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: requireRef(ctx.assets.materials.decalGlow, "the Additive decal Material"), size: [1.2, 1, 1.2], tint: [1, 0.6, 0.3] }),
+    }, tf([1.6, 0, 0])),
+  ];
   const graph = classGraph({
     members: [],
-    components: [],
+    components,
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
       gNode("self-loc", "transform.getActorLocation", 0, 140),
       gNode("spawn", "decals.spawn", 320, 0, {
-        "default:texture": decalTexture,
+        "default:material": decalMaterial,
         "default:size": { x: 1.5, y: 1, z: 1.5 },
+        "default:tint": { x: 1, y: 0.9, z: 0.8, w: 1 },
+        "default:opacity": 0.9,
         "default:lifetime": 0,
         "default:fadeOutDuration": 0,
       }),
@@ -545,7 +557,7 @@ async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
     ],
   });
   const ref = await ctx.saveClass({ folder: RENDER_FOLDER, name: "FT_RenderDecalSpawner", parentClass: "Actor", graph });
-  return { ref, components: [] };
+  return { ref, components };
 }
 
 /**
@@ -849,18 +861,36 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
     materialGuid: ctx.assets.materials.emissive ?? null,
   }));
 
-  // Projected Decals: lit alpha floor decal, unlit additive ramp decal (angular fade), and dynamic Spawn Decal.
-  const decalTexture = ctx.assets.textures.colormap;
+  // Projected Decals, one Decal Material root per Blend Mode: a lit, normal-mapped Translucent floor decal and a
+  // scene-owned override of it, an unlit Additive emissive ramp decal (angular fade), a Multiply stain, a lit Masked
+  // decal, an unlit Opaque one, and a dynamic Spawn Decal of a Material Instance.
+  const decals = ctx.assets.materials;
+  const decalLit = requireRef(decals.decalLit, "the lit decal Material");
   add(actor("ft-render-decal-floor", "Lit Floor Decal", tf(zone.at(2, 0.1, 4.5)), [
     comp("ft-render-decal-floor-comp", "DecalComponent", {
-      ...parseDecalProperties({
-        textureGuid: decalTexture,
-        size: [2.2, 1.0, 2.2],
-        receiveLighting: true,
-        blendMode: "alpha",
-        roughness: 0.65,
-        sortOrder: 0,
-      }),
+      ...parseDecalProperties({ materialGuid: decalLit, size: [2.2, 1.0, 2.2], sortOrder: 0 }),
+    }),
+  ]));
+  add(actor("ft-render-decal-override", "Decal With Own Tint", tf(zone.at(-0.6, 0.1, 4.5)), [{
+    ...comp("ft-render-decal-override-comp", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: decalLit, size: [1.6, 1.0, 1.6], tint: [0.9, 0.9, 1] }),
+    }),
+    // Scene-owned values of the Material's parameters: a private copy of it, which shares its program.
+    materialInstance: { materialGuid: decalLit, parameters: { Tint: { kind: "color", value: [0.4, 0.6, 1, 1] } } },
+  }]));
+  add(actor("ft-render-decal-multiply", "Multiply Stain Decal", tf(zone.at(4.6, 0.1, 2.4)), [
+    comp("ft-render-decal-multiply-comp", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: requireRef(decals.decalMultiply, "the Multiply decal Material"), size: [1.8, 1.0, 1.8], sortOrder: 2 }),
+    }),
+  ]));
+  add(actor("ft-render-decal-masked", "Masked Cells Decal", tf(zone.at(-0.6, 0.1, 6.8)), [
+    comp("ft-render-decal-masked-comp", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: requireRef(decals.decalMasked, "the Masked decal Material"), size: [1.6, 1.0, 1.6] }),
+    }),
+  ]));
+  add(actor("ft-render-decal-opaque", "Opaque Stripes Decal", tf(zone.at(4.6, 0.1, 7.4)), [
+    comp("ft-render-decal-opaque-comp", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: requireRef(decals.decalOpaque, "the Opaque decal Material"), size: [1.6, 1.0, 0.8] }),
     }),
   ]));
   add(primitive("ft-render-decal-ramp", "Decal Test Ramp", "box", zone.at(5.5, 0.55, 5.2), {
@@ -871,18 +901,17 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
   add(actor("ft-render-decal-angled", "Unlit Ramp Decal", tf(zone.at(5.5, 0.6, 5.2)), [
     comp("ft-render-decal-angled-comp", "DecalComponent", {
       ...parseDecalProperties({
-        textureGuid: decalTexture,
+        materialGuid: requireRef(decals.decalGlow, "the Additive decal Material"),
         tint: [0.4, 0.9, 1.0],
         opacity: 0.85,
-        receiveLighting: false,
-        blendMode: "additive",
         size: [2.2, 1.8, 1.8],
         fadeAngle: 60,
         sortOrder: 1,
       }),
     }),
   ]));
-  add(actor("ft-render-decal-spawner", "Runtime Decal Spawner", tf(zone.at(2, 0.1, 7.2)), [], {
+  add(actor("ft-render-decal-spawner", "Runtime Decal Spawner", tf(zone.at(2, 0.1, 7.2)),
+    instanceComponents("ft-render-decal-spawner", refs.decalSpawner.components), {
     classId: refs.decalSpawner.ref.classId,
   }));
 

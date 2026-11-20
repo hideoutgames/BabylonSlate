@@ -16,7 +16,7 @@ import {
   type PinListRow,
   type PropertyRow,
 } from "@haptic/editor-kit";
-import { OUTPUT_DELEGATE_PIN_ID, POST_PROCESS_MATERIAL_NODE_IDS, isDispatcherNodeType, isTimelineProxyPickerNode } from "@haptic/scripting-nodes";
+import { OUTPUT_DELEGATE_PIN_ID, isDispatcherNodeType, isTimelineProxyPickerNode } from "@haptic/scripting-nodes";
 import {
   Field,
   FieldError,
@@ -43,6 +43,7 @@ import {
 } from "../lib/graph-inspector";
 import { canRenameCustomEvent, patchClassMember } from "../lib/class-members";
 import { filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
+import { graphPinMaterialDomain } from "../lib/material-asset-filters";
 import { dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, patchDataGraphNode, patchInspectedGraphNode } from "../lib/data-graph";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -604,8 +605,8 @@ function GraphPinPickers({
         }
         allowedTypes={assetPinPick?.allowedTypes}
         createOptions={
-          POST_PROCESS_MATERIAL_NODE_IDS.has(node.type)
-            ? { materialDomain: "postProcess" }
+          graphPinMaterialDomain(node.type)
+            ? { materialDomain: graphPinMaterialDomain(node.type)! }
             : assetPinPick
               ? dataGraphAssetCreateOptions(node.type, assetPinPick.pinId, node.data)
               : undefined

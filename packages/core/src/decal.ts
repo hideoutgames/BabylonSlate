@@ -1,19 +1,18 @@
 import { identitySerializedTransform, type SerializedComponent, type SerializedTransform } from "./scene";
+import type { MaterialInstanceOverrides } from "./material-parameter-value";
 
 export const DECAL_CLASS_ID = "DecalComponent";
 
-export const DECAL_BLEND_MODES = ["alpha", "multiply", "additive"] as const;
-export type DecalBlendMode = (typeof DECAL_BLEND_MODES)[number];
-
+/**
+ * A projected decal. Its look (shading, blend mode, roughness, textures) is a Decal-domain Material's; Tint and Opacity
+ * are per decal and multiply the Material's Base Color, Emissive and Opacity, so decals of one Material still draw together.
+ */
 export interface DecalProperties {
   enabled: boolean;
-  textureGuid: string | null;
-  normalTextureGuid: string | null;
+  /** A Decal-domain Material or Material Instance. */
+  materialGuid: string | null;
   tint: [number, number, number];
   opacity: number;
-  roughness: number;
-  blendMode: DecalBlendMode;
-  receiveLighting: boolean;
   /** Local OBB projection extents (X width, Y projection depth, Z height). */
   size: [number, number, number];
   /** Surface normal divergence angle from local +Y beyond which projection fades out (degrees). */
@@ -25,13 +24,9 @@ export interface DecalProperties {
 
 export const DEFAULT_DECAL_PROPERTIES: DecalProperties = {
   enabled: true,
-  textureGuid: null,
-  normalTextureGuid: null,
+  materialGuid: null,
   tint: [1, 1, 1],
   opacity: 1,
-  roughness: 0.7,
-  blendMode: "alpha",
-  receiveLighting: true,
   size: [2, 1, 2],
   fadeAngle: 75,
   sortOrder: 0,
@@ -84,21 +79,13 @@ function normalizeSize(entry: unknown): [number, number, number] {
   ];
 }
 
-export function normalizeDecalBlendMode(entry: unknown): DecalBlendMode {
-  return entry === "multiply" || entry === "additive" ? entry : "alpha";
-}
-
 export function parseDecalProperties(value: unknown): DecalProperties {
   const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   return {
     enabled: source.enabled !== false,
-    textureGuid: normalizeGuid(source.textureGuid),
-    normalTextureGuid: normalizeGuid(source.normalTextureGuid),
+    materialGuid: normalizeGuid(source.materialGuid),
     tint: normalizeTint(source.tint),
     opacity: clamp(finite(source.opacity, DEFAULT_DECAL_PROPERTIES.opacity), 0, 1),
-    roughness: clamp(finite(source.roughness, DEFAULT_DECAL_PROPERTIES.roughness), 0, 1),
-    blendMode: normalizeDecalBlendMode(source.blendMode),
-    receiveLighting: source.receiveLighting !== false,
     size: normalizeSize(source.size),
     fadeAngle: clamp(finite(source.fadeAngle, DEFAULT_DECAL_PROPERTIES.fadeAngle), 1, 180),
     sortOrder: Math.round(finite(source.sortOrder, DEFAULT_DECAL_PROPERTIES.sortOrder)),
@@ -109,6 +96,8 @@ export function parseDecalProperties(value: unknown): DecalProperties {
 export interface DecalBinding {
   id: string;
   properties: DecalProperties;
+  /** The component's own parameter values for its Material, when they are for its current `materialGuid`. */
+  materialInstance?: MaterialInstanceOverrides;
   /** Component-local transforms from decal to actor origin; actor world is separate. */
   transforms: SerializedTransform[];
   error?: string;
@@ -120,11 +109,11 @@ export function decalBindings(components: readonly SerializedComponent[]): Decal
   if (!decals.length) return [];
   const byId = new Map(components.map((component) => [component.id, component]));
   return decals.map((component) => {
-    const binding: DecalBinding = {
-      id: component.id,
-      properties: parseDecalProperties(component.properties),
-      transforms: [],
-    };
+    const properties = parseDecalProperties(component.properties);
+    const binding: DecalBinding = { id: component.id, properties, transforms: [] };
+    const instance = component.materialInstance;
+    if (instance && properties.materialGuid && instance.materialGuid === properties.materialGuid && Object.keys(instance.parameters).length)
+      binding.materialInstance = { materialGuid: instance.materialGuid, parameters: { ...instance.parameters } };
     const visited = new Set<string>();
     let current: SerializedComponent | undefined = component;
     while (current) {
@@ -145,16 +134,13 @@ export function decalBindings(components: readonly SerializedComponent[]): Decal
 }
 
 export interface DynamicDecalSpawnRequest {
-  textureGuid: string;
-  normalTextureGuid?: string | null;
+  /** A Decal-domain Material or Material Instance. */
+  materialGuid: string;
   position: [number, number, number];
   rotation: [number, number, number, number];
   size: [number, number, number];
   tint?: [number, number, number];
   opacity?: number;
-  roughness?: number;
-  blendMode?: DecalBlendMode;
-  receiveLighting?: boolean;
   fadeAngle?: number;
   sortOrder?: number;
   cullDistance?: number;

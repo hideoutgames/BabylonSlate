@@ -29,7 +29,7 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
-import { clearDecals, removeDecals, sceneDecalTextureGuids, setDecalTextureResolver, setDecalTimePaused, takeDecalTextureRelease, upsertDecals } from "./decal-pass";
+import { clearDecals, refreshDecalMaterials, sceneDecalStats, removeDecals, setDecalMaterialSource, setDecalPendingListener, setDecalTimePaused, upsertDecals, warmDecalMaterials } from "./decal-pass";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isFoliageDistanceOnlySceneEdit } from "./foliage-mesh";
@@ -1088,6 +1088,8 @@ function initializeEngine(
       // Rebuilding here releases the ready material and starts compilation again.
       // Only the editor actors that resolved this Material are rebound.
       if (materialScene === scene) editorSync?.refreshMaterialsCoalesced(assetGuid);
+      // A published generation replaces the one the decals drew (disposed with its predecessor's last reference).
+      refreshDecalMaterials(materialScene);
       for (const root of binding.meshes.values()) {
         if (root.getScene() === materialScene) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); refreshUIControl2DMaterials(root, binding); }
       }
@@ -1601,21 +1603,6 @@ function initializeEngine(
     editorFogActors.clear();
     for (const id of retained) editorFogActors.add(id);
   };
-  const decalTextureLeases = new Map<string, { source: unknown; lease: { resource: import("@babylonjs/core/Materials/Textures/baseTexture").BaseTexture; release(): void } }>();
-  const releaseDecalTextureLeases = () => {
-    for (const entry of decalTextureLeases.values()) entry.lease.release();
-    decalTextureLeases.clear();
-  };
-  const pruneDecalTextureLeases = () => {
-    if (decalTextureLeases.size === 0) return;
-    const used = sceneDecalTextureGuids(scene);
-    for (const [guid, entry] of [...decalTextureLeases.entries()]) {
-      if (!used.has(guid)) {
-        entry.lease.release();
-        decalTextureLeases.delete(guid);
-      }
-    }
-  };
   const editorDecalActors = new Set<string>();
   const syncEditorDecals = () => {
     const data = editorSync?.serializedScene();
@@ -1632,27 +1619,15 @@ function initializeEngine(
     for (const id of editorDecalActors) if (!retained.has(id)) removeDecals(scene, id);
     editorDecalActors.clear();
     for (const id of retained) editorDecalActors.add(id);
-    pruneDecalTextureLeases();
   };
-  scene.onDisposeObservable.addOnce(() => {
-    releaseDecalTextureLeases();
-    setDecalTextureResolver(scene, null);
+  // Decals draw their Decal Materials from the library, as meshes do: the asset's, or a component's private copy with
+  // its own values. A decal whose Material is still compiling is skipped, and the view draws again once it links.
+  setDecalMaterialSource(scene, {
+    resolve: (guid, instance) => binding.resolveMaterial?.(guid, instance ? { instanceKey: instance.key, parameters: instance.parameters } : undefined) ?? null,
+    release: (key, guid) => binding.releaseMaterialInstance?.(key, guid),
   });
-  setDecalTextureResolver(scene, (guid) => {
-    const source = binding.textureBytes?.get(guid);
-    if (!source || !binding.resourceCache) return null;
-    const cached = decalTextureLeases.get(guid);
-    if (cached && cached.source === source) return cached.lease.resource;
-    cached?.lease.release();
-    try {
-      const lease = binding.resourceCache.acquireTexture(guid, engine, source, { hasAlpha: true });
-      decalTextureLeases.set(guid, { source, lease });
-      return lease.resource;
-    } catch {
-      decalTextureLeases.delete(guid);
-      return null;
-    }
-  });
+  setDecalPendingListener(scene, () => scheduler.invalidate("asset"));
+  scene.onDisposeObservable.addOnce(() => setDecalMaterialSource(scene, null));
   const playVisuals = createPlayVisualBindings({
     options,
     scene,
@@ -1669,12 +1644,6 @@ function initializeEngine(
   const installMeshAssets = (assets: MeshAssetContext): MeshAssetContext => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = installTextureBytes(assets.textureBytes);
-      for (const [guid, entry] of [...decalTextureLeases.entries()]) {
-        if (binding.textureBytes?.get(guid) !== entry.source) {
-          entry.lease.release();
-          decalTextureLeases.delete(guid);
-        }
-      }
       binding.renderTargets = assets.renderTargets;
       binding.renderTargetTextures = assets.renderTargetTextures;
       renderTargetCaptures.setAssets(assets.renderTargets, assets.renderTargetTextures);
@@ -1710,6 +1679,8 @@ function initializeEngine(
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
       claimTextureHandover();
+      // A Material's generation follows its textures' bytes: the decals ask for theirs again.
+      refreshDecalMaterials(scene);
       return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng };
   };
   const installMaterialDocuments = (
@@ -1734,6 +1705,7 @@ function initializeEngine(
         }
       }
       materialFunctionRecord = Object.fromEntries(materialFunctions);
+      refreshDecalMaterials(scene);
       return true;
   };
 
@@ -1884,7 +1856,6 @@ function initializeEngine(
       lastRenderedSnapshotFrame = null;
       retirePlayWorldSlots(binding);
       clearDecals(scene);
-      releaseDecalTextureLeases();
       commandSources.releaseSlots(worldPlaySlots);
       worldPlaySlots.clear();
       refreshPlayActiveCamera(scene, binding);
@@ -2131,6 +2102,7 @@ function initializeEngine(
         rttPresenting: rttPresent?.isPresenting() ?? false, contextLost },
       worldLoad: worldLoading ? worldLoadDiagnostics() : null,
       textureMemory: estimateTextureMemory(engine),
+      decals: sceneDecalStats(scene),
       engineLoop: { frameId: engine.frameId, activeLoops: engine.activeRenderLoops.length,
         ownsLoop: engine.activeRenderLoops.includes(renderLoop), frameHandler: engine._frameHandler,
         disposed: engine.isDisposed, contextLost: native._contextWasLost,
@@ -2169,11 +2141,13 @@ function initializeEngine(
   const warmPlaySpawnables = async (assertCurrent: () => void) => {
     const started = performance.now();
     const materials: Material[] = [];
-    // Surface Materials only: post-process, particle, text and landscape graphs never draw on a spawned mesh.
+    // Surface Materials only: post-process, particle, text and landscape graphs never draw on a spawned mesh. Decal
+    // Materials compile on the decal pass's own boxes (`warmDecalMaterials`).
+    const decalMaterials: Material[] = [];
     for (const [guid, document] of materialDocuments) {
-      if (document.domain !== "surface") continue;
+      if (document.domain !== "surface" && document.domain !== "decal") continue;
       const material = binding.resolveMaterial?.(guid);
-      if (material) materials.push(material);
+      if (material) (document.domain === "decal" ? decalMaterials : materials).push(material);
     }
     const leases: { release(): void }[] = [];
     const containers: AssetContainer[] = [];
@@ -2186,7 +2160,8 @@ function initializeEngine(
       assertCurrent();
       releaseStaged();
       releaseStagedSpawnables = await warmSpawnables(scene, { materials, containers }, assertCurrent, { keepForFirstDraw: true });
-      spawnableWarm = { materials: materials.length, models: containers.length, ms: performance.now() - started };
+      await warmDecalMaterials(scene, decalMaterials, assertCurrent);
+      spawnableWarm = { materials: materials.length + decalMaterials.length, models: containers.length, ms: performance.now() - started };
     } finally {
       for (const lease of leases) lease.release();
     }
@@ -2387,8 +2362,6 @@ function initializeEngine(
     const preparationStart = measurePhases ? performance.now() : 0;
     applyRenderingQuality();
     outlineHost.refreshSettings();
-    // Expired or evicted Spawn Decal decals may leave textures no decal uses: release those leases.
-    if (takeDecalTextureRelease(scene)) pruneDecalTextureLeases();
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
     const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();

@@ -23,4 +23,4 @@ Returns a value that is 0 where the surface faces the camera and rises to 1 at i
 
 - For a rim glow, multiply the result by a color with [**Multiply**](multiply.md) and connect it to **Emissive** on the [**Material Output**](material-output.md).
 - Subtract the result from 1 with [**Subtract**](subtract.md) for a value that is brightest where the surface faces the camera.
-- Only in Surface and Landscape materials.
+- Only in Surface, Landscape and Decal materials.

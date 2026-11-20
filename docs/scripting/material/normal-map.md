@@ -22,6 +22,6 @@ Turns a normal map colour into a world-space normal that follows the surface's s
 
 ## Notes
 
-- Connect the result to **Normal** on [**Material Output**](material-output.md).
+- Connect the result to **Normal** on [**Material Output**](material-output.md) or [**Decal Output**](decal-output.md).
 - Fragment stage only, so it cannot feed **World Position Offset**.
-- Only in Surface and Landscape materials.
+- Only in Surface, Landscape and Decal materials.

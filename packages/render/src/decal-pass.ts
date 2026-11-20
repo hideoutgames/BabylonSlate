@@ -1,4 +1,4 @@
-import "@babylonjs/core/Meshes/thinInstanceMesh";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo";
 import { Constants } from "@babylonjs/core/Engines/constants";
@@ -11,8 +11,7 @@ import type { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Material } from "@babylonjs/core/Materials/material";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
-import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
+import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum";
 import { Plane } from "@babylonjs/core/Maths/math.plane";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -28,24 +27,43 @@ import type { Scene } from "@babylonjs/core/scene";
 import {
   DEFAULT_DECAL_PROPERTIES,
   isQualityLevel,
-  normalizeDecalBlendMode,
   type DecalBinding,
-  type DecalBlendMode,
   type DecalProperties,
   type DynamicDecalSpawnRequest,
+  type MaterialParameterValue,
 } from "@haptic/core";
-import { DECAL_SHADER_NAME, registerDecalShaders } from "./decal-shader";
-import {
-  HAPTIC_LIGHTING_SAMPLERS,
-  HAPTIC_LIGHTING_UNIFORMS,
-  bindHapticLightingUniforms,
-} from "./haptic-lighting-block";
+import { DECAL_INSTANCE_ATTRIBUTES, DECAL_PASS_UNIFORMS, DECAL_SCENE_DEPTH_SAMPLER } from "./decal-projection-block";
+import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { resolveSceneRenderingQuality, sceneRenderingSettings } from "./render-settings";
-import { bindSceneFog, bindSceneFogColor } from "./scene-fog-block";
 import { ManagedShadowObjectRendererTask } from "./framegraph-managed-shadows";
-import { retireOwnedEffect } from "./owned-effect-retirement";
+import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
+import { renewOnCompileProgress } from "./driver-compile";
 
-export type DecalTextureResolver = (guid: string) => BaseTexture | null;
+/** A Material Instance's own values for a decal's Material: a private copy under `key` (`MaterialLibrary.resolve`). */
+export interface DecalMaterialInstance {
+  key: string;
+  parameters: ReadonlyMap<string, MaterialParameterValue>;
+}
+
+/**
+ * Where a Scene's decals get their Decal-domain Materials: the Material asset (or Material Instance asset) by guid, or a
+ * private copy with a component's own values. Null while there is none; the host asks again on `refreshDecalMaterials`.
+ */
+export interface DecalMaterialSource {
+  resolve(guid: string, instance?: DecalMaterialInstance): Material | null;
+  /** Releases a private copy the host no longer draws. */
+  release?(key: string, guid: string): void;
+}
+
+/** One Material a Scene's decals draw with: the asset's, or a component's private copy. */
+type DecalMaterialEntry = {
+  key: string;
+  guid: string;
+  instance: DecalMaterialInstance | null;
+  material: NodeMaterial | null;
+  /** The host's material revision the entry last resolved at. */
+  revision: number;
+};
 
 type PreparedDecal = {
   world: Matrix;
@@ -56,6 +74,7 @@ type PreparedDecal = {
   mirrored: boolean;
   properties: DecalProperties;
   opacityMultiplier: number;
+  material: DecalMaterialEntry | null;
 };
 
 type AuthoredDecalEntry = PreparedDecal & {
@@ -63,6 +82,9 @@ type AuthoredDecalEntry = PreparedDecal & {
   local: Matrix;
   bounds: BoundingInfo;
   valid: boolean;
+  /** The component's own parameter values (`DecalBinding.materialInstance`), as a signature. */
+  instanceSignature: string;
+  instanceParameters: ReadonlyMap<string, MaterialParameterValue> | null;
 };
 
 type DynamicDecalEntry = PreparedDecal & {
@@ -74,12 +96,27 @@ type DynamicDecalEntry = PreparedDecal & {
 type DecalBatch = {
   key: string;
   sortOrder: number;
-  blendMode: DecalBlendMode;
-  receiveLighting: boolean;
   mirrored: boolean;
-  textureGuid: string;
-  normalTextureGuid: string | null;
+  material: NodeMaterial;
   items: PreparedDecal[];
+};
+
+/**
+ * The box one Material's decals draw: a unit cube outside `scene.meshes` (picking, culling, shadows and readiness
+ * ignore it), thin-instanced with the decals' rows. One per Material, so each keeps its own submesh Effect and the
+ * Material's defines never thrash between batches.
+ */
+type DecalDrawSlot = {
+  material: NodeMaterial;
+  cube: Mesh;
+  capacity: number;
+  /** The instance rows' GPU buffers, one per attribute, beside the cube's own vertex buffers. */
+  buffers: Partial<Record<(typeof DECAL_INSTANCE_ATTRIBUTES)[number], VertexBuffer>>;
+  /** The cube's vertex buffers and the instance rows', as one binding. */
+  binding: Record<string, VertexBuffer> | null;
+  rows: Record<(typeof DECAL_INSTANCE_ATTRIBUTES)[number], Float32Array>;
+  /** The Effect whose compile already asks for a redraw. */
+  awaited: Effect | null;
 };
 
 export interface SceneDecalStats {
@@ -89,39 +126,19 @@ export interface SceneDecalStats {
   batches: number;
   draws: number;
   capacity: number;
+  /** Batches the last render skipped because their Material's program was not ready. */
+  pending: number;
+  /** Materials with a draw slot (one program each per variant). */
+  materials: number;
 }
 
-const DECAL_ATTRIBUTES = [
-  "position",
-  "world0",
-  "world1",
-  "world2",
-  "world3",
-  "decalInv0",
-  "decalInv1",
-  "decalInv2",
-  "decalInv3",
-  "decalTintOpacity",
-  "decalParams",
-];
+const IDENTITY = Matrix.Identity();
+const DECAL_PROXY_PREFIX = "haptic:decal-unit-cube";
 
-// Not Babylon's `view` / `viewProjection`: its floating origin rewrites those by name from the Scene's own camera. The
-// pass uploads its camera's matrices itself, already relative to the eye (`render`).
-const DECAL_BASE_UNIFORMS = [
-  "decalViewProjection",
-  "decalInvViewProjection",
-  "decalView",
-  "decalAlbedoMatrix",
-  "decalNormalMatrix",
-  "invViewport",
-  "depthRange",
-  "reverseDepth",
-  "cameraPosition",
-  "sceneLinear",
-  "blendModeId",
-  "sceneFogInfo",
-  "sceneFogColor",
-];
+/** Whether `mesh` is a decal pass's box (the light block keeps Screen-Space Shadows out of it). */
+export function isDecalProxyMesh(mesh: AbstractMesh | null | undefined): boolean {
+  return !!mesh && mesh.name.startsWith(DECAL_PROXY_PREFIX);
+}
 
 function encloseDecal(entry: AuthoredDecalEntry, world: Matrix): void {
   const center = entry.center.copyFromFloats(world.m[12]!, world.m[13]!, world.m[14]!);
@@ -143,18 +160,6 @@ function sphereFrustumSide(planes: readonly Plane[], center: Vector3, radius: nu
   return inside ? 1 : 0;
 }
 
-function blendModeId(mode: DecalBlendMode): number {
-  return mode === "additive" ? 2 : mode === "multiply" ? 1 : 0;
-}
-
-function babylonAlphaMode(mode: DecalBlendMode): number {
-  return mode === "additive"
-    ? Constants.ALPHA_ADD
-    : mode === "multiply"
-      ? Constants.ALPHA_MULTIPLY
-      : Constants.ALPHA_COMBINE;
-}
-
 /**
  * Capacity of the dynamic decal pool: 64 on the Low and Medium Geometry tiers, 128 on High and Ultra. The tier is the
  * Geometry quality's target (`profile`), else the tier its values match, else Medium, as Auto local lights pick theirs.
@@ -165,12 +170,11 @@ export function maxDynamicDecalsForScene(scene: Scene): number {
   return tier === "high" || tier === "ultra" ? 128 : 64;
 }
 
-/** `world` with the floating origin's eye taken from its translation (the engine's rule for an instance row). */
-function writeRelativeWorld(world: Matrix, eye: Vector3, out: Float32Array, offset: number): void {
-  world.copyToArray(out, offset);
-  out[offset + 12] = world.m[12]! - eye.x;
-  out[offset + 13] = world.m[13]! - eye.y;
-  out[offset + 14] = world.m[14]! - eye.z;
+function parameterMap(binding: DecalBinding): ReadonlyMap<string, MaterialParameterValue> | null {
+  const parameters = binding.materialInstance?.parameters;
+  if (!parameters) return null;
+  const entries = Object.entries(parameters).sort(([a], [b]) => a.localeCompare(b));
+  return entries.length ? new Map(entries) : null;
 }
 
 class DecalActorOwner {
@@ -201,7 +205,7 @@ class DecalActorOwner {
     this.decals.length = 0;
     for (const binding of bindings) {
       const properties = binding.properties;
-      if (binding.error || !properties.enabled || !properties.textureGuid || properties.opacity <= 0) continue;
+      if (binding.error || !properties.enabled || !properties.materialGuid || properties.opacity <= 0) continue;
       // Unit cube spans [-0.5, 0.5]^3 so scaling by size maps it directly to the OBB.
       const local = Matrix.Scaling(properties.size[0], properties.size[1], properties.size[2]);
       for (const transform of binding.transforms) {
@@ -213,6 +217,7 @@ class DecalActorOwner {
         );
         local.multiplyToRef(this.part, local);
       }
+      const instanceParameters = parameterMap(binding);
       this.decals.push({
         id: binding.id,
         properties,
@@ -225,6 +230,9 @@ class DecalActorOwner {
         radius: 0,
         mirrored: false,
         valid: false,
+        material: null,
+        instanceParameters,
+        instanceSignature: instanceParameters ? JSON.stringify([...instanceParameters]) : "",
       });
     }
     this.dirty = true;
@@ -263,35 +271,36 @@ export class SceneDecalHost {
   /** Live dynamic decals, oldest first: expired ones leave at once, so a full pool evicts its front. */
   private readonly dynamicPool: DynamicDecalEntry[] = [];
   /**
-   * Set by the first Spawn Decal and kept until `clear`: the forward graph keeps its decal pass while it is set, so a
-   * scene spawning short-lived decals never rebuilds the graph as its pool empties and fills again.
+   * Set by the first Spawn Decal (or a load's warm-up of Decal Materials) and kept until `clear`: the forward graph
+   * keeps its decal pass while it is set, so a scene spawning short-lived decals never rebuilds the graph as its pool
+   * empties and fills again.
    */
   private dynamicDemand = false;
-  /** Dynamic decals left the pool since `takeTextureRelease`: their textures may now be unused. */
-  private texturesReleased = false;
+  /** Dynamic decals left the pool since the last prune: their Materials may now be unused. */
+  private dynamicReleased = false;
   private paused = false;
   private timeScale = 1;
   /** The Engine frame whose time the dynamic lifetimes last took (`advanceClock`). */
   private clockFrame = -1;
-  private textureResolver: DecalTextureResolver | null = null;
+  private materialSource: DecalMaterialSource | null = null;
+  private readonly materialEntries = new Map<string, DecalMaterialEntry>();
+  /** Bumped by `refreshMaterials`: an entry whose Material was disposed resolves again once per revision. */
+  private materialRevision = 0;
+  private nextInstance = 0;
+  private readonly slots = new Map<NodeMaterial, DecalDrawSlot>();
+  /** Warmed Materials whose program has not drawn yet: the next decal pass draws each once, degenerate. */
+  private readonly firstDraws = new Set<NodeMaterial>();
+  private onPending: (() => void) | null = null;
   private readonly planes: Plane[] = Array.from({ length: 6 }, () => new Plane(0, 0, 0, 0));
   private readonly viewProjection = Matrix.Identity();
   private readonly invViewProjection = Matrix.Identity();
   private readonly relativeView = Matrix.Identity();
   private readonly eyeTranslation = Matrix.Identity();
+  private readonly cameraRelative = new Vector3();
   private readonly batches: DecalBatch[] = [];
   private readonly batchMap = new Map<string, DecalBatch>();
-  private cube: Mesh | null = null;
-  private allocatedCapacity = 0;
-  private readonly effects = new Map<string, Effect>();
-  private scratchWorld = new Float32Array(0);
-  private scratchInv0 = new Float32Array(0);
-  private scratchInv1 = new Float32Array(0);
-  private scratchInv2 = new Float32Array(0);
-  private scratchInv3 = new Float32Array(0);
-  private scratchTint = new Float32Array(0);
-  private scratchParams = new Float32Array(0);
   private lastVisibleCount = 0;
+  private lastPending = 0;
   private totalDraws = 0;
   private preparedFrameId = -1;
   private preparedCamera: Camera | null = null;
@@ -307,8 +316,25 @@ export class SceneDecalHost {
     return this.demandRevision;
   }
 
-  setTextureResolver(resolver: DecalTextureResolver | null): void {
-    this.textureResolver = resolver;
+  /** Where the decals' Materials come from; each decal asks it again. */
+  setMaterialSource(source: DecalMaterialSource | null): void {
+    this.releaseEntries();
+    this.materialSource = source;
+    this.relinkDecals();
+  }
+
+  /** Called when a decal was skipped because its Material's program was not ready yet, so the view draws again. */
+  setPendingListener(listener: (() => void) | null): void {
+    this.onPending = listener;
+  }
+
+  /**
+   * Ask the source again for every Material the decals draw with: a Material document changed, or a generation was
+   * published. A disposed generation's decals also ask again once after this.
+   */
+  refreshMaterials(): void {
+    this.materialRevision += 1;
+    for (const entry of this.materialEntries.values()) this.resolveEntry(entry);
   }
 
   /** Whether the forward graph needs its decal pass: authored decals, or any Spawn Decal since the last `clear`. */
@@ -318,28 +344,6 @@ export class SceneDecalHost {
       if (owner.decals.length > 0) return true;
     }
     return false;
-  }
-
-  usedTextureGuids(): Set<string> {
-    const guids = new Set<string>();
-    for (const owner of this.owners.values()) {
-      for (const decal of owner.decals) {
-        if (decal.properties.textureGuid) guids.add(decal.properties.textureGuid);
-        if (decal.properties.normalTextureGuid) guids.add(decal.properties.normalTextureGuid);
-      }
-    }
-    for (const entry of this.dynamicPool) {
-      if (entry.properties.textureGuid) guids.add(entry.properties.textureGuid);
-      if (entry.properties.normalTextureGuid) guids.add(entry.properties.normalTextureGuid);
-    }
-    return guids;
-  }
-
-  /** Whether dynamic decals expired or were evicted since the last call, which clears it. */
-  takeTextureRelease(): boolean {
-    const released = this.texturesReleased;
-    this.texturesReleased = false;
-    return released;
   }
 
   /** Holds dynamic lifetimes while the game is paused, as particles hold. */
@@ -354,12 +358,13 @@ export class SceneDecalHost {
 
   upsertActor(actorId: string, node: TransformNode, bindings: readonly DecalBinding[], admitted = true): void {
     const existing = this.owners.get(actorId);
-    const has = bindings.some((binding) => !binding.error && binding.properties.enabled && !!binding.properties.textureGuid && binding.properties.opacity > 0);
+    const has = bindings.some((binding) => !binding.error && binding.properties.enabled && !!binding.properties.materialGuid && binding.properties.opacity > 0);
     if (!has) {
       if (existing) {
         existing.dispose();
         this.owners.delete(actorId);
         this.demandRevision += 1;
+        this.pruneEntries();
       }
       return;
     }
@@ -371,7 +376,11 @@ export class SceneDecalHost {
       this.demandRevision += 1;
     }
     owner.admitted = admitted;
-    if (owner.update(bindings)) this.demandRevision += 1;
+    if (owner.update(bindings)) {
+      this.demandRevision += 1;
+      this.linkOwner(owner);
+      this.pruneEntries();
+    }
   }
 
   setActorVisible(actorId: string, visible: boolean): void {
@@ -385,6 +394,7 @@ export class SceneDecalHost {
     owner.dispose();
     this.owners.delete(actorId);
     this.demandRevision += 1;
+    this.pruneEntries();
   }
 
   clear(): void {
@@ -392,10 +402,88 @@ export class SceneDecalHost {
     this.owners.clear();
     this.dynamicPool.length = 0;
     this.dynamicDemand = false;
-    this.texturesReleased = false;
+    this.dynamicReleased = false;
     this.batches.length = 0;
     this.lastVisibleCount = 0;
     this.demandRevision += 1;
+    this.firstDraws.clear();
+    this.pruneEntries();
+  }
+
+  /** The entry of `guid` (shared) or of a private copy keyed by `instanceKey`, resolving a new one. */
+  private entryFor(guid: string, instance: DecalMaterialInstance | null): DecalMaterialEntry {
+    const key = instance ? `${guid}\u0000${instance.key}` : guid;
+    let entry = this.materialEntries.get(key);
+    if (!entry) {
+      entry = { key, guid, instance, material: null, revision: -1 };
+      this.materialEntries.set(key, entry);
+      this.resolveEntry(entry);
+    }
+    return entry;
+  }
+
+  /** Only a Decal-domain Material draws: any other Material, or none, leaves its decals undrawn. */
+  private resolveEntry(entry: DecalMaterialEntry): void {
+    entry.revision = this.materialRevision;
+    const material = this.materialSource?.resolve(entry.guid, entry.instance ?? undefined) ?? null;
+    const usable = material instanceof NodeMaterial && (material.metadata as { materialDomain?: unknown } | null)?.materialDomain === "decal"
+      ? material : null;
+    if (usable !== entry.material) this.dropSlot(entry.material);
+    entry.material = usable;
+  }
+
+  /** The Material `entry` draws now; a disposed generation asks the source again once per material revision. */
+  private materialOf(entry: DecalMaterialEntry | null): NodeMaterial | null {
+    if (!entry) return null;
+    if (entry.material && !isDisposedNodeMaterial(entry.material, this.scene)) return entry.material;
+    if (entry.revision !== this.materialRevision) this.resolveEntry(entry);
+    else if (entry.material) { this.dropSlot(entry.material); entry.material = null; }
+    return entry.material;
+  }
+
+  private linkOwner(owner: DecalActorOwner): void {
+    for (const decal of owner.decals) {
+      const guid = decal.properties.materialGuid!;
+      let instance: DecalMaterialInstance | null = null;
+      if (decal.instanceParameters) {
+        // A component's own values keep their private copy while they stay the same; new values take a new copy.
+        const previous = [...this.materialEntries.values()].find((entry) => entry.guid === guid &&
+          entry.instance?.key.startsWith(`decal:${owner.actorId}:${decal.id}:`) && JSON.stringify([...entry.instance.parameters]) === decal.instanceSignature);
+        instance = previous?.instance ?? { key: `decal:${owner.actorId}:${decal.id}:${++this.nextInstance}`, parameters: decal.instanceParameters };
+      }
+      decal.material = this.entryFor(guid, instance);
+    }
+  }
+
+  /** Every decal asks its (new) source again. */
+  private relinkDecals(): void {
+    for (const owner of this.owners.values()) this.linkOwner(owner);
+    for (const entry of this.dynamicPool) entry.material = this.entryFor(entry.properties.materialGuid!, null);
+    this.pruneEntries();
+  }
+
+  /** Releases every Material no decal draws with any more, and its draw slot. */
+  private pruneEntries(): void {
+    const used = new Set<DecalMaterialEntry>();
+    for (const owner of this.owners.values()) for (const decal of owner.decals) if (decal.material) used.add(decal.material);
+    for (const entry of this.dynamicPool) if (entry.material) used.add(entry.material);
+    for (const [key, entry] of this.materialEntries) {
+      if (used.has(entry)) continue;
+      this.materialEntries.delete(key);
+      this.dropSlot(entry.material);
+      if (entry.instance) this.materialSource?.release?.(entry.instance.key, entry.guid);
+    }
+    for (const material of this.firstDraws) if (!this.slots.has(material)) this.firstDraws.delete(material);
+  }
+
+  private releaseEntries(): void {
+    for (const entry of this.materialEntries.values()) {
+      this.dropSlot(entry.material);
+      if (entry.instance) this.materialSource?.release?.(entry.instance.key, entry.guid);
+    }
+    this.materialEntries.clear();
+    for (const owner of this.owners.values()) for (const decal of owner.decals) decal.material = null;
+    for (const entry of this.dynamicPool) entry.material = null;
   }
 
   /** Drops the oldest dynamic decals past `capacity`, so a quality downshift keeps the newest. */
@@ -403,12 +491,12 @@ export class SceneDecalHost {
     const excess = this.dynamicPool.length - capacity;
     if (excess <= 0) return;
     this.dynamicPool.splice(0, excess);
-    this.texturesReleased = true;
+    this.dynamicReleased = true;
   }
 
   spawnDynamic(request: DynamicDecalSpawnRequest): void {
-    const textureGuid = typeof request.textureGuid === "string" ? request.textureGuid.trim() : "";
-    if (!textureGuid) return;
+    const materialGuid = typeof request.materialGuid === "string" ? request.materialGuid.trim() : "";
+    if (!materialGuid) return;
     const size: [number, number, number] = [
       request.size[0] > 0 ? request.size[0] : 1,
       request.size[1] > 0 ? request.size[1] : 1,
@@ -429,15 +517,12 @@ export class SceneDecalHost {
     for (const corner of bounds.boundingBox.vectorsWorld) {
       farthest = Math.max(farthest, Vector3.DistanceSquared(corner, center));
     }
+    const unit = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : fallback;
     const properties: DecalProperties = {
       enabled: true,
-      textureGuid,
-      normalTextureGuid: request.normalTextureGuid?.trim() || null,
-      tint: request.tint ?? [...DEFAULT_DECAL_PROPERTIES.tint],
-      opacity: typeof request.opacity === "number" && Number.isFinite(request.opacity) ? Math.min(1, Math.max(0, request.opacity)) : 1,
-      roughness: typeof request.roughness === "number" && Number.isFinite(request.roughness) ? Math.min(1, Math.max(0, request.roughness)) : DEFAULT_DECAL_PROPERTIES.roughness,
-      blendMode: normalizeDecalBlendMode(request.blendMode),
-      receiveLighting: request.receiveLighting !== false,
+      materialGuid,
+      tint: request.tint ? [unit(request.tint[0], 1), unit(request.tint[1], 1), unit(request.tint[2], 1)] : [...DEFAULT_DECAL_PROPERTIES.tint],
+      opacity: unit(request.opacity, 1),
       size,
       fadeAngle: typeof request.fadeAngle === "number" && Number.isFinite(request.fadeAngle) ? Math.min(180, Math.max(1, request.fadeAngle)) : DEFAULT_DECAL_PROPERTIES.fadeAngle,
       sortOrder: typeof request.sortOrder === "number" && Number.isFinite(request.sortOrder) ? Math.round(request.sortOrder) : 0,
@@ -451,6 +536,7 @@ export class SceneDecalHost {
       mirrored: determinant < 0,
       properties,
       opacityMultiplier: 1,
+      material: this.entryFor(materialGuid, null),
       age: 0,
       lifetime: typeof request.lifetime === "number" && Number.isFinite(request.lifetime) && request.lifetime > 0 ? request.lifetime : 0,
       fadeOutDuration: typeof request.fadeOutDuration === "number" && Number.isFinite(request.fadeOutDuration) && request.fadeOutDuration > 0 ? request.fadeOutDuration : 0,
@@ -458,10 +544,20 @@ export class SceneDecalHost {
     // Expired decals have already left the pool, so a full pool evicts its oldest live decal, whatever its lifetime.
     this.fitDynamicCapacity(maxDynamicDecalsForScene(this.scene) - 1);
     this.dynamicPool.push(entry);
-    if (!this.dynamicDemand) {
-      this.dynamicDemand = true;
-      this.demandRevision += 1;
-    }
+    this.pruneReleased();
+    this.demandDynamic();
+  }
+
+  private demandDynamic(): void {
+    if (this.dynamicDemand) return;
+    this.dynamicDemand = true;
+    this.demandRevision += 1;
+  }
+
+  private pruneReleased(): void {
+    if (!this.dynamicReleased) return;
+    this.dynamicReleased = false;
+    this.pruneEntries();
   }
 
   /** Ages dynamic decals by `deltaSeconds` of game time; expired ones leave the pool. */
@@ -483,7 +579,7 @@ export class SceneDecalHost {
     }
     if (kept === pool.length) return;
     pool.length = kept;
-    this.texturesReleased = true;
+    this.dynamicReleased = true;
   }
 
   /**
@@ -500,8 +596,9 @@ export class SceneDecalHost {
   }
 
   /**
-   * Cull decals against `camera` frustum + quality-scaled `cullDistance` and group into sorted
-   * instanced batches. Returns `true` when at least one decal is visible this frame.
+   * Cull decals against `camera` frustum + quality-scaled `cullDistance` and group them by sort order, Material and
+   * winding into instanced batches. Returns `true` when the pass has something to draw this frame: a visible decal whose
+   * Material resolved, or a warmed Material's first draw.
    */
   prepare(camera: Camera, force = false): boolean {
     const frameId = this.scene.getFrameId();
@@ -512,6 +609,7 @@ export class SceneDecalHost {
     this.preparedCamera = camera;
     this.advanceClock();
     this.fitDynamicCapacity(maxDynamicDecalsForScene(this.scene));
+    this.pruneReleased();
 
     this.batches.length = 0;
     this.batchMap.clear();
@@ -523,28 +621,20 @@ export class SceneDecalHost {
     const distanceScale = sceneRenderingSettings(this.scene).lodDistanceScale;
 
     const admit = (item: PreparedDecal) => {
-      const textureGuid = item.properties.textureGuid;
-      if (!textureGuid || item.properties.opacity * item.opacityMultiplier <= 0.004) return;
+      if (item.properties.opacity * item.opacityMultiplier <= 0.004) return;
       if (item.properties.cullDistance > 0) {
         const effectiveCull = item.properties.cullDistance * distanceScale;
         const dist = Math.max(0, Vector3.Distance(camPos, item.center) - item.radius);
         if (dist > effectiveCull) return;
       }
       if (sphereFrustumSide(this.planes, item.center, item.radius) < 0) return;
+      const material = this.materialOf(item.material);
+      if (!material) return;
 
-      const key = `${item.properties.sortOrder}|${item.properties.blendMode}|${item.properties.receiveLighting ? 1 : 0}|${item.mirrored ? 1 : 0}|${textureGuid}|${item.properties.normalTextureGuid ?? ""}`;
+      const key = `${item.properties.sortOrder}|${material.uniqueId}|${item.mirrored ? 1 : 0}`;
       let batch = this.batchMap.get(key);
       if (!batch) {
-        batch = {
-          key,
-          sortOrder: item.properties.sortOrder,
-          blendMode: item.properties.blendMode,
-          receiveLighting: item.properties.receiveLighting,
-          mirrored: item.mirrored,
-          textureGuid,
-          normalTextureGuid: item.properties.normalTextureGuid,
-          items: [],
-        };
+        batch = { key, sortOrder: item.properties.sortOrder, mirrored: item.mirrored, material, items: [] };
         this.batchMap.set(key, batch);
         this.batches.push(batch);
       }
@@ -561,7 +651,7 @@ export class SceneDecalHost {
     for (const entry of this.dynamicPool) admit(entry);
 
     this.batches.sort((a, b) => a.sortOrder - b.sortOrder);
-    this.lastPreparedResult = this.batches.length > 0;
+    this.lastPreparedResult = this.batches.length > 0 || this.firstDraws.size > 0;
     return this.lastPreparedResult;
   }
 
@@ -579,79 +669,157 @@ export class SceneDecalHost {
       batches: this.batches.length,
       draws: this.totalDraws,
       capacity: maxDynamicDecalsForScene(this.scene),
+      pending: this.lastPending,
+      materials: this.slots.size,
     };
   }
 
-  private ensureUnitCube(): Mesh {
-    if (this.cube && !this.cube.isDisposed()) return this.cube;
-    const cube = CreateBox("haptic:decal-unit-cube", { size: 1 }, this.scene);
-    // Keep internal decal proxy out of scene.meshes so picking, culling, shadows and readiness ignore it.
-    this.scene.removeMesh(cube);
-    cube.isPickable = false;
-    cube.doNotSyncBoundingInfo = true;
-    this.cube = cube;
-    this.allocatedCapacity = 0;
-    return cube;
+  /** Whether the last render skipped a decal whose Material's program was not ready (a capture waits for it). */
+  hasPendingDecals(): boolean {
+    return this.lastPending > 0;
   }
 
-  private ensureBuffers(cube: Mesh, count: number): void {
-    if (this.allocatedCapacity >= count) return;
-    let cap = Math.max(16, this.allocatedCapacity);
-    while (cap < count) cap *= 2;
-    this.allocatedCapacity = cap;
-    this.scratchWorld = new Float32Array(cap * 16);
-    this.scratchInv0 = new Float32Array(cap * 4);
-    this.scratchInv1 = new Float32Array(cap * 4);
-    this.scratchInv2 = new Float32Array(cap * 4);
-    this.scratchInv3 = new Float32Array(cap * 4);
-    this.scratchTint = new Float32Array(cap * 4);
-    this.scratchParams = new Float32Array(cap * 4);
-    cube.thinInstanceSetBuffer("matrix", this.scratchWorld, 16, false);
-    cube.thinInstanceSetBuffer("decalInv0", this.scratchInv0, 4, false);
-    cube.thinInstanceSetBuffer("decalInv1", this.scratchInv1, 4, false);
-    cube.thinInstanceSetBuffer("decalInv2", this.scratchInv2, 4, false);
-    cube.thinInstanceSetBuffer("decalInv3", this.scratchInv3, 4, false);
-    cube.thinInstanceSetBuffer("decalTintOpacity", this.scratchTint, 4, false);
-    cube.thinInstanceSetBuffer("decalParams", this.scratchParams, 4, false);
-  }
-
-  private effectFor(lit: boolean, hasNormalMap: boolean, cel: boolean): Effect {
-    const key = `${lit ? 1 : 0}:${hasNormalMap ? 1 : 0}:${cel ? 1 : 0}`;
-    const cached = this.effects.get(key);
-    if (cached) return cached;
-    registerDecalShaders();
-    const defines: string[] = [];
-    if (lit) {
-      defines.push("#define DECAL_LIT");
-      if (cel) defines.push("#define HAPTIC_CEL");
+  /** The draw slot of `material`, with room for `count` decals. */
+  private slotFor(material: NodeMaterial, count: number): DecalDrawSlot {
+    let slot = this.slots.get(material);
+    if (!slot) {
+      const cube = CreateBox(`${DECAL_PROXY_PREFIX}:${material.name}`, { size: 1 }, this.scene);
+      // Keep internal decal proxy out of scene.meshes so picking, culling, shadows and readiness ignore it.
+      this.scene.removeMesh(cube);
+      cube.isPickable = false;
+      cube.doNotSyncBoundingInfo = true;
+      // A decal receives the shadows the surface under it receives (the light block's receiver term).
+      cube.receiveShadows = true;
+      slot = {
+        material, cube, capacity: 0, awaited: null, buffers: {}, binding: null,
+        rows: Object.fromEntries(DECAL_INSTANCE_ATTRIBUTES.map((name) => [name, new Float32Array(0)])) as DecalDrawSlot["rows"],
+      };
+      this.slots.set(material, slot);
     }
-    if (this.scene.getEngine().useExactSrgbConversions) defines.push("#define HAPTIC_EXACT_SRGB");
-    if (hasNormalMap) defines.push("#define DECAL_NORMAL_MAP");
-    const uniforms = lit ? [...DECAL_BASE_UNIFORMS, ...HAPTIC_LIGHTING_UNIFORMS] : [...DECAL_BASE_UNIFORMS];
-    const samplers = [
-      "sceneDepth",
-      "albedoSampler",
-      ...(hasNormalMap ? ["normalSampler"] : []),
-      ...(lit ? HAPTIC_LIGHTING_SAMPLERS : []),
-    ];
-    const uniformBuffers = lit ? ["HapticLights", "HapticClusters"] : [];
-    const effect = this.scene.getEngine().createEffect(
-      DECAL_SHADER_NAME,
-      {
-        attributes: DECAL_ATTRIBUTES,
-        uniformsNames: uniforms,
-        uniformBuffersNames: uniformBuffers,
-        samplers,
-        defines: defines.join("\n"),
-        fallbacks: null,
-        onCompiled: null,
-        onError: null,
-        shaderLanguage: ShaderLanguage.GLSL,
-      },
-      this.scene.getEngine(),
-    );
-    this.effects.set(key, effect);
-    return effect;
+    if (slot.capacity < count || slot.capacity === 0) {
+      let capacity = Math.max(16, slot.capacity);
+      while (capacity < count) capacity *= 2;
+      slot.capacity = capacity;
+      const engine = this.scene.getEngine();
+      for (const name of DECAL_INSTANCE_ATTRIBUTES) {
+        slot.rows[name] = new Float32Array(capacity * 4);
+        slot.buffers[name]?.dispose();
+        // Instanced (divisor 1) and updatable: the pass writes each draw's rows in place.
+        slot.buffers[name] = new VertexBuffer(engine, slot.rows[name], name, true, false, 4, true);
+      }
+      slot.binding = { ...slot.cube.geometry?.getVertexBuffers() ?? {}, ...slot.buffers as Record<string, VertexBuffer> };
+    }
+    return slot;
+  }
+
+  private dropSlot(material: NodeMaterial | null): void {
+    if (!material) return;
+    const slot = this.slots.get(material);
+    if (!slot) return;
+    this.slots.delete(material);
+    this.firstDraws.delete(material);
+    for (const buffer of Object.values(slot.buffers)) buffer?.dispose();
+    slot.cube.dispose();
+  }
+
+  /**
+   * Whether `material`'s program is ready on its slot. Never binds or draws one that is not: the decal is skipped, and a
+   * compiling Effect asks for a redraw when it finishes (an Effect not created yet asks every frame until it is).
+   */
+  private slotReady(slot: DecalDrawSlot): boolean {
+    const subMesh = slot.cube.subMeshes[0];
+    if (!subMesh) return false;
+    if (slot.material.isReadyForSubMesh(slot.cube, subMesh, true) && subMesh.effect?.isReady()) return true;
+    const effect = subMesh.effect;
+    if (effect && effect.getCompilationError()) return false;
+    if (effect && slot.awaited !== effect) {
+      slot.awaited = effect;
+      effect.executeWhenCompiled(() => this.onPending?.());
+    } else if (!effect) {
+      this.onPending?.();
+    }
+    return false;
+  }
+
+  /**
+   * Compile `materials` on their own draw slots, as the pass draws them, so a decal's first frame does not wait for its
+   * link, and draw each once in the next pass (degenerate, covering no pixel) for drivers that link at a program's first
+   * draw. Also keeps the decal pass in the forward graph, as a Spawn Decal does. Ends at once for a Material that is
+   * not a Decal Material, and gives up on one that does not compile within the warm-up bound.
+   */
+  async warm(materials: Iterable<Material>, assertCurrent?: () => void): Promise<number> {
+    const slots: DecalDrawSlot[] = [];
+    for (const material of materials) {
+      if (!(material instanceof NodeMaterial) || (material.metadata as { materialDomain?: unknown } | null)?.materialDomain !== "decal") continue;
+      slots.push(this.slotFor(material, 1));
+    }
+    if (!slots.length) return 0;
+    this.demandDynamic();
+    const bound = createHeldThreadBound(SCENE_SHADER_WARM_TIMEOUT_MS, undefined, renewOnCompileProgress(this.scene.getEngine()));
+    let waiting = slots;
+    while (waiting.length) {
+      assertCurrent?.();
+      waiting = waiting.filter((slot) => {
+        if (this.slots.get(slot.material) !== slot || isDisposedNodeMaterial(slot.material, this.scene)) return false;
+        const subMesh = slot.cube.subMeshes[0];
+        if (!subMesh || subMesh.effect?.getCompilationError()) return false;
+        if (slot.material.isReadyForSubMesh(slot.cube, subMesh, true) && subMesh.effect?.isReady()) {
+          this.firstDraws.add(slot.material);
+          return false;
+        }
+        return true;
+      });
+      if (!waiting.length || bound.expired()) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 16));
+    }
+    return slots.length - waiting.length;
+  }
+
+  /** Fills `slot`'s instance rows for `items` (or one degenerate row when there are none) and returns the count. */
+  private writeRows(slot: DecalDrawSlot, items: readonly PreparedDecal[], relative: boolean, eye: Vector3): number {
+    const count = Math.max(1, items.length);
+    const rows = slot.rows;
+    if (!items.length) {
+      // A first draw: a zero world collapses every vertex to one point, so it rasterizes nothing.
+      for (const name of DECAL_INSTANCE_ATTRIBUTES) rows[name].fill(0, 0, 4);
+    }
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]!;
+      const inv = item.inverseWorld.m;
+      const o4 = i * 4;
+      for (let c = 0; c < 4; c++) {
+        rows.decalInv0[o4 + c] = inv[c]!;
+        rows.decalInv1[o4 + c] = inv[4 + c]!;
+        rows.decalInv2[o4 + c] = inv[8 + c]!;
+      }
+      const world = item.world.m;
+      for (let c = 0; c < 4; c++) {
+        rows.decalWorld0[o4 + c] = world[c]!;
+        rows.decalWorld1[o4 + c] = world[4 + c]!;
+        rows.decalWorld2[o4 + c] = world[8 + c]!;
+        rows.decalWorld3[o4 + c] = world[12 + c]!;
+      }
+      if (relative) {
+        // The world row's translation less the floating origin's eye (the engine's rule for an instance row).
+        rows.decalWorld3[o4] = world[12]! - eye.x;
+        rows.decalWorld3[o4 + 1] = world[13]! - eye.y;
+        rows.decalWorld3[o4 + 2] = world[14]! - eye.z;
+        // The inverse of the relative world: an eye-relative point is first moved back by the eye (in 64 bits).
+        for (let c = 0; c < 4; c++) rows.decalInv3[o4 + c] = eye.x * inv[c]! + eye.y * inv[4 + c]! + eye.z * inv[8 + c]! + inv[12 + c]!;
+      } else {
+        for (let c = 0; c < 4; c++) rows.decalInv3[o4 + c] = inv[12 + c]!;
+      }
+      rows.decalTintOpacity[o4] = item.properties.tint[0];
+      rows.decalTintOpacity[o4 + 1] = item.properties.tint[1];
+      rows.decalTintOpacity[o4 + 2] = item.properties.tint[2];
+      rows.decalTintOpacity[o4 + 3] = item.properties.opacity * item.opacityMultiplier;
+      rows.decalParams[o4] = 0;
+      rows.decalParams[o4 + 1] = Math.cos((item.properties.fadeAngle * Math.PI) / 180);
+      rows.decalParams[o4 + 2] = 0;
+      rows.decalParams[o4 + 3] = 0;
+    }
+    for (const name of DECAL_INSTANCE_ATTRIBUTES) slot.buffers[name]!.updateDirectly(rows[name].subarray(0, count * 4), 0);
+    return count;
   }
 
   /** Draw all prepared decal batches against the resolved opaque depth buffer. */
@@ -662,11 +830,9 @@ export class SceneDecalHost {
     width: number,
     height: number,
   ): number {
-    if (this.batches.length === 0) return 0;
+    this.lastPending = 0;
+    if (this.batches.length === 0 && this.firstDraws.size === 0) return 0;
     const engine = this.scene.getEngine();
-    const cube = this.ensureUnitCube();
-    const subMesh = cube.subMeshes[0];
-    if (!subMesh) return 0;
 
     context.setTextureSamplingMode(depthHandle, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
     // Large World Rendering: positions are relative to the floating origin's eye, as every other draw's and the
@@ -684,93 +850,66 @@ export class SceneDecalHost {
     view.multiplyToRef(camera.getProjectionMatrix(), this.viewProjection);
     if (Math.abs(this.viewProjection.determinant()) <= 1e-12) return 0;
     this.viewProjection.invertToRef(this.invViewProjection);
-
     const camPos = camera.globalPosition ?? camera.position;
-    const cel = sceneRenderingSettings(this.scene).mode === "cel";
-    const sceneLinear = this.scene.imageProcessingConfiguration.applyByPostProcess ? 1 : 0;
-    let drawnBatches = 0;
+    if (relative) this.cameraRelative.copyFromFloats(camPos.x - eye.x, camPos.y - eye.y, camPos.z - eye.z);
+    else this.cameraRelative.copyFrom(camPos);
 
+    let drawnBatches = 0;
+    const draw = (slot: DecalDrawSlot, items: readonly PreparedDecal[], mirrored: boolean): boolean => {
+      const subMesh = slot.cube.subMeshes[0];
+      if (!subMesh || !this.slotReady(slot)) return false;
+      const drawWrapper = subMesh._drawWrapper;
+      const effect = drawWrapper.effect!;
+      const count = this.writeRows(slot, items, relative, eye);
+      engine.enableEffect(drawWrapper);
+      // Front-face culling draws the OBB's far faces, so entering a decal volume never near-clips it. A mirrored
+      // world (negative determinant) flips the cube's winding, so its batch culls the other side.
+      engine.setState(true, 0, false, mirrored, false);
+      // The cube's vertices and the instance rows, bound as one set without a cached vertex array object: the rows are
+      // the pass's own instanced buffers, which a mesh's thin-instance binding left unbound for this program.
+      engine.bindBuffers(slot.binding!, slot.cube.geometry!.getIndexBuffer(), effect);
+      // Every batch binds in full: a frozen Material skips its bindings when the previous draw used the same Effect.
+      this.scene.resetCachedMaterial();
+      slot.material.bindForSubMesh(IDENTITY, slot.cube, subMesh);
+      effect.setMatrix(DECAL_PASS_UNIFORMS.viewProjection, this.viewProjection);
+      effect.setMatrix(DECAL_PASS_UNIFORMS.invViewProjection, this.invViewProjection);
+      effect.setMatrix(DECAL_PASS_UNIFORMS.view, view);
+      effect.setFloat2(DECAL_PASS_UNIFORMS.invViewport, 1 / Math.max(1, width), 1 / Math.max(1, height));
+      // Depth to NDC z: [0, 1] as it is where clip space has a half z range (reverse depth through clip control), else
+      // [-1, 1].
+      if (engine.isNDCHalfZRange) effect.setFloat2(DECAL_PASS_UNIFORMS.depthRange, 1, 0);
+      else effect.setFloat2(DECAL_PASS_UNIFORMS.depthRange, 2, -1);
+      effect.setFloat(DECAL_PASS_UNIFORMS.reverseDepth, engine.useReverseDepthBuffer ? 1 : 0);
+      effect.setVector3(DECAL_PASS_UNIFORMS.cameraPosition, this.cameraRelative);
+      context.bindTextureHandle(effect, DECAL_SCENE_DEPTH_SAMPLER, depthHandle);
+      engine.setAlphaMode(slot.material.alphaMode);
+      engine.drawElementsType(Material.TriangleFillMode, subMesh.indexStart, subMesh.indexCount, count);
+      // As Babylon after an instanced draw: the divisors go, so the next draw's attributes at these locations are not
+      // instanced.
+      engine.unbindInstanceAttributes();
+      return true;
+    };
+
+    // A frame graph pass binds its target lazily, for its own draw helpers: the decals draw through the engine, so the
+    // target must be bound first, or they land on the default framebuffer.
+    context._applyRenderTarget();
     engine.setDepthBuffer(false);
     engine.setDepthWrite(false);
     try {
       for (const batch of this.batches) {
-        const albedo = this.textureResolver?.(batch.textureGuid) ?? null;
-        if (!albedo || !albedo.isReadyOrNotBlocking()) continue;
-        const normal = batch.normalTextureGuid ? (this.textureResolver?.(batch.normalTextureGuid) ?? null) : null;
-        const hasNormalMap = !!normal && normal.isReadyOrNotBlocking();
-        const effect = this.effectFor(batch.receiveLighting, hasNormalMap, cel);
-        if (!effect.isReady()) continue;
-
-        const count = batch.items.length;
-        this.ensureBuffers(cube, count);
-        for (let i = 0; i < count; i++) {
-          const item = batch.items[i]!;
-          const inv = item.inverseWorld.m;
-          const o4 = i * 4;
-          this.scratchInv0[o4] = inv[0]!; this.scratchInv0[o4 + 1] = inv[1]!; this.scratchInv0[o4 + 2] = inv[2]!; this.scratchInv0[o4 + 3] = inv[3]!;
-          this.scratchInv1[o4] = inv[4]!; this.scratchInv1[o4 + 1] = inv[5]!; this.scratchInv1[o4 + 2] = inv[6]!; this.scratchInv1[o4 + 3] = inv[7]!;
-          this.scratchInv2[o4] = inv[8]!; this.scratchInv2[o4 + 1] = inv[9]!; this.scratchInv2[o4 + 2] = inv[10]!; this.scratchInv2[o4 + 3] = inv[11]!;
-          if (relative) {
-            writeRelativeWorld(item.world, eye, this.scratchWorld, i * 16);
-            // The inverse of the relative world: an eye-relative point is first moved back by the eye (in 64 bits).
-            for (let c = 0; c < 4; c++) {
-              this.scratchInv3[o4 + c] = eye.x * inv[c]! + eye.y * inv[4 + c]! + eye.z * inv[8 + c]! + inv[12 + c]!;
-            }
-          } else {
-            item.world.copyToArray(this.scratchWorld, i * 16);
-            this.scratchInv3[o4] = inv[12]!; this.scratchInv3[o4 + 1] = inv[13]!; this.scratchInv3[o4 + 2] = inv[14]!; this.scratchInv3[o4 + 3] = inv[15]!;
-          }
-          this.scratchTint[o4] = item.properties.tint[0];
-          this.scratchTint[o4 + 1] = item.properties.tint[1];
-          this.scratchTint[o4 + 2] = item.properties.tint[2];
-          this.scratchTint[o4 + 3] = item.properties.opacity * item.opacityMultiplier;
-          const fadeRad = (item.properties.fadeAngle * Math.PI) / 180;
-          this.scratchParams[o4] = item.properties.roughness;
-          this.scratchParams[o4 + 1] = Math.cos(fadeRad);
-          this.scratchParams[o4 + 2] = 0;
-          this.scratchParams[o4 + 3] = 0;
+        const slot = this.slotFor(batch.material, batch.items.length);
+        if (!draw(slot, batch.items, batch.mirrored)) {
+          this.lastPending += 1;
+          continue;
         }
-        cube.thinInstanceCount = count;
-        cube.thinInstancePartialBufferUpdate("matrix", this.scratchWorld.subarray(0, count * 16), 0);
-        cube.thinInstancePartialBufferUpdate("decalInv0", this.scratchInv0.subarray(0, count * 4), 0);
-        cube.thinInstancePartialBufferUpdate("decalInv1", this.scratchInv1.subarray(0, count * 4), 0);
-        cube.thinInstancePartialBufferUpdate("decalInv2", this.scratchInv2.subarray(0, count * 4), 0);
-        cube.thinInstancePartialBufferUpdate("decalInv3", this.scratchInv3.subarray(0, count * 4), 0);
-        cube.thinInstancePartialBufferUpdate("decalTintOpacity", this.scratchTint.subarray(0, count * 4), 0);
-        cube.thinInstancePartialBufferUpdate("decalParams", this.scratchParams.subarray(0, count * 4), 0);
-
-        engine.enableEffect(effect);
-        // Front-face culling draws the OBB's far faces, so entering a decal volume never near-clips it. A mirrored
-        // world (negative determinant) flips the cube's winding, so its batch culls the other side.
-        engine.setState(true, 0, false, batch.mirrored, false);
-        cube._bind(subMesh, effect, Material.TriangleFillMode);
-        effect.setMatrix("decalViewProjection", this.viewProjection);
-        effect.setMatrix("decalInvViewProjection", this.invViewProjection);
-        effect.setMatrix("decalView", view);
-        effect.setFloat2("invViewport", 1 / Math.max(1, width), 1 / Math.max(1, height));
-        effect.setFloat2("depthRange", 2, -1);
-        effect.setFloat("reverseDepth", engine.useReverseDepthBuffer ? 1 : 0);
-        if (relative) effect.setFloat3("cameraPosition", camPos.x - eye.x, camPos.y - eye.y, camPos.z - eye.z);
-        else effect.setVector3("cameraPosition", camPos);
-        effect.setFloat("sceneLinear", sceneLinear);
-        effect.setFloat("blendModeId", blendModeId(batch.blendMode));
-        bindSceneFog(effect, this.scene);
-        bindSceneFogColor(effect, this.scene);
-        context.bindTextureHandle(effect, "sceneDepth", depthHandle);
-        // The textures' own UV transform: KTX2 flips V there (`ResourceCache`); any other texture's is the identity.
-        effect.setTexture("albedoSampler", albedo);
-        effect.setMatrix("decalAlbedoMatrix", albedo.getTextureMatrix());
-        if (hasNormalMap && normal) {
-          effect.setTexture("normalSampler", normal);
-          effect.setMatrix("decalNormalMatrix", normal.getTextureMatrix());
-        }
-        if (batch.receiveLighting) {
-          bindHapticLightingUniforms(this.scene, effect, cel, true);
-        }
-        engine.setAlphaMode(babylonAlphaMode(batch.blendMode));
-        engine.drawElementsType(Material.TriangleFillMode, subMesh.indexStart, subMesh.indexCount, count);
+        this.firstDraws.delete(batch.material);
         drawnBatches += 1;
         this.totalDraws += 1;
+      }
+      for (const material of [...this.firstDraws]) {
+        const slot = this.slots.get(material);
+        if (!slot || isDisposedNodeMaterial(material, this.scene)) { this.firstDraws.delete(material); continue; }
+        if (draw(slot, [], false)) this.firstDraws.delete(material);
       }
     } finally {
       engine.setAlphaMode(Constants.ALPHA_DISABLE);
@@ -786,13 +925,10 @@ export class SceneDecalHost {
     this.owners.clear();
     this.dynamicPool.length = 0;
     this.batches.length = 0;
-    this.cube?.dispose();
-    this.cube = null;
-    this.allocatedCapacity = 0;
-    for (const effect of this.effects.values()) {
-      retireOwnedEffect(effect, () => effect.dispose());
-    }
-    this.effects.clear();
+    this.releaseEntries();
+    for (const slot of this.slots.values()) slot.cube.dispose();
+    this.slots.clear();
+    this.firstDraws.clear();
   }
 }
 
@@ -815,8 +951,28 @@ export function sceneDecalStats(scene: Scene): SceneDecalStats {
   return sceneDecalHost(scene).stats();
 }
 
-export function setDecalTextureResolver(scene: Scene, resolver: DecalTextureResolver | null): void {
-  sceneDecalHost(scene).setTextureResolver(resolver);
+/** Whether `scene`'s last decal pass skipped a decal whose Material was not ready yet. */
+export function sceneDecalsPending(scene: Scene): boolean {
+  return hosts.get(scene)?.hasPendingDecals() ?? false;
+}
+
+export function setDecalMaterialSource(scene: Scene, source: DecalMaterialSource | null): void {
+  sceneDecalHost(scene).setMaterialSource(source);
+}
+
+/** Asks for a redraw whenever the decal pass skipped a decal whose Material was still compiling. */
+export function setDecalPendingListener(scene: Scene, listener: (() => void) | null): void {
+  sceneDecalHost(scene).setPendingListener(listener);
+}
+
+/** A Material document changed or a generation was published: the decals ask their source again. */
+export function refreshDecalMaterials(scene: Scene): void {
+  hosts.get(scene)?.refreshMaterials();
+}
+
+/** Compile Decal Materials before their first decal draws (`SceneDecalHost.warm`). Returns how many became ready. */
+export function warmDecalMaterials(scene: Scene, materials: Iterable<Material>, assertCurrent?: () => void): Promise<number> {
+  return sceneDecalHost(scene).warm(materials, assertCurrent);
 }
 
 export function upsertDecals(scene: Scene, actorId: string, node: TransformNode, bindings: readonly DecalBinding[], admitted = true): void {
@@ -826,10 +982,6 @@ export function upsertDecals(scene: Scene, actorId: string, node: TransformNode,
 
 export function setDecalsVisible(scene: Scene, actorId: string, visible: boolean): void {
   hosts.get(scene)?.setActorVisible(actorId, visible);
-}
-
-export function sceneDecalTextureGuids(scene: Scene): Set<string> {
-  return hosts.get(scene)?.usedTextureGuids() ?? new Set<string>();
 }
 
 export function removeDecals(scene: Scene, actorId: string): void {
@@ -852,11 +1004,6 @@ export function setDecalTimePaused(scene: Scene, paused: boolean): void {
 /** Scales dynamic decal lifetimes by the simulation time scale (`setSimulationTimeScale`, as for particles). */
 export function setDecalTimeScale(scene: Scene, scale: number): void {
   sceneDecalHost(scene).setTimeScale(scale);
-}
-
-/** Whether dynamic decals left `scene`'s pool since the last call: the owner's texture leases may now be prunable. */
-export function takeDecalTextureRelease(scene: Scene): boolean {
-  return hosts.get(scene)?.takeTextureRelease() ?? false;
 }
 
 /** FrameGraph render pass that projects all visible instanced decals onto opaque scene geometry. */

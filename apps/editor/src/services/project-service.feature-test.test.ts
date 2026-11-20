@@ -366,6 +366,13 @@ describe("FeatureTest starter", () => {
         : [{ path: registry.getByGuid(guid)?.path, errors: lowered.diagnostics.filter((row) => row.severity === "error") }];
     });
     expect(materialErrors).toEqual([]);
+    // Every Material domain is showcased, and the Decal domain in every Blend Mode, lit and unlit.
+    expect([...new Set([...materials.values()].map((material) => material.domain))].sort())
+      .toEqual(["decal", "landscape", "particle", "postProcess", "surface", "text"]);
+    const decalMaterials = [...materials.values()].filter((material) => material.domain === "decal");
+    expect([...new Set(decalMaterials.map((material) => material.blendMode))].sort())
+      .toEqual(["additive", "masked", "multiply", "opaque", "translucent"]);
+    expect([...new Set(decalMaterials.map((material) => material.shadingModel))].sort()).toEqual(["pbr", "unlit"]);
 
     for (const asset of ofType("ParticleGraph")) {
       const graph = normalizeParticleGraphDocument(await reopened.loadDocument("particle-graph", asset.path));

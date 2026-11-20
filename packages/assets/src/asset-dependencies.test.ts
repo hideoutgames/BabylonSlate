@@ -183,12 +183,19 @@ describe("typed asset dependencies", () => {
     }
   });
 
-  it("ships the Texture a Spawn Decal node names, and nothing for a property the node has no pin for", () => {
+  it("ships the Material a Spawn Decal node names, and nothing for a property the node has no pin for", () => {
     const metadata = collectAssetDependencyMetadata("Class", {
-      nodes: [{ id: "decal", type: "decals.spawn", data: { "default:texture": "scorch", "default:normalTexture": "stale-normal" } }],
+      nodes: [{ id: "decal", type: "decals.spawn", data: { "default:material": "scorch-material", "default:texture": "stale-texture" } }],
       edges: [],
     });
-    expect(metadata.dependencies).toEqual(["scorch"]);
+    expect(metadata.dependencies).toEqual(["scorch-material"]);
+  });
+
+  it("ships a Decal component's Material", () => {
+    const metadata = collectAssetDependencyMetadata("Scene", { actors: [{ id: "mark", components: [
+      { id: "decal", classId: "DecalComponent", properties: { materialGuid: "decal-material", textureGuid: "stale-texture" } },
+    ] }] });
+    expect(metadata.dependencies).toEqual(["decal-material"]);
   });
 
   it("loads a curve asset read by Get Curve Object with its owner, through a literal or a variable", () => {

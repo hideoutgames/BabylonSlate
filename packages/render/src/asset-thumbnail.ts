@@ -18,7 +18,7 @@ import { isColliderVisualMesh } from "./collider-visual";
 import { isSkyboxMesh } from "./skybox";
 import { hasSurfaceVisual } from "./scene-loader";
 import { MaterialLibrary, type MaterialResolveOptions } from "./material-library";
-import { createMaterialPreviewScene, createPreviewRenderTarget, renderPreviewFrame } from "./material-preview";
+import { createMaterialPreviewScene, createPreviewRenderTarget, isDecalDomainMaterial, renderPreviewFrame } from "./material-preview";
 import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
 import { acquireMaterialTexture, bindResourceCacheToHandle, materialTextureSampling, resourceCacheForEngine, type TextureResources } from "./resource-cache";
@@ -207,9 +207,15 @@ export async function captureAssetThumbnailPng(
     if (request.kind === "Material") {
       const material = resolveMaterial(request.materialGuid);
       if (!material) return thumbnailMiss(shouldContinue());
-      // Always a sphere, independent of the Material document's preview choice.
-      applyMaterialToVisualMeshes(host.mesh, material);
-      meshes = [host.mesh];
+      // Always a sphere, independent of the Material document's preview choice; a Decal Material projects onto the
+      // preview's decal stage instead.
+      if (isDecalDomainMaterial(material)) {
+        host.applyMaterial(material);
+        meshes = [...host.decalStageMeshes()];
+      } else {
+        applyMaterialToVisualMeshes(host.mesh, material);
+        meshes = [host.mesh];
+      }
     } else {
       host.mesh.isVisible = false;
       host.scene.shadowsEnabled = false;

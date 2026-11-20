@@ -14,4 +14,4 @@ Returns the position of the camera in world space.
 
 ## Notes
 
-- Available in Surface, Landscape and Post Process materials.
+- Available in Surface, Landscape, Post Process and Decal materials.

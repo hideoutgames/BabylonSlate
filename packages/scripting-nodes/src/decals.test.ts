@@ -20,7 +20,7 @@ function node(
 }
 
 describe("decal nodes", () => {
-  it("compiles decals.spawn with size, lifetime, and fadeOutDuration defaults", () => {
+  it("compiles decals.spawn with its Material and the size, lifetime, fade, tint and opacity defaults", () => {
     expect(decalNodes.map((definition) => definition.id)).toEqual(["decals.spawn"]);
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
@@ -28,7 +28,7 @@ describe("decal nodes", () => {
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "spawn", "decals.spawn", { "default:texture": "scorch-tex" }),
+        node(registry, "spawn", "decals.spawn", { "default:material": "scorch-material" }),
       ],
       edges: [
         { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "spawn", targetPinId: "execIn" },
@@ -42,10 +42,12 @@ describe("decal nodes", () => {
       spawnDecal: (...args: unknown[]) => { calls.push(args); },
     });
     expect(calls).toHaveLength(1);
-    expect([calls[0]![0], calls[0]![3], calls[0]![4], calls[0]![5]]).toEqual([
-      "scorch-tex",
+    expect([calls[0]![0], calls[0]![3], calls[0]![4], calls[0]![5], calls[0]![6], calls[0]![7]]).toEqual([
+      "scorch-material",
       { x: 1, y: 1, z: 1 },
       10,
+      1,
+      { x: 1, y: 1, z: 1, w: 1 },
       1,
     ]);
   });

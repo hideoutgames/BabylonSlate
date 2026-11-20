@@ -15,4 +15,4 @@ Returns the position of the surface point in world space, in metres.
 ## Notes
 
 - A node that also feeds **World Position Offset** returns the position before the offset.
-- Only in Surface and Landscape materials.
+- Only in Surface, Landscape and Decal materials. In a Decal material, it is the surface point under the decal.

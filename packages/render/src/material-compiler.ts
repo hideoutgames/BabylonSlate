@@ -84,6 +84,8 @@ import { markCageShadowWrapper, registerLatticeShadowAdapter } from "./lattice-d
 import { markBoundedMaterial, markDrawBatchMaterial } from "./draw-batch-world-block";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
+import { createDecalPlumbing } from "./decal-projection-block";
+import { MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 
@@ -381,7 +383,11 @@ export function compileMaterialPlan(
     } else {
       applyAuthoredSurfaceBlend(material, plan);
       if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text") registerAlphaToCoverage(material);
-      if (options.overlay) { material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false; }
+      if (options.overlay) {
+        material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false;
+        // A Multiply surface on a Scene Layer draws as Translucent (`attachSurfaceShading`).
+        if (plan.blendMode === "multiply") material.alphaMode = Constants.ALPHA_COMBINE;
+      }
       syncSceneLighting(scene);
     }
   };
@@ -435,6 +441,8 @@ export function compileMaterialPlan(
       outputNodes.push(
         ...createPostProcessPlumbing(options.name, created, plumbing),
       );
+    } else if (plan.domain === "decal") {
+      outputNodes.push(...createDecalPlumbing(options.name, created, plumbing));
     } else if (plan.domain !== "particle" || options.particlePreview) {
       outputNodes.push(
         ...createSurfacePlumbing(options.name, created, plumbing),
@@ -569,8 +577,9 @@ export function compileMaterialPlan(
         pin && pin.type.kind !== "generic"
           ? (pin.type.kind as MaterialValueType)
           : "float";
-      // A root-level parameter marked Per Instance reads each mesh's value from an instanced attribute.
-      const perInstance = operation.source.callPath.length === 0 && isPerInstanceParameter(operation.nodeType, operation.properties);
+      // A root-level parameter marked Per Instance reads each mesh's value from an instanced attribute. A decal's box
+      // carries only the decal's own instance rows, so in the Decal domain it stays a uniform.
+      const perInstance = operation.source.callPath.length === 0 && plan.domain !== "decal" && isPerInstanceParameter(operation.nodeType, operation.properties);
       const kind = operation.nodeType === "param.color" ? "color" : "float";
       const block = perInstance
         ? createInstanceParameterBlock(instanceParameterAttribute(instanceParameters.length, kind), kind)
@@ -786,6 +795,8 @@ export function compileMaterialPlan(
         connectParticleBlend(options.name, created, color, fragment.rgba);
       } else if (color) color.connectTo(fragment.rgba);
       outputNodes.push(fragment);
+    } else if (plan.domain === "decal") {
+      outputNodes.push(...attachDecalShading(plan, options, created, plumbing, outputPoint));
     } else {
       // A water variant keeps built-in water's cut (removal volumes, land above the water, a blending neighbour's water),
       // in each of its own variants (outline, capture). It reads the final displaced position, and the geometry's own
@@ -806,7 +817,7 @@ export function compileMaterialPlan(
         const identity = new SharedOutlineIdentityBlock(`${options.name}_identity`);
         const output = new SharedOutlineOutputBlock(`${options.name}_outline`);
         identity.identity.connectTo(output.rgb);
-        if (plan.blendMode === "translucent" || plan.blendMode === "additive")
+        if (blendsOverScene(plan.blendMode))
           outputPoint("opacity", `${options.name}_opacity`, false)?.connectTo(output.a);
         created.push(identity, output); outputNodes.push(output);
       } else if (shadowDepth) {
@@ -816,7 +827,7 @@ export function compileMaterialPlan(
           if (outputNodes[index] instanceof VertexOutputBlock) outputNodes.splice(index, 1);
         outputNodes.push(createAuthoredShadowVertexOutput(options.name, created, plumbing));
         const output = new AuthoredShadowFragmentOutput(`${options.name}_shadowFragment`);
-        if (plan.blendMode === "translucent" || plan.blendMode === "additive")
+        if (blendsOverScene(plan.blendMode))
           outputPoint("opacity", `${options.name}_opacity`, false)?.connectTo(output.opacity);
         created.push(output); outputNodes.push(output);
       } else if (options.surfaceVariant === "captureDepth" || options.surfaceVariant === "captureNormal") {
@@ -835,7 +846,7 @@ export function compileMaterialPlan(
       }
     }
     for (const node of outputNodes) material.addOutputNode(node);
-    if ((plan.domain === "surface" || plan.domain === "landscape") && !auxiliary && plan.shadingModel !== "unlit") {
+    if ((plan.domain === "surface" || plan.domain === "landscape" || plan.domain === "decal") && !auxiliary && plan.shadingModel !== "unlit") {
       // CEL and Screen-Space Shadows are HapticLightingBlock's scene-level defines, set from the Scene's settings.
       followLightingDefines(material);
     }
@@ -1435,6 +1446,21 @@ function constantScalar(plan: MaterialBuildPlan, operand: MaterialOperand | null
   return Array.isArray(value) && value.length === 1 && typeof value[0] === "number" ? value[0] : null;
 }
 
+/** Blend modes that draw over the scene by their opacity (the coverage passes read it as translucent ones do). */
+function blendsOverScene(mode: MaterialBuildPlan["blendMode"]): boolean {
+  return mode === "translucent" || mode === "additive" || mode === "multiply";
+}
+
+/** The alpha mode a Decal Material draws with; Opaque and Masked write their colour (Masked after its discard). */
+export function decalAlphaMode(mode: MaterialBuildPlan["blendMode"]): number {
+  switch (mode) {
+    case "translucent": return Constants.ALPHA_COMBINE;
+    case "additive": return Constants.ALPHA_ADD;
+    case "multiply": return Constants.ALPHA_MULTIPLY;
+    default: return Constants.ALPHA_DISABLE;
+  }
+}
+
 /** Map authored blend / two-sided onto Babylon after `material.build()`. */
 function applyAuthoredSurfaceBlend(
   material: NodeMaterial,
@@ -1450,8 +1476,18 @@ function applyAuthoredSurfaceBlend(
   if (plan.domain === "postProcess" || plan.domain === "particle") {
     return;
   }
+  if (plan.domain === "decal") {
+    // The decal pass draws every Decal Material after the opaque surfaces, culls the box's front faces itself and
+    // blends by the Material's alpha mode. Alpha blending (not the blend mode) keeps Screen-Space Shadows out of its
+    // lighting, so every blend mode compiles the same lighting defines.
+    material.backFaceCulling = true;
+    material.needDepthPrePass = false;
+    material.transparencyMode = Material.MATERIAL_ALPHABLEND;
+    material.alphaMode = decalAlphaMode(plan.blendMode);
+    return;
+  }
   material.backFaceCulling = plan.twoSided !== true;
-  material.alphaMode = plan.blendMode === "additive" ? Constants.ALPHA_ADD : Constants.ALPHA_COMBINE;
+  material.alphaMode = plan.blendMode === "additive" ? Constants.ALPHA_ADD : plan.blendMode === "multiply" ? Constants.ALPHA_MULTIPLY : Constants.ALPHA_COMBINE;
   material.needDepthPrePass = false;
   switch (plan.blendMode) {
     case "masked":
@@ -1459,6 +1495,7 @@ function applyAuthoredSurfaceBlend(
       return;
     case "translucent":
     case "additive":
+    case "multiply":
       material.transparencyMode = Material.MATERIAL_ALPHABLEND;
       material.needDepthPrePass = true;
       return;
@@ -1705,10 +1742,14 @@ function attachSurfaceShading(
     right.connectTo(add.right);
     return add.output;
   };
-  // The scene's fog, by the one rule every surface fogs by (`SceneFogBlock`).
+  // A world Multiply surface writes its factor (`writeMultiplyFactor`); on a Scene Layer it draws as Translucent: a layer
+  // with post-processing composites through a transparent target, where a product with the scene has nothing to multiply.
+  const multiply = plan.blendMode === "multiply" && !options.overlay;
+  // The scene's fog, by the one rule every surface fogs by (`SceneFogBlock`); a Multiply factor fades toward 1.
   const applyFog = (color: NodeMaterialConnectionPoint) => {
     if (options.overlay || !plumbing.worldPosition || !plumbing.view) return color;
     const fog = new SceneFogBlock(`${options.name}_fog`);
+    if (multiply) fog.toward = "white";
     color.connectTo(fog.input);
     plumbing.worldPosition.connectTo(fog.worldPosition);
     plumbing.view.connectTo(fog.view);
@@ -1724,6 +1765,16 @@ function attachSurfaceShading(
     color.connectTo(coverage.color);
     alpha.connectTo(coverage.alpha);
     return { color: coverage.rgb, alpha: coverage.a };
+  };
+
+  // A Multiply surface writes its factor, encoded for display alone, and alpha 1 (`MultiplyBlendFactorBlock`).
+  const writeShown = (color: NodeMaterialConnectionPoint, alpha: NodeMaterialConnectionPoint | null) => {
+    if (!multiply) {
+      writeLinearSurfaceColor(color, fragment, options.name, created);
+      alpha?.connectTo(fragment.a);
+      return;
+    }
+    writeMultiplyFactor(color, alpha, fragment, options.name, created);
   };
 
   if (plan.shadingModel === "unlit") {
@@ -1752,8 +1803,8 @@ function attachSurfaceShading(
       // Like lit surfaces, world unlit color is linear: it stays linear for a
       // Scene Linear display stage and is encoded for display otherwise.
       const shown = color && opacity ? covered(color, opacity) : { color, alpha: opacity };
-      if (shown.color) writeLinearSurfaceColor(applyFog(shown.color), fragment, options.name, created);
-      shown.alpha?.connectTo(fragment.a);
+      if (shown.color) writeShown(applyFog(shown.color), shown.alpha);
+      else shown.alpha?.connectTo(fragment.a);
     }
     return fragment;
   }
@@ -1809,15 +1860,14 @@ function attachSurfaceShading(
   const total = addColor(lit, indirect, "totalLighting");
   const color = emissive ? addColor(total, emissive, "surfaceEmission") : total;
   const shown = alpha ? covered(color, alpha) : { color, alpha };
-  writeLinearSurfaceColor(applyFog(shown.color), fragment, options.name, created);
-  shown.alpha?.connectTo(fragment.a);
+  writeShown(applyFog(shown.color), shown.alpha);
   return fragment;
 }
 
 /** Route a linear surface color through the scene's image processing. */
 function writeLinearSurfaceColor(
   color: NodeMaterialConnectionPoint,
-  fragment: GeometrySurfaceOutputBlock,
+  fragment: FragmentOutputBlock,
   name: string,
   created: NodeMaterialBlock[],
 ): void {
@@ -1828,6 +1878,119 @@ function writeLinearSurfaceColor(
   created.push(imageProcessing);
   color.connectTo(imageProcessing.color);
   imageProcessing.rgb.connectTo(fragment.rgb);
+}
+
+/**
+ * A Multiply blend's output: `mix(1, color, alpha)` with alpha 1, gamma-encoded alone (never tone mapped or exposed,
+ * so a factor of 1 stays 1) unless a Scene Linear display stage encodes the frame.
+ */
+function writeMultiplyFactor(
+  color: NodeMaterialConnectionPoint,
+  alpha: NodeMaterialConnectionPoint | null,
+  fragment: GeometrySurfaceOutputBlock | MultiplyFactorOutputBlock,
+  name: string,
+  created: NodeMaterialBlock[],
+): void {
+  const factor = new MultiplyBlendFactorBlock(`${name}_multiplyFactor`);
+  const one = createConstantBlock(`${name}_multiplyAlpha`, "float", [1]);
+  created.push(factor, one);
+  color.connectTo(factor.color);
+  (alpha ?? one.output).connectTo(factor.alpha);
+  factor.factor.connectTo(fragment.rgb);
+  one.output.connectTo(fragment.a);
+  if (fragment instanceof GeometrySurfaceOutputBlock) fragment.linearFactor = true;
+}
+
+/**
+ * The Decal domain's shading, after its projection (`createDecalPlumbing`): Base Color and Emissive times the decal's
+ * Tint, lit by the shared light block unless the Material is Unlit; alpha is Opacity times the decal's Opacity and its
+ * fade. The fog fades the colour toward what leaves the scene as it is (the fog colour for Translucent, black for
+ * Additive, white for Multiply). Opaque discards where the fade is under half, Masked under Alpha Cutoff; both write
+ * alpha 1. The pass blends by the Material's alpha mode (`decalAlphaMode`).
+ */
+function attachDecalShading(
+  plan: MaterialBuildPlan,
+  options: CompileMaterialOptions,
+  created: NodeMaterialBlock[],
+  plumbing: MaterialPlumbing,
+  outputPoint: (pinId: string, name: string, asColor: boolean) => NodeMaterialConnectionPoint | null,
+): NodeMaterialBlock[] {
+  const projection = plumbing.decal;
+  if (!projection || !plumbing.worldPosition) throw new Error("A Decal Material needs its projection");
+  const name = options.name;
+  const constant = (type: MaterialValueType, value: number[], suffix: string, asColor = false) => {
+    const block = createConstantBlock(`${name}_${suffix}`, type, value, asColor);
+    created.push(block);
+    return block.output;
+  };
+  const multiply = (left: NodeMaterialConnectionPoint, right: NodeMaterialConnectionPoint, suffix: string) => {
+    const block = new MultiplyBlock(`${name}_${suffix}`);
+    created.push(block);
+    left.connectTo(block.left);
+    right.connectTo(block.right);
+    return block.output;
+  };
+  const add = (left: NodeMaterialConnectionPoint, right: NodeMaterialConnectionPoint, suffix: string) => {
+    const block = new AddBlock(`${name}_${suffix}`);
+    created.push(block);
+    left.connectTo(block.left);
+    right.connectTo(block.right);
+    return block.output;
+  };
+  const baseColor = multiply(outputPoint("baseColor", `${name}_baseColor`, true) ?? constant("vec3", [0.8, 0.8, 0.8], "baseColorDefault", true),
+    projection.tint, "tintedBaseColor");
+  const emissiveOperand = plan.outputs.emissive;
+  const emissive = emissiveOperand && !(emissiveOperand.kind === "constant" && emissiveOperand.value.every((value) => value === 0))
+    ? outputPoint("emissive", `${name}_emissive`, true)
+    : null;
+
+  let color = baseColor;
+  if (plan.shadingModel !== "unlit") {
+    const lighting = new HapticLightingBlock(`${name}_lighting`);
+    created.push(lighting);
+    plumbing.worldPosition.connectTo(lighting.worldPosition);
+    projection.worldNormal.connectTo(lighting.worldNormal);
+    projection.cameraPosition.connectTo(lighting.cameraPosition);
+    baseColor.connectTo(lighting.baseColor);
+    (outputPoint("metallic", `${name}_metallic`, false) ?? constant("float", [0], "metallicDefault")).connectTo(lighting.metallic);
+    (outputPoint("roughness", `${name}_roughness`, false) ?? constant("float", [0.5], "roughnessDefault")).connectTo(lighting.roughness);
+    outputPoint("normal", `${name}_normalInput`, false)?.connectTo(lighting.normal);
+    color = add(add(lighting.diffuseDirect, lighting.specularDirect, "litColor"), add(lighting.diffuseIndirect, lighting.specularIndirect, "environmentColor"), "totalLighting");
+  }
+  if (emissive) color = add(color, multiply(emissive, projection.tint, "tintedEmissive"), "decalEmission");
+
+  const opacity = outputPoint("opacity", `${name}_opacity`, false) ?? constant("float", [1], "opacityDefault");
+  const alpha = multiply(multiply(opacity, projection.opacity, "decalOpacity"), projection.fade, "decalAlpha");
+
+  const fog = new SceneFogBlock(`${name}_fog`);
+  fog.toward = plan.blendMode === "additive" ? "black" : plan.blendMode === "multiply" ? "white" : "fog";
+  created.push(fog);
+  color.connectTo(fog.input);
+  plumbing.worldPosition.connectTo(fog.worldPosition);
+  projection.viewPosition.connectTo(fog.viewPosition);
+
+  const outputs: NodeMaterialBlock[] = [];
+  if (plan.blendMode === "opaque" || plan.blendMode === "masked") {
+    const clip = new CoverageClipBlock(`${name}_decalClip`);
+    clip.coverage = false;
+    (plan.blendMode === "masked" ? alpha : projection.fade).connectTo(clip.value);
+    constant("float", [plan.blendMode === "masked" ? plan.alphaCutoff : 0.5], "decalCutoff").connectTo(clip.cutoff);
+    created.push(clip);
+    outputs.push(clip);
+  }
+  if (plan.blendMode === "multiply") {
+    const fragment = new MultiplyFactorOutputBlock(`${name}_fragment`);
+    created.push(fragment);
+    writeMultiplyFactor(fog.output, alpha, fragment, name, created);
+    outputs.push(fragment);
+    return outputs;
+  }
+  const fragment = new FragmentOutputBlock(`${name}_fragment`);
+  created.push(fragment);
+  writeLinearSurfaceColor(fog.output, fragment, name, created);
+  (plan.blendMode === "translucent" || plan.blendMode === "additive" ? alpha : constant("float", [1], "decalOpaqueAlpha")).connectTo(fragment.a);
+  outputs.push(fragment);
+  return outputs;
 }
 
 /**

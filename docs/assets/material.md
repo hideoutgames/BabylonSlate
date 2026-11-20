@@ -53,15 +53,17 @@ With no node selected, the **Inspector** shows these settings. Some apply to onl
 
 | Setting | Description |
 | --- | --- |
-| Domain | **Surface** (meshes and models), **Landscape**, **Post Process** (full-screen passes), **Particle** or **Text** (2D text in Scene Layers). Changing it removes nodes the new domain does not support. |
-| Shading Model | **PBR** (lit) or **Unlit**. Surface and Landscape. |
-| Blend Mode | **Opaque**, **Masked**, **Translucent** or **Additive**. Not shown for Particle or Text; particle emitters set their own blending. |
-| Alpha Cutoff | Masked only. Pixels with lower opacity are cut out. Under [MSAA](../graphics/post-processing.md#anti-aliasing) the cut-out edges are smoothed. |
+| Domain | **Surface** (meshes and models), **Landscape**, **Post Process** (full-screen passes), **Particle**, **Text** (2D text in Scene Layers) or **Decal** (projected by a [Decal](../components/decal.md) or [Spawn Decal](../scripting/class/spawn-decal.md)). Changing it removes nodes the new domain does not support; between Surface and Decal the output node keeps the wires both outputs have. |
+| Shading Model | **PBR** (lit) or **Unlit**. Surface, Landscape and Decal. |
+| Blend Mode | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (Surface, Landscape and Decal): Multiply darkens what is behind by the colour, scaled by Opacity. A Multiply Material on a Scene Layer draws as Translucent. Text offers Translucent and Additive. Not shown for Particle or Text; particle emitters set their own blending. |
+| Alpha Cutoff | Masked only. Pixels with lower opacity are cut out. Under [MSAA](../graphics/post-processing.md#anti-aliasing) the cut-out edges are smoothed (not on decals). |
 | Two Sided | Draws back faces too. Surface and Landscape. |
 | Default Normals | **Model Normals** or **Flat Normals**, used when the Normal input is unconnected. Surface and Landscape. |
 | Bounds Padding (Local) | Enlarges culling bounds for Materials that move vertices, so displaced meshes do not vanish at screen edges. Surface and Landscape. |
 
-Each domain has its own output node: [Material Output](../scripting/material/material-output.md) for Surface and Landscape, [Post Process Output](../scripting/material/post-process-output.md), [Particle Output](../scripting/material/particle-output.md) and [Text Output](../scripting/material/text-output.md).
+Each domain has its own output node: [Material Output](../scripting/material/material-output.md) for Surface and Landscape, [Post Process Output](../scripting/material/post-process-output.md), [Particle Output](../scripting/material/particle-output.md), [Text Output](../scripting/material/text-output.md) and [Decal Output](../scripting/material/decal-output.md).
+
+A Decal Material previews projected onto a floor and a ball. In its graph, [UV](../scripting/material/uv.md) gives the decal's projected coordinates and World Position and World Normal the surface under it. A Per Instance parameter is an ordinary parameter in a Decal Material: each decal's own Tint and Opacity are its per-decal values.
 
 ## Notes
 

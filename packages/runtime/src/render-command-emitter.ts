@@ -176,13 +176,9 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       !actor.sceneLayerId && hasLiveComponent(actor, "DecalComponent"),
       () => decalBindings(liveBindingInputs(actor, "DecalComponent", (component) => ({
         enabled: component.getVariable("enabled"),
-        textureGuid: component.getVariable("textureGuid"),
-        normalTextureGuid: component.getVariable("normalTextureGuid"),
+        materialGuid: component.getVariable("materialGuid"),
         tint: rgbTuple(component.getVariable("tint")),
         opacity: component.getVariable("opacity"),
-        roughness: component.getVariable("roughness"),
-        blendMode: component.getVariable("blendMode"),
-        receiveLighting: component.getVariable("receiveLighting"),
         size: sizeTuple(component),
         fadeAngle: component.getVariable("fadeAngle"),
         sortOrder: component.getVariable("sortOrder"),
@@ -544,9 +540,11 @@ const hasLiveComponent = (actor: Actor, classId: string): boolean =>
 function liveBindingInputs(actor: Actor, classId: string, properties: (component: ActorComponent) => Record<string, unknown>): SerializedComponent[] {
   return actor.components.filter((component) => !component.destroyed).map((component) => {
     const { position, rotation, scale } = component.transform;
+    const own = component.classId === classId;
     return {
       id: component.guid, classId: component.classId, parentId: component.parentId,
-      properties: component.classId === classId ? properties(component) : {},
+      properties: own ? properties(component) : {},
+      ...(own && component.materialInstance ? { materialInstance: component.materialInstance } : {}),
       transform: { position: [position.x, position.y, position.z], rotation: [rotation.x, rotation.y, rotation.z, rotation.w], scale: [scale.x, scale.y, scale.z] },
     };
   });

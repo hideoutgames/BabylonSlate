@@ -46,7 +46,13 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
   get geometryRoughness() { return this.getInputByName("geometryRoughness")!; }
   get geometrySpecular() { return this.getInputByName("geometrySpecular")!; }
   override getClassName(): string { return "GeometrySurfaceOutputBlock"; }
+  /**
+   * The colour is a Multiply blend's linear factor (`MultiplyBlendFactorBlock`): encoded for display alone, unless a
+   * Scene Linear display stage encodes the frame. Set before the build.
+   */
+  linearFactor = false;
   override prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial, mesh?: AbstractMesh): void {
+    if (this.linearFactor) this.convertToGammaSpace = !nodeMaterial.imageProcessingConfiguration.applyByPostProcess;
     super.prepareDefines(defines, nodeMaterial);
     // `worlddebug shading off`: one constant colour, so the compiler drops the surface's shading and texture reads.
     if (mesh) defines.setValue(WORLD_DEBUG_FLAT_DEFINE, worldDebugOff(mesh.getScene(), "shading"), true);

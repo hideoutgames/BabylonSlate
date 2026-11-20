@@ -1,10 +1,13 @@
 import type { MaterialValueType } from "./types";
 
-/** Surface shades a mesh; post-process shades a camera pass; particle shades GPUParticleSystem quads. */
-export type MaterialDomain = "surface" | "landscape" | "postProcess" | "particle" | "text";
+/**
+ * Surface shades a mesh; post-process shades a camera pass; particle shades GPUParticleSystem quads; decal shades the
+ * scene's opaque surfaces inside a Decal component's box, projected along its local -Y.
+ */
+export type MaterialDomain = "surface" | "landscape" | "postProcess" | "particle" | "text" | "decal";
 
 export function parseMaterialDomain(value: unknown): MaterialDomain {
-  if (value === "postProcess" || value === "particle" || value === "landscape" || value === "text") {
+  if (value === "postProcess" || value === "particle" || value === "landscape" || value === "text" || value === "decal") {
     return value;
   }
   return "surface";
@@ -355,12 +358,12 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
   { type: "input.vertexNormal", title: "Vertex Normal (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "normal", name: "Normal", type: VEC3 }] },
   { type: "input.vertexPosition", title: "Vertex Position (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "position", name: "Position", type: VEC3 }] },
   {
-    // Mesh, particle quad and glyph UVs. A post-process quad has no UV
-    // attribute; it reads Screen UV instead.
+    // Mesh, particle quad and glyph UVs, and a decal's projected coordinates (its box's local X and Z, 0 to 1). A
+    // post-process quad has no UV attribute; it reads Screen UV instead.
     type: "input.uv",
     title: "UV",
     category: "Input",
-    domains: ["surface", "particle", "text"],
+    domains: ["surface", "particle", "text", "decal"],
     cost: 0,
     inputs: [],
     outputs: [{ id: "uv", name: "UV", type: VEC2 }],
@@ -513,7 +516,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     type: "input.objectPosition",
     title: "Object Position",
     category: "Input",
-    domains: ["surface"],
+    domains: ["surface", "decal"],
     cost: 1,
     inputs: [],
     outputs: [{ id: "position", name: "Position", type: VEC3 }],
@@ -522,7 +525,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     type: "input.worldPosition",
     title: "World Position",
     category: "Input",
-    domains: ["surface"],
+    domains: ["surface", "decal"],
     cost: 0,
     inputs: [],
     outputs: [{ id: "position", name: "Position", type: VEC3 }],
@@ -531,7 +534,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     type: "input.worldNormal",
     title: "World Normal",
     category: "Input",
-    domains: ["surface"],
+    domains: ["surface", "decal"],
     cost: 0,
     inputs: [],
     outputs: [{ id: "normal", name: "Normal", type: VEC3 }],
@@ -540,7 +543,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     type: "input.worldTangent",
     title: "World Tangent",
     category: "Input",
-    domains: ["surface"],
+    domains: ["surface", "decal"],
     cost: 0,
     inputs: [],
     outputs: [{ id: "tangent", name: "Tangent", type: VEC3 }],
@@ -549,7 +552,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     type: "input.viewDirection",
     title: "View Direction",
     category: "Input",
-    domains: ["surface"],
+    domains: ["surface", "decal"],
     cost: 0,
     inputs: [],
     outputs: [{ id: "direction", name: "Direction", type: VEC3 }],
@@ -558,7 +561,7 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     type: "input.cameraPosition",
     title: "Camera Position",
     category: "Input",
-    domains: ["surface", "postProcess"],
+    domains: ["surface", "postProcess", "decal"],
     cost: 0,
     inputs: [],
     outputs: [{ id: "position", name: "Position", type: VEC3 }],
@@ -1030,7 +1033,7 @@ const TEXTURE_NODES: MaterialNodeDefinition[] = [
     type: "texture.triplanar",
     title: "Triplanar",
     category: "Texture",
-    domains: ["surface"],
+    domains: ["surface", "decal"],
     stages: ["fragment"],
     cost: 8,
     samples: 3,
@@ -1052,7 +1055,7 @@ const SHADING_NODES: MaterialNodeDefinition[] = [
     type: "shading.fresnel",
     title: "Fresnel",
     category: "Shading",
-    domains: ["surface"],
+    domains: ["surface", "decal"],
     cost: 6,
     inputs: [
       { id: "bias", name: "Bias", type: FLOAT, defaultValue: [0] },
@@ -1064,7 +1067,7 @@ const SHADING_NODES: MaterialNodeDefinition[] = [
     type: "shading.normalMap",
     title: "Normal Map",
     category: "Shading",
-    domains: ["surface"],
+    domains: ["surface", "decal"],
     stages: ["fragment"],
     cost: 5,
     inputs: [
@@ -1333,6 +1336,30 @@ const OUTPUT_NODES: MaterialNodeDefinition[] = [
   },
 ];
 
+/**
+ * The Decal domain's output. Every pin is optional: an unwired pin draws its default. Base Color, Normal, Roughness and
+ * Metallic shade a lit decal (Shading Model PBR); an unlit one draws Base Color plus Emissive. Normal is a world-space
+ * normal, as the Normal Map node gives. A Decal component's Tint multiplies Base Color and Emissive; its Opacity and the
+ * box's edge and angle fade multiply Opacity.
+ */
+const DECAL_OUTPUT_NODE: MaterialNodeDefinition = {
+  type: "output.decal",
+  title: "Decal Output",
+  category: "Output",
+  domains: ["decal"],
+  terminal: "decal",
+  cost: 0,
+  inputs: [
+    { id: "baseColor", name: "Base Color", type: VEC3, colorHint: true, defaultValue: [0.8, 0.8, 0.8] },
+    { id: "opacity", name: "Opacity", type: FLOAT, defaultValue: [1] },
+    { id: "normal", name: "Normal", type: VEC3 },
+    { id: "roughness", name: "Roughness", type: FLOAT, defaultValue: [0.5] },
+    { id: "metallic", name: "Metallic", type: FLOAT, defaultValue: [0] },
+    { id: "emissive", name: "Emissive", type: VEC3, colorHint: true, defaultValue: [0, 0, 0] },
+  ],
+  outputs: [],
+};
+
 const LANDSCAPE_NODES: MaterialNodeDefinition[] = [
   { type: "landscape.uv", title: "Landscape Coordinates", category: "Landscape", domains: ["landscape"], cost: 1,
     inputs: [{ id: "scale", name: "Tiling", type: FLOAT, defaultValue: [0.1] }], outputs: [{ id: "uv", name: "UV", type: VEC2 }] },
@@ -1366,6 +1393,7 @@ export const MATERIAL_CATALOG: readonly MaterialNodeDefinition[] = [
   ...FUNCTION_NODES,
   ...REROUTE_NODES,
   ...OUTPUT_NODES,
+  DECAL_OUTPUT_NODE,
 ].map(withSearchAliases);
 
 const BY_TYPE = new Map(
@@ -1416,5 +1444,6 @@ export function terminalNodeTypeFor(domain: MaterialDomain): string {
   if (domain === "text") return "output.text";
   if (domain === "postProcess") return "output.postProcess";
   if (domain === "particle") return "output.particle";
+  if (domain === "decal") return "output.decal";
   return "output.surface";
 }
