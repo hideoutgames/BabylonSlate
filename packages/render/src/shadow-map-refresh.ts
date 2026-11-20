@@ -220,8 +220,11 @@ type MaterialState = Shared & {
 /** Which of a geometry's buffers can be rewritten in place, as found at its buffer layout `layout`. */
 type GeometryState = { layout: number; indices: boolean; vertices: boolean; verticesBesidesPose: boolean };
 
-/** A local map's caster: the revision and drawn level the map last saw of it (`ShadowMapRefresh.applyLocal`). */
-type LocalMember = { revision: number; level: number | undefined };
+/**
+ * A local map's caster: the revision and drawn level the map last saw of it (`ShadowMapRefresh.applyLocal`), and the
+ * read of every caster that last found it in range (`scanLocal`). Updated in place: a frame allocates none.
+ */
+type LocalMember = { revision: number; level: number | undefined; scan: number };
 
 /**
  * A local map's kept casters (`ShadowMapRefresh.applyLocal`): those in its range, those of them read every frame
@@ -288,6 +291,15 @@ function cascadesDrawnInto(
   return reached;
 }
 
+/** Whether two caster boxes (`ShadowMapRefresh.casterBox`) hold the same six values. */
+function sameBox(a: Float64Array, b: Float64Array): boolean {
+  for (let index = 0; index < 6; index++) if (a[index] !== b[index]) return false;
+  return true;
+}
+
+/** Seen-caster entries kept for reuse (`ShadowMapRefresh.releaseSeen`); more are left to the collector. */
+const MAX_SPARE_SEEN = 4096;
+
 function addSeen(entry: SeenCaster, region: ShadowChangeRegion): void {
   const box = entry.box;
   if (entry.bounded) region.addBox(box[0]!, box[1]!, box[2]!, box[3]!, box[4]!, box[5]!);
@@ -336,6 +348,7 @@ export class ShadowMapRefresh {
   private readonly localRanges = new WeakMap<RenderTargetTexture, LocalRange>();
   /** Scratch for `applyLocal`: the casters it reads, marked with `localVisit`. */
   private readonly localVisits: Caster[] = [];
+  private localVisitCount = 0;
   private localVisit = 0;
   private readonly checkBox = new Float64Array(6);
   /** Per cascaded map whose last refresh skipped its casters, the change log's end then (`trackCascades`). */
@@ -373,6 +386,75 @@ export class ShadowMapRefresh {
   private readonly sceneState = new Snapshot();
   private revision = 0;
   private continuous = false;
+  /**
+   * The casters in the order of `casters`, listed again only after one was added or removed (`listCasters`): the
+   * per-frame reads of every caster iterate it without allocating an iterator entry each.
+   */
+  private readonly casterList: Caster[] = [];
+  private casterListValid = false;
+  /** Seen-caster entries the maps dropped, reused by `note` (`releaseSeen`). */
+  private readonly spareSeen: SeenCaster[] = [];
+  /** The read of every caster `scanLocal` runs: the members it did not find in range leave. */
+  private localScan = 0;
+  /** Whether the reader `readerFor` returned was opened by that call. */
+  private readerFresh = false;
+  /**
+   * Per-call state of the callbacks below, which are made once so that the frame's walk, refreshes and sweeps allocate
+   * no closure: the Scene of the walk's source polls, `collect`'s mode and count, the map `apply` refreshes, what
+   * `applyLocal` found of its live casters, and the region a sweep adds to.
+   */
+  private pollScene: Scene | null = null;
+  private collectWalk = 0;
+  private collectEverything = false;
+  private collectKept = 0;
+  private collected = 0;
+  private refreshTarget: RenderTargetTexture | null = null;
+  private refreshState: Snapshot | null = null;
+  private refreshRateWanted = 0;
+  private refreshContinuous = false;
+  private liveUnsafe = false;
+  private sweepRegion: ShadowChangeRegion | null = null;
+  private readonly pollMaterial = (shared: MaterialState, material: Material): void => {
+    const revision = shared.revision;
+    this.materialState(material, this.walk);
+    if (shared.revision !== revision) shared.changed = this.walk;
+  };
+  private readonly pollSourceEntry = (shared: SourceState, source: AbstractMesh): void => {
+    this.pollSource(this.pollScene!, source, shared, this.walk);
+  };
+  private readonly markDirty = (node: unknown): void => {
+    const record = this.casters.get(node as AbstractMesh);
+    if (record) record.dirty = this.walk;
+  };
+  private readonly collectMesh = (mesh: AbstractMesh): void => {
+    if (this.collectOne(mesh, this.collectWalk, this.collectEverything)) this.collectKept++;
+  };
+  private readonly refreshMap = (): void => {
+    const map = this.refreshTarget!;
+    const rate = this.refreshRateWanted;
+    if (map.refreshRate !== rate) map.refreshRate = rate;
+    else if (!this.refreshContinuous && this.refreshState!.changed) map.resetRefreshCounter();
+  };
+  private readonly queueVisit = (record: Caster): void => {
+    if (record.visit === this.localVisit) return;
+    record.visit = this.localVisit;
+    this.localVisits[this.localVisitCount++] = record;
+  };
+  private readonly noteLiveUnsafe = (record: Caster): void => {
+    if (record.unsafe) this.liveUnsafe = true;
+  };
+  private readonly sweepEntry = (entry: SeenCaster, mesh: AbstractMesh, seen: Map<AbstractMesh, SeenCaster>): void => {
+    if (entry.stamp === this.stamp) return;
+    addSeen(entry, this.sweepRegion!);
+    seen.delete(mesh);
+    this.releaseSeen(entry);
+  };
+  private readonly releaseSeen = (entry: SeenCaster): void => {
+    if (this.spareSeen.length < MAX_SPARE_SEEN) this.spareSeen.push(entry);
+  };
+  private readonly dropStaleMember = (member: LocalMember, record: Caster, members: Map<Caster, LocalMember>): void => {
+    if (member.scan !== this.localScan) members.delete(record);
+  };
 
   private readonly casterChanged: ((mesh: AbstractMesh) => void) | undefined;
 
@@ -403,6 +485,7 @@ export class ShadowMapRefresh {
       if (meshes.has(mesh)) continue;
       if (record.geometry) unwatchGeometry(record.geometry);
       this.casters.delete(mesh);
+      this.casterListValid = false;
       record.removed = true;
       this.logChange(record);
     }
@@ -442,7 +525,13 @@ export class ShadowMapRefresh {
    * more than once. False, visiting none, when the log no longer holds them all: the caller reads every caster.
    */
   forEachChangeSince(cursor: number, visit: (mesh: AbstractMesh, removed: boolean) => void): boolean {
-    return this.forEachChangedRecordSince(cursor, (record) => visit(record.mesh, record.removed));
+    if (cursor < this.logBase) return false;
+    const log = this.changeLog;
+    for (let at = cursor - this.logBase; at < log.length; at++) {
+      const record = log[at]!;
+      visit(record.mesh, record.removed);
+    }
+    return true;
   }
 
   private forEachChangedRecordSince(cursor: number, visit: (record: Caster) => void): boolean {
@@ -511,13 +600,16 @@ export class ShadowMapRefresh {
     this.syncScene(scene);
   }
 
-  private readerFor(scene: Scene): { reader: RenderChangeReader; fresh: boolean } {
-    if (this.reader && this.readerScene === scene) return { reader: this.reader, fresh: false };
+  /** The Scene's change journal reader; `readerFresh` says whether this call opened it. */
+  private readerFor(scene: Scene): RenderChangeReader {
+    this.readerFresh = false;
+    if (this.reader && this.readerScene === scene) return this.reader;
+    this.readerFresh = true;
     this.reader?.dispose();
     // Not transforms or geometry: asking every caster for its world matrix, and polling each source, already finds them.
     this.reader = openRenderChangeReader(scene, RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material | RenderChange.Other | RenderChange.Style);
     this.readerScene = scene;
-    return { reader: this.reader, fresh: true };
+    return this.reader;
   }
 
   private noteMissed(kind: string): void {
@@ -537,13 +629,14 @@ export class ShadowMapRefresh {
     const stats = this.stats;
     // The levels as the journal walk left them, to compare.
     const lodCheck = this.lodCheck;
-    lodCheck.clear();
+    // An empty Map is left as it is: clearing one makes it a new table.
+    if (lodCheck.size) lodCheck.clear();
     if (!journal) for (const [mesh, level] of this.lodLevels) lodCheck.set(mesh, level);
-    this.lodLevels.clear();
+    if (this.lodLevels.size) this.lodLevels.clear();
     let everything = !journal;
     if (journal) {
-      const { reader, fresh } = this.readerFor(scene);
-      if (fresh) everything = true;
+      const reader = this.readerFor(scene);
+      if (this.readerFresh) everything = true;
       // Walks that give a caster the new default note it again.
       if (this.defaultMaterial && (scene as unknown as { _defaultMaterial: Material | null })._defaultMaterial !== this.defaultMaterial) {
         this.defaultMaterial = null;
@@ -552,12 +645,10 @@ export class ShadowMapRefresh {
       if (!everything) {
         // Materials first: a source's poll reads its Material for this walk (`materialGate`), after which a read here
         // would find nothing new.
-        for (const [material, shared] of this.materials) {
-          const revision = shared.revision;
-          this.materialState(material, walk);
-          if (shared.revision !== revision) shared.changed = walk;
-        }
-        for (const [source, shared] of this.sources) this.pollSource(scene, source, shared, walk);
+        this.materials.forEach(this.pollMaterial);
+        this.pollScene = scene;
+        this.sources.forEach(this.pollSourceEntry);
+        this.pollScene = null;
         stats.polledSources += this.sources.size;
         stats.polledMaterials += this.materials.size;
       }
@@ -565,13 +656,12 @@ export class ShadowMapRefresh {
       stats.casters += meshes.size;
       // Asking every caster for its world matrix below notes recomputed ones; the drain after it reads those too.
       this.collect(meshes, walk, everything);
-      if (!reader.drain((node) => {
-        const record = this.casters.get(node as AbstractMesh);
-        if (record) record.dirty = walk;
-      })) everything = true;
+      if (!reader.drain(this.markDirty)) everything = true;
     } else this.collect(meshes, walk, true);
     let visited = 0, moved = 0, missed = 0;
-    for (const record of this.order) {
+    const order = this.order;
+    for (let index = 0; index < order.length; index++) {
+      const record = order[index]!;
       const mesh = record.mesh;
       if (!everything && record.dirty !== walk) {
         if (record.moved === walk) {
@@ -619,76 +709,86 @@ export class ShadowMapRefresh {
    * finds changed (`syncCasters`); drops the casters `meshes` no longer holds.
    */
   private collect(meshes: ReadonlySet<AbstractMesh>, walk: number, everything: boolean): void {
-    const order = this.order;
-    order.length = 0;
     const before = this.casters.size;
-    let kept = 0;
-    for (const mesh of meshes) {
-      let record = this.casters.get(mesh);
-      if (record) kept++;
-      else {
-        const instance = mesh instanceof InstancedMesh;
-        record = {
-          mesh,
-          source: instance ? mesh.sourceMesh : mesh,
-          instance,
-          followed: journalFollows(mesh),
-          snapshot: new Snapshot(),
-          sourceShared: null,
-          materialShared: null,
-          billboard: 0,
-          infinite: false,
-          autoLod: false,
-          lattice: false,
-          lod: false,
-          seen: 0,
-          dirty: walk,
-          moved: 0,
-          logged: -1,
-          removed: false,
-          visit: 0,
-          geometry: null,
-          world: null,
-          worldFlag: -1,
-          worldValue: Matrix.Identity(),
-          transformRevision: 0,
-          revision: 0,
-          safe: false,
-          unsafe: false,
-          bounded: false,
-          shown: false,
-        };
-        this.casters.set(mesh, record);
-      }
-      record.seen = walk;
-      order.push(record);
-      const world = mesh.computeWorldMatrix();
-      if (record.sourceShared) record.sourceShared.used = walk;
-      if (record.materialShared) record.materialShared.used = walk;
-      if (everything || record.dirty === walk) continue;
-      if (
-        !record.followed ||
-        record.sourceShared!.changed === walk ||
-        record.materialShared!.changed === walk ||
-        mesh.billboardMode !== record.billboard ||
-        mesh.infiniteDistance !== record.infinite ||
-        isAutoLodMaster(mesh) !== record.autoLod ||
-        (record.instance &&
-          ((mesh as InstancedMesh).sourceMesh !== record.source || hasMeshLatticeDeformer(mesh) !== record.lattice))
-      )
-        record.dirty = walk;
-      // Only its world matrix: unless the journal, drained next, names it too, it reads that alone (`moveCaster`).
-      else if (world !== record.world || world.updateFlag !== record.worldFlag) record.moved = walk;
-    }
-    if (kept === before) return;
+    this.collectWalk = walk;
+    this.collectEverything = everything;
+    this.collectKept = 0;
+    this.collected = 0;
+    // `forEach` visits each mesh without an iterator result each. The order is written over in place, and shortened
+    // after: emptied first, its storage would be made again as it grew.
+    meshes.forEach(this.collectMesh);
+    this.order.length = this.collected;
+    if (this.collectKept === before) return;
     // Removed casters leave each map's in-range list, which refreshes that map.
     for (const [mesh, record] of this.casters) {
       if (record.seen === walk) continue;
       if (record.geometry) unwatchGeometry(record.geometry);
       this.casters.delete(mesh);
+      this.casterListValid = false;
       record.removed = true;
       this.logChange(record);
     }
+  }
+
+  /** `collect` for one mesh: lists its caster (made when new) and marks what a poll finds; true when it was kept. */
+  private collectOne(mesh: AbstractMesh, walk: number, everything: boolean): boolean {
+    let record = this.casters.get(mesh);
+    const kept = record !== undefined;
+    if (!record) {
+      const instance = mesh instanceof InstancedMesh;
+      record = {
+        mesh,
+        source: instance ? mesh.sourceMesh : mesh,
+        instance,
+        followed: journalFollows(mesh),
+        snapshot: new Snapshot(),
+        sourceShared: null,
+        materialShared: null,
+        billboard: 0,
+        infinite: false,
+        autoLod: false,
+        lattice: false,
+        lod: false,
+        seen: 0,
+        dirty: walk,
+        moved: 0,
+        logged: -1,
+        removed: false,
+        visit: 0,
+        geometry: null,
+        world: null,
+        worldFlag: -1,
+        worldValue: Matrix.Identity(),
+        transformRevision: 0,
+        revision: 0,
+        safe: false,
+        unsafe: false,
+        bounded: false,
+        shown: false,
+      };
+      this.casters.set(mesh, record);
+      this.casterListValid = false;
+    }
+    record.seen = walk;
+    this.order[this.collected++] = record;
+    const world = mesh.computeWorldMatrix();
+    if (record.sourceShared) record.sourceShared.used = walk;
+    if (record.materialShared) record.materialShared.used = walk;
+    if (everything || record.dirty === walk) return kept;
+    if (
+      !record.followed ||
+      record.sourceShared!.changed === walk ||
+      record.materialShared!.changed === walk ||
+      mesh.billboardMode !== record.billboard ||
+      mesh.infiniteDistance !== record.infinite ||
+      isAutoLodMaster(mesh) !== record.autoLod ||
+      (record.instance &&
+        ((mesh as InstancedMesh).sourceMesh !== record.source || hasMeshLatticeDeformer(mesh) !== record.lattice))
+    )
+      record.dirty = walk;
+    // Only its world matrix: unless the journal, drained next, names it too, it reads that alone (`moveCaster`).
+    else if (world !== record.world || world.updateFlag !== record.worldFlag) record.moved = walk;
+    return kept;
   }
 
   /**
@@ -1116,9 +1216,8 @@ export class ShadowMapRefresh {
       // Its casters are kept, and updated from the walk's changes (`applyLocal`): the snapshot holds the light alone.
       state.end();
       const lightChanged = state.changed;
-      const local = this.applyLocal(map, lightChanged, position, range, this.shadowCone(light, direction), seen, region);
-      continuous = local.continuous;
-      if (local.changed) state.changed = true;
+      if (this.applyLocal(map, lightChanged, position, range, this.shadowCone(light, direction), seen, region)) state.changed = true;
+      continuous = this.liveUnsafe;
     }
     if (!localMap) {
       this.sweepSeen(seen, region);
@@ -1132,15 +1231,16 @@ export class ShadowMapRefresh {
     const rate = continuous
       ? RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME
       : RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
-    const refresh = () => {
-      if (map.refreshRate !== rate) map.refreshRate = rate;
-      else if (!continuous && state.changed) map.resetRefreshCounter();
-    };
+    this.refreshTarget = map;
+    this.refreshState = state;
+    this.refreshRateWanted = rate;
+    this.refreshContinuous = continuous;
     // An atlas sun map redraws only the cascades this refresh found changed (`trackCascades`); the others keep their
     // tiles. Any other reset of its counter redraws every cascade.
     if (cascadedSun instanceof AtlasCascadedShadowGenerator) {
-      cascadedSun.refreshCascades(continuous || state.changed ? this.cascadeChanges : 0, refresh);
-    } else refresh();
+      cascadedSun.refreshCascades(continuous || state.changed ? this.cascadeChanges : 0, this.refreshMap);
+    } else this.refreshMap();
+    this.refreshTarget = this.refreshState = null;
     // No completion observer: readiness probes also emit onAfterUnbind without
     // drawing. Babylon consumes the refresh only at its real target-render gate,
     // and retries automatically when a caster's shader is not ready.
@@ -1215,7 +1315,10 @@ export class ShadowMapRefresh {
     // differs from this one's in length, so the frame the view stops redraws once more, with the same depth, and is
     // exact again from there. A frame whose walk also ran the full path (`stageCheck`) reads the casters as ever.
     if (state.changed && !this.check) {
-      seen.clear();
+      if (seen.size) {
+        seen.forEach(this.releaseSeen);
+        seen.clear();
+      }
       this.cascadeSkipped.set(map, this.changeCursor());
       this.stats.cascadeSkips++;
       return false;
@@ -1235,13 +1338,16 @@ export class ShadowMapRefresh {
     const count = generator.numCascades;
     const all = (1 << count) - 1;
     const cascades = this.cascadeSnapshots(map, count);
-    for (const snapshot of cascades) snapshot.begin();
+    for (let cascade = 0; cascade < cascades.length; cascade++) cascades[cascade]!.begin();
     // The cascades reached by a caster that changes on its own.
     let live = 0;
     let continuous = false;
     const eye = camera?.globalPosition;
     const orthographic = camera?.mode === Camera.ORTHOGRAPHIC_CAMERA;
-    for (const [mesh, record] of this.casters) {
+    const casters = this.listCasters();
+    for (let index = 0; index < casters.length; index++) {
+      const record = casters[index]!;
+      const mesh = record.mesh;
       let reach = all;
       if (matrices.length) {
         const sphere = mesh.getBoundingInfo().boundingSphere;
@@ -1310,31 +1416,31 @@ export class ShadowMapRefresh {
    * the casters that change on their own (unsafe) or with the camera (automatic levels of detail), read every frame.
    * A change of the light (`lightChanged`), a log this map fell behind, or a refresh that was not a local one before
    * reads every caster again, as does a frame whose walk ran the full path (`stageCheck`), which then counts each kept
-   * answer the full read disagrees with. Notes each caster read (`note`) and drops those that left. Returns whether the
-   * map draws continuously and whether its casters changed (what the snapshot's caster values were).
+   * answer the full read disagrees with. Notes each caster read (`note`) and drops those that left. Returns whether its
+   * casters changed (what the snapshot's caster values were), and leaves in `liveUnsafe` whether the map draws
+   * continuously.
    */
   private applyLocal(
     map: RenderTargetTexture, lightChanged: boolean, position: Vector3, range: number, cone: ShadowCone | null,
     seen: Map<AbstractMesh, SeenCaster>, region: ShadowChangeRegion,
-  ): { continuous: boolean; changed: boolean } {
+  ): boolean {
     let kept = this.localRanges.get(map);
     if (!kept) this.localRanges.set(map, (kept = { cursor: 0, members: new Map(), live: new Set(), valid: false }));
     const cursor = kept.cursor;
     kept.cursor = this.changeCursor();
     let changed = false;
+    // The visits are written over in place (`queueVisit`), and shortened after: emptied first, the list's storage would
+    // be made again as it grew.
     const visits = this.localVisits;
-    visits.length = 0;
+    this.localVisitCount = 0;
     const visit = ++this.localVisit;
-    const queue = (record: Caster) => {
-      if (record.visit === visit) return;
-      record.visit = visit;
-      visits.push(record);
-    };
-    const incremental = kept.valid && !lightChanged && this.forEachChangedRecordSince(cursor, queue);
+    const incremental = kept.valid && !lightChanged && this.forEachChangedRecordSince(cursor, this.queueVisit);
+    if (incremental) kept.live.forEach(this.queueVisit);
+    visits.length = this.localVisitCount;
     if (incremental) {
-      for (const record of kept.live) queue(record);
       this.stats.localVisited += visits.length;
-      for (const record of visits) if (this.readLocal(kept, record, position, range, cone, seen, region)) changed = true;
+      for (let index = 0; index < visits.length; index++)
+        if (this.readLocal(kept, visits[index]!, position, range, cone, seen, region)) changed = true;
     }
     if (!incremental || this.check) {
       const misses = incremental ? this.checkLocal(kept, visit, position, range, cone, seen) : 0;
@@ -1346,9 +1452,9 @@ export class ShadowMapRefresh {
         this.stats.localScans++;
       }
     }
-    let continuous = false;
-    for (const record of kept.live) if (record.unsafe) continuous = true;
-    return { continuous, changed };
+    this.liveUnsafe = false;
+    kept.live.forEach(this.noteLiveUnsafe);
+    return changed;
   }
 
   /**
@@ -1376,6 +1482,7 @@ export class ShadowMapRefresh {
       if (entry && (current || !this.casters.has(mesh))) {
         addSeen(entry, region);
         seen.delete(mesh);
+        this.releaseSeen(entry);
       }
       return true;
     }
@@ -1384,28 +1491,50 @@ export class ShadowMapRefresh {
     if (record.unsafe || level !== undefined) kept.live.add(record);
     else kept.live.delete(record);
     if (member && member.revision === record.revision && member.level === level) return false;
-    kept.members.set(record, { revision: record.revision, level });
+    if (member) {
+      member.revision = record.revision;
+      member.level = level;
+    } else kept.members.set(record, { revision: record.revision, level, scan: 0 });
     return true;
   }
 
-  /** Reads every caster for a local map's kept casters, replacing them; true when they changed. */
+  /**
+   * Reads every caster for a local map's kept casters, replacing them; true when they changed. The members are updated
+   * in place, and those it did not find in range leave, so a light that moves every frame allocates nothing here.
+   */
   private scanLocal(
     kept: LocalRange, position: Vector3, range: number, cone: ShadowCone | null, seen: Map<AbstractMesh, SeenCaster>, region: ShadowChangeRegion,
   ): boolean {
-    const members = new Map<Caster, LocalMember>();
+    const members = kept.members;
+    const scan = ++this.localScan;
     let changed = false;
-    kept.live.clear();
-    for (const [mesh, record] of this.casters) {
+    let inRange = 0;
+    if (kept.live.size) kept.live.clear();
+    const casters = this.listCasters();
+    for (let index = 0; index < casters.length; index++) {
+      const record = casters[index]!;
+      const mesh = record.mesh;
       if (!casterWithinShadowRange(mesh, position, range, cone)) continue;
+      inRange++;
       const level = this.lodLevels.get(mesh);
       this.note(seen, mesh, record, level, region);
       if (record.unsafe || level !== undefined) kept.live.add(record);
-      const member = kept.members.get(record);
-      if (!member || member.revision !== record.revision || member.level !== level) changed = true;
-      members.set(record, { revision: record.revision, level });
+      const member = members.get(record);
+      if (!member) {
+        changed = true;
+        members.set(record, { revision: record.revision, level, scan });
+        continue;
+      }
+      if (member.revision !== record.revision || member.level !== level) changed = true;
+      member.revision = record.revision;
+      member.level = level;
+      member.scan = scan;
     }
-    if (members.size !== kept.members.size) changed = true;
-    kept.members = members;
+    // Members this read did not find in range left.
+    if (members.size !== inRange) {
+      changed = true;
+      members.forEach(this.dropStaleMember);
+    }
     kept.valid = true;
     this.sweepSeen(seen, region);
     return changed;
@@ -1421,7 +1550,10 @@ export class ShadowMapRefresh {
   ): number {
     let misses = 0, members = 0;
     const box = this.checkBox;
-    for (const [mesh, record] of this.casters) {
+    const casters = this.listCasters();
+    for (let index = 0; index < casters.length; index++) {
+      const record = casters[index]!;
+      const mesh = record.mesh;
       if (!casterWithinShadowRange(mesh, position, range, cone)) continue;
       members++;
       const member = kept.members.get(record);
@@ -1432,9 +1564,19 @@ export class ShadowMapRefresh {
       if (record.visit === visit) continue;
       const entry = seen.get(mesh);
       const bounded = this.casterBox(mesh, record, box);
-      if (!entry || entry.bounded !== bounded || (bounded && !box.every((value, index) => value === entry.box[index]))) misses++;
+      if (!entry || entry.bounded !== bounded || (bounded && !sameBox(box, entry.box))) misses++;
     }
     return misses + Math.abs(members - kept.members.size);
+  }
+
+  /** The casters in the order of `casters`, listed again after one was added or removed. */
+  private listCasters(): readonly Caster[] {
+    const list = this.casterList;
+    if (this.casterListValid) return list;
+    list.length = 0;
+    for (const record of this.casters.values()) list.push(record);
+    this.casterListValid = true;
+    return list;
   }
 
   private seenCasters(map: RenderTargetTexture): Map<AbstractMesh, SeenCaster> {
@@ -1478,7 +1620,8 @@ export class ShadowMapRefresh {
       if (bounded) region.addBox(box[0]!, box[1]!, box[2]!, box[3]!, box[4]!, box[5]!);
       else region.addAll();
     }
-    if (!entry) seen.set(mesh, (entry = { revision: 0, level: undefined, stamp: 0, bounded: false, box: new Float64Array(6) }));
+    // Every field is written below, so an entry another map or caster dropped serves as a new one.
+    if (!entry) seen.set(mesh, (entry = this.spareSeen.pop() ?? { revision: 0, level: undefined, stamp: 0, bounded: false, box: new Float64Array(6) }));
     entry.revision = record.revision;
     entry.level = level;
     entry.stamp = this.stamp;
@@ -1488,11 +1631,9 @@ export class ShadowMapRefresh {
 
   /** Casters the map no longer draws (removed, out of range or reach) changed it where they were. */
   private sweepSeen(seen: Map<AbstractMesh, SeenCaster>, region: ShadowChangeRegion): void {
-    for (const [mesh, entry] of seen) {
-      if (entry.stamp === this.stamp) continue;
-      addSeen(entry, region);
-      seen.delete(mesh);
-    }
+    this.sweepRegion = region;
+    seen.forEach(this.sweepEntry);
+    this.sweepRegion = null;
   }
 
   /** The cascade matrices of the map's last actual pass, kept by a clear observer. */
@@ -1517,6 +1658,9 @@ export class ShadowMapRefresh {
     for (const record of this.casters.values())
       if (record.geometry) unwatchGeometry(record.geometry);
     this.casters.clear();
+    this.casterList.length = 0;
+    this.casterListValid = false;
+    this.spareSeen.length = 0;
     this.sources.clear();
     this.materials.clear();
     this.lodLevels.clear();
