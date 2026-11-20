@@ -16,6 +16,8 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "setActorOutlines",
   "setActorDeformers",
   "setFogVolumes",
+  "setDecals",
+  "spawnDecal",
   "setReflectionProbes",
   "recaptureReflectionProbes",
   "assignMaterial",

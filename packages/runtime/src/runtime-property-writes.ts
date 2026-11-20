@@ -44,7 +44,7 @@ interface RuntimePropertyWritesHost {
   renderSlots(): Pick<RenderSlots, "recordedSlot">;
   renderEmitter(): Pick<RenderCommandEmitter,
     "rendersComponent" | "queueDeformers" | "emitActorDeformers" | "emitMaterialAssignments" |
-    "emitRenderTargetCapture" | "emitActorOutlines" | "emitActorFogVolumes" | "emitActorReflectionProbes" | "queueComponentTransforms" | "emitComponentTransforms" |
+    "emitRenderTargetCapture" | "emitActorOutlines" | "emitActorFogVolumes" | "emitActorDecals" | "emitActorReflectionProbes" | "queueComponentTransforms" | "emitComponentTransforms" |
     "emitMeshAssignment">;
   uiControls(): Pick<UIControls2DRuntime, "refresh">;
   overlay(): Pick<SceneLayerOverlay, "applyLayouts" | "refreshComponent">;
@@ -167,6 +167,7 @@ export class RuntimePropertyWrites {
       if (component.classId === "RenderTargetCaptureComponent") renderEmitter.emitRenderTargetCapture(owner, slotId);
       else if (component.classId === "OutlineComponent") renderEmitter.emitActorOutlines(owner, slotId);
       else if (component.classId === "FogVolumeComponent") renderEmitter.emitActorFogVolumes(owner, slotId);
+      else if (component.classId === "DecalComponent") renderEmitter.emitActorDecals(owner, slotId);
       else if (component.classId === "ReflectionProbeComponent") renderEmitter.emitActorReflectionProbes(owner, slotId);
       else if (propertyName === "transform") {
         if (this.host.ticks().processing) renderEmitter.queueComponentTransforms(owner);

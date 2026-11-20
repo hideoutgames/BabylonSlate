@@ -429,6 +429,8 @@ export interface ScriptHostServices {
   ): void;
   /** Spawn Particles At Location / Attached: a transient effect actor, or null when it cannot spawn. */
   spawnParticleEffect?(request: import("./runtime-particle-effects").ParticleEffectRequest, owner: EngineObject | null): Actor | null;
+  /** Spawn Decal: emit a pooled runtime decal at a world pose with optional lifetime and fade-out. */
+  spawnDecal?(decal: import("@haptic/core").DynamicDecalSpawnRequest): void;
   /** Whether the component (or, without `componentId`, any ParticleComponent of the actor) is playing. */
   isParticlesPlaying?(actorGuid: string, componentId?: string): boolean;
   /** `count` extra particles from a playing ParticleComponent; `slot` -1 for every emitter slot. */

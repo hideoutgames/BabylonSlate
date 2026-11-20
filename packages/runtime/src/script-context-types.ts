@@ -668,6 +668,7 @@ export interface ScriptContext {
   spawnParticlesAtLocation(system: unknown, location: unknown, rotation: unknown, scale: unknown, autoDestroy?: unknown): Actor | null;
   spawnParticlesAttached(system: unknown, attachTo: unknown, bone: unknown, locationOffset: unknown, rotationOffset: unknown,
     autoDestroy?: unknown): Actor | null;
+  spawnDecal(texture: unknown, location: unknown, rotation: unknown, size?: unknown, lifetime?: unknown, fadeOutDuration?: unknown): void;
   setChannelVolume(channelGuid: string, volume: number): void;
   setGlobalVolume(volume: number): void;
   changeScene(scene: string): void;

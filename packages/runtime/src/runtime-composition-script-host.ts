@@ -173,6 +173,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     }),
     isParticlesPlaying: (actorGuid, componentId) => rt.particles.isPlaying(actorGuid, componentId),
     spawnParticleEffect: (request, owner) => rt.particleEffects.spawn(request, owner),
+    spawnDecal: (decal) => emit({ type: "spawnDecal", decal }),
     ...createParticleParameterBindings({
       particles: rt.particles,
       findActor: (actorGuid) => rt.world.findActor(actorGuid),

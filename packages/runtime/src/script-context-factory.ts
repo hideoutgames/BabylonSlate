@@ -979,6 +979,23 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           return services.spawnParticleEffect?.({ systemGuid: String(system ?? ""), attachTo: attachTo ?? null, bone: String(bone ?? ""),
             location: locationOffset, rotation: rotationOffset, autoDestroy: autoDestroy !== false }, self) ?? null;
         },
+        spawnDecal(texture, location, rotation, size, lifetime = 0, fadeOutDuration = 0) {
+          const guid = typeof texture === "string" ? texture.trim() : "";
+          if (!guid) return;
+          const pos = finiteVector(location as never, 0) ?? { x: 0, y: 0, z: 0 };
+          const rot = rotatorToQuat(finiteRotator(rotation as never));
+          const ext = finiteVector(size as never, 1) ?? { x: 1, y: 1, z: 1 };
+          const life = Number(lifetime);
+          const fade = Number(fadeOutDuration);
+          services.spawnDecal?.({
+            textureGuid: guid,
+            position: [pos.x, pos.y, pos.z],
+            rotation: [rot.x, rot.y, rot.z, rot.w],
+            size: [ext.x > 0 ? ext.x : 1, ext.y > 0 ? ext.y : 1, ext.z > 0 ? ext.z : 1],
+            lifetime: Number.isFinite(life) && life > 0 ? life : 0,
+            fadeOutDuration: Number.isFinite(fade) && fade > 0 ? fade : 0,
+          });
+        },
         async createSceneLayerAsync(assetGuid, zOrder) {
           const { self } = this;
           if (!services.createSceneLayerAsync) throw new Error("This host cannot prepare a cold SceneLayer");

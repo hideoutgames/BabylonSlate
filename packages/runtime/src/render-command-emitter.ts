@@ -8,6 +8,7 @@ import {
   deformerBindings,
   DEFORMER_PROPERTY_KEYS,
   fogVolumeBindings,
+  decalBindings,
   reflectionProbeBindings,
   isInteractiveUIControl2DClass,
   isOverlayLayoutClass,
@@ -170,6 +171,26 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       (volumes) => this.host.emit({ type: "setFogVolumes", slotId, actorId: actor.guid, volumes }));
   }
 
+  emitActorDecals(actor: Actor, slotId: number): void {
+    this.emitComponentBindings(slotId, this.state.decalSlots,
+      !actor.sceneLayerId && hasLiveComponent(actor, "DecalComponent"),
+      () => decalBindings(liveBindingInputs(actor, "DecalComponent", (component) => ({
+        enabled: component.getVariable("enabled"),
+        textureGuid: component.getVariable("textureGuid"),
+        normalTextureGuid: component.getVariable("normalTextureGuid"),
+        tint: rgbTuple(component.getVariable("tint")),
+        opacity: component.getVariable("opacity"),
+        roughness: component.getVariable("roughness"),
+        blendMode: component.getVariable("blendMode"),
+        receiveLighting: component.getVariable("receiveLighting"),
+        size: sizeTuple(component),
+        fadeAngle: component.getVariable("fadeAngle"),
+        sortOrder: component.getVariable("sortOrder"),
+        cullDistance: component.getVariable("cullDistance"),
+      }))),
+      (decals) => this.host.emit({ type: "setDecals", slotId, actorId: actor.guid, decals }));
+  }
+
   emitActorReflectionProbes(actor: Actor, slotId: number): void {
     this.emitComponentBindings(slotId, this.state.reflectionProbeSlots,
       !actor.sceneLayerId && hasLiveComponent(actor, "ReflectionProbeComponent"),
@@ -257,6 +278,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
     this.emitActorOutlines(actor, slotId);
     this.emitActorDeformers(actor, slotId);
     this.emitActorFogVolumes(actor, slotId);
+    this.emitActorDecals(actor, slotId);
     this.emitActorReflectionProbes(actor, slotId);
     this.emitActorAreaLights(actor, slotId);
     this.emitActorLights2D(actor, slotId);
