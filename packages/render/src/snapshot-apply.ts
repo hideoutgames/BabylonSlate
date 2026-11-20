@@ -581,11 +581,25 @@ function composeSlotPartTransform(
   return scratchComposedPart;
 }
 
-function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
+/**
+ * True when writing `actor` would leave `mesh` as it is: its local TRS equals the row (`===`, so NaN always writes),
+ * its world matrix was computed from that TRS (`isSynchronized`: no TRS, parent or pivot change since), and it is
+ * frozen exactly when the write would freeze it. A visual that copied its predecessor's TRS (a migration, a staged
+ * replacement) has not computed or frozen it yet, so it still takes its first write.
+ */
+function holdsActorTransform(mesh: Mesh, actor: ActorSlot): boolean {
   const rotation = mesh.rotationQuaternion;
-  if (mesh.position.x === actor.position.x && mesh.position.y === actor.position.y && mesh.position.z === actor.position.z
+  return mesh.position.x === actor.position.x && mesh.position.y === actor.position.y && mesh.position.z === actor.position.z
     && mesh.scaling.x === actor.scale.x && mesh.scaling.y === actor.scale.y && mesh.scaling.z === actor.scale.z
-    && rotation?.x === actor.rotation.x && rotation.y === actor.rotation.y && rotation.z === actor.rotation.z && rotation.w === actor.rotation.w) return;
+    && rotation?.x === actor.rotation.x && rotation.y === actor.rotation.y && rotation.z === actor.rotation.z
+    && rotation.w === actor.rotation.w
+    && mesh.isSynchronized()
+    && mesh.isWorldMatrixFrozen === shouldFreezeStaticWorldMatrix(mesh);
+}
+
+function writeActorTransform(mesh: Mesh, actor: ActorSlot): void {
+  // Babylon's setters mark the node dirty whatever the value, so an unchanged row writes nothing.
+  if (holdsActorTransform(mesh, actor)) return;
   scratchPos.set(actor.position.x, actor.position.y, actor.position.z);
   scratchScale.set(actor.scale.x, actor.scale.y, actor.scale.z);
   scratchQuat.set(
