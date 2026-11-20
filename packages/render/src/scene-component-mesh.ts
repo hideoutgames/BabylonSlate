@@ -12,7 +12,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import {
   isOverlayLayoutClass, isUIControl2DClass, LIGHT_2D_CLASS_ID, MIRROR_CLASS_ID, parseSurfaceShadingMode, normalizeWaterBody, overlayPanelDestFromScale,
   parseCableProperties, parseMirrorProperties, parseOverlayLayoutProperties, parseOverlayPanelProperties,
-  parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID, supportsOverlayVisualStyle, waterKindForClass,
+  parseSpringArmProperties, POST_PROCESSING_PANEL_CLASS_ID, SPRING_ARM_COMPONENT_CLASS_ID, supportsOverlayVisualStyle, waterKindForClass,
   type SerializedActor, type SerializedComponent,
 } from "@haptic/core";
 import type { TilemapPayload } from "@haptic/assets";
@@ -248,6 +248,13 @@ function createComponentMesh(
   if (isOverlayLayoutClass(component.classId)) {
     const props = parseOverlayLayoutProperties(component.properties, component.classId);
     const mesh = MeshBuilder.CreatePlane(name, { width: Number(component.properties.layoutResolvedWidth ?? props.width) || 0.001, height: Number(component.properties.layoutResolvedHeight ?? props.height) || 0.001 }, scene);
+    mesh.visibility = 0;
+    return mesh;
+  }
+  if (component.classId === POST_PROCESSING_PANEL_CLASS_ID) {
+    // The panel's rectangle: the actor's centred unit square, sized by its scale. It draws nothing in the editor; its
+    // Material runs only in Play.
+    const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
     mesh.visibility = 0;
     return mesh;
   }

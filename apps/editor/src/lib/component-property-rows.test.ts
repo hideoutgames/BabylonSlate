@@ -67,6 +67,27 @@ function rowsFor(
   return { rows, update, onPickAsset };
 }
 
+it("authors a Post Processing Panel with Enabled and a post-process Material picker, and no raw rows", () => {
+  const { rows, update, onPickAsset } = rowsFor({ id: "panel", classId: "2DPostProcessingPanelComponent",
+    properties: { ...defaultPropertiesFor("2DPostProcessingPanelComponent"), materialGuid: "blur" } });
+  expect(rows.map((row) => row.label)).toEqual(["Enabled", "Material"]);
+  const enabled = rows.find((row) => row.label === "Enabled");
+  const material = rows.find((row) => row.label === "Material");
+  if (enabled?.kind !== "boolean" || material?.kind !== "asset") throw new Error("Missing Post Processing Panel rows");
+  expect([enabled.value, material.value]).toEqual([true, "blur"]);
+  // Tooltips only: what switching it off does, and what the Material runs over.
+  expect(enabled.description).toBeTruthy();
+  expect(material.description).toBeTruthy();
+  enabled.onChange(false);
+  expect(update).toHaveBeenLastCalledWith("enabled", false);
+  material.onPick();
+  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({
+    property: "materialGuid", allowedTypes: ["Material", "MaterialInstance"], materialDomain: "postProcess",
+  }));
+  material.onChange(null);
+  expect(update).toHaveBeenLastCalledWith("materialGuid", null);
+});
+
 it("edits the joystick's two material references independently using the existing material picker", () => {
   const { rows, update, onPickAsset } = rowsFor({ id: "stick", classId: "2DJoystickComponent",
     properties: { ...defaultPropertiesFor("2DJoystickComponent"), backgroundMaterialGuid: "base", joystickMaterialGuid: "thumb" } });

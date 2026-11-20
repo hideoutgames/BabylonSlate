@@ -1876,9 +1876,11 @@ export class ForwardSceneFrameGraph {
           }
           this.graph.addTask(this.outputCopy);
         }
-        // A Scene Layer draws from its retained draw list when the objects pass alone reads the cull.
-        this.cull.drawList = attachLayerDrawList(scene, this.graph, this.objects.objectRenderer, () => this.cull?.camera,
-          !this.auxiliary && !this.water && !this.decalSplit && !this.effectsGraph && !occlusion && !this.outlineTask && !this.postProcessGraph?.geometryTasks.length);
+        // A Scene Layer draws from its retained draw list when the objects pass alone reads the cull. The list is the
+        // layer view's: an auxiliary view of the same Scene (a Post Processing Panel's) draws its own objects and never
+        // takes it over.
+        this.cull.drawList = this.auxiliary ? null : attachLayerDrawList(scene, this.graph, this.objects.objectRenderer, () => this.cull?.camera,
+          !this.water && !this.decalSplit && !this.effectsGraph && !occlusion && !this.outlineTask && !this.postProcessGraph?.geometryTasks.length);
         this.observeDrawPasses();
         if (this.leanPreparation) {
           // The water split's opaque pass draws through the objects' renderer; its transparent pass keeps Babylon's.

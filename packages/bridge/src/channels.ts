@@ -9,6 +9,16 @@ export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
 /** Serializable runtime override of one named Material Graph parameter. */
 export type { MaterialParameterValue } from "@haptic/core";
 
+/** One Post Processing Panel of a Scene Layer instance (`sceneLayerPostProcessPanels`). */
+export interface SceneLayerPostProcessPanelPayload {
+  slotId: number;
+  componentId: string;
+  materialGuid: string;
+  parameters: Record<string, MaterialParameterValue>;
+  contentSlotIds: number[];
+  parentSlotId: number | null;
+}
+
 export type GameSessionMode = "play" | "simulate" | "preview";
 /** `rendering`: the view holds its last image while shaders it needs compile. */
 export type SessionPauseReason = "user" | "lifecycle" | "loading" | "rendering";
@@ -1324,6 +1334,13 @@ export type CommandMessage =
    * Project Setting's passes) and after Register or Unregister Scene Layer Post-Processing.
    */
   | { type: "sceneLayerPostProcess"; postProcessStack: ScenePostProcessEntry[] }
+  /**
+   * A Scene Layer instance's Post Processing Panels with a Material, enabled, inner panels before the panels holding
+   * them: each one's actor slot, component, Material, parameter values (the authored instance overrides and script
+   * writes so far), the slots whose actors draw into it (its own actor and the descendants no nearer panel holds) and
+   * the nearest panel holding it. Sent when the list changes; empty when the layer has none left.
+   */
+  | { type: "sceneLayerPostProcessPanels"; layerId: string; panels: SceneLayerPostProcessPanelPayload[] }
   /** The current Scene's post-process passes after Register or Unregister Scene Post-Processing. */
   | { type: "scenePostProcess"; postProcessStack: ScenePostProcessEntry[] }
   /** A Scene Layer instance's camera moved, turned or zoomed (scripts only; `sceneLayerCreate` carries its start pose). */

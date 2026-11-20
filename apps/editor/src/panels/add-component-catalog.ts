@@ -181,6 +181,12 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Overlay",
   ),
   engineComponent(
+    "2DPostProcessingPanelComponent",
+    "Post Processing Panel",
+    "Runs a post-process Material over the actors inside its rectangle",
+    "Overlay",
+  ),
+  engineComponent(
     "RigidBodyComponent",
     "Rigid Body",
     "Physics body",

@@ -50,7 +50,7 @@ import { cameraPropertyRows, renderTargetCapturePropertyRows, springArmPropertyR
 import { areaRectLightPropertyRows, hemisphericFillLightPropertyRows, light2DPropertyRows, lightPropertyRows } from "./light-property-rows";
 import { cableComponentPropertyRows, dynamicRuntimeMeshPropertyRows, meshPropertyRows } from "./mesh-property-rows";
 import { navAgentPropertyRows, navMeshBlockerPropertyRows, navMeshPropertyRows } from "./navigation-property-rows";
-import { anchor2DPropertyRows, joystick2DPropertyRows, panel2DPropertyRows, visual2DPropertyRows } from "./overlay-element-property-rows";
+import { anchor2DPropertyRows, joystick2DPropertyRows, panel2DPropertyRows, postProcessingPanelPropertyRows, visual2DPropertyRows } from "./overlay-element-property-rows";
 import { splinePropertyRows } from "./path-property-rows";
 import { foliagePropertyRows, landscapePropertyRows } from "./landscape-property-rows";
 import { colliderPropertyRows, ragdollPropertyRows, rigidBodyPropertyRows } from "./physics-body-property-rows";
@@ -163,6 +163,7 @@ const COMPONENT_ROW_BUILDERS = {
   "2DTextureComponent": visual2DPropertyRows,
   "2DMaterialComponent": visual2DPropertyRows,
   "2DPanelComponent": panel2DPropertyRows,
+  "2DPostProcessingPanelComponent": postProcessingPanelPropertyRows,
 } satisfies Partial<Record<EngineComponentClassId, ComponentRowBuilder>>;
 
 /** A Map, not property access, so a project class named toString or constructor still gets generic rows. */

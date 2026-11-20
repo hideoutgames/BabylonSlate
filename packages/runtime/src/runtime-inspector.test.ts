@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform } from "@haptic/core";
+import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent, identitySerializedTransform } from "@haptic/core";
 import { readSnapshotHeader, snapshotFloatCount, type CommandMessage, type RuntimeInspectorAction, type RuntimeInspectorResult,
   type RuntimeObjectIdentity } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
@@ -29,6 +29,39 @@ async function fixture(mode: "simulate" | "play" = "simulate", deferMaterialEdit
 }
 const mutation = (target: RuntimeObjectIdentity, sequence: number, value: number): RuntimeInspectorAction =>
   ({ kind: "setProperty", target, sequence, property: "health", value });
+
+describe("runtime Inspector on a Post Processing Panel", () => {
+  it.each([false, true])("assigns only post-process Materials and writes its pass's parameters (deferred material edits %s)", async (deferMaterialEdits) => {
+    const commands: CommandMessage[] = [];
+    const panel = { id: "panel", classId: "2DPostProcessingPanelComponent", properties: { enabled: true, materialGuid: "blur" } };
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, sessionGeneration: 4, sessionMode: "simulate",
+      playSceneGuid: "root", deferMaterialEdits, playScene: createDefaultScene(),
+      sceneLayerLibrary: { hud: { ...createDefaultSceneLayer(), actors: [createActor("frame", "Frame", { classId: "SceneLayerActor", components: [panel] })] } },
+      materialParameterCatalog: { ...catalog,
+        blur: { domain: "postProcess", planHash: "blur", parameters: { Strength: { kind: "float", value: 1 } } },
+        wobble: { domain: "postProcess", planHash: "wobble", parameters: {} } },
+      onCommand: command => commands.push(command) });
+    try {
+      runtime.realizePlayWorld(); runtime.createSceneLayer("hud", 0); runtime.start(); runtime.pause();
+      let requestId = 0;
+      const request = (action: RuntimeInspectorAction) => runtime.requestRuntimeInspector({ sessionGeneration: 4, requestId: ++requestId, action });
+      const tree = await request({ kind: "identities" });
+      const rows = tree.payload?.kind === "identities" ? tree.payload.rows : [];
+      const component = rows.find(row => row.kind === "component" && row.classId === "2DPostProcessingPanelComponent")!.identity;
+      const assign = (sequence: number, value: string) => request({ kind: "setProperty", target: component, sequence, property: "materialGuid", value });
+      // A surface Material is refused; a post-process one is taken, without any surface preparation.
+      expect(await assign(1, "mat")).toMatchObject({ success: false, reason: "The material is unavailable or is not a post-process material." });
+      expect(await assign(2, "wobble")).toMatchObject({ success: true });
+      expect(commands.some(command => command.type === "prepareRuntimeMaterialEdit")).toBe(false);
+      expect(await assign(3, "blur")).toMatchObject({ success: true });
+      const from = commands.length;
+      expect(await request({ kind: "setMaterialParameter", target: component, sequence: 1, materialGuid: "blur",
+        parameter: "Strength", value: { kind: "float", value: 0.25 } })).toMatchObject({ success: true });
+      expect(commands.slice(from)).toContainEqual(expect.objectContaining({ type: "setMaterialParameter", materialAssetGuid: "blur",
+        parameterName: "Strength", parameter: { kind: "float", value: 0.25 } }));
+    } finally { runtime.stop(); }
+  });
+});
 
 describe("bounded runtime Inspector", () => {
   it("reads selected reflection metadata and applies correlated writes while paused without authoring or ticking", async () => {
