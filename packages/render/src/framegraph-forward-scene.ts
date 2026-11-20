@@ -2005,9 +2005,11 @@ export class ForwardSceneFrameGraph {
   }
 
   /** Membership and style revisions update the fixed tasks in place. Only
-   * activation or an attached-view change alters the graph structure. */
+   * activation, a group the task has no targets for becoming active, or an
+   * attached-view change alters the graph structure. */
   private outlineMatches(): boolean {
-    return this.preparedOutlineView === (this.outlineView?.active ? this.outlineView : undefined);
+    if (this.preparedOutlineView !== (this.outlineView?.active ? this.outlineView : undefined)) return false;
+    return this.outlineTask?.coversActiveGroups() ?? true;
   }
 
   /** Water-owned passes (scene copy, planar, FFT) are planned with the graph,

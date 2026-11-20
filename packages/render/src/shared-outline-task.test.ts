@@ -10,7 +10,7 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { managedRenderReservations } from "./managed-render-resources";
 import { SharedOutlineOwner } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
-import { setOutlineContribution } from "./test-support/shared-outline-contributions";
+import { removeOutlineContribution, setOutlineContribution } from "./test-support/shared-outline-contributions";
 
 const disposers: Array<() => void> = [];
 afterEach(() => {
@@ -18,8 +18,12 @@ afterEach(() => {
   while (disposers.length) disposers.pop()!();
 });
 
-/** A 16 × 8 graph holding only a shared outline task, outlining one box; `sceneDepth`: a scene depth texture of that size for it to read. */
-async function outlineGraph(sceneDepth?: { width: number; height: number }) {
+/**
+ * A 16 × 8 graph holding only a shared outline task, outlining one box with an Outline component; `sceneDepth`: a scene
+ * depth texture of that size for it to read; `others`: the through and selection groups also outline a box each as
+ * the task is built.
+ */
+async function outlineGraph(sceneDepth?: { width: number; height: number }, others = false) {
   const engine = adaptNullEngineFrameGraph(new NullEngine());
   Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, textureFloatRender: true, textureHalfFloatRender: true, blendFloat: true });
   const scene = new Scene(engine);
@@ -31,6 +35,12 @@ async function outlineGraph(sceneDepth?: { width: number; height: number }) {
   disposers.push(() => { view.dispose(); graph.dispose(); scene.dispose(); engine.dispose(); });
   setOutlineContribution(view, "component", { kind: "component", color: [1, 0, 0], width: 2, targets: [{ key: "member", meshes: [member] }] });
   expect(view.groupActive("strict")).toBe(true);
+  if (others) {
+    setOutlineContribution(view, "through", { kind: "component", color: [0, 1, 0], width: 2, throughMeshes: true,
+      targets: [{ key: "through", meshes: [MeshBuilder.CreateBox("through", {}, scene)] }] });
+    setOutlineContribution(view, "selection", { kind: "selection", color: [1, 1, 0], width: 2,
+      targets: [{ key: "selected", meshes: [MeshBuilder.CreateBox("selected", {}, scene)] }] });
+  }
   const task = new FrameGraphSharedOutlineTask("Outlines", graph, view);
   task.camera = camera;
   task.targetTexture = graph.textureManager.createRenderTargetTexture("scene color", {
@@ -47,7 +57,9 @@ async function outlineGraph(sceneDepth?: { width: number; height: number }) {
 }
 
 it("gives the through and selection masks one depth target, since the compose samples only the strict group's", async () => {
-  const { engine, task } = await outlineGraph();
+  const { engine, task } = await outlineGraph(undefined, true);
+  // Reserved: an RGBA8 mask and a DEPTH32F target of 16 × 8 texels for each of the three groups, at most.
+  expect(managedRenderReservations(engine).pendingBytes).toBe(3 * 16 * 8 * 8);
   task.reconcileResources();
   // Two DEPTH32F targets of 16 × 8 texels for the three groups: the strict group's and one the other two draw into in turn.
   expect(managedRenderReservations(engine).categoryBytes.depth).toBe(2 * 16 * 8 * 4);
@@ -65,10 +77,33 @@ it("draws every strict occluder in a frame without view culling, and only those 
   expect(narrowed).toHaveBeenCalledTimes(1);
 });
 
+it("creates targets and passes only for the groups active as it is built, and reports a group activated later", async () => {
+  // A game's view: an Outline component's strict group only, never a selection.
+  const { engine, scene, view, task } = await outlineGraph();
+  expect(task.groups).toEqual(["strict"]);
+  expect(managedRenderReservations(engine).pendingBytes).toBe(16 * 8 * 8);
+  task.reconcileResources();
+  // One RGBA8 mask and one DEPTH32F target of 16 × 8 texels.
+  expect(managedRenderReservations(engine).categoryBytes.depth).toBe(16 * 8 * 4);
+  expect(task.coversActiveGroups()).toBe(true);
+  // A selection the task has no targets for: the graph must be built again, and until then the compose reads it as inactive.
+  setOutlineContribution(view, "selection", { kind: "selection", color: [1, 1, 0], width: 2, targets: [{ key: "member", meshes: [scene.getMeshByName("member")!] }] });
+  expect(view.groupActive("selection")).toBe(true);
+  expect(task.coversActiveGroups()).toBe(false);
+  expect([task.drawingPassCount, task.renderRecordCount]).toEqual([2, 3]);
+  // A group that deactivates keeps its targets until the next build, so toggling it costs no rebuild.
+  removeOutlineContribution(view, "selection");
+  expect(task.coversActiveGroups()).toBe(true);
+  const both = await outlineGraph(undefined, true);
+  removeOutlineContribution(both.view, "selection");
+  expect(both.task.groups).toEqual(["strict", "through", "selection"]);
+  expect(both.task.coversActiveGroups()).toBe(true);
+  expect([both.task.drawingPassCount, both.task.renderRecordCount]).toEqual([3, 5]);
+});
+
 it("draws a through group's members that can show in a steady frame, and all of them in a frame without view culling", async () => {
-  const { scene, view, task } = await outlineGraph();
-  const through = MeshBuilder.CreateBox("through", {}, scene);
-  setOutlineContribution(view, "through", { kind: "component", color: [0, 1, 0], width: 2, throughMeshes: true, targets: [{ key: "through", meshes: [through] }] });
+  const { scene, view, task } = await outlineGraph(undefined, true);
+  const through = scene.getMeshByName("through")!;
   expect(view.groupActive("through")).toBe(true);
   const list = () => (task as unknown as { masks: { group: string; objects: { objectList: { meshes: unknown[] } } }[] }).masks
     .find((record) => record.group === "through")!.objects.objectList.meshes.length;
