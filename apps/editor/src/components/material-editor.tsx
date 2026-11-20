@@ -894,8 +894,6 @@ const MATERIAL_BLEND_MODE_LABELS: Record<MaterialBlendMode, string> = {
   additive: "Additive",
   multiply: "Multiply",
 };
-const POST_PROCESS_BLEND_MODES: readonly MaterialBlendMode[] = ["opaque", "masked", "translucent", "additive"];
-
 /** Domain, shading and blend settings plus the selected node's properties. */
 export function MaterialDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -949,8 +947,7 @@ function MaterialDocumentDetails() {
       kind: "enum",
       label: "Blend Mode",
       value: document.blendMode,
-      // Post Process keeps the row it had, though no pass reads it.
-      options: (document.domain === "postProcess" ? POST_PROCESS_BLEND_MODES : materialBlendModesFor(document.domain))
+      options: materialBlendModesFor(document.domain)
         .map((mode) => ({ value: mode, label: MATERIAL_BLEND_MODE_LABELS[mode] })),
       onChange: (value) =>
         commit({
@@ -981,10 +978,10 @@ function MaterialDocumentDetails() {
   ];
   if ((document.domain === "surface" || document.domain === "landscape")) rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }, "material:boundsPadding") });
   if ((document.domain !== "surface" && document.domain !== "landscape")) {
-    // Particle emitters own blending (their Render module), so particle Materials hide Blend Mode.
-    // A decal draws a box's far faces over the surfaces in it, and its normal is the surface's: no Two Sided or Default Normals.
-    const hidden = document.domain === "particle" || document.domain === "text" ? ["shadingModel", "blendMode", "twoSided", "defaultNormals"]
-      : document.domain === "decal" ? ["twoSided", "defaultNormals"] : ["shadingModel", "twoSided", "defaultNormals"];
+    // Particle emitters own blending (their Render module) and a post-process pass replaces the image, so neither has
+    // Blend Mode. A decal draws a box's far faces over the surfaces in it, and its normal is the surface's: no Two
+    // Sided or Default Normals.
+    const hidden = document.domain === "decal" ? ["twoSided", "defaultNormals"] : ["shadingModel", "blendMode", "twoSided", "defaultNormals"];
     for (let i = rows.length - 1; i >= 0; i--) if (hidden.includes(rows[i]!.id)) rows.splice(i, 1);
   }
   if ((document.domain === "surface" || document.domain === "landscape" || document.domain === "decal") && document.blendMode === "masked") {

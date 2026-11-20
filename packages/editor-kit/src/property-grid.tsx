@@ -248,6 +248,8 @@ export type PropertyRow =
       visual?: TypeVisualQuery;
       /** Asset types the row accepts, so Paste can offer a copied asset; without it only the current type pastes. */
       assetTypes?: readonly string[];
+      /** Whether the row takes this asset of an accepted type (a Material of the slot's domain); Paste refuses the rest. */
+      acceptsAsset?: (guid: string) => boolean;
       onPick: () => void;
       onChange: (value: string | null) => void;
     })

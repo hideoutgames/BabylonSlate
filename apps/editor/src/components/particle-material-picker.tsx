@@ -1,6 +1,6 @@
 import { AssetPicker } from "@haptic/editor-kit";
 import { useRegistryState } from "../context/document-context";
-import { isParticleMaterialForPicker } from "../lib/content-browser-helpers";
+import { materialPickerEntries } from "../lib/content-browser-helpers";
 import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
@@ -23,14 +23,7 @@ export function ParticleMaterialPicker({
 }) {
   const { assetRegistry } = useRegistryState();
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
-  const assets = (assetRegistry?.list() ?? [])
-    .filter((asset) => isParticleMaterialForPicker(asset, materialDocuments))
-    .map((asset) => ({
-      guid: asset.header.guid,
-      name: asset.header.name,
-      type: asset.header.type,
-      path: asset.path,
-    }));
+  const assets = materialPickerEntries(assetRegistry?.list() ?? [], materialDocuments, "particle");
   return (
     <AssetPicker
       open={open}

@@ -65,8 +65,8 @@ export function joystick2DPropertyRows(
   });
   return [
     { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: joystick.enabled, onChange: value => update("enabled", value) },
-    assetRow(actorId, component, "backgroundMaterialGuid", "Background Material", ["Material", "MaterialInstance"], update, context, "Pick Background Material"),
-    assetRow(actorId, component, "joystickMaterialGuid", "Joystick Material", ["Material", "MaterialInstance"], update, context, "Pick Joystick Material"),
+    assetRow(actorId, component, "backgroundMaterialGuid", "Background Material", ["Material", "MaterialInstance"], update, context, "Pick Background Material", "None", "surface"),
+    assetRow(actorId, component, "joystickMaterialGuid", "Joystick Material", ["Material", "MaterialInstance"], update, context, "Pick Joystick Material", "None", "surface"),
     numeric("radius", "Background Radius", 0.01),
     numeric("joystickRadius", "Joystick Radius", 0.01, joystick.radius * 0.95),
     numeric("deadZone", "Dead Zone", 0, 0.99),
@@ -104,6 +104,8 @@ export function visual2DPropertyRows(
           assetProperty === "materialGuid"
             ? "Pick Material"
             : "Pick Texture",
+          "None",
+          assetProperty === "materialGuid" ? "surface" : undefined,
         ),
       ]
     : [];
@@ -189,6 +191,8 @@ export function panel2DPropertyRows(
       update,
       context,
       parsed.source === "material" ? "Pick Material" : "Pick Texture",
+      "None",
+      parsed.source === "material" ? "surface" : undefined,
     ),
     sliderRow(
       actorId,

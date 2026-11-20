@@ -1,7 +1,7 @@
 import { normalizeSceneLayerPostProcessStack, type ProjectDocument } from "@haptic/core";
 import { Field } from "@haptic/ui/components/field";
 import type { DocumentActions, RegistryState } from "../context/document-context-types";
-import { isPostProcessMaterialForPicker } from "../lib/content-browser-helpers";
+import { materialPickerEntries } from "../lib/content-browser-helpers";
 import { MATERIAL_DOCUMENT_KINDS, useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { PostProcessPassList } from "./post-process-pass-list";
 
@@ -31,7 +31,7 @@ export function SceneLayerPostProcessSettings({
         entries={projectDocument.settings.sceneLayerPostProcessStack}
         onChange={(entries) => updateProjectSettings({ sceneLayerPostProcessStack: normalizeSceneLayerPostProcessStack(entries) })}
         assets={listed.map(entry)}
-        materialAssets={listed.filter((asset) => isPostProcessMaterialForPicker(asset, materialDocuments)).map(entry)}
+        materialAssets={materialPickerEntries(listed, materialDocuments, "postProcess")}
       />
     </Field>
   );

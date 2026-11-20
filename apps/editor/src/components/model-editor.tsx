@@ -45,6 +45,13 @@ import { usePreviewLoopActive } from "../lib/preview-loop";
 import { scaleLinkKey, useLinkedScale, type ScaleLink } from "../lib/linked-scale";
 import { ModelPreviewCanvas } from "./model-preview-canvas";
 import { asRecord } from "../lib/as-record";
+import {
+  materialDomainsFromAssets,
+  materialSlotPickerAssets,
+  materialSlotRowState,
+  materialSlotTakes,
+} from "../lib/material-asset-filters";
+import { MATERIAL_DOCUMENT_KINDS, useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 
 /** Shown in place of a mesh preview when the Model source could not be read. */
 export function ModelSourceReadError({ error }: { error: string }) {
@@ -175,12 +182,17 @@ export function ModelEditor({
   const model = normalizeModelPayload(payload);
   const [pickIndex, setPickIndex] = useState<number | null>(null);
   const { assetRegistry } = useRegistryState();
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
+  const indexed = assetRegistry?.list() ?? [];
+  const assets = indexed.map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
     type: asset.header.type,
     path: asset.path,
   }));
+  // A Model's slots draw Surface Materials.
+  const domains = materialDomainsFromAssets(indexed, materialDocuments);
+  const domainOf = (guid: string) => domains[guid];
 
   const commit = (next: ModelPayload) => {
     onChange(next as unknown as Record<string, unknown>);
@@ -203,6 +215,8 @@ export function ModelEditor({
       label: slot.name,
       value: slot.materialGuid,
       placeholder: "None",
+      assetTypes: ["Material", "MaterialInstance"],
+      ...materialSlotRowState("surface", slot.materialGuid, domainOf),
       onPick: () => setPickIndex(slot.index),
       onChange: (value) => setSlotGuid(slot.index, value),
       ...assetRowIdentity(
@@ -229,10 +243,10 @@ export function ModelEditor({
         onOpenChange={(open) => {
           if (!open) setPickIndex(null);
         }}
-        assets={assets}
+        assets={materialSlotPickerAssets("surface", assets, domainOf)}
         allowedTypes={["Material", "MaterialInstance"]}
         onPick={(guid) => {
-          if (pickIndex !== null) setSlotGuid(pickIndex, guid);
+          if (pickIndex !== null && materialSlotTakes("surface", guid, domainOf)) setSlotGuid(pickIndex, guid);
           setPickIndex(null);
         }}
         data-testid="model-material-picker"
