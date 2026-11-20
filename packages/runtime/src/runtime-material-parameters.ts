@@ -62,9 +62,9 @@ export class RuntimeMaterialParameters {
     this.textures = new Set(textures);
   }
 
-  /** Loaded catalog admission for a surface assignment; never accepts made-up assets. */
-  acceptsAssignment(assetGuid: string): boolean {
-    return Object.hasOwn(this.catalog, assetGuid) && this.catalog[assetGuid]!.domain === "surface";
+  /** Loaded catalog admission for an assignment of that domain (a surface by default); never accepts made-up assets. */
+  acceptsAssignment(assetGuid: string, domain: "surface" | "postProcess" = "surface"): boolean {
+    return Object.hasOwn(this.catalog, assetGuid) && this.catalog[assetGuid]!.domain === domain;
   }
 
   revision(material: MaterialInstanceObject): number { return this.state(material)?.revision ?? -1; }

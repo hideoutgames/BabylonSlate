@@ -1,5 +1,5 @@
 import { runtimeEditWorldTransform } from "./runtime-transform-edit";
-import type { SerializedTransform } from "@haptic/core";
+import { POST_PROCESSING_PANEL_CLASS_ID, type SerializedTransform } from "@haptic/core";
 import type {
   RuntimeIdentityCursor, RuntimeIdentityRow, RuntimeInspectorAction, RuntimeInspectorPayload,
   RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeInspectorValue, RuntimeObjectIdentity,
@@ -251,7 +251,10 @@ export class RuntimeInspector {
       if (!descriptor || !["live", "rebuild"].includes(descriptor.capability) || descriptor.key.startsWith("material:")) throw new Error("This property is read-only or requires a new session.");
       const value = this.decode(action.value, descriptor);
       validateProperty(target, descriptor.key, value);
-      if (descriptor.typeId === "asset" && (value !== null && (typeof value !== "string" || !this.host.materials.acceptsAssignment(value)))) throw new Error("The material is unavailable or is not a surface material.");
+      // A Post Processing Panel's Material is a post-process one; every other assignable Material is a surface.
+      const domain = target instanceof ActorComponent && target.classId === POST_PROCESSING_PANEL_CLASS_ID ? "postProcess" : "surface";
+      if (descriptor.typeId === "asset" && (value !== null && (typeof value !== "string" || !this.host.materials.acceptsAssignment(value, domain))))
+        throw new Error(domain === "postProcess" ? "The material is unavailable or is not a post-process material." : "The material is unavailable or is not a surface material.");
       this.host.applyProperty(target, descriptor.key, value);
       effective = this.read(target, descriptor);
     } else if (action.kind === "setTransform") {
