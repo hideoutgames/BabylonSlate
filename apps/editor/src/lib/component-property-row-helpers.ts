@@ -13,7 +13,7 @@ export type AssetPickRequest = {
   allowedTypes: string[];
   title?: string;
   /** Offer only Materials of this domain, and create new ones in it. */
-  materialDomain?: "text" | "landscape";
+  materialDomain?: "text" | "landscape" | "postProcess";
 };
 
 export type ComponentPropertyContext = {

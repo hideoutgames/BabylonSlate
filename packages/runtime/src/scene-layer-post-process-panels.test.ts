@@ -58,7 +58,8 @@ async function panelRuntime() {
   runtime.tick();
   const world = runtime.getWorld();
   const actor = (id: string) => world.findActor(`${layer.guid}:${id}`)!;
-  const slot = (id: string) => commands.find((command) => command.type === "spawn" && command.actorGuid === actor(id).guid)?.slotId;
+  const slot = (id: string) =>
+    commands.flatMap((command) => command.type === "spawn" && command.actorGuid === actor(id).guid ? [command.slotId] : [])[0];
   const panelLists = () => commands.flatMap((command) => command.type === "sceneLayerPostProcessPanels" ? [command] : []);
   return { runtime, commands, layer, actor, slot, panelLists };
 }
