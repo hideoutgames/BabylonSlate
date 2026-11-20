@@ -192,6 +192,12 @@ class LatticeOwner {
   private boundsRender = -1;
   private readonly acceptedBatches = new Map<Mesh, AcceptedBatch>();
   private materialsDirty = false;
+  /** `revision()`: bumped by every `refresh` and `dispose`, and by a root world matrix of another value. */
+  private shapeRevision = 0;
+  /** The root's world matrix as `revision()` last read it: its object, update flag and value. */
+  private revisionRoot: Matrix | null = null;
+  private revisionRootFlag = -1;
+  private readonly revisionRootValue = Matrix.Identity();
   private readonly disposeObserver;
   private frameObserver: Observer<Scene> | null = null;
   constructor(root: AbstractMesh) {
@@ -221,6 +227,27 @@ class LatticeOwner {
       if (scene.getFrameId() !== this.boundsFrame || scene.getRenderId() !== this.boundsRender || this.root.computeWorldMatrix().updateFlag !== this.rootFlag)
         this.updateBounds(false);
   };
+  /**
+   * Moves whenever what this cage does to a part may have changed, apart from the part's own world matrix and geometry:
+   * every `refresh` (controls, parts, materials, activity) and the root's world matrix taking another value, read here.
+   * The deformation follows the root's world matrix less the floating origin, so an origin shift alone moves nothing.
+   */
+  revision(): number {
+    const world = this.root.computeWorldMatrix();
+    if (world !== this.revisionRoot || world.updateFlag !== this.revisionRootFlag) {
+      this.revisionRoot = world;
+      this.revisionRootFlag = world.updateFlag;
+      if (!world.equals(this.revisionRootValue)) {
+        this.revisionRootValue.copyFrom(world);
+        this.shapeRevision++;
+      }
+    }
+    return this.shapeRevision;
+  }
+  /** Whether `mesh` is one of this active cage's parts, whose bounds it widened to the cage's hull (`updateBounds`). */
+  widens(mesh: AbstractMesh): boolean {
+    return !!this.resource && this.parts.has(mesh) && !mesh.isDisposed();
+  }
   configure(config: LatticeDeformerConfig): void {
     const previous = this.config;
     this.config = { ...config, resolution: [...config.resolution], offsets: [...config.offsets], boundsMin: [...config.boundsMin], boundsMax: [...config.boundsMax] };
@@ -230,6 +257,7 @@ class LatticeOwner {
   refresh(geometryChanged = false): void {
     const config = this.config;
     if (!config) return;
+    this.shapeRevision++;
     if (geometryChanged) this.fit = undefined;
     const found = new Set(latticePartMeshes(this.root));
     for (const node of found) {
@@ -418,6 +446,7 @@ class LatticeOwner {
   }
   dispose(): void {
     const wasActive = !!this.resource;
+    this.shapeRevision++;
     this.root.onDisposeObservable.remove(this.disposeObserver);
     this.root.getScene().onBeforeRenderObservable.remove(this.frameObserver);
     activeByScene.get(this.root.getScene())?.delete(this);

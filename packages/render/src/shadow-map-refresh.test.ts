@@ -35,7 +35,10 @@ import { setShadowDistanceCulled } from "./shadow-caster-list";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 import { verifyRenderChangeJournal } from "./render-change-journal";
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo";
-import { setLatticeBinding } from "./lattice-deformer-binding";
+import { hasMeshLatticeDeformer, setLatticeBinding } from "./lattice-deformer-binding";
+import { refreshMeshLatticeDeformer, setMeshLatticeDeformer, type LatticeDeformerConfig } from "./lattice-deformer";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
+import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { followPose, updatePoseBounds } from "./pose-bounds";
 import { skinnedRig, skinnedStrip } from "./skinned-test-fixtures";
 import { ReflectedContent } from "./reflected-content";
@@ -1398,7 +1401,7 @@ describe("what casters share", () => {
 
     // A cage that deforms the instance alone keeps its shadow live, and its source's cached.
     expect(refresh.casterState(instance)!.safe).toBe(true);
-    setLatticeBinding(instance, { active: true } as Parameters<typeof setLatticeBinding>[1]);
+    setLatticeBinding(instance, { active: true, revision: () => 0, widens: () => true } as unknown as Parameters<typeof setLatticeBinding>[1]);
     refresh.syncCasters(scene, casters);
     expect(refresh.casterState(instance)!.safe).toBe(false);
     expect(refresh.casterState(first)!.safe).toBe(true);
@@ -1518,5 +1521,231 @@ describe("the changed-set caster pipeline", () => {
     other.position.y = 1;
     expect(frame()).toBe(1);
     expect(frame()).toBe(0);
+  });
+});
+
+/**
+ * The cascaded sun fixture with per-cascade counts: `tiles` renders one scene frame and returns the cascade tiles it
+ * drew, `listed` which cascades' caster lists hold a mesh, and `misses` the list and walk disagreements a full read
+ * found since its last call (every frame is checked while `verifyRenderChangeJournal` is on).
+ */
+async function cascadedTiles() {
+  const sun = await cascadedSun();
+  const { scene, map } = sun;
+  const counts = shadowAtlasDrawCounts(scene);
+  const tiles = () => {
+    const before = counts.tiles;
+    scene.render();
+    return counts.tiles - before;
+  };
+  const settleTiles = () => {
+    for (let frame = 0; frame < 5; frame++) if (tiles() === 0) return;
+    throw new Error("The sun map kept redrawing.");
+  };
+  const listed = (mesh: AbstractMesh) => [0, 1].map((layer) => [...(map.getCustomRenderList!(layer, map.renderList!, map.renderList!.length) ?? [])].includes(mesh));
+  const controller = sceneShadowController(scene);
+  let last = controller.journalDiagnostics();
+  const misses = () => {
+    const now = controller.journalDiagnostics();
+    const step = now.mismatches - last.mismatches;
+    last = now;
+    return step;
+  };
+  return { ...sun, controller, tiles, settleTiles, listed, misses };
+}
+
+/**
+ * Draws frames until the sun map's depth programs for each of `mesh`'s parts are ready: a depth wrapper or a new
+ * Material builds its program over frames, and a pass that skips a caster not ready redraws every cascade until it is.
+ */
+async function depthReady(sun: Awaited<ReturnType<typeof cascadedTiles>>, mesh: AbstractMesh) {
+  const ready = () => mesh.subMeshes.every((part) => sun.generator.isReady(part, false, false));
+  for (let attempt = 0; attempt < 50 && !ready(); attempt++) {
+    sun.tiles();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  expect(ready()).toBe(true);
+}
+
+describe("casters whose every part blends", () => {
+  afterEach(() => verifyRenderChangeJournal(false));
+
+  /** A translucent sphere by the camera, in the first cascade: Babylon's shadow pass draws none of its parts. */
+  async function glass(padding = 0) {
+    const sun = await cascadedTiles();
+    const glassMaterial = new StandardMaterial("glass", sun.scene);
+    glassMaterial.alpha = 0.5;
+    // As an authored World Position Offset asks: bounds that do not hold what it draws, so it cannot be tracked.
+    if (padding) glassMaterial.metadata = { boundsPadding: padding };
+    const sphere = MeshBuilder.CreateSphere("glass sphere", { diameter: 1.5 }, sun.scene);
+    sphere.position.set(-2, 1, 0);
+    sphere.material = glassMaterial;
+    sun.controller.setParticipation(sphere, { castShadows: true });
+    await glassMaterial.forceCompilationAsync(sphere);
+    sun.tiles();
+    sun.settleTiles();
+    return { ...sun, sphere, glassMaterial };
+  }
+
+  it.each([["rigid", 0], ["with padded bounds", 0.25]] as [string, number][])(
+    "keeps every cascade while a still view holds only a %s translucent caster, which is in no layer's list",
+    async (_name, padding) => {
+      verifyRenderChangeJournal(true);
+      const { sphere, tiles, listed, misses } = await glass(padding);
+      expect([tiles(), tiles(), tiles()]).toEqual([0, 0, 0]);
+      expect(listed(sphere)).toEqual([false, false]);
+      expect(misses()).toBe(0);
+    },
+  );
+
+  it("joins the lists in the frame its Material turns opaque, and leaves them in the frame it blends again", async () => {
+    verifyRenderChangeJournal(true);
+    const { sphere, glassMaterial, tiles, settleTiles, listed, misses } = await glass();
+    glassMaterial.alpha = 1;
+    expect(tiles()).toBeGreaterThan(0);
+    expect(listed(sphere)[0]).toBe(true);
+    settleTiles();
+    expect(tiles()).toBe(0);
+    glassMaterial.alpha = 0.5;
+    // Its depth leaves the cascades it was drawn into.
+    expect(tiles()).toBeGreaterThan(0);
+    expect(listed(sphere)).toEqual([false, false]);
+    settleTiles();
+    expect(misses()).toBe(0);
+  });
+
+  it("follows a fading caster: one whose visibility is below one blends however opaque its Material", async () => {
+    const { sphere, glassMaterial, tiles, settleTiles, listed } = await glass();
+    glassMaterial.alpha = 1;
+    settleTiles();
+    expect(listed(sphere)[0]).toBe(true);
+    sphere.visibility = 0.5;
+    expect(tiles()).toBeGreaterThan(0);
+    expect(listed(sphere)).toEqual([false, false]);
+    settleTiles();
+    expect(tiles()).toBe(0);
+  });
+
+  it("lists a caster with one opaque part beside blended ones, and blended ones under a map that draws them", async () => {
+    const sun = await glass();
+    const { scene, sphere, glassMaterial, generator, tiles, listed, settleTiles } = sun;
+    const opaque = new StandardMaterial("opaque part", scene);
+    const parts = new MultiMaterial("parts", scene);
+    parts.subMaterials.push(glassMaterial, opaque);
+    sphere.material = parts;
+    const count = sphere.getTotalIndices();
+    const vertices = sphere.getTotalVertices();
+    sphere.subMeshes = [];
+    new SubMesh(0, 0, vertices, 0, count / 2, sphere);
+    new SubMesh(1, 0, vertices, count / 2, count / 2, sphere);
+    await opaque.forceCompilationAsync(sphere);
+    await depthReady(sun, sphere);
+    // A Material of parts is not one the refresh can vouch for: drawing, the caster redraws what it reaches each frame.
+    expect(tiles()).toBeGreaterThan(0);
+    expect(tiles()).toBeGreaterThan(0);
+    expect(listed(sphere)[0]).toBe(true);
+    // A Material of parts the refresh polls nothing of: the swap is read from the parts each walk.
+    parts.subMaterials[1] = glassMaterial;
+    tiles();
+    settleTiles();
+    expect(listed(sphere)).toEqual([false, false]);
+    generator.transparencyShadow = true;
+    tiles();
+    expect(listed(sphere)[0]).toBe(true);
+  });
+});
+
+describe("lattice casters", () => {
+  afterEach(() => verifyRenderChangeJournal(false));
+
+  /** A cage's offsets: every control moved `x` along X. */
+  const cage = (x: number): LatticeDeformerConfig => ({
+    enabled: true, resolution: [2, 2, 2], strength: 1, offsets: Array.from({ length: 24 }, (_, index) => index % 3 === 0 ? x : 0),
+    fitToMesh: true, boundsMin: [-1, -1, -1], boundsMax: [1, 1, 1],
+  });
+
+  /**
+   * A caged box thirty units ahead, in the second cascade only (as the per-cascade caster above), under a component
+   * root. NullEngine has no 3D texture backend: only the cage texture's allocation and upload are stood in for.
+   */
+  async function caged() {
+    const sun = await cascadedTiles();
+    const { scene, controller } = sun;
+    const engine = scene.getEngine() as NullEngine;
+    engine.getCaps().textureFloat = true;
+    engine.getCaps().maxVertexTextureImageUnits = 16;
+    vi.spyOn(engine, "webGLVersion", "get").mockReturnValue(2);
+    vi.spyOn(engine, "createRawTexture3D").mockImplementation((_data, width, height, depth) => {
+      const texture = new InternalTexture(engine, InternalTextureSource.Raw3D);
+      texture.width = width; texture.height = height; texture.depth = depth;
+      texture.isReady = true;
+      return texture;
+    });
+    vi.spyOn(engine, "updateRawTexture3D").mockImplementation(() => {});
+    const root = new Mesh("cage root", scene);
+    root.position.set(0, 1, 30);
+    const box = MeshBuilder.CreateBox("caged box", { size: 2 }, scene);
+    box.parent = root;
+    const surface = new StandardMaterial("caged surface", scene);
+    box.material = surface;
+    setMeshLatticeDeformer(root, cage(1));
+    controller.setParticipation(box, { castShadows: true });
+    await surface.forceCompilationAsync(box);
+    await depthReady(sun, box);
+    sun.settleTiles();
+    return { ...sun, root, box, surface };
+  }
+
+  it("keeps every cascade while the view and the cage are still, and lists the box only where its widened bounds reach", async () => {
+    verifyRenderChangeJournal(true);
+    const { box, tiles, listed, misses } = await caged();
+    expect(hasMeshLatticeDeformer(box)).toBe(true);
+    expect([tiles(), tiles(), tiles()]).toEqual([0, 0, 0]);
+    expect(listed(box)).toEqual([false, true]);
+    expect(misses()).toBe(0);
+  });
+
+  it.each([
+    ["the cage changes", ({ root }: Awaited<ReturnType<typeof caged>>) => setMeshLatticeDeformer(root, cage(1.5))],
+    ["the root moves", ({ root }: Awaited<ReturnType<typeof caged>>) => { root.position.z += 0.5; }],
+    ["the root turns", ({ root }: Awaited<ReturnType<typeof caged>>) => { root.rotation.y += 0.3; }],
+  ])("redraws only the cascade the caged box reaches when %s, keeping the other's tile", async (_name, change) => {
+    verifyRenderChangeJournal(true);
+    const sun = await caged();
+    change(sun);
+    expect(sun.tiles()).toBe(1);
+    expect((sun.generator as AtlasCascadedShadowGenerator).keepsCascade(0)).toBe(true);
+    sun.settleTiles();
+    expect(sun.tiles()).toBe(0);
+    expect(sun.misses()).toBe(0);
+  });
+
+  it("redraws for a cage the walk finds only through its root, whose matrix is all that changed", async () => {
+    const sun = await caged();
+    const { root, box } = sun;
+    // The box keeps its world matrix (frozen where it stands); only the cage's root moves under it.
+    box.freezeWorldMatrix();
+    root.position.x += 0.5;
+    expect(sun.tiles()).toBe(1);
+    sun.settleTiles();
+  });
+
+  it("keeps a caged caster live, drawn into every cascade, until its cage widens its bounds", async () => {
+    const sun = await caged();
+    const { scene, root, controller, surface } = sun;
+    // Parented under the root after the cage gathered its parts: the cage deforms it, but did not widen its bounds.
+    const late = MeshBuilder.CreateBox("late part", { size: 1 }, scene);
+    late.material = surface;
+    late.parent = root;
+    controller.setParticipation(late, { castShadows: true });
+    expect(hasMeshLatticeDeformer(late)).toBe(true);
+    await depthReady(sun, late);
+    expect([sun.tiles(), sun.tiles()]).toEqual([2, 2]);
+    expect(sun.listed(late)).toEqual([true, true]);
+    // The cage gathers it, widening its bounds: from then on it is tracked as the others are.
+    refreshMeshLatticeDeformer(root);
+    sun.settleTiles();
+    expect(sun.tiles()).toBe(0);
+    expect(sun.listed(late)).toEqual([false, true]);
   });
 });

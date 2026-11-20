@@ -7,6 +7,13 @@ import type { Node } from "@babylonjs/core/node";
 /** Leaf shared by the compiler, native adapters, and scene cage owners. */
 export interface LatticeBinding {
   readonly active: boolean;
+  /**
+   * Moves whenever what the cage does to a mesh may have changed, apart from that mesh's own world matrix and geometry:
+   * its controls, its parts, its activity and its root's world matrix (read when asked). The shadow refresh compares it.
+   */
+  revision(): number;
+  /** Whether this cage widened `mesh`'s bounds to hold its deformed shape: one of its parts, while it is active. */
+  widens(mesh: AbstractMesh): boolean;
   bindEffect(effect: Effect): void;
   bindBuffer(buffer: UniformBuffer): void;
 }
@@ -50,6 +57,15 @@ export function meshLatticeBinding(mesh?: AbstractMesh): LatticeBinding | undefi
   return undefined;
 }
 export function hasMeshLatticeDeformer(mesh?: AbstractMesh): boolean { return meshLatticeBinding(mesh)?.active === true; }
+/** The active cage deforming `mesh`, or undefined. */
+export function activeMeshLatticeBinding(mesh?: AbstractMesh): LatticeBinding | undefined {
+  const binding = meshLatticeBinding(mesh);
+  return binding?.active ? binding : undefined;
+}
+/** Whether an active cage deforms `mesh` and widened its bounds to hold the deformed shape (`LatticeBinding.widens`). */
+export function hasBoundedLatticeDeformer(mesh: AbstractMesh): boolean {
+  return activeMeshLatticeBinding(mesh)?.widens(mesh) === true;
+}
 export function bindMeshLatticeDeformer(effect: Effect, mesh?: AbstractMesh): void {
   const binding = meshLatticeBinding(mesh);
   effect.setFloat("slateLatticeEnabled", binding?.active ? 1 : 0);

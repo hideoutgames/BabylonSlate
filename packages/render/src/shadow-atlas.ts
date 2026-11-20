@@ -506,9 +506,10 @@ function drawIntoTiles(
   const viewports = map.tiles.map((tile) => new Viewport(tile.x / page, tile.y / page, tile.size / page, tile.size / page));
   const whole = new Viewport(0, 0, 1, 1);
   const own = new Set(map.tiles);
-  // The pages this render clears whole, and those it has cleared.
-  const wholePages = new Set<number>();
-  const clearedPages = new Set<number>();
+  // Per page, whether this render clears it whole, and whether it has: flags written over each render, as clearing a
+  // Set makes it a new table.
+  const wholePages = new Array<boolean>(placed.tiles.pages).fill(false);
+  const clearedPages = new Array<boolean>(placed.tiles.pages).fill(false);
   const views: { view: Matrix; reach: number }[] = map.tiles.map(() => ({ view: Matrix.Identity(), reach: 0 }));
   let pass = 0;
   let cleared = false;
@@ -522,12 +523,14 @@ function drawIntoTiles(
     pass = layer;
     if (layer === 0) {
       // A render's first pass: the pages it clears whole hold only its tiles, each of which it draws.
-      wholePages.clear();
-      clearedPages.clear();
-      for (const tile of map.tiles) wholePages.add(tile.layer);
-      map.tiles.forEach((tile, index) => {
-        if (deferral?.defers(index) || !placed.tiles.holdsOnly(tile.layer, own)) wholePages.delete(tile.layer);
-      });
+      wholePages.fill(false);
+      clearedPages.fill(false);
+      const tiles = map.tiles;
+      for (let index = 0; index < tiles.length; index++) wholePages[tiles[index]!.layer] = true;
+      for (let index = 0; index < tiles.length; index++) {
+        const tile = tiles[index]!;
+        if (deferral?.defers(index) || !placed.tiles.holdsOnly(tile.layer, own)) wholePages[tile.layer] = false;
+      }
     }
     scene.getEngine().setViewport(viewports[layer]!);
     const left = deferral?.defers(layer) ?? false;
@@ -556,10 +559,10 @@ function drawIntoTiles(
       counts.tiles += 1;
       counts.texels += tile.size * tile.size;
     }
-    if (wholePages.has(tile.layer)) {
+    if (wholePages[tile.layer]) {
       // The page's first pass clears it whole, under a viewport over the page (a probe counts the texels it covers).
-      if (clearedPages.has(tile.layer)) return;
-      clearedPages.add(tile.layer);
+      if (clearedPages[tile.layer]) return;
+      clearedPages[tile.layer] = true;
       engine.setViewport(whole);
       engine.clear(null, false, true, false);
       engine.setViewport(viewports[pass]!);

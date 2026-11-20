@@ -20,6 +20,7 @@ import { limitManagedRenderBytes, managedRenderReservations } from "./managed-re
 import { updateSceneRenderingSettings } from "./render-settings";
 import { sceneShadowController } from "./shadow-controller";
 import { markSmoothNormalShadowCaster } from "./shadow-bias";
+import { setLatticeBinding } from "./lattice-deformer-binding";
 import { RETAINED_CALL_DRAWS, RetainedShadowCasters, setRetainedShadowCasters, type RetainedCasterState } from "./shadow-retained-casters";
 
 type Upload = { buffer: "vertices" | "indices"; at: number; data: number[] };
@@ -180,9 +181,19 @@ describe("RetainedShadowCasters", () => {
     const points = box("points");
     points.overrideRenderingFillMode = Material.PointFillMode;
     const empty = vouch(new Mesh("empty", scene));
-    const meshes = [unvouched, unsafe, thin, levels, updatable, smooth, wire, points, empty];
+    // A lattice cage the scheduler tracks (so the caster is safe), whose deformation the shared buffer cannot draw: on
+    // the caster itself, or on the source an instance draws.
+    const cage = { active: true, revision: () => 0, widens: () => true, bindEffect: () => {}, bindBuffer: () => {} };
+    const caged = box("caged");
+    setLatticeBinding(caged, cage);
+    const cagedSource = box("caged source");
+    setLatticeBinding(cagedSource, cage);
+    const cagedInstance = vouch(cagedSource.createInstance("caged instance"));
+    const meshes = [unvouched, unsafe, thin, levels, updatable, smooth, wire, points, empty, caged, cagedInstance];
     expect(pass(meshes).taken).toEqual(meshes.map(() => false));
-    expect(vouched.size).toBe(8);
+    expect(vouched.size).toBe(11);
+    setLatticeBinding(caged);
+    setLatticeBinding(cagedSource);
     expect(uploads).toEqual([]);
     expect(calls).toEqual([]);
   });
