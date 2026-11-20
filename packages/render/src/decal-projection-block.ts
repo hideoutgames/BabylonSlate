@@ -11,11 +11,15 @@ import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
 import type { MaterialPlumbing } from "./material-block-registry";
 
 /**
- * Per-decal instance attributes beside Babylon's thin-instance world rows (`world0`..`world3`): the inverse world rows,
- * the decal's Tint and Opacity (rgb, a), and its cosine of Fade Angle (y). The decal pass fills them
- * (`decal-pass.ts`).
+ * Per-decal instance attributes: the world rows, the inverse world rows, the decal's Tint and Opacity (rgb, a), and its
+ * cosine of Fade Angle (y). The decal pass fills them as thin-instance buffers of its own kinds (`decal-pass.ts`). The
+ * world rows are not Babylon's `matrix` kind: its `world0`..`world3` streams read zero in a program built outside
+ * Babylon's instancing blocks.
  */
-export const DECAL_INSTANCE_ATTRIBUTES = ["decalInv0", "decalInv1", "decalInv2", "decalInv3", "decalTintOpacity", "decalParams"] as const;
+export const DECAL_INSTANCE_ATTRIBUTES = [
+  "decalWorld0", "decalWorld1", "decalWorld2", "decalWorld3",
+  "decalInv0", "decalInv1", "decalInv2", "decalInv3", "decalTintOpacity", "decalParams",
+] as const;
 
 /**
  * The pass's own uniforms. Not Babylon's `view` / `viewProjection`: its floating origin rewrites those by name from the
@@ -34,7 +38,7 @@ export const DECAL_PASS_UNIFORMS = {
 /** The resolved scene depth the decal reconstructs its surface from. */
 export const DECAL_SCENE_DEPTH_SAMPLER = "decalSceneDepth";
 
-const WORLD_ROWS = ["world0", "world1", "world2", "world3"];
+const WORLD_ROWS = ["decalWorld0", "decalWorld1", "decalWorld2", "decalWorld3"];
 const VARYINGS = {
   invWorld: "vDecalInvWorld",
   projAxis: "vDecalProjAxis",
@@ -112,7 +116,6 @@ export class DecalProjectionBlock extends NodeMaterialBlock {
 
   private declareVertexInputs(state: NodeMaterialBuildState): void {
     declareAttribute(state, "position", "vec3");
-    for (const name of WORLD_ROWS) declareAttribute(state, name, "vec4");
     for (const name of DECAL_INSTANCE_ATTRIBUTES) declareAttribute(state, name, "vec4");
     state._emitUniformFromString(DECAL_PASS_UNIFORMS.viewProjection, Types.Matrix);
   }
@@ -129,11 +132,11 @@ export class DecalProjectionBlock extends NodeMaterialBlock {
     // The vertex stage hands over the decal's rows; the fragment never reads a vertex local.
     const varyings: Array<[string, Types, string]> = [
       [VARYINGS.invWorld, Types.Matrix, "mat4(decalInv0, decalInv1, decalInv2, decalInv3)"],
-      [VARYINGS.projAxis, Types.Vector3, "normalize(world1.xyz)"],
-      [VARYINGS.tangent, Types.Vector3, "normalize(world0.xyz)"],
+      [VARYINGS.projAxis, Types.Vector3, "normalize(decalWorld1.xyz)"],
+      [VARYINGS.tangent, Types.Vector3, "normalize(decalWorld0.xyz)"],
       [VARYINGS.tintOpacity, Types.Vector4, "decalTintOpacity"],
       [VARYINGS.params, Types.Vector4, "decalParams"],
-      [VARYINGS.origin, Types.Vector3, "world3.xyz"],
+      [VARYINGS.origin, Types.Vector3, "decalWorld3.xyz"],
     ];
     for (const [name, type, value] of varyings) {
       if (vertex._emitVaryingFromString(name, type)) vertex.compilationString += `${name} = ${value};\n`;

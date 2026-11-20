@@ -5,7 +5,6 @@ import {
   createSkyboxComponent,
   DEFAULT_SCENE_SUN_ACTOR_ID,
   DEFAULT_SCENE_SUN_POSITION,
-  identitySerializedTransform,
   lookAtRotation,
   normalizeCelShadingSettings,
   normalizeRenderEffectsSettings,
@@ -526,14 +525,16 @@ async function saveDynamicMesh(ctx: FeatureTestContext): Promise<PlacedClass> {
 
 /**
  * Spawns a pooled runtime decal of a Decal Material Instance at its own location on Begin Play via the Spawn Decal
- * node, beside a Decal component of its own (a decal in a Prefab, which its Prefab Preview shows).
+ * node, beside a Decal component of its own on a plate of its own (a decal in a Prefab, which its Prefab Preview shows).
  */
 async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
   const decalMaterial = requireRef(ctx.assets.materials.decalLitInstance, "the decal Material Instance");
   const components = [
+    // A plate of its own for its decal to land on, so the Prefab Preview (which has no floor) shows it.
+    { ...meshComp("prefab-decal-plate", "box"), transform: tf([1.6, -0.02, 0], { scale: [1.4, 0.04, 1.4] }) },
     comp("prefab-decal", "DecalComponent", {
       ...parseDecalProperties({ materialGuid: requireRef(ctx.assets.materials.decalGlow, "the Additive decal Material"), size: [1.2, 1, 1.2], tint: [1, 0.6, 0.3] }),
-    }, { ...identitySerializedTransform(), position: [1.6, 0, 0] }),
+    }, tf([1.6, 0, 0])),
   ];
   const graph = classGraph({
     members: [],

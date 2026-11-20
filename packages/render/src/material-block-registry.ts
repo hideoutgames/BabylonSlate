@@ -1156,10 +1156,24 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     const normal = new NormalizeBlock(`${name}_normal`);
     plumbing.worldNormal4?.connectTo(normal.input);
     normal.output.connectTo(block.worldNormal);
-    if (!operation.inputs.uv) plumbing.uv?.connectTo(block.uv);
     // Babylon emits a Vector4 normal; the graph pin is a Vector3.
     const split = new VectorSplitterBlock(`${name}_xyz`);
     block.output.connectTo(split.xyzw);
+    if (plumbing.decal) {
+      // A decal draws its box's back faces, where Babylon's frame negates the UV it differentiates (`gl_FrontFacing`
+      // false): negating it first keeps the map's X and Y along the decal's.
+      const flip = new ScaleBlock(`${name}_backFaceUv`);
+      const minusOne = createConstantBlock(`${name}_minusOne`, "float", [-1]);
+      minusOne.output.connectTo(flip.factor);
+      flip.output.connectTo(block.uv);
+      if (!operation.inputs.uv) plumbing.uv?.connectTo(flip.input);
+      return {
+        blocks: [normal, block, split, flip, minusOne],
+        inputs: { packed: block.normalMapColor, uv: flip.input, strength: block.strength },
+        outputs: { normal: split.xyzOut },
+      };
+    }
+    if (!operation.inputs.uv) plumbing.uv?.connectTo(block.uv);
     return {
       blocks: [normal, block, split],
       inputs: { packed: block.normalMapColor, uv: block.uv, strength: block.strength },

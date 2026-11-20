@@ -216,6 +216,8 @@ export type RenderDiagnostics = {
   };
   /** Textures the Engine holds and their estimated GPU bytes (`estimateTextureMemory`). */
   textureMemory?: { bytes: number; textures: number };
+  /** The world Scene's decals: how many, how many drew and batches, and how many waited for their Material's program. */
+  decals?: import("./decal-pass").SceneDecalStats;
   /** While the world loads: the first frame's attempts. */
   worldLoad?: {
     presentation: { ready: boolean; draws: number; rendered: boolean; gpuPending: boolean; copied: boolean } | null;

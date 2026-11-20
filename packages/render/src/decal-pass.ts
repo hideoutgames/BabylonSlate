@@ -1,4 +1,4 @@
-import "@babylonjs/core/Meshes/thinInstanceMesh";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo";
 import { Constants } from "@babylonjs/core/Engines/constants";
@@ -110,7 +110,10 @@ type DecalDrawSlot = {
   material: NodeMaterial;
   cube: Mesh;
   capacity: number;
-  world: Float32Array;
+  /** The instance rows' GPU buffers, one per attribute, beside the cube's own vertex buffers. */
+  buffers: Partial<Record<(typeof DECAL_INSTANCE_ATTRIBUTES)[number], VertexBuffer>>;
+  /** The cube's vertex buffers and the instance rows', as one binding. */
+  binding: Record<string, VertexBuffer> | null;
   rows: Record<(typeof DECAL_INSTANCE_ATTRIBUTES)[number], Float32Array>;
   /** The Effect whose compile already asks for a redraw. */
   awaited: Effect | null;
@@ -165,14 +168,6 @@ export function maxDynamicDecalsForScene(scene: Scene): number {
   const geometry = resolveSceneRenderingQuality(scene).geometry;
   const tier = geometry.profile ?? (isQualityLevel(geometry.preset) ? geometry.preset : "medium");
   return tier === "high" || tier === "ultra" ? 128 : 64;
-}
-
-/** `world` with the floating origin's eye taken from its translation (the engine's rule for an instance row). */
-function writeRelativeWorld(world: Matrix, eye: Vector3, out: Float32Array, offset: number): void {
-  world.copyToArray(out, offset);
-  out[offset + 12] = world.m[12]! - eye.x;
-  out[offset + 13] = world.m[13]! - eye.y;
-  out[offset + 14] = world.m[14]! - eye.z;
 }
 
 function parameterMap(binding: DecalBinding): ReadonlyMap<string, MaterialParameterValue> | null {
@@ -696,7 +691,7 @@ export class SceneDecalHost {
       // A decal receives the shadows the surface under it receives (the light block's receiver term).
       cube.receiveShadows = true;
       slot = {
-        material, cube, capacity: 0, world: new Float32Array(0), awaited: null,
+        material, cube, capacity: 0, awaited: null, buffers: {}, binding: null,
         rows: Object.fromEntries(DECAL_INSTANCE_ATTRIBUTES.map((name) => [name, new Float32Array(0)])) as DecalDrawSlot["rows"],
       };
       this.slots.set(material, slot);
@@ -705,12 +700,14 @@ export class SceneDecalHost {
       let capacity = Math.max(16, slot.capacity);
       while (capacity < count) capacity *= 2;
       slot.capacity = capacity;
-      slot.world = new Float32Array(capacity * 16);
-      slot.cube.thinInstanceSetBuffer("matrix", slot.world, 16, false);
+      const engine = this.scene.getEngine();
       for (const name of DECAL_INSTANCE_ATTRIBUTES) {
         slot.rows[name] = new Float32Array(capacity * 4);
-        slot.cube.thinInstanceSetBuffer(name, slot.rows[name], 4, false);
+        slot.buffers[name]?.dispose();
+        // Instanced (divisor 1) and updatable: the pass writes each draw's rows in place.
+        slot.buffers[name] = new VertexBuffer(engine, slot.rows[name], name, true, false, 4, true);
       }
+      slot.binding = { ...slot.cube.geometry?.getVertexBuffers() ?? {}, ...slot.buffers as Record<string, VertexBuffer> };
     }
     return slot;
   }
@@ -721,6 +718,7 @@ export class SceneDecalHost {
     if (!slot) return;
     this.slots.delete(material);
     this.firstDraws.delete(material);
+    for (const buffer of Object.values(slot.buffers)) buffer?.dispose();
     slot.cube.dispose();
   }
 
@@ -783,7 +781,6 @@ export class SceneDecalHost {
     const rows = slot.rows;
     if (!items.length) {
       // A first draw: a zero world collapses every vertex to one point, so it rasterizes nothing.
-      slot.world.fill(0, 0, 16);
       for (const name of DECAL_INSTANCE_ATTRIBUTES) rows[name].fill(0, 0, 4);
     }
     for (let i = 0; i < items.length; i++) {
@@ -795,12 +792,21 @@ export class SceneDecalHost {
         rows.decalInv1[o4 + c] = inv[4 + c]!;
         rows.decalInv2[o4 + c] = inv[8 + c]!;
       }
+      const world = item.world.m;
+      for (let c = 0; c < 4; c++) {
+        rows.decalWorld0[o4 + c] = world[c]!;
+        rows.decalWorld1[o4 + c] = world[4 + c]!;
+        rows.decalWorld2[o4 + c] = world[8 + c]!;
+        rows.decalWorld3[o4 + c] = world[12 + c]!;
+      }
       if (relative) {
-        writeRelativeWorld(item.world, eye, slot.world, i * 16);
+        // The world row's translation less the floating origin's eye (the engine's rule for an instance row).
+        rows.decalWorld3[o4] = world[12]! - eye.x;
+        rows.decalWorld3[o4 + 1] = world[13]! - eye.y;
+        rows.decalWorld3[o4 + 2] = world[14]! - eye.z;
         // The inverse of the relative world: an eye-relative point is first moved back by the eye (in 64 bits).
         for (let c = 0; c < 4; c++) rows.decalInv3[o4 + c] = eye.x * inv[c]! + eye.y * inv[4 + c]! + eye.z * inv[8 + c]! + inv[12 + c]!;
       } else {
-        item.world.copyToArray(slot.world, i * 16);
         for (let c = 0; c < 4; c++) rows.decalInv3[o4 + c] = inv[12 + c]!;
       }
       rows.decalTintOpacity[o4] = item.properties.tint[0];
@@ -812,10 +818,7 @@ export class SceneDecalHost {
       rows.decalParams[o4 + 2] = 0;
       rows.decalParams[o4 + 3] = 0;
     }
-    const cube = slot.cube;
-    cube.thinInstanceCount = count;
-    cube.thinInstancePartialBufferUpdate("matrix", slot.world.subarray(0, count * 16), 0);
-    for (const name of DECAL_INSTANCE_ATTRIBUTES) cube.thinInstancePartialBufferUpdate(name, rows[name].subarray(0, count * 4), 0);
+    for (const name of DECAL_INSTANCE_ATTRIBUTES) slot.buffers[name]!.updateDirectly(rows[name].subarray(0, count * 4), 0);
     return count;
   }
 
@@ -862,7 +865,9 @@ export class SceneDecalHost {
       // Front-face culling draws the OBB's far faces, so entering a decal volume never near-clips it. A mirrored
       // world (negative determinant) flips the cube's winding, so its batch culls the other side.
       engine.setState(true, 0, false, mirrored, false);
-      slot.cube._bind(subMesh, effect, Material.TriangleFillMode);
+      // The cube's vertices and the instance rows, bound as one set without a cached vertex array object: the rows are
+      // the pass's own instanced buffers, which a mesh's thin-instance binding left unbound for this program.
+      engine.bindBuffers(slot.binding!, slot.cube.geometry!.getIndexBuffer(), effect);
       // Every batch binds in full: a frozen Material skips its bindings when the previous draw used the same Effect.
       this.scene.resetCachedMaterial();
       slot.material.bindForSubMesh(IDENTITY, slot.cube, subMesh);
@@ -870,15 +875,24 @@ export class SceneDecalHost {
       effect.setMatrix(DECAL_PASS_UNIFORMS.invViewProjection, this.invViewProjection);
       effect.setMatrix(DECAL_PASS_UNIFORMS.view, view);
       effect.setFloat2(DECAL_PASS_UNIFORMS.invViewport, 1 / Math.max(1, width), 1 / Math.max(1, height));
-      effect.setFloat2(DECAL_PASS_UNIFORMS.depthRange, 2, -1);
+      // Depth to NDC z: [0, 1] as it is where clip space has a half z range (reverse depth through clip control), else
+      // [-1, 1].
+      if (engine.isNDCHalfZRange) effect.setFloat2(DECAL_PASS_UNIFORMS.depthRange, 1, 0);
+      else effect.setFloat2(DECAL_PASS_UNIFORMS.depthRange, 2, -1);
       effect.setFloat(DECAL_PASS_UNIFORMS.reverseDepth, engine.useReverseDepthBuffer ? 1 : 0);
       effect.setVector3(DECAL_PASS_UNIFORMS.cameraPosition, this.cameraRelative);
       context.bindTextureHandle(effect, DECAL_SCENE_DEPTH_SAMPLER, depthHandle);
       engine.setAlphaMode(slot.material.alphaMode);
       engine.drawElementsType(Material.TriangleFillMode, subMesh.indexStart, subMesh.indexCount, count);
+      // As Babylon after an instanced draw: the divisors go, so the next draw's attributes at these locations are not
+      // instanced.
+      engine.unbindInstanceAttributes();
       return true;
     };
 
+    // A frame graph pass binds its target lazily, for its own draw helpers: the decals draw through the engine, so the
+    // target must be bound first, or they land on the default framebuffer.
+    context._applyRenderTarget();
     engine.setDepthBuffer(false);
     engine.setDepthWrite(false);
     try {

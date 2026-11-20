@@ -315,11 +315,11 @@ describe("projected decal pass", () => {
 
     /** Draws `scene`'s decals through a stand-in render context, recording what the draw uploads. */
     async function drawDecals(scene: Scene, camera: FreeCamera): Promise<Uploads> {
-      const { Mesh } = await import("@babylonjs/core/Meshes/mesh");
+      const { VertexBuffer } = await import("@babylonjs/core/Buffers/buffer");
       const { Effect } = await import("@babylonjs/core/Materials/effect");
       const uploads: Uploads = { rows: {}, matrices: {}, camera: null, events: [] };
-      vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate").mockImplementation(function (this: unknown, kind: string, data: number | Float32Array) {
-        if (typeof data !== "number") uploads.rows[kind] = Array.from(data);
+      vi.spyOn(VertexBuffer.prototype, "updateDirectly").mockImplementation(function (this: InstanceType<typeof VertexBuffer>, data) {
+        uploads.rows[this.getKind()] = Array.from(data as Float32Array);
       });
       vi.spyOn(Effect.prototype, "setMatrix").mockImplementation(function (this: InstanceType<typeof Effect>, name: string, matrix) {
         uploads.matrices[name] = Array.from(matrix.asArray());
@@ -333,7 +333,7 @@ describe("projected decal pass", () => {
       vi.spyOn(engine, "setState").mockImplementation((_culling, _offset, _force, reverseSide) => { uploads.events.push(`cull:${reverseSide ? "cw" : "ccw"}`); });
       vi.spyOn(engine, "setAlphaMode").mockImplementation((mode) => { uploads.events.push(`alpha:${mode}`); });
       vi.spyOn(engine, "drawElementsType").mockImplementation((_fill, _start, _count, instances) => { uploads.events.push(`draw:${instances}`); });
-      const context = { setTextureSamplingMode: vi.fn(), bindTextureHandle: vi.fn() } as unknown as FrameGraphRenderContext;
+      const context = { setTextureSamplingMode: vi.fn(), bindTextureHandle: vi.fn(), _applyRenderTarget: vi.fn() } as unknown as FrameGraphRenderContext;
       scene.activeCamera = camera;
       scene.updateTransformMatrix();
       const host = sceneDecalHost(scene);
@@ -358,7 +358,7 @@ describe("projected decal pass", () => {
       const scene = testScene();
       const camera = await spawnAt1000(scene);
       const uploads = await drawDecals(scene, camera);
-      expect(uploads.rows.matrix!.slice(12, 16)).toEqual([1000, 0, 0, 1]);
+      expect(uploads.rows.decalWorld3).toEqual([1000, 0, 0, 1]);
       expect(unsigned(uploads.rows.decalInv3!)).toEqual([-1000, 0, 0, 1]);
       expect(uploads.rows.decalTintOpacity!.map((value) => Math.round(value * 1000) / 1000)).toEqual([1, 0.5, 0.25, 0.8]);
       expect(uploads.camera![0]).toBeCloseTo(1000, 9);
@@ -375,7 +375,7 @@ describe("projected decal pass", () => {
       const camera = await spawnAt1000(scene);
       const uploads = await drawDecals(scene, camera);
       // The instance row's translation less the eye (1000, 2, -10), and the inverse row taking an eye-relative point.
-      expect(uploads.rows.matrix!.slice(12, 16)).toEqual([0, -2, 10, 1]);
+      expect(uploads.rows.decalWorld3).toEqual([0, -2, 10, 1]);
       expect(uploads.rows.decalInv3).toEqual([0, 2, -10, 1]);
       expect(uploads.camera).toEqual([0, 0, 0]);
       // The view keeps the camera's rotation and puts the eye at the origin, so view-space fog distance is unchanged.
@@ -438,7 +438,7 @@ describe("projected decal pass", () => {
       const first = await drawDecals(scene, camera);
       expect(first.events.filter((event) => event.startsWith("draw"))).toEqual(["draw:1"]);
       // A zero world collapses the box to a point.
-      expect(first.rows.matrix!.slice(0, 16).every((value) => value === 0)).toBe(true);
+      for (const row of ["decalWorld0", "decalWorld1", "decalWorld2", "decalWorld3"]) expect(first.rows[row]!.every((value) => value === 0)).toBe(true);
       vi.restoreAllMocks();
       const second = await drawDecals(scene, camera);
       expect(second.events.filter((event) => event.startsWith("draw"))).toEqual([]);

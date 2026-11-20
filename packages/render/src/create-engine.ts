@@ -29,7 +29,7 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
-import { clearDecals, refreshDecalMaterials, removeDecals, setDecalMaterialSource, setDecalPendingListener, setDecalTimePaused, upsertDecals, warmDecalMaterials } from "./decal-pass";
+import { clearDecals, refreshDecalMaterials, sceneDecalStats, removeDecals, setDecalMaterialSource, setDecalPendingListener, setDecalTimePaused, upsertDecals, warmDecalMaterials } from "./decal-pass";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isFoliageDistanceOnlySceneEdit } from "./foliage-mesh";
@@ -2102,6 +2102,7 @@ function initializeEngine(
         rttPresenting: rttPresent?.isPresenting() ?? false, contextLost },
       worldLoad: worldLoading ? worldLoadDiagnostics() : null,
       textureMemory: estimateTextureMemory(engine),
+      decals: sceneDecalStats(scene),
       engineLoop: { frameId: engine.frameId, activeLoops: engine.activeRenderLoops.length,
         ownsLoop: engine.activeRenderLoops.includes(renderLoop), frameHandler: engine._frameHandler,
         disposed: engine.isDisposed, contextLost: native._contextWasLost,
