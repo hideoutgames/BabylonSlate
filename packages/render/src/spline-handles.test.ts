@@ -9,6 +9,7 @@ import { createActor, createDefaultScene, parseSplineProperties } from "@haptic/
 import { createSplineHandles, insertSplinePoint, removeSplinePoint, splineHandles } from "./spline-handles";
 import { createSplineMesh, splineMeshBody } from "./spline-mesh";
 import { selectedShapeComponent } from "./shape-edit-target";
+import { HANDLE_MIN_HIT_PX } from "./shape-handles";
 
 const event = (point: Vector3) => ({ dragPlanePoint: point, pointerId: 1, pointerInfo: null, dragPlaneNormal: Vector3.Forward(), dragDistance: 0, delta: Vector3.Zero() });
 
@@ -43,6 +44,34 @@ describe("Spline shape handles", () => {
       const expected = camera.getForwardRay().direction.normalize();
       expect(Math.abs(Vector3.Dot(after, expected))).toBeCloseTo(1, 6);
       expect(Math.abs(Vector3.Dot(after, before))).toBeLessThan(0.99);
+    } finally { handles.dispose(); layer.dispose(); scene.dispose(); engine.dispose(); }
+  });
+
+  it("keeps a point's hit area a touch target in a short viewport without resizing its dot", () => {
+    const engine = new NullEngine(), scene = new Scene(engine);
+    const camera = new FreeCamera("camera", new Vector3(0, 0, -20), scene);
+    camera.setTarget(Vector3.Zero());
+    const layer = new UtilityLayerRenderer(scene);
+    let cssHeight = 0;
+    const handles = createSplineHandles(layer, scene, { viewportCssHeight: () => cssHeight });
+    try {
+      const properties = { points: [[0, 0, 0], [5, 0, 0]], curvature: 0 };
+      createSplineMesh(scene, "curve", properties);
+      handles.attach({ actorId: "actor", componentId: "spline", meshName: "curve", properties });
+      layer.utilityLayerScene.render();
+      const pick = layer.utilityLayerScene.getMeshByName("spline-handle:point:0")!;
+      const visual = layer.utilityLayerScene.getMeshByName("spline-handle:point:0:visual")!;
+      const dot = pick.scaling.x * visual.scaling.x;
+      const pixels = () => pick.scaling.x / (2 * 20 * Math.tan(camera.fov / 2)) * cssHeight;
+      // A tall viewport already draws the hit sphere larger than a touch target.
+      cssHeight = 2000;
+      layer.utilityLayerScene.render();
+      expect(pixels()).toBeGreaterThan(HANDLE_MIN_HIT_PX);
+      expect(visual.scaling.x).toBeCloseTo(1, 6);
+      cssHeight = 300;
+      layer.utilityLayerScene.render();
+      expect(pixels()).toBeCloseTo(HANDLE_MIN_HIT_PX, 4);
+      expect(pick.scaling.x * visual.scaling.x).toBeCloseTo(dot, 6);
     } finally { handles.dispose(); layer.dispose(); scene.dispose(); engine.dispose(); }
   });
 
