@@ -171,6 +171,8 @@ export class EditorSceneSync {
     options?: EditorSceneSyncOptions,
   ) {
     this.scene = scene;
+    // Editor views show every foliage cell: distances apply in Play.
+    showEveryFoliageCell(scene);
     this.scheduler = scheduler;
     this.resolveMaterial = options?.resolveMaterial;
     this.releaseMaterialInstance = options?.releaseMaterialInstance;
@@ -1493,4 +1495,4 @@ function meshAndDescendantMeshes(root: Mesh): AbstractMesh[] {
   return [root, ...children];
 }
 import { updateLandscapeMesh } from "./landscape-mesh";
-import { refreshFoliageMaterials } from "./foliage-mesh";
+import { refreshFoliageMaterials, showEveryFoliageCell } from "./foliage-mesh";

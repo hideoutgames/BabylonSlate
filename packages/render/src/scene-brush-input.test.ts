@@ -8,6 +8,10 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";
 import type { EngineHandle } from "./create-engine";
 import { RenderScheduler } from "./render-scheduler";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { installAssetBytes } from "@haptic/assets";
+import { encodeTriangleGlb } from "./glb-test-fixtures";
+import { isShadowDistanceCulled } from "./shadow-caster-list";
 
 class Canvas extends EventTarget {
   captures = new Set<number>();
@@ -160,6 +164,26 @@ it("paints mixed Models as one component per stroke and erases them together wit
   expect(f.state.scene!.actors).toHaveLength(1);
   f.state.scene = painted; f.sync.apply(painted);
   expect(f.sync.meshForComponent(painted.actors[1]!.id, components[0]!.id)).not.toBeNull();
+});
+
+it("shows a stroke painted beyond its group's Cull Distance in the viewport, every cell drawn and casting", async () => {
+  const f = fixture("foliage");
+  const model = () => installAssetBytes(encodeTriangleGlb(), "model/gltf-binary");
+  f.sync.setMeshAssets({ modelSources: new Map([["oak", model()], ["pine", model()]]) });
+  // The camera is 35 m away: Play would cull these cells and their shadows.
+  f.state.group = { ...f.state.group!, models: f.state.group!.models.map((entry) => ({ ...entry, cullDistance: 1, fadeRange: 0.5, shadowDistance: 1 })) };
+  f.pointer("pointerdown", 10, 0); f.pointer("pointermove", 12, 0); f.pointer("pointerup", 12, 0);
+  await Promise.resolve();
+  await f.sync.whenEditorModelsReady();
+  f.scene.render();
+  const stroke = f.state.scene!.actors[1]!;
+  const root = f.sync.meshForComponent(stroke.id, stroke.components[0]!.id)!;
+  const cells = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances);
+  expect(cells.length).toBeGreaterThan(0);
+  for (const cell of cells) {
+    expect(cell.isEnabled() && cell.isPickable).toBe(true);
+    expect(isShadowDistanceCulled(cell)).toBe(false);
+  }
 });
 
 type Instance = { position: [number, number, number]; rotation: [number, number, number, number]; scale: [number, number, number] };

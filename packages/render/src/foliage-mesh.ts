@@ -171,9 +171,22 @@ function foliageDistanceState(scene: Scene): FoliageDistanceState {
   return state;
 }
 
+const editorViews = new WeakSet<Scene>();
+
+/**
+ * Marks `scene` as an editor view (`EditorSceneSync`: the viewport and thumbnails): its foliage cells never distance-cull,
+ * shadow-cull or fade, so a far overview shows every stroke and every cell can be selected. Levels of detail still swap.
+ */
+export function showEveryFoliageCell(scene: Scene): void {
+  editorViews.add(scene);
+  const state = foliageDistancesByScene.get(scene);
+  if (state) state.dirty = true;
+}
+
 /**
  * Evaluate distance culling, readiness-safe shadow distance culling, Bayer dither fade bands,
- * and per-cell LOD geometry swaps for all `32x32` foliage cells in `scene`.
+ * and per-cell LOD geometry swaps for all `32x32` foliage cells in `scene`, from `camera`: the main camera of the
+ * frame. Mirrors, probes and Render Target Captures draw what it chose.
  */
 export function updateFoliageDistances(
   scene: Scene,
@@ -204,6 +217,7 @@ export function updateFoliageDistances(
   state.lastScale = scale;
   state.lastAutoLod = autoLod;
   state.dirty = false;
+  const showAll = editorViews.has(scene);
 
   for (const cell of state.cells) {
     if (cell.mesh.isDisposed()) {
@@ -219,15 +233,15 @@ export function updateFoliageDistances(
     const effectiveShadow = cell.shadowDistance > 0 ? cell.shadowDistance * scale : effectiveCull;
     const effectiveFadeRange = cell.fadeRange > 0 ? cell.fadeRange * scale : 0;
 
-    const withinCull = effectiveCull <= 0 || dist <= effectiveCull;
+    const withinCull = showAll || effectiveCull <= 0 || dist <= effectiveCull;
     if (cell.mesh.isEnabled(false) !== withinCull) {
       cell.mesh.setEnabled(withinCull);
     }
 
-    setShadowDistanceCulled(cell.mesh, !withinCull || (effectiveShadow > 0 && dist > effectiveShadow));
+    setShadowDistanceCulled(cell.mesh, !showAll && (!withinCull || (effectiveShadow > 0 && dist > effectiveShadow)));
     const metadata = (cell.mesh.metadata ?? (cell.mesh.metadata = {})) as Record<string, unknown>;
 
-    if (withinCull && effectiveCull > 0 && effectiveFadeRange > 0) {
+    if (!showAll && withinCull && effectiveCull > 0 && effectiveFadeRange > 0) {
       const fadeStart = Math.max(0, effectiveCull - effectiveFadeRange);
       if (centerDist + radius >= fadeStart) {
         metadata.hapticFoliageFade = [fadeStart, effectiveCull];

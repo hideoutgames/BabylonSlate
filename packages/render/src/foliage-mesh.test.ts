@@ -132,74 +132,87 @@ it("keeps an unchanged foliage visual across applies and rebuilds it when its pr
   expect(rebuilt.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)?.thinInstanceCount).toBe(2);
 });
 
-it("distance-culls foliage cells, drops distant shadows without readiness churn, and sets dither fade bands scaled by lodDistanceScale", async () => {
+/**
+ * A meadow of three cells at x = 5, 50 and 100 drawing a Standard Material, at Low quality (distances scaled by 0.75:
+ * cull 60 m, fade from 45 m, shadows to 30 m), seen from `camera`. `fade` binds a cell's Material for one draw and returns
+ * the fade range the draw uploads; `casts` asks a shadow caster list whether a map would draw the cell.
+ */
+async function meadow(editor: boolean) {
   const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
+  const { Plane } = await import("@babylonjs/core/Maths/math.plane");
   const { RENDER_QUALITY_PROFILES } = await import("@haptic/core");
   const { updateSceneRenderingSettings } = await import("./render-settings");
-  const { onSceneReadinessDirty } = await import("./scene-readiness-signal");
-  const { updateFoliageDistances } = await import("./foliage-mesh");
+  const { ShadowCasterList } = await import("./shadow-caster-list");
+  const { showEveryFoliageCell } = await import("./foliage-mesh");
   const { engine, scene } = createTestEngine();
   disposers.push(() => { scene.dispose(); engine.dispose(); });
+  if (editor) showEveryFoliageCell(scene);
   const camera = new FreeCamera("cam", new Vector3(0, 2, 0), scene);
-  camera.getViewMatrix();
   scene.activeCamera = camera;
-  // Low quality uses lodDistanceScale = 0.75.
   updateSceneRenderingSettings(scene, { quality: RENDER_QUALITY_PROFILES.low });
-
-  const assets = { modelSources: new Map([["grass", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) };
+  const material = new StandardMaterial("grass", scene);
+  const assets = { modelSources: new Map([["grass", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]), resolveMaterial: () => material };
   const root = createFoliageMesh(scene, "meadow", {
     batches: [{
-      modelGuid: "grass",
-      materialGuid: null,
-      cullDistance: 80,
-      fadeRange: 20,
-      shadowDistance: 40,
-      transforms: [
-        { ...identitySerializedTransform(), position: [5, 0, 0] },
-        { ...identitySerializedTransform(), position: [50, 0, 0] },
-        { ...identitySerializedTransform(), position: [100, 0, 0] },
-      ],
+      modelGuid: "grass", materialGuid: "grass-material", cullDistance: 80, fadeRange: 20, shadowDistance: 40,
+      transforms: [5, 50, 100].map((x) => ({ ...identitySerializedTransform(), position: [x, 0, 0] })),
     }],
   }, assets);
   await foliagePreparation(root);
-
   const cells = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances);
   expect(cells).toHaveLength(3);
-  const byX = (targetX: number) => cells.find((cell) => Math.abs(cell.getBoundingInfo().boundingSphere.centerWorld.x - targetX) < 5)!;
-  const near = byX(5);
-  const mid = byX(50);
-  const far = byX(100);
+  const at = (x: number) => cells.find((cell) => Math.abs(cell.getBoundingInfo().boundingSphere.centerWorld.x - x) < 5)!;
+  const casters = new ShadowCasterList();
+  for (const cell of cells) casters.add(cell);
+  disposers.push(() => casters.dispose());
+  const everywhere = [new Plane(0, 1, 0, 1000)];
+  const casts = (cell: Mesh) => casters.queryPlanes(everywhere).includes(cell);
+  const fade = (cell: Mesh) => {
+    expect(material.isReadyForSubMesh(cell, cell.subMeshes[0]!, true)).toBe(true);
+    const ubo = (material as unknown as { _uniformBuffer: { updateFloat2: (name: string, x: number, y: number) => void } })._uniformBuffer;
+    const ranges: number[][] = [];
+    const update = ubo.updateFloat2.bind(ubo);
+    const spy = vi.spyOn(ubo, "updateFloat2").mockImplementation((name: string, x: number, y: number) => {
+      if (name === "hapticFoliageFade") ranges.push([x, y]);
+      update(name, x, y);
+    });
+    material.bindForSubMesh(cell.getWorldMatrix(), cell, cell.subMeshes[0]!);
+    spy.mockRestore();
+    return ranges[0];
+  };
+  return { scene, camera, near: at(5), mid: at(50), far: at(100), casts, fade };
+}
 
-  const readinessEvents: string[] = [];
-  const unsubscribe = onSceneReadinessDirty(scene, (reason) => readinessEvents.push(reason));
-  disposers.push(unsubscribe);
-
-  // Effective distances at Low (0.75): cull = 60 m, fadeStart = 45 m, shadow = 30 m.
-  updateFoliageDistances(scene, camera, true);
-  expect(near.isEnabled(false)).toBe(true);
-  expect(isShadowDistanceCulled(near)).toBe(false);
-  expect(near.metadata?.hapticFoliageFade).toBeNull();
-
-  expect(mid.isEnabled(false)).toBe(true);
-  expect(isShadowDistanceCulled(mid)).toBe(true);
-  expect(mid.metadata?.hapticFoliageFade).toEqual([45, 60]);
-
-  expect(far.isEnabled(false)).toBe(false);
-  expect(isShadowDistanceCulled(far)).toBe(true);
-  expect(far.metadata?.hapticFoliageFade).toBeNull();
-
-  // Hidden actor visibility is independent of distance culling (setEnabled vs isVisible).
+it("distance-culls, shadow-culls and fades Play's foliage cells from the frame's camera, scaled by quality, without readiness", async () => {
+  const { onSceneReadinessDirty } = await import("./scene-readiness-signal");
+  const { scene, camera, near, mid, far, casts, fade } = await meadow(false);
+  const readiness: string[] = [];
+  disposers.push(onSceneReadinessDirty(scene, (reason) => readiness.push(reason)));
+  scene.render();
+  expect([near, mid, far].map((cell) => cell.isEnabled())).toEqual([true, true, false]);
+  expect([near, mid, far].map(casts)).toEqual([true, false, false]);
+  expect(fade(near)).toEqual([0, 0]);
+  expect(fade(mid)).toEqual([45, 60]);
+  // A hidden actor stays hidden whatever its distance: culling enables and disables, never changes visibility.
   near.isVisible = false;
-
-  // Moving camera near the far cell restores drawing and shadows with zero readiness invalidations.
   camera.position.set(95, 2, 0);
-  camera.getViewMatrix();
-  updateFoliageDistances(scene, camera, true);
-  expect(far.isEnabled(false)).toBe(true);
-  expect(isShadowDistanceCulled(far)).toBe(false);
-  expect(near.isEnabled(false)).toBe(false);
+  scene.render();
+  expect([near, mid, far].map((cell) => cell.isEnabled())).toEqual([false, true, true]);
   expect(near.isVisible).toBe(false);
-  expect(readinessEvents).toEqual([]);
+  expect([mid, far].map(casts)).toEqual([false, true]);
+  expect(fade(far)).toEqual([0, 0]);
+  expect(readiness).toEqual([]);
+});
+
+it("never culls or fades foliage cells in an editor view, however far its camera", async () => {
+  const { scene, camera, near, mid, far, casts, fade } = await meadow(true);
+  camera.position.set(-500, 2, 0);
+  scene.render();
+  for (const cell of [near, mid, far]) {
+    expect(cell.isEnabled()).toBe(true);
+    expect(casts(cell)).toBe(true);
+    expect(fade(cell)).toEqual([0, 0]);
+  }
 });
 
 it("swaps pre-built per-cell LOD geometries while sharing thin-instance matrix buffers", async () => {
