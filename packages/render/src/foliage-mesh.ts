@@ -263,6 +263,17 @@ export function updateFoliageDistances(
   }
 }
 
+const reportedLodFailures = new WeakMap<Scene, Set<string>>();
+
+/** Warns once per Scene and Model that its foliage keeps full detail, as the Model cache reports a failed generation. */
+function reportFoliageLodFailure(scene: Scene, modelGuid: string, error: unknown): void {
+  let reported = reportedLodFailures.get(scene);
+  if (!reported) reportedLodFailures.set(scene, (reported = new Set()));
+  if (reported.has(modelGuid)) return;
+  reported.add(modelGuid);
+  console.warn(`[render] Model ${modelGuid} foliage keeps full detail; attaching its levels of detail failed: ${String(error)}`);
+}
+
 const preparations = new WeakMap<Mesh, Promise<void>>();
 const batchesByRoot = new WeakMap<Mesh, Array<{ root: Mesh; batch: FoliageBatch }>>();
 /** Each parsed batch's distances, by batch index, for a foliage root. */
@@ -438,7 +449,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
   });
   const ready = (async () => {
     const distanceState = foliageDistanceState(scene);
-    const lodPending: Array<{ loadLods: () => Promise<ModelLodSet | null>; cells: FoliageCellRecord[] }> = [];
+    const lodPending: Array<{ modelGuid: string; loadLods: () => Promise<ModelLodSet | null>; cells: FoliageCellRecord[] }> = [];
     for (const [batchIndex, batch] of data.batches.entries()) {
       if (root.isDisposed()) return;
       const bytes = assets?.modelBytes?.get(batch.modelGuid);
@@ -506,7 +517,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
         }
       }
       if (batchCellRecords.length > 0) {
-        lodPending.push({ loadLods: () => lease.lods(), cells: batchCellRecords });
+        lodPending.push({ modelGuid: batch.modelGuid, loadLods: () => lease.lods(), cells: batchCellRecords });
       }
     }
     if (root.isDisposed()) return;
@@ -524,7 +535,10 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
           for (const cell of pending.cells) attachCellLods(cell, lodSet);
           distanceState.dirty = true;
           updateFoliageDistances(scene, scene.activeCamera, true);
-        }).catch(() => {});
+        }).catch((error: unknown) => {
+          // Generation failures were reported by the Model's cache (`lods()` settles null); this is the cells' attach.
+          if (!root.isDisposed()) reportFoliageLodFailure(scene, pending.modelGuid, error);
+        });
       }
     }
   })().catch((error: unknown) => {

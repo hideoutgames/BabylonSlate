@@ -12,8 +12,22 @@ import { createFoliageMesh, foliagePreparation, refreshFoliageMaterials } from "
 import { glbContainerLoadCount } from "./glb-anim";
 import { keepsDrawingOutsideView } from "./play-view-culling";
 import { isShadowDistanceCulled } from "./shadow-caster-list";
+import type { ModelLodSet } from "./model-lod";
+/** The levels of detail a Model's cache hands foliage, when a test replaces them (generation is the Model cache's own work). */
+const lodOverride = vi.hoisted(() => ({ current: null as null | (() => Promise<ModelLodSet | null>) }));
+vi.mock("./glb-anim", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./glb-anim")>();
+  return {
+    ...actual,
+    acquireGlbContainer: (...args: Parameters<typeof actual.acquireGlbContainer>) => {
+      const lease = actual.acquireGlbContainer(...args);
+      const lods = lodOverride.current;
+      return lods ? { ...lease, lods } : lease;
+    },
+  };
+});
 const disposers: Array<() => void> = [];
-afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
+afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); lodOverride.current = null; });
 
 it("shares model vertices while keeping stroke and cell instance buffers independent", async () => {
   const { engine, scene } = createTestEngine();
@@ -416,3 +430,29 @@ it.each([
   material.bindForSubMesh(mesh.getWorldMatrix(), mesh, mesh.subMeshes[0]!);
   expect(eyes).toEqual([eye]);
 });
+
+it("reports once per Model when its levels of detail cannot attach to the foliage, which keeps full detail", async () => {
+  const warnings = vi.spyOn(console, "warn").mockImplementation(() => {});
+  let attaches = 0;
+  lodOverride.current = async () => ({
+    levelsFor: () => { attaches++; throw new Error("index buffer rejected"); },
+    indexBytes: 0,
+    dispose: () => {},
+  });
+  const { engine, scene } = createTestEngine();
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  const assets = { modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) };
+  const strokes = ["a", "b"].map((name) => createFoliageMesh(scene, name, {
+    batches: [{ modelGuid: "tree", transforms: [identitySerializedTransform(), { ...identitySerializedTransform(), position: [40, 0, 0] }] }],
+  }, assets));
+  await Promise.all(strokes.map((root) => foliagePreparation(root)));
+  await vi.waitFor(() => expect(attaches).toBe(2));
+  await Promise.resolve();
+  const reports = warnings.mock.calls.filter(([message]) => String(message).includes("levels of detail"));
+  expect(reports).toHaveLength(1);
+  expect(String(reports[0]![0])).toContain("Model tree");
+  expect(String(reports[0]![0])).toContain("index buffer rejected");
+  const cells = strokes.flatMap((root) => root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances));
+  expect(cells.every((cell) => !cell.geometry!.id.includes(":lod"))).toBe(true);
+});
+
