@@ -13,7 +13,7 @@ export type MaterialProgramCensus = {
   programs: number;
   /** Builds, since the Engine's first, that adopted an earlier build's program instead of compiling their own. */
   adopted: number;
-  /** Rebuilds (a texture arriving) whose shader text was the same as the build before: each a program compiled again. */
+  /** Rebuilds (a texture arriving) whose shader text was the same as the build before: each keeps its program. */
   sameShaderRebuilds: number;
 };
 
@@ -39,7 +39,7 @@ export function noteAdoptedProgram(engine: AbstractEngine): void {
   censusOf(engine).adopted += 1;
 }
 
-/** A rebuild produced the shader text its material already had, under a new build id. */
+/** A rebuild produced the shader text its material already had. */
 export function noteSameShaderRebuild(engine: AbstractEngine): void {
   censusOf(engine).sameShaderRebuilds += 1;
 }
