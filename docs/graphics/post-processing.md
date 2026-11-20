@@ -91,10 +91,13 @@ Passes run from top to bottom. If a pass needs a buffer the device cannot provid
 
 Scene Layers draw after the world and its post-processing, so a scene's passes never touch them. To post-process the HUD, open **Project Settings > Rendering > Scene Layer Post-Processing** (or the **Inspector** of any Scene Layer, which shows the same list) and add passes there. Every layer draws into one image, the passes run over it once, and the result is blended over the world. These passes always run at full resolution. See [Scene Layer post-processing](../scenes/scene-layers.md#scene-layer-post-processing).
 
+To post-process only part of a layer, add a [Post Processing Panel](../components/post-processing-panel.md) and give it a post-process Material. The Material runs over the actors under the panel, cut to its rectangle, and the Scene Layer passes still run over the whole result afterwards.
+
 ## From scripts
 
 - [Set Rendering Effects](../scripting/class/set-rendering-effects.md) changes the colour pipeline, tone mapping, exposure, bloom and vignette for the session. [Set Anti-Aliasing](../scripting/class/set-anti-aliasing.md) and [Set Vignette Color](../scripting/class/set-vignette-color.md) change one setting.
 - [Set Post Processing Quality](../scripting/class/set-post-processing-quality.md) changes the Post Processing quality group.
+- To animate a Post Processing Panel's Material, call **Get Material** on the panel and use the same Set Material Parameter nodes.
 - To animate a scene pass, copy its **Entry ID** (the **#** button beside the pass's Material), get its Material with [Get Post Process Entry](../scripting/class/get-post-process-entry.md), then use [Set Material Float Parameter](../scripting/class/set-material-float-parameter.md), [Set Material Vector2 Parameter](../scripting/class/set-material-vector2-parameter.md), [Set Material Vector3 Parameter](../scripting/class/set-material-vector3-parameter.md), [Set Material Vector4 Parameter](../scripting/class/set-material-vector4-parameter.md) or [Set Material Color Parameter](../scripting/class/set-material-color-parameter.md).
 - [Register Scene Post-Processing](../scripting/class/register-scene-post-processing.md) adds a post-process Material to the current scene while the game runs, and [Unregister Scene Post-Processing](../scripting/class/unregister-scene-post-processing.md) removes one. [Register Scene Layer Post-Processing](../scripting/class/register-scene-layer-post-processing.md) and [Unregister Scene Layer Post-Processing](../scripting/class/unregister-scene-layer-post-processing.md) do the same for the passes every Scene Layer shares. Both Register nodes return the new pass's Material Object as **Pass**, so you can set its parameters without an Entry ID.
 
