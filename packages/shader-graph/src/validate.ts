@@ -15,6 +15,7 @@ function materialDomainLabel(domain: MaterialDomain): string {
   if (domain === "landscape") return "landscape";
   if (domain === "postProcess") return "post-process";
   if (domain === "particle") return "particle";
+  if (domain === "decal") return "decal";
   return "surface";
 }
 
@@ -22,6 +23,7 @@ function materialTerminalTitle(domain: MaterialDomain): string {
   if (domain === "text") return "Text Output";
   if (domain === "postProcess") return "Post Process Output";
   if (domain === "particle") return "Particle Output";
+  if (domain === "decal") return "Decal Output";
   return "Material Output";
 }
 import type {

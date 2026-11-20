@@ -58,7 +58,7 @@ export function materialNodePreviewDocument(
   const combine = freeNodeId(document.nodes, "__previewCombine");
   const edge = (sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) =>
     ({ id: `${sourceNodeId}:${sourcePinId}:${targetNodeId}:${targetPinId}`, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
-  const surface = document.domain === "surface" || document.domain === "landscape";
+  const surface = document.domain === "surface" || document.domain === "landscape" || document.domain === "decal";
   return {
     ...document,
     shadingModel: "unlit",

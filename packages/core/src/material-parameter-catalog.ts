@@ -8,7 +8,7 @@ export type MaterialParameterCatalog = Readonly<
   Record<
     string,
     {
-      domain: "surface" | "landscape" | "postProcess" | "particle" | "text";
+      domain: "surface" | "landscape" | "postProcess" | "particle" | "text" | "decal";
       planHash: string;
       parameters: Readonly<Record<string, MaterialParameterValue>>;
     }
@@ -30,7 +30,8 @@ export function normalizeMaterialParameterCatalog(
         entry.domain !== "landscape" &&
         entry.domain !== "postProcess" &&
         entry.domain !== "particle" &&
-        entry.domain !== "text") ||
+        entry.domain !== "text" &&
+        entry.domain !== "decal") ||
       typeof entry.planHash !== "string" ||
       !entry.planHash
     )
