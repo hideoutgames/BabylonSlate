@@ -899,6 +899,7 @@ function initializeEngine(
         onVoiceEnded: options.onAudioVoiceEnded,
         onAssetReady: options.onAudioAssetReady,
         loadSourceBytes: options.loadAudioSourceBytes,
+        resolveStreamUrl: options.resolveAudioStreamUrl,
         prepareAsset: options.prepareAudioAsset,
         preparation: nativePreparation,
       })

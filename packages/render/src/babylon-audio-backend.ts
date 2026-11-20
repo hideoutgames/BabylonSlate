@@ -3,12 +3,18 @@ import {
   CreateAudioEngineAsync,
   CreateSoundAsync,
   CreateSoundBufferAsync,
+  CreateStreamingSoundAsync,
   type AudioBus,
   type AudioEngineV2,
   type StaticSound,
   type StaticSoundBuffer,
+  type StreamingSound,
 } from "@babylonjs/core/AudioV2";
-import { AUDIO_MUFFLE_LOWPASS_HZ, AUDIO_SHARED_REVERB_BUSES } from "@haptic/assets";
+import {
+  AUDIO_MUFFLE_LOWPASS_HZ,
+  AUDIO_SHARED_REVERB_BUSES,
+  mimeForAudioBytes,
+} from "@haptic/assets";
 import type {
   AudioPlaybackBackend,
   AudioPlayRequest,
@@ -19,11 +25,41 @@ import {
   type ParametricReverbGraph,
 } from "./parametric-reverb";
 
+type LiveAudioSound = StaticSound | StreamingSound;
+
 function sourceBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(
     bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength,
   ) as ArrayBuffer;
+}
+
+function releaseMediaElement(element: HTMLAudioElement): void {
+  try {
+    element.pause();
+  } catch {
+    /* tearing down */
+  }
+  try {
+    element.removeAttribute?.("src");
+  } catch {
+    /* tearing down */
+  }
+  try {
+    element.load?.();
+  } catch {
+    /* tearing down */
+  }
+}
+
+function revokeObjectUrlSafely(url: string): void {
+  try {
+    if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+      URL.revokeObjectURL(url);
+    }
+  } catch {
+    /* tearing down */
+  }
 }
 
 /**
@@ -63,7 +99,11 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   private reverbGraph: ParametricReverbGraph | null = null;
   private audioContext: AudioContext | null = null;
   private readonly buffers = new Map<string, StaticSoundBuffer>();
-  private readonly voices = new Map<string, StaticSound>();
+  private readonly voices = new Map<string, LiveAudioSound>();
+  /** Managed media elements for streamed voices so playbackRate works and stop() releases WebKit decoders. */
+  private readonly streamedElements = new Map<string, HTMLAudioElement>();
+  /** Blob URLs created directly by this backend (when callers omit sourceUrl); revoked on stop/dispose. */
+  private readonly ownedStreamUrls = new Map<string, string>();
   private readonly muffleSends = new Map<string, GainNode>();
   /** Requested gain and applied muffle per live voice; both set its volume. */
   private readonly voiceLevels = new Map<string, { gain: number; muffle: number }>();
@@ -109,6 +149,77 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     const isCurrent = () => !this.disposed && this.pendingVoices.get(request.voiceId) === pending;
     const engine = await this.ensureEngine();
     if (!isCurrent()) return;
+    const spatial = request.spatial;
+    const commonOptions = {
+      volume: request.gain,
+      loop: request.loop,
+      maxInstances: 1,
+      spatialEnabled: spatial?.enabled === true,
+      spatialMinDistance: spatial?.innerRadius,
+      spatialMaxDistance: spatial?.maxRadius,
+      spatialDistanceModel: spatial?.distanceModel,
+      spatialRolloffFactor: spatial?.rolloff,
+      spatialPanningModel: (
+        spatial?.spatialisation === "hrtf" ? "HRTF" : "equalpower"
+      ) as PanningModelType,
+      spatialConeInnerAngle: spatial?.cone
+        ? degreesToRadians(spatial.cone.innerAngle)
+        : undefined,
+      spatialConeOuterAngle: spatial?.cone
+        ? degreesToRadians(spatial.cone.outerAngle)
+        : undefined,
+      spatialConeOuterVolume: spatial?.cone?.outerGain,
+      outBus: request.reverbSend ? this.reverbBus : null,
+    };
+
+    if (request.playbackMode === "streamed") {
+      let url = request.sourceUrl?.trim() ?? "";
+      let ownedUrl: string | null = null;
+      if (!url) {
+        if (request.source.byteLength === 0) {
+          throw new Error("Streamed audio request has neither sourceUrl nor bytes.");
+        }
+        const mime = request.mimeType ?? mimeForAudioBytes(request.source);
+        ownedUrl = URL.createObjectURL(new Blob([sourceBuffer(request.source)], { type: mime }));
+        url = ownedUrl;
+      }
+      const element = new Audio();
+      element.crossOrigin = "anonymous";
+      element.loop = request.loop;
+      element.preload = "auto";
+      element.src = url;
+      let sound: StreamingSound;
+      try {
+        sound = await CreateStreamingSoundAsync(
+          request.voiceId,
+          element,
+          { ...commonOptions, preloadCount: 1 },
+          engine,
+        );
+      } catch (error) {
+        releaseMediaElement(element);
+        if (ownedUrl) revokeObjectUrlSafely(ownedUrl);
+        throw error;
+      }
+      if (!isCurrent()) {
+        sound.dispose();
+        releaseMediaElement(element);
+        if (ownedUrl) revokeObjectUrlSafely(ownedUrl);
+        return;
+      }
+      this.pendingVoices.delete(request.voiceId);
+      this.voices.set(request.voiceId, sound);
+      this.streamedElements.set(request.voiceId, element);
+      if (ownedUrl) this.ownedStreamUrls.set(request.voiceId, ownedUrl);
+      this.voiceLevels.set(request.voiceId, { gain: request.gain, muffle: 0 });
+      sound.onEndedObservable.addOnce(() => {
+        this.onVoiceEnded?.(request.voiceId);
+      });
+      sound.play();
+      if (this.paused || this.pausedVoices.has(request.voiceId)) this.pauseSound(sound);
+      return;
+    }
+
     const cacheKey = request.cacheKey ?? (request.clipChunkId ? `${request.assetGuid}:${request.clipChunkId}` : request.assetGuid);
     let buffer = this.buffers.get(cacheKey);
     if (!buffer) {
@@ -124,30 +235,10 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       this.buffers.set(cacheKey, buffer);
     }
     if (!isCurrent()) return;
-    const spatial = request.spatial;
     const sound = await CreateSoundAsync(
       request.voiceId,
       buffer,
-      {
-        volume: request.gain,
-        loop: request.loop,
-        maxInstances: 1,
-        spatialEnabled: spatial?.enabled === true,
-        spatialMinDistance: spatial?.innerRadius,
-        spatialMaxDistance: spatial?.maxRadius,
-        spatialDistanceModel: spatial?.distanceModel,
-        spatialRolloffFactor: spatial?.rolloff,
-        spatialPanningModel:
-          spatial?.spatialisation === "hrtf" ? "HRTF" : "equalpower",
-        spatialConeInnerAngle: spatial?.cone
-          ? degreesToRadians(spatial.cone.innerAngle)
-          : undefined,
-        spatialConeOuterAngle: spatial?.cone
-          ? degreesToRadians(spatial.cone.outerAngle)
-          : undefined,
-        spatialConeOuterVolume: spatial?.cone?.outerGain,
-        outBus: request.reverbSend ? this.reverbBus : null,
-      },
+      commonOptions,
       engine,
     );
     if (!isCurrent()) {
@@ -168,11 +259,24 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     this.pendingVoices.delete(voiceId);
     this.disposeMuffleSend(voiceId);
     this.voiceLevels.delete(voiceId);
+    const element = this.streamedElements.get(voiceId);
+    if (element) this.streamedElements.delete(voiceId);
+    const ownedUrl = this.ownedStreamUrls.get(voiceId);
+    if (ownedUrl) this.ownedStreamUrls.delete(voiceId);
     const sound = this.voices.get(voiceId);
-    if (!sound) return;
-    this.voices.delete(voiceId);
-    sound.stop();
-    sound.dispose();
+    if (sound) {
+      this.voices.delete(voiceId);
+      try {
+        sound.stop();
+        sound.dispose();
+      } finally {
+        if (element) releaseMediaElement(element);
+        if (ownedUrl) revokeObjectUrlSafely(ownedUrl);
+      }
+      return;
+    }
+    if (element) releaseMediaElement(element);
+    if (ownedUrl) revokeObjectUrlSafely(ownedUrl);
   }
 
   setVoiceGain(voiceId: string, gain: number): void {
@@ -198,9 +302,15 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   setVoicePlaybackRate(voiceId: string, rate: number): boolean {
+    const element = this.streamedElements.get(voiceId);
+    if (element) {
+      (element as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = false;
+      element.playbackRate = rate;
+      return true;
+    }
     const sound = this.voices.get(voiceId);
     if (!sound) return false;
-    sound.playbackRate = rate;
+    (sound as StaticSound).playbackRate = rate;
     return true;
   }
 
@@ -312,6 +422,14 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
         this.voices.delete(voiceId);
       }
     }
+    for (const element of this.streamedElements.values()) {
+      releaseMediaElement(element);
+    }
+    this.streamedElements.clear();
+    for (const url of this.ownedStreamUrls.values()) {
+      revokeObjectUrlSafely(url);
+    }
+    this.ownedStreamUrls.clear();
     this.buffers.clear();
     try {
       this.reverbGraph?.dispose();
@@ -369,7 +487,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     else this.resumeSound(sound);
   }
 
-  private pauseSound(sound: StaticSound): boolean {
+  private pauseSound(sound: LiveAudioSound): boolean {
     if (typeof sound.pause !== "function") return false;
     try {
       sound.pause();
@@ -379,7 +497,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     }
   }
 
-  private resumeSound(sound: StaticSound): boolean {
+  private resumeSound(sound: LiveAudioSound): boolean {
     if (typeof sound.resume !== "function") return false;
     try {
       sound.resume();

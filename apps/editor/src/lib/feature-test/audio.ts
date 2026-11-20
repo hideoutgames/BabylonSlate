@@ -92,13 +92,16 @@ export async function buildFeatureTestAudio(ctx: FeatureTestContext): Promise<vo
   });
 
   // Deterministic playback: one clip per asset and no random pitch.
+  // Loop exercises Streamed playback; one-shot exercises Decoded playback.
   const loop = await importOptionalAudio(ctx, FEATURE_TEST_OPTIONAL_SLOTS.loopAudio, NAMES.loop, {
+    playbackMode: "streamed",
     loop: true,
     volume: 0.7,
     audioChannelGuid: world,
     soundAttenuationGuid: near,
   });
   const oneShot = await importOptionalAudio(ctx, FEATURE_TEST_OPTIONAL_SLOTS.oneShotAudio, NAMES.oneShot, {
+    playbackMode: "decoded",
     loop: false,
     volume: 0.8,
     audioChannelGuid: cues,
@@ -193,7 +196,7 @@ async function importOptionalAudio(
   ctx: FeatureTestContext,
   candidates: readonly string[],
   name: string,
-  overrides: Pick<AudioPayload, "loop" | "volume" | "audioChannelGuid" | "soundAttenuationGuid">,
+  overrides: Pick<AudioPayload, "playbackMode" | "loop" | "volume" | "audioChannelGuid" | "soundAttenuationGuid">,
 ): Promise<string | null> {
   const source = await ctx.host.loadOptional(candidates);
   if (!source) return null;

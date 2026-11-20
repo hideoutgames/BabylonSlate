@@ -138,6 +138,15 @@ describe("FeatureTest starter", () => {
     const required = [...CREATABLE_ASSET_TYPES, ...IMPORTED_ASSET_TYPES, ...(audioSlot ? ["Audio"] : [])];
     const types = new Set(assets.map((asset) => asset.header.type));
     expect(required.filter((type) => !types.has(type))).toEqual([]);
+    if (audioSlot) {
+      const audioModes = new Map(
+        assets
+          .filter((asset) => asset.header.type === "Audio")
+          .map((asset) => [asset.header.name, (asset.header.payload as { playbackMode?: string } | undefined)?.playbackMode]),
+      );
+      expect(audioModes.get("FT_AudioLoop")).toBe("streamed");
+      expect(audioModes.get("FT_AudioOneShot")).toBe("decoded");
+    }
 
     const parents = new Set(
       assets.filter((asset) => asset.header.type === "Class").map((asset) => asset.header.parentClass ?? ""),

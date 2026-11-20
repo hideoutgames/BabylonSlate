@@ -2421,4 +2421,110 @@ describe("AudioService with runtime Audio component commands", () => {
       service.dispose();
     }
   });
+
+  it("streams without PCM decoding, ref-counts Blob URLs across voices, and bypasses AudioBufferCache during play and preload", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const cache = new AudioBufferCache();
+    const created: string[] = [];
+    const revoked: string[] = [];
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
+      const url = `blob:stream-${created.length + 1}`;
+      created.push(url);
+      return url;
+    });
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation((url) => {
+      revoked.push(url);
+    });
+    const musicBytes = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x01, 0x02, 0x03, 0x04]);
+    const service = new AudioService({
+      backend,
+      cache,
+      loadSourceBytes: async () => musicBytes,
+    });
+    try {
+      service.setLibrary(
+        library({
+          audio: {
+            bgm: { ...createDefaultAudioPayload(), playbackMode: "streamed", loop: true },
+          },
+        }),
+      );
+      await service.unlockAsync();
+      // Preload verifies availability without decoding PCM or pinning the PCM LRU.
+      const releasePreload = await service.preload(["bgm"]);
+      expect(backend.decodeCount).toBe(0);
+      expect(cache.accountedBytes()).toBe(0);
+      releasePreload();
+
+      service.handleCommand({ type: "playSound", assetGuid: "bgm", voiceId: "bgm-1", volume: 0.7, frameId: 1 });
+      service.handleCommand({ type: "playSound", assetGuid: "bgm", voiceId: "bgm-2", volume: 0.5, frameId: 2 });
+      await service.flush();
+
+      expect(backend.decodeCount).toBe(0);
+      expect(cache.accountedBytes()).toBe(0);
+      expect(created).toEqual(["blob:stream-1"]);
+      expect(revoked).toEqual([]);
+      expect(backend.plays[0]).toMatchObject({
+        voiceId: "bgm-1",
+        playbackMode: "streamed",
+        sourceUrl: "blob:stream-1",
+        mimeType: "audio/mpeg",
+      });
+      expect(backend.plays[1]?.sourceUrl).toBe("blob:stream-1");
+      expect(service.stats().streamedVoices).toBe(2);
+      expect(service.stats().streamedBytes).toBeGreaterThan(musicBytes.byteLength);
+
+      service.handleCommand({ type: "stopSound", voiceId: "bgm-1" });
+      await service.flush();
+      expect(revoked).toEqual([]);
+      expect(service.stats().streamedVoices).toBe(1);
+
+      service.handleCommand({ type: "stopSound", voiceId: "bgm-2" });
+      await service.flush();
+      expect(revoked).toEqual(["blob:stream-1"]);
+      expect(service.stats().streamedVoices).toBe(0);
+      expect(service.stats().streamedBytes).toBe(0);
+    } finally {
+      service.dispose();
+      createObjectURL.mockRestore();
+      revokeObjectURL.mockRestore();
+    }
+  });
+
+  it("streams directly from resolveStreamUrl without calling loadSourceBytes or creating a Blob URL", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const loadSourceBytes = vi.fn(async () => new Uint8Array([1, 2, 3]));
+    const createObjectURL = vi.spyOn(URL, "createObjectURL");
+    const service = new AudioService({
+      backend,
+      loadSourceBytes,
+      resolveStreamUrl: ({ assetGuid, chunkId }) =>
+        assetGuid === "bgm" && chunkId === "source" ? "https://game.example/assets/stream-0.mp3" : null,
+    });
+    try {
+      service.setLibrary(
+        library({
+          audio: {
+            bgm: { ...createDefaultAudioPayload(), playbackMode: "streamed" },
+          },
+        }),
+      );
+      await service.unlockAsync();
+      await service.preload(["bgm"]);
+      service.handleCommand({ type: "playSound", assetGuid: "bgm", voiceId: "bgm-direct", volume: 1, frameId: 1 });
+      await service.flush();
+
+      expect(loadSourceBytes).not.toHaveBeenCalled();
+      expect(createObjectURL).not.toHaveBeenCalled();
+      expect(backend.decodeCount).toBe(0);
+      expect(backend.plays[0]).toMatchObject({
+        voiceId: "bgm-direct",
+        playbackMode: "streamed",
+        sourceUrl: "https://game.example/assets/stream-0.mp3",
+      });
+    } finally {
+      service.dispose();
+      createObjectURL.mockRestore();
+    }
+  });
 });

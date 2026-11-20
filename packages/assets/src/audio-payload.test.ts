@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readGoldenBinary, writeGoldenBinary } from "@haptic/test-kit";
 import {
+  AUDIO_AUTO_STREAM_MIN_BYTES,
   AUDIO_SPEED_OF_SOUND,
   audioAssetDependencies,
   fillEmptySourceClipName,
@@ -55,6 +56,7 @@ describe("audio payloads", () => {
       pitchMin: 1,
       pitchMax: 1,
       loop: false,
+      playbackMode: "decoded",
     });
     expect(normalizeAudioPayload(undefined)).toEqual(createDefaultAudioPayload());
   });
@@ -64,6 +66,29 @@ describe("audio payloads", () => {
     expect(normalizeAudioPayload({}).loop).toBe(false);
     expect(normalizeAudioPayload({ loop: true }).loop).toBe(true);
     expect(normalizeAudioPayload({ loop: "yes" }).loop).toBe(false);
+  });
+
+  it("normalizes playbackMode and defaults large imports to streamed", async () => {
+    expect(normalizeAudioPayload({}).playbackMode).toBe("decoded");
+    expect(normalizeAudioPayload({ playbackMode: "streamed" }).playbackMode).toBe("streamed");
+    expect(normalizeAudioPayload({ playbackMode: "invalid" }).playbackMode).toBe("decoded");
+    expect(
+      resolveAudioPlayback({
+        audio: { playbackMode: "streamed" },
+        playCallVolume: 1,
+        mixer: null,
+        channels: new Map(),
+      }).playbackMode,
+    ).toBe("streamed");
+
+    const shortClip = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00]);
+    const [shortImport] = await importAudio(shortClip, { fileName: "jump.mp3" });
+    expect(normalizeAudioPayload(shortImport!.payload).playbackMode).toBe("decoded");
+
+    const longMusic = new Uint8Array(AUDIO_AUTO_STREAM_MIN_BYTES);
+    longMusic.set([0x49, 0x44, 0x33, 0x04]);
+    const [longImport] = await importAudio(longMusic, { fileName: "theme.mp3" });
+    expect(normalizeAudioPayload(longImport!.payload).playbackMode).toBe("streamed");
   });
 
   it("caps clips at eight, defaults equal weights, and swaps inverted pitch range", () => {

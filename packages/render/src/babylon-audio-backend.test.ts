@@ -20,6 +20,7 @@ const audio = vi.hoisted(() => {
     createBus: vi.fn(async () => ({ dispose: vi.fn() })),
     createBuffer: vi.fn(async (source: ArrayBuffer) => ({ length: source.byteLength, channelCount: 1 })),
     createSound: vi.fn(async () => sound()),
+    createStreamingSound: vi.fn(async () => sound()),
   };
 });
 vi.mock("@babylonjs/core/AudioV2", () => ({
@@ -27,6 +28,7 @@ vi.mock("@babylonjs/core/AudioV2", () => ({
   CreateAudioBusAsync: audio.createBus,
   CreateSoundBufferAsync: audio.createBuffer,
   CreateSoundAsync: audio.createSound,
+  CreateStreamingSoundAsync: audio.createStreamingSound,
 }));
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 
@@ -138,6 +140,107 @@ describe("Babylon audio backend lifecycle", () => {
     await playing;
     expect(sound.play).not.toHaveBeenCalled();
     expect(sound.dispose).toHaveBeenCalledOnce();
+    backend.dispose();
+  });
+
+  it("streams without decoding PCM, sets playbackRate on the media element, and releases WebKit decoder state on stop", async () => {
+    const createdElements: Array<{
+      crossOrigin: string;
+      loop: boolean;
+      preload: string;
+      src: string;
+      playbackRate: number;
+      preservesPitch: boolean;
+      pause: ReturnType<typeof vi.fn>;
+      removeAttribute: ReturnType<typeof vi.fn>;
+      load: ReturnType<typeof vi.fn>;
+    }> = [];
+    class FakeAudioElement {
+      crossOrigin = "";
+      loop = false;
+      preload = "";
+      src = "";
+      playbackRate = 1;
+      preservesPitch = true;
+      pause = vi.fn();
+      removeAttribute = vi.fn((name: string) => { if (name === "src") this.src = ""; });
+      load = vi.fn();
+      constructor() { createdElements.push(this); }
+    }
+    vi.stubGlobal("Audio", FakeAudioElement);
+
+    const backend = new BabylonAudioPlaybackBackend();
+    await backend.play({
+      ...request,
+      voiceId: "bgm",
+      playbackMode: "streamed",
+      sourceUrl: "https://game.example/assets/stream-0.mp3",
+      loop: true,
+    });
+    expect(audio.createBuffer).not.toHaveBeenCalled();
+    expect(audio.createSound).not.toHaveBeenCalled();
+    expect(audio.createStreamingSound).toHaveBeenCalledOnce();
+    const element = createdElements[0]!;
+    expect(element.src).toBe("https://game.example/assets/stream-0.mp3");
+    expect(element.crossOrigin).toBe("anonymous");
+    expect(element.loop).toBe(true);
+    expect(audio.createStreamingSound.mock.calls[0]![1]).toBe(element);
+
+    expect(backend.setVoicePlaybackRate("bgm", 1.25)).toBe(true);
+    expect(element.preservesPitch).toBe(false);
+    expect(element.playbackRate).toBe(1.25);
+
+    const sound = await (audio.createStreamingSound.mock.results[0]!.value as Promise<ReturnType<typeof audio.sound>>);
+    expect(backend.setVoiceMuffle("bgm", 0.5)).toBe(true);
+    expect(sound.volume).toBeCloseTo(0.5);
+
+    backend.stop("bgm");
+    expect(sound.stop).toHaveBeenCalledOnce();
+    expect(sound.dispose).toHaveBeenCalledOnce();
+    expect(element.pause).toHaveBeenCalledOnce();
+    expect(element.removeAttribute).toHaveBeenCalledWith("src");
+    expect(element.load).toHaveBeenCalledOnce();
+    backend.dispose();
+  });
+
+  it("releases a streamed media element and owned Blob URL when Stop arrives during creation", async () => {
+    const createdElements: Array<{ pause: ReturnType<typeof vi.fn>; removeAttribute: ReturnType<typeof vi.fn>; load: ReturnType<typeof vi.fn>; src: string }> = [];
+    class FakeAudioElement {
+      crossOrigin = "";
+      loop = false;
+      preload = "";
+      src = "";
+      pause = vi.fn();
+      removeAttribute = vi.fn((name: string) => { if (name === "src") this.src = ""; });
+      load = vi.fn();
+      constructor() { createdElements.push(this); }
+    }
+    vi.stubGlobal("Audio", FakeAudioElement);
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:owned-stream");
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    let finish!: (sound: ReturnType<typeof audio.sound>) => void;
+    audio.createStreamingSound.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+
+    const backend = new BabylonAudioPlaybackBackend();
+    const playing = backend.play({
+      ...request,
+      voiceId: "bgm",
+      playbackMode: "streamed",
+      source: new Uint8Array([0x49, 0x44, 0x33, 0x04]),
+    });
+    await vi.waitFor(() => expect(audio.createStreamingSound).toHaveBeenCalled());
+    backend.stop("bgm");
+    const sound = audio.sound();
+    finish(sound);
+    await playing;
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(sound.play).not.toHaveBeenCalled();
+    expect(sound.dispose).toHaveBeenCalledOnce();
+    expect(createdElements[0]!.removeAttribute).toHaveBeenCalledWith("src");
+    expect(createdElements[0]!.load).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:owned-stream");
+    createObjectURL.mockRestore();
+    revokeObjectURL.mockRestore();
     backend.dispose();
   });
 

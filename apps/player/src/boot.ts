@@ -40,7 +40,11 @@ import { createPlayerWorkerHost, playerHavokWasmUrl, type PlayerWorkerHost } fro
 import { createPlayerSourceInstalls } from "./source-installs";
 import { playerDecoderPaths } from "./decoder-paths";
 import { manifestConsoleCommands } from "./console-catalog";
-import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
+import {
+  createGameAudioSourceLoader,
+  createGameAudioStreamUrlResolver,
+  type LoadedGame,
+} from "./artifact";
 import {
   applyPlayerActiveScene,
   applyPlayerEngineCommand,
@@ -295,6 +299,7 @@ function initializePlayer(
     retargetAnimationLoads: content.retargetAnimationLoads,
     audioBytes: game.audioBytes,
     loadAudioSourceBytes: createGameAudioSourceLoader(game),
+    resolveAudioStreamUrl: createGameAudioStreamUrlResolver(game),
     audioLibrary: content.audioLibrary,
     particleLibrary: content.particleLibrary,
     audioReverbBytes: content.audioReverbBytes,

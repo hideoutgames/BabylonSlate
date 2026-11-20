@@ -8,7 +8,8 @@ Imported Audio, mixer/channel routing, spatial attenuation, Play/player playback
 - Runtime and graph packages only emit commands; playback lives on the main thread in `AudioService`. No Babylon or Web Audio imports in scripting, BT or runtime.
 - Never auto-unlock at load. The first `pointerdown` / `touchstart` on the Play or player canvas unlocks; earlier commands queue (cap 32) and the overlay shows the unlock hint.
 - Reverb is one shared parametric bus fed by baked probes; muffling is a DDA walk on the baked occupancy grid. Not triangle ray tracing, Recast or physics rays, and no per-voice convolver.
-- Out of scope: streaming music, mic capture, acoustic zones/materials, triangle occlusion, waveform editing, DSP plugins, IR convolution.
+- Streamed Audio (`playbackMode: "streamed"`, auto-defaulted on import at ≥ 512 KiB) bypasses `AudioBufferCache` PCM decoding (both `playPrepared` and `preload`). `BabylonAudioPlaybackBackend` wraps a managed `HTMLAudioElement` in AudioV2 `CreateStreamingSoundAsync` so gain, spatialization, reverb bus and `_outNode` wall muffling match `StaticSound`, `setVoicePlaybackRate` drives `element.playbackRate` (`preservesPitch = false`), and `stop`/`dispose` clear `src` and call `load()` to release WebKit decoders. In Editor Play, `AudioService` ref-counts Blob URLs and releases them (and `sourceBytes`) when the last voice stops; exported builds emit standalone `assets/stream-*` sidecars (`streamClips` in `game.json`) with metadata-only `BSAU` envelopes so the player streams directly by URL when `baseUrl` is present.
+- Out of scope: mic capture, acoustic zones/materials, triangle occlusion, waveform editing, DSP plugins, IR convolution.
 
 ## Ownership
 
@@ -24,13 +25,13 @@ Unit tests use `FakeAudioPlaybackBackend` (NullEngine cannot decode). Overlay Pl
 
 ## Formats
 
-- **Audio**: `volume` 0..1 (1), `loop` (false), `audioChannelGuid` / `soundAttenuationGuid` (null), `clips` (default one `source` clip, cap 8; extra files are `source:<id>` chunks, not other Audio guids; `source` cannot be removed), `pitch` 0.25..4, `pitchRandom`, `pitchMin` / `pitchMax`. Old `{}` payloads normalize without rewriting.
+- **Audio**: `volume` 0..1 (1), `loop` (false), `playbackMode` (`"decoded"` | `"streamed"`, default `"decoded"`; imports ≥ `AUDIO_AUTO_STREAM_MIN_BYTES` default to `"streamed"`), `audioChannelGuid` / `soundAttenuationGuid` (null), `clips` (default one `source` clip, cap 8; extra files are `source:<id>` chunks, not other Audio guids; `source` cannot be removed), `pitch` 0.25..4, `pitchRandom`, `pitchMin` / `pitchMax`.
 - **AudioChannel** (`.channel.hasset`): no volume; `parentChannelGuid`, `effects` of `environmentReverb` / `muffleThroughWalls`. Keep both effect kinds when editing. Parent cycles fail validation; missing parents route to master.
 - **AudioMixer** (`.mixer.hasset`): user asset, not a singleton; `globalVolume`, `channels: { channelGuid, volume }[]` (unique guids).
 - **SoundAttenuation** (`.atten.hasset`): opts into 3D (`null` = non-spatial); radii, distance model, rolloff, spatialisation, optional cone and Doppler.
 - Project Settings `audio`: `audioMixerGuid`, `occlusionEnabled`, reverb wet/decay/damping scales (0..2).
 - Header `dependencies[]` list channel, attenuation, parent and mixer channels for references and delete guards.
-- Scene `audioReverb` chunk: magic `BSAR`, a format word (`2`; decode reads no field from a chunk with any other value), flags, geometry hash, probes and the occupancy bitmap, ≤ 64 KiB. Export sidecar `audioReverb:<sceneGuid>`. Packed Audio uses a `BSAU` envelope.
+- Scene `audioReverb` chunk: magic `BSAR`, a format word (`2`; decode reads no field from a chunk with any other value), flags, geometry hash, probes and the occupancy bitmap, ≤ 64 KiB. Export sidecar `audioReverb:<sceneGuid>`. Packed Audio uses a `BSAU` envelope; exported streamed Audio writes raw clip sidecars (`assets/stream-*.<ext>`, indexed by `streamClips` on the manifest entry) alongside a metadata-only `BSAU` envelope.
 
 ## Gain and commands
 
@@ -61,10 +62,10 @@ Unit tests use `FakeAudioPlaybackBackend` (NullEngine cannot decode). Overlay Pl
 
 ## Budgets
 
-Named constants in [`audio-payload.ts`](../../../packages/assets/src/audio-payload.ts): occupancy grid ≤ 24×24×16, voxel 2 units, 32 probes, 1 reverb bus with 4 comb / 2 all-pass taps, 32 queued pre-unlock commands, 256 MiB decoded PCM LRU (Engine Settings `audioByteCeiling`), 32 voices default (`audioMaxVoices`, 8–128), 8 clips per Audio. Muffle constants (700 Hz low-pass, saturates after 2 walls) live in [`audio-reverb.ts`](../../../packages/assets/src/audio-reverb.ts); 128 waveform bars in [`audio-waveform.ts`](../../../packages/assets/src/audio-waveform.ts).
+Named constants in [`audio-payload.ts`](../../../packages/assets/src/audio-payload.ts): occupancy grid ≤ 24×24×16, voxel 2 units, 32 probes, 1 reverb bus with 4 comb / 2 all-pass taps, 32 queued pre-unlock commands, 256 MiB decoded PCM LRU (Engine Settings `audioByteCeiling`), 256 KiB per-voice streamed buffer estimate (`AUDIO_STREAMED_VOICE_ESTIMATE_BYTES`), 512 KiB auto-stream import threshold (`AUDIO_AUTO_STREAM_MIN_BYTES`), 32 voices default (`audioMaxVoices`, 8–128), 8 clips per Audio. Streamed voices are tracked in `audioStats.streamedVoices` / `audioStats.streamedBytes` (included in `audioStats.accountedBytes`) without consuming the decoded PCM LRU. Muffle constants (700 Hz low-pass, saturates after 2 walls) live in [`audio-reverb.ts`](../../../packages/assets/src/audio-reverb.ts); 128 waveform bars in [`audio-waveform.ts`](../../../packages/assets/src/audio-waveform.ts).
 
 ## Preview and lifecycle
 
 - Asset preview prefetches clip bytes on open and starts playback in the same turn as the Play click; WKWebView drops the gesture if Play awaits I/O.
 - Play and previews share `attachAudioLifecycle`: user pause, hidden page, native inactivity and interruptions are independent pause sources; Babylon's automatic resume timer is disabled.
-- Overlay Play and the player load Audio metadata at session start and clip chunks on first `playSound`.
+- Overlay Play and the player load Audio metadata at session start and clip chunks (or direct stream URLs) on first `playSound`.

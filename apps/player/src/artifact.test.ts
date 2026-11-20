@@ -545,3 +545,45 @@ it("rejects a corrupt deferred deployed file without reading it during startup a
     source.release();
   } finally { game.dispose?.(); }
 });
+
+it("resolves direct stream URLs for exported streamed Audio under HTTP and loads sidecars without retaining audioBytes in memory", async () => {
+  const { encodePackedAudioAsset } = await import("@haptic/assets");
+  const { createGameAudioSourceLoader, createGameAudioStreamUrlResolver } = await import("./artifact");
+  const scene = encoder.encode(JSON.stringify(createDefaultScene()));
+  const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x10, 0x20, 0x30]);
+  const exported = await exportGame({
+    platform: "web",
+    bundleDebugger: false,
+    startupSceneGuid: "scene",
+    renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+    scripts: [],
+    assets: [
+      { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: scene, dependencies: ["bgm"], requiredDependencies: [] },
+      { guid: "bgm", type: "Audio", sceneGuid: "scene", bytes: encodePackedAudioAsset({ playbackMode: "streamed", loop: true }, mp3) },
+    ],
+  });
+  if (!exported.ok) throw new Error(exported.error);
+
+  // HTTP export resolves direct sidecar URL without fetching clip bytes.
+  const httpGame = await loadGameFromFiles(exported.value.files, { baseUrl: "https://game.example/play/" });
+  try {
+    const resolveStreamUrl = createGameAudioStreamUrlResolver(httpGame);
+    expect(resolveStreamUrl({ assetGuid: "bgm", chunkId: "source" })).toMatch(
+      /^https:\/\/game\.example\/play\/assets\/stream-\d+\.mp3$/,
+    );
+  } finally {
+    httpGame.dispose?.();
+  }
+
+  // In-memory export (no baseUrl) reads the sidecar bytes without retaining them in game.audioBytes.
+  const memGame = await loadGameFromFiles(exported.value.files);
+  try {
+    const resolveStreamUrl = createGameAudioStreamUrlResolver(memGame);
+    expect(resolveStreamUrl({ assetGuid: "bgm", chunkId: "source" })).toBeNull();
+    const loadSource = createGameAudioSourceLoader(memGame);
+    expect(await loadSource({ assetGuid: "bgm", chunkId: "source" })).toEqual(mp3);
+    expect(memGame.audioBytes.size).toBe(0);
+  } finally {
+    memGame.dispose?.();
+  }
+});
