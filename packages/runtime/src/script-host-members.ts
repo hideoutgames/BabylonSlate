@@ -297,7 +297,9 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     },
     getPostProcessEntry: (owner, entryId) => {
       if (!(owner instanceof Scene || owner instanceof SceneLayer) || !host.canInvokeOwner(owner) || typeof entryId !== "string" || !entryId.trim()) return null;
-      return services.getPostProcessEntry?.(owner, entryId.trim()) ?? null;
+      // Every Scene Layer shares one stack: a layer reference reads the Scene Layer post-processing.
+      const stack = owner instanceof SceneLayer ? services.sceneLayerPostProcessing?.() : owner;
+      return stack ? services.getPostProcessEntry?.(stack, entryId.trim()) ?? null : null;
     },
     setGlobalFloatParameter: (collection, name, value) => {
       if (typeof value === "number" && Number.isFinite(value)) services.setGlobalParameter?.(collection, name, [value], ["float"]);
@@ -640,20 +642,13 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     clearSceneLayers: () => {
       services.clearSceneLayers?.();
     },
-    registerSceneLayerPostProcess: (layer, materialGuid) => {
-      const guid = sceneLayerGuidOf(layer);
-      const registered = guid ? services.registerSceneLayerPostProcess?.(guid, String(materialGuid ?? "")) : null;
+    registerSceneLayerPostProcess: (materialGuid) => {
+      const registered = services.registerSceneLayerPostProcess?.(String(materialGuid ?? ""));
       // The same Material Object Get Post Process Entry returns for the new pass.
       return registered ? services.getPostProcessEntry?.(registered.owner, registered.entryId) ?? null : null;
     },
-    unregisterSceneLayerPostProcess: (layer, materialGuid) => {
-      const guid = sceneLayerGuidOf(layer);
-      if (guid) {
-        services.unregisterSceneLayerPostProcess?.(
-          guid,
-          String(materialGuid ?? ""),
-        );
-      }
+    unregisterSceneLayerPostProcess: (materialGuid) => {
+      services.unregisterSceneLayerPostProcess?.(String(materialGuid ?? ""));
     },
     registerScenePostProcess: (materialGuid) => {
       const registered = services.registerScenePostProcess?.(String(materialGuid ?? ""));

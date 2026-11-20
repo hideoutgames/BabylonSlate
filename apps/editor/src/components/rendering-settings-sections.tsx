@@ -22,6 +22,7 @@ import { PlayPreviewSettingsFields } from "./play-preview-settings-fields";
 import { RenderEffectsFields, RENDER_EFFECTS_SEARCH_TEXT } from "./render-effects-fields";
 import { projectEffectsScope, sceneEffectsScope } from "./render-effects-scope";
 import { RenderQualityFields } from "./render-quality-fields";
+import { SceneLayerPostProcessSettings } from "./scene-layer-post-process-settings";
 import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "./shadow-settings-fields";
 import { LargeWorldRenderingField, ProjectLutControl, RenderModeField, ResolutionFields } from "./rendering-project-fields";
 
@@ -144,6 +145,13 @@ export const RENDERING_SETTINGS_SECTIONS: readonly RenderingSettingsSection[] = 
         return <RenderEffectsFields hideTitle pixelated={pixelatedUpscaling(render)} scope={scope} lutControl={lutControl} lutName={lutName} />;
       },
     },
+  },
+  {
+    id: "sceneLayerPostProcessing",
+    title: "Scene Layer Post-Processing",
+    project: ({ projectDocument, updateProjectSettings, assetRegistry }) => (
+      <SceneLayerPostProcessSettings projectDocument={projectDocument} updateProjectSettings={updateProjectSettings} assetRegistry={assetRegistry} />
+    ),
   },
   {
     id: "cel",

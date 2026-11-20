@@ -537,7 +537,6 @@ export class SceneLayer extends EngineObject {
   assetGuid: string;
   zOrder: number;
   ownerSceneGuid: string | null;
-  postProcessStack: ScenePostProcessEntry[];
   /** Its asset's canvas: how its design canvas is sized and how Play scales it. */
   canvas: SceneLayerCanvasDesign;
   /** Its actors and SceneLayerScript keep ticking while the game is paused, whatever their own Tick On Pause. */
@@ -552,7 +551,6 @@ export class SceneLayer extends EngineObject {
     assetGuid: string;
     zOrder: number;
     ownerSceneGuid?: string | null;
-    postProcessStack?: ScenePostProcessEntry[];
     canvas?: SceneLayerCanvasDesign;
     cameraLocation?: readonly [number, number] | null;
     tickOnPause?: boolean;
@@ -570,7 +568,6 @@ export class SceneLayer extends EngineObject {
     this.zOrder = options.zOrder;
     this.ownerSceneGuid = options.ownerSceneGuid ?? null;
     this.tickOnPause = options.tickOnPause === true;
-    this.postProcessStack = normalizeScenePostProcessStack(options.postProcessStack);
     this.canvas = normalizeSceneLayerCanvasDesign(options.canvas);
     this.camera = new LayerCamera(this, options.cameraLocation);
   }
@@ -610,15 +607,35 @@ export class Scene extends EngineObject {
   }
 }
 
+const SCENE_LAYER_POST_PROCESSING_CLASS_ID = "SceneLayerPostProcessing";
+
+/**
+ * The session's Scene Layer post-processing: one pass stack every Scene Layer shares. Every layer draws into one
+ * transparent target, these passes run over it, and the result is blended over the world. It starts from the
+ * Project Setting and lives as long as the session, across Scene changes, as Scene Layers can; scripts add and
+ * remove passes with Register and Unregister Scene Layer Post-Processing.
+ */
+export class SceneLayerPostProcessing extends EngineObject {
+  /** Passes in draw order; each has an Entry ID and none is Scalable (layers draw at full resolution). */
+  postProcessStack: ScenePostProcessEntry[] = [];
+
+  constructor() {
+    super({ classId: SCENE_LAYER_POST_PROCESSING_CLASS_ID, guid: "scene-layer-post-processing" });
+  }
+}
+
+/** What owns post-process passes: the main Scene's own stack, or the Scene Layer stack every layer shares. */
+export type PostProcessOwner = Scene | SceneLayerPostProcessing;
+
 /** A pass reference shares the reflected MaterialObject type without inventing a mesh owner. */
 export class PostProcessMaterialObject extends EngineObject {
   readonly targetKind = "postProcess" as const;
   readonly materialAssetGuid: string;
-  readonly owner: Scene | SceneLayer;
+  readonly owner: PostProcessOwner;
   readonly entry: ScenePostProcessEntry;
 
   constructor(
-    owner: Scene | SceneLayer,
+    owner: PostProcessOwner,
     entry: ScenePostProcessEntry,
   ) {
     super({ classId: "MaterialObject" });
@@ -636,11 +653,11 @@ export class PostProcessMaterialObject extends EngineObject {
 
 export type MaterialInstanceObject = MaterialObject | PostProcessMaterialObject;
 
-const postProcessReferences = new WeakMap<Scene | SceneLayer, WeakMap<ScenePostProcessEntry, PostProcessMaterialObject>>();
+const postProcessReferences = new WeakMap<PostProcessOwner, WeakMap<ScenePostProcessEntry, PostProcessMaterialObject>>();
 
 /** Reordering preserves identity; removal/replacement invalidates references even if an ID is reused. */
 export function getPostProcessMaterialObject(
-  owner: Scene | SceneLayer,
+  owner: PostProcessOwner,
   entryId: string,
 ): PostProcessMaterialObject | null {
   if (owner.destroyed) return null;

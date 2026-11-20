@@ -149,6 +149,7 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
     globalParameterCatalog: options.globalParameterCatalog,
     assetCatalog: options.assetCatalog,
     focusNavigation: options.focusNavigation,
+    sceneLayerPostProcessStack: options.sceneLayerPostProcessStack,
     pixelsPerUnit: options.pixelsPerUnit,
     pixelMatchedCameras: options.pixelMatchedCameras,
     collisionPresets: options.collisionPresets,

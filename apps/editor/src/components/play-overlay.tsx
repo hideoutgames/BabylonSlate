@@ -155,6 +155,8 @@ export interface PlayOverlayProps {
   globalParameterCatalog?: import("@haptic/core").GlobalParameterCatalog;
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+  /** Project Scene Layer post-processing; snapshotted when the session starts. */
+  sceneLayerPostProcessStack?: import("@haptic/core").SceneLayerPostProcessEntry[];
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
   /** Project render size; snapshotted when the session starts. */
@@ -306,6 +308,7 @@ function PlayOverlayView({
   globalParameterCatalog,
   assetCatalog,
   focusNavigation,
+  sceneLayerPostProcessStack,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
   animGraphs,
@@ -786,6 +789,7 @@ function PlayOverlayView({
   const initialGlobalParameterCatalogRef = useRef(globalParameterCatalog);
   const initialAssetCatalogRef = useRef(assetCatalog);
   const initialFocusNavigationRef = useRef(focusNavigation);
+  const initialSceneLayerPostProcessRef = useRef(sceneLayerPostProcessStack);
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
   const initialTraceByteBudgetRef = useRef(localEngineSettings.traceByteBudget);
@@ -912,6 +916,7 @@ function PlayOverlayView({
           globalParameterCatalog: initialGlobalParameterCatalogRef.current,
           assetCatalog: initialAssetCatalogRef.current,
           focusNavigation: initialFocusNavigationRef.current,
+          sceneLayerPostProcessStack: initialSceneLayerPostProcessRef.current,
           animGraphs: animGraphsRef.current,
           behaviourTrees: behaviourTreesRef.current,
           blackboards: blackboardsRef.current,

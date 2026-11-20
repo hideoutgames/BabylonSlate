@@ -1,3 +1,5 @@
+import type { MarchEnds, MarchSource } from "./merged-marches";
+
 /** Shared GLSL syntax helpers for the ambient occlusion and other spatial passes. */
 export function syntax() {
   const v2 = "vec2",
@@ -43,7 +45,18 @@ export function syntax() {
  * `aoCamera` (handedness sign, orthographic flag) and `aoTexelSize`.
  */
 export function ambientOcclusionShader(samples: number): string {
-  const { v2, v3, v4, f, uv, u, decl, field, texture, texelUv, sample, loop, output, main } = syntax();
+  const { header, body } = ambientOcclusionSource(samples);
+  return header + syntax().main(body);
+}
+
+/**
+ * The occlusion march in parts (`MarchSource`, no functions of its own), ending a pixel through `ends`: its own pass's
+ * `gl_FragColor = value; return;` unless the merged pass gives its own (`merged-marches.ts`).
+ */
+export function ambientOcclusionSource(samples: number, ends?: MarchEnds): MarchSource {
+  const { v2, v3, v4, f, uv, u, decl, field, texture, texelUv, sample, loop, output } = syntax();
+  const early = ends ? ends.early : output;
+  const last = ends ? ends.last : output;
   /** Declares `name`, the view-space point a depth texel at `at` shows, from its depth. */
   const point = (name: string, at: string, depth: string) => `
 ${decl(v4, `${name}Unprojected`, `${u("aoInverseProjection")} * ${v4}(${at} * 2.0 - ${v2}(1.0), 0.5, 1.0)`)}
@@ -66,13 +79,13 @@ ${field(v4, "aoSettings")}${field(v2, "aoCamera")}${field(v2, "aoTexelSize")}
 ${decl(v2, "depthTexel", texelUv("depthSampler"))}
 ${decl(v2, "centreUv", `(floor(${uv} / depthTexel) + ${v2}(0.5)) * depthTexel`)}
 ${decl(f, "depth", `abs(${sample("depthSampler", "centreUv")}.r)`)}
-if (depth < 0.000001 || depth >= ${u("aoSettings")}.z) { ${output(`${v4}(1.0)`)} }
+if (depth < 0.000001 || depth >= ${u("aoSettings")}.z) { ${early(`${v4}(1.0)`)} }
 ${decl(f, "radius", `${u("aoSettings")}.x`)}
 ${point("viewPosition", "centreUv", "depth")}
 ${decl(v3, "toCamera", "-viewPosition")}
 if (${u("aoCamera")}.y > 0.5) { toCamera = ${v3}(0.0, 0.0, -${u("aoCamera")}.x); }
 ${decl(v3, "worldNormal", `${sample("normalSampler", uv)}.xyz * 2.0 - ${v3}(1.0)`)}
-if (dot(worldNormal, worldNormal) < 0.0001) { ${output(`${v4}(1.0)`)} }
+if (dot(worldNormal, worldNormal) < 0.0001) { ${early(`${v4}(1.0)`)} }
 ${decl(v3, "surfaceNormal", `normalize((${u("aoView")} * ${v4}(normalize(worldNormal), 0.0)).xyz)`)}
 if (dot(surfaceNormal, toCamera) < 0.0) { surfaceNormal = -surfaceNormal; }
 // The plane of the face the centre lies on, from the depth beside it: a low-poly mesh's smooth normal tilts by up to
@@ -124,9 +137,9 @@ ${loop("i", 0, samples)} {
 }
 ${decl(f, "visibility", `clamp(1.0 - ${u("aoSettings")}.y * occlusion / ${f}(${samples}), 0.0, 1.0)`)}
 visibility = mix(visibility, 1.0, smoothstep(${u("aoSettings")}.z * 0.75, ${u("aoSettings")}.z, depth));
-${output(`${v4}(visibility, visibility, visibility, 1.0)`)}
+${last(`${v4}(visibility, visibility, visibility, 1.0)`)}
 `;
-  return header + main(body);
+  return { header, functions: "", body };
 }
 
 /**

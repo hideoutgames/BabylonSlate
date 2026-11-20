@@ -751,7 +751,7 @@ describe("SceneLayer runtime compositor", () => {
     } finally { runtime.stop(); }
   });
 
-  it("logs an error when unregistering a missing SceneLayer post-process without throwing", () => {
+  it("logs an error when unregistering a missing Scene Layer post-process without throwing", () => {
     const commands: CommandMessage[] = [];
     const hud = overlayLayer();
     const runtime = createInProcessRuntime({
@@ -762,9 +762,9 @@ describe("SceneLayer runtime compositor", () => {
       onCommand: (command) => commands.push(command),
     });
     runtime.realizePlayWorld();
-    const layer = runtime.createSceneLayer("hud", 0)!;
+    runtime.createSceneLayer("hud", 0);
     expect(() =>
-      runtime.unregisterSceneLayerPostProcess(layer.guid, "missing-pp"),
+      runtime.unregisterSceneLayerPostProcess("missing-pp"),
     ).not.toThrow();
     expect(
       commands.some(
@@ -776,14 +776,52 @@ describe("SceneLayer runtime compositor", () => {
     ).toBe(true);
   });
 
-  it("tags overlay spawn commands and copies authored post-process onto the instance", () => {
+  it("starts the shared Scene Layer post-processing from the Project Setting, sends it before the first layer, and keeps it past every layer", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud: overlayLayer() },
+      sceneLayerPostProcessStack: [{ id: "bloom-pass", materialGuid: "bloom", enabled: true }],
+      onCommand: (command) => commands.push(command),
+    });
+    try {
+      runtime.realizePlayWorld();
+      const stacks = () => commands.flatMap((command) => command.type === "sceneLayerPostProcess" ? [command.postProcessStack] : []);
+      // Nothing to draw it over yet.
+      expect(stacks()).toEqual([]);
+      const layer = runtime.createSceneLayer("hud", 4)!;
+      const sent = commands.findIndex((command) => command.type === "sceneLayerPostProcess");
+      expect(sent).toBeGreaterThanOrEqual(0);
+      expect(sent).toBeLessThan(commands.findIndex((command) => command.type === "sceneLayerLoading"));
+      expect(stacks()).toEqual([[{ id: "bloom-pass", materialGuid: "bloom", enabled: true }]]);
+      expect(commands.find((command) => command.type === "sceneLayerCreate")).not.toHaveProperty("postProcessStack");
+      // Every layer shares it: a second layer sends nothing more.
+      runtime.createSceneLayer("hud", 5);
+      expect(stacks()).toHaveLength(1);
+      const stack = runtime.getWorld().sceneLayerPostProcessing;
+      runtime.registerSceneLayerPostProcess("vignette");
+      expect(stack.postProcessStack.map((entry) => entry.materialGuid)).toEqual(["bloom", "vignette"]);
+      expect(stacks().at(-1)!.map((entry) => entry.materialGuid)).toEqual(["bloom", "vignette"]);
+      runtime.removeSceneLayer(layer.guid);
+      runtime.clearSceneLayers();
+      expect(stack.postProcessStack.map((entry) => entry.materialGuid)).toEqual(["bloom", "vignette"]);
+      // A Project Setting pass is removed like a registered one.
+      runtime.unregisterSceneLayerPostProcess("bloom");
+      expect(stack.postProcessStack).toEqual([{ id: expect.any(String), materialGuid: "vignette", enabled: true }]);
+      expect(stacks().at(-1)).toEqual(stack.postProcessStack);
+      const removedId = stack.postProcessStack[0]!.id;
+      runtime.unregisterSceneLayerPostProcess("vignette");
+      runtime.registerSceneLayerPostProcess("vignette");
+      expect(stack.postProcessStack[0]!.id).not.toBe(removedId);
+    } finally { runtime.stop(); }
+  });
+
+  it("tags overlay spawn commands with their layer", () => {
     const commands: CommandMessage[] = [];
     const hud = {
       ...overlayLayer(),
-      settings: {
-        ...overlayLayer().settings,
-        postProcessStack: [{ id: "bloom-pass", materialGuid: "bloom", enabled: true, scalable: true }],
-      },
       actors: [
         createActor("banner", "Banner", {
           classId: "SceneLayerActor",
@@ -807,12 +845,6 @@ describe("SceneLayer runtime compositor", () => {
     });
     runtime.realizePlayWorld();
     const layer = runtime.createSceneLayer("hud", 4)!;
-    expect(layer.postProcessStack).toEqual([
-      { id: "bloom-pass", materialGuid: "bloom", enabled: true, scalable: true },
-    ]);
-    expect(commands.find((command) => command.type === "sceneLayerCreate")).toMatchObject({
-      postProcessStack: [{ id: "bloom-pass", materialGuid: "bloom", enabled: true, scalable: true }],
-    });
     expect(
       commands.some(
         (command) =>
@@ -842,19 +874,6 @@ describe("SceneLayer runtime compositor", () => {
         (slot) => (slot.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
       ),
     ).toBe(true);
-    runtime.registerSceneLayerPostProcess(layer.guid, "vignette");
-    expect(layer.postProcessStack.map((entry) => entry.materialGuid)).toEqual([
-      "bloom",
-      "vignette",
-    ]);
-    runtime.unregisterSceneLayerPostProcess(layer.guid, "bloom");
-    expect(layer.postProcessStack).toEqual([
-      { id: expect.any(String), materialGuid: "vignette", enabled: true },
-    ]);
-    const removedId = layer.postProcessStack[0]!.id;
-    runtime.unregisterSceneLayerPostProcess(layer.guid, "vignette");
-    runtime.registerSceneLayerPostProcess(layer.guid, "vignette");
-    expect(layer.postProcessStack[0]!.id).not.toBe(removedId);
   });
 
   it("skips disabled scene-owned layers and remints actor guids for a second instance", () => {

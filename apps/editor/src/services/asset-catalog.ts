@@ -36,6 +36,7 @@ export function playAssetCatalog(options: {
       gameInstanceClass: settings.gameInstanceClass,
       audioMixerGuid: settings.audio.audioMixerGuid,
       renderSettings: settings.render,
+      sceneLayerPostProcessStack: settings.sceneLayerPostProcessStack,
       alwaysPackageFolders: settings.alwaysPackageFolders,
     }),
     assets: indexed,

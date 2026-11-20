@@ -307,6 +307,8 @@ export type PlaySessionOptions = {
   /** Packaged authored assets the Asset Registry nodes query, snapshotted when Play starts. */
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+  /** Project Scene Layer post-processing, snapshotted when Play starts. */
+  sceneLayerPostProcessStack?: import("@haptic/core").SceneLayerPostProcessEntry[];
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
   onFatalDiagnostic?: () => void;
   /** Called when the runtime ended its own session (console `quit`); the host stops as for its Stop control. */

@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { Actor, ActorComponent, EngineObject, Scene, SceneLayer, getPostProcessMaterialObject } from "./objects";
+import { Actor, ActorComponent, EngineObject, Scene, SceneLayerPostProcessing, getPostProcessMaterialObject } from "./objects";
 import { ClassRegistry } from "./class-registry";
 import { engineScriptApiFor } from "./engine-script-api";
 
-it.each(["scene", "layer"] as const)("keeps %s pass handles isolated across reorder and rejects replacement or teardown", (kind) => {
+it.each(["scene", "sceneLayers"] as const)("keeps %s pass handles isolated across reorder and rejects replacement or teardown", (kind) => {
   const stack = [
     { id: "first", materialGuid: "gain", enabled: true, parameters: { Gain: { kind: "float" as const, value: 0.2 } } },
     { id: "second", materialGuid: "gain", enabled: false },
   ];
   const owner = kind === "scene"
     ? new Scene({ assetGuid: "scene", sceneName: "Scene", postProcessStack: stack })
-    : new SceneLayer({ assetGuid: "layer", zOrder: 0, postProcessStack: stack });
+    : Object.assign(new SceneLayerPostProcessing(), { postProcessStack: [...stack] });
   const first = getPostProcessMaterialObject(owner, "first")!;
   const second = getPostProcessMaterialObject(owner, "second")!;
   expect(first).not.toBe(second);

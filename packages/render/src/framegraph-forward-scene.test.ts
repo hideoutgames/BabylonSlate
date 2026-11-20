@@ -32,6 +32,7 @@ import { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRe
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
+import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload } from "@haptic/assets";
@@ -60,12 +61,13 @@ import {
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { managedRenderReservations } from "./managed-render-resources";
-import { setSceneWorldDebug } from "./world-debug";
+import { setSceneWorldDebug, worldDebugFingerprint } from "./world-debug";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator, shadowAtlasGeneration, shadowAtlasTexture } from "./shadow-atlas";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
 import { screenShadowsForPass } from "./screen-shadows";
+import { MERGED_MARCHES_NAME } from "./merged-marches";
 import { hapticLightBuffer, hapticShadowedSun } from "./haptic-lights";
 import { VOLUME_SHADOW_CODE } from "./volumetric-lights";
 import { configureCutoutSorting } from "./sorting";
@@ -2228,8 +2230,10 @@ it.each([
 });
 
 /** A world view with Screen-Space Shadows at High and no Fog Volume: a sun (shadowed as `shadowed` says) over a plane. */
-async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFAULT_RENDER_EFFECTS> = {}, nullEngine?: NullEngine) {
+async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFAULT_RENDER_EFFECTS> = {}, nullEngine?: NullEngine,
+  quality?: ReturnType<typeof normalizeRenderingQuality>, mergedMarches = false) {
   const { engine, scene, camera } = host(nullEngine);
+  if (mergedMarches) setSceneWorldDebug(scene, "mergedmarches", true);
   Object.assign(engine.getCaps(), {
     maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
     textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
@@ -2237,6 +2241,7 @@ async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFA
   engine._features.supportCSM = true;
   updateSceneRenderingSettings(scene, {
     mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects }, shadows: normalizeShadowSettings({ cascades: 1, mapSize: 256 }),
+    ...(quality ? { quality } : {}),
   });
   allowSceneScreenShadows(scene, () => true);
   updateSceneRenderingSettings(scene, undefined, undefined, { screenShadows: "high" });
@@ -2312,7 +2317,95 @@ it("idles Screen-Space Shadows and the geometry pass for an orthographic camera,
 
 it("keeps the geometry pass for ambient occlusion while Screen-Space Shadows idle", async () => {
   const { graph, frame } = await screenShadowsHost(false, { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
+  expect(graph.taskNames()).not.toContain(MERGED_MARCHES_NAME);
   expect(frame()).toEqual({ skipped: ["Screen shadows"], reads: false });
+  graph.dispose();
+});
+
+// The merged march pass (`merged-marches.ts`) is an opt-in, `worlddebug mergedmarches on`, until a native GPU proves it.
+it("keeps the geometry pass and the merged pass for ambient occlusion while Screen-Space Shadows idle, reading none", async () => {
+  const { graph, frame } = await screenShadowsHost(false, { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } },
+    undefined, undefined, true);
+  expect(graph.taskNames()).toContain(MERGED_MARCHES_NAME);
+  expect(frame()).toEqual({ skipped: [], reads: false });
+  graph.dispose();
+});
+
+it("keeps ambient occlusion in a pass of its own where its target's size is not the Screen-Space Shadows target's", async () => {
+  const { graph, frame } = await screenShadowsHost(false,
+    { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, resolutionScale: 1 } }, undefined, undefined, true);
+  expect(graph.taskNames()).toEqual(expect.arrayContaining(["Screen shadows", "Scene Ambient Occlusion"]));
+  expect(graph.taskNames()).not.toContain(MERGED_MARCHES_NAME);
+  expect(frame()).toEqual({ skipped: ["Screen shadows"], reads: false });
+  graph.dispose();
+});
+
+// High plans volumetric lighting; its march and occlusion's are at half the render size, as the screen shadows'.
+const HIGH = normalizeRenderingQuality(qualityPresetPatch("high"));
+const MARCHES = {
+  ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+  volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true },
+};
+
+it("marches ambient occlusion and fog in the Screen-Space Shadows pass before the objects, each into its own target, once merged", async () => {
+  const { graph, frame } = await screenShadowsHost(true, MARCHES, undefined, HIGH, true);
+  const tasks = graph.taskNames();
+  expect(tasks.slice(tasks.indexOf("Spatial Geometry"), tasks.indexOf("Forward objects") + 1))
+    .toEqual(["Spatial Geometry", MERGED_MARCHES_NAME, "Forward objects"]);
+  for (const name of ["Screen shadows", "Scene Ambient Occlusion", "Scene Volumetric Lighting"]) expect(tasks).not.toContain(name);
+  // One pass with three colour attachments: the screen shadows' (which the objects read), the occlusion's and the fog's.
+  const { tasks: graphTasks, textureManager } = (graph as unknown as { graph: FrameGraph }).graph;
+  const pass = graphTasks.find((task) => task.name === MERGED_MARCHES_NAME)!.passes[0] as FrameGraphRenderPass;
+  const targets = (pass.renderTarget as number[]).map((handle) => textureManager.getTextureDescription(handle));
+  expect(targets.map(({ options }) => [options.types?.[0], options.formats?.[0]])).toEqual([
+    [Constants.TEXTURETYPE_HALF_FLOAT, Constants.TEXTUREFORMAT_RGBA],
+    [Constants.TEXTURETYPE_HALF_FLOAT, Constants.TEXTUREFORMAT_R],
+    [Constants.TEXTURETYPE_HALF_FLOAT, Constants.TEXTUREFORMAT_RGBA],
+  ]);
+  expect(new Set(targets.map(({ size }) => JSON.stringify(size))).size).toBe(1);
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  graph.dispose();
+});
+
+it("draws each march in a pass of its own by default, merges them with worlddebug mergedmarches on, rebuilding the graph, and separates them again once off", async () => {
+  const { scene, camera, graph, frame } = await screenShadowsHost(true, MARCHES, undefined, HIGH);
+  expect(worldDebugFingerprint(scene)).toBe("none");
+  const separate = graph.taskNames();
+  expect(separate).not.toContain(MERGED_MARCHES_NAME);
+  expect(separate.slice(separate.indexOf("Spatial Geometry"), separate.indexOf("Forward objects") + 1))
+    .toEqual(["Spatial Geometry", "Screen shadows", "Forward objects"]);
+  expect(separate.indexOf("Scene Ambient Occlusion")).toBeGreaterThan(separate.indexOf("Forward objects"));
+  expect(separate.indexOf("Scene Volumetric Lighting")).toBeGreaterThan(separate.indexOf("Forward objects"));
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  const builds = graph.diagnostics().graphBuilds;
+  setSceneWorldDebug(scene, "mergedmarches", true);
+  expect(worldDebugFingerprint(scene)).toBe("mergedmarches on");
+  await graph.prepare(camera);
+  expect(graph.taskNames()).toContain(MERGED_MARCHES_NAME);
+  expect(graph.diagnostics().graphBuilds).toBeGreaterThan(builds);
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  setSceneWorldDebug(scene, "mergedmarches", false);
+  expect(worldDebugFingerprint(scene)).toBe("none");
+  await graph.prepare(camera);
+  expect(graph.taskNames()).toEqual(separate);
+  graph.dispose();
+});
+
+it("skips the merged pass and the geometry pass while neither its fog nor its screen shadows march, without rebuilding", async () => {
+  // No light casts shadows, so the screen shadows idle; the fog marches while its Fog Volume is in front of the camera.
+  const { camera, graph, skipped } = await fogHost({}, undefined, (scene) => {
+    allowSceneScreenShadows(scene, () => true);
+    updateSceneRenderingSettings(scene, undefined, undefined, { screenShadows: "high" });
+    setSceneWorldDebug(scene, "mergedmarches", true);
+  });
+  expect(graph.taskNames()).toContain(MERGED_MARCHES_NAME);
+  const builds = graph.diagnostics().graphBuilds;
+  expect(skipped()).toEqual([]);
+  camera.rotation.y = Math.PI;
+  expect(skipped().sort()).toEqual([MERGED_MARCHES_NAME, "Scene Effects Compose", "Spatial Geometry"].sort());
+  camera.rotation.y = 0;
+  expect(skipped()).toEqual([]);
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
   graph.dispose();
 });
 
