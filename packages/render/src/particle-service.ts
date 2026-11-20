@@ -60,6 +60,7 @@ import {
   particleLifetimeBound,
   particleSimBackend,
   particleSimulationDelta,
+  prewarmParticleMaterial,
 } from "./particle-system-factory";
 import { markSceneReadinessDirty } from "./scene-perf";
 import { applySortingToParticleSystem, resolveSortingLayer, type SortingLayerResolution } from "./sorting";
@@ -909,8 +910,9 @@ export class ParticleService {
     const trigger: SpawnTrigger = { entry, context, settings, emitterGuid, emitter, depth, lastFire: Number.NEGATIVE_INFINITY,
       queued: [], flushing: false, live: 0, closed: false,
       lease: materialGuid ? this.acquireMaterial?.(materialGuid, { scene: context.host, instanceKey: this.spawnInstanceKey(entry, emitterGuid) }) ?? null : null };
-    // A failed preparation surfaces on the spawn that uses it.
+    // A failed preparation surfaces on the spawn that uses it. Once the Material is built, each spawn binds it at once.
     void trigger.lease?.ready?.catch(() => {});
+    if (trigger.lease) void prewarmParticleMaterial(trigger.lease.resource).catch(() => {});
     triggers.push(trigger);
     return { fire: (position, velocity, now) => this.requestSpawn(trigger, position, velocity, now) };
   }

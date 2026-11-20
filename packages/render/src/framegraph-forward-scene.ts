@@ -2220,7 +2220,10 @@ export class ForwardSceneFrameGraph {
         this.scene.getEngine().currentRenderPassId = camera.renderPassId;
         const sources = this.outlineView?.sourceRevision ?? 0;
         // An auxiliary view's own passes are its readiness; the scene view gates the scene.
-        const cameraReady = this.auxiliary || isSceneFrameReady(this.scene, [], this.water && this.skipCopyWater);
+        // The shadow task's probe below asks the maps it binds; the scene probe leaves them to it.
+        const shadows = this.shadows;
+        const cameraReady = this.auxiliary ||
+          isSceneFrameReady(this.scene, [], this.water && this.skipCopyWater, shadows && ((map) => shadows.probesMap(map)));
         const ready = this.graphReady() && cameraReady;
         // A mask admitting an instance source late dirties attributes that the
         // earlier probes already accepted; the next probe sees the final state.

@@ -197,7 +197,7 @@ type Surface = MirrorCandidate & {
   readonly drawnViewProjection: Matrix;
   /** Whether the last draw listed nothing: its image is open everywhere, whatever the view. */
   drawnEmpty: boolean;
-  /** The owner's `culls` value when the pass's list was last culled, and the target it was culled into. */
+  /** The owner's `listEpoch` when the pass's list was last culled, and the target it was culled into. */
   culledAt: number;
   culledInto: PlanarMirrorTargetState | null;
   /** While verifying (`verifyMirrorContentPolls`); null otherwise, and until the surface's first draw after it is on. */
@@ -276,11 +276,12 @@ class SceneMirrors {
   private renders = 0;
   private sunShadows = false;
   /**
-   * Bumped as an update starts and as each surface starts drawing: a pass list `current` made under the same value
+   * Bumped as an update starts and before a surface's sun maps and pass run: a pass list culled under the same value
    * was made for this view, and nothing that can change what it lists (a shadow map or mirror pass, which run render
-   * hooks) has run since.
+   * hooks) has run since. A draw that stops before them (no target, an eye that cannot see the surface) leaves it, so
+   * the lists culled before it still stand. Not a count: `candidateCulls` counts the culls.
    */
-  private culls = 0;
+  private listEpoch = 0;
   private order = 0;
   private drawing = false;
   private drawTarget: PlanarMirrorTargetState | null = null;
@@ -300,7 +301,7 @@ class SceneMirrors {
   private readonly checkListed = new Set<AbstractMesh>();
   /**
    * The candidates of the culls (`collectPlanarMirrorCandidates`), for Everything and for Moving Actors surfaces, and the
-   * `culls` value they were collected under: the culls of one render share them until a pass draws.
+   * `listEpoch` they were collected under: the culls of one render share them until a pass draws.
    */
   private readonly candidates: AbstractMesh[] = [];
   private readonly stillCandidates: AbstractMesh[] = [];
@@ -429,7 +430,7 @@ class SceneMirrors {
     const maxSize = engine.getCaps().maxTextureSize;
     const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     const tick = ++this.renders;
-    this.culls++;
+    this.listEpoch++;
     this.sunShadows = reflectionShadowsEnabled(scene);
     const rates = sceneHonoursUpdateRates(scene), frame = updateRateTick(scene);
     for (const surface of this.surfaces) {
@@ -623,24 +624,24 @@ class SceneMirrors {
     cullPlanarMirrorCandidates(this.scene, this.candidatesFor(still, camera.layerMask, excluded), list, this.reflectionPlanes);
     if (verifyingCulls) this.checkCull(list, camera.layerMask, excluded);
     if (cropped && verifyingCrops) this.checkCrop(list, camera.layerMask, surface.plane, excluded);
-    surface.culledAt = this.culls;
+    surface.culledAt = this.listEpoch;
     surface.culledInto = target;
     return true;
   }
 
   /**
    * The candidates a cull keeps from: collected at the render's first cull of that kind and shared by its later ones
-   * until a pass draws (`culls` moves), since nothing between them writes what they test; collected afresh every cull
+   * until a pass draws (`listEpoch` moves), since nothing between them writes what they test; collected afresh every cull
    * when unshared (`walkMirrorCullsUnshared`). One camera draws a render, so its layer mask is the same throughout.
    */
   private candidatesFor(still: boolean, layerMask: number, excluded: (mesh: AbstractMesh) => boolean): readonly AbstractMesh[] {
     const list = still ? this.stillCandidates : this.candidates;
     this.candidateCulls++;
-    if (unshared || (still ? this.stillCandidatesAt : this.candidatesAt) !== this.culls) {
+    if (unshared || (still ? this.stillCandidatesAt : this.candidatesAt) !== this.listEpoch) {
       this.candidateWalks++;
       collectPlanarMirrorCandidates(this.scene, list, layerMask, excluded);
-      if (still) this.stillCandidatesAt = this.culls;
-      else this.candidatesAt = this.culls;
+      if (still) this.stillCandidatesAt = this.listEpoch;
+      else this.candidatesAt = this.listEpoch;
     }
     return list;
   }
@@ -702,15 +703,17 @@ class SceneMirrors {
     const scale = surface.properties.resolutionScale;
     const width = planarMirrorTargetSize(drawnWidth, scale, maxSize), height = planarMirrorTargetSize(drawnHeight, scale, maxSize);
     const type = linear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
-    // The list `current` culled this update is still the pass's for the first surface to draw: the same view, plane,
-    // mode and target (`current` checked its size and type, so `ensureTarget` keeps it as it is), and no pass has run.
-    const listed = surface.culledAt === this.culls;
-    this.culls++;
+    // The list `current` culled this update is still the pass's while no sun map or pass has run since: the same view,
+    // plane, mode and target (`current` checked its size and type, so `ensureTarget` keeps it as it is). A cull here
+    // shares the candidates collected since then too.
+    const listed = surface.culledAt === this.listEpoch;
     const target = this.ensureTarget(surface, camera, width, height, type);
     if (!target) return false;
     if (!this.mirrorAndCull(surface, camera, target, listed && surface.culledInto === target)) return false;
     // A view without its own clear colour clears like the scene view does.
     target.texture.clearColor = this.mode(surface) === "movingActors" ? OPEN : this.scene.clearColor ?? new Color4(0, 0, 0, 1);
+    // From here render hooks run (its sun maps, its pass): no list culled before stands for a later surface.
+    this.listEpoch++;
     // Its own sun maps first: the shadow passes the content follows from on are then those after them.
     target.sunShadows.prepare(this.sunShadows, this.projection, "mirrors", this.renders);
     // Follows the drawn list from this draw on (a surface's first draw starts following it here). A change since the

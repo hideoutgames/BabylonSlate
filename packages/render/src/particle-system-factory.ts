@@ -411,6 +411,17 @@ function adoptLoadedParticleShaders(system: IParticleSystem): void {
 /** A particle system's Material draws no mesh: a probe for its bind asks the system and the bind's check, no mesh. */
 const NO_MESHES: SceneReadinessScope = [];
 
+/** Particle-domain Materials whose build has completed without errors: a bind to one waits for nothing. */
+const builtParticleMaterials = new WeakSet<NodeMaterial>();
+
+/**
+ * Waits for a particle-domain Material's build (`prewarmMaterial`); once it has completed, every bind to the Material
+ * creates its effects at once, holding no readiness check (`bindParticleMaterial`). Rejects when the build failed.
+ */
+export function prewarmParticleMaterial(material: NodeMaterial): Promise<void> {
+  return prewarmMaterial(material, null).then(() => { builtParticleMaterials.add(material); });
+}
+
 /** Settles a pending bind: with its successor's bind when one replaces it, or at once (a disposed system). */
 const pendingParticleMaterials = new WeakMap<IParticleSystem, (successor?: Promise<void>) => void>();
 
@@ -419,6 +430,8 @@ const pendingParticleMaterials = new WeakMap<IParticleSystem, (successor?: Promi
  * bind replaces a pending one, whose promise then settles with the later bind: it never
  * drew, so an owner waiting on it to release the Material drawn until then waits for the
  * Material that actually replaces it. The promise rejects when the Material cannot prepare.
+ * A Material whose build has completed (`prewarmParticleMaterial`) binds synchronously: no
+ * readiness check joins or leaves the Scene, so no probe runs for the bind itself.
  */
 export function bindParticleMaterial(system: IParticleSystem, material: NodeMaterial): Promise<void> {
   const superseded = pendingParticleMaterials.get(system);
@@ -435,8 +448,29 @@ export function bindParticleMaterial(system: IParticleSystem, material: NodeMate
   }
   let follow: ((ready: Promise<void>) => void) | undefined;
   superseded?.(new Promise<void>((resolve, reject) => { follow = (ready) => { ready.then(resolve, reject); }; }));
-  const ready = bindReadyParticleMaterial(system, material, scene);
+  const ready = builtParticleMaterials.has(material) ? bindBuiltParticleMaterial(system, material) : bindReadyParticleMaterial(system, material, scene);
   follow?.(ready);
+  return ready;
+}
+
+/** Creates the system's effects from a Material whose build has completed, as a pending bind does once it has. */
+function createParticleEffects(system: IParticleSystem, material: NodeMaterial): void {
+  prepareNodeMaterialParticleBindings(material);
+  material.createEffectForParticles(system);
+  // Only now: before its Material's effect exists, a ready system would compile Babylon's default particle program.
+  adoptLoadedParticleShaders(system);
+}
+
+/** The bind of a built Material: its effects now, and a settled promise. */
+function bindBuiltParticleMaterial(system: IParticleSystem, material: NodeMaterial): Promise<void> {
+  let ready: Promise<void>;
+  try {
+    createParticleEffects(system, material);
+    ready = Promise.resolve();
+  } catch (error) {
+    ready = Promise.reject(error instanceof Error ? error : new Error(String(error)));
+  }
+  void ready.catch(() => {});
   return ready;
 }
 
@@ -472,13 +506,10 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
   const stopBound = boundParticlePreparation(scene.getEngine(), () => "Particle material preparation timed out.", fail);
   // Babylon's first NodeMaterial build can finish asynchronously. Creating the
   // particle effect before then registers no fragment source and fetches a .fx URL.
-  void prewarmMaterial(material, null).then(() => {
+  void prewarmParticleMaterial(material).then(() => {
     if (pendingParticleMaterials.get(system) !== cancel || scene.isDisposed) return;
     if (isDisposedNodeMaterial(material, scene)) throw new Error("Particle material was disposed before its build completed.");
-    prepareNodeMaterialParticleBindings(material);
-    material.createEffectForParticles(system);
-    // Only now: before its Material's effect exists, a ready system would compile Babylon's default particle program.
-    adoptLoadedParticleShaders(system);
+    createParticleEffects(system, material);
     cancel();
   }).catch(fail);
   return ready;
