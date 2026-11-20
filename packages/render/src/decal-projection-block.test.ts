@@ -91,6 +91,20 @@ describe("Decal Material compile", () => {
     }
   });
 
+  it("compiles a normal-mapped Decal Material, wired or unwired UV, with the frame's UV negated on the box's back faces", async () => {
+    for (const wired of [false, true]) {
+      const doc = decalDocument();
+      doc.nodes.push({ id: "map", type: "shading.normalMap", position: { x: 0, y: 0 }, properties: {} });
+      doc.edges.push({ id: "map-normal", sourceNodeId: "map", sourcePinId: "normal", targetNodeId: "output", targetPinId: "normal" });
+      if (wired) {
+        doc.nodes.push({ id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} });
+        doc.edges.push({ id: "uv-map", sourceNodeId: "uv", sourcePinId: "uv", targetNodeId: "map", targetPinId: "uv" });
+      }
+      const material = await compile(doc, wired ? "wiredMap" : "map");
+      expect(material.getBlockByName(wired ? "wiredMap_map_backFaceUv" : "map_map_backFaceUv") ?? material.attachedBlocks.find((block) => block.name.endsWith("_backFaceUv"))).toBeTruthy();
+    }
+  });
+
   it("writes a Multiply decal's factor, toward 1 in fog, and keeps a Per Instance parameter a uniform", async () => {
     const doc = decalDocument({ shadingModel: "unlit", blendMode: "multiply" });
     doc.nodes.push({ id: "tint", type: "param.color", position: { x: 0, y: 0 }, properties: { name: "Tint", value: [1, 0, 0, 1], perInstance: true } });

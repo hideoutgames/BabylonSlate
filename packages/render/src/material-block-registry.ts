@@ -1162,14 +1162,15 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     if (plumbing.decal) {
       // A decal draws its box's back faces, where Babylon's frame negates the UV it differentiates (`gl_FrontFacing`
       // false): negating it first keeps the map's X and Y along the decal's.
-      const flip = new ScaleBlock(`${name}_backFaceUv`);
-      const minusOne = createConstantBlock(`${name}_minusOne`, "float", [-1]);
-      minusOne.output.connectTo(flip.factor);
+      // The Vector2 constant on the left types the product, so it can feed the frame's UV before the right is wired.
+      const flip = new MultiplyBlock(`${name}_backFaceUv`);
+      const minusOne = createConstantBlock(`${name}_minusOne`, "vec2", [-1, -1]);
+      minusOne.output.connectTo(flip.left);
       flip.output.connectTo(block.uv);
-      if (!operation.inputs.uv) plumbing.uv?.connectTo(flip.input);
+      if (!operation.inputs.uv) plumbing.uv?.connectTo(flip.right);
       return {
         blocks: [normal, block, split, flip, minusOne],
-        inputs: { packed: block.normalMapColor, uv: flip.input, strength: block.strength },
+        inputs: { packed: block.normalMapColor, uv: flip.right, strength: block.strength },
         outputs: { normal: split.xyzOut },
       };
     }
