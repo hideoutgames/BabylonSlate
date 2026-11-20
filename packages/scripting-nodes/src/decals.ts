@@ -8,7 +8,7 @@ import {
   assetRef,
 } from "@haptic/scripting";
 
-/** Runtime decal projection nodes backed by the renderer's pooled dynamic decal ring buffer. */
+/** Runtime decal projection nodes backed by the renderer's dynamic decal pool. */
 export const decalNodes: NodeDefinition[] = [
   {
     id: "decals.spawn",

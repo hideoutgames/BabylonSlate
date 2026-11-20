@@ -26,6 +26,8 @@ Projects a pooled runtime decal onto opaque world surfaces at a world location a
 
 ## Notes
 
-- Dynamic decals use a fixed-size ring buffer (64 on Low and Medium Geometry quality, 128 on High and Ultra). Spawning past the cap recycles the oldest slot.
+- Spawned decals share a pool of 64 on the Low and Medium Geometry quality tiers and 128 on High and Ultra. An expired decal frees its place at once; spawning into a full pool removes the oldest decal, whatever its **Lifetime**. Lowering the quality tier keeps the newest decals.
+- **Lifetime** and **Fade Out Duration** count game time: they stop while the game is paused and are scaled by [time dilation](get-time-dilation.md).
+- Spawned decals stay until they expire, the pool recycles them, or the scene changes.
 - If **Texture** is empty, nothing is spawned.
 - For decals placed in the scene editor, use the [Decal](../../components/decal.md) component.
