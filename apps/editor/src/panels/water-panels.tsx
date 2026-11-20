@@ -110,8 +110,9 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
     void registryEpoch;
     return materialPickerEntries(assetRegistry?.list() ?? [], materialDocuments, "surface");
   }, [assetRegistry, materialDocuments, registryEpoch]);
-  const selectedHeader = water.materialGuid ? assetRegistry?.getByGuid(water.materialGuid)?.header : undefined;
-  const selected = selectedHeader && isMaterialAssetType(selectedHeader.type) ? { header: selectedHeader } : undefined;
+  const selected = water.materialGuid
+    ? (assetRegistry?.list() ?? []).find((asset) => asset.header.guid === water.materialGuid && isMaterialAssetType(asset.header.type))
+    : undefined;
   const numberRow = ([key, min, max]: NumberControl): PropertyRow => {
     const description = descriptions[key];
     return {
