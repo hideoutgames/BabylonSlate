@@ -183,6 +183,14 @@ describe("typed asset dependencies", () => {
     }
   });
 
+  it("ships the Texture a Spawn Decal node names, and nothing for a property the node has no pin for", () => {
+    const metadata = collectAssetDependencyMetadata("Class", {
+      nodes: [{ id: "decal", type: "decals.spawn", data: { "default:texture": "scorch", "default:normalTexture": "stale-normal" } }],
+      edges: [],
+    });
+    expect(metadata.dependencies).toEqual(["scorch"]);
+  });
+
   it("loads a curve asset read by Get Curve Object with its owner, through a literal or a variable", () => {
     const literal = collectAssetDependencyMetadata("Class", {
       nodes: [

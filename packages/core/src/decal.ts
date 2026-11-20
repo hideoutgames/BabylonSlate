@@ -158,7 +158,7 @@ export interface DynamicDecalSpawnRequest {
   fadeAngle?: number;
   sortOrder?: number;
   cullDistance?: number;
-  /** Seconds before expiring; 0 keeps the decal until recycled by the ring buffer. */
+  /** Seconds of game time before expiring; 0 keeps the decal until the pool evicts it. */
   lifetime?: number;
   /** Seconds at the end of `lifetime` over which opacity fades linearly to 0. */
   fadeOutDuration?: number;

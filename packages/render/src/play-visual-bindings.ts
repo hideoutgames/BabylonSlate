@@ -7,7 +7,7 @@ import { AreaRectLightGroup } from "./area-rect-light";
 import { Light2DGroup, Occluder2DGroup } from "./light-2d-group";
 import type { CreateEngineOptions } from "./create-engine-types";
 import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
-import { removeDecals, spawnDynamicDecal, upsertDecals } from "./decal-pass";
+import { removeDecals, setDecalTimeScale, spawnDynamicDecal, upsertDecals } from "./decal-pass";
 import { markLatticeComponentRoot } from "./lattice-deformer";
 import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
 import { setSceneStaticMeshes } from "./scene-static-meshes";
@@ -237,6 +237,8 @@ export function createPlayVisualBindings({
       scheduler.invalidate("asset");
     }
   }
+  // Dynamic decal lifetimes follow the simulation time scale, as particles do.
+  if (command.type === "setSimulationTimeScale") setDecalTimeScale(scene, command.scale);
   if (command.type === "setLights2D") {
     let group = binding.lights2D.get(command.slotId);
     if (command.lights.length) {

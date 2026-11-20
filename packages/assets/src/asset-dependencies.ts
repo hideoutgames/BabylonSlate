@@ -403,7 +403,6 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         if (!pins.length) {
           const pinId = BUILTIN_ASSET_PINS[nodeType];
           if (pinId) add(properties[`default:${pinId}`], needed);
-          if (nodeType === "decals.spawn") add(properties["default:normalTexture"], needed);
           if (nodeType === "literal.makeClass") addClass(properties["default:in"], needed);
         }
         if (nodeType.startsWith("data.")) {

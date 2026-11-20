@@ -293,6 +293,24 @@ describe("componentPropertyRows", () => {
     edge.onChange(2);
     expect(update).toHaveBeenLastCalledWith("edgeFalloff", 1);
   });
+  it("keeps Decal row tooltips to what the row cannot show, and clamps Fade Angle to 1 to 180 degrees", () => {
+    const { rows, update } = rowsFor({ id: "decal", classId: "DecalComponent", properties: defaultPropertiesFor("DecalComponent") });
+    // Rows whose label and control say it all carry no tooltip (row-descriptions rule).
+    for (const label of ["Enabled", "Texture", "Tint", "Opacity", "Blend Mode", "Receive Lighting"]) {
+      const row = rows.find((candidate) => candidate.label === label);
+      expect(row, label).toBeDefined();
+      expect(row!.description, label).toBeUndefined();
+    }
+    // The projection axis is the one thing Size cannot show.
+    expect(rows.find((row) => row.label === "Size")?.description).toContain("-Y");
+    const fade = rows.find((row) => row.label === "Fade Angle");
+    if (fade?.kind !== "slider") throw new Error("Missing Decal Fade Angle");
+    expect([fade.min, fade.max]).toEqual([1, 180]);
+    fade.onChange(200);
+    expect(update).toHaveBeenLastCalledWith("fadeAngle", 180);
+    fade.onChange(0);
+    expect(update).toHaveBeenLastCalledWith("fadeAngle", 1);
+  });
   it("authors independent outline appearance and explicit through-mesh visibility", () => {
     const properties = defaultPropertiesFor("OutlineComponent");
     expect(properties).toEqual({ enabled: true, color: [0.03, 0.03, 0.03], width: 1, throughMeshes: false });

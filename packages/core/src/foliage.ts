@@ -1,4 +1,4 @@
-import { normalizeTransform, type SerializedTransform } from "./scene";
+import { normalizeTransform, type SerializedActor, type SerializedTransform } from "./scene";
 
 export const DEFAULT_FOLIAGE_CULL_DISTANCE = 120;
 export const DEFAULT_FOLIAGE_FADE_RANGE = 15;
@@ -113,4 +113,37 @@ export function appendFoliageInstance(properties: FoliageProperties, model: Foli
   return { ...properties, batches: existing < 0
     ? [...properties.batches, { modelGuid: model.modelGuid, materialGuid: model.materialGuid, transforms: [transform], cullDistance, fadeRange, shadowDistance }]
     : properties.batches.map((batch, index) => index === existing ? { ...batch, transforms: [...batch.transforms, transform], cullDistance, fadeRange, shadowDistance } : batch) };
+}
+
+/**
+ * A Foliage Group Model's edit from `previous` to `next` reaches the strokes painted with it: every batch of group
+ * `groupId`'s Foliage components that holds `previous`'s Model and Material Override takes `next`'s Material Override and
+ * distances, so later edits still find it. Untouched actors, components and batches keep their identity; returns
+ * `actors` itself when no batch is the Model's.
+ */
+export function applyFoliageModelEdit(
+  actors: SerializedActor[], groupId: string, previous: FoliageModel, next: FoliageModel,
+): SerializedActor[] {
+  let changed = false;
+  const result = actors.map((actor) => {
+    let actorChanged = false;
+    const components = actor.components.map((component) => {
+      const properties = object(component.properties);
+      if (component.classId !== "FoliageComponent" || properties.groupId !== groupId || !Array.isArray(properties.batches)) return component;
+      let batchChanged = false;
+      const batches = properties.batches.map((batch: unknown) => {
+        const entry = object(batch);
+        if (entry.modelGuid !== previous.modelGuid || guid(entry.materialGuid) !== previous.materialGuid) return batch;
+        batchChanged = true;
+        return { ...entry, materialGuid: next.materialGuid, cullDistance: next.cullDistance, fadeRange: next.fadeRange, shadowDistance: next.shadowDistance };
+      });
+      if (!batchChanged) return component;
+      actorChanged = true;
+      return { ...component, properties: { ...properties, batches } };
+    });
+    if (!actorChanged) return actor;
+    changed = true;
+    return { ...actor, components };
+  });
+  return changed ? result : actors;
 }

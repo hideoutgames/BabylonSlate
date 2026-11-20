@@ -171,6 +171,8 @@ export class EditorSceneSync {
     options?: EditorSceneSyncOptions,
   ) {
     this.scene = scene;
+    // Editor views show every foliage cell: distances apply in Play.
+    showEveryFoliageCell(scene);
     this.scheduler = scheduler;
     this.resolveMaterial = options?.resolveMaterial;
     this.releaseMaterialInstance = options?.releaseMaterialInstance;
@@ -1080,7 +1082,10 @@ export class EditorSceneSync {
       const installed = assets();
       const context = { ...installed, resolveMaterial: this.notingUses(actor.id, this.resolveMaterial ?? installed?.resolveMaterial) };
       if (component.classId === "LandscapeComponent") updateLandscapeMesh(visual, component.properties, context);
-      else refreshFoliageMaterials(visual, context);
+      else {
+        refreshFoliageMaterials(visual, context);
+        applyFoliageDistances(visual, component.properties);
+      }
     }
   }
 
@@ -1493,4 +1498,4 @@ function meshAndDescendantMeshes(root: Mesh): AbstractMesh[] {
   return [root, ...children];
 }
 import { updateLandscapeMesh } from "./landscape-mesh";
-import { refreshFoliageMaterials } from "./foliage-mesh";
+import { applyFoliageDistances, refreshFoliageMaterials, showEveryFoliageCell } from "./foliage-mesh";

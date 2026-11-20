@@ -60,7 +60,7 @@ class Snapshot {
 }
 
 /** What each value of a caster's own snapshot is (`ShadowMapRefresh.walkCaster`), to name what a journal walk missed. */
-const CASTER_VALUES = ["transform", "enabled", "isVisible", "visibility", "source", "material", "materialState", "safeMaterial", "safeMesh"];
+const CASTER_VALUES = ["transform", "enabled", "isVisible", "visibility", "shadowDistance", "source", "material", "materialState", "safeMaterial", "safeMesh"];
 
 /**
  * Every this many frames the full walk follows the journal's: a change the journal missed is found within that many
@@ -714,8 +714,8 @@ export class ShadowMapRefresh {
 
   /**
    * `walkCaster` for a caster whose only observed change is its world matrix (`collect`): everything else the full read
-   * would find is vouched for this walk. Its enabled state, `isVisible`, `visibility` and Material have no write the
-   * journal did not hear (`followed`); its source's and Material's records were polled this walk and found unchanged
+   * would find is vouched for this walk. Its enabled state, `isVisible`, `visibility`, Material and shadow distance cull
+   * (`setShadowDistanceCulled`) have no write the journal did not hear (`followed`); its source's and Material's records were polled this walk and found unchanged
    * (else `collect` marked it), so its shared revisions, `safeMaterial`, `safeMesh` and `bounded` are what its last read
    * found; billboard mode, infinite distance, lattice cage, LOD mastery and an instance's source were compared in
    * `collect`. A move changes only its transform revision, the snapshot's first value: the result is the full read's.
@@ -773,6 +773,8 @@ export class ShadowMapRefresh {
     state.value(enabled);
     state.value(mesh.isVisible);
     state.value(mesh.visibility);
+    const distanceCulled = isShadowDistanceCulled(mesh);
+    state.value(distanceCulled);
     state.value(shared.revision);
     state.value(material);
     state.value(materialShared.revision);
@@ -797,7 +799,7 @@ export class ShadowMapRefresh {
       record.revision++;
       this.casterChanged?.(mesh);
     }
-    record.shown = enabled && mesh.isVisible && !isShadowDistanceCulled(mesh);
+    record.shown = enabled && mesh.isVisible && !distanceCulled;
     const visible = record.shown && mesh.visibility > 0;
     record.safe = safeMesh && safeMaterial;
     record.unsafe = visible && !record.safe;

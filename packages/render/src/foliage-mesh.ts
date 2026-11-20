@@ -7,7 +7,7 @@ import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
-import { parseFoliageProperties, type FoliageBatch } from "@haptic/core";
+import { parseFoliageProperties, type FoliageBatch, type SerializedActor, type SerializedScene } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { acquireGlbContainer, prepareInstanceMaterials } from "./glb-anim";
 import { installAssetBytes } from "@haptic/assets";
@@ -19,6 +19,7 @@ import { applyMaterialBounds } from "./material-bounds";
 import { markBoundsHoldInstances } from "./play-view-culling";
 import { sharedVertexBuffer } from "./shared-vertex-buffer";
 import { sceneRenderingSettings } from "./render-settings";
+import { setShadowDistanceCulled } from "./shadow-caster-list";
 import type { ModelLodSet } from "./model-lod";
 import "./foliage-fade";
 
@@ -35,12 +36,13 @@ type FoliageCellLod = {
   subMeshes: SubMeshSpec[];
 };
 
+/** A batch's authored distances, shared by its cells and rewritten in place by `applyFoliageDistances`. */
+type FoliageDistances = { cullDistance: number; fadeRange: number; shadowDistance: number };
+
 type FoliageCellRecord = {
   mesh: Mesh;
   sourceMesh: Mesh;
-  cullDistance: number;
-  fadeRange: number;
-  shadowDistance: number;
+  distances: FoliageDistances;
   lods: FoliageCellLod[];
   activeLod: number;
 };
@@ -170,9 +172,22 @@ function foliageDistanceState(scene: Scene): FoliageDistanceState {
   return state;
 }
 
+const editorViews = new WeakSet<Scene>();
+
+/**
+ * Marks `scene` as an editor view (`EditorSceneSync`: the viewport and thumbnails): its foliage cells never distance-cull,
+ * shadow-cull or fade, so a far overview shows every stroke and every cell can be selected. Levels of detail still swap.
+ */
+export function showEveryFoliageCell(scene: Scene): void {
+  editorViews.add(scene);
+  const state = foliageDistancesByScene.get(scene);
+  if (state) state.dirty = true;
+}
+
 /**
  * Evaluate distance culling, readiness-safe shadow distance culling, Bayer dither fade bands,
- * and per-cell LOD geometry swaps for all `32x32` foliage cells in `scene`.
+ * and per-cell LOD geometry swaps for all `32x32` foliage cells in `scene`, from `camera`: the main camera of the
+ * frame. Mirrors, probes and Render Target Captures draw what it chose.
  */
 export function updateFoliageDistances(
   scene: Scene,
@@ -203,6 +218,7 @@ export function updateFoliageDistances(
   state.lastScale = scale;
   state.lastAutoLod = autoLod;
   state.dirty = false;
+  const showAll = editorViews.has(scene);
 
   for (const cell of state.cells) {
     if (cell.mesh.isDisposed()) {
@@ -214,30 +230,28 @@ export function updateFoliageDistances(
     const radius = sphere.radiusWorld;
     const centerDist = Vector3.Distance(cam, center);
     const dist = Math.max(0, centerDist - radius);
-    const effectiveCull = cell.cullDistance > 0 ? cell.cullDistance * scale : 0;
-    const effectiveShadow = cell.shadowDistance > 0 ? cell.shadowDistance * scale : effectiveCull;
-    const effectiveFadeRange = cell.fadeRange > 0 ? cell.fadeRange * scale : 0;
+    const { cullDistance, fadeRange, shadowDistance } = cell.distances;
+    const effectiveCull = cullDistance > 0 ? cullDistance * scale : 0;
+    const effectiveShadow = shadowDistance > 0 ? shadowDistance * scale : effectiveCull;
+    const effectiveFadeRange = fadeRange > 0 ? fadeRange * scale : 0;
 
-    const withinCull = effectiveCull <= 0 || dist <= effectiveCull;
+    const withinCull = showAll || effectiveCull <= 0 || dist <= effectiveCull;
     if (cell.mesh.isEnabled(false) !== withinCull) {
       cell.mesh.setEnabled(withinCull);
     }
 
-    const shadowCulled = !withinCull || (effectiveShadow > 0 && dist > effectiveShadow);
+    setShadowDistanceCulled(cell.mesh, !showAll && (!withinCull || (effectiveShadow > 0 && dist > effectiveShadow)));
     const metadata = (cell.mesh.metadata ?? (cell.mesh.metadata = {})) as Record<string, unknown>;
-    if (metadata.slateShadowDistanceCulled !== shadowCulled) {
-      metadata.slateShadowDistanceCulled = shadowCulled;
-    }
 
-    if (withinCull && effectiveCull > 0 && effectiveFadeRange > 0) {
+    if (!showAll && withinCull && effectiveCull > 0 && effectiveFadeRange > 0) {
       const fadeStart = Math.max(0, effectiveCull - effectiveFadeRange);
       if (centerDist + radius >= fadeStart) {
-        metadata.slateFoliageFade = [fadeStart, effectiveCull];
-      } else if (metadata.slateFoliageFade !== null) {
-        metadata.slateFoliageFade = null;
+        metadata.hapticFoliageFade = [fadeStart, effectiveCull];
+      } else if (metadata.hapticFoliageFade !== null) {
+        metadata.hapticFoliageFade = null;
       }
-    } else if (metadata.slateFoliageFade !== null) {
-      metadata.slateFoliageFade = null;
+    } else if (metadata.hapticFoliageFade !== null) {
+      metadata.hapticFoliageFade = null;
     }
 
     if (withinCull && cell.lods.length > 1) {
@@ -249,12 +263,25 @@ export function updateFoliageDistances(
   }
 }
 
+const reportedLodFailures = new WeakMap<Scene, Set<string>>();
+
+/** Warns once per Scene and Model that its foliage keeps full detail, as the Model cache reports a failed generation. */
+function reportFoliageLodFailure(scene: Scene, modelGuid: string, error: unknown): void {
+  let reported = reportedLodFailures.get(scene);
+  if (!reported) reportedLodFailures.set(scene, (reported = new Set()));
+  if (reported.has(modelGuid)) return;
+  reported.add(modelGuid);
+  console.warn(`[render] Model ${modelGuid} foliage keeps full detail; attaching its levels of detail failed: ${String(error)}`);
+}
+
 const preparations = new WeakMap<Mesh, Promise<void>>();
 const batchesByRoot = new WeakMap<Mesh, Array<{ root: Mesh; batch: FoliageBatch }>>();
+/** Each parsed batch's distances, by batch index, for a foliage root. */
+const distancesByRoot = new WeakMap<Mesh, FoliageDistances[]>();
 
 export function foliagePreparation(root: Mesh): Promise<void> | undefined { return preparations.get(root); }
 
-type FoliageSummary = { json: string; models: readonly string[] };
+type FoliageSummary = { json: string; models: readonly string[]; distances: readonly FoliageDistances[] };
 const summaries = new WeakMap<object, FoliageSummary>();
 
 /**
@@ -273,17 +300,101 @@ function foliageSummary(properties: unknown): FoliageSummary {
   const memo = properties !== null && typeof properties === "object" ? properties : null;
   const cached = memo ? summaries.get(memo) : undefined;
   if (cached) return cached;
+  const batches = parseFoliageProperties(properties).batches;
   const summary = {
-    json: JSON.stringify(properties),
-    models: [...new Set(parseFoliageProperties(properties).batches.map((batch) => batch.modelGuid))],
+    json: JSON.stringify(withoutDistances(properties)),
+    models: [...new Set(batches.map((batch) => batch.modelGuid))],
+    distances: batches.map(distancesOf),
   };
   if (memo) summaries.set(memo, summary);
   return summary;
 }
 
-/** Equals `JSON.stringify(properties)`: any edit of the authored foliage changes it. */
+const DISTANCE_KEYS = ["cullDistance", "fadeRange", "shadowDistance"] as const;
+
+function distancesOf(batch: FoliageBatch): FoliageDistances {
+  return { cullDistance: batch.cullDistance, fadeRange: batch.fadeRange, shadowDistance: batch.shadowDistance };
+}
+
+/** The properties with each batch's distances left out: they apply in place (`applyFoliageDistances`). */
+function withoutDistances(properties: unknown): unknown {
+  const batches = (properties as { batches?: unknown } | null)?.batches;
+  if (!Array.isArray(batches)) return properties;
+  return {
+    ...(properties as object),
+    batches: batches.map((batch: unknown) => {
+      if (batch === null || typeof batch !== "object") return batch;
+      const rest: Record<string, unknown> = { ...(batch as Record<string, unknown>) };
+      for (const key of DISTANCE_KEYS) delete rest[key];
+      return rest;
+    }),
+  };
+}
+
+/**
+ * `JSON.stringify(properties)` without the batches' Cull Distance, Fade Range and Shadow Distance: any other edit of
+ * the authored foliage changes it and rebuilds the visual; a distance edit applies to its cells in place.
+ */
 export function foliagePropertiesFingerprint(properties: unknown): string {
   return foliageSummary(properties).json;
+}
+
+/**
+ * Applies the batches' Cull Distance, Fade Range and Shadow Distance of `properties` to the foliage `root` built from
+ * properties that differ at most in those values (`foliagePropertiesFingerprint`), including cells still preparing.
+ */
+export function applyFoliageDistances(root: Mesh, properties: unknown): void {
+  const live = distancesByRoot.get(root);
+  if (!live) return;
+  const next = foliageSummary(properties).distances;
+  let changed = false;
+  for (let index = 0; index < live.length; index++) {
+    const target = live[index]!, source = next[index];
+    if (!source) continue;
+    for (const key of DISTANCE_KEYS) {
+      if (target[key] === source[key]) continue;
+      target[key] = source[key];
+      changed = true;
+    }
+  }
+  const state = changed ? foliageDistancesByScene.get(root.getScene()) : undefined;
+  if (state) state.dirty = true;
+}
+
+/**
+ * True when two scenes differ at most in Foliage distances: the batches' (applied in place, `applyFoliageDistances`) and
+ * the Foliage Groups' Models' (read by the next stroke). Nothing else changes, so no visual rebuilds and no shader
+ * variant changes. Unchanged actors keep their identity; a changed one compares its Foliage components by
+ * `foliagePropertiesFingerprint`, which each apply computes once per properties object anyway.
+ */
+export function isFoliageDistanceOnlySceneEdit(previous: SerializedScene | null, next: SerializedScene): boolean {
+  if (!previous || previous === next || previous.actors.length !== next.actors.length) return false;
+  const actorShape = (actor: SerializedActor) => JSON.stringify({
+    ...actor,
+    components: actor.components.map((component) => component.classId === "FoliageComponent"
+      ? { ...component, properties: foliagePropertiesFingerprint(component.properties) }
+      : component),
+  });
+  for (let index = 0; index < next.actors.length; index++) {
+    const before = previous.actors[index]!, after = next.actors[index]!;
+    if (before !== after && actorShape(before) !== actorShape(after)) return false;
+  }
+  const sceneShape = (scene: SerializedScene) => JSON.stringify({
+    ...scene,
+    actors: undefined,
+    settings: {
+      ...scene.settings,
+      foliageGroups: scene.settings.foliageGroups?.map((group) => ({
+        ...group,
+        models: group.models.map((model) => {
+          const rest: Record<string, unknown> = { ...model };
+          for (const key of DISTANCE_KEYS) delete rest[key];
+          return rest;
+        }),
+      })),
+    },
+  });
+  return sceneShape(previous) === sceneShape(next);
 }
 
 export function foliageSourceFingerprint(properties: unknown, assets?: MeshAssetContext): string {
@@ -327,6 +438,8 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
   const bundle = new VisualBundle();
   const batches: Array<{ root: Mesh; batch: FoliageBatch }> = [];
   batchesByRoot.set(root, batches);
+  const distances = data.batches.map(distancesOf);
+  distancesByRoot.set(root, distances);
   let cancel!: (reason: Error) => void;
   const cancellation = new Promise<never>((_resolve, reject) => { cancel = reject; });
   void cancellation.catch(() => {});
@@ -336,7 +449,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
   });
   const ready = (async () => {
     const distanceState = foliageDistanceState(scene);
-    const lodPending: Array<{ loadLods: () => Promise<ModelLodSet | null>; cells: FoliageCellRecord[] }> = [];
+    const lodPending: Array<{ modelGuid: string; loadLods: () => Promise<ModelLodSet | null>; cells: FoliageCellRecord[] }> = [];
     for (const [batchIndex, batch] of data.batches.entries()) {
       if (root.isDisposed()) return;
       const bytes = assets?.modelBytes?.get(batch.modelGuid);
@@ -374,7 +487,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
           mesh.receiveShadows = true;
           mesh.isPickable = true;
           mesh.thinInstanceEnablePicking = true;
-          mesh.metadata = { foliageRoot: root, slateShadowDistanceCulled: false, slateFoliageFade: null };
+          mesh.metadata = { foliageRoot: root, hapticFoliageFade: null };
           const matrices = new Float32Array(transforms.length * 16);
           transforms.forEach((transform, i) => {
             modelMatrix.multiply(Matrix.Compose(Vector3.FromArray(transform.scale), Quaternion.FromArray(transform.rotation), Vector3.FromArray(transform.position))).copyToArray(matrices, i * 16);
@@ -386,9 +499,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
           const record: FoliageCellRecord = {
             mesh,
             sourceMesh: geometry,
-            cullDistance: batch.cullDistance,
-            fadeRange: batch.fadeRange,
-            shadowDistance: batch.shadowDistance,
+            distances: distances[batchIndex]!,
             lods: [{ geometry: mesh.geometry!, subMeshes: snapshotSubMeshes(mesh) }],
             activeLod: 0,
           };
@@ -406,7 +517,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
         }
       }
       if (batchCellRecords.length > 0) {
-        lodPending.push({ loadLods: () => lease.lods(), cells: batchCellRecords });
+        lodPending.push({ modelGuid: batch.modelGuid, loadLods: () => lease.lods(), cells: batchCellRecords });
       }
     }
     if (root.isDisposed()) return;
@@ -424,7 +535,10 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
           for (const cell of pending.cells) attachCellLods(cell, lodSet);
           distanceState.dirty = true;
           updateFoliageDistances(scene, scene.activeCamera, true);
-        }).catch(() => {});
+        }).catch((error: unknown) => {
+          // Generation failures were reported by the Model's cache (`lods()` settles null); this is the cells' attach.
+          if (!root.isDisposed()) reportFoliageLodFailure(scene, pending.modelGuid, error);
+        });
       }
     }
   })().catch((error: unknown) => {

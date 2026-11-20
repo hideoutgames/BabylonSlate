@@ -29,9 +29,10 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
-import { clearDecals, removeDecals, sceneDecalTextureGuids, setDecalTextureResolver, upsertDecals } from "./decal-pass";
+import { clearDecals, removeDecals, sceneDecalTextureGuids, setDecalTextureResolver, setDecalTimePaused, takeDecalTextureRelease, upsertDecals } from "./decal-pass";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
+import { isFoliageDistanceOnlySceneEdit } from "./foliage-mesh";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
 import { setSceneWorldDebug, worldDebugFingerprint } from "./world-debug";
@@ -1831,6 +1832,11 @@ function initializeEngine(
       editorSync.apply(sceneData);
       return;
     }
+    // A Foliage distance edit applies to the existing cells (`applyFoliageDistances`): no rebuild, no new variant.
+    if (editorSync && sameScene && isFoliageDistanceOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      editorSync.apply(sceneData);
+      return;
+    }
     if (editorSync && sameScene &&
       isOutlineOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
       applySceneDocumentRenderSettings(sceneData);
@@ -2381,6 +2387,8 @@ function initializeEngine(
     const preparationStart = measurePhases ? performance.now() : 0;
     applyRenderingQuality();
     outlineHost.refreshSettings();
+    // Expired or evicted Spawn Decal decals may leave textures no decal uses: release those leases.
+    if (takeDecalTextureRelease(scene)) pruneDecalTextureLeases();
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
     const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();
@@ -2768,6 +2776,7 @@ function initializeEngine(
     debugOverlay?.setPaused(paused);
     audioService?.setPaused(paused || held);
     particleService?.setPaused(paused || held);
+    setDecalTimePaused(scene, paused || held);
   };
   /** When the current run of held frames began, until the hold pauses or ends. */
   let holdSince: number | undefined;

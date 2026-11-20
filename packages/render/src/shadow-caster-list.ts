@@ -1,11 +1,27 @@
 import type { Plane } from "@babylonjs/core/Maths/math.plane";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { noteRenderChange } from "./render-change-journal";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
-/** Distance-culled shadow casters (for example distant foliage cells) drop out of shadow draws without readiness churn. */
+const distanceCulled = new WeakSet<AbstractMesh>();
+
+/**
+ * Takes a caster out of every shadow map while it stays drawn in the view (a foliage cell beyond its Shadow Distance),
+ * or puts it back. The caster walk reads it as a change of the caster (`ShadowMapRefresh`), heard through the render
+ * change journal (`RenderChange.Other`), so the tiles it reaches redraw in the frame it changes; nothing marks the
+ * Scene's readiness.
+ */
+export function setShadowDistanceCulled(mesh: AbstractMesh, culled: boolean): void {
+  if (distanceCulled.has(mesh) === culled) return;
+  if (culled) distanceCulled.add(mesh);
+  else distanceCulled.delete(mesh);
+  noteRenderChange(mesh);
+}
+
+/** Whether `setShadowDistanceCulled` took the caster out of the shadow maps. */
 export function isShadowDistanceCulled(mesh: AbstractMesh): boolean {
-  return (mesh.metadata as { slateShadowDistanceCulled?: boolean } | null | undefined)?.slateShadowDistanceCulled === true;
+  return distanceCulled.has(mesh);
 }
 
 type Bounds = { min: Vector3; max: Vector3 };
