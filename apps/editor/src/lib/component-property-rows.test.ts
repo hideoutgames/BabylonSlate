@@ -1657,6 +1657,7 @@ describe("Material slots by domain", () => {
     ["LandscapeComponent", "materialGuid", "landscape"],
     ["DecalComponent", "materialGuid", "decal"],
     ["2DTextComponent", "materialGuid", "text"],
+    ["2DPostProcessingPanelComponent", "materialGuid", "postProcess"],
   ])("%s's %s picks, pastes and keeps only %s Materials", (classId, property, domain) => {
     const { rows, onPickAsset } = rowsFor({ id: "c", classId, properties: { ...defaultPropertiesFor(classId), [property]: domain } }, context);
     const row = rows.find((entry) => entry.id === `actor-1-c-${property}`);

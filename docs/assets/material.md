@@ -76,7 +76,7 @@ Every Material field takes Materials of one domain, and its picker lists only th
 | Decal | **Material** on a Decal; the **Spawn Decal** node |
 | Text | **Text Material** on 2D Text and 2D Rich Text |
 | Particle | an emitter's **Material** |
-| Post Process | **Post-Process Passes**; the Register and Unregister Post-Processing nodes |
+| Post Process | **Post-Process Passes** (Scene and Scene Layers); the **Material** of a Scene Layer post-processing panel; the Register and Unregister Post-Processing nodes |
 
 - Paste refuses a Material of another domain, as the picker does.
 - A field that already holds a Material of another domain, for example after its Material's **Domain** changed, shows an error under it until you pick another. A node pin that does shows an error in **Compiler Results**.
