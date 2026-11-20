@@ -122,6 +122,8 @@ export interface MaterialEditingValue {
   focusNode: (nodeId: string) => void;
   requestRender: () => void;
   attachPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
+  /** Whether the Preview window is on screen; while it is not, the preview requests no frames. */
+  setPreviewShown: (shown: boolean) => void;
   /** The preview's zoom drive for **Viewport Zoom Buttons**; stable, read at each press. */
   previewZoomDrive: () => ViewportZoomDrive | undefined;
   frameBudgetMs: number;
@@ -178,6 +180,7 @@ export function MaterialEditingProvider({
   const { selectedNodeIds, selectedNodeId, setSelectedNodeIds, setSelectedNodeId } = useNodeSelection();
   const { focusedNodeId, focusRequest, requestFocus: focusNode } = useNodeFocus();
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [previewShown, setPreviewShown] = useState(true);
   const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
   const previewZoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
@@ -408,9 +411,12 @@ export function MaterialEditingProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvas, sharedEngine]);
 
+  // A hidden Preview window only stops the frame loop: unlike `frozen` it keeps Render enabled, and its forced
+  // frame waits for the canvas to be shown again. The presenter keeps drawing every interval (no static
+  // settle), so the first frame after a restart draws a fresh picture.
   useEffect(() => {
     presenterRef.current?.setFrozen(frozen);
-    if (frozen) return;
+    if (frozen || !previewShown) return;
     const presenter = presenterRef.current;
     if (!presenter) return;
     let frame = 0;
@@ -422,7 +428,7 @@ export function MaterialEditingProvider({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [frozen, canvas, sharedEngine]);
+  }, [frozen, previewShown, canvas, sharedEngine]);
 
   // Keep the preview primitive in step with the document.
   useEffect(() => {
@@ -783,6 +789,7 @@ export function MaterialEditingProvider({
       focusNode,
       requestRender,
       attachPreviewCanvas: setCanvas,
+      setPreviewShown,
       previewZoomDrive,
       frameBudgetMs,
       previewNode: previewedDocument ? previewNode : null,

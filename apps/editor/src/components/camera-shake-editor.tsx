@@ -18,6 +18,7 @@ import { useOptionalPlay } from "../context/play-context";
 import { asRecord } from "../lib/as-record";
 import { CAMERA_SHAKE_CURVE_FIELDS, cameraShakeDetailRows, type CameraShakeCurveField } from "../lib/camera-shake-rows";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
+import { createPreviewFrameLoop, usePreviewLoopActive, type PreviewFrameLoop } from "../lib/preview-loop";
 import { IconActionButton } from "./icon-action-button";
 
 type RegistryEntry = { header: { guid: string; name: string; type: string; payload?: Record<string, unknown> }; path: string };
@@ -91,8 +92,11 @@ export function CameraShakeDetailsPanel(_props: IDockviewPanelProps) {
  * Plays the open shake on a small built-in set, on the shared Engine. Play starts it; Stop blends it out as Stop
  * Camera Shake does, and a second Stop (or the end of its Duration) ends it. Edits apply to the playing shake.
  */
-export function CameraShakePreviewPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function CameraShakePreviewPanel(props: IDockviewPanelProps) {
+  const active = usePreviewLoopActive(props.api);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const loopRef = useRef<PreviewFrameLoop | null>(null);
   const { shake } = useCameraShakeDocument();
   const { assetRegistry } = useRegistryState();
   const entries = (assetRegistry?.list() ?? []) as readonly RegistryEntry[];
@@ -134,7 +138,6 @@ export function CameraShakePreviewPanel(_props: IDockviewPanelProps) {
     }
     const scene = host;
     const view = presenter;
-    let frame = 0;
     const tick = () => {
       const running = clock.current;
       if (!running) scene.setOffset(null);
@@ -151,16 +154,24 @@ export function CameraShakePreviewPanel(_props: IDockviewPanelProps) {
         } else scene.setOffset(sampleCameraShake(current, running, 1, curves));
       }
       view.present({ force: running !== null });
-      frame = window.requestAnimationFrame(tick);
     };
-    frame = window.requestAnimationFrame(tick);
+    // A playing shake holds while the loop is paused: its time starts again from the resuming frame.
+    const resume = () => {
+      if (clock.current) clock.current.last = performance.now();
+      view.present({ force: true });
+    };
+    const loop = loopRef.current = createPreviewFrameLoop(tick, resume);
+    loop.setActive(activeRef.current);
     return () => {
-      window.cancelAnimationFrame(frame);
+      loop.dispose();
+      if (loopRef.current === loop) loopRef.current = null;
       overlay.dispose();
       view.dispose();
       scene.dispose();
     };
   }, [engine]);
+
+  useEffect(() => loopRef.current?.setActive(active), [active]);
 
   const start = () => {
     clock.current = { time: 0, stoppingAt: null, seed: Math.floor(Math.random() * 0x7fffffff), last: performance.now() };

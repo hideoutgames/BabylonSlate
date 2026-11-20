@@ -41,6 +41,7 @@ import {
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useModelColliderSession } from "../context/model-collider-session";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
+import { usePreviewLoopActive } from "../lib/preview-loop";
 import { scaleLinkKey, useLinkedScale, type ScaleLink } from "../lib/linked-scale";
 import { ModelPreviewCanvas } from "./model-preview-canvas";
 import { asRecord } from "../lib/as-record";
@@ -57,8 +58,8 @@ export function ModelSourceReadError({ error }: { error: string }) {
   );
 }
 
-export function ModelPreviewPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function ModelPreviewPanel(props: IDockviewPanelProps) {
+  const active = usePreviewLoopActive(props.api);
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(documentId);
@@ -72,6 +73,7 @@ export function ModelPreviewPanel(_props: IDockviewPanelProps) {
         onChange={(next) => {
           void applyAssetDocumentChange(documentId, next);
         }}
+        active={active}
       />
     </PanelFrame>
   );
@@ -118,12 +120,15 @@ export function ModelPreview({
   sourceBytes = null,
   sourceError = null,
   onChange,
+  active = true,
 }: {
   payload: Record<string, unknown>;
   sourceBytes?: Uint8Array | null;
   /** Why the Model source could not be read, shown instead of a mesh. */
   sourceError?: string | null;
   onChange?: (next: Record<string, unknown>) => void;
+  /** Whether the preview is on screen; its canvas requests no frames otherwise. */
+  active?: boolean;
 }) {
   if (sourceError) {
     return (
@@ -154,6 +159,7 @@ export function ModelPreview({
         payload={payload}
         sourceBytes={sourceBytes}
         onChange={onChange}
+        active={active}
       />
     </div>
   );

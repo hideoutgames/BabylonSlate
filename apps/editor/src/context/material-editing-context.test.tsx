@@ -1,5 +1,5 @@
 import { unzlibSync } from "fflate";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   act,
   cleanup,
@@ -537,6 +537,26 @@ describe("MaterialEditingProvider preview isolation", () => {
     mount();
     await waitFor(() => expect(harness.presenter.setStaticContent).toHaveBeenCalled());
     expect(harness.presenter.setStaticContent).toHaveBeenLastCalledWith(false);
+  });
+
+  it("requests no frames while the Preview window is hidden, and keeps Render enabled", async () => {
+    const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(1);
+    onTestFinished(() => frame.mockRestore());
+    function HiddenPreview({ shown }: { shown: boolean }) {
+      const { setPreviewShown } = useMaterialEditing();
+      useEffect(() => setPreviewShown(shown), [setPreviewShown, shown]);
+      return <AttachCanvas />;
+    }
+    const tree = (shown: boolean) => materialTree(true, <><HiddenPreview shown={shown} /><RenderProbe /></>);
+    const view = render(tree(false));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Render" }).hasAttribute("disabled")).toBe(false));
+    expect(harness.createPresenter).toHaveBeenCalled();
+    expect(frame).not.toHaveBeenCalled();
+    // Hiding the window is not a freeze: Play and an inactive tab freeze the presenter.
+    expect(harness.presenter.setFrozen).not.toHaveBeenCalledWith(true);
+
+    view.rerender(tree(true));
+    expect(frame).toHaveBeenCalledTimes(1);
   });
 
   it("does not keep a present rAF running while the document is frozen", async () => {

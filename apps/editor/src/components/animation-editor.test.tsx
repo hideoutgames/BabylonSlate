@@ -211,6 +211,26 @@ describe("AnimationPreview playback", () => {
     flush(50);
     expect(position()).toBe("Frame 1/1 · 0/1000 ms");
   });
+
+  it("resumes where it stopped, without the time it was hidden", () => {
+    const flush = stubFrames();
+    const at = (active: boolean) => (
+      <AnimationPreview
+        payload={{ clipName: "Walk", modelGuid: "hero", skeletonGuid: null, sourceAnimationGuid: null, durationMs: 1000 }}
+        sourceBytes={gltf}
+        materialSlots={[]}
+        active={active}
+      />
+    );
+    const view = render(at(true));
+    flush(0);
+    flush(40);
+    view.rerender(at(false));
+    flush(5000);
+    view.rerender(at(true));
+    flush(30);
+    expect(position()).toBe("Frame 1/1 · 70/1000 ms");
+  });
 });
 
 describe("AnimationEditor additive", () => {

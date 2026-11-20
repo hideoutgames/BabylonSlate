@@ -35,6 +35,7 @@ import {
 import { GraphEditor, type GraphPasteElements, type PaletteNode } from "@haptic/graph-ui";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { useRevealResultWindow } from "../lib/use-reveal-result-window";
+import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import { primaryDockPanel } from "../shell/window-catalog";
 import { isMaterialSamplerTextureAsset } from "../lib/content-browser-helpers";
 import {
@@ -710,8 +711,8 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
  * Preview dock: primitive picker, the Render control, and the live canvas the
  * render host draws into.
  */
-export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function MaterialPreviewPanel(props: IDockviewPanelProps) {
+  const shown = useDockPanelShown(props.api);
   const { document, commit } = useMaterialDocument();
   const { setPreviewNode } = useMaterialEditing();
   return (
@@ -721,6 +722,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
       onPreviewChange={(preview) => commit({ ...document, preview })}
       previewedNode={usePreviewedNode(document)}
       onStopPreviewingNode={() => setPreviewNode(null)}
+      shown={shown}
     />
   );
 }
@@ -732,6 +734,7 @@ export function MaterialPreviewSurface({
   onPreviewChange,
   previewedNode = null,
   onStopPreviewingNode,
+  shown = true,
 }: {
   preview: MaterialPreviewSettings;
   domain: MaterialDomain | null;
@@ -739,6 +742,8 @@ export function MaterialPreviewSurface({
   /** The node the preview shows instead of the Material's output (**Preview Node**). */
   previewedNode?: { title: string; output: string | null } | null;
   onStopPreviewingNode?: () => void;
+  /** Whether the Preview window is on screen (`useDockPanelShown`); the preview requests no frames otherwise. */
+  shown?: boolean;
 }) {
   const editing = useMaterialEditing();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -749,6 +754,8 @@ export function MaterialPreviewSurface({
     editing.attachPreviewCanvas(canvasRef.current);
     return () => editing.attachPreviewCanvas(null);
   }, [editing.attachPreviewCanvas]);
+  const { setPreviewShown } = editing;
+  useEffect(() => setPreviewShown(shown), [setPreviewShown, shown]);
 
   const modelAssets = useMemo(() => {
     void registryEpoch; // Registry contents mutate without replacing its instance.

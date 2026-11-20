@@ -22,6 +22,7 @@ import {
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useMaterialEditing } from "../context/material-editing-context";
 import { isMaterialSamplerTextureAsset } from "../lib/content-browser-helpers";
+import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import {
   materialInstanceParameterRows,
   setMaterialInstanceOverride,
@@ -46,8 +47,8 @@ function useMaterialInstanceDocument() {
   return { document, commit, path: doc?.ref.path };
 }
 
-export function MaterialInstancePreviewPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function MaterialInstancePreviewPanel(props: IDockviewPanelProps) {
+  const shown = useDockPanelShown(props.api);
   const { document, commit } = useMaterialInstanceDocument();
   const editing = useMaterialEditing();
   return (
@@ -56,6 +57,7 @@ export function MaterialInstancePreviewPanel(_props: IDockviewPanelProps) {
         preview={document.preview}
         domain={editing.previewDomain}
         onPreviewChange={(preview) => commit({ ...document, preview })}
+        shown={shown}
       />
     </PanelFrame>
   );
