@@ -72,7 +72,7 @@ import { PLATFORMER_TILE_PX, ROBOT_FRAMES, type RobotFrame } from "./engine-cont
 const FEATURE_TEST_TWO_D_FOLDER = "TwoD";
 
 /** The 2D world scene (`FeatureTest/Scenes/FT_2D`): open its tab and press Play. */
-const FEATURE_TEST_TWO_D_SCENE_NAME = "FT_2D";
+export const FEATURE_TEST_TWO_D_SCENE_NAME = "FT_2D";
 
 /** Asset names, so sibling FeatureTest modules and docs can find them by path. */
 const FEATURE_TEST_TWO_D_NAMES = {

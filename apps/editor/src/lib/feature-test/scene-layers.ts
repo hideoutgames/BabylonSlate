@@ -31,6 +31,7 @@ import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./mat
 import { ownedActorProbeScript } from "./scene-scripts";
 import { FEATURE_TEST_EASING_CURVE_CLASS, featureTestCameraShakes } from "./scripting";
 import { withFeatureTestHudPulse } from "./timeline";
+import { FEATURE_TEST_TWO_D_SCENE_NAME } from "./two-d";
 
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
 const FEATURE_TEST_SCENE_LAYERS_FOLDER = "SceneLayers";
@@ -43,6 +44,8 @@ const FEATURE_TEST_SCENE_LAYER_NAMES = {
   overlayPhysics: "FT_OverlayPhysics",
   /** A Desired canvas at True Pixel Size, its top right in the screen's, spawned over the main scene at z-order 15. */
   badge: "FT_Badge",
+  /** A post-processed layer (its own grade) whose Multiply darkens by its grey, spawned over `FT_2D` at z-order 10. */
+  layerGrade: "FT_LayerGrade",
   listItem: "FT_UIListItem",
   gridItem: "FT_UIGridItem",
   cardA: "FT_UICardA",
@@ -77,6 +80,7 @@ const FEATURE_TEST_SCENE_LAYER_KNOBS = {
   painterPixelsPerUnit: 107,
   hudZOrder: 10,
   badgeZOrder: 15,
+  layerGradeZOrder: 10,
   overlayPhysicsZOrder: 5,
   /** Seconds each FT_UICameraRig tween takes. */
   cameraTweenSeconds: 1.5,
@@ -110,6 +114,11 @@ interface LayerRefs {
   pixelFont: string;
   textMaterial: string;
   overlayMaterial: string;
+  /** Multiply: the Surface stain (`FT_MatOverlayMultiply`) and the Text ink (`FT_MatTextMultiply`). */
+  multiplyMaterial: string;
+  textMultiplyMaterial: string;
+  /** `FT_LayerGrade`'s post-process (`FT_MatLayerGrade`). */
+  layerGradeMaterial: string;
   panelTexture: string;
   /** The optional one-shot Audio asset, which the rich text's reveal plays. */
   sound: string | null;
@@ -127,7 +136,7 @@ interface PlacedClass {
   components: SerializedComponent[];
 }
 
-const layerGuidsByContext = new WeakMap<FeatureTestContext, { hud: string; overlayPhysics: string; badge: string }>();
+const layerGuidsByContext = new WeakMap<FeatureTestContext, { hud: string; overlayPhysics: string; badge: string; layerGrade: string }>();
 
 /**
  * SceneLayerActor Classes (list and grid items, two switchable cards, a click
@@ -145,6 +154,9 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     pixelFont: requireRef(ctx.assets.fonts.arkPixel, "the Ark Pixel Font"),
     textMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.text),
     overlayMaterial,
+    multiplyMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.overlayMultiply),
+    textMultiplyMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.textMultiply),
+    layerGradeMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.layerGrade),
     panelTexture: requireRef(ctx.assets.textures.colormapPixelArt, "the pixel art colormap Texture"),
     sound: ctx.assets.audio.oneShot,
     icons: {
@@ -197,7 +209,14 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     content: badgeLayer(refs),
     order: SCENE_SAVE_ORDER.sceneLayer,
   });
-  layerGuidsByContext.set(ctx, { hud: hud.guid, overlayPhysics: overlayPhysics.guid, badge: badge.guid });
+  const layerGrade = await ctx.addSceneDocument({
+    kind: "scene-layer",
+    folder: FOLDER,
+    name: NAMES.layerGrade,
+    content: layerGradeLayer(refs),
+    order: SCENE_SAVE_ORDER.sceneLayer,
+  });
+  layerGuidsByContext.set(ctx, { hud: hud.guid, overlayPhysics: overlayPhysics.guid, badge: badge.guid, layerGrade: layerGrade.guid });
 
   await bindJoystickToMove(ctx);
   const confirm = ctx.registry
@@ -211,20 +230,27 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
   }));
 }
 
-/** Spawn `FT_OverlayPhysics` (z 5) and `FT_HUD` (z 10) over the main scene. */
+/**
+ * Spawn `FT_OverlayPhysics` (z 5), `FT_HUD` (z 10) and `FT_Badge` (z 15) over the main scene, and the post-processed
+ * `FT_LayerGrade` (z 10) over `FT_2D`, so its target, passes and blit stay out of the main scene's workload.
+ */
 export async function placeFeatureTestSceneLayers(ctx: FeatureTestContext): Promise<void> {
   const guids = layerGuidsByContext.get(ctx);
   if (!guids) throw new Error("FeatureTest Scene Layers were not built before placement.");
-  const entries: SceneLayerSpawnEntry[] = [
+  const spawn = (settings: { sceneLayers: SceneLayerSpawnEntry[] }, entries: SceneLayerSpawnEntry[]) => {
+    settings.sceneLayers = [
+      ...settings.sceneLayers.filter((entry) => !entries.some((next) => next.assetGuid === entry.assetGuid)),
+      ...entries,
+    ];
+  };
+  spawn(ctx.mainScene.settings, [
     { assetGuid: guids.overlayPhysics, zOrder: KNOBS.overlayPhysicsZOrder, enabled: true },
     { assetGuid: guids.hud, zOrder: KNOBS.hudZOrder, enabled: true },
     { assetGuid: guids.badge, zOrder: KNOBS.badgeZOrder, enabled: true },
-  ];
-  const settings = ctx.mainScene.settings;
-  settings.sceneLayers = [
-    ...settings.sceneLayers.filter((entry) => !entries.some((next) => next.assetGuid === entry.assetGuid)),
-    ...entries,
-  ];
+  ]);
+  const twoD = ctx.sceneDocuments.find((entry) => entry.kind === "scene" && entry.content.name === FEATURE_TEST_TWO_D_SCENE_NAME);
+  if (!twoD || !("viewportMode" in twoD.content)) throw new Error(`FeatureTest Scene Layers need the ${FEATURE_TEST_TWO_D_SCENE_NAME} scene.`);
+  spawn(twoD.content.settings, [{ assetGuid: guids.layerGrade, zOrder: KNOBS.layerGradeZOrder, enabled: true }]);
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +275,7 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
     { id: "ft-ui-folder-widgets", name: "Widget Row", parentFolderId: null },
     { id: "ft-ui-folder-classes", name: "Class Row", parentFolderId: null },
     { id: "ft-ui-folder-input", name: "Joystick And Painter", parentFolderId: null },
+    { id: "ft-ui-folder-multiply", name: "Multiply", parentFolderId: null },
   ];
   const add = (actor: SerializedActor) => addLayerActor(layer, actor);
   addHeader(refs, add);
@@ -257,6 +284,7 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   addWidgetRow(refs, add);
   addClassRow(refs, add);
   addJoystickAndPainter(add);
+  addMultiply(refs, add, "ft-ui-multiply", "Multiply", [-4.9, -2.4], "ft-ui-folder-multiply");
   // The SceneLayerScript of every FT_HUD instance probes its own title.
   const title = layer.actors.find((actor) => actor.id === "ft-ui-title");
   if (!title) throw new Error("FT_HUD has no title for its Scene Layer Script.");
@@ -304,6 +332,44 @@ function withScalabilityReport(graph: SerializedGraph): SerializedGraph {
 }
 
 type AddActor = (actor: SerializedActor) => void;
+
+/** Size of each Multiply demo quad, in layer units. */
+const MULTIPLY_QUAD = { width: 1.6, height: 0.7 } as const;
+
+/**
+ * The Multiply showcase around `center`: a translucent backdrop drawn first (behind), the `FT_MatOverlayMultiply`
+ * stain overlapping its right half and the world beside it, and a `FT_MatTextMultiply` label above. On a direct layer
+ * (FT_HUD) the stain tints both and the ink darkens the world by its blue; on a post-processed one (FT_LayerGrade) both
+ * darken by their grey.
+ */
+function addMultiply(refs: LayerRefs, add: AddActor, id: string, label: string, [x, y]: readonly [number, number], folderId: string): void {
+  const { width, height } = MULTIPLY_QUAD;
+  add(layerActor(`${id}-backdrop`, `${label} Backdrop`, [
+    ui(`${id}-backdrop-quad`, "2DMaterialComponent", { materialGuid: refs.overlayMaterial, tint: [0.35, 0.8, 0.95, 0.9] }),
+  ], { position: [x - width / 4, y, BACK_Z], scale: [width, height], folderId }));
+  add(layerActor(`${id}-stain`, `${label} Stain`, [
+    ui(`${id}-stain-quad`, "2DMaterialComponent", { materialGuid: refs.multiplyMaterial }),
+  ], { position: [x + width / 4, y, ITEM_BACK_Z], scale: [width, height], folderId }));
+  add(layerActor(`${id}-ink`, `${label} Ink`, [
+    ui(`${id}-ink-text`, "2DTextComponent", text(refs, label, 24, [240, 30], {
+      bold: true,
+      alignment: "center",
+      materialGuid: refs.textMultiplyMaterial,
+    })),
+  ], { position: [x, y + height * 0.85, FRONT_Z], folderId }));
+}
+
+/**
+ * `FT_LayerGrade`: the Multiply showcase on a layer with its own post-process stack (`FT_MatLayerGrade`), so the layer
+ * draws through its target and its Multiply darkens by grey. The default Fullscreen canvas; spawned over `FT_2D`.
+ */
+function layerGradeLayer(refs: LayerRefs): SerializedSceneLayer {
+  const layer: SerializedSceneLayer = { ...createDefaultSceneLayer(), name: NAMES.layerGrade };
+  layer.settings.postProcessStack = [{ id: "ft-layer-grade-pass", materialGuid: refs.layerGradeMaterial, enabled: true }];
+  layer.folders = [{ id: "ft-grade-folder-multiply", name: "Multiply", parentFolderId: null }];
+  addMultiply(refs, (actor) => addLayerActor(layer, actor), "ft-grade-multiply", "Grey Multiply", [-6.4, 3.4], "ft-grade-folder-multiply");
+  return layer;
+}
 
 /** Title (Text Material + top-center Anchor), Rich Text, material 9-slice Panel and the Safe Area. */
 function addHeader(refs: LayerRefs, add: AddActor): void {

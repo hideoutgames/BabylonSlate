@@ -42,7 +42,13 @@ export const FEATURE_TEST_MATERIAL_NAMES = {
   postProcess: "FT_MatPostGrade",
   landscape: "FT_MatLandscape",
   overlayUnlit: "FT_MatOverlayUnlit",
+  /** Scene Layer Multiply: a warm stain over what is beneath (coloured on FT_HUD, grey on FT_LayerGrade). */
+  overlayMultiply: "FT_MatOverlayMultiply",
   text: "FT_MatText",
+  /** Text Multiply: blue ink that darkens what is behind the glyphs. */
+  textMultiply: "FT_MatTextMultiply",
+  /** Scene Layer post-process: a warm grade that keeps the layer's alpha (FT_LayerGrade's stack). */
+  layerGrade: "FT_MatLayerGrade",
   globalTint: "FT_MatGlobalTint",
   decalLit: "FT_MatDecalLit",
   decalLitInstance: "FT_MatDecalLitInstance",
@@ -88,6 +94,7 @@ export function featureTestMaterialAssetGuid(
  * - particleSheet: `Sheet` (texture)
  * - postProcess: `Desaturation` (0..1), `Vignette` (0..1 edge darkening)
  * - overlayUnlit: `Tint` (color), `Opacity`, `Scroll Speed`
+ * - overlayMultiply: `Stain` (color), `Opacity`; textMultiply: `Ink` (color); layerGrade: `Grade` (color)
  * - landscape: none (see `landscapeMaterial` for the paint layer semantics)
  * - decalLit: `Albedo` (texture), `Tint` (color), `Roughness`; decalGlow: `Glow Color` (color);
  *   decalMultiply: `Stain Color` (color); decalMasked: `Cell Density`; decalOpaque: `Stripe Color` (color)
@@ -125,7 +132,10 @@ export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promis
   const postProcess = await saveMaterial(ctx, NAMES.postProcess, postGradeMaterial(NAMES.postProcess));
   const landscape = await saveMaterial(ctx, NAMES.landscape, landscapeMaterial(NAMES.landscape));
   const overlayUnlit = await saveMaterial(ctx, NAMES.overlayUnlit, overlayUnlitMaterial(NAMES.overlayUnlit));
+  await saveMaterial(ctx, NAMES.overlayMultiply, overlayMultiplyMaterial(NAMES.overlayMultiply));
   await saveMaterial(ctx, NAMES.text, textMaterial(NAMES.text));
+  await saveMaterial(ctx, NAMES.textMultiply, textMultiplyMaterial(NAMES.textMultiply));
+  await saveMaterial(ctx, NAMES.layerGrade, layerGradeMaterial(NAMES.layerGrade));
   // Decal domain: one root per Blend Mode (each root is one program), lit and unlit, a normal-mapped and an emissive
   // one, and an Instance.
   const decalLit = await saveMaterial(ctx, NAMES.decalLit, decalLitMaterial(NAMES.decalLit, colormap));
@@ -942,6 +952,49 @@ function particleSheetMaterial(name: string, sheetGuid: string): MaterialDocumen
   wire(doc, "sample", "rgba", "lit", "a");
   wire(doc, "particleColor", "color", "lit", "b");
   wire(doc, "lit", "out", "output", "color");
+  return doc;
+}
+
+/**
+ * Scene Layer Multiply (Surface, unlit): multiplies what is beneath by `Stain` at `Opacity`. On a direct layer it tints
+ * the world and the layer's own earlier visuals; on a post-processed one it darkens by the stain's grey.
+ */
+function overlayMultiplyMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "surface", {
+    shadingModel: "unlit",
+    blendMode: "multiply",
+    twoSided: true,
+    preview: { mesh: "plane", customMeshGuid: null },
+  });
+  node(doc, "stain", "param.color", 0, 0, { name: "Stain", value: [1, 0.55, 0.25, 1] });
+  node(doc, "opacity", "param.float", 0, 1, { name: "Opacity", value: [1] });
+  node(doc, "output", "output.surface", 1, 0);
+  wire(doc, "stain", "rgb", "output", "baseColor");
+  wire(doc, "opacity", "out", "output", "opacity");
+  return doc;
+}
+
+/** Text Multiply: `Ink` where the glyphs are darkens what is behind them by the ink's colour. */
+function textMultiplyMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "text", { blendMode: "multiply" });
+  node(doc, "ink", "param.color", 0, 0, { name: "Ink", value: [0.2, 0.45, 1, 1] });
+  node(doc, "output", "output.text", 1, 0);
+  wire(doc, "ink", "out", "output", "color");
+  return doc;
+}
+
+/** Post Process for a Scene Layer: Scene Color × `Grade` (alpha 1), so the layer keeps its coverage. */
+function layerGradeMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "postProcess");
+  node(doc, "screenUv", "input.screenUv", 0, 0);
+  node(doc, "sceneColor", "input.sceneColor", 1, 0);
+  node(doc, "grade", "param.color", 1, 1, { name: "Grade", value: [1, 0.95, 0.85, 1] });
+  node(doc, "graded", "math.multiply", 2, 0);
+  node(doc, "output", "output.postProcess", 3, 0);
+  wire(doc, "screenUv", "uv", "sceneColor", "uv");
+  wire(doc, "sceneColor", "color", "graded", "a");
+  wire(doc, "grade", "out", "graded", "b");
+  wire(doc, "graded", "out", "output", "color");
   return doc;
 }
 
