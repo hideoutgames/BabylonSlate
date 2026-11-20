@@ -78,7 +78,8 @@ function restorePreFocusSnapshot(
 ): void {
   const api =
     apis.get(dockviewApiKey(id, snapshot.surface)) ?? apis.get(id);
-  api?.fromJSON(snapshot.layout as never);
+  // Windows Focus kept stay mounted: a remounted Viewport reloads its Scene and ends a running Simulation.
+  api?.fromJSON(snapshot.layout as never, { reuseExistingPanels: true });
 }
 
 export interface DocumentDockLayoutDeps {
