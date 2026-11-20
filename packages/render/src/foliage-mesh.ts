@@ -19,6 +19,7 @@ import { applyMaterialBounds } from "./material-bounds";
 import { markBoundsHoldInstances } from "./play-view-culling";
 import { sharedVertexBuffer } from "./shared-vertex-buffer";
 import { sceneRenderingSettings } from "./render-settings";
+import { setShadowDistanceCulled } from "./shadow-caster-list";
 import type { ModelLodSet } from "./model-lod";
 import "./foliage-fade";
 
@@ -223,11 +224,8 @@ export function updateFoliageDistances(
       cell.mesh.setEnabled(withinCull);
     }
 
-    const shadowCulled = !withinCull || (effectiveShadow > 0 && dist > effectiveShadow);
+    setShadowDistanceCulled(cell.mesh, !withinCull || (effectiveShadow > 0 && dist > effectiveShadow));
     const metadata = (cell.mesh.metadata ?? (cell.mesh.metadata = {})) as Record<string, unknown>;
-    if (metadata.hapticShadowDistanceCulled !== shadowCulled) {
-      metadata.hapticShadowDistanceCulled = shadowCulled;
-    }
 
     if (withinCull && effectiveCull > 0 && effectiveFadeRange > 0) {
       const fadeStart = Math.max(0, effectiveCull - effectiveFadeRange);
@@ -374,7 +372,7 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
           mesh.receiveShadows = true;
           mesh.isPickable = true;
           mesh.thinInstanceEnablePicking = true;
-          mesh.metadata = { foliageRoot: root, hapticShadowDistanceCulled: false, hapticFoliageFade: null };
+          mesh.metadata = { foliageRoot: root, hapticFoliageFade: null };
           const matrices = new Float32Array(transforms.length * 16);
           transforms.forEach((transform, i) => {
             modelMatrix.multiply(Matrix.Compose(Vector3.FromArray(transform.scale), Quaternion.FromArray(transform.rotation), Vector3.FromArray(transform.position))).copyToArray(matrices, i * 16);

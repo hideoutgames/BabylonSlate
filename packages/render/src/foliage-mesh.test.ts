@@ -11,6 +11,7 @@ import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { createFoliageMesh, foliagePreparation, refreshFoliageMaterials } from "./foliage-mesh";
 import { glbContainerLoadCount } from "./glb-anim";
 import { keepsDrawingOutsideView } from "./play-view-culling";
+import { isShadowDistanceCulled } from "./shadow-caster-list";
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
 
@@ -176,15 +177,15 @@ it("distance-culls foliage cells, drops distant shadows without readiness churn,
   // Effective distances at Low (0.75): cull = 60 m, fadeStart = 45 m, shadow = 30 m.
   updateFoliageDistances(scene, camera, true);
   expect(near.isEnabled(false)).toBe(true);
-  expect(near.metadata?.hapticShadowDistanceCulled).toBe(false);
+  expect(isShadowDistanceCulled(near)).toBe(false);
   expect(near.metadata?.hapticFoliageFade).toBeNull();
 
   expect(mid.isEnabled(false)).toBe(true);
-  expect(mid.metadata?.hapticShadowDistanceCulled).toBe(true);
+  expect(isShadowDistanceCulled(mid)).toBe(true);
   expect(mid.metadata?.hapticFoliageFade).toEqual([45, 60]);
 
   expect(far.isEnabled(false)).toBe(false);
-  expect(far.metadata?.hapticShadowDistanceCulled).toBe(true);
+  expect(isShadowDistanceCulled(far)).toBe(true);
   expect(far.metadata?.hapticFoliageFade).toBeNull();
 
   // Hidden actor visibility is independent of distance culling (setEnabled vs isVisible).
@@ -195,7 +196,7 @@ it("distance-culls foliage cells, drops distant shadows without readiness churn,
   camera.getViewMatrix();
   updateFoliageDistances(scene, camera, true);
   expect(far.isEnabled(false)).toBe(true);
-  expect(far.metadata?.hapticShadowDistanceCulled).toBe(false);
+  expect(isShadowDistanceCulled(far)).toBe(false);
   expect(near.isEnabled(false)).toBe(false);
   expect(near.isVisible).toBe(false);
   expect(readinessEvents).toEqual([]);

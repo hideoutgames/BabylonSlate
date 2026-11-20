@@ -31,6 +31,8 @@ import { createSpriteQuad, setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-
 import { createTilemapMeshes, updateSceneTilemapAnimations } from "./tilemap-mesh";
 import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile, type TilemapPayload } from "@haptic/assets";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { setShadowDistanceCulled } from "./shadow-caster-list";
+import { onSceneReadinessDirty } from "./scene-readiness-signal";
 import { verifyRenderChangeJournal } from "./render-change-journal";
 import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo";
 import { setLatticeBinding } from "./lattice-deformer-binding";
@@ -937,6 +939,37 @@ describe("casters that draw nothing", () => {
     expect(controller.journalDiagnostics().missedKinds).toContain("casterLists");
     verifyRenderChangeJournal(false);
     expect(listed().has(mesh)).toBe(true);
+  });
+});
+
+describe("shadow distance cull", () => {
+  afterEach(() => verifyRenderChangeJournal(false));
+
+  it("redraws the map in the frame a caster crosses its shadow distance, heard through the journal, without readiness", async () => {
+    const { scene, mesh, render, controller } = await fixture();
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    const readiness: string[] = [];
+    const unsubscribe = onSceneReadinessDirty(scene, (reason) => readiness.push(reason));
+    // The journal walk alone (the full walk runs only every 32nd frame) finds each crossing.
+    setShadowDistanceCulled(mesh, true);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    setShadowDistanceCulled(mesh, false);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    // And the full walk that follows every journal walk while verifying finds nothing the journal walk missed.
+    verifyRenderChangeJournal(true);
+    const before = controller.journalDiagnostics().mismatches;
+    setShadowDistanceCulled(mesh, true);
+    expect(render()).toBe(6);
+    setShadowDistanceCulled(mesh, false);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    expect(controller.journalDiagnostics().mismatches).toBe(before);
+    expect(controller.journalDiagnostics().missedKinds).toEqual([]);
+    unsubscribe();
+    expect(readiness).toEqual([]);
   });
 });
 

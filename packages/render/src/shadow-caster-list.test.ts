@@ -7,7 +7,7 @@ import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
-import { ShadowCasterList, type CasterChanges } from "./shadow-caster-list";
+import { setShadowDistanceCulled, ShadowCasterList, type CasterChanges } from "./shadow-caster-list";
 
 /** The caster walk's change log as `prepare` reads it: what a test lists, and what the stages counted. */
 function changeLog() {
@@ -105,7 +105,7 @@ describe("shadow caster selection", () => {
       engine.dispose();
     }
   });
-  it("excludes casters marked hapticShadowDistanceCulled from both prepared and direct queries", () => {
+  it("excludes casters culled by shadow distance from both prepared and direct queries", () => {
     const engine = new NullEngine();
     try {
       const scene = new Scene(engine);
@@ -115,12 +115,12 @@ describe("shadow caster selection", () => {
       index.add(mesh);
       const planes = [new Plane(-1, 0, 0, 10)];
       expect(index.queryPlanes(planes)).toContain(mesh);
-      mesh.metadata = { hapticShadowDistanceCulled: true };
+      setShadowDistanceCulled(mesh, true);
       expect(index.queryPlanes(planes)).not.toContain(mesh);
       index.prepare();
       expect(index.queryPlanes(planes)).not.toContain(mesh);
       index.release();
-      mesh.metadata = { hapticShadowDistanceCulled: false };
+      setShadowDistanceCulled(mesh, false);
       index.prepare();
       expect(index.queryPlanes(planes)).toContain(mesh);
       index.release();
