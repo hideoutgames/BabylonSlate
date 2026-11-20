@@ -67,7 +67,7 @@ Limits:
 
 - LOD reduces triangles, not draw calls.
 - Levels switch without a cross-fade.
-- Model previews, thumbnails and foliage always use full detail.
+- Model previews and thumbnails always use full detail.
 - Meshes that the file stores without normals draw at full detail.
 - Levels are generated each time the game loads; they are not saved in the project or export.
 
