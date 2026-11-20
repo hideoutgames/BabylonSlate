@@ -191,6 +191,21 @@ describe("typed asset dependencies", () => {
     expect(metadata.dependencies).toEqual(["scorch"]);
   });
 
+  it("loads the Material a Register post-processing node attaches with its owner, and only ships an Unregister node's", () => {
+    for (const type of ["scene.registerPostProcess", "scene-layer.registerPostProcess"]) {
+      const metadata = collectAssetDependencyMetadata("Class", {
+        nodes: [
+          { id: "register", type, data: { "default:material": "grade" } },
+          { id: "unregister", type: type.replace("register", "unregister"), data: { "default:material": "removed-only" } },
+        ],
+        edges: [],
+      });
+      expect(metadata.dependencies, type).toEqual(["grade", "removed-only"]);
+      // The renderer compiles the pass from the Material's document the moment the node runs.
+      expect(metadata.requiredDependencies, type).toEqual(["grade"]);
+    }
+  });
+
   it("loads a curve asset read by Get Curve Object with its owner, through a literal or a variable", () => {
     const literal = collectAssetDependencyMetadata("Class", {
       nodes: [

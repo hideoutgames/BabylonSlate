@@ -87,6 +87,9 @@ const row = (value: unknown): Row => value && typeof value === "object" && !Arra
 const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(row) : [];
 const values = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 
+/** Nodes whose Material loads with their owner: the pass they add is drawn from it as soon as they run. */
+const POST_PROCESS_REGISTER_NODES: ReadonlySet<string> = new Set(["scene.registerPostProcess", "scene-layer.registerPostProcess"]);
+
 // Asset pin ids of built-in nodes, for a graph read without pin snapshots.
 // Dynamic pins use host schemas.
 const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
@@ -412,7 +415,10 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         // Play Camera Shake reads its Camera Shake (and the shake's curves) from the session catalog.
         ["camera.playShake", "camera.playShakeOnSceneLayer", "camera.playWorldShake"].includes(entry.nodeType) ||
         // Set and Get Global Parameter resolve their collection from the session catalog the owner loads with.
-        entry.nodeType.startsWith("globalParameters.")) requireInputs(String(entry.node.id));
+        entry.nodeType.startsWith("globalParameters.") ||
+        // Register Scene (Layer) Post-Processing attaches its Material at once: the renderer compiles the pass from
+        // the Material's document, which nothing else loads when no Scene or Project Setting names it.
+        POST_PROCESS_REGISTER_NODES.has(entry.nodeType)) requireInputs(String(entry.node.id));
       for (const { node, properties, nodeType, pins } of nodes) {
         const needed = requiredNodes.has(String(node.id));
         const schemaNeeded = nodeType !== "data.readEntryAsync";
