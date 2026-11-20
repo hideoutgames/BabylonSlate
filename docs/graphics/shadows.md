@@ -30,7 +30,8 @@ Open **Project Settings > Rendering > Shadows**. The defaults below are the High
 | **Shadows Enabled** | On | Lets eligible lights cast real-time shadows. |
 | **Shadow Distance** | 350 | Directional shadow coverage around the camera, in world units. |
 | **Shadow Distance Fade** | 0.1 | Fades the far edge over this fraction of the distance. 0 turns fading off. |
-| **Directional Map Size** | 2048 | Resolution per cascade, 256 to 8192. At High the first cascade uses twice this, up to 4096. 8192 needs a 1 GiB shadow map; see [8192 directional maps](#8192-directional-maps). |
+| **Directional Map Size** | 2048 | Resolution per cascade, 256 to 8192. 8192 needs a 1 GiB shadow map; see [8192 directional maps](#8192-directional-maps). |
+| **First Cascade Detail** | Map Size | **Map Size** or **Twice Map Size**: the resolution of the cascade nearest the camera. See [First cascade detail](#first-cascade-detail). |
 | **Shadow Cascades** | 4 | Splits directional coverage, 1 to 4, to keep detail near the camera. |
 | **Shadow Filter** | PCF | **PCF** softens edges. **Contact Hardening (PCSS)** adds a contact-hardening penumbra, in PBR only; flat ground under the sun stays free of its own shadow. |
 | **Shadow Filter Quality** | High | Low, Medium or High. **Low** blends edges over about 3 shadow-map texels, the narrowest smooth edge. **Medium** blends them over about 5 and **High** over about 7, for softer, wider edges at a higher GPU cost. Edges keep the same softness in the world near and far, except where far shadows have too little detail for it. Water always takes Low's edge, without Contact Hardening: on its moving surface a wider edge barely shows, and it would cost up to four times the shadow reads over the whole surface. |
@@ -51,7 +52,7 @@ CEL projects always use PCF. Bands and shadow edges in CEL are hard steps.
 No quality level uses a **Directional Map Size** of 8192, so choosing it makes **Shadows Quality** **Custom**.
 
 - All shadows share one shadow map. With 8192 directional cascades it grows to 16384 × 16384, which holds 1 GiB of GPU memory instead of 256 MiB at most, while a directional light casts shadows.
-- At **High**, the first cascade uses 8192 too rather than twice it, which would fill the whole shadow map.
+- With **First Cascade Detail** at **Twice Map Size**, the first cascade uses 8192 too rather than twice it, which would fill the whole shadow map.
 - Point and spot lights still get their share. Spot lights up to the level's local shadow light count fit beside the cascades; point lights that need more room lower the directional map to 4096.
 - Where the device can't make a texture that large, on phones and tablets, or when the graphics card can't allocate it, the directional light uses 4096 instead (less when local shadow lights need the room), in a shadow map of at most 8192 × 8192. `stat draws` in the [console](../debugging/console.md) then lists **shadow map reduced by shadow atlas space**, or **shadow map reduced after allocation failure**.
 
@@ -59,12 +60,12 @@ No quality level uses a **Directional Map Size** of 8192, so choosing it makes *
 
 The **Shadows Quality** setting in **Scalability** applies one of these sets. Changing any field afterwards makes it **Custom**.
 
-| Level | Distance | Map size | First cascade | Cascades | Half-size far cascades | Filter quality | Local shadow lights | Local map size | Smallest far caster | Screen-Space Shadows | Reflection Shadows |
+| Level | Distance | Map size | First cascade detail | Cascades | Half-size far cascades | Filter quality | Local shadow lights | Local map size | Smallest far caster | Screen-Space Shadows | Reflection Shadows |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Low | 120 | 2048 | 2048 | 2 | 0 | Low | 1 | 512 | 3 texels | Off | Off |
-| Medium | 250 | 2048 | 2048 | 3 | 1 | High | 2 | 1024 | 2 texels | Off | Off |
-| High | 350 | 2048 | 4096 | 4 | 1 | High | 4 | 2048 | 1.5 texels | Medium | Off |
-| Ultra | 600 | 4096 | 4096 | 4 | 2 | High | 8 | 2048 | 1 texel | High | On |
+| Low | 120 | 2048 | Map Size | 2 | 0 | Low | 1 | 512 | 3 texels | Off | Off |
+| Medium | 250 | 2048 | Map Size | 3 | 1 | High | 2 | 1024 | 2 texels | Off | Off |
+| High | 350 | 2048 | Map Size | 4 | 1 | High | 4 | 2048 | 1.5 texels | Medium | Off |
+| Ultra | 600 | 4096 | Map Size | 4 | 2 | High | 8 | 2048 | 1 texel | High | On |
 
 Applying a level also resets a Manual **Local Shadow Light Budget** to that level's count.
 
@@ -72,9 +73,20 @@ All shadows share one shadow map: 4096 × 4096 at Low and Medium, 8192 × 8192 a
 
 The last cascades, those farthest from the camera, use half the **Directional Map Size** in each direction (never below 256, and never the first two cascades): far shadows are seen small, and the room they leave goes to closer shadows and local lights.
 
-At High, the first cascade, nearest the camera, uses twice the **Directional Map Size** in each direction over the same distance, so shadows close to the camera have twice the detail. It takes room in the shadow atlas that local shadow lights could otherwise use, and its shadow pass draws more texels. With a **Directional Map Size** of 4096 or 8192 it uses the map size instead: twice would leave the shadow atlas no room for the other cascades.
-
 Beyond the first cascade, an object narrower than the level's smallest far caster, measured in that cascade's shadow texels, casts no directional shadow there: its shadow would be too small to see. The first cascade, nearest the camera, keeps every caster.
+
+### First cascade detail
+
+Every level draws the first cascade, nearest the camera, at the **Directional Map Size**. Set **First Cascade Detail** to **Twice Map Size** to draw it at twice the map size in each direction over the same distance: shadows close to the camera get twice the detail, with sharper edges. It takes four times the room in the shadow map, room local shadow lights could otherwise use, and its shadow pass draws four times the texels. Choosing it makes **Shadows Quality** **Custom**, and a scene can override it.
+
+The first cascade gets twice the map size only while it takes at most half the shadow map's width:
+
+| Shadow map | Twice applies at a map size of |
+| --- | --- |
+| 4096 × 4096 (Low and Medium) | 1024 or less |
+| 8192 × 8192 (High and Ultra) | 2048 or less |
+
+At a larger map size the first cascade keeps the map size: twice would leave no room for the other cascades. So at Low and Medium's own 2048 map size, and at Ultra's 4096, **Twice Map Size** changes nothing.
 
 ### How cascades split the distance
 
