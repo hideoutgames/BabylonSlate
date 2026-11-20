@@ -253,7 +253,6 @@ export function createPropertyWrites(rt: RuntimeComposition, options: RuntimeDri
     navigation: () => rt.navigation,
     physics: () => rt.physics,
     ragdolls: () => rt.ragdolls,
-    layers: () => rt.layers,
     sceneRealizer: () => rt.sceneRealizer,
     emit: (command) => rt.emit(command),
   });

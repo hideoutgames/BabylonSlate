@@ -61,6 +61,23 @@ export function sceneLayerActorFrameBounds(
   return sceneLayerCanvasRect(design, context, contentBounds);
 }
 
+/**
+ * One pass of the Scene Layer post-processing stack every layer shares (Project Settings
+ * `sceneLayerPostProcessStack`, and Play's live stack). Layers always draw at full resolution, so a pass has no
+ * Scalable flag.
+ */
+export type SceneLayerPostProcessEntry = Omit<ScenePostProcessEntry, "id" | "scalable"> & { id: string };
+
+/** The Scene's pass rules (`normalizeScenePostProcessStack`: an id per pass, enabled by default) without `scalable`. */
+export function normalizeSceneLayerPostProcessStack(value: unknown): SceneLayerPostProcessEntry[] {
+  return normalizeScenePostProcessStack(value).map((entry) => ({
+    id: entry.id,
+    materialGuid: entry.materialGuid,
+    enabled: entry.enabled,
+    ...(entry.parameters ? { parameters: entry.parameters } : {}),
+  }));
+}
+
 export const SCENE_LAYER_HIT_TESTS = [
   "ignore",
   "block",
@@ -72,7 +89,6 @@ export type SceneLayerHitTest = (typeof SCENE_LAYER_HIT_TESTS)[number];
 export interface SceneLayerSettings {
   gravity: [number, number, number];
   fixedTimestepMs: number;
-  postProcessStack: ScenePostProcessEntry[];
   /** The design canvas (`sceneLayerCanvasRect`) and how Play scales it (`sceneLayerView`). Default Fullscreen, Root Center, Fit To Screen. */
   canvas: SceneLayerCanvasDesign;
   /** Where each instance's Layer Camera starts: its offset from the view the canvas sets. Default (0, 0). */
@@ -135,7 +151,6 @@ export function createDefaultSceneLayerSettings(): SceneLayerSettings {
   return {
     gravity: [...defaults.gravity] as [number, number, number],
     fixedTimestepMs: defaults.fixedTimestepMs,
-    postProcessStack: [],
     canvas: createDefaultSceneLayerCanvasDesign(),
     cameraLocation: [0, 0],
     physicsEnabled: false,
@@ -175,9 +190,6 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
     settings: {
       gravity: scene.settings.gravity,
       fixedTimestepMs: scene.settings.fixedTimestepMs,
-      postProcessStack: normalizeScenePostProcessStack(
-        sourceSettings.postProcessStack ?? scene.settings.postProcessStack,
-      ),
       canvas: normalizeSceneLayerCanvasDesign(sourceSettings.canvas),
       cameraLocation: normalizeCameraLocation2D(sourceSettings.cameraLocation),
       physicsEnabled: sourceSettings.physicsEnabled === true,
@@ -362,7 +374,6 @@ export function editorSceneToSceneLayer(
     settings: {
       gravity: scene.settings.gravity,
       fixedTimestepMs: scene.settings.fixedTimestepMs,
-      postProcessStack: scene.settings.postProcessStack,
       canvas: scene.settings.layerCanvas,
       cameraLocation: scene.settings.cameraLocation2D,
       physicsEnabled: scene.settings.layerPhysicsEnabled === true,
@@ -389,7 +400,6 @@ export function sceneLayerToEditorScene(
       environmentColor: [0, 0, 0],
       gravity: layer.settings.gravity,
       fixedTimestepMs: layer.settings.fixedTimestepMs,
-      postProcessStack: layer.settings.postProcessStack,
       cameraLocation2D: [...layer.settings.cameraLocation],
       layerPhysicsEnabled: layer.settings.physicsEnabled,
       layerTickOnPause: layer.settings.tickOnPause,

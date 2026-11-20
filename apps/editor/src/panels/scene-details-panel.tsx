@@ -116,6 +116,7 @@ import {
   useOpenDocumentsOfKinds,
 } from "../lib/use-open-documents-of-kinds";
 import { projectCustomEasingCurves } from "../lib/custom-easing-curves";
+import type { PostProcessPassPick } from "../components/post-process-pass-list";
 
 const NO_SEARCH_ITEMS: SearchDialogItem[] = [];
 const PREFAB_KINDS = ["prefab"] as const;
@@ -141,7 +142,7 @@ export function SceneDetailsPanel(props: IDockviewPanelProps) {
 function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { applySceneChange } = useDocumentActions();
+  const { applySceneChange, updateProjectSettings } = useDocumentActions();
   const { projectDocument } = useProjectState();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const areaEmissionStatus = useAreaEmissionStatus();
@@ -214,9 +215,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   const [cameraPickerOpen, setCameraPickerOpen] = useState(false);
   const [envTexturePickOpen, setEnvTexturePickOpen] = useState(false);
   const [effectsLutPickOpen, setEffectsLutPickOpen] = useState(false);
-  const [postProcessPick, setPostProcessPick] = useState<"add" | { id: string } | null>(
-    null,
-  );
+  const [postProcessPick, setPostProcessPick] = useState<PostProcessPassPick>(null);
   const [sceneLayerPick, setSceneLayerPick] = useState<"add" | number | null>(
     null,
   );
@@ -490,6 +489,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
           setPostProcessPick={setPostProcessPick}
           sceneLayerPick={sceneLayerPick}
           setSceneLayerPick={setSceneLayerPick}
+          updateProjectSettings={updateProjectSettings}
         />
       </PanelFrame>
     );

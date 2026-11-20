@@ -239,9 +239,10 @@ export function createOverlay(rt: RuntimeComposition, options: RuntimeDriverOpti
   });
 }
 
-export function createLayers(rt: RuntimeComposition): SceneLayers {
+export function createLayers(rt: RuntimeComposition, options: RuntimeDriverOptions): SceneLayers {
   return new SceneLayers(rt.admission, rt.overlay, {
     world: () => rt.world,
+    projectPostProcessStack: () => options.sceneLayerPostProcessStack ?? [],
     stopped: () => rt.stopped,
     frameId: () => rt.frameId,
     bootLoading: () => rt.bootLoading,

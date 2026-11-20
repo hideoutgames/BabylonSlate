@@ -19,12 +19,11 @@ import { createActor, createDefaultSceneSettings, normalizeScene } from "./scene
 import { createDefaultScene } from "./project";
 
 describe("SceneLayer schema", () => {
-  it("creates an empty unlit 2D overlay document with 2D gravity and no post-process", () => {
+  it("creates an empty unlit 2D overlay document with 2D gravity", () => {
     const layer = createDefaultSceneLayer();
     expect(layer.name).toBe("Untitled");
     expect(layer.actors).toEqual([]);
     expect(layer.folders).toEqual([]);
-    expect(layer.settings.postProcessStack).toEqual([]);
     expect(layer.settings.gravity).toEqual(
       createDefaultSceneSettings("2d").gravity,
     );
@@ -77,9 +76,8 @@ describe("SceneLayer schema", () => {
     expect(layer.actors[0]?.components.map((c) => c.classId)).toEqual([
       "SpriteComponent",
     ]);
-    expect(layer.settings.postProcessStack).toEqual([
-      { id: "pass-1", materialGuid: "pp-1", enabled: true },
-    ]);
+    // Post-processing is the project's, shared by every layer: a layer document keeps no passes of its own.
+    expect(layer.settings).not.toHaveProperty("postProcessStack");
   });
 
   it("normalizes a world-scene spawn list by guid, integer z-order, and enabled", () => {
@@ -107,9 +105,7 @@ describe("SceneLayer schema", () => {
     expect(scene.viewportMode).toBe("2d");
     expect(scene.settings.physicsWorld).toBe("2d");
     expect(scene.settings.gravity).toEqual([0, -4, 0]);
-    expect(scene.settings.postProcessStack).toEqual([
-      { id: "pass", materialGuid: "pp", enabled: true },
-    ]);
+    expect(scene.settings.postProcessStack).toEqual([]);
     expect(scene.actors).toHaveLength(1);
     expect(scene.settings.environmentColor).toEqual([0, 0, 0]);
     expect(scene.overlayEditor).toBe(true);
@@ -192,9 +188,7 @@ describe("SceneLayer schema", () => {
     const restored = editorSceneToSceneLayer(sceneLayerToEditorScene(layer));
     expect(restored.name).toBe("HUD");
     expect(restored.settings.gravity).toEqual([0, -4, 0]);
-    expect(restored.settings.postProcessStack).toEqual([
-      { id: "pass", materialGuid: "pp", enabled: true },
-    ]);
+    expect(restored.settings).not.toHaveProperty("postProcessStack");
     expect(restored.actors).toHaveLength(1);
   });
 

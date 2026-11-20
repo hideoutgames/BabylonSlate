@@ -846,9 +846,9 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Clear Scene Layer](clear-scene-layer.md) | Removes every Scene Layer and all of their actors. |
 | [Create Scene Layer](create-scene-layer.md) | Creates a Scene Layer from an asset and waits until it is ready. |
 | [Get Owning Scene Layer](get-owning-scene-layer.md) | Returns the Scene Layer an actor belongs to. |
-| [Register Scene Layer Post-Processing](register-scene-layer-post-processing.md) | Adds a post-process Material to the effects applied to a Scene Layer and returns the new pass's Material Object. |
+| [Register Scene Layer Post-Processing](register-scene-layer-post-processing.md) | Adds a post-process Material to the passes every Scene Layer shares and returns the new pass's Material Object. |
 | [Remove Scene Layer](remove-scene-layer.md) | Removes a Scene Layer and all of its actors. |
-| [Unregister Scene Layer Post-Processing](unregister-scene-layer-post-processing.md) | Removes a post-process Material from the effects applied to a Scene Layer. |
+| [Unregister Scene Layer Post-Processing](unregister-scene-layer-post-processing.md) | Removes a post-process Material from the passes every Scene Layer shares. |
 
 ## Rich Text
 
@@ -919,7 +919,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Material Vector2 Parameter](get-material-vector2-parameter.md) | Returns the current value of a named Vector2 parameter on a Material Object. |
 | [Get Material Vector3 Parameter](get-material-vector3-parameter.md) | Returns the current value of a named Vector3 parameter on a Material Object. |
 | [Get Material Vector4 Parameter](get-material-vector4-parameter.md) | Returns the current value of a named Vector4 parameter on a Material Object. |
-| [Get Post Process Entry](get-post-process-entry.md) | Returns the Material Object of one post-process pass on a Scene or Scene Layer. |
+| [Get Post Process Entry](get-post-process-entry.md) | Returns the Material Object of one post-process pass of a Scene, or of the passes every Scene Layer shares. |
 | [Reset Material Color Parameter](reset-material-color-parameter.md) | Restores a Color parameter on a Material Object to its original value. |
 | [Reset Material Float Parameter](reset-material-float-parameter.md) | Restores a Float parameter on a Material Object to its original value. |
 | [Reset Material Texture Parameter](reset-material-texture-parameter.md) | Restores a Texture parameter on a Material Object to its original Texture. |
