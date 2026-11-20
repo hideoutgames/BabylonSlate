@@ -75,6 +75,7 @@ export type PlaceActorKind =
         | "2DButtonComponent"
         | "2DFocusTargetComponent"
         | "2DPanelComponent"
+        | "2DPostProcessingPanelComponent"
         | "2DTextComponent"
         | "2DRichTextComponent";
     }
@@ -268,6 +269,12 @@ const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
     title: "2D Panel",
     category: "Overlay",
     kind: { type: "overlay-2d", classId: "2DPanelComponent" },
+  },
+  {
+    id: "post-processing-panel",
+    title: "Post Processing Panel",
+    category: "Overlay",
+    kind: { type: "overlay-2d", classId: "2DPostProcessingPanelComponent" },
   },
   {
     id: "2d-text",

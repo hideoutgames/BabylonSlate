@@ -1,4 +1,4 @@
-import { DEFORMER_MAX_COORDINATE, isUIControl2DClass, parseDeformerProperties } from "@haptic/core";
+import { DEFORMER_MAX_COORDINATE, isUIControl2DClass, parseDeformerProperties, POST_PROCESSING_PANEL_CLASS_ID } from "@haptic/core";
 import { Actor, LayerCamera, MaterialObject, type ActorComponent, type EngineObject } from "@haptic/object-model";
 import { particleParameterArg, particleParameterResult } from "./particle-parameter-bindings";
 import { asActor, asActorComponent, vec3Arg } from "./script-host-helpers";
@@ -42,7 +42,7 @@ export function callNativeComponentFunction(
   const component = asActorComponent(target);
   if (!component || !name) return {};
   if (name === "getMaterialObject" &&
-    (component.classId === "MeshComponent" || component.classId === "DynamicRuntimeMeshComponent")) {
+    (component.classId === "MeshComponent" || component.classId === "DynamicRuntimeMeshComponent" || component.classId === POST_PROCESSING_PANEL_CLASS_ID)) {
     const material = component.getVariable("materialObject");
     return { material: material instanceof MaterialObject ? material : null };
   }

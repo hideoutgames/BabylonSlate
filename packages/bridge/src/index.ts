@@ -55,6 +55,7 @@ export {
   type ScriptAnchorPayload,
   type ScriptBundleEntry,
   type ScriptConsoleCommand,
+  type SceneLayerPostProcessPanelPayload,
 } from "./channels";
 export {
   ANIM_OBJECT_DEBUG_GRAPH_ID,

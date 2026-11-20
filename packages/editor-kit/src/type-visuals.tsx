@@ -88,6 +88,7 @@ import {
   TreesIcon,
   TypeIcon,
   VibrateIcon,
+  WandSparklesIcon,
   Volume2Icon,
   WavesIcon,
   WaypointsIcon,
@@ -326,6 +327,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   "2DTextComponent": "ActorComponent",
   "2DRichTextComponent": "ActorComponent",
   "2DPanelComponent": "ActorComponent",
+  "2DPostProcessingPanelComponent": "ActorComponent",
 };
 
 const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
@@ -388,6 +390,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   "2DTextComponent": TypeIcon,
   "2DRichTextComponent": SparklesIcon,
   "2DPanelComponent": LayoutGridIcon,
+  "2DPostProcessingPanelComponent": WandSparklesIcon,
   LandscapeComponent: MountainIcon,
   FoliageComponent: TreesIcon,
   MeshComponent: BoxIcon,
