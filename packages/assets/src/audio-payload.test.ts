@@ -196,6 +196,7 @@ describe("audio payloads", () => {
       pitchMin: 1,
       pitchMax: 1,
       loop: false,
+      playbackMode: "decoded",
     });
     expect(normalizeAudioPayload({ volume: -2 }).volume).toBe(0);
     expect(normalizeAudioPayload({ audioChannelGuid: "" }).audioChannelGuid).toBe(
@@ -689,6 +690,7 @@ describe("audio asset containers", () => {
       existingGuids: new Set(),
     });
     expect(results[0]!.payload).toEqual({
+      playbackMode: "decoded",
       clips: [{ chunkId: "source", name: "jump", weight: 1 }],
     });
     expect(results[0]!.version).toBe(1);
