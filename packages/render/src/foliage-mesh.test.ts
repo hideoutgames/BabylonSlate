@@ -11,7 +11,6 @@ import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { createFoliageMesh, foliagePreparation, refreshFoliageMaterials } from "./foliage-mesh";
 import { glbContainerLoadCount } from "./glb-anim";
 import { keepsDrawingOutsideView } from "./play-view-culling";
-import { isShadowDistanceCulled } from "./shadow-caster-list";
 import type { ModelLodSet } from "./model-lod";
 /** The levels of detail a Model's cache hands foliage, when a test replaces them (generation is the Model cache's own work). */
 const lodOverride = vi.hoisted(() => ({ current: null as null | (() => Promise<ModelLodSet | null>) }));
