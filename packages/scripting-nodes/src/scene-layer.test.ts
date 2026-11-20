@@ -8,7 +8,7 @@ import {
   type NodeRegistry,
 } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
-import { registerSceneLayerValidationRules } from "./scene-layer";
+import { registerMaterialPinDomainValidationRules } from "./material-pin-domains";
 
 function node(
   registry: NodeRegistry,
@@ -30,7 +30,7 @@ function node(
 describe("scene-layer nodes", () => {
   beforeEach(() => {
     clearValidationRules();
-    registerSceneLayerValidationRules();
+    registerMaterialPinDomainValidationRules();
   });
   afterEach(() => {
     clearValidationRules();
@@ -71,9 +71,16 @@ describe("scene-layer nodes", () => {
     expect(finished).toBe(true);
   });
 
-  it.each(["scene-layer.registerPostProcess", "scene-layer.unregisterPostProcess", "scene.registerPostProcess", "scene.unregisterPostProcess"])(
-    "errors when %s's Material pin is not a postProcess material",
-    (typeId) => {
+  it.each([
+    ["scene-layer.registerPostProcess", "material", "surface", "Needs a Post Process Material; this is a Surface Material."],
+    ["scene-layer.unregisterPostProcess", "material", "surface", "Needs a Post Process Material; this is a Surface Material."],
+    ["scene.registerPostProcess", "material", "surface", "Needs a Post Process Material; this is a Surface Material."],
+    ["scene.unregisterPostProcess", "material", "surface", "Needs a Post Process Material; this is a Surface Material."],
+    ["decals.spawn", "material", "surface", "Needs a Decal Material; this is a Surface Material."],
+    ["material.setMaterialInstance", "instance", "decal", "Needs a Surface Material; this is a Decal Material."],
+  ])(
+    "errors when %s's %s pin holds a %s Material",
+    (typeId, pinId, domain, message) => {
       const registry = createDefaultNodeRegistry();
       const graph: LogicGraph = {
         id: "g",
@@ -81,7 +88,7 @@ describe("scene-layer nodes", () => {
         nodes: [
           node(registry, "begin", "flow.event.beginPlay"),
           node(registry, "reg", typeId, {
-            "default:material": "bloom",
+            [`default:${pinId}`]: "held",
           }),
         ],
         edges: [
@@ -90,12 +97,32 @@ describe("scene-layer nodes", () => {
       };
       const diagnostics = validateGraphs([graph], {
         assetGuid: "a",
-        materialDomains: { bloom: "surface" },
+        materialDomains: { held: domain },
       });
-      expect(diagnostics.filter((entry) => entry.code === "scene-layer.postProcessDomain").map((entry) => entry.message))
-        .toEqual(["Post-processing requires a postProcess Material (got surface)"]);
+      expect(diagnostics.filter((entry) => entry.code === "material.pinDomain").map((entry) => [entry.pinId, entry.message]))
+        .toEqual([[pinId, message]]);
     },
   );
+
+  it.each([
+    ["decals.spawn", "material", "decal"],
+    ["material.setMaterialInstance", "instance", "surface"],
+  ])("accepts a %s %s pin holding a %s Material", (typeId, pinId, domain) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "reg", typeId, { [`default:${pinId}`]: "held" }),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
+      ],
+    };
+    const diagnostics = validateGraphs([graph], { assetGuid: "a", materialDomains: { held: domain } });
+    expect(diagnostics.filter((entry) => entry.code === "material.pinDomain")).toEqual([]);
+  });
 
   it.each([
     ["scene.registerPostProcess", "registerScenePostProcess"],
@@ -160,7 +187,7 @@ describe("scene-layer nodes", () => {
       materialDomains: { bloom: "postProcess" },
     });
     expect(
-      diagnostics.filter((entry) => entry.code === "scene-layer.postProcessDomain"),
+      diagnostics.filter((entry) => entry.code === "material.pinDomain"),
     ).toEqual([]);
   });
 
@@ -186,7 +213,7 @@ describe("scene-layer nodes", () => {
       materialDomains: { bloom: "surface" },
     });
     expect(
-      diagnostics.filter((entry) => entry.code === "scene-layer.postProcessDomain"),
+      diagnostics.filter((entry) => entry.code === "material.pinDomain"),
     ).toEqual([]);
   });
 });

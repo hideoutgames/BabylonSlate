@@ -86,9 +86,10 @@ import {
 } from "../lib/component-property-rows";
 import {
   classParentLookup,
-  isPostProcessMaterialForPicker,
+  materialPickerEntries,
   materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
+import { materialSlotPickerAssets, materialSlotTakes } from "../lib/material-asset-filters";
 import { spatialTransformPropertyRows, type TransformRowsMode } from "../lib/transform-property-rows";
 import { selectionTransformPropertyRows } from "../lib/selection-transform-property-rows";
 import { scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
@@ -253,14 +254,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   }, [assetRegistry, materialDocuments, registryEpoch]);
   const postProcessPickerAssets = useMemo(() => {
     void registryEpoch;
-    return (assetRegistry?.list() ?? [])
-      .filter((asset) => isPostProcessMaterialForPicker(asset, materialDocuments))
-      .map((asset) => ({
-        guid: asset.header.guid,
-        name: asset.header.name,
-        type: asset.header.type,
-        path: asset.path,
-      }));
+    return materialPickerEntries(assetRegistry?.list() ?? [], materialDocuments, "postProcess");
   }, [assetRegistry, materialDocuments, registryEpoch]);
   const prefabDocuments = useOpenDocumentsOfKinds(PREFAB_KINDS);
   const sortingLayers =
@@ -632,6 +626,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     physicsWorld: scene.settings.physicsWorld,
     pixelMatchedCamera: projectPixelMatchedLens(projectDocument),
     onPickAsset: setAssetPick,
+    materialDomain: (guid) => materialDomains[guid],
     areaEmissionStatus,
     actorLabel: (targetId) => actorDisplayNames.get(targetId),
     actorComponents: (targetId) => scene.actors.find((candidate) => candidate.id === targetId)?.components ?? [],
@@ -886,9 +881,8 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         onOpenChange={(open) => {
           if (!open) setAssetPick(null);
         }}
-        assets={assetPick?.materialDomain ? pickerAssets.filter((asset) => materialDomains[asset.guid] === assetPick.materialDomain) : pickedMeshesHaveModels
-          ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
-          : pickerAssets}
+        assets={materialSlotPickerAssets(assetPick?.materialDomain, pickerAssets, (guid) => materialDomains[guid],
+          pickedMeshesHaveModels ? MODEL_MATERIALS_PICKER_ENTRY : undefined)}
         allowedTypes={assetPick?.allowedTypes}
         // Domain rows (Text Material) only accept Materials of that domain, so
         // Create New makes one; a parentless Material Instance would be refused.
@@ -898,7 +892,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
         allowNone
         onPick={(guid) => {
           if (!assetPick) return;
-          if (guid && assetPick.materialDomain && materialDomains[guid] !== assetPick.materialDomain) return;
+          if (!materialSlotTakes(assetPick.materialDomain, guid, (entry) => materialDomains[entry], [MODEL_MATERIALS_PICKER_ENTRY.guid])) return;
           const { componentId, property } = assetPick;
           batchSceneChange(() => {
             for (const { owner, component: picked } of pickTargets(componentId)) {

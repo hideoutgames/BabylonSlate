@@ -11,7 +11,6 @@ import { Button } from "@haptic/ui/components/button";
 import { FieldDescription } from "@haptic/ui/components/field";
 import {
   normalizeMaterialInstanceDocument,
-  parseMaterialDomain,
   type MaterialInstanceDocument,
 } from "@haptic/shader-graph";
 import {
@@ -21,7 +20,8 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useMaterialEditing } from "../context/material-editing-context";
-import { isMaterialSamplerTextureAsset } from "../lib/content-browser-helpers";
+import { isMaterialSamplerTextureAsset, materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import { MATERIAL_DOCUMENT_KINDS, useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import {
   materialInstanceParameterRows,
@@ -72,12 +72,18 @@ export function MaterialInstanceDetailsPanel(_props: IDockviewPanelProps) {
   const [pickParent, setPickParent] = useState(false);
   const [pickTexture, setPickTexture] = useState<string | null>(null);
   const assets = assetRegistry?.list() ?? [];
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const parent = assets.find((asset) => asset.header.guid === document.parentGuid);
   const parentIdentity = parent
     ? assetRowIdentity({ name: parent.header.name, type: parent.header.type })
     : {};
   const parameters = instance?.parameters ?? [];
   const unused = unusedMaterialInstanceOverrides(document, parameters);
+  // The Instance takes its root Material's domain (through any parent Instances); pickers read the cached copy.
+  const commitParent = (parentGuid: string | null) => {
+    const domain = parentGuid ? materialDomainsFromAssets(assets, materialDocuments)[parentGuid] : undefined;
+    commit({ ...document, parentGuid, domain: domain ?? document.domain });
+  };
   const textureIdentity = (guid: string) => {
     const header = assetRegistry?.getByGuid(guid)?.header;
     return assetRowIdentity(header ? { name: header.name, type: header.type } : { name: guid, type: "Texture" });
@@ -96,7 +102,7 @@ export function MaterialInstanceDetailsPanel(_props: IDockviewPanelProps) {
             description: "A Material or another Material Instance. The shader is compiled once for the root Material.",
             ...parentIdentity,
             onPick: () => setPickParent(true),
-            onChange: (parentGuid) => commit({ ...document, parentGuid }),
+            onChange: (parentGuid) => commitParent(parentGuid),
           }]}
         />
         <PropertySectionTitle>Parameters</PropertySectionTitle>
@@ -145,12 +151,7 @@ export function MaterialInstanceDetailsPanel(_props: IDockviewPanelProps) {
         title="Pick Parent Material"
         allowNone
         onPick={(parentGuid) => {
-          const picked = parentGuid ? assetRegistry?.getByGuid(parentGuid)?.header : undefined;
-          commit({
-            ...document,
-            parentGuid,
-            domain: picked ? parseMaterialDomain(picked.payload?.domain) : document.domain,
-          });
+          commitParent(parentGuid);
           setPickParent(false);
         }}
         data-testid="material-instance-parent-picker"
