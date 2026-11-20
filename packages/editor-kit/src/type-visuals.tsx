@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { EqualizerIcon } from "@phosphor-icons/react/dist/csr/Equalizer";
 import { FloppyDiskIcon } from "@phosphor-icons/react/dist/csr/FloppyDisk";
 import { PuzzlePieceIcon } from "@phosphor-icons/react/dist/csr/PuzzlePiece";
+import { StickerIcon as PhosphorStickerIcon } from "@phosphor-icons/react/dist/csr/Sticker";
 import {
   IconAdjustmentsAlt,
   IconCube3dSphere,
@@ -74,6 +75,7 @@ import {
   PaintbrushIcon,
   PersonStandingIcon,
   PlugIcon,
+  ProjectorIcon,
   RectangleHorizontalIcon,
   Rows3Icon,
   SaveIcon,
@@ -186,6 +188,7 @@ const CURVE_GLYPH = tablerGlyph(IconEaseInOutControlPoints);
 const EQUALIZER_GLYPH = phosphorGlyph(EqualizerIcon);
 const PUZZLE_GLYPH = phosphorGlyph(PuzzlePieceIcon);
 const FLOPPY_GLYPH = phosphorGlyph(FloppyDiskIcon);
+const DECAL_GLYPH = phosphorGlyph(PhosphorStickerIcon);
 
 export type TypeVisualQuery = {
   assetType?: string;
@@ -401,7 +404,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   LightComponent: LightbulbIcon,
   AreaRectLightComponent: RectangleHorizontalIcon,
   FogVolumeComponent: CloudIcon,
-  DecalComponent: Layers2Icon,
+  DecalComponent: DECAL_GLYPH,
   MirrorComponent: FlipHorizontal2Icon,
   ReflectionProbeComponent: ApertureIcon,
   OutlineComponent: SquareDashedIcon,
@@ -428,7 +431,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   Scene: LayersIcon,
   Graph: FileJsonIcon,
   Texture: PHOTO_GLYPH,
-  RenderTarget: CameraIcon,
+  RenderTarget: ProjectorIcon,
   RenderTargetTexture: ImageIcon,
   Material: SPHERE_GLYPH,
   MaterialInstance: SPHERE_2_GLYPH,
