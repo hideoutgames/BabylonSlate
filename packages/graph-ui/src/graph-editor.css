@@ -619,7 +619,8 @@
 
 /*
  * Cut Links: the cursor is the tool's icon (`--graph-cut-cursor`, set while the tool is on) over
- * the canvas, wires, pins and knots. Hovering what a click removes draws it in the destructive colour.
+ * the canvas, wires, pins and knots. Hovering what a click removes, or crossing it with a held drag
+ * (`data-cut-pending`), draws it in the destructive colour.
  */
 [data-graph-tool="cut"] :is(
   .react-flow__pane,
@@ -634,27 +635,28 @@
   cursor: var(--graph-cut-cursor) 10 10, crosshair !important;
 }
 
-[data-graph-tool="cut"] .graph-editor-canvas .react-flow__edge:hover .react-flow__edge-path {
+[data-graph-tool="cut"] .graph-editor-canvas .react-flow__edge:is(:hover, [data-cut-pending]) .react-flow__edge-path {
   stroke: var(--destructive) !important;
   stroke-width: calc(var(--graph-wire-exec, 5px) + 2px) !important;
 }
 
-[data-graph-tool="cut"] .graph-editor-canvas .react-flow__handle:hover .graph-pin-visual {
+[data-graph-tool="cut"] .graph-editor-canvas .react-flow__handle:is(:hover, [data-cut-pending]) .graph-pin-visual {
   border-radius: 9999px;
   outline: 2px solid var(--destructive);
   outline-offset: 2px;
 }
 
-[data-graph-tool="cut"] .graph-editor-canvas .react-flow__handle:hover:not(:has(.graph-pin-visual)) {
+[data-graph-tool="cut"] .graph-editor-canvas .react-flow__handle:is(:hover, [data-cut-pending]):not(:has(.graph-pin-visual)) {
   border-radius: 4px;
   box-shadow: 0 0 0 2px var(--destructive);
 }
 
-[data-graph-tool="cut"] .graph-editor-canvas .graph-reroute-knot:hover:not(:has(.react-flow__handle:hover)) {
+[data-graph-tool="cut"] .graph-editor-canvas .graph-reroute-knot:hover:not(:has(.react-flow__handle:hover)),
+[data-graph-tool="cut"] .graph-editor-canvas .react-flow__node[data-cut-pending] .graph-reroute-knot {
   /* Over the knot's inline outline in its carried colour. */
   box-shadow: 0 0 0 2px var(--destructive) !important;
 }
 
-[data-graph-tool="cut"] .graph-editor-canvas .anim-transition-badge:hover {
+[data-graph-tool="cut"] .graph-editor-canvas .anim-transition-badge:is(:hover, [data-cut-pending]) {
   background: var(--destructive);
 }
