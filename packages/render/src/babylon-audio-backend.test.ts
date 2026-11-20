@@ -20,7 +20,7 @@ const audio = vi.hoisted(() => {
     createBus: vi.fn(async () => ({ dispose: vi.fn() })),
     createBuffer: vi.fn(async (source: ArrayBuffer) => ({ length: source.byteLength, channelCount: 1 })),
     createSound: vi.fn(async () => sound()),
-    createStreamingSound: vi.fn(async (_name: string, _source: unknown) => sound()),
+    createStreamingSound: vi.fn<(...args: unknown[]) => Promise<ReturnType<typeof sound>>>(async () => sound()),
   };
 });
 vi.mock("@babylonjs/core/AudioV2", () => ({
