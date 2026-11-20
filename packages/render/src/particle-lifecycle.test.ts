@@ -899,17 +899,34 @@ describe("Spawn Emitter", () => {
       { id: "e-one-spawn", sourceNodeId: "one", sourcePinId: "out", targetNodeId: "spawn", targetPinId: "condition" },
     );
   };
-  function spawnService(edit: (document: ParticleGraphDocument) => void, extra: Record<string, ParticleLibraryEmitter> = { spark }) {
+  /** With `shared`, one Material per instance key, held while any lease of it is, as the Material library keeps them. */
+  function spawnService(edit: (document: ParticleGraphDocument) => void, extra: Record<string, ParticleLibraryEmitter> = { spark }, shared = false) {
     const host = createTestEngine();
     const diagnostics: Array<{ code: string; assetGuid?: string }> = [];
     const leases: string[] = [];
+    const materials = new Map<string, { resource: NodeMaterial; holders: number }>();
     const service = new ParticleService({ scene: host.scene, gpuSupported: false,
       acquireMaterial: (_guid, owner) => {
         leases.push(owner.instanceKey);
-        const resource = new NodeMaterial("spawn test material", owner.scene);
-        resource.mode = NodeMaterialModes.Particle;
-        resource.createEffectForParticles = () => {};
-        return { key: `material:${owner.instanceKey}`, resource, release: () => resource.dispose() };
+        let entry = shared ? materials.get(owner.instanceKey) : undefined;
+        if (!entry) {
+          const resource = new NodeMaterial("spawn test material", owner.scene);
+          resource.mode = NodeMaterialModes.Particle;
+          resource.createEffectForParticles = () => {};
+          entry = { resource, holders: 0 };
+          if (shared) materials.set(owner.instanceKey, entry);
+        }
+        const held = entry;
+        held.holders += 1;
+        let released = false;
+        return { key: `material:${owner.instanceKey}`, resource: held.resource, release: () => {
+          if (released) return;
+          released = true;
+          held.holders -= 1;
+          if (held.holders > 0) return;
+          materials.delete(owner.instanceKey);
+          held.resource.dispose();
+        } };
       },
       onDiagnostic: (diagnostic) => diagnostics.push(diagnostic) });
     cleanups.push(() => { service.dispose(); host.scene.dispose(); host.engine.dispose(); });
@@ -953,6 +970,18 @@ describe("Spawn Emitter", () => {
     await until(scene, frame, () => scene.particleSystems.slice(1).every((system) => system.isStarted()));
     // Limit 2 holds while both play.
     expect(spawnedNodes(scene)).toHaveLength(2);
+  });
+
+  it("binds each spawn's Material at once once the trigger has warmed it: no readiness check joins the Scene for a spawn", async () => {
+    const { scene, frame } = spawnService(firing({ limit: 2 }), { spark }, true);
+    const parent = scene.particleSystems[0] as ParticleSystem;
+    await vi.waitFor(() => expect(parent.isStarted()).toBe(true));
+    const checks = vi.spyOn(scene, "addIsReadyCheck");
+    simulate([parent], 5);
+    frame();
+    expect(scene.particleSystems).toHaveLength(3);
+    await until(scene, frame, () => scene.particleSystems.slice(1).every((system) => system.isStarted()));
+    expect(checks).not.toHaveBeenCalled();
   });
 
   it("waits Min Interval of simulated time, runs one Duration, drains and is disposed", async () => {
