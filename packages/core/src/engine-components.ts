@@ -77,6 +77,7 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "2DTextComponent", placement: "overlay" },
   { classId: "2DRichTextComponent", placement: "overlay" },
   { classId: "2DPanelComponent", placement: "overlay" },
+  { classId: "2DPostProcessingPanelComponent", placement: "overlay" },
 ] as const satisfies readonly { readonly classId: string; readonly placement: EngineComponentPlacement }[];
 
 export type EngineComponentClassId = (typeof ENGINE_COMPONENT_DESCRIPTORS)[number]["classId"];

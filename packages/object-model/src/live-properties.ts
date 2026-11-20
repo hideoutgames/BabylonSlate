@@ -1,4 +1,4 @@
-import { isOverlayLayoutClass, supportsOverlayVisualStyle, timelineValueTypeFor } from "@haptic/core";
+import { isOverlayLayoutClass, POST_PROCESSING_PANEL_CLASS_ID, supportsOverlayVisualStyle, timelineValueTypeFor } from "@haptic/core";
 import type { EngineScriptVariable } from "./engine-script-api";
 
 /**
@@ -36,6 +36,8 @@ export function engineComponentPropertyCapability(
   if (!LIVE_SCALAR_TYPE_IDS.has(variable.typeId) || variable.container === "map") return undefined;
   if (classId === "ColliderComponent") return "rebuild";
   if (classId === "AudioComponent" && variable.propertyKey === "volume") return "live";
+  // The runtime sends a Post Processing Panel's list again whenever Enabled or its Material changes.
+  if (classId === POST_PROCESSING_PANEL_CLASS_ID) return variable.propertyKey === "enabled" || variable.propertyKey === "materialGuid" ? "live" : undefined;
   if (!LIVE_COMPONENTS.has(classId)) return undefined;
   if (MESH_COMPONENTS.has(classId) && !LIVE_MESH_PROPERTIES.has(variable.propertyKey)) return undefined;
   return "live";

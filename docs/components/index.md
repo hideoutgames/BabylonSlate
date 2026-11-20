@@ -93,6 +93,7 @@ These components work only in Scene Layers.
 | [2D Texture](2d-texture.md) | Draws a Texture as a flat image. |
 | [2D Material](2d-material.md) | Draws a Material as a flat square. |
 | [2D Panel](2d-panel.md) | A stretchable background that keeps its corners intact, from a Texture or a Material. |
+| [Post Processing Panel](post-processing-panel.md) | Runs a post-process Material over the elements inside its rectangle. |
 | [2D Text](2d-text.md) | Draws text from a Font. |
 | [2D Rich Text](2d-rich-text.md) | Draws text with inline formatting, images and animated letters. |
 | [2D Painter](2d-painter.md) | A drawing surface for lines, shapes and paths that you draw from a script. |

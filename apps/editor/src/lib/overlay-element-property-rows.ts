@@ -1,6 +1,7 @@
 import {
   parseJoystick2DProperties,
   parseOverlayPanelProperties,
+  parsePostProcessingPanelProperties,
   SCENE_LAYER_ANCHOR_LABELS,
   SCENE_LAYER_ANCHORS,
   SCENE_LAYER_HIT_TEST_LABELS,
@@ -130,6 +131,31 @@ export function visual2DPropertyRows(
         ...(component.classId === "2DButtonComponent" ? ["focusEnabled", "focusInitial", "focusUp", "focusDown", "focusLeft", "focusRight", "focused"] : []),
       ]),
     ),
+  ];
+}
+
+export function postProcessingPanelPropertyRows(
+  actorId: string,
+  component: SerializedComponent,
+  update: ComponentPropertyUpdate,
+  context: ComponentPropertyContext,
+): PropertyRow[] {
+  const parsed = parsePostProcessingPanelProperties(component.properties);
+  return [
+    {
+      kind: "boolean",
+      id: rowId(actorId, component.id, "enabled"),
+      label: "Enabled",
+      value: parsed.enabled,
+      description: "Off, the actors inside draw as under a plain parent, at no extra cost.",
+      onChange: (value) => update("enabled", value),
+    },
+    {
+      ...assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context,
+        "Pick Post-Process Material", "None", "postProcess"),
+      description: "Runs in Play over this actor and everything under it, cut to the panel's rectangle.",
+    },
+    ...genericRows(actorId, component, update, new Set(["enabled", "materialGuid"])),
   ];
 }
 

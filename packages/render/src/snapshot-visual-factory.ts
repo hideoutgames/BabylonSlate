@@ -295,7 +295,8 @@ export function createPlayMesh(
   // A part carries its own Shading Mode; the slot's single visual, the command's.
   const shadingMode = (meshName === undefined ? binding?.meshSorting.get(slotId)?.shadingMode : illuminationPart?.shadingMode) ?? "2d";
   if (meshKind === "dynamicRuntimeMesh") return finishPlayWorldMesh(createDynamicRuntimeMesh(scene, name, dynamicMesh));
-  if (meshKind === "2dlayout") {
+  // A layout container and a Post Processing Panel draw nothing themselves: an empty node carries the actor's pose.
+  if (meshKind === "2dlayout" || meshKind === "2dpostprocesspanel") {
     const mesh = new Mesh(name, scene);
     mesh.isPickable = false;
     return mesh;

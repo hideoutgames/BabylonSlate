@@ -258,6 +258,7 @@ export function materialAssetGuidsFromScene(
     ...componentGuidsFromScene(scene, "2DJoystickComponent", ["backgroundMaterialGuid", "joystickMaterialGuid"]),
     ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "2DPanelComponent", ["materialGuid"]),
+    ...componentGuidsFromScene(scene, "2DPostProcessingPanelComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "2DTextComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "2DRichTextComponent", ["materialGuid"]),
   ]) {

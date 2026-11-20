@@ -105,6 +105,20 @@ describe("typed asset dependencies", () => {
     expect(header.requiredDependencies).toEqual(["private-texture", "replacement", "surface"]);
   });
 
+  it("ships a Post Processing Panel's Material and its instance textures with the Scene Layer, switched off or not", () => {
+    const metadata = collectAssetDependencyMetadata("SceneLayer", {
+      actors: [{ classId: "engine:Actor", components: [
+        { classId: "2DPostProcessingPanelComponent", properties: { enabled: true, materialGuid: "blur-pass" }, materialInstance: {
+          materialGuid: "blur-pass", parameters: { Mask: { kind: "texture", textureAssetGuid: "mask-texture" } },
+        } },
+      ] }, { classId: "engine:Actor", components: [
+        { classId: "2DPostProcessingPanelComponent", properties: { enabled: false, materialGuid: "wobble-pass" } },
+        { classId: "2DPostProcessingPanelComponent", properties: { enabled: true, materialGuid: null } },
+      ] }],
+    });
+    expect([...metadata.requiredDependencies].sort()).toEqual(["blur-pass", "mask-texture", "wobble-pass"]);
+  });
+
   it("collects typed graph literals, nested structure collections and selected classes without treating free text as references", () => {
     const metadata = collectAssetDependencyMetadata("Class", {
       nodes: [{ id: "spawn", type: "spawn", data: { "default:class": "Enemy", asset: "bare-id-texture", Asset: "old-texture", text: "unrelated" } }], edges: [],

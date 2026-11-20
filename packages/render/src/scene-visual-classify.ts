@@ -4,7 +4,7 @@
  */
 import {
   identitySerializedTransform, isOverlayLayoutClass, isSceneLayerAnchorActor, isUIControl2DClass, MIRROR_CLASS_ID,
-  OVERLAY_LAYOUT_CLASSES, SPRING_ARM_COMPONENT_CLASS_ID, UI_CONTROL_2D_CLASS_IDS, waterKindForClass, type SerializedActor,
+  OVERLAY_LAYOUT_CLASSES, POST_PROCESSING_PANEL_CLASS_ID, SPRING_ARM_COMPONENT_CLASS_ID, UI_CONTROL_2D_CLASS_IDS, waterKindForClass, type SerializedActor,
   type SerializedComponent, type SerializedTransform,
 } from "@haptic/core";
 import { authoredComponentActorTransform } from "./authored-transform-matrices";
@@ -18,6 +18,8 @@ export function stringProp(value: unknown): string | null {
 export const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "2DPainterComponent",
   ...OVERLAY_LAYOUT_CLASSES,
+  // Its rectangle, invisible, so the 2D box sizes it as it sizes a 2D Panel.
+  POST_PROCESSING_PANEL_CLASS_ID,
   "DynamicRuntimeMeshComponent",
   "CableComponent",
   MIRROR_CLASS_ID,
@@ -248,7 +250,7 @@ export function hasSurfaceVisual(actor: SerializedActor): boolean {
 export function helperBillboardIconOf(
   actor: SerializedActor,
 ): EditorBillboardIcon | null {
-  if (actor.components.some(c => isOverlayLayoutClass(c.classId))) return null;
+  if (actor.components.some(c => isOverlayLayoutClass(c.classId) || c.classId === POST_PROCESSING_PANEL_CLASS_ID)) return null;
   if (isSceneLayerAnchorActor(actor)) return null;
   if (actor.components.some((component) => component.classId === "SceneStreamingComponent")) return "default";
   if (hasSurfaceVisual(actor)) return null;
@@ -286,7 +288,7 @@ export function needsOriginRoot(
 ): boolean {
   const visuals = visualComponentsOf(actor, allActors);
   return (
-    actor.components.some(c => isOverlayLayoutClass(c.classId)) ||
+    actor.components.some(c => isOverlayLayoutClass(c.classId) || c.classId === POST_PROCESSING_PANEL_CLASS_ID) ||
     helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
     visuals.some((component) => component.classId === "CableComponent" || component.classId === MIRROR_CLASS_ID) ||
