@@ -541,6 +541,8 @@ export class SceneLayerCompositor {
   render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {
     this.resize();
     this.heldDrawn = false;
+    // With no layer left, an ended stack's last composite has nothing to stand in for.
+    if (this.byId.size === 0) this.releaseHeld();
     if (this.stack) this.renderThroughStack(this.stack, presentingLayers, draw);
     else this.renderDirect(presentingLayers, draw);
   }
