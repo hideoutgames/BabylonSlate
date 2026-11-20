@@ -9,7 +9,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { normalizeShadowSettings, SHADOW_HALF_TILE_CASCADES, type ShadowProfile } from "@haptic/core";
 import { planShadowAdmission, type ShadowAdmissionBudget, type ShadowAdmissionDecision } from "./shadow-admission-plan";
 import { cascadeTileSizes, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge, shadowAtlasEdgeLimit } from "./shadow-atlas";
-import type { ShadowEntry } from "./shadow-entry";
+import { allocationRequestKey, type ShadowEntry } from "./shadow-entry";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -267,5 +267,23 @@ describe("First Cascade Detail", () => {
         .decisions.map(({ mapSize }) => mapSize);
     expect(sizes()).toEqual([2048, 4096, 4096, 4096]);
     expect(sizes(2)).toEqual([2048, 4096, 4096, 2048]);
+  });
+
+  it("keeps a sun's reduced or recovered size only while First Cascade Detail is unchanged", () => {
+    // The break: the level alone deciding whether a smaller map or a failed allocation still applies, so a sun reduced
+    // at twice the map size stays reduced after going back to the map size.
+    const sun = new DirectionalLight("sun", Vector3.Down(), scene());
+    const high = (firstCascadeScale: 1 | 2) =>
+      normalizeShadowSettings({ profile: "high", mapSize: 2048, cascades: 4, maxLocalLights: 8, localMapSize: 2048, firstCascadeScale });
+    const sunSize = (held: ShadowEntry, firstCascadeScale: 1 | 2) => planShadowAdmission({
+      entries: new Map([[sun, held]]), settings: high(firstCascadeScale), camera: null, previousCamera: null, at: 0,
+      budget: budget(8192), measure: () => 0,
+    }).decisions[0]!.mapSize;
+    // A map built smaller under twice the map size.
+    const reduced = () => ({ ...entry(sun), generator: { mapSize: 1024 } as never, settings: high(2) });
+    expect([sunSize(reduced(), 2), sunSize(reduced(), 1)]).toEqual([1024, 2048]);
+    // A recovery from an allocation failure under twice the map size.
+    const recovered = () => ({ ...entry(sun), recovery: { requestKey: allocationRequestKey(sun, high(2)), mapSize: 1024, error: "out of memory" } });
+    expect([sunSize(recovered(), 2), sunSize(recovered(), 1)]).toEqual([1024, 2048]);
   });
 });
