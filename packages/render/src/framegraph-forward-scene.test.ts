@@ -2462,7 +2462,7 @@ it("splits ForwardSceneFrameGraph for projected decals only while decals exist a
   camera.position.set(0, 2, -10);
   camera.setTarget(new Vector3(0, 0, 0));
   updateSceneRenderingSettings(scene, {
-    effects: { ...DEFAULT_RENDER_EFFECTS, toneMapping: { ...DEFAULT_RENDER_EFFECTS.toneMapping, enabled: false } },
+    effects: { ...DEFAULT_RENDER_EFFECTS, toneMapping: "none" },
     quality: {
       ...RENDER_QUALITY_PROFILES.low,
       postprocessing: { ...RENDER_QUALITY_PROFILES.low.postprocessing, antiAliasing: "off" },

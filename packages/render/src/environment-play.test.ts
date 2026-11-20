@@ -16,7 +16,7 @@ it("realizes terrain heights and instanced foliage from Play parts before publis
     const transform = identitySerializedTransform();
     applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "landscape", meshAssetGuid: null, parts: [
       { componentId: "ground", meshKind: "landscape", meshAssetGuid: null, ...transform, landscape: parseLandscapeProperties({ subdivisions: 4, heights: Array(25).fill(2) }) },
-      { componentId: "plants", meshKind: "foliage", meshAssetGuid: null, ...transform, foliage: { groupId: "trees", batches: [{ modelGuid: "tree", materialGuid: null, transforms: [transform, { ...transform, position: [3, 0, 0] }] }] } },
+      { componentId: "plants", meshKind: "foliage", meshAssetGuid: null, ...transform, foliage: { groupId: "trees", batches: [{ modelGuid: "tree", materialGuid: null, cullDistance: 120, fadeRange: 15, shadowDistance: 45, transforms: [transform, { ...transform, position: [3, 0, 0] }] }] } },
     ] });
     await binding.slotAnimLoads?.get(0);
     const root = binding.meshes.get(0)!;

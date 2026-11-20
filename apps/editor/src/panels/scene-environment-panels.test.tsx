@@ -59,7 +59,7 @@ describe("Landscape Outliner", () => {
 
 describe("Foliage Groups", () => {
   it("keeps a Model's scale range ordered when Min passes Max", () => {
-    harness.groups = [{ id: "g", name: "Trees", models: [{ modelGuid: MODEL, materialGuid: null, weight: 1, minScale: 0.8, maxScale: 1.2 }] }];
+    harness.groups = [{ id: "g", name: "Trees", models: [{ modelGuid: MODEL, materialGuid: null, weight: 1, minScale: 0.8, maxScale: 1.2, cullDistance: 120, fadeRange: 15, shadowDistance: 45 }] }];
     setTools({ groupId: "g" });
     render(<FoliageGroupsPanel {...panel} />);
     expect(screen.getByTestId("foliage-model-0-name").textContent).toBe("Tree");

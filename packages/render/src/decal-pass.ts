@@ -7,7 +7,7 @@ import type { FrameGraphObjectList } from "@babylonjs/core/FrameGraph/frameGraph
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
-import type { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/culling/cullObjectsTask";
+import type { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Material } from "@babylonjs/core/Materials/material";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
@@ -553,6 +553,9 @@ export class SceneDecalHost {
         uniformBuffersNames: uniformBuffers,
         samplers,
         defines: defines.join("\n"),
+        fallbacks: null,
+        onCompiled: null,
+        onError: null,
         shaderLanguage: ShaderLanguage.GLSL,
       },
       this.scene.getEngine(),
