@@ -1576,7 +1576,7 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(readsInWindow[2 + index + 1]).toBeGreaterThan(0);
     // The GPU-busy probe stops before the row's window, without a GPU probe, and the next row's window starts it again.
     const at = editor.commands.indexOf("gpubusy off");
-    expect(editor.commands.slice(at, at + 5)).toEqual(["gpubusy off", "quality reset", "quality resolution scale 0.75", "gpuprobe on", "gpubusy on"]);
+    expect(editor.commands.slice(at, at + 5)).toEqual(["gpubusy off", "quality reset", "quality resolution scale 1", "gpuprobe on", "gpubusy on"]);
     expect(editor.commands.lastIndexOf("gpubusy off")).toBe(editor.commands.length - 3);
     // Every window's long frames, read over that window on the Check's clock: Play's and each row's.
     expect(main!.play.longFrames).toMatchObject({ frames: 180, three: { render: 1 }, four: { none: 2 } });

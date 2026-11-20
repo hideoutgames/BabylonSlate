@@ -88,7 +88,8 @@ describe("rendering quality sessions", () => {
     expect(session.effective().shadows.distance).toBe(120);
     expect(session.effective().resolution.scale).toBe(0.5);
     session.execute(undefined, "reset");
-    expect(session.effective().resolution.scale).toBe(1);
+    // Back to the inherited Medium tier's scale.
+    expect(session.effective().resolution.scale).toBe(0.85);
   });
   it("reports each chosen tier even when two tiers share a setting value", () => {
     const session = new RenderingQualitySession();

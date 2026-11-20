@@ -156,7 +156,7 @@ describe("project schema", () => {
     const pixelArt = createEmptyProject("Pixels", { render: { width: 640, height: 360, blackBars: false }, pixelArt: true }).settings;
     expect(pixelArt.twoD).toMatchObject({ pixelPerfect: true, nearestTextures: true });
     expect(pixelArt.render).toMatchObject({ customResolution: true, width: 640, height: 360, blackBars: false, upscaling: "pixelated" });
-    expect(pixelArt.render.quality?.resolution).toEqual({ scale: 1, preset: "custom" });
+    expect(pixelArt.render.quality?.resolution).toEqual({ profile: "high", scale: 1, preset: "custom" });
     expect(pixelArt.render.quality?.postprocessing).toMatchObject({ antiAliasing: "off", preset: "custom" });
     const plain = createEmptyProject("Plain").settings;
     expect(plain.twoD).toMatchObject({ pixelPerfect: false, nearestTextures: false });
