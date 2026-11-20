@@ -310,5 +310,33 @@ it("updates FoliageFadePlugin uniforms per mesh across consecutive draws sharing
   ]);
 });
 
-
-
+it.each([
+  { largeWorld: false, eye: [1000, 2, 3] },
+  { largeWorld: true, eye: [0, 0, 0] },
+])("binds the fade eye in the space of the surface's world positions (Large World Rendering $largeWorld)", async ({ largeWorld, eye }) => {
+  const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
+  const { CreateBox } = await import("@babylonjs/core/Meshes/Builders/boxBuilder");
+  const { Scene } = await import("@babylonjs/core/scene");
+  const { createHeadlessEngine } = await import("./large-world");
+  const engine = createHeadlessEngine();
+  const scene = new Scene(engine, { useFloatingOrigin: largeWorld });
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  // Far from the origin: with the floating origin, vPositionW is relative to this eye.
+  const camera = new FreeCamera("cam", new Vector3(1000, 2, 3), scene);
+  camera.getViewMatrix();
+  scene.activeCamera = camera;
+  const material = new StandardMaterial("foliage", scene);
+  const mesh = CreateBox("fade", { size: 1 }, scene);
+  mesh.material = material;
+  mesh.metadata = { hapticFoliageFade: [85, 100] };
+  expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!, false)).toBe(true);
+  const ubo = (material as unknown as { _uniformBuffer: { updateFloat3: (name: string, x: number, y: number, z: number) => void } })._uniformBuffer;
+  const eyes: number[][] = [];
+  const update = ubo.updateFloat3.bind(ubo);
+  vi.spyOn(ubo, "updateFloat3").mockImplementation((name: string, x: number, y: number, z: number) => {
+    if (name === "hapticFoliageCamera") eyes.push([x, y, z]);
+    update(name, x, y, z);
+  });
+  material.bindForSubMesh(mesh.getWorldMatrix(), mesh, mesh.subMeshes[0]!);
+  expect(eyes).toEqual([eye]);
+});

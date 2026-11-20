@@ -5,12 +5,13 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import { registerPersistentMaterialPlugin } from "./material-plugin-registration";
 
 export type FoliageFadeRange = readonly [fadeStart: number, fadeEnd: number];
 
-/** Read the per-cell dither fade range `[fadeStart, cullDistance]` attached by `FoliageDistanceController`, or null. */
+/** The per-cell dither fade range `[fadeStart, cullDistance]` `updateFoliageDistances` attached, or null. */
 export function foliageFadeForMesh(mesh: AbstractMesh | null | undefined): FoliageFadeRange | null {
   const value = (mesh?.metadata as { hapticFoliageFade?: unknown } | null | undefined)?.hapticFoliageFade;
   if (!Array.isArray(value) || value.length < 2) return null;
@@ -18,6 +19,19 @@ export function foliageFadeForMesh(mesh: AbstractMesh | null | undefined): Folia
   const end = Number(value[1]);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= 0) return null;
   return [start, end];
+}
+
+const eyeScratch = new Vector3();
+
+/**
+ * The eye the fade measures from, in the space of the surface's `vPositionW`: the eye Babylon binds as `vEyePosition`
+ * (the view's camera, or the position a mirror or probe forces), less the floating origin. With Large World Rendering
+ * on, world positions are relative to the eye, so this is zero; off, it is the eye itself.
+ */
+export function foliageFadeEye(scene: Scene): Vector3 {
+  const eye = scene.bindEyePosition(null);
+  const origin = scene.floatingOriginOffset;
+  return eyeScratch.copyFromFloats(eye.x - origin.x, eye.y - origin.y, eye.z - origin.z);
 }
 
 /**
@@ -73,8 +87,8 @@ export class FoliageFadePlugin extends MaterialPluginBase {
       return;
     }
     uniformBuffer.updateFloat2("hapticFoliageFade", fade[0], fade[1]);
-    const cam = scene.activeCamera?.globalPosition;
-    uniformBuffer.updateFloat3("hapticFoliageCamera", cam?.x ?? 0, cam?.y ?? 0, cam?.z ?? 0);
+    const eye = foliageFadeEye(scene);
+    uniformBuffer.updateFloat3("hapticFoliageCamera", eye.x, eye.y, eye.z);
   }
 
   override getCustomCode(type: string) {
