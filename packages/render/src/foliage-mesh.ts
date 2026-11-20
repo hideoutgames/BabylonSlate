@@ -113,6 +113,15 @@ function attachCellLods(cell: FoliageCellRecord, lodSet: ModelLodSet): void {
   }
 }
 
+/** Attach a resolved `ModelLodSet` to every registered foliage cell matching its source meshes. */
+export function attachFoliageLodSet(scene: Scene, lodSet: ModelLodSet): void {
+  const state = foliageDistancesByScene.get(scene);
+  if (!state) return;
+  for (const cell of state.cells) attachCellLods(cell, lodSet);
+  state.dirty = true;
+  updateFoliageDistances(scene, scene.activeCamera, true);
+}
+
 function pickFoliageLodIndex(
   dist: number,
   effectiveCull: number,

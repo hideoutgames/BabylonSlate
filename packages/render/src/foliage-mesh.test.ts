@@ -131,17 +131,19 @@ it("keeps an unchanged foliage visual across applies and rebuilds it when its pr
   expect(rebuilt.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)?.thinInstanceCount).toBe(2);
 });
 
-it("distance-culls foliage cells, drops distant shadows, and sets dither fade bands scaled by lodDistanceScale", async () => {
+it("distance-culls foliage cells, drops distant shadows without readiness churn, and sets dither fade bands scaled by lodDistanceScale", async () => {
   const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
+  const { RENDER_QUALITY_PROFILES } = await import("@haptic/core");
   const { updateSceneRenderingSettings } = await import("./render-settings");
+  const { onSceneReadinessDirty } = await import("./scene-readiness-signal");
   const { updateFoliageDistances } = await import("./foliage-mesh");
   const { engine, scene } = createTestEngine();
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   const camera = new FreeCamera("cam", new Vector3(0, 2, 0), scene);
-  camera.getWorldMatrix();
+  camera.getViewMatrix();
   scene.activeCamera = camera;
   // Low quality uses lodDistanceScale = 0.75.
-  updateSceneRenderingSettings(scene, { quality: { level: "low", custom: {} } });
+  updateSceneRenderingSettings(scene, { quality: RENDER_QUALITY_PROFILES.low });
 
   const assets = { modelSources: new Map([["grass", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) };
   const root = createFoliageMesh(scene, "meadow", {
@@ -167,6 +169,10 @@ it("distance-culls foliage cells, drops distant shadows, and sets dither fade ba
   const mid = byX(50);
   const far = byX(100);
 
+  const readinessEvents: string[] = [];
+  const unsubscribe = onSceneReadinessDirty(scene, (reason) => readinessEvents.push(reason));
+  disposers.push(unsubscribe);
+
   // Effective distances at Low (0.75): cull = 60 m, fadeStart = 45 m, shadow = 30 m.
   updateFoliageDistances(scene, camera, true);
   expect(near.isEnabled(false)).toBe(true);
@@ -181,11 +187,85 @@ it("distance-culls foliage cells, drops distant shadows, and sets dither fade ba
   expect(far.metadata?.slateShadowDistanceCulled).toBe(true);
   expect(far.metadata?.slateFoliageFade).toBeNull();
 
-  // Moving camera near the far cell restores drawing and shadows.
+  // Hidden actor visibility is independent of distance culling (setEnabled vs isVisible).
+  near.isVisible = false;
+
+  // Moving camera near the far cell restores drawing and shadows with zero readiness invalidations.
   camera.position.set(95, 2, 0);
-  camera.getWorldMatrix();
+  camera.getViewMatrix();
   updateFoliageDistances(scene, camera, true);
   expect(far.isEnabled(false)).toBe(true);
   expect(far.metadata?.slateShadowDistanceCulled).toBe(false);
   expect(near.isEnabled(false)).toBe(false);
+  expect(near.isVisible).toBe(false);
+  expect(readinessEvents).toEqual([]);
 });
+
+it("swaps pre-built per-cell LOD geometries while sharing thin-instance matrix buffers", async () => {
+  const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
+  const { RENDER_QUALITY_PROFILES } = await import("@haptic/core");
+  const { updateSceneRenderingSettings } = await import("./render-settings");
+  const { attachFoliageLodSet, updateFoliageDistances } = await import("./foliage-mesh");
+  const { engine, scene } = createTestEngine();
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  const camera = new FreeCamera("cam", new Vector3(0, 2, 0), scene);
+  camera.getViewMatrix();
+  scene.activeCamera = camera;
+  updateSceneRenderingSettings(scene, {
+    quality: { ...RENDER_QUALITY_PROFILES.medium, geometry: { ...RENDER_QUALITY_PROFILES.medium.geometry, lodDistanceScale: 1, autoLod: true } },
+  });
+
+  const assets = { modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) };
+  const root = createFoliageMesh(scene, "grove", {
+    batches: [{
+      modelGuid: "tree",
+      materialGuid: null,
+      cullDistance: 100,
+      fadeRange: 10,
+      shadowDistance: 50,
+      transforms: [
+        { ...identitySerializedTransform(), position: [5, 0, 0] },
+        { ...identitySerializedTransform(), position: [50, 0, 0] },
+      ],
+    }],
+  }, assets);
+  await foliagePreparation(root);
+
+  const cells = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances);
+  const near = cells.find((cell) => Math.abs(cell.getBoundingInfo().boundingSphere.centerWorld.x - 5) < 5)!;
+  const mid = cells.find((cell) => Math.abs(cell.getBoundingInfo().boundingSphere.centerWorld.x - 50) < 5)!;
+  const midLod0Geometry = mid.geometry!;
+  const midWorld3Wrapper = mid.getVertexBuffer("world3")!.getWrapperBuffer();
+  const midPosWrapper = mid.getVertexBuffer(VertexBuffer.PositionKind)!.getWrapperBuffer();
+
+  // Attach a synthetic 1-level ModelLodSet (simplified index buffer, same vertex pool).
+  attachFoliageLodSet(scene, {
+    levelsFor: () => [{
+      data: {
+        coverage: 0.25,
+        indices: new Uint16Array([0, 1, 2]),
+        subMeshes: [{ materialIndex: 0, verticesStart: 0, verticesCount: 3, indexStart: 0, indexCount: 3 }],
+        triangles: 1,
+      },
+    }],
+    indexBytes: 6,
+    dispose: () => {},
+  });
+
+  // Near cell stays on LOD0; mid cell (dist ~50 m >= 45 m * 1.05) switches to LOD1 sharing VB + world3.
+  expect(near.geometry!.id).not.toContain(":lod1");
+  expect(mid.geometry).not.toBe(midLod0Geometry);
+  expect(mid.geometry!.id).toContain(":lod1");
+  expect(mid.thinInstanceCount).toBe(1);
+  expect(mid.getVertexBuffer("world3")!.getWrapperBuffer()).toBe(midWorld3Wrapper);
+  expect(mid.getVertexBuffer(VertexBuffer.PositionKind)!.getWrapperBuffer()).toBe(midPosWrapper);
+
+  // Disabling autoLod returns every cell to LOD0 without disposing pre-built LOD1.
+  updateSceneRenderingSettings(scene, {
+    quality: { ...RENDER_QUALITY_PROFILES.medium, geometry: { ...RENDER_QUALITY_PROFILES.medium.geometry, lodDistanceScale: 1, autoLod: false } },
+  });
+  updateFoliageDistances(scene, camera, true);
+  expect(mid.geometry).toBe(midLod0Geometry);
+});
+
+
