@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createActor, DEFAULT_FOLIAGE_CULL_DISTANCE, DEFAULT_FOLIAGE_FADE_RANGE, DEFAULT_FOLIAGE_SHADOW_DISTANCE, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, resizeLandscape, type SerializedScene, type FoliageGroup, type SerializedComponent } from "@haptic/core";
+import { createActor, DEFAULT_FOLIAGE_CULL_DISTANCE, DEFAULT_FOLIAGE_FADE_RANGE, DEFAULT_FOLIAGE_SHADOW_DISTANCE, applyFoliageModelEdit, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, resizeLandscape, type SerializedScene, type FoliageGroup, type SerializedComponent } from "@haptic/core";
 import { AssetPicker, PanelFrame, PropertyGrid, PropertySectionTitle, ToolbarStrip, TreeView, TypeVisualIcon, resolveTypeVisual, useTouchUi, type PropertyRow } from "@haptic/editor-kit";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Badge } from "@haptic/ui/components/badge";
@@ -190,34 +190,13 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
     const nextModel = previous ? { ...previous, ...patch } : null;
     const nextGroup: FoliageGroup = { ...group, models: group.models.map((m, i) => i === index ? { ...m, ...patch } : m) };
     const nextGroups = groups.map((entry) => entry.id === nextGroup.id ? nextGroup : entry);
-    const distanceChanged = patch.cullDistance !== undefined || patch.fadeRange !== undefined || patch.shadowDistance !== undefined;
-    if (!distanceChanged || !previous || !nextModel) {
+    // The Material Override and distances reach the strokes already painted with this Model, in the same command.
+    const reachesStrokes = patch.materialGuid !== undefined || patch.cullDistance !== undefined || patch.fadeRange !== undefined || patch.shadowDistance !== undefined;
+    if (!reachesStrokes || !previous || !nextModel) {
       setGroups(nextGroups);
       return;
     }
-    const actors = scene.actors.map((actor) => {
-      let actorChanged = false;
-      const components = actor.components.map((component) => {
-        if (component.classId !== "FoliageComponent") return component;
-        const parsed = parseFoliageProperties(component.properties);
-        if (parsed.groupId !== group.id) return component;
-        let batchChanged = false;
-        const batches = parsed.batches.map((batch) => {
-          if (batch.modelGuid !== previous.modelGuid || batch.materialGuid !== previous.materialGuid) return batch;
-          batchChanged = true;
-          return {
-            ...batch,
-            cullDistance: nextModel.cullDistance,
-            fadeRange: nextModel.fadeRange,
-            shadowDistance: nextModel.shadowDistance,
-          };
-        });
-        if (!batchChanged) return component;
-        actorChanged = true;
-        return { ...component, properties: { ...parsed, batches } };
-      });
-      return actorChanged ? { ...actor, components } : actor;
-    });
+    const actors = applyFoliageModelEdit(scene.actors, group.id, previous, nextModel);
     void commit({ ...scene, actors, settings: { ...scene.settings, foliageGroups: nextGroups } });
   };
   return <PanelFrame className="scene-environment-panel"><div className="flex min-h-0 flex-1 flex-col">
@@ -255,9 +234,9 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
                 updateModel(index, min !== model.minScale ? { minScale, maxScale: Math.max(minScale, maxScale) } : { maxScale, minScale: Math.min(minScale, maxScale) });
               } },
               { id: "material", label: "Material Override", kind: "asset", value: model.materialGuid, displayLabel: assets.find((asset) => asset.guid === model.materialGuid)?.name, displayType: "Material", visual: { assetType: "Material" }, placeholder: "Model Materials", onPick: () => setPicker(index), onChange: (materialGuid) => updateModel(index, { materialGuid }) },
-              { id: "cullDistance", label: "Cull Distance", description: "Distance in meters beyond which foliage cells stop drawing; 0 never culls.", kind: "number", value: model.cullDistance, min: 0, max: 10000, onChange: (cullDistance) => updateModel(index, { cullDistance }) },
-              { id: "fadeRange", label: "Fade Range", description: "Distance in meters over which cells dither-fade out before Cull Distance.", kind: "number", value: model.fadeRange, min: 0, max: 1000, onChange: (fadeRange) => updateModel(index, { fadeRange }) },
-              { id: "shadowDistance", label: "Shadow Distance", description: "Distance in meters beyond which foliage cells stop casting shadows; 0 follows Cull Distance.", kind: "number", value: model.shadowDistance, min: 0, max: 10000, onChange: (shadowDistance) => updateModel(index, { shadowDistance }) },
+              { id: "cullDistance", label: "Cull Distance", description: "0 never culls.", kind: "number", unit: "m", value: model.cullDistance, min: 0, max: 10000, onChange: (cullDistance) => updateModel(index, { cullDistance }) },
+              { id: "fadeRange", label: "Fade Range", kind: "number", unit: "m", value: model.fadeRange, min: 0, max: 1000, onChange: (fadeRange) => updateModel(index, { fadeRange }) },
+              { id: "shadowDistance", label: "Shadow Distance", description: "0 follows Cull Distance.", kind: "number", unit: "m", value: model.shadowDistance, min: 0, max: 10000, onChange: (shadowDistance) => updateModel(index, { shadowDistance }) },
             ]} />
           </li>;
         })}
@@ -268,7 +247,7 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
     <AssetPicker open={picker !== null} onOpenChange={(open) => { if (!open) setPicker(null); }} title={picker === "model" ? "Add Foliage Model" : "Foliage Material"} assets={pickerAssets} allowedTypes={picker === "model" ? ["Model"] : ["Material", "MaterialInstance"]} allowNone={picker !== "model"} onPick={(guid) => {
       if (!group) return;
       if (picker === "model" && guid && assets.some((asset) => asset.guid === guid && asset.type === "Model")) update({ ...group, models: [...group.models, { modelGuid: guid, materialGuid: null, weight: 1, minScale: 0.8, maxScale: 1.2, cullDistance: DEFAULT_FOLIAGE_CULL_DISTANCE, fadeRange: DEFAULT_FOLIAGE_FADE_RANGE, shadowDistance: DEFAULT_FOLIAGE_SHADOW_DISTANCE }] });
-      else if (typeof picker === "number" && (!guid || surfaceMaterials.has(guid))) update({ ...group, models: group.models.map((model, i) => i === picker ? { ...model, materialGuid: guid } : model) });
+      else if (typeof picker === "number" && (!guid || surfaceMaterials.has(guid))) updateModel(picker, { materialGuid: guid });
       setPicker(null);
     }} />
   </div></PanelFrame>;
