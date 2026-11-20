@@ -341,18 +341,20 @@ function operationBlockName(id: string): string {
  * style, a text glyph's rectangles, colour and visibility) or requires its members to share (the lighting's Receive
  * Shadows, a text's atlas, mode and outline), and per-mesh ones of meshes that never
  * batch (bones, morphs, a lattice) or of a pass that draws no batch (a fragment output's geometry terms; its
- * logarithmic depth is the Scene's). A block that binds and is not listed keeps its Material out of batches.
+ * logarithmic depth is the Scene's), and a Scene Layer Multiply's layer kind (the Scene's: every member of a batch
+ * draws on one Scene). A block that binds and is not listed keeps its Material out of batches. Listed at the first
+ * compile, not as this module evaluates: a module cycle (the text block's, the unlit Material's) can leave a class
+ * undefined until then.
  */
-const BATCH_BINDINGS: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> = [
-  BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
-  ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
-];
+let batchBindings: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> | null = null;
 
 function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
-  return block.bind === NodeMaterialBlock.prototype.bind || BATCH_BINDINGS.some((known) => block instanceof known) ||
-    // The Scene's layer kind: every member of a batch draws on one Scene. Read at the call: the import cycle through
-    // the unlit Material leaves it undefined while this module first evaluates.
-    block instanceof LayerMultiplyBlock;
+  batchBindings ??= [
+    BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
+    ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
+    LayerMultiplyBlock,
+  ];
+  return block.bind === NodeMaterialBlock.prototype.bind || batchBindings.some((known) => block instanceof known);
 }
 
 /**
