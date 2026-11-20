@@ -33,8 +33,7 @@ async function run(page: Page, variant: EffectsComposeVariant, separateMarches: 
   return result;
 }
 
-const TARGETS = ["frame", "composed", "screenShadows", "occlusion", "fog"] as const;
-type Target = (typeof TARGETS)[number];
+type Target = "frame" | "composed" | "screenShadows" | "occlusion" | "fog";
 
 /**
  * Per variant, the targets a reader samples that frame: an idle march's target is read by no one (the objects bind the
