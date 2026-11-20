@@ -32,6 +32,7 @@ import {
 } from "@haptic/shader-graph";
 import { isBoundedMaterial, isDrawBatchMaterial, isDrawBatchTextMaterial } from "./draw-batch-world-block";
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
+import { materialProgramCensus } from "./material-program-census";
 import { blockAdapterFor } from "./material-block-registry";
 import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
 import { HapticLightingBlock } from "./haptic-lighting-block";
@@ -720,6 +721,38 @@ describe("material compiler", () => {
     const afterRelease = compile();
     await afterRelease.ready;
     expect(afterRelease.material.buildId).not.toBe(first.material.buildId);
+  });
+
+  it("counts an Engine's Material builds against the programs they share, the builds that adopted one and the rebuilds that compiled theirs again", async () => {
+    const scene = host();
+    const engine = scene.getEngine();
+    const compile = (doc: MaterialDocument, name: string) => {
+      const result = compileMaterialPlan(planFor(doc), { scene, name });
+      if (!result.ok) throw new Error("compile failed");
+      disposers.push(() => result.dispose());
+      return result;
+    };
+    const [first, sharer, other] = [compile(multiplyMaterial(), "material:census"), compile(multiplyMaterial(), "material:census"), compile(createDefaultMaterialDocument(), "material:other")];
+    await Promise.all([first.ready, sharer.ready, other.ready]);
+    expect(materialProgramCensus(engine)).toEqual({ builds: 3, programs: 2, adopted: 1, sameShaderRebuilds: 0 });
+    sharer.dispose();
+    other.dispose();
+    expect(materialProgramCensus(engine)).toMatchObject({ builds: 1, programs: 1, adopted: 1 });
+
+    // A texture that arrives rebuilds the Material under a new build id, though nothing in its shader text changed.
+    const texture = new Texture(null, scene, true, false);
+    disposers.push(() => texture.dispose());
+    let loaded = false;
+    vi.spyOn(texture, "isReady").mockImplementation(() => loaded);
+    const imported = compileMaterialPlan(planFor(createImportedMaterialDocument({ textureGuid: "albedo" })), { scene, name: "imported", resolveTexture: () => texture });
+    if (!imported.ok) throw new Error("compile failed");
+    disposers.push(() => imported.dispose());
+    await imported.ready;
+    const builtAs = imported.material.buildId;
+    loaded = true;
+    texture.onLoadObservable.notifyObservers(texture);
+    await vi.waitFor(() => expect(imported.material.buildId).not.toBe(builtAs));
+    expect(materialProgramCensus(engine)).toMatchObject({ builds: 2, programs: 2, sameShaderRebuilds: 1 });
   });
 
   it("carries a constant value onto its input block", () => {

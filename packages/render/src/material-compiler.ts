@@ -88,6 +88,7 @@ import { createDecalPlumbing } from "./decal-projection-block";
 import { MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
+import { noteAdoptedProgram, noteMaterialBuild, noteSameShaderRebuild } from "./material-program-census";
 
 /** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
 const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
@@ -868,6 +869,8 @@ export function compileMaterialPlan(
   let checkingShader = false;
   // Builds `rebuildWhenReady` started whose build observer has not run yet: the same plan, rebuilt for a loaded texture.
   let ownRebuilds = 0;
+  /** Each pending own rebuild's shader text before it, oldest first. */
+  const rebuiltFrom: Array<string | null> = [];
   let shaderTimer: ReturnType<typeof setTimeout> | undefined;
   let shaderProbe: Mesh | null = null;
   let failedShaderEffect: Effect | null = null;
@@ -930,6 +933,7 @@ export function compileMaterialPlan(
     buildError = message;
     // A failed build emits no build notification: the next one is not ours unless `rebuildWhenReady` starts it.
     ownRebuilds = 0;
+    rebuiltFrom.length = 0;
     const diagnostic: MaterialDiagnostic = { code: "material.compile.buildFailed", message, severity: "error" };
     if (buildState === "pending") {
       buildState = "failed";
@@ -942,6 +946,8 @@ export function compileMaterialPlan(
     configureSurface();
     if (ownRebuilds > 0) {
       ownRebuilds--;
+      const before = rebuiltFrom.shift();
+      if (typeof before === "string" && before === material.compiledShaders) noteSameShaderRebuild(scene.getEngine());
       // The plan's vertex stage is unchanged, so a cacheable shape stays so at its new build id.
       if (buildState === "ready" && cacheableShadowShape) registerCacheableShadowMaterial(material);
     }
@@ -1103,6 +1109,7 @@ export function compileMaterialPlan(
   }
 
   configureSurface();
+  noteMaterialBuild(material);
 
   const loadObservers: Array<() => void> = [];
   let rebuildQueued = false;
@@ -1124,6 +1131,8 @@ export function compileMaterialPlan(
     }
     const wasFrozen = material.isFrozen;
     if (wasFrozen) material.unfreeze();
+    // The census asks whether the rebuild changed the program at all (`sameShaderRebuilds`).
+    rebuiltFrom.push(nodeMaterialBuilt(material) ? material.compiledShaders : null);
     ownRebuilds++;
     try {
       material.build();
@@ -1131,6 +1140,7 @@ export function compileMaterialPlan(
       markCompiledMaterialDirty(material);
     } catch (error) {
       ownRebuilds = 0;
+      rebuiltFrom.length = 0;
       // Must not throw into Texture.onLoadObservable / onErrorObservable.
       options.onTextureError?.({
         code: "material.compile.buildFailed",
@@ -1334,6 +1344,7 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
       firstBuild = false;
       material.buildId = adopted = known.buildId;
       known.users.add(material);
+      noteAdoptedProgram(engine);
       return;
     }
     firstBuild = false;
@@ -1381,8 +1392,10 @@ function shareParticleProgram(material: NodeMaterial, key: string): void {
     firstBuild = false;
     shaders = material.compiledShaders;
     const known = registry.get(shaders);
-    if (known !== undefined) material.buildId = adopted = known;
-    else registry.set(shaders, material.buildId);
+    if (known !== undefined) {
+      material.buildId = adopted = known;
+      noteAdoptedProgram(engine);
+    } else registry.set(shaders, material.buildId);
   }, undefined, true);
 }
 
@@ -1426,6 +1439,11 @@ function textureErrorMessage(payload: unknown): string {
     }
   }
   return "Texture failed to load";
+}
+
+/** Whether a NodeMaterial's last build succeeded, so reading its `compiledShaders` does not build it again. */
+function nodeMaterialBuilt(material: NodeMaterial): boolean {
+  return (material as unknown as { _buildWasSuccessful?: boolean })._buildWasSuccessful === true;
 }
 
 /** Whether a NodeMaterial's build still waits for its blocks' shader code; Babylon ignores another build() until then. */
