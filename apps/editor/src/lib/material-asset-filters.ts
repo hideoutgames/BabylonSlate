@@ -71,30 +71,37 @@ export function graphPinMaterialDomain(nodeType: string): MaterialDomain | null 
   return MATERIAL_PIN_DOMAINS.get(nodeType)?.domain ?? null;
 }
 
+/** A domain recorded on a header or document, or undefined when none is (a header written without the editor's meta). */
+function recordedDomain(value: unknown): MaterialDomain | undefined {
+  return typeof value === "string" && value.length > 0 ? parseMaterialDomain(value) : undefined;
+}
+
 /**
  * Every Material's and Material Instance's domain by guid, from an open document first, else the saved header. A
- * Material without a stored domain is Surface, as it loads. An Instance takes its root's domain, followed through its
- * parents, so a root whose domain changed since the Instance was saved still decides; only a chain that reaches no
- * Material (a missing parent or a cycle) falls back to the domain the Instance cached.
+ * Material whose header records no domain is left out: its domain is unknown until it loads, so validation does not
+ * flag it and Surface slots take it (`materialDomainMatches`). An Instance takes its root's domain, followed through
+ * its parents, so a root whose domain changed since the Instance was saved still decides; only a chain that reaches no
+ * known Material (a missing parent, an unrecorded root or a cycle) falls back to the domain the Instance cached.
  */
 export function materialDomainsFromAssets(
   assets: ReadonlyArray<IndexedMaterialAsset>,
   openDocuments: OpenMaterialDocuments = [],
 ): Record<string, MaterialDomain> {
   const roots = new Map<string, MaterialDomain>();
-  const instances = new Map<string, { parentGuid: string | null; cached: MaterialDomain }>();
+  const instances = new Map<string, { parentGuid: string | null; cached: MaterialDomain | undefined }>();
   for (const asset of assets) {
     if (!isMaterialAssetType(asset.header.type)) continue;
     const open = openMaterialDocumentFor(asset, openDocuments);
-    const source = open && open.content && typeof open.content === "object"
-      ? (open.content as Record<string, unknown>)
-      : (asset.header.payload ?? {});
+    const opened = open && open.content && typeof open.content === "object";
+    const source = opened ? (open.content as Record<string, unknown>) : (asset.header.payload ?? {});
     if (asset.header.type === "Material") {
-      roots.set(asset.header.guid, parseMaterialDomain(source.domain));
+      // An open document always has a domain: it parses as it loads.
+      const domain = opened ? parseMaterialDomain(source.domain) : recordedDomain(source.domain);
+      if (domain) roots.set(asset.header.guid, domain);
       continue;
     }
     const parent = typeof source.parentGuid === "string" ? source.parentGuid.trim() : "";
-    instances.set(asset.header.guid, { parentGuid: parent || null, cached: parseMaterialDomain(source.domain) });
+    instances.set(asset.header.guid, { parentGuid: parent || null, cached: recordedDomain(source.domain) });
   }
   const domains: Record<string, MaterialDomain> = Object.fromEntries(roots);
   for (const [guid, instance] of instances) {
@@ -105,9 +112,15 @@ export function materialDomainsFromAssets(
       if (resolved) break;
       current = current === guid ? null : (instances.get(current)?.parentGuid ?? null);
     }
-    domains[guid] = resolved ?? instance.cached;
+    const domain = resolved ?? instance.cached;
+    if (domain) domains[guid] = domain;
   }
   return domains;
+}
+
+/** Whether a Material whose known domain is `held` (undefined: not recorded, which loads as Surface) draws in `domain`. */
+export function materialDomainMatches(held: string | undefined, domain: string): boolean {
+  return held === domain || (held === undefined && domain === "surface");
 }
 
 /** Picker entries for the Materials and Material Instances of `domain`. */
@@ -118,7 +131,7 @@ export function materialPickerEntries(
 ): Array<{ guid: string; name: string; type: string; path: string }> {
   const domains = materialDomainsFromAssets(assets, openDocuments);
   return assets
-    .filter((asset) => domains[asset.header.guid] === domain)
+    .filter((asset) => isMaterialAssetType(asset.header.type) && materialDomainMatches(domains[asset.header.guid], domain))
     .map((asset) => ({ guid: asset.header.guid, name: asset.header.name ?? asset.header.guid, type: asset.header.type, path: asset.path }));
 }
 
@@ -136,7 +149,7 @@ export function materialSlotTakes(
   also: readonly string[] = [],
 ): boolean {
   if (!domain || !guid || also.includes(guid)) return true;
-  return domainOf(guid) === domain;
+  return materialDomainMatches(domainOf(guid), domain);
 }
 
 /** The assets a slot's picker lists: only Materials of the slot's domain when it has one, after any picker-only entry. */
@@ -146,7 +159,7 @@ export function materialSlotPickerAssets<T extends { guid: string }>(
   domainOf: MaterialDomainLookup,
   leading?: T,
 ): T[] {
-  const offered = domain ? assets.filter((asset) => domainOf(asset.guid) === domain) : [...assets];
+  const offered = domain ? assets.filter((asset) => materialDomainMatches(domainOf(asset.guid), domain)) : [...assets];
   return leading ? [leading, ...offered] : offered;
 }
 
@@ -191,5 +204,5 @@ export function filterInspectorPinPickerAssets<
   const domain = graphPinMaterialDomain(options.nodeType);
   if (!domain) return [...assets];
   const domains = materialDomainsFromAssets(indexed, openDocuments);
-  return assets.filter((entry) => domains[entry.guid] === domain);
+  return assets.filter((entry) => materialDomainMatches(domains[entry.guid], domain));
 }

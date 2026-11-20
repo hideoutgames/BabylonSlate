@@ -23,7 +23,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { useSceneTools } from "../context/scene-tools-context";
 import { isMaterialAssetType, materialDomainsFromAssets } from "../lib/content-browser-helpers";
-import { materialSlotRowState } from "../lib/material-asset-filters";
+import { materialDomainMatches, materialSlotRowState } from "../lib/material-asset-filters";
 import { landscapeCellSizeDescription } from "../lib/landscape-property-rows";
 
 const NEW_LANDSCAPE_SIZE = 64;
@@ -176,7 +176,7 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
   const assets = (assetRegistry?.list() ?? []).map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
   const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
   const domainOf = (guid: string) => domains[guid];
-  const surfaceMaterials = new Set((assetRegistry?.list() ?? []).filter((entry) => domains[entry.header.guid] === "surface").map((entry) => entry.header.guid));
+  const surfaceMaterials = new Set((assetRegistry?.list() ?? []).filter((entry) => isMaterialAssetType(entry.header.type) && materialDomainMatches(domains[entry.header.guid], "surface")).map((entry) => entry.header.guid));
   const pickerAssets = assets.filter((asset) => picker === "model" ? asset.type === "Model" : surfaceMaterials.has(asset.guid));
   const totalWeight = group?.models.reduce((sum, model) => sum + Math.max(0, model.weight), 0) ?? 0;
   const createGroup = () => {
