@@ -59,6 +59,36 @@ export function isParticleMaterialAsset(asset: {
   );
 }
 
+/**
+ * The Material domain a scripting node's Material pin takes: Post Process for the post-process stack nodes, Decal for
+ * Spawn Decal. Null for any other node, whose pins take any Material.
+ */
+export function graphPinMaterialDomain(nodeType: string): "postProcess" | "decal" | null {
+  if (POST_PROCESS_MATERIAL_NODE_IDS.has(nodeType)) return "postProcess";
+  if (nodeType === "decals.spawn") return "decal";
+  return null;
+}
+
+/** Whether `asset` is a Material or Material Instance of `domain`, by its open document first, else its saved header. */
+export function isMaterialOfDomainForPicker(
+  asset: {
+    path: string;
+    header: { type: string; payload?: Record<string, unknown> };
+  },
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>,
+  domain: string,
+): boolean {
+  if (!isMaterialAssetType(asset.header.type)) return false;
+  const open = openMaterialDocumentFor(asset, openDocuments);
+  if (open && open.content && typeof open.content === "object") {
+    return (open.content as { domain?: unknown }).domain === domain;
+  }
+  return asset.header.payload?.domain === domain;
+}
+
 export function isPostProcessMaterialForPicker(
   asset: {
     path: string;
@@ -132,9 +162,10 @@ export function filterInspectorPinPickerAssets<
   }>,
   options: { nodeType: string },
 ): T[] {
-  if (!POST_PROCESS_MATERIAL_NODE_IDS.has(options.nodeType)) return [...assets];
+  const domain = graphPinMaterialDomain(options.nodeType);
+  if (!domain) return [...assets];
   return assets.filter((entry) => {
     const match = indexed.find((asset) => asset.header.guid === entry.guid);
-    return match ? isPostProcessMaterialForPicker(match, openDocuments) : false;
+    return match ? isMaterialOfDomainForPicker(match, openDocuments, domain) : false;
   });
 }

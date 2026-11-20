@@ -9,10 +9,11 @@ import {
   PinDefaultEditorContext, type PinDefaultEditorRenderer, type PinDefaultEditorRequest,
 } from "@haptic/graph-ui";
 import { pinDefaultPropertyKey, type PinType } from "@haptic/scripting";
-import { CREATE_OBJECT_NODE_ID, POST_PROCESS_MATERIAL_NODE_IDS } from "@haptic/scripting-nodes";
+import { CREATE_OBJECT_NODE_ID } from "@haptic/scripting-nodes";
 import { useRegistryState } from "./document-context";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import { classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
+import { graphPinMaterialDomain } from "../lib/material-asset-filters";
 import { assetPickerAllowedTypes, collectEnumMemberNames, dataNodePathOptions, pinDefaultPropertyRows } from "../lib/graph-inspector";
 import { MATERIAL_DOCUMENT_KINDS, useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { DataTreeEntryField } from "../components/data-tree-entry-picker";
@@ -103,7 +104,7 @@ export function GraphPinDefaultEditor({ request, catalogs, editorGraph: hostEdit
   const assets = useMemo(() => activePick?.kind === "asset"
     ? filterInspectorPinPickerAssets(catalogs.pickerAssets, catalogs.assets, catalogs.materialDocuments, { nodeType: request.nodeType ?? "" }) : [],
   [activePick, catalogs.pickerAssets, catalogs.assets, catalogs.materialDocuments, request.nodeType]);
-  const postProcess = POST_PROCESS_MATERIAL_NODE_IDS.has(request.nodeType ?? "");
+  const pinMaterialDomain = graphPinMaterialDomain(request.nodeType ?? "");
 
   if (pathOptions) return <div className="min-w-24 max-w-(--graph-pin-default-max-width)">
     <DataTreeEntryField {...pathOptions} value={typeof value === "string" ? value : ""} onChange={onChange}
@@ -119,7 +120,7 @@ export function GraphPinDefaultEditor({ request, catalogs, editorGraph: hostEdit
       <AssetPicker open={activePick?.kind === "asset"} onOpenChange={(open) => { if (!open) setPick(null); }}
         assets={assets} allowedTypes={activePick?.kind === "asset"
           ? assetPickerAllowedTypes(activePick.assetType) : undefined}
-        createOptions={postProcess ? { materialDomain: "postProcess" }
+        createOptions={pinMaterialDomain ? { materialDomain: pinMaterialDomain }
           : dataGraphAssetCreateOptions(request.nodeType ?? "", request.pin.id, request.nodeData)}
         allowNone onPick={commitPick} data-testid="graph-pin-asset-picker" />
     </div>

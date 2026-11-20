@@ -44,6 +44,12 @@ export const FEATURE_TEST_MATERIAL_NAMES = {
   overlayUnlit: "FT_MatOverlayUnlit",
   text: "FT_MatText",
   globalTint: "FT_MatGlobalTint",
+  decalLit: "FT_MatDecalLit",
+  decalLitInstance: "FT_MatDecalLitInstance",
+  decalGlow: "FT_MatDecalGlow",
+  decalMultiply: "FT_MatDecalMultiply",
+  decalMasked: "FT_MatDecalMasked",
+  decalOpaque: "FT_MatDecalOpaque",
 } as const;
 
 const NAMES = FEATURE_TEST_MATERIAL_NAMES;
@@ -69,8 +75,9 @@ export function featureTestMaterialAssetGuid(
 
 /**
  * Material Functions, Materials (every domain: surface, landscape, post
- * process, particle, text) and Material Instances (a chained surface pair and a
- * particle-domain instance). Fills every `ctx.assets.materials` key.
+ * process, particle, text, decal: one Decal root per Blend Mode) and Material
+ * Instances (a chained surface pair, a particle-domain instance and a decal
+ * instance). Fills every `ctx.assets.materials` key.
  *
  * Parameter names (override keys for instances, post-process entries,
  * scene-owned overrides and `material.set*Parameter` script nodes):
@@ -82,6 +89,8 @@ export function featureTestMaterialAssetGuid(
  * - postProcess: `Desaturation` (0..1), `Vignette` (0..1 edge darkening)
  * - overlayUnlit: `Tint` (color), `Opacity`, `Scroll Speed`
  * - landscape: none (see `landscapeMaterial` for the paint layer semantics)
+ * - decalLit: `Albedo` (texture), `Tint` (color), `Roughness`; decalGlow: `Glow Color` (color);
+ *   decalMultiply: `Stain Color` (color); decalMasked: `Cell Density`; decalOpaque: `Stripe Color` (color)
  */
 export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promise<void> {
   const colormap = requireRef(ctx.assets.textures.colormap, "the colormap Texture");
@@ -117,8 +126,22 @@ export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promis
   const landscape = await saveMaterial(ctx, NAMES.landscape, landscapeMaterial(NAMES.landscape));
   const overlayUnlit = await saveMaterial(ctx, NAMES.overlayUnlit, overlayUnlitMaterial(NAMES.overlayUnlit));
   await saveMaterial(ctx, NAMES.text, textMaterial(NAMES.text));
+  // Decal domain: one root per Blend Mode (each root is one program), lit and unlit, a normal-mapped and an emissive
+  // one, and an Instance.
+  const decalLit = await saveMaterial(ctx, NAMES.decalLit, decalLitMaterial(NAMES.decalLit, colormap));
+  const decalLitInstance = await saveInstance(ctx, NAMES.decalLitInstance, decalLit, "decal", { Tint: color(0.55, 1, 0.6), Roughness: float(0.3) });
+  const decalGlow = await saveMaterial(ctx, NAMES.decalGlow, decalGlowMaterial(NAMES.decalGlow));
+  const decalMultiply = await saveMaterial(ctx, NAMES.decalMultiply, decalMultiplyMaterial(NAMES.decalMultiply));
+  const decalMasked = await saveMaterial(ctx, NAMES.decalMasked, decalMaskedMaterial(NAMES.decalMasked));
+  const decalOpaque = await saveMaterial(ctx, NAMES.decalOpaque, decalOpaqueMaterial(NAMES.decalOpaque));
 
   Object.assign(ctx.assets.materials, {
+    decalLit,
+    decalLitInstance,
+    decalGlow,
+    decalMultiply,
+    decalMasked,
+    decalOpaque,
     surface,
     surfaceInstance,
     emissive,
@@ -246,7 +269,7 @@ async function saveFunction(ctx: FeatureTestContext, name: string, doc: Material
   return (await ctx.createAsset("MaterialFunction", FOLDER, name, { payload: payload(doc) })).guid;
 }
 
-/** Instances carry their root's domain so domain-filtered pickers (particle, post process) list them. */
+/** Instances carry their root's domain so domain-filtered pickers (particle, post process, decal) list them. */
 async function saveInstance(
   ctx: FeatureTestContext,
   name: string,
@@ -608,6 +631,125 @@ function overlayUnlitMaterial(name: string): MaterialDocument {
   wire(doc, "tintColor", "rgb", "tinted", "b");
   wire(doc, "tinted", "out", "output", "baseColor");
   wire(doc, "opacity", "out", "output", "opacity");
+  return doc;
+}
+
+// ---------------------------------------------------------------------------
+// Decal domain
+
+/** A round mask over the decal's projected UV: 1 inside radius 0.3, fading to 0 at the box's edge (radius 0.5). */
+function decalRoundMask(doc: MaterialDocument, column: number, row: number): string {
+  node(doc, "maskUv", "input.uv", column, row);
+  node(doc, "maskDistance", "vector.distance", column + 1, row, { "default:b": [0.5, 0.5] });
+  node(doc, "maskEdge", "math.smoothstep", column + 2, row, { "default:edgeA": [0.3], "default:edgeB": [0.5] });
+  node(doc, "mask", "math.oneMinus", column + 3, row);
+  wire(doc, "maskUv", "uv", "maskDistance", "a");
+  wire(doc, "maskDistance", "out", "maskEdge", "value");
+  wire(doc, "maskEdge", "out", "mask", "value");
+  return "mask";
+}
+
+/**
+ * Lit, Translucent: the colormap at twice the decal's UV, tinted, through a round mask, with the colormap's colour read
+ * as a packed normal through Normal Map (a normal-mapped decal with no generated texture).
+ */
+function decalLitMaterial(name: string, albedoGuid: string): MaterialDocument {
+  const doc = blankMaterial(name, "decal", { blendMode: "translucent" });
+  node(doc, "albedo", "param.texture", 0, 0, { name: "Albedo", textureGuid: albedoGuid });
+  node(doc, "uv", "input.uv", 0, 1);
+  node(doc, "tint", "param.color", 0, 2, { name: "Tint", value: [1, 0.85, 0.7, 1] });
+  node(doc, "roughness", "param.float", 0, 3, { name: "Roughness", value: [0.65] });
+  node(doc, "tiling", "texture.transformUv", 1, 1, { "default:tiling": [2, 2] });
+  node(doc, "sample", "texture.sample", 2, 0);
+  node(doc, "tinted", "math.multiply", 3, 1);
+  node(doc, "normal", "shading.normalMap", 3, 2, { "default:strength": [0.6] });
+  const mask = decalRoundMask(doc, 0, 4);
+  node(doc, "output", "output.decal", 5, 1);
+  wire(doc, "albedo", "out", "sample", "texture");
+  wire(doc, "uv", "uv", "tiling", "uv");
+  wire(doc, "tiling", "out", "sample", "uv");
+  wire(doc, "sample", "rgb", "tinted", "a");
+  wire(doc, "tint", "rgb", "tinted", "b");
+  wire(doc, "sample", "rgb", "normal", "packed");
+  wire(doc, "tinted", "out", "output", "baseColor");
+  wire(doc, "normal", "normal", "output", "normal");
+  wire(doc, "roughness", "out", "output", "roughness");
+  wire(doc, mask, "out", "output", "opacity");
+  return doc;
+}
+
+/** Unlit, Additive: a pulsing emissive glow through a round mask, no base colour. */
+function decalGlowMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "decal", { shadingModel: "unlit", blendMode: "additive" });
+  node(doc, "glow", "param.color", 0, 0, { name: "Glow Color", value: [0.3, 0.9, 1, 1] });
+  node(doc, "time", "input.time", 0, 1);
+  node(doc, "wave", "math.sin", 1, 1);
+  node(doc, "pulse", "math.remap", 2, 1, { "default:fromMin": [-1], "default:toMin": [0.6], "default:toMax": [1.4] });
+  const pulsePin = splat(doc, "pulseGain", "pulse", "out", 3, 1, 3);
+  node(doc, "lit", "math.multiply", 4, 0);
+  node(doc, "black", "const.color", 4, 2, { value: [0, 0, 0] });
+  const mask = decalRoundMask(doc, 0, 3);
+  node(doc, "output", "output.decal", 5, 1);
+  wire(doc, "time", "time", "wave", "value");
+  wire(doc, "wave", "out", "pulse", "value");
+  wire(doc, "glow", "rgb", "lit", "a");
+  wire(doc, "pulseGain", pulsePin, "lit", "b");
+  wire(doc, "black", "out", "output", "baseColor");
+  wire(doc, "lit", "out", "output", "emissive");
+  wire(doc, mask, "out", "output", "opacity");
+  return doc;
+}
+
+/** Unlit, Multiply: a stain colour that darkens what it lands on, through a round mask. */
+function decalMultiplyMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "decal", { shadingModel: "unlit", blendMode: "multiply" });
+  node(doc, "stain", "param.color", 0, 0, { name: "Stain Color", value: [0.35, 0.22, 0.12, 1] });
+  const mask = decalRoundMask(doc, 0, 2);
+  node(doc, "output", "output.decal", 5, 0);
+  wire(doc, "stain", "rgb", "output", "baseColor");
+  wire(doc, mask, "out", "output", "opacity");
+  return doc;
+}
+
+/** Lit, Masked: Voronoi cells over the decal's UV, clipped at Alpha Cutoff, and rougher where they are darker. */
+function decalMaskedMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "decal", { blendMode: "masked", alphaCutoff: 0.45 });
+  node(doc, "uv", "input.uv", 0, 0);
+  node(doc, "density", "param.float", 0, 1, { name: "Cell Density", value: [5] });
+  node(doc, "cells", "noise.voronoi", 1, 0);
+  node(doc, "ramp", "color.gradient", 2, 0, {
+    stops: [
+      { position: 0, color: [0.9, 0.35, 0.1] },
+      { position: 1, color: [1, 0.85, 0.3] },
+    ],
+  });
+  node(doc, "output", "output.decal", 3, 0);
+  wire(doc, "uv", "uv", "cells", "uv");
+  wire(doc, "density", "out", "cells", "density");
+  wire(doc, "cells", "cells", "ramp", "value");
+  wire(doc, "ramp", "out", "output", "baseColor");
+  wire(doc, "cells", "out", "output", "opacity");
+  return doc;
+}
+
+/** Unlit, Opaque: painted stripes across the decal's U. */
+function decalOpaqueMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "decal", { shadingModel: "unlit", blendMode: "opaque" });
+  node(doc, "uv", "input.uv", 0, 0);
+  node(doc, "stripe", "param.color", 0, 1, { name: "Stripe Color", value: [1, 0.8, 0.1, 1] });
+  node(doc, "split", "vector.split", 1, 0);
+  node(doc, "count", "math.multiply", 2, 0, { "default:b": [4] });
+  node(doc, "band", "math.fract", 3, 0);
+  node(doc, "on", "math.step", 4, 0, { "default:edge": [0.5] });
+  node(doc, "paint", "math.mix", 5, 1, { "default:a": [0.08, 0.08, 0.1] });
+  node(doc, "output", "output.decal", 6, 1);
+  wire(doc, "uv", "uv", "split", "value");
+  wire(doc, "split", "x", "count", "a");
+  wire(doc, "count", "out", "band", "value");
+  wire(doc, "band", "out", "on", "value");
+  wire(doc, "stripe", "rgb", "paint", "b");
+  wire(doc, "on", "out", "paint", "alpha");
+  wire(doc, "paint", "out", "output", "baseColor");
   return doc;
 }
 

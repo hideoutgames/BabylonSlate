@@ -611,6 +611,18 @@ it("prepares retained surface textures only for the current component assignment
   expect(materialInstanceTextureGuidsFromScenes([null, scene, scene])).toEqual(["instance-texture"]);
 });
 
+it("loads a Decal's Material, and the Textures of its own Material values, for Play and the editor's views", () => {
+  const scene = createDefaultScene();
+  scene.actors = [createActor("mark", "Mark", { components: [
+    { id: "decal", classId: "DecalComponent", properties: { materialGuid: "decal-material" }, materialInstance: {
+      materialGuid: "decal-material", parameters: { Albedo: { kind: "texture", textureAssetGuid: "decal-texture" } },
+    } },
+  ] })];
+  // The Scene viewport and Prefab Preview load the Materials these name (and their Textures) before the decals draw.
+  expect(materialGuidsFromScenes([scene])).toEqual(["decal-material"]);
+  expect(materialInstanceTextureGuidsFromScenes([scene])).toEqual(["decal-texture"]);
+});
+
 describe("SceneLayer control dependencies", () => {
   it("loads assigned control visuals for Play", () => {
     const scene = { ...createDefaultScene(), actors: [createActor("switch", "Switcher", { components: [{ id: "slider", classId: "2DSliderComponent", properties: { trackMaterialGuid: "track-material", thumbTextureGuid: "thumb-texture" } }] })] };

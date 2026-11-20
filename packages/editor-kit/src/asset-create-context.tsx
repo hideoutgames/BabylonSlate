@@ -6,7 +6,8 @@ export type AssetCreateMaterialDomain =
   | "landscape"
   | "postProcess"
   | "particle"
-  | "text";
+  | "text"
+  | "decal";
 
 export type AssetCreateRequest = {
   type: string;

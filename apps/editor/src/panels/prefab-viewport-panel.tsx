@@ -69,6 +69,7 @@ import {
 } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import {
+  materialInstanceTextureGuidsFromScenes,
   modelSlotMaterialGuidsFromPayloads,
   overlayTextureGuidsFromScene,
   skyboxFaceGuidsFromScene,
@@ -458,6 +459,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         );
         const extraTextureGuids = [
           ...materials.textureGuids,
+          // A component's own Material Instance values (a Mesh's or a Decal's) may sample other Textures.
+          ...materialInstanceTextureGuidsFromScenes([scene]),
           ...skyboxFaceGuidsFromScene(scene),
           ...overlayTextureGuidsFromScene(scene),
         ];

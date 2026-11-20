@@ -294,13 +294,18 @@ describe("componentPropertyRows", () => {
     expect(update).toHaveBeenLastCalledWith("edgeFalloff", 1);
   });
   it("keeps Decal row tooltips to what the row cannot show, and clamps Fade Angle to 1 to 180 degrees", () => {
-    const { rows, update } = rowsFor({ id: "decal", classId: "DecalComponent", properties: defaultPropertiesFor("DecalComponent") });
+    const { rows, update, onPickAsset } = rowsFor({ id: "decal", classId: "DecalComponent", properties: defaultPropertiesFor("DecalComponent") });
+    // The Material row offers Decal Materials (and their Instances) only, and creates new ones in that domain.
+    const material = rows.find((row) => row.label === "Material");
+    if (material?.kind !== "asset") throw new Error("Missing Decal Material row");
+    material.onPick?.();
+    expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "materialGuid", allowedTypes: ["Material", "MaterialInstance"], materialDomain: "decal" }));
+    // The look is the Material's: no Texture, Roughness, Blend Mode or Receive Lighting rows of the decal's own.
+    expect(rows.map((row) => row.label)).toEqual(["Enabled", "Material", "Tint", "Opacity", "Size", "Fade Angle", "Sort Order", "Cull Distance"]);
     // Rows whose label and control say it all carry no tooltip (row-descriptions rule).
-    for (const label of ["Enabled", "Texture", "Tint", "Opacity", "Blend Mode", "Receive Lighting"]) {
-      const row = rows.find((candidate) => candidate.label === label);
-      expect(row, label).toBeDefined();
-      expect(row!.description, label).toBeUndefined();
-    }
+    for (const label of ["Enabled", "Material"]) expect(rows.find((row) => row.label === label)!.description, label).toBeUndefined();
+    // Tint and Opacity say how they meet the Material's own values, which the row cannot show.
+    for (const label of ["Tint", "Opacity"]) expect(rows.find((row) => row.label === label)!.description, label).toContain("Material");
     // The projection axis is the one thing Size cannot show.
     expect(rows.find((row) => row.label === "Size")?.description).toContain("-Y");
     const fade = rows.find((row) => row.label === "Fade Angle");
