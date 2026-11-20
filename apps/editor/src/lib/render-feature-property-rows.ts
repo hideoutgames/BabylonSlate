@@ -173,11 +173,11 @@ export function decalPropertyRows(
       description: "Fades out where the receiving surface normal diverges past this angle from local +Y (degrees).",
       onChange: (next) => update("fadeAngle", Math.min(180, Math.max(1, next))) },
     { kind: "number", id: rowId(actorId, component.id, "sortOrder"), label: "Sort Order",
-      value: properties.sortOrder, defaultValue: defaults.sortOrder, step: 1, precision: 0,
+      value: properties.sortOrder, defaultValue: defaults.sortOrder, sensitivity: 1, precision: 0,
       description: "Higher values draw on top of lower-order overlapping decals.",
       onChange: (next) => update("sortOrder", Math.round(next)) },
     { kind: "number", id: rowId(actorId, component.id, "cullDistance"), label: "Cull Distance", unit: "scene units",
-      value: properties.cullDistance, defaultValue: defaults.cullDistance, min: 0, step: 1,
+      value: properties.cullDistance, defaultValue: defaults.cullDistance, min: 0, sensitivity: 1,
       description: "Distance from the camera beyond which the decal stops drawing, scaled by Geometry quality. Zero never culls by distance.",
       onChange: (next) => update("cullDistance", Math.max(0, next)) },
   ];
