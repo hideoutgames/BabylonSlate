@@ -2,12 +2,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Material } from "@babylonjs/core/Materials/material";
+import type { Effect } from "@babylonjs/core/Materials/effect";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { Scene } from "@babylonjs/core/scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { DecalProjectionBlock, decalProjectionFragmentSource } from "./decal-projection-block";
+import { isDrawBatchMaterial } from "./draw-batch-world-block";
 import { HapticLightingBlock } from "./haptic-lighting-block";
+import { setTargetedLayerScene } from "./layer-composite";
 import { compileMaterialPlan } from "./material-compiler";
-import { MultiplyBlendFactorBlock } from "./multiply-blend-block";
+import { LayerMultiplyBlock, MultiplyBlendFactorBlock } from "./multiply-blend-block";
 import { SceneFogBlock } from "./scene-fog-block";
 
 const disposers: Array<() => void> = [];
@@ -119,22 +123,90 @@ describe("Decal Material compile", () => {
 });
 
 describe("Multiply surface", () => {
-  it("multiplies the scene by its factor in the world, and draws as Translucent on a Scene Layer", async () => {
-    const doc = { ...createDefaultMaterialDocument("Stain"), shadingModel: "unlit" as const, blendMode: "multiply" as const };
+  async function compiled(doc: MaterialDocument, host: Scene, name: string, overlay: boolean) {
     const lowered = lowerMaterialDocument(doc);
     if (!lowered.ok) throw new Error("did not lower");
+    const result = compileMaterialPlan(lowered.plan, { scene: host, name, overlay });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    expect(await result.ready).toEqual([]);
+    disposers.push(() => result.dispose());
+    return result.material;
+  }
+
+  /** The value a draw binds for the layer kind's uniform. */
+  function boundKind(material: NodeMaterial): number {
+    const block = material.attachedBlocks.find((entry): entry is LayerMultiplyBlock => entry instanceof LayerMultiplyBlock)!;
+    let value = Number.NaN;
+    block.bind({ setFloat: (_name: string, bound: number) => { value = bound; } } as unknown as Effect, material);
+    return value;
+  }
+
+  it("multiplies the world by its factor, and on a Scene Layer blends by the layer's kind with one program", async () => {
+    const doc = { ...createDefaultMaterialDocument("Stain"), shadingModel: "unlit" as const, blendMode: "multiply" as const };
     const host = scene();
-    const world = compileMaterialPlan(lowered.plan, { scene: host, name: "world" });
-    const overlay = compileMaterialPlan(lowered.plan, { scene: host, name: "overlay", overlay: true });
-    if (!world.ok || !overlay.ok) throw new Error("did not compile");
-    expect(await world.ready).toEqual([]);
-    expect(await overlay.ready).toEqual([]);
-    expect(world.material.alphaMode).toBe(Constants.ALPHA_MULTIPLY);
-    expect(world.material.transparencyMode).toBe(Material.MATERIAL_ALPHABLEND);
-    expect(world.material.attachedBlocks.some((block) => block instanceof MultiplyBlendFactorBlock)).toBe(true);
-    expect(overlay.material.alphaMode).toBe(Constants.ALPHA_COMBINE);
-    expect(overlay.material.attachedBlocks.some((block) => block instanceof MultiplyBlendFactorBlock)).toBe(false);
-    world.dispose();
-    overlay.dispose();
+    const world = await compiled(doc, host, "world", false);
+    expect(world.alphaMode).toBe(Constants.ALPHA_MULTIPLY);
+    expect(world.transparencyMode).toBe(Material.MATERIAL_ALPHABLEND);
+    expect(world.attachedBlocks.some((block) => block instanceof MultiplyBlendFactorBlock)).toBe(true);
+    expect(world.attachedBlocks.some((block) => block instanceof LayerMultiplyBlock)).toBe(false);
+
+    const overlay = await compiled(doc, host, "overlay", true);
+    expect(overlay.attachedBlocks.some((block) => block instanceof MultiplyBlendFactorBlock)).toBe(false);
+    // A draw batch reproduces it: the layer kind is the Scene's, shared by every member.
+    expect(isDrawBatchMaterial(overlay)).toBe(true);
+    const program = overlay.getEffect();
+    expect(overlay.alphaMode).toBe(Constants.ALPHA_MULTIPLY);
+    expect(boundKind(overlay)).toBe(0);
+    setTargetedLayerScene(host, true);
+    expect(overlay.alphaMode).toBe(Constants.ALPHA_PREMULTIPLIED_PORTERDUFF);
+    expect(boundKind(overlay)).toBe(1);
+    setTargetedLayerScene(host, false);
+    expect(overlay.alphaMode).toBe(Constants.ALPHA_MULTIPLY);
+    expect(boundKind(overlay)).toBe(0);
+    // The switch changes a uniform and the blend, never the program.
+    expect(overlay.getEffect()).toBe(program);
+  });
+
+  // Source-text contract: the GPU shows the colours (the perf route's pictures); here, what each kind writes and that the
+  // block keeps to main with no early exit (ANGLE's D3D11 translator).
+  it("writes the encoded factor with alpha 0 on a direct layer and its grey's complement on a targeted one", async () => {
+    const doc = { ...createDefaultMaterialDocument("Stain"), shadingModel: "unlit" as const, blendMode: "multiply" as const };
+    const fragment = (await compiled(doc, scene(), "overlay", true)).compiledShaders.split("// Fragment shader")[1]!;
+    const line = (pattern: RegExp) => fragment.split("\n").find((row) => pattern.test(row)) ?? "";
+    expect(line(/vec3 layerMultiplyFactor\w* =/)).toMatch(/= toGammaSpace\(max\(mix\(vec3\(1\.0\), \w+\.rgb, clamp\(\w+, 0\.0, 1\.0\)\), vec3\(0\.0\)\)\);/);
+    expect(line(/float layerMultiplyGrey\w* =/)).toMatch(/clamp\(dot\(layerMultiplyFactor\w*, vec3\(0\.2126, 0\.7152, 0\.0722\)\), 0\.0, 1\.0\);/);
+    expect(line(/= mix\(vec4\(layerMultiplyFactor/)).toMatch(/mix\(vec4\(layerMultiplyFactor\w*, 0\.0\), vec4\(0\.0, 0\.0, 0\.0, 1\.0 - layerMultiplyGrey\w*\), layerTargeted\w*\);/);
+    const main = fragment.slice(fragment.indexOf("void main"));
+    expect(main.slice(0, main.indexOf("layerTargeted") + 200)).not.toMatch(/\breturn\b/);
+  });
+
+  it("gives a Text Material Multiply over its fill, glyph coverage and style, in display colour", async () => {
+    const doc = { ...createDefaultMaterialDocument("Ink", "text"), blendMode: "multiply" as const };
+    const host = scene();
+    const text = await compiled(doc, host, "text", true);
+    const block = text.attachedBlocks.find((entry): entry is LayerMultiplyBlock => entry instanceof LayerMultiplyBlock);
+    expect(block?.encode).toBe(false);
+    expect(text.alphaMode).toBe(Constants.ALPHA_MULTIPLY);
+    setTargetedLayerScene(host, true);
+    expect(text.alphaMode).toBe(Constants.ALPHA_PREMULTIPLIED_PORTERDUFF);
+    setTargetedLayerScene(host, false);
+    const fragment = text.compiledShaders.split("// Fragment shader")[1]!;
+    expect(fragment.split("\n").find((row) => /vec3 layerMultiplyFactor\w* =/.test(row))).toMatch(/= max\(mix\(vec3\(1\.0\),/);
+  });
+
+  it("leaves Translucent and Additive Materials as they were on either layer kind", async () => {
+    const host = scene();
+    setTargetedLayerScene(host, true);
+    const cases: Array<[MaterialDocument, number]> = [
+      [{ ...createDefaultMaterialDocument("Glass"), shadingModel: "unlit", blendMode: "translucent" }, Constants.ALPHA_COMBINE],
+      [{ ...createDefaultMaterialDocument("Glow"), shadingModel: "unlit", blendMode: "additive" }, Constants.ALPHA_ADD],
+      [createDefaultMaterialDocument("Label", "text"), Constants.ALPHA_COMBINE],
+      [{ ...createDefaultMaterialDocument("Shine", "text"), blendMode: "additive" }, Constants.ALPHA_ADD],
+    ];
+    for (const [doc, alphaMode] of cases) {
+      const material = await compiled(doc, host, doc.name, true);
+      expect(material.alphaMode, doc.name).toBe(alphaMode);
+      expect(material.attachedBlocks.some((block) => block instanceof LayerMultiplyBlock), doc.name).toBe(false);
+    }
   });
 });

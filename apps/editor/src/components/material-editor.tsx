@@ -983,7 +983,7 @@ function MaterialDocumentDetails() {
   if ((document.domain !== "surface" && document.domain !== "landscape")) {
     // Particle emitters own blending (their Render module), so particle Materials hide Blend Mode.
     // A decal draws a box's far faces over the surfaces in it, and its normal is the surface's: no Two Sided or Default Normals.
-    const hidden = document.domain === "particle" || document.domain === "text" ? ["shadingModel", "blendMode", "twoSided", "defaultNormals"]
+    const hidden = document.domain === "particle" ? ["shadingModel", "blendMode", "twoSided", "defaultNormals"]
       : document.domain === "decal" ? ["twoSided", "defaultNormals"] : ["shadingModel", "twoSided", "defaultNormals"];
     for (let i = rows.length - 1; i >= 0; i--) if (hidden.includes(rows[i]!.id)) rows.splice(i, 1);
   }

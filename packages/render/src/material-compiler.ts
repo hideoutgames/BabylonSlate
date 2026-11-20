@@ -85,7 +85,8 @@ import { markBoundedMaterial, markDrawBatchMaterial } from "./draw-batch-world-b
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
 import { createDecalPlumbing } from "./decal-projection-block";
-import { MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
+import { LayerMultiplyBlock, MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
+import { followLayerMultiplyAlphaMode } from "./layer-composite";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 
@@ -340,15 +341,20 @@ function operationBlockName(id: string): string {
  * style, a text glyph's rectangles, colour and visibility) or requires its members to share (the lighting's Receive
  * Shadows, a text's atlas, mode and outline), and per-mesh ones of meshes that never
  * batch (bones, morphs, a lattice) or of a pass that draws no batch (a fragment output's geometry terms; its
- * logarithmic depth is the Scene's). A block that binds and is not listed keeps its Material out of batches.
+ * logarithmic depth is the Scene's), and a Scene Layer Multiply's layer kind (the Scene's: every member of a batch
+ * draws on one Scene). A block that binds and is not listed keeps its Material out of batches. Listed at the first
+ * compile, not as this module evaluates: a module cycle (the text block's, the unlit Material's) can leave a class
+ * undefined until then.
  */
-const BATCH_BINDINGS: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> = [
-  BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
-  ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
-];
+let batchBindings: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> | null = null;
 
 function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
-  return block.bind === NodeMaterialBlock.prototype.bind || BATCH_BINDINGS.some((known) => block instanceof known);
+  batchBindings ??= [
+    BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
+    ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
+    LayerMultiplyBlock,
+  ];
+  return block.bind === NodeMaterialBlock.prototype.bind || batchBindings.some((known) => block instanceof known);
 }
 
 /**
@@ -383,11 +389,9 @@ export function compileMaterialPlan(
     } else {
       applyAuthoredSurfaceBlend(material, plan);
       if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text") registerAlphaToCoverage(material);
-      if (options.overlay) {
-        material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false;
-        // A Multiply surface on a Scene Layer draws as Translucent (`attachSurfaceShading`).
-        if (plan.blendMode === "multiply") material.alphaMode = Constants.ALPHA_COMBINE;
-      }
+      if (options.overlay) { material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false; }
+      // A Scene Layer's Multiply (a Surface's overlay compile, or any Text Material) blends by its layer's kind.
+      if (plan.blendMode === "multiply" && (options.overlay || plan.domain === "text")) followLayerMultiplyAlphaMode(material);
       syncSceneLighting(scene);
     }
   };
@@ -782,8 +786,18 @@ export function compileMaterialPlan(
       const styled = new MultiplyBlock(`${options.name}_overlayFill`);
       multiply.output.connectTo(styled.left);
       style.rgba.connectTo(styled.right);
-      styled.output.connectTo(fragment.rgba);
       created.push(fragment, multiply, style, styled);
+      if (plan.blendMode === "multiply") {
+        // Fill colour × glyph coverage × style, in display colour: its rgb is the factor's colour, its alpha the amount.
+        const split = new ColorSplitterBlock(`${options.name}_multiplyFill`);
+        const layer = new LayerMultiplyBlock(`${options.name}_layerMultiply`);
+        layer.encode = false;
+        styled.output.connectTo(split.rgba);
+        split.rgbOut.connectTo(layer.color);
+        split.a.connectTo(layer.alpha);
+        layer.rgba.connectTo(fragment.rgba);
+        created.push(split, layer);
+      } else styled.output.connectTo(fragment.rgba);
       outputNodes.push(fragment);
     } else if (plan.domain === "postProcess" || plan.domain === "particle") {
       const fragment = plan.domain === "particle"
@@ -1742,8 +1756,8 @@ function attachSurfaceShading(
     right.connectTo(add.right);
     return add.output;
   };
-  // A world Multiply surface writes its factor (`writeMultiplyFactor`); on a Scene Layer it draws as Translucent: a layer
-  // with post-processing composites through a transparent target, where a product with the scene has nothing to multiply.
+  // A world Multiply surface writes its factor (`writeMultiplyFactor`); a Scene Layer's writes its layer's
+  // (`LayerMultiplyBlock`, below).
   const multiply = plan.blendMode === "multiply" && !options.overlay;
   // The scene's fog, by the one rule every surface fogs by (`SceneFogBlock`); a Multiply factor fades toward 1.
   const applyFog = (color: NodeMaterialConnectionPoint) => {
@@ -1786,7 +1800,24 @@ function attachSurfaceShading(
         ? addColor(baseColor, emissive, "unlitEmission")
         : (baseColor ?? emissive);
     const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
-    if (options.overlay) {
+    if (options.overlay && plan.blendMode === "multiply") {
+      // The colour × the style's tint, by Opacity × the style's alpha, as the layer's Multiply (encoded in the block).
+      fragment.convertToGammaSpace = false;
+      const style = new OverlayStyleBlock(`${options.name}_overlayStyle`);
+      const layer = new LayerMultiplyBlock(`${options.name}_layerMultiply`);
+      created.push(style, layer);
+      if (color) {
+        const tint = new MultiplyBlock(`${options.name}_overlayColor`);
+        color.connectTo(tint.left); style.rgb.connectTo(tint.right); tint.output.connectTo(layer.color);
+        created.push(tint);
+      } else style.rgb.connectTo(layer.color);
+      if (opacity) {
+        const alpha = new MultiplyBlock(`${options.name}_overlayAlpha`);
+        opacity.connectTo(alpha.left); style.alpha.connectTo(alpha.right); alpha.output.connectTo(layer.alpha);
+        created.push(alpha);
+      } else style.alpha.connectTo(layer.alpha);
+      layer.rgba.connectTo(fragment.rgba);
+    } else if (options.overlay) {
       const style = new OverlayStyleBlock(`${options.name}_overlayStyle`);
       created.push(style);
       if (color) {
