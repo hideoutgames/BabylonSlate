@@ -138,9 +138,10 @@ it("distance-culls foliage cells, drops distant shadows, and sets dither fade ba
   const { engine, scene } = createTestEngine();
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   const camera = new FreeCamera("cam", new Vector3(0, 2, 0), scene);
+  camera.getWorldMatrix();
   scene.activeCamera = camera;
   // Low quality uses lodDistanceScale = 0.75.
-  updateSceneRenderingSettings(scene, { project: { quality: { level: "low", custom: {} } } });
+  updateSceneRenderingSettings(scene, { quality: { level: "low", custom: {} } });
 
   const assets = { modelSources: new Map([["grass", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) };
   const root = createFoliageMesh(scene, "meadow", {
