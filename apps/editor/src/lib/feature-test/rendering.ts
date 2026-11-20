@@ -5,6 +5,7 @@ import {
   createSkyboxComponent,
   DEFAULT_SCENE_SUN_ACTOR_ID,
   DEFAULT_SCENE_SUN_POSITION,
+  identitySerializedTransform,
   lookAtRotation,
   normalizeCelShadingSettings,
   normalizeRenderEffectsSettings,
@@ -523,12 +524,20 @@ async function saveDynamicMesh(ctx: FeatureTestContext): Promise<PlacedClass> {
   return { ref, components };
 }
 
-/** Spawns a pooled runtime decal of a Decal Material Instance at its own location on Begin Play via the Spawn Decal node. */
+/**
+ * Spawns a pooled runtime decal of a Decal Material Instance at its own location on Begin Play via the Spawn Decal
+ * node, beside a Decal component of its own (a decal in a Prefab, which its Prefab Preview shows).
+ */
 async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
   const decalMaterial = requireRef(ctx.assets.materials.decalLitInstance, "the decal Material Instance");
+  const components = [
+    comp("prefab-decal", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: requireRef(ctx.assets.materials.decalGlow, "the Additive decal Material"), size: [1.2, 1, 1.2], tint: [1, 0.6, 0.3] }),
+    }, { ...identitySerializedTransform(), position: [1.6, 0, 0] }),
+  ];
   const graph = classGraph({
     members: [],
-    components: [],
+    components,
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
       gNode("self-loc", "transform.getActorLocation", 0, 140),
@@ -547,7 +556,7 @@ async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
     ],
   });
   const ref = await ctx.saveClass({ folder: RENDER_FOLDER, name: "FT_RenderDecalSpawner", parentClass: "Actor", graph });
-  return { ref, components: [] };
+  return { ref, components };
 }
 
 /**
@@ -900,7 +909,8 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
       }),
     }),
   ]));
-  add(actor("ft-render-decal-spawner", "Runtime Decal Spawner", tf(zone.at(2, 0.1, 7.2)), [], {
+  add(actor("ft-render-decal-spawner", "Runtime Decal Spawner", tf(zone.at(2, 0.1, 7.2)),
+    instanceComponents("ft-render-decal-spawner", refs.decalSpawner.components), {
     classId: refs.decalSpawner.ref.classId,
   }));
 
