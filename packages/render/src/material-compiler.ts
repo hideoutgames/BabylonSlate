@@ -346,12 +346,13 @@ function operationBlockName(id: string): string {
 const BATCH_BINDINGS: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> = [
   BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
   ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
-  // The Scene's layer kind: every member of a batch draws on one Scene.
-  LayerMultiplyBlock,
 ];
 
 function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
-  return block.bind === NodeMaterialBlock.prototype.bind || BATCH_BINDINGS.some((known) => block instanceof known);
+  return block.bind === NodeMaterialBlock.prototype.bind || BATCH_BINDINGS.some((known) => block instanceof known) ||
+    // The Scene's layer kind: every member of a batch draws on one Scene. Read at the call: the import cycle through
+    // the unlit Material leaves it undefined while this module first evaluates.
+    block instanceof LayerMultiplyBlock;
 }
 
 /**
