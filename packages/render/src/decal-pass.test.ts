@@ -171,7 +171,7 @@ describe("projected decal pass", () => {
     expect(setsAfterFirstFrame).toBe(7);
     expect(partialUpdateSpy).toHaveBeenCalledTimes(7);
 
-    // Second and third frames within capacity must update in place without reallocating GPU buffers.
+    // Second and third frames (2 batches each: with and without normalTextureGuid) update in place without reallocating GPU buffers.
     spawnDynamicDecal(scene, {
       textureGuid: "albedo-1",
       position: [1, 0, 0],
@@ -179,10 +179,10 @@ describe("projected decal pass", () => {
       size: [1, 1, 1],
     });
     expect(host.prepare(camera, 0, true)).toBe(true);
-    expect(host.render(fakeContext, camera, 1, 256, 256)).toBe(1);
-    expect(host.render(fakeContext, camera, 1, 256, 256)).toBe(1);
+    expect(host.render(fakeContext, camera, 1, 256, 256)).toBe(2);
+    expect(host.render(fakeContext, camera, 1, 256, 256)).toBe(2);
     expect(setBufferSpy).toHaveBeenCalledTimes(setsAfterFirstFrame);
-    expect(partialUpdateSpy).toHaveBeenCalledTimes(21);
+    expect(partialUpdateSpy).toHaveBeenCalledTimes(7 + 14 + 14);
 
     clearDecals(scene);
     expect(sceneHasDecals(scene)).toBe(false);
