@@ -287,8 +287,10 @@ function reconcileSnapshotVisuals(
   binding.snapshotMeshes.length = count;
   // World copies of all overlay slots are dropped in one pass, when one can
   // exist (`sweepWorldOverlayLeftovers`). It also runs when a later slot
-  // throws, so earlier slots keep their per-slot cleanup.
-  let overlaySlots: Set<number> | undefined;
+  // throws, so earlier slots keep their per-slot cleanup. The binding's set is
+  // reused like `live`: stamped here, pruned to this pass's slots before the sweep.
+  const overlaySlots = (binding.overlaySlots ??= new Set());
+  const overlayPasses = (binding.overlaySlotPasses ??= new Map());
   let movedOrHid = false;
   let completed = false;
   try {
@@ -324,7 +326,10 @@ function reconcileSnapshotVisuals(
         applyMaterialToActorMeshes(binding, actor.slotId, mesh);
         binding.onVisualChanged?.(actor.slotId);
       }
-      if (wantsOverlay) (overlaySlots ??= new Set()).add(actor.slotId);
+      if (wantsOverlay) {
+        overlayPasses.set(actor.slotId, pass);
+        if (!overlaySlots.has(actor.slotId)) overlaySlots.add(actor.slotId);
+      }
       binding.snapshotMeshes[i] = mesh;
       // Seen only once applied: a scene lookup or visual build that throws
       // leaves a command-built visual protected from a stale buffer.
@@ -337,7 +342,12 @@ function reconcileSnapshotVisuals(
       live.delete(slotId);
       livePasses.delete(slotId);
     }
-    sweepWorldOverlayLeftovers(scene, binding, overlaySlots, movedOrHid || !completed);
+    for (const slotId of overlaySlots) {
+      if (overlayPasses.get(slotId) === pass) continue;
+      overlaySlots.delete(slotId);
+      overlayPasses.delete(slotId);
+    }
+    sweepWorldOverlayLeftovers(scene, binding, overlaySlots.size > 0 ? overlaySlots : undefined, movedOrHid || !completed);
   }
   for (const slotId of binding.meshes.keys()) {
     // A command-built visual not yet seen must survive a stale buffer.
@@ -530,6 +540,8 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.meshes.clear();
   binding.liveSlots.clear();
   binding.liveSlotPasses?.clear();
+  binding.overlaySlots?.clear();
+  binding.overlaySlotPasses?.clear();
   binding.snapshotMeshes.length = 0;
   binding.seenSlots.clear();
   binding.despawnedSlots.clear();

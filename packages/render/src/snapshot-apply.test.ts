@@ -2432,6 +2432,36 @@ describe("createPlayMesh", () => {
     overlay.dispose();
   });
 
+  it("keeps the world visual of a slot that leaves the overlay, while other overlay slots remain and once none do", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene, engine } = handle;
+    const overlay = new Scene(engine);
+    const binding = createSnapshotSceneBinding();
+    for (const slotId of [1, 2]) binding.meshKinds.set(slotId, "box");
+    binding.sceneForSlot = () => overlay;
+    const apply = (frameId: number, overlaySlotIds: number[]) => applySnapshotToScene(scene, binding, {
+      frameId, tickIndex: frameId, actorCount: 2, actors: [1, 2].map((slotId) => ({
+        slotId, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
+        flags: SNAPSHOT_FLAG_VISIBLE | (overlaySlotIds.includes(slotId) ? SNAPSHOT_FLAG_OVERLAY : 0) })) });
+    apply(1, [1, 2]);
+    expect(binding.meshes.get(1)!.getScene()).toBe(overlay);
+    // Slot 1 returns to the world; its world visual is named like a leftover of the overlay slot it was.
+    apply(2, [2]);
+    const world1 = binding.meshes.get(1)!;
+    expect(world1.getScene()).toBe(scene);
+    expect(world1.isDisposed()).toBe(false);
+    // A later pass with nothing moved keeps it too.
+    apply(3, [2]);
+    expect(world1.isDisposed()).toBe(false);
+    apply(4, []);
+    const world2 = binding.meshes.get(2)!;
+    expect(world2.getScene()).toBe(scene);
+    expect([world1, world2].map((mesh) => mesh.isDisposed())).toEqual([false, false]);
+    expect(binding.meshes.get(1)).toBe(world1);
+    overlay.dispose();
+  });
+
   it("keeps a command-built visual alive when a stale snapshot omits its slot", () => {
     const handle = createTestEngine();
     handles.push(handle);
