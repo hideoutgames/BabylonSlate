@@ -289,8 +289,8 @@ it("updates FoliageFadePlugin uniforms per mesh across consecutive draws sharing
   expect(material.isReadyForSubMesh(fadeMesh, fadeMesh.subMeshes[0]!, false)).toBe(true);
   material.freeze();
 
-  const ubo = material.getEffect() ? (material as unknown as { _uniformBuffer: { updateFloat2: (name: string, x: number, y: number) => void } })._uniformBuffer : null;
-  expect(ubo).not.toBeNull();
+  const ubo = (material as unknown as { _uniformBuffer: { updateFloat2: (name: string, x: number, y: number) => void } })._uniformBuffer;
+  expect(ubo).toBeDefined();
   const fadeCalls: Array<[number, number]> = [];
   const origUpdateFloat2 = ubo!.updateFloat2.bind(ubo);
   vi.spyOn(ubo!, "updateFloat2").mockImplementation((name: string, x: number, y: number) => {

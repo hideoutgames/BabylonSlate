@@ -2576,11 +2576,12 @@ describe("AudioService with runtime Audio component commands", () => {
 
     // 2. Pre-seeded audioBytes path (no lazy loader): stopping and replaying must still find its source bytes.
     const seededBackend = new FakeAudioPlaybackBackend();
-    const seededService = new AudioService({ backend: seededBackend, initialBytes: new Map([["bgm", mp3]]) });
+    const seededService = new AudioService({ backend: seededBackend });
     try {
       seededService.setLibrary(
         library({ audio: { bgm: { ...createDefaultAudioPayload(), playbackMode: "streamed" } } }),
       );
+      seededService.setSourceBytes("bgm", mp3);
       await seededService.unlockAsync();
       seededService.handleCommand({ type: "playSound", assetGuid: "bgm", voiceId: "s1", volume: 1, frameId: 1 });
       await seededService.flush();

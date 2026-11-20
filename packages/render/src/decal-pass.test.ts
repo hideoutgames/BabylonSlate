@@ -141,6 +141,7 @@ describe("projected decal pass", () => {
     camera.getViewMatrix();
     camera.getProjectionMatrix();
     scene.activeCamera = camera;
+    scene.updateTransformMatrix();
 
     const fakeAlbedo = new Texture(null, scene);
     vi.spyOn(fakeAlbedo, "isReadyOrNotBlocking").mockReturnValue(true);
