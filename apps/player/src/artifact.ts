@@ -122,6 +122,7 @@ export async function loadGameFromFiles(
   const audioPayloads = new Map<string, AudioPayload>();
   const audioStreamUrls = new Map<string, string>();
   const audioStreamPaths = new Map<string, string>();
+  const audioStreamRevisions = new Map<string, string>();
   const payloads = new Map<string, Uint8Array>();
   const decodedPayloads = new Map<string, unknown>();
   const complexMeshes = new Map<string, CollisionTriangleMesh>();
@@ -137,6 +138,8 @@ export async function loadGameFromFiles(
       for (const [chunkId, streamPath] of Object.entries(entry.streamClips)) {
         const key = audioClipCacheKey(entry.guid, chunkId);
         audioStreamPaths.set(key, streamPath);
+        const clipRevision = entry.streamRevisions?.[chunkId];
+        if (clipRevision) audioStreamRevisions.set(key, clipRevision);
         if (options.baseUrl) {
           audioStreamUrls.set(key, new URL(streamPath, options.baseUrl).href);
         }
@@ -315,14 +318,20 @@ export async function loadGameFromFiles(
     audioPayloads,
     audioStreamUrls,
     readAudioStreamClip: async (assetGuid, chunkId) => {
-      const streamPath = audioStreamPaths.get(audioClipCacheKey(assetGuid, chunkId));
+      const key = audioClipCacheKey(assetGuid, chunkId);
+      const streamPath = audioStreamPaths.get(key);
       if (!streamPath) return null;
-      const inMemory = files.get(streamPath);
-      if (inMemory) return inMemory;
-      if (options.readFile) {
-        return options.readFile(streamPath, options.signal ?? new AbortController().signal);
+      const bytes =
+        files.get(streamPath) ??
+        (options.readFile
+          ? await options.readFile(streamPath, options.signal ?? new AbortController().signal)
+          : null);
+      if (!bytes) return null;
+      const expectedRevision = audioStreamRevisions.get(key);
+      if (expectedRevision && await sha256Hex(bytes) !== expectedRevision) {
+        throw new Error(`Audio stream clip ${assetGuid}:${chunkId} has a corrupt revision.`);
       }
-      return null;
+      return bytes;
     },
     payloads,
     decodedPayloads,

@@ -185,7 +185,7 @@ export {
   setDecalTextureResolver,
   upsertDecals,
   setDecalsVisible,
-  setDecalsAdmitted,
+  sceneDecalTextureGuids,
   removeDecals,
   clearDecals,
   spawnDynamicDecal,

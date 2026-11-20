@@ -129,4 +129,63 @@ describe("projected decal pass", () => {
     expect(outline).toBeDefined();
     expect(outline!.isPickable).toBe(false);
   });
+
+  it("reuses dynamic thin-instance buffers across decal frames and tracks active texture guids", async () => {
+    const { Mesh } = await import("@babylonjs/core/Meshes/mesh");
+    const { Texture } = await import("@babylonjs/core/Materials/Textures/texture");
+    const { clearDecals, sceneDecalTextureGuids, setDecalTextureResolver } = await import("./decal-pass");
+    const { engine, scene } = createTestEngine();
+    disposers.push(() => { scene.dispose(); engine.dispose(); });
+    const camera = new FreeCamera("cam", new Vector3(0, 2, -10), scene);
+    camera.setTarget(new Vector3(0, 0, 0));
+    camera.getViewMatrix();
+    camera.getProjectionMatrix();
+    scene.activeCamera = camera;
+
+    const fakeAlbedo = new Texture(null, scene);
+    vi.spyOn(fakeAlbedo, "isReadyOrNotBlocking").mockReturnValue(true);
+    setDecalTextureResolver(scene, (guid) => (guid === "albedo-1" ? fakeAlbedo : null));
+
+    spawnDynamicDecal(scene, {
+      textureGuid: "albedo-1",
+      normalTextureGuid: "normal-1",
+      position: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      size: [1, 1, 1],
+    });
+    expect([...sceneDecalTextureGuids(scene)].sort()).toEqual(["albedo-1", "normal-1"]);
+
+    const setBufferSpy = vi.spyOn(Mesh.prototype, "thinInstanceSetBuffer");
+    const partialUpdateSpy = vi.spyOn(Mesh.prototype, "thinInstancePartialBufferUpdate");
+    const fakeContext = {
+      setTextureSamplingMode: vi.fn(),
+      bindTextureHandle: vi.fn(),
+    } as unknown as import("@babylonjs/core/FrameGraph/frameGraphRenderContext").FrameGraphRenderContext;
+
+    const host = sceneDecalHost(scene);
+    expect(host.prepare(camera, 0, true)).toBe(true);
+    const firstDraws = host.render(fakeContext, camera, 1, 256, 256);
+    expect(firstDraws).toBe(1);
+    const setsAfterFirstFrame = setBufferSpy.mock.calls.length;
+    expect(setsAfterFirstFrame).toBe(7);
+    expect(partialUpdateSpy).toHaveBeenCalledTimes(7);
+
+    // Second and third frames within capacity must update in place without reallocating GPU buffers.
+    spawnDynamicDecal(scene, {
+      textureGuid: "albedo-1",
+      position: [1, 0, 0],
+      rotation: [0, 0, 0, 1],
+      size: [1, 1, 1],
+    });
+    expect(host.prepare(camera, 0, true)).toBe(true);
+    expect(host.render(fakeContext, camera, 1, 256, 256)).toBe(1);
+    expect(host.render(fakeContext, camera, 1, 256, 256)).toBe(1);
+    expect(setBufferSpy).toHaveBeenCalledTimes(setsAfterFirstFrame);
+    expect(partialUpdateSpy).toHaveBeenCalledTimes(21);
+
+    clearDecals(scene);
+    expect(sceneHasDecals(scene)).toBe(false);
+    expect(sceneDecalTextureGuids(scene).size).toBe(0);
+  });
 });
+

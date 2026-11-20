@@ -29,7 +29,7 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
-import { removeDecals, setDecalTextureResolver, upsertDecals } from "./decal-pass";
+import { clearDecals, removeDecals, sceneDecalTextureGuids, setDecalTextureResolver, upsertDecals } from "./decal-pass";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
@@ -1600,6 +1600,21 @@ function initializeEngine(
     editorFogActors.clear();
     for (const id of retained) editorFogActors.add(id);
   };
+  const decalTextureLeases = new Map<string, { source: unknown; lease: { resource: import("@babylonjs/core/Materials/Textures/baseTexture").BaseTexture; release(): void } }>();
+  const releaseDecalTextureLeases = () => {
+    for (const entry of decalTextureLeases.values()) entry.lease.release();
+    decalTextureLeases.clear();
+  };
+  const pruneDecalTextureLeases = () => {
+    if (decalTextureLeases.size === 0) return;
+    const used = sceneDecalTextureGuids(scene);
+    for (const [guid, entry] of [...decalTextureLeases.entries()]) {
+      if (!used.has(guid)) {
+        entry.lease.release();
+        decalTextureLeases.delete(guid);
+      }
+    }
+  };
   const editorDecalActors = new Set<string>();
   const syncEditorDecals = () => {
     const data = editorSync?.serializedScene();
@@ -1616,11 +1631,7 @@ function initializeEngine(
     for (const id of editorDecalActors) if (!retained.has(id)) removeDecals(scene, id);
     editorDecalActors.clear();
     for (const id of retained) editorDecalActors.add(id);
-  };
-  const decalTextureLeases = new Map<string, { source: unknown; lease: { resource: import("@babylonjs/core/Materials/Textures/baseTexture").BaseTexture; release(): void } }>();
-  const releaseDecalTextureLeases = () => {
-    for (const entry of decalTextureLeases.values()) entry.lease.release();
-    decalTextureLeases.clear();
+    pruneDecalTextureLeases();
   };
   scene.onDisposeObservable.addOnce(() => {
     releaseDecalTextureLeases();
@@ -1866,6 +1877,8 @@ function initializeEngine(
       appliedSnapshotIdentity = null;
       lastRenderedSnapshotFrame = null;
       retirePlayWorldSlots(binding);
+      clearDecals(scene);
+      releaseDecalTextureLeases();
       commandSources.releaseSlots(worldPlaySlots);
       worldPlaySlots.clear();
       refreshPlayActiveCamera(scene, binding);

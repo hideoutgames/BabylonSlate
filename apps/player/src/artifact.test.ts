@@ -569,7 +569,7 @@ it("resolves direct stream URLs for exported streamed Audio under HTTP and loads
   try {
     const resolveStreamUrl = createGameAudioStreamUrlResolver(httpGame);
     expect(resolveStreamUrl({ assetGuid: "bgm", chunkId: "source" })).toMatch(
-      /^https:\/\/game\.example\/play\/assets\/stream-\d+\.mp3$/,
+      /^https:\/\/game\.example\/play\/assets\/stream-\d+-[0-9a-f]{12}\.mp3$/,
     );
   } finally {
     httpGame.dispose?.();
@@ -585,5 +585,19 @@ it("resolves direct stream URLs for exported streamed Audio under HTTP and loads
     expect(memGame.audioBytes.size).toBe(0);
   } finally {
     memGame.dispose?.();
+  }
+
+  // Corrupted sidecar bytes fail streamRevisions verification.
+  const bgmStreamPath = exported.value.manifest.assets.find((entry) => entry.guid === "bgm")!.streamClips!.source!;
+  const corruptedFiles = new Map(exported.value.files);
+  const badMp3 = mp3.slice();
+  badMp3[badMp3.length - 1] = badMp3[badMp3.length - 1]! ^ 0xff;
+  corruptedFiles.set(bgmStreamPath, badMp3);
+  const corruptGame = await loadGameFromFiles(corruptedFiles);
+  try {
+    const loadSource = createGameAudioSourceLoader(corruptGame);
+    await expect(loadSource({ assetGuid: "bgm", chunkId: "source" })).rejects.toThrow(/corrupt revision/i);
+  } finally {
+    corruptGame.dispose?.();
   }
 });

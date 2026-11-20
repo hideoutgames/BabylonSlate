@@ -42,6 +42,7 @@ import {
 import { sceneRenderingSettings } from "./render-settings";
 import { bindSceneFog, bindSceneFogColor } from "./scene-fog-block";
 import { ManagedShadowObjectRendererTask } from "./framegraph-managed-shadows";
+import { retireOwnedEffect } from "./owned-effect-retirement";
 
 export type DecalTextureResolver = (guid: string) => BaseTexture | null;
 
@@ -245,6 +246,7 @@ export class SceneDecalHost {
   private readonly batches: DecalBatch[] = [];
   private readonly batchMap = new Map<string, DecalBatch>();
   private cube: Mesh | null = null;
+  private allocatedCapacity = 0;
   private readonly effects = new Map<string, Effect>();
   private scratchWorld = new Float32Array(0);
   private scratchInv0 = new Float32Array(0);
@@ -283,6 +285,22 @@ export class SceneDecalHost {
     return false;
   }
 
+  usedTextureGuids(): Set<string> {
+    const guids = new Set<string>();
+    for (const owner of this.owners.values()) {
+      for (const decal of owner.decals) {
+        if (decal.properties.textureGuid) guids.add(decal.properties.textureGuid);
+        if (decal.properties.normalTextureGuid) guids.add(decal.properties.normalTextureGuid);
+      }
+    }
+    for (const entry of this.dynamicPool) {
+      if (!entry.alive) continue;
+      if (entry.properties.textureGuid) guids.add(entry.properties.textureGuid);
+      if (entry.properties.normalTextureGuid) guids.add(entry.properties.normalTextureGuid);
+    }
+    return guids;
+  }
+
   upsertActor(actorId: string, node: TransformNode, bindings: readonly DecalBinding[], admitted = true): void {
     const existing = this.owners.get(actorId);
     const has = bindings.some((binding) => !binding.error && binding.properties.enabled && !!binding.properties.textureGuid && binding.properties.opacity > 0);
@@ -308,11 +326,6 @@ export class SceneDecalHost {
   setActorVisible(actorId: string, visible: boolean): void {
     const owner = this.owners.get(actorId);
     if (owner) owner.visible = visible;
-  }
-
-  setActorAdmitted(actorId: string, admitted: boolean): void {
-    const owner = this.owners.get(actorId);
-    if (owner) owner.admitted = admitted;
   }
 
   removeActor(actorId: string): void {
@@ -508,20 +521,29 @@ export class SceneDecalHost {
     cube.isPickable = false;
     cube.doNotSyncBoundingInfo = true;
     this.cube = cube;
+    this.allocatedCapacity = 0;
     return cube;
   }
 
-  private ensureScratch(count: number): void {
-    if (this.scratchWorld.length < count * 16) {
-      const cap = Math.max(count, 16);
-      this.scratchWorld = new Float32Array(cap * 16);
-      this.scratchInv0 = new Float32Array(cap * 4);
-      this.scratchInv1 = new Float32Array(cap * 4);
-      this.scratchInv2 = new Float32Array(cap * 4);
-      this.scratchInv3 = new Float32Array(cap * 4);
-      this.scratchTint = new Float32Array(cap * 4);
-      this.scratchParams = new Float32Array(cap * 4);
-    }
+  private ensureBuffers(cube: Mesh, count: number): void {
+    if (this.allocatedCapacity >= count) return;
+    let cap = Math.max(16, this.allocatedCapacity);
+    while (cap < count) cap *= 2;
+    this.allocatedCapacity = cap;
+    this.scratchWorld = new Float32Array(cap * 16);
+    this.scratchInv0 = new Float32Array(cap * 4);
+    this.scratchInv1 = new Float32Array(cap * 4);
+    this.scratchInv2 = new Float32Array(cap * 4);
+    this.scratchInv3 = new Float32Array(cap * 4);
+    this.scratchTint = new Float32Array(cap * 4);
+    this.scratchParams = new Float32Array(cap * 4);
+    cube.thinInstanceSetBuffer("matrix", this.scratchWorld, 16, false);
+    cube.thinInstanceSetBuffer("decalInv0", this.scratchInv0, 4, false);
+    cube.thinInstanceSetBuffer("decalInv1", this.scratchInv1, 4, false);
+    cube.thinInstanceSetBuffer("decalInv2", this.scratchInv2, 4, false);
+    cube.thinInstanceSetBuffer("decalInv3", this.scratchInv3, 4, false);
+    cube.thinInstanceSetBuffer("decalTintOpacity", this.scratchTint, 4, false);
+    cube.thinInstanceSetBuffer("decalParams", this.scratchParams, 4, false);
   }
 
   private effectFor(lit: boolean, hasNormalMap: boolean, cel: boolean): Effect {
@@ -602,7 +624,7 @@ export class SceneDecalHost {
         if (!effect.isReady()) continue;
 
         const count = batch.items.length;
-        this.ensureScratch(count);
+        this.ensureBuffers(cube, count);
         for (let i = 0; i < count; i++) {
           const item = batch.items[i]!;
           item.world.copyToArray(this.scratchWorld, i * 16);
@@ -622,14 +644,14 @@ export class SceneDecalHost {
           this.scratchParams[o4 + 2] = 0;
           this.scratchParams[o4 + 3] = 0;
         }
-        cube.thinInstanceSetBuffer("matrix", this.scratchWorld.subarray(0, count * 16), 16, false);
-        cube.thinInstanceSetBuffer("decalInv0", this.scratchInv0.subarray(0, count * 4), 4, false);
-        cube.thinInstanceSetBuffer("decalInv1", this.scratchInv1.subarray(0, count * 4), 4, false);
-        cube.thinInstanceSetBuffer("decalInv2", this.scratchInv2.subarray(0, count * 4), 4, false);
-        cube.thinInstanceSetBuffer("decalInv3", this.scratchInv3.subarray(0, count * 4), 4, false);
-        cube.thinInstanceSetBuffer("decalTintOpacity", this.scratchTint.subarray(0, count * 4), 4, false);
-        cube.thinInstanceSetBuffer("decalParams", this.scratchParams.subarray(0, count * 4), 4, false);
         cube.thinInstanceCount = count;
+        cube.thinInstancePartialBufferUpdate("matrix", this.scratchWorld.subarray(0, count * 16), 0);
+        cube.thinInstancePartialBufferUpdate("decalInv0", this.scratchInv0.subarray(0, count * 4), 0);
+        cube.thinInstancePartialBufferUpdate("decalInv1", this.scratchInv1.subarray(0, count * 4), 0);
+        cube.thinInstancePartialBufferUpdate("decalInv2", this.scratchInv2.subarray(0, count * 4), 0);
+        cube.thinInstancePartialBufferUpdate("decalInv3", this.scratchInv3.subarray(0, count * 4), 0);
+        cube.thinInstancePartialBufferUpdate("decalTintOpacity", this.scratchTint.subarray(0, count * 4), 0);
+        cube.thinInstancePartialBufferUpdate("decalParams", this.scratchParams.subarray(0, count * 4), 0);
 
         engine.enableEffect(effect);
         cube._bind(subMesh, effect, Material.TriangleFillMode);
@@ -671,7 +693,10 @@ export class SceneDecalHost {
     this.batches.length = 0;
     this.cube?.dispose();
     this.cube = null;
-    for (const effect of this.effects.values()) effect.dispose();
+    this.allocatedCapacity = 0;
+    for (const effect of this.effects.values()) {
+      retireOwnedEffect(effect, () => effect.dispose());
+    }
     this.effects.clear();
   }
 }
@@ -708,8 +733,8 @@ export function setDecalsVisible(scene: Scene, actorId: string, visible: boolean
   hosts.get(scene)?.setActorVisible(actorId, visible);
 }
 
-export function setDecalsAdmitted(scene: Scene, actorId: string, admitted: boolean): void {
-  hosts.get(scene)?.setActorAdmitted(actorId, admitted);
+export function sceneDecalTextureGuids(scene: Scene): Set<string> {
+  return hosts.get(scene)?.usedTextureGuids() ?? new Set<string>();
 }
 
 export function removeDecals(scene: Scene, actorId: string): void {
