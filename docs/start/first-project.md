@@ -75,7 +75,7 @@ A scene fails when it does not load, a console command fails, Play reports an er
 
 If the graphics context is lost while Play loads a scene, the check starts Play once more when the context is back and measures that load; the scene still fails. While Play starts, the status shows where its load stands, for example **paused before the first tick**, and a check you cancel then reports it.
 
-If the app crashes or reloads during a check, choose **Run Feature Test Check…** again: it shows the report up to where the app stopped, with what the editor held at the end, so you can still copy it.
+If the app crashes or reloads during a check, choose **Run Feature Test Check…** again: it shows the report up to where the app stopped, with what the editor held at the end, so you can still copy it. The report also lists the last steps the app reached before it stopped; during a Benchmark, Breakdown or Profile these include each command the check ran, with how much memory the app had left and how much its textures used at that moment.
 
 Benchmark plays every scene at each quality level and takes about ten minutes; keep the device awake and plugged in.
 

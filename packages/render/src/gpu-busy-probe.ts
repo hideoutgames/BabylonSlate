@@ -13,14 +13,16 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
  * start after it, so it is read at frame granularity: a frame whose GPU work ends before the next frame starts reads
  * the time from its end to that start at least (an upper bound), and a GPU that runs behind is stamped once per frame,
  * so its frames read the frame period, as a saturated GPU's do. The error does not accumulate (completion times are
- * absolute), so medians over many frames stay comparable between steps. `stats().pollMs` reports the mean poll gap.
+ * absolute), so medians over many frames stay comparable between steps. `stats().pollMs` reports the mean gap between
+ * Engine frame starts while the probe is active, whether or not a fence was outstanding: a GPU that finishes every
+ * frame before the next one starts still reads at that frame period.
  */
 export interface GpuBusyStats {
   /** Frames whose completion was observed. */
   frames: number;
   medianMs: number;
   p95Ms: number;
-  /** Mean gap between fence polls, the per-frame timing resolution. */
+  /** Mean gap between Engine frame starts while active, the per-frame timing resolution. */
   pollMs: number;
   /** Frames not measured because too many markers were outstanding. */
   skipped: number;
@@ -59,7 +61,7 @@ export class GpuBusyProbe {
   private lastCompletion = -Infinity;
   private polls = 0;
   private pollSpan = 0;
-  private lastPoll = 0;
+  private lastFrameStart = -1;
 
   private readonly submit: (submitted: number) => Marker | null;
   private readonly now: () => number;
@@ -99,9 +101,16 @@ export class GpuBusyProbe {
 
   get measuring(): boolean { return this.active; }
 
-  /** Call once at the start of every Engine frame: reads the markers completed since the last frame's start. */
+  /**
+   * Call once at the start of every Engine frame: counts the gap from the previous frame start (the poll period) and
+   * reads the markers completed since then.
+   */
   frameStart(): void {
-    if (this.active && this.outstanding.length) this.poll();
+    if (!this.active) return;
+    const now = this.now();
+    if (this.lastFrameStart >= 0) { this.polls += 1; this.pollSpan += now - this.lastFrameStart; }
+    this.lastFrameStart = now;
+    if (this.outstanding.length) this.poll();
   }
 
   /** Call once at the end of every Engine frame. */
@@ -116,8 +125,6 @@ export class GpuBusyProbe {
   /** Reads completed markers in submission order (`frameStart`). */
   poll(): void {
     const now = this.now();
-    if (this.lastPoll > 0) { this.polls += 1; this.pollSpan += now - this.lastPoll; }
-    this.lastPoll = now;
     while (this.outstanding.length) {
       const marker = this.outstanding[0]!;
       const done = marker.done();
@@ -130,7 +137,6 @@ export class GpuBusyProbe {
       this.lastCompletion = now;
       if (this.count < MAX_FRAMES) this.busy[this.count++] = Math.max(0, now - started);
     }
-    if (!this.outstanding.length) this.lastPoll = 0;
   }
 
   stats(): GpuBusyStats | null {
@@ -150,7 +156,7 @@ export class GpuBusyProbe {
 
   private drop(): void {
     for (const marker of this.outstanding.splice(0)) marker.dispose();
-    this.lastPoll = 0;
+    this.lastFrameStart = -1;
   }
 }
 
