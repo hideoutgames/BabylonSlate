@@ -43,7 +43,7 @@ Shipped systems beyond the core (do not rebuild): Save Games (typed definitions,
 
 Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desktop and web inherit headroom.
 
-- Play/Preview renders at project `playFrameCap` (default 60). Dynamic resolution is the relief valve before frame drops.
+- Play/Preview renders at project `playFrameCap` (default 60). Resolution is a static per-tier Resolution Scale (Low 0.75, Medium 0.85, High and Ultra 1) plus the Engine Settings hardware scaling level; there is no runtime valve, since each scale step rebuilds the frame graph (a hitch), cannot relieve CPU-bound frames and WebKit reports no GPU time to drive it.
 - A **visible** editor viewport (Scene, Prefab Preview) renders continuously at Engine Settings `viewportFrameCap` (default 60), at half the cap while idle when `viewportIdleHalfRate` (**Half Rate When Idle**, default on) is set, so animated materials, water and particles keep moving while the editor gets main-thread headroom ([render.md](architecture/render.md)). Hidden, zero-size, obstructed, modal-covered, backgrounded or Play-paused viewports render **zero** frames. Never dirty-skip a visible viewport.
 - Game tick under 8 ms combined (~5 ms script, ~3 ms physics), timed separately even though one worker runs both. An overrun lags logic; the renderer keeps drawing the latest snapshot.
 - Draw calls in the low hundreds (HUD warns at 400). Prefer instancing and merged static geometry.
@@ -88,7 +88,7 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 - Particle Graphs are our own IR lowered onto Node Particle blocks; never the NPE UI, snippet server, CDN or Babylon JSON.
 - glTF import keeps the original bytes as a chunk plus extracted metadata; the runtime loads through Babylon's loader (the one non-pure importer, deliberately). FBX, OBJ and STL convert to GLB in the editor first.
 - The KTX2 transcoder is self-hosted via `KhronosTextureContainer2.URLConfig` and must ship in the editor, player and every export.
-- WebGL context loss is normal on iPad: restore resets hardware scaling to the Engine Settings floor, the resolution valve forgets hitch samples, Babylon rebuilds retained resources (the ResourceCache is not flushed), materials invalidate and the Output Log reports it.
+- WebGL context loss is normal on iPad: restore keeps the hardware scaling level, Babylon rebuilds retained resources (the ResourceCache is not flushed), materials invalidate and the Output Log reports it.
 - iOS blocks audio until a gesture: both hosts unlock on the first touch, never at load.
 - `NullEngine` is the `render` test seam and the production host for worker physics.
 - Babylon is pinned to an exact version with a repository patch ([patches/](../../patches/), [pnpm-workspace.yaml](../../pnpm-workspace.yaml)); upgrades re-validate the patch.
@@ -97,7 +97,7 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 
 Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power is a slope (throttling slows the rest of the session).
 
-- **Resolution is the cheapest lever.** The Engine uses `adaptToDeviceRatio: false`; `setHardwareScalingLevel` is the single knob for the editor default, Play quality tier, user preference, `quality resolution` and the dynamic valve (rolling median, hysteresis, cooldown). Anti-aliasing has no device-class cap: the iPad baseline takes the same tiers as every other device (Low FXAA, Medium and above MSAA 4x), limited only by the device's own sample count ([render.md](architecture/render.md#rendering-settings)).
+- **Resolution is the cheapest lever.** The Engine uses `adaptToDeviceRatio: false`; `setHardwareScalingLevel` is the single knob for the editor default, Play quality tier, user preference and `quality resolution`; the level is static, set by the last of the tier's Resolution Scale and Engine Settings. Anti-aliasing has no device-class cap: the iPad baseline takes the same tiers as every other device (Low FXAA, Medium and above MSAA 4x), limited only by the device's own sample count ([render.md](architecture/render.md#rendering-settings)).
 - **One GPU texture per asset across Scenes.** Babylon caches `InternalTexture` per Engine keyed by URL *and* sampling flags, so the ResourceCache owns a stable blob URL per asset guid plus one canonical sampling set. Constructing an asset `Texture` outside the cache is prohibited; renderer-owned `RenderTargetTexture` / `RawTexture` are exempt but account bytes through `beginManagedRenderAllocation`.
 - **The ResourceCache is a byte-ceilinged LRU, not only refcounts**: it evicts only unreferenced entries, logs evictions, exists once per Engine (`resourceCacheForEngine`), releases a handle's leases on dispose, and is disposed only at project Engine teardown ([resource-cache.ts](../../packages/render/src/resource-cache.ts)).
 - **Catalog reads are bounded at storage.** The registry reads only a validated header prefix; payload chunks load on demand with revision, bounds, length and hash checks.
