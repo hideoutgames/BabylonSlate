@@ -19,6 +19,7 @@ import { isSceneStreamSlotPending } from "./scene-stream-admission";
 import { meshForPlayComponent, type SnapshotSceneBinding } from "./snapshot-apply";
 import { ejectPooledLeaf, onPooledLeafEjected } from "./pooled-visuals";
 import { visualMeshes } from "./visual-meshes";
+import { ejectBatchedSprite } from "./world-sprite-batcher";
 
 /** What Play's per-slot visual bindings read from the Engine handle being built. */
 export interface PlayVisualBindingsContext {
@@ -74,14 +75,18 @@ export function createPlayVisualBindings({
       if (target) markLatticeComponentRoot(target);
     }
     if (!authored) return;
-    // A deformer reads the mesh's own vertices, which a pool group's batch does not have: its targets leave the pool
-    // first (this refresh follows the new meshes, so the eject's own refresh is skipped).
+    // A deformer reads the mesh's own vertices, which a pool group's or sprite batch's mesh does not have:
+    // its targets leave the pool/batch first (this refresh follows the new meshes, so the eject's own refresh is skipped).
     ejectingForDeformers = true;
     try {
       ejectPooledLeaf(root);
+      ejectBatchedSprite(root);
       for (const part of binding.meshParts.get(slotId) ?? []) {
         const target = meshForPlayComponent(binding, slotId, part.componentId);
-        if (target) ejectPooledLeaf(target);
+        if (target) {
+          ejectPooledLeaf(target);
+          ejectBatchedSprite(target);
+        }
       }
     } finally { ejectingForDeformers = false; }
     deformerHost.setActor(authored.actorId, authored.bindings,
@@ -160,6 +165,13 @@ export function createPlayVisualBindings({
       outlineHost.removeActor(previous); outlineActorBySlot.delete(slotId);
     }
     if (!actorId || !root) return;
+    if (authored?.bindings.length) {
+      ejectBatchedSprite(root);
+      for (const part of binding.meshParts.get(slotId) ?? []) {
+        const target = meshForPlayComponent(binding, slotId, part.componentId);
+        if (target) ejectBatchedSprite(target);
+      }
+    }
     // Runtime transforms are normally world-space. If a caller attaches actor
     // roots, descendants still belong to their own actor's outline identity.
     const otherRoots = { has: (mesh: AbstractMesh) => mesh !== root && binding.meshes.hasRoot(mesh) };

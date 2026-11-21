@@ -5,6 +5,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { setMeshRenderingGroup } from "./instance-pool";
 import { sortPooledLeaf } from "./pooled-visuals";
 import { tilemapLayerMeshes } from "./tilemap-chunk-parent";
+import { batchedSpriteOf } from "./sprite-batch-handle";
 import { sortingLayerSortKey } from "@haptic/core";
 
 /**
@@ -98,6 +99,11 @@ export function applyComponentSorting(
   }
   // A pooled visual's drawn leaf sorts as its root does.
   sortPooledLeaf(root);
+  batchedSpriteOf(root)?.setSorting({
+    renderingGroupId: primary.renderingGroupId,
+    alphaIndex: primary.sortKey,
+    sortingGroupId: groupId,
+  });
 }
 
 function compareIdentity(a: string, b: string): number {

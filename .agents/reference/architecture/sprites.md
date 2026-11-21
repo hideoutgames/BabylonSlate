@@ -5,7 +5,7 @@ Sprite and Sprite Animation assets and `SpriteComponent`, rendered as UV-baked q
 ## Decisions
 
 - `SpriteComponent` is a quad **mesh**, not `BABYLON.Sprite`, because a Babylon Sprite is not a Mesh: it cannot parent, take a shader, hold a physics shape or share the gizmo path.
-- Thin instances and merged static batching are out of scope until measured.
+- Play world `SpriteComponent` visuals batch into persistent thin-instanced unit quads (`WorldSpriteBatcher`, [`world-sprite-batcher.ts`](../../../packages/render/src/world-sprite-batcher.ts)), keyed by rendering group, sort key, lighting, blend mode, mirrored winding, shadows, and texture (with `LayerImageAtlas` auto-atlasing for `<= 256×256` nearest textures). Each batched slot keeps a geometry-free root `Mesh` in `binding.meshes`; custom Materials, Deformers, and active Outlines promote it in place to a standalone `createSpriteQuad` mesh. Editor viewports keep pickable `createSpriteQuad` meshes, and Scene Layer sprites batch through `OverlayDrawBatcher`.
 - Shading Mode (`shadingMode`, `parseSurfaceShadingMode`; Sprites and Tilemaps): `2d` (default) draws the unlit Material's 2D-lit variant while its Scene is 2D-lit and unlit otherwise, `3d` its 3D-lit variant, `unlit` unlit always ([render.md](render.md#lighting-and-shadows)). The editor fingerprints it, so a change rebuilds the visual; Play sends it only when not `2d`, never for Scene Layer actors.
 - Sprites default to alpha **test** (opaque pass). `alphaIndex` from [`sorting.ts`](../../../packages/render/src/sorting.ts) orders draws and does not opt into blending. A fractional `visibility` switches the owned material to test + blend; only an `alwaysBlend` binding uses plain blend. Changing the default to blend needs an on-device fill-rate measurement first.
 - Sampling is pixel-art: NEAREST, no mips, anisotropy 1, through a dedicated `ResourceCache` sampling wrapper (`PIXEL_ART_TEXTURE_SAMPLING`) so a mipped 3D load of the same texture cannot bleed. Sprite textures stay uncompressed.
@@ -18,7 +18,8 @@ Sprite and Sprite Animation assets and `SpriteComponent`, rendered as UV-baked q
 | --- | --- |
 | Sprite payload (`parseSpritePayload`, `applyTexturePixelSizeToSprite`, `spriteWorldSize`), `spriteCollisionToBox2d` | [`packages/assets/src/sprite-payload.ts`](../../../packages/assets/src/sprite-payload.ts) |
 | Sprite Animation payload, `resolveSpriteAnimation`, `hydrateSpriteAnimations`, sheet grid helpers | [`packages/assets/src/sprite-animation-payload.ts`](../../../packages/assets/src/sprite-animation-payload.ts) |
-| Quad builder (`createSpriteQuad`, `setSpriteQuadSize`, `setSpriteQuadUvs`) | [`packages/render/src/sprite-quad.ts`](../../../packages/render/src/sprite-quad.ts) |
+| Quad builder (`createSpriteQuad`, `populateSpriteQuadGeometry`, `setSpriteQuadSize`, `setSpriteQuadUvs`) | [`packages/render/src/sprite-quad.ts`](../../../packages/render/src/sprite-quad.ts) |
+| Play world sprite batcher (`WorldSpriteBatcher`, `SpriteBatchVertexBlock`) | [`packages/render/src/world-sprite-batcher.ts`](../../../packages/render/src/world-sprite-batcher.ts), [`packages/render/src/sprite-batch-block.ts`](../../../packages/render/src/sprite-batch-block.ts) |
 | Animation frame apply (`applySpriteAnimationAssetFrame`) | [`packages/render/src/anim-apply.ts`](../../../packages/render/src/anim-apply.ts) |
 | Editor resolve and preload (`useResolvedSpriteAnimation`, `useTexturePreviews`) | [`sprite-animation-sources.ts`](../../../apps/editor/src/components/sprite-animation-sources.ts), [`texture-preview-status.tsx`](../../../apps/editor/src/components/texture-preview-status.tsx) |
 | Pixel-art sampling wrapper | [`packages/render/src/resource-cache.ts`](../../../packages/render/src/resource-cache.ts) |
