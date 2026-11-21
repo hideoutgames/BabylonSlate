@@ -1,7 +1,7 @@
 import "./babylon-registrations";
 import { RenderingContextLostError } from "./context-lost-error";
 import { setSceneInstancing } from "./instance-pool";
-import { setSceneWorldSpriteBatching } from "./world-sprite-batcher";
+import { findWorldSpriteBatcher, setSceneWorldSpriteBatching } from "./world-sprite-batcher";
 import { ejectPooledLeaf } from "./pooled-visuals";
 import { allowSceneOcclusionCulling, sceneOcclusionBuffer, setSceneOcclusionFrozen } from "./view-occlusion";
 import { applyGamepadRumble } from "./gamepad-rumble";
@@ -2240,6 +2240,7 @@ function initializeEngine(
     const previousCamera = scene.activeCamera;
     // The snapshot's spawns, rebuilt visuals and despawns publish their outlines once, not once each.
     outlineHost.batch(() => applySnapshotToScene(scene, binding, sampled));
+    findWorldSpriteBatcher(scene)?.flush();
     playViz?.refresh();
     rebuildIfActiveCameraChanged(previousCamera);
     publishPositions(sampled);
@@ -3881,6 +3882,7 @@ function initializeEngine(
         if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
         freezeLibraryMaterials();
         outlineHost.refreshSettings();
+        if (!owner) findWorldSpriteBatcher(scene)?.flush();
         if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
         else await worldRenderer.prepare(scope.assert);
       } finally {
