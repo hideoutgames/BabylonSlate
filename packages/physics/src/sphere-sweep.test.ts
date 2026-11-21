@@ -71,22 +71,22 @@ describe("reusable Havok sphere sweeps", () => {
 
   it("owns one native shape per query and retires it on explicit or backend disposal", async () => {
     const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
-    const shapes = (backend.plugin as unknown as { _shapes: Map<bigint, unknown> })._shapes;
+    const liveShapes = () => backend.havok.HP_GetStatistics()[1][1];
     try {
-      const baseline = shapes.size;
+      const baseline = liveShapes();
       for (const radius of [0, -1, NaN, Infinity]) expect(() => backend.createSphereSweep(radius)).toThrow();
-      expect(shapes.size).toBe(baseline);
+      expect(liveShapes()).toBe(baseline);
       const query = backend.createSphereSweep(0.1);
-      expect(shapes.size).toBe(baseline + 1);
+      expect(liveShapes()).toBe(baseline + 1);
       for (let repeat = 0; repeat < 20; repeat++) query.sweep(-1, 0, 0, 1, 0, 0);
-      expect(shapes.size).toBe(baseline + 1);
+      expect(liveShapes()).toBe(baseline + 1);
       query.dispose();
       query.dispose();
-      expect(shapes.size).toBe(baseline);
+      expect(liveShapes()).toBe(baseline);
       expect(query.sweep(-1, 0, 0, 1, 0, 0).hit).toBe(false);
       const owned = backend.createSphereSweep(0.2);
       backend.dispose();
-      expect(shapes.size).toBe(0);
+      expect(liveShapes()).toBe(baseline);
       expect(owned.sweep(-1, 0, 0, 1, 0, 0).hit).toBe(false);
       owned.dispose();
       expect(() => backend.createSphereSweep(0.2)).toThrow();
@@ -118,19 +118,20 @@ describe("Havok shape sweeps", () => {
 
   it("keeps a bounded set of native shapes for repeated primitive sweeps and releases them with the backend", async () => {
     const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
-    const shapes = (backend.plugin as unknown as { _shapes: Map<bigint, unknown> })._shapes;
+    const liveShapes = () => backend.havok.HP_GetStatistics()[1][1];
     const identity = { x: 0, y: 0, z: 0, w: 1 };
     const pose = (x: number) => ({ position: { x, y: 0, z: 0 }, rotation: identity });
     const sweep = (shape: Parameters<HavokPhysicsBackend["shapeSweep"]>[0]) => backend.shapeSweep(shape, pose(-2), pose(2));
     try {
+      const initialBaseline = liveShapes();
       addWall(backend, "wall");
-      const baseline = shapes.size;
+      const baseline = liveShapes();
       const sphere = { kind: "sphere" as const, radius: 0.2 };
       const first = sweep(sphere);
       expect(first).toMatchObject({ hit: true, bodyId: "wall" });
       // The same kind and dimensions share one native shape, whatever the pose, and give the same answer.
       for (let repeat = 0; repeat < 10; repeat++) expect(sweep({ ...sphere })).toEqual(first);
-      expect(shapes.size).toBe(baseline + 1);
+      expect(liveShapes()).toBe(baseline + 1);
       for (const shape of [
         { kind: "box" as const, halfExtents: { x: 0.2, y: 0.2, z: 0.2 } },
         { kind: "capsule" as const, radius: 0.2, halfHeight: 0.3 },
@@ -139,17 +140,17 @@ describe("Havok shape sweeps", () => {
         expect(sweep(shape).hit).toBe(true);
         expect(sweep(shape).hit).toBe(true);
       }
-      expect(shapes.size).toBe(baseline + 4);
+      expect(liveShapes()).toBe(baseline + 4);
       // Sizes that never repeat cannot grow the set without bound.
       for (let index = 1; index <= 40; index++) sweep({ kind: "sphere", radius: 0.01 * index });
-      const grown = shapes.size;
+      const grown = liveShapes();
       expect(grown).toBeLessThan(baseline + 40);
       for (let index = 41; index <= 80; index++) sweep({ kind: "sphere", radius: 0.01 * index });
-      expect(shapes.size).toBe(grown);
+      expect(liveShapes()).toBe(grown);
       expect(() => sweep({ kind: "sphere", radius: -1 })).toThrow();
-      expect(shapes.size).toBe(grown);
+      expect(liveShapes()).toBe(grown);
       backend.dispose();
-      expect(shapes.size).toBe(0);
+      expect(liveShapes()).toBe(initialBaseline);
     } finally { backend.dispose(); }
   });
 

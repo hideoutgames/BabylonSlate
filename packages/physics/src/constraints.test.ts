@@ -116,8 +116,8 @@ it("Havok bounds a ball joint and enforces exact anchor distance after transacti
     step(backend);
     expect(Math.abs(angleOf(backend))).toBeGreaterThan(0.15);
     expect(Math.abs(angleOf(backend))).toBeLessThan(0.32);
-    const original = backend.plugin.initConstraint.bind(backend.plugin);
-    const fail = vi.spyOn(backend.plugin, "initConstraint").mockImplementationOnce((...args) => {
+    const original = backend.havok.HP_Constraint_SetEnabled.bind(backend.havok);
+    const fail = vi.spyOn(backend.havok, "HP_Constraint_SetEnabled").mockImplementationOnce((...args) => {
       original(...args);
       throw new Error("injected native setup failure");
     });

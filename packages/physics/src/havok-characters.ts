@@ -1,57 +1,81 @@
-import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { Scene } from "@babylonjs/core/scene";
-import type { HavokPlugin } from "@babylonjs/core/Physics/v2/Plugins/havokPlugin";
-import { CharacterSupportedState, PhysicsCharacterController } from "@babylonjs/core/Physics/v2/characterController";
-import { PhysicsShapeCapsule, type PhysicsShape } from "@babylonjs/core/Physics/v2/physicsShape";
-import { ShapeCastResult } from "@babylonjs/core/Physics/shapeCastResult";
+import type {
+  HavokPhysicsWithBindings,
+  HP_CollectorId,
+  HP_ShapeId,
+  HP_WorldId,
+} from "@babylonjs/havok";
 import type { CharacterControllerDesc, CharacterMovementResult, PhysicsTransform, Vec3 } from "./types";
 import { normalizedPhysicsPose } from "./collider-validation";
-import { detachHavokCharacterBodyShape, setHavokBodyPoseBeforeStep } from "./havok-native-adapter";
-import { toVector3, type BodyRecord } from "./havok-records";
+import {
+  colliderShapes,
+  releaseHavokShape,
+  setShapeMembershipMask,
+  type BodyRecord,
+} from "./havok-records";
+import {
+  checked,
+  checkedValue,
+  IDENTITY_HAVOK_QUAT,
+  vec3Cross,
+  vec3Dot,
+} from "./havok-wasm-memory";
 
 type CharacterRecord = {
   desc: CharacterControllerDesc;
-  controller: PhysicsCharacterController;
-  shape: PhysicsShape;
+  shape: HP_ShapeId;
+  maxSlopeCosine: number;
+  position: Vec3;
   grounded: boolean;
 };
 
-/** Character solves shorter than this integrate their displacement over the nominal step. */
-const MIN_CHARACTER_SOLVE_DT = 1e-3;
-const NOMINAL_CHARACTER_SOLVE_DT = 1 / 60;
+/** Max slide iterations per `moveCharacter` call. */
+const MAX_SLIDE_ITERATIONS = 6;
+const MOVE_EPS = 1e-6;
+const SUPPORT_PROBE_EXTRA = 0.005;
 
 /** What character movement reads from and calls on the backend that owns the world. */
 export interface HavokCharacterHost {
-  readonly scene: Scene;
-  readonly plugin: HavokPlugin;
+  readonly havok: HavokPhysicsWithBindings;
+  readonly worldId: HP_WorldId;
   readonly bodies: ReadonlyMap<string, BodyRecord>;
   flushMutations(): void;
   failMutation(record: BodyRecord, failure: Error): Error;
+  setBodyPoseBeforeStep(record: BodyRecord): void;
   getBodyTransform(bodyId: string): PhysicsTransform | null;
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void;
   teleportBody(bodyId: string, transform: PhysicsTransform): void;
 }
 
-/** The Havok backend's character controllers: a Babylon `PhysicsCharacterController` per controller, solved on demand. */
+/**
+ * Direct Havok WASM character controllers: owns one native capsule `HP_ShapeId` per controller (zero extra bodies or
+ * Babylon `TransformNode`s) and solves depenetration, collide-and-slide, slope limits, and ground snapping directly
+ * through `HP_World_ShapeProximityWithCollector` and `HP_World_ShapeCastWithCollector`.
+ */
 export class HavokCharacters {
   private readonly host: HavokCharacterHost;
   private readonly characters = new Map<string, CharacterRecord>();
-  /** Result holders for the ground snap cast; the plugin resets them at the start of every query. */
-  private readonly castInput = new ShapeCastResult();
-  private readonly castHit = new ShapeCastResult();
-  private readonly zeroGravity = Vector3.Zero();
-  private readonly down = new Vector3(0, -1, 0);
+  private readonly proximityCollector: HP_CollectorId;
+  private readonly castCollector: HP_CollectorId;
 
   constructor(host: HavokCharacterHost) {
     this.host = host;
+    this.proximityCollector = checkedValue(
+      host.havok,
+      host.havok.HP_QueryCollector_Create(16),
+      "character proximity collector creation",
+    );
+    this.castCollector = checkedValue(
+      host.havok,
+      host.havok.HP_QueryCollector_Create(16),
+      "character cast collector creation",
+    );
   }
 
   /** Disposes the controllers driving a body that is being destroyed. */
   destroyForBody(bodyId: string): void {
     for (const [id, character] of this.characters) {
       if (character.desc.bodyId === bodyId) {
-        character.controller.dispose();
-        character.shape.dispose();
+        releaseHavokShape(this.host.havok, character.shape);
         this.characters.delete(id);
       }
     }
@@ -61,19 +85,26 @@ export class HavokCharacters {
   bodyTeleported(bodyId: string, position: Vec3): void {
     for (const character of this.characters.values()) {
       if (character.desc.bodyId === bodyId) {
-        character.controller.setPosition(toVector3(position));
+        character.position.x = position.x;
+        character.position.y = position.y;
+        character.position.z = position.z;
         character.grounded = false;
       }
     }
   }
 
-  /** Disposes every controller and its capsule. */
+  /** Disposes every controller, its capsule shape, and shared query collectors. */
   dispose(): void {
     for (const character of this.characters.values()) {
-      character.controller.dispose();
-      character.shape.dispose();
+      releaseHavokShape(this.host.havok, character.shape);
     }
     this.characters.clear();
+    if (this.proximityCollector[0] !== 0n) {
+      this.host.havok.HP_QueryCollector_Release(this.proximityCollector);
+    }
+    if (this.castCollector[0] !== 0n) {
+      this.host.havok.HP_QueryCollector_Release(this.castCollector);
+    }
   }
 
   createCharacterController(desc: CharacterControllerDesc): void {
@@ -83,39 +114,24 @@ export class HavokCharacters {
     const radius = desc.radius ?? 0.4;
     const height = Math.max(desc.height ?? 1.8, radius * 2);
     const halfSegment = height / 2 - radius;
-    const shape = new PhysicsShapeCapsule(
-      new Vector3(0, halfSegment, 0),
-      new Vector3(0, -halfSegment, 0),
-      radius,
-      this.host.scene,
+    const shape = checkedValue(
+      this.host.havok,
+      this.host.havok.HP_Shape_CreateCapsule([0, halfSegment, 0], [0, -halfSegment, 0], radius),
+      "character capsule creation",
     );
-    let controller: PhysicsCharacterController | undefined;
-    try {
-      controller = new PhysicsCharacterController(
-        record.node.position.clone(),
-        { shape, capsuleHeight: height, capsuleRadius: radius },
-        this.host.scene,
-      );
-      controller.keepDistance = desc.offset;
-      // A broad proximity tolerance makes checkSupport project gravity away
-      // before the capsule reaches the floor. Ground snapping is a separate cast.
-      controller.keepContactTolerance = Math.min(desc.offset, 0.001);
-      controller.maxSlopeCosine = Math.cos((desc.maxSlopeAngle ?? 50) * Math.PI / 180);
-      // The actor's native body already supplies physical contacts and actor IDs.
-      detachHavokCharacterBodyShape(this.host.plugin, controller);
-      this.characters.set(desc.id, { desc: { ...desc }, controller, shape, grounded: false });
-    } catch (error) {
-      controller?.dispose();
-      shape.dispose();
-      throw error;
-    }
+    this.characters.set(desc.id, {
+      desc: { ...desc },
+      shape,
+      maxSlopeCosine: Math.cos(((desc.maxSlopeAngle ?? 50) * Math.PI) / 180),
+      position: { ...record.pose.position },
+      grounded: false,
+    });
   }
 
   destroyCharacterController(id: string): void {
     const character = this.characters.get(id);
     if (!character) return;
-    character.controller.dispose();
-    character.shape.dispose();
+    releaseHavokShape(this.host.havok, character.shape);
     this.characters.delete(id);
   }
 
@@ -130,102 +146,366 @@ export class HavokCharacters {
     if (!character) return null;
     const body = this.host.bodies.get(character.desc.bodyId);
     if (!body || !Number.isFinite(dt) || dt < 0) return null;
+
     const start = startPose ? normalizedPhysicsPose(startPose) : undefined;
     if (start) {
-      const position = toVector3(start.position);
-      if (!body.node.position.equals(position)) {
-        // Inherited repositioning is not velocity: large parent changes must
-        // not be clipped by Havok's world speed limit. Keep contact membership;
-        // only the motor's displacement becomes a native kinematic target.
-        const previousPosition = body.node.position.clone();
-        body.node.position.copyFrom(position);
+      const p = start.position;
+      if (
+        body.pose.position.x !== p.x ||
+        body.pose.position.y !== p.y ||
+        body.pose.position.z !== p.z
+      ) {
+        const previousPosition = { ...body.pose.position };
+        body.pose.position.x = p.x;
+        body.pose.position.y = p.y;
+        body.pose.position.z = p.z;
         try {
-          setHavokBodyPoseBeforeStep(this.host.plugin, body.body);
+          this.host.setBodyPoseBeforeStep(body);
         } catch (error) {
-          body.node.position.copyFrom(previousPosition);
+          body.pose.position.x = previousPosition.x;
+          body.pose.position.y = previousPosition.y;
+          body.pose.position.z = previousPosition.z;
           try {
-            setHavokBodyPoseBeforeStep(this.host.plugin, body.body);
+            this.host.setBodyPoseBeforeStep(body);
           } catch (rollbackError) {
-            throw this.host.failMutation(body, new AggregateError(
-              [error, rollbackError],
-              `Havok Movement pose rollback failed for ${character.desc.bodyId}`,
-            ));
+            throw this.host.failMutation(
+              body,
+              new AggregateError(
+                [error, rollbackError],
+                `Havok Movement pose rollback failed for ${character.desc.bodyId}`,
+              ),
+            );
           }
           throw error;
         }
       }
-      character.controller.setPosition(position);
+      character.position.x = p.x;
+      character.position.y = p.y;
+      character.position.z = p.z;
     }
-    // A displacement requested outside a tick (dt = 0, discrete graph events)
-    // still moves: the controller integrates it over a nominal step, and the
-    // reported velocity is the displacement over the real dt (zero for dt = 0).
-    const solveDt = dt >= MIN_CHARACTER_SOLVE_DT ? dt : NOMINAL_CHARACTER_SOLVE_DT;
-    character.controller.setVelocity(
-      new Vector3(
-        translation.x / solveDt,
-        translation.y / solveDt,
-        translation.z / solveDt,
-      ),
+
+    const havok = this.host.havok;
+    const worldId = this.host.worldId;
+    const keepDistance = Math.max(0, character.desc.offset);
+    const startX = character.position.x;
+    const startY = character.position.y;
+    const startZ = character.position.z;
+
+    // Filter the controller's capsule using the actor's own solid collider layer & mask.
+    const self = [...body.colliders.values()].find(
+      (c) => !c.desc.isTrigger && (c.desc.actorId ?? body.desc.actorId) === body.desc.actorId,
     );
-    // The controller's casts use its capsule's filter: the actor's own solid
-    // collider's layer and mask, as the other backends' solves do.
-    const self = [...body.colliders.values()].find((c) => !c.desc.isTrigger &&
-      (c.desc.actorId ?? body.desc.actorId) === body.desc.actorId);
-    character.shape.filterMembershipMask = self?.desc.layer ?? 0xffffffff;
-    character.shape.filterCollideMask = self?.desc.mask ?? 0xffffffff;
-    const memberships = new Map<PhysicsShape, number>();
-    let grounded: boolean;
+    const layer = (self?.desc.layer ?? 0xffffffff) >>> 0;
+    const mask = (self?.desc.mask ?? 0xffffffff) >>> 0;
+    checked(havok, havok.HP_Shape_SetFilterInfo(character.shape, [layer, mask]), "character capsule filter");
+
+    // Mask the actor's own compound shapes so self-collision is excluded even when hosted shapes exist.
+    const memberships = new Map<HP_ShapeId, number>();
+    let grounded = false;
+    let posX = startX;
+    let posY = startY;
+    let posZ = startZ;
+
     try {
-      // CCT casts exclude their private body, not the actor's physical body.
-      // Filter the owner's complete compound before collecting any contacts.
-      for (const shape of [body.body.shape, ...[...body.colliders.values()].map((c) => c.shape)]) {
-        if (!shape || memberships.has(shape)) continue;
-        memberships.set(shape, shape.filterMembershipMask);
-        shape.filterMembershipMask = 0;
+      const ownShapes: HP_ShapeId[] = [];
+      if (body.attachedShape) ownShapes.push(body.attachedShape);
+      for (const collider of body.colliders.values()) {
+        for (const s of colliderShapes(collider)) ownShapes.push(s);
       }
-      const support = character.controller.checkSupport(solveDt, this.down);
-      character.controller.integrate(solveDt, support, this.zeroGravity);
-      grounded = translation.y <= 0 && character.controller.checkSupport(solveDt, this.down).supportedState === CharacterSupportedState.SUPPORTED;
+      for (const shape of ownShapes) {
+        if (memberships.has(shape)) continue;
+        memberships.set(shape, setShapeMembershipMask(havok, shape, 0));
+      }
+
+      // 1. Depenetration: resolve any existing overlap within `keepDistance`.
+      for (let depen = 0; depen < 3; depen++) {
+        checked(
+          havok,
+          havok.HP_World_ShapeProximityWithCollector(worldId, this.proximityCollector, [
+            character.shape,
+            [posX, posY, posZ],
+            IDENTITY_HAVOK_QUAT,
+            keepDistance,
+            false,
+            body.hpBodyId,
+          ]),
+          "character depenetration proximity",
+        );
+        const hits = checkedValue(
+          havok,
+          havok.HP_QueryCollector_GetNumHits(this.proximityCollector),
+          "character depenetration count",
+        );
+        if (hits <= 0) break;
+        let deepestDist = keepDistance;
+        let pushNx = 0, pushNy = 0, pushNz = 0;
+        for (let i = 0; i < hits; i++) {
+          const [dist, , hitWorld] = checkedValue(
+            havok,
+            havok.HP_QueryCollector_GetShapeProximityResult(this.proximityCollector, i),
+            "character depenetration result",
+          );
+          if (dist < deepestDist) {
+            deepestDist = dist;
+            pushNx = hitWorld[4][0];
+            pushNy = hitWorld[4][1];
+            pushNz = hitWorld[4][2];
+          }
+        }
+        const push = keepDistance - deepestDist;
+        if (push <= 1e-5) break;
+        posX += pushNx * push;
+        posY += pushNy * push;
+        posZ += pushNz * push;
+      }
+
+      // 2. Iterative collide-and-slide across up to MAX_SLIDE_ITERATIONS planes.
+      let remX = Number.isFinite(translation.x) ? translation.x : 0;
+      let remY = Number.isFinite(translation.y) ? translation.y : 0;
+      let remZ = Number.isFinite(translation.z) ? translation.z : 0;
+      const planes: Vec3[] = [];
+      let touchedWalkable = false;
+
+      for (let iter = 0; iter < MAX_SLIDE_ITERATIONS; iter++) {
+        const len = Math.hypot(remX, remY, remZ);
+        if (len <= MOVE_EPS) break;
+
+        checked(
+          havok,
+          havok.HP_World_ShapeCastWithCollector(worldId, this.castCollector, [
+            character.shape,
+            IDENTITY_HAVOK_QUAT,
+            [posX, posY, posZ],
+            [posX + remX, posY + remY, posZ + remZ],
+            false,
+            body.hpBodyId,
+          ]),
+          "character slide cast",
+        );
+        const numHits = checkedValue(
+          havok,
+          havok.HP_QueryCollector_GetNumHits(this.castCollector),
+          "character slide hit count",
+        );
+        if (numHits <= 0) {
+          posX += remX;
+          posY += remY;
+          posZ += remZ;
+          break;
+        }
+
+        // Collectors with capacity > 1 are not guaranteed sorted; pick the earliest blocking hit.
+        let minFrac = 2;
+        let hitNx = 0, hitNy = 0, hitNz = 0;
+        for (let i = 0; i < numHits; i++) {
+          const [fraction, , hitWorld] = checkedValue(
+            havok,
+            havok.HP_QueryCollector_GetShapeCastResult(this.castCollector, i),
+            "character slide cast result",
+          );
+          if (fraction < minFrac) {
+            minFrac = fraction;
+            hitNx = hitWorld[4][0];
+            hitNy = hitWorld[4][1];
+            hitNz = hitWorld[4][2];
+          }
+        }
+        if (minFrac > 1) {
+          posX += remX;
+          posY += remY;
+          posZ += remZ;
+          break;
+        }
+
+        const dirX = remX / len;
+        const dirY = remY / len;
+        const dirZ = remZ / len;
+        const intoDot = -(dirX * hitNx + dirY * hitNy + dirZ * hitNz);
+        const skinBackoff = intoDot > 1e-4 ? keepDistance / intoDot : keepDistance;
+        const advance = Math.max(0, minFrac * len - skinBackoff);
+        posX += dirX * advance;
+        posY += dirY * advance;
+        posZ += dirZ * advance;
+
+        // Remaining displacement after advancing by `advance` (keeps full tangential slide when already at `keepDistance`).
+        const leftover = Math.max(0, len - advance);
+        remX = dirX * leftover;
+        remY = dirY * leftover;
+        remZ = dirZ * leftover;
+
+        if (hitNy >= character.maxSlopeCosine) {
+          touchedWalkable = true;
+        } else if (hitNy > 0 && translation.y <= 0) {
+          // Steep slope: block upward climbing by treating it as a vertical wall.
+          const horiz = Math.hypot(hitNx, hitNz);
+          if (horiz > 1e-5) {
+            hitNx /= horiz;
+            hitNy = 0;
+            hitNz /= horiz;
+          }
+        }
+
+        const planeNormal: Vec3 = { x: hitNx, y: hitNy, z: hitNz };
+        planes.push(planeNormal);
+
+        // Clip remaining displacement against the active constraint planes.
+        const dot = remX * hitNx + remY * hitNy + remZ * hitNz;
+        if (dot < 0) {
+          remX -= hitNx * dot;
+          remY -= hitNy * dot;
+          remZ -= hitNz * dot;
+        }
+
+        // If two non-parallel planes are active, project along their crease line when penetrating an earlier plane.
+        if (planes.length >= 2) {
+          let blocked = false;
+          for (let p = 0; p < planes.length - 1; p++) {
+            const prev = planes[p]!;
+            if (remX * prev.x + remY * prev.y + remZ * prev.z < -MOVE_EPS) {
+              const crease = vec3Cross(prev, planeNormal);
+              const creaseLen = Math.hypot(crease.x, crease.y, crease.z);
+              if (creaseLen > 1e-5) {
+                const cx = crease.x / creaseLen;
+                const cy = crease.y / creaseLen;
+                const cz = crease.z / creaseLen;
+                const proj = remX * cx + remY * cy + remZ * cz;
+                remX = cx * proj;
+                remY = cy * proj;
+                remZ = cz * proj;
+                // Check against a third plane: corner lock stops motion cleanly.
+                for (let k = 0; k < planes.length; k++) {
+                  if (k === p || k === planes.length - 1) continue;
+                  const third = planes[k]!;
+                  if (vec3Dot({ x: remX, y: remY, z: remZ }, third) < -MOVE_EPS) {
+                    blocked = true;
+                    break;
+                  }
+                }
+              } else {
+                blocked = true;
+              }
+              break;
+            }
+          }
+          if (blocked) break;
+        }
+      }
+
+      // 3. Support check: grounded when moving down/level and touching or immediately above a walkable surface.
+      if (translation.y <= 0) {
+        if (touchedWalkable) {
+          grounded = true;
+        } else {
+          const probeDist = keepDistance + SUPPORT_PROBE_EXTRA;
+          checked(
+            havok,
+            havok.HP_World_ShapeCastWithCollector(worldId, this.castCollector, [
+              character.shape,
+              IDENTITY_HAVOK_QUAT,
+              [posX, posY, posZ],
+              [posX, posY - probeDist, posZ],
+              false,
+              body.hpBodyId,
+            ]),
+            "character support cast",
+          );
+          const supportHits = checkedValue(
+            havok,
+            havok.HP_QueryCollector_GetNumHits(this.castCollector),
+            "character support count",
+          );
+          let bestFrac = 2;
+          let bestNy = -1;
+          for (let i = 0; i < supportHits; i++) {
+            const [fraction, , hitWorld] = checkedValue(
+              havok,
+              havok.HP_QueryCollector_GetShapeCastResult(this.castCollector, i),
+              "character support result",
+            );
+            if (fraction < bestFrac) {
+              bestFrac = fraction;
+              bestNy = hitWorld[4][1];
+            }
+          }
+          if (bestFrac <= 1 && bestNy >= character.maxSlopeCosine) {
+            grounded = true;
+          }
+        }
+      }
+
+      // 4. Ground snap down short ledges when previously grounded and moving down/level.
       const snap = character.desc.groundSnapDistance ?? 0.1;
       if (character.grounded && translation.y <= 0 && snap > 0) {
-        const position = character.controller.getPosition();
-        const hit = this.castHit;
-        this.host.plugin.shapeCast({
-          shape: character.shape, rotation: Quaternion.Identity(),
-          startPosition: position,
-          endPosition: position.add(new Vector3(0, -snap - character.desc.offset, 0)),
-          shouldHitTriggers: false,
-        }, this.castInput, hit);
-        if (hit.hasHit && hit.hitNormal.y >= character.controller.maxSlopeCosine) {
-          const drop = Math.max(0, hit.hitFraction * (snap + character.desc.offset) - character.desc.offset);
+        const snapCastDist = snap + keepDistance;
+        checked(
+          havok,
+          havok.HP_World_ShapeCastWithCollector(worldId, this.castCollector, [
+            character.shape,
+            IDENTITY_HAVOK_QUAT,
+            [posX, posY, posZ],
+            [posX, posY - snapCastDist, posZ],
+            false,
+            body.hpBodyId,
+          ]),
+          "character ground snap cast",
+        );
+        const snapHits = checkedValue(
+          havok,
+          havok.HP_QueryCollector_GetNumHits(this.castCollector),
+          "character ground snap count",
+        );
+        let bestFrac = 2;
+        let bestNy = -1;
+        for (let i = 0; i < snapHits; i++) {
+          const [fraction, , hitWorld] = checkedValue(
+            havok,
+            havok.HP_QueryCollector_GetShapeCastResult(this.castCollector, i),
+            "character ground snap result",
+          );
+          if (fraction < bestFrac) {
+            bestFrac = fraction;
+            bestNy = hitWorld[4][1];
+          }
+        }
+        if (bestFrac <= 1 && bestNy >= character.maxSlopeCosine) {
+          const drop = Math.max(0, bestFrac * snapCastDist - keepDistance);
           if (drop <= snap) {
-            character.controller.setPosition(position.add(new Vector3(0, -drop, 0)));
+            posY -= drop;
             grounded = true;
           }
         }
       }
     } finally {
-      for (const [shape, membership] of memberships) shape.filterMembershipMask = membership;
+      for (const [shape, membership] of memberships) {
+        setShapeMembershipMask(havok, shape, membership);
+      }
     }
-    const pos = character.controller.getPosition();
-    const velocity = dt > 0
-      ? character.controller.getVelocity().scale(solveDt / dt)
+
+    character.position.x = posX;
+    character.position.y = posY;
+    character.position.z = posZ;
+
+    const velocity: Vec3 = dt > 0
+      ? {
+          x: (posX - startX) / dt,
+          y: (posY - startY) / dt,
+          z: (posZ - startZ) / dt,
+        }
       : { x: 0, y: 0, z: 0 };
-    // The solve keeps the start rotation; without one, the body's current rotation.
-    const pose = {
-      position: { x: pos.x, y: pos.y, z: pos.z },
+
+    const pose: PhysicsTransform = {
+      position: { x: posX, y: posY, z: posZ },
       rotation: start?.rotation ?? this.host.getBodyTransform(character.desc.bodyId)!.rotation,
     };
-    // Kinematic movement uses a native target, which keeps contact membership
-    // without the world-membership refresh an explicit teleport performs. It
-    // replaces any target set earlier in the frame.
+
     if (body.desc.motionType === "kinematic") this.host.setBodyTargetTransform(character.desc.bodyId, pose);
     else this.host.teleportBody(character.desc.bodyId, pose);
-    // After the teleport, which resets the controller's support state.
+    // After teleport, which resets the controller's support state.
     character.grounded = grounded;
+
     return {
       ...pose,
-      velocity: { x: velocity.x, y: velocity.y, z: velocity.z },
+      velocity,
       grounded,
     };
   }

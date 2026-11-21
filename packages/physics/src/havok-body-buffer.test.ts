@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { HavokPhysicsWithBindings, HP_BodyId } from "@babylonjs/havok";
 import { HavokPhysicsBackend } from "./havok-backend";
 import type { PhysicsTransform } from "./types";
 
@@ -16,9 +15,8 @@ function spawn(backend: HavokPhysicsBackend, id: string, transform: PhysicsTrans
     friction: 0.5, restitution: 0.2, isTrigger: false, layer: 1, mask: 0xffffffff });
 }
 
-const havokOf = (backend: HavokPhysicsBackend) => backend.plugin._hknp as HavokPhysicsWithBindings;
-const nativeBody = (backend: HavokPhysicsBackend, id: string) =>
-  (backend.scene.getTransformNodeByName(id)!.physicsBody!._pluginData as { hpBodyId: HP_BodyId }).hpBodyId;
+const havokOf = (backend: HavokPhysicsBackend) => backend.havok;
+const nativeBody = (backend: HavokPhysicsBackend, id: string) => backend.getNativeBodyId(id)!;
 
 /**
  * What Havok itself reports for the body, beside what the backend read for it. Rotations compare as orientations:

@@ -7,13 +7,9 @@
  * supplied (engineplan §2.1).
  */
 
-export type HavokModule = {
-  HP_World_Create: () => unknown;
-  HP_World_Release: (world: unknown) => void;
-  HP_World_SetGravity: (world: unknown, gravity: number[]) => void;
-  HP_World_Step: (world: unknown, dt: number) => void;
-};
+import type { HavokPhysicsWithBindings } from "@babylonjs/havok";
 
+export type HavokModule = HavokPhysicsWithBindings;
 
 let cached: Promise<HavokModule> | null = null;
 
@@ -34,10 +30,10 @@ export function loadHavokModule(havokWasmUrl?: string): Promise<HavokModule> {
             return {};
           },
         });
-        return (await Promise.race([module, failure])) as unknown as HavokModule;
+        return await Promise.race([module, failure]);
       }
       const wasmBinary = await resolveWasmBinary(havokWasmUrl);
-      return (await HavokPhysics({ locateFile, wasmBinary })) as unknown as HavokModule;
+      return await HavokPhysics({ locateFile, wasmBinary });
     })().catch((error) => {
       cached = null;
       throw error;

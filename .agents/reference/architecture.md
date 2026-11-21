@@ -17,7 +17,7 @@ Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsy
 | [scripting-nodes](../../packages/scripting-nodes/src/) | Data-driven node catalog (definition + codegen per node) |
 | [input](../../packages/input/src/) | Raw input ring, action/axis mapping model, `InputResolver` |
 | [runtime](../../packages/runtime/src/) | Game worker entry and in-process driver (`driver.ts`; its subsystem wiring in `runtime-composition*.ts`, tick phases in `runtime-tick-phases.ts`, error and breakpoint reporting in `runtime-error-reporting.ts`), ScriptHost, snapshot publisher, runtime subsystems |
-| [physics](../../packages/physics/src/) | Body/shape protocol; Havok 3D (Physics V2 on a worker-local NullEngine), Rapier 2D, software test backend |
+| [physics](../../packages/physics/src/) | Body/shape protocol; direct `@babylonjs/havok` WASM 3D backend (zero `@babylonjs/core`), Rapier 2D, software test backend |
 | [bridge](../../packages/bridge/src/) | SAB seq-lock and transferable transports, snapshot layout, typed channel messages |
 | [render](../../packages/render/src/) | Babylon view: Engine/Scene lifecycle, snapshot apply, ResourceCache, render scheduler, editor tools and gizmos, material/particle lowering, audio and particle services, KTX2 transcode, font registry |
 | [debugger](../../packages/debugger/src/) | Console command registry, parser, tiers, `DebugCommand` helpers, stats, trace recorder |
@@ -56,7 +56,7 @@ render: snapshot apply + command handlers on the Play Scene of the shared Engine
 ```
 
 - One Engine per open project; editor viewports, Prefab/Material previews and overlay Play are Scenes or views on it. Preview Build runs `apps/player` in an iframe with its own Engine.
-- The game worker owns simulation: scripts, physics, navigation, Animation Graph and behaviour-tree evaluation. The main thread owns rendering, audio and fonts. Nothing Babylon crosses into the worker except physics on its private NullEngine.
+- The game worker owns simulation: scripts, physics (direct `@babylonjs/havok` WASM and Rapier2D WASM), navigation, Animation Graph and behaviour-tree evaluation. The main thread owns rendering, audio and fonts. Zero `@babylonjs/core` code crosses into the worker.
 - Poses travel only through the snapshot buffer; structural changes travel only as ordered commands. Graph execution emits commands and never touches Babylon.
 - Owners: worker hosts in [apps/editor/src/services](../../apps/editor/src/services/) (`game-worker-host.ts`, `play-session.ts` with its `play-session-*.ts` and `play-scene-readiness.ts` modules, `input-capture.ts`), worker side [worker-entry.ts](../../packages/runtime/src/worker-entry.ts) and [driver.ts](../../packages/runtime/src/driver.ts), main-thread apply [snapshot-apply.ts](../../packages/render/src/snapshot-apply.ts).
 
