@@ -65,7 +65,7 @@ function setup(
 
 describe("editor Drop", () => {
   it("drops onto the sculpted Landscape only when its collisions are enabled", () => {
-    const data = parseLandscapeProperties({ width: 8, depth: 8, subdivisions: 4, heights: Array(25).fill(2) });
+    const data = parseLandscapeProperties({ width: 8, depth: 8, subdivisions: 4, heights: new Float32Array(25).fill(2) });
     const component = { id: "terrain", classId: "LandscapeComponent", properties: { ...data } };
     const { drop, sceneData } = setup([box("selected", [0, 10, 0]), createActor("landscape", "Landscape", {
       transform: { ...identitySerializedTransform(), position: [0, 1, 0] }, components: [component],
@@ -73,7 +73,7 @@ describe("editor Drop", () => {
     expect(drop(["selected"])).toEqual([]);
     sceneData.actors[1]!.components[0]!.properties.collisionsEnabled = true;
     expect(drop(["selected"])[0]?.position).toEqual([0, 3.75, 0]); // Built-in box is 1.5 units tall.
-    sceneData.actors[1]!.components[0]!.properties.heights = Array(25).fill(4);
+    sceneData.actors[1]!.components[0]!.properties.heights = new Float32Array(25).fill(4);
     expect(drop(["selected"])[0]?.position).toEqual([0, 5.75, 0]);
   });
 

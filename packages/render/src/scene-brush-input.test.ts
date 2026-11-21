@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
-import { createActor, createDefaultScene, parseLandscapeProperties, type SerializedScene, type SerializedTransform } from "@haptic/core";
+import { createActor, createDefaultScene, parseLandscapeProperties, serializeLandscapeProperties, type SerializedScene, type SerializedTransform } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";
@@ -26,12 +26,13 @@ class Canvas extends EventTarget {
 const dispose: Array<() => void> = [];
 afterEach(() => { while (dispose.length) dispose.pop()!(); vi.unstubAllGlobals(); });
 
-function fixture(mode: "landscape" | "foliage" = "landscape", options: { transform?: SerializedTransform; strength?: number; heights?: number[] } = {}) {
+function fixture(mode: "landscape" | "foliage" = "landscape", options: { transform?: SerializedTransform; strength?: number; heights?: Float32Array } = {}) {
   const { scene, engine } = createTestEngine();
   const camera = new ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 4, 35, Vector3.Zero(), scene);
   scene.activeCamera = camera;
   const sync = new EditorSceneSync(scene);
-  const initial: SerializedScene = { ...createDefaultScene(), actors: [createActor("land", "Land", { ...(options.transform ? { transform: options.transform } : {}), components: [{ id: "surface", classId: "LandscapeComponent", properties: { ...parseLandscapeProperties({ width: 32, depth: 32, subdivisions: 32, heights: options.heights }) } }] })] };
+  const initialProps = serializeLandscapeProperties(parseLandscapeProperties({ width: 32, depth: 32, subdivisions: 32, heights: options.heights }));
+  const initial: SerializedScene = { ...createDefaultScene(), actors: [createActor("land", "Land", { ...(options.transform ? { transform: options.transform } : {}), components: [{ id: "surface", classId: "LandscapeComponent", properties: { ...initialProps } }] })] };
   sync.apply(initial); scene.render();
   const canvas = new Canvas(); const windowTarget = new EventTarget(); vi.stubGlobal("window", windowTarget);
   const state: SceneBrushState = {
@@ -65,31 +66,32 @@ it.each(["mouse", "touch", "pen"])("commits one undoable landscape stroke for %s
   f.pointer("pointerup", 2, 0, pointerType);
   await Promise.resolve();
   expect(f.committed).toHaveLength(1);
+  expect(typeof f.committed[0]!.actors[0]!.components[0]!.properties.data).toBe("string");
   expect(parseLandscapeProperties(f.committed[0]!.actors[0]!.components[0]!.properties).heights.some((height) => height > 0)).toBe(true);
   f.sync.apply(f.initial);
   expect(f.centerHeight()).toBe(0);
   expect(f.canvas.captures.size).toBe(0);
 });
 
-it("applies the scene once per pointer event however many dabs a drag interpolates, and commits the scene it showed", async () => {
+it("updates chunks directly during drag without full scene sync or base64 encoding, and commits the shown terrain once on release", async () => {
   const f = fixture();
   const apply = vi.spyOn(f.sync, "apply");
   f.pointer("pointerdown", -6, 0);
-  expect(apply).toHaveBeenCalledTimes(1);
-  apply.mockClear();
   f.pointer("pointermove", 6, 0); // 12 units at a 0.8 spacing interpolates 15 dabs
-  expect(apply).toHaveBeenCalledTimes(1);
-  const shown = apply.mock.calls[0]![0];
-  expect(f.centerHeight()).toBeGreaterThan(0);
+  // Zero full EditorSceneSync.apply calls during active drag!
+  expect(apply).not.toHaveBeenCalled();
+  const shownCenter = f.centerHeight();
+  expect(shownCenter).toBeGreaterThan(0);
   f.pointer("pointerup", 6, 0);
   await Promise.resolve();
   expect(f.committed).toHaveLength(1);
-  expect(f.committed[0]).toBe(shown);
+  expect(apply).toHaveBeenCalledTimes(1);
+  expect(parseLandscapeProperties(f.committed[0]!.actors[0]!.components[0]!.properties).heights[16 * 33 + 16]).toBeCloseTo(shownCenter!, 5);
 });
 
 it("shows a footprint ring of the brush radius that follows the surface under the pointer", () => {
   // Flat ground with a 2-unit plateau from x = 1; the ring around (-2, 0) reaches onto it.
-  const f = fixture("landscape", { heights: Array.from({ length: 33 * 33 }, (_, i) => i % 33 >= 17 ? 2 : 0) });
+  const f = fixture("landscape", { heights: Float32Array.from({ length: 33 * 33 }, (_, i) => i % 33 >= 17 ? 2 : 0) });
   f.pointer("pointermove", -2, 0);
   const positions = f.scene.getMeshByName("sceneBrushPreview")!.getVerticesData(VertexBuffer.PositionKind)!;
   const outer = Array.from({ length: 49 }, (_, i) => ({ x: positions[i * 3]!, y: positions[i * 3 + 1]!, z: positions[i * 3 + 2]! }));
@@ -111,7 +113,7 @@ it("sculpts a moved and scaled landscape under the pointer, with the brush radiu
   const f = fixture("landscape", { transform: SCALED });
   f.pointer("pointerdown", 10, 0); f.pointer("pointerup", 10, 0);
   await Promise.resolve();
-  const raised = heightsOf(f.committed[0]!).flatMap((height, index) => height > 0 ? [index] : []);
+  const raised = Array.from(heightsOf(f.committed[0]!)).flatMap((height, index) => height > 0 ? [index] : []);
   // Radius 4 around the world point (10, 0); no vertex sits near the edge of that disc.
   const inside = Array.from({ length: 33 * 33 }, (_, index) => index).filter((index) => {
     const { x, z } = worldOfVertex(index);
@@ -127,7 +129,7 @@ it("sculpts the whole path of a drag across a moved and scaled landscape", async
   await Promise.resolve();
   const heights = heightsOf(f.committed[0]!);
   const toPath = (index: number) => { const { x, z } = worldOfVertex(index); return Math.hypot(x - Math.min(14, Math.max(-2, x)), z - 2); };
-  const indices = heights.map((_, index) => index);
+  const indices = Array.from({ length: heights.length }, (_, index) => index);
   const near = indices.filter((index) => toPath(index) < 3.6);
   const far = indices.filter((index) => toPath(index) > 4.25);
   expect(near.length).toBeGreaterThan(30);

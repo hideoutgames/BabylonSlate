@@ -59,7 +59,7 @@ describe("Water field", () => {
     new FreeCamera("camera", new Vector3(0, 30, -30), scene);
     try {
       // A 40 m square landscape: a raised island in the west half, a 4 m deep floor in the east.
-      const side = 16, heights = Array.from({ length: (side + 1) ** 2 }, (_, i) => (i % (side + 1)) < side / 2 ? 3 : -4);
+      const side = 16, heights = Float32Array.from({ length: (side + 1) ** 2 }, (_, i) => (i % (side + 1)) < side / 2 ? 3 : -4);
       createLandscapeMesh(scene, "land", { width: 40, depth: 40, subdivisions: side, heights });
       const water = createDefaultWaterDefinition();
       const ocean = createWaterMesh(scene, "ocean", normalizeWaterBody({}, "global"), water, builtInWaterMaterial(scene));
@@ -106,7 +106,7 @@ describe("Water field", () => {
       const surface = MeshBuilder.CreateGround("water", { width: 20, height: 20 }, scene);
       surface.metadata = { slateWater: true };
       // A beach rising 0.15 m per metre across X, crossing the waterline at x = 0.
-      const side = 20, heights = Array.from({ length: (side + 1) ** 2 }, (_, i) => -1.5 + (i % (side + 1)) * 0.15);
+      const side = 20, heights = Float32Array.from({ length: (side + 1) ** 2 }, (_, i) => -1.5 + (i % (side + 1)) * 0.15);
       createLandscapeMesh(scene, "beach", { width: 20, depth: 20, subdivisions: side, heights });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
       field.update();
@@ -128,7 +128,7 @@ describe("Water field", () => {
     try {
       const surface = MeshBuilder.CreateGround("water", { width: 20, height: 20 }, scene);
       surface.metadata = { slateWater: true };
-      createLandscapeMesh(scene, "floor", { width: 30, depth: 30, subdivisions: 4, heights: Array(25).fill(-3) });
+      createLandscapeMesh(scene, "floor", { width: 30, depth: 30, subdivisions: 4, heights: new Float32Array(25).fill(-3) });
       // A rest height bending over metres (as a blend between bodies does), with no water beyond 8 m of the centre.
       let calls = 0;
       const level = (x: number, z: number) => 0.4 * Math.sin(x / 3) * Math.cos(z / 4);
@@ -158,7 +158,7 @@ describe("Water field", () => {
       // rim of the water inside the field's last three cells (where terrain depth fades out, drawing the rim as pale water).
       const surface = MeshBuilder.CreateGround("water", { width: 700, height: 60 }, scene);
       surface.metadata = { slateWater: true };
-      createLandscapeMesh(scene, "floor", { width: 800, depth: 200, subdivisions: 4, heights: Array(25).fill(-3) });
+      createLandscapeMesh(scene, "floor", { width: 800, depth: 200, subdivisions: 4, heights: new Float32Array(25).fill(-3) });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
       field.update();
       const view = field as unknown as FieldView;
@@ -176,7 +176,7 @@ describe("Water field", () => {
       const engine = new NullEngine(), scene = new Scene(engine);
       const surface = MeshBuilder.CreateGround("water", { width: waterSize, height: waterSize }, scene);
       surface.metadata = { slateWater: true };
-      createLandscapeMesh(scene, "floor", { width: floorSize, depth: floorSize, subdivisions: 4, heights: Array(25).fill(-4) });
+      createLandscapeMesh(scene, "floor", { width: floorSize, depth: floorSize, subdivisions: 4, heights: new Float32Array(25).fill(-4) });
       const field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
       try {
         field.update();
@@ -200,7 +200,7 @@ describe("Water field", () => {
       const surface = MeshBuilder.CreateGround("water", { width: 36, height: 8 }, scene);
       surface.metadata = { slateWater: true };
       // A coast rising 0.5 m per metre across X, crossing the rest waterline at x = 0 (rest depth -x / 2).
-      const side = 40, heights = Array.from({ length: (side + 1) ** 2 }, (_, i) => -10 + (i % (side + 1)) * 0.5);
+      const side = 40, heights = Float32Array.from({ length: (side + 1) ** 2 }, (_, i) => -10 + (i % (side + 1)) * 0.5);
       createLandscapeMesh(scene, "coast", { width: 40, depth: 40, subdivisions: side, heights });
       // Waves reach 5 m either side of rest: a trough exposes the floor down to a rest depth of 5 m (x = -10).
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 5, contactRange: 1, surfaceY: () => 0 });
@@ -223,7 +223,7 @@ describe("Water field", () => {
       // A 40 m floor 4 m under a 100 m body: the field covers the body, so most of it lies beyond the landscape.
       const surface = MeshBuilder.CreateGround("water", { width: 100, height: 100 }, scene);
       surface.metadata = { slateWater: true };
-      createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-4) });
+      createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: new Float32Array(25).fill(-4) });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
       field.update();
       const view = field as unknown as FieldView, cell = 1 / (view.bounds[2]! * view.width);
@@ -254,7 +254,7 @@ describe("Water field", () => {
       // A 40 m tile in a 100 m body: dry (1 m up) along its west edge, 4 m under water along its east edge.
       const surface = MeshBuilder.CreateGround("water", { width: 100, height: 100 }, scene);
       surface.metadata = { slateWater: true };
-      const side = 9, heights = Array.from({ length: side * side }, (_, i) => [1, 1, 1, 1, -1.5, -4, -4, -4, -4][i % side]!);
+      const side = 9, heights = Float32Array.from({ length: side * side }, (_, i) => [1, 1, 1, 1, -1.5, -4, -4, -4, -4][i % side]!);
       createLandscapeMesh(scene, "coast", { width: 40, depth: 40, subdivisions: side - 1, heights });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
       field.update();
@@ -281,7 +281,7 @@ describe("Water field", () => {
     try {
       const surface = MeshBuilder.CreateGround("water", { width: 8, height: 8 }, scene);
       surface.metadata = { slateWater: true };
-      createLandscapeMesh(scene, "deep floor", { width: 12, depth: 12, subdivisions: 4, heights: Array(25).fill(-45) });
+      createLandscapeMesh(scene, "deep floor", { width: 12, depth: 12, subdivisions: 4, heights: new Float32Array(25).fill(-45) });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 50, contactRange: 1, surfaceY: () => 0 });
       field.update();
       expect(texel(field as unknown as FieldView, 0, 0).depth).toBeCloseTo(45, 0);
@@ -299,7 +299,7 @@ describe("Water field", () => {
       const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30 }), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
       const field = liveField(lake);
       expect(field.texture).toBeNull();
-      const floor = createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-3) });
+      const floor = createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: new Float32Array(25).fill(-3) });
       later();
       expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(3, 0);
       floor.position.y = -2; floor.computeWorldMatrix(true); later();
@@ -325,7 +325,7 @@ describe("Water field", () => {
     const engine = new NullEngine(), scene = new Scene(engine);
     new FreeCamera("camera", new Vector3(0, 30, -30), scene);
     try {
-      createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: Array(25).fill(-3) });
+      createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: new Float32Array(25).fill(-3) });
       const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30, waveScale: 1 }), createDefaultWaterDefinition(), builtInWaterMaterial(scene));
       expect(texel(fieldOf(lake), 0, 0).depth).toBeCloseTo(3, 0);
       // The field is keyed on the surface bounds, so they must not follow the moving edges frame by frame.

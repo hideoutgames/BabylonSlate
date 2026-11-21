@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { SerializedScene } from "../packages/core/src/scene";
+import { parseLandscapeProperties } from "../packages/core/src/landscape";
 import { createDefaultScene, MAIN_SCENE_FILE } from "../packages/core/src/project";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import { decodeAssetDocument, encodeAssetDocument } from "../packages/assets/src/asset-document";
@@ -85,7 +86,7 @@ test.describe("Scene modes", () => {
     await page.getByRole("button", { name: "Frame", exact: true }).click();
     await expect.poll(() => terrainPixelFraction(page)).toBeGreaterThan(0.02);
     await page.getByRole("button", { name: "Raise", exact: true }).click();
-    const heightSum = async () => (await content(page)).actors.flatMap((actor) => actor.components).filter((c) => c.classId === "LandscapeComponent").flatMap((c) => c.properties.heights as number[]).reduce((sum, value) => sum + value, 0);
+    const heightSum = async () => (await content(page)).actors.flatMap((actor) => actor.components).filter((c) => c.classId === "LandscapeComponent").flatMap((c) => Array.from(parseLandscapeProperties(c.properties).heights)).reduce((sum, value) => sum + value, 0);
     await stroke(page, isMobile);
     await expect.poll(heightSum).toBeGreaterThan(0);
     await page.getByTestId("undo-document").click();

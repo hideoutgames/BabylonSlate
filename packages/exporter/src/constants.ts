@@ -14,6 +14,8 @@ export const NAVMESH_EXPORT_TYPE = "NavMesh";
 const NAVMESH_EXPORT_GUID_PREFIX = "navmesh:";
 export const AUDIO_REVERB_EXPORT_TYPE = "AudioReverb";
 const AUDIO_REVERB_EXPORT_GUID_PREFIX = "audioReverb:";
+export const LANDSCAPE_EXPORT_TYPE = "Landscape";
+const LANDSCAPE_EXPORT_GUID_PREFIX = "landscape:";
 export const FONT_FACETYPE_EXPORT_TYPE = "FontFacetype";
 export const AREA_EMISSION_EXPORT_TYPE = "AreaEmission";
 const AREA_EMISSION_EXPORT_PREFIX = "area-emission:";
@@ -43,6 +45,31 @@ export function sceneGuidFromAudioReverbExport(guid: string): string | null {
   return guid.startsWith(AUDIO_REVERB_EXPORT_GUID_PREFIX)
     ? guid.slice(AUDIO_REVERB_EXPORT_GUID_PREFIX.length)
     : null;
+}
+
+/** Key inside `GameSourceContent.landscapeBytes` and `sceneLandscapeBytes` (`<ownerGuid>:<chunkId>`). */
+export function landscapeSidecarKey(ownerGuid: string, chunkId: string): string {
+  return `${ownerGuid}:${chunkId}`;
+}
+
+/** Manifest sidecar asset guid for a binary `BSLD` landscape chunk (`landscape:<ownerGuid>:<chunkId>`). */
+export function landscapeExportGuid(ownerGuid: string, chunkId: string): string {
+  return `${LANDSCAPE_EXPORT_GUID_PREFIX}${landscapeSidecarKey(ownerGuid, chunkId)}`;
+}
+
+/** Returns `<ownerGuid>:<chunkId>` for a `Landscape` export sidecar guid, or null. */
+export function landscapeSidecarKeyFromExport(guid: string): string | null {
+  return guid.startsWith(LANDSCAPE_EXPORT_GUID_PREFIX)
+    ? guid.slice(LANDSCAPE_EXPORT_GUID_PREFIX.length)
+    : null;
+}
+
+/** Returns the owning scene/asset guid for a `Landscape` export sidecar guid, or null. */
+export function ownerGuidFromLandscapeExport(guid: string): string | null {
+  const key = landscapeSidecarKeyFromExport(guid);
+  if (!key) return null;
+  const colon = key.indexOf(":");
+  return colon > 0 ? key.slice(0, colon) : null;
 }
 
 export function fontFacetypeExportGuid(fontGuid: string): string {

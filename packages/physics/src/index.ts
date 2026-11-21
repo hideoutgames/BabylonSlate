@@ -15,6 +15,7 @@ export type {
   ColliderShape,
   ColliderShape3D,
   ColliderShape2D,
+  HeightFieldColliderShape,
   RigidBodyDesc,
   ColliderDesc,
   ColliderChanges,

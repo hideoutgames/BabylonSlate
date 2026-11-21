@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createActor, DEFAULT_FOLIAGE_CULL_DISTANCE, DEFAULT_FOLIAGE_FADE_RANGE, DEFAULT_FOLIAGE_SHADOW_DISTANCE, applyFoliageModelEdit, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, resizeLandscape, type SerializedScene, type FoliageGroup, type SerializedComponent } from "@haptic/core";
+import { createActor, DEFAULT_FOLIAGE_CULL_DISTANCE, DEFAULT_FOLIAGE_FADE_RANGE, DEFAULT_FOLIAGE_SHADOW_DISTANCE, applyFoliageModelEdit, identitySerializedTransform, normalizeSerializedLandscapeProperties, parseFoliageProperties, parseLandscapeProperties, resizeLandscape, serializeLandscapeProperties, type SerializedScene, type FoliageGroup, type SerializedComponent } from "@haptic/core";
 import { AssetPicker, PanelFrame, PropertyGrid, PropertySectionTitle, ToolbarStrip, TreeView, TypeVisualIcon, resolveTypeVisual, useTouchUi, type PropertyRow } from "@haptic/editor-kit";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Badge } from "@haptic/ui/components/badge";
@@ -86,7 +86,7 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
   };
   const createLandscape = () => {
     if (!scene) return;
-    const actor = createActor(crypto.randomUUID(), `Landscape ${entries.length + 1}`, { components: [{ id: crypto.randomUUID(), classId: "LandscapeComponent", transform: identitySerializedTransform(), properties: { ...parseLandscapeProperties({ width: NEW_LANDSCAPE_SIZE, depth: NEW_LANDSCAPE_SIZE, subdivisions: NEW_LANDSCAPE_CELLS }) } }] });
+    const actor = createActor(crypto.randomUUID(), `Landscape ${entries.length + 1}`, { components: [{ id: crypto.randomUUID(), classId: "LandscapeComponent", transform: identitySerializedTransform(), properties: { ...normalizeSerializedLandscapeProperties({ width: NEW_LANDSCAPE_SIZE, depth: NEW_LANDSCAPE_SIZE, subdivisions: NEW_LANDSCAPE_CELLS }) } }] });
     void commit({ ...scene, actors: [...scene.actors, actor] }).then((ok) => { if (ok) { selectActor(actor.id); setLandscapeSelection(`${actor.id}/${actor.components[0]!.id}`); } });
   };
   const deleteSelection = () => {
@@ -134,7 +134,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
     if (!scene || !selected || selected.actor.locked) return;
     void commit({ ...scene, actors: scene.actors.map((actor) => actor.id === selected.actor.id ? { ...actor, components: actor.components.map((entry) => entry.id === component.id ? component : entry) } : actor) });
   };
-  const setData = (next: typeof data) => { if (selected && next) update({ ...selected.component, properties: { ...next } }); };
+  const setData = (next: typeof data) => { if (selected && next) update({ ...selected.component, properties: { ...serializeLandscapeProperties(next) } }); };
   const brush = tools.landscapeBrush;
   const tool = tools.landscapeTool;
   const brushRows: PropertyRow[] = [

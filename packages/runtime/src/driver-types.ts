@@ -119,6 +119,8 @@ export interface RuntimeDriverOptions {
   acquireScene?: AcquireRuntimeScene;
   /** Baked navigation keyed by canonical scene guid, selected before Begin Play. */
   sceneNavmeshBytes?: Readonly<Record<string, Uint8Array>>;
+  /** Binary BSLD landscape chunks keyed by `<sceneGuid>:<chunkId>`, decoded once on component realization. */
+  sceneLandscapeBytes?: Readonly<Record<string, Uint8Array>>;
   /** Display name or library key → canonical scene asset guid. */
   sceneGuidByKey?: Readonly<Record<string, string>>;
   /** Overlay documents the session compositor can instantiate by guid or name. */

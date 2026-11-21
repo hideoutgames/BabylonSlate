@@ -68,7 +68,8 @@ export function isShape3D(shape: ColliderShape): boolean {
     shape.kind === "capsule" ||
     shape.kind === "cylinder" ||
     shape.kind === "convex" ||
-    shape.kind === "mesh"
+    shape.kind === "mesh" ||
+    shape.kind === "heightfield"
   );
 }
 
@@ -176,6 +177,27 @@ export function createHavokShape(
             havok.HP_Shape_CreateMesh(vPtr, numVertices, tPtr, numTriangles),
             "mesh shape creation",
           ),
+        ),
+      );
+    }
+    case "heightfield": {
+      const { numXSamples, numZSamples, width, depth, heights } = shape;
+      // Havok HP_Shape_CreateHeightField expects X-major order `heights[ix * numZSamples + iz]`
+      // and already centers the grid at `[-width/2, +width/2] x [-depth/2, +depth/2]`.
+      const transposed = new Float32Array(numXSamples * numZSamples);
+      for (let ix = 0; ix < numXSamples; ix++) {
+        const dstBase = ix * numZSamples;
+        for (let iz = 0; iz < numZSamples; iz++) {
+          transposed[dstBase + iz] = heights[iz * numXSamples + ix]!;
+        }
+      }
+      const dx = width / (numXSamples - 1);
+      const dz = depth / (numZSamples - 1);
+      return withFloat32Heap(havok, transposed, (ptr) =>
+        checkedValue(
+          havok,
+          havok.HP_Shape_CreateHeightField(numXSamples, numZSamples, [dx, 1, dz], ptr),
+          "heightfield shape creation",
         ),
       );
     }
