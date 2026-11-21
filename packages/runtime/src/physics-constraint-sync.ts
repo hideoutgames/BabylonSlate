@@ -89,11 +89,13 @@ export class PhysicsConstraintSync {
     eligible: (actor: Actor) => boolean;
     hosting?: ConstraintHosting;
   }): void {
+    const owners = options.world ? componentOwners(options.world, "PhysicsConstraintComponent") : [];
+    if (owners.length === 0 && this.applied.size === 0) return;
     const live = new Set<string>();
     // A failing constraint keeps its last usable joint; the others still
     // reconcile and absent joints are released before the failure is reported.
     let failure: Error | undefined;
-    for (const owner of options.world ? componentOwners(options.world, "PhysicsConstraintComponent") : []) {
+    for (const owner of owners) {
       if (owner.destroyed || options.findActor(owner.guid) !== owner || !options.eligible(owner)) continue;
       for (const component of owner.components) {
         if (component.destroyed || component.owner !== owner || component.classId !== "PhysicsConstraintComponent") continue;

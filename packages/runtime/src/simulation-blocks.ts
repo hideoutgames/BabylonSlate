@@ -16,6 +16,7 @@ interface SimulationBlocksHost {
  */
 export class SimulationBlocks {
   private count = 0;
+  private _revision = 0;
   private readonly host: SimulationBlocksHost;
 
   constructor(host: SimulationBlocksHost) { this.host = host; }
@@ -25,13 +26,24 @@ export class SimulationBlocks {
     return this.count > 0;
   }
 
+  /** Monotonic revision advancing whenever `active` flips. */
+  get revision(): number {
+    return this._revision;
+  }
+
   /** Hold the simulation until `operation` settles; the result follows `operation`. */
   hold<T>(operation: Promise<T>): Promise<T> {
     this.count++;
-    if (this.count === 1) this.host.emit({ type: "simulationBlocking", blocking: true });
+    if (this.count === 1) {
+      this._revision++;
+      this.host.emit({ type: "simulationBlocking", blocking: true });
+    }
     return operation.finally(() => {
       this.count--;
-      if (this.count === 0 && !this.host.stopped()) this.host.emit({ type: "simulationBlocking", blocking: false });
+      if (this.count === 0) {
+        this._revision++;
+        if (!this.host.stopped()) this.host.emit({ type: "simulationBlocking", blocking: false });
+      }
       this.host.settled();
     });
   }

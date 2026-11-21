@@ -91,6 +91,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   readonly havok: HavokPhysicsWithBindings;
   readonly worldId: HP_WorldId;
   private readonly bodies = new Map<string, BodyRecord>();
+  /** Non-static bodies so `syncSteppedBodyTransforms` skips static level geometry in O(0). */
+  private readonly activeMotionBodies = new Set<BodyRecord>();
   /** Each actor's live bodies, so `setContactReporting` reaches them without scanning every body. */
   private readonly bodiesByActor = new Map<string, Set<BodyRecord>>();
   private bodySeq = 0;
@@ -208,6 +210,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.disposeBodyRecord(record);
     }
     this.bodies.clear();
+    this.activeMotionBodies.clear();
     this.bodiesByActor.clear();
     this.collidersByOwner.clear();
     this.triggerColliders.clear();
@@ -272,11 +275,14 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         colliders: new Map(),
         container: null,
         hostsShapes: false,
+        lastBufferMatrix: null,
+        movedLastStep: desc.motionType !== "static",
         uncertainShapes: new Set(),
       };
       this.applyBodyTuning(record);
       this.contacts.applyEventMask(record);
       this.bodies.set(desc.id, record);
+      if (desc.motionType !== "static") this.activeMotionBodies.add(record);
       this.bodyIdByHpId.set(hpBodyId[0], desc.id);
       let owned = this.bodiesByActor.get(desc.actorId);
       if (!owned) this.bodiesByActor.set(desc.actorId, (owned = new Set()));
@@ -305,6 +311,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     this.characterControllers.destroyForBody(bodyId);
     this.disposeBodyRecord(record);
     this.bodies.delete(bodyId);
+    this.activeMotionBodies.delete(record);
     const owned = this.bodiesByActor.get(record.desc.actorId);
     if (owned?.delete(record) && !owned.size) this.bodiesByActor.delete(record.desc.actorId);
     this.contacts.forgetBody(record);
@@ -334,6 +341,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const previous = this.constraints.get(desc.id);
     if (previous) disposeHavokConstraint(this.havok, previous.jointId);
     this.constraints.set(desc.id, { desc, jointId });
+    this.markBodyAwake(a);
+    this.markBodyAwake(b);
   }
 
   destroyConstraint(id: string): void {
@@ -345,6 +354,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (!record) return;
     disposeHavokConstraint(this.havok, record.jointId);
     this.constraints.delete(id);
+    const a = this.bodies.get(record.desc.bodyAId);
+    const b = this.bodies.get(record.desc.bodyBId);
+    if (a) this.markBodyAwake(a);
+    if (b) this.markBodyAwake(b);
   }
 
   teleportBody(
@@ -421,6 +434,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       throw error;
     }
     record.desc.transform = pose;
+    this.markBodyAwake(record);
     // World membership refresh drops native pairs without emitting exits.
     this.contacts.refreshTriggerPairs(record);
     this.characterControllers.bodyTeleported(bodyId, pose.position);
@@ -453,6 +467,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.havok.HP_Body_SetTargetQTransform(record.hpBodyId, this.targetQTransform),
       "kinematic target transform",
     );
+    this.markBodyAwake(record);
   }
 
   getBodyTransform(bodyId: string): PhysicsTransform | null {
@@ -471,6 +486,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     out.rotation.z = record.pose.rotation.z;
     out.rotation.w = record.pose.rotation.w;
     return true;
+  }
+
+  didBodyMoveLastStep(bodyId: string): boolean {
+    const record = this.bodies.get(bodyId);
+    return record !== undefined && record.desc.motionType !== "static" && record.movedLastStep;
   }
 
   getBodyVelocity(bodyId: string): BodyVelocity | null {
@@ -510,6 +530,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.havok.HP_Body_SetAngularVelocity(record.hpBodyId, toHavokVec3(velocity)),
       "set angular velocity",
     );
+    this.markBodyAwake(record);
   }
 
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void {
@@ -521,6 +542,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (typeof velocity.y === "number" && Number.isFinite(velocity.y)) next[1] = velocity.y;
     if (typeof velocity.z === "number" && Number.isFinite(velocity.z)) next[2] = velocity.z;
     checked(this.havok, this.havok.HP_Body_SetLinearVelocity(record.hpBodyId, next), "set linear velocity");
+    this.markBodyAwake(record);
   }
 
   addImpulse(bodyId: string, impulse: Vec3, strength = 1): void {
@@ -543,6 +565,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       ]),
       "apply impulse",
     );
+    this.markBodyAwake(record);
   }
 
   addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void {
@@ -554,6 +577,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.havok.HP_Body_ApplyImpulse(record.hpBodyId, toHavokVec3(point), toHavokVec3(impulse)),
       "apply impulse at point",
     );
+    this.markBodyAwake(record);
   }
 
   getBodyImpulseResponse(bodyId: string, impulse: Vec3, point: Vec3) {
@@ -599,7 +623,11 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   updateBody(bodyId: string, tuning: RigidBodyTuning): void {
     const record = this.bodies.get(bodyId);
     if (!record) return;
-    if (tuning.motionType) record.desc.motionType = tuning.motionType;
+    if (tuning.motionType) {
+      record.desc.motionType = tuning.motionType;
+      if (tuning.motionType === "static") this.activeMotionBodies.delete(record);
+      else this.activeMotionBodies.add(record);
+    }
     if (typeof tuning.mass === "number" && Number.isFinite(tuning.mass)) {
       record.desc.mass = tuning.mass;
     }
@@ -617,6 +645,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     }
     if (tuning.motionType) this.applyMotionType(record);
     this.applyBodyTuning(record);
+    this.markBodyAwake(record);
   }
 
   createCollider(desc: ColliderDesc): void {
@@ -776,6 +805,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         if (!liveShapes.has(shape)) releaseHavokShape(this.havok, shape);
       }
     }
+    this.markBodyAwake(record);
   }
 
   private applyColliderTuning(collider: ColliderRecord): void {
@@ -870,32 +900,70 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     return this.characterControllers.moveCharacter(id, translation, dt, startPose);
   }
 
+  private markBodyAwake(record: BodyRecord): void {
+    record.lastBufferMatrix = null;
+    record.movedLastStep = record.desc.motionType !== "static";
+  }
+
   /**
    * Read every non-static stepped body's pose directly from Havok's world body buffer (`HP_World_GetBodyBuffer` +
    * `HP_Body_GetWorldTransformOffset`) with zero per-body WASM calls and zero allocations.
+   * When a body's 12 raw matrix floats are bit-identical to the previous step, skips quaternion extraction
+   * and marks `movedLastStep = false` so `PhysicsReadback` can skip resting/sleeping bodies too.
    */
   private syncSteppedBodyTransforms(): void {
+    if (this.activeMotionBodies.size === 0) return;
     const [res, bufferAddress] = this.havok.HP_World_GetBodyBuffer(this.worldId);
     const canReadBuffer = res === this.havok.Result.RESULT_OK && bufferAddress !== 0;
     if (canReadBuffer && this.heapFloat32?.buffer !== this.havok.HEAPU8.buffer) {
       this.heapFloat32 = new Float32Array(this.havok.HEAPU8.buffer);
     }
     const heap = this.heapFloat32;
-    for (const record of this.bodies.values()) {
-      if (record.desc.motionType === "static" || !record.inWorld) continue;
+    for (const record of this.activeMotionBodies) {
+      if (!record.inWorld) {
+        record.movedLastStep = false;
+        continue;
+      }
       const start = bufferAddress + record.worldTransformOffset;
       if (canReadBuffer && heap && start % 4 === 0) {
-        readBodyBufferTransform(heap, start >> 2, record.pose);
+        const m = start >> 2;
+        const m0 = heap[m]!, m1 = heap[m + 1]!, m2 = heap[m + 2]!;
+        const m4 = heap[m + 4]!, m5 = heap[m + 5]!, m6 = heap[m + 6]!;
+        const m8 = heap[m + 8]!, m9 = heap[m + 9]!, m10 = heap[m + 10]!;
+        const m12 = heap[m + 12]!, m13 = heap[m + 13]!, m14 = heap[m + 14]!;
+        let prev = record.lastBufferMatrix;
+        if (
+          prev !== null &&
+          prev[0] === m0 && prev[1] === m1 && prev[2] === m2 &&
+          prev[3] === m4 && prev[4] === m5 && prev[5] === m6 &&
+          prev[6] === m8 && prev[7] === m9 && prev[8] === m10 &&
+          prev[9] === m12 && prev[10] === m13 && prev[11] === m14
+        ) {
+          record.movedLastStep = false;
+          continue;
+        }
+        if (prev === null) {
+          prev = new Float32Array(12);
+          record.lastBufferMatrix = prev;
+        }
+        prev[0] = m0; prev[1] = m1; prev[2] = m2;
+        prev[3] = m4; prev[4] = m5; prev[5] = m6;
+        prev[6] = m8; prev[7] = m9; prev[8] = m10;
+        prev[9] = m12; prev[10] = m13; prev[11] = m14;
+        readBodyBufferTransform(heap, m, record.pose);
+        record.movedLastStep = true;
       } else {
+        record.lastBufferMatrix = null;
         const [qRes, [pos, rot]] = this.havok.HP_Body_GetQTransform(record.hpBodyId);
         if (qRes === this.havok.Result.RESULT_OK) {
-          record.pose.position.x = pos[0];
-          record.pose.position.y = pos[1];
-          record.pose.position.z = pos[2];
-          record.pose.rotation.x = rot[0];
-          record.pose.rotation.y = rot[1];
-          record.pose.rotation.z = rot[2];
-          record.pose.rotation.w = rot[3];
+          const p = record.pose.position;
+          const r = record.pose.rotation;
+          const changed =
+            p.x !== pos[0] || p.y !== pos[1] || p.z !== pos[2] ||
+            r.x !== rot[0] || r.y !== rot[1] || r.z !== rot[2] || r.w !== rot[3];
+          p.x = pos[0]; p.y = pos[1]; p.z = pos[2];
+          r.x = rot[0]; r.y = rot[1]; r.z = rot[2]; r.w = rot[3];
+          record.movedLastStep = changed || record.movedLastStep;
         }
       }
     }
@@ -944,6 +1012,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       ]),
       "native body teleport",
     );
+    this.markBodyAwake(record);
   }
 
   /** Update `record.pose` and refresh Havok's query broadphase immediately via remove/re-add. */

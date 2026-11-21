@@ -8,8 +8,8 @@ import {
   type CommandMessage,
 } from "@haptic/bridge";
 import { isSceneLayerAnchorActor } from "@haptic/core";
-import type { Actor, World } from "@haptic/object-model";
-import { actorLabel, WorldTransformComposer } from "./actor-world-transform";
+import type { Actor, World, WorldChangeObserver } from "@haptic/object-model";
+import { actorLabel, WorldTransformComposer, type ActorTransformMap } from "./actor-world-transform";
 import type { LogSeverity } from "./log-ring";
 import type { RenderSlots } from "./render-slots";
 import type { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
@@ -40,14 +40,15 @@ interface SnapshotPublisherHost {
 /**
  * The Actor pose snapshot: seq-locked double buffer, capacity growth
  * (`snapshotLayout`), the floating origin, and publishing. A publish lays out
- * overlays and runs the removal pass, then composes world poses and writes
- * every live actor's slot. `advance()` catch-up ticks keep their
- * per-tick layout and removals but write only the burst's final frame.
+ * overlays and runs the removal pass, then composes changed world poses and
+ * writes updated actor slots across the 2-buffer pair. `advance()` catch-up
+ * ticks keep their per-tick layout and removals but write only the burst's
+ * final frame.
  */
 export class SnapshotPublisher {
   private snapshots: SeqLockSnapshotPair;
   private _generation = 0;
-  /** Publish-time world poses, rewritten in place each snapshot write. */
+  /** Publish-time world poses, updated incrementally from `WorldChangeObserver` notifications. */
   private readonly poses = new WorldTransformComposer();
   private readonly findActor: (guid: string) => Actor | undefined;
   /** Reused per actor while writing a snapshot; `writeActorSlot` copies it into the buffer. */
@@ -60,6 +61,19 @@ export class SnapshotPublisher {
   };
   private origin = { x: 0, y: 0, z: 0 };
   private originGeneration = 0;
+  /** Incremental snapshot state across the 2-buffer `SeqLockSnapshotPair`. */
+  private fullRewriteRemaining = 2;
+  private needsFullCompose = true;
+  private lastStructureRevision = -1;
+  private lastSlotsRevision = -1;
+  private lastOriginGeneration = -1;
+  private lastCapacity = -1;
+  private cachedCount = 0;
+  private readonly rowByActor = new Map<Actor, { row: number; slotId: number }>();
+  private readonly dirtyPoses = new Set<Actor>();
+  private readonly dirtySlotFrames = new Map<Actor, number>();
+  private readonly walkVisited = new Set<Actor>();
+  private readonly unsubscribeWorld: () => void;
   /** Actors whose sheared world pose has been reported to the Output Log. */
   private readonly shearedActors = new WeakSet<Actor>();
   private readonly reportShearedActor = (actor: Actor): void => {
@@ -93,6 +107,18 @@ export class SnapshotPublisher {
   private readonly host: SnapshotPublisherHost;
   private readonly now: () => number;
 
+  private readonly worldObserver: WorldChangeObserver = {
+    onActorTransformChanged: (actor) => {
+      if (this.needsFullCompose) return;
+      this.markPoseDirtyWithDescendants(actor);
+    },
+    onActorVariableChanged: (actor, name) => {
+      if (name === "visible" || name === null) {
+        this.dirtySlotFrames.set(actor, 2);
+      }
+    },
+  };
+
   constructor(maxActors: number, world: World, slots: RenderSlots, host: SnapshotPublisherHost, now: () => number) {
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
     this.world = world;
@@ -100,6 +126,15 @@ export class SnapshotPublisher {
     this.host = host;
     this.now = now;
     this.findActor = (guid) => world.findActor(guid);
+    this.unsubscribeWorld = world.addChangeObserver(this.worldObserver);
+  }
+
+  dispose(): void {
+    this.unsubscribeWorld();
+    this.dirtyPoses.clear();
+    this.dirtySlotFrames.clear();
+    this.rowByActor.clear();
+    this.walkVisited.clear();
   }
 
   get capacity(): number { return this.snapshots.maxActors; }
@@ -127,6 +162,7 @@ export class SnapshotPublisher {
     try {
       this.snapshots = SeqLockSnapshotPair.grow(this.snapshots, capacity);
       this._generation += 1;
+      this.fullRewriteRemaining = 2;
       this.host.emit({ type: "snapshotLayout", capacity, generation: this._generation });
     } catch (error) {
       const message = `Unable to grow Actor snapshot capacity to ${capacity}: ${error instanceof Error ? error.message : String(error)}`;
@@ -263,11 +299,68 @@ export class SnapshotPublisher {
     if (removedActors) this.host.removedActors();
   }
 
+  private markPoseDirtyWithDescendants(root: Actor): void {
+    this.dirtyPoses.add(root);
+    const direct = this.world.getChildren(root.guid);
+    if (!direct || direct.size === 0) return;
+    const visited = this.walkVisited;
+    visited.clear();
+    visited.add(root);
+    const stack: Actor[] = [];
+    for (const child of direct) {
+      if (!child.destroyed && !visited.has(child)) {
+        visited.add(child);
+        stack.push(child);
+      }
+    }
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      this.dirtyPoses.add(current);
+      const next = this.world.getChildren(current.guid);
+      if (!next) continue;
+      for (const child of next) {
+        if (!child.destroyed && !visited.has(child)) {
+          visited.add(child);
+          stack.push(child);
+        }
+      }
+    }
+    visited.clear();
+  }
+
   private write(frameId: number, tickIndex: number, scriptMs: number, physicsMs: number): void {
     const actors = this.world.getActors();
     const buf = this.snapshots.beginWrite();
     const findActor = this.findActor;
-    const worldTransforms = this.poses.compose(findActor, actors, this.reportShearedActor);
+    const structureChanged = this.world.structuralRevision !== this.lastStructureRevision;
+    const slotsChanged = this.slots.revision !== this.lastSlotsRevision;
+    const capacityChanged = this.snapshots.maxActors !== this.lastCapacity;
+
+    let worldTransforms: ActorTransformMap;
+    if (structureChanged || slotsChanged || capacityChanged || this.needsFullCompose) {
+      worldTransforms = this.poses.compose(findActor, actors, this.reportShearedActor);
+      this.needsFullCompose = false;
+      this.dirtyPoses.clear();
+      this.dirtySlotFrames.clear();
+      this.fullRewriteRemaining = 2;
+      this.lastStructureRevision = this.world.structuralRevision;
+      this.lastSlotsRevision = this.slots.revision;
+      this.lastCapacity = this.snapshots.maxActors;
+    } else if (this.dirtyPoses.size > 0) {
+      for (const actor of this.dirtyPoses) this.dirtySlotFrames.set(actor, 2);
+      const incremental = this.poses.composeDirty(findActor, this.dirtyPoses, this.reportShearedActor);
+      this.dirtyPoses.clear();
+      if (incremental === null) {
+        worldTransforms = this.poses.compose(findActor, actors, this.reportShearedActor);
+        this.fullRewriteRemaining = 2;
+        this.dirtySlotFrames.clear();
+      } else {
+        worldTransforms = incremental;
+      }
+    } else {
+      worldTransforms = this.poses.current();
+    }
+
     const cameraActor = this.host.cameraActor();
     const layerCentre = cameraActor ? null : this.host.layerCameraCentre();
     const cameraPosition = cameraActor ? worldTransforms.get(cameraActor.guid)?.position
@@ -276,24 +369,65 @@ export class SnapshotPublisher {
       const next = { x: Math.floor(cameraPosition.x / 1024) * 1024, y: Math.floor(cameraPosition.y / 1024) * 1024, z: Math.floor(cameraPosition.z / 1024) * 1024 };
       if (next.x !== this.origin.x || next.y !== this.origin.y || next.z !== this.origin.z) { this.origin = next; this.originGeneration++; }
     }
+    if (this.originGeneration !== this.lastOriginGeneration) {
+      this.lastOriginGeneration = this.originGeneration;
+      this.fullRewriteRemaining = 2;
+      this.dirtySlotFrames.clear();
+    }
+
     const slot = this.slot;
-    let count = 0;
-    for (const actor of actors) {
-      // Layout-only anchors must not create fallback visuals from pose snapshots.
-      if (isSceneLayerAnchorActor(actor)) continue;
-      const slotId = this.slots.recordedSlot(actor);
-      if (slotId === undefined) continue;
-      const pose = worldTransforms.get(actor.guid);
-      if (!pose) continue;
-      slot.slotId = slotId;
-      slot.position = pose.position;
-      slot.rotation = pose.rotation;
-      slot.scale = pose.scale;
-      slot.flags =
-        (actor.getVariable("visible") === false ? 0 : SNAPSHOT_FLAG_VISIBLE) |
-        (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0);
-      writeActorSlot(buf, count, slot, this.origin);
-      count += 1;
+    let count: number;
+    if (this.fullRewriteRemaining > 0) {
+      this.rowByActor.clear();
+      count = 0;
+      for (const actor of actors) {
+        // Layout-only anchors must not create fallback visuals from pose snapshots.
+        if (isSceneLayerAnchorActor(actor)) continue;
+        const slotId = this.slots.recordedSlot(actor);
+        if (slotId === undefined) continue;
+        const pose = worldTransforms.get(actor.guid);
+        if (!pose) continue;
+        slot.slotId = slotId;
+        slot.position = pose.position;
+        slot.rotation = pose.rotation;
+        slot.scale = pose.scale;
+        slot.flags =
+          (actor.getVariable("visible") === false ? 0 : SNAPSHOT_FLAG_VISIBLE) |
+          (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0);
+        writeActorSlot(buf, count, slot, this.origin);
+        this.rowByActor.set(actor, { row: count, slotId });
+        count += 1;
+      }
+      this.cachedCount = count;
+      this.fullRewriteRemaining -= 1;
+      if (this.dirtySlotFrames.size > 0) {
+        for (const [actor, remaining] of this.dirtySlotFrames) {
+          if (remaining <= 1) this.dirtySlotFrames.delete(actor);
+          else this.dirtySlotFrames.set(actor, remaining - 1);
+        }
+      }
+    } else {
+      count = this.cachedCount;
+      if (this.dirtySlotFrames.size > 0) {
+        for (const [actor, remaining] of this.dirtySlotFrames) {
+          const entry = this.rowByActor.get(actor);
+          if (entry) {
+            const pose = worldTransforms.get(actor.guid);
+            if (pose) {
+              slot.slotId = entry.slotId;
+              slot.position = pose.position;
+              slot.rotation = pose.rotation;
+              slot.scale = pose.scale;
+              slot.flags =
+                (actor.getVariable("visible") === false ? 0 : SNAPSHOT_FLAG_VISIBLE) |
+                (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0);
+              writeActorSlot(buf, entry.row, slot, this.origin);
+            }
+          }
+          if (remaining <= 1) this.dirtySlotFrames.delete(actor);
+          else this.dirtySlotFrames.set(actor, remaining - 1);
+        }
+      }
     }
     writeSnapshotHeader(buf, {
       frameId,
