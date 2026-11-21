@@ -187,17 +187,13 @@ it("keeps real Havok shapes/helpers stable while moving unchanged high-vertex co
   actors[0]!.components
     .find((component) => component.classId === "RigidBodyComponent")!
     .setVariable("motionType", "static");
-  const nativeShapeCount = () =>
-    (
-      native.plugin._hknp as {
-        HP_GetStatistics(): [unknown, readonly number[]];
-      }
-    ).HP_GetStatistics()[1][1];
+  const nativeShapeCount = () => native.havok.HP_GetStatistics()[1][1];
   try {
     install(sync, triangles(2048));
     for (let warm = 0; warm < 3; warm++) sync.step(1 / 60, world);
     const baseline = nativeShapeCount();
-    const construct = vi.spyOn(native.plugin, "initShape");
+    const constructMesh = vi.spyOn(native.havok, "HP_Shape_CreateMesh");
+    const constructContainer = vi.spyOn(native.havok, "HP_Shape_CreateContainer");
     const resolve = vi.spyOn(assets, "resolveMeshCollisions");
     const scale = vi.spyOn(physics, "scaleColliderShape");
     const step = native.step.bind(native);
@@ -233,12 +229,11 @@ it("keeps real Havok shapes/helpers stable while moving unchanged high-vertex co
       readback: distribution(readbackMs),
       liveNativeShapes: nativeShapeCount(),
     });
-    expect(construct).not.toHaveBeenCalled();
+    expect(constructMesh).not.toHaveBeenCalled();
+    expect(constructContainer).not.toHaveBeenCalled();
     expect(resolve).not.toHaveBeenCalled();
     expect(scale).not.toHaveBeenCalled();
     expect(nativeShapeCount()).toBe(baseline);
-    expect(native.scene.meshes).toHaveLength(0);
-    expect(native.scene.geometries).toHaveLength(0);
   } finally {
     sync.dispose();
   }

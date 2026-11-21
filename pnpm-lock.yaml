@@ -684,9 +684,6 @@ importers:
 
   packages/physics:
     dependencies:
-      '@babylonjs/core':
-        specifier: 9.29.0
-        version: 9.29.0(patch_hash=18620d357e5233f35850ebdf242bbc399d618050ff52a6c5150e3539a55d0d52)
       '@babylonjs/havok':
         specifier: 1.3.14
         version: 1.3.14

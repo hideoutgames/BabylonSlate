@@ -1,24 +1,43 @@
-import { Physics6DoFConstraint, type Physics6DoFLimit } from "@babylonjs/core/Physics/v2/physicsConstraint";
-import { PhysicsConstraintAxis } from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { HavokPlugin } from "@babylonjs/core/Physics/v2/Plugins/havokPlugin";
-import type { Scene } from "@babylonjs/core/scene";
-import type { PhysicsBody } from "@babylonjs/core/Physics/v2/physicsBody";
-import type { HavokPhysicsWithBindings, HP_BodyId } from "@babylonjs/havok";
+import type {
+  ConstraintAxis,
+  HavokPhysicsWithBindings,
+  HP_BodyId,
+  HP_ConstraintId,
+} from "@babylonjs/havok";
 import { rotateQuatVec } from "./collider-bake";
-import type { ConstraintDesc, Vec3 } from "./types";
+import type { ConstraintDesc } from "./types";
+import {
+  checked,
+  checkedValue,
+  perpendicularAxis,
+  toHavokVec3,
+} from "./havok-wasm-memory";
 
-const toVector = (v: Vec3) => new Vector3(v.x, v.y, v.z);
-const locked = (axis: PhysicsConstraintAxis): Physics6DoFLimit => ({ axis, minLimit: 0, maxLimit: 0 });
+type AxisLimit = {
+  axis: ConstraintAxis;
+  minLimit?: number;
+  maxLimit?: number;
+};
 
-export function makeHavokConstraint(desc: ConstraintDesc, scene: Scene): Physics6DoFConstraint {
-  const linear = [PhysicsConstraintAxis.LINEAR_X, PhysicsConstraintAxis.LINEAR_Y, PhysicsConstraintAxis.LINEAR_Z];
-  const angular = [PhysicsConstraintAxis.ANGULAR_X, PhysicsConstraintAxis.ANGULAR_Y, PhysicsConstraintAxis.ANGULAR_Z];
+/** Create, configure, attach, and validate a native Havok 6DoF constraint directly via `HP_Constraint_*`. */
+export function createHavokConstraint(
+  havok: HavokPhysicsWithBindings,
+  desc: ConstraintDesc,
+  bodyA: HP_BodyId,
+  bodyB: HP_BodyId,
+): HP_ConstraintId {
+  const Axis = havok.ConstraintAxis;
+  const Mode = havok.ConstraintAxisLimitMode;
+  const linear = [Axis.LINEAR_X, Axis.LINEAR_Y, Axis.LINEAR_Z];
+  const angular = [Axis.ANGULAR_X, Axis.ANGULAR_Y, Axis.ANGULAR_Z];
+  const locked = (axis: ConstraintAxis): AxisLimit => ({ axis, minLimit: 0, maxLimit: 0 });
+
   let axisA = { x: 1, y: 0, z: 0 };
-  let axisB = { ...axisA };
+  let axisB = { x: 1, y: 0, z: 0 };
   let perpendicularA = { x: 0, y: 1, z: 0 };
-  let perpendicularB = { ...perpendicularA };
-  let limits: Physics6DoFLimit[];
+  let perpendicularB = { x: 0, y: 1, z: 0 };
+  let limits: AxisLimit[];
+
   switch (desc.kind) {
     case "fixed":
       axisA = rotateQuatVec(desc.frameA!, axisA);
@@ -35,54 +54,119 @@ export function makeHavokConstraint(desc: ConstraintDesc, scene: Scene): Physics
       limits = linear.map(locked);
       if (desc.angularLimits) {
         const keys = ["x", "y", "z"] as const;
-        for (let i = 0; i < angular.length; i++) limits.push({ axis: angular[i]!,
-          minLimit: desc.angularLimits.min[keys[i]!], maxLimit: desc.angularLimits.max[keys[i]!] });
+        for (let i = 0; i < angular.length; i++) {
+          limits.push({
+            axis: angular[i]!,
+            minLimit: desc.angularLimits.min[keys[i]!],
+            maxLimit: desc.angularLimits.max[keys[i]!],
+          });
+        }
       }
       break;
     case "distance":
-      limits = [{ axis: PhysicsConstraintAxis.LINEAR_DISTANCE, minLimit: desc.distance, maxLimit: desc.distance }];
+      perpendicularA = perpendicularAxis(axisA);
+      perpendicularB = perpendicularAxis(axisB);
+      limits = [{ axis: Axis.LINEAR_DISTANCE, minLimit: desc.distance, maxLimit: desc.distance }];
       break;
     case "hinge":
       axisA = desc.axisA;
       axisB = desc.axisB;
       perpendicularA = desc.referenceAxisA!;
       perpendicularB = desc.referenceAxisB!;
-      limits = [...linear, PhysicsConstraintAxis.ANGULAR_Y, PhysicsConstraintAxis.ANGULAR_Z].map(locked);
-      if (desc.limits) limits.push({ axis: PhysicsConstraintAxis.ANGULAR_X, minLimit: desc.limits.min, maxLimit: desc.limits.max });
+      limits = [...linear, Axis.ANGULAR_Y, Axis.ANGULAR_Z].map(locked);
+      if (desc.limits) {
+        limits.push({
+          axis: Axis.ANGULAR_X,
+          minLimit: desc.limits.min,
+          maxLimit: desc.limits.max,
+        });
+      }
       break;
   }
-  return new Physics6DoFConstraint({
-    pivotA: toVector(desc.anchorA), pivotB: toVector(desc.anchorB),
-    axisA: toVector(axisA), axisB: toVector(axisB),
-    perpAxisA: toVector(perpendicularA), perpAxisB: toVector(perpendicularB),
-    collision: desc.collideConnected,
-  }, limits, scene);
+
+  const jointId = checkedValue(havok, havok.HP_Constraint_Create(), "constraint creation");
+  if (!jointId || jointId[0] === 0n) {
+    throw new Error("Havok failed to create the constraint");
+  }
+  try {
+    checked(havok, havok.HP_Constraint_SetParentBody(jointId, bodyA), "constraint parent body");
+    checked(havok, havok.HP_Constraint_SetChildBody(jointId, bodyB), "constraint child body");
+    checked(
+      havok,
+      havok.HP_Constraint_SetAnchorInParent(
+        jointId,
+        toHavokVec3(desc.anchorA),
+        toHavokVec3(axisA),
+        toHavokVec3(perpendicularA),
+      ),
+      "constraint parent anchor",
+    );
+    checked(
+      havok,
+      havok.HP_Constraint_SetAnchorInChild(
+        jointId,
+        toHavokVec3(desc.anchorB),
+        toHavokVec3(axisB),
+        toHavokVec3(perpendicularB),
+      ),
+      "constraint child anchor",
+    );
+
+    for (const limit of limits) {
+      if ((limit.minLimit ?? -1) === 0 && (limit.maxLimit ?? -1) === 0) {
+        checked(havok, havok.HP_Constraint_SetAxisMode(jointId, limit.axis, Mode.LOCKED), "constraint axis lock");
+      } else {
+        if (limit.axis === Axis.LINEAR_DISTANCE) {
+          // Havok 1.3.14 applies `LIMITED` to `LINEAR_DISTANCE` but returns `RESULT_INVALIDARGS`; verify the applied mode.
+          havok.HP_Constraint_SetAxisMode(jointId, limit.axis, Mode.LIMITED);
+          if (havok.HP_Constraint_GetAxisMode(jointId, limit.axis)[1] !== Mode.LIMITED) {
+            throw new Error("Havok constraint distance limit mode failed");
+          }
+        } else {
+          checked(havok, havok.HP_Constraint_SetAxisMode(jointId, limit.axis, Mode.LIMITED), "constraint axis limit mode");
+        }
+        if (limit.minLimit !== undefined) {
+          checked(havok, havok.HP_Constraint_SetAxisMinLimit(jointId, limit.axis, limit.minLimit), "constraint axis min limit");
+        }
+        if (limit.maxLimit !== undefined) {
+          checked(havok, havok.HP_Constraint_SetAxisMaxLimit(jointId, limit.axis, limit.maxLimit), "constraint axis max limit");
+        }
+      }
+    }
+
+    checked(
+      havok,
+      havok.HP_Constraint_SetCollisionsEnabled(jointId, desc.collideConnected ? 1 : 0),
+      "constraint collisions flag",
+    );
+    checked(havok, havok.HP_Constraint_SetEnabled(jointId, 1), "constraint enable");
+
+    const parent = havok.HP_Constraint_GetParentBody(jointId);
+    const child = havok.HP_Constraint_GetChildBody(jointId);
+    const enabled = havok.HP_Constraint_GetEnabled(jointId);
+    if (
+      parent[0] !== havok.Result.RESULT_OK ||
+      child[0] !== havok.Result.RESULT_OK ||
+      enabled[0] !== havok.Result.RESULT_OK ||
+      parent[1][0] !== bodyA[0] ||
+      child[1][0] !== bodyB[0] ||
+      !enabled[1]
+    ) {
+      throw new Error("Havok failed to attach the constraint");
+    }
+    return jointId;
+  } catch (error) {
+    disposeHavokConstraint(havok, jointId);
+    throw error;
+  }
 }
 
-/** Babylon 9.29 releases native joints but leaves its reverse pair index behind. */
-export function disposeHavokConstraint(plugin: HavokPlugin, constraint: Physics6DoFConstraint): void {
-  const handles = constraint._pluginData as Array<[bigint]> | undefined;
-  if (!handles) return;
-  const validHandles = handles.filter((handle) => Array.isArray(handle) && typeof handle[0] === "bigint" && handle[0] !== 0n);
-  const ids = validHandles.map(([id]) => id);
-  // A failed native allocation may publish a null handle; never release it.
-  constraint._pluginData = validHandles;
-  constraint.dispose();
-  const pairs = (plugin as unknown as { _constraintToBodyIdPair: Map<bigint, unknown> })._constraintToBodyIdPair;
-  for (const id of ids) pairs.delete(id);
-}
-
-/** Babylon ignores native setup result codes; validate the published joint before replacing an owner. */
-export function assertHavokConstraintAttached(plugin: HavokPlugin, constraint: Physics6DoFConstraint, a: PhysicsBody, b: PhysicsBody): void {
-  const handles = constraint._pluginData as Array<[bigint]> | undefined;
-  if (handles?.length !== 1 || !handles[0]?.[0]) throw new Error("Havok failed to create the constraint");
-  const havok = plugin._hknp as HavokPhysicsWithBindings;
-  const parent = havok.HP_Constraint_GetParentBody(handles[0]);
-  const child = havok.HP_Constraint_GetChildBody(handles[0]);
-  const enabled = havok.HP_Constraint_GetEnabled(handles[0]);
-  const bodyA = (a._pluginData as { hpBodyId: HP_BodyId }).hpBodyId;
-  const bodyB = (b._pluginData as { hpBodyId: HP_BodyId }).hpBodyId;
-  if (parent[0] !== havok.Result.RESULT_OK || child[0] !== havok.Result.RESULT_OK || enabled[0] !== havok.Result.RESULT_OK ||
-    parent[1][0] !== bodyA[0] || child[1][0] !== bodyB[0] || !enabled[1])
-    throw new Error("Havok failed to attach the constraint");
+/** Disable and release a native Havok constraint handle. */
+export function disposeHavokConstraint(
+  havok: HavokPhysicsWithBindings,
+  jointId: HP_ConstraintId | null | undefined,
+): void {
+  if (!jointId || jointId[0] === 0n) return;
+  havok.HP_Constraint_SetEnabled(jointId, 0);
+  havok.HP_Constraint_Release(jointId);
 }

@@ -103,12 +103,11 @@ const debuggerTypesFromBridge = boundary(
 );
 
 /**
- * Physics hosts Babylon Physics V2 on a worker-local NullEngine Scene.
- * It may import `@babylonjs/core` and `@babylonjs/havok` and no other Babylon
- * package (gui/loaders/inspector and every other editor-side package), and
- * never React or Capacitor.
+ * Physics talks directly to `@babylonjs/havok` WASM (3D) and Rapier2D WASM (2D)
+ * with zero `@babylonjs/core` dependency. It may import `@babylonjs/havok` only
+ * among `@babylonjs/*` packages, and never React or Capacitor.
  */
-const physicsNoReactNoCapacitor = babylonBoundary(
+const physicsNoReactNoCapacitor = boundary(
   "boundary/physics",
   ["packages/physics/**/*.{ts,tsx}"],
   [
@@ -117,10 +116,10 @@ const physicsNoReactNoCapacitor = babylonBoundary(
       message: "physics must not import React (engineplan section 2.2).",
     },
     {
-      // An allowlist, so a newly installed Babylon package is rejected by default.
-      group: ["@babylonjs/*", "!@babylonjs/core", "!@babylonjs/havok"],
+      // An allowlist, so @babylonjs/core and every other Babylon package are rejected by default.
+      group: ["@babylonjs/*", "@babylonjs/**", "!@babylonjs/havok"],
       message:
-        "physics may import @babylonjs/core Physics V2 and @babylonjs/havok only — not gui/loaders/inspector or other Babylon packages.",
+        "physics talks directly to @babylonjs/havok WASM and must not import @babylonjs/core or other Babylon packages.",
     },
     {
       group: CAPACITOR_PATTERNS,
