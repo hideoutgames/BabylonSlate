@@ -3,6 +3,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { CommandMessage } from "@haptic/bridge";
 import { viewOfBox, type BoxView } from "./active-view";
 import { posesEveryCommand } from "./anim-pose";
+import { worldSpriteBounds } from "./sprite-batch-handle";
 
 type AnimStateCommand = Extract<CommandMessage, { type: "animState" }>;
 
@@ -120,6 +121,18 @@ export class AnimVisibilityGate {
   private seen(slotId: number): boolean {
     const root = this.binding.meshes.get(slotId);
     if (!root || root.isDisposed()) return true;
+    const spriteBounds = worldSpriteBounds(root);
+    if (spriteBounds) {
+      const dx = spriteBounds.maxX - spriteBounds.minX;
+      const dy = spriteBounds.maxY - spriteBounds.minY;
+      const dz = spriteBounds.maxZ - spriteBounds.minZ;
+      const reach = this.binding.meshSorting.get(slotId)?.castShadows === false ? 1 : SHADOW_REACH;
+      const half = Math.hypot(dx, dy, dz) * 0.5 * POSE_MARGIN * reach;
+      const cx = (spriteBounds.minX + spriteBounds.maxX) * 0.5;
+      const cy = (spriteBounds.minY + spriteBounds.maxY) * 0.5;
+      const cz = (spriteBounds.minZ + spriteBounds.maxZ) * 0.5;
+      return viewOfBox(this.scene, cx - half, cy - half, cz - half, cx + half, cy + half, cz + half, view).visible;
+    }
     const sphere = actorSphere(root);
     if (!sphere) return true;
     const scale = root.absoluteScaling;

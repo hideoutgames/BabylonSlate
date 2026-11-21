@@ -1,6 +1,7 @@
 import "./babylon-registrations";
 import { RenderingContextLostError } from "./context-lost-error";
 import { setSceneInstancing } from "./instance-pool";
+import { setSceneWorldSpriteBatching } from "./world-sprite-batcher";
 import { ejectPooledLeaf } from "./pooled-visuals";
 import { allowSceneOcclusionCulling, sceneOcclusionBuffer, setSceneOcclusionFrozen } from "./view-occlusion";
 import { applyGamepadRumble } from "./gamepad-rumble";
@@ -1162,6 +1163,8 @@ function initializeEngine(
   // unseen When Visible actor's waits until a camera can see it.
   const animVisibility = new AnimVisibilityGate(scene, binding, (command) => applyAnimStateToScene(animHostReportingMissing, command));
   scene.onBeforeRenderObservable.add(() => animVisibility.flush());
+  // Play world sprites batch into persistent thin-instanced quads, flushed after animVisibility and LayerImageAtlas.
+  if (options.playMode) setSceneWorldSpriteBatching(scene, true);
   // Many actors place their feet each frame: they share one snapshot of the meshes' world bounds, dropped before each
   // render (after the flush above).
   shareFootPlacementBounds(scene);

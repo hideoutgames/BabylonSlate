@@ -42,8 +42,10 @@ import {
   applyComponentSorting,
   applyWorldVisualGroup,
 } from "./sorting";
+import { spriteWorldSize } from "@haptic/assets";
 import { sceneShadowController } from "./shadow-controller";
 import { createSpriteQuad } from "./sprite-quad";
+import { attachBatchedSprite, batchedSpriteOf, sceneWorldSpriteBatching } from "./world-sprite-batcher";
 import {
   createTilemapMeshes,
   worldTileSize,
@@ -106,14 +108,29 @@ export function applyPlayVisualSorting(root: Mesh, slotId: number, binding: Snap
       if (target) {
         shadows.setParticipation(target, part);
         applyOccluderProperty(target, part.occluder);
+        batchedSpriteOf(target)?.setSorting({
+          castShadows: part.castShadows === true,
+          receiveShadows: part.receiveShadows !== false,
+          shadingMode: part.shadingMode ?? "2d",
+        });
       }
     }
   } else if (parts?.[0]) {
     shadows.setParticipation(root, parts[0]);
     applyOccluderProperty(root, parts[0].occluder);
+    batchedSpriteOf(root)?.setSorting({
+      castShadows: parts[0].castShadows === true,
+      receiveShadows: parts[0].receiveShadows !== false,
+      shadingMode: parts[0].shadingMode ?? primary?.shadingMode ?? "2d",
+    });
   } else if (primary?.castShadows !== undefined) {
     // The optimized actor mesh draws its one component: an unlit visual's class default casts none.
     shadows.setParticipation(root, { castShadows: primary.castShadows, receiveShadows: primary.receiveShadows });
+    batchedSpriteOf(root)?.setSorting({
+      castShadows: primary.castShadows === true,
+      receiveShadows: primary.receiveShadows !== false,
+      shadingMode: primary.shadingMode ?? "2d",
+    });
   }
   const layers = binding.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const actorId = primary?.actorGuid ?? `actor-${slotId}`;
@@ -342,6 +359,25 @@ export function createPlayMesh(
     const payload = assetGuid
       ? binding?.spritePayloads?.get(assetGuid)
       : undefined;
+    const partComponentId = illuminationPart?.componentId ?? binding?.primaryComponentIds.get(slotId);
+    if (batchesPlaySprite(scene, binding, slotId, partComponentId)) {
+      const ppu = payload?.pixelsPerUnit ?? binding?.pixelsPerUnit ?? 100;
+      const { width, height } = spriteWorldSize({ pixelsPerUnit: ppu, width: payload?.width, height: payload?.height });
+      const pivot = payload?.pivot ?? { x: 0.5, y: 0.5 };
+      const root = new Mesh(name, scene);
+      root.isPickable = false;
+      attachBatchedSprite(root, {
+        width,
+        height,
+        pivotX: pivot.x,
+        pivotY: pivot.y,
+        textureGuid: payload?.textureGuid ?? null,
+        assets: binding,
+        shadingMode,
+        visible: true,
+      });
+      return root;
+    }
     const mesh = payload
       ? createSpriteQuad(
           scene,
@@ -493,6 +529,26 @@ export function createPlayMesh(
  */
 function poolsPlayPrimitive(binding: SnapshotSceneBinding | undefined, slotId: number): boolean {
   return !binding?.deformers.get(slotId);
+}
+
+/**
+ * Whether a Play world `SpriteComponent` draws through `WorldSpriteBatcher`: enabled on `scene`, not in a Scene Layer
+ * (Scene Layers use `OverlayDrawBatcher`), and no custom Material override, deformer, or active outline.
+ */
+function batchesPlaySprite(
+  scene: Scene,
+  binding: SnapshotSceneBinding | undefined,
+  slotId: number,
+  componentId: string | undefined,
+): boolean {
+  if (!sceneWorldSpriteBatching(scene)) return false;
+  if (!binding) return true;
+  if (binding.isOverlaySlot?.(slotId) === true) return false;
+  if (binding.deformers.get(slotId)) return false;
+  if (binding.outlines.get(slotId)?.bindings.length) return false;
+  if (binding.materialAssetGuids.get(slotId)) return false;
+  if (componentId && binding.componentMaterialGuids.get(`${slotId}|${componentId}`)) return false;
+  return true;
 }
 
 function finishPlayWorldMesh(mesh: Mesh): Mesh {
