@@ -74,13 +74,13 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 
 - Pure packages (core, assets, edit, object-model, scripting, debugger, graph IRs, input, exporter, source-control, …) import neither React nor Babylon; they hold most engine logic and test fast.
 - `assets` owns texture **encoding** (Basis wasm, no Babylon); `render` owns **decoding** (`KhronosTextureContainer2`).
-- `physics` hosts Babylon Physics V2 on a worker-local `NullEngine` Scene so `runtime` stays Babylon-free. `navigation` may load Recast wasm but not Babylon.
+- `physics` talks directly to `@babylonjs/havok` WASM (3D) and Rapier2D WASM (2D) with zero `@babylonjs/core`, so the game worker stays completely Babylon-free. `navigation` may load Recast wasm but not Babylon.
 - Only `vfs` adapters touch Capacitor; platform detection is `getHostPlatform()`.
 
 ### Babylon integration constraints
 
 - Babylon is left-handed (X right, Y up, Z into the screen). `scene.useRightHandedSystem` stays `false`; 2D conventions derive from it.
-- 3D physics: `HavokPlugin` + `PhysicsAggregate` on a never-rendered worker-local `NullEngine` Scene, stepped through its physics engine, Havok wasm loaded with `locateFile`. `runtime` talks only to `PhysicsBackend`. Bodies never cross threads. 2D uses Rapier (Babylon has no Rapier plugin).
+- 3D physics: direct `@babylonjs/havok` WASM C-API (`HP_World_*`, `HP_Body_*`, `HP_Shape_*`, `HP_Constraint_*`, `HP_QueryCollector_*`), Havok wasm loaded with `locateFile`, zero `@babylonjs/core` in the worker. `runtime` talks only to `PhysicsBackend`. Bodies never cross threads. 2D uses Rapier.
 - Movement beside a dynamic Rigid Body steers that body's horizontal velocity and leaves gravity, collisions and impulses to physics (rotation locked); without a Rigid Body, or beside a kinematic one, a character controller moves a kinematic capsule. A static Rigid Body, Nav Agent, Ragdoll, Water Buoyancy or a second Movement stops it.
 - Gameplay owns animation time: evaluators run in the worker and send state, normalised time and weights; the main thread poses clips with its own pose evaluator and never lets Babylon play gameplay animation (replay would break).
 - The game HUD / UserInterface system is removed. Editor chrome and debug overlays (Print, Stats) are DOM. SceneLayers are 2D actor documents on a session compositor, not a HUD revival.
@@ -90,7 +90,7 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 - The KTX2 transcoder is self-hosted via `KhronosTextureContainer2.URLConfig` and must ship in the editor, player and every export.
 - WebGL context loss is normal on iPad: restore keeps the hardware scaling level, Babylon rebuilds retained resources (the ResourceCache is not flushed), materials invalidate and the Output Log reports it.
 - iOS blocks audio until a gesture: both hosts unlock on the first touch, never at load.
-- `NullEngine` is the `render` test seam and the production host for worker physics.
+- `NullEngine` is the `render` test seam (and headless model-import converter); worker physics no longer uses it.
 - Babylon is pinned to an exact version with a repository patch ([patches/](../../patches/), [pnpm-workspace.yaml](../../pnpm-workspace.yaml)); upgrades re-validate the patch.
 
 ### iPad memory and thermal architecture

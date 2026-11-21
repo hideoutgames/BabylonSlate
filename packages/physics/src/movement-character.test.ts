@@ -244,3 +244,39 @@ it.each(["havok", "rapier", "software3d", "software2d"] as const)(
     }
   },
 );
+
+it("Havok stays grounded when standing still pressed against a wall and snaps down a ledge beside a side wall", async () => {
+  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+  try {
+    body(backend, "floor", { x: 0, y: -0.5, z: 0 });
+    box(backend, "floor", { x: 8, y: 0.5, z: 8 });
+    body(backend, "ledge", { x: -2, y: 0.1, z: 0 });
+    box(backend, "ledge", { x: 2, y: 0.1, z: 8 });
+    // Side wall running along X at z = 0.91 (face at z = 0.41, right at capsule radius 0.4 + offset 0.01).
+    body(backend, "side-wall", { x: 0, y: 1.5, z: 0.91 });
+    box(backend, "side-wall", { x: 8, y: 2, z: 0.5 });
+    body(backend, "player", { x: -1, y: 1.11, z: 0 }, true);
+    capsule(backend, "player");
+    backend.createCharacterController({ id: "motor", bodyId: "player", offset: 0.01, groundSnapDistance: 0.3 });
+    const move = (x: number, y: number, z = 0) => {
+      const result = backend.moveCharacter("motor", { x, y, z }, 1 / 60)!;
+      backend.step(1 / 60);
+      return result;
+    };
+    // Press firmly against both the ledge floor and the side wall, then stop completely.
+    for (let i = 0; i < 6; i++) move(0, -0.01, 0.05);
+    const standing = move(0, 0, 0);
+    expect(standing.grounded).toBe(true);
+    expect(standing.position.y).toBeCloseTo(1.11, 2);
+    // Step off the ledge while continuing to hug the side wall: ground snap must not be masked by the wall.
+    let result = standing;
+    for (let i = 0; i < 18; i++) result = move(0.1, 0, 0.05);
+    expect(result.grounded).toBe(true);
+    expect(result.position.y).toBeCloseTo(0.91, 2);
+    // Standing still on the lower floor while pressed against the wall stays grounded.
+    const stillAtBottom = move(0, 0, 0);
+    expect(stillAtBottom.grounded).toBe(true);
+  } finally {
+    backend.dispose();
+  }
+});

@@ -422,9 +422,12 @@ export class HavokCharacters {
               havok.HP_QueryCollector_GetShapeCastResult(this.castCollector, i),
               "character support result",
             );
+            const ny = hitWorld[4][1];
+            // Ignore vertical side-wall or ceiling grazing contacts so hugging a wall never masks the floor underneath.
+            if (ny <= 1e-3) continue;
             if (fraction < bestFrac) {
               bestFrac = fraction;
-              bestNy = hitWorld[4][1];
+              bestNy = ny;
             }
           }
           if (bestFrac <= 1 && bestNy >= character.maxSlopeCosine) {
@@ -462,9 +465,12 @@ export class HavokCharacters {
             havok.HP_QueryCollector_GetShapeCastResult(this.castCollector, i),
             "character ground snap result",
           );
+          const ny = hitWorld[4][1];
+          // Ignore vertical side-wall or ceiling grazing contacts so stepping off a ledge beside a wall still snaps.
+          if (ny <= 1e-3) continue;
           if (fraction < bestFrac) {
             bestFrac = fraction;
-            bestNy = hitWorld[4][1];
+            bestNy = ny;
           }
         }
         if (bestFrac <= 1 && bestNy >= character.maxSlopeCosine) {
