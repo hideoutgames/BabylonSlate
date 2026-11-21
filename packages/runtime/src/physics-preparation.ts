@@ -360,7 +360,7 @@ export function physicsWorldTransforms(
 }
 
 /** Whether `actor` owns a live component that makes it a physics participant in a `kind` world. */
-function hasParticipantComponent(actor: Actor, kind: "2d" | "3d"): boolean {
+export function hasParticipantComponent(actor: Actor, kind: "2d" | "3d"): boolean {
   const components = actor.components;
   for (let index = 0; index < components.length; index++) {
     const component = components[index]!;

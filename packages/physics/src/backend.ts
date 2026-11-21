@@ -50,6 +50,12 @@ export interface PhysicsBackend {
    * (Rapier's native translation read still allocates its own vector).
    */
   readBodyTransform(bodyId: string, out: PhysicsTransform): boolean;
+  /**
+   * Optional. Returns false when the most recent `step()` observed no pose change for this body
+   * (e.g. a sleeping or resting dynamic body), allowing `PhysicsReadback` to skip pose readback
+   * when no ancestor moved. Backends that omit it are treated as always moved.
+   */
+  didBodyMoveLastStep?(bodyId: string): boolean;
   getBodyVelocity(bodyId: string): BodyVelocity | null;
   /** Set only the supplied world velocity axes of a dynamic body. */
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void;

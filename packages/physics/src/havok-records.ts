@@ -34,6 +34,10 @@ export type BodyRecord = {
   container: HP_ShapeId | null;
   /** The compound includes shapes hosted for other actors; hits resolve per shape. */
   hostsShapes: boolean;
+  /** Last stepped 12 matrix floats (cols 0..3 xyz) read from the Havok body buffer, or null before first step/after mutation. */
+  lastBufferMatrix: Float32Array | null;
+  /** True when the last step observed a pose change (or before the first step / after an explicit mutation). */
+  movedLastStep: boolean;
   /** Failed rollback keeps possibly attached native shapes alive until body teardown. */
   uncertainShapes: Set<HP_ShapeId>;
   mutationFailure?: Error;
