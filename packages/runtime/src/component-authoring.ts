@@ -39,7 +39,7 @@ import {
   defaultNavMeshBlockerComponentProperties,
   defaultNavMeshComponentProperties,
 } from "@haptic/navigation/settings";
-import { normalizeSceneStreamingProperties, parseLandscapeProperties, parseFoliageProperties, parseLight2DProperties } from "@haptic/core";
+import { normalizeSceneStreamingProperties, normalizeSerializedLandscapeProperties, parseFoliageProperties, parseLight2DProperties } from "@haptic/core";
 
 /** Canonical authorable fields shared by scene editing and final-state capture. */
 export function defaultComponentAuthoringProperties(
@@ -57,7 +57,7 @@ export function defaultComponentAuthoringProperties(
     case "SceneStreamingComponent":
       return { ...normalizeSceneStreamingProperties({}) };
     case "LandscapeComponent":
-      return { ...parseLandscapeProperties({}) };
+      return { ...normalizeSerializedLandscapeProperties({}) };
     case "FoliageComponent":
       return { ...parseFoliageProperties({}) };
     case "SaveGameComponent":

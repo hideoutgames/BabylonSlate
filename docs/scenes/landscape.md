@@ -63,7 +63,8 @@ Each paint stroke becomes one entry in **Foliage Outliner**, with its instance c
 - Each stroke is one undo step. Press <kbd>Escape</kbd> or touch with a second finger to cancel a stroke before you lift.
 - A single foliage stroke holds up to 20,000 instances.
 - Foliage is static scenery: it has no collision, scripts or animation.
-- Landscape collision works only in scenes whose **Physics World** is 3D. It needs no Collider or Rigid Body.
+- Landscape collision uses a 3D heightfield and works only in scenes whose **Physics World** is 3D. It needs no Collider or Rigid Body.
+- Landscape chunks automatically step down mesh detail with camera distance (distance LODs), while sculpting and 3D heightfield collisions always run at full resolution.
 - Landscape and Foliage work in world scenes only, not in Scene Layers.
 
 ## Related

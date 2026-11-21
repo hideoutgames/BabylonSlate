@@ -835,6 +835,48 @@ describe("packedContentFromGame", () => {
     expect(content.audioReverbByScene.get("scene-2")).toEqual(new Uint8Array([7, 8]));
   });
 
+  it("hydrates packed binary BSLD landscape sidecars without base64", async () => {
+    const { encodeLandscapeChunk, landscapeChunkId, parseLandscapeProperties } = await import("@haptic/core");
+    const { LANDSCAPE_EXPORT_TYPE, landscapeExportGuid, landscapeSidecarKey } = await import("@haptic/exporter");
+    const terrain = parseLandscapeProperties({
+      width: 32,
+      depth: 32,
+      subdivisions: 4,
+      heights: Float32Array.from({ length: 25 }, (_, i) => (i === 12 ? 7.5 : 0)),
+    });
+    const chunkId = landscapeChunkId("terrain-1");
+    const chunkBytes = encodeLandscapeChunk(terrain);
+    const packed = await exportGame({
+      platform: "web",
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: landscapeExportGuid("scene-1", chunkId),
+          ownerGuid: "scene-1",
+          type: LANDSCAPE_EXPORT_TYPE,
+          sceneGuid: "scene-1",
+          bytes: chunkBytes,
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    const key = landscapeSidecarKey("scene-1", chunkId);
+    expect(game.landscapeBytes.get(key)).toEqual(chunkBytes);
+    const content = packedContentFromGame(game);
+    expect(content.landscapeBytes.get(key)).toEqual(chunkBytes);
+  });
+
   it("loads lifecycle classes without spawning unplaced actors", async () => {
     const packed = await exportGame({
       platform: "web",

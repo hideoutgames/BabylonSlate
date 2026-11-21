@@ -525,6 +525,7 @@ const LANDSCAPE_DESCRIPTOR_VARIABLES = [
   "depth",
   "subdivisions",
   "heights",
+  "data",
 ] as const;
 
 const WORLD_UP: Vec3 = { x: 0, y: 1, z: 0 };

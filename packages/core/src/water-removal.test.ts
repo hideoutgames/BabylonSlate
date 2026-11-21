@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { identityTransform } from "./math-rng";
 import { eulerDegreesToQuaternion, quatRotateVector } from "./euler";
-import { landscapeCollisionMesh, parseLandscapeProperties } from "./landscape";
+import { landscapeHeightField, parseLandscapeProperties } from "./landscape";
 import { landscapeHeightAt, landscapeWorldHeightAt, normalizeWaterRemoval, waterCutAt, waterRemovalDistance } from "./water-removal";
 
 describe("Water removal and terrain cut-outs", () => {
@@ -19,18 +19,29 @@ describe("Water removal and terrain cut-outs", () => {
     expect(normalizeWaterRemoval({ shape: "cone", width: -1 })).toMatchObject({ shape: "box", width: 0.01, enabled: true });
   });
 
-  it("samples terrain exactly on its collision triangles", () => {
-    const heights = Array.from({ length: 25 }, (_, i) => (i * 7919) % 13 - 6);
+  it("samples terrain exactly on its heightfield triangles", () => {
+    const heights = Float32Array.from({ length: 25 }, (_, i) => (i * 7919) % 13 - 6);
     const data = parseLandscapeProperties({ width: 8, depth: 8, subdivisions: 4, heights });
-    const mesh = landscapeCollisionMesh({ ...data, collisionsEnabled: true })!;
-    for (let t = 0; t < mesh.indices.length; t += 3) {
-      const [a, b, c] = [0, 1, 2].map((k) => {
-        const i = mesh.indices[t + k]! * 3;
-        return { x: mesh.positions[i]!, y: mesh.positions[i + 1]!, z: mesh.positions[i + 2]! };
-      });
-      // Centroid of every rendered/collision triangle.
-      const x = (a!.x + b!.x + c!.x) / 3, z = (a!.z + b!.z + c!.z) / 3;
-      expect(landscapeHeightAt(data, x, z)).toBeCloseTo((a!.y + b!.y + c!.y) / 3, 9);
+    const hf = landscapeHeightField({ ...data, collisionsEnabled: true })!;
+    const side = hf.numXSamples;
+    const dx = hf.width / (side - 1), dz = hf.depth / (side - 1);
+    const pt = (ix: number, iz: number) => ({
+      x: ix * dx - hf.width / 2,
+      y: hf.heights[iz * side + ix]!,
+      z: iz * dz - hf.depth / 2,
+    });
+    for (let iz = 0; iz < side - 1; iz++) {
+      for (let ix = 0; ix < side - 1; ix++) {
+        // Match the rendered and Havok heightfield diagonal (1,0)-(0,1).
+        const tris = [
+          [pt(ix, iz), pt(ix + 1, iz), pt(ix, iz + 1)],
+          [pt(ix + 1, iz), pt(ix + 1, iz + 1), pt(ix, iz + 1)],
+        ] as const;
+        for (const [a, b, c] of tris) {
+          const x = (a.x + b.x + c.x) / 3, z = (a.z + b.z + c.z) / 3;
+          expect(landscapeHeightAt(data, x, z)).toBeCloseTo((a.y + b.y + c.y) / 3, 9);
+        }
+      }
     }
     expect(landscapeHeightAt(data, 4.01, 0)).toBeNull();
   });
@@ -38,7 +49,7 @@ describe("Water removal and terrain cut-outs", () => {
   it("cuts water inside transformed removal volumes and under raised terrain", () => {
     const [x, y, z, w] = eulerDegreesToQuaternion([0, 45, 0]);
     const removal = { volume: normalizeWaterRemoval({ width: 2, height: 2, length: 10 }), transform: { position: { x: 10, y: 0, z: 0 }, rotation: { x, y, z, w }, scale: { x: 1, y: 1, z: 1 } } };
-    const island = parseLandscapeProperties({ width: 20, depth: 20, subdivisions: 4, heights: Array.from({ length: 25 }, (_, i) => i === 12 ? 6 : -2) });
+    const island = parseLandscapeProperties({ width: 20, depth: 20, subdivisions: 4, heights: Float32Array.from({ length: 25 }, (_, i) => i === 12 ? 6 : -2) });
     const land = { data: island, transform: { ...identityTransform(), position: { x: -30, y: 0, z: 0 } } };
     const cutters = { removals: [removal], landscapes: [land] };
     // The rotated box runs diagonally, so a point 3 m along its diagonal is removed but 3 m along X is not.
@@ -53,7 +64,7 @@ describe("Water removal and terrain cut-outs", () => {
   it("measures a rolled landscape's height straight below the queried point", () => {
     const [x, y, z, w] = eulerDegreesToQuaternion([0, 0, 30]);
     // A ramp rising 0.25 per metre along local X, so its triangles are one plane.
-    const ramp = parseLandscapeProperties({ width: 20, depth: 20, subdivisions: 4, heights: Array.from({ length: 25 }, (_, i) => 0.25 * (5 * (i % 5) - 10)) });
+    const ramp = parseLandscapeProperties({ width: 20, depth: 20, subdivisions: 4, heights: Float32Array.from({ length: 25 }, (_, i) => 0.25 * (5 * (i % 5) - 10)) });
     const transform = { ...identityTransform(), position: { x: 1, y: 2, z: 0 }, rotation: { x, y, z, w } };
     for (const u of [-6, 0, 4]) {
       const local = quatRotateVector(transform.rotation, { x: u, y: 0.25 * u, z: 3 });

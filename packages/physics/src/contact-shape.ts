@@ -11,6 +11,18 @@ export const CONTACT_SHAPE_TIE_TOLERANCE = 1e-3;
 
 /** Bounds that convex hulls and triangle meshes resolve contact points against. */
 export function localShapeBounds(shape: ColliderShape): LocalBounds | null {
+  if (shape.kind === "heightfield") {
+    let minY = Infinity, maxY = -Infinity;
+    const heights = shape.heights;
+    for (let i = 0; i < heights.length; i++) {
+      const y = heights[i]!;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    const hx = shape.width * 0.5;
+    const hz = shape.depth * 0.5;
+    return minY <= maxY ? [-hx, minY, -hz, hx, maxY, hz] : null;
+  }
   let points: ArrayLike<number>;
   if (shape.kind === "mesh") points = shape.positions;
   else if (shape.kind === "convex") points = shape.points.flatMap((p) => [p.x, p.y, p.z]);
@@ -97,7 +109,8 @@ export function colliderSignedDistance(
       return Math.min(Math.max(radial, axial), 0) + Math.hypot(Math.max(radial, 0), Math.max(axial, 0));
     }
     case "convex":
-    case "mesh": {
+    case "mesh":
+    case "heightfield": {
       if (!bounds) return Infinity;
       return boxDistance(
         x - (bounds[0] + bounds[3]) / 2, y - (bounds[1] + bounds[4]) / 2, z - (bounds[2] + bounds[5]) / 2,

@@ -15,7 +15,7 @@ import type { MovementWorldSync } from "./movement";
 import type { RenderTargetPayload, RenderTargetTexturePayload } from "@haptic/core";
 import type { WaterDefinition } from "@haptic/core";
 import type { ScalabilitySession, ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, ScalabilityAcknowledgement } from "@haptic/core";
-import type { CollisionTriangleMesh } from "@haptic/core";
+import { parseLandscapeProperties, type CollisionTriangleMesh } from "@haptic/core";
 import { inputMappingsFromAssets } from "@haptic/input";
 import type {
   CommandMessage,
@@ -399,6 +399,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly cameraShakeCatalog = new Map<string, CameraShakeCatalogEntry>();
   /** 2D and 3D Timeline Clip assets of the current sources, by guid, for Create. */
   readonly timelineClipCatalog = new Map<string, TimelineClipAssetCatalogEntry>();
+  /** Binary BSLD landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
+  readonly sceneLandscapeBytes = new Map<string, Uint8Array>();
   readonly scriptHost: ScriptHost;
   readonly objectLifetime: RuntimeObjectLifetime;
   readonly scriptDebug: ScriptDebugObserver;
@@ -487,6 +489,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.acquireScene = options.acquireScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
     this.navigation.replaceSceneNavMeshes(options.sceneNavmeshBytes ?? {});
+    this.replaceSceneLandscapes(options.sceneLandscapeBytes ?? {});
     this.deferSceneModelsReady = options.deferSceneModelsReady === true;
     this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
     this.cooperativeSceneLoading = options.cooperativeSceneLoading
@@ -964,6 +967,52 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.behaviourTrees.registerBlackboard(guid, document);
   }
 
+  replaceSceneLandscapes(bytes: Readonly<Record<string, Uint8Array>>): void {
+    this.sceneLandscapeBytes.clear();
+    for (const [key, value] of Object.entries(bytes)) {
+      this.sceneLandscapeBytes.set(key, value);
+    }
+  }
+
+  hydrateActorLandscapes(actor: Actor | null, sceneGuid?: string): Actor | null {
+    if (!actor) return null;
+    for (const component of actor.components) {
+      if (component.classId !== "LandscapeComponent") continue;
+      if (
+        component.getVariable("heights") instanceof Float32Array &&
+        component.getVariable("weights") instanceof Uint8Array
+      ) {
+        continue;
+      }
+      const chunkId = component.getVariable("chunkId");
+      let binaryBytes: Uint8Array | undefined;
+      if (typeof chunkId === "string" && chunkId.length > 0) {
+        if (sceneGuid) binaryBytes = this.sceneLandscapeBytes.get(`${sceneGuid}:${chunkId}`);
+        if (!binaryBytes) binaryBytes = this.sceneLandscapeBytes.get(chunkId);
+        if (!binaryBytes) {
+          const suffix = `:${chunkId}`;
+          for (const [key, bytes] of this.sceneLandscapeBytes) {
+            if (key.endsWith(suffix)) {
+              binaryBytes = bytes;
+              break;
+            }
+          }
+        }
+      }
+      const parsed = parseLandscapeProperties(Object.fromEntries(component.variables), binaryBytes);
+      component.setVariable("width", parsed.width);
+      component.setVariable("depth", parsed.depth);
+      component.setVariable("subdivisions", parsed.subdivisions);
+      component.setVariable("heights", parsed.heights);
+      component.setVariable("weights", parsed.weights);
+      component.setVariable("materialGuid", parsed.materialGuid);
+      component.setVariable("collisionsEnabled", parsed.collisionsEnabled);
+      component.variables.delete("data");
+      component.variables.delete("chunkId");
+    }
+    return actor;
+  }
+
   registerSceneContent(content: RuntimeSceneContent): void {
     const retained = new Set(content.assetGuids);
     this.simulation.retainSceneContent(retained, content.dataAssets);
@@ -972,6 +1021,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.sceneLayerLibrary.clear();
     for (const entry of content.sceneLayers ?? []) this.sceneLayerLibrary.set(entry.guid, entry.layer);
     this.navigation.replaceSceneNavMeshes(content.sceneNavmeshBytes ?? {});
+    this.replaceSceneLandscapes(content.sceneLandscapeBytes ?? {});
     this.behaviourTrees.replaceAnimClipCatalog(content.animClipCatalog ?? []);
     this.animGraphs.replaceAnimClipCatalog(content.animClipCatalog ?? []);
     this.behaviourTrees.replaceAudioAssets(content.audioAssetGuids ?? []);
@@ -1176,6 +1226,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.sceneRealizer.releaseSceneSources();
     this.playScene = undefined;
     this.sceneLibrary.clear();
+    this.sceneLandscapeBytes.clear();
     // Dispose.
     this.admission.clear();
     this.layers.clear();

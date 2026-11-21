@@ -1610,21 +1610,30 @@ it("edits slider visual asset slots independently and exposes ordered range valu
   expect(lower).toMatchObject({ kind: "number", value: 20, min: 10, max: 40 });
 });
 
-it("edits a Landscape's size, cells, collisions and landscape Material without exposing its heights or paint weights", () => {
+it("edits a Landscape's size, cells, collisions and landscape Material without exposing its heights or paint weights", async () => {
+  const { parseLandscapeProperties, serializeLandscapeProperties } = await import("@haptic/core");
+  const sculpted = serializeLandscapeProperties(parseLandscapeProperties({
+    width: 32,
+    depth: 32,
+    subdivisions: 4,
+    heights: Float32Array.from({ length: 25 }, (_, i) => (i === 12 ? 3 : 0)),
+    materialGuid: "ground",
+  }));
   const { rows, update, onPickAsset } = rowsFor({ id: "terrain", classId: "LandscapeComponent",
-    properties: { ...defaultPropertiesFor("LandscapeComponent"), subdivisions: 4, materialGuid: "ground" } });
+    properties: { ...sculpted } });
   expect(rows.map((row) => row.label)).toEqual(["Size", "Cells", "Landscape Collisions", "Landscape Material"]);
 
   const cells = rows.find((row) => row.label === "Cells");
   if (cells?.kind !== "number") throw new Error("Missing Cells row");
   cells.onChange(8);
-  // The height and weight grids are resampled in the same edit as the resolution.
+  // The height and weight grids are resampled and serialized into compact BSLD data in the same edit.
   expect(update).toHaveBeenLastCalledWith("subdivisions", 8, {
-    heights: expect.any(Array),
-    weights: expect.any(Array),
+    data: expect.any(String),
   });
-  const alsoSet = update.mock.lastCall![2] as { heights: number[]; weights: number[] };
-  expect([alsoSet.heights.length, alsoSet.weights.length]).toEqual([81, 81 * 4]);
+  const alsoSet = update.mock.lastCall![2] as { data: string | null };
+  const decoded = parseLandscapeProperties({ subdivisions: 8, data: alsoSet.data });
+  expect([decoded.heights.length, decoded.weights.length]).toEqual([81, 81 * 4]);
+  expect(decoded.heights[4 * 9 + 4]).toBeCloseTo(3, 4);
 
   const material = rows.find((row) => row.label === "Landscape Material");
   if (material?.kind !== "asset") throw new Error("Missing Landscape Material row");

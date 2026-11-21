@@ -38,6 +38,7 @@ Select a Landscape in **Landscape Outliner**, then use **Landscape Settings**.
 - World scenes only.
 - Locked actors cannot be sculpted or edited.
 - A Landscape Material reads the four paint weights with the [Landscape Paint Layers](../scripting/material/landscape-paint-layers.md) node.
+- Distant landscape chunks automatically step down mesh detail (distance LODs) while sculpting and 3D heightfield collisions stay at full resolution.
 
 ## Related
 

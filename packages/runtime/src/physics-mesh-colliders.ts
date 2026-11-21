@@ -6,7 +6,7 @@ import {
   type ModelPayload,
 } from "@haptic/assets";
 import {
-  landscapeCollisionMesh,
+  landscapeHeightField,
   sameCollisionTriangleMesh,
   type CollisionFilter,
   type CollisionTriangleMesh,
@@ -58,7 +58,7 @@ export class MeshColliders {
   >();
   private readonly landscapeSources = new WeakMap<ActorComponent, {
     descriptor: readonly unknown[];
-    shape: ReturnType<typeof landscapeCollisionMesh>;
+    shape: ReturnType<typeof landscapeHeightField>;
   }>();
   private readonly modelContentIdentities = new Map<string, string>();
   private readonly meshScratch: unknown[] = [];
@@ -140,11 +140,11 @@ export class MeshColliders {
 
   collectLandscapeColliders(actor: Actor, bodyId: string, scale: Vec3, colliders: Map<string, ColliderDesc>): void {
     for (const component of this.landscapePhysicsComponents(actor)) {
-      const names = ["width", "depth", "subdivisions", "heights", "collisionsEnabled"];
+      const names = ["width", "depth", "subdivisions", "heights", "data", "collisionsEnabled"];
       const descriptor = names.map((name) => component.getVariable(name));
       let source = this.landscapeSources.get(component);
       if (!source || !sameDescriptor(source.descriptor, descriptor)) {
-        source = { descriptor, shape: landscapeCollisionMesh(Object.fromEntries(names.map((name, index) => [name, descriptor[index]]))) };
+        source = { descriptor, shape: landscapeHeightField(Object.fromEntries(names.map((name, index) => [name, descriptor[index]]))) };
         this.landscapeSources.set(component, source);
       }
       if (!source.shape) continue;

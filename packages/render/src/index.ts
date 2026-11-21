@@ -207,4 +207,5 @@ export {
 } from "./decal-pass";
 export { createDecalGuide } from "./decal-guide";
 export { updateFoliageDistances, attachFoliageLodSet } from "./foliage-mesh";
+export { updateLandscapeLods, LANDSCAPE_LOD_DISTANCES } from "./landscape-mesh";
 
