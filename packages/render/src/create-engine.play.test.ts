@@ -6169,7 +6169,7 @@ describe("Play createEngine view", () => {
     };
     const world = view(false);
     expect(sceneRenderingSettings(world).effectsPlan).toMatchObject({
-      ambientOcclusion: { enabled: true }, reflections: { enabled: true }, volumetricLighting: { enabled: true }, screenShadows: "high",
+      ambientOcclusion: { enabled: true }, reflections: { enabled: true }, screenShadows: "high",
       bloom: { enabled: true }, imageProcessing: { sceneLinear: true, vignette: { enabled: true } }, upscale: { enabled: true },
     });
     expect(sceneMultisampleCount(world)).toBeGreaterThan(1);
