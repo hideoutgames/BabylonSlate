@@ -1,6 +1,6 @@
 import { BabylonSlateScopedStorage, decodeBase64, encodeBase64, type BabylonSlateScopedStoragePlugin, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
 import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, utf8ByteLength, validateStorageRange, validateStorageRangeResult } from "./storage-range";
-import { PROJECT_FILE, StorageNotFoundError } from "@haptic/core";
+import { StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
@@ -12,7 +12,7 @@ import { Directory, Filesystem } from "@capacitor/filesystem";
 import { getHostPlatform, type HostPlatform } from "./platform";
 import { projectFolderName, projectRelativePath } from "./project-path";
 import { isAppOwnedFolder } from "./library-folders";
-import { isStagedWrite, stagedWriteName } from "./staged-write";
+import { ASIDE_TARGET_MAX_BYTES, asideWriteFits, asideWriteName, asideWriteTarget, isStagedWrite, stagedWriteName } from "./staged-write";
 import { nativeBinaryBridge, type NativeBinaryBridge, type NativeBinaryBridgePlugin, type NativeBinaryRange } from "./native-binary-bridge";
 
 /** Where projects live in app storage; the native plugin accepts app-storage paths under this root only. */
@@ -55,6 +55,14 @@ function rethrowFilesystemError(error: unknown, path: string): never {
     throw new StorageNotFoundError(path, { cause: error });
   }
   throw error;
+}
+
+/** A replace refused before anything was written: the file's name is too long for its aside copy (`ASIDE_TARGET_MAX_BYTES`). */
+export class FileNameTooLongError extends Error {
+  constructor(name: string) {
+    super(`The file name "${name}" is too long to save on this device. Use a name of at most ${ASIDE_TARGET_MAX_BYTES} bytes.`);
+    this.name = "FileNameTooLongError";
+  }
 }
 
 export interface DocumentsFilesystemApi {
@@ -144,6 +152,8 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   private readonly root: string;
   private readonly plugin: DocumentsNativePlugin | undefined;
   private readonly bridge: Promise<NativeBinaryBridge | null>;
+  /** Aside copies (full paths) of this adapter's writes still running, which listings leave to them. */
+  private readonly asidesInFlight = new Set<string>();
 
   constructor(options: DocumentsStorageOptions = {}) {
     const platform = options.platform ?? getHostPlatform();
@@ -169,7 +179,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     name = projectFolderName(name);
     const root = `${this.root}/${name}`;
     await this.ensureDirectory(root);
-    await this.finishProjectFileReplace(root);
+    await this.settleFolder(root);
     this.folder = { id: `documents:${name}`, name, tier: "documents" };
     return this.folder;
   }
@@ -184,7 +194,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     const name = projectFolderName(handle.id.slice("documents:".length));
     const info = await this.fs.stat({ path: `${this.root}/${name}`, directory: this.directory });
     if (info.type !== "directory") throw new Error("Project folder is not a directory.");
-    await this.finishProjectFileReplace(`${this.root}/${name}`);
+    await this.settleFolder(`${this.root}/${name}`);
     this.folder = { id: `documents:${name}`, name, tier: "documents" };
     return this.folder;
   }
@@ -280,39 +290,47 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   /**
-   * Finishes a `project.json` replacement a killed app left half done, from
-   * its marker (never by guessing from content): with `project.json` missing
-   * and the marker's complete staged file present, the staged file becomes
-   * `project.json`. Otherwise the marker and its staged file are leftovers of
-   * a write that finished or never got that far, and are removed. Failures
-   * leave everything as it was; opening goes on.
+   * Settles the project root's aside copies before anything reads
+   * `project.json` (`settleAsides`); a failure leaves them for the next
+   * listing, and opening goes on.
    */
-  private async finishProjectFileReplace(root: string): Promise<void> {
-    const directory = this.directory;
+  private async settleFolder(root: string): Promise<void> {
     try {
-      const { files } = await this.fs.readdir({ path: root, directory });
-      const names = new Set(files.map((file) => file.name));
-      for (const file of files) {
-        if (file.type !== "file" || !isStagedWrite(file.name) || file.size > 1024) continue;
-        let staged: string;
-        try {
-          const record = JSON.parse((await this.fs.readFile({ path: `${root}/${file.name}`, directory, encoding: "utf8" })).data) as { target?: unknown; staged?: unknown };
-          if (record.target !== PROJECT_FILE || typeof record.staged !== "string" || !isStagedWrite(record.staged)) continue;
-          staged = record.staged;
-        } catch {
-          continue;
-        }
-        if (!names.has(PROJECT_FILE) && names.has(staged)) {
-          await this.fs.rename({ from: `${root}/${staged}`, to: `${root}/${PROJECT_FILE}`, directory, toDirectory: directory });
-          names.add(PROJECT_FILE);
-        } else if (names.has(staged)) {
-          await this.fs.deleteFile({ path: `${root}/${staged}`, directory });
-        }
-        await this.fs.deleteFile({ path: `${root}/${file.name}`, directory });
-      }
+      const { files } = await this.fs.readdir({ path: root, directory: this.directory });
+      await this.settleAsides(root, files);
     } catch {
-      // Left for the next open.
+      // Left for the next listing.
     }
+  }
+
+  /**
+   * Finishes what a write killed mid-replace left in `folder`, from the names
+   * alone (`asideWriteName`): an aside copy whose file is missing is the file
+   * and moves back; one beside its file is stale and goes. Copies of this
+   * adapter's writes still running are theirs. Returns the listing as it is
+   * now, without staged or aside names; a step that fails stays for the next
+   * listing.
+   */
+  private async settleAsides<T extends { name: string; type: string }>(folder: string, files: readonly T[]): Promise<T[]> {
+    const names = new Set(files.map((file) => file.name));
+    const restored: T[] = [];
+    for (const file of files) {
+      const target = asideWriteTarget(file.name);
+      const aside = `${folder}/${file.name}`;
+      if (target === null || file.type !== "file" || this.asidesInFlight.has(aside)) continue;
+      try {
+        if (names.has(target)) {
+          await this.fs.deleteFile({ path: aside, directory: this.directory });
+        } else {
+          await this.fs.rename({ from: aside, to: `${folder}/${target}`, directory: this.directory, toDirectory: this.directory });
+          names.add(target);
+          restored.push({ ...file, name: target });
+        }
+      } catch {
+        // Left for the next listing.
+      }
+    }
+    return [...files.filter((file) => !isStagedWrite(file.name) && asideWriteTarget(file.name) === null), ...restored];
   }
 
   async readBinary(path: string, options?: StorageReadOptions): Promise<Uint8Array> {
@@ -362,31 +380,58 @@ export class DocumentsStorageAdapter implements ProjectStorage {
 
   /**
    * Without the binary transport: the bytes go to a staged `.haptic-<uuid>.tmp`
-   * beside the file, then move over it, so a failed or interrupted write never
-   * leaves the file truncated. A failure removes the staged file.
-   *
-   * Capacitor's iOS `rename` removes an existing file before it moves the
-   * staged one (the transport's native commit is a single POSIX rename, with
-   * no such gap). A kill in between would leave no `project.json`, which
-   * makes the folder refuse to open, so for that file alone a marker naming
-   * the complete staged file is written before the rename and removed after;
-   * `finishProjectFileReplace` completes the move on the next open.
+   * beside the file, then replace it. Capacitor's `rename` is no atomic
+   * replace (iOS removes an existing file before it moves the staged one), so
+   * the file being replaced first moves to an aside copy named after it
+   * (`asideWriteName`), the staged file moves into place, and the copy goes.
+   * Killed at any step, the next listing or open finds the old or the new
+   * complete file (`settleAsides`); a failure removes the staged file and
+   * moves the old one back. The transport's native commit is one POSIX
+   * rename and needs none of this.
    */
   private async stagedWrite(full: string, content: { data: string; encoding?: "utf8" }): Promise<void> {
     const slash = full.lastIndexOf("/");
-    const folder = full.slice(0, slash);
-    const stagedName = stagedWriteName();
-    const staged = `${folder}/${stagedName}`;
-    const marker = full.slice(slash + 1) === PROJECT_FILE && folder === this.abs("", true) ? `${folder}/${stagedWriteName()}` : null;
+    const directory = this.directory;
+    const name = full.slice(slash + 1);
+    // A file whose name leaves no room for its aside copy cannot be replaced safely here; a new one needs no copy.
+    if (!asideWriteFits(name) && await this.fileExists(full)) throw new FileNameTooLongError(name);
+    const staged = `${full.slice(0, slash)}/${stagedWriteName()}`;
+    const aside = `${full.slice(0, slash)}/${asideWriteName(name)}`;
+    let setAside = false;
+    this.asidesInFlight.add(aside);
     try {
-      await this.fs.writeFile({ path: staged, ...content, directory: this.directory, recursive: true });
-      if (marker) await this.fs.writeFile({ path: marker, data: JSON.stringify({ target: PROJECT_FILE, staged: stagedName }), directory: this.directory, encoding: "utf8" });
-      await this.fs.rename({ from: staged, to: full, directory: this.directory, toDirectory: this.directory });
-    } catch (error) {
-      await this.fs.deleteFile({ path: staged, directory: this.directory }).catch(() => {});
-      throw error;
+      try {
+        await this.fs.writeFile({ path: staged, ...content, directory, recursive: true });
+        // A name too long for a copy got here only as a new file, with nothing to set aside.
+        if (asideWriteFits(name)) {
+          try {
+            await this.fs.rename({ from: full, to: aside, directory, toDirectory: directory });
+            setAside = true;
+          } catch (error) {
+            // A new file has nothing to set aside; any other failure leaves the file as it was.
+            if (!isMissing(error) && await this.fileExists(full)) throw error;
+          }
+        }
+        await this.fs.rename({ from: staged, to: full, directory, toDirectory: directory });
+      } catch (error) {
+        await this.fs.deleteFile({ path: staged, directory }).catch(() => {});
+        if (setAside) await this.fs.rename({ from: aside, to: full, directory, toDirectory: directory }).catch(() => {});
+        throw error;
+      }
+      // The new file is in place; a copy left by a failure here goes at the next listing.
+      if (setAside) await this.fs.deleteFile({ path: aside, directory }).catch(() => {});
     } finally {
-      if (marker) await this.fs.deleteFile({ path: marker, directory: this.directory }).catch(() => {});
+      this.asidesInFlight.delete(aside);
+    }
+  }
+
+  private async fileExists(full: string): Promise<boolean> {
+    try {
+      await this.fs.stat({ path: full, directory: this.directory });
+      return true;
+    } catch (error) {
+      if (isMissing(error)) return false;
+      throw error;
     }
   }
 
@@ -408,8 +453,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
         path: full,
         directory: this.directory,
       });
-      return files
-        .filter((f) => !isStagedWrite(f.name))
+      return (await this.settleAsides(full, files))
         .map((f) => ({
           name: f.name,
           isDir: f.type === "directory",

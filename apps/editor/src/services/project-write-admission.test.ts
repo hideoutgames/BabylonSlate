@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter } from "./project-write-admission";
+import { admitOwnerWrites, guardProjectStorage, isProjectWritesLocked, ProjectWriteAdmission, withProjectWriter } from "./project-write-admission";
 
 describe("project write admission", () => {
   it("drains complete admitted operations before locking while refusing new public writes", async () => {
@@ -145,5 +145,65 @@ describe("project write admission", () => {
     expect(await admission.runYieldingUnit(() => true, async () => { order.push("ran while locked"); })).toBe(false);
     lease.release();
     expect(order).not.toContain("ran while busy");
+  });
+
+  it("makes writes wait for a queueWrites lock and run once it ends, where a refusing lock refuses them by type", async () => {
+    const raw = new MemoryStorageAdapter("documents");
+    await raw.openDocumentsProject("Writes");
+    const admission = new ProjectWriteAdmission();
+    const publicStorage = guardProjectStorage(raw, admission);
+    const committing = admission.lock("Read-only while committing", { queueWrites: true });
+    expect(await committing.ready).toBe(true);
+    // An explicit save during a commit: not refused, it waits.
+    expect(admission.refusal).toBeNull();
+    let saved = false;
+    const saving = publicStorage.writeText("scene", "edited").then(() => { saved = true; });
+    let unlocked = false;
+    const unlocking = admission.whenUnlocked().then(() => { unlocked = true; });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(saved).toBe(false);
+    expect(unlocked).toBe(false);
+    expect(await raw.exists("scene")).toBe(false);
+    // Synchronous checks still refuse, by type.
+    let refused: unknown;
+    try { admission.assertAdmission(); } catch (error) { refused = error; }
+    expect(isProjectWritesLocked(refused)).toBe(true);
+    committing.release();
+    await saving;
+    await unlocking;
+    expect(await raw.readText("scene")).toBe("edited");
+
+    // Simulation's lock refuses; a refusing lock taken while a write waits refuses it too.
+    const waiting = admission.lock("Read-only while committing", { queueWrites: true });
+    expect(await waiting.ready).toBe(true);
+    const late = publicStorage.writeText("scene", "late");
+    const simulation = admission.lock("Read-only during Simulation Play");
+    waiting.release();
+    const failure = await late.then(() => null, (error: unknown) => error);
+    expect(isProjectWritesLocked(failure)).toBe(true);
+    expect((failure as Error).message).toBe("Read-only during Simulation Play");
+    expect(admission.refusal).toBe("Read-only during Simulation Play");
+    simulation.release();
+    expect(await raw.readText("scene")).toBe("edited");
+  });
+
+  it("admits a write nested in an operation a queueWrites lock is still waiting for, so the wait cannot close a cycle", async () => {
+    const raw = new MemoryStorageAdapter("documents");
+    await raw.openDocumentsProject("Writes");
+    const admission = new ProjectWriteAdmission();
+    const publicStorage = guardProjectStorage(raw, admission);
+    let lockAsked!: () => void;
+    const asked = new Promise<void>((resolve) => { lockAsked = resolve; });
+    const saving = admission.run(async () => {
+      await asked;
+      // A public write from inside the admitted save, after the commit asked for the lock.
+      await publicStorage.writeText("nested", "inside");
+    });
+    const committing = admission.lock("Read-only while committing", { queueWrites: true });
+    lockAsked();
+    await saving;
+    expect(await committing.ready).toBe(true);
+    expect(await raw.readText("nested")).toBe("inside");
+    committing.release();
   });
 });
