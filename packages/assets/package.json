@@ -15,6 +15,7 @@
     "./area-emission-client": "./src/area-emission-client.ts",
     "./asset-diff": "./src/asset-diff.ts",
     "./asset-diff-client": "./src/asset-diff-client.ts",
+    "./project-settings-diff": "./src/project-settings-diff.ts",
     "./import-worker-client": "./src/import-worker-client.ts",
     "./test-support/*": "./src/test-support/*.ts",
     "./audio-reverb-worker": "./src/audio-reverb-worker.ts",

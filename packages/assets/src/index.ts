@@ -61,6 +61,7 @@ export * from "./tilemap-paint";
 export * from "./tilemap-selection";
 export * from "./importers";
 export * from "./migration";
+export * from "./project-manifest";
 export * from "./payload-loader";
 export { STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
 export * from "./plugin-host";

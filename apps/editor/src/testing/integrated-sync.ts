@@ -12,6 +12,23 @@ export function projectJsonWith(sourceControl: { mode: string; repositoryUrl: st
   return JSON.stringify({ settings: { sourceControl: { ...sourceControl, branch: "main" } } });
 }
 
+/**
+ * A complete `project.json` the editor can open: Integrated with
+ * `INTEGRATED_REPOSITORY` unless `settings.sourceControl` says otherwise,
+ * with `settings` and `metadata` merged in.
+ */
+export function integratedProjectJson(settings: Record<string, unknown> = {}, metadata: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    guid: "project-guid",
+    kind: "project",
+    version: 1,
+    metadata: { name: "Game", version: "1.0.0", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", ...metadata },
+    settings: { sourceControl: { mode: "integrated", repositoryUrl: INTEGRATED_REPOSITORY, branch: "main" }, ...settings },
+    scenes: [],
+    graphs: [],
+  }, null, 2);
+}
+
 /** Forest (a Scene) and Rock (a Texture), as the registry would describe them. */
 export const INTEGRATED_LOOKUP: ChangeLookup = (path) =>
   path === "assets/Forest.scene.hasset" ? { name: "Forest", type: "Scene", blobPaths: [] }

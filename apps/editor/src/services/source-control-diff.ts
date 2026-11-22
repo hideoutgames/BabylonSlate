@@ -1,4 +1,5 @@
 import type { AssetDiff } from "@haptic/assets/asset-diff";
+import { PROJECT_FILE } from "@haptic/core";
 import { whenEditorAwake } from "../lib/editor-quiet";
 import type { SourceControlSyncService, SyncSnapshot } from "./source-control-sync";
 
@@ -350,10 +351,18 @@ export class SourceControlDiffService {
   }
 }
 
-/** The first changed item, chosen when the diff opens: an actor, or the first graph that changed. */
+/**
+ * The first changed item, chosen when the diff opens: an actor, the first
+ * graph that changed, or for Project Settings (no asset row to start on) the
+ * first changed category's group.
+ */
 function firstChange(diff: AssetDiff): string | null {
   const view = diff.view;
   if (view.kind === "scene") return view.rows.find((row) => row.kind === "actor" && row.status !== "unchanged")?.id ?? null;
   if (view.kind === "graph") return view.sections.find((section) => section.status !== "unchanged")?.id ?? null;
+  if (view.kind === "properties" && diff.path === PROJECT_FILE) {
+    const group = view.groups.find((entry) => entry.status !== "unchanged");
+    return group ? `group:${group.id}` : null;
+  }
   return null;
 }

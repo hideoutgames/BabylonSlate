@@ -17,13 +17,18 @@ export interface ChangedAssetInfo {
 
 export type ChangeLookup = (path: string) => ChangedAssetInfo | null;
 
-/**
- * An asset's `.hasset`: the only files History follows (**This Asset**) and
- * Revert writes. Project Settings and folder markers are plain files; a
- * reverted `project.json` would reload the whole project.
- */
+/** An asset's `.hasset`, as opposed to Project Settings, folder markers and other plain files. */
 export function isAssetPath(path: string): boolean {
   return path.endsWith(".hasset");
+}
+
+/**
+ * The files History follows (**This Asset**) and Revert writes: an asset's
+ * `.hasset`, or `project.json` (Project Settings, whose revert reloads the
+ * project). Folder markers and other plain files have neither.
+ */
+export function hasVersionHistory(path: string): boolean {
+  return isAssetPath(path) || path === PROJECT_FILE;
 }
 
 /**
