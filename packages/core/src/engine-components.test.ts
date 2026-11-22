@@ -24,12 +24,12 @@ describe("componentSurface", () => {
     expect(componentSurface(classId)).toBe("3d");
   });
 
-  it("draws nothing for helpers, lights, physics, audio, layout, particles and unknown classes", () => {
+  it("draws nothing for helpers, lights, physics, audio, layout, decals, particles and unknown classes", () => {
     for (const classId of [
       "ColliderComponent", "RigidBodyComponent", "AudioComponent", "MovementComponent", "CameraComponent",
       "LightComponent", "Light2DComponent", "ParticleComponent", "WaterRemovalVolumeComponent", "FogVolumeComponent",
       "2DAnchorComponent", "2DVerticalBoxComponent", "2DMaskPanelComponent", "2DFocusTargetComponent",
-      "BehaviourTreeComponent", "MyScriptComponent",
+      "BehaviourTreeComponent", "DecalComponent", "2DPostProcessingPanelComponent", "MyScriptComponent",
     ]) {
       expect(componentSurface(classId), classId).toBeNull();
     }
