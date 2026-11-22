@@ -50,6 +50,8 @@ export function useAssetThumbnails({
   const requestedThumbnailRevisionsRef = useRef(new Map<string, string>());
   const thumbnailsEnabledRef = useRef(true);
   const [thumbnailVersions] = useState(createThumbnailVersionStore);
+  /** The revision index a write builds its cache key with, kept while the registry and Pixels Per Unit stay the same. */
+  const writeIndexRef = useRef<{ registry: unknown; generation: number; pixelsPerUnit: number | undefined; index: ReturnType<typeof createAssetThumbnailRevisionIndex> } | null>(null);
   const previousThumbnailIndexRef = useRef<ReturnType<typeof createAssetThumbnailRevisionIndex> | null>(null);
   const thumbnailRevisionIndex = useMemo(
     () => {
@@ -86,6 +88,7 @@ export function useAssetThumbnails({
   const resetThumbnails = useCallback(() => {
     thumbnailLruRef.current = new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES);
     requestedThumbnailRevisionsRef.current.clear();
+    writeIndexRef.current = null;
     thumbnailVersions.reset();
   }, [thumbnailVersions]);
 
@@ -135,7 +138,16 @@ export function useAssetThumbnails({
       if (!guid || (expected && expected.projectGuid !== guid)) return;
       const lru = thumbnailLruRef.current;
       const derived = await ensureDerived();
-      const revisionIndex = createAssetThumbnailRevisionIndex(projectService.registry?.list() ?? [], projectDocumentRef.current?.settings.twoD.pixelsPerUnit);
+      // A batch of captures (a new project's every asset) builds the index once per registry change, not once per asset.
+      const registry = projectService.registry;
+      const generation = registry?.generation ?? 0;
+      const pixelsPerUnit = projectDocumentRef.current?.settings.twoD.pixelsPerUnit;
+      let cached = writeIndexRef.current;
+      if (!cached || cached.registry !== registry || cached.generation !== generation || cached.pixelsPerUnit !== pixelsPerUnit) {
+        cached = { registry, generation, pixelsPerUnit, index: createAssetThumbnailRevisionIndex(registry?.list() ?? [], pixelsPerUnit) };
+        writeIndexRef.current = cached;
+      }
+      const revisionIndex = cached.index;
       const revision = revisionIndex.revision(assetGuid);
       const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) : assetGuid;
       if (!key || projectService.guid !== guid || thumbnailLruRef.current !== lru ||
