@@ -8,7 +8,10 @@ export type AudioDebugVoiceSnapshot = {
   distance: number | null;
   innerRadius: number | null;
   maxRadius: number | null;
+  /** Whether the voice is nearer than Max Radius, where it falls silent; null without a pose. */
   insideRadius: boolean | null;
+  /** The distance gain playback applies to a spatial voice (0 at and beyond Max Radius); null when not spatial. */
+  attenuation: number | null;
 };
 
 function formatNumber(value: number): string {
@@ -27,6 +30,7 @@ function formatVoice(voice: AudioDebugVoiceSnapshot): string {
     parts.push(`inner ${formatNumber(voice.innerRadius)}`);
   }
   if (voice.maxRadius !== null) parts.push(`max ${formatNumber(voice.maxRadius)}`);
+  if (voice.attenuation !== null) parts.push(`atten ${formatNumber(voice.attenuation)}`);
   if (voice.insideRadius === null) parts.push("inside n/a");
   else parts.push(`inside ${voice.insideRadius ? "yes" : "no"}`);
   return parts.join(" ");

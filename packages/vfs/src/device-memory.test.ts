@@ -11,6 +11,8 @@ vi.mock("@capacitor/core", () => ({
   Capacitor: { getPlatform: () => getPlatform() },
   registerPlugin: () => ({ stats: nativeStats }),
 }));
+// `getHostPlatform` reads the Capacitor bridge global that the native shells inject.
+(globalThis as { Capacitor?: unknown }).Capacitor = { getPlatform: () => getPlatform() };
 
 const { getHostMemoryStats } = await import("./device-memory");
 

@@ -32,3 +32,4 @@ export * from "./flow-switch-pins";
 export * from "./structured-flow";
 export * from "./editor-data-api";
 export { tagCasesConstant, tagCasesOf, tagCasePinId, tagOptionPinId } from "./tags";
+export * from "./math-expression";

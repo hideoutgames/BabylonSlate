@@ -1,4 +1,3 @@
-import { Capacitor } from "@capacitor/core";
 import { browserDeviceFacts, type BuildPlatform, type GameEnvironment } from "@haptic/core";
 import type {
   DirEntry,
@@ -269,8 +268,17 @@ export function isElectronHost(): boolean {
   return getElectronUserDataBridge() !== null;
 }
 
+/**
+ * The iOS and Android shells inject the Capacitor bridge (`window.Capacitor`, with `getPlatform`) before any page
+ * script runs, and `@capacitor/core` installs the same global when it loads. Reading the global keeps this check free
+ * of `@capacitor/core`, so a web or desktop game never loads it.
+ */
+function capacitorPlatform(): string | undefined {
+  return (globalThis as { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.();
+}
+
 export function getHostPlatform(): HostPlatform {
-  const platform = Capacitor.getPlatform();
+  const platform = capacitorPlatform();
   if (platform === "ios" || platform === "android") return platform;
   if (isElectronHost()) return "electron";
   return "web";

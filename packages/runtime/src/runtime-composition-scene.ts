@@ -156,6 +156,7 @@ export function createActorRealization(rt: RuntimeComposition): ActorRealization
     streams: () => rt.streams,
     boundaries: () => rt.boundaries,
     physicsKind: () => rt.physics.kind,
+    fixedStepSeconds: () => rt.dt,
     renderSlots: () => rt.renderSlots,
     renderEmitter: () => rt.renderEmitter,
     audioParticles: () => rt.audioParticles,

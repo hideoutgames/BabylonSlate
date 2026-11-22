@@ -1,17 +1,31 @@
 import v8 from "node:v8";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDocumentRef, createEmptyProject, documentId, SCENE_SCHEMA_VERSION } from "@haptic/core";
+import { createActor, createDocumentRef, createEmptyProject, documentId, normalizeSceneLayer, SCENE_SCHEMA_VERSION } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createInProcessRuntime } from "@haptic/runtime";
 import type { CommandMessage, ScriptBundleEntry } from "@haptic/bridge";
 import {
-  AssetFormatVersionError, AssetRegistry, buildBoxGlbFixture, createDefaultMigrationRegistry, createRegistryAssetLoadingService, encodeHasset,
-  FONT_FACETYPE_CHUNK_ID, MATERIAL_PAYLOAD_VERSION, projectContentRoot, type ChunkInput,
+  AssetFormatVersionError,
+  AssetRegistry,
+  buildBoxGlbFixture,
+  createDefaultMigrationRegistry,
+  createRegistryAssetLoadingService,
+  FONT_FACETYPE_CHUNK_ID,
+  MATERIAL_PAYLOAD_VERSION,
+  projectContentRoot,
+  type ChunkInput,
 } from "@haptic/assets";
+import { encodeHasset } from "@haptic/assets/hasset";
 import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
 import type { OpenDocument } from "./document-service";
 import { PlayRequiredAssetError } from "./play-asset-problems";
+
+// Counts the passes over Scene Layer documents; the real normalization still runs.
+vi.mock("@haptic/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/core")>();
+  return { ...actual, normalizeSceneLayer: vi.fn(actual.normalizeSceneLayer) };
+});
 
 const formats = createDefaultMigrationRegistry();
 /** Fixture header version: the type's current format, or 1 for unversioned types. */
@@ -1256,5 +1270,32 @@ describe("Play missing required assets", () => {
     await expect(preparing).rejects.toThrow("2D Rich Text on \"Edited\" in Scene Layer \"HUD\" uses an asset that does not exist: MISSING_ID (Text).");
     await expect(preparing).rejects.toMatchObject({ location: { actorId: "edited", componentId: "rich", property: "text" } });
     loading.dispose();
+  });
+});
+
+describe("Play Scene Layer documents", () => {
+  it("normalizes a Scene Layer once as Play reads it, and creating its instances normalizes nothing", async () => {
+    const { host, loading } = await missingAssetFixture([
+      { ...MAIN, payload: { name: "Main", actors: [], settings: { sceneLayers: [{ assetGuid: "hud", zOrder: 0 }] } }, requires: ["hud"] },
+      // As stored: a plain Actor class and a world-only component, which a Scene Layer never runs.
+      { ...HUD, payload: { name: "HUD", actors: [{ id: "banner", name: "Banner", classId: "Actor", components: [
+        { id: "save", classId: "SaveGameComponent", properties: {} },
+        { id: "label", classId: "2DTextComponent", properties: { text: "Hi" } },
+      ] }] } },
+    ]);
+    vi.mocked(normalizeSceneLayer).mockClear();
+    const prepared = await acquirePlayAssetSources(host, ["main"], { consumer: "Play Scene", signal: new AbortController().signal });
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: prepared.game.scenes.get("main"),
+      playSceneGuid: "main", sceneLayerLibrary: Object.fromEntries(prepared.game.sceneLayers) });
+    try {
+      expect(normalizeSceneLayer).toHaveBeenCalledTimes(1);
+      runtime.realizePlayWorld();
+      const scripted = runtime.createSceneLayer("hud", 1);
+      const banner = runtime.getWorld().findActor(`${scripted?.guid}:banner`);
+      expect(banner?.classId).toBe("SceneLayerActor");
+      expect(banner?.components.map((component) => component.classId)).toEqual(["2DTextComponent"]);
+      expect(runtime.getWorld().getSceneLayers()).toHaveLength(2);
+      expect(normalizeSceneLayer).toHaveBeenCalledTimes(1);
+    } finally { runtime.stop(); prepared.release(); loading.dispose(); }
   });
 });

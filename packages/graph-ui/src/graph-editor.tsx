@@ -40,7 +40,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { pinDefaultPropertyKey } from "@haptic/scripting";
+import { editMathExpressionFormula, pinDefaultPropertyKey } from "@haptic/scripting";
 import { PinDefaultEditorContext } from "./pin-default-editor-context";
 import { inlinePinDefaultStorageValue } from "./pin-default-value";
 import { ClipboardPasteIcon, CopyIcon, PlusIcon, Trash2Icon, UnlinkIcon, WaypointsIcon } from "lucide-react";
@@ -70,7 +70,7 @@ import {
 } from "./graph-types";
 import type { PinTypeNames } from "./pin-default-preview";
 import { GraphEditorProvider, type GraphPreviewedNode } from "./graph-editor-context";
-import { GraphNodeBodyContext, GraphNodeStateStore } from "./graph-node-state";
+import { GraphNodeBodyContext, GraphNodeStateStore, stablePinDisplayTypes } from "./graph-node-state";
 import {
   canonicalGraphSignature,
   createEdgeId,
@@ -1047,7 +1047,7 @@ function FocusedNodeSync({
 
 function GraphEditorCanvas({
   initialGraph,
-  onChange,
+  onChange: hostOnChange,
   commitPositionsOnDragEnd = false,
   onSelectionChange,
   onEmptyCanvasClick,
@@ -1118,6 +1118,9 @@ function GraphEditorCanvas({
   // Called when a gesture or menu runs, never while rendering: kept current through refs, so a host
   // that passes new callbacks with every edit does not hand every node and pin a new context.
   const onNavigateRequest = useStableHostCallback(hostOnNavigateRequest);
+  // Every edit calls it, and the canvas's own edit callbacks (a pin default, a formula) reach it
+  // through `emitChange`: a host that rebuilds it per edit must not rebuild them.
+  const onChange = useStableHostCallback(hostOnChange);
   const onAttachmentSelect = useStableHostCallback(hostOnAttachmentSelect);
   const contextMenuItemsForNode = useStableHostCallback(hostContextMenuItemsForNode);
   const contextMenuItemsForPin = useStableHostCallback(hostContextMenuItemsForPin);
@@ -3974,10 +3977,12 @@ function GraphEditorCanvas({
     };
   }, [endConnectSession, storeApi]);
 
+  // Stable: what a render shows reads `usePinDisplayType` (one pin's type); the wire being drawn
+  // reads the latest types here.
   const pinDisplayType = useCallback(
     (nodeId: string, pinId: string) =>
-      pinDisplayTypes.get(pinTypeKey(nodeId, pinId)),
-    [pinDisplayTypes],
+      pinDisplayTypesRef.current.get(pinTypeKey(nodeId, pinId)),
+    [],
   );
 
   const styledEdges = useMemo(
@@ -4107,9 +4112,15 @@ function GraphEditorCanvas({
   // Seeded with the first render's state, then kept current after each commit (below).
   const [nodeState] = useState(() => new GraphNodeStateStore({
     pendingPin, nodeErrorCounts, pinErrorKeys, renamingNodeId, renamingNodeValue, previewedNode,
+    pinDisplayTypes, connectedInputs,
   }));
   useLayoutEffect(() => {
-    nodeState.set({ pendingPin, nodeErrorCounts, pinErrorKeys, renamingNodeId, renamingNodeValue, previewedNode });
+    const current = nodeState.get();
+    nodeState.set({
+      pendingPin, nodeErrorCounts, pinErrorKeys, renamingNodeId, renamingNodeValue, previewedNode,
+      pinDisplayTypes: stablePinDisplayTypes(current.pinDisplayTypes, pinDisplayTypes),
+      connectedInputs,
+    });
   });
 
   // React Flow hands its node handlers to every node's wrapper: a new one each render would render every node again.
@@ -4118,13 +4129,24 @@ function GraphEditorCanvas({
     if (!isRerouteNodeData(node.data)) onNodeDoubleClick?.(node.id);
   }, [onNodeDoubleClick]);
 
+  // A Math Expression formula typed on the node: the formula, its pins and the wires that follow a
+  // renamed variable (or go with a removed one) are one change, so one undo step.
+  const onFormulaCommit = useCallback((nodeId: string, formula: string) => {
+    if (readOnlyRef.current) return;
+    const current = graphStateRef.current;
+    const next = editMathExpressionFormula(current.nodes, current.edges, nodeId, formula,
+      (node) => typeof node.data.__nodeType === "string" ? node.data.__nodeType : (node.type ?? ""));
+    if (!next) return;
+    commitGraph(next.nodes, next.edges);
+  }, [commitGraph]);
+
   const contextValue = useMemo(
     () => ({
       nodeState,
       onPinTap,
       onPinDefaultChange: pinDefaultsDisabled ? undefined : onPinDefaultChange,
+      onFormulaCommit: readOnly ? undefined : onFormulaCommit,
       renderPinDefaultEditor,
-      connectedInputs,
       pinDisplayType,
       pinTypeNames,
       connectEndMode,
@@ -4158,9 +4180,10 @@ function GraphEditorCanvas({
       onNavigateRequest,
       onPinTap,
       onPinDefaultChange,
+      onFormulaCommit,
+      readOnly,
       pinDefaultsDisabled,
       renderPinDefaultEditor,
-      connectedInputs,
       pinDisplayType,
       pinTypeNames,
       connectEndMode,

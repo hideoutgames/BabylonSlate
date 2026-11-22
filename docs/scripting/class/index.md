@@ -210,6 +210,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Less Or Equal](less-or-equal.md) | Returns true when **A** is less than or equal to **B**. |
 | [Less Than](less-than.md) | Returns true when **A** is less than **B**. |
 | [Logarithm](logarithm.md) | Returns the logarithm of a number to a chosen base. |
+| [Math Expression](math-expression.md) | Computes a formula of numbers and vectors that you type on the node. |
 | [Max](max.md) | Returns the larger of two numbers. |
 | [Max Int](max-int.md) | Returns the larger of two whole numbers. |
 | [Min](min.md) | Returns the smaller of two numbers. |

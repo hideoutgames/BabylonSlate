@@ -61,7 +61,8 @@ import {
   setCustomEasingCurves,
 } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
-import { createEngine, COMPILE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
+import { COMPILE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
+import { createEngine } from "./editor-engine";
 import { AUTHORED_CAMERA_PREFIX } from "./scene-illumination";
 import { sceneOutputScale } from "./scene-output-scale";
 import type { RenderPerformanceSample } from "./render-performance";
@@ -95,7 +96,7 @@ import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { DEFAULT_CAMERA_PREVIEW_FRAME_RATE } from "./editor-debug-overlay";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isSceneStaticMesh } from "./scene-static-meshes";
-import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
+import { sceneMultisampleCount, sceneRenderingSettings, setSceneEffectsEnabled, updateSceneRenderingSettings } from "./render-settings";
 import { setNearestTextures } from "./nearest-textures";
 import { managedRenderReservations } from "./managed-render-resources";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
@@ -4360,8 +4361,9 @@ describe("Play createEngine view", () => {
     });
     handle.scene.onBeforeRenderObservable.notifyObservers(handle.scene);
     await handle.prewarmSceneMaterials();
-    expect(handle.renderTaskNames()).toContain("Scene Effects Bloom");
-    expect(handle.postProcessPassCount()).toBe(1);
+    // Display Space bloom alone: its blurs, then its merge as a pass of its own.
+    expect(handle.renderTaskNames()).toEqual(expect.arrayContaining(["Scene Effects Bloom", "Scene Effects Bloom Merge"]));
+    expect(handle.postProcessPassCount()).toBe(2);
   });
 
   it("keeps overlay 2DMaterial assignMaterial as an overlay unlit compile of a User Interface Material", () => {
@@ -6143,6 +6145,42 @@ describe("Play createEngine view", () => {
     handles.push(plain);
     plain.setLocalQualityOverrides({ textures: { anisotropy: 2 } });
     expect(RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, plain.scene).anisotropicFilteringLevel).toBe(2);
+  });
+
+  it("plans none of the world's effects or Anti-Aliasing for a Scene Layer's editor view, as Play draws a layer, while an ordinary editor view plans them", () => {
+    const engine = sharedEngine();
+    Object.assign(engine.getCaps(), { texelFetch: true, maxMSAASamples: 4 });
+    const project = {
+      effects: {
+        ...DEFAULT_RENDER_EFFECTS,
+        colorPipeline: { mode: "sceneLinear" as const },
+        vignette: { ...DEFAULT_RENDER_EFFECTS.vignette, enabled: true },
+        upscaling: { ...DEFAULT_RENDER_EFFECTS.upscaling, enabled: true, renderScale: 0.8 },
+        ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+        reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+        volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true },
+        bloom: { ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true },
+      },
+    };
+    const view = (fullQuality: boolean) => {
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, fullQuality });
+      handles.push(handle);
+      handle.setRenderSettings(project);
+      updateSceneRenderingSettings(handle.scene, undefined, undefined, { screenShadows: "high" });
+      return handle.scene;
+    };
+    const world = view(false);
+    expect(sceneRenderingSettings(world).effectsPlan).toMatchObject({
+      ambientOcclusion: { enabled: true }, reflections: { enabled: true }, screenShadows: "high",
+      bloom: { enabled: true }, imageProcessing: { sceneLinear: true, vignette: { enabled: true } }, upscale: { enabled: true },
+    });
+    expect(sceneMultisampleCount(world)).toBeGreaterThan(1);
+    const layer = view(true);
+    expect(sceneRenderingSettings(layer).effectsPlan).toBeNull();
+    expect(sceneMultisampleCount(layer)).toBe(1);
+    // A later project update reaches it no more than the first.
+    updateSceneRenderingSettings(layer, project);
+    expect(sceneRenderingSettings(layer).effectsPlan).toBeNull();
   });
 
   it("draws a Pixel-Perfect 2D editor view at device pixels, at its own level, in whole device pixels per texel", () => {

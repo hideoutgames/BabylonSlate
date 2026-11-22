@@ -11,6 +11,7 @@ import {
   useContext,
   useEffect,
   useRef,
+  useState,
   type MouseEvent,
   type ReactElement,
   type ReactNode,
@@ -24,13 +25,15 @@ import {
   LabelHint,
   PinShapeGlyph,
   tagDisplayName,
+  useDoubleTap,
   useTags,
 } from "@haptic/editor-kit";
-import { isDevelopmentOnlyNode } from "@haptic/scripting";
+import { isDevelopmentOnlyNode, MATH_EXPRESSION_NODE_ID, mathExpressionNodeState } from "@haptic/scripting";
+import { MathExpressionFormulaField } from "./math-expression-formula";
 import { Badge } from "@haptic/ui/components/badge";
 import { cn } from "@haptic/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
-import { GraphNodeBodyContext, useNodeErrorCount, useNodeRename, usePendingPinId, usePinErrors, usePreviewedNode } from "./graph-node-state";
+import { GraphNodeBodyContext, useConnectedInputs, useNodeErrorCount, useNodeRename, usePendingPinId, usePinDisplayType, usePinErrors, usePreviewedNode } from "./graph-node-state";
 import { nodeCanBreak, useNodeBreakpoint } from "./graph-breakpoints";
 import { useNodeMenu } from "./use-node-menu";
 import { hasSerializedPins, isRerouteNodeData, type SerializedPin } from "./graph-types";
@@ -229,9 +232,9 @@ function PinHandle({
   disabled?: boolean;
   circle?: boolean;
 }) {
-  const { onPinTap, pinDisplayType } = useGraphEditorContext();
+  const { onPinTap } = useGraphEditorContext();
   const isSource = pin.direction === "out";
-  const displayType = pinDisplayType(nodeId, pin.id) ?? pin.type;
+  const displayType = usePinDisplayType(nodeId, pin.id) ?? pin.type;
   const byReference = useStore((state) => passesReference(state.edges, state.nodeLookup, nodeId, pin));
 
   return (
@@ -354,13 +357,19 @@ function PinRow({
   data,
   incoming,
   outgoing,
+  literalLabels = false,
 }: {
   nodeId: string;
   data: Record<string, unknown>;
   incoming?: SerializedPin;
   outgoing?: SerializedPin;
+  /** Names shown exactly as authored (a formula's variables), not humanized. */
+  literalLabels?: boolean;
 }) {
-  const { pinTypeNames, pinDisplayType, onPinDefaultChange, renderPinDefaultEditor, connectedInputs } = useGraphEditorContext();
+  const label = (pin: SerializedPin) => literalLabels ? pin.name : humanizePropertyLabel(pin.name);
+  const { pinTypeNames, onPinDefaultChange, renderPinDefaultEditor } = useGraphEditorContext();
+  const connectedInputIds = useConnectedInputs(nodeId);
+  const incomingDisplayType = usePinDisplayType(nodeId, incoming?.id ?? "");
   const pendingPinId = usePendingPinId(nodeId);
   const pinHasError = usePinErrors(nodeId);
   const { entries: tags } = useTags();
@@ -369,9 +378,9 @@ function PinRow({
   const incomingTag = data.__nodeType === "tags.select" && incoming?.id.startsWith("option:")
     ? Number(incoming.id.slice(7)) : undefined;
   const incomingName = incomingTag !== undefined ? tagDisplayName(tags, incomingTag)
-    : incoming ? humanizePropertyLabel(incoming.name) : "";
+    : incoming ? label(incoming) : "";
   const outgoingLabel = outgoingTag !== undefined ? tagDisplayName(tags, outgoingTag)
-    : outgoing ? humanizePropertyLabel(outgoing.name) : "";
+    : outgoing ? label(outgoing) : "";
   const incomingConnected = useStore((state) =>
     incoming ? isPinWired(state.edges, nodeId, incoming) : false,
   );
@@ -380,7 +389,7 @@ function PinRow({
   const outgoingConnected = useStore((state) =>
     outgoing ? isPinWired(state.edges, nodeId, outgoing) : false,
   );
-  const displayedIncoming = incoming ? { ...incoming, type: pinDisplayType(nodeId, incoming.id) ?? incoming.type } : undefined;
+  const displayedIncoming = incoming ? { ...incoming, type: incomingDisplayType ?? incoming.type } : undefined;
   const preview = displayedIncoming
     ? pinDefaultPreview(displayedIncoming, data, incomingConnected, pinTypeNames)
     : null;
@@ -413,7 +422,7 @@ function PinRow({
             />
             {preview && displayedIncoming ? <PinDefaultEditor
               nodeId={nodeId} nodeData={data} nodeType={typeof data.__nodeType === "string" ? data.__nodeType : undefined}
-              connectedInputIds={connectedInputs?.get(nodeId)}
+              connectedInputIds={connectedInputIds}
               pin={{ ...displayedIncoming, name: incomingName }} preview={preview} value={readPinDefaultValue(displayedIncoming, data)}
               disabled={disabled || !onPinDefaultChange} onChange={(value) => onPinDefaultChange?.(nodeId, incoming.id, value)}
               renderer={renderPinDefaultEditor}
@@ -804,15 +813,15 @@ function VariableGetNode({
   selected,
 }: NodeProps<CanvasNode>) {
   const pins = hasSerializedPins(data) ? data.__pins : [];
-  const { pinDisplayType } = useGraphEditorContext();
   const pendingPinId = usePendingPinId(id);
   const pinHasError = usePinErrors(id);
   const errorCount = useNodeErrorCount(id);
   const dataPins = pins.filter((pin) => pin.kind !== "exec");
   const incoming = dataPins.filter((pin) => pin.direction === "in");
   const outgoing = dataPins.find((pin) => pin.direction === "out");
+  const outgoingDisplayType = usePinDisplayType(id, outgoing?.id ?? "");
   const valueType = outgoing
-    ? (pinDisplayType(id, outgoing.id) ?? outgoing.type)
+    ? (outgoingDisplayType ?? outgoing.type)
     : { kind: "wildcard" };
   const disabled = data.__disabled === true;
   const nodeMenu = useNodeMenu(id);
@@ -871,7 +880,6 @@ function VariableGetNode({
  * at the right, both drawn in the type the knot carries. The space between them drags the knot.
  */
 function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
-  const { pinDisplayType } = useGraphEditorContext();
   const pendingPinId = usePendingPinId(id);
   const pinHasError = usePinErrors(id);
   const nodeMenu = useNodeMenu(id);
@@ -883,7 +891,8 @@ function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const isPending = (pin: SerializedPin) => pendingPinId === pin.id;
   // The outline takes the colour of what the knot carries, as its pins do (the input's, should they differ).
   const carried = input ?? output;
-  const outline = pinCssVar((carried && pinDisplayType(id, carried.id)) ?? carried?.type ?? { kind: "wildcard" });
+  const carriedDisplayType = usePinDisplayType(id, carried?.id ?? "");
+  const outline = pinCssVar((carried && carriedDisplayType) ?? carried?.type ?? { kind: "wildcard" });
   const handle = (pin: SerializedPin, connected: boolean) => (
     <span className="flex" data-pin-side={pin.direction} data-pin-id={pin.id}>
       <PinHandle
@@ -918,6 +927,107 @@ function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
   );
 }
 
+/**
+ * A Math Expression node: a card in the style of an Animation Graph state, its formula in monospace
+ * under the title and its variables as ordinary pin rows, inputs left and outputs right. A
+ * double-click, a double-tap, or Enter while the node is selected types the formula in place.
+ */
+function MathExpressionNode({ id, data, selected }: NodeProps<CanvasNode>) {
+  const { onFormulaCommit } = useGraphEditorContext();
+  const errorCount = useNodeErrorCount(id);
+  const nodeMenu = useNodeMenu(id);
+  const pins = hasSerializedPins(data) ? data.__pins : [];
+  const rows = zipPinRows(pins);
+  const formula = typeof data.formula === "string" ? data.formula : "";
+  const { error } = mathExpressionNodeState(data);
+  const disabled = data.__disabled === true;
+  const editable = Boolean(onFormulaCommit) && !disabled;
+  const [editing, setEditing] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const startEditing = useCallback(() => { if (editable) setEditing(true); }, [editable]);
+  const onTap = useDoubleTap(startEditing);
+  // Pins come and go with the formula: re-measure the handles.
+  const updateNodeInternals = useUpdateNodeInternals();
+  const handleOrder = pins.map((pin) => `${pin.direction}:${pin.id}`).join("|");
+  const measured = useRef(handleOrder);
+  useEffect(() => {
+    if (measured.current === handleOrder) return;
+    measured.current = handleOrder;
+    updateNodeInternals(id);
+  }, [handleOrder, id, updateNodeInternals]);
+  // Enter on the selected node (React Flow focuses its wrapper) starts typing.
+  useEffect(() => {
+    const wrapper = cardRef.current?.closest(".react-flow__node");
+    if (!selected || editing || !editable || !(wrapper instanceof HTMLElement)) return undefined;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Enter" || event.target !== wrapper || event.repeat) return;
+      event.preventDefault();
+      setEditing(true);
+    };
+    wrapper.addEventListener("keydown", onKeyDown);
+    return () => wrapper.removeEventListener("keydown", onKeyDown);
+  }, [editable, editing, selected]);
+  // Gestures on pins, their value fields and the open formula field are theirs.
+  const onBody = (target: EventTarget | null) =>
+    target instanceof Element && target.closest(".react-flow__handle, input, textarea, button, [data-pin-cell]") === null;
+  return (
+    <div {...nodeMenu.bind}>
+      <div className="group/node group/title relative">
+        <NodeErrorBadge nodeId={id} count={errorCount} />
+        <NodeBreakpointTab nodeId={id} data={data} placement="cardTop" />
+        <div
+          ref={cardRef}
+          className={cn("math-expression-node", selected && "anim-state-node-selected", disabled && "opacity-50")}
+          data-node-kind="math-expression"
+          data-disabled={disabled ? "true" : undefined}
+          data-testid={`math-expression-${id}`}
+          onDoubleClick={(event) => {
+            if (!editable || !onBody(event.target)) return;
+            event.stopPropagation();
+            startEditing();
+          }}
+          onPointerUp={(event) => {
+            if (onBody(event.target)) onTap(event);
+          }}
+        >
+          <div className="anim-state-node-title math-expression-node-title">
+            <NodeKindIcon kind="pure" className="size-4" />
+            <span>Math Expression</span>
+          </div>
+          <div className="math-expression-node-formula">
+            {editing ? (
+              <MathExpressionFormulaField
+                value={formula}
+                onDone={(next) => {
+                  setEditing(false);
+                  if (next !== null && next !== formula) onFormulaCommit?.(id, next);
+                }}
+              />
+            ) : (
+              <pre data-testid="math-expression-formula" className={cn(!formula && "text-muted-foreground")}>
+                {formula || "No Formula"}
+              </pre>
+            )}
+          </div>
+          {error && !editing ? (
+            <div role="alert" className="math-expression-node-error" data-testid="math-expression-error">
+              {`Line ${error.line}, column ${error.column}: ${error.message}`}
+            </div>
+          ) : null}
+          {rows.length > 0 ? (
+            <div className="flex flex-col py-1">
+              {rows.map((row, index) => (
+                <PinRow key={row.in?.id ?? row.out?.id ?? `row-${index}`} nodeId={id} data={data} incoming={row.in} outgoing={row.out} literalLabels />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+      {nodeMenu.overlay}
+    </div>
+  );
+}
+
 export function resolveNodeType(
   type: string,
   data: Record<string, unknown>,
@@ -928,6 +1038,7 @@ export function resolveNodeType(
   if (typeId === "variables.get" || typeId.startsWith("variables.get:")) {
     return "variableGet";
   }
+  if (typeId === MATH_EXPRESSION_NODE_ID && "mathExpression" in knownTypes) return "mathExpression";
   if (type in knownTypes) return type;
   return "pinNode";
 }
@@ -936,4 +1047,5 @@ export const graphNodeTypes = {
   pinNode: PinNode,
   variableGet: VariableGetNode,
   reroute: RerouteNode,
+  mathExpression: MathExpressionNode,
 };

@@ -18,7 +18,7 @@ import {
   DEFAULT_SCENE_SUN_COMPONENT_ID,
 } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
-import { createEngine } from "./create-engine";
+import { createEngine } from "./editor-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
 import { encodeTriangleGlb } from "./glb-test-fixtures";

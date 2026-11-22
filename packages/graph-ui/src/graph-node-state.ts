@@ -1,5 +1,7 @@
-import { createContext, useCallback, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { useGraphEditorContext } from "./graph-editor-context";
+import type { PinTypeRef } from "./node-theme";
+import { pinTypeKey } from "./wildcard-display";
 import type { GraphPreviewedNode } from "./graph-editor-context";
 
 /**
@@ -19,7 +21,32 @@ export type GraphNodeState = {
   /** The rename field's starting text when it differs from the title. */
   renamingNodeValue: string | undefined;
   previewedNode: GraphPreviewedNode | null;
+  /**
+   * Each pin's shown type (`pinTypeKey`), where it differs from its declared one. An unchanged
+   * type keeps its object across updates (`stablePinDisplayTypes`), so a pin renders again only
+   * when its own type changed.
+   */
+  pinDisplayTypes: ReadonlyMap<string, PinTypeRef>;
+  /** The ids of each node's wired inputs. */
+  connectedInputs: ReadonlyMap<string, readonly string[]>;
 };
+
+/**
+ * `next` with every type that equals the one `previous` holds for the same pin replaced by that
+ * object, so a recomputed map hands unchanged pins the very type they had.
+ */
+export function stablePinDisplayTypes(
+  previous: ReadonlyMap<string, PinTypeRef>,
+  next: ReadonlyMap<string, PinTypeRef>,
+): ReadonlyMap<string, PinTypeRef> {
+  if (previous === next) return next;
+  const stable = new Map<string, PinTypeRef>();
+  for (const [key, type] of next) {
+    const before = previous.get(key);
+    stable.set(key, before !== undefined && JSON.stringify(before) === JSON.stringify(type) ? before : type);
+  }
+  return stable;
+}
 
 export const EMPTY_GRAPH_NODE_STATE: GraphNodeState = {
   pendingPin: null,
@@ -28,6 +55,8 @@ export const EMPTY_GRAPH_NODE_STATE: GraphNodeState = {
   renamingNodeId: null,
   renamingNodeValue: undefined,
   previewedNode: null,
+  pinDisplayTypes: new Map(),
+  connectedInputs: new Map(),
 };
 
 export class GraphNodeStateStore {
@@ -111,6 +140,23 @@ export function useNodeRename(nodeId: string): { renaming: boolean; value: strin
     [nodeId],
   ));
   return { renaming, value };
+}
+
+/** A pin's shown type, when it differs from its declared one (a resolved wildcard). */
+export function usePinDisplayType(nodeId: string, pinId: string): PinTypeRef | undefined {
+  return useGraphNodeState(useCallback(
+    (state: GraphNodeState) => state.pinDisplayTypes.get(pinTypeKey(nodeId, pinId)),
+    [nodeId, pinId],
+  ));
+}
+
+/** The ids of this node's wired inputs, the same array while they are unchanged. */
+export function useConnectedInputs(nodeId: string): readonly string[] | undefined {
+  const joined = useGraphNodeState(useCallback(
+    (state: GraphNodeState) => state.connectedInputs.get(nodeId)?.join("\u0000"),
+    [nodeId],
+  ));
+  return useMemo(() => (joined === undefined ? undefined : joined.split("\u0000")), [joined]);
 }
 
 /** This node when the host previews it, else null. */

@@ -4,7 +4,7 @@ import {
   isCreatableObjectChain,
   isLockedEngineClassId,
   SUBSYSTEM_CLASS_ID,
-  type Actor,
+  Actor,
   type ActorComponent,
   type EngineObject,
   type LifecycleHooks,
@@ -127,6 +127,8 @@ export class ScriptHost {
   private finalizingOwner: EngineObject | null = null;
   /** The `ctx.callInterface` caller whose frame its interface handler runs in. */
   private interfaceCaller: CallerFrame | null = null;
+  /** The delta of the Tick Interval Event Tick running now, which Get Delta Seconds reads; null outside one. */
+  private intervalTickDeltaSeconds: number | null = null;
   /** The global seed: Set Global Randomization Seed moves it; traces replay it from the session seed. */
   private readonly rng: RandomStream;
   /** Host-lifetime members every context inherits; built once in the constructor. */
@@ -160,7 +162,10 @@ export class ScriptHost {
       writeComponentVariable: (component: ActorComponent, name: string, value: unknown) =>
         this.writeComponentVariable(component, name, value),
     };
-    this.hostMembers = createHostMembers({ ...shared, frames: this.latentFrames, breakpoints: () => this.breakpoints });
+    this.hostMembers = createHostMembers({
+      ...shared, frames: this.latentFrames, breakpoints: () => this.breakpoints,
+      intervalTickDeltaSeconds: () => this.intervalTickDeltaSeconds,
+    });
     this.contextHost = {
       ...shared,
       hostMembers: this.hostMembers,
@@ -455,7 +460,7 @@ export class ScriptHost {
         if (loaded) this.dispatchEvent(loaded, creationEvent, self, 0, 0);
       },
       onTick: (self, ctx: TickContext) => {
-        // Input first, as the tick's Event Tick may act on it.
+        // Input first, as the tick's Event Tick may act on it. Input runs every step, whatever the Tick Interval.
         for (const loaded of this.inputScriptsFor(classId)) {
           // No arguments: the context reads the shared frozen empty record.
           this.dispatchEvent(loaded, INPUT_EVENT, self, ctx.dt, ctx.tickIndex);
@@ -463,6 +468,10 @@ export class ScriptHost {
         }
         const loaded = this.lifecycleScriptsFor(classId, "onTick");
         if (!loaded) return;
+        if (self instanceof Actor && self.tickStride > 1) {
+          this.dispatchIntervalTick(loaded, self, ctx);
+          return;
+        }
         this.dispatchEvent(loaded, "onTick", self, ctx.dt, ctx.tickIndex);
       },
       onDestroyed: (self) => {
@@ -476,6 +485,26 @@ export class ScriptHost {
     };
     this.hooksByClassId.set(classId, hooks);
     return hooks;
+  }
+
+  /**
+   * Event Tick for an actor with a Tick Interval (`tickStride` > 1). Every step the hook runs adds that
+   * step's delta; Event Tick runs on the steps where `(tickIndex + spawnOrder) % tickStride === 0`, so
+   * actors of one Class spread over the steps and keep their phase when others are destroyed, and it
+   * receives the summed delta. Get Delta Seconds reads the same delta while the event runs.
+   */
+  private dispatchIntervalTick(loaded: LoadedScript[], self: Actor, ctx: TickContext): void {
+    self.eventTickElapsed += ctx.dt;
+    if ((ctx.tickIndex + self.spawnOrder) % self.tickStride !== 0) return;
+    const deltaSeconds = self.eventTickElapsed;
+    self.eventTickElapsed = 0;
+    const previous = this.intervalTickDeltaSeconds;
+    this.intervalTickDeltaSeconds = deltaSeconds;
+    try {
+      this.dispatchEvent(loaded, "onTick", self, deltaSeconds, ctx.tickIndex);
+    } finally {
+      this.intervalTickDeltaSeconds = previous;
+    }
   }
 
   /**
