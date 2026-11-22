@@ -198,6 +198,7 @@ import {
   applyAttachToBone,
   applySetMaterialParameter,
   applyAssignMesh,
+  rebuildSlotForLoadedClip,
   applyPainter2DCommand,
   applyUIControl2DCommand,
   applyText2DAppearCommand,
@@ -1187,6 +1188,9 @@ function initializeEngine(
   const animHostReportingMissing = sceneAnimHostFromBinding(binding, animHostOptions((info) => {
     const clips = binding.slotPoseClips?.get(info.slotId);
     if (info.clipKind === "animation" && (!clips || clips.length === 0)) return;
+    // A clip loaded since the slot's Model was built (Play Slot Animation loads one on demand) binds once it is
+    // built again; until then the slot keeps its pose and the clip is not missing.
+    if (info.clipKind === "animation" && rebuildSlotForLoadedClip(binding, info.slotId, info.clipAssetGuid)) return;
     warnMissingClip(info);
   }));
   // Each slot's latest animation state is posed before the next snapshot is applied and before each render, and an
