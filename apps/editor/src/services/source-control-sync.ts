@@ -143,7 +143,7 @@ export interface SyncConfigureInput {
    * handing it the project storage past the write barrier; the sync binds it
    * to the folder. Refused while another operation holds project writes.
    */
-  exclusiveWrites: <T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal: AbortSignal) => Promise<T>;
+  exclusiveWrites: <T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal: AbortSignal, options?: { queueWrites?: boolean }) => Promise<T>;
   /**
    * Resolves once the project's queued background writers are done
    * (`ProjectService.textureEncodesIdle`: no Texture encode waits or runs);
@@ -869,8 +869,10 @@ export class SourceControlSyncService {
    * Runs `work` (a status read and the commit that follows it) as the
    * project's only writer (`exclusiveWrites`): writes admitted before it
    * (saves, imports, a Texture encode and its commit) finish first, later
-   * ones are refused with `reason` until it returns (auto-save tries again),
-   * and the Git client writes `.git` past that barrier meanwhile. So nothing
+   * ones wait until it returns and then run (`queueWrites`; a Save All shows
+   * its spinner meanwhile, a Texture encode starting then is held,
+   * `ProjectTextureEncoding`), and the Git client writes `.git` past that
+   * barrier meanwhile. So nothing
    * lands between the status and the commit. Cancelled while it waits, it
    * rejects as a `cancelled` `SyncError`.
    */
@@ -886,7 +888,7 @@ export class SourceControlSyncService {
         } finally {
           this.writer = null;
         }
-      }, signal);
+      }, signal, { queueWrites: true });
     } catch (error) {
       // The wait for other writers ends with the signal's own reason.
       if (!entered) throwIfCancelled(signal);

@@ -12,7 +12,8 @@
     "./fake-host": "./src/fake-host.ts",
     "./git": "./src/git/index.ts",
     "./fake-sync": "./src/fake-sync.ts",
-    "./git-benchmark": "./src/git/benchmark.ts"
+    "./git-benchmark": "./src/git/benchmark.ts",
+    "./git-test-server": "./src/test-support/git-server.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

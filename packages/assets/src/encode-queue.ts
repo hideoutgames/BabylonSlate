@@ -121,6 +121,15 @@ export interface EncodeQueueOptions {
    * when `clear()` dropped the queue.
    */
   onDrop?: (job: EncodeJob) => void;
+  /**
+   * A failure that is no failure of the job: its writes were refused because
+   * something holds the project's writes for a while (a commit, Simulation).
+   * Returns the promise that ends the hold, or null for a real failure. A
+   * held job goes back to the front of the queue with no state reported, and
+   * the queue starts nothing until that promise resolves, so it never retries
+   * in a loop; it counts as waiting (`whenIdle`), and `clear()` drops it.
+   */
+  holdOn?: (error: unknown, job: EncodeJob) => Promise<void> | null;
 }
 
 type DerivedJob = { run: () => Promise<void>; cancel: (reason: unknown) => void };
@@ -158,6 +167,9 @@ export class EncodeQueue {
   private readonly onComplete?: EncodeQueueOptions["onComplete"];
   private readonly onError?: EncodeQueueOptions["onError"];
   private readonly onDrop?: EncodeQueueOptions["onDrop"];
+  private readonly holdOn?: EncodeQueueOptions["holdOn"];
+  /** The end of a hold a held job waits for (`holdOn`); nothing starts until it resolves. */
+  private hold: Promise<void> | null = null;
   private paused = false;
   private running = false;
   /** The job being encoded, until its result or error is reported or `clear()` drops it. */
@@ -182,6 +194,7 @@ export class EncodeQueue {
     this.onComplete = options.onComplete;
     this.onError = options.onError;
     this.onDrop = options.onDrop;
+    this.holdOn = options.holdOn;
   }
 
   get depth(): number {
@@ -324,6 +337,7 @@ export class EncodeQueue {
     this.generation += 1;
     this.encoding = null;
     this.settling = null;
+    this.hold = null;
     for (const job of this.queue.splice(0)) {
       if ("run" in job) job.cancel(new Error("Asset processing cancelled."));
     }
@@ -392,7 +406,7 @@ export class EncodeQueue {
 
   private async pump(): Promise<void> {
     if (this.running) return;
-    if (this.paused) {
+    if (this.paused || this.hold) {
       // The job that just ended may have been the last one.
       this.notifyIdle();
       return;
@@ -452,6 +466,18 @@ export class EncodeQueue {
       this.encoding = null;
       if (generation !== this.generation || this.supersededJobs.has(job)) {
         this.onDrop?.(job);
+        return;
+      }
+      const hold = this.holdOn?.(error, job);
+      if (hold) {
+        // First again once the hold ends; a newer request for its asset meanwhile replaces it as usual.
+        this.queue.unshift(job);
+        this.hold = hold;
+        void hold.then(() => {
+          if (this.hold !== hold) return;
+          this.hold = null;
+          void this.pump();
+        });
         return;
       }
       this.settling = job;

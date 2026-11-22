@@ -17,7 +17,7 @@ import {
 import { processAreaEmissionInWorker } from "@haptic/assets/area-emission-client";
 import { convertHdrEnvironmentOffMainThread } from "@haptic/assets/import-worker-client";
 import { onEncodeQueuePause } from "./encode-queue-pause";
-import type { ProjectWriteAdmission } from "./project-write-admission";
+import { isProjectWritesLocked, type ProjectWriteAdmission } from "./project-write-admission";
 import { committedKtx2Sha256 } from "./project-document-meta";
 import { isPluginDocumentReadOnly } from "../lib/plugin-ui";
 import { editorEncodeWorkerUrl } from "../lib/public-engine-assets";
@@ -195,6 +195,15 @@ export class ProjectTextureEncoding {
           if (this.setTextureEncoding(job, false) && session === host.sourceSession()) host.emitRegistryChange();
           release?.();
         }));
+      },
+      // Refused because a lock holds the project's writes (a commit took it
+      // while the job loaded its source, Simulation): no failure. The job
+      // waits, first in the queue, until the lock is gone, and then runs.
+      holdOn: (error, job) => {
+        if (!isProjectWritesLocked(error)) return null;
+        if (this.setTextureEncoding(job, false)) host.emitRegistryChange();
+        this.releaseEncodeWrite(job);
+        return writeAdmission.whenUnlocked();
       },
       // A guarded job dropped unencoded may leave its Texture stale for the
       // user. A closed project's encode, and one a newer request replaced,

@@ -115,7 +115,7 @@ export function useSourceControlSync({
     testMode: isTestModeEnabled(),
     lookup: registryLookup(projectService),
     locks: syncLocksFor(sourceControlRef.current),
-    exclusiveWrites: (reason, work, signal) => projectService.withExclusiveWrites(reason, work, signal),
+    exclusiveWrites: (reason, work, signal, options) => projectService.withExclusiveWrites(reason, work, signal, options),
     backgroundWritesIdle: (signal) => projectService.textureEncodesIdle(signal),
   }), [projectService, sourceControlRef]);
   // Integrated mode's lock requests name the branch checked out in the working copy.

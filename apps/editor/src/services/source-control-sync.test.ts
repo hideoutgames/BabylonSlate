@@ -798,7 +798,7 @@ describe("SourceControlSyncService", () => {
         testMode: true,
         lookup,
         locks: { theirs: async () => [], releaseOwn: async () => {} },
-        exclusiveWrites: (reason, work, signal) => withExclusiveWriter(admission, raw, reason, work, signal),
+        exclusiveWrites: (reason, work, signal, options) => withExclusiveWriter(admission, raw, reason, work, signal, options),
         backgroundWritesIdle: options.backgroundWritesIdle ?? (async () => {}),
         factory,
       });

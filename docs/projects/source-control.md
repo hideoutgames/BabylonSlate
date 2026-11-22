@@ -114,7 +114,7 @@ Haptic reads changes after you save (while a game covers the editor, once you ar
 
 In the iPad, iPhone, Android and desktop apps, large asset data travels straight between the host and the project folder, without passing through the editor's memory. The status bar shows how much has been transferred.
 
-A commit takes each asset with the large data it uses. If a save or Texture encode is still running when you commit, Haptic waits for it first. A save made while the commit reads your changes writes nothing, and your edits stay unsaved until the next save. Large data that no asset in the commit uses, such as what an edit you reverted had added, stays on your device and out of the commit until you remove it ([Remove unused files](#remove-unused-files)).
+A commit takes each asset with the large data it uses. If a save or Texture encode is still running when you commit, Haptic waits for it first. Saving while the commit reads your changes waits until it is done, then saves; a Texture that starts encoding then waits too and encodes right after. Large data that no asset in the commit uses, such as what an edit you reverted had added, stays on your device and out of the commit until you remove it ([Remove unused files](#remove-unused-files)).
 
 **Push** sends your commits. Before it does, Haptic checks the locks on what it sends, on the branch it pushes, and refuses if someone else has locked one of those assets, naming who. With **Release Locks After Push** on, a push then releases your locks on the assets it sent, except any you have changed again or have unsaved edits in. Haptic then checks the host for new commits; if that check fails (**Could Not Check For Changes**), the push still went through.
 
