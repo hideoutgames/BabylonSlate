@@ -134,6 +134,7 @@ export * from "./dispatchers";
 export * from "./objects";
 export * from "./curves-ranges";
 export * from "./math-expression";
+export * from "./math-expression-nodes";
 
 export function allNodeDefinitions(): NodeDefinition[] {
   return withNodeDescriptions([
