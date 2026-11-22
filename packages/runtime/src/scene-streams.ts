@@ -167,13 +167,15 @@ export class SceneStreams implements RuntimeSubsystem {
     return !(stream && (owner?.destroyed || !this.ready(stream)));
   }
 
-  /** A script-spawned actor joins the stream of the owner that spawned it. */
+  /**
+   * A script-spawned actor joins the stream of the owner that spawned it. Adoption happens before the actor enters
+   * the World and only into a ready stream, so no actor's readiness changes: physics meets the actor as a spawn.
+   */
   adoptSpawned(owner: EngineObject | null | undefined, actor: Actor): void {
     const stream = this.streamFor(owner);
     if (!stream) return;
     stream.actors.add(actor);
     this.actorStream.set(actor, stream);
-    this._readinessRevision++;
     actor.setVariable("parentId", stream.actor.guid);
     if (stream.origin) actor.transform = composeParentChildTransform(stream.origin, actor.transform);
   }

@@ -333,6 +333,26 @@ describe("additive scene streaming", () => {
     } finally { runtime.stop(); }
   });
 
+  it("gives a script spawn inside a streamed Scene its body without a whole-world physics sync", async () => {
+    const { runtime, world, left } = await setup({ deferred: false, scripts: [logic("Crate")] });
+    try {
+      await runtime.loadSceneStream(left);
+      runtime.tick();
+      const member = world.getActors().find((actor) => actor.classId === "ChildActor")!;
+      const sync = runtime.getPhysicsSync()!;
+      const fullSyncs = vi.spyOn(sync as unknown as { runFullSync(): void }, "runFullSync");
+      const crate = runtime.prepareScriptedActor({ classId: "Crate", streamOwner: member })!;
+      crate.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static" } }));
+      crate.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: {
+        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } }));
+      expect(runtime.finishScriptedActor(crate)).toBe(crate);
+      runtime.tick();
+      expect(fullSyncs).not.toHaveBeenCalled();
+      // Under the streaming actor at x = 10 (scale 2), at the stream component's offset (3, 0, 0).
+      expect(sync.getBackend().getBodyTransform(`body:${crate.guid}`)?.position).toEqual({ x: 16, y: 0, z: 0 });
+    } finally { runtime.stop(); }
+  });
+
   it("rejects invalid targets and incompatible physics before mutating the parent", async () => {
     const child = { ...createDefaultScene("2d"), actors: [] };
     const { runtime, world, left } = await setup({ child });
