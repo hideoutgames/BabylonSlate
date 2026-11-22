@@ -21,7 +21,7 @@ type TransferPlugin = Pick<BabylonSlateScopedStoragePlugin, "transferFile" | "ca
   BabylonSlateScopedStorageEvents;
 
 /** Where the Documents tier keeps projects, as `DocumentsStorageAdapter` and `readDocumentsRange` name it. */
-const PROJECTS_ROOT = "BabylonSlate/projects";
+const PROJECTS_ROOT = "Haptic/projects";
 
 function newId(): string {
   return globalThis.crypto.randomUUID();

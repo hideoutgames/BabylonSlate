@@ -116,7 +116,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func readDocumentsRange(_ call: CAPPluginCall) {
-        guard let path = call.getString("path"), path.hasPrefix("BabylonSlate/projects/"),
+        guard let path = call.getString("path"), path.hasPrefix("Haptic/projects/"),
               ["DOCUMENTS", "DATA"].contains(call.getString("directory") ?? "") else {
             call.reject("Invalid Documents range location", "UNREACHABLE")
             return
@@ -358,7 +358,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     /// one: never a chosen folder (Integrated mode never runs in one), never
     /// the project folder itself, inside Documents after resolving links.
     private func documentsFile(_ call: CAPPluginCall) throws -> URL {
-        guard let path = call.getString("path"), path.hasPrefix("BabylonSlate/projects/"),
+        guard let path = call.getString("path"), path.hasPrefix("Haptic/projects/"),
               path.split(separator: "/").count >= 4,
               ["DOCUMENTS", "DATA"].contains(call.getString("directory") ?? "") else {
             throw ScopedStoragePluginError.invalidPath(call.getString("path") ?? "")

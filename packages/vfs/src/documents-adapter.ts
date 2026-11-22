@@ -13,7 +13,7 @@ import { projectFolderName, projectRelativePath } from "./project-path";
 import { isAppOwnedFolder } from "./library-folders";
 import { isStagedWrite } from "./staged-write";
 
-const PROJECTS_ROOT = "BabylonSlate/projects";
+const PROJECTS_ROOT = "Haptic/projects";
 
 /** Files-visible Documents on iPad; app-private Data on Android, whose public Documents needs a picker. */
 function mobileDocumentsDirectory(platform: HostPlatform = getHostPlatform()): Directory {
@@ -72,7 +72,7 @@ export interface DocumentsFilesystemApi {
 
 /**
  * Durable mobile default tier via Capacitor Filesystem: iPad Documents or
- * Android app-private Data. No picker — projects live under BabylonSlate/projects/.
+ * Android app-private Data. No picker — projects live under Haptic/projects/.
  */
 export class DocumentsStorageAdapter implements ProjectStorage {
   private readonly reads = new StorageReadCounter();

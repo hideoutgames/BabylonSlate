@@ -69,7 +69,7 @@ describe("capacitorFileTransfer", () => {
       url: "https://lfs.example/objects/1",
       headers,
       directory: "DATA",
-      path: `BabylonSlate/projects/Game/assets/.blobs/${SHA}`,
+      path: `Haptic/projects/Game/assets/.blobs/${SHA}`,
       expectedSize: 3,
       expectedSha256: SHA,
     });
@@ -187,6 +187,6 @@ describe("capacitorFileTransfer", () => {
     const fake = fakePlugin();
     const transfer = capacitorFileTransfer("DATA", fake.plugin);
     expect(await transfer.writeRandomObject!(GAME, "assets/.blobs", 256)).toEqual({ path: `assets/.blobs/${SHA}`, sha256: SHA });
-    expect(fake.plugin.writeRandomObject).toHaveBeenCalledWith({ directory: "DATA", path: "BabylonSlate/projects/Game/assets/.blobs", size: 256 });
+    expect(fake.plugin.writeRandomObject).toHaveBeenCalledWith({ directory: "DATA", path: "Haptic/projects/Game/assets/.blobs", size: 256 });
   });
 });

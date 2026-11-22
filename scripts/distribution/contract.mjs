@@ -102,18 +102,18 @@ export function releaseDisposition(identity, tagSha, release) {
 export function artifactNames(platform, version) {
   const release = version.endsWith("-release");
   if (platform === "windows") {
-    const installer = `BabylonSlate-${version}-x64.exe`;
+    const installer = `Haptic-${version}-x64.exe`;
     return [installer, ...(release ? ["latest.yml", `${installer}.blockmap`] : [])];
   }
   if (platform === "macos") {
     const names = ["arm64", "x64"].flatMap(arch => [
-      `BabylonSlate-${version}-${arch}.dmg`,
-      `BabylonSlate-${version}-${arch}.zip`,
+      `Haptic-${version}-${arch}.dmg`,
+      `Haptic-${version}-${arch}.zip`,
     ]);
     return [...names, ...(release ? ["latest-mac.yml"] : [])];
   }
-  if (platform === "linux") return [`BabylonSlate-${version}-x64.AppImage`, ...(release ? ["latest-linux.yml"] : [])];
-  if (platform === "android") return [`BabylonSlate-${version}-android.apk`];
+  if (platform === "linux") return [`Haptic-${version}-x64.AppImage`, ...(release ? ["latest-linux.yml"] : [])];
+  if (platform === "android") return [`Haptic-${version}-android.apk`];
   throw new Error("Unsupported artifact platform");
 }
 

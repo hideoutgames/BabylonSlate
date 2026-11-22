@@ -241,7 +241,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             // Android Documents projects use Capacitor Directory.Data (filesDir).
             if (!"DATA".equals(call.getString("directory"))) throw new PluginFailure("Invalid Documents directory", "UNREACHABLE");
             String path = path(call, false);
-            if (!path.startsWith("BabylonSlate/projects/")) throw new PluginFailure("Invalid Documents path", "UNREACHABLE");
+            if (!path.startsWith("Haptic/projects/")) throw new PluginFailure("Invalid Documents path", "UNREACHABLE");
             File root = getContext().getFilesDir().getCanonicalFile();
             File target = new File(root, path).getCanonicalFile();
             if (!target.getPath().startsWith(root.getPath() + File.separator)) throw new PluginFailure("Path escapes project root", "UNREACHABLE");
@@ -665,7 +665,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     private File documentsFile(PluginCall call) throws Exception {
         if (!"DATA".equals(call.getString("directory"))) throw new PluginFailure("Invalid Documents directory", "UNREACHABLE");
         String path = path(call, false);
-        if (!path.startsWith("BabylonSlate/projects/") || path.split("/").length < 4) throw new PluginFailure("Invalid Documents path", "UNREACHABLE");
+        if (!path.startsWith("Haptic/projects/") || path.split("/").length < 4) throw new PluginFailure("Invalid Documents path", "UNREACHABLE");
         File root = getContext().getFilesDir().getCanonicalFile();
         File target = new File(root, path).getCanonicalFile();
         if (!target.getPath().startsWith(root.getPath() + File.separator)) throw new PluginFailure("Path escapes project root", "UNREACHABLE");

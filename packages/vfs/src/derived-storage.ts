@@ -7,7 +7,7 @@ import { DERIVED_STORAGE_ROOT } from "./library-folders";
 /**
  * App-private derived-data store keyed under a stable root (outside project trees).
  * Web and Electron: an OPFS library bind. Mobile: the project tier's
- * BabylonSlate/projects/__haptic_derived__.
+ * Haptic/projects/__haptic_derived__.
  */
 export async function createDerivedStorage(): Promise<ProjectStorage> {
   const storage = isMobilePlatform()

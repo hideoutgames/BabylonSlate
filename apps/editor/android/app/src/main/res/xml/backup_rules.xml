@@ -3,5 +3,5 @@
 <full-backup-content>
     <exclude domain="sharedpref" path="babylonslate-secrets.xml" />
     <!-- Projects can exceed the 25 MB cloud quota, which would stop every backup. -->
-    <exclude domain="file" path="BabylonSlate/projects/" />
+    <exclude domain="file" path="Haptic/projects/" />
 </full-backup-content>

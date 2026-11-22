@@ -13,7 +13,7 @@ const toBase64 = (bytes: Uint8Array) => btoa(Array.from(bytes, (byte) => String.
  */
 export function createFakeDocumentsFs(): FakeDocumentsFs {
   const tree = new Map<string, { kind: "file" | "dir"; data?: Uint8Array }>();
-  tree.set("BabylonSlate/projects", { kind: "dir" });
+  tree.set("Haptic/projects", { kind: "dir" });
 
   let revision = 0;
   const revisions = new Map<string, string>();
