@@ -1277,7 +1277,7 @@ export type CommandMessage =
   /** Debug: whether each frame Play presents directly is copied into its held image (the `heldimage` console command). */
   | { type: "setHeldImageDebug"; enabled: boolean }
   /** Debug: whether a Scene Layer drawn over the world clears depth and stencil before it draws (the `layerdebug` console command). */
-  | { type: "setLayerDebug"; part: "clears"; enabled: boolean }
+  | { type: "setLayerDebug"; part: "clears" | "skipclears"; enabled: boolean }
   /** Debug: rebuild the view's frame graph, reallocate its shadow maps, or render nothing for 3 s (the `renderreset` console command). */
   | { type: "resetRenderingDebug"; what: "graph" | "shadows" | "idle" }
   /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */

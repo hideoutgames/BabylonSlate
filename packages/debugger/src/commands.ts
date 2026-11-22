@@ -286,13 +286,14 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "layerdebug",
       tier: "debug",
       category: "engine",
-      description: "Clear depth and stencil before each Scene Layer drawn over the world (clears on, the default) or leave them (clears off), to measure what the clears cost; a layer whose meshes use depth may then draw differently",
-      parameters: [{ name: "part", type: "enum", enumValues: ["clears"] }, FLAG],
+      description: "Clear depth and stencil before each Scene Layer drawn over the world (clears on, the default) or leave them (clears off), to measure what the clears cost, where a layer whose meshes use depth may then draw differently; or leave out only the clears the backbuffer already holds, the world's own clear taking the first layer's (skipclears on, the default), or clear before every layer (skipclears off), which draws the same picture",
+      parameters: [{ name: "part", type: "enum", enumValues: ["clears", "skipclears"] }, FLAG],
       run(args, host) {
         const enabled = Boolean(args.enabled);
+        const part = args.part as "clears" | "skipclears";
         if (!host.setLayerDebug) return fail("layerdebug is unavailable here");
-        host.setLayerDebug("clears", enabled);
-        return ok(`layerdebug clears ${enabled ? "on" : "off"}`);
+        host.setLayerDebug(part, enabled);
+        return ok(`layerdebug ${part} ${enabled ? "on" : "off"}`);
       },
     },
     flagCommand("backbufferdiscard", (host, enabled) => host.setBackbufferDiscard?.(enabled),

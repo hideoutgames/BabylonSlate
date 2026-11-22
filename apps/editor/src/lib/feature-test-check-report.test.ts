@@ -712,13 +712,13 @@ describe("formatFeatureTestCheckReport", () => {
       };
       return formatFeatureTestCheckReport(report, environment).split("\n").filter((line) => line.startsWith("  Scene Layer work:"));
     };
-    expect(work({ scenes: 3, ms: 3.25, batchMs: 1.25, clears: 3, depthClears: 3, targetSwitches: 0, uploads: 0, beforeWorld: { ms: 0.5, uploads: 2, targetSwitches: 2 } }))
-      .toEqual(["  Scene Layer work: 3 scenes in 3.25 ms (1.25 in batched passes, 2.00 per-Scene work) · 3 clears (3 of depth) · 0 target switches · 0 uploads · before the world: 0.50 ms, 2 uploads, 2 target switches"]);
-    expect(work({ scenes: 1, ms: 1, batchMs: 0.5, clears: 1, depthClears: 1, targetSwitches: 1, uploads: 1, beforeWorld: { ms: 0, uploads: 0, targetSwitches: 0 } }))
-      .toEqual(["  Scene Layer work: 1 scene in 1.00 ms (0.50 in batched passes, 0.50 per-Scene work) · 1 clear (1 of depth) · 1 target switch · 1 upload · before the world: 0.00 ms, 0 uploads, 0 target switches"]);
+    expect(work({ scenes: 3, ms: 3.25, batchMs: 1.25, clears: 3, depthClears: 3, targetSwitches: 0, uploads: 0, beforeWorld: { ms: 0.5, uploads: 2, targetSwitches: 2 }, backbuffer: { clears: 3, depthClears: 3, elided: 1 } }))
+      .toEqual(["  Scene Layer work: 3 scenes in 3.25 ms (1.25 in batched passes, 2.00 per-Scene work) · 3 clears (3 of depth) · 0 target switches · 0 uploads · before the world: 0.50 ms, 2 uploads, 2 target switches · backbuffer: 3 depth-stencil clears, 1 left out as already cleared"]);
+    expect(work({ scenes: 1, ms: 1, batchMs: 0.5, clears: 1, depthClears: 1, targetSwitches: 1, uploads: 1, beforeWorld: { ms: 0, uploads: 0, targetSwitches: 0 }, backbuffer: { clears: 1, depthClears: 1, elided: 0 } }))
+      .toEqual(["  Scene Layer work: 1 scene in 1.00 ms (0.50 in batched passes, 0.50 per-Scene work) · 1 clear (1 of depth) · 1 target switch · 1 upload · before the world: 0.00 ms, 0 uploads, 0 target switches · backbuffer: 1 depth-stencil clear, 0 left out as already cleared"]);
     // A view that reports none, or whose layers rendered nothing, has no line.
     expect(work(undefined)).toEqual([]);
-    expect(work({ scenes: 0, ms: 0, batchMs: 0, clears: 0, depthClears: 0, targetSwitches: 0, uploads: 0, beforeWorld: { ms: 0, uploads: 0, targetSwitches: 0 } })).toEqual([]);
+    expect(work({ scenes: 0, ms: 0, batchMs: 0, clears: 0, depthClears: 0, targetSwitches: 0, uploads: 0, beforeWorld: { ms: 0, uploads: 0, targetSwitches: 0 }, backbuffer: { clears: 0, depthClears: 0, elided: 0 } })).toEqual([]);
   });
 
   it("says how many shadow casters the maps draw from the shared buffer, and how, only where some are", () => {
