@@ -18,15 +18,17 @@ const NONE: ReadonlySet<WorldDebugPart> = new Set();
 
 /**
  * The parts off by default: `mergedmarches`, the merged half-resolution march pass, an opt-in until a native GPU proves
- * it (`merged-marches.ts`).
+ * it (`merged-marches.ts`), and `materialrecords`, graph Materials reading the Material record (`material-record.ts`),
+ * an opt-in until a native GPU proves it.
  */
-const DEFAULT_OFF: ReadonlySet<WorldDebugPart> = new Set(["mergedmarches"]);
+const DEFAULT_OFF: ReadonlySet<WorldDebugPart> = new Set(["mergedmarches", "materialrecords"]);
 
 /**
- * The parts that change no Material's program: those of the view's graph (`liveSceneEffectsKey`), and
- * `spritebatching`, which the Play view applies itself (`syncWorldSpriteBatching` in `create-engine.ts`).
+ * The parts that change no Material's defines: those of the view's graph (`liveSceneEffectsKey`), `spritebatching`,
+ * which the Play view applies itself (`syncWorldSpriteBatching` in `create-engine.ts`), and `materialrecords`, which
+ * compiles the Scene's library Materials again (`MaterialLibrary.recompileScene`).
  */
-const PROGRAM_FREE_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "mergedmarches", "spritebatching"]);
+const PROGRAM_FREE_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "mergedmarches", "spritebatching", "materialrecords"]);
 
 /** Whether `part` of the world is switched off for `scene`. */
 export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
@@ -48,6 +50,14 @@ export function setSceneWorldDebug(scene: Scene, part: WorldDebugPart, enabled: 
   if (!PROGRAM_FREE_PARTS.has(part)) for (const material of scene.materials) material.markDirty(true);
   markSceneReadinessDirty(scene, "renderSettings");
   return true;
+}
+
+/**
+ * Whether `scene`'s graph Materials read their parameters and hoisted literals from the Material record
+ * (`worlddebug materialrecords on`); off by default, when they compile them as uniforms and literals.
+ */
+export function materialRecordsOn(scene: Scene): boolean {
+  return !worldDebugOff(scene, "materialrecords");
 }
 
 /**

@@ -76,7 +76,8 @@ describe("material pin defaults", () => {
     const listed = listUnconnectedMaterialPinDefaults(doc, "output");
     expect(listed.find((row) => row.pinId === "worldPositionOffset")?.value).toEqual([1, 2, 1]);
     const lowered = lowerMaterialDocument(doc);
-    expect(lowered.ok && lowered.plan.outputs.worldPositionOffset).toEqual({
+    // (A Material Output literal is also marked hoisted, for programs that read the Material record.)
+    expect(lowered.ok && lowered.plan.outputs.worldPositionOffset).toMatchObject({
       kind: "constant",
       type: "vec3",
       value: [1, 2, 1],

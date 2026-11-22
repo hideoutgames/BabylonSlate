@@ -24,6 +24,7 @@
     "./src/material-block-registry.ts",
     "./src/material-compiler.ts",
     "./src/material-plugin-registration.ts",
+    "./src/material-record.ts",
     "./src/mirror-reflection-block.ts",
     "./src/model-lod.worker.ts",
     "./src/multiply-blend-block.ts",

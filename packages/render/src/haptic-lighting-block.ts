@@ -25,6 +25,7 @@ import { areaEmissionTexture } from "./area-emission-array";
 import { areaLightLtcTexture } from "./area-light-resources";
 import { CEL_UNIFORMS, bindCelSettings, celFunctions } from "./cel-shader";
 import { HAPTIC_CLUSTERS_GLSL, HAPTIC_LIGHTS_GLSL, bindHapticClusters, bindHapticLights } from "./haptic-lights";
+import { HAPTIC_LIGHT_UNIFORM_BLOCKS } from "./material-record";
 import {
   HAPTIC_IRRADIANCE_KEYS,
   HAPTIC_IRRADIANCE_UNIFORMS,
@@ -299,7 +300,9 @@ export class HapticLightingBlock extends NodeMaterialBlock {
 
   override updateUniformsAndSamples(state: NodeMaterialBuildState, material: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void {
     super.updateUniformsAndSamples(state, material, defines, uniformBuffers);
-    uniformBuffers.push("HapticLights", "HapticClusters");
+    // A program's binding points are the positions in this list: the light blocks are 0 and 1 in every program that
+    // lists them, whatever else it binds (`material-record.ts` lists them ahead of its own block).
+    for (const name of HAPTIC_LIGHT_UNIFORM_BLOCKS) if (!uniformBuffers.includes(name)) uniformBuffers.push(name);
   }
 
   /**

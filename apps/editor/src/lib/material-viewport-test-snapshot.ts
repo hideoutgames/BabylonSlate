@@ -13,9 +13,14 @@ export function materialViewportTestSnapshot(
   visual: AbstractMesh,
 ): MaterialViewportTestSnapshot {
   const material = visual.material;
-  const blocks =
+  // Its uniforms and constants, and the values it reads from its record (`MaterialRecordReadBlock`): parameters and
+  // hoisted literals, as authored.
+  const blocks: Array<{ name: string; value: unknown }> =
     material?.getClassName() === "NodeMaterial"
-      ? (material as NodeMaterial).getInputBlocks()
+      ? [
+        ...(material as NodeMaterial).getInputBlocks(),
+        ...(material as NodeMaterial).attachedBlocks.filter((block) => block.getClassName() === "MaterialRecordReadBlock") as unknown as Array<{ name: string; value: unknown }>,
+      ]
       : [];
   return {
     meshUniqueId: visual.uniqueId,

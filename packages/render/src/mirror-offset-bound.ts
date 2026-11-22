@@ -3,7 +3,7 @@
  * (`mirrors.ts`): interval arithmetic, per component, over the compiled Babylon blocks behind the node's Offset input.
  *
  * It reads the compiled blocks rather than the Material plan because they are what the shader runs: a value input's
- * InputBlock holds the value the next draw binds (a parameter edit writes it in place), so the bound asked on a render
+ * InputBlock or record slot holds the value the next draw binds (a parameter edit writes it in place), so the bound asked on a render
  * is the bound of what that render's draws sample. Only blocks with a rule below take part; any other block, a value
  * that is not finite, or an Offset whose bound is not finite gives null, and the pass culls without the crop.
  *
@@ -15,6 +15,7 @@
 import { AddBlock } from "@babylonjs/core/Materials/Node/Blocks/addBlock";
 import { ClampBlock } from "@babylonjs/core/Materials/Node/Blocks/clampBlock";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
+import { MaterialRecordReadBlock } from "./material-record";
 import { AnimatedInputBlockTypes } from "@babylonjs/core/Materials/Node/Blocks/Input/animatedInputBlockTypes";
 import { LerpBlock } from "@babylonjs/core/Materials/Node/Blocks/lerpBlock";
 import { MaxBlock } from "@babylonjs/core/Materials/Node/Blocks/maxBlock";
@@ -151,6 +152,14 @@ function inputValue(block: InputBlock): Interval | null {
     const width = widthOf(block.output);
     return width ? unbounded(width) : UNKNOWN;
   }
+  return heldValue(block);
+}
+
+/**
+ * The value a uniform, a constant or a slot of the Material's record (`MaterialRecordReadBlock`: a parameter or a hoisted
+ * literal) holds, which the next draw reads.
+ */
+function heldValue(block: { value: unknown; convertToLinearSpace: boolean }): Interval | null {
   const value: unknown = block.value;
   let components: number[];
   if (typeof value === "number") components = [value];
@@ -210,6 +219,7 @@ function evaluate(point: NodeMaterialConnectionPoint, memo: Map<NodeMaterialConn
   const block = point.ownerBlock;
   const read = (target: NodeMaterialConnectionPoint) => input(target, memo, depth);
   if (block instanceof InputBlock) return inputValue(block);
+  if (block instanceof MaterialRecordReadBlock) return heldValue(block);
   if (block instanceof MorphTargetsBlock) {
     // A mesh's attributes plus its morph targets' weighted deltas (the surface plumbing's UV and position): finite, unbounded.
     const width = widthOf(point);
