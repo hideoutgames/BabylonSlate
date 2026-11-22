@@ -5,6 +5,7 @@ import { isValidAppId } from "@haptic/core/app-identity";
 import { isRuntimeFileName, MAX_RUNTIME_FILES } from "./game-runtime";
 import { ANDROID_ICON_SIZES, MAX_ANDROID_VERSION_CODE } from "../../../packages/exporter/src/native-android";
 import { isValidTeamId } from "../../../packages/exporter/src/native-ios";
+import { packages as thirdPartyPackages } from "../../editor/src/lib/third-party-notices.json";
 
 /** Largest payload one project IPC call may move through the main process. */
 export const MAX_IPC_BYTES = 512 * 1024 * 1024;
@@ -147,11 +148,24 @@ const STORE_MANAGEMENT_HOSTS = new Set(["apps.apple.com", "play.google.com"]);
 const DEVICE_SIGN_IN_PAGES = new Set(["https://github.com/login/device", "https://gitlab.com/oauth/device"]);
 /** The documentation site the editor's Settings > Documentation opens (HAPTIC_DOCS_URL in apps/editor/src/lib/documentation.ts). */
 const DOCS_SITE = { origin: "https://hideoutgames.github.io", path: "/BabylonSlate/docs/" };
+/** The Homepage's Discord invite (HAPTIC_DISCORD_URL in apps/editor/src/components/homepage-discord-badge.tsx). */
+const COMMUNITY_LINKS = new Set(["https://discord.gg/7uPR4JK5q3"]);
+/** Each bundled package's source link, which Third-Party Notices offers: these exact pages and no others. */
+const NOTICE_SOURCE_LINKS = new Set(
+  thirdPartyPackages.flatMap(({ source }) => {
+    try {
+      const url = new URL(source);
+      return url.protocol === "https:" ? [url.href] : [];
+    } catch {
+      return [];
+    }
+  }),
+);
 
 /**
  * Links the editor hands to the system browser or mail client: Haptic's site and documentation,
- * Web Billing and store subscription pages and the GitHub and GitLab device
- * sign-in pages over HTTPS, and mailto. Anything else stays denied, so project
+ * its Discord invite, the bundled packages' source pages, Web Billing and store subscription pages and
+ * the GitHub and GitLab device sign-in pages over HTTPS, and mailto. Anything else stays denied, so project
  * scripts in the Preview frame cannot open arbitrary sites.
  */
 export function externalOpenUrl(rawUrl: string): string | null {
@@ -163,6 +177,8 @@ export function externalOpenUrl(rawUrl: string): string | null {
       STORE_MANAGEMENT_HOSTS.has(url.hostname) ||
       isBillingFrameUrl(url.href) ||
       (url.origin === DOCS_SITE.origin && url.pathname.startsWith(DOCS_SITE.path)) ||
+      COMMUNITY_LINKS.has(url.href) ||
+      NOTICE_SOURCE_LINKS.has(url.href) ||
       (DEVICE_SIGN_IN_PAGES.has(`${url.origin}${url.pathname}`) && !url.search && !url.hash)
       ? url.href
       : null;
