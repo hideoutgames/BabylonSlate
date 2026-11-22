@@ -16,7 +16,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
 import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
 import type { ClampBlock } from "@babylonjs/core/Materials/Node/Blocks/clampBlock";
-import type { Effect } from "@babylonjs/core/Materials/effect";
+import { Effect } from "@babylonjs/core/Materials/effect";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
 import type { MorphTargetsBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/morphTargetsBlock";
@@ -484,6 +484,59 @@ describe("material compiler", () => {
     const values = (material: NodeMaterial) => material.attachedBlocks.flatMap((block) => block instanceof MaterialRecordReadBlock ? [block.value] : []);
     expect(values(brass.material)).toContain(0.25);
     expect(values(brick.material)).not.toContain(0.25);
+  });
+
+  it("gives the record one binding point in every program and binds it only when another Material's record is drawn", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    const engine = scene.getEngine() as NullEngine & { _features: { useUBOBindingCache: boolean } };
+    // As on WebGL: Babylon skips a bind whose buffer is already at its binding point.
+    engine._features.useUBOBindingCache = true;
+    const compile = (roughness: number, shading: "pbr" | "unlit", name: string) => {
+      const doc = createDefaultMaterialDocument();
+      doc.shadingModel = shading;
+      doc.nodes.find((node) => node.id === "output")!.properties["default:roughness"] = [roughness];
+      const result = compileMaterialPlan(planFor(doc), { scene, name });
+      if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+      disposers.push(() => result.dispose());
+      return result;
+    };
+    // `twin` holds what `a` holds: they bind one shared buffer.
+    const [a, b, flat, twin] = [compile(0.3, "pbr", "material:a"), compile(0.8, "pbr", "material:b"), compile(0.5, "unlit", "material:flat"), compile(0.3, "pbr", "material:twin")];
+    await Promise.all([a.ready, b.ready, flat.ready, twin.ready]);
+    const all = [a, b, flat, twin];
+    const meshes = all.map((compiled, index) => {
+      const mesh = MeshBuilder.CreateBox(`bind-${index}`, {}, scene);
+      mesh.material = compiled.material;
+      return mesh;
+    });
+    for (const [index, compiled] of all.entries()) {
+      await compiled.material.forceCompilationAsync(meshes[index]!);
+      expect(compiled.material.isReadyForSubMesh(meshes[index]!, meshes[index]!.subMeshes[0]!)).toBe(true);
+      compiled.material.freeze();
+    }
+    // Lit or unlit, the light blocks are binding points 0 and 1 and the record 2.
+    for (const mesh of meshes) expect(mesh.subMeshes[0]!.effect!.getUniformBuffersNames()).toEqual(["HapticLights", "HapticClusters", "HapticMaterial"]);
+    Effect.ResetCache();
+    const binds = vi.spyOn(engine, "bindUniformBufferBase");
+    const draw = (...indices: number[]) => {
+      for (const index of indices) {
+        const mesh = meshes[index]!;
+        all[index]!.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
+      }
+    };
+    draw(0, 0, 1, 1, 0, 3, 0, 2, 2, 1);
+    const at = (point: number) => binds.mock.calls.filter(([, location]) => location === point).length;
+    // a, b, a (twin and a again bind nothing: one buffer), flat, b: one bind per change of bytes, none for a repeated,
+    // frozen or identical Material's draw.
+    expect(at(2)).toBe(5);
+    expect(at(0)).toBeLessThanOrEqual(1);
+    // A write gives the twin a buffer of its own; a keeps the shared one.
+    const slot = twin.material.attachedBlocks.find((block): block is MaterialRecordReadBlock => block instanceof MaterialRecordReadBlock && block.value === 0.3)!;
+    slot.value = 0.4;
+    binds.mockClear();
+    draw(0, 3, 3, 0);
+    expect(at(2)).toBe(3);
   });
 
   it("keeps plain uniforms for a plan whose record would pass the safe block size", async () => {

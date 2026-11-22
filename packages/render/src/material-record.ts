@@ -12,6 +12,9 @@ import { Vector2, Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import type { MaterialBuildPlan, MaterialOperand, MaterialOperation } from "@haptic/shader-graph";
 
+/** The light blocks every lit program binds (`HapticLightingBlock`), in binding-point order. */
+export const HAPTIC_LIGHT_UNIFORM_BLOCKS = ["HapticLights", "HapticClusters"] as const;
+
 /** The per-Material `std140` uniform block every Material-mode program of the compiler reads its record from. */
 export const MATERIAL_RECORD_BLOCK = "HapticMaterial";
 
@@ -62,9 +65,31 @@ export type MaterialRecordValue = number | Vector2 | Vector3 | Vector4 | Color3 
  * hapticMaterial[N]; }`), in a uniform buffer of its own. The slot layout is the program's (the plan's shape decides
  * it), the bytes are the Material's: Materials sharing a program bind their own record on every draw.
  */
+/** Per Engine, the shared record buffers by their bytes, with how many records bind each. */
+const sharedRecords = new WeakMap<AbstractEngine, Map<string, { buffer: DataBuffer; users: number }>>();
+
+/** A record's bytes as a key: two records with one key hold the same values in the same size of buffer. */
+function recordKey(data: Float32Array): string {
+  const words = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+  let key = "";
+  for (let index = 0; index < words.length; index += 4096) key += String.fromCharCode(...words.subarray(index, index + 4096));
+  return key;
+}
+
+/**
+ * One Material's record. Records holding the same bytes (a Material and its outline, capture, shadow and water variants,
+ * its Instances that override nothing, Materials of one graph and values) bind one shared buffer per Engine, so
+ * consecutive draws of them keep the buffer at the binding point and Babylon's binding cache skips the bind. A record
+ * written after its first bind (a parameter edit) leaves the shared buffer for one of its own, which later writes
+ * update in place.
+ */
 export class MaterialRecord {
   readonly data: Float32Array;
   private buffer: DataBuffer | null = null;
+  /** The shared buffer's key while the record binds one; null for a buffer of its own. */
+  private sharedKey: string | null = null;
+  /** Written after it first bound: it binds a buffer of its own. */
+  private own = false;
   private dirty = true;
   private disposed = false;
   private readonly engine: AbstractEngine;
@@ -79,12 +104,20 @@ export class MaterialRecord {
   /** Writes `components` (at most four) into `slot`; the next bind uploads them. */
   write(slot: number, components: readonly number[]): void {
     const offset = slot * 4;
+    let changed = false;
     for (let index = 0; index < 4; index++) {
       const value = index < components.length ? components[index]! : 0;
       if (this.data[offset + index] !== Math.fround(value)) {
         this.data[offset + index] = value;
-        this.dirty = true;
+        changed = true;
       }
+    }
+    if (!changed) return;
+    this.dirty = true;
+    if (this.sharedKey !== null) {
+      // Other records still bind the shared buffer with the old bytes.
+      this.leaveShared();
+      this.own = true;
     }
   }
 
@@ -92,7 +125,17 @@ export class MaterialRecord {
   bind(effect: Effect): void {
     if (this.disposed) return;
     if (!this.buffer) {
-      this.buffer = this.engine.createUniformBuffer(this.data, MATERIAL_RECORD_BLOCK);
+      if (this.own) this.buffer = this.engine.createUniformBuffer(this.data, MATERIAL_RECORD_BLOCK);
+      else {
+        let shared = sharedRecords.get(this.engine);
+        if (!shared) sharedRecords.set(this.engine, (shared = new Map()));
+        const key = recordKey(this.data);
+        let entry = shared.get(key);
+        if (!entry) shared.set(key, (entry = { buffer: this.engine.createUniformBuffer(this.data, MATERIAL_RECORD_BLOCK), users: 0 }));
+        entry.users += 1;
+        this.buffer = entry.buffer;
+        this.sharedKey = key;
+      }
       this.dirty = false;
     } else if (this.dirty) {
       this.engine.updateUniformBuffer(this.buffer, this.data);
@@ -101,10 +144,24 @@ export class MaterialRecord {
     effect.bindUniformBuffer(this.buffer, MATERIAL_RECORD_BLOCK);
   }
 
+  private leaveShared(): void {
+    const key = this.sharedKey;
+    if (key === null) return;
+    const shared = sharedRecords.get(this.engine);
+    const entry = shared?.get(key);
+    if (entry && --entry.users === 0) {
+      shared!.delete(key);
+      this.engine._releaseBuffer(entry.buffer);
+    }
+    this.sharedKey = null;
+    this.buffer = null;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    if (this.buffer) this.engine._releaseBuffer(this.buffer);
+    if (this.sharedKey !== null) this.leaveShared();
+    else if (this.buffer) this.engine._releaseBuffer(this.buffer);
     this.buffer = null;
   }
 }
@@ -184,6 +241,11 @@ export class MaterialRecordReadBlock extends NodeMaterialBlock {
 
   override updateUniformsAndSamples(state: NodeMaterialBuildState, material: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void {
     super.updateUniformsAndSamples(state, material, defines, uniformBuffers);
+    // A binding point is the block's position in the program's list. The record comes after the light blocks, listed
+    // first whether or not the program reads them (an unread name binds nothing), so the record has one binding point
+    // in every program and the lights keep theirs: Babylon's binding cache (`Effect._BaseCache`) then skips a bind
+    // whose buffer is already there, and only a change of record rebinds.
+    for (const name of HAPTIC_LIGHT_UNIFORM_BLOCKS) if (!uniformBuffers.includes(name)) uniformBuffers.push(name);
     if (!uniformBuffers.includes(MATERIAL_RECORD_BLOCK)) uniformBuffers.push(MATERIAL_RECORD_BLOCK);
   }
 
