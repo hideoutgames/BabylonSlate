@@ -15,6 +15,7 @@ import { compileMaterialPlan, MATERIAL_BLOCK_PREFIX } from "./material-compiler"
 import { nodeBlockName } from "./test-support/material-node-blocks";
 import { materialParameterRevision } from "./material-parameters";
 import { MaterialLibrary } from "./material-library";
+import { MaterialRecordReadBlock } from "./material-record";
 import * as snapshots from "./snapshot-apply";
 
 const disposers: Array<() => void> = [];
@@ -245,7 +246,8 @@ describe("material parameter bindings", () => {
     const tint = compiled.material.getBlockByName(nodeBlockName(doc, "tint")) as InputBlock;
     expect(rect.value).toBeInstanceOf(Vector4);
     expect(rect.convertToLinearSpace).toBe(false);
-    expect(rect.isConstant).toBe(false);
+    // A parameter: a slot of the Material's record, never a shader constant.
+    expect(rect).toBeInstanceOf(MaterialRecordReadBlock);
     expect(tint.convertToLinearSpace).toBe(true);
     expect(compiled.getParameter("Rect")).toEqual({ kind: "vec4", value: [0.5, 0.5, 0.5, 0.5] });
     expect(compiled.setParameter("Rect", { kind: "vec4", value: [1, 2, 3, 4] })).toBe(true);

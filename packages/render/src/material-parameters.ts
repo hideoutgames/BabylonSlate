@@ -12,6 +12,7 @@ import { copyMaterialParameterValue } from "@haptic/core";
 import type { MaterialBuildPlan } from "@haptic/shader-graph";
 import type { BlockRealization } from "./material-block-registry";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { MaterialRecordReadBlock } from "./material-record";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 
 /** Reject invalid writes before replacing a component's replayable value. */
@@ -75,8 +76,10 @@ export function createMaterialParameterBindings(
   const textureObservers = new Map<string, () => void>();
   const copy = copyMaterialParameterValue;
   const defaults = new Map<string, MaterialParameterValue>();
+  /** The block holding a parameter's value: a record slot (`MaterialRecordReadBlock`) or a uniform. */
+  const valueBlock = (block: unknown) => block instanceof InputBlock || block instanceof MaterialRecordReadBlock ? block : null;
   for (const [name, operation] of parameters) {
-    const block = realized.get(operation.id)?.blocks[0];
+    const block = valueBlock(realized.get(operation.id)?.blocks[0]);
     // A per-instance parameter's attribute block holds no value: the Material's is recorded with it.
     const perInstance = instanceParameterValue(material, name);
     if (perInstance) {
@@ -84,15 +87,15 @@ export function createMaterialParameterBindings(
     } else if (operation.nodeType === "param.texture") {
       defaults.set(name, { kind: "texture", textureAssetGuid:
         typeof operation.properties.textureGuid === "string" ? operation.properties.textureGuid : null });
-    } else if (block instanceof InputBlock && operation.nodeType === "param.float") {
+    } else if (block && operation.nodeType === "param.float") {
       defaults.set(name, { kind: "float", value: block.value as number });
-    } else if (block instanceof InputBlock && block.value instanceof Vector2) {
+    } else if (block && block.value instanceof Vector2) {
       defaults.set(name, { kind: "vec2", value: [block.value.x, block.value.y] });
-    } else if (block instanceof InputBlock && block.value instanceof Vector3) {
+    } else if (block && block.value instanceof Vector3) {
       defaults.set(name, { kind: "vec3", value: [block.value.x, block.value.y, block.value.z] });
-    } else if (block instanceof InputBlock && block.value instanceof Vector4) {
+    } else if (block && block.value instanceof Vector4) {
       defaults.set(name, { kind: "vec4", value: [block.value.x, block.value.y, block.value.z, block.value.w] });
-    } else if (block instanceof InputBlock && block.value instanceof Color4) {
+    } else if (block && block.value instanceof Color4) {
       const color = block.value;
       defaults.set(name, { kind: "color", value: [color.r, color.g, color.b, color.a] });
     }
@@ -185,8 +188,8 @@ export function createMaterialParameterBindings(
         parameterRevisions.set(material, (parameterRevisions.get(material) ?? 0) + 1);
         return true;
       }
-      const block = realized.get(operation.id)?.blocks[0];
-      if (!(block instanceof InputBlock)) return false;
+      const block = valueBlock(realized.get(operation.id)?.blocks[0]);
+      if (!block) return false;
       // Resolve replays every stored value; an unchanged uniform must not
       // reset readiness for every mesh using this material.
       const current: unknown = block.value;

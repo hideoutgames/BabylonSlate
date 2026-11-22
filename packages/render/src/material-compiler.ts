@@ -49,6 +49,8 @@ import { attachInstanceParameters, createInstanceParameterBlock, indexLetters, i
 import { materialGlslDiagnostic, shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
+  babylonTypeFor,
+  babylonValueFor,
   createConstantBlock,
   type BlockRealization,
   type MaterialPlumbing,
@@ -85,6 +87,7 @@ import { markBoundedMaterial, markDrawBatchMaterial } from "./draw-batch-world-b
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
 import { createDecalPlumbing } from "./decal-projection-block";
+import { MATERIAL_RECORD_BLOCK, MaterialRecord, MaterialRecordReadBlock, planMaterialRecord, type MaterialRecordValue } from "./material-record";
 import { MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
@@ -360,6 +363,7 @@ function operationBlockName(id: string): string {
 const BATCH_BINDINGS: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> = [
   BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
   ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
+  MaterialRecordReadBlock,
 ];
 
 function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
@@ -433,6 +437,15 @@ export function compileMaterialPlan(
   // the same shader text and share a program (`shareCompiledProgram`).
   const blockNames = new Map(plan.operations.map((operation, index) => [operation.id, materialOperationBlockName(index)]));
   const blockNameOf = (operation: MaterialOperation): string => blockNames.get(operation.id)!;
+  // A root-level parameter marked Per Instance reads each mesh's value from an instanced attribute. A decal's box
+  // carries only the decal's own instance rows, so in the Decal domain it stays a uniform.
+  const isPerInstance = (operation: MaterialOperation) =>
+    operation.source.callPath.length === 0 && plan.domain !== "decal" && isPerInstanceParameter(operation.nodeType, operation.properties);
+  // A Material-mode program reads its parameters from the Material's record (`material-record.ts`); Particle and Post
+  // Process programs, and a plan too large for a record, keep plain uniforms.
+  const recordPlan = material.mode === NodeMaterialModes.Material ? planMaterialRecord(plan, isPerInstance) : null;
+  const record = recordPlan ? new MaterialRecord(scene.getEngine(), recordPlan.slots) : null;
+  if (record) material.onDisposeObservable.addOnce(() => record.dispose());
 
   const fail = (): CompileMaterialResult => {
     for (const block of created) block.dispose();
@@ -596,14 +609,18 @@ export function compileMaterialPlan(
         pin && pin.type.kind !== "generic"
           ? (pin.type.kind as MaterialValueType)
           : "float";
-      // A root-level parameter marked Per Instance reads each mesh's value from an instanced attribute. A decal's box
-      // carries only the decal's own instance rows, so in the Decal domain it stays a uniform.
-      const perInstance = operation.source.callPath.length === 0 && plan.domain !== "decal" && isPerInstanceParameter(operation.nodeType, operation.properties);
+      const perInstance = isPerInstance(operation);
       const kind = operation.nodeType === "param.color" ? "color" : "float";
+      const slot = recordPlan?.slotOf.get(operation.id);
       const block = perInstance
         ? createInstanceParameterBlock(instanceParameterAttribute(instanceParameters.length, kind), kind)
-        // A parameter stays a uniform, which `setParameter` rewrites; a constant node is written into the shader.
-        : createConstantBlock(blockNameOf(operation), type, value, asColor, operation.nodeType.startsWith("param."));
+        // A parameter reads the Material's record, or a uniform, which `setParameter` rewrites; a constant node is
+        // written into the shader.
+        : record && slot !== undefined
+          ? new MaterialRecordReadBlock(blockNameOf(operation),
+            asColor ? (type === "vec3" ? NodeMaterialBlockConnectionPointTypes.Color3 : NodeMaterialBlockConnectionPointTypes.Color4) : babylonTypeFor(type),
+            slot, record, babylonValueFor(type, value, asColor) as MaterialRecordValue, asColor, scene.getEngine().useExactSrgbConversions)
+          : createConstantBlock(blockNameOf(operation), type, value, asColor, operation.nodeType.startsWith("param."));
       if (perInstance) instanceParameters.push({
         name: String(operation.properties.name ?? "").trim(), attribute: block.name, kind,
         value: kind === "color" ? { kind, value: [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1] } : { kind, value: value[0] ?? 0 },
@@ -1084,7 +1101,7 @@ export function compileMaterialPlan(
   if (bounded && (options.overlay || plan.domain === "text") && created.every(bindsAsABatchDoes)) markDrawBatchMaterial(material, plan.domain === "text");
   // The light block rebinds only its receiver terms.
   const lightingBlocks = created.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
-  if (perMeshBlocks.length > 0 || lightingBlocks.length > 0) {
+  if (perMeshBlocks.length > 0 || lightingBlocks.length > 0 || record) {
     material.onBindObservable.add((mesh) => {
       // A pool member Babylon draws on its own (`_actAsRegularMesh`, its handedness apart from its source's) binds as
       // itself: an instance carries no bones, morphs or per-mesh text, so it rebinds as a rigid mesh does.
@@ -1093,6 +1110,8 @@ export function compileMaterialPlan(
       if (effect) {
         for (const block of perMeshBlocks) block.bind(effect, material, mesh as Mesh);
         for (const block of lightingBlocks) block.bindReceiver(effect, mesh as Mesh);
+        // The Material's record too: one binding point serves every program's record.
+        if (record && effect.getUniformBuffersNames().includes(MATERIAL_RECORD_BLOCK)) record.bind(effect);
       }
     });
   }

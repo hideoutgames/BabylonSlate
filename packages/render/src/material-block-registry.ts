@@ -145,7 +145,7 @@ interface BlockAdapterContext {
 
 type BlockAdapter = (context: BlockAdapterContext) => BlockRealization;
 
-function babylonTypeFor(
+export function babylonTypeFor(
   type: MaterialValueType,
 ): NodeMaterialBlockConnectionPointTypes {
   switch (type) {
@@ -164,7 +164,7 @@ function babylonTypeFor(
 }
 
 /** Build the Babylon value object a constant InputBlock expects. */
-function babylonValueFor(
+export function babylonValueFor(
   type: MaterialValueType,
   components: readonly number[],
   asColor: boolean,
