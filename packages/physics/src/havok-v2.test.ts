@@ -60,6 +60,29 @@ function spawnFallingBox(backend: PhysicsBackend): void {
   });
 }
 
+function placeBox(
+  backend: PhysicsBackend,
+  id: string,
+  motionType: "static" | "dynamic",
+  position: { x: number; y: number; z: number },
+  halfExtents: { x: number; y: number; z: number },
+): void {
+  backend.createBody({
+    id, actorId: id, motionType, mass: 1, linearDamping: 0, angularDamping: 0, gravityScale: 1,
+    transform: { position, rotation: { x: 0, y: 0, z: 0, w: 1 } },
+  });
+  backend.createCollider({
+    id: `${id}:shape`, bodyId: id, shape: { kind: "box", halfExtents },
+    friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
+  });
+}
+
+/** Four 1 m boxes, `box0` to `box3`, stacked on a static floor. */
+function placeStack(backend: PhysicsBackend): void {
+  placeBox(backend, "floor", "static", { x: 0, y: -0.5, z: 0 }, { x: 10, y: 0.5, z: 10 });
+  for (let i = 0; i < 4; i++) placeBox(backend, `box${i}`, "dynamic", { x: 0, y: 0.5 + i, z: 0 }, { x: 0.5, y: 0.5, z: 0.5 });
+}
+
 describe("Havok 3D backend drives Havok WASM directly", () => {
   beforeAll(() => {
     resetLoadedBackendModules();
@@ -135,6 +158,38 @@ describe("Havok 3D backend drives Havok WASM directly", () => {
     } finally {
       backend.dispose();
     }
+  });
+
+  // Expected values were recorded from the Babylon HavokPlugin path, which made every step's length Havok's ideal step
+  // time and capped a step at 0.1 s; at 1/60 both paths already agreed.
+  it.each([
+    { dt: 1 / 240, steps: 600, top: 3.49985 },
+    { dt: 1 / 30, steps: 600, top: 3.48991 },
+  ])("simulates a stack with steps of $dt s as long as each step is", async ({ dt, steps, top }) => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+    try {
+      placeStack(backend);
+      for (let i = 0; i < steps; i++) backend.step(dt);
+      expect(backend.getBodyTransform("box3")!.position.y).toBeCloseTo(top, 4);
+    } finally {
+      backend.dispose();
+    }
+  });
+
+  it("simulates at most 0.1 s per step", async () => {
+    const fallAfter = async (dt: number) => {
+      const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+      try {
+        placeBox(backend, "ball", "dynamic", { x: 0, y: 100, z: 0 }, { x: 0.5, y: 0.5, z: 0.5 });
+        for (let i = 0; i < 20; i++) backend.step(dt);
+        return backend.getBodyTransform("ball")!.position.y;
+      } finally {
+        backend.dispose();
+      }
+    };
+    const capped = await fallAfter(0.1);
+    expect(capped).toBeCloseTo(80.1347, 3);
+    expect(await fallAfter(0.2)).toBe(capped);
   });
 
   it("names the hosted shape a contact touched on a rotated compound", async () => {
