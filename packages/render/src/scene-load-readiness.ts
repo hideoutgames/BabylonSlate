@@ -22,18 +22,34 @@ export interface SceneLoadProgress extends SceneLoadIdentity {
   count?: SceneLoadCount;
 }
 
-/** Cross a browser paint before beginning work; cancellation removes both frames. */
+/** Runs `callback` in a task of its own (a posted message: no timer clamp); the result cancels it. */
+function inNextTask(callback: () => void): () => void {
+  const channel = new MessageChannel();
+  const close = () => { channel.port1.onmessage = null; channel.port1.close(); };
+  channel.port1.onmessage = () => { close(); callback(); };
+  channel.port2.postMessage(undefined);
+  return close;
+}
+
+/**
+ * Cross a browser paint before beginning work, with one animation frame: a task first, so a loading UI update the
+ * caller scheduled (React commits in a task) is in that frame's paint; then the frame; then a task after it, which runs
+ * once that frame's rendering update, its paint included, has run. Cancellation stops whichever step is pending.
+ */
 export function waitForSceneLoadingPaint(signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     signal.throwIfAborted();
-    let frame = 0;
-    const cancel = () => { cancelAnimationFrame(frame); reject(signal.reason); };
+    let stop = () => {};
+    const cancel = () => { stop(); reject(signal.reason); };
     signal.addEventListener("abort", cancel, { once: true });
-    frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => {
-        signal.removeEventListener("abort", cancel);
-        resolve();
+    stop = inNextTask(() => {
+      const frame = requestAnimationFrame(() => {
+        stop = inNextTask(() => {
+          signal.removeEventListener("abort", cancel);
+          resolve();
+        });
       });
+      stop = () => cancelAnimationFrame(frame);
     });
   });
 }
@@ -41,6 +57,11 @@ export function waitForSceneLoadingPaint(signal: AbortSignal): Promise<void> {
 interface LoadingHost {
   acquire: () => () => void;
   progress: (state: SceneLoadProgress | null) => void;
+  /**
+   * The load's one paint barrier: a load that departs from a shown Scene or layer (`sceneLoading`, `sceneLayerLoading`)
+   * waits for it before `painted` lets the runtime retire what shows, so the loading UI is on screen first. A session's
+   * first Scene (`activeScene`) shows nothing to hide and waits for none.
+   */
   paint: (signal: AbortSignal) => Promise<void>;
   painted: (scene: SceneLoadIdentity) => void;
   layerPainted?: (layer: SceneLayerLoadIdentity) => void;
@@ -133,18 +154,15 @@ export function createSceneLoadReadiness(options: {
         progress(scene, 70, "Compiling Shaders");
         await options.handle.prewarmSceneMaterials(scene.layer, (count) => progress(scene, 70, "Compiling Shaders", count));
         if (!isCurrent(scene)) return;
+        // The loading UI is on screen already (painted when the load began, or shown by the host before a session's
+        // first Scene), so the first frame presents without waiting for another paint, and the load acknowledges as
+        // soon as it has: the presented frame is coherent whether or not the UI over it has been removed yet.
         progress(scene, 90, "Presenting First Frame");
-        await options.loading?.paint(scene.controller.signal);
-        if (!isCurrent(scene)) return;
         await options.handle.presentFirstFrame(scene.layer);
         if (!isCurrent(scene)) return;
         scene.completed = true;
         release(scene, false);
         publishProgress();
-        // Let the host remove its blocker and paint the presented canvas before
-        // authored callbacks can replace the scene or produce another frame.
-        await options.loading?.paint(scene.controller.signal);
-        if (!isCurrent(scene)) return;
         if (scene.layer) options.onLayerReady?.(scene.layer);
         else options.onReady(scene);
       })().catch((error: unknown) => fail(scene, error));
