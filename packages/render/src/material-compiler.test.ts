@@ -919,7 +919,7 @@ describe("material compiler", () => {
     other.dispose();
     expect(materialProgramCensus(engine)).toMatchObject({ builds: 1, programs: 1, adopted: 1 });
 
-    // A texture that arrives rebuilds the Material under a new build id, though nothing in its shader text changed.
+    // A texture that arrives rebuilds the Material; nothing in its shader text changed, so it keeps its program.
     const texture = new Texture(null, scene, true, false);
     disposers.push(() => texture.dispose());
     let loaded = false;
@@ -929,9 +929,12 @@ describe("material compiler", () => {
     disposers.push(() => imported.dispose());
     await imported.ready;
     const builtAs = imported.material.buildId;
+    const builds = vi.fn();
+    imported.material.onBuildObservable.add(builds);
     loaded = true;
     texture.onLoadObservable.notifyObservers(texture);
-    await vi.waitFor(() => expect(imported.material.buildId).not.toBe(builtAs));
+    await vi.waitFor(() => expect(builds).toHaveBeenCalled());
+    expect(imported.material.buildId).toBe(builtAs);
     expect(materialProgramCensus(engine)).toMatchObject({ builds: 2, programs: 2, sameShaderRebuilds: 1 });
   });
 

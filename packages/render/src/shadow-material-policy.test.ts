@@ -176,8 +176,8 @@ describe("shadow material cache policy", () => {
     const rebuilt = new Promise<void>((resolve) => material.onBuildObservable.addOnce(() => resolve()));
     texture.onLoadObservable.notifyObservers(texture);
     await rebuilt;
-    // The same plan at a new build id: its vertex stage is still the stock transform.
-    expect(material.buildId).not.toBe(built);
+    // The same plan and code: the rebuild keeps its program, and its vertex stage is still the stock transform.
+    expect(material.buildId).toBe(built);
     expect(canCacheShadowMaterial(material, mesh)).toBe(true);
     result.dispose();
   });

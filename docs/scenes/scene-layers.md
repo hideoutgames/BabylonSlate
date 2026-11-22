@@ -42,6 +42,8 @@ Sprites, tilemaps, meshes, 3D text, sound, particles, Rigid Bodies, Colliders an
 
 2D components that take a Material (2D Material, 2D Panel, 2D Joystick and the form controls) draw only [User Interface Materials](../graphics/materials.md#user-interface-materials), and 2D Text and 2D Rich Text only Text Materials. A mesh on a layer keeps using a Surface Material.
 
+Meshes and 3D text whose Material is **Opaque** or **Masked** hide each other by depth, as in the editor: the nearer one shows, whatever order they were placed in. With a **Translucent**, **Additive** or **Multiply** Material, or while an actor fades, they blend in their sorting order instead. 2D content keeps drawing in **Z-Order** as before.
+
 An actor with a mesh or 3D text can be tilted: its **Inspector** shows Rotation and Scale on X, Y and Z, while Position stays X and Y with **Z-Order**. In the viewport it keeps the 2D box; moving or rotating it there keeps its X and Y tilt.
 
 To script the layer as a whole, set **Scene Mode** to **Script** and edit its [Scene Layer Script](../scripting/scene-scripts.md): each copy of the layer runs it for as long as that copy exists. To script layer elements, make a Class whose parent is **Scene Layer Actor**. Such Classes appear in **Place Actors** only while a Scene Layer is open. A new Scene Layer Actor starts with no components.
