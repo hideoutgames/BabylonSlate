@@ -7,7 +7,6 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { createActor, createDefaultScene, LandscapeSculptSession, parseLandscapeProperties, type LandscapeBrush, type LandscapeProperties } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
-import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { createLandscapeMesh, intersectLandscapeChunk, updateLandscapeMesh } from "./landscape-mesh";
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); });

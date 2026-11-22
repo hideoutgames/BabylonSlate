@@ -175,7 +175,7 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
   it("opens, saves, plays and exports a Scene with a damaged landscape chunk, warning once and keeping the stored bytes", async () => {
     const damaged = new Uint8Array([66, 83, 76, 68, 1, 0, 0, 0, 4, 0]);
     const chunkId = landscapeChunkId("land");
-    const { storage, service } = await openProject(async (storage) => {
+    const { service } = await openProject(async (storage) => {
       const scene = {
         ...createDefaultScene(),
         actors: [createActor("island", "Island", {
