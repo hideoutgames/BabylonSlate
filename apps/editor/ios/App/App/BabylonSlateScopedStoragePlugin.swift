@@ -248,7 +248,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// A file in app storage as `documents-adapter.ts` names it: `DOCUMENTS` (or `DATA`) projects
-    /// under `BabylonSlate/projects/` in Documents, `LIBRARY` app data under
+    /// under `Projects/` in Documents, `LIBRARY` app data under
     /// `Application Support/Haptic/` in Library; inside that folder after resolving links.
     fileprivate func appStorageFile(directory: String, path: String) throws -> (root: URL, file: URL) {
         let base: URL?
@@ -256,7 +256,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         switch directory {
         case "DOCUMENTS", "DATA":
             base = Self.documentsRoot
-            pathPrefix = "BabylonSlate/projects/"
+            pathPrefix = "Projects/"
         case "LIBRARY":
             base = Self.libraryRoot
             pathPrefix = Self.appDataPath + "/"
@@ -541,7 +541,7 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     /// one: never a chosen folder (Integrated mode never runs in one), never
     /// the project folder itself, inside Documents after resolving links.
     private func documentsFile(_ call: CAPPluginCall) throws -> URL {
-        guard let path = call.getString("path"), path.hasPrefix("BabylonSlate/projects/"),
+        guard let path = call.getString("path"), path.hasPrefix("Projects/"),
               path.split(separator: "/").count >= 4,
               ["DOCUMENTS", "DATA"].contains(call.getString("directory") ?? "") else {
             throw ScopedStoragePluginError.invalidPath(call.getString("path") ?? "")

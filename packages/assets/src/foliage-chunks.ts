@@ -8,22 +8,11 @@ import {
   type SerializedComponent,
 } from "@haptic/core";
 import type { ChunkInput } from "./hasset";
+import { bytesToBase64 } from "./chunk-base64";
 import { mapPayloadComponents, sceneComponentChunkKey } from "./landscape-chunks";
 
 export const FOLIAGE_CHUNK_KIND = "foliage";
 export const FOLIAGE_CHUNK_MIME = "application/octet-stream";
-
-function bytesToBase64(bytes: Uint8Array): string {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
-  }
-  let binary = "";
-  const step = 0x8000;
-  for (let i = 0; i < bytes.length; i += step) {
-    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + step, bytes.length)));
-  }
-  return btoa(binary);
-}
 
 /** A Scene component's chunk id: `foliage:<actorId>/<componentId>` (`sceneComponentChunkKey`). */
 export function sceneFoliageChunkId(component: SerializedComponent, actor: SerializedActor | undefined): string {

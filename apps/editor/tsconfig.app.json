@@ -27,5 +27,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Unit tests and their helpers are tsconfig.test.json; a helper the app imports (test-mode proofs) stays here through
+  // that import.
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/testing"]
 }

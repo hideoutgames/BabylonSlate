@@ -41,7 +41,7 @@ const delay = milliseconds => new Promise(resolveDelay => setTimeout(resolveDela
 // of the next nine. Should it stall again, this prints the app's processes and, by attaching cdb without stopping it, the
 // main process's main thread stack and busiest threads.
 function printWindowsMainStacks() {
-  const script = "Get-CimInstance Win32_Process -Filter \"Name='BabylonSlate.exe'\" | ForEach-Object { \"$($_.ProcessId) $($_.CommandLine)\" }";
+  const script = "Get-CimInstance Win32_Process -Filter \"Name='Haptic.exe'\" | ForEach-Object { \"$($_.ProcessId) $($_.CommandLine)\" }";
   const processes = execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8" })
     .split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   console.log(`The relaunch is still starting after 40 s. App processes:\n${processes.map(line => line.slice(0, 240)).join("\n")}`);
@@ -65,31 +65,31 @@ let failure;
 try {
   if (platform === "windows") {
     installer = join(sandbox, "installer.exe");
-    await cp(join(desktop, `dist/public/BabylonSlate-${manifest.packageVersion}-x64.exe`), installer);
+    await cp(join(desktop, `dist/public/Haptic-${manifest.packageVersion}-x64.exe`), installer);
     await run(installer, ["/S", `/D=${installDir}`]);
-    executable = join(installDir, "BabylonSlate.exe");
+    executable = join(installDir, "Haptic.exe");
     archive = join(installDir, "resources/app.asar");
   } else if (platform === "macos") {
     const arch = process.arch === "arm64" ? "arm64" : "x64";
-    const zip = join(desktop, `dist/public/BabylonSlate-${manifest.packageVersion}-${arch}.zip`);
+    const zip = join(desktop, `dist/public/Haptic-${manifest.packageVersion}-${arch}.zip`);
     await mkdir(installDir);
     await run("ditto", ["-x", "-k", zip, installDir]);
-    executable = join(installDir, "BabylonSlate.app/Contents/MacOS/BabylonSlate");
-    archive = join(installDir, "BabylonSlate.app/Contents/Resources/app.asar");
+    executable = join(installDir, "Haptic.app/Contents/MacOS/Haptic");
+    archive = join(installDir, "Haptic.app/Contents/Resources/app.asar");
     const mount = join(sandbox, "dmg");
     await mkdir(mount);
-    const dmg = join(desktop, `dist/public/BabylonSlate-${manifest.packageVersion}-${arch}.dmg`);
+    const dmg = join(desktop, `dist/public/Haptic-${manifest.packageVersion}-${arch}.dmg`);
     await run("hdiutil", ["attach", "-nobrowse", "-readonly", "-noverify", "-mountpoint", mount, dmg]);
     dmgMounted = true;
-    await access(join(mount, "BabylonSlate.app/Contents/Info.plist"));
+    await access(join(mount, "Haptic.app/Contents/Info.plist"));
     await run("hdiutil", ["detach", mount]);
     dmgMounted = false;
   } else {
-    const appImage = join(sandbox, `BabylonSlate-${manifest.packageVersion}-x64.AppImage`);
-    await cp(join(desktop, `dist/public/BabylonSlate-${manifest.packageVersion}-x64.AppImage`), appImage);
+    const appImage = join(sandbox, `Haptic-${manifest.packageVersion}-x64.AppImage`);
+    await cp(join(desktop, `dist/public/Haptic-${manifest.packageVersion}-x64.AppImage`), appImage);
     await chmod(appImage, 0o755);
     await run(appImage, ["--appimage-extract"]);
-    executable = join(sandbox, "squashfs-root/babylonslate");
+    executable = join(sandbox, "squashfs-root/haptic");
     archive = join(sandbox, "squashfs-root/resources/app.asar");
   }
   await mkdir(userData);

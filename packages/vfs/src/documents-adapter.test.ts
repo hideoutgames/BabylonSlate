@@ -21,7 +21,7 @@ describe("DocumentsStorageAdapter", () => {
   it("does not recreate a deleted project when opening a recent handle", async () => {
     const missing = { id: "documents:Deleted", name: "Deleted", tier: "documents" as const };
     await expect(storage.openKnownFolder(missing)).rejects.toBeDefined();
-    expect(fs.tree.has("BabylonSlate/projects/Deleted")).toBe(false);
+    expect(fs.tree.has("Projects/Deleted")).toBe(false);
     expect(storage.getCurrentFolder()).toBeNull();
   });
 
@@ -274,12 +274,12 @@ describe("DocumentsStorageAdapter", () => {
       { id: "documents:Keep", name: "Keep", tier: "external" as const },
       { id: "external:Keep", name: "Keep", tier: "documents" as const },
     ]) await expect(storage.deleteProject(handle), handle.id).rejects.toThrow();
-    expect(fs.tree.has("BabylonSlate/projects/Keep/project.json")).toBe(true);
-    expect(fs.tree.has("BabylonSlate/projects/__haptic_derived__/thumb.bin")).toBe(true);
-    for (const folder of LIBRARY_FOLDERS) expect(fs.tree.has(`BabylonSlate/projects/${folder}`), folder).toBe(true);
+    expect(fs.tree.has("Projects/Keep/project.json")).toBe(true);
+    expect(fs.tree.has("Projects/__haptic_derived__/thumb.bin")).toBe(true);
+    for (const folder of LIBRARY_FOLDERS) expect(fs.tree.has(`Projects/${folder}`), folder).toBe(true);
 
     await storage.deleteProject({ id: "documents:Keep", name: "Keep", tier: "documents" });
-    expect(fs.tree.has("BabylonSlate/projects/Keep")).toBe(false);
+    expect(fs.tree.has("Projects/Keep")).toBe(false);
     expect(storage.getCurrentFolder()).toBeNull();
   });
 });

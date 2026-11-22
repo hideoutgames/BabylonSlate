@@ -330,7 +330,7 @@ export default defineConfig(
   {
     ...js.configs.recommended,
     // Node tooling: root scripts plus app-local scripts (apps/*/scripts).
-    files: ["**/scripts/**/*.mjs", "eslint.config.js"],
+    files: ["**/scripts/**/*.mjs", "eslint.config.js", "eslint.promises.config.js"],
     languageOptions: { globals: globals.node },
   },
   {
