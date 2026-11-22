@@ -184,7 +184,7 @@ export async function exportProjectGameArtifact(
     extensionLibraries,
     previewBuild: options?.previewBuild,
     onPhase: options?.onPhase,
-    assertExecuteJavaScriptAllowed: (names) => projectService.extensions.assertExecuteJavaScriptAllowed(names),
+    assertTrustGatedNodesAllowed: (findings) => projectService.extensions.assertTrustGatedNodesAllowed(findings),
     ...(appIcon ? { appIcon } : {}),
   });
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import {
   createActor,
@@ -15,10 +15,12 @@ import {
   type SerializedGraph,
 } from "@haptic/core";
 import { createImportedMaterialDocument } from "@haptic/shader-graph";
-import { AUDIO_REVERB_CHUNK_ID, collectAssetDependencyMetadata, createDefaultPluginSettings, type IndexedAsset } from "@haptic/assets";
+import { AUDIO_REVERB_CHUNK_ID, collectAssetDependencyMetadata, createDefaultPluginSettings, createExtensionSettings, normalizeExtensionContributions, type IndexedAsset } from "@haptic/assets";
 import { MISSING_STARTUP_SCENE_MESSAGE } from "@haptic/exporter";
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { assetsFromIndexed, collectAndExportGame, resolveExportPluginGraph } from "./export-game";
+import { syncExtensionNodes } from "./extension-nodes";
+import type { TrustGateFinding } from "./trust-gate";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 import { loadFixtureExportDocuments } from "../testing/export-document-fixtures";
 import type { ExportIndexedAsset, ExportArtifact } from "@haptic/exporter";
@@ -269,16 +271,29 @@ describe("collectAndExportGame", () => {
     ]);
   });
 
-  describe("Workspace Trust for Execute JavaScript", () => {
+  // Each kind of trust-gated node, as Hero's Begin Play would call it, with code its compiled module carries.
+  describe.each([
+    { title: "Execute JavaScript", node: { id: "gated", type: "debug.executeJavaScript", data: { body: "ctx.log('hi');", inputs: [], outputs: [] } }, code: "ctx.log('hi');" },
+    { title: "Open URL", node: { id: "gated", type: "system.openUrl", data: { "default:url": "https://example.com/" } }, code: "ctx.openUrl(" },
+    { title: "Ping Server", node: { id: "gated", type: "extension.net-guid.ping", data: {} }, code: '__extensionCall("net", "ping")' },
+  ])("Workspace Trust for $title", ({ title, node, code }) => {
+    // An Extension's nodes are in the registry while it is enabled: here for this block only.
+    beforeAll(() => syncExtensionNodes(defaultNodeRegistry(), [{
+      extensionGuid: "net-guid", folderName: "net", folderPath: "extensions/net", settingsPath: "extensions/net/extension.json",
+      contentPath: "extensions/net/assets", source: "engine", readOnly: true,
+      settings: { ...createExtensionSettings("Net Tools", "net-guid"), editorOnly: false, libraryName: "net",
+        contributes: normalizeExtensionContributions({ nodes: [{ id: "ping", title: "Ping Server", call: "ping" }] }) },
+    }]));
+    afterAll(() => syncExtensionNodes(defaultNodeRegistry(), []));
     const heroGraph: SerializedGraph = {
       nodes: [
         { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
-        { id: "js", type: "debug.executeJavaScript", position: { x: 200, y: 0 }, data: { body: "ctx.log('hi');", inputs: [], outputs: [] } },
+        { ...node, position: { x: 200, y: 0 } },
       ],
-      edges: [{ id: "e", source: "begin", target: "js", sourceHandle: "execOut", targetHandle: "execIn" }],
+      edges: [{ id: "e", source: "begin", target: "gated", sourceHandle: "execOut", targetHandle: "execIn" }],
     };
     const scene = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] };
-    const exportHero = (options: { previewBuild: boolean; assertExecuteJavaScriptAllowed?: (names: readonly string[]) => void }) => collectAndExportGame({
+    const exportHero = (options: { previewBuild: boolean; assertTrustGatedNodesAllowed?: (findings: readonly TrustGateFinding[]) => void }) => collectAndExportGame({
       platform: "web",
       startupSceneGuid: "scene-main",
       assets: [
@@ -291,54 +306,54 @@ describe("collectAndExportGame", () => {
       bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "scene-main" ? scene : heroGraph)),
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles,
       previewBuild: options.previewBuild,
-      ...(options.assertExecuteJavaScriptAllowed ? { assertExecuteJavaScriptAllowed: options.assertExecuteJavaScriptAllowed } : {}),
+      ...(options.assertTrustGatedNodesAllowed ? { assertTrustGatedNodesAllowed: options.assertTrustGatedNodesAllowed } : {}),
     });
 
-    it.each([false, true])("refuses Execute JavaScript an untrusted project would package, previewBuild=%s", async (previewBuild) => {
-      const asked: string[][] = [];
-      const refused = await exportHero({ previewBuild, assertExecuteJavaScriptAllowed: (names) => {
-        asked.push([...names]);
+    it.each([false, true])("refuses the node an untrusted project would package, previewBuild=%s", async (previewBuild) => {
+      const asked: TrustGateFinding[][] = [];
+      const refused = await exportHero({ previewBuild, assertTrustGatedNodesAllowed: (findings) => {
+        asked.push([...findings]);
         throw new Error("not trusted");
       } });
       expect(refused).toEqual({ ok: false, error: "not trusted" });
-      expect(asked).toEqual([["Hero"]]);
+      expect(asked).toEqual([[{ title, assets: ["Hero"] }]]);
       // A caller that makes no trust decision packages none either.
       expect(await exportHero({ previewBuild })).toEqual({
         ok: false,
-        error: expect.stringContaining("so the Execute JavaScript in Hero cannot run."),
+        error: expect.stringContaining(`so the ${title} in Hero cannot run.`),
       });
     });
 
-    it("never packs a project file as compiled code: only this editor's compile produces scripts", async () => {
-      // A crafted asset whose header claims the player's compiled-script type, listed as a Scene dependency.
-      const crafted = { assetGuid: "scene-main", classId: "Evil", source: "export function onBeginPlay(ctx) { globalThis.__pwned = true; }\n",
-        anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] };
-      const plainScene = createDefaultScene();
-      const result = await collectAndExportGame({
-        platform: "web",
-        startupSceneGuid: "scene-main",
-        assets: [
-          asset({ guid: "scene-main", type: "Scene", name: "Main", dependencies: ["evil"], requiredDependencies: ["evil"] }),
-          asset({ guid: "evil", type: "CompiledScript", name: "Evil", path: "assets/evil.hasset" }),
-        ],
-        plugins: [], projectPluginOverrides: {}, parentOf: () => null,
-        sceneByGuid: (guid) => guid === "scene-main" ? plainScene : null,
-        graphByGuid: () => null,
-        payloadByGuid: (guid) => guid === "evil" ? crafted : null,
-        bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "evil" ? crafted : plainScene)),
-        renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles, previewBuild: true,
-      });
-      expect(result).toEqual({ ok: false, error: expect.stringContaining("Evil (assets/evil.hasset) claims to be compiled script code") });
-    });
-
-    it("packages Execute JavaScript the project's trust allows", async () => {
-      const result = await exportHero({ previewBuild: false, assertExecuteJavaScriptAllowed: () => {} });
+    it.each([false, true])("packages the node the project's trust allows, previewBuild=%s", async (previewBuild) => {
+      const result = await exportHero({ previewBuild, assertTrustGatedNodesAllowed: () => {} });
       if (!isOk(result)) throw new Error(result.error);
       const hero = compiledScripts(result.value).find((script) => script.classId === "Hero");
-      expect(hero?.source).toContain("ctx.log('hi');");
+      expect(hero?.source).toContain(code);
       // The gate's metadata stays in the editor.
-      expect(hero).not.toHaveProperty("executeJavaScriptNodes");
+      expect(hero).not.toHaveProperty("trustGatedNodes");
     });
+  });
+
+  it("never packs a project file as compiled code: only this editor's compile produces scripts", async () => {
+    // A crafted asset whose header claims the player's compiled-script type, listed as a Scene dependency.
+    const crafted = { assetGuid: "scene-main", classId: "Evil", source: "export function onBeginPlay(ctx) { globalThis.__pwned = true; }\n",
+      anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] };
+    const plainScene = createDefaultScene();
+    const result = await collectAndExportGame({
+      platform: "web",
+      startupSceneGuid: "scene-main",
+      assets: [
+        asset({ guid: "scene-main", type: "Scene", name: "Main", dependencies: ["evil"], requiredDependencies: ["evil"] }),
+        asset({ guid: "evil", type: "CompiledScript", name: "Evil", path: "assets/evil.hasset" }),
+      ],
+      plugins: [], projectPluginOverrides: {}, parentOf: () => null,
+      sceneByGuid: (guid) => guid === "scene-main" ? plainScene : null,
+      graphByGuid: () => null,
+      payloadByGuid: (guid) => guid === "evil" ? crafted : null,
+      bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "evil" ? crafted : plainScene)),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles, previewBuild: true,
+    });
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("Evil (assets/evil.hasset) claims to be compiled script code") });
   });
 
   it("ships empty subsystem classes no scene references, with their empty user bases", async () => {

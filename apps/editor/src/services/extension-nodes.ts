@@ -36,6 +36,8 @@ function nodeDefinition(extension: ExtensionDescriptor, node: ExtensionNodeContr
     ...(node.hosts.length ? { hosts: node.hosts } : {}),
     ...(node.pure ? { pure: true } : {}),
     ...(node.latent ? { latent: true } : {}),
+    // Every Extension node calls its Extension's game code, so each one needs a trusted project.
+    trustGate: "extension",
     pins: () => node.pure ? dataPins : [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC), ...dataPins],
     codegen: (ctx) => {
       ctx.hoist(CALL_HELPER);

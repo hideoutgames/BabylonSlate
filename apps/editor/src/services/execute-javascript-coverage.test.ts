@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import { ASSET_TYPES, findExecuteJavaScriptNodes, normalizeEmbeddedScript, type SerializedGraph } from "@haptic/core";
+import type { ScriptBundleEntry } from "@haptic/bridge";
+import { createExtensionSettings, normalizeExtensionContributions } from "@haptic/assets";
 import { compileAnimGraphScripts, compileGraphDocuments } from "./script-compiler";
+import { syncExtensionNodes } from "./extension-nodes";
+import { defaultNodeRegistry } from "./graph-validation";
 import { EMBEDDED_SCRIPT_OWNER_TYPES, SCRIPT_ASSET_TYPES } from "./play-asset-sources";
 
 /**
  * The import scan (`findExecuteJavaScriptNodes`) and the Play and export gate (the compiler's
- * `executeJavaScriptNodes`) must see the same Execute JavaScript in every asset type that holds a
+ * `trustGatedNodes`) must see the same Execute JavaScript in every asset type that holds a
  * script graph. Every asset type is listed here, either with a document carrying the node where its
  * editor stores it and the compile path Play and export use, or as holding no script graph; a new
  * type fails until it is placed.
@@ -18,11 +22,15 @@ const wire = (source: string, target: string, sourceHandle = "execOut") =>
   ({ id: `${source}-${target}`, source, target, sourceHandle, targetHandle: "execIn" });
 const scriptGraph = (nodeId: string): SerializedGraph => ({ nodes: [ENTRY, executeJavaScript(nodeId)], edges: [wire("begin", nodeId)] });
 
+/** The Execute JavaScript nodes a compiled script's trust gate records. */
+const executeJavaScriptIds = (script: ScriptBundleEntry) =>
+  (script.trustGatedNodes ?? []).filter((node) => node.kind === "executeJavaScript").map((node) => node.nodeId);
+
 type Fixture = { document: Record<string, unknown>; compile: (document: Record<string, unknown>) => string[] };
 
 const compiledClass = (content: SerializedGraph, classId = "Hero") =>
   compileGraphDocuments([{ path: `assets/${classId}.class.hasset`, content, parentClassId: "Actor" }], { throwOnError: true })
-    .flatMap((script) => script.executeJavaScriptNodes ?? []);
+    .flatMap(executeJavaScriptIds);
 const embeddedScript = (document: Record<string, unknown>, classId: string) =>
   compiledClass(normalizeEmbeddedScript(document.script)!, classId);
 const animationGraph = (dimension: "3d" | "2d"): Fixture => {
@@ -35,7 +43,7 @@ const animationGraph = (dimension: "3d" | "2d"): Fixture => {
   return {
     document: graph as unknown as Record<string, unknown>,
     compile: (document) => compileAnimGraphScripts([{ guid: "loco", path: "assets/Loco.hasset", document }], { throwOnError: true })
-      .flatMap((script) => script.executeJavaScriptNodes ?? []),
+      .flatMap(executeJavaScriptIds),
   };
 };
 
@@ -79,5 +87,52 @@ describe("Execute JavaScript coverage of script graph assets", () => {
     const compiled = fixture.compile(fixture.document);
     expect(compiled.length).toBeGreaterThan(0);
     expect(findExecuteJavaScriptNodes(fixture.document).map((node) => node.nodeId).sort()).toEqual([...compiled].sort());
+  });
+});
+
+/**
+ * Which nodes Workspace Trust gates is the user's decision: Execute JavaScript with a body, Open URL and
+ * every Extension node; Copy To Clipboard and Execute Console Command are not gated.
+ */
+describe("Trust-gated nodes", () => {
+  beforeAll(() => syncExtensionNodes(defaultNodeRegistry(), [{
+    extensionGuid: "net-guid", folderName: "net", folderPath: "extensions/net", settingsPath: "extensions/net/extension.json",
+    contentPath: "extensions/net/assets", source: "engine", readOnly: true,
+    settings: { ...createExtensionSettings("Net Tools", "net-guid"), editorOnly: false, libraryName: "net",
+      contributes: normalizeExtensionContributions({ nodes: [{ id: "ping", title: "Ping Server", call: "ping" }] }) },
+  }]));
+  afterAll(() => syncExtensionNodes(defaultNodeRegistry(), []));
+
+  it("gates exactly Execute JavaScript and Open URL among the built-in nodes", () => {
+    const gated = defaultNodeRegistry().list().filter((definition) => definition.trustGate && !definition.id.startsWith("extension."));
+    expect(gated.map((definition) => [definition.id, definition.trustGate]).sort()).toEqual([
+      ["debug.executeJavaScript", "executeJavaScript"],
+      ["system.openUrl", "openUrl"],
+    ]);
+  });
+
+  it("records each gated node a Class compiles, and neither Copy To Clipboard nor Execute Console Command", () => {
+    const chain = ["js", "url", "ext", "copy", "console"];
+    const graph: SerializedGraph = {
+      nodes: [
+        ENTRY,
+        executeJavaScript("js"),
+        { id: "url", type: "system.openUrl", position: { x: 400, y: 0 }, data: { "default:url": "https://example.com/" } },
+        { id: "ext", type: "extension.net-guid.ping", position: { x: 600, y: 0 }, data: {} },
+        { id: "copy", type: "system.copyToClipboard", position: { x: 800, y: 0 }, data: { "default:text": "hi" } },
+        { id: "console", type: "debug.executeConsoleCommand", position: { x: 1000, y: 0 }, data: { "default:command": "stat fps" } },
+      ],
+      edges: chain.map((id, index) => wire(index === 0 ? "begin" : chain[index - 1]!, id)),
+    };
+    const scripts = compileGraphDocuments([{ path: "assets/Hero.class.hasset", content: graph, parentClassId: "Actor" }], { throwOnError: true });
+    expect(scripts.flatMap((script) => script.trustGatedNodes ?? [])).toEqual([
+      { nodeId: "js", kind: "executeJavaScript", title: "Execute JavaScript" },
+      { nodeId: "url", kind: "openUrl", title: "Open URL" },
+      { nodeId: "ext", kind: "extension", title: "Ping Server" },
+    ]);
+    // Each node did compile into the module, so the record is not missing them for want of code.
+    const source = scripts.map((script) => script.source).join("\n");
+    expect(source).toContain("ctx.copyToClipboard(");
+    expect(source).toContain("executeConsoleCommandAsync(");
   });
 });

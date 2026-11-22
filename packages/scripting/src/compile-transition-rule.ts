@@ -110,6 +110,6 @@ export function compileTransitionRuleGraph(
         )?.id,
       },
     ],
-    executeJavaScriptNodes: [...s.executeJavaScriptNodes],
+    trustGatedNodes: [...s.trustGatedNodes.values()],
   };
 }
