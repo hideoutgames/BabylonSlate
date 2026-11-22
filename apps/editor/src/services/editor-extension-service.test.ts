@@ -530,6 +530,28 @@ describe("EditorExtensionService Workspace Trust", () => {
     expect(started).toHaveBeenCalledTimes(1);
   });
 
+  it("refuses Execute JavaScript until the project is trusted, naming it for the trust prompt", async () => {
+    const { service } = await fixture();
+    await service.refresh({}, false);
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero", "Level 1"])).toThrow(
+      "This project is not trusted on this computer, so the Execute JavaScript in Hero, Level 1 cannot run.");
+    expect(() => service.assertExecuteJavaScriptAllowed(["Boss"])).toThrow("Execute JavaScript in Boss cannot run.");
+    expect(service.getSnapshot().untrustedExecuteJavaScript).toEqual(["Boss", "Hero", "Level 1"]);
+    // Nothing to refuse without Execute JavaScript.
+    expect(() => service.assertExecuteJavaScriptAllowed([])).not.toThrow();
+
+    // Trusting lifts the refusal at once, with no reload, and clears the prompt's list.
+    await service.refresh(undefined, true);
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).not.toThrow();
+    expect(service.getSnapshot().untrustedExecuteJavaScript).toEqual([]);
+
+    await service.refresh(undefined, false);
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).toThrow("Execute JavaScript in Hero cannot run.");
+    await service.close();
+    expect(service.getSnapshot().untrustedExecuteJavaScript).toEqual([]);
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).toThrow("Execute JavaScript in Hero cannot run.");
+  });
+
   it("forgets trust when the project closes", async () => {
     const { project, service } = await fixture();
     await writeProjectExtension(project, "tools", enabledSettings("tools"), originalModule);

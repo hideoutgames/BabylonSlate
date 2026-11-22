@@ -399,6 +399,32 @@ describe("ProjectService plugin roots", () => {
     expect(replaced.status).toBe("imported");
   });
 
+  it("writes nothing for a plugin holding Execute JavaScript until it is confirmed, after Keep / Replace", async () => {
+    const source = await scaffolded();
+    const created = await source.service.createProjectPlugin("Scripted Pack");
+    await source.storage.writeBinary("plugins/scripted-pack/assets/Hero.class.hasset", await encodeAssetDocument({
+      type: "Class", name: "Hero", guid: "hero-js", version: 1,
+      payload: { nodes: [{ id: "js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: { body: "ctx.log(1)" } }], edges: [] },
+    }, { parentClass: "Actor" }));
+    const zip = await source.service.exportPlugin(created.pluginGuid);
+
+    const dest = await scaffolded();
+    const disclosed = await dest.service.importPlugin(zip);
+    expect(disclosed).toMatchObject({ status: "executeJavaScript", assets: [{ name: "Hero", type: "Class", nodes: [{ nodeId: "js" }] }] });
+    expect(await dest.storage.exists("plugins/scripted-pack")).toBe(false);
+    expect(dest.service.plugins.map((plugin) => plugin.settings.displayName)).not.toContain("Scripted Pack");
+
+    const imported = await dest.service.importPlugin(zip, undefined, { allowExecuteJavaScript: true });
+    expect(imported.status).toBe("imported");
+    expect(await dest.storage.exists("plugins/scripted-pack/assets/Hero.class.hasset")).toBe(true);
+
+    // A same-version reinstall asks Keep / Replace first; Replace then discloses before replacing anything.
+    expect((await dest.service.importPlugin(zip)).status).toBe("conflict");
+    expect((await dest.service.importPlugin(zip, "keep")).status).toBe("kept");
+    expect((await dest.service.importPlugin(zip, "replace")).status).toBe("executeJavaScript");
+    expect((await dest.service.importPlugin(zip, "replace", { allowExecuteJavaScript: true })).status).toBe("imported");
+  });
+
   it("mounts enabled engine plugins from a separate storage", async () => {
     const { service } = await scaffolded();
     const engine = new MemoryStorageAdapter("opfs");

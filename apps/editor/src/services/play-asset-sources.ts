@@ -899,9 +899,9 @@ function playText2DFontStacks(host: PlayAssetSourceHost, preparedFamilies: Reado
   };
 }
 
-const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph3D", "AnimationGraph2D"]);
+export const SCRIPT_ASSET_TYPES: ReadonlySet<string> = new Set(["Class", "AnimationGraph3D", "AnimationGraph2D"]);
 /** Assets that may embed a script (SceneScript, SceneLayerScript). */
-const EMBEDDED_SCRIPT_OWNER_TYPES = new Set(["Scene", "SceneLayer"]);
+export const EMBEDDED_SCRIPT_OWNER_TYPES: ReadonlySet<string> = new Set(["Scene", "SceneLayer"]);
 const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "InputAxis", "DataDefinition", "DataTree", "Enum", "Structure", "ScriptInterface"]);
 /**
  * Assets the Play compile reads project-wide, beyond its closure: class lineage and palette, the typed

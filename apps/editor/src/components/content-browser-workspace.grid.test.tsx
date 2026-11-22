@@ -11,7 +11,7 @@ import {
 } from "@testing-library/react";
 import { zipSync } from "fflate";
 import type { IndexedAsset } from "@haptic/assets";
-import { AssetRegistry, createDefaultPluginSettings, createExtensionSettings, normalizeExtensionContributions, projectContentRoot } from "@haptic/assets";
+import { AssetRegistry, createDefaultPluginSettings, createExtensionSettings, encodeAssetDocument, normalizeExtensionContributions, projectContentRoot } from "@haptic/assets";
 import { extensionAssetTypes } from "../lib/extension-asset-types";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createThumbnailVersionStore, TREE_ROW_HEIGHT, type ThumbnailVersionStore } from "@haptic/editor-kit";
@@ -1099,6 +1099,89 @@ describe("ContentBrowserWorkspace grid window", () => {
     expect(deleteAsset).toHaveBeenCalledWith("tex-0");
     expect(deleteFolder).toHaveBeenLastCalledWith("project", "Props");
     expect(screen.queryByText("Import Failed")).toBeNull();
+  });
+
+  describe("Execute JavaScript disclosure", () => {
+    /** A `.hasset` Class whose Begin Play runs `body`. */
+    async function classFile(name: string, body: string): Promise<{ file: File; bytes: Uint8Array }> {
+      const bytes = await encodeAssetDocument({
+        type: "Class", name, guid: `${name}-guid`, version: 1,
+        payload: {
+          nodes: [
+            { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+            { id: "js", type: "debug.executeJavaScript", position: { x: 200, y: 0 }, data: { body } },
+          ],
+          edges: [{ id: "e", source: "begin", target: "js", sourceHandle: "execOut", targetHandle: "execIn" }],
+        },
+      }, { parentClass: "Actor" });
+      const file = new File([bytes], `${name}.hasset`);
+      Object.defineProperty(file, "arrayBuffer", { value: async () => bytes.slice().buffer });
+      return { file, bytes };
+    }
+    const png = () => {
+      const file = new File([new Uint8Array([1])], "lamp.png");
+      Object.defineProperty(file, "arrayBuffer", { value: async () => new Uint8Array([1]).buffer });
+      return file;
+    };
+
+    function installImport() {
+      const assets: IndexedAsset[] = [];
+      installRegistry(assets);
+      const createFolder = vi.fn(async () => {});
+      const importFile = vi.fn(async (_root: string, _folder: string, _name: string, _bytes: Uint8Array, _options?: { allowExecuteJavaScript?: boolean }) => {
+        const asset = texture(assets.length);
+        assets.push(asset);
+        return [asset];
+      });
+      docs.assetRegistry = { ...(docs.assetRegistry as object), importFile, createFolder, deleteFolder: vi.fn(async () => {}) };
+      return { importFile, createFolder };
+    }
+
+    it("asks once for a whole batch before anything is written, and Cancel writes nothing", async () => {
+      const { importFile, createFolder } = installImport();
+      render(<ContentBrowserWorkspace />);
+      const hero = await classFile("Hero", "ctx.log('hero');");
+      const boss = await classFile("Boss", "// comment only");
+      fireEvent.change(screen.getByTestId("content-browser-import-input"), {
+        target: { files: [hero.file, png(), zipFile("Pack.zip", { "Enemies/Boss.hasset": boss.bytes })] },
+      });
+      const dialog = await screen.findByTestId("execute-javascript-import-dialog");
+      expect(within(dialog).getByText("Import Execute JavaScript?")).toBeTruthy();
+      expect(within(dialog).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+        "Hero (Class)1 node",
+        "Boss (Class)1 node",
+      ]);
+      fireEvent.click(within(dialog).getByTestId("execute-javascript-import-cancel"));
+      await waitFor(() => expect(screen.queryByTestId("execute-javascript-import-dialog")).toBeNull());
+      await waitFor(() => expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(false));
+      expect(importFile).not.toHaveBeenCalled();
+      expect(createFolder).not.toHaveBeenCalled();
+      expect(screen.queryByText("Import Failed")).toBeNull();
+    });
+
+    it("imports the batch once confirmed, confirming only the files it disclosed", async () => {
+      const { importFile, createFolder } = installImport();
+      render(<ContentBrowserWorkspace />);
+      const hero = await classFile("Hero", "ctx.log('hero');");
+      fireEvent.change(screen.getByTestId("content-browser-import-input"), { target: { files: [hero.file, png()] } });
+      fireEvent.click(within(await screen.findByTestId("execute-javascript-import-dialog")).getByTestId("execute-javascript-import-confirm"));
+      await waitFor(() => expect(importFile).toHaveBeenCalledTimes(2));
+      expect(importFile.mock.calls.map(([, , name, , options]) => [name, options?.allowExecuteJavaScript])).toEqual([
+        ["Hero.hasset", true],
+        ["lamp.png", false],
+      ]);
+      expect(createFolder).not.toHaveBeenCalled();
+    });
+
+    it("asks nothing for files without Execute JavaScript", async () => {
+      const { importFile } = installImport();
+      render(<ContentBrowserWorkspace />);
+      const quiet = await classFile("Quiet", "   ");
+      fireEvent.change(screen.getByTestId("content-browser-import-input"), { target: { files: [quiet.file, png()] } });
+      await waitFor(() => expect(importFile).toHaveBeenCalledTimes(2));
+      expect(screen.queryByTestId("execute-javascript-import-dialog")).toBeNull();
+      expect(importFile.mock.calls.every(([, , , , options]) => options?.allowExecuteJavaScript === false)).toBe(true);
+    });
   });
 
   it("refuses an MSDF atlas pick without its JSON instead of attaching the PNG to the Font", async () => {
