@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import type { SceneSourceAssets } from "@haptic/render";
 import {
   acquirePlayAssetSources,
@@ -25,8 +26,13 @@ export function usePlayAssetSources({
   const playSourceHostRef = useRef<PlayAssetSourceHost | null>(null);
   const playSourceLifetimeRef = useRef<AbortController | null>(null);
   const playSourceSetsRef = useRef(new Set<Awaited<ReturnType<typeof acquirePlayAssetSources>>>());
-  /** Merged Play source controls, rebuilt only when the live source sets change. */
-  const mergedSourceControls = useMemo(() => createMergedPlaySourceControls(() => playSourceSetsRef.current), []);
+  /**
+   * The session's clip catalog (`playAnimClipCatalog`), set once the startup sources are prepared. It lasts the whole
+   * session, Scene changes included: every merged `loadSceneContent` carries it.
+   */
+  const sessionClipCatalogRef = useRef<readonly AnimClipCatalogEntry[]>([]);
+  /** Merged Play source controls, rebuilt only when the live source sets or the session's clip catalog change. */
+  const mergedSourceControls = useMemo(() => createMergedPlaySourceControls(() => playSourceSetsRef.current, () => sessionClipCatalogRef.current), []);
   const initialPlaySourceRef = useRef<Awaited<ReturnType<typeof acquirePlayAssetSources>> | null>(null);
   const [sessionSources, setSessionSources] = useState<SceneSourceAssets>();
   const acquireAssetSources = useCallback(async (
@@ -84,6 +90,7 @@ export function usePlayAssetSources({
     for (const sources of playSourceSetsRef.current) sources.release();
     playSourceSetsRef.current.clear();
     mergedSourceControls.reset();
+    sessionClipCatalogRef.current = [];
     setSessionSources(undefined);
   }, [releaseInitialSources, mergedSourceControls]);
   return {
@@ -91,6 +98,7 @@ export function usePlayAssetSources({
     playSourceLifetimeRef,
     playSourceSetsRef,
     initialPlaySourceRef,
+    sessionClipCatalogRef,
     mergedSourceControls,
     sessionSources,
     setSessionSources,

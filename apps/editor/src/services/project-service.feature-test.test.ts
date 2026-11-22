@@ -37,6 +37,7 @@ import {
 } from "@haptic/particle-graph";
 import { physicsActorsDiagnostics } from "@haptic/physics";
 import { loadCompiledModule } from "@haptic/runtime";
+import { requiredGameAssets, type GameManifest } from "@haptic/exporter";
 import { FEATURE_TEST_CHECK_SCENES } from "./feature-test-check-scenes";
 import {
   lowerMaterialDocument,
@@ -60,6 +61,8 @@ import { JournalBuffer } from "../lib/journal-buffer";
 import { modelSimpleColliderCounter } from "../lib/physics-pairing-diagnostics";
 import { DocumentEditingService } from "./document-editing-service";
 import { DocumentService } from "./document-service";
+import { assetsFromIndexed } from "./export-game";
+import { acquirePlayAssetSources } from "./play-asset-sources";
 import { createPlayContentService } from "./play-content-service";
 import { ProjectService } from "./project-service";
 import { SourceControlService } from "./source-control-service";
@@ -492,6 +495,35 @@ describe("FeatureTest starter", () => {
       expect(physicsActorsDiagnostics(actors, { modelSimpleColliderCount }), asset.path).toEqual([]);
     }
   });
+
+  it("prepares the Animations FT_Animation's scripts play, as an exported game loads them with the Scene", async () => {
+    const registry = reopened.registry!;
+    const sceneGuid = registry.list().find((asset) => asset.path === FEATURE_TEST_CHECK_SCENES.find((scene) => scene.name === "FT_Animation")!.path)!.header.guid;
+    const host = { registry, project: document, createScope: (owner: string) => reopened.createAssetLoadScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }) };
+    const prepared = await acquirePlayAssetSources(host, [sceneGuid], { consumer: "FT_Animation", signal: new AbortController().signal });
+    try {
+      const animations = (guids: Iterable<string>) => [...guids].filter((guid) => registry.getByGuid(guid)?.header.type === "Animation").sort();
+      // The exported player loads a Scene with the closure of its required edges, which Play's closure follows too.
+      const exported = requiredGameAssets({ assets: assetsFromIndexed(registry.list()) } as unknown as GameManifest, [sceneGuid]);
+      expect(animations(prepared.required)).toEqual(animations(exported));
+      // The Knight plays Throw only through Play Slot Animation's pin; the renderer binds it to the Knight's slot.
+      const knight = registry.list().find((asset) => asset.header.type === "Class" && asset.header.name === "FT_AnimKnight")!;
+      const throwGuid = registry.dependenciesFor(knight.header.guid).find((guid) => {
+        const header = registry.getByGuid(guid)?.header;
+        return header?.type === "Animation" && normalizeAnimationPayload(header.payload).clipName === "Throw";
+      });
+      expect(throwGuid).toBeDefined();
+      const assets = prepared.sources.assets;
+      const bound = new Set([
+        ...[...assets?.modelClipAnimationGuids?.values() ?? []].flatMap((clips) => [...clips.values()]),
+        ...[...assets?.retargetAnimationLoads?.values() ?? []].flatMap((rows) => rows.map((row) => row.animationGuid)),
+      ]);
+      expect(bound.has(throwGuid!)).toBe(true);
+    } finally {
+      prepared.release();
+    }
+  }, 120_000);
 
   // Each scene plays headlessly as in editor Play: its probes assert what they check, so a broken feature fails here.
   // Event handlers whose asserts would pass by never running also print a line, which must appear.
