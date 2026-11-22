@@ -75,8 +75,11 @@ jobs:
       # Bundles the Electron main and preload scripts as desktop packaging does, which nothing else in Verify builds.
       - run: pnpm --filter desktop build:host
       # ESLint's per-file cache: an entry is reused only for the same file content, ESLint and Node versions and
-      # computed config. Plugin code is not part of it, so the lockfile hash is in every key. Only main saves it.
+      # computed config. Plugin code is not part of it, so the lockfile hash is in every key. Only main saves it. A pull
+      # request also restores from its own scope, which only a workflow its author changed could have written, so a
+      # fork's pull request lints without it.
       - name: Restore the ESLint cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/eslint
@@ -183,14 +186,21 @@ jobs:
       # Bundle on this runner; static remains independently required for merge.
       # The immutable build is verified before this shard executes its tests: its chunk graph as it is built, and one
       # boot of the editor in the browser before the first test.
+      # Shard 1 builds first, the same artifact pnpm test:e2e builds, and checks the bundles against their gzip
+      # budgets, so a size regression fails in minutes, before any browser test. They are test-mode builds, budgeted
+      # apart from the production Pages build (scripts/bundle-budgets-test-build.json). pnpm test:e2e then reuses the
+      # artifact from .cache/test-build instead of building again.
+      - name: Build the browser test bundles
+        if: matrix.shard == 1
+        run: pnpm test:build
+        env:
+          HAPTIC_TEST_BUILD_MODE: ci-bundle
+      - name: Check bundle size budgets
+        if: matrix.shard == 1
+        run: node scripts/bundle-report.mjs --budgets scripts/bundle-budgets-test-build.json apps/player/dist apps/editor/dist >> "$GITHUB_STEP_SUMMARY"
       - run: pnpm test:e2e --partition=${{ matrix.shard }}/5
         env:
           HAPTIC_TEST_BUILD_MODE: ci-bundle
-      # The bundles this shard built against their gzip budgets, so a size regression fails before merge. They are
-      # test-mode builds, budgeted apart from the production Pages build (scripts/bundle-budgets-test-build.json).
-      - name: Check bundle size budgets
-        if: matrix.shard == 1 && !cancelled() && hashFiles('apps/editor/dist/index.html') != ''
-        run: node scripts/bundle-report.mjs --budgets scripts/bundle-budgets-test-build.json apps/player/dist apps/editor/dist >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
