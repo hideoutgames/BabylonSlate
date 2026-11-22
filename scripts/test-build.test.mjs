@@ -705,6 +705,25 @@ test("independent hosted bundles preserve player/editor order and cannot substit
   assert.equal(await compilations(directory), 3);
 });
 
+test("a hosted browser run after a build-only run reuses its artifact and leaves the bundles in place", async (t) => {
+  // Verify's first shard runs `pnpm test:build`, checks apps/*/dist against its size budgets, then `pnpm test:e2e`,
+  // whose runBrowserTests looks the artifact up the same way.
+  const f = await fixture(t);
+  const directory = await f.worktree("build-then-browser");
+  const built = await f.run(directory, hostedBundle);
+  assert.equal(built.error, undefined);
+  assert.equal(built.cached, false);
+  assert.equal(
+    await readFile(join(directory, "apps/editor/dist/assets/main.js"), "utf8"),
+    "export const fixture = 1;\n",
+  );
+  const browser = await f.run(directory, hostedBundle);
+  assert.equal(browser.error, undefined);
+  assert.equal(browser.cached, true);
+  assert.equal(browser.directory, built.directory);
+  assert.equal(await compilations(directory), 2);
+});
+
 for (const app of ["player", "editor"]) {
   test(`a failed ${app} bundle publishes no independent browser artifact`, async (t) => {
     const f = await fixture(t);
