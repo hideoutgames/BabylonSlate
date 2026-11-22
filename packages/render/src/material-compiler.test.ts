@@ -361,6 +361,25 @@ describe("material compiler", () => {
     expect(await linearDecodes()).toHaveLength(1);
   });
 
+  it("encodes a Text graph's linear colour for display once, before the display-space glyph colour multiplies it", async () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument("Letters", "text");
+    doc.nodes.push({ id: "pick", type: "const.color", position: { x: 0, y: 0 }, properties: { value: [0.5, 0.25, 0.75] } });
+    doc.edges.push({ id: "pick-output", sourceNodeId: "pick", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" });
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "letters" });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.dispose());
+    expect(await result.ready).toEqual([]);
+    // The constant is the decoded pick; written as is, a picked mid grey showed at its linear value (128 as 55 of 255).
+    const fill = result.material.getBlockByName("letters_textFill") as MultiplyBlock;
+    const encode = fill.left.connectedPoint!.ownerBlock;
+    expect(encode.getClassName()).toBe("DisplayColorBlock");
+    expect(encode.inputs[0]!.connectedPoint!.ownerBlock.getClassName()).not.toBe("TextMaterialBlock");
+    expect(fill.right.connectedPoint!.ownerBlock.getClassName()).toBe("TextMaterialBlock");
+    const fragment = result.material.compiledShaders.split("// Fragment shader")[1]!;
+    expect(fragment).toMatch(/vec4 \w+ = toGammaSpace\(/);
+  });
+
   it("keeps screen overlays independent of world fog", async () => {
     const scene = host();
     scene.fogMode = Scene.FOGMODE_LINEAR;
