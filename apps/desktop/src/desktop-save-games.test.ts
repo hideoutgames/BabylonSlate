@@ -7,7 +7,7 @@ import { DesktopSaveGames } from "./desktop-save-games";
 
 const directories: string[] = [];
 async function createHost() {
-  const directory = await mkdtemp(join(tmpdir(), "slate-save-host-"));
+  const directory = await mkdtemp(join(tmpdir(), "haptic-save-host-"));
   directories.push(directory);
   return new DesktopSaveGames(new NodeSaveGameStorage(directory));
 }

@@ -83,7 +83,7 @@ MyGame/                      (directory) or MyGame.zip
 
 ## Derived data
 
-App-private storage keyed by project guid (`derived/{projectGuid}/…`): compiled scripts, thumbnails, import cache, recovery journal ([command-layer](command-layer.md#journal-format)), Play traces. Never part of Export Project.
+App-private storage keyed by project guid (`derived/{projectGuid}/…`): compiled scripts, thumbnails, import cache, recovery journal ([command-layer](command-layer.md#journal-format)), Play traces. Never part of Export Project. Where each host keeps it: [vfs.md](vfs.md#app-owned-libraries-and-derived-data).
 
 ## Schema versions
 

@@ -17,8 +17,8 @@ import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderEffectsSettings, parseLight2DProperties } from "@haptic/core";
 import { setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
-import { add2DLight, add2DOccluder } from "../../../../packages/render/src/lights-2d";
-import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "../../../../packages/render/src/unlit-material";
+import { add2DLight, add2DOccluder } from "@haptic/render/editor-proofs";
+import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "@haptic/render/editor-proofs";
 
 const WIDTH = 96;
 const HEIGHT = 48;

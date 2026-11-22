@@ -74,7 +74,7 @@ export interface WaterPlanarReflection {
   readonly texture: ThinTexture;
   /**
    * Mirrored camera view × oblique projection, taking positions relative to the origin the water shader uses
-   * (`slateWaterOrigin`: the view camera's position under floating origin, otherwise the world origin). A water
+   * (`hapticWaterOrigin`: the view camera's position under floating origin, otherwise the world origin). A water
    * fragment at that relative position projects to clip position c, and the texel holding what it reflects is at
    * uv = 0.5 + 0.5·c.xy/c.w. Clip depth spans −1 to 1 and follows the engine's reverse depth; the water plane is
    * the near plane.

@@ -3,7 +3,7 @@ import { buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
 import { readEnvironmentTextureInfo } from "./environment-texture";
 import { createImportWorkerClient, type ImportWorkerHandle } from "./import-worker-client";
 import { runImportWorkerRequest, type ImportWorkerReply, type ImportWorkerRequest } from "./import-worker-protocol";
-import { buildMinimalGlbFixture } from "./importers/glb-parse";
+import { buildMinimalGlbFixture } from "./test-support/glb-fixtures";
 import { importByExtension } from "./importers";
 
 /** Stands in for a module Worker: messages are structured-cloned both ways, as across a real thread. */

@@ -15,4 +15,3 @@ export {
   type DeterministicScenarioOptions,
   type DeterministicScenarioResult,
 } from "./harness";
-export { createInProcessRuntime } from "./transport-harness";

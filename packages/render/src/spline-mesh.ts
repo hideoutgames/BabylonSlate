@@ -15,7 +15,7 @@ export function createSplineMesh(scene: Scene, name: string, input: unknown): Li
   const mesh = CreateLines(name, { points: splineCentreline(body).map((point) => Vector3.FromArray(point)), updatable: true }, scene);
   mesh.color = COLOR.clone();
   mesh.intersectionThreshold = 0.15;
-  mesh.metadata = { editorVolume: true, slateSpline: true };
+  mesh.metadata = { editorVolume: true, hapticSpline: true };
   bodies.set(mesh, body);
   return mesh;
 }

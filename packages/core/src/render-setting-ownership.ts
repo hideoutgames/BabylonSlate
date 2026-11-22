@@ -1,3 +1,7 @@
+/**
+ * Compile-time ownership tables: `satisfies` makes the package typecheck fail when a setting has no owner. Nothing
+ * imports this module, so no build ships it.
+ */
 import type { RenderProjectSettings } from "./project";
 import type { SceneSettings, ScenePostProcessEntry } from "./scene";
 import type { EffectiveRenderingQuality, QualityGroup } from "./render-quality";

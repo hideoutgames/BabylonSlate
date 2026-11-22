@@ -3,9 +3,9 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { ok } from "@haptic/core";
 import { encodeIcns } from "@haptic/exporter/app-icon";
 import { strToU8, unzipSync, zipSync } from "fflate";
-import { appIconImages } from "../../../../packages/exporter/src/test-support/app-icon-images";
+import { appIconImages } from "@haptic/exporter/test-support/app-icon-images";
 import { defaultEngineSettings } from "@haptic/vfs";
-import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
+import { MemoryAppSettingsStore } from "@haptic/vfs/test-support/memory-app-settings";
 import { AppSettingsProvider } from "../context/app-settings-context";
 import type { GameShellManifest } from "../lib/game-shells";
 import { PackagingDialog } from "./packaging-dialog";

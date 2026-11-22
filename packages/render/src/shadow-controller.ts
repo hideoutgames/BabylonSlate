@@ -347,7 +347,7 @@ export class SceneShadowController {
     entry.priority = Number.isFinite(priority) ? priority : 0;
   }
   setParticipation(mesh: AbstractMesh, value: ShadowParticipation): void {
-    const previous = mesh.metadata?.slateShadowParticipation as
+    const previous = mesh.metadata?.hapticShadowParticipation as
       ShadowParticipation | undefined;
     if (
       previous?.castShadows === value.castShadows &&
@@ -356,7 +356,7 @@ export class SceneShadowController {
       return;
     mesh.metadata = {
       ...mesh.metadata,
-      slateShadowParticipation: {
+      hapticShadowParticipation: {
         castShadows: value.castShadows,
         receiveShadows: value.receiveShadows,
       },

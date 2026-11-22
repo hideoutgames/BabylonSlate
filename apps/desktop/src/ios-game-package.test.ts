@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSettingArguments } from "../../../packages/exporter/src/native-ios";
+import { buildSettingArguments } from "@haptic/exporter/native-ios";
 import { findXcode, packageIosGame, xcodeFailure, type IosGamePackageRequest } from "./ios-game-package";
 import type { RunCommand } from "./mac-game-package";
 

@@ -14,7 +14,9 @@
     "./app-icon": "./src/app-icon.ts",
     "./native-android": "./src/native-android.ts",
     "./native-ios": "./src/native-ios.ts",
-    "./desktop-package-client": "./src/desktop-package-client.ts"
+    "./desktop-package-client": "./src/desktop-package-client.ts",
+    "./zip-merge": "./src/zip-merge.ts",
+    "./test-support/*": "./src/test-support/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -32,6 +34,7 @@
     "@haptic/shader-graph": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
   }
 }

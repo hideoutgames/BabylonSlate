@@ -1,4 +1,4 @@
-import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
+import { installMinimalProject } from "@haptic/assets/test-support/minimal-project";
 import { describe, expect, it, vi } from "vitest";
 import {
   createDefaultScene,

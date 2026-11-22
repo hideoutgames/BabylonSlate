@@ -40,7 +40,7 @@ export function sceneHasWaterRemovals(scene: Scene): boolean {
 export function sceneWaterRemovals(scene: Scene): Array<{ mesh: Mesh; volume: WaterRemovalProperties }> {
   const result: Array<{ mesh: Mesh; volume: WaterRemovalProperties }> = [];
   for (const mesh of removals.get(scene) ?? []) {
-    const volume = (mesh.metadata as { slateWaterRemoval?: WaterRemovalProperties } | null)?.slateWaterRemoval;
+    const volume = (mesh.metadata as { hapticWaterRemoval?: WaterRemovalProperties } | null)?.hapticWaterRemoval;
     if (volume?.enabled && mesh.isEnabled(false)) result.push({ mesh, volume });
   }
   return result;
@@ -85,7 +85,7 @@ export function waterRemovalOutline(volume: WaterRemovalProperties): Vector3[][]
 export function createWaterRemovalMesh(scene: Scene, name: string, properties: unknown, options: { editor: boolean }): Mesh {
   const volume = normalizeWaterRemoval(properties);
   const mesh = new Mesh(name, scene);
-  mesh.metadata = { ...(mesh.metadata ?? {}), slateWaterRemoval: volume };
+  mesh.metadata = { ...(mesh.metadata ?? {}), hapticWaterRemoval: volume };
   mesh.isPickable = false;
   if (options.editor) {
     const outline = CreateLineSystem(`${name}:outline`, { lines: waterRemovalOutline(volume) }, scene);

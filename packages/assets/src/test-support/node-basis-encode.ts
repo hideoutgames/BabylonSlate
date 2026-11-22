@@ -5,13 +5,13 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
-import type { EncodeFn } from "./encode-queue";
-import type { TextureEncodeSettings } from "./texture-compression";
+import type { EncodeFn } from "../encode-queue";
+import type { TextureEncodeSettings } from "../texture-compression";
 
 function basisDir(): string {
   // apps/editor/public/basis relative to this source file (packages/assets/src)
   const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "../../../apps/editor/public/basis");
+  return join(here, "../../../../apps/editor/public/basis");
 }
 
 /**

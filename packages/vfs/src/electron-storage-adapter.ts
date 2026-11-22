@@ -14,14 +14,10 @@ import {
 } from "./platform";
 import type { LibraryFolder } from "./library-folders";
 
+import { ipcArrayBuffer } from "./ipc-bytes";
+
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
-
-function toBuffer(data: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(data.byteLength);
-  copy.set(data);
-  return copy.buffer;
-}
 
 /**
  * Electron rejects an invoke with only `Error invoking remote method '<channel>':
@@ -125,7 +121,7 @@ export class ElectronStorageAdapter implements ProjectStorage {
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
-    await this.requireBridge().writeBinary(path, toBuffer(data));
+    await this.requireBridge().writeBinary(path, ipcArrayBuffer(data));
   }
 
   async readText(path: string): Promise<string> {

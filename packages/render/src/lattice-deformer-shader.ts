@@ -5,7 +5,7 @@ import { Lattice } from "@babylonjs/core/Meshes/lattice";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import { checkedShader } from "./checked-shader";
 
-export const LATTICE_UNIFORMS = ["lattice_cellSize", "lattice_min", "lattice_max", "lattice_resolution", "lattice_position", "slateWorldToLattice", "slateLatticeToWorld", "slateLatticeEnabled"];
+export const LATTICE_UNIFORMS = ["lattice_cellSize", "lattice_min", "lattice_max", "lattice_resolution", "lattice_position", "hapticWorldToLattice", "hapticLatticeToWorld", "hapticLatticeEnabled"];
 /**
  * How far outside the cage, as a fraction of a cell, a vertex still deforms as one on its face. A thousandth of a
  * metre-wide cell is a millimetre: above float rounding at the coordinates scenes use, below anything modelled.
@@ -62,31 +62,31 @@ export function latticeShaderFunctions(scene: Scene): string {
     changed = true;`);
   const identity = `${mat}(${vec}(1.0,0.0,0.0),${vec}(0.0,1.0,0.0),${vec}(0.0,0.0,1.0))`;
   const matrix3 = (name: string) => `${mat}(${name})`;
-  const result = `struct SlateLatticeResult { vec3 position; mat3 jacobian; };
-SlateLatticeResult slateLattice(vec3 worldPosition) {
-  ${declare("result", "SlateLatticeResult", `SlateLatticeResult(worldPosition,${identity})`)}
-#ifdef SLATE_LATTICE
-  if (slateLatticeEnabled > 0.5) {
-    ${declare("positionUpdated", vec, `(slateWorldToLattice * ${v4}(worldPosition,1.0)).xyz`)}
+  const result = `struct HapticLatticeResult { vec3 position; mat3 jacobian; };
+HapticLatticeResult hapticLattice(vec3 worldPosition) {
+  ${declare("result", "HapticLatticeResult", `HapticLatticeResult(worldPosition,${identity})`)}
+#ifdef HAPTIC_LATTICE
+  if (hapticLatticeEnabled > 0.5) {
+    ${declare("positionUpdated", vec, `(hapticWorldToLattice * ${v4}(worldPosition,1.0)).xyz`)}
     ${declare("localJacobian", mat, identity)}
     ${declare("changed", "bool", "false")}
     ${adapter.value}
     if (changed) {
-      result.position = (slateLatticeToWorld * ${v4}(positionUpdated,1.0)).xyz;
-      result.jacobian = ${matrix3("slateLatticeToWorld")} * localJacobian * ${matrix3("slateWorldToLattice")};
+      result.position = (hapticLatticeToWorld * ${v4}(positionUpdated,1.0)).xyz;
+      result.jacobian = ${matrix3("hapticLatticeToWorld")} * localJacobian * ${matrix3("hapticWorldToLattice")};
     }
   }
 #endif
   return result;
 }
 ${latticeNormalShaderFunction()}
-vec3 slateLatticeTangent(mat3 j, vec3 t, vec3 n) {
+vec3 hapticLatticeTangent(mat3 j, vec3 t, vec3 n) {
   ${declare("tangent", vec, "j*t")}
   tangent = tangent - n*dot(tangent,n);
   if (dot(tangent,tangent) < 0.0000001) { return t; }
   return normalize(tangent);
 }
-vec3 slateLatticeBitangent(mat3 j, vec3 t, vec3 b, vec3 n) {
+vec3 hapticLatticeBitangent(mat3 j, vec3 t, vec3 b, vec3 n) {
   ${declare("bitangent", vec, "cross(n,t)")}
   if (dot(bitangent,bitangent) < 0.0000001) { return b; }
   if (dot(bitangent,j*b) < 0.0) { bitangent = -bitangent; }
@@ -97,7 +97,7 @@ vec3 slateLatticeBitangent(mat3 j, vec3 t, vec3 b, vec3 n) {
 }
 
 export function latticeNormalShaderFunction(): string {
-  return `vec3 slateLatticeNormal(mat3 j, vec3 n) {
+  return `vec3 hapticLatticeNormal(mat3 j, vec3 n) {
   vec3 c0 = cross(j[1],j[2]); vec3 c1 = cross(j[2],j[0]); vec3 c2 = cross(j[0],j[1]);
   float d = dot(j[0],c0); vec3 normal = mat3(c0,c1,c2)*n;
   if (abs(d) < 0.0000001 || dot(normal,normal) < 0.0000001) { return n; }
@@ -106,14 +106,14 @@ export function latticeNormalShaderFunction(): string {
 }
 
 export function latticeShaderDeclarations(uniforms = true): string {
-  return `#ifdef SLATE_LATTICE\nprecision highp sampler3D;\nuniform sampler3D ${LATTICE_SAMPLER};
+  return `#ifdef HAPTIC_LATTICE\nprecision highp sampler3D;\nuniform sampler3D ${LATTICE_SAMPLER};
 ${uniforms ? LATTICE_UNIFORMS.map((name) => {
-    const type = name.startsWith("slate") ? name.endsWith("Enabled") ? "float" : "mat4" : "vec3";
+    const type = name.startsWith("haptic") ? name.endsWith("Enabled") ? "float" : "mat4" : "vec3";
     return `uniform ${type} ${name};`;
   }).join("\n") : ""}\n#endif\n`;
 }
 
 export const LATTICE_WORLD_POSITION_PATTERN = "(worldPos\\s*=\\s*finalWorld\\s*\\*\\s*vec4\\(positionUpdated,\\s*1\\.0\\);)";
 export function latticeWorldPositionCode(): string {
-  return `\nSlateLatticeResult slateLatticeResult = slateLattice(worldPos.xyz);\nworldPos = vec4(slateLatticeResult.position,worldPos.w);\n`;
+  return `\nHapticLatticeResult hapticLatticeResult = hapticLattice(worldPos.xyz);\nworldPos = vec4(hapticLatticeResult.position,worldPos.w);\n`;
 }

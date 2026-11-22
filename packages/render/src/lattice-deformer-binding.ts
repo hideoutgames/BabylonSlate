@@ -68,12 +68,12 @@ export function hasBoundedLatticeDeformer(mesh: AbstractMesh): boolean {
 }
 export function bindMeshLatticeDeformer(effect: Effect, mesh?: AbstractMesh): void {
   const binding = meshLatticeBinding(mesh);
-  effect.setFloat("slateLatticeEnabled", binding?.active ? 1 : 0);
+  effect.setFloat("hapticLatticeEnabled", binding?.active ? 1 : 0);
   if (binding?.active) binding.bindEffect(effect);
 }
 export function bindMeshLatticeDeformerBuffer(buffer: UniformBuffer, mesh?: AbstractMesh): void {
   const binding = meshLatticeBinding(mesh);
-  buffer.updateFloat("slateLatticeEnabled", binding?.active ? 1 : 0);
+  buffer.updateFloat("hapticLatticeEnabled", binding?.active ? 1 : 0);
   if (binding?.active) binding.bindBuffer(buffer);
 }
 let authoredShadowAdapter: ((material: Material) => boolean) | undefined;

@@ -30,7 +30,7 @@ import { allowSceneScreenShadows } from "@haptic/render/render-settings";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { removeFogVolumes, upsertFogVolumes } from "@haptic/render/fog-volumes";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
-import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
+import { setUnlitMaterial } from "@haptic/render/editor-proofs";
 
 async function captureFogVolumes(
   scene: Scene,

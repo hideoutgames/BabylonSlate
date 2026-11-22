@@ -16,7 +16,7 @@ import { disposeMeshLatticeDeformer, MaterialLibrary, RenderTargetCaptures, setM
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
-import { createDepthTextureTarget } from "../../../../packages/render/src/depth-texture-target";
+import { createDepthTextureTarget } from "@haptic/render/editor-proofs";
 
 /**
  * A colour target whose depth is a depth texture (material previews, views presented through a target),

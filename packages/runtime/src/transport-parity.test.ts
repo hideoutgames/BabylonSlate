@@ -8,7 +8,7 @@ import {
   writeSnapshotHeader,
 } from "@haptic/bridge";
 import { readActorSlot } from "@haptic/bridge/read-actor-slot";
-import { createInProcessRuntime } from "@haptic/runtime";
+import { createInProcessRuntime } from "./driver";
 
 /**
  * P4 payload fidelity: one in-process run (actor transforms after N ticks)

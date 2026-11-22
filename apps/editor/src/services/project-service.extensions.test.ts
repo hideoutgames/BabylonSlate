@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEmptyProject, loadExtensionGameLibraries, normalizeProjectSettings, type BuildPlatform } from "@haptic/core";
 import { createExtensionSettings, encodeAssetDocument, normalizeExtensionContributions, writeProjectExtension, type ExtensionDescriptor } from "@haptic/assets";
-import { createEmptyProjectFiles } from "../../../../packages/assets/src/test-support/project-files";
+import { createEmptyProjectFiles } from "@haptic/assets/test-support/project-files";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { lowerMaterialDocument } from "@haptic/shader-graph";
 import { ProjectService } from "./project-service";

@@ -21,7 +21,7 @@ import {
   particleSplatBlocks,
   type ParticleBlockAdapter,
   type ParticleBlockRealization,
-  type SlateSystemBlock,
+  type HapticSystemBlock,
 } from "./particle-graph-blocks";
 import { createParticleReadinessTexture } from "./particle-system-factory";
 import type { ParticleMeshShapeSource } from "./particle-mesh-shape";
@@ -128,7 +128,7 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
   const owner = new Map<NodeParticleBlock, ParticleOperation>();
   const realized = new Map<string, ParticleBlockRealization>();
   const diagnostics: ParticleGraphCompileDiagnostic[] = [];
-  let systemBlock: SlateSystemBlock | undefined;
+  let systemBlock: HapticSystemBlock | undefined;
   const parameters = new Map((plan.parameters ?? []).map((parameter) => [parameter.id, parameter]));
   const parameterBlocks = new Map<string, ParticleInputBlock[]>();
   const track = (operation: ParticleOperation, blocks: readonly NodeParticleBlock[]) => {

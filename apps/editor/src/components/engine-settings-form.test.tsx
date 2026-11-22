@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
-import { dispatchPointerEvent, stubPointerCapture } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent, stubPointerCapture } from "@haptic/editor-kit/test-support/pointer-events";
 import { defaultEngineSettings } from "@haptic/vfs";
-import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
+import { MemoryAppSettingsStore } from "@haptic/vfs/test-support/memory-app-settings";
 import { getAddNodeHistory, GraphEditor, type GraphDocument } from "@haptic/graph-ui";
 import { TagProvider } from "@haptic/editor-kit";
 import { EngineSettingsForm } from "./engine-settings-form";

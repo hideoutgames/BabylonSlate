@@ -3,7 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   androidGameFileName, androidProjectFiles, type AndroidPackageFormat,
-} from "../../../packages/exporter/src/native-android";
+} from "@haptic/exporter/native-android";
 import { runCommand, type RunCommand } from "./mac-game-package";
 import { copyTree, writeFiles } from "./package-files";
 

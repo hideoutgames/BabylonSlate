@@ -32,7 +32,7 @@ vi.mock("./lattice-deformer-binding", async (importOriginal) => {
 });
 
 const cleanups: (() => void)[] = [];
-const cagePlugin = (material: Material | null) => material?.pluginManager?.getPlugin("SlateLattice") ?? null;
+const cagePlugin = (material: Material | null) => material?.pluginManager?.getPlugin("HapticLattice") ?? null;
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); vi.restoreAllMocks(); });
 function fixture() {
   const engine = new NullEngine(), scene = new Scene(engine);
@@ -94,9 +94,9 @@ describe("component lattice resource ownership", () => {
     bindMeshLatticeDeformer(effect, lod);
     expect(vectors.get("lattice_min")).toEqual([-1, -1, -1]);
     expect(vectors.get("lattice_max")).toEqual([1, 1, 1]);
-    expect(Vector3.TransformCoordinates(new Vector3(10, 0, 0), matrices.get("slateWorldToLattice")!).asArray()).toEqual([0, 0, 0]);
+    expect(Vector3.TransformCoordinates(new Vector3(10, 0, 0), matrices.get("hapticWorldToLattice")!).asArray()).toEqual([0, 0, 0]);
     bindMeshLatticeDeformer(effect, attached);
-    expect(effect.setFloat).toHaveBeenLastCalledWith("slateLatticeEnabled", 0);
+    expect(effect.setFloat).toHaveBeenLastCalledWith("hapticLatticeEnabled", 0);
   });
 
   it("binds the cage on native draws compiled with it and leaves ordinary draws of the same material alone", () => {
@@ -104,7 +104,7 @@ describe("component lattice resource ownership", () => {
     const plain = MeshBuilder.CreateBox("plain", { size: 2 }, scene);
     plain.material = mesh.material;
     setMeshLatticeDeformer(root, cage());
-    const plugin = mesh.material!.pluginManager!.getPlugin<MaterialPluginBase>("SlateLattice")!;
+    const plugin = mesh.material!.pluginManager!.getPlugin<MaterialPluginBase>("HapticLattice")!;
     const bound = (target: Mesh) => {
       const subMesh = target.subMeshes[0]!, floats = new Map<string, number>();
       mesh.material!.isReadyForSubMesh(target, subMesh);
@@ -112,8 +112,8 @@ describe("component lattice resource ownership", () => {
       plugin.hardBindForSubMesh(buffer as unknown as UniformBuffer, scene, engine, subMesh);
       return floats;
     };
-    expect(bound(mesh).get("slateLatticeEnabled")).toBe(1);
-    expect(bound(plain).has("slateLatticeEnabled")).toBe(false);
+    expect(bound(mesh).get("hapticLatticeEnabled")).toBe(1);
+    expect(bound(plain).has("hapticLatticeEnabled")).toBe(false);
   });
 
   it("attaches the cage plugin only to the materials an active cage draws, even after every Engine was disposed", () => {
@@ -133,10 +133,10 @@ describe("component lattice resource ownership", () => {
     const { root, mesh } = fixture();
     const material = mesh.material!, subMesh = mesh.subMeshes[0]!;
     material.isReadyForSubMesh(mesh, subMesh);
-    expect(subMesh.materialDefines?.toString()).not.toContain("SLATE_LATTICE");
+    expect(subMesh.materialDefines?.toString()).not.toContain("HAPTIC_LATTICE");
     setMeshLatticeDeformer(root, cage());
     material.isReadyForSubMesh(mesh, subMesh);
-    expect(subMesh.materialDefines?.toString()).toContain("#define SLATE_LATTICE");
+    expect(subMesh.materialDefines?.toString()).toContain("#define HAPTIC_LATTICE");
   });
 
   it("gives a clone of a cage-drawn material its own plugin when the clone is assigned", () => {

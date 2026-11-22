@@ -5,7 +5,7 @@ import { serializeRenderFrameReport, type RenderFrameReport } from "@haptic/rend
 import { DiagnosticResultsStore } from "../services/diagnostic-results-store";
 import DiagnosticResultsDialog, { PerformanceSummary } from "./diagnostic-results-dialog";
 import { PerformanceTimeline } from "./performance-timeline";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 
 vi.mock("../context/app-settings-context", () => ({ useAppSettings: () => ({ settings: { debuggerDefaults: {} } }) }));
 

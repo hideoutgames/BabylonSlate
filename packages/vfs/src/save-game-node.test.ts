@@ -6,7 +6,7 @@ import { NodeSaveGameStorage } from "./save-game-node";
 
 const roots: string[] = [];
 async function root() {
-  const path = await mkdtemp(join(tmpdir(), "slate-save-games-"));
+  const path = await mkdtemp(join(tmpdir(), "haptic-save-games-"));
   roots.push(path);
   return path;
 }

@@ -19,7 +19,7 @@ const bundle = join(work, "package-android.cjs");
 await build({
   absWorkingDir: desktop,
   stdin: {
-    contents: 'export { packageAndroidGame, findAndroidToolchain } from "./src/android-game-package"; export { ANDROID_ICON_SIZES } from "../../packages/exporter/src/native-android";',
+    contents: 'export { packageAndroidGame, findAndroidToolchain } from "./src/android-game-package"; export { ANDROID_ICON_SIZES } from "@haptic/exporter/native-android";',
     resolveDir: desktop,
     loader: "ts",
   },

@@ -133,8 +133,6 @@ export const instanceUploads = {
   },
 };
 
-export type InstanceUploads = typeof instanceUploads;
-
 /** Lets `scene`'s instanced batches skip the uploads whose data their buffers already hold this frame. */
 export function installInstanceUploads(scene: Scene): void {
   scene._instanceUploads = instanceUploads;
