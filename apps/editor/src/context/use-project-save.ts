@@ -21,6 +21,7 @@ import {
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import { saveAllSceneWriter } from "../lib/locked-writes";
 import { refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
+import { storageFullError } from "../lib/storage-full";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -151,6 +152,8 @@ export function useProjectSave({
         return lockChecks.get(path)!;
       };
       const writer = saveAllSceneWriter(admitted, lockedByOther);
+      /** Documents this save wrote and marked clean so far. */
+      let settled = 0;
       try {
         progress.phase("audio-reverb");
         await flushAudioReverbForSave(undefined, writer);
@@ -190,6 +193,15 @@ export function useProjectSave({
                 | Record<string, unknown>,
             );
           }
+          // Settled as soon as its file is written, so a later document's failure
+          // never leaves this one dirty with journal records that a crash would
+          // replay onto what was just saved. Edits made since the save began keep
+          // it dirty, and their records stay.
+          documentService.markAllClean([doc]);
+          settled += 1;
+          if (guid && documentService.getDocument(doc.id)?.dirty === false) {
+            journalBuffer.append(guid, journalDiscardLine(doc.id, new Date().toISOString()));
+          }
         }
         progress.phase("compile");
         if (document.settings.compileOnSave) {
@@ -198,15 +210,6 @@ export function useProjectSave({
         const layouts = documentService.buildLayouts();
         progress.phase("project");
         await writer.saveProject(document, layouts);
-        documentService.markAllClean(saved);
-        if (guid && documentService.getDirtyDocuments().length > 0) {
-          // The journal is cleared only once nothing is unsaved: until then it
-          // must not replay what this save wrote onto the saved files.
-          const at = new Date().toISOString();
-          for (const doc of saved) {
-            if (documentService.getDocument(doc.id)?.dirty === false) journalBuffer.append(guid, journalDiscardLine(doc.id, at));
-          }
-        }
         progress.phase("mtime");
         await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
         if (guid) {
@@ -268,6 +271,13 @@ export function useProjectSave({
         });
         return blocked.length === 0 ? "saved" : "locked";
       } catch (error) {
+        if (settled > 0) {
+          // What was saved is the editor's own write, not an external change; the journal keeps the rest until it saves.
+          await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot).catch(() => undefined);
+          flushSync(() => {
+            bump();
+          });
+        }
         recordSaveAllTrace({
           ok: false,
           reason: "error",
@@ -275,7 +285,7 @@ export function useProjectSave({
           dirtyAfter: documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current)),
           error: error instanceof Error ? error.message : String(error),
         });
-        throw error;
+        throw storageFullError(error) ?? error;
       } finally {
         progress.finish();
       }

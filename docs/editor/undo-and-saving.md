@@ -35,6 +35,8 @@ These actions change files or settings directly and cannot be undone:
 
 Choose **Save All** in the toolbar or press <kbd>Mod</kbd>+<kbd>S</kbd>. It saves every changed document and the project settings. A dot on the button means something is unsaved.
 
+If a save fails partway, for example because the device is out of storage space, the documents saved before the failure stay saved and the rest stay unsaved; a full device says **There is not enough storage space on this device**. Free some space, then choose **Save All** again.
+
 The status bar shows the state: **All Changes Saved**, **2 Unsaved Documents**, **Unsaved Project Changes**, **Unrecovered Edits**, **Auto-Saving…** or **All Changes Auto-Saved**. A dot in front of it means something is unsaved or unrecovered. An asterisk marks unsaved documents in the **Open Documents** menu.
 
 ## Auto-save

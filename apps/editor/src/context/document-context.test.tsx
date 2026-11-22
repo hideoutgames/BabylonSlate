@@ -1799,6 +1799,38 @@ describe("DocumentProvider Save All and files someone else has locked", () => {
     expect(documents().saveFailed?.purpose).toBe("play");
   });
 
+  it("settles each document it wrote when a later one fails on a full disk, and names the full disk", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const stats = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "DataDefinition", name: "Stats" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.openDocument({ kind: "data-definition", path: stats.path, label: "Stats Data Definition" }));
+    await act(() => actions.saveAll());
+    const statsId = documentId({ kind: "data-definition", path: stats.path });
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 3)));
+    await act(() => actions.applyAssetDocumentChange(statsId, {
+      kind: "dataDefinition", fields: [{ id: "hp", name: "HP", typeId: "number", defaultValue: 10 }],
+    }));
+    await settleJournal();
+    const saveDocument = ProjectService.prototype.saveDocument;
+    const save = vi.spyOn(ProjectService.prototype, "saveDocument").mockImplementation(function (this: ProjectService, ...args) {
+      if (args[1] === stats.path) return Promise.reject(new DOMException("The quota has been exceeded.", "QuotaExceededError"));
+      return saveDocument.apply(this, args);
+    });
+    try {
+      await expect(act(() => actions.saveAll())).rejects.toThrow(/not enough storage space/i);
+    } finally {
+      save.mockRestore();
+    }
+    // Main was written: clean, and its records discarded so a crash never replays them onto the saved file.
+    expect(dirtyIds()).toEqual([statsId]);
+    await settleJournal();
+    expect(await recoverable()).toEqual([statsId]);
+    expect(await act(() => actions.saveAll())).toBe("saved");
+    expect(dirtyIds()).toEqual([]);
+  });
+
   it("lets Auto-Save skip the locked document quietly, with no prompt and no paused error", async () => {
     const { actions } = await editsWithMainLocked();
     // The edits' interval restarts under fake timers.
@@ -2045,7 +2077,8 @@ describe("DocumentProvider closed document history", () => {
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
     await act(() => actions.saveAll());
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const save = vi.spyOn(ProjectService.prototype, "saveProject").mockRejectedValueOnce(new Error("Storage unavailable"));
+    // The Scene's own write fails, so its edit stays unsaved (one written before a later failure is clean).
+    const save = vi.spyOn(ProjectService.prototype, "saveDocument").mockRejectedValueOnce(new Error("Storage unavailable"));
     // Fire the debounce, then let the save's own timers and storage I/O run
     // until it settles; a real macrotask per step lets slow I/O finish.
     const runAutoSave = async () => {
