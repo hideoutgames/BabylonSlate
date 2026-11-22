@@ -32,6 +32,13 @@ it("derives a paired program whose main neither returns, discards nor writes gl_
   expect(fragment).not.toMatch(/const float weights\[/);
 });
 
+it("derives the paired program the native proof compared, from the Babylon release the repository pins", () => {
+  // The digest of the program `e2e/paired-blurs.spec.ts` proved byte-identical on a native GPU: any change to Babylon's
+  // reflection blur that the counted replacements still accept (a weight, a tap) changes it and fails here.
+  const text = pairedBlurShader();
+  expect([text.length, createHash("sha256").update(text).digest("hex")]).toEqual([3009, "0f6736d5fc300de4a72d77904305d55dae77e164f115d52c772b3be48e0d17ce"]);
+});
+
 it("holds Babylon's reflection taps, their weights and their order verbatim", () => {
   const fragment = pairedBlurShader();
   // Main's taps, from the blur radius to the last tap.

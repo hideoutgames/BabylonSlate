@@ -345,7 +345,7 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  * geometry effects together, the world drawn once and the paired blurs. `heavy` (many draws, no Mirror on screen; the control view) takes what follows the draws rather
  * than the pixels: the world hidden, the shadow map passes, the geometry effects together and the geometry pass drawn
  * twice, whole and scissored (where it draws the most), the world drawn once, and the passes joined: the merged marches,
- * the paired blurs and both (the light view repeats the paired blurs alone, within the run's twelve minutes). `mirror` (both Mirrors and the capture monitors on screen) takes
+ * the paired blurs and both (the light view repeats the paired blurs alone, within the 720 s the unit test bounds the windows to). `mirror` (both Mirrors and the capture monitors on screen) takes
  * the captures, the Mirrors' reflection and the world drawn once.
  */
 export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureTestBreakdownPlan {
