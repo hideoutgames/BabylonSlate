@@ -188,7 +188,8 @@ describe("player startup and Stop ownership", () => {
     acknowledge(true);
     await suppress;
     expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(false);
-    expect(input().ring.drain()).toContainEqual({ kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [0], buttons: [0] });
+    // The pad first appeared while paused: the game never saw it, so nothing of it is sent, its held values least of all.
+    expect(input().ring.drain().filter(event => event.kind === "gamepad")).toEqual([]);
     const restore = session.previewDiagnostics!.setEditorInputSuppressed(false);
     acknowledge(false);
     await restore;

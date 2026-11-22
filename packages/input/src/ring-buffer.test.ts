@@ -115,6 +115,21 @@ describe("input ring buffer overflow", () => {
     expect(resolver.resolve(ring.drain()).actions.Jump).toEqual({ held: false, pressed: true, released: true });
   });
 
+  it.each([
+    ["every control at the same level", [0.2, 0.7], [0, 1], [0.3, 0.9], [0, 0.8], true],
+    ["an axis crossing 0.5", [0.2, 0.7], [0, 1], [0.6, 0.7], [0, 1], false],
+    ["a button leaving rest", [0.2, 0.7], [0, 1], [0.2, 0.7], [0.1, 1], false],
+    ["one axis more", [0.2], [0], [0.2, 0], [0], false],
+    ["one button more, same axes", [0.2], [0], [0.2], [0, 0], false],
+  ])("coalesces a full queue's gamepad sample only when the next one keeps its edges: %s", (_name, axes, buttons, nextAxes, nextButtons, coalesced) => {
+    const first: RawInputEvent = { kind: "gamepad", tick: 1, gamepadIndex: 0, axes, buttons };
+    const next: RawInputEvent = { kind: "gamepad", tick: 2, gamepadIndex: 0, axes: nextAxes, buttons: nextButtons };
+    const ring = new InputRingBuffer(1);
+    ring.push(first);
+    ring.push(next);
+    expect(ring.drain()).toEqual(coalesced ? [next] : [first, next]);
+  });
+
   it("grows for press and release edges, then drops the oldest presses before any release", () => {
     const key = (code: string, phase: "down" | "up"): RawInputEvent => ({ kind: "key", tick: 1, code, phase });
     const ring = new InputRingBuffer(2);

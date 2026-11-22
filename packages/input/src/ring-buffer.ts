@@ -318,8 +318,14 @@ function supersededBy(sample: RawInputEvent, next: RawInputEvent): boolean {
   if (sample.kind === "touchAxis" && next.kind === "touchAxis") return level(sample.value) === level(next.value);
   if (sample.kind === "motion") return next.kind === "motion";
   if (sample.kind !== "gamepad" || next.kind !== "gamepad") return false;
-  const levels = (event: typeof sample) => [...event.axes, ...event.buttons].map(level).join();
-  return sample.axes.length === next.axes.length && levels(sample) === levels(next);
+  return sameLevels(sample.axes, next.axes) && sameLevels(sample.buttons, next.buttons);
+}
+
+/** Same control count and every control at the same `level`; compared in place, since a saturated push runs it per queued pair. */
+function sameLevels(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (level(a[i]!) !== level(b[i]!)) return false;
+  return true;
 }
 
 /** What a release lets go of; a later release with the same key repeats it. Disconnects never repeat. */
