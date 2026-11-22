@@ -338,6 +338,35 @@ describe("Haptic project browser", () => {
     expect(screen.getByTestId("create-project-hosting-local").getAttribute("aria-pressed")).toBe("true");
   });
 
+  it.each([
+    ["Include", true],
+    ["Create Without", false],
+  ] as const)("asks once about Engine Plugins with Execute JavaScript while creating, and %s answers %s", async (button, include) => {
+    const answers: boolean[] = [];
+    const onCreateEmpty = vi.fn<ComponentProps<typeof Homepage>["onCreateEmpty"]>(async (_name, options) => {
+      answers.push(await options!.reviewExecuteJavaScript!([
+        { pluginGuid: "a", displayName: "Combat Pack", assets: [
+          { guid: "hero", name: "Hero", type: "Class", path: "combat-pack/assets/Hero.class.hasset", nodes: [{ nodeId: "js", body: "1" }] },
+        ] },
+        { pluginGuid: "b", displayName: "Net Pack", assets: [
+          { guid: "net", name: "Net", type: "Class", nodes: [{ nodeId: "a", body: "1" }, { nodeId: "b", body: "2" }] },
+        ] },
+      ]));
+    });
+    renderHomepage({ onCreateEmpty });
+    createDialog();
+    fireEvent.change(screen.getByTestId("create-project-name"), { target: { value: "Orbit" } });
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+    const dialog = await screen.findByTestId("execute-javascript-import-dialog");
+    expect(dialog.textContent).toContain("Include Execute JavaScript?");
+    expect([...screen.getByTestId("execute-javascript-import-list").querySelectorAll("li")].map((row) => row.textContent))
+      .toEqual(["Hero (Class) in Combat Pack1 node", "Net (Class) in Net Pack2 nodes"]);
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    await waitFor(() => expect(answers).toEqual([include]));
+    await waitFor(() => expect(screen.queryByTestId("execute-javascript-import-dialog")).toBeNull());
+    expect(onCreateEmpty).toHaveBeenCalledTimes(1);
+  });
+
   it("starts naming a project straight from a welcome tile in an empty library", async () => {
     const onCreateEmpty = vi.fn(async () => {});
     renderHomepage({ onCreateEmpty });

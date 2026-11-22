@@ -177,18 +177,55 @@ describe("EnginePluginLibrary", () => {
     expect(savedRead.mock.calls.some(([path]) => path.endsWith("/assets/data.txt"))).toBe(true);
   });
 
-  it("leaves a non-bundled entry holding Execute JavaScript out of a new project's copy, and keeps bundled ones", async () => {
-    const bundled = await storage("bundled");
-    const saved = await storage("library");
-    await unpackEnginePluginZip(bundled, await archive("bundled-guid", "Bundled Pack", "original", true), "bundled");
-    const store = new EnginePluginLibrary(bundled, saved);
-    await store.import(await archive("scripted-guid", "Scripted Pack", "original", true));
-    await store.import(await archive("plain-guid", "Plain Pack"));
-    const guids = async (snapshot: Awaited<ReturnType<typeof store.createStorageSnapshot>>) =>
+  describe("a new project's copy of plugins holding Execute JavaScript", () => {
+    async function scriptedLibrary(scripted = true) {
+      const bundled = await storage("bundled");
+      const saved = await storage("library");
+      await unpackEnginePluginZip(bundled, await archive("bundled-guid", "Bundled Pack", "original", true), "bundled");
+      const store = new EnginePluginLibrary(bundled, saved);
+      await store.import(await archive("scripted-guid", "Scripted Pack", "original", scripted));
+      await store.import(await archive("plain-guid", "Plain Pack"));
+      return store;
+    }
+    const guids = async (snapshot: Awaited<ReturnType<EnginePluginLibrary["createStorageSnapshot"]>>) =>
       (await discoverEnginePlugins(snapshot)).map((entry) => entry.pluginGuid).sort();
-    expect(await guids(await store.createStorageSnapshot({ forNewProject: true }))).toEqual(["bundled-guid", "plain-guid"]);
-    // An open project's library view still lists it, to be enabled through the disclosure.
-    expect(await guids(await store.createStorageSnapshot())).toEqual(["bundled-guid", "plain-guid", "scripted-guid"]);
+
+    it("asks once about each non-bundled plugin holding it, never a bundled one, and includes them on Include", async () => {
+      const store = await scriptedLibrary();
+      const review = vi.fn(async () => true);
+      expect(await guids(await store.createStorageSnapshot({ forNewProject: true, reviewExecuteJavaScript: review })))
+        .toEqual(["bundled-guid", "plain-guid", "scripted-guid"]);
+      expect(review).toHaveBeenCalledTimes(1);
+      expect(review).toHaveBeenCalledWith([{
+        pluginGuid: "scripted-guid", displayName: "Scripted Pack",
+        // Named where the plugin's files will sit, with the node the import dialog would count.
+        assets: [{ guid: "scripted-guid-hero", name: "Hero", type: "Class", path: "scripted-pack/assets/Hero.class.hasset",
+          nodes: [{ nodeId: "js", body: "ctx.log(1)" }] }],
+      }]);
+    });
+
+    it("leaves them out on Create Without, keeping every other plugin", async () => {
+      const store = await scriptedLibrary();
+      const review = vi.fn(async () => false);
+      expect(await guids(await store.createStorageSnapshot({ forNewProject: true, reviewExecuteJavaScript: review })))
+        .toEqual(["bundled-guid", "plain-guid"]);
+      expect(review).toHaveBeenCalledTimes(1);
+      // An open project's library view still lists it, to be enabled through the disclosure.
+      expect(await guids(await store.createStorageSnapshot())).toEqual(["bundled-guid", "plain-guid", "scripted-guid"]);
+    });
+
+    it("leaves them out without asking when there is no UI to ask with", async () => {
+      const store = await scriptedLibrary();
+      expect(await guids(await store.createStorageSnapshot({ forNewProject: true }))).toEqual(["bundled-guid", "plain-guid"]);
+    });
+
+    it("asks nothing when no such plugin is in the library", async () => {
+      const store = await scriptedLibrary(false);
+      const review = vi.fn(async () => false);
+      expect(await guids(await store.createStorageSnapshot({ forNewProject: true, reviewExecuteJavaScript: review })))
+        .toEqual(["bundled-guid", "plain-guid", "scripted-guid"]);
+      expect(review).not.toHaveBeenCalled();
+    });
   });
 
   it("keeps the old snapshot usable after a replacement publishes a new generation", async () => {

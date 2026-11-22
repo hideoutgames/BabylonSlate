@@ -1,5 +1,6 @@
 import type { ProjectAppearance } from "@haptic/core";
 import type { NewRepositoryRequest, PublishOutcome } from "../services/source-control-publish";
+import type { NewProjectExecuteJavaScriptReview } from "./engine-plugin-library";
 
 // Descriptor + noun + head noun reads as a compound name in any combination,
 // for example "Walnut Apple Sauce" or "Velvet Comet Parade".
@@ -97,6 +98,11 @@ export type CreateProjectOptions = {
   blackBars?: boolean;
   /** Pixel Art Optimized (`pixelArtProjectSettings`). */
   pixelArt?: boolean;
+  /**
+   * Asks whether the project includes the Engine Plugins library's plugins (not bundled with Haptic)
+   * that hold Execute JavaScript; omitted (no UI to ask with), they are left out.
+   */
+  reviewExecuteJavaScript?: NewProjectExecuteJavaScriptReview;
 };
 
 /**

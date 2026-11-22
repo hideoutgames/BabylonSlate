@@ -60,9 +60,6 @@ export async function runProjectScene(options: {
     createScope: (owner) => project.createAssetLoadScope(owner),
     traceExecution: true,
     compile: (required, storedDocuments) => playContent.collectPlayPreviewScripts(required, undefined, document, { traceExecution: true, storedDocuments }),
-    // The project is the test's own, so it is trusted, as a project the editor creates is: its
-    // Execute JavaScript, Open URL and Extension nodes run.
-    assertTrustGatedNodesAllowed: () => {},
   };
   const sceneGuid = registry.list().find((asset) => asset.path === options.scenePath)?.header.guid;
   if (!sceneGuid) throw new Error(`No scene at ${options.scenePath}`);

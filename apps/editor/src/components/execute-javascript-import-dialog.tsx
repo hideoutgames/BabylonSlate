@@ -12,41 +12,61 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
+import { cn } from "@haptic/ui/lib/utils";
+
+/** An asset the dialog lists; `plugin` names the plugin it comes from, when the batch spans plugins. */
+export type ExecuteJavaScriptReviewAsset = ExecuteJavaScriptAsset & { plugin?: string };
 
 export type ExecuteJavaScriptImportDialogProps = {
-  /** The assets of the import that hold Execute JavaScript; the dialog is open while there are any. */
-  assets: readonly ExecuteJavaScriptAsset[] | null;
+  /** The assets of the batch that hold Execute JavaScript; the dialog is open while there are any. */
+  assets: readonly ExecuteJavaScriptReviewAsset[] | null;
+  /**
+   * `import` (default): Import or Cancel, which imports nothing. `newProject`: a New Project's library
+   * plugins, Include or Create Without, which creates the project without them.
+   */
+  purpose?: "import" | "newProject";
+  /** Extra classes for the dialog, such as a theme or a layer above the launcher's loading card. */
+  className?: string;
   onConfirm: () => void;
   onCancel: () => void;
 };
 
 /**
- * Discloses the Execute JavaScript an import brings in (Content Browser files, ZIPs and drops, or a
- * `.hplugin`) before anything is written: one dialog per batch, listing each asset with its node
- * count. Cancel imports nothing.
+ * Discloses Execute JavaScript before anything is written: what an import brings in (Content Browser
+ * files, ZIPs and drops, or a `.hplugin`), or the Engine Plugins a New Project would copy. One dialog
+ * per batch, listing each asset with its node count.
  */
-export function ExecuteJavaScriptImportDialog({ assets, onConfirm, onCancel }: ExecuteJavaScriptImportDialogProps) {
+export function ExecuteJavaScriptImportDialog({ assets, purpose = "import", className, onConfirm, onCancel }: ExecuteJavaScriptImportDialogProps) {
   const list = assets ?? [];
+  const newProject = purpose === "newProject";
   return (
     <AlertDialog open={list.length > 0} onOpenChange={(open) => { if (!open) onCancel(); }}>
-      <AlertDialogContent variant="warning" className="data-[size=default]:sm:max-w-md" data-testid="execute-javascript-import-dialog">
+      <AlertDialogContent variant="warning" className={cn("data-[size=default]:sm:max-w-md", className)} data-testid="execute-javascript-import-dialog">
         <AlertDialogHeader>
           <AlertDialogMedia>
             <CodeIcon />
           </AlertDialogMedia>
-          <AlertDialogTitle>Import Execute JavaScript?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {list.length === 1 ? "This asset contains" : "These assets contain"} Execute JavaScript nodes. Their code runs
-            without a sandbox, with the same access as the game, when the project plays or is packaged. Import only if
-            you trust where {list.length === 1 ? "it" : "they"} came from.
-          </AlertDialogDescription>
+          <AlertDialogTitle>{newProject ? "Include Execute JavaScript?" : "Import Execute JavaScript?"}</AlertDialogTitle>
+          {newProject ? (
+            <AlertDialogDescription>
+              Engine Plugins from your library contain Execute JavaScript nodes. Their code runs without a sandbox, with
+              the same access as the game, when the project plays or is packaged. Include them only if you trust where
+              they came from; otherwise the project is created without them.
+            </AlertDialogDescription>
+          ) : (
+            <AlertDialogDescription>
+              {list.length === 1 ? "This asset contains" : "These assets contain"} Execute JavaScript nodes. Their code runs
+              without a sandbox, with the same access as the game, when the project plays or is packaged. Import only if
+              you trust where {list.length === 1 ? "it" : "they"} came from.
+            </AlertDialogDescription>
+          )}
         </AlertDialogHeader>
         <ul className="max-h-60 divide-y overflow-y-auto overscroll-y-contain rounded-md border bg-muted/30 text-sm"
           data-testid="execute-javascript-import-list">
           {list.map((asset, index) => (
             <li key={`${asset.guid}:${index}`} className="flex items-baseline justify-between gap-3 px-3 py-1.5">
               <span className="min-w-0 truncate" title={asset.path ?? asset.name}>
-                {asset.name} <span className="text-muted-foreground">({asset.type})</span>
+                {asset.name} <span className="text-muted-foreground">({asset.type}){asset.plugin ? ` in ${asset.plugin}` : ""}</span>
               </span>
               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                 {asset.nodes.length === 1 ? "1 node" : `${asset.nodes.length} nodes`}
@@ -55,9 +75,9 @@ export function ExecuteJavaScriptImportDialog({ assets, onConfirm, onCancel }: E
           ))}
         </ul>
         <AlertDialogFooter>
-          <AlertDialogCancel data-testid="execute-javascript-import-cancel">Cancel</AlertDialogCancel>
+          <AlertDialogCancel data-testid="execute-javascript-import-cancel">{newProject ? "Create Without" : "Cancel"}</AlertDialogCancel>
           <AlertDialogAction data-testid="execute-javascript-import-confirm" onClick={onConfirm}>
-            Import
+            {newProject ? "Include" : "Import"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -66,16 +86,17 @@ export function ExecuteJavaScriptImportDialog({ assets, onConfirm, onCancel }: E
 }
 
 /**
- * The question an import waits on: `review(assets)` shows the dialog and resolves true for Import, false
- * for Cancel. A newer question cancels the one still open, and the host unmounting (its panel closed,
- * the project closed) answers Cancel, so a waiting import always settles and writes nothing.
+ * The question an import or New Project waits on: `review(assets)` shows the dialog and resolves true for
+ * Import or Include, false for Cancel or Create Without. A newer question cancels the one still open, and
+ * the host unmounting (its panel closed, the project closed) answers false, so a waiting import always
+ * settles and writes nothing.
  */
 export function useExecuteJavaScriptReview(): {
-  assets: ExecuteJavaScriptAsset[] | null;
-  review: (assets: ExecuteJavaScriptAsset[]) => Promise<boolean>;
+  assets: ExecuteJavaScriptReviewAsset[] | null;
+  review: (assets: ExecuteJavaScriptReviewAsset[]) => Promise<boolean>;
   answer: (confirmed: boolean) => void;
 } {
-  const [assets, setAssets] = useState<ExecuteJavaScriptAsset[] | null>(null);
+  const [assets, setAssets] = useState<ExecuteJavaScriptReviewAsset[] | null>(null);
   const answerRef = useRef<((confirmed: boolean) => void) | null>(null);
   const answer = useCallback((confirmed: boolean) => {
     const resolve = answerRef.current;
@@ -83,7 +104,7 @@ export function useExecuteJavaScriptReview(): {
     setAssets(null);
     resolve?.(confirmed);
   }, []);
-  const review = useCallback((next: ExecuteJavaScriptAsset[]) => new Promise<boolean>((resolve) => {
+  const review = useCallback((next: ExecuteJavaScriptReviewAsset[]) => new Promise<boolean>((resolve) => {
     answerRef.current?.(false);
     answerRef.current = resolve;
     setAssets(next);
