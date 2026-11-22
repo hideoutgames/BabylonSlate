@@ -593,8 +593,9 @@ test.describe("P9 content systems", () => {
     await glslEditor.fill("norm");
     await glslEditor.press("End");
     await glslEditor.press("Control+Space");
-    await expect(page.getByRole("option", { name: "normalize", exact: true })).toBeVisible();
-    await glslEditor.press("Escape");
+    // The completion list shows in full over the 160px inline box: a click on it lands and applies it.
+    await page.getByRole("option", { name: "normalize", exact: true }).click();
+    await expect(glslEditor).toContainText("normalize");
     await glslEditor.fill("#define X 1");
     await glslEditor.blur();
     await expect(

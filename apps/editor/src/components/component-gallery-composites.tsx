@@ -31,6 +31,7 @@ import {
   CurveEditor,
   SearchDialog,
   SearchDropdown,
+  MarkupAutocompleteTextarea,
   MultilineTextField,
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
@@ -644,16 +645,24 @@ export function GalleryComposites() {
           <Field>
             {/* The editor opens the value in a Text Editor tab; the gallery has no tabs, so the button does nothing. */}
             <MultilineTextField
-              id="gallery-markup-autocomplete"
+              id="gallery-multiline-text"
               label="Markup"
               hint="Inline at a fixed height; the button beside the label opens the value in its own tab."
               markup
               value={markup}
               onChange={setMarkup}
               onOpenInTab={() => {}}
-              data-testid="gallery-markup-autocomplete"
+              data-testid="gallery-multiline-text"
             />
           </Field>
+          {/* The tag catalog the Text Editor tab shows for 2D Rich Text. */}
+          <MarkupAutocompleteTextarea
+            aria-label="Markup With Tags"
+            value={markup}
+            onChange={setMarkup}
+            className="h-24 resize-none font-mono text-sm field-sizing-fixed"
+            data-testid="gallery-markup-autocomplete"
+          />
         </div>
         <Button variant="outline" className="h-auto" onClick={() => setPickerOpen(true)}>
           {selectedPickerIdentity(

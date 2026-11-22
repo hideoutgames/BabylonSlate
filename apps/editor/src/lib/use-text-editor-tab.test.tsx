@@ -1,5 +1,7 @@
-import { StrictMode } from "react";
-import { act, cleanup, render } from "@testing-library/react";
+import { StrictMode, useState } from "react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MultilineTextField } from "@haptic/editor-kit";
+import { TextEditorWorkspace } from "../components/text-editor-workspace";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentRef } from "@haptic/core";
 import type { OpenDocument } from "../services/document-service";
@@ -103,6 +105,28 @@ describe("useTextEditorTab", () => {
     act(() => vi.runAllTimers());
     expect(harness.closeDocument).not.toHaveBeenCalled();
     expect(getTextEditorSession(SESSION)).toBeDefined();
+  });
+
+  it("opens the tab on text typed inline but not yet committed", () => {
+    const committed: string[] = [];
+    function FormulaField() {
+      const [value, setValue] = useState("y = 1");
+      const onChange = (next: string) => {
+        committed.push(next);
+        setValue(next);
+      };
+      const openInTab = useTextEditorTab({ fieldKey: "node:n1:formula", title: "Formula", mode: "formula", value, onChange });
+      return <MultilineTextField label="Formula" value={value} onChange={onChange} onOpenInTab={openInTab} data-testid="formula" />;
+    }
+    render(<FormulaField />);
+    fireEvent.change(screen.getByTestId("formula-editor"), { target: { value: "y = 2" } });
+    fireEvent.click(screen.getByTestId("formula-open-tab"));
+    expect(committed).toEqual(["y = 2"]);
+    expect(harness.openTransientDocument).toHaveBeenCalledTimes(1);
+    // The session follows the committed value, and the tab shows it.
+    expect(getTextEditorSession(SESSION)?.value).toBe("y = 2");
+    render(<TextEditorWorkspace documentId={TAB} sessionId={SESSION} active />);
+    expect((screen.getByRole("textbox", { name: "Formula" }) as HTMLTextAreaElement).value).toBe("y = 2");
   });
 
   it("does not reopen a tab the user closed while the field stays", () => {

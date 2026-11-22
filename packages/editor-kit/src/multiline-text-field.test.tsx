@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MultilineTextField } from "./multiline-text-field";
+import { flushTextDrafts } from "./text-draft";
 
 describe("MultilineTextField", () => {
   afterEach(() => {
@@ -27,14 +28,60 @@ describe("MultilineTextField", () => {
 
   it("does not commit an unchanged draft or a blur that stays inside the field", () => {
     const onChange = vi.fn();
-    render(<MultilineTextField label="Text" value="Same" onChange={onChange} markup data-testid="ml" />);
-    const editor = screen.getByTestId("ml-editor");
+    render(
+      <MultilineTextField
+        label="Text"
+        value="Same"
+        onChange={onChange}
+        renderEditor={(value, set) => (
+          <>
+            <textarea aria-label="Body" value={value} onChange={(event) => set(event.target.value)} />
+            <button type="button">Completion</button>
+          </>
+        )}
+        data-testid="ml"
+      />,
+    );
+    const editor = screen.getByLabelText("Body");
     fireEvent.blur(editor, { relatedTarget: document.body });
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.change(editor, { target: { value: "Other" } });
-    // Focus moving to the markup completion list stays inside the field.
-    fireEvent.blur(editor, { relatedTarget: screen.getByTestId("search-item-tag:b") });
+    // Focus moving to a completion list inside the field is not leaving it.
+    fireEvent.blur(editor, { relatedTarget: screen.getByRole("button", { name: "Completion" }) });
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("shows markup text in a plain fixed-height textarea, without the tag catalog", () => {
+    render(<MultilineTextField label="Text" value="[b]Hi[/b]" onChange={() => {}} markup data-testid="ml" />);
+    const editor = screen.getByTestId("ml-editor") as HTMLTextAreaElement;
+    expect(editor.tagName).toBe("TEXTAREA");
+    expect(editor.value).toBe("[b]Hi[/b]");
+    expect(editor.className).toContain("h-24");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("commits a pending draft before opening the tab", () => {
+    const calls: string[] = [];
+    render(
+      <MultilineTextField label="Text" value="Old" onChange={(value) => calls.push(`commit:${value}`)}
+        onOpenInTab={() => calls.push("open")} data-testid="ml" />,
+    );
+    fireEvent.change(screen.getByTestId("ml-editor"), { target: { value: "New" } });
+    fireEvent.click(screen.getByTestId("ml-open-tab"));
+    expect(calls).toEqual(["commit:New", "open"]);
+  });
+
+  it("commits every mounted pending draft on flushTextDrafts, keeping focus", () => {
+    const onChange = vi.fn();
+    render(<MultilineTextField label="Text" value="A" onChange={onChange} data-testid="ml" />);
+    const editor = screen.getByTestId("ml-editor") as HTMLTextAreaElement;
+    editor.focus();
+    fireEvent.change(editor, { target: { value: "B" } });
+    flushTextDrafts();
+    expect(onChange.mock.calls).toEqual([["B"]]);
+    expect(document.activeElement).toBe(editor);
+    flushTextDrafts();
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   it("adopts an external value change even with a draft typed", () => {

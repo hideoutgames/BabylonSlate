@@ -7,7 +7,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/t
 import { cn } from "@haptic/ui/lib/utils";
 import { useEditorReadOnly } from "./editor-read-only";
 import { LabelHint } from "./label-hint";
-import { MarkupAutocompleteTextarea } from "./markup-autocomplete";
 import { commitOnFocusLeave, useTextDraft } from "./text-draft";
 
 /** The pop-out button's icon, chosen in this one place. */
@@ -22,7 +21,7 @@ export type MultilineTextFieldProps = {
   /** Called with the committed text: when focus leaves the field, or on unmount with a pending draft. */
   onChange: (value: string) => void;
   disabled?: boolean;
-  /** Hosts `MarkupAutocompleteTextarea` inline. */
+  /** Markup text (2D Rich Text): monospace inline. The tag catalog is in the Text Editor tab, not inline. */
   markup?: boolean;
   /** Code styling and the taller fixed height. */
   code?: boolean;
@@ -80,7 +79,11 @@ export function MultilineTextField({
                   size="sm"
                   className="size-6 min-w-6 px-0 text-muted-foreground pointer-coarse:size-[var(--touch-target)]"
                   aria-label={openLabel}
-                  onClick={onOpenInTab}
+                  // Leaving for the tab commits first, so the tab opens on the text just typed.
+                  onClick={() => {
+                    commit();
+                    onOpenInTab();
+                  }}
                   data-testid={testId ? `${testId}-open-tab` : undefined}
                 />
               }
@@ -95,23 +98,14 @@ export function MultilineTextField({
         <div className={cn("flex min-w-0 flex-col overflow-hidden rounded-lg border border-input", height)}>
           {renderEditor(draft, setDraft)}
         </div>
-      ) : markup ? (
-        <MarkupAutocompleteTextarea
-          id={id}
-          value={draft}
-          onChange={setDraft}
-          disabled={disabled}
-          readOnly={readOnly}
-          className={cn("min-h-0 resize-none font-mono text-sm field-sizing-fixed", height)}
-          data-testid={editorTestId}
-        />
       ) : (
         <Textarea
           id={id}
           value={draft}
           disabled={disabled}
           readOnly={readOnly}
-          className={cn("min-h-0 resize-none field-sizing-fixed", code && "font-mono text-xs", height)}
+          spellCheck={markup || code ? false : undefined}
+          className={cn("min-h-0 resize-none field-sizing-fixed", (markup || code) && "font-mono", code && "text-xs", height)}
           onChange={(event) => setDraft(event.target.value)}
           data-testid={editorTestId}
         />

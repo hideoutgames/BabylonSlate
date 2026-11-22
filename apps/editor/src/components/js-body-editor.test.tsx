@@ -45,3 +45,15 @@ it("keeps the caret outside the span an external value changes", () => {
   expect(view.state.selection.main.from).toBe(6);
   expect(view.state.selection.main.to).toBe(7);
 });
+
+it("compact: no status line or symbol bar, and a diagnostic's body line still moves the caret to it", () => {
+  const body = Array.from({ length: 60 }, (_, index) => `const line${index + 1} = ${index + 1};`).join("\n");
+  const editor = (bodyLine?: number) =>
+    <CodeBodyEditor language="javascript" value={body} onChange={vi.fn()} compact bodyLine={bodyLine} />;
+  const { container, rerender } = render(editor());
+  expect(screen.queryByTestId("js-accessory-bar")).toBeNull();
+  expect(screen.queryByText(/Ctrl\+Space: Complete/)).toBeNull();
+  const view = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  rerender(editor(40));
+  expect(view.state.selection.main.head).toBe(view.state.doc.line(40).from);
+});

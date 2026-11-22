@@ -25,6 +25,7 @@ import {
 import { AssetCreateProvider, TagProvider } from "@haptic/editor-kit";
 import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 import { SceneDetailsPanel } from "./scene-details-panel";
+import { clearTextEditorSessions, getTextEditorSession } from "../services/text-editor-sessions";
 import { RENDERING_SETTINGS_SECTIONS } from "../components/rendering-settings-sections";
 import { AppSettingsProvider } from "../context/app-settings-context";
 import { MemoryAppSettingsStore } from "@haptic/vfs/test-support/memory-app-settings";
@@ -1646,7 +1647,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(next.actors[0]?.components[0]?.properties.appearModes).toEqual(["fade"]);
   });
 
-  it("offers markup tag suggestions for 2D Rich Text inline", () => {
+  it("keeps 2D Rich Text inline at a fixed height and offers the tag list in its Text Editor tab", () => {
     scene().actors = [
       createActor("hud", "Rich", {
         components: [createRichText2DComponent("rich")],
@@ -1654,16 +1655,12 @@ describe("SceneDetailsPanel authoring", () => {
     ];
     harness.selectedActorIds = ["hud"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    const field = screen.getByTestId(
-      "text2d-text-rich-editor",
-    ) as HTMLTextAreaElement;
-    fireEvent.change(field, { target: { value: "[" } });
-    field.setSelectionRange(1, 1);
-    fireEvent.select(field);
-    expect(
-      screen.getByTestId("text2d-text-rich-editor-suggestions"),
-    ).toBeTruthy();
-    expect(screen.getByTestId("search-item-tag:b")).toBeTruthy();
+    const field = screen.getByTestId("text2d-text-rich-editor") as HTMLTextAreaElement;
+    expect(field.className).toContain("h-24");
+    expect(screen.queryByTestId("search-item-tag:b")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open Text in Tab" }));
+    expect(getTextEditorSession(`${harness.documentId}#component:hud:rich:text`)?.mode).toBe("markup");
+    clearTextEditorSessions();
   });
 });
 

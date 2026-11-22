@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useThumbnailVersion } from "@haptic/editor-kit";
+import { MultilineTextField, useThumbnailVersion } from "@haptic/editor-kit";
 import {
   ASSET_DOCUMENT_KINDS,
   MAIN_CLASS_FILE,
@@ -209,6 +209,28 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("Save All commits a draft still being typed in an Inspector field before it saves", async () => {
+    function SceneNameField() {
+      const { applySceneChange } = useDocumentActions();
+      const scene = useOpenDocument(MAIN_SCENE_ID)?.content as SerializedScene | null | undefined;
+      if (!scene) return null;
+      return <MultilineTextField label="Name" value={scene.name} data-testid="scene-name"
+        onChange={(name) => void applySceneChange(MAIN_SCENE_ID, { ...scene, name })} />;
+    }
+    const actions = await openProject(<SceneNameField />);
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    const editor = await screen.findByTestId("scene-name-editor");
+    act(() => editor.focus());
+    // Typed but not committed: focus is still in the field, as when Ctrl/Cmd+S is pressed.
+    fireEvent.change(editor, { target: { value: "Typed Name" } });
+    expect(openScene(MAIN_SCENE_ID).name).not.toBe("Typed Name");
+    expect(await act(() => actions.saveAll())).toBe("saved");
+    expect(openScene(MAIN_SCENE_ID).name).toBe("Typed Name");
+    expect(documents().dirtyDocuments).toEqual([]);
+    expect(document.activeElement).toBe(editor);
+  });
+
   it("clears a recovered journal that returns to saved content without another Save", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));

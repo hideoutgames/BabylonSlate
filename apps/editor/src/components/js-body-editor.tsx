@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
 import { useEditorReadOnly } from "@haptic/editor-kit";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers, tooltips } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { javascript } from "@codemirror/lang-javascript";
 import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
@@ -83,6 +83,9 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
         readOnlyCompartment.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
         EditorState.transactionFilter.of((transaction) => readOnlyRef.current && transaction.docChanged &&
           !transaction.annotation(externalValueSync) ? [] : transaction),
+        // Completion and other tooltips live in the document body, so a small host
+        // (the Inspector's fixed-height box, a scrolling panel) never clips them.
+        tooltips({ parent: document.body }),
         lineNumbers(),
         history(),
         language === "glsl" ? glslLanguage : javascript(),

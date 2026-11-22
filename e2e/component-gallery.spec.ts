@@ -82,10 +82,12 @@ test("gallery primitives, dialogs, and editor composites", async ({ page }) => {
     await expect(page.getByTestId("gallery-search-dropdown")).toBeVisible();
     await page.keyboard.press("Escape");
 
+    await expect(page.getByTestId("gallery-multiline-text-editor")).toBeVisible();
+    await expect(page.getByTestId("gallery-multiline-text-open-tab")).toBeVisible();
     await expect(page.getByTestId("gallery-markup-autocomplete")).toBeVisible();
-    await page.getByTestId("gallery-markup-autocomplete-editor").click();
+    await page.getByTestId("gallery-markup-autocomplete").click();
     await expect(
-      page.getByTestId("gallery-markup-autocomplete-editor-suggestions"),
+      page.getByTestId("gallery-markup-autocomplete-suggestions"),
     ).toBeVisible();
     await expect(page.getByTestId("search-item-tag:b")).toBeVisible();
     await page.keyboard.press("Escape");
