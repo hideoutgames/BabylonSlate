@@ -19,11 +19,33 @@ export interface ProjectWriteLease {
  */
 export class ProjectWriteAdmission {
   private active = 0;
+  private epoch = 0;
   private readonly locks = new Map<symbol, { reason: string; ready: (acquired: boolean) => void }>();
   private readonly listeners = new Set<() => void>();
   private publishedState = "open";
 
   get blocked(): boolean { return this.locks.size > 0; }
+  /**
+   * Advances on every admitted owner operation and every write through a
+   * guarded storage (`guardProjectStorage`), never on reads: equal values
+   * before and after some work mean nothing wrote project files meanwhile,
+   * except through `withExclusiveWriter`'s own storage.
+   */
+  get writeEpoch(): number { return this.epoch; }
+
+  /** Counts a write made through a guarded storage. */
+  noteWrite(): void { this.epoch++; }
+
+  /**
+   * Locks project writes at once, or returns null without locking: while
+   * another lock holds them or any admitted operation is still running. So
+   * a background owner never makes saves wait or fail behind a drain; it
+   * tries again later.
+   */
+  tryLockIdle(reason: string): ProjectWriteLease | null {
+    if (this.blocked || this.active > 0) return null;
+    return this.lock(reason);
+  }
   get locked(): boolean { return this.blocked && this.active === 0; }
   get reason(): string | null { return this.locks.values().next().value?.reason ?? null; }
 
@@ -76,6 +98,7 @@ export class ProjectWriteAdmission {
   retain(): () => void {
     this.assertStorageWritable();
     this.active++;
+    this.epoch++;
     let finished = false;
     return () => {
       if (finished) return;
@@ -140,9 +163,10 @@ export function guardProjectStorage(
       if (cached?.original === value) return cached.method;
       const method = STORAGE_WRITES.has(key)
         ? (...args: unknown[]) => {
-          if (!internal) return admission.run(() => Reflect.apply(value, target, args));
+          if (!internal) return admission.run(() => { admission.noteWrite(); return Reflect.apply(value, target, args); });
           try {
             admission.assertStorageWritable();
+            admission.noteWrite();
             return Reflect.apply(value, target, args);
           } catch (error) { return Promise.reject(error); }
         }
@@ -170,7 +194,32 @@ export async function withExclusiveWriter<T>(
 ): Promise<T> {
   if (admission.blocked) throw new Error(admission.reason!);
   signal?.throwIfAborted();
-  const lease = admission.lock(reason);
+  return exclusively(admission.lock(reason), storage, work, signal);
+}
+
+/**
+ * `withExclusiveWriter` for background work: runs `work` only if project
+ * writes can be locked at once (no lock held, no admitted operation running),
+ * else resolves `{ ran: false }` without waiting, so no save is refused for
+ * long behind it.
+ */
+export async function withIdleExclusiveWriter<T>(
+  admission: ProjectWriteAdmission,
+  storage: ProjectStorage,
+  reason: string,
+  work: (storage: ProjectStorage) => Promise<T>,
+): Promise<{ ran: true; value: T } | { ran: false }> {
+  const lease = admission.tryLockIdle(reason);
+  if (!lease) return { ran: false };
+  return { ran: true, value: await exclusively(lease, storage, work) };
+}
+
+async function exclusively<T>(
+  lease: ProjectWriteLease,
+  storage: ProjectStorage,
+  work: (storage: ProjectStorage) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
   try {
     let stopWaiting = noop;
     const aborted = new Promise<never>((_resolve, reject) => {

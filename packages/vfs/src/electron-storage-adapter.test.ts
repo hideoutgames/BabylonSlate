@@ -43,6 +43,7 @@ function fakeProjectBridge(): ElectronProjectBridge {
     }),
     exists: vi.fn(async (path: string) => files.has(path)),
     readdir: vi.fn(async () => []),
+    listStagedWrites: vi.fn(async () => []),
     mkdir: vi.fn(async () => {}),
     remove: vi.fn(async (path: string) => {
       files.delete(path);

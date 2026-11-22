@@ -7,6 +7,7 @@ export * from "./hasset";
 export * from "./hasset-carry";
 export * from "./hproject";
 export * from "./blob-store";
+export * from "./blob-sweep";
 export * from "./bounded-concurrency";
 export * from "./bytes";
 export * from "./installed-asset";

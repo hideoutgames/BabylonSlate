@@ -317,6 +317,18 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     }
   }
 
+  async listStagedWrites(path: string): Promise<DirEntry[]> {
+    const full = this.abs(path, true);
+    try {
+      const { files } = await this.fs.readdir({ path: full, directory: this.directory });
+      return files
+        .filter((f) => f.type === "file" && isStagedWrite(f.name))
+        .map((f) => ({ name: f.name, isDir: false, size: f.size, mtime: f.mtime }));
+    } catch (error) {
+      rethrowFilesystemError(error, path);
+    }
+  }
+
   async mkdir(path: string, recursive = true): Promise<void> {
     await this.ensureDirectory(this.abs(path), recursive);
   }

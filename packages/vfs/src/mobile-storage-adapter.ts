@@ -148,6 +148,13 @@ export class MobileStorageAdapter implements ProjectStorage {
     return this.port().readdir(path);
   }
 
+  /** The bound tier's staged write files; none where that tier cannot list them. */
+  async listStagedWrites(path: string): Promise<DirEntry[]> {
+    await this.init();
+    const port = this.port();
+    return port.listStagedWrites ? port.listStagedWrites(path) : [];
+  }
+
   async mkdir(path: string, recursive?: boolean): Promise<void> {
     await this.init();
     return this.port().mkdir(path, recursive);

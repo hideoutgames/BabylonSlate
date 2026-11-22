@@ -5,7 +5,7 @@ import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs"
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
-import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withExclusiveWriter, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
+import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withExclusiveWriter, withIdleExclusiveWriter, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
 import { guardProjectAssetRegistry } from "./project-authoring-ports";
 import { isExtensionPackagePath, isAssetSourceRevisionChanged, mountExtensionContentRoots, resolveExtensionFieldValues, type AssetDocument, type ExtensionDescriptor } from "@haptic/assets";
 import type {
@@ -67,6 +67,9 @@ import {
   createProjectFromTemplate,
   normalizeTilemapPayload,
   createVfsBlobStore,
+  collectReferencedBlobs,
+  orphanedBlobCandidates,
+  sweepOrphanedBlobs,
   decodeAssetDocument,
   encodePluginSettingsDocument,
   normalizePluginSettings,
@@ -175,6 +178,20 @@ export interface ProjectLoadResult {
 }
 
 export type { PluginImportResult } from "./project-plugins";
+
+/**
+ * What Clean Unused Project Storage did: `reclaimed` (`stopped` when a write
+ * landed or the lock was busy, so files may remain for the next run),
+ * `source-control` (Git owns blob retention: nothing run), `incomplete` (an
+ * asset header could not be read: nothing removed), `linked` (a symbolic
+ * link may alias a blob folder: nothing removed), `no-project`.
+ */
+export type BlobReclaimResult =
+  | { status: "reclaimed"; files: number; bytes: number; stopped: boolean }
+  | { status: "source-control" }
+  | { status: "incomplete"; unreadable: string[] }
+  | { status: "linked" }
+  | { status: "no-project" };
 
 /**
  * Reverb results kept per Scene: an edit's, a newer edit's baked during its
@@ -372,6 +389,75 @@ export class ProjectService {
    */
   withExclusiveWrites<T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal?: AbortSignal): Promise<T> {
     return withExclusiveWriter(this.writeAdmission, this.unguardedStorage, reason, work, signal);
+  }
+
+  /**
+   * Clean Unused Project Storage: removes `assets/.blobs` files no asset
+   * names (and staged write files a killed write or download left there),
+   * each only once it is `minAgeMs` old by mtime. Never while Source Control
+   * is on or the folder is a Git working copy (`.git`): Git and Git LFS own
+   * blob retention there, and Remove Unused Files serves it.
+   *
+   * Safety: the referenced set is every header on disk (`collectReferencedBlobs`);
+   * an unreadable header or a linked folder removes nothing. Removal runs
+   * under the write-admission lock, and only while no project write happened
+   * since the set was read (`ProjectWriteAdmission.writeEpoch`): a save,
+   * import, encode or move landing at any point stops the sweep before its
+   * next batch, and the next run reads the set again. A blob written or asked
+   * for (`writeBlob`) within the grace window stays, which covers an asset
+   * written after its blobs.
+   *
+   * `automatic` (after a project opens) reads the set without the lock and
+   * takes it only per batch and only when no write is admitted, so no save
+   * waits on it; otherwise the whole run holds it as the only writer, as
+   * Remove Unused Files does (other writes are refused meanwhile).
+   */
+  async reclaimUnusedBlobs(options: { automatic?: boolean; signal?: AbortSignal; minAgeMs?: number; now?: () => number } = {}): Promise<BlobReclaimResult> {
+    if (!this.projectGuid) return { status: "no-project" };
+    if (await this.sourceControlOwnsBlobs()) return { status: "source-control" };
+    const sweepOptions = {
+      ...(options.minAgeMs !== undefined ? { minAgeMs: options.minAgeMs } : {}),
+      ...(options.now ? { now: options.now } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    };
+    const sweep = async (reader: ProjectStorage, admit: (removeBatch: (writer: ProjectStorage) => Promise<void>) => Promise<boolean>): Promise<BlobReclaimResult> => {
+      // Cheap first look: nothing old enough that the index leaves unnamed means nothing to read further.
+      const indexed = new Set((this.assetRegistry?.list() ?? []).flatMap((entry) =>
+        entry.header.chunks.flatMap((chunk) => ("blob" in chunk.locator ? [chunk.locator.blob] : []))));
+      if ((await orphanedBlobCandidates(reader, indexed, sweepOptions)).length === 0) return { status: "reclaimed", files: 0, bytes: 0, stopped: false };
+      const referenced = await collectReferencedBlobs(reader, options.signal);
+      if (!referenced.complete) return referenced.reason === "linked" ? { status: "linked" } : { status: "incomplete", unreadable: referenced.paths };
+      const result = await sweepOrphanedBlobs(reader, referenced.blobs, { ...sweepOptions, admit });
+      return { status: "reclaimed", files: result.removed.length, bytes: result.bytes, stopped: result.stopped };
+    };
+    const reason = "Haptic is cleaning unused project storage. Try again in a moment.";
+    if (!options.automatic) {
+      return this.withExclusiveWrites(reason, (writer) => sweep(writer, async (removeBatch) => {
+        await removeBatch(writer);
+        return true;
+      }), options.signal);
+    }
+    const epoch = this.writeAdmission.writeEpoch;
+    return sweep(this.storage, async (removeBatch) => {
+      const done = await withIdleExclusiveWriter(this.writeAdmission, this.unguardedStorage, reason, async (writer) => {
+        // A write since the set was read may name a candidate: stop, and leave the rest to the next run.
+        if (this.writeAdmission.writeEpoch !== epoch) return false;
+        await removeBatch(writer);
+        return true;
+      });
+      return done.ran && done.value;
+    });
+  }
+
+  /** Source Control is on in `project.json`, or the folder is a Git working copy; unreadable settings count as on. */
+  private async sourceControlOwnsBlobs(): Promise<boolean> {
+    try {
+      const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as { settings?: { sourceControl?: { mode?: unknown } } };
+      if ((raw.settings?.sourceControl?.mode ?? "off") !== "off") return true;
+      return await this.storage.exists(".git");
+    } catch {
+      return true;
+    }
   }
 
   /** Save All owns one admission, even when it saves several documents after awaits. */

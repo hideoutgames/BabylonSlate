@@ -35,6 +35,7 @@ export const STORAGE_OPERATIONS: Record<FileOperation, StorageOperation> = {
   writeBinary: (storage, path, data) => storage.writeBinary(String(path), new Uint8Array(data as ArrayBuffer)),
   exists: (storage, path) => storage.exists(String(path)),
   readdir: (storage, path) => storage.readdir(String(path)),
+  listStagedWrites: (storage, path) => storage.listStagedWrites(String(path)),
   mkdir: (storage, path, recursive) => storage.mkdir(String(path), recursive !== false),
   remove: (storage, path) => storage.remove(String(path)),
   stat: (storage, path) => storage.stat(String(path)),
