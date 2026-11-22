@@ -47,6 +47,7 @@ import { ImageProcessingBlock } from "@babylonjs/core/Materials/Node/Blocks/Frag
 import { MultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/multiplyBlock";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
+import { ColorEncodingBlock } from "./color-encoding-block";
 
 const disposers: Array<() => void> = [];
 
@@ -373,7 +374,8 @@ describe("material compiler", () => {
     // The constant is the decoded pick; written as is, a picked mid grey showed at its linear value (128 as 55 of 255).
     const fill = result.material.getBlockByName("letters_textFill") as MultiplyBlock;
     const encode = fill.left.connectedPoint!.ownerBlock;
-    expect(encode.getClassName()).toBe("DisplayColorBlock");
+    expect(encode).toBeInstanceOf(ColorEncodingBlock);
+    expect((encode as ColorEncodingBlock).to).toBe("display");
     expect(encode.inputs[0]!.connectedPoint!.ownerBlock.getClassName()).not.toBe("TextMaterialBlock");
     expect(fill.right.connectedPoint!.ownerBlock.getClassName()).toBe("TextMaterialBlock");
     const fragment = result.material.compiledShaders.split("// Fragment shader")[1]!;
@@ -673,8 +675,44 @@ describe("material compiler", () => {
     ) as FragmentOutputBlock;
     const blend = fragment.rgba.connectedPoint?.ownerBlock;
     expect(blend).toBeInstanceOf(ParticleBlendMultiplyBlock);
-    expect((blend as ParticleBlendMultiplyBlock).color.connectedPoint).toBe(sample.rgba);
+    // The linear sample is encoded for display once, before the blend that works on display colours.
+    const encode = (blend as ParticleBlendMultiplyBlock).color.connectedPoint?.ownerBlock;
+    expect(encode).toBeInstanceOf(ColorEncodingBlock);
+    expect((encode as ColorEncodingBlock).to).toBe("display");
+    expect((encode as ColorEncodingBlock).input.connectedPoint).toBe(sample.rgba);
     expect((blend as ParticleBlendMultiplyBlock).alphaTexture.isConnected).toBe(true);
+  });
+
+  it.each([false, true])("keeps a particle graph linear, Particle Color decoded where it enters, encoded once at the output (preview %s)", async (particlePreview) => {
+    // Particle Color is a display colour and the rest of a graph is linear: written as they were, a picked mid grey
+    // Color showed at its linear value (128 as 55 of 255) while the emitter's colour showed as set.
+    const scene = host();
+    const doc = createDefaultMaterialDocument("Sparks", "particle");
+    const particle = doc.nodes.find((node) => node.type === "input.particleColor")!.id;
+    doc.nodes.push(
+      { id: "pick", type: "const.color", position: { x: 0, y: 0 }, properties: { value: [0.5, 0.5, 0.5] } },
+      { id: "tint", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+    );
+    doc.edges = [
+      { id: "pick-tint", sourceNodeId: "pick", sourcePinId: "out", targetNodeId: "tint", targetPinId: "a" },
+      { id: "particle-tint", sourceNodeId: particle, sourcePinId: "color", targetNodeId: "tint", targetPinId: "b" },
+      { id: "tint-output", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" },
+    ];
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "sparks", particlePreview });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(result.dispose);
+    expect(await result.ready).toEqual([]);
+    const encodings = result.material.attachedBlocks.filter((block): block is ColorEncodingBlock => block instanceof ColorEncodingBlock);
+    const decode = encodings.find((block) => block.to === "linear")!;
+    const encode = encodings.find((block) => block.to === "display")!;
+    expect(encodings).toHaveLength(2);
+    // Decoded from the emitter's colour (the preview's white constant), encoded from the graph's result.
+    const decoded = decode.input.connectedPoint!.ownerBlock as InputBlock;
+    expect(decoded.isAttribute ? decoded.name : "constant").toBe(particlePreview ? "constant" : "particle_color");
+    expect(encode.input.connectedPoint!.ownerBlock.name).toMatch(/tint/);
+    const fragment = result.material.attachedBlocks.find((block): block is FragmentOutputBlock => block instanceof FragmentOutputBlock)!;
+    const fed = fragment.rgba.connectedPoint!.ownerBlock;
+    expect(particlePreview ? fed : (fed as ParticleBlendMultiplyBlock).color.connectedPoint!.ownerBlock).toBe(encode);
   });
 
   it("connects the graph so the output block is actually fed", () => {

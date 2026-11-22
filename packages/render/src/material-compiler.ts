@@ -20,9 +20,6 @@ import {
   NodeMaterialBlockConnectionPointTypes,
 } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockConnectionPointTypes";
 import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
-import { NodeMaterialBlockTargets } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialBlockTargets";
-import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
-import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
 import { NodeMaterial, type NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
@@ -30,6 +27,7 @@ import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Material } from "@babylonjs/core/Materials/material";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { ColorEncodingBlock } from "./color-encoding-block";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
@@ -777,7 +775,7 @@ export function compileMaterialPlan(
       const multiply = new MultiplyBlock(`${options.name}_textFill`);
       // The graph's colour is linear (a Color, Parameter, Gradient or texture colour is the decoded pick); the glyph's
       // span colour and the overlay style are display colours. Encode the graph's once, then multiply.
-      const display = new DisplayColorBlock(`${options.name}_textColor`);
+      const display = new ColorEncodingBlock(`${options.name}_textColor`, "display");
       outputPoint("color", `${options.name}_color`, true)?.connectTo(display.input);
       display.output.connectTo(multiply.left);
       textGlyph.color.connectTo(multiply.right);
@@ -809,7 +807,15 @@ export function compileMaterialPlan(
         ? new DisplayFragmentOutputBlock(`${options.name}_fragment`)
         : new FragmentOutputBlock(`${options.name}_fragment`);
       created.push(fragment);
-      const color = outputPoint("color", `${options.name}_color`, true);
+      let color = outputPoint("color", `${options.name}_color`, true);
+      if (color && plan.domain === "particle") {
+        // The graph's colour is linear (Particle Color decodes where it enters, `input.particleColor`): encoded for
+        // display once, where the multiply blend and the display output expect it.
+        const display = new ColorEncodingBlock(`${options.name}_particleDisplay`, "display");
+        created.push(display);
+        color.connectTo(display.input);
+        color = display.output;
+      }
       if (color && material.mode === NodeMaterialModes.Particle) {
         connectParticleBlend(options.name, created, color, fragment.rgba);
       } else if (color) color.connectTo(fragment.rgba);
@@ -1672,7 +1678,7 @@ RegisterClass(
 );
 
 // Particle and Text outputs write display color: Particle Color and glyph span
-// colors are display-space (a Text graph's own linear colour is encoded first, `DisplayColorBlock`), and Legacy
+// colors are display-space (a Text or Particle graph's own linear colour is encoded first, `ColorEncodingBlock`), and Legacy
 // Display shows the output unchanged. Like
 // Babylon's own particle and Standard shaders, they decode to linear when a
 // Scene Linear display stage (applyByPostProcess) encodes the frame once.
@@ -1694,29 +1700,6 @@ RegisterClass(
   "BABYLON.DisplayFragmentOutputBlock",
   DisplayFragmentOutputBlock,
 );
-
-/**
- * A linear colour encoded for display (`toGammaSpace` on RGB, alpha kept), the encoding a fragment output's
- * `convertToGammaSpace` applies, for a colour that is then combined with display colours. Binds nothing.
- */
-export class DisplayColorBlock extends NodeMaterialBlock {
-  constructor(name: string) {
-    super(name, NodeMaterialBlockTargets.Fragment);
-    this.registerInput("input", NodeMaterialBlockConnectionPointTypes.Color4);
-    this.registerOutput("output", NodeMaterialBlockConnectionPointTypes.Color4);
-  }
-  get input(): NodeMaterialConnectionPoint { return this._inputs[0]!; }
-  get output(): NodeMaterialConnectionPoint { return this._outputs[0]!; }
-  override getClassName(): string { return "DisplayColorBlock"; }
-  protected override _buildBlock(state: NodeMaterialBuildState): this {
-    super._buildBlock(state);
-    state._emitFunctionFromInclude("helperFunctions", `//${this.name}`);
-    state.compilationString += `${state._declareOutput(this.output)} = toGammaSpace(${this.input.associatedVariableName});\n`;
-    return this;
-  }
-}
-
-RegisterClass("BABYLON.DisplayColorBlock", DisplayColorBlock);
 
 // User Interface colour is linear, as a Color node's or an unlit surface's is: encoded for display here (as a Scene
 // Layer's unlit surface encodes it, plain `toGammaSpace`, no image processing), except under a Scene Linear display

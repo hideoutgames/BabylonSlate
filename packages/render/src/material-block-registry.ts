@@ -76,6 +76,7 @@ import type {
 import { componentCount, customGlslInterface, materialGradientStops, swizzleComponents, vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@haptic/shader-graph";
 import { customGlslFunctionName } from "./material-glsl-diagnostics";
 import { UserInterfaceProgressBlock, UserInterfaceShapeBlock } from "./user-interface-blocks";
+import { ColorEncodingBlock } from "./color-encoding-block";
 
 /**
  * One lowered operation realised as Babylon blocks.
@@ -867,12 +868,14 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     return colorOutputs(context.name, color.outputs.color!, color.blocks);
   },
   "input.particleColor": (context) => {
-    if (!context.plumbing.particlePreview) {
-      const color = attributeInput("particle_color", NodeMaterialBlockConnectionPointTypes.Color4, "color")(context);
-      return colorOutputs(context.name, color.outputs.color!, color.blocks);
-    }
-    const block = new InputBlock(context.name); block.value = new Color4(1, 1, 1, 1);
-    return colorOutputs(context.name, block.output, [block]);
+    // The emitter's colour is a display colour: decoded to linear where it enters the graph, as every graph colour
+    // is linear; the Particle output encodes the result once. The preview's white is the same either way.
+    const source = context.plumbing.particlePreview
+      ? (() => { const block = new InputBlock(context.name); block.value = new Color4(1, 1, 1, 1); return single(block, {}, { color: block.output }); })()
+      : attributeInput("particle_color", NodeMaterialBlockConnectionPointTypes.Color4, "color")(context);
+    const linear = new ColorEncodingBlock(`${context.name}_linear`, "linear");
+    source.outputs.color!.connectTo(linear.input);
+    return colorOutputs(context.name, linear.output, [...source.blocks, linear]);
   },
   "input.time": ({ name }) => {
     const block = new GameTimeInputBlock(name);
