@@ -99,7 +99,7 @@ describe("DocumentsStorageAdapter", () => {
   });
 
   describe("a project.json replacement a killed app left half done", () => {
-    const ROOT = "BabylonSlate/projects/Killed.hproject";
+    const ROOT = "Projects/Killed.hproject";
     const STAGED = ".haptic-0f8fad5b-d9cb-469f-a165-70867728950e.tmp";
     const MARKER = ".haptic-7c9e6679-7425-40de-944b-e07fc1f90ae7.tmp";
     const text = (value: string) => new TextEncoder().encode(value);
@@ -134,7 +134,7 @@ describe("DocumentsStorageAdapter", () => {
       await storage.writeText("project.json", "saved");
       // The staged bytes, then the marker naming them.
       expect(write).toHaveBeenCalledTimes(2);
-      expect([...fs.tree.keys()].filter((key) => key.startsWith("BabylonSlate/projects/Clean.hproject/"))).toEqual(["BabylonSlate/projects/Clean.hproject/project.json"]);
+      expect([...fs.tree.keys()].filter((key) => key.startsWith("Projects/Clean.hproject/"))).toEqual(["Projects/Clean.hproject/project.json"]);
     });
 
     it("writes no marker through the binary transport, whose native commit is one rename with no gap", async () => {
