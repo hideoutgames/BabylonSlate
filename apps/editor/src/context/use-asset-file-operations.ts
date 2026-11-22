@@ -8,7 +8,7 @@ import {
   replaceClassAssetReferences,
   type ClassAssetReplacement,
 } from "@haptic/assets";
-import { journalCheckpointLine, journalRepathLine, type EditSession } from "@haptic/edit";
+import { journalCheckpointLine, journalDiscardLine, journalRepathLine, type EditSession } from "@haptic/edit";
 import {
   classIdFromClassAsset,
 } from "../lib/class-asset-lookup";
@@ -223,6 +223,15 @@ export function useAssetFileOperations({
       // also those of a tab closed meanwhile, must not reintroduce the Class
       // id that no longer exists.
       for (const id of rewritten) editSessionRef.current.dropDocument(id);
+      // The checkpoints above guard the rename until it lands. A referrer the rename left clean holds what its file now
+      // holds, so its records (the checkpoint included) are retired: otherwise the next open offers to recover a saved file.
+      const journalGuid = projectService.guid;
+      if (journalGuid) {
+        const at = new Date().toISOString();
+        for (const id of rewritten) {
+          if (documentService.getDocument(id)?.dirty === false) journalBuffer.append(journalGuid, journalDiscardLine(id, at));
+        }
+      }
       // The registry stamped the file's payload name; an open tab follows it.
       for (const doc of documentService.getOpenDocumentsOrdered()) {
         if (doc.ref.path === before.path) documentService.applyAssetRename(doc.id, renamed.header.name);
