@@ -271,6 +271,12 @@ function PinHandle({
   );
 }
 
+/** A pin that reads whether it is wired itself, so a wire elsewhere renders only the pins it changes. */
+function WiredPinHandle(props: Omit<Parameters<typeof PinHandle>[0], "connected">) {
+  const connected = useStore((state) => isPinWired(state.edges, props.nodeId, props.pin));
+  return <PinHandle {...props} connected={connected} />;
+}
+
 /**
  * An Animation Graph's Pose pin (Phosphor User Focus) or Frame pin (Bootstrap Image), drawn larger than other pins and
  * without a box: the icon's outline glyph while unwired, its fill glyph once wired. Phosphor pads its glyph, so the
@@ -792,7 +798,6 @@ function VariableGetNode({
   const dataPins = pins.filter((pin) => pin.kind !== "exec");
   const incoming = dataPins.filter((pin) => pin.direction === "in");
   const outgoing = dataPins.find((pin) => pin.direction === "out");
-  const edges = useStore((state) => state.edges);
   const valueType = outgoing
     ? (pinDisplayType(id, outgoing.id) ?? outgoing.type)
     : { kind: "wildcard" };
@@ -817,13 +822,12 @@ function VariableGetNode({
         style={{ borderColor: pinCssVar(valueType) }}
       >
         {incoming.map((pin) => (
-          <PinHandle
+          <WiredPinHandle
             key={pin.id}
             nodeId={id}
             pin={pin}
             pending={isPending(pin)}
             hasError={pinHasError(id, pin.id)}
-            connected={isPinWired(edges, id, pin)}
             disabled={disabled}
           />
         ))}
@@ -835,12 +839,11 @@ function VariableGetNode({
             >
               {humanizePropertyLabel(outgoing.name)}
             </span>
-            <PinHandle
+            <WiredPinHandle
               nodeId={id}
               pin={outgoing}
               pending={isPending(outgoing)}
               hasError={pinHasError(id, outgoing.id)}
-              connected={isPinWired(edges, id, outgoing)}
               disabled={disabled}
             />
           </>

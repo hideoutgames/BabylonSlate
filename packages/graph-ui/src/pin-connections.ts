@@ -38,24 +38,61 @@ export function isPinWired(
   return wiredPins[pin.direction].get(nodeId)?.has(pin.id) ?? false;
 }
 
+type NodeLookup = ReadonlyMap<string, { data: Record<string, unknown> }>;
+
+/** An answer and the data object of every node the walk read, as it read them. */
+type ReferenceAnswer = { passes: boolean; read: Map<string, Record<string, unknown> | undefined> };
+
+/** Answers by node id then pin id, per edges snapshot. */
+const referenceByEdges = new WeakMap<ConnectionEdges, Map<string, Map<string, ReferenceAnswer>>>();
+
 /**
  * A variable output (`reference: "writable"`) passes its variable by reference
  * while one of its wires ends on a reference input (a Seeded Random node's Seed,
  * a Pass-By-Reference function input). The graph then draws it as a reference pin.
+ *
+ * Every pin of the canvas asks again on each store update (a pan, zoom or drag
+ * frame), so the answer is kept per edges snapshot and reused while each node
+ * the walk read (the knots it passed and the inputs it reached) still has the
+ * same data object: React Flow keeps a node's data on a move, and a data edit
+ * replaces it.
  */
 export function passesReference(
   edges: ConnectionEdges,
-  nodeLookup: ReadonlyMap<string, { data: Record<string, unknown> }>,
+  nodeLookup: NodeLookup,
   nodeId: string,
   pin: Pick<SerializedPin, "id" | "direction" | "reference">,
 ): boolean {
   if (pin.direction !== "out" || pin.reference !== "writable") return false;
+  let byNode = referenceByEdges.get(edges);
+  if (!byNode) referenceByEdges.set(edges, (byNode = new Map()));
+  let byPin = byNode.get(nodeId);
+  if (!byPin) byNode.set(nodeId, (byPin = new Map()));
+  const cached = byPin.get(pin.id);
+  if (cached && everyReadUnchanged(cached.read, nodeLookup)) return cached.passes;
+  const answer = walkPassesReference(edges, nodeLookup, nodeId, pin.id);
+  byPin.set(pin.id, answer);
+  return answer.passes;
+}
+
+function everyReadUnchanged(read: ReferenceAnswer["read"], nodeLookup: NodeLookup): boolean {
+  for (const [id, data] of read) if (nodeLookup.get(id)?.data !== data) return false;
+  return true;
+}
+
+function walkPassesReference(edges: ConnectionEdges, nodeLookup: NodeLookup, nodeId: string, pinId: string): ReferenceAnswer {
+  const read: ReferenceAnswer["read"] = new Map();
+  const dataOf = (id: string) => {
+    const data = nodeLookup.get(id)?.data;
+    read.set(id, data);
+    return data;
+  };
   // Reroute knots pass the variable on, so the inputs past them count.
-  const isKnot = (id: string) => isRerouteNodeData(nodeLookup.get(id)?.data);
-  for (const end of passThroughTargets(edges, isKnot, nodeId, pin.id)) {
-    const target = nodeLookup.get(end.nodeId)?.data;
+  const isKnot = (id: string) => isRerouteNodeData(dataOf(id));
+  for (const end of passThroughTargets(edges, isKnot, nodeId, pinId)) {
+    const target = dataOf(end.nodeId);
     if (!hasSerializedPins(target)) continue;
-    if (target.__pins.some((input) => input.id === end.pinId && input.reference === "required")) return true;
+    if (target.__pins.some((input) => input.id === end.pinId && input.reference === "required")) return { passes: true, read };
   }
-  return false;
+  return { passes: false, read };
 }

@@ -143,7 +143,7 @@ import { formatGraphNodes, formatPinOffsetKey } from "./graph-format";
 import type { GraphFormatLayout } from "./format-layout";
 import { freeNodePosition } from "./graph-placement";
 import { placeConversion } from "./graph-conversion-placement";
-import { findProximityConnections, type ProximityPin } from "./graph-proximity";
+import { findProximityConnections, pinBox, pinBoxWithinReach, type PinBox, type ProximityPin } from "./graph-proximity";
 import {
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
   estimateGraphNodeSize,
@@ -151,6 +151,8 @@ import {
   graphNodesBounds,
   graphPinRowCenterY,
   selectVisibleGraphElements,
+  cullStillHolds,
+  type GraphCullHold,
 } from "./graph-virtualize";
 import {
   attachGraphPaneMarquee,
@@ -827,18 +829,19 @@ function proximityPinsOf(
 // drag, so its pins are worked out once instead of on every drag tick.
 const stationaryPins = new WeakMap<
   CanvasNode,
-  { bounds: InternalNode["internals"]["handleBounds"]; pins: ProximityPin[] }
+  { bounds: InternalNode["internals"]["handleBounds"]; pins: ProximityPin[]; box: PinBox | null }
 >();
 
 function stationaryProximityPins(
   node: CanvasNode,
   bounds: InternalNode["internals"]["handleBounds"],
-): ProximityPin[] {
+): { pins: ProximityPin[]; box: PinBox | null } {
   const cached = stationaryPins.get(node);
-  if (cached && cached.bounds === bounds) return cached.pins;
+  if (cached && cached.bounds === bounds) return cached;
   const pins = proximityPinsOf(node, bounds, node.position);
-  stationaryPins.set(node, { bounds, pins });
-  return pins;
+  const entry = { bounds, pins, box: pinBox(pins) };
+  stationaryPins.set(node, entry);
+  return entry;
 }
 
 type GraphClip = { nodes: CanvasNode[]; edges: Edge[] };
@@ -853,6 +856,8 @@ type VisibleGraphInputs = {
   x: number;
   y: number;
   zoom: number;
+  /** How far the transform may pan from `x`, `y` before the culled set can change. */
+  hold: GraphCullHold | undefined;
   result: VisibleGraph;
 };
 
@@ -1884,22 +1889,28 @@ function GraphEditorCanvas({
       const moving = new Map(dragged.map((node) => [node.id, node]));
       const pins: ProximityPin[] = [];
       const store = storeApi.getState();
-      for (const node of graphStateRef.current.nodes) {
-        if (isDisabledNode(node)) continue;
-        const internal = store.nodeLookup.get(node.id);
+      const maxDistance = interactions.assistantDistance / store.transform[2];
+      const enabledNodes = graphStateRef.current.nodes.filter((node) => !isDisabledNode(node));
+      for (const node of enabledNodes) {
+        const draggedNode = moving.get(node.id);
+        const internal = draggedNode && store.nodeLookup.get(node.id);
         if (!internal) continue;
-        const bounds = internal.internals.handleBounds;
-        const dragged = moving.get(node.id);
-        const nodePins = dragged
-          ? proximityPinsOf(node, bounds, dragged.position)
-          : stationaryProximityPins(node, bounds);
-        for (const pin of nodePins) pins.push(pin);
+        for (const pin of proximityPinsOf(node, internal.internals.handleBounds, draggedNode.position)) pins.push(pin);
+      }
+      const reach = pinBox(pins);
+      for (const node of enabledNodes) {
+        if (moving.has(node.id)) continue;
+        const internal = store.nodeLookup.get(node.id);
+        if (!internal || !reach) continue;
+        const stationary = stationaryProximityPins(node, internal.internals.handleBounds);
+        if (!pinBoxWithinReach(stationary.box, reach, maxDistance)) continue;
+        for (const pin of stationary.pins) pins.push(pin);
       }
       const connections = findProximityConnections({
         pins,
         edges: graphStateRef.current.edges,
         movingNodeIds: new Set(moving.keys()),
-        maxDistance: interactions.assistantDistance / store.transform[2],
+        maxDistance,
         resolveConnection: (connection) =>
           finalizeOrientedConnection(
             connection,
@@ -3998,15 +4009,12 @@ function GraphEditorCanvas({
       last.nodes === nodes &&
       last.edges === styledEdges &&
       last.keepIds === keepIds &&
-      last.width === hostSize.width &&
-      last.height === hostSize.height &&
-      last.x === x &&
-      last.y === y &&
-      last.zoom === zoom
+      cullStillHolds(last, { x, y, zoom, width: hostSize.width, height: hostSize.height }, last.hold)
     ) {
+      // No node can have crossed the culling box's edge since the last cull: the same set.
       return last.result;
     }
-    const result = selectVisibleGraphElements(
+    const { hold, ...result } = selectVisibleGraphElements(
       nodes,
       styledEdges,
       { x, y, zoom, width: hostSize.width, height: hostSize.height },
@@ -4022,6 +4030,7 @@ function GraphEditorCanvas({
       x,
       y,
       zoom,
+      hold,
       result,
     };
     return result;

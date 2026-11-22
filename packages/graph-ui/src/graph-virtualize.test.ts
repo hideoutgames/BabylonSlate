@@ -7,6 +7,7 @@ import {
   GRAPH_NODE_FALLBACK_WIDTH,
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
   selectVisibleGraphElements,
+  cullStillHolds,
 } from "./graph-virtualize";
 
 function gridNodes(count: number, gap = 400) {
@@ -172,5 +173,52 @@ describe("Reroute knot size", () => {
     expect(estimateGraphNodeSize(pins, { __reroute: true })).toEqual({ width: 80, height: 35 });
     expect(graphNodesBounds([{ id: "knot", position: { x: 100, y: 50 }, data: { __reroute: true, __pins: pins } }]))
       .toEqual({ x: 100, y: 50, width: 80, height: 35 });
+  });
+});
+
+describe("cullStillHolds", () => {
+  it("skips a rescan only for pans whose cull would mount the very same nodes and wires", () => {
+    // Deterministic scatter of nodes with uneven sizes, and wires between neighbours.
+    let seed = 7;
+    const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    const nodes = Array.from({ length: 300 }, (_, index) => ({
+      id: `n${index}`,
+      position: { x: Math.round(random() * 6000), y: Math.round(random() * 4000) },
+      width: 120 + Math.round(random() * 300),
+      height: 60 + Math.round(random() * 200),
+    }));
+    const edges = nodes.slice(1).map((node, index) => ({ id: `e${index}`, source: nodes[index]!.id, target: node.id }));
+    const ids = (result: { nodes: { id: string }[]; edges: { id: string }[] }) =>
+      [result.nodes.map((node) => node.id), result.edges.map((edge) => edge.id)];
+    let anchor = { x: -1000, y: -800, zoom: 0.75, width: 1200, height: 800 };
+    let culled = selectVisibleGraphElements(nodes, edges, anchor, 100, ["n5"]);
+    let held = 0;
+    let recut = 0;
+    for (let step = 0; step < 400; step++) {
+      const next = { ...anchor, x: anchor.x + (random() - 0.5) * 20, y: anchor.y + (random() - 0.5) * 20 };
+      const fresh = selectVisibleGraphElements(nodes, edges, next, 100, ["n5"]);
+      if (cullStillHolds(anchor, next, culled.hold)) {
+        held += 1;
+        expect(ids(fresh)).toEqual(ids(culled));
+      } else {
+        recut += 1;
+        anchor = next;
+        culled = fresh;
+      }
+    }
+    // Most pans of up to 10 px keep the set; some still cross a node edge.
+    expect(held).toBeGreaterThan(recut);
+    expect(recut).toBeGreaterThan(0);
+  });
+
+  it("never holds across a zoom or resize, or without a hold", () => {
+    const nodes = gridNodes(10);
+    const viewport = { x: -37, y: -23, zoom: 1, width: 800, height: 600 };
+    const { hold } = selectVisibleGraphElements(nodes, [], viewport);
+    expect(cullStillHolds(viewport, viewport, hold)).toBe(true);
+    expect(cullStillHolds(viewport, { ...viewport, zoom: 1.1 }, hold)).toBe(false);
+    expect(cullStillHolds(viewport, { ...viewport, width: 801 }, hold)).toBe(false);
+    expect(cullStillHolds(viewport, viewport, undefined)).toBe(false);
+    expect(selectVisibleGraphElements(nodes, [], { ...viewport, width: 0 }).hold).toBeUndefined();
   });
 });
