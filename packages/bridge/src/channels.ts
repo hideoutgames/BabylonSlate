@@ -188,6 +188,7 @@ export type ScriptBundleEntry = {
 /** Complete currently owned source metadata; omitted collections become empty. */
 export interface RuntimeSceneContent {
   assetGuids: string[];
+  /** `normalizeSceneLayer` output: the runtime creates layers from these as they are. */
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
   /** Binary Landscape (HPLD) and Foliage (HPFG) component chunks keyed by `<sceneGuid>:<chunkId>`, decoded once on component realization. */
@@ -284,7 +285,7 @@ export type ControlMessage =
       sceneNavmeshBytes?: Record<string, Uint8Array>;
       /** Binary Landscape (HPLD) and Foliage (HPFG) component chunks keyed by `<sceneGuid>:<chunkId>`, decoded once on component realization. */
       sceneComponentChunks?: Record<string, Uint8Array>;
-      /** Overlay documents the session compositor can instantiate by guid or name. */
+      /** Overlay documents the session compositor can instantiate by guid or name, already `normalizeSceneLayer` output. */
       sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
       /** Where the session runs: device platform, touch, editor and development build (the System nodes read it). */
       environment?: import("@haptic/core").GameEnvironment;
@@ -371,7 +372,7 @@ export type ControlMessage =
       /** Host answer to `requestComplexCollision`; kept beside `loadModels` meshes for the session. */
       type: "loadComplexCollision";
       meshes: CookedCollisionMeshEntry[];
-      /** Requested Models the host could not cook (source not loaded, or no triangles). */
+      /** Requested Models the host could not cook (source not loaded, no triangles, or Draco or meshopt geometry). */
       unavailable?: string[];
     }
   | {
