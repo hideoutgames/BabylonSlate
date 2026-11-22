@@ -103,6 +103,11 @@ export function discordIpcPaths(platform: NodeJS.Platform, env: NodeJS.ProcessEn
   return folders.flatMap((folder) => indices.map((index) => join(base, folder, `discord-ipc-${index}`)));
 }
 
+/** The largest frame payload accepted from Discord's IPC socket. */
+export const MAX_DISCORD_IPC_FRAME_BYTES = 1024 * 1024;
+/** The most unread socket data held: one largest frame and its header. */
+const MAX_DISCORD_IPC_BUFFER_BYTES = MAX_DISCORD_IPC_FRAME_BYTES + 8;
+
 const OP_HANDSHAKE = 0;
 const OP_FRAME = 1;
 const OP_CLOSE = 2;
@@ -192,10 +197,20 @@ export function createDiscordPresence(options: DiscordPresenceOptions = {}): Dis
       close(current, reason);
     };
     socket.on("data", (chunk: Buffer) => {
+      if (current.closed) return;
+      // Discord's frames are small; a larger one, or unread data past the cap, closes the connection.
+      if (buffered.length + chunk.length > MAX_DISCORD_IPC_BUFFER_BYTES) {
+        fail("Discord sent more data than a Rich Presence connection needs.");
+        return;
+      }
       buffered = Buffer.concat([buffered, chunk]);
       while (buffered.length >= 8) {
         const op = buffered.readUInt32LE(0);
         const length = buffered.readUInt32LE(4);
+        if (length > MAX_DISCORD_IPC_FRAME_BYTES) {
+          fail("Discord sent a message that is too large.");
+          return;
+        }
         if (buffered.length < 8 + length) break;
         const body = buffered.subarray(8, 8 + length).toString("utf8");
         buffered = buffered.subarray(8 + length);
@@ -283,6 +298,36 @@ export function createDiscordPresence(options: DiscordPresenceOptions = {}): Dis
   };
 }
 
+/** The largest presence request body; a full activity is well under 2 KiB. */
+export const MAX_PRESENCE_REQUEST_BYTES = 16 * 1024;
+
+/**
+ * The body as UTF-8 text, or null past `limit` bytes: a declared length over
+ * it is refused unread, and a streamed body is counted chunk by chunk and
+ * cancelled as soon as it passes, so no more than the limit is ever held.
+ */
+async function boundedRequestText(request: Request, limit: number): Promise<string | null> {
+  if (Number(request.headers.get("content-length")) > limit) {
+    await request.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    if (received > limit) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, received).toString("utf8");
+}
+
 /**
  * Answers a game's presence request on its own `app://` origin: POST, JSON, at most 16 KiB, from `origin` itself.
  * A page on another origin cannot send it: the JSON content type needs a preflight, which the app protocol refuses,
@@ -294,8 +339,8 @@ export async function handleDiscordPresenceRequest(request: Request, origin: str
   if (request.method !== "POST") return reply(405, { ok: false, error: "Use POST." });
   if (request.headers.get("origin") !== origin) return reply(403, { ok: false, error: "Only the game may set its presence." });
   if (!/^application\/json\b/.test(request.headers.get("content-type") ?? "")) return reply(415, { ok: false, error: "Send JSON." });
-  const text = await request.text();
-  if (text.length > 16 * 1024) return reply(413, { ok: false, error: "The request is too large." });
+  const text = await boundedRequestText(request, MAX_PRESENCE_REQUEST_BYTES);
+  if (text === null) return reply(413, { ok: false, error: "The request is too large." });
   let parsed: DiscordPresenceRequest;
   try {
     parsed = parseDiscordPresenceRequest(JSON.parse(text));

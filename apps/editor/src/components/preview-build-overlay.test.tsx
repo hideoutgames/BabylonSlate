@@ -4,6 +4,7 @@ import {
   cleanup,
   fireEvent,
   render,
+  screen,
   waitFor,
 } from "@testing-library/react";
 import { createRef } from "react";
@@ -14,6 +15,30 @@ afterEach(() => {
 });
 
 describe("PreviewBuildOverlay", () => {
+  it("sandboxes the player frame so project code cannot navigate the editor or open dialogs", () => {
+    const iframeRef = createRef<HTMLIFrameElement>();
+    render(<PreviewBuildOverlay src="/player/index.html?preview=1" iframeRef={iframeRef} onClose={() => {}} />);
+    const frame = iframeRef.current!;
+    const tokens = (frame.getAttribute("sandbox") ?? "").split(/\s+/);
+    expect(tokens).toEqual(expect.arrayContaining(["allow-scripts", "allow-same-origin"]));
+    for (const token of ["allow-top-navigation", "allow-top-navigation-by-user-activation", "allow-modals", "allow-forms"]) {
+      expect(tokens).not.toContain(token);
+    }
+    // Sharing the editor's origin (web), Open URL still opens a tab.
+    expect(tokens).toContain("allow-popups");
+  });
+
+  it("withholds popups from a player at its own origin and talks to it only by message", () => {
+    const iframeRef = createRef<HTMLIFrameElement>();
+    render(<PreviewBuildOverlay src="https://player.example/player/index.html?preview=1" iframeRef={iframeRef} onClose={() => {}} />);
+    const frame = iframeRef.current!;
+    expect(frame.getAttribute("sandbox")?.split(/\s+/)).not.toContain("allow-popups");
+    expect(frame.getAttribute("allow")).toContain("cross-origin-isolated");
+    const post = vi.spyOn(frame.contentWindow!, "postMessage");
+    fireEvent.click(screen.getByRole("button", { name: "Stats" }));
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ line: "showfps on" }), "https://player.example");
+  });
+
   it("keeps winning command metadata and live actor context without clearing the catalog", () => {
     const iframeRef = createRef<HTMLIFrameElement>();
     const view = render(

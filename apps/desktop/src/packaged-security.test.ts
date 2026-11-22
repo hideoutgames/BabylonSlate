@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { allowsEditorPermission, allowsGamePermission, externalOpenUrl, gameExternalUrl, gameFile, insidePreviewFrame, isBillingFrameUrl, isGameUrl, knownProjectFolder, rendererFile, isEditorSender, isPreviewFrameUrl, MAX_IPC_BYTES, validateIpcArguments } from "./packaged-security";
+import {
+  allowsEditorPermission, allowsGamePermission, externalOpenUrl, gameExternalUrl, gameFile, insidePreviewFrame, isBillingFrameUrl, isEditorIpcSender,
+  isGameUrl, knownProjectFolder, MAX_MAILTO_LENGTH, previewFile, rendererFile, isEditorSender, isPreviewFrameUrl, MAX_IPC_BYTES, validateIpcArguments,
+  windowOpenExternalUrl,
+} from "./packaged-security";
 
 describe("packaged renderer boundary", () => {
   it("resolves encoded asset filenames without treating filename characters as URL delimiters", () => {
@@ -43,18 +47,45 @@ describe("packaged renderer boundary", () => {
   });
   it("only accepts the main editor frame as a privileged IPC sender", () => {
     expect(isEditorSender("app://babylonslate/index.html", true)).toBe(true);
-    for (const url of ["https://haptic/index.html", "app://babylonslate/player/index.html", "app://other/index.html", "app://babylonslate/index.html.evil"]) {
+    for (const url of ["https://haptic/index.html", "app://babylonslate/player/index.html", "app://other/index.html", "app://babylonslate/index.html.evil", "app://preview/index.html"]) {
       expect(isEditorSender(url, true)).toBe(false);
     }
     expect(isEditorSender("app://babylonslate/index.html", false)).toBe(false);
   });
-  it("limits subframes to the Preview player and grants the editor only clipboard writes", () => {
-    expect(isPreviewFrameUrl("app://babylonslate/player/index.html?preview=1&t=2")).toBe(true);
-    for (const url of ["https://example.com/", "app://babylonslate/index.html", "app://other/player/index.html", "about:blank"]) {
+  it("refuses IPC from any frame but the editor window's own top frame, even a same-origin one", () => {
+    const windows = new Set([7]);
+    const top = { url: "app://babylonslate/index.html", parent: null };
+    const editor = { sender: { id: 7, mainFrame: top }, senderFrame: top };
+    expect(isEditorIpcSender(editor, windows)).toBe(true);
+    // The Preview player, and a same-origin child frame showing the editor's own page.
+    const preview = { url: "app://preview/player/index.html?preview=1", parent: top };
+    const sameOriginChild = { url: "app://babylonslate/index.html", parent: top };
+    for (const frame of [preview, sameOriginChild]) {
+      expect(isEditorIpcSender({ sender: { id: 7, mainFrame: top }, senderFrame: frame }, windows)).toBe(false);
+    }
+    // A main frame that navigated elsewhere, a gone frame, and a page that is not an editor window.
+    const navigated = { url: "app://preview/player/index.html", parent: null };
+    expect(isEditorIpcSender({ sender: { id: 7, mainFrame: navigated }, senderFrame: navigated }, windows)).toBe(false);
+    expect(isEditorIpcSender({ sender: { id: 7, mainFrame: top }, senderFrame: null }, windows)).toBe(false);
+    expect(isEditorIpcSender({ sender: { id: 8, mainFrame: top }, senderFrame: top }, windows)).toBe(false);
+    // A frame claiming the editor's URL that is not the page's main frame.
+    expect(isEditorIpcSender({ sender: { id: 7, mainFrame: top }, senderFrame: { url: top.url, parent: null } }, windows)).toBe(false);
+  });
+  it("serves Preview Build's player, and nothing else of the editor, at its own origin", () => {
+    expect(previewFile("app://preview/player/index.html", "renderer")).toBe(resolve("renderer/player/index.html"));
+    expect(previewFile("app://preview/player/assets/worker.js", "renderer")).toBe(resolve("renderer/player/assets/worker.js"));
+    for (const url of ["app://preview/index.html", "app://preview/", "app://preview/assets/index.js", "app://preview/player/../index.html",
+      "app://preview/player/%2e%2e/index.html", "app://preview/player", "app://babylonslate/player/index.html"]) {
+      expect(() => previewFile(url, "renderer")).toThrow();
+    }
+  });
+  it("limits subframes to the Preview player at its own origin and grants the editor only clipboard writes", () => {
+    expect(isPreviewFrameUrl("app://preview/player/index.html?preview=1&t=2")).toBe(true);
+    for (const url of ["https://example.com/", "app://babylonslate/index.html", "app://babylonslate/player/index.html", "app://other/player/index.html", "app://preview/index.html", "about:blank"]) {
       expect(isPreviewFrameUrl(url)).toBe(false);
     }
     expect(allowsEditorPermission("clipboard-sanitized-write", "app://babylonslate/index.html", true)).toBe(true);
-    expect(allowsEditorPermission("clipboard-sanitized-write", "app://babylonslate/player/index.html", false)).toBe(false);
+    expect(allowsEditorPermission("clipboard-sanitized-write", "app://preview/player/index.html", false)).toBe(false);
     expect(allowsEditorPermission("clipboard-read", "app://babylonslate/index.html", true)).toBe(false);
     expect(allowsEditorPermission("media", "app://babylonslate/index.html", true)).toBe(false);
   });
@@ -76,7 +107,7 @@ describe("packaged renderer boundary", () => {
   });
   it("keeps Web Billing frames out of the Preview player, where project scripts run", () => {
     const editor = { url: "app://babylonslate/index.html", parent: null };
-    const player = { url: "app://babylonslate/player/index.html?preview=1", parent: editor };
+    const player = { url: "app://preview/player/index.html?preview=1", parent: editor };
     const checkout = { url: "about:blank", parent: editor };
     expect(insidePreviewFrame(checkout)).toBe(false);
     expect(insidePreviewFrame({ url: "https://js.stripe.com/v3/", parent: checkout })).toBe(false);
@@ -107,6 +138,23 @@ describe("packaged renderer boundary", () => {
       "http://haptic.no/", "http://example.com/", "javascript:alert(1)", "  JaVaScRiPt:alert(1)", "data:text/html,x", "vbscript:msgbox", "file:///etc/passwd",
       "app://babylonslate/index.html", "ftp://example.com/file", "ms-msdt:/id", "about:blank", "//example.com/", "/relative", "not a url", "",
     ]) expect(externalOpenUrl(url)).toBeNull();
+  });
+  it("refuses mailto links with control characters, written or encoded, or past the length limit", () => {
+    const longest = `mailto:a@example.com?body=${"x".repeat(MAX_MAILTO_LENGTH - "mailto:a@example.com?body=".length)}`;
+    expect(externalOpenUrl(longest)).toBe(longest);
+    expect(externalOpenUrl(`${longest}x`)).toBeNull();
+    for (const url of [
+      "mailto:a@example.com?subject=Hi%0D%0ABcc:%20victim@example.com", "mailto:a@example.com?body=%00", "mailto:a@example.com?body=%7F",
+      "mailto:a@example.com?subject=%C2%85", "mailto:a@example.com?body=%E0%A4%A", "mailto:a@example.com?body=\u0085",
+    ]) expect(externalOpenUrl(url)).toBeNull();
+  });
+  it("opens no window for a request the Preview origin made", () => {
+    const url = "https://haptic.no/pricing";
+    expect(windowOpenExternalUrl({ url, referrer: { url: "app://babylonslate/index.html" } })).toBe(url);
+    expect(windowOpenExternalUrl({ url, referrer: { url: "" } })).toBe(url);
+    expect(windowOpenExternalUrl({ url, referrer: { url: "app://preview/player/index.html?preview=1" } })).toBeNull();
+    expect(windowOpenExternalUrl({ url: "mailto:a@example.com", referrer: { url: "app://preview/" } })).toBeNull();
+    expect(windowOpenExternalUrl({ url: "https://example.com/", referrer: { url: "app://babylonslate/index.html" } })).toBeNull();
   });
   it("rejects malformed privileged arguments and filesystem escapes", () => {
     expect(() => validateIpcArguments("save-games:list", ["save-games/project/game/profile/"])).not.toThrow();
@@ -160,8 +208,8 @@ describe("packaged renderer boundary", () => {
   });
   // Git smart HTTP and LFS transfers: packs and objects as bytes, binary answers, no other shapes.
   it("accepts a bounded byte body for a POST or PUT and a binary answer through native HTTP", () => {
-    const pack = { url: "https://github.com/org/game.git/git-receive-pack", method: "POST", headers: { "Content-Type": "application/x-git-receive-pack-request" }, body: new ArrayBuffer(16), responseType: "binary", disableRedirects: true };
-    const object = { url: "https://lfs.example.com/objects/abc", method: "PUT", headers: { Authorization: "RemoteAuth token" }, body: new ArrayBuffer(0), disableRedirects: true };
+    const pack = { url: "https://github.com/org/game.git/git-receive-pack", method: "POST", headers: { "Content-Type": "application/x-git-receive-pack-request" }, body: new ArrayBuffer(16), responseType: "binary" };
+    const object = { url: "https://lfs.example.com/objects/abc", method: "PUT", headers: { Authorization: "RemoteAuth token" }, body: new ArrayBuffer(0) };
     for (const good of [pack, object, { url: pack.url, method: "GET", headers: {}, responseType: "binary" }, { ...pack, responseType: "text" }]) {
       expect(() => validateIpcArguments("lfs:fetch", [good])).not.toThrow();
     }
@@ -169,7 +217,7 @@ describe("packaged renderer boundary", () => {
       { ...pack, method: "GET" }, { ...pack, method: undefined }, { ...object, method: "DELETE" },
       { ...pack, body: new Uint8Array(16) }, { ...pack, body: [1, 2, 3] }, { ...pack, body: { byteLength: 1 } },
       { ...pack, body: { byteLength: MAX_IPC_BYTES + 1 } },
-      { ...pack, responseType: "arraybuffer" }, { ...pack, responseType: true }, { ...pack, disableRedirects: "yes" },
+      { ...pack, responseType: "arraybuffer" }, { ...pack, responseType: true },
       { ...pack, url: "http://github.com/org/game.git/git-receive-pack" },
     ]) expect(() => validateIpcArguments("lfs:fetch", [bad])).toThrow();
     // An oversized buffer is refused before any network work.

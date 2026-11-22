@@ -21,8 +21,12 @@ describe("playerHostBase", () => {
 
 describe("playerPreviewSrc", () => {
   it("requests preview mode and busts the iframe cache", () => {
-    expect(playerPreviewSrc(1234, "/BabylonSlate/")).toBe(
+    expect(playerPreviewSrc(1234, "/BabylonSlate/", null)).toBe(
       "/BabylonSlate/player/index.html?preview=1&t=1234",
     );
+  });
+
+  it("serves the desktop Preview at its own origin, apart from the editor's", () => {
+    expect(playerPreviewSrc(7, "/", "app://preview")).toBe("app://preview/player/index.html?preview=1&t=7");
   });
 });
