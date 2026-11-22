@@ -1863,6 +1863,7 @@ function initializeEngine(
     }
     if (options.playMode) {
       disablePlayFreeCam(playFreeCam);
+      refreshPositions();
       snapshots.clear();
       appliedSnapshotIdentity = null;
       lastRenderedSnapshotFrame = null;
@@ -2016,13 +2017,15 @@ function initializeEngine(
   let admittedSnapshot: ReturnType<typeof prepareSnapshot> = null;
   let snapshotAdmitted = false;
   const lastPositions: PlayActorPosition[] = [];
-  // pushSnapshot publishes positions as soon as a snapshot lands; preparing the
-  // same buffered snapshot later finds them already current.
+  // Debug readout (`lastActorPositions`): decoded on read, once per buffered snapshot, never per push or frame.
+  // A snapshot that leaves nothing to sample (cleared) keeps the positions of the last one that did; the clears
+  // read them first, so a read after a clear sees the snapshot buffered before it, as one after each push would.
   let positionsRevision = -1;
-  const publishPositions = (sampled: Parameters<typeof positionsFromSample>[0]) => {
+  const refreshPositions = () => {
     if (positionsRevision === snapshots.revision) return;
     positionsRevision = snapshots.revision;
-    positionsFromSample(sampled, lastPositions);
+    const sampled = snapshots.sample();
+    if (sampled) positionsFromSample(sampled, lastPositions);
   };
   const audioPoses: SampledAudioPose[] = [];
   const audioEmitterSlots = new Set<number>();
@@ -2247,7 +2250,6 @@ function initializeEngine(
     findWorldSpriteBatcher(scene)?.flush();
     playViz?.refresh();
     rebuildIfActiveCameraChanged(previousCamera);
-    publishPositions(sampled);
     // Pose/listener sync owns the applied snapshot, not render admission: a
     // capped or held frame must not leave spatial audio stale.
     if (audioService) {
@@ -3016,9 +3018,9 @@ function initializeEngine(
       if (disposed) return;
       if (snapshots.push(buffer)) notePlaySnapshotReceived(binding);
       appliedSnapshotIdentity = null;
-      const sampled = snapshots.sample();
-      if (sampled) publishPositions(sampled);
-      if (sampled && sampled.frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
+      // The header's frame id alone: the frame that draws it samples the rows, so a snapshot superseded before then is never decoded.
+      const frameId = snapshots.latestFrameId();
+      if (frameId !== null && frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
       if (isPublishedSnapshot(buffer)) {
         playDebugDraw?.noteSimTick(readSnapshotHeader(buffer).tickIndex);
       }
@@ -3038,6 +3040,7 @@ function initializeEngine(
       })) return;
       streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
+        refreshPositions();
         snapshots.installLayout(command.capacity, command.generation);
         appliedSnapshotIdentity = null;
         scheduler.invalidate("snapshot");
@@ -3658,7 +3661,7 @@ function initializeEngine(
     },
     scalabilityStatus: () => lastScalabilityStatus,
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
-    lastActorPositions: () => lastPositions,
+    lastActorPositions: () => { refreshPositions(); return lastPositions; },
     ...createPlayHandleInspection(binding),
     registerFonts: async (entries) => {
       await fontRegistry.registerAll(entries);
