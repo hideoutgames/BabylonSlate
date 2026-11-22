@@ -169,6 +169,9 @@ jobs:
       # Public RevenueCat Web Billing key. Unset builds show subscriptions as not set up.
       VITE_REVENUECAT_WEB_API_KEY: ${{ vars.VITE_REVENUECAT_WEB_API_KEY }}
       VITE_REVENUECAT_PRO_ENTITLEMENT: ${{ vars.VITE_REVENUECAT_PRO_ENTITLEMENT }}
+      # The editor build, packaging and native sync scripts run on the 7 GB macOS runner, whose default Node heap is
+      # about 2 GB. The editor typecheck sets its own heap per program and drops this one.
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -341,6 +344,9 @@ jobs:
       VITE_REVENUECAT_PRO_ENTITLEMENT: ${{ vars.VITE_REVENUECAT_PRO_ENTITLEMENT }}
       FASTLANE_SKIP_UPDATE_CHECK: 'true'
       FASTLANE_OPT_OUT_USAGE: 'true'
+      # The editor build, packaging and native sync scripts run on the 7 GB macOS runner, whose default Node heap is
+      # about 2 GB. The editor typecheck sets its own heap per program and drops this one.
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

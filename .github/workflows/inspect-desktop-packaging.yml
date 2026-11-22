@@ -64,6 +64,10 @@ jobs:
     if: inputs.platform == 'all' || inputs.platform == 'macos'
     runs-on: macos-26
     timeout-minutes: 60
+    env:
+      # The editor build, packaging and native sync scripts run on the 7 GB macOS runner, whose default Node heap is
+      # about 2 GB. The editor typecheck sets its own heap per program and drops this one.
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
