@@ -67,6 +67,9 @@ import {
   createProjectFromTemplate,
   normalizeTilemapPayload,
   createVfsBlobStore,
+  collectReferencedBlobs,
+  orphanedBlobCandidates,
+  sweepOrphanedBlobs,
   decodeAssetDocument,
   encodePluginSettingsDocument,
   normalizePluginSettings,
@@ -175,6 +178,24 @@ export interface ProjectLoadResult {
 }
 
 export type { PluginImportResult } from "./project-plugins";
+
+/**
+ * What Clean Unused Project Storage did: `reclaimed` (`stopped` when a write
+ * landed or the lock was busy, so files may remain for the next run),
+ * `source-control` (Git owns blob retention: nothing run), `incomplete` (an
+ * asset header could not be read: nothing removed), `linked` (a symbolic
+ * link may alias a blob folder: nothing removed), `no-project`.
+ */
+/** The manual Clean Unused Project Storage reads the referenced set again at most this many times when writes interrupt it. */
+const MANUAL_SWEEP_PASSES = 8;
+const MANUAL_SWEEP_RETRY_MS = 250;
+
+export type BlobReclaimResult =
+  | { status: "reclaimed"; files: number; bytes: number; stopped: boolean }
+  | { status: "source-control" }
+  | { status: "incomplete"; unreadable: string[] }
+  | { status: "linked" }
+  | { status: "no-project" };
 
 /**
  * Reverb results kept per Scene: an edit's, a newer edit's baked during its
@@ -372,6 +393,79 @@ export class ProjectService {
    */
   withExclusiveWrites<T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal?: AbortSignal): Promise<T> {
     return withExclusiveWriter(this.writeAdmission, this.unguardedStorage, reason, work, signal);
+  }
+
+  /**
+   * Clean Unused Project Storage: removes `assets/.blobs` files no asset
+   * names (and staged write files a killed write or download left there),
+   * each only once it is `minAgeMs` old by mtime. Never while Source Control
+   * is on or the folder is a Git working copy (`.git`): Git and Git LFS own
+   * blob retention there, and Remove Unused Files serves it.
+   *
+   * Safety: the referenced set is every header on disk (`collectReferencedBlobs`);
+   * an unreadable header or a linked folder removes nothing. Files go a few
+   * at a time, each unit under a yielding hold (`runYieldingUnit`) taken
+   * only while no write is admitted and no project write happened since the
+   * set was read (`writeEpoch`). A save, auto-save, import or encode arriving
+   * during a unit waits for it (milliseconds) and is never refused; the
+   * write then stops the sweep before its next unit. A blob written or asked
+   * for (`writeBlob`) within the grace window stays, which covers an asset
+   * written after its blobs.
+   *
+   * `automatic` (after a project opens) stops there and leaves the rest to a
+   * later run. The manual run (Project Settings) reads the set again and
+   * goes on, up to `MANUAL_SWEEP_PASSES` passes, waiting briefly while
+   * writes are busy.
+   */
+  async reclaimUnusedBlobs(options: { automatic?: boolean; signal?: AbortSignal; minAgeMs?: number; now?: () => number } = {}): Promise<BlobReclaimResult> {
+    if (!this.projectGuid) return { status: "no-project" };
+    if (await this.sourceControlOwnsBlobs()) return { status: "source-control" };
+    const sweepOptions = {
+      ...(options.minAgeMs !== undefined ? { minAgeMs: options.minAgeMs } : {}),
+      ...(options.now ? { now: options.now } : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+    };
+    const pass = async (): Promise<BlobReclaimResult> => {
+      const epoch = this.writeAdmission.writeEpoch;
+      // Cheap first look: nothing old enough that the index leaves unnamed means nothing to read further.
+      const indexed = new Set((this.assetRegistry?.list() ?? []).flatMap((entry) =>
+        entry.header.chunks.flatMap((chunk) => ("blob" in chunk.locator ? [chunk.locator.blob] : []))));
+      if ((await orphanedBlobCandidates(this.storage, indexed, sweepOptions)).length === 0) return { status: "reclaimed", files: 0, bytes: 0, stopped: false };
+      const referenced = await collectReferencedBlobs(this.storage, options.signal);
+      if (!referenced.complete) return referenced.reason === "linked" ? { status: "linked" } : { status: "incomplete", unreadable: referenced.paths };
+      const result = await sweepOrphanedBlobs(this.storage, referenced.blobs, {
+        ...sweepOptions,
+        // A write since the set was read may name a candidate: no further unit runs.
+        admit: (removeUnit) => this.writeAdmission.runYieldingUnit(
+          () => this.writeAdmission.writeEpoch === epoch,
+          () => removeUnit(this.unguardedStorage),
+        ),
+      });
+      return { status: "reclaimed", files: result.removed.length, bytes: result.bytes, stopped: result.stopped };
+    };
+    if (options.automatic) return pass();
+    let files = 0;
+    let bytes = 0;
+    for (let attempt = 1; ; attempt++) {
+      const result = await pass();
+      if (result.status !== "reclaimed") return files > 0 ? { status: "reclaimed", files, bytes, stopped: true } : result;
+      files += result.files;
+      bytes += result.bytes;
+      if (!result.stopped || attempt >= MANUAL_SWEEP_PASSES) return { status: "reclaimed", files, bytes, stopped: result.stopped };
+      await new Promise((resolve) => setTimeout(resolve, MANUAL_SWEEP_RETRY_MS));
+      options.signal?.throwIfAborted();
+    }
+  }
+
+  /** Source Control is on in `project.json`, or the folder is a Git working copy; unreadable settings count as on. */
+  private async sourceControlOwnsBlobs(): Promise<boolean> {
+    try {
+      const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as { settings?: { sourceControl?: { mode?: unknown } } };
+      if ((raw.settings?.sourceControl?.mode ?? "off") !== "off") return true;
+      return await this.storage.exists(".git");
+    } catch {
+      return true;
+    }
   }
 
   /** Save All owns one admission, even when it saves several documents after awaits. */

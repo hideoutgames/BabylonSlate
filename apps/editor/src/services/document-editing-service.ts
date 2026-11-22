@@ -13,6 +13,7 @@ import {
   diffGraphCommands,
   diffTilemapDocument,
   graphEditMergeKey,
+  journalCheckpointLine,
   PatchTilemapDocumentCommand,
   planSceneChange,
   sceneEditMergeKey,
@@ -33,6 +34,7 @@ import type { JournalBuffer } from "../lib/journal-buffer";
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { isPluginDocumentReadOnly } from "../lib/plugin-ui";
+import { editorTabContentForKind } from "../lib/scene-layer-document";
 import {
   descendantClassIds,
   prefabAssetTemplateKey,
@@ -46,6 +48,17 @@ import type { ProjectService } from "./project-service";
 import { classIdForGraphPath } from "./script-compiler";
 import type { SimulationDocumentTransaction } from "./simulation-document";
 import type { SourceControlService } from "./source-control-service";
+
+/**
+ * What Recover did: `recovered` (or found nothing to replay), `changed` (it
+ * changed nothing: these documents were edited or written since the project
+ * opened, and replaying needs `replaceChanged`), or `aborted` (the project or
+ * its authoring lock changed meanwhile, or documents are read-only).
+ */
+export type RecoveryReplayOutcome =
+  | { outcome: "recovered" }
+  | { outcome: "changed"; documents: string[] }
+  | { outcome: "aborted" };
 
 /** Scene instance sync scope; omit both lists to sync every Class and Prefab. */
 export type PrefabSyncOptions = {
@@ -90,6 +103,8 @@ export class DocumentEditingService {
   private readonly sourceControl: SourceControlService;
   private readonly journal: JournalBuffer;
   private readonly options: DocumentEditingServiceOptions;
+  /** Each recovery target's registry entry when the project opened (`noteRecoveryBase`). */
+  private readonly recoveryBase = new Map<string, unknown>();
   private prefabTemplatesCache: {
     registry: unknown;
     key: string;
@@ -393,30 +408,90 @@ export class DocumentEditingService {
    * resolving recovery when an authoring lock or another project takes over
    * during its reads, so the banner stays for a retry.
    */
-  async replayRecoveryJournal(): Promise<void> {
+  /**
+   * Records, for each document the sealed recovery records name, the registry
+   * entry of its file now (null when none): the saved base those records
+   * replay onto. Called when the project opens, right after sealing.
+   */
+  noteRecoveryBase(sealedLines: readonly string[]): void {
+    this.recoveryBase.clear();
+    const registry = this.project.registry;
+    for (const docId of new Set(resolveJournalLines(resolveClassRenameRecovery([...sealedLines], registry)).map((line) => line.docId))) {
+      const ref = parseDocumentId(docId);
+      if (ref && isAssetDocumentKind(ref.kind)) this.recoveryBase.set(docId, registry?.getByPath(ref.path) ?? null);
+    }
+  }
+
+  /** Its file was written or replaced since the project opened: the base its sealed records were made on is gone. */
+  private rewrittenSinceOpen(docId: string): boolean {
+    if (!this.recoveryBase.has(docId)) return false;
+    const ref = parseDocumentId(docId);
+    // Registry entries are replaced, never mutated, and kept when a file is indexed again unchanged.
+    return ref !== null && (this.project.registry?.getByPath(ref.path) ?? null) !== this.recoveryBase.get(docId);
+  }
+
+  /**
+   * Recover: replays the records sealed when the project opened onto each
+   * document's saved base, never onto content this session changed. A
+   * document edited since the project opened (unsaved), or whose file was
+   * written since, makes the replay stop before changing anything and answer
+   * `changed` with their labels, unless `replaceChanged`: then an edited one
+   * is reloaded from its file first (its edits since opening are lost, as the
+   * caller confirmed) and a rewritten one's records are dropped (its base is
+   * gone). Replayed documents lose their Undo history (recovered edits cannot
+   * be undone, and history recorded on other content no longer applies).
+   *
+   * The journal then gets one checkpoint record per recovered document (its
+   * whole recovered content), written before the sealed records are discarded:
+   * a crash at any point recovers either the sealed records or the checkpoint,
+   * and no record written since the project opened can replay ahead of or
+   * onto them. Records that could not be replayed (a missing document, an
+   * unreadable line) keep the sealed segments, which rejoin the live journal.
+   */
+  async replayRecoveryJournal(options: { replaceChanged?: boolean } = {}): Promise<RecoveryReplayOutcome> {
     const authoring = this.documents.getAuthoringLock();
-    if (authoring.readOnly) return;
+    if (authoring.readOnly) return { outcome: "aborted" };
     const guid = this.project.guid;
-    if (!guid) return;
+    if (!guid) return { outcome: "aborted" };
     const current = () => this.documents.getAuthoringLock() === authoring && this.project.guid === guid;
     const derived = await this.options.derivedStorage();
     const lines = resolveClassRenameRecovery(
       await readSealedJournalLines(derived, guid),
       this.project.registry,
     );
-    if (!current()) return;
+    if (!current()) return { outcome: "aborted" };
     if (lines.length === 0) {
       await discardSealedJournal(derived, guid);
       this.options.onRecoveryResolved();
-      return;
+      return { outcome: "recovered" };
+    }
+
+    const targets = [...new Set(resolveJournalLines(lines).map((line) => line.docId))].filter((docId) => {
+      const ref = parseDocumentId(docId);
+      return ref !== null && isAssetDocumentKind(ref.kind);
+    });
+    const rewritten = new Set(targets.filter((docId) => this.rewrittenSinceOpen(docId)));
+    const edited = targets.filter((docId) => !rewritten.has(docId) && this.documents.getDocument(docId)?.dirty === true);
+    if ((rewritten.size > 0 || edited.length > 0) && !options.replaceChanged) {
+      const label = (docId: string) => this.documents.getDocument(docId)?.ref.label ?? parseDocumentId(docId)?.path ?? docId;
+      return { outcome: "changed", documents: [...rewritten, ...edited].map(label).sort() };
+    }
+    // Pre-open records never replay onto this session's edits: those documents start again from their files.
+    for (const docId of edited) {
+      const doc = this.documents.getDocument(docId);
+      if (!doc || !isAssetDocumentKind(doc.ref.kind)) continue;
+      const loaded = await this.project.loadDocument(doc.ref.kind, doc.ref.path);
+      if (!current()) return { outcome: "aborted" };
+      this.documents.replaceLoadedContent(docId, editorTabContentForKind(doc.ref.kind, loaded) as DocumentContent);
+      this.editSession.dropDocument(docId);
     }
 
     // Ensure every journal target document is open so replay is not skipped.
     // Resolved ids follow renames, so a renamed document opens at its new path.
-    for (const { docId } of resolveJournalLines(lines)) {
-      if (!current()) return;
-      const ref = parseDocumentId(docId);
-      if (!ref || !isAssetDocumentKind(ref.kind)) continue;
+    for (const docId of targets) {
+      if (!current()) return { outcome: "aborted" };
+      if (rewritten.has(docId)) continue;
+      const ref = parseDocumentId(docId)!;
       if (this.documents.getState().openDocuments.get(docId)?.content != null) continue;
       const { kind, path } = ref;
       try {
@@ -431,11 +506,12 @@ export class DocumentEditingService {
       }
     }
 
-    if (!current()) return;
+    if (!current()) return { outcome: "aborted" };
 
+    // Every target is clean here (reloaded, or never edited), so its content is its saved base.
     const openDocs = new Map<string, DocumentContent>();
     for (const doc of this.documents.getOpenDocumentsOrdered()) {
-      if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
+      if (isAssetDocumentKind(doc.ref.kind) && doc.content && !rewritten.has(doc.id)) {
         openDocs.set(doc.id, doc.content);
       }
     }
@@ -444,6 +520,7 @@ export class DocumentEditingService {
     if (malformed.length > 0) {
       console.warn(`[journal] ${malformed.length} unreadable recovery record(s) could not be replayed`);
     }
+    const recovered: string[] = [];
     for (const [id, content] of documents) {
       const doc = this.documents.getDocument(id);
       if (!doc || doc.content === content) continue;
@@ -455,19 +532,36 @@ export class DocumentEditingService {
       } else {
         this.documents.updateAssetDocument(id, content as Record<string, unknown>, "compare");
       }
+      // History recorded before the replay describes other content.
+      this.editSession.dropDocument(id);
+      if (this.documents.getDocument(id)?.dirty) recovered.push(id);
     }
+    // Dropped on purpose: their files changed since the project opened.
+    const unreplayed = skipped.filter((line) => !rewritten.has(line.docId));
     // Undo can leave the journal at the saved content. There is nothing to
     // save in that case, so retire the replayed records without a no-op edit.
-    // Otherwise they rejoin the live journal, so a crash before the next save
-    // still recovers them; skipped or unreadable ones stay until that save too.
     // Decided in the tick that applied the replay, so no save sits between.
-    const settled = skipped.length === 0 &&
+    const settled = unreplayed.length === 0 &&
       malformed.length === 0 &&
       this.documents.getDirtyDocuments().length === 0 &&
       !this.options.isProjectDirty();
-    await (settled ? discardSealedJournal(derived, guid) : unsealJournal(derived, guid));
+    if (settled) {
+      await discardSealedJournal(derived, guid);
+    } else {
+      const at = new Date().toISOString();
+      for (const id of recovered) this.journal.append(guid, journalCheckpointLine(id, this.documents.getDocument(id)!.content, at));
+      try {
+        await this.journal.flush(guid, { rejectOnError: true });
+        // The checkpoints stand for the recovered documents; only records that could not be replayed keep the sealed segments.
+        await (unreplayed.length === 0 && malformed.length === 0 ? discardSealedJournal(derived, guid) : unsealJournal(derived, guid));
+      } catch {
+        // No checkpoint is stored: the sealed records stay sealed, so a crash offers them again (onto files a save may have changed,
+        // which the next open's base check catches) rather than losing them. The failure is reported by the buffer.
+      }
+    }
     this.options.onRecoveryResolved();
     this.options.bump();
+    return { outcome: "recovered" };
   }
 
   /** Tell the user once per gesture when an edit could not reach Undo history. */

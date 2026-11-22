@@ -152,6 +152,13 @@ export interface ProjectStorage {
   /** False only for a missing path; rejects on permission, I/O or invalid-path failures. */
   exists(path: string): Promise<boolean>;
   readdir(path: string): Promise<DirEntry[]>;
+  /**
+   * The staged write files (`.haptic-<uuid>.tmp`) directly in `path`, with
+   * their stats: what `readdir` leaves out. A killed app or native transfer
+   * can leave one; reclaiming them (blob folders) is its only use. Adapters
+   * that never leave one, or cannot list them, omit it.
+   */
+  listStagedWrites?(path: string): Promise<DirEntry[]>;
   mkdir(path: string, recursive?: boolean): Promise<void>;
   /** Rejects with `StorageNotFoundError` when the path is already missing. */
   remove(path: string): Promise<void>;

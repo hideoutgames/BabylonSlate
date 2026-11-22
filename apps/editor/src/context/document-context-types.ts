@@ -46,7 +46,7 @@ import type { AssetThumbnailWriteIdentity } from "../lib/asset-thumbnail-revisio
 import type { DocumentAuthoringLock, DocumentService, DocumentIdentityListener, OpenDocument } from "../services/document-service";
 import type { DocumentTransitionGate } from "../services/document-transition-gate";
 import type { PlayScriptCompileOptions } from "../services/play-content-service";
-import type { PluginImportResult, ProjectService } from "../services/project-service";
+import type { BlobReclaimResult, PluginImportResult, ProjectService } from "../services/project-service";
 import type { SimulationDocumentTransaction } from "../services/simulation-document";
 import type { SourceControlService } from "../services/source-control-service";
 import type { SourceControlSyncService, TransferMonitor } from "../services/source-control-sync";
@@ -95,12 +95,17 @@ export type CloseProjectResult =
  * How a Save All ended. `saved` wrote everything; `locked` wrote everything
  * except documents someone else holds a source control lock on, which stay
  * unsaved. Nothing was written for `authoring-locked` (Play or a Simulation
- * holds the project) or `no-document` (no project is open).
+ * holds the project), `recovery-pending` (the recovery choice is still open:
+ * a save now would move the saved base the recovered edits replay onto) or
+ * `no-document` (no project is open).
  */
-export type SaveAllOutcome = "saved" | "locked" | "authoring-locked" | "no-document";
+export type SaveAllOutcome = "saved" | "locked" | "authoring-locked" | "recovery-pending" | "no-document";
 
 /** What a Save All the user asked for was for: Play and Preview Build cannot start while documents stay unsaved. */
 export type SaveFailedPurpose = "save" | "play" | "preview";
+
+/** `recoveryNotice`: documents changed since the project opened (by label), or a journal that could not be read. */
+export type RecoveryNotice = { kind: "changed"; documents: string[] } | { kind: "unreadable" };
 
 /** The documents a Save All left unsaved because someone else has locked them, each with its lock's holder. */
 export interface SaveFailed {
@@ -193,6 +198,8 @@ export interface DocumentContextValue {
   /** Writes a file of a project's editor state in derived storage. */
   writeProjectDerivedText: (projectGuid: string, name: string, text: string) => Promise<void>;
   retryFailedTextureEncoding: () => Promise<number>;
+  /** Project Settings' Clean Unused Project Storage, as the project's only writer (`ProjectService.reclaimUnusedBlobs`). */
+  reclaimUnusedProjectStorage: () => Promise<BlobReclaimResult>;
   prepareAreaEmission: ProjectService["prepareAreaEmission"];
   /** Converts an environment Texture's kept `.hdr` again at another Face Size; false when nothing was written. */
   reconvertHdrEnvironment: ProjectService["reconvertHdrEnvironment"];
@@ -228,6 +235,19 @@ export interface DocumentContextValue {
   listedProjects: ListedProject[];
   needsReconnect: boolean;
   recoveryAvailable: boolean;
+  /**
+   * What the recovery prompt must say besides its offer: Recover found
+   * documents edited or saved since the project opened (`changed`, nothing
+   * replayed yet), or the last session's records could not be read when the
+   * project opened (`unreadable`, they were discarded).
+   */
+  recoveryNotice: RecoveryNotice | null;
+  /**
+   * Crash recovery stopped recording edits (storage stayed full, or too many
+   * records failed to write): a crash now loses the edits since, until a Save
+   * All leaves nothing unsaved.
+   */
+  journalPaused: boolean;
   /** Open documents with unsaved edits. */
   dirtyDocuments: OpenDocument[];
   projectDirty: boolean;
@@ -298,7 +318,14 @@ export interface DocumentContextValue {
   }) => Promise<Result<ExportArtifact, string>>;
   zipExportedGame: (artifact: ExportArtifact) => Promise<Uint8Array>;
   dismissRecovery: () => Promise<void>;
-  keepRecovery: () => void;
+  /**
+   * Recover Edits. With `replaceChanged` it goes ahead over documents edited
+   * or saved since the project opened, after the user confirmed
+   * (`recoveryNotice` `changed`).
+   */
+  keepRecovery: (options?: { replaceChanged?: boolean }) => void;
+  /** Closes `recoveryNotice` (its Cancel or OK). */
+  dismissRecoveryNotice: () => void;
   openDocument: (ref: DocumentRef) => Promise<void>;
   /** Loads a canonical working document without creating or activating a tab. */
   ensureAssetDocument: (ref: DocumentRef) => Promise<string>;
@@ -621,7 +648,7 @@ export type ActiveDocumentState = Pick<
  * (with the same labels) are dirty, so further edits of an already dirty
  * document do not change it.
  */
-export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus" | "recoveryAvailable">;
+export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus" | "recoveryAvailable" | "journalPaused">;
 /** `useCompileState()`: compile staleness. */
 export type CompileState = Pick<DocumentContextValue, "graphsNeedCompile">;
 /** `useEditorShellState()`: Homepage, recovery, prompts and thumbnails. */
@@ -630,6 +657,7 @@ export type EditorShellState = Pick<
   | "listedProjects"
   | "needsReconnect"
   | "recoveryAvailable"
+  | "recoveryNotice"
   | "saveFailed"
   | "templates"
   | "homepageReady"

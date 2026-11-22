@@ -321,6 +321,29 @@ export class NodeStorageAdapter implements ProjectStorage {
     return out;
   }
 
+  /** Staged write files directly in `path` (regular files only, never a link), which `readdir` leaves out. */
+  async listStagedWrites(path: string): Promise<DirEntry[]> {
+    const { full } = await this.resolvePath(path, true);
+    let entries: Dirent[];
+    try {
+      entries = await readdir(full, { withFileTypes: true });
+    } catch (error) {
+      throw nodeStorageError(error, path);
+    }
+    const out: DirEntry[] = [];
+    for (const e of entries) {
+      if (!e.isFile() || !isStagedWrite(e.name)) continue;
+      try {
+        const s = await stat(join(full, e.name));
+        out.push({ name: e.name, isDir: false, size: s.size, mtime: s.mtimeMs });
+      } catch (error) {
+        // Renamed into place or removed after it was listed.
+        if (errorCode(error) !== "ENOENT") throw error;
+      }
+    }
+    return out;
+  }
+
   async mkdir(path: string, recursive = true): Promise<void> {
     await mkdir((await this.resolvePath(path)).full, { recursive });
   }

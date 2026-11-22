@@ -80,6 +80,7 @@ import {
   SettingsSection,
   SettingsSectionsProvider,
 } from "./settings-section";
+import { ProjectStorageCleanup } from "./project-storage-cleanup";
 import { useSettingsSectionsHost } from "./use-settings-sections";
 import {
   ENGINE_CATEGORIES,
@@ -451,6 +452,9 @@ export function SettingsModal({
                 data-testid="settings-autosave-interval"
               />
             </Field>
+          </SettingsSection>
+          <SettingsSection id="storage" title="Storage">
+            <ProjectStorageCleanup sourceControlOn={(projectDocument.settings.sourceControl?.mode ?? "off") !== "off"} />
           </SettingsSection>
           <SettingsSection id="scripting" title="Scripting">
               <Field orientation="horizontal" className="settings-field">

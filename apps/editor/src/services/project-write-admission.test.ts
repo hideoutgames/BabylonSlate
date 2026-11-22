@@ -110,4 +110,40 @@ describe("project write admission", () => {
     expect(admission.locked).toBe(true);
     lease.release();
   });
+
+  it("makes admissions and guarded writes wait for a yielding unit, never refusing them, and runs a unit only when idle", async () => {
+    const raw = new MemoryStorageAdapter("documents");
+    await raw.openDocumentsProject("Writes");
+    const admission = new ProjectWriteAdmission();
+    const internal = guardProjectStorage(raw, admission, true);
+    const publicStorage = guardProjectStorage(raw, admission);
+    const order: string[] = [];
+    let finishUnit!: () => void;
+    const unitDone = new Promise<void>(resolve => { finishUnit = resolve; });
+    const unit = admission.runYieldingUnit(() => true, async () => {
+      order.push("unit start");
+      await unitDone;
+      order.push("unit end");
+    });
+    const admitted = admission.run(async () => { order.push("save"); });
+    const written = Promise.all([internal.writeText("a", "1"), publicStorage.writeText("b", "2")]).then(() => order.push("writes"));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(order).toEqual(["unit start"]);
+    finishUnit();
+    expect(await unit).toBe(true);
+    await Promise.all([admitted, written]);
+    expect(order).toEqual(["unit start", "unit end", "save", "writes"]);
+
+    // Busy or stale: the unit does not run.
+    let release!: () => void;
+    const busy = admission.run(() => new Promise<void>(resolve => { release = resolve; }));
+    expect(await admission.runYieldingUnit(() => true, async () => { order.push("ran while busy"); })).toBe(false);
+    release();
+    await busy;
+    expect(await admission.runYieldingUnit(() => false, async () => { order.push("ran while stale"); })).toBe(false);
+    const lease = admission.lock("Simulating");
+    expect(await admission.runYieldingUnit(() => true, async () => { order.push("ran while locked"); })).toBe(false);
+    lease.release();
+    expect(order).not.toContain("ran while busy");
+  });
 });

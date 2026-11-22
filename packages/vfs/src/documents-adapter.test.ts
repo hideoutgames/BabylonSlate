@@ -74,6 +74,72 @@ describe("DocumentsStorageAdapter", () => {
     expect(write).toHaveBeenCalledTimes(3);
   });
 
+  it.each(["writeText", "writeBinary"] as const)("keeps the old file whole and leaves no staged file when %s fails part way", async (method) => {
+    await storage.openDocumentsProject("Atomic.hproject");
+    await storage.writeText("project.json", "old");
+    const write = fs.writeFile.bind(fs);
+    // A full disk: the first bytes land, then the write fails.
+    vi.spyOn(fs, "writeFile").mockImplementation(async (options) => {
+      await write({ ...options, data: options.encoding ? options.data.slice(0, 1) : btoa("n") });
+      throw Object.assign(new Error("No space left on device"), { code: "OS-PLUG-FILE-0013" });
+    });
+    const replacement = method === "writeText" ? storage.writeText("project.json", "new contents") : storage.writeBinary("project.json", new TextEncoder().encode("new contents"));
+    await expect(replacement).rejects.toThrow(/space/);
+    expect(await storage.readText("project.json")).toBe("old");
+    expect([...fs.tree.keys()].filter((key) => key.startsWith("BabylonSlate/projects/Atomic.hproject/"))).toEqual(["BabylonSlate/projects/Atomic.hproject/project.json"]);
+  });
+
+  describe("a project.json replacement a killed app left half done", () => {
+    const ROOT = "BabylonSlate/projects/Killed.hproject";
+    const STAGED = ".haptic-0f8fad5b-d9cb-469f-a165-70867728950e.tmp";
+    const MARKER = ".haptic-7c9e6679-7425-40de-944b-e07fc1f90ae7.tmp";
+    const text = (value: string) => new TextEncoder().encode(value);
+
+    /** The state a kill leaves between iOS's rename removing project.json and moving the staged file: the new bytes and their marker. */
+    async function killedMidRename(projectJson: string | null) {
+      await storage.openDocumentsProject("Killed.hproject");
+      await storage.writeText("project.json", "old");
+      fs.tree.set(`${ROOT}/${STAGED}`, { kind: "file", data: text("new") });
+      fs.tree.set(`${ROOT}/${MARKER}`, { kind: "file", data: text(JSON.stringify({ target: "project.json", staged: STAGED })) });
+      if (projectJson === null) fs.tree.delete(`${ROOT}/project.json`);
+      const reopened = new DocumentsStorageAdapter(fs);
+      await reopened.openKnownFolder({ id: "documents:Killed.hproject", name: "Killed.hproject", tier: "documents" });
+      return reopened;
+    }
+
+    it("is finished on the next open from its marker: the complete staged file becomes project.json", async () => {
+      const reopened = await killedMidRename(null);
+      expect(await reopened.readText("project.json")).toBe("new");
+      expect([...fs.tree.keys()].filter((key) => key.startsWith(`${ROOT}/`))).toEqual([`${ROOT}/project.json`]);
+    });
+
+    it("leaves a project.json still there as it is and removes the leftovers", async () => {
+      const reopened = await killedMidRename("old");
+      expect(await reopened.readText("project.json")).toBe("old");
+      expect([...fs.tree.keys()].filter((key) => key.startsWith(`${ROOT}/`))).toEqual([`${ROOT}/project.json`]);
+    });
+
+    it("leaves no marker behind a write that finishes", async () => {
+      await storage.openDocumentsProject("Clean.hproject");
+      const write = vi.spyOn(fs, "writeFile");
+      await storage.writeText("project.json", "saved");
+      // The staged bytes, then the marker naming them.
+      expect(write).toHaveBeenCalledTimes(2);
+      expect([...fs.tree.keys()].filter((key) => key.startsWith("BabylonSlate/projects/Clean.hproject/"))).toEqual(["BabylonSlate/projects/Clean.hproject/project.json"]);
+    });
+  });
+
+  it("replaces a file through a staged sibling it renames into place", async () => {
+    await storage.openDocumentsProject("Staged.hproject");
+    await storage.writeText("project.json", "old");
+    const rename = vi.spyOn(fs, "rename");
+    await storage.writeBinary("project.json", new TextEncoder().encode("new"));
+    expect(await storage.readText("project.json")).toBe("new");
+    expect(rename).toHaveBeenCalledTimes(1);
+    expect(rename.mock.calls[0]![0].from).toMatch(/^BabylonSlate\/projects\/Staged\.hproject\/\.haptic-[0-9a-f-]{36}\.tmp$/);
+    expect((await storage.readdir("")).map((entry) => entry.name)).toEqual(["project.json"]);
+  });
+
   it("round-trips a payload larger than one base64 encoding chunk", async () => {
     await storage.openDocumentsProject("Large.hproject");
     const bytes = Uint8Array.from({ length: 70_001 }, (_, index) => (index * 31) % 256);

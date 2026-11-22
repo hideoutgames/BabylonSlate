@@ -92,9 +92,16 @@ export function fixedCredential(credential: HostCredential): CredentialSource {
   return { current: async () => credential, renew: async () => null };
 }
 
+/** Base64 of the UTF-8 bytes of `text` (RFC 7617's charset); `btoa` alone refuses anything beyond Latin-1. */
+function utf8Base64(text: string): string {
+  let binary = "";
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 function authorization(credential: HostCredential, scheme: "basic" | "bearer"): string {
   return scheme === "basic"
-    ? `Basic ${btoa(`${credential.username}:${credential.token}`)}`
+    ? `Basic ${utf8Base64(`${credential.username}:${credential.token}`)}`
     : `Bearer ${credential.token}`;
 }
 

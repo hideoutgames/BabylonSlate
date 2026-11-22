@@ -1031,7 +1031,7 @@ describe("DocumentProvider actions and route", () => {
     let closing!: Promise<boolean>;
     act(() => { closing = actions.forceCloseProject(); });
     await act(async () => { resolve(false); expect(await closing).toBe(false); });
-    expect(documents().route).toBe("editor");
+    expect(seen.route).toBe("editor");
     expect(openScene(MAIN_SCENE_ID)).toBe(original);
     act(() => actions.closeDocument(MAIN_SCENE_ID));
     await act(async () => { resolve(true); await Promise.resolve(); });
@@ -1150,41 +1150,112 @@ describe("DocumentProvider actions and route", () => {
 
   const settleJournal = () => act(() => new Promise((resolve) => setTimeout(resolve, JOURNAL_FLUSH_DELAY_MS * 2)));
 
-  it("keeps edits the last session never saved through saves and a clean close, and Recover replays only them", async () => {
+  it("writes nothing while the recovery choice is open, keeps the offer through a close, and replays onto the original saved file", async () => {
     const actions = await openProject();
     const { derived, guid, original, unsaved, reopen } = await reopenAfterUnsavedSession(actions, "Recovered Name");
     expect(documents().recoveryAvailable).toBe(true);
+    const storage = new OpfsStorageAdapter();
+    await storage.openDocumentsProject("Stable");
+    const savedBytes = await storage.readBinary(MAIN_SCENE_FILE);
 
-    // Edits since the reopen are journaled, and their own save truncates them.
-    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 5)));
-    await settleJournal();
-    expect(await readJournalLines(derived, guid)).toHaveLength(2);
-    expect(await act(() => actions.saveAll())).toBe("saved");
-    expect(documents().dirtyDocuments).toEqual([]);
-    expect(documents().recoveryAvailable).toBe(true);
-    expect(await readJournalLines(derived, guid)).toEqual([unsaved]);
+    // An open-time automatic update (as a Prefab sync makes) leaves the Scene dirty: neither Save All nor Auto-Save writes it.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 5)));
+      expect(await act(() => actions.saveAll())).toBe("recovery-pending");
+      await act(() => vi.advanceTimersByTimeAsync(240_000));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(documents().autoSaveStatus).toBeNull();
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(savedBytes);
 
-    // A clean close does not settle the offer either: it returns on reopen.
-    expect((await act(() => actions.closeProject())).outcome).toBe("closed");
-    expect(await readJournalLines(derived, guid)).toEqual([unsaved]);
+    // Closing without the choice keeps the offer: it returns on reopen, and the file is still the original.
+    await act(() => actions.forceCloseProject());
+    expect(await readJournalLines(derived, guid)).toContain(unsaved);
     await reopen();
     expect(documents().recoveryAvailable).toBe(true);
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(savedBytes);
 
-    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+    // The last session's rename is never replayed onto an edit made since this open: Recover asks first.
+    const saved = openScene(MAIN_SCENE_ID);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(saved, 2)));
     act(() => actions.keepRecovery());
+    await waitFor(() => expect(documents().recoveryNotice).toEqual({ kind: "changed", documents: [openSceneLabel()] }));
+    expect(documents().recoveryAvailable).toBe(true);
+    expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position[0]).toBe(saved.actors[0]!.transform.position[0] + 2);
+
+    // Confirmed, the rename replays onto the original saved file, replacing what changed since opening.
+    act(() => actions.keepRecovery({ replaceChanged: true }));
     await waitFor(() => expect(documents().recoveryAvailable).toBe(false));
+    expect(documents().recoveryNotice).toBeNull();
     const recovered = openScene(MAIN_SCENE_ID);
     expect(recovered.name).toBe("Recovered Name");
-    // The saved +5 and the unsaved +2 each count once.
-    expect(recovered.actors[0]!.transform.position[0]).toBe(original.actors[0]!.transform.position[0] + 7);
+    expect(recovered.actors[0]!.transform.position[0]).toBe(original.actors[0]!.transform.position[0]);
     expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
 
-    // The replayed edits stay journaled until saved, each exactly once.
+    // One checkpoint of the recovered Scene stands for the sealed records until saved.
     await settleJournal();
-    expect(await readJournalLines(derived, guid)).toHaveLength(2);
+    const kept = resolveJournalLines(await readJournalLines(derived, guid));
+    expect(kept.map((line) => [line.docId, line.command.type])).toEqual([[MAIN_SCENE_ID, "document.checkpoint"]]);
     expect(await act(() => actions.saveAll())).toBe("saved");
+    expect(await storage.readBinary(MAIN_SCENE_FILE)).not.toEqual(savedBytes);
     await settleJournal();
     expect(await readJournalLines(derived, guid)).toEqual([]);
+  });
+
+  it("starts the Auto-Save the recovery choice held once it is made", async () => {
+    const actions = await openProject();
+    await reopenAfterUnsavedSession(actions, "Recovered Name");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+      await act(() => vi.advanceTimersByTimeAsync(120_000));
+      expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
+      await act(() => actions.dismissRecovery());
+      expect(documents().recoveryAvailable).toBe(false);
+      await act(() => vi.advanceTimersByTimeAsync(120_000));
+      for (let i = 0; i < 1_000 && documents().autoSaveStatus?.state !== "saved"; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(100);
+          await new Promise((resolve) => setImmediate(resolve));
+        });
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(documents().autoSaveStatus).toEqual({ state: "saved" });
+    expect(documents().dirtyDocuments).toEqual([]);
+  });
+
+  it("opens a project whose recovery journal cannot be read, discards it and says so", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    const guid = documents().projectGuid!;
+    const listed = documents().listedProjects.find(project => project.label === "Stable")!;
+    await act(() => actions.forceCloseProject());
+    const derived = await createDerivedStorage();
+    // Unreadable: the seal marker's path holds a folder, so sealing the journal fails.
+    await appendJournalLines(derived, guid, ["{}"]);
+    await derived.mkdir(`derived/${guid}/journal/sealed.json`, true);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await act(() => actions.openListedProject(listed));
+    } finally {
+      error.mockRestore();
+    }
+    expect(seen.route).toBe("editor");
+    expect(documents().recoveryAvailable).toBe(false);
+    expect(documents().recoveryNotice).toEqual({ kind: "unreadable" });
+    expect(await derived.exists(`derived/${guid}/journal`)).toBe(false);
+    // The session journals again from the files it opened.
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    await settleJournal();
+    expect(await readJournalLines(derived, guid)).toHaveLength(1);
+    act(() => actions.dismissRecoveryNotice());
+    expect(documents().recoveryNotice).toBeNull();
   });
 
   it("discards only the edits of the last session and keeps the ones made since the reopen", async () => {
@@ -1462,7 +1533,7 @@ describe("DocumentProvider actions and route", () => {
       expect(gate).not.toHaveBeenCalled();
       expect(await act(() => actions.forceCloseProject())).toBe(false);
       expect(gate).toHaveBeenCalledWith({ kind: "close-project" });
-      expect(documents().route).toBe("editor");
+      expect(seen.route).toBe("editor");
     } finally {
       unregister();
     }
@@ -1488,7 +1559,7 @@ describe("DocumentProvider actions and route", () => {
       expect(await act(() => actions.closeProject())).toMatchObject({
         outcome: "unsaved", dirty: [expect.objectContaining({ id: MAIN_SCENE_ID })], projectDirty: false,
       });
-      expect(documents().route).toBe("editor");
+      expect(seen.route).toBe("editor");
       expect(openScene(MAIN_SCENE_ID)).toEqual(session.kept());
     } finally {
       session.unregister();
@@ -1536,7 +1607,7 @@ describe("DocumentProvider actions and route", () => {
       await waitFor(() => expect(write).toHaveBeenCalled());
       act(() => { closing = actions.forceCloseProject(); });
       await act(async () => { await Promise.resolve(); });
-      expect(documents().route).toBe("editor");
+      expect(seen.route).toBe("editor");
       await act(async () => {
         releaseWrite();
         expect(await saving).toBe("saved");
@@ -1812,6 +1883,38 @@ describe("DocumentProvider Save All and files someone else has locked", () => {
     expect(documents().saveFailed?.purpose).toBe("play");
   });
 
+  it("settles each document it wrote when a later one fails on a full disk, and names the full disk", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const stats = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "DataDefinition", name: "Stats" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.openDocument({ kind: "data-definition", path: stats.path, label: "Stats Data Definition" }));
+    await act(() => actions.saveAll());
+    const statsId = documentId({ kind: "data-definition", path: stats.path });
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 3)));
+    await act(() => actions.applyAssetDocumentChange(statsId, {
+      kind: "dataDefinition", fields: [{ id: "hp", name: "HP", typeId: "number", defaultValue: 10 }],
+    }));
+    await settleJournal();
+    const saveDocument = ProjectService.prototype.saveDocument;
+    const save = vi.spyOn(ProjectService.prototype, "saveDocument").mockImplementation(function (this: ProjectService, ...args) {
+      if (args[1] === stats.path) return Promise.reject(new DOMException("The quota has been exceeded.", "QuotaExceededError"));
+      return saveDocument.apply(this, args);
+    });
+    try {
+      await expect(act(() => actions.saveAll())).rejects.toThrow(/not enough storage space/i);
+    } finally {
+      save.mockRestore();
+    }
+    // Main was written: clean, and its records discarded so a crash never replays them onto the saved file.
+    expect(dirtyIds()).toEqual([statsId]);
+    await settleJournal();
+    expect(await recoverable()).toEqual([statsId]);
+    expect(await act(() => actions.saveAll())).toBe("saved");
+    expect(dirtyIds()).toEqual([]);
+  });
+
   it("lets Auto-Save skip the locked document quietly, with no prompt and no paused error", async () => {
     const { actions } = await editsWithMainLocked();
     // The edits' interval restarts under fake timers.
@@ -2058,7 +2161,8 @@ describe("DocumentProvider closed document history", () => {
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
     await act(() => actions.saveAll());
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const save = vi.spyOn(ProjectService.prototype, "saveProject").mockRejectedValueOnce(new Error("Storage unavailable"));
+    // The Scene's own write fails, so its edit stays unsaved (one written before a later failure is clean).
+    const save = vi.spyOn(ProjectService.prototype, "saveDocument").mockRejectedValueOnce(new Error("Storage unavailable"));
     // Fire the debounce, then let the save's own timers and storage I/O run
     // until it settles; a real macrotask per step lets slow I/O finish.
     const runAutoSave = async () => {

@@ -409,6 +409,64 @@ describe("DocumentEditingService", () => {
     warn.mockRestore();
   });
 
+  describe("recovery of the last session's edits", () => {
+    /** Main open from its file, with the last session's rename sealed and noted as the open-time base. */
+    async function sealedRename() {
+      const derived = new MemoryStorageAdapter("documents");
+      await derived.openDocumentsProject("derived-root");
+      const harness = createEditing({ derivedStorage: async () => derived });
+      // The registry's entry for Main's file: replaced when the file is written.
+      const entries = new Map<string, object>([[MAIN_SCENE_FILE, {}]]);
+      (harness.project as unknown as { registry: unknown }).registry = { getByPath: (path: string) => entries.get(path), getByGuid: () => undefined, list: () => [] };
+      await harness.open(SCENE_REF, createDefaultScene("2d"));
+      const saved = harness.documents.getDocument(SCENE_ID)!.content as SerializedScene;
+      const line = serializeJournalLine({
+        v: 1, docId: SCENE_ID, at: "2026-10-11T10:00:00Z",
+        command: commandToJournalPayload(new SetSceneNameCommand(saved.name, "Recovered")),
+      });
+      await appendJournalLines(derived, "project-guid", [line]);
+      await sealJournalForRecovery(derived, "project-guid");
+      harness.editing.noteRecoveryBase([line]);
+      return { ...harness, derived, entries, saved, line };
+    }
+
+    it("never replays the sealed edits onto an edit made since the project opened until told to replace it", async () => {
+      const { documents, editing, editSession, derived, saved, line, journaled } = await sealedRename();
+      const edited = structuredClone(saved);
+      edited.actors[0]!.transform.position[0] += 5;
+      expect(await editing.applySceneChange(SCENE_ID, edited)).toBe(true);
+
+      expect(await editing.replayRecoveryJournal()).toEqual({ outcome: "changed", documents: ["Main Scene"] });
+      // Nothing changed: the edit, its history and the sealed records stay.
+      expect(documents.getDocument(SCENE_ID)!.content).toEqual(edited);
+      expect(editSession.canUndo(SCENE_ID)).toBe(true);
+      expect(await readJournalLines(derived, "project-guid")).toEqual([line]);
+
+      expect(await editing.replayRecoveryJournal({ replaceChanged: true })).toEqual({ outcome: "recovered" });
+      const recovered = documents.getDocument(SCENE_ID)!.content as SerializedScene;
+      // Replayed onto the saved file: renamed, without the edit made since opening.
+      expect(recovered.name).toBe("Recovered");
+      expect(recovered.actors[0]!.transform.position).toEqual(saved.actors[0]!.transform.position);
+      expect(documents.getDocument(SCENE_ID)!.dirty).toBe(true);
+      expect(editSession.canUndo(SCENE_ID)).toBe(false);
+      // A checkpoint of the recovered Scene stands for the sealed records, which are gone.
+      expect((await journaled()).at(-1)).toEqual({ docId: SCENE_ID, type: "document.checkpoint" });
+      expect(await readJournalLines(derived, "project-guid")).toEqual([]);
+    });
+
+    it("drops, only when told to, the sealed edits of a document whose file was saved since the project opened", async () => {
+      const { documents, editing, derived, entries, saved, line } = await sealedRename();
+      // Saved since opening: the registry indexes a new entry for the file.
+      entries.set(MAIN_SCENE_FILE, {});
+      expect(await editing.replayRecoveryJournal()).toEqual({ outcome: "changed", documents: ["Main Scene"] });
+      expect(await readJournalLines(derived, "project-guid")).toEqual([line]);
+
+      expect(await editing.replayRecoveryJournal({ replaceChanged: true })).toEqual({ outcome: "recovered" });
+      expect((documents.getDocument(SCENE_ID)!.content as SerializedScene).name).toBe(saved.name);
+      expect(await readJournalLines(derived, "project-guid")).toEqual([]);
+    });
+  });
+
   it("does not replay a project's recovery journal into another project opened during the read", async () => {
     const derived = new MemoryStorageAdapter("documents");
     await derived.openDocumentsProject("derived-root");

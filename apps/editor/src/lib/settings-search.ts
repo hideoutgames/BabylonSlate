@@ -33,6 +33,7 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
       ["Autosave", "settings-autosave"],
       ["Autosave Interval", "settings-autosave-interval"],
     ]],
+    ["storage", "Storage", [["Clean Unused Project Storage", "clean-unused-project-storage"]]],
     ["scripting", "Scripting", [
       ["Compile On Save", "settings-compile-on-save"],
       ["Infinite Loop Detection", "settings-infinite-loop-detection"],
