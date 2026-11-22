@@ -54,4 +54,13 @@ describe("desktop content security policies", () => {
     expect(copies).toHaveLength(1);
     expect(copies[0]![1]).toBe(playerContentSecurityPolicy("'none'"));
   });
+
+  // The web package ships no policy; the hosting page tells hosts which one to set. A host's policy cannot know who
+  // embeds the game, so the page leaves out frame-ancestors and must otherwise match the native games' policy.
+  it("gives the web hosting page the native games' policy without frame-ancestors", () => {
+    const page = readFileSync(fileURLToPath(new URL("../../../docs/publishing/web-hosting.md", import.meta.url)), "utf8");
+    const copies = [...page.matchAll(/^default-src .*$/gm)].map(([line]) => line);
+    expect(copies).toEqual([playerContentSecurityPolicy("'none'").replace(/; frame-ancestors 'none'$/, "")]);
+    expect(copies[0]).not.toContain("frame-ancestors");
+  });
 });

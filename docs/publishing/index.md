@@ -17,7 +17,7 @@
 4. Choose **Package**.
 5. Save the file when Haptic asks (see [Saving exported files](../projects/index.md#saving-exported-files)); in a browser, a message such as **Game package downloaded. Check your downloads.** appears. The file is named after the project, with underscores for spaces, and native packages end in `-Windows`, `-Linux`, `-macOS`, `-Android` or `-iOS`.
 
-The web ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host. The page's title is the project name. For desktop ZIPs, see [Desktop games](#desktop-games).
+The web ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, or unzip it and serve the folder from any static web host over HTTPS; [Hosting web games](web-hosting.md) covers the headers and settings a host needs. The page's title is the project name. For desktop ZIPs, see [Desktop games](#desktop-games).
 
 If packaging fails, the reason appears in the **Packaging** window.
 
@@ -203,6 +203,7 @@ Your own console commands work in both.
 ## In this section
 
 - [Preview Build](preview-build.md): test the packaged game inside the editor before you publish.
+- [Hosting web games](web-hosting.md): serve the web package from your own host, with the headers it needs.
 
 ## Related
 
