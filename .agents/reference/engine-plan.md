@@ -242,7 +242,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - **Compiler**: IR → deterministic plain JavaScript ES modules (no TypeScript, no transpiler in the browser). Exec flow becomes straight-line code with native `if`/`for`/`while`; pure nodes inline with CSE; latent nodes use async entry functions. Modules load by blob-URL dynamic import inside the worker. Each module gets `//# sourceURL=haptic:///<assetGuid>.js` and an anchor table (generated line/column → asset/graph/node); any pass that moves code rewrites anchors, and compiled game scripts are never minified.
 - The node catalog in `scripting-nodes` is data-driven: id, title, category, pins, codegen; one test file per category.
 - **Special compilation**:
-  - ExecuteJavaScript: typed input/output pin lists (valid unique identifiers), body hoisted into a named module-scope function with pre-declared defaulted outputs, optional async (latent). Body parse errors report line/column in Compiler Results. It is unsandboxed by design; importing a foreign asset that contains bodies must disclose them.
+  - ExecuteJavaScript: typed input/output pin lists (valid unique identifiers), body hoisted into a named module-scope function with pre-declared defaulted outputs, optional async (latent). Body parse errors report line/column in Compiler Results. It is unsandboxed by design; importing a foreign asset that contains bodies discloses them before writing, and an untrusted project cannot Play, Simulate, Preview Build or package one ([Workspace Trust](architecture/editor-extensions.md#decisions)).
   - Log: severity + category to the Output Log and a capped ring buffer that survives without the console UI.
   - Print: wildcard value through `formatValue`, keyed entries replace in place, newest first, clipped; HUD in Play and the player regardless of debugger bundling.
   - Draw Debug: world-space wireframes through commands; duration 0 lasts one simulation tick.
@@ -412,7 +412,7 @@ Listen-server multiplayer is designed and deferred; nothing is built. Its decisi
 - The light block is Haptic's own shader over Babylon's NodeMaterial block API. Tiles can bleed under PCF and PCSS kernels, and seams can show between a point light's six tiles.
 - Two physics backends can drift; run shared scenario shapes against both.
 - Tilemap chunk rebuild cost per stroke; Recast crowd determinism across builds; the 2D axis remap sign.
-- ExecuteJavaScript runs with full worker privileges; disclosure on import is the mitigation.
+- ExecuteJavaScript runs with full worker privileges (and on the editor main thread in the in-process Play fallback); the mitigations are disclosure on import and Workspace Trust for running it. A Pull into a trusted folder is not disclosed.
 - CPU-only Particle Graphs on A16; untested device cost.
 - File moves, including cross-root moves, copy then remove and are not crash-atomic: an interrupted move can leave a same-guid copy that scans keep unindexed. Class re-parenting invalidates inherited members.
 

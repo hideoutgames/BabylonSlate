@@ -12,6 +12,15 @@ The **Importing** window shows each file and how far along it is. Slow conversio
 
 If some files fail, **Import Partially Completed** lists the errors; the rest are imported. A file that fails leaves none of its assets behind.
 
+## Assets with Execute JavaScript
+
+Before it writes anything, Haptic reads the `.hasset` files you import, including those in a ZIP, for [Execute JavaScript](../scripting/javascript.md) nodes. When any hold code, **Import Execute JavaScript?** lists those assets and how many such nodes each has, once for the whole import.
+
+- **Import** imports everything you picked. The code runs when the project plays or is packaged, with the same access as the game, and in a project that is not trusted on this computer it waits until you [trust the project](../scripting/javascript.md#trusted-projects).
+- **Cancel** imports nothing: no assets, and no folder for a ZIP.
+
+Importing does not change whether the project is trusted. Copying, moving, renaming and saving assets inside your project never asks.
+
 On iPhone and iPad the file picker shows every file, including types iOS does not recognise, such as FBX. A file Haptic cannot import is listed with the import errors.
 
 ## Import a ZIP

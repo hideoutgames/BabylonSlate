@@ -43,8 +43,21 @@ Pin names are case-sensitive variable names. Each must be a valid JavaScript ide
 
 Syntax errors in the body appear in **Compiler Results**. Tap the result to go to the node.
 
+## Trusted projects
+
+The body is not sandboxed: it runs with the same access as the rest of your game, in Play, in Simulate and in packaged games. So a project that came from somewhere else, such as a repository you cloned, a folder someone sent you or a template, must be trusted on this computer before its Execute JavaScript runs. This is the same [Workspace Trust](../projects/extensions.md#trust-project-extensions) that holds back project extensions.
+
+- In a project this computer does not trust, **Play**, **Simulate**, **Preview Build** and packaging stop with a message when anything they would run contains Execute JavaScript with code in its body. A Scene, Class or other asset that a running game loads later and that contains it stops loading with the same message.
+- The banner above the documents then names the assets. Choose **Trust Project**, or turn on **Trust This Project** under **Editor Utility Objects** in **Project Settings > General**. It takes effect at once; play again.
+- Projects you create in Haptic are trusted. Projects without Execute JavaScript play as before, whether trusted or not.
+- Only nodes with code count: an empty body, or one of only spaces, does not. A body that holds only a comment counts. Nodes not connected to anything that runs are left out of the game, so they do not count either.
+- Trust belongs to the project's folder on this computer. Pulling changes into a trusted project with [Source Control](../projects/source-control.md) keeps it trusted, so review incoming Classes and Scenes for Execute JavaScript before you play them.
+- A packaged game holds whatever Execute JavaScript the project had when you packaged it. The game itself does not check again.
+- When you import assets or plugins that contain Execute JavaScript, Haptic lists them first. See [Importing Assets](../editor/importing.md#assets-with-execute-javascript).
+
 ## Notes
 
 - On touch screens, the code editor shows a key bar with braces, brackets, parentheses, semicolons, quotes, comparison signs and **Tab**.
-- The code runs with the same access as the rest of your game. Only use code you trust, and review it in projects or plugins you import.
+- Only use code you trust, and review it in projects or plugins you import.
 - For most logic, regular nodes are easier to read and debug. Use this node for calculations or text handling that would need many nodes.
+- An Animation Graph's **Preview** never runs Execute JavaScript.
