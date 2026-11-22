@@ -5,6 +5,7 @@ import {
   createDefaultPluginSettings,
   discoverEnginePlugins,
   discoverProjectPlugins,
+  executeJavaScriptInPlugin,
   exportPluginZip,
   indexUnresolvedPlaceholders,
   inspectHplugin,
@@ -24,6 +25,7 @@ import {
   type PluginDiagnostic,
   type PluginImportPlan,
 } from "@haptic/assets";
+import type { ExecuteJavaScriptAsset } from "@haptic/core";
 import { pluginRootId } from "../lib/plugin-ui";
 
 export type PluginImportResult =
@@ -33,7 +35,14 @@ export type PluginImportResult =
       status: "conflict";
       incoming: InspectedHplugin;
       plan: Extract<PluginImportPlan, { kind: "conflict" }>;
-    };
+    }
+  /** The plugin holds Execute JavaScript the caller has not confirmed; nothing was written. */
+  | { status: "executeJavaScript"; incoming: InspectedHplugin; assets: ExecuteJavaScriptAsset[] };
+
+export interface PluginImportOptions {
+  /** The user confirmed the plugin's Execute JavaScript, or it comes from this computer's Engine Plugins library. */
+  allowExecuteJavaScript?: boolean;
+}
 
 /** What plugin discovery and mounting read from the project session that owns it. */
 export interface ProjectPluginsHost {
@@ -247,6 +256,7 @@ export class ProjectPlugins {
   async import(
     bytes: Uint8Array,
     decision?: "keep" | "replace",
+    options: PluginImportOptions = {},
   ): Promise<PluginImportResult> {
     const incoming = await inspectHplugin(bytes);
     const plan = planPluginImport({
@@ -262,6 +272,13 @@ export class ProjectPlugins {
       if (decision !== "replace") {
         return { status: "conflict", incoming, plan };
       }
+    }
+    // Foreign code is disclosed before anything is written; the caller confirms and imports again.
+    if (!options.allowExecuteJavaScript) {
+      const assets = await executeJavaScriptInPlugin(incoming);
+      if (assets.length > 0) return { status: "executeJavaScript", incoming, assets };
+    }
+    if (plan.kind === "conflict") {
       await applyPluginImport(this.host.storage, incoming, {
         ...plan,
         replace: true,

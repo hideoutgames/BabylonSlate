@@ -60,6 +60,7 @@ import {
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 import { embeddedScriptHost } from "../lib/embedded-script";
+import { executeJavaScriptAssetNames, untrustedExecuteJavaScriptMessage } from "./execute-javascript-trust";
 import { requireSaveGameDefinition } from "../lib/save-game-catalog";
 
 export function assetsFromIndexed(
@@ -167,6 +168,12 @@ export type CollectExportGameParams = {
   /** Preview Build keeps Development Only nodes. */
   previewBuild?: boolean;
   onPhase?: (phase: "Compiling" | "Writing Pack") => void;
+  /**
+   * Workspace Trust for Execute JavaScript (`EditorExtensionService.assertExecuteJavaScriptAllowed`):
+   * called with the assets whose compiled scripts carry an Execute JavaScript body, before anything is
+   * packed; it throws to refuse. Omitted, the export refuses every such script.
+   */
+  assertExecuteJavaScriptAllowed?: (assetNames: readonly string[]) => void;
   /** Project Settings App Icon, rendered at every package size. */
   appIcon?: import("@haptic/exporter").AppIconImages;
 };
@@ -621,6 +628,16 @@ export async function collectAndExportGame(
         // Exported Animation Graph scripts are keyed by guid, as the pack is.
         ...compileAnimGraphScripts(animDocs.map(document => ({ ...document, path: document.guid })), compileOptions),
       );
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  // A package (and Preview Build) carries what this check allows; the exported player has no gate of its own.
+  const executeJavaScriptAssets = executeJavaScriptAssetNames(scripts, (guid) => params.assets.find((asset) => asset.guid === guid)?.name);
+  if (executeJavaScriptAssets.length > 0) {
+    try {
+      if (!params.assertExecuteJavaScriptAllowed) throw new Error(untrustedExecuteJavaScriptMessage(executeJavaScriptAssets));
+      params.assertExecuteJavaScriptAllowed(executeJavaScriptAssets);
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }

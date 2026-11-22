@@ -37,6 +37,11 @@ export type CompileResult = {
   /** True when any entry point is async. */
   isAsync: boolean;
   entryPoints: CompiledEntryPoint[];
+  /**
+   * Ids of the Execute JavaScript nodes with a body whose code this module carries. An unrooted,
+   * stripped or empty node is not here, as none of its code ships.
+   */
+  executeJavaScriptNodes: string[];
 };
 
 export type CompileOptions = {

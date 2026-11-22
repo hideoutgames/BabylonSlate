@@ -12,6 +12,7 @@ import { EditorExtensionHost, type EditorExtensionServices, type EditorExtension
 import { extensionAssetTypeDiagnostics, extensionAssetTypes, type ExtensionAssetTypeDescriptor } from "../lib/extension-asset-types";
 import { linkExtensionModules } from "../lib/extension-modules";
 import { resolvedExtensionSettings, type ExtensionSettingValues } from "../lib/extension-settings-ui";
+import { untrustedExecuteJavaScriptMessage } from "./execute-javascript-trust";
 
 /** Code file edits applied by one Save. */
 export interface ExtensionFileChanges {
@@ -48,6 +49,8 @@ export interface ExtensionSnapshot {
   trusted: boolean;
   /** Display names of enabled Project Extensions held back because the project is not trusted. */
   untrusted: string[];
+  /** Assets whose Execute JavaScript Play, Preview Build or packaging refused because the project is not trusted. */
+  untrustedExecuteJavaScript: string[];
 }
 
 /**
@@ -64,6 +67,7 @@ export function untrustedExtensionsMessage(names: readonly string[]): string {
   return `Project Extensions are not trusted on this computer, so ${names.join(", ")} cannot run. `
     + "Turn on Trust This Project in Project Settings > Project Extensions if you trust this project.";
 }
+
 
 export interface EditorExtensionWriteOptions {
   /** Project owner admission spans queued package operations and guest writes. */
@@ -86,7 +90,7 @@ export class EditorExtensionService {
   private overrides: ExtensionOverrides = {};
   private settingValues: ExtensionSettingValues = {};
   private listeners = new Set<() => void>();
-  private state: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted: [] };
+  private state: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted: [], untrustedExecuteJavaScript: [] };
   private fingerprint = "";
   /**
    * Workspace Trust for the open project: until it is trusted on this
@@ -233,6 +237,19 @@ export class EditorExtensionService {
   }
 
   /**
+   * Workspace Trust for Execute JavaScript: Play, Simulate, Preview Build and packaging call this with
+   * the assets whose compiled scripts carry an Execute JavaScript body, right before those scripts would
+   * run or ship. Untrusted, it throws `untrustedExecuteJavaScriptMessage` and lists the assets in the
+   * snapshot so the trust prompt can name them. Trusting the project (the next `refresh`) lifts it.
+   */
+  assertExecuteJavaScriptAllowed(names: readonly string[]): void {
+    if (names.length === 0 || this.trusted) return;
+    const held = [...new Set([...this.state.untrustedExecuteJavaScript, ...names])].sort((a, b) => a.localeCompare(b));
+    if (held.join("\n") !== this.state.untrustedExecuteJavaScript.join("\n")) this.publish({ untrustedExecuteJavaScript: held });
+    throw new Error(untrustedExecuteJavaScriptMessage([...new Set(names)]));
+  }
+
+  /**
    * Rediscovers packages and activates the enabled ones. `trusted` is the
    * open project's Workspace Trust; without it, Project Extensions are listed
    * but never run. It defaults to the value of the previous refresh.
@@ -292,7 +309,7 @@ export class EditorExtensionService {
       }
       this.packageDiagnostics = diagnostics;
       this.publishAssetTypes(graph.order);
-      this.state = { ...this.state, trusted, untrusted };
+      this.state = { ...this.state, trusted, untrusted, ...(trusted ? { untrustedExecuteJavaScript: [] } : {}) };
       this.publishHostState(entries);
     } catch (cause) {
       await this.resetHost();
@@ -302,7 +319,7 @@ export class EditorExtensionService {
       await this.syncContentRoots([]).catch(() => undefined);
       this.packageDiagnostics = [String(cause)];
       this.publishAssetTypes([]);
-      this.state = { ...this.state, trusted, untrusted: [] };
+      this.state = { ...this.state, trusted, untrusted: [], ...(trusted ? { untrustedExecuteJavaScript: [] } : {}) };
       this.publishHostState([]);
       throw cause;
     }
@@ -313,7 +330,7 @@ export class EditorExtensionService {
       await this.resetHost();
       this.fingerprint = "";
       this.trusted = false;
-      this.state = { ...this.state, trusted: false, untrusted: [] };
+      this.state = { ...this.state, trusted: false, untrusted: [], untrustedExecuteJavaScript: [] };
       this.overrides = {};
       this.cleanupDiagnostics = [];
       this.packageDiagnostics = [];

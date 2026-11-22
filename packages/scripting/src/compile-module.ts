@@ -199,6 +199,7 @@ export function assembleModule(
     exportName: compiledEntries[0]?.entry.name ?? exportName,
     isAsync: compiledEntries.some((c) => c.entry.isAsync),
     entryPoints: compiledEntries.map((c) => c.entry),
+    executeJavaScriptNodes: [...s.executeJavaScriptNodes],
   };
 }
 

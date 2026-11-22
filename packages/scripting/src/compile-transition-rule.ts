@@ -109,5 +109,6 @@ export function compileTransitionRuleGraph(
         )?.id,
       },
     ],
+    executeJavaScriptNodes: [...s.executeJavaScriptNodes],
   };
 }

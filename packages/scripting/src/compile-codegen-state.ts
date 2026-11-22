@@ -101,6 +101,11 @@ export type CodegenState = {
    */
   readonly outputDecls: Map<string, string>;
   isAsync: boolean;
+  /**
+   * Execute JavaScript nodes with a body that code generation reached: exactly the authored code
+   * this module carries, which Workspace Trust gates (`CompileResult.executeJavaScriptNodes`).
+   */
+  readonly executeJavaScriptNodes: Set<string>;
 };
 
 /**
@@ -154,6 +159,7 @@ export function createCodegenState(
     epochFragments: [],
     outputDecls: new Map<string, string>(),
     isAsync: false,
+    executeJavaScriptNodes: new Set<string>(),
   };
 }
 

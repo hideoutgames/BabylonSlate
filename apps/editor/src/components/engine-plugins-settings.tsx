@@ -44,7 +44,8 @@ function usePluginProject(): EngineLibraryProject<EnginePluginEntry> | undefined
         let target = guid;
         if (!find(guid)) {
           if (!enabled) return;
-          const result = await importPlugin(await archive());
+          // This computer's Engine Plugins library: bundled plugins and ones exported from a project here, never foreign files.
+          const result = await importPlugin(await archive(), undefined, { allowExecuteJavaScript: true });
           if (result.status !== "imported") {
             const existing = result.status === "conflict" ? result.incoming.settings.displayName : guid;
             throw new Error(`${name} already has a plugin named ${existing}. Import this one in Project Settings > Plugins to replace it.`);

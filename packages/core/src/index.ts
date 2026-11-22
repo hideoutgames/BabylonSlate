@@ -40,6 +40,7 @@ export * from "./project-appearance";
 export * from "./document";
 export * from "./app-identity";
 export * from "./editor-only";
+export * from "./execute-javascript";
 export * from "./class-member-category";
 export * from "./asset-loading-policy";
 export * from "./engine-version";

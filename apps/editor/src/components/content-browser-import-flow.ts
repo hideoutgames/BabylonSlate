@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState } from "react";
+import type { ExecuteJavaScriptAsset } from "@haptic/core";
 import {
   describeSkippedZipEntries,
   embedGltfImportBatch,
+  executeJavaScriptInImportFile,
   expandImportZip,
   groupMsdfImportBatch,
   isImportableFileName,
@@ -50,6 +52,35 @@ type ImportGroup = {
   imported: number;
 };
 
+/** A ZIP's importable files, before its folder exists. */
+type ExpandedZipGroup = { zip: ImportFileBytes; files: ImportFileBytes[] };
+
+/**
+ * The batch's assets that hold Execute JavaScript, read before any file is written, with the bytes of
+ * the files they come from (batch preparation keeps a `.hasset`'s bytes, though it may copy its entry).
+ * A file that cannot be read here fails again when it imports, and is reported then.
+ */
+async function executeJavaScriptInBatch(
+  batch: ReadonlyArray<{ file: ImportFileBytes; path: string }>,
+  signal: AbortSignal,
+): Promise<{ assets: ExecuteJavaScriptAsset[]; files: Set<Uint8Array> }> {
+  const assets: ExecuteJavaScriptAsset[] = [];
+  const files = new Set<Uint8Array>();
+  for (const { file, path } of batch) {
+    signal.throwIfAborted();
+    let found: ExecuteJavaScriptAsset[];
+    try {
+      found = await executeJavaScriptInImportFile(file.name, file.bytes, path);
+    } catch {
+      continue;
+    }
+    if (found.length === 0) continue;
+    assets.push(...found);
+    files.add(file.bytes);
+  }
+  return { assets, files };
+}
+
 /**
  * Converts FBX, OBJ and STL files to GLB, embeds glTF sidecars and pairs MSDF
  * atlases, as one batch: a model finds its sidecars by the paths the batch
@@ -84,27 +115,20 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * Expands each ZIP and creates its folder in the open folder (`Props.zip` →
- * `Props`, or `Props_1` when a folder of that name, in any case, exists),
- * adding one group per ZIP that holds something to import. A ZIP that cannot
- * be read imports nothing; its error and the entries each ZIP skipped go to
- * `errors`. A cancel throws.
+ * Expands each ZIP, keeping those that hold something to import. A ZIP that
+ * cannot be read imports nothing; its error and the entries each ZIP skipped
+ * go to `errors`. Nothing is written. A cancel throws.
  */
-async function addZipImportGroups(
+async function expandZipImports(
   zips: ImportFileBytes[],
   context: {
-    assetRegistry: AssetRegistry;
-    selectedRoot: ContentBrowserImportFlowDeps["selectedRoot"];
-    existingFolderPaths: readonly string[];
     signal: AbortSignal;
-    groups: ImportGroup[];
     errors: string[];
     onPhase: (patch: Partial<ImportProgress>) => void;
   },
-): Promise<void> {
-  const { assetRegistry, selectedRoot, signal, groups, errors, onPhase } = context;
-  const openFolder = joinFolder(selectedRoot.pathPrefix, selectedRoot.relative);
-  const folderPaths = [...context.existingFolderPaths];
+): Promise<ExpandedZipGroup[]> {
+  const { signal, errors, onPhase } = context;
+  const expandedZips: ExpandedZipGroup[] = [];
   for (const zip of zips) {
     signal.throwIfAborted();
     onPhase({ phase: `Unzipping ${zip.name}`, completed: 0, total: 1, fraction: 0 });
@@ -125,6 +149,33 @@ async function addZipImportGroups(
       errors.push(`${zip.name}: It holds no files Haptic can import.`);
       continue;
     }
+    expandedZips.push({ zip, files: expanded.files });
+  }
+  return expandedZips;
+}
+
+/**
+ * Creates each expanded ZIP's folder in the open folder (`Props.zip` →
+ * `Props`, or `Props_1` when a folder of that name, in any case, exists),
+ * adding one group per ZIP. A folder that cannot be made skips its ZIP, with
+ * the error in `errors`.
+ */
+async function addZipImportGroups(
+  zips: readonly ExpandedZipGroup[],
+  context: {
+    assetRegistry: AssetRegistry;
+    selectedRoot: ContentBrowserImportFlowDeps["selectedRoot"];
+    existingFolderPaths: readonly string[];
+    signal: AbortSignal;
+    groups: ImportGroup[];
+    errors: string[];
+  },
+): Promise<void> {
+  const { assetRegistry, selectedRoot, signal, groups, errors } = context;
+  const openFolder = joinFolder(selectedRoot.pathPrefix, selectedRoot.relative);
+  const folderPaths = [...context.existingFolderPaths];
+  for (const { zip, files } of zips) {
+    signal.throwIfAborted();
     const folder = freeFolderName(folderPaths, openFolder, zipImportFolderName(zip.name));
     try {
       await assetRegistry.createFolder(selectedRoot.rootId, joinFolder(selectedRoot.relative, folder));
@@ -133,7 +184,7 @@ async function addZipImportGroups(
       continue;
     }
     folderPaths.push(joinAssetFolderPath(openFolder, folder));
-    groups.push({ folder, files: expanded.files, imported: 0 });
+    groups.push({ folder, files, imported: 0 });
   }
 }
 
@@ -169,6 +220,19 @@ export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) 
     setImportedFileCount(0);
   }, []);
   const importInputRef = useRef<HTMLInputElement>(null);
+  /** The Execute JavaScript a batch would bring in, shown while the user decides; the answer resolves the batch's wait. */
+  const [executeJavaScriptReview, setExecuteJavaScriptReview] = useState<ExecuteJavaScriptAsset[] | null>(null);
+  const executeJavaScriptAnswerRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const reviewExecuteJavaScript = useCallback((assets: ExecuteJavaScriptAsset[]) => new Promise<boolean>((resolve) => {
+    executeJavaScriptAnswerRef.current = resolve;
+    setExecuteJavaScriptReview(assets);
+  }), []);
+  const answerExecuteJavaScriptReview = useCallback((confirmed: boolean) => {
+    const answer = executeJavaScriptAnswerRef.current;
+    executeJavaScriptAnswerRef.current = null;
+    setExecuteJavaScriptReview(null);
+    answer?.(confirmed);
+  }, []);
 
   /**
    * Imports files behind the cancelable Importing dialog. Cancel stops the
@@ -179,6 +243,10 @@ export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) 
    * or `Props_1` when taken), keeping the folders inside it; what it skips is
    * listed with the errors. Its files form their own batch, so its models
    * find their sidecars by path.
+   *
+   * Before anything is written (ZIP folders included), the batch's `.hasset`
+   * files are read for Execute JavaScript; when any holds some, one dialog
+   * lists them, and Cancel ends the import as a cancel does.
    */
   const importPickedFiles = useCallback(
     async (
@@ -202,19 +270,36 @@ export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) 
       const groups: ImportGroup[] = [
         { folder: "", files: incoming.filter((file) => !isZipFileName(file.name)), imported: 0 },
       ];
+      /** The files (by their bytes) whose Execute JavaScript the user confirmed; every other file imports none. */
+      let confirmedFiles = new Set<Uint8Array>();
       await runWithContentBrowserImportBusy(
         setBusy,
         () => setImportProgress(null),
         async () => {
           try {
-            await addZipImportGroups(incoming.filter((file) => isZipFileName(file.name)), {
+            const zips = await expandZipImports(incoming.filter((file) => isZipFileName(file.name)), {
+              signal,
+              errors,
+              onPhase: (patch) => updateImportProgress(signal, patch),
+            });
+            updateImportProgress(signal, { phase: "Checking Files", completed: 0, total: 1, fraction: null });
+            const disclosed = await executeJavaScriptInBatch([
+              ...groups[0]!.files.map((file) => ({ file, path: file.name })),
+              ...zips.flatMap(({ zip, files }) => files.map((file) => ({ file, path: `${zip.name}/${file.name}` }))),
+            ], signal);
+            if (disclosed.assets.length > 0) {
+              setImportProgress(null);
+              if (!await reviewExecuteJavaScript(disclosed.assets)) controller.abort();
+              signal.throwIfAborted();
+            }
+            confirmedFiles = disclosed.files;
+            await addZipImportGroups(zips, {
               assetRegistry,
               selectedRoot,
               existingFolderPaths,
               signal,
               groups,
               errors,
-              onPhase: (patch) => updateImportProgress(signal, patch),
             });
             const queue: Array<{ group: ImportGroup; file: ImportFileBytes; path: string }> = [];
             for (const group of groups) {
@@ -246,6 +331,7 @@ export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) 
                     hdrFaceSize: hdrImportFaceSize,
                     nearestTextures,
                     sidecars: file.sidecars,
+                    allowExecuteJavaScript: confirmedFiles.has(file.bytes),
                     signal,
                     onProgress: (fraction) => updateImportProgress(signal, { fraction }),
                   },
@@ -300,7 +386,7 @@ export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) 
       }
       enqueueModelThumbnailJobs(createdModels);
     },
-    [assetRegistry, existingFolderPaths, nearestTextures, play, refreshAssetRegistry, selectedRoot, setBusy, setImportErrors, updateImportProgress],
+    [assetRegistry, existingFolderPaths, nearestTextures, play, refreshAssetRegistry, reviewExecuteJavaScript, selectedRoot, setBusy, setImportErrors, updateImportProgress],
   );
 
   const handleImport = useCallback(async () => {
@@ -361,6 +447,8 @@ export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) 
   };
 
   return {
+    executeJavaScriptReview,
+    answerExecuteJavaScriptReview,
     importAbortRef,
     updateImportProgress,
     setImportProgress,
