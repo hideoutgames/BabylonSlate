@@ -179,6 +179,20 @@ function changeOf(row: StatusRow): FileChange | null {
   return { path, kind: head === 0 ? "added" : stage === 0 ? "deleted" : "modified", staged: true };
 }
 
+/**
+ * The `staged-elsewhere` refusal: which files, why nothing happened, and what
+ * to do: unstage or commit them in the other Git app, or (for a commit)
+ * choose them too, which commits the files as they are on disk.
+ */
+export function stagedElsewhereMessage(paths: readonly string[], action: "commit" | "pull"): string {
+  const named = paths.slice(0, 3).join(", ") + (paths.length > 3 ? ` and ${paths.length - 3} more` : "");
+  const what = action === "commit" ? "Nothing was committed" : "Nothing was pulled";
+  const next = action === "commit"
+    ? "Unstage or commit them in that app, or include them in this commit to commit the files as they are now."
+    : "Unstage or commit them in that app, then pull again.";
+  return `Another Git app staged changes to ${named} that differ from both the last commit and the files on disk, and setting them aside would lose them. ${what}. ${next}`;
+}
+
 /** At most this many bytes of packs stay in isomorphic-git's cache after an operation that reads history or the network. */
 export const MAX_PACK_CACHE_BYTES = 32 * 1024 * 1024;
 
@@ -383,7 +397,7 @@ export class GitRepository implements SyncPort {
         throw new SyncError("conflict", "The chosen files already match the last commit.", { code: "nothing-to-commit" });
       }
       const chosen = new Set(selected);
-      const others = await this.stagedOutside(op, head, (path) => chosen.has(path));
+      const others = await this.stagedOutside(op, head, (path) => chosen.has(path), "commit");
       const changed = selectedRows.filter((row) => row[2] === 2).map(([path]) => path);
       const removed = selectedRows.filter((row) => row[2] === 0 && (row[1] === 1 || row[3] !== 0)).map(([path]) => path);
       // Working file as HEAD has it, index not: the commit records the working file.
@@ -406,7 +420,7 @@ export class GitRepository implements SyncPort {
    * no working file is read. Refuses, as `staged-elsewhere`, when one of them
    * holds a staged version found in neither `commit` nor its working file.
    */
-  private async stagedOutside(op: Op, commit: string | null, inside: (path: string) => boolean): Promise<string[]> {
+  private async stagedOutside(op: Op, commit: string | null, inside: (path: string) => boolean, action: "commit" | "pull"): Promise<string[]> {
     const trees = commit ? [git.TREE({ ref: commit }), git.STAGE()] : [git.STAGE()];
     const found = (await git.walk({
       ...op.git,
@@ -436,7 +450,7 @@ export class GitRepository implements SyncPort {
     if (unique.length > 0) {
       throw new SyncError(
         "conflict",
-        `Another Git app staged versions of ${unique.join(", ")} that are in neither the last commit nor the working files. Commit or unstage them in that app first.`,
+        stagedElsewhereMessage(unique, action),
         { code: "staged-elsewhere", paths: unique },
       );
     }
@@ -499,7 +513,7 @@ export class GitRepository implements SyncPort {
       const byPath = new Map(incoming.map((entry) => [entry.path, entry]));
       const pulled = new Set([...writes, ...kept]);
       // A merge commits the index: what another app staged elsewhere must not ride along (refused before any change when it would be lost).
-      const staged = fastForward ? [] : await this.stagedOutside(op, local, (path) => pulled.has(path));
+      const staged = fastForward ? [] : await this.stagedOutside(op, local, (path) => pulled.has(path), "pull");
 
       await this.downloadMissing(op, remote, new Set(writes));
       const checkpoint = await this.pullCheckpoint(op, writes.map((path) => byPath.get(path)!), mine);

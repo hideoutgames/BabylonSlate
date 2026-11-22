@@ -247,6 +247,11 @@ describe("GitRepository", { timeout: 60_000 }, () => {
       expect((await repository.status()).changes).toContainEqual({ path: "assets/a.hasset", kind: "modified", staged: true });
       const error = await rejection(repository.commit({ paths: ["assets/b.hasset"], message: "Only b", author: AUTHOR }));
       expect([error.kind, error.code, error.paths]).toEqual(["conflict", "staged-elsewhere", ["assets/a.hasset"]]);
+      // It says what happened and what to do next.
+      expect(error.message).toBe(
+        "Another Git app staged changes to assets/a.hasset that differ from both the last commit and the files on disk, and setting them aside would lose them. "
+        + "Nothing was committed. Unstage or commit them in that app, or include them in this commit to commit the files as they are now.",
+      );
       expect(server.git(dir, "rev-parse", "HEAD").trim()).toBe(head);
       expect(server.git(dir, "show", ":assets/a.hasset")).toBe("A-staged");
       expect(server.git(dir, "show", ":assets/b.hasset")).toBe("B");
