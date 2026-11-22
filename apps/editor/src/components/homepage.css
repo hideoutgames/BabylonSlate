@@ -1615,6 +1615,17 @@ svg.homepage-account-center-avatar {
   gap: 6px;
   font-size: 12px;
 }
+.homepage-plan-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.homepage-plan-loading svg {
+  width: 13px;
+  height: 13px;
+}
 .homepage-plan-option > span + span {
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;

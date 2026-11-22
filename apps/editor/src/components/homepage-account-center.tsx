@@ -4,6 +4,7 @@ import {
   CircleUserRoundIcon,
   CreditCardIcon,
   ExternalLinkIcon,
+  LoaderCircleIcon,
   LogInIcon,
   LogOutIcon,
   MailIcon,
@@ -168,11 +169,21 @@ function AccountSection({
 }
 
 /**
- * Monthly or Annual, each with the store's own price string. A single plan
- * shows as text; nothing shows while the plans load or when there are none.
+ * Haptic Pro's prices: Monthly or Annual, each with the store's own price
+ * string, or a single plan as text. While the plans load it says so; with
+ * none there is nothing to show (the page's alert says why for a person who
+ * could subscribe).
  */
 function BillingPlanChoice({ billing }: { billing: BillingController }) {
-  const plans = billing.plans ?? [];
+  const plans = billing.plans;
+  if (!plans) {
+    return (
+      <p role="status" className="homepage-plan-loading" data-testid="billing-plans-loading">
+        <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
+        Loading Prices…
+      </p>
+    );
+  }
   if (plans.length === 0) return null;
   if (plans.length === 1) {
     const plan = plans[0]!;
@@ -307,7 +318,7 @@ function SubscriptionSection({
                 <span>{plan.audience}</span>
               </header>
               <h4>{plan.name}</h4>
-              <p className="homepage-plan-price">{plan.price}</p>
+              {plan.price && <p className="homepage-plan-price">{plan.price}</p>}
               <p className="homepage-plan-summary">{plan.summary}</p>
               <ul>
                 {plan.features.map((feature) => (

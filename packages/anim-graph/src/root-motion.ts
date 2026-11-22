@@ -1,5 +1,14 @@
 import type { AnimClipSweep } from "./events";
 
+/** A root motion track: the root bone's travel along X and Z and turn about Y from its first sample, at even steps. */
+export interface AnimClipRootMotionTrack {
+  durationMs: number;
+  stepMs: number;
+  x: readonly number[];
+  z: readonly number[];
+  yaw: readonly number[];
+}
+
 /**
  * Root motion as the worker plays it: an Animation's root bone travel across the ground and turn about the up axis,
  * sampled from its first key, in the actor's own axes and units (the catalog scales the Animation's track by its source
@@ -8,13 +17,11 @@ import type { AnimClipSweep } from "./events";
  */
 export interface AnimClipRootMotion {
   bone: string;
-  track: {
-    durationMs: number;
-    stepMs: number;
-    x: readonly number[];
-    z: readonly number[];
-    yaw: readonly number[];
-  };
+  /**
+   * Absent in a catalog built from asset headers (the editor's), which name only the bone: a player then holds the bone
+   * in place and moves nothing. Play and exported games build their catalogs from documents, with the track.
+   */
+  track?: AnimClipRootMotionTrack;
 }
 
 /** A tick's root motion: travel along the actor's X and Z, and its turn about Y in degrees. */
@@ -24,7 +31,7 @@ export interface AnimRootMotionDelta {
   yaw: number;
 }
 
-function trackAt(track: AnimClipRootMotion["track"], normalised: number): AnimRootMotionDelta {
+function trackAt(track: AnimClipRootMotionTrack, normalised: number): AnimRootMotionDelta {
   const last = track.x.length - 1;
   if (last < 0) return { x: 0, z: 0, yaw: 0 };
   const position = Math.min(last, (Math.min(1, Math.max(0, normalised)) * track.durationMs) / Math.max(1e-6, track.stepMs));
@@ -36,11 +43,11 @@ function trackAt(track: AnimClipRootMotion["track"], normalised: number): AnimRo
 }
 
 /** Where the track has carried the bone at sweep position `p`: whole passes of a looping clip, then into the next. */
-function travelled(motion: AnimClipRootMotion, p: number, loop: boolean): AnimRootMotionDelta {
-  if (!loop) return trackAt(motion.track, p);
+function travelled(track: AnimClipRootMotionTrack, p: number, loop: boolean): AnimRootMotionDelta {
+  if (!loop) return trackAt(track, p);
   const passes = Math.floor(p);
-  const end = trackAt(motion.track, 1);
-  const into = trackAt(motion.track, p - passes);
+  const end = trackAt(track, 1);
+  const into = trackAt(track, p - passes);
   return { x: passes * end.x + into.x, z: passes * end.z + into.z, yaw: passes * end.yaw + into.yaw };
 }
 
@@ -48,9 +55,9 @@ function travelled(motion: AnimClipRootMotion, p: number, loop: boolean): AnimRo
  * The travel and turn a clip made over a tick's sweep: from where it was to where it is, through each pass it
  * completed. A pass's travel turns with the turn the passes before it made, so a clip that turns as it walks curves.
  */
-export function animRootMotionDelta(motion: AnimClipRootMotion, sweep: AnimClipSweep): AnimRootMotionDelta {
-  const from = travelled(motion, sweep.from, sweep.loop);
-  const to = travelled(motion, sweep.to, sweep.loop);
+export function animRootMotionDelta(track: AnimClipRootMotionTrack, sweep: AnimClipSweep): AnimRootMotionDelta {
+  const from = travelled(track, sweep.from, sweep.loop);
+  const to = travelled(track, sweep.to, sweep.loop);
   // Travel since the sweep's start, in the actor's axes at its start.
   const radians = (-from.yaw * Math.PI) / 180;
   const dx = to.x - from.x;
@@ -75,12 +82,17 @@ export function sumAnimRootMotion(parts: ReadonlyArray<AnimRootMotionDelta & { w
   return Math.abs(x) + Math.abs(z) + Math.abs(yaw) > 1e-9 ? { x, z, yaw } : undefined;
 }
 
-/** A root motion as stored on a resolved clip node, or undefined. */
+/**
+ * A root motion as stored on a resolved clip node, or undefined. One without a track (from a header catalog) keeps its
+ * bone; one whose track is malformed is none.
+ */
 export function parseAnimClipRootMotion(value: unknown): AnimClipRootMotion | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const row = value as { bone?: unknown; track?: Record<string, unknown> };
-  const track = row.track;
-  if (typeof row.bone !== "string" || !track) return undefined;
+  const row = value as { bone?: unknown; track?: unknown };
+  if (typeof row.bone !== "string" || !row.bone) return undefined;
+  if (row.track === undefined) return { bone: row.bone };
+  if (!row.track || typeof row.track !== "object") return undefined;
+  const track = row.track as Record<string, unknown>;
   const numbers = (entry: unknown) => (Array.isArray(entry) ? (entry as number[]) : []);
   const durationMs = typeof track.durationMs === "number" ? track.durationMs : 0;
   const stepMs = typeof track.stepMs === "number" ? track.stepMs : 0;

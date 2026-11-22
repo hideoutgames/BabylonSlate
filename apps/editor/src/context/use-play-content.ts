@@ -1,4 +1,5 @@
 import { useMemo, useReducer } from "react";
+import type { AnimClipCatalogEntry, AnimClipRootMotion } from "@haptic/anim-graph";
 import type {
   CollisionTriangleMesh,
   DataAssetCatalogEntry,
@@ -28,6 +29,7 @@ import type {
   PlayBehaviourTreeEntry,
   PlayBlackboardEntry,
 } from "../lib/play-content";
+import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import { playAssetCatalog } from "../services/asset-catalog";
 import type { PreparedPlaySources } from "../services/play-asset-sources";
 
@@ -39,6 +41,8 @@ export interface PlayContent {
   scenes: Array<{ guid: string; scene: SerializedScene }>;
   sceneLayers: Array<{ guid: string; layer: SerializedSceneLayer }>;
   animGraphs: PlayAnimGraphEntry[];
+  /** Every clip in the project, each Animation with root motion carrying its track (`playAnimClipCatalog`). */
+  animClipCatalog: AnimClipCatalogEntry[];
   behaviourTrees: PlayBehaviourTreeEntry[];
   blackboards: PlayBlackboardEntry[];
   dataAssets: DataAssetCatalogEntry[];
@@ -108,6 +112,7 @@ function emptyPlayContent(fontCssStack = "sans-serif"): PlayContent {
     scenes: [],
     sceneLayers: [],
     animGraphs: [],
+    animClipCatalog: [],
     behaviourTrees: [],
     blackboards: [],
     dataAssets: [],
@@ -164,6 +169,8 @@ function playContentReducer(state: PlayContent, action: PlayContentAction): Play
 export function preparedPlayContent(
   prepared: PreparedPlaySources,
   catalog: Parameters<typeof playAssetCatalog>[0],
+  /** Every project Animation's root motion (`playRootMotionTracks`). */
+  rootMotionTracks: ReadonlyMap<string, AnimClipRootMotion>,
 ): PlayPreparedContent {
   const { game, content, sources } = prepared;
   return {
@@ -173,6 +180,7 @@ export function preparedPlayContent(
     globalParameterCatalog: content.globalParameterCatalog,
     assetCatalog: playAssetCatalog(catalog),
     animGraphs: content.animGraphs,
+    animClipCatalog: playAnimClipCatalog(catalog.registry.list(), rootMotionTracks),
     behaviourTrees: content.behaviourTrees,
     blackboards: content.blackboards,
     spritePayloads: content.spritePayloads,

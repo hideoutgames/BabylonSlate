@@ -25,6 +25,7 @@ import { RenderSlots } from "./render-slots";
 import { RuntimeSubsystems } from "./runtime-subsystems";
 import type { CompiledScript } from "./script-host";
 import { SnapshotPublisher } from "./snapshot-publisher";
+import { countPublishWork } from "./testing/count-publish-work";
 
 type Vec3 = [number, number, number];
 
@@ -171,6 +172,7 @@ describe("snapshot publishing", () => {
   });
 
   it("composes only dirty actors once per catch-up burst and once per bare tick", async () => {
+    countPublishWork();
     const { runtime, slots } = await launch(scene([
       createActor("still", "Still"),
       createActor("mover", "Mover", { classId: "Mover" }),
@@ -209,6 +211,7 @@ describe("snapshot publishing", () => {
   });
 
   it("steers the crowd from NavAgent actors and their ancestors only", async () => {
+    countPublishWork();
     // The agent starts at world (-4, 0, -4) under a parent that a script moves
     // every tick; the crowd owns its world pose, so it must follow the path of
     // a root agent placed there.
@@ -524,6 +527,7 @@ describe("snapshot removal pass", () => {
   }
 
   it("checks no slot while neither the World structure nor the slot table changed", () => {
+    countPublishWork();
     const { world, snapshots, despawns, actor } = publisher();
     world.spawnActorNow(actor("still"));
     world.spawnActorNow(actor("doomed"));
@@ -537,8 +541,7 @@ describe("snapshot removal pass", () => {
     world.flushPending();
     snapshots.publish();
     expect(despawns).toEqual(["doomed"]);
-    // Its own release changed the slot table, so the next publish checks once more, then stops.
-    snapshots.publish();
+    // Its own release names no other slot to check.
     lookups.mockClear();
     snapshots.publish();
     expect(lookups).not.toHaveBeenCalled();
@@ -601,6 +604,7 @@ describe("snapshot removal pass", () => {
   });
 
   it("propagates incremental transform, descendant, visibility, and floating-origin updates across both seq-lock buffers", () => {
+    countPublishWork();
     const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
     let cam: Actor | null = null;
     const slots = new RenderSlots({ releaseSlot: () => {} } as unknown as RuntimeSubsystems, {

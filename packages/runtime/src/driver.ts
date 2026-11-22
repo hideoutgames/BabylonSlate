@@ -408,6 +408,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   get snapshotCapacity(): number { return this.snapshots.capacity; }
   get snapshotGeneration(): number { return this.snapshots.generation; }
   get snapshotSerial(): number { return this.snapshots.writes; }
+  /** Whole-World checks of this session's snapshot publishes; null unless verification is on. */
+  get snapshotVerification() { return this.snapshots.verification; }
 
   /**
    * Builds the session in phases. Subsystem constructors build only their own

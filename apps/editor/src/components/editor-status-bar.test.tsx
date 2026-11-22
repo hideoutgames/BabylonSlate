@@ -212,6 +212,7 @@ describe("EditorStatusBar", () => {
         lookup: () => null,
         locks: { theirs: async () => [], releaseOwn: async () => {} },
         exclusiveWrites: (_reason, work) => work(storage),
+        backgroundWritesIdle: async () => {},
         factory: {
           open: async () => {
             throw new SyncError("conflict", detached, { code: "detached-head" });

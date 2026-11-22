@@ -10,7 +10,8 @@ export const HAPTIC_PLANS: ReadonlyArray<{
   id: HapticPlanId;
   audience: string;
   name: string;
-  price: string;
+  /** A fixed price; Haptic Pro has none, its card shows the store's prices (`BillingPlanChoice`). */
+  price?: string;
   summary: string;
   features: readonly string[];
   icon: LucideIcon;
@@ -28,7 +29,6 @@ export const HAPTIC_PLANS: ReadonlyArray<{
     id: "pro",
     audience: "Phone and Tablet",
     name: "Haptic Pro",
-    price: "Price Coming Soon",
     summary: "Haptic on iPhone, iPad and Android",
     features: [
       "One account for all your devices",

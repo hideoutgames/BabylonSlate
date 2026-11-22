@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { animClipCatalogFromAssets } from "./anim-clip-catalog";
+import { animClipCatalogFromAssets, playAnimClipCatalog } from "./anim-clip-catalog";
 
 describe("animClipCatalogFromAssets", () => {
   it("reads the Animation clipName from payload and lists Models by name only", () => {
@@ -186,6 +186,33 @@ describe("animClipCatalogFromAssets", () => {
         guid: "walk-anim",
         durationMs: 80,
       }),
+    ]);
+  });
+
+  it("lists an Animation's root motion as the bone its header names, with no track", () => {
+    const [moving, inPlace] = animClipCatalogFromAssets([
+      { header: { guid: "fall", type: "Animation", name: "Death_A", payload: { clipName: "Death_A", rootMotionBone: "hips" } } },
+      { header: { guid: "idle", type: "Animation", name: "Idle_A", payload: { clipName: "Idle_A" } } },
+    ]);
+    expect(moving!.rootMotion).toEqual({ bone: "hips" });
+    expect(inPlace).not.toHaveProperty("rootMotion");
+  });
+
+  it("gives Play every clip the headers list, each Animation's root motion only with a track it was given", () => {
+    const track = { durationMs: 100, stepMs: 50, x: [0, 0, 0], z: [0, 1, 2], yaw: [0, 0, 0] };
+    const catalog = playAnimClipCatalog(
+      [
+        { header: { guid: "fall", type: "Animation", name: "Death_A", payload: { clipName: "Death_A", rootMotionBone: "hips" } } },
+        // Its track could not be read.
+        { header: { guid: "dodge", type: "Animation", name: "Dodge", payload: { clipName: "Dodge", rootMotionBone: "hips" } } },
+        { header: { guid: "throw", type: "Animation", name: "Throw", payload: { clipName: "Throw" } } },
+      ],
+      new Map([["fall", { bone: "hips", track }]]),
+    );
+    expect(catalog.map((entry) => [entry.guid, entry.rootMotion])).toEqual([
+      ["fall", { bone: "hips", track }],
+      ["dodge", undefined],
+      ["throw", undefined],
     ]);
   });
 
