@@ -230,7 +230,7 @@ it("runs the audio debug readout's per-frame loop only while audio debug is on, 
   expect(screen.queryByTestId("audio-debug-overlay")).toBeNull();
 
   const voice = { assetGuid: "sfx", clipName: null, gain: 0.5, pitch: 1, loop: false, spatial: false,
-    distance: null, innerRadius: null, maxRadius: null, insideRadius: null };
+    distance: null, innerRadius: null, maxRadius: null, insideRadius: null, attenuation: null };
   audioStats.debugVoices = [voice];
   await poll();
   await stepFrames();
