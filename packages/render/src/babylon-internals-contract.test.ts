@@ -57,7 +57,7 @@ import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { CurrentScreenBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/currentScreenBlock";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
-import { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
+import { NodeMaterialConnectionPoint, NodeMaterialConnectionPointDirection } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
 import { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
@@ -83,9 +83,8 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { ParticleInputBlock } from "@babylonjs/core/Particles/Node/Blocks/particleInputBlock";
-import { NodeParticleBlockConnectionPointTypes } from "@babylonjs/core/Particles/Node/Enums/nodeParticleBlockConnectionPointTypes";
 import { NodeParticleBlock } from "@babylonjs/core/Particles/Node/nodeParticleBlock";
-import { NodeParticleConnectionPoint } from "@babylonjs/core/Particles/Node/nodeParticleBlockConnectionPoint";
+import { NodeParticleConnectionPoint, NodeParticleConnectionPointDirection } from "@babylonjs/core/Particles/Node/nodeParticleBlockConnectionPoint";
 import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
 import { Particle } from "@babylonjs/core/Particles/particle";
 import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
@@ -176,12 +175,12 @@ const OWNERS = {
   NodeMaterialBlock: { cls: NodeMaterialBlock, make: () => new NodeMaterialBlock("contract block") },
   NodeMaterialBuildState: { cls: NodeMaterialBuildState, make: () => new NodeMaterialBuildState() },
   NodeMaterialConnectionPoint: {
-    cls: NodeMaterialConnectionPoint, make: () => new NodeMaterialConnectionPoint("point", new NodeMaterialBlock("contract owner")),
+    cls: NodeMaterialConnectionPoint, make: () => new NodeMaterialConnectionPoint("point", new NodeMaterialBlock("contract owner"), NodeMaterialConnectionPointDirection.Input),
   },
   NodeParticleBlock: { cls: NodeParticleBlock, make: () => new NodeParticleBlock("contract particle block") },
   NodeParticleConnectionPoint: {
     cls: NodeParticleConnectionPoint,
-    make: () => new NodeParticleConnectionPoint("point", new NodeParticleBlock("contract owner"), NodeParticleBlockConnectionPointTypes.Float),
+    make: () => new NodeParticleConnectionPoint("point", new NodeParticleBlock("contract owner"), NodeParticleConnectionPointDirection.Input),
   },
   ObjectRenderer: { cls: ObjectRenderer, make: ({ scene }) => new ObjectRenderer("contract renderer", scene) },
   Particle: { cls: Particle, make: ({ particles }) => new Particle(particles) },
