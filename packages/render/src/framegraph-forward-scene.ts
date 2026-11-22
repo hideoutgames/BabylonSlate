@@ -2482,7 +2482,7 @@ export class ForwardSceneFrameGraph {
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();
-    const { graph, postProcessGraph, effectsGraph, outlineTask, outputCopy, objects, shadows, clear, cull, water, ownScene } = this;
+    const { graph, postProcessGraph, effectsGraph, outlineTask, outputCopy, objects, shadows, clear, cull, water, ownScene, decalSplit, decalTask } = this;
     // Only a compiled program of a prepared graph: one still linking, or one that failed, is nobody's to keep.
     const displayColor = effectsGraph?.displayColorEffect;
     if (!this.disposed && displayColor?.isReady() && this.preparedEffectsKey !== undefined)
@@ -2494,6 +2494,9 @@ export class ForwardSceneFrameGraph {
       water?.disposeTasks();
       outlineTask?.dispose();
       outputCopy?.dispose(); objects?.dispose(); shadows?.dispose(); clear?.dispose(); cull?.dispose();
+      // The decal split's transparent pass is an object renderer too (its OIT renderer's quad, its scene uniform buffer
+      // and render pass ids); undisposed, each rebuild of a view with decals kept one for the session.
+      decalSplit?.dispose(); decalTask?.dispose();
       graph?.dispose();
       if (postProcessGraph) this.postProcessRetirement.add(postProcessGraph);
       if (effectsGraph) this.postProcessRetirement.add(effectsGraph);
