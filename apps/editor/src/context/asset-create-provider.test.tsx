@@ -60,6 +60,29 @@ function renderApi(): AssetCreateApi | null {
 }
 
 describe("AssetCreateDocumentsProvider", () => {
+  it("seeds a new curve asset with the requested curve", async () => {
+    const registry = await projectRegistry();
+    docs.value = {
+      assetRegistry: registry,
+      noteAssetsCreated: vi.fn(),
+      refreshAssetRegistry: vi.fn(),
+      activeDocumentId: null,
+      openDocuments: [],
+    };
+    const api = renderApi()!;
+    // Create Curve From on a Sound Attenuation: the built-in falloff's keys.
+    const falloff = {
+      Keys: [
+        { Time: 0, Value: 1, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
+        { Time: 1, Value: 0, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
+      ],
+      Before: "constant",
+      After: "constant",
+    };
+    const curve = await api.createAsset({ type: "FloatCurve", name: "Near Falloff", curve: falloff, ownerPath: "assets/Levels/Near.atten.hasset" });
+    expect(registry.getByGuid(curve)).toMatchObject({ path: "assets/Levels/Near_Falloff.floatcurve.hasset", header: { payload: { curve: falloff } } });
+  });
+
   it("creates beside the owner (default: the active document) and refreshes before resolving", async () => {
     const registry = await projectRegistry();
     let listedAtRefresh = false;

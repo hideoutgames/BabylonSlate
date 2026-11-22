@@ -691,6 +691,8 @@ describe("player startup and Stop ownership", () => {
     const worker = TestWorker.instances[0]!;
     await vi.waitFor(() => expect(publishedState(worker, "jump")).toBe("unloaded"));
     const options = vi.mocked(rendering.createGameEngine).mock.calls.at(-1)![1]!;
+    // Outside the startup closure: nothing of it is loaded before the Audio is.
+    expect(options.audioLibrary?.attenuations.has("near")).toBe(false);
     const release = await options.prepareAudioAsset!("jump", { consumer: "test", signal: new AbortController().signal });
     // The renderer's audio service reads this library object; the refresh fills it in place.
     expect(options.audioLibrary?.attenuations.get("near")).toMatchObject({ falloff: "custom", customCurve: FADE_CURVE });
