@@ -363,6 +363,10 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerView(layerId, view);
     },
+    onGameView: (view) => {
+      if (worker) worker.postControl({ type: "gameView", view });
+      else runtime?.applyGameView(view);
+    },
     onSceneLayerResize: (size) => {
       const control = { type: "sceneLayerResize" as const, ...size };
       if (worker) worker.postControl(control);

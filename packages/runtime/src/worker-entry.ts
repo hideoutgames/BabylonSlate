@@ -538,6 +538,9 @@ function handleControl(msg: ControlMessage): void {
     case "sceneLayerView":
       ensureRuntime().applySceneLayerView(msg.layerId, msg.view);
       return;
+    case "gameView":
+      ensureRuntime().applyGameView(msg.view);
+      return;
     case "sceneLayerResize":
       ensureRuntime().applySceneLayerResize(
         msg.outputWidth,

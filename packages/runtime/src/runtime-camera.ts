@@ -1,6 +1,7 @@
 import type { CommandMessage } from "@haptic/bridge";
 import {
   deprojectCursorRay,
+  deprojectViewRay,
   pixelMatchedDesignFrame,
   pixelMatchedView,
   sceneDefaultCameraActor,
@@ -9,12 +10,14 @@ import {
   DEFAULT_LAYER_CAMERA_STATE,
   WORLD_LAYER_CAMERA_DISTANCE,
   WORLD_LAYER_CAMERA_FAR_CLIP,
+  type DrawnCameraView,
   type LayerCameraState,
   type SerializedScene,
 } from "@haptic/core";
 import type { ResolvedInputTick } from "@haptic/input";
 import type { Actor, ActorComponent, World } from "@haptic/object-model";
 import { actorChainWorldTransform } from "./actor-world-transform";
+import { componentWorldTransform } from "./tween-transforms";
 import { actorFromIlluminationTarget } from "./runtime-host-render";
 import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
@@ -79,7 +82,12 @@ export class RuntimeCamera implements RuntimeSubsystem {
 
   constructor(host: RuntimeCameraHost) { this.host = host; }
 
+  /** The view the renderer last drew through a possessed camera (`gameView`); null before one is reported. */
+  private drawnView: DrawnCameraView | null = null;
+
   releaseSlot(slotId: number): void {
+    // The slot's next owner is drawn afresh before its view counts.
+    if (this.drawnView?.slotId === slotId) this.drawnView = null;
     if (this.possessedSlotId !== slotId) return;
     this.possessedSlotId = null;
   }
@@ -88,6 +96,15 @@ export class RuntimeCamera implements RuntimeSubsystem {
   resetPossession(): void {
     this.possessedByScript = false;
     this.possessedSlotId = null;
+    this.drawnView = null;
+  }
+
+  /**
+   * The view Play drew through a possessed camera, which the host reports after each world draw that changed it.
+   * Cursor and touch projection cast through it while it is the possessed camera's.
+   */
+  setDrawnView(view: DrawnCameraView | null): void {
+    this.drawnView = view;
   }
 
   /**
@@ -182,6 +199,31 @@ export class RuntimeCamera implements RuntimeSubsystem {
     return this.host.touches().find((touch) => touch.Finger === finger);
   }
 
+  /**
+   * A ray from the camera in view through `point`, in CSS pixels from the game view canvas's top-left corner (the
+   * same unit as `canvasSize`): through the view Play drew while it is the possessed camera's, else through the
+   * Camera component's own world pose (its Spring Arm socket and attachment included) and authored lens.
+   */
+  private possessedCameraRay(camera: Actor, component: ActorComponent, point: { x: number; y: number }) {
+    const canvas = this.host.overlay().canvasSize();
+    const drawn = this.drawnView;
+    if (drawn && drawn.slotId === this.possessedSlotId) return deprojectViewRay(point, canvas, drawn);
+    const findActor = (guid: string) => this.host.world().findActor(guid);
+    const pose = componentWorldTransform(component, findActor) ?? actorChainWorldTransform(camera, findActor) ?? camera.transform;
+    const projection = component.getVariable("projectionMode");
+    return deprojectCursorRay(point, canvas, {
+      position: pose.position,
+      rotation: pose.rotation,
+      lens: {
+        projectionMode: projection === "orthographic" ? "orthographic" : "perspective",
+        fieldOfView: Number(component.getVariable("fieldOfView") ?? 60),
+        orthographicSize: this.orthographicHalfHeight(Number(component.getVariable("orthographicSize") ?? 5)),
+        nearClip: Number(component.getVariable("nearClip") ?? 0.1),
+        farClip: Number(component.getVariable("farClip") ?? 1000),
+      },
+    });
+  }
+
   /** A ray from the camera in view through `point`, in game view CSS pixels. */
   private projectPointToScene(
     point: { x: number; y: number },
@@ -196,26 +238,7 @@ export class RuntimeCamera implements RuntimeSubsystem {
       if (this.host.physics().kind === "2d") return this.layerCameraOverlap(layer, channel);
       ray = layer;
     } else {
-      const projection = component.getVariable("projectionMode");
-      // Cast from the camera's world pose at call time; a parented camera's
-      // local transform is relative to its parent.
-      const pose = actorChainWorldTransform(camera, (guid) => this.host.world().findActor(guid)) ?? camera.transform;
-      ray = deprojectCursorRay(
-        point,
-        this.host.overlay().canvasSize(),
-        {
-          position: pose.position,
-          rotation: pose.rotation,
-          lens: {
-            projectionMode:
-              projection === "orthographic" ? "orthographic" : "perspective",
-            fieldOfView: Number(component.getVariable("fieldOfView") ?? 60),
-            orthographicSize: this.orthographicHalfHeight(Number(component.getVariable("orthographicSize") ?? 5)),
-            nearClip: Number(component.getVariable("nearClip") ?? 0.1),
-            farClip: Number(component.getVariable("farClip") ?? 1000),
-          },
-        },
-      );
+      ray = this.possessedCameraRay(camera, component, point);
     }
     // Same freshness as Line Trace: bodies as of the last step plus call-time
     // pose writes and component refreshes. Actors spawned, destroyed or

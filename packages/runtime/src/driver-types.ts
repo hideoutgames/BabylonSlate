@@ -21,6 +21,7 @@ import type { BehaviourTreeDocument, BlackboardDocument } from "@haptic/behaviou
 import type {
   GameEnvironment,
   CollisionTriangleMesh,
+  DrawnCameraView,
   FocusNavigationSettings,
   InputAssetDefinition,
   MaterialParameterCatalog,
@@ -311,6 +312,8 @@ export interface RuntimeDriver {
   applySceneLayerFocusNavigate(reverse: boolean): void;
   /** The compositor measured a Desired Scene Layer's content: its view. */
   applySceneLayerView(layerId: string, view: { width: number; height: number; center: readonly [number, number] }): void;
+  /** The view Play's last world draw went through a possessed camera; cursor and touch projection cast through it. */
+  applyGameView(view: DrawnCameraView): void;
   /**
    * The editor's graph debugger watches `target` and follows `instanceId`: publish `debugRoster` for
    * the target and, for that instance only, a per-tick `executionTrace` (and a Behaviour Tree's
