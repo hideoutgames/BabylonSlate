@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSceneLoadReadiness, type SceneLoadProgress } from "./scene-load-readiness";
+import { createSceneLoadReadiness, waitForSceneLoadingPaint, type SceneLoadProgress } from "./scene-load-readiness";
 import { RenderScheduler } from "./render-scheduler";
 
 function deferred() {
@@ -263,23 +263,18 @@ describe("independent scene owners", () => {
     } finally { readiness.dispose(); }
   });
 
-  it("acknowledges a ready layer while the world waits, then waits for the dismissed blocker to paint before world logic", async () => {
+  it("acknowledges a ready layer while the world waits, then the world once its first frame presents", async () => {
     const models = deferred();
-    const dismissedPaint = deferred();
-    let loading = true;
     const states: Array<SceneLoadProgress | null> = [];
     const ready: string[] = [];
     const owners: Array<string | undefined> = [];
+    const paint = vi.fn(async () => {});
     const readiness = createSceneLoadReadiness({
       handle: {
         whenEditorModelsReady: (owner) => { owners.push(owner?.layerId); return owner ? Promise.resolve() : models.promise; },
         whenMaterialTexturesReady: async () => {}, prewarmSceneMaterials: async () => {}, presentFirstFrame: async () => {},
       },
-      loading: {
-        acquire: () => () => {}, painted: () => {},
-        progress: (state) => { states.push(state); loading = state !== null; },
-        paint: () => loading ? Promise.resolve() : dismissedPaint.promise,
-      },
+      loading: { acquire: () => () => {}, painted: () => {}, progress: (state) => { states.push(state); }, paint },
       activate: () => {}, onReady: () => ready.push("world"), onLayerReady: (layer) => ready.push(layer.layerId),
       onFailed: (_owner, error) => { throw error; },
     });
@@ -292,25 +287,24 @@ describe("independent scene owners", () => {
     expect(states.at(-1)?.sceneAssetGuid).toBe("world");
     expect(states).not.toContain(null);
     models.resolve();
-    await vi.waitFor(() => expect(states.at(-1)).toBeNull());
-    expect(ready).toEqual(["global"]);
-    dismissedPaint.resolve();
     await vi.waitFor(() => expect(ready).toEqual(["global", "world"]));
+    expect(states.at(-1)).toBeNull();
+    // Only the layer's load paints: it departs from nothing the session's first Scene had to hide.
+    expect(paint).toHaveBeenCalledOnce();
     readiness.dispose();
   });
 
-  it("does not acknowledge a removed layer's delayed frame or a world stopped during dismissal paint", async () => {
+  it("does not acknowledge a removed layer's delayed frame or a world disposed while it presents", async () => {
     const frame = deferred();
-    const dismissedPaint = deferred();
+    const worldFrame = deferred();
     const layerReady = vi.fn();
     const worldReady = vi.fn();
     const failure = vi.fn();
     let loading = true;
     const readiness = createSceneLoadReadiness({
       handle: { whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {}, prewarmSceneMaterials: async () => {},
-        presentFirstFrame: (owner) => owner ? frame.promise : Promise.resolve() },
-      loading: { acquire: () => () => {}, painted: () => {}, progress: (state) => { loading = state !== null; },
-        paint: () => loading ? Promise.resolve() : dismissedPaint.promise },
+        presentFirstFrame: (owner) => owner ? frame.promise : worldFrame.promise },
+      loading: { acquire: () => () => {}, painted: () => {}, progress: (state) => { loading = state !== null; }, paint: async () => {} },
       activate: () => {}, onReady: worldReady, onLayerReady: layerReady, onFailed: failure,
     });
     readiness.receive({ type: "sceneLayerLoading", layerId: "old", layerLoadId: 1, assetGuid: "overlay" });
@@ -320,12 +314,79 @@ describe("independent scene owners", () => {
     frame.resolve();
     readiness.receive({ type: "activeScene", sceneAssetGuid: "world", sceneLoadId: 1 });
     readiness.receive({ type: "sceneRealized", sceneAssetGuid: "world", sceneLoadId: 1 });
-    await vi.waitFor(() => expect(loading).toBe(false));
-    readiness.dispose();
-    dismissedPaint.resolve();
     await Promise.resolve();
+    readiness.dispose();
+    worldFrame.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(layerReady).not.toHaveBeenCalled();
     expect(worldReady).not.toHaveBeenCalled();
     expect(failure).not.toHaveBeenCalled();
+  });
+
+  it("waits for one paint when a load departs from a shown Scene and none for a session's first Scene", async () => {
+    const paint = vi.fn(async () => {});
+    const painted = vi.fn();
+    const onReady = vi.fn();
+    const readiness = createSceneLoadReadiness({
+      handle: { whenEditorModelsReady: async () => {}, whenMaterialTexturesReady: async () => {}, prewarmSceneMaterials: async () => {},
+        presentFirstFrame: async () => {} },
+      loading: { acquire: () => () => {}, progress: () => {}, paint, painted },
+      activate: () => {}, onReady, onFailed: (_scene, error) => { throw error; },
+    });
+    readiness.receive({ type: "activeScene", sceneAssetGuid: "first", sceneLoadId: 1 });
+    readiness.receive({ type: "sceneRealized", sceneAssetGuid: "first", sceneLoadId: 1 });
+    await vi.waitFor(() => expect(onReady).toHaveBeenCalledOnce());
+    expect(paint).not.toHaveBeenCalled();
+    readiness.receive({ type: "sceneLoading", sceneAssetGuid: "next", sceneLoadId: 2 });
+    await vi.waitFor(() => expect(painted).toHaveBeenCalledOnce());
+    expect(paint).toHaveBeenCalledOnce();
+    readiness.receive({ type: "activeScene", sceneAssetGuid: "next", sceneLoadId: 2 });
+    readiness.receive({ type: "sceneRealized", sceneAssetGuid: "next", sceneLoadId: 2 });
+    await vi.waitFor(() => expect(onReady).toHaveBeenCalledTimes(2));
+    expect(paint).toHaveBeenCalledOnce();
+    readiness.dispose();
+  });
+});
+
+describe("the loading paint", () => {
+  it("crosses one animation frame and settles in a task after it, once UI work queued before it has run", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    try {
+      const order: string[] = [];
+      // A UI commit scheduled before the barrier (React commits in a posted-message task).
+      const ui = new MessageChannel();
+      ui.port1.onmessage = () => { order.push("ui"); ui.port1.close(); };
+      ui.port2.postMessage(undefined);
+      const painted = waitForSceneLoadingPaint(new AbortController().signal).then(() => order.push("painted"));
+      await vi.waitFor(() => expect(frames).toHaveLength(1));
+      expect(order).toEqual(["ui"]);
+      frames[0]!(0);
+      // Not inside the frame's callbacks, which run before its paint.
+      await Promise.resolve();
+      expect(order).toEqual(["ui"]);
+      await painted;
+      expect(order).toEqual(["ui", "painted"]);
+      expect(frames).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("rejects with the reason and requests no frame once cancelled", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    try {
+      const controller = new AbortController();
+      const paint = waitForSceneLoadingPaint(controller.signal);
+      controller.abort(new Error("superseded"));
+      await expect(paint).rejects.toThrow("superseded");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(frames).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

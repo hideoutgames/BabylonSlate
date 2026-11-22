@@ -215,6 +215,31 @@ describe("scene material lighting", () => {
     },
   );
 
+  it("refreshes a parent its lights share once per ranking, and ranks them all from its moved pose", () => {
+    const scene = host(false);
+    scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);
+    const parent = new TransformNode("actor", scene);
+    parent.position.x = 100;
+    const lamps = [1, 2, 3].map((x) => {
+      const lamp = new PointLight(`lamp ${x}`, new Vector3(x, 0, 0), scene);
+      lamp.parent = parent;
+      return lamp;
+    });
+    const near = new PointLight("near", new Vector3(50, 0, 0), scene);
+    const refresh = vi.spyOn(parent, "computeWorldMatrix");
+    admitLocals(scene, 3);
+    expect(refresh.mock.calls.filter(([force]) => force === true)).toHaveLength(1);
+    expect([...lamps.slice(0, 2), near].map((light) => light.isEnabled())).toEqual([true, true, true]);
+    expect(isForwardLightExcluded(lamps[2]!)).toBe(true);
+    // The actor walks up to the camera: every lamp ranks from where it now is, ahead of the near light.
+    parent.position.x = -2;
+    refresh.mockClear();
+    admitLocals(scene, 3);
+    expect(refresh.mock.calls.filter(([force]) => force === true)).toHaveLength(1);
+    expect(lamps.map((lamp) => lamp.isEnabled())).toEqual([true, true, true]);
+    expect(isForwardLightExcluded(near)).toBe(true);
+  });
+
   it("retains equal-distance incumbents and restores policy-excluded lights when capacity returns", () => {
     const scene = host(false);
     scene.activeCamera = new UniversalCamera("camera", Vector3.Zero(), scene);

@@ -1,6 +1,7 @@
 import type { Material } from "@babylonjs/core/Materials/material";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Node } from "@babylonjs/core/node";
+import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { drawingMesh } from "./instance-source";
 
@@ -19,6 +20,28 @@ import { drawingMesh } from "./instance-source";
  * change hot-swaps it like any drawn mesh.
  */
 const pending = new WeakSet<AbstractMesh>();
+/**
+ * Per Scene, its pending meshes that are not disposed, so a pass can tell in O(1) that it has none to leave out
+ * (`hasRevealPending`). A mesh joins when hidden and leaves when revealed or disposed (it then left the Scene's list).
+ */
+const pendingInScene = new WeakMap<Scene, Set<AbstractMesh>>();
+const disposeObservers = new WeakMap<AbstractMesh, Observer<Node>>();
+
+function trackPending(mesh: AbstractMesh): void {
+  const scene = mesh.getScene();
+  let members = pendingInScene.get(scene);
+  if (!members) pendingInScene.set(scene, (members = new Set()));
+  members.add(mesh);
+  if (!disposeObservers.has(mesh)) disposeObservers.set(mesh, mesh.onDisposeObservable.addOnce(() => untrackPending(mesh)));
+}
+
+function untrackPending(mesh: AbstractMesh): void {
+  pendingInScene.get(mesh.getScene())?.delete(mesh);
+  const observer = disposeObservers.get(mesh);
+  if (!observer) return;
+  disposeObservers.delete(mesh);
+  mesh.onDisposeObservable.remove(observer);
+}
 /** Hidden meshes whose own variants are all ready: each waits for the rest of its actor. */
 const ready = new WeakSet<AbstractMesh>();
 /** Each hidden mesh's actor root, and each root's hidden meshes. */
@@ -46,6 +69,11 @@ function actorRoot(mesh: AbstractMesh): Node {
 
 export function isRevealPending(mesh: AbstractMesh): boolean {
   return pending.has(mesh);
+}
+
+/** Whether any mesh of `scene` that is not disposed is hidden until ready: false means `isRevealPending` holds for none of its listed meshes. */
+export function hasRevealPending(scene: Scene): boolean {
+  return (pendingInScene.get(scene)?.size ?? 0) > 0;
 }
 
 /**
@@ -88,6 +116,7 @@ export function hideUntilReady(mesh: AbstractMesh): void {
   if (pending.has(mesh) && groupOf.has(mesh)) return;
   if (!pending.has(mesh)) noteRevealChange(mesh);
   pending.add(mesh);
+  trackPending(mesh);
   const root = actorRoot(mesh);
   groupOf.set(mesh, root);
   let members = groups.get(root);
@@ -173,6 +202,7 @@ function revealIfReady(root: Node): void {
     if (!ready.has(member)) continue;
     members.delete(member);
     if (pending.delete(member)) noteRevealChange(member);
+    untrackPending(member);
     ready.delete(member);
     groupOf.delete(member);
     noteDrawn(member);
