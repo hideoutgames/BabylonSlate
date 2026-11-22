@@ -113,8 +113,8 @@ export interface RenderProjectSettings {
   cel?: CelShadingSettings;
   environmentLighting?: EnvironmentLightingSettings;
   /**
-   * Color pipeline stage and display-space effects. Missing on legacy
-   * projects — normalizes to the display-identical Legacy Display block.
+   * Color pipeline stage and display-space effects. Missing normalizes to the
+   * Display Space block.
    */
   effects?: RenderEffectsSettings;
   /**
@@ -183,7 +183,7 @@ const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
 
 /**
  * A new 3D project's colour: Scene Linear with Neutral tone mapping, so lighting keeps its range and colours their
- * saturation. 2D and Pixel Art Optimized projects stay on Legacy Display, which leaves sprite colours exactly as drawn.
+ * saturation. 2D and Pixel Art Optimized projects stay on Display Space, which leaves sprite colours exactly as drawn.
  */
 const NEW_3D_PROJECT_EFFECTS = {
   ...DEFAULT_RENDER_EFFECTS,

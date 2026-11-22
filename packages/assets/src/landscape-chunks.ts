@@ -23,9 +23,11 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-type ComponentTransformer = (component: SerializedComponent) => SerializedComponent;
+/** `actor` is the owning actor, or undefined for a Prefab or Class root component. */
+export type ComponentTransformer = (component: SerializedComponent, actor?: SerializedActor) => SerializedComponent;
 
-function mapPayloadComponents<T>(payload: T, transform: ComponentTransformer): T {
+/** Applies `transform` to every component of a Scene, Prefab or Class payload; unchanged parts keep their identity. */
+export function mapPayloadComponents<T>(payload: T, transform: ComponentTransformer): T {
   if (!payload || typeof payload !== "object") return payload;
   const record = payload as {
     actors?: readonly SerializedActor[];
@@ -41,7 +43,7 @@ function mapPayloadComponents<T>(payload: T, transform: ComponentTransformer): T
       let nextComponents: SerializedComponent[] | undefined;
       for (let ci = 0; ci < actor.components.length; ci++) {
         const component = actor.components[ci]!;
-        const updated = transform(component);
+        const updated = transform(component, actor);
         if (updated !== component) {
           const copy = nextComponents ?? actor.components.slice();
           copy[ci] = updated;
@@ -81,7 +83,7 @@ function mapPayloadComponents<T>(payload: T, transform: ComponentTransformer): T
 
 /**
  * Strips base64 `data` from every `LandscapeComponent` in a Scene, Prefab, or Class
- * payload and emits raw binary `BSLD` `.hasset` chunks (`landscape:<componentId>`).
+ * payload and emits raw binary `HPLD` `.hasset` chunks (`landscape:<componentId>`).
  * Flat default terrains emit no binary chunk.
  */
 export function extractLandscapeChunks<T>(payload: T): { payload: T; chunks: ChunkInput[] } {
@@ -152,9 +154,9 @@ export function hydrateLandscapeChunksToEditor<T>(
 }
 
 /**
- * Prepares a Scene/Prefab/Class payload and its raw binary `BSLD` chunks for Play or
+ * Prepares a Scene/Prefab/Class payload and its raw binary `HPLD` chunks for Play or
  * Export with zero base64 entering the runtime:
- * - Unsaved Editor `properties.data` is decoded once into raw `BSLD` bytes and replaced with `chunkId`.
+ * - Unsaved Editor `properties.data` is decoded once into raw `HPLD` bytes and replaced with `chunkId`.
  * - Disk-resident `properties.chunkId` entries reuse their raw `storedChunks` bytes directly.
  */
 export function collectLandscapeChunksForPlay<T>(

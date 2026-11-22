@@ -1,9 +1,9 @@
 /**
  * Project-wide color pipeline and display-space effect settings. Defaults
- * reproduce the current per-material image processing output exactly: Legacy
- * Display mode, no tone mapping, unit exposure/contrast, every effect off.
+ * reproduce the per-material image processing output exactly: Display Space
+ * mode, no tone mapping, unit exposure/contrast, every effect off.
  */
-export type ColorPipelineMode = "legacyDisplay" | "sceneLinear";
+export type ColorPipelineMode = "displaySpace" | "sceneLinear";
 export type RenderEffectsToneMapping = "none" | "standard" | "aces" | "neutral";
 
 export interface ReflectionSettings {
@@ -141,7 +141,7 @@ export const RENDER_EFFECTS_LIMITS = {
 } as const;
 
 export const DEFAULT_RENDER_EFFECTS: Readonly<RenderEffectsSettings> = {
-  colorPipeline: { mode: "legacyDisplay" },
+  colorPipeline: { mode: "displaySpace" },
   // Applies in Scene Linear only: Neutral keeps hues and saturation and rolls highlights off.
   toneMapping: "neutral",
   exposure: 1,
@@ -216,7 +216,7 @@ export function normalizeRenderEffectsSettings(
   return {
     colorPipeline: {
       mode:
-        colorPipeline.mode === "sceneLinear" ? "sceneLinear" : "legacyDisplay",
+        colorPipeline.mode === "sceneLinear" ? "sceneLinear" : "displaySpace",
     },
     toneMapping: TONE_MAPPINGS.includes(
       source.toneMapping as RenderEffectsToneMapping,

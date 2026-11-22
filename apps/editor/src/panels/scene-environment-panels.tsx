@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createActor, DEFAULT_FOLIAGE_CULL_DISTANCE, DEFAULT_FOLIAGE_FADE_RANGE, DEFAULT_FOLIAGE_SHADOW_DISTANCE, applyFoliageModelEdit, identitySerializedTransform, normalizeSerializedLandscapeProperties, parseFoliageProperties, parseLandscapeProperties, resizeLandscape, serializeLandscapeProperties, type SerializedScene, type FoliageGroup, type SerializedComponent } from "@haptic/core";
+import { createActor, DEFAULT_FOLIAGE_CULL_DISTANCE, DEFAULT_FOLIAGE_FADE_RANGE, DEFAULT_FOLIAGE_SHADOW_DISTANCE, applyFoliageModelEdit, foliageInstanceCount, identitySerializedTransform, normalizeSerializedLandscapeProperties, parseFoliageProperties, parseLandscapeProperties, resizeLandscape, serializeLandscapeProperties, type SerializedScene, type FoliageGroup, type SerializedComponent } from "@haptic/core";
 import { AssetPicker, PanelFrame, PropertyGrid, PropertySectionTitle, ToolbarStrip, TreeView, TypeVisualIcon, resolveTypeVisual, useTouchUi, type PropertyRow } from "@haptic/editor-kit";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Badge } from "@haptic/ui/components/badge";
@@ -43,8 +43,8 @@ function environmentEntries(scene: SerializedScene | null, classId: string) {
   return scene?.actors.flatMap((actor) => actor.components.filter((c) => c.classId === classId).map((component) => ({ actor, component, id: `${actor.id}/${component.id}` }))) ?? [];
 }
 
-function foliageInstanceCount(component: SerializedComponent) {
-  return parseFoliageProperties(component.properties).batches.reduce((sum, batch) => sum + batch.transforms.length, 0);
+function foliageInstances(component: SerializedComponent) {
+  return foliageInstanceCount(parseFoliageProperties(component.properties));
 }
 
 function plural(count: number, noun: string) {
@@ -82,7 +82,7 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
       const data = parseLandscapeProperties(component.properties);
       return `${data.width} × ${data.depth}`;
     }
-    return String(foliageInstanceCount(component));
+    return String(foliageInstances(component));
   };
   const createLandscape = () => {
     if (!scene) return;
@@ -98,7 +98,7 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
       <ToolbarStrip data-testid={landscape ? "landscape-outliner-toolbar" : "foliage-outliner-toolbar"}>
         {landscape
           ? <Button size="sm" variant="ghost" disabled={!scene} onClick={createLandscape}><PlusIcon data-icon="inline-start" />Create Landscape</Button>
-          : <span className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground" data-testid="foliage-outliner-count">{plural(entries.length, "Stroke")}{entries.length ? ` · ${plural(entries.reduce((sum, entry) => sum + foliageInstanceCount(entry.component), 0), "Instance")}` : ""}</span>}
+          : <span className="min-w-0 flex-1 truncate px-1 text-xs text-muted-foreground" data-testid="foliage-outliner-count">{plural(entries.length, "Stroke")}{entries.length ? ` · ${plural(entries.reduce((sum, entry) => sum + foliageInstances(entry.component), 0), "Instance")}` : ""}</span>}
         {landscape && <span className="flex-1" />}
         <IconActionButton label="Frame" variant="ghost" disabled={!selection} onClick={() => { if (selection) frameActor(selection.actor.id); }}><ScanIcon /></IconActionButton>
         <IconActionButton label="Delete Component" variant="ghost" disabled={!selection || selection.actor.locked} onClick={deleteSelection}><Trash2Icon /></IconActionButton>

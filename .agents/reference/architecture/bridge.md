@@ -27,7 +27,7 @@ Float indices, little-endian views. `SNAPSHOT_HEADER_FLOATS = 16`, `SNAPSHOT_ACT
 
 | Header float | Field |
 | --- | --- |
-| 0 | `magic`: `SNAPSHOT_MAGIC_U32 = 0x42534e50` ("BSNP", big-endian u32) stored as f32 bits |
+| 0 | `magic`: `SNAPSHOT_MAGIC_U32 = 0x48504e50` ("HPNP", big-endian u32) stored as f32 bits |
 | 1 | `version` (2) |
 | 2, 3 | `frameId`, `tickIndex`: raw u32 bits (exact past 2^24) |
 | 4 | `actorCount` |

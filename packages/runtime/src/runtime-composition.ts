@@ -116,8 +116,8 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   tilemapAnimationTimeMs: number;
   readonly hasAnimatedTiles: boolean;
   readonly waterClock: WaterClock;
-  /** Decodes binary BSLD chunks onto any LandscapeComponent of a newly created actor. */
-  hydrateActorLandscapes(actor: Actor | null, sceneGuid?: string): Actor | null;
+  /** Decodes binary HPLD chunks onto any LandscapeComponent of a newly created actor. */
+  hydrateActorComponentChunks(actor: Actor | null, sceneGuid?: string): Actor | null;
 
   // Scene documents and render target sources.
   /** Replaced by the Scene realizer's `enterScene` and by `setWorldGravity`. */

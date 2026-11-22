@@ -103,6 +103,7 @@ import { sceneDrawBatcher } from "./draw-batching";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { emptyDrawPasses, withDrawPass } from "./draw-passes";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
@@ -2521,6 +2522,42 @@ describe("Play createEngine view", () => {
     }
   });
 
+  it("does its Scene Layers' uploads before the world draws, and reports its last drawn frame's layer work", async () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    const callback = runRenderLoop.mock.calls[0]![0]!;
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
+    const order: string[] = [];
+    const before = vi.spyOn(SceneLayerCompositor.prototype, "beforeWorld").mockImplementation(function (this: SceneLayerCompositor) {
+      order.push("layers before the world");
+      this.frameStats.beforeWorld.uploads = 2;
+    });
+    const layers = vi.spyOn(SceneLayerCompositor.prototype, "render").mockImplementation(function (this: SceneLayerCompositor) {
+      order.push("layers");
+      Object.assign(this.frameStats, { scenes: 1, clears: 1, depthClears: 1, targetSwitches: 0, uploads: 0 });
+    });
+    try {
+      vi.spyOn(handle.scene, "render").mockImplementation(() => { order.push("world"); });
+      callback();
+      expect(order).toEqual(["layers before the world", "world", "layers"]);
+      const first = handle.renderDiagnostics().layerFrame!;
+      expect(first).toMatchObject({ scenes: 1, clears: 1, depthClears: 1, targetSwitches: 0, uploads: 0, beforeWorld: { uploads: 2 } });
+      // Hidden layers do no work, before the world or after it, and report none.
+      handle.applyCommand({ type: "setSceneLayersDebug", enabled: false });
+      order.length = 0;
+      callback();
+      expect(order).toEqual(["world"]);
+      expect(handle.renderDiagnostics().layerFrame).toMatchObject({ scenes: 0, beforeWorld: { uploads: 0 } });
+      // What a reader holds stays as read.
+      expect(first.beforeWorld.uploads).toBe(2);
+    } finally {
+      before.mockRestore();
+      layers.mockRestore();
+    }
+  });
+
   it("reports the programs its Engine holds, every view's among them", async () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
@@ -3870,7 +3907,7 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     const draw = () => renderViews(engine);
     const values = (scene: Scene) => scene.materials.filter((material): material is NodeMaterial => material instanceof NodeMaterial && material.name === "material:gain")
-      .map((material) => (material.getBlockByName("gain") as InputBlock).value);
+      .map((material) => (material.getBlockByName(nodeBlockName(document, "gain")) as InputBlock).value);
     const worldOwner = { kind: "scene" as const, sceneAssetGuid: "world", sceneLoadId: 1 };
     const write = (owner: Extract<import("@haptic/bridge").CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"], entryId: string, value: number) =>
       handle.applyCommand({ type: "setPostProcessMaterialParameter", owner, entryId, materialAssetGuid: "gain", parameterName: "Gain", parameter: { kind: "float", value } });

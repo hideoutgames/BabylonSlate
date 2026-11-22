@@ -1,5 +1,5 @@
 import { diagnostic, type Diagnostic } from "@haptic/scripting";
-import { normalizeModelPayload, type AssetRegistry } from "@haptic/assets";
+import { modelSimpleColliderCount, normalizeModelPayload, type AssetRegistry } from "@haptic/assets";
 import {
   physicsActorsDiagnostics,
   type PhysicsActorLike,
@@ -22,7 +22,7 @@ export function modelSimpleColliderCounter(
     const asset = registry?.getByGuid(assetGuid);
     if (!asset || asset.placeholder || asset.header.type !== "Model") return undefined;
     const open = openModels.find((doc) => doc.ref.path === asset.path);
-    return normalizeModelPayload(open?.content ?? asset.header.payload ?? {}).simpleColliders.length;
+    return open ? normalizeModelPayload(open.content).simpleColliders.length : modelSimpleColliderCount(asset.header.payload ?? {});
   };
 }
 

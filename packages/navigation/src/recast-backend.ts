@@ -37,7 +37,7 @@ import {
 } from "./types";
 
 const QUERY_EXTENTS = { x: 4, y: 4, z: 4 };
-const TILE_CACHE_MAGIC = new Uint8Array([0x42, 0x53, 0x4e, 0x54]); // BSNT
+const TILE_CACHE_MAGIC = new Uint8Array([0x48, 0x50, 0x4e, 0x54]); // HPNT
 const WALKABLE_AREA = 63;
 // Detour supports 64 area IDs; 0 and 63 are reserved for walkable polygons.
 const MAX_COST_AREAS = WALKABLE_AREA - 1;

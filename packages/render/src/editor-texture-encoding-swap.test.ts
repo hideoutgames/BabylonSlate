@@ -14,6 +14,7 @@ import { sampledTextureDocument } from "./sampled-texture-material-fixture";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
 import { ktx2HeaderBytes } from "./texture-test-fixtures";
 import { unlitBinding } from "./unlit-material-blocks";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 // The same pixels stored two ways. A real KTX2 header makes the cache flip the
 // wrapper's V axis (a sprite-sampled KTX2 gets a non-identity texture matrix).
@@ -168,7 +169,7 @@ describe("swapping a Texture's stored encoding", () => {
     const root = sync.meshForActor("a")!;
     const first = root.material as NodeMaterial;
     await vi.waitFor(() => expect(library.isReady(scene, "mat", document)).toBe(true), { timeout: 5000 });
-    const sampled = (material: NodeMaterial) => (material.getBlockByName("sample") as TextureBlock).texture;
+    const sampled = (material: NodeMaterial) => (material.getBlockByName(nodeBlockName(document, "sample")) as TextureBlock).texture;
     const before = sampled(first);
     const meshes = scene.meshes.length;
 

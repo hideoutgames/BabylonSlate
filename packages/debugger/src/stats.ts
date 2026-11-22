@@ -56,8 +56,10 @@ export type StatsHudRendering = {
   /** The world view's last frame culled by occlusion; null or absent while it does not. */
   occlusion?: { tested: number; culled: number; triangles: number; ms: number; idle?: boolean; backOff?: number } | null;
   qualityLimits: readonly string[];
-  /** Play: shaders first drawn since the scene presented, and the frames that held them. */
-  firstDraws?: { draws: number; loadCompiled: number; stalls: number; worstFrameMs: number } | null;
+  /** Play: shaders first drawn since the scene presented, the frames that held them, and the programs its load compiled. */
+  firstDraws?: { draws: number; loadCompiled: number; loadPrograms?: number; stalls: number; worstFrameMs: number } | null;
+  /** The Engine's programs now, and the Material builds against the distinct programs they share. */
+  programs?: { programs: number; materials: { builds: number; programs: number } } | null;
   /** The Engine's GPU backpressure: its `framesinflight` mode, frames queued now and renders skipped so far. */
   frameBackpressure?: { mode: "off" | 2 | 3; inFlight: number; skipped: number } | null;
   /** The world view's last drawn frame's draw calls by what drew them (objects, shadows, post, …), in display order. */
@@ -219,9 +221,16 @@ function groupMetrics(group: StatGroup, input: StatsHudInput, overBudget: boolea
           rendering.firstDraws ? {
             id: "first-draws",
             label: "first draws",
-            text: `${rendering.firstDraws.draws} (${rendering.firstDraws.loadCompiled} load) · worst ${rendering.firstDraws.worstFrameMs.toFixed(0)} ms`,
+            text: `${rendering.firstDraws.draws} (${rendering.firstDraws.loadCompiled} load) · worst ${rendering.firstDraws.worstFrameMs.toFixed(0)} ms${
+              rendering.firstDraws.loadPrograms === undefined ? "" : ` · ${rendering.firstDraws.loadPrograms} programs at load`}`,
             raw: rendering.firstDraws.draws,
             warn: rendering.firstDraws.stalls > 0,
+          } : null,
+          rendering.programs ? {
+            id: "programs",
+            label: "programs",
+            text: `${rendering.programs.programs} · Materials ${rendering.programs.materials.builds} on ${rendering.programs.materials.programs}`,
+            raw: rendering.programs.programs,
           } : null,
           rendering.qualityLimits.length ? { id: "quality-limits", text: rendering.qualityLimits.join(", "), warn: true } : null,
         ] : []),

@@ -10,7 +10,7 @@ import type {
   ScreenShadowsQuality,
 } from "@haptic/core";
 
-/** Display Color stage inputs. The vignette also runs in Legacy Display and
+/** Display Color stage inputs. The vignette also runs in Display Space and
  * CEL, where exposure, contrast and tone mapping stay at identity. */
 export interface SceneEffectsImageProcessingPlan {
   /** Linear HDR scene color resolves through the configured display stage. */
@@ -148,7 +148,7 @@ export function planWithoutScreenEffects(plan: SceneEffectsPlan | null): SceneEf
  *   output.
  * - Real-Time Reflections at strength 0, in Scene Linear only: the compose's reflection multiplier is
  *   `clamp(pow(F · 0, 1))` = 0, so its term writes `color · 1 + ssr · 0` into a half-float target, as the half-float
- *   source holds it. In Legacy Display a compose of reflections alone converts to linear and back (`pow` 2.2), which is
+ *   source holds it. In Display Space a compose of reflections alone converts to linear and back (`pow` 2.2), which is
  *   not exact. Kept when an authored stack feeds the chain (its output can be smaller than the render size; the compose
  *   resamples it into a full-size half-float target), and
  *   when its removal would leave the volumetric march the geometry pass alone, which a game's world view then seeds

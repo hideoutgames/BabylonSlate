@@ -48,10 +48,11 @@ Locked on-disk formats: `.hasset`, `.htrace`, the project / `.hplugin` tree, der
 ## Documents
 
 - Scenes, Classes and other authored documents keep their JSON body in one `document` chunk (`encodeAssetDocument` / `decodeAssetDocument`), so type, version and guid stay header-readable.
-- Import types (Font, Texture, Model, …) store settings on `header.payload` with binary chunks and no `document` chunk; `decodeAssetDocument` falls back to the header payload. Saves for those types write `headerPayload` so binary chunks survive, and document saves carry extra chunks.
+- Import types (Font, Texture, Skeleton, Animation, …) store settings on `header.payload` with binary chunks and no `document` chunk; `decodeAssetDocument` falls back to the header payload. Saves for those types write `headerPayload` so binary chunks survive, and document saves carry extra chunks.
+- Headers stay small because every scan parses and holds them: a Model keeps its full payload in the `document` chunk and `modelHeaderSummary` (everything but `simpleColliders`, plus `simpleColliderCount`) in the header, from import (`registry-import.ts`), every save (`headerMetaForSave`) and EditorPrimitives; an imported Material's graph goes into its `document` chunk with `{ domain }` in the header. Readers of collision shapes (Play, export, the viewport, the Model editor) load the document. Skeleton `bones`/`sockets` and Animation `rootMotion` stay in the header: skeleton matching, bone pickers, attach-point lists, the animation editor and the Play clip catalog read them synchronously from headers with no loaded-document cache (a KayKit Knight Skeleton header is about 5.5 KB; a root motion track is 30 samples a second of three numbers).
 - A re-save keeps the guid read from the existing header.
 - Readers that pair a document with chunks (export, Texture variants) use `ProjectService.loadDocumentWithChunks`: one file revision, retried if a save lands in between.
-- Scene payloads are `SCENE_SCHEMA_VERSION` = 4; additive fields are filled by `normalizeScene`. Documents are `.hasset` only; `.json` scenes/classes are never read or discovered.
+- Scene payloads are `SCENE_SCHEMA_VERSION` = 1; additive fields are filled by `normalizeScene`. Documents are `.hasset` only; `.json` scenes/classes are never read or discovered.
 
 ## .htrace
 
@@ -65,6 +66,7 @@ One codec, manifest kind `project` | `plugin`:
 MyGame/                      (directory) or MyGame.zip
   project.json               # kind=project
   layout.json                # editor dock layout (projects only)
+  cover.webp|cover.jpg|cover.png  # Homepage picture, when the project has one
   assets/                    # .hasset tree = Content Browser tree
     .blobs/
   plugins/<folder>/          # project plugins
@@ -76,6 +78,7 @@ MyGame/                      (directory) or MyGame.zip
 - Directory backend writes incrementally (OPFS, Documents, external folders, desktop); the folder name is the display name. Zip backend (`fflate`) is for Export Project and interchange.
 - `project.json` without a project `guid` does not open (the guid namespaces saves and derived data).
 - `project.json` holds `metadata` (the project's `name`), `settings`, `scenes` and `graphs`. A manifest missing any of them does not open and its Homepage identity cannot be edited; nothing rebuilds an empty project from it. Only `plugin.json` keeps a top-level `name`, which templates rewrite.
+- The project picture is a root cover file named by `metadata.appearance.coverFile`; `project.json` and app-settings recents never hold its data URL (`storedProjectAppearance`). `ProjectAppearance.image` is in memory only: `loadCurrentProject` reads it from the cover file, create and **Edit** write the file (`writeProjectCover`, removing other cover files), and Homepage keeps each recent's copy in derived storage at `recent-covers/<encoded folder id>` (`syncRecentProjectCover`, loaded into cards by `withRecentProjectCovers`, removed with the recent).
 - Export Game output (`assets/data-<n>.bin` + `game.json`) is export-only; the editor project stays one `.hasset` per asset ([exporter](exporter.md)).
 
 ## Derived data
@@ -84,8 +87,6 @@ App-private storage keyed by project guid (`derived/{projectGuid}/…`): compile
 
 ## Schema versions
 
-- Each registered type declares `currentVersion` and may own ordered `N → N+1` steps (`MigrationRegistry`, `loadPayloadWithMigration`). `createDefaultMigrationRegistry()` registers **no steps**: older versions are refused as an unsupported old format. Before the first release formats change in place without raising versions; add a step (with a committed golden) only when a released format must be read again.
-- Unregistered types pass through (so Font / Sprite / AnimationGraph3D version 1 is not "newer than 0"); registered future versions are refused. `project.json` migrates as type `Project`.
-- Migration is opt-in per session: opening a project that needs it prompts once; `saveDocument`, `saveProject`, NavMesh bakes and Audio clip writes refuse pending paths until `approveMigrateOnSave()`. Untouched files are never silently rewritten; autosave never prompts.
-- Play, Simulate, Preview Build and Export Game never migrate: `MigrationRegistry.requireCurrent` refuses any reached asset whose stored version is not current (open working documents are exempt). The packaged player trusts its export.
+- `RELEASED_VERSIONS` / `CURRENT_VERSIONS` in `migration.ts` are exhaustive over `AssetType | "Project"` (`satisfies Record<VersionedAssetType, number>`): a new asset type does not compile until it has a version. Every type is at 1 until the first release. Extension asset types (`extension.<guid>.<typeId>`) are at `EXTENSION_ASSET_FORMAT_VERSION` (1).
+- Reads are strict: `MigrationRegistry.requireCurrent` refuses any stored version other than the current one (older: "unsupported old format", newer: "made with a newer engine version") and any unknown type. There are no upgrade steps and no migration prompt; opening a document, `project.json` (type `Project`), Play, Simulate, Preview Build and Export Game all refuse (open working documents are exempt from the Play check). `currentVersion` throws for an unknown type, so no save writes version 0. The packaged player trusts its export.
 - `AssetFormatVersionError` messages are user-facing (Scene Loading Failed, Could Not Open Asset, Play/Preview/Export failures).

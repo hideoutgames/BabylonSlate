@@ -59,7 +59,6 @@ export interface PreviewBuildHost {
   setSessionPlayScene: Dispatch<SetStateAction<PlaySceneLoad | null>>;
   setStartupAlertOpen: Dispatch<SetStateAction<boolean>>;
   setUnsavedPrompt: Dispatch<SetStateAction<PlayUnsavedPrompt | null>>;
-  setPlayAwaitingMigration: Dispatch<SetStateAction<boolean>>;
   appendLog: (line: string) => void;
   /** Opens the session report with a closed Preview Build's diagnostics. */
   showPreviewReport: (entries: SessionReportEntry[]) => void;
@@ -89,7 +88,6 @@ export function usePreviewBuild({
   setSessionPlayScene,
   setStartupAlertOpen,
   setUnsavedPrompt,
-  setPlayAwaitingMigration,
   appendLog,
   showPreviewReport,
   loadSaveGameDefinition,
@@ -257,7 +255,6 @@ export function usePreviewBuild({
     const {
       assetRegistry,
       dirtyDocuments,
-      migrationPending,
       projectDirty,
       projectDocument,
       openPlaySceneGuid,
@@ -284,10 +281,6 @@ export function usePreviewBuild({
       });
       return;
     }
-    if (needsSave && migrationPending.length > 0) {
-      setPlayAwaitingMigration(true);
-      return;
-    }
     const ticket = sessionOwner.begin("preview");
     if (!ticket) return;
     sessionTicketRef.current = ticket;
@@ -308,11 +301,8 @@ export function usePreviewBuild({
       if (needsSave) {
         const outcome = await saveAll("preview");
         if (!isCurrentRequest()) return;
-        if (outcome !== "saved") {
-          // As Play: migrations wait for approval; locked documents are named in Save Failed.
-          if (outcome === "migrations") setPlayAwaitingMigration(true);
-          return;
-        }
+        // As Play: documents someone else has locked are named in Save Failed.
+        if (outcome !== "saved") return;
       }
       if (!isCurrentRequest()) return;
       await prepareSaveGameConfiguration({
@@ -410,7 +400,6 @@ export function usePreviewBuild({
     preparingRef,
     sessionSourceDocumentRef,
     sessionTicketRef,
-    setPlayAwaitingMigration,
     setPlayOpen,
     setPreparing,
     setStartupAlertOpen,

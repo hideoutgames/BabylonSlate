@@ -14,6 +14,7 @@ import { MaterialLibrary } from "./material-library";
 import { encodeUvHierarchyGlb } from "./glb-test-fixtures";
 import { createSnapshotSceneBinding } from "./snapshot-apply";
 import { visualMeshes } from "./visual-meshes";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -141,7 +142,7 @@ describe("staged model material admission", () => {
     textures.admission.reject(new Error("authored parameter admission rejected"));
     await expect(load).rejects.toThrow("authored parameter admission");
     expect(visualMeshes(f.root)).toEqual(f.previous);
-    expect((first.material.getBlockByName("sample") as TextureBlock).texture).toBe(textures.working);
+    expect((first.material.getBlockByName(nodeBlockName(textureDocument("working"), "sample")) as TextureBlock).texture).toBe(textures.working);
     expect(textures.released).toHaveBeenCalledWith("pending");
   });
 
@@ -164,7 +165,7 @@ describe("staged model material admission", () => {
     textures.admission.resolve();
     await load;
     expect(visualMeshes(f.root)).not.toEqual(f.previous);
-    expect((first.material.getBlockByName("sample") as TextureBlock).texture).toBe(textures.pending);
+    expect((first.material.getBlockByName(nodeBlockName(textureDocument("working"), "sample")) as TextureBlock).texture).toBe(textures.pending);
     expect(textures.released).not.toHaveBeenCalledWith("pending");
   });
 

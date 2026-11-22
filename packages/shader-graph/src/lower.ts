@@ -15,6 +15,7 @@ import type {
   MaterialGraphEdge,
   MaterialGraphNode,
 } from "./document";
+import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE } from "./global-parameter";
 import { createTypeResolver, type TypeResolver } from "./resolve";
 import { materialDefaultComponents, resolveMaterialPinDefault } from "./pin-defaults";
 import { conversionFor, convertMaterialValue, type MaterialConversion, type MaterialValueType } from "./types";
@@ -96,6 +97,18 @@ export interface MaterialBuildPlan {
   bufferRequirements: MaterialBufferRequirements;
   /** Stable content hash. Node positions and names are deliberately excluded. */
   hash: string;
+  /**
+   * The graph's shape: what decides its GPU program. Operations by plan position (never node id), their wiring and
+   * conversions, the literals the shader holds, the properties that change code, which samples have a texture bound,
+   * and the domain, shading, blend, two-sided, normals and alpha cutoff. Two plans with one `programHash` and one
+   * `valueHash` compile byte-identical shader text whatever their Materials and node ids (`shareCompiledProgram`).
+   */
+  programHash: string;
+  /**
+   * What a plan binds rather than compiles: its parameters' names and default values, its texture guids and filters,
+   * its Global Parameter selections and its bounds padding. Two plans that differ only here share one program.
+   */
+  valueHash: string;
 }
 
 export interface MaterialBufferRequirements {
@@ -211,6 +224,52 @@ function describeOperand(operand: MaterialOperand | null | undefined): string {
   return `o:${operand.operationId}:${operand.pinId}${
     operand.conversions?.map(({ from, to }) => `:${from}>${to}`).join("") ?? ""
   }`;
+}
+
+/** Properties a parameter or a texture binding reads at bind time: values, never code. */
+const BOUND_PROPERTIES: ReadonlySet<string> = new Set(["textureGuid", "filter"]);
+const PARAMETER_PROPERTIES: ReadonlySet<string> = new Set(["name", "value"]);
+const GLOBAL_PARAMETER_PROPERTIES: ReadonlySet<string> = new Set(["collectionGuid", "parameterId"]);
+
+/** Whether `key` of `operation` is a bound value (`valueHash`) rather than part of its code (`programHash`). */
+function isBoundProperty(operation: MaterialOperation, key: string): boolean {
+  if (BOUND_PROPERTIES.has(key)) return true;
+  if (operation.nodeType.startsWith("param.")) return PARAMETER_PROPERTIES.has(key);
+  return operation.nodeType === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE && GLOBAL_PARAMETER_PROPERTIES.has(key);
+}
+
+/** `programHash` and `valueHash` of a lowered plan (see `MaterialBuildPlan`). */
+function hashPlanParts(
+  operations: readonly MaterialOperation[],
+  outputs: Record<string, MaterialOperand | null>,
+  textures: readonly MaterialTextureBinding[],
+  programHeader: string,
+  valueHeader: string,
+): { programHash: string; valueHash: string } {
+  const positions = new Map(operations.map((operation, index) => [operation.id, index]));
+  const operand = (value: MaterialOperand | null | undefined): string => {
+    if (!value) return "none";
+    if (value.kind === "constant") return `c:${value.type}:${value.value.join("/")}`;
+    return `o:${positions.get(value.operationId) ?? "?"}:${value.pinId}${
+      value.conversions?.map(({ from, to }) => `:${from}>${to}`).join("") ?? ""
+    }`;
+  };
+  const property = (operation: MaterialOperation, key: string) => `${key}:${JSON.stringify(operation.properties[key])}`;
+  const bound = new Map(textures.map((binding) => [binding.operationId, binding]));
+  const program: string[] = [programHeader];
+  const values: string[] = [valueHeader];
+  operations.forEach((operation, index) => {
+    const inputs = Object.keys(operation.inputs).sort().map((pinId) => `${pinId}=${operand(operation.inputs[pinId])}`).join(",");
+    const keys = Object.keys(operation.properties).sort().filter((key) => key !== "__pins");
+    const code = keys.filter((key) => !isBoundProperty(operation, key)).map((key) => property(operation, key)).join(",");
+    program.push(`${operation.nodeType}|${operation.resolvedType}|${inputs}|${code}|${bound.has(operation.id) ? "texture" : ""}`);
+    const value = keys.filter((key) => isBoundProperty(operation, key)).map((key) => property(operation, key));
+    const binding = bound.get(operation.id);
+    if (binding) value.push(`binding:${binding.textureGuid}:${binding.filter ?? "linear"}`);
+    if (value.length) values.push(`${index}|${value.join(",")}`);
+  });
+  for (const key of Object.keys(outputs).sort()) program.push(`out:${key}=${operand(outputs[key])}`);
+  return { programHash: fnv1a(program.join("\n")), valueHash: fnv1a(values.join("\n")) };
 }
 
 function compileFingerprint(document: MaterialDocument): string {
@@ -556,6 +615,9 @@ function lowerWithinBudget(
       },
       bufferRequirements: bufferRequirementsOf(operations),
       hash: hashPlan(operations, outputs, header),
+      ...hashPlanParts(operations, outputs, textures, [
+        doc.domain, doc.shadingModel, doc.blendMode, doc.twoSided ? "two-sided" : "one-sided", doc.defaultNormals, String(doc.alphaCutoff),
+      ].join("|"), String(doc.boundsPadding ?? 0)),
     },
   };
 }

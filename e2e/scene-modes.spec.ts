@@ -148,9 +148,12 @@ test.describe("Scene modes", () => {
     const foliage = async () => (await content(page)).actors.flatMap((actor) => actor.components).filter((component) => component.classId === "FoliageComponent");
     await expect.poll(async () => (await foliage()).length).toBe(1);
     const painted = (await foliage())[0]!;
-    const batches = painted.properties.batches as Array<{ modelGuid: string; transforms: unknown[] }>;
+    const batches = painted.properties.batches as Array<{ modelGuid: string }>;
     expect(batches.map((batch) => batch.modelGuid)).toEqual([guid]);
-    expect(batches[0]!.transforms.length).toBeGreaterThan(1);
+    // Instances are one base64 HPFG chunk: magic, version 1, one batch, then its instance count.
+    const data = Uint8Array.from(atob(painted.properties.data as string), (character) => character.charCodeAt(0));
+    expect(String.fromCharCode(...data.subarray(0, 4))).toBe("HPFG");
+    expect(new DataView(data.buffer).getUint32(8, true)).toBeGreaterThan(1);
     await page.getByTestId("undo-document").click();
     await expect.poll(async () => (await foliage()).length).toBe(0);
     await page.getByTestId("redo-document").click();
@@ -163,7 +166,7 @@ test.describe("Scene modes", () => {
     await waitForEditorInteractive(page);
     await openMainScene(page);
     await waitForSceneViewportReady(page);
-    expect((await foliage())[0]!.properties.batches).toEqual(batches);
+    expect((await foliage())[0]!.properties).toMatchObject({ batches, data: painted.properties.data });
   });
   test("creates, renames and keeps a Timeline Clip in Timeline mode, with the Clips and Timeline windows", async ({ page }) => {
     test.setTimeout(120_000);

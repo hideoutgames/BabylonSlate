@@ -406,13 +406,13 @@ describe("runtime Save Game", () => {
       const original = [...storage.files];
       const exported = await service.exportSave();
       if (!exported.ok) throw new Error(exported.error.message);
-      const envelope = JSON.parse(exported.value);
-      const payload = JSON.parse(envelope.payload);
+      // A save file is a `haptic-save <format> <sha256>` line, then the JSON body.
+      const payload = JSON.parse(exported.value.slice(exported.value.indexOf("\n") + 1));
       payload.state.actors.find((actor: { id: string }) => actor.id === "hero").variables.target = invalidMap;
-      envelope.payload = JSON.stringify(payload);
-      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(envelope.payload));
-      envelope.checksum = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
-      expect(await service.importSave(JSON.stringify(envelope))).toMatchObject({ ok: false, error: { code: "corrupt" } });
+      const body = JSON.stringify(payload);
+      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+      const file = `haptic-save 1 ${Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("")}\n${body}`;
+      expect(await service.importSave(file)).toMatchObject({ ok: false, error: { code: "corrupt" } });
       expect([...storage.files]).toEqual(original);
       expect(hero(runtime).getVariable("target")).toBe(liveMap);
     } finally { runtime.stop(); }

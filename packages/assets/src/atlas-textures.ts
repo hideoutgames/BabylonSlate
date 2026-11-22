@@ -27,12 +27,9 @@ export function atlasTextureGuids(type: string, payload: Record<string, unknown>
   return [];
 }
 
-/**
- * Atlas textures a referrer's header lists, or null when the header predates
- * the meta (legacy: the document must be decoded to know).
- */
-export function headerAtlasTextureGuids(payload: Record<string, unknown>): string[] | null {
+/** Atlas textures a referrer's header lists; every write of a referrer lists them. */
+export function headerAtlasTextureGuids(payload: Record<string, unknown>): string[] {
   const listed = payload[ATLAS_TEXTURES_META];
-  if (!Array.isArray(listed)) return null;
+  if (!Array.isArray(listed)) return [];
   return listed.filter((guid): guid is string => typeof guid === "string" && guid.length > 0);
 }

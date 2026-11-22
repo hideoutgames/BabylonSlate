@@ -14,6 +14,7 @@ import {
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
   normalizeTilemapPayload,
+  setTile,
 } from "@haptic/assets";
 import {
   collectPlayScriptDocuments,
@@ -208,21 +209,23 @@ describe("scene-referenced Play content", () => {
     ]);
   });
 
-  it("builds a worker loadTilemaps control from scene payloads", () => {
-    const tilemap = createDefaultTilemapPayload();
+  it("builds a worker loadTilemaps control whose Tilemap chunks cross run-length encoded", () => {
+    const tilemap = setTile(createDefaultTilemapPayload(), "layer-1", 2, 0, 5);
     const tileset = createDefaultTilesetPayload();
-    expect(
-      playLoadTilemapsControl(
-        new Map([["overworld", tilemap]]),
-        new Map([["overworld-set", tileset]]),
-        16,
-      ),
-    ).toEqual({
+    const control = playLoadTilemapsControl(
+      new Map([["overworld", tilemap]]),
+      new Map([["overworld-set", tileset]]),
+      16,
+    );
+    expect(control).toMatchObject({
       type: "loadTilemaps",
-      tilemaps: [{ guid: "overworld", document: tilemap }],
       tilesets: [{ guid: "overworld-set", document: tileset }],
       pixelsPerUnit: 16,
     });
+    const sent = control!.tilemaps[0]!.document as { layers: Array<{ chunks: Array<Record<string, unknown>> }> };
+    expect(sent.layers[0]!.chunks).toEqual([{ cx: 0, cy: 0, runs: [2, 0, 1, 5, 1021, 0] }]);
+    // The worker normalizes it back to the same cells.
+    expect(normalizeTilemapPayload(sent)).toEqual(tilemap);
     expect(playLoadTilemapsControl(new Map(), new Map())).toBeNull();
   });
 

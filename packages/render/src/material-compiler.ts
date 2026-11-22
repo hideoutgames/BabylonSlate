@@ -45,7 +45,7 @@ import { fnv1a, globalParameterSelection } from "@haptic/core";
 import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, componentCount, isPerInstanceParameter, materialNodeDefinition } from "@haptic/shader-graph";
 import { globalParameterDefaults, type GlobalParameterValueSource } from "./global-parameter-values";
 import { createGlobalParameterBlock } from "./material-global-parameter";
-import { attachInstanceParameters, createInstanceParameterBlock, instanceParameterAttribute, type InstanceParameter } from "./instance-parameters";
+import { attachInstanceParameters, createInstanceParameterBlock, indexLetters, instanceParameterAttribute, type InstanceParameter } from "./instance-parameters";
 import { materialGlslDiagnostic, shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
@@ -88,6 +88,7 @@ import { createDecalPlumbing } from "./decal-projection-block";
 import { MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
+import { noteAdoptedProgram, noteMaterialBuild, noteSameShaderRebuild } from "./material-program-census";
 
 /** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
 const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
@@ -326,8 +327,22 @@ function anchorNodeId(operation: MaterialOperation): string {
   return operation.source.callPath[0] ?? operation.source.nodeId;
 }
 
+/**
+ * What the compiler names its plumbing blocks (the surface's transforms, lighting, fog, outputs) in every Material:
+ * never the Material's own name, which would make each Material's shader text, and so its program, its own.
+ */
+export const MATERIAL_BLOCK_PREFIX = "material";
+
+/**
+ * The name of the blocks realizing a plan's `index`th operation: letters only, since Babylon strips digits from the
+ * shader symbols it derives from block names, so each operation keeps a symbol of its own whatever its node id.
+ */
+export function materialOperationBlockName(index: number): string {
+  return `op${indexLetters(index)}`;
+}
+
 /** Babylon removes digits before allocating unique shader symbols. Collapse the
- * separators after that removal so generated node IDs cannot introduce GLSL's
+ * separators after that removal so generated names cannot introduce GLSL's
  * reserved double underscore, including when an adapter appends a suffix. */
 function operationBlockName(id: string): string {
   const name = id.replace(/[^A-Za-z0-9_]/g, "_").replace(/[0-9]/g, "").replace(/_+/g, "_").replace(/^_|_$/g, "");
@@ -414,6 +429,10 @@ export function compileMaterialPlan(
   }
   const outputNodes: NodeMaterialBlock[] = [];
   let textGlyph: TextMaterialBlock | undefined;
+  // Blocks are named by the operation's place in the plan, never its node id, so Materials of one graph shape generate
+  // the same shader text and share a program (`shareCompiledProgram`).
+  const blockNames = new Map(plan.operations.map((operation, index) => [operation.id, materialOperationBlockName(index)]));
+  const blockNameOf = (operation: MaterialOperation): string => blockNames.get(operation.id)!;
 
   const fail = (): CompileMaterialResult => {
     for (const block of created) block.dispose();
@@ -432,34 +451,34 @@ export function compileMaterialPlan(
   try {
     if (material.mode === NodeMaterialModes.Particle) {
       prepareNodeMaterialParticleBindings(material);
-      const uv = new InputBlock(`${options.name}_particleUv`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
+      const uv = new InputBlock(`${MATERIAL_BLOCK_PREFIX}_particleUv`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
       uv.setAsAttribute("particle_uv");
       created.push(uv);
       plumbing.uv = uv.output;
     }
     if (plan.domain === "postProcess") {
       outputNodes.push(
-        ...createPostProcessPlumbing(options.name, created, plumbing),
+        ...createPostProcessPlumbing(MATERIAL_BLOCK_PREFIX, created, plumbing),
       );
     } else if (plan.domain === "decal") {
-      outputNodes.push(...createDecalPlumbing(options.name, created, plumbing));
+      outputNodes.push(...createDecalPlumbing(MATERIAL_BLOCK_PREFIX, created, plumbing));
     } else if (plan.domain !== "particle" || options.particlePreview) {
       outputNodes.push(
-        ...createSurfacePlumbing(options.name, created, plumbing),
+        ...createSurfacePlumbing(MATERIAL_BLOCK_PREFIX, created, plumbing),
       );
     }
     // One Water Waves block per graph, at the rest point, whichever surface variant this is: every variant compiles the
     // same plan, so the depth, shadow, outline and capture programs displace as the colour pass does.
     if (plumbing.restWorldPosition && plan.operations.some((operation) => operation.nodeType === "input.waterWaves")) {
-      const waves = new WaterWavesBlock(`${options.name}_waterWaves`);
+      const waves = new WaterWavesBlock(`${MATERIAL_BLOCK_PREFIX}_waterWaves`);
       plumbing.restWorldPosition.connectTo(waves.worldPosition);
       plumbing.worldNormal?.connectTo(waves.worldNormal);
       created.push(waves);
       plumbing.waterWaves = waves;
     }
     if (plan.domain === "text") {
-      textGlyph = new TextMaterialBlock(`${options.name}_textGlyph`);
-      const uv = new InputBlock(`${options.name}_glyphUV`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
+      textGlyph = new TextMaterialBlock(`${MATERIAL_BLOCK_PREFIX}_textGlyph`);
+      const uv = new InputBlock(`${MATERIAL_BLOCK_PREFIX}_glyphUV`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
       uv.setAsAttribute("uv");
       uv.output.connectTo(textGlyph.glyphUV);
       plumbing.uv = textGlyph.uv;
@@ -539,11 +558,11 @@ export function compileMaterialPlan(
       const blocks: NodeMaterialBlock[] = [];
       const outputs: Record<string, NodeMaterialConnectionPoint> = {};
       if (selection) {
-        const block = createGlobalParameterBlock(operationBlockName(operation.id), selection, options.globalParameters ?? globalParameterDefaults);
+        const block = createGlobalParameterBlock(blockNameOf(operation), selection, options.globalParameters ?? globalParameterDefaults);
         blocks.push(block);
         outputs.out = block.output;
         if (selection.valueType === "color") {
-          const split = new VectorSplitterBlock(`${operation.id}_rgb`);
+          const split = new VectorSplitterBlock(`${blockNameOf(operation)}_rgb`);
           block.output.connectTo(split.xyzw);
           blocks.push(split);
           outputs.rgb = split.xyzOut;
@@ -559,7 +578,7 @@ export function compileMaterialPlan(
       operation.nodeType.startsWith("param.");
     if (isConstant) {
       if (operation.nodeType === "param.texture") {
-        const block = new ImageSourceBlock(operation.id);
+        const block = new ImageSourceBlock(blockNameOf(operation));
         created.push(block);
         const realization = { blocks: [block], inputs: {}, outputs: { out: block.source } };
         realized.set(operation.id, realization);
@@ -584,7 +603,7 @@ export function compileMaterialPlan(
       const block = perInstance
         ? createInstanceParameterBlock(instanceParameterAttribute(instanceParameters.length, kind), kind)
         // A parameter stays a uniform, which `setParameter` rewrites; a constant node is written into the shader.
-        : createConstantBlock(operationBlockName(operation.id), type, value, asColor, operation.nodeType.startsWith("param."));
+        : createConstantBlock(blockNameOf(operation), type, value, asColor, operation.nodeType.startsWith("param."));
       if (perInstance) instanceParameters.push({
         name: String(operation.properties.name ?? "").trim(), attribute: block.name, kind,
         value: kind === "color" ? { kind, value: [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1] } : { kind, value: value[0] ?? 0 },
@@ -595,7 +614,7 @@ export function compileMaterialPlan(
         out: block.output,
       };
       if (operation.nodeType === "param.color") {
-        const split = new VectorSplitterBlock(`${operation.id}_rgb`);
+        const split = new VectorSplitterBlock(`${blockNameOf(operation)}_rgb`);
         block.output.connectTo(split.xyzw);
         created.push(split);
         blocks.push(split);
@@ -630,7 +649,7 @@ export function compileMaterialPlan(
       realization = track(
         adapter({
           operation,
-          name: operationBlockName(operation.id),
+          name: blockNameOf(operation),
           resolveTexture: options.resolveTexture,
           plumbing,
         }),
@@ -672,7 +691,7 @@ export function compileMaterialPlan(
       try {
         const point = pointForOperand(
           operand,
-          operationBlockName(`${operation.id}_${pinId}`),
+          operationBlockName(`${blockNameOf(operation)}_${pinId}`),
           false,
         );
         if (!point) continue;
@@ -732,14 +751,14 @@ export function compileMaterialPlan(
     if (!isIdentityWorldPositionOffset(offsetOperand) && offsetOperand) {
       const offset = pointForOperand(
         offsetOperand,
-        `${options.name}_worldPositionOffset`,
+        `${MATERIAL_BLOCK_PREFIX}_worldPositionOffset`,
         false,
       );
       if (offset) {
-        applyWorldPositionOffset(options.name, created, plumbing, offset);
+        applyWorldPositionOffset(MATERIAL_BLOCK_PREFIX, created, plumbing, offset);
       }
     }
-    applyLatticeDeformerPlumbing(options.name, created, plumbing, scene, plan.operations.some((operation) => operation.nodeType === "input.worldTangent"));
+    applyLatticeDeformerPlumbing(MATERIAL_BLOCK_PREFIX, created, plumbing, scene, plan.operations.some((operation) => operation.nodeType === "input.worldTangent"));
     if (!realizeOperations()) return fail();
     if (plumbing.clipPosition && plumbing.worldPosition) {
       plumbing.worldPosition.connectTo(plumbing.clipPosition);
@@ -761,7 +780,7 @@ export function compileMaterialPlan(
     const operand = plan.outputs[pinId];
     if (!operand && pinId === "normal" && plan.defaultNormals === "flat") {
       if (!flatNormal && plumbing.worldPosition && plumbing.worldNormal) {
-        flatNormal = new FlatNormalBlock(`${options.name}_flatNormal`);
+        flatNormal = new FlatNormalBlock(`${MATERIAL_BLOCK_PREFIX}_flatNormal`);
         created.push(flatNormal);
         plumbing.worldPosition.connectTo(flatNormal.worldPosition);
         plumbing.worldNormal.connectTo(flatNormal.modelNormal);
@@ -774,12 +793,12 @@ export function compileMaterialPlan(
 
   try {
     if (plan.domain === "text" && textGlyph) {
-      const fragment = new DisplayFragmentOutputBlock(`${options.name}_fragment`);
-      const multiply = new MultiplyBlock(`${options.name}_textFill`);
-      outputPoint("color", `${options.name}_color`, true)?.connectTo(multiply.left);
+      const fragment = new DisplayFragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`);
+      const multiply = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_textFill`);
+      outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true)?.connectTo(multiply.left);
       textGlyph.color.connectTo(multiply.right);
-      const style = new OverlayStyleBlock(`${options.name}_overlayStyle`);
-      const styled = new MultiplyBlock(`${options.name}_overlayFill`);
+      const style = new OverlayStyleBlock(`${MATERIAL_BLOCK_PREFIX}_overlayStyle`);
+      const styled = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_overlayFill`);
       multiply.output.connectTo(styled.left);
       style.rgba.connectTo(styled.right);
       styled.output.connectTo(fragment.rgba);
@@ -787,25 +806,25 @@ export function compileMaterialPlan(
       outputNodes.push(fragment);
     } else if (plan.domain === "postProcess" || plan.domain === "particle") {
       const fragment = plan.domain === "particle"
-        ? new DisplayFragmentOutputBlock(`${options.name}_fragment`)
-        : new FragmentOutputBlock(`${options.name}_fragment`);
+        ? new DisplayFragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`)
+        : new FragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`);
       created.push(fragment);
-      const color = outputPoint("color", `${options.name}_color`, true);
+      const color = outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true);
       if (color && material.mode === NodeMaterialModes.Particle) {
-        connectParticleBlend(options.name, created, color, fragment.rgba);
+        connectParticleBlend(MATERIAL_BLOCK_PREFIX, created, color, fragment.rgba);
       } else if (color) color.connectTo(fragment.rgba);
       outputNodes.push(fragment);
     } else if (plan.domain === "decal") {
-      outputNodes.push(...attachDecalShading(plan, options, created, plumbing, outputPoint));
+      outputNodes.push(...attachDecalShading(plan, created, plumbing, outputPoint));
     } else {
       // A water variant keeps built-in water's cut (removal volumes, land above the water, a blending neighbour's water),
       // in each of its own variants (outline, capture). It reads the final displaced position, and the geometry's own
       // waterline: the Water Waves node's vertex height on the GPU path.
       if (plan.domain === "surface" && options.water && plumbing.worldPosition) {
-        const cut = new WaterCutBlock(`${options.name}_waterCut`);
+        const cut = new WaterCutBlock(`${MATERIAL_BLOCK_PREFIX}_waterCut`);
         plumbing.worldPosition.connectTo(cut.worldPosition);
         if (plumbing.waterWaves) {
-          const vertexHeight = new WaterSurfaceBlock(`${options.name}_waterCutHeight`);
+          const vertexHeight = new WaterSurfaceBlock(`${MATERIAL_BLOCK_PREFIX}_waterCutHeight`);
           plumbing.waterWaves.height.connectTo(vertexHeight.gpuWaveHeight);
           vertexHeight.waveHeight.connectTo(cut.waveHeight);
           created.push(vertexHeight);
@@ -814,31 +833,31 @@ export function compileMaterialPlan(
         outputNodes.push(cut);
       }
       if (outlineMask) {
-        const identity = new SharedOutlineIdentityBlock(`${options.name}_identity`);
-        const output = new SharedOutlineOutputBlock(`${options.name}_outline`);
+        const identity = new SharedOutlineIdentityBlock(`${MATERIAL_BLOCK_PREFIX}_identity`);
+        const output = new SharedOutlineOutputBlock(`${MATERIAL_BLOCK_PREFIX}_outline`);
         identity.identity.connectTo(output.rgb);
         if (blendsOverScene(plan.blendMode))
-          outputPoint("opacity", `${options.name}_opacity`, false)?.connectTo(output.a);
+          outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false)?.connectTo(output.a);
         created.push(identity, output); outputNodes.push(output);
       } else if (shadowDepth) {
         // The shadow pass owns the final projection so native normal bias is
         // applied after WPO/runtime deformation and before clip conversion.
         for (let index = outputNodes.length - 1; index >= 0; index--)
           if (outputNodes[index] instanceof VertexOutputBlock) outputNodes.splice(index, 1);
-        outputNodes.push(createAuthoredShadowVertexOutput(options.name, created, plumbing));
-        const output = new AuthoredShadowFragmentOutput(`${options.name}_shadowFragment`);
+        outputNodes.push(createAuthoredShadowVertexOutput(MATERIAL_BLOCK_PREFIX, created, plumbing));
+        const output = new AuthoredShadowFragmentOutput(`${MATERIAL_BLOCK_PREFIX}_shadowFragment`);
         if (blendsOverScene(plan.blendMode))
-          outputPoint("opacity", `${options.name}_opacity`, false)?.connectTo(output.opacity);
+          outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false)?.connectTo(output.opacity);
         created.push(output); outputNodes.push(output);
       } else if (options.surfaceVariant === "captureDepth" || options.surfaceVariant === "captureNormal") {
         outputNodes.push(createGeometryCaptureOutput(scene, options.surfaceVariant === "captureDepth", created, plumbing));
       } else outputNodes.push(attachSurfaceShading(plan, options, created, plumbing, outputPoint));
       if (plan.blendMode === "masked") {
         // The colour variant writes alpha-to-coverage under MSAA (`alpha-to-coverage.ts`); pass variants only discard.
-        const discard = new CoverageClipBlock(`${options.name}_alphaClip`);
+        const discard = new CoverageClipBlock(`${MATERIAL_BLOCK_PREFIX}_alphaClip`);
         discard.coverage = !auxiliary && !options.water && !options.overlay;
-        const cutoff = createConstantBlock(`${options.name}_alphaCutoff`, "float", [plan.alphaCutoff]);
-        const mask = outputPoint(plan.outputs.alphaClip ? "alphaClip" : "opacity", `${options.name}_clipMask`, false);
+        const cutoff = createConstantBlock(`${MATERIAL_BLOCK_PREFIX}_alphaCutoff`, "float", [plan.alphaCutoff]);
+        const mask = outputPoint(plan.outputs.alphaClip ? "alphaClip" : "opacity", `${MATERIAL_BLOCK_PREFIX}_clipMask`, false);
         mask?.connectTo(discard.value);
         cutoff.output.connectTo(discard.cutoff);
         created.push(discard, cutoff);
@@ -868,6 +887,8 @@ export function compileMaterialPlan(
   let checkingShader = false;
   // Builds `rebuildWhenReady` started whose build observer has not run yet: the same plan, rebuilt for a loaded texture.
   let ownRebuilds = 0;
+  /** Each pending own rebuild's shader text before it, oldest first. */
+  const rebuiltFrom: Array<string | null> = [];
   let shaderTimer: ReturnType<typeof setTimeout> | undefined;
   let shaderProbe: Mesh | null = null;
   let failedShaderEffect: Effect | null = null;
@@ -930,6 +951,7 @@ export function compileMaterialPlan(
     buildError = message;
     // A failed build emits no build notification: the next one is not ours unless `rebuildWhenReady` starts it.
     ownRebuilds = 0;
+    rebuiltFrom.length = 0;
     const diagnostic: MaterialDiagnostic = { code: "material.compile.buildFailed", message, severity: "error" };
     if (buildState === "pending") {
       buildState = "failed";
@@ -942,6 +964,8 @@ export function compileMaterialPlan(
     configureSurface();
     if (ownRebuilds > 0) {
       ownRebuilds--;
+      const before = rebuiltFrom.shift();
+      if (typeof before === "string" && before === material.compiledShaders) noteSameShaderRebuild(scene.getEngine());
       // The plan's vertex stage is unchanged, so a cacheable shape stays so at its new build id.
       if (buildState === "ready" && cacheableShadowShape) registerCacheableShadowMaterial(material);
     }
@@ -1072,10 +1096,11 @@ export function compileMaterialPlan(
       }
     });
   }
-  // Custom GLSL keeps its own readiness probe; everything else in Material
-  // mode may reuse a byte-identical program compiled for another material.
+  // Custom GLSL keeps its own readiness probe; everything else in Material mode may reuse a byte-identical program
+  // compiled for another material, whatever its name. Particle programs share only under one name: Babylon names a
+  // particle Effect after its material.
   if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
-    shareCompiledProgram(material, JSON.stringify([options.name, options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]));
+    shareCompiledProgram(material, JSON.stringify([options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]));
   } else if (material.mode === NodeMaterialModes.Particle && plan.cost.customBlocks === 0) {
     shareParticleProgram(material, JSON.stringify([options.name, material.shaderLanguage]));
   }
@@ -1103,6 +1128,7 @@ export function compileMaterialPlan(
   }
 
   configureSurface();
+  noteMaterialBuild(material);
 
   const loadObservers: Array<() => void> = [];
   let rebuildQueued = false;
@@ -1124,6 +1150,8 @@ export function compileMaterialPlan(
     }
     const wasFrozen = material.isFrozen;
     if (wasFrozen) material.unfreeze();
+    // The census asks whether the rebuild changed the program at all (`sameShaderRebuilds`).
+    rebuiltFrom.push(nodeMaterialBuilt(material) ? material.compiledShaders : null);
     ownRebuilds++;
     try {
       material.build();
@@ -1131,6 +1159,7 @@ export function compileMaterialPlan(
       markCompiledMaterialDirty(material);
     } catch (error) {
       ownRebuilds = 0;
+      rebuiltFrom.length = 0;
       // Must not throw into Texture.onLoadObservable / onErrorObservable.
       options.onTextureError?.({
         code: "material.compile.buildFailed",
@@ -1288,8 +1317,10 @@ export function compileMaterialPlan(
 }
 
 /** Live materials on each program keep its entry; the last one to dispose drops it. */
+/** `shaders` is the registry's key, which every user refers to rather than holding a copy of its own code. */
 type SharedProgram = { buildId: number; shaders: string; users: Set<NodeMaterial> };
-const sharedPrograms = new WeakMap<AbstractEngine, Map<string, SharedProgram>>();
+/** Per Engine, per key, the programs by their generated code. */
+const sharedPrograms = new WeakMap<AbstractEngine, Map<string, Map<string, SharedProgram>>>();
 const sharedProgramForgetters = new WeakMap<NodeMaterial, () => void>();
 
 /** Drop the program a material shares from the registry, so no later compile adopts its build id. */
@@ -1303,22 +1334,33 @@ function freshBuildId(): number {
 }
 
 /**
- * Babylon keys a NodeMaterial effect by build id, so each build compiles and
- * links its own GPU program even when the generated code is identical, as it
- * is for Material Instances and per-component parameter copies. After each
- * build, adopt the build id of an earlier build under the same key whose
- * generated vertex and fragment code is byte-identical: the engine's effect
- * cache then returns the already compiled program and only uniforms differ.
- * Source equality is checked on every build, so a changed graph or a
- * texture-dependent variant never reuses a mismatched program.
+ * Babylon keys a NodeMaterial effect by build id, so each build compiles and links its own GPU program even when the
+ * generated code is identical, as it is for every Material of one graph shape and values (the compiler names its blocks
+ * by plan position, never by Material), their Instances and per-component parameter copies. After its first build, a
+ * material adopts the build id of a live build under the same key whose generated vertex and fragment code is
+ * byte-identical: the engine's effect cache then returns the already compiled program and only uniforms and textures
+ * differ. Source equality is the test, so a changed graph or a texture-dependent variant never reuses a mismatched
+ * program.
  */
 export function shareCompiledProgram(material: NodeMaterial, key: string): void {
   const engine = material.getScene().getEngine();
-  let programs = sharedPrograms.get(engine);
-  if (!programs) sharedPrograms.set(engine, (programs = new Map()));
+  let byKey = sharedPrograms.get(engine);
+  if (!byKey) sharedPrograms.set(engine, (byKey = new Map()));
+  let programs = byKey.get(key);
+  if (!programs) byKey.set(key, (programs = new Map()));
   const registry = programs;
+  /** The code this material's program is registered under. */
+  let registered: string | undefined;
+  const leave = () => {
+    if (registered === undefined) return;
+    const known = registry.get(registered);
+    if (known?.users.delete(material) && known.users.size === 0) registry.delete(registered);
+    registered = undefined;
+  };
   // The program failed to link: the Engine hands a later requester that Effect without an error to report.
-  sharedProgramForgetters.set(material, () => { if (registry.get(key)?.users.has(material)) registry.delete(key); });
+  sharedProgramForgetters.set(material, () => {
+    if (registered !== undefined && registry.get(registered)?.users.has(material)) registry.delete(registered);
+  });
   let adopted: number | undefined;
   let firstBuild = true;
   // First observer: later observers (shadow/cluster policies) record the final id.
@@ -1326,23 +1368,24 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
     // A rebuild that kept an adopted id may no longer match that program.
     if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
     adopted = undefined;
+    leave();
     const shaders = material.compiledShaders;
-    const known = registry.get(key);
+    const known = registry.get(shaders);
     // Only the compiler's own first build adopts: any later rebuild keeps a
     // new id so policies that trust a compiled build id still see the change.
-    if (firstBuild && known?.shaders === shaders) {
+    if (firstBuild && known) {
       firstBuild = false;
       material.buildId = adopted = known.buildId;
       known.users.add(material);
+      registered = known.shaders;
+      noteAdoptedProgram(engine);
       return;
     }
     firstBuild = false;
-    registry.set(key, { buildId: material.buildId, shaders, users: new Set([material]) });
+    registry.set(shaders, { buildId: material.buildId, shaders, users: new Set([material]) });
+    registered = shaders;
   }, undefined, true);
-  material.onDisposeObservable.addOnce(() => {
-    const known = registry.get(key);
-    if (known?.users.delete(material) && known.users.size === 0) registry.delete(key);
-  });
+  material.onDisposeObservable.addOnce(leave);
 }
 
 /** Particle programs an Engine remembers for adoption (`shareParticleProgram`), least recently used first out. */
@@ -1391,6 +1434,7 @@ function shareParticleProgram(material: NodeMaterial, key: string): void {
     if (known?.shaders === shaders) {
       registry.set(entry, known);
       material.buildId = adopted = known.buildId;
+      noteAdoptedProgram(engine);
       return;
     }
     // Unknown code, or other code under the same digest: this build's program takes the slot.
@@ -1439,6 +1483,11 @@ function textureErrorMessage(payload: unknown): string {
     }
   }
   return "Texture failed to load";
+}
+
+/** Whether a NodeMaterial's last build succeeded, so reading its `compiledShaders` does not build it again. */
+function nodeMaterialBuilt(material: NodeMaterial): boolean {
+  return (material as unknown as { _buildWasSuccessful?: boolean })._buildWasSuccessful === true;
 }
 
 /** Whether a NodeMaterial's build still waits for its blocks' shader code; Babylon ignores another build() until then. */
@@ -1692,7 +1741,7 @@ RegisterClass(
 );
 
 // Particle and Text outputs write display color: Particle Color and glyph span
-// colors are display-space, and Legacy Display shows the output unchanged. Like
+// colors are display-space, and Display Space shows the output unchanged. Like
 // Babylon's own particle and Standard shaders, they decode to linear when a
 // Scene Linear display stage (applyByPostProcess) encodes the frame once.
 class DisplayFragmentOutputBlock extends FragmentOutputBlock {
@@ -1729,11 +1778,11 @@ function attachSurfaceShading(
     asColor: boolean,
   ) => NodeMaterialConnectionPoint | null,
 ): NodeMaterialBlock {
-  const fragment = new GeometrySurfaceOutputBlock(`${options.name}_fragment`);
-  connectGeometrySurfaceOutput(fragment, plumbing, outputPoint("normal", `${options.name}_geometryNormal`, false), created);
+  const fragment = new GeometrySurfaceOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`);
+  connectGeometrySurfaceOutput(fragment, plumbing, outputPoint("normal", `${MATERIAL_BLOCK_PREFIX}_geometryNormal`, false), created);
   created.push(fragment);
 
-  const baseColor = outputPoint("baseColor", `${options.name}_baseColor`, true);
+  const baseColor = outputPoint("baseColor", `${MATERIAL_BLOCK_PREFIX}_baseColor`, true);
   const emissionOperand = plan.outputs.emissive;
   const hasEmission =
     emissionOperand &&
@@ -1742,14 +1791,14 @@ function attachSurfaceShading(
       emissionOperand.value.every((value) => value === 0)
     );
   const emissive = hasEmission
-    ? outputPoint("emissive", `${options.name}_emissive`, true)
+    ? outputPoint("emissive", `${MATERIAL_BLOCK_PREFIX}_emissive`, true)
     : null;
   const addColor = (
     left: NodeMaterialConnectionPoint,
     right: NodeMaterialConnectionPoint,
     suffix: string,
   ) => {
-    const add = new AddBlock(`${options.name}_${suffix}`);
+    const add = new AddBlock(`${MATERIAL_BLOCK_PREFIX}_${suffix}`);
     created.push(add);
     left.connectTo(add.left);
     right.connectTo(add.right);
@@ -1761,7 +1810,7 @@ function attachSurfaceShading(
   // The scene's fog, by the one rule every surface fogs by (`SceneFogBlock`); a Multiply factor fades toward 1.
   const applyFog = (color: NodeMaterialConnectionPoint) => {
     if (options.overlay || !plumbing.worldPosition || !plumbing.view) return color;
-    const fog = new SceneFogBlock(`${options.name}_fog`);
+    const fog = new SceneFogBlock(`${MATERIAL_BLOCK_PREFIX}_fog`);
     if (multiply) fog.toward = "white";
     color.connectTo(fog.input);
     plumbing.worldPosition.connectTo(fog.worldPosition);
@@ -1773,7 +1822,7 @@ function attachSurfaceShading(
   // variants only.
   const covered = (color: NodeMaterialConnectionPoint, alpha: NodeMaterialConnectionPoint) => {
     if (options.overlay || !options.water || plan.domain !== "surface" || plan.blendMode !== "translucent") return { color, alpha };
-    const coverage = new WaterCoverageBlock(`${options.name}_waterCoverage`);
+    const coverage = new WaterCoverageBlock(`${MATERIAL_BLOCK_PREFIX}_waterCoverage`);
     created.push(coverage);
     color.connectTo(coverage.color);
     alpha.connectTo(coverage.alpha);
@@ -1783,11 +1832,11 @@ function attachSurfaceShading(
   // A Multiply surface writes its factor, encoded for display alone, and alpha 1 (`MultiplyBlendFactorBlock`).
   const writeShown = (color: NodeMaterialConnectionPoint, alpha: NodeMaterialConnectionPoint | null) => {
     if (!multiply) {
-      writeLinearSurfaceColor(color, fragment, options.name, created);
+      writeLinearSurfaceColor(color, fragment, MATERIAL_BLOCK_PREFIX, created);
       alpha?.connectTo(fragment.a);
       return;
     }
-    writeMultiplyFactor(color, alpha, fragment, options.name, created);
+    writeMultiplyFactor(color, alpha, fragment, MATERIAL_BLOCK_PREFIX, created);
   };
 
   if (plan.shadingModel === "unlit") {
@@ -1798,17 +1847,17 @@ function attachSurfaceShading(
       baseColor && emissive
         ? addColor(baseColor, emissive, "unlitEmission")
         : (baseColor ?? emissive);
-    const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
+    const opacity = outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false);
     if (options.overlay) {
-      const style = new OverlayStyleBlock(`${options.name}_overlayStyle`);
+      const style = new OverlayStyleBlock(`${MATERIAL_BLOCK_PREFIX}_overlayStyle`);
       created.push(style);
       if (color) {
-        const tint = new MultiplyBlock(`${options.name}_overlayColor`);
+        const tint = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_overlayColor`);
         color.connectTo(tint.left); style.rgb.connectTo(tint.right); tint.output.connectTo(fragment.rgb);
         created.push(tint);
       }
       if (opacity) {
-        const alpha = new MultiplyBlock(`${options.name}_overlayAlpha`);
+        const alpha = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_overlayAlpha`);
         opacity.connectTo(alpha.left); style.alpha.connectTo(alpha.right); alpha.output.connectTo(fragment.a);
         created.push(alpha);
       } else style.alpha.connectTo(fragment.a);
@@ -1823,30 +1872,30 @@ function attachSurfaceShading(
   }
 
   const surfaceColor = baseColor ?? (() => {
-    const fallback = createConstantBlock(`${options.name}_baseColorFallback`, "vec3", [0.8, 0.8, 0.8], true);
+    const fallback = createConstantBlock(`${MATERIAL_BLOCK_PREFIX}_baseColorFallback`, "vec3", [0.8, 0.8, 0.8], true);
     created.push(fallback);
     return fallback.output;
   })();
   surfaceColor.connectTo(fragment.geometryBaseColor);
-  const metallic = outputPoint("metallic", `${options.name}_metallic`, false);
+  const metallic = outputPoint("metallic", `${MATERIAL_BLOCK_PREFIX}_metallic`, false);
   if (metallic) metallic.connectTo(fragment.geometryMetallic);
-  const roughness = outputPoint("roughness", `${options.name}_roughness`, false);
+  const roughness = outputPoint("roughness", `${MATERIAL_BLOCK_PREFIX}_roughness`, false);
   if (roughness) roughness.connectTo(fragment.geometryRoughness);
-  const normal = outputPoint("normal", `${options.name}_normalInput`, false);
-  const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
+  const normal = outputPoint("normal", `${MATERIAL_BLOCK_PREFIX}_normalInput`, false);
+  const opacity = outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false);
   const environmentOperand = plan.outputs.environmentInfluence;
   const influence = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1)
-    ? outputPoint("environmentInfluence", `${options.name}_environmentInfluence`, false)
+    ? outputPoint("environmentInfluence", `${MATERIAL_BLOCK_PREFIX}_environmentInfluence`, false)
     : null;
   // A non-metal's reflectance, F0 = 0.08 x Specular; the blocks' own default is 0.5 (F0 0.04).
   const specularOperand = plan.outputs.specular;
   const specular = specularOperand && !(specularOperand.kind === "constant" && specularOperand.value[0] === 0.5)
-    ? outputPoint("specular", `${options.name}_specular`, false)
+    ? outputPoint("specular", `${MATERIAL_BLOCK_PREFIX}_specular`, false)
     : null;
   specular?.connectTo(fragment.geometrySpecular);
 
   // The surface's direct and environment light (scaled by Environment Influence), from the light block.
-  const lighting = new HapticLightingBlock(`${options.name}_lighting`);
+  const lighting = new HapticLightingBlock(`${MATERIAL_BLOCK_PREFIX}_lighting`);
   // A constant Environment Influence of 0 (built-in water's) compiles the environment's light out.
   lighting.noEnvironment = constantScalar(plan, environmentOperand) === 0;
   created.push(lighting);
@@ -1856,7 +1905,7 @@ function attachSurfaceShading(
   surfaceColor.connectTo(lighting.baseColor);
   // The Material Output's own defaults, for a plan that leaves a channel out.
   const constant = (value: number, suffix: string) => {
-    const block = createConstantBlock(`${options.name}_${suffix}`, "float", [value]);
+    const block = createConstantBlock(`${MATERIAL_BLOCK_PREFIX}_${suffix}`, "float", [value]);
     created.push(block);
     return block.output;
   };
@@ -1923,14 +1972,13 @@ function writeMultiplyFactor(
  */
 function attachDecalShading(
   plan: MaterialBuildPlan,
-  options: CompileMaterialOptions,
   created: NodeMaterialBlock[],
   plumbing: MaterialPlumbing,
   outputPoint: (pinId: string, name: string, asColor: boolean) => NodeMaterialConnectionPoint | null,
 ): NodeMaterialBlock[] {
   const projection = plumbing.decal;
   if (!projection || !plumbing.worldPosition) throw new Error("A Decal Material needs its projection");
-  const name = options.name;
+  const name = MATERIAL_BLOCK_PREFIX;
   const constant = (type: MaterialValueType, value: number[], suffix: string, asColor = false) => {
     const block = createConstantBlock(`${name}_${suffix}`, type, value, asColor);
     created.push(block);

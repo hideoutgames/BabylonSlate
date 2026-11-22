@@ -32,7 +32,7 @@ Recast navmesh bake, Scene `navmesh` chunk, runtime crowd/obstacles/cost volumes
 | Parent | Scene `.scene.hasset` extra chunk |
 | Chunk id | `NAVMESH_CHUNK_ID = "navmesh"` |
 | Solo / tiled | `exportNavMesh()` bytes |
-| Tile cache (dynamic obstacles) | magic `BSNT` + `exportTileCache()` |
+| Tile cache (dynamic obstacles) | magic `HPNT` + `exportTileCache()` |
 
 - Scene Save preserves the stored chunk without reading it; `writeSceneNavmeshChunk` writes it after the other chunks. Readers load it by chunk id.
 - `NavMeshSettings` stay in Recast's own units (cells, cell heights, degrees); generators apply conversions.

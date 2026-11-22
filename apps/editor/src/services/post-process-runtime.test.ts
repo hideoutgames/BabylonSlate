@@ -24,6 +24,7 @@ import {
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { playLoadControl } from "./play-physics";
 import { runtimeOptionsFromLoadControl } from "@haptic/runtime";
+import { nodeBlockName } from "@haptic/render/material-node-blocks";
 
 /** Node's NullEngine needs the real view lifecycle, but no browser pixel surface. */
 class Canvas extends EventTarget {
@@ -231,7 +232,7 @@ it("applies compiled gameplay entry reads, setters and resets through Play load 
             candidate.name === "material:post",
         )
         .map(
-          (candidate) => (candidate.getBlockByName("gain") as InputBlock).value,
+          (candidate) => (candidate.getBlockByName(nodeBlockName(gainMaterial(), "gain")) as InputBlock).value,
         );
     expect(commands.filter((command) => command.type === "diagnostic")).toEqual(
       [],
@@ -330,7 +331,7 @@ it("runs the passes Register and Unregister Scene Post-Processing leave on the S
       .filter((candidate): candidate is NodeMaterial => candidate instanceof NodeMaterial && candidate.name.startsWith("material:"));
     expect(passes.map((candidate) => candidate.name)).toEqual(["material:gain"]);
     // The Pass output's parameter write reached the pass it registered.
-    expect((passes[0]!.getBlockByName("gain") as InputBlock).value).toBe(0.9);
+    expect((passes[0]!.getBlockByName(nodeBlockName(gainMaterial(), "gain")) as InputBlock).value).toBe(0.9);
     expect(commands.filter((command) => command.type === "diagnostic" || (command.type === "log" && command.severity === "error"))).toEqual([]);
   } finally {
     runtime.stop();
