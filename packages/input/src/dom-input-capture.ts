@@ -96,6 +96,13 @@ export interface InputCaptureHandle {
    * as `gamepadDisconnect`.
    */
   pollGamepads: () => void;
+  /**
+   * The runtime reset its input (a blocking pause ended): the next poll sends
+   * every pad's whole state again, so a stick still held reads again at once.
+   * Buttons still held stay released until they rest, as held keys do. Leaves
+   * the blocks a page blur or exclusive suppression set in place.
+   */
+  resyncGamepads: () => void;
   /** Opt into exclusive routing; suppressed input needs a fresh physical transition on return. */
   setSuppressed: (suppressed: boolean) => void;
   /** Release all game controls without advancing the game clock. Drain the ring at the runtime boundary. */
@@ -177,6 +184,8 @@ export function attachInputCapture(
   /** Pads by `Gamepad.index`; a pad's entry lives from its first poll until it disconnects. */
   const pads: (PadSnapshot | undefined)[] = [];
   let padGeneration = 0;
+  /** Set by `resyncGamepads`, consumed by the next poll that reads pads. */
+  let resyncingPads = false;
   const isSuppressed = () => exclusive && (suppressed || focusBlocked);
 
   const push = (raw: RawInputEvent) => {
@@ -518,6 +527,8 @@ export function attachInputCapture(
     pad.seen = padGeneration;
     pad.axisCount = axisCount;
     pad.buttonCount = buttonCount;
+    // The runtime forgot the pad: send it whole, with the buttons held now released until they rest.
+    if (resyncingPads) pad.announced = false;
     let changed = !pad.announced || pad.sentAxisCount !== axisCount || pad.sentButtonCount !== buttonCount;
     for (let id = 0; id < axisCount; id++) {
       const raw = axisAt(id);
@@ -531,6 +542,7 @@ export function attachInputCapture(
       const raw = buttonAt(id);
       const value = Number.isFinite(raw) ? raw : 0;
       pad.rawButtons[id] = value;
+      if (resyncingPads && Math.abs(value) > PAD_REST) pad.blockedButtons[id] = 1;
       const out = maskButton(pad, id, value);
       pad.outButtons[id] = out;
       if (!changed && Math.fround(out) !== pad.sentButtons[id]) changed = true;
@@ -603,6 +615,10 @@ export function attachInputCapture(
         // A pad the game never saw has nothing to disconnect.
         if (pad.announced) push({ kind: "gamepadDisconnect", tick, gamepadIndex: index });
       }
+      resyncingPads = false;
+    },
+    resyncGamepads: () => {
+      if (!disposed) resyncingPads = true;
     },
     setSuppressed: (value) => {
       if (disposed) return;

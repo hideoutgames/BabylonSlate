@@ -324,6 +324,52 @@ describe.each([
     expect(handle.ring.drain()).toEqual([{ kind: "gamepad", tick: 7, gamepadIndex: 0, axes: [0.3001, 0], buttons: [0, 1] }]);
   });
 
+  it("sends a held stick again after the runtime resets its input, keeping a held button released until it rests", () => {
+    const { handle } = fixture();
+    const pad = { index: 0, axes: [1], buttons: [{ value: 1 }] };
+    Object.assign(navigator, { getGamepads: () => [pad] });
+    const resolver = new InputResolver({
+      actions: [{ name: "Fire", bindings: [{ device: "gamepadButton", code: "0:0" }] }],
+      axes: [{ name: "Stick", bindings: [{ device: "gamepadAxis", code: "0:0" }] }],
+    });
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain())).toMatchObject({ axes: { Stick: 1 }, actions: { Fire: { held: true } } });
+    // A blocking pause: the runtime forgets every device; the steady stick sends nothing by itself.
+    resolver.reset();
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).axes.Stick).toBe(0);
+    handle.resyncGamepads();
+    handle.pollGamepads();
+    const resumed = resolver.resolve(handle.ring.drain());
+    expect(resumed.axes.Stick).toBe(1);
+    // Like a held key, the button held through the pause does not start again.
+    expect(resumed.actions.Fire).toEqual({ held: false, pressed: false, released: false });
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([]);
+    pad.buttons[0]!.value = 0;
+    handle.pollGamepads();
+    pad.buttons[0]!.value = 1;
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).actions.Fire.pressed).toBe(true);
+  });
+
+  it("keeps a stick held through a page blur at 0 after a resync, until it rests or moves on", () => {
+    const { handle } = fixture();
+    const pad = { index: 0, axes: [1], buttons: [{ value: 0 }] };
+    Object.assign(navigator, { getGamepads: () => [pad] });
+    const resolver = new InputResolver({ actions: [], axes: [{ name: "Stick", bindings: [{ device: "gamepadAxis", code: "0:0" }] }] });
+    handle.pollGamepads();
+    resolver.resolve(handle.ring.drain());
+    window.dispatchEvent(new Event("blur"));
+    resolver.reset();
+    handle.resyncGamepads();
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).axes.Stick).toBe(0);
+    pad.axes[0] = 0.6;
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).axes.Stick).toBe(0.6);
+  });
+
   it("still delivers a pad's last change when the queue overflows before the host drains it", () => {
     const canvas = document.createElement("canvas");
     canvas.setPointerCapture = () => {};
