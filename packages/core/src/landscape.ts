@@ -72,8 +72,8 @@ type DecodedField = {
 };
 
 const MAX_BASE64_CACHE = 16;
-const decodedByBytes = new WeakMap<Uint8Array, DecodedField>();
-const decodedByBase64 = new Map<string, DecodedField>();
+const decodedByBytes = new WeakMap<Uint8Array, DecodedField | null>();
+const decodedByBase64 = new Map<string, DecodedField | null>();
 
 function finite(value: unknown, fallback: number, min: number, max: number): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
@@ -194,36 +194,28 @@ export function encodeLandscapeChunk(
   return bytes;
 }
 
-/** Decode a `BSLD` binary chunk into typed `Float32Array` heights and `Uint8Array` RGBA8 paint weights. */
-export function decodeLandscapeChunk(bytes: Uint8Array): DecodedField {
-  if (bytes.byteLength < BSLD_HEADER_BYTES) {
-    throw new Error("Invalid BSLD landscape chunk: truncated header");
-  }
+/**
+ * Decode a `BSLD` binary chunk into typed `Float32Array` heights and `Uint8Array` RGBA8 paint weights; null when the
+ * bytes are not a well-formed chunk (truncated, wrong magic, format, subdivisions or length). Never throws, so one
+ * damaged chunk cannot stop a Scene from opening, saving or playing.
+ */
+export function decodeLandscapeChunk(bytes: Uint8Array): DecodedField | null {
+  if (bytes.byteLength < BSLD_HEADER_BYTES) return null;
   if (
     bytes[0] !== BSLD_MAGIC_0 ||
     bytes[1] !== BSLD_MAGIC_1 ||
     bytes[2] !== BSLD_MAGIC_2 ||
     bytes[3] !== BSLD_MAGIC_3
   ) {
-    throw new Error("Invalid BSLD landscape chunk: bad magic");
+    return null;
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const format = view.getUint32(4, true);
-  if (format !== BSLD_FORMAT) {
-    throw new Error(`Unsupported BSLD landscape chunk format: ${format}`);
-  }
+  if (view.getUint32(4, true) !== BSLD_FORMAT) return null;
   const subdivisions = view.getUint16(8, true);
-  if (subdivisions < 4 || subdivisions > 256) {
-    throw new Error(`Invalid BSLD landscape subdivisions: ${subdivisions}`);
-  }
+  if (subdivisions < 4 || subdivisions > 256) return null;
   const vertexCount = (subdivisions + 1) ** 2;
   const heightBytes = vertexCount * 4;
-  const expectedLength = BSLD_HEADER_BYTES + heightBytes + vertexCount * 4;
-  if (bytes.byteLength !== expectedLength) {
-    throw new Error(
-      `Invalid BSLD landscape chunk byte length: expected ${expectedLength}, got ${bytes.byteLength}`,
-    );
-  }
+  if (bytes.byteLength !== BSLD_HEADER_BYTES + heightBytes + vertexCount * 4) return null;
   const heights = new Float32Array(vertexCount);
   if (LITTLE_ENDIAN && (bytes.byteOffset + BSLD_HEADER_BYTES) % 4 === 0) {
     const src = new Float32Array(bytes.buffer, bytes.byteOffset + BSLD_HEADER_BYTES, vertexCount);
@@ -262,8 +254,13 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(parts.join(""));
 }
 
-function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(encoded);
+function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> | null {
+  let binary: string;
+  try {
+    binary = atob(encoded);
+  } catch {
+    return null;
+  }
   const out = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
   return out;
@@ -276,28 +273,27 @@ export function encodeLandscapeBase64(
   return bytesToBase64(encodeLandscapeChunk(data));
 }
 
-/** Decode a base64 `BSLD` string into raw binary `BSLD` bytes. */
-export function decodeLandscapeBase64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
+/** Decode a base64 `BSLD` string into raw binary `BSLD` bytes; null when it is not base64. */
+export function decodeLandscapeBase64ToBytes(encoded: string): Uint8Array<ArrayBuffer> | null {
   return base64ToBytes(encoded);
 }
 
-function cachedDecodeBytes(bytes: Uint8Array): DecodedField {
-  let decoded = decodedByBytes.get(bytes);
-  if (!decoded) {
-    decoded = decodeLandscapeChunk(bytes);
-    decodedByBytes.set(bytes, decoded);
-  }
+function cachedDecodeBytes(bytes: Uint8Array): DecodedField | null {
+  if (decodedByBytes.has(bytes)) return decodedByBytes.get(bytes)!;
+  const decoded = decodeLandscapeChunk(bytes);
+  decodedByBytes.set(bytes, decoded);
   return decoded;
 }
 
-function cachedDecodeBase64(encoded: string): DecodedField {
-  const hit = decodedByBase64.get(encoded);
-  if (hit) {
+function cachedDecodeBase64(encoded: string): DecodedField | null {
+  if (decodedByBase64.has(encoded)) {
+    const hit = decodedByBase64.get(encoded)!;
     decodedByBase64.delete(encoded);
     decodedByBase64.set(encoded, hit);
     return hit;
   }
-  const decoded = decodeLandscapeChunk(base64ToBytes(encoded));
+  const bytes = base64ToBytes(encoded);
+  const decoded = bytes ? decodeLandscapeChunk(bytes) : null;
   if (decodedByBase64.size >= MAX_BASE64_CACHE) {
     const oldest = decodedByBase64.keys().next().value;
     if (oldest !== undefined) decodedByBase64.delete(oldest);
@@ -307,14 +303,15 @@ function cachedDecodeBase64(encoded: string): DecodedField {
 }
 
 /**
- * Parse a `LandscapeComponent` into in-memory typed arrays (`Float32Array` heights + `Uint8Array` RGBA8 weights).
- * Accepts already-parsed `LandscapeProperties` in O(1), raw binary `BSLD` bytes (Play/Player), or base64 `data`
- * (Editor JSON, LRU-cached). Flat default terrains omit field data and allocate zeroed defaults cleanly.
+ * A `LandscapeComponent`'s heightfield from the field data it names: raw binary `BSLD` bytes (Play/Player, matched to
+ * the component's `chunkId`), already-parsed typed arrays, or base64 `data` (Editor JSON, LRU-cached). A component
+ * naming no field data is the flat default terrain. Null when the field data it names cannot be read: bytes or base64
+ * that are not a well-formed chunk, a chunk for other subdivisions, or a `chunkId` whose bytes were not supplied.
  */
-export function parseLandscapeProperties(
+export function decodeLandscapeField(
   value: unknown,
   binaryBytes?: Uint8Array | null,
-): LandscapeProperties {
+): LandscapeProperties | null {
   const p = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const subdivisions = Math.round(finite(p.subdivisions, 64, 4, 256));
   const width = finite(p.width, 64, 1, 4096);
@@ -322,73 +319,42 @@ export function parseLandscapeProperties(
   const materialGuid = typeof p.materialGuid === "string" && p.materialGuid ? p.materialGuid : null;
   const collisionsEnabled = p.collisionsEnabled === true;
   const count = (subdivisions + 1) ** 2;
+  const field = (heights: Float32Array, weights: Uint8Array): LandscapeProperties =>
+    ({ width, depth, subdivisions, heights, weights, materialGuid, collisionsEnabled });
 
   if (binaryBytes && binaryBytes.byteLength > 0) {
     const decoded = cachedDecodeBytes(binaryBytes);
-    if (decoded.subdivisions === subdivisions) {
-      return {
-        width,
-        depth,
-        subdivisions,
-        heights: decoded.heights,
-        weights: decoded.weights,
-        materialGuid,
-        collisionsEnabled,
-      };
-    }
+    return decoded?.subdivisions === subdivisions ? field(decoded.heights, decoded.weights) : null;
   }
 
-  const rawHeights = p.heights;
   const rawWeights = p.weights;
-  if (rawHeights instanceof Float32Array && rawHeights.length === count) {
-    const weights =
-      rawWeights instanceof Uint8Array && rawWeights.length === count * 4
-        ? rawWeights
-        : defaultWeights(count);
-    return {
-      width,
-      depth,
-      subdivisions,
-      heights: rawHeights,
-      weights,
-      materialGuid,
-      collisionsEnabled,
-    };
+  const ownWeights = rawWeights instanceof Uint8Array && rawWeights.length === count * 4 ? rawWeights : null;
+  if (p.heights instanceof Float32Array && p.heights.length === count) {
+    return field(p.heights, ownWeights ?? defaultWeights(count));
   }
-
   if (typeof p.data === "string" && p.data.length > 0) {
-    try {
-      const decoded = cachedDecodeBase64(p.data);
-      if (decoded.subdivisions === subdivisions) {
-        return {
-          width,
-          depth,
-          subdivisions,
-          heights: decoded.heights,
-          weights: decoded.weights,
-          materialGuid,
-          collisionsEnabled,
-        };
-      }
-    } catch {
-      // Fall through to flat default if malformed.
-    }
+    const decoded = cachedDecodeBase64(p.data);
+    return decoded?.subdivisions === subdivisions ? field(decoded.heights, decoded.weights) : null;
   }
+  if (typeof p.chunkId === "string" && isLandscapeChunkId(p.chunkId)) return null;
+  return field(new Float32Array(count), ownWeights ?? defaultWeights(count));
+}
 
-  const heights = new Float32Array(count);
-  const weights =
-    rawWeights instanceof Uint8Array && rawWeights.length === count * 4
-      ? rawWeights
-      : defaultWeights(count);
-  return {
-    width,
-    depth,
-    subdivisions,
-    heights,
-    weights,
-    materialGuid,
-    collisionsEnabled,
-  };
+/**
+ * `decodeLandscapeField`, with flat terrain in place of field data that cannot be read. Callers that must tell the
+ * user about unreadable terrain use `decodeLandscapeField` (Editor open, runtime hydration).
+ */
+export function parseLandscapeProperties(
+  value: unknown,
+  binaryBytes?: Uint8Array | null,
+): LandscapeProperties {
+  const decoded = decodeLandscapeField(value, binaryBytes);
+  if (decoded) return decoded;
+  const p = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return decodeLandscapeField({
+    width: p.width, depth: p.depth, subdivisions: p.subdivisions, materialGuid: p.materialGuid,
+    collisionsEnabled: p.collisionsEnabled,
+  })!;
 }
 
 /** Convert in-memory `LandscapeProperties` into pure JSON `SerializedLandscapeProperties`. */
@@ -449,21 +415,26 @@ export function landscapeHeightField(
   };
 }
 
+/** Inclusive vertex index bounds (`ix`, `iz`) of the samples a stroke changed. */
+export interface LandscapeRegion {
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+}
+
 /** The vertices a dab changes, computed from the untouched heightfield. */
 interface SculptPatch {
   indices: number[];
   heights: number[];
   weights: number[];
+  region: LandscapeRegion;
 }
 
 /** `null` for a dab that cannot apply (non-finite or non-positive brush). */
 function sculptPatch(
-  width: number,
-  depth: number,
-  subdivisions: number,
-  heights: Float32Array,
+  terrain: LandscapeProperties,
   floatWeights: Float32Array | null,
-  byteWeights: Uint8Array,
   x: number,
   z: number,
   brush: LandscapeBrush,
@@ -471,6 +442,7 @@ function sculptPatch(
   if (![x, z, brush.radius, brush.strength].every(Number.isFinite) || brush.radius <= 0 || brush.strength <= 0) {
     return null;
   }
+  const { width, depth, subdivisions, heights } = terrain;
   const side = subdivisions + 1;
   const stepX = width / subdivisions;
   const stepZ = depth / subdivisions;
@@ -479,7 +451,7 @@ function sculptPatch(
   const minZ = Math.max(0, Math.ceil((z - brush.radius + depth / 2) / stepZ));
   const maxZ = Math.min(side - 1, Math.floor((z + brush.radius + depth / 2) / stepZ));
   const falloff = finite(brush.falloff, 0.5, 0.001, 1);
-  const patch: SculptPatch = { indices: [], heights: [], weights: [] };
+  const patch: SculptPatch = { indices: [], heights: [], weights: [], region: { x0: minX, z0: minZ, x1: maxX, z1: maxZ } };
   for (let iz = minZ; iz <= maxZ; iz++) {
     for (let ix = minX; ix <= maxX; ix++) {
       const distance = Math.hypot(ix * stepX - width / 2 - x, iz * stepZ - depth / 2 - z);
@@ -494,7 +466,7 @@ function sculptPatch(
         const blend = Math.min(1, amount);
         const at = index * 4;
         for (let l = 0; l < 4; l++) {
-          const prev = floatWeights ? floatWeights[at + l]! : byteWeights[at + l]! / 255;
+          const prev = floatWeights ? floatWeights[at + l]! : terrain.weights[at + l]! / 255;
           patch.weights.push(prev * (1 - blend) + (l === layer ? blend : 0));
         }
       } else if (brush.tool === "smooth") {
@@ -523,67 +495,19 @@ function sculptPatch(
   return patch;
 }
 
-function applyPatchToBuffers(
-  patch: SculptPatch,
-  paint: boolean,
-  heights: Float32Array,
-  floatWeights: Float32Array | null,
-  byteWeights: Uint8Array,
-): void {
-  for (let n = 0; n < patch.indices.length; n++) {
-    const index = patch.indices[n]!;
-    if (paint) {
-      const at = index * 4;
-      const w0 = patch.weights[n * 4]!;
-      const w1 = patch.weights[n * 4 + 1]!;
-      const w2 = patch.weights[n * 4 + 2]!;
-      const w3 = patch.weights[n * 4 + 3]!;
-      quantizeVertexWeights(w0, w1, w2, w3, byteWeights, at);
-      if (floatWeights) {
-        floatWeights[at] = byteWeights[at]! / 255;
-        floatWeights[at + 1] = byteWeights[at + 1]! / 255;
-        floatWeights[at + 2] = byteWeights[at + 2]! / 255;
-        floatWeights[at + 3] = byteWeights[at + 3]! / 255;
-      }
-    } else {
-      heights[index] = patch.heights[n]!;
-    }
-  }
-}
-
-/** Each dab is immutable, allowing an entire drag to share one undo entry. */
-export function sculptLandscape(
-  terrain: LandscapeProperties,
-  x: number,
-  z: number,
-  brush: LandscapeBrush,
-): LandscapeProperties {
-  const patch = sculptPatch(
-    terrain.width,
-    terrain.depth,
-    terrain.subdivisions,
-    terrain.heights,
-    null,
-    terrain.weights,
-    x,
-    z,
-    brush,
-  );
-  if (!patch?.indices.length) return terrain;
-  const paint = brush.tool === "paint";
-  const heights = paint ? terrain.heights : terrain.heights.slice();
-  const weights = paint ? terrain.weights.slice() : terrain.weights;
-  applyPatchToBuffers(patch, paint, heights, null, weights);
-  return { ...terrain, heights, weights };
-}
-
 /**
  * One drag's dabs applied in place to owned `Float32Array` heights and `Uint8Array` weights.
- * `liveProperties()` exposes the working buffers directly for zero-copy 60fps viewport preview updates;
- * `toSerializedProperties()` encodes `BSLD` once on pointer-up when committing the Undo/Redo snapshot.
+ * `liveProperties()` exposes the working buffers directly for zero-copy viewport preview updates, and
+ * `takeDirtyRegion()` names the samples changed since the last preview, so only the chunks over them re-upload.
+ * Paint keeps the stroke's weights unrounded (`floatWeights`): every dab blends from them, and the RGBA8 bytes are
+ * rounded from them (summing to 255), so a low-strength stroke accumulates as the float maths does instead of
+ * stalling on byte rounding. `toSerializedProperties()` encodes `BSLD` once on pointer-up for Undo/Redo.
  */
 export class LandscapeSculptSession {
   private readonly terrain: LandscapeProperties;
+  /** The stroke's unrounded paint weights, created by its first paint dab. */
+  private floatWeights: Float32Array | null = null;
+  private dirtyRegion: LandscapeRegion | null = null;
   private dirty = false;
 
   constructor(properties: unknown) {
@@ -600,42 +524,63 @@ export class LandscapeSculptSession {
     return this.dirty;
   }
 
-  /** Applies one dab at local `(x, z)`; the brush has the same meaning as for `sculptLandscape`. */
+  /** Applies one dab at local `(x, z)` in the landscape's own units; dabs that cannot apply are ignored. */
   dab(x: number, z: number, brush: LandscapeBrush): void {
-    const patch = sculptPatch(
-      this.terrain.width,
-      this.terrain.depth,
-      this.terrain.subdivisions,
-      this.terrain.heights,
-      null,
-      this.terrain.weights,
-      x,
-      z,
-      brush,
-    );
+    const paint = brush.tool === "paint";
+    const { heights, weights } = this.terrain;
+    if (paint && !this.floatWeights) {
+      const floats = new Float32Array(weights.length);
+      for (let i = 0; i < weights.length; i++) floats[i] = weights[i]! / 255;
+      this.floatWeights = floats;
+    }
+    const patch = sculptPatch(this.terrain, this.floatWeights, x, z, brush);
     if (!patch?.indices.length) return;
     this.dirty = true;
-    applyPatchToBuffers(patch, brush.tool === "paint", this.terrain.heights, null, this.terrain.weights);
+    const floats = this.floatWeights;
+    for (let n = 0; n < patch.indices.length; n++) {
+      const index = patch.indices[n]!;
+      if (paint && floats) {
+        const at = index * 4;
+        for (let l = 0; l < 4; l++) floats[at + l] = patch.weights[n * 4 + l]!;
+        quantizeVertexWeights(floats[at]!, floats[at + 1]!, floats[at + 2]!, floats[at + 3]!, weights, at);
+      } else {
+        heights[index] = patch.heights[n]!;
+      }
+    }
+    const region = this.dirtyRegion;
+    this.dirtyRegion = region
+      ? {
+        x0: Math.min(region.x0, patch.region.x0),
+        z0: Math.min(region.z0, patch.region.z0),
+        x1: Math.max(region.x1, patch.region.x1),
+        z1: Math.max(region.z1, patch.region.z1),
+      }
+      : patch.region;
   }
 
-  /** Live typed-array view for zero-copy 60fps viewport mesh preview updates during a drag. */
+  /** Live typed-array view for zero-copy viewport mesh preview updates during a drag. */
   liveProperties(): LandscapeProperties {
     return this.terrain;
   }
 
-  /** Owned immutable copy of the terrain after the dabs so far (later dabs do not mutate it). */
-  snapshot(): LandscapeProperties {
-    return {
-      ...this.terrain,
-      heights: this.terrain.heights.slice(),
-      weights: this.terrain.weights.slice(),
-    };
+  /** The samples dabs changed since the last call (inclusive vertex bounds), or null when none did. */
+  takeDirtyRegion(): LandscapeRegion | null {
+    const region = this.dirtyRegion;
+    this.dirtyRegion = null;
+    return region;
   }
 
   /** Pure JSON serialized form encoded once at stroke commit time for Undo/Redo. */
   toSerializedProperties(): SerializedLandscapeProperties {
     return serializeLandscapeProperties(this.terrain);
   }
+}
+
+/** One dab on a copy of `terrain`; `terrain` itself when the dab cannot apply. */
+export function sculptLandscape(terrain: LandscapeProperties, x: number, z: number, brush: LandscapeBrush): LandscapeProperties {
+  const session = new LandscapeSculptSession(terrain);
+  session.dab(x, z, brush);
+  return session.hasChanges ? session.liveProperties() : terrain;
 }
 
 /** Resample a heightfield when its resolution changes, preserving the authored shape and paint weights. */
