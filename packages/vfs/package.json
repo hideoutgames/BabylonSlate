@@ -12,6 +12,7 @@
     "./fake-documents-fs": "./src/test-support/fake-documents-fs.ts",
     "./save-game-node": "./src/save-game-node.ts",
     "./library-folders": "./src/library-folders.ts",
+    "./ipc-bytes": "./src/ipc-bytes.ts",
     "./save-game-storage": "./src/save-game-storage.ts",
     "./device-memory": "./src/device-memory.ts"
   },
