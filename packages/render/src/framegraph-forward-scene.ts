@@ -37,6 +37,7 @@ import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Observable, Observer } from "@babylonjs/core/Misc/observable";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
@@ -459,6 +460,15 @@ export class ForwardSceneFrameGraph {
   }
   private graph: FrameGraph | undefined;
   private readonly retainedGraphs = new Map<FrameGraph, { count: number; release?: () => void }>();
+  /**
+   * The Display Color program of the last released graph whose pass composited the outline stroke, and of the last
+   * whose pass did not, under one effects key, one reference each. The stroke is a define of that pass, so a view whose
+   * outlines come and go (an editor selection) switches between two programs; kept, each links once instead of at every
+   * toggle once the graph that drew it is gone. Dropped when the effects key changes, with the view and, as the Engine's
+   * other kept Effects are (`effect-bridge.ts`), with a lost context: a WebGL2 restore relinks every Effect left in the
+   * Engine's cache, and the rebuilt graph links again only what it draws.
+   */
+  private displayColorPrograms: { key: string; effects: Map<boolean, Effect>; lost: Observer<AbstractEngine> } | undefined;
   private postProcessOwner: ScenePostProcessOwner | undefined;
   private postProcessGraph: ScenePostProcessGraph | undefined;
   private effectsGraph: SceneEffectsGraph | undefined;
@@ -775,7 +785,8 @@ export class ForwardSceneFrameGraph {
       : 0;
     const graphEffects =
       this.effectsGraph?.tasks.filter((task) => task !== this.outlineTask && !task.disabled).length ?? 0;
-    return stackPasses + graphEffects + (this.outlineTask ? 1 : 0);
+    // The outlines' own composition is a pass of its own; a Display Color pass that composites the stroke is counted already.
+    return stackPasses + graphEffects + (this.outlineTask && !this.outlineTask.externalCompose ? 1 : 0);
   }
 
   /**
@@ -1496,6 +1507,29 @@ export class ForwardSceneFrameGraph {
     this.scene.onBeforeRenderTargetsRenderObservable.remove(this.beforeRenderTargets);
     this.scene.onDisposeObservable.remove(this.onDispose);
     if (!this.pending) this.releaseGraph();
+    this.releaseDisplayColorPrograms();
+  }
+
+  /** Keeps `effect`, the Display Color program of a released graph (`displayColorPrograms`). */
+  private keepDisplayColorProgram(key: string, outline: boolean, effect: Effect): void {
+    if (this.displayColorPrograms?.key !== key) this.releaseDisplayColorPrograms();
+    const engine = this.scene.getEngine();
+    const programs = this.displayColorPrograms ??= {
+      key, effects: new Map(), lost: engine.onContextLostObservable.add(() => this.releaseDisplayColorPrograms()),
+    };
+    const kept = programs.effects.get(outline);
+    if (kept === effect) return;
+    effect._refCount += 1;
+    programs.effects.set(outline, effect);
+    if (kept && !kept.isDisposed) kept.dispose();
+  }
+
+  private releaseDisplayColorPrograms(): void {
+    const programs = this.displayColorPrograms;
+    if (!programs) return;
+    this.displayColorPrograms = undefined;
+    this.scene.getEngine().onContextLostObservable.remove(programs.lost);
+    for (const effect of programs.effects.values()) if (!effect.isDisposed) effect.dispose();
   }
 
   private unavailable(camera: Camera): string | undefined {
@@ -1608,6 +1642,7 @@ export class ForwardSceneFrameGraph {
       const waterDemand = waterSceneCopyDemand(scene, camera);
       const decalDemand = sceneHasDecals(scene);
       if (!this.graph) {
+        if (this.displayColorPrograms && this.displayColorPrograms.key !== effectsKey) this.releaseDisplayColorPrograms();
         this.graph = new FrameGraph(scene);
         this.preparedOutlineView = this.outlineView?.active ? this.outlineView : undefined;
         // Explicit owner: Scene.dispose must not race an asynchronous build.
@@ -1663,12 +1698,11 @@ export class ForwardSceneFrameGraph {
           if (result.ok === false) throw new Error(result.reason);
           if (this.postProcessGraph) postProcessOwner.useGraph(this.postProcessGraph);
         }
-        const composeOutline = (target: FrameGraphTextureHandle) => {
-          const task = new FrameGraphSharedOutlineTask("Shared outlines", this.graph!, this.preparedOutlineView!);
+        const outlineTask = (externalCompose: boolean) => {
+          const task = new FrameGraphSharedOutlineTask("Shared outlines", this.graph!, this.preparedOutlineView!, { externalCompose });
           this.outlineTask = task;
           task.camera = camera;
-          task.targetTexture = target;
-          return { task, outputTexture: task.outputTexture };
+          return task;
         };
         // An auxiliary view without a chain still draws offscreen: only the
         // final copy writes its output, which a material in view may sample.
@@ -1707,14 +1741,16 @@ export class ForwardSceneFrameGraph {
             outputHeight: chainAtView ? viewSize.height : output.height,
             samples,
             geometryOverSceneDepth: this.seedsFromSceneDepth ? { authoredDepthTexture: this.postProcessGraph?.depthTexture ?? undefined } : undefined,
-            // The outlines blend onto the chain's display image before antialiasing: onto the view's output itself when
-            // no FXAA or FSR follows and the stage before them can draw into it (`SceneEffectsGraph.outputWriter`).
-            beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
+            // The outlines land on the chain's display image before antialiasing: composited by its Display Color pass
+            // where it has one, else blended onto that image by their own pass, onto the view's output itself when no
+            // FXAA or FSR follows and the stage before them can draw into it (`SceneEffectsGraph.outputWriter`).
+            outlines: this.preparedOutlineView ? outlineTask : undefined,
             // Ending at the view's size, the chain never writes the larger output: the output copy below fills it.
             outputTarget: chainAtView ? undefined : color,
           });
         } else if (this.preparedOutlineView) {
-          composeOutline(this.postProcessGraph?.outputTexture ?? (outlineOnOutput ? undefined : this.ownScene?.color) ?? color);
+          outlineTask(false).targetTexture =
+            this.postProcessGraph?.outputTexture ?? (outlineOnOutput ? undefined : this.ownScene?.color) ?? color;
         }
         // The scene colour and depth the objects draw into. The view's clear settings: the objects pass clears them as
         // it starts, unless the water split's own-pair form runs this as a task of its own (below).
@@ -1971,7 +2007,8 @@ export class ForwardSceneFrameGraph {
         if (ready) break;
         assertCurrent();
         // A failed shader never becomes ready; report it instead of timing out.
-        const compileFailure = this.effectsGraph?.spatial?.compileFailure.message ?? this.outlineTask?.compileFailure.message;
+        const compileFailure = this.effectsGraph?.spatial?.compileFailure.message ?? this.outlineTask?.compileFailure.message ??
+          this.effectsGraph?.compileFailure;
         if (compileFailure) throw new Error(compileFailure);
         const now = performance.now();
         if (now >= deadline || now >= compiles.ceiling) {
@@ -2414,6 +2451,10 @@ export class ForwardSceneFrameGraph {
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();
     const { graph, postProcessGraph, effectsGraph, outlineTask, outputCopy, objects, shadows, clear, cull, water, ownScene } = this;
+    // Only a compiled program of a prepared graph: one still linking, or one that failed, is nobody's to keep.
+    const displayColor = effectsGraph?.displayColorEffect;
+    if (!this.disposed && displayColor?.isReady() && this.preparedEffectsKey !== undefined)
+      this.keepDisplayColorProgram(this.preparedEffectsKey, effectsGraph!.outlines?.externalCompose === true, displayColor);
     const release = () => {
       postProcessGraph?.disposeTasks();
       effectsGraph?.disposeTasks();

@@ -11,8 +11,9 @@ import { readEngineDrawCalls, type DrawCallEngine } from "./draw-calls";
  * - `mirrors`, `probes`: Mirror and Reflection Probe passes; `mirrors` holds all of a Scene render's Mirror work
  *   (placement, currency checks, culls, content asks and the reflections' sun maps besides the passes)
  * - `water`: the water scene copy and its output, planar reflections and the FFT simulations
- * - `outlines`: `Shared outlines`
- * - `post`: post-process stages and a chain's output copy
+ * - `outlines`: `Shared outlines`, its masks and its own composition
+ * - `post`: post-process stages and a chain's output copy; a Display Color pass that composites the outline stroke
+ *   (the stroke's share of that one draw has no pass of its own to count to)
  * - `layers`: Scene Layers composited over the world
  * - `cull`: the `Forward cull` task, with the view's occlusion filter that runs in it
  * - `readiness`: the frame's readiness work around the graph's draw (membership sync, shadow admission, strict probes)

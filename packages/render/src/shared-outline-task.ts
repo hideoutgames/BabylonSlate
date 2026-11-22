@@ -8,6 +8,8 @@ import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Matrix } from "@babylonjs/core/Maths/math.vector";
 import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
@@ -22,6 +24,7 @@ import {
   type SharedOutlineGroup,
 } from "./shared-outline";
 import { registerSharedOutlineShaders, SHARED_OUTLINE_COMPOSE_SHADER, SHARED_OUTLINE_DEPTH_SEED_SHADER } from "./shared-outline-shaders";
+import { SHARED_OUTLINE_STROKE_SAMPLERS, SHARED_OUTLINE_STROKE_UNIFORMS } from "./shared-outline-stroke";
 import { SharedOutlineMaskRenderer } from "./shared-outline-mask";
 import { EffectCompileFailure } from "./effect-compile-failure";
 import { LightNeutralObjectRendererTask } from "./light-neutral-tasks";
@@ -43,9 +46,24 @@ type MaskRecord = {
   inactive: AbstractMesh[];
 };
 
+export interface SharedOutlineTaskOptions {
+  /**
+   * Another pass composites the stroke (a Display Color pass, as its last stage): the task records its mask passes
+   * only, with no composition pass and no composition Effect, and that pass declares `strokeTextures`, sets their
+   * sampling (`setStrokeSampling`) and binds the stroke (`bindStroke`) with the shared stroke include
+   * (`shared-outline-stroke.ts`). The pass must run after this task, at `targetTexture`'s size.
+   */
+  externalCompose?: boolean;
+}
+
 /** Shared outline masks and composition with a bounded per-view pass budget. */
 export class FrameGraphSharedOutlineTask extends FrameGraphTask {
   camera!: Camera;
+  /**
+   * The image the strokes land on; its size is the masks' and the stroke's pixels. The task blends onto it, unless the
+   * composition is external (`externalCompose`): it is then a texture of the composing pass's size, which the task only
+   * measures.
+   */
   targetTexture!: FrameGraphTextureHandle;
   /**
    * The view's scene depth as its object pass left it, single-sample (resolved where the pass is multisampled). With
@@ -53,8 +71,11 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
    * meshes and only the occluders that depth lacks (`writesSceneDepth`), instead of every occluder again.
    */
   sceneDepthTexture: FrameGraphTextureHandle | undefined;
+  /** `targetTexture` with the strokes blended on; never resolved when the composition is external. */
   readonly outputTexture: FrameGraphTextureHandle;
   readonly view: SharedOutlineView;
+  /** Whether another pass composites the stroke (`SharedOutlineTaskOptions.externalCompose`). */
+  readonly externalCompose: boolean;
   /**
    * The groups this task draws, fixed as it is built: those active then. An inactive group's targets and passes are
    * never created (the selection group never is in Play, which has no selection). A group that activates later needs a
@@ -63,7 +84,8 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
    */
   readonly groups: readonly SharedOutlineGroup[];
   private readonly masks: MaskRecord[] = [];
-  private readonly compose: EffectWrapper;
+  /** The composition's own Effect; none when the composition is external. */
+  private readonly compose: EffectWrapper | undefined;
   private readonly seed: EffectWrapper;
   /** Whether the strict mask is seeded from `sceneDepthTexture` (decided as the task records). */
   private seeded = false;
@@ -71,6 +93,11 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
   readonly compileFailure = new EffectCompileFailure();
   private readonly inverseProjection = Matrix.Identity();
   private composePass: FrameGraphRenderPass | undefined;
+  /** The masks and the strict group's depth, which the stroke samples; set as the task records. */
+  private strokeInputs: FrameGraphTextureHandle[] = [];
+  private strictDepth: FrameGraphTextureHandle | undefined;
+  /** Whether this frame's masks can hold a stroke (`sync`); false keeps every group's stroke unread. */
+  private strokesDrawn = false;
   private lease: ManagedRenderLease | undefined;
   private width = 0;
   private height = 0;
@@ -81,18 +108,19 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
   private resolveGraphRelease!: () => void;
   private readonly graphReleased = new Promise<void>((resolve) => { this.resolveGraphRelease = resolve; });
 
-  constructor(name: string, graph: FrameGraph, view: SharedOutlineView) {
+  constructor(name: string, graph: FrameGraph, view: SharedOutlineView, options: SharedOutlineTaskOptions = {}) {
     super(name, graph);
     if (view.scene !== graph.scene || view.isDisposed) throw new Error("Shared outline view does not belong to the live graph Scene.");
     this.view = view;
+    this.externalCompose = options.externalCompose ?? false;
     this.groups = view.active ? SHARED_OUTLINE_GROUPS.filter((group) => view.groupActive(group)) : [];
     this.outputTexture = graph.textureManager.createDanglingHandle();
     registerSharedOutlineShaders();
-    this.compose = new EffectWrapper({
+    this.compose = this.externalCompose ? undefined : new EffectWrapper({
       name: `${name} Compose`, engine: graph.engine, useShaderStore: true,
       fragmentShader: SHARED_OUTLINE_COMPOSE_SHADER,
-      uniformNames: ["screenSize", "tableSize", "maximumWidth", "maximumWidths", "reverseDepth", "activeGroups", "inverseProjection", "depthRange", "distanceFadeEnabled"],
-      samplerNames: ["strictDepth", ...SHARED_OUTLINE_GROUPS.flatMap((group) => [`${group}Mask`, `${group}Style`])],
+      uniformNames: [...SHARED_OUTLINE_STROKE_UNIFORMS],
+      samplerNames: [...SHARED_OUTLINE_STROKE_SAMPLERS],
       shaderLanguage: ShaderLanguage.GLSL,
       onError: this.compileFailure.for(`${name} Compose`),
     });
@@ -113,14 +141,55 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
   private drawsGroup(group: SharedOutlineGroup): boolean { return this.view.active && this.groups.includes(group) && this.view.groupActive(group); }
   /** Whether the strict mask's pass runs seeded from the scene's depth this frame. */
   private get seeds(): boolean { return this.seeded && this.drawsGroup("strict"); }
-  /** The compose, each active group's mask and, where the strict mask is seeded, its depth copy. */
+  /** The compose (unless external), each active group's mask and, where the strict mask is seeded, its depth copy. */
   get drawingPassCount(): number {
-    return this.view.active ? 1 + this.groups.filter((group) => this.drawsGroup(group)).length + (this.seeds ? 1 : 0) : 0;
+    if (!this.view.active) return 0;
+    return this.composePassCount + this.groups.filter((group) => this.drawsGroup(group)).length + (this.seeds ? 1 : 0);
   }
   get renderRecordCount(): number {
     if (!this.view.active) return 0;
     const groups = this.groups.filter((group) => this.drawsGroup(group)).length;
-    return 1 + 2 * groups + (this.seeds ? 1 : 0);
+    return this.composePassCount + 2 * groups + (this.seeds ? 1 : 0);
+  }
+  private get composePassCount(): number { return this.externalCompose ? 0 : 1; }
+  /**
+   * Whether a stroke can show this frame: the view is active and a mask can hold an identity (`sync`). An external
+   * composition reads no mask in a frame without one (`bindStroke` sets every group inactive).
+   */
+  get strokesShow(): boolean { return this.view.active && this.strokesDrawn; }
+  /** The textures the stroke samples, for the composing pass's dependencies: each group's mask and the strict depth. */
+  get strokeTextures(): readonly FrameGraphTextureHandle[] { return this.strokeInputs; }
+  /** Nearest sampling for every texture the stroke reads: it decodes identities and compares depths texel by texel. */
+  setStrokeSampling(context: FrameGraphRenderContext): void {
+    for (const handle of this.strokeInputs) context.setTextureSamplingMode(handle, Texture.NEAREST_SAMPLINGMODE);
+  }
+  /**
+   * Binds this frame's stroke uniforms and samplers on `effect`, which includes the shared stroke. A group without
+   * targets, or every group in a frame where no stroke can show, reads as inactive, so its samplers are never read; each
+   * still takes a texture that is never a render target (its own style table), since WebGL rejects a draw whose
+   * program's samplers could read the target it draws into.
+   */
+  bindStroke(context: FrameGraphRenderContext, effect: Effect): void {
+    const drawn = this.strokesShow;
+    effect.setFloat2("screenSize", this.width, this.height);
+    effect.setFloat2("tableSize", this.view.tableWidth, this.view.tableHeight);
+    effect.setFloat("maximumWidth", this.view.maximumWidth);
+    effect.setFloat3("maximumWidths", ...SHARED_OUTLINE_GROUPS.map((group) => this.view.maximumWidthForGroup(group)) as [number, number, number]);
+    effect.setFloat("distanceFadeEnabled", this.view.distanceFadeEnabled ? 1 : 0);
+    effect.setFloat("reverseDepth", this._frameGraph.engine.useReverseDepthBuffer ? 1 : 0);
+    this.camera.getProjectionMatrix().invertToRef(this.inverseProjection);
+    effect.setMatrix("inverseProjection", this.inverseProjection);
+    effect.setFloat2("depthRange", 2, -1);
+    effect.setFloat3("activeGroups", ...SHARED_OUTLINE_GROUPS.map((group) => drawn && this.drawsGroup(group) ? 1 : 0) as [number, number, number]);
+    for (const group of SHARED_OUTLINE_GROUPS) {
+      const style = this.view.styleTexture(group);
+      const record = this.masks.find((entry) => entry.group === group);
+      if (record) context.bindTextureHandle(effect, `${group}Mask`, record.mask);
+      else effect.setTexture(`${group}Mask`, style);
+      effect.setTexture(`${group}Style`, style);
+    }
+    if (this.strictDepth !== undefined) context.bindTextureHandle(effect, "strictDepth", this.strictDepth);
+    else effect.setTexture("strictDepth", this.view.styleTexture("strict"));
   }
   override getClassName(): string { return "FrameGraphSharedOutlineTask"; }
 
@@ -130,7 +199,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     const textures = graph.textureManager;
     const size = textures.getTextureDescription(this.targetTexture).size;
     this.width = size.width; this.height = size.height;
-    textures.resolveDanglingHandle(this.outputTexture, this.targetTexture);
+    if (!this.externalCompose) textures.resolveDanglingHandle(this.outputTexture, this.targetTexture);
     const sceneDepth = this.sceneDepthTexture;
     const depthSize = sceneDepth === undefined ? undefined : textures.getTextureDescription(sceneDepth).size;
     // A scene depth of another size (an authored chain at its own resolution) is not this mask's pixels.
@@ -173,48 +242,30 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       record.drawPass = record.objects.record(true);
       record.renderer.overSceneDepth = record.seedPass !== undefined;
     }
-    const pass = graph.addRenderPass(`${this.name} Compose`);
-    this.composePass = pass;
-    pass.setRenderTarget(this.outputTexture);
     // Every drawn group's mask, but only the strict group's depth: the others end with their own mask pass, so the
     // graph's allocator gives the through and selection passes one depth target in turn.
-    const strictDepth = this.masks.find((record) => record.group === "strict")?.depth;
-    pass.addDependencies([...this.masks.map((record) => record.mask), ...strictDepth === undefined ? [] : [strictDepth]]);
-    pass.setInitializeFunc((context) => {
-      for (const record of this.masks) context.setTextureSamplingMode(record.mask, Texture.NEAREST_SAMPLINGMODE);
-      if (strictDepth !== undefined) context.setTextureSamplingMode(strictDepth, Texture.NEAREST_SAMPLINGMODE);
-    });
+    this.strictDepth = this.masks.find((record) => record.group === "strict")?.depth;
+    this.strokeInputs = [...this.masks.map((record) => record.mask), ...this.strictDepth === undefined ? [] : [this.strictDepth]];
+    if (!this.externalCompose) this.recordCompose();
+    this.sync();
+  }
+  /** The composition's own pass: the stroke blended onto the target (`ALPHA_COMBINE`). */
+  private recordCompose(): void {
+    const pass = this._frameGraph.addRenderPass(`${this.name} Compose`);
+    this.composePass = pass;
+    pass.setRenderTarget(this.outputTexture);
+    pass.addDependencies(this.strokeInputs);
+    pass.setInitializeFunc((context) => this.setStrokeSampling(context));
     pass.setExecuteFunc((context) => {
       if (!this.view.active) return;
-      const effect = this.compose.effect;
-      context.applyFullScreenEffect(this.compose.drawWrapper, () => {
+      const compose = this.compose!;
+      context.applyFullScreenEffect(compose.drawWrapper, () => {
         // FrameGraph binds the DrawWrapper directly, so EffectWrapper's
         // onApply default for the native postprocess vertex shader does not run.
-        effect.setFloat2("scale", 1, 1);
-        effect.setFloat2("screenSize", this.width, this.height);
-        effect.setFloat2("tableSize", this.view.tableWidth, this.view.tableHeight);
-        effect.setFloat("maximumWidth", this.view.maximumWidth);
-        effect.setFloat3("maximumWidths", ...SHARED_OUTLINE_GROUPS.map((group) => this.view.maximumWidthForGroup(group)) as [number, number, number]);
-        effect.setFloat("distanceFadeEnabled", this.view.distanceFadeEnabled ? 1 : 0);
-        effect.setFloat("reverseDepth", graph.engine.useReverseDepthBuffer ? 1 : 0);
-        this.camera.getProjectionMatrix().invertToRef(this.inverseProjection);
-        effect.setMatrix("inverseProjection", this.inverseProjection);
-        effect.setFloat2("depthRange", 2, -1);
-        effect.setFloat3("activeGroups", ...SHARED_OUTLINE_GROUPS.map((group) => this.drawsGroup(group) ? 1 : 0) as [number, number, number]);
-        // A group without targets reads as inactive, so its samplers are never read; each still takes a texture that is
-        // not this pass's target (its own style table), since WebGL rejects a draw whose program's samplers could.
-        for (const group of SHARED_OUTLINE_GROUPS) {
-          const style = this.view.styleTexture(group);
-          const record = this.masks.find((entry) => entry.group === group);
-          if (record) context.bindTextureHandle(effect, `${group}Mask`, record.mask);
-          else effect.setTexture(`${group}Mask`, style);
-          effect.setTexture(`${group}Style`, style);
-        }
-        if (strictDepth !== undefined) context.bindTextureHandle(effect, "strictDepth", strictDepth);
-        else effect.setTexture("strictDepth", this.view.styleTexture("strict"));
+        compose.effect.setFloat2("scale", 1, 1);
+        this.bindStroke(context, compose.effect);
       }, undefined, false, false, false, false, Constants.ALPHA_COMBINE);
     });
-    this.sync();
   }
   /** The strict mask's depth, cleared, takes the scene's: one full-screen draw in place of every occluder that depth holds. */
   private recordSeed(record: MaskRecord, sceneDepth: FrameGraphTextureHandle): FrameGraphRenderPass {
@@ -246,7 +297,8 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
    *
    * A narrowed frame in which no group can show a stroke (no stroked strict member can show, and the through and
    * selection groups have no member in view) draws none of the task's passes: every mask would hold no identity, and the
-   * composition of masks without identities blends nothing onto the image (`strokes`).
+   * composition of masks without identities blends nothing onto the image (`strokes`). An external composition reads
+   * every group as inactive in such a frame (`strokesShow`), so it fetches none of the masks left from an earlier frame.
    */
   private sync(cull = false): void {
     if (this.disposed) return;
@@ -269,6 +321,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       record.renderer.prune();
     }
     const drawn = this.view.active && strokes;
+    this.strokesDrawn = strokes;
     for (const record of this.masks) {
       const disabled = !drawn || !this.view.groupActive(record.group);
       if (record.clearPass) record.clearPass.disabled = disabled;
@@ -290,7 +343,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     this.sync();
     if (!this.view.active) return true;
     // Probe every group even after a failure, so each starts its own compilation.
-    let ready = this.compose.isReady();
+    let ready = this.compose?.isReady() ?? true;
     if (this.seeds && !this.seed.isReady()) ready = false;
     for (const record of this.masks) {
       if (!this.view.groupActive(record.group)) { record.probed = undefined; continue; }
@@ -318,7 +371,8 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       this.view.owner.retireRenderPass(record.objects.objectRenderer.renderPassId);
       record.objects.dispose(); record.clear.dispose();
     }
-    this.retirements.push(retireOwnedEffect(this.compose.effect, () => this.compose.dispose()));
+    const compose = this.compose;
+    if (compose) this.retirements.push(retireOwnedEffect(compose.effect, () => compose.dispose()));
     this.retirements.push(retireOwnedEffect(this.seed.effect, () => this.seed.dispose()));
     super.dispose();
   }
