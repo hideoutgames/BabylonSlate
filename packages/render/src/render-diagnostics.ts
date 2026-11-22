@@ -24,6 +24,7 @@ import type { LayerDrawListWork } from "./layer-draw-list";
 import type { LeanPreparationWork } from "./lean-render-preparation";
 import type { RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
+import { worldSpriteBatchStats, type WorldSpriteBatchStats } from "./world-sprite-batcher";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
 import { deviceTextureLimits } from "./device-profile";
@@ -307,6 +308,11 @@ export type RenderDiagnostics = {
   /** The Scene's instance pool (`SceneInstancePool.diagnostics`): groups, retained groups, pooled members and re-keys; null without one. */
   instancePool: InstancePoolDiagnostics | null;
   /**
+   * Play world sprite batching (`WorldSpriteBatcher.stats`): sprites and batches drawing, pooled batch meshes, atlas
+   * images, and buffer uploads and the instances they carried since Play began; null without a batcher.
+   */
+  worldSprites: WorldSpriteBatchStats | null;
+  /**
    * The world view's last frame culled by occlusion (meshes tested and culled, occluders, their triangles, ms; on an idle
    * frame the last run's counts and 0 ms), whether that frame was idle (backing off while its runs cull nothing) and the
    * frames it skips after each run (0: every frame), and since its first frame the frames skipped, the frames that kept
@@ -396,6 +402,7 @@ export function createRenderDiagnostics(
       drawCalls: readEngineDrawCalls(engine),
       autoLod: autoLodDiagnostics(scene),
       instancePool: existingSceneInstancePool(scene)?.diagnostics() ?? null,
+      worldSprites: worldSpriteBatchStats(scene),
       occlusion: occlusionCounts(scene),
       resources: {
         meshes: liveMeshCount(scene),

@@ -1,3 +1,4 @@
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { CommandMessage } from "@haptic/bridge";
 import type { SpriteAnimationPayload, SpritePayload } from "@haptic/assets";
@@ -7,7 +8,7 @@ import { applyAlbedoTexture, applySpriteVisibility, type MeshAssetContext } from
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import type { AnimLayerMaskRef } from "@haptic/core";
 import { applyPose, poseRigFor, type PoseAdditive, type PoseClip, type PoseLayering } from "./anim-pose";
-import { batchedSpriteOf } from "./world-sprite-batcher";
+import { batchedSpriteOf, ejectBatchedSprite } from "./world-sprite-batcher";
 
 /**
  * Bind a Sprite Animation asset frame (texture, region, size, pivot) onto the sprite quad; a sheet cell shows its
@@ -92,6 +93,8 @@ export function resolvePlaySpriteSlot(
         );
         overlay.parent = mesh;
         overlay.visibility = 0;
+        // Babylon does not inherit `isVisible`: a hidden actor's overlay starts hidden (`setPlayVisualVisibility`).
+        overlay.isVisible = mesh.isVisible;
         overlay.alphaIndex = mesh.alphaIndex;
         overlay.renderingGroupId = mesh.renderingGroupId;
         overlay.metadata = { ...(mesh.metadata ?? {}) };
@@ -104,6 +107,45 @@ export function resolvePlaySpriteSlot(
     },
     assets: binding,
   };
+}
+
+/**
+ * Promotes a batched Play sprite to a standalone quad (`ejectBatchedSprite`). The slot's own visual also gets its
+ * crossfade overlay now, showing the overlay layer it drew batched, as an unbatched sprite has one from when it is
+ * built: so it is in the visual's mesh list an outline or a selection takes next. True when `mesh` was batched.
+ */
+export function ejectPlaySprite(binding: SnapshotSceneBinding, slotId: number, mesh: AbstractMesh): boolean {
+  const batched = batchedSpriteOf(mesh);
+  if (!batched) return false;
+  const overlay = batched.secondary;
+  const frame = overlay.active && overlay.visibility > 0
+    ? {
+      uv: overlay.u0 === 0 && overlay.v0 === 0 && overlay.u1 === 1 && overlay.v1 === 1
+        ? null : { u0: overlay.u0, v0: overlay.v0, u1: overlay.u1, v1: overlay.v1 },
+      width: overlay.width, height: overlay.height, pivot: { x: overlay.pivotX, y: overlay.pivotY },
+      textureGuid: overlay.textureGuid, visibility: overlay.visibility,
+    }
+    : null;
+  if (!ejectBatchedSprite(mesh)) return false;
+  if (binding.meshes.get(slotId) !== mesh) return true;
+  const quad = resolvePlaySpriteSlot(binding, binding.spritePayloads, slotId)?.ensureOverlayMesh?.();
+  if (quad && frame) {
+    applyAlbedoTexture(quad, quad.getScene(), frame.textureGuid, binding, {
+      shadingMode: binding.meshSorting.get(slotId)?.shadingMode ?? "2d",
+    });
+    setSpriteQuadUvs(quad, frame.uv);
+    setSpriteQuadSize(quad, frame.width, frame.height, frame.pivot);
+    applySpriteVisibility(quad, frame.visibility);
+  }
+  return true;
+}
+
+/** Ejects every batched sprite of the binding's slots (`ejectPlaySprite`). */
+export function ejectAllPlaySprites(binding: SnapshotSceneBinding): void {
+  for (const [slotId, root] of binding.meshes) {
+    ejectPlaySprite(binding, slotId, root);
+    for (const mesh of root.getChildMeshes()) ejectPlaySprite(binding, slotId, mesh);
+  }
 }
 
 export interface MissingAnimClip {
