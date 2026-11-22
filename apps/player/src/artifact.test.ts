@@ -5,12 +5,14 @@ import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
 } from "@haptic/core";
 import { exportGame, GAME_MANIFEST_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@haptic/exporter";
-import { AREA_EMISSION_EDGE, encodeAreaEmission } from "@haptic/assets";
+import { AREA_EMISSION_EDGE, encodeAreaEmission, installedAssetIdentity } from "@haptic/assets";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 
 const encoder = new TextEncoder();
 /** Response bodies need ArrayBuffer-backed views; exported bytes never use SharedArrayBuffer. */
 const body = (bytes: Uint8Array | undefined) => bytes as Uint8Array<ArrayBuffer> | undefined;
+/** The bytes an installed source Blob owns. */
+const bytesOf = async (source: Blob | undefined) => source ? new Uint8Array(await source.arrayBuffer()) : undefined;
 
 describe("loadGameFromFiles", () => {
   it("uses a valid native fetch receiver for default HTTP source loading", async () => {
@@ -145,7 +147,7 @@ describe("loadGameFromFiles", () => {
       return new Response(body(match ? bytes.subarray(Number(match[1]), Number(match[2]) + 1) : bytes), { status: match ? 206 : 200 });
     });
     expect(game.textureBytes.size).toBe(15);
-    expect(game.textureBytes.get("texture-14")).toEqual(new Uint8Array([14]));
+    expect(await bytesOf(game.textureBytes.get("texture-14"))).toEqual(new Uint8Array([14]));
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThanOrEqual(6);
   });
@@ -180,7 +182,11 @@ describe("loadGameFromFiles", () => {
     ] });
     if (!exported.ok) throw new Error(exported.error);
     const game = await loadGameFromFiles(exported.value.files);
-    expect(game.textureBytes.get("texture")).toEqual(new Uint8Array([1, 2, 3]));
+    expect(await bytesOf(game.textureBytes.get("texture"))).toEqual(new Uint8Array([1, 2, 3]));
+    // The installed Blob is the bytes' only owner, identified by the revision the load verified (never hashed again).
+    const revision = exported.value.manifest.assets.find((entry) => entry.guid === "texture")!.revision!;
+    expect(installedAssetIdentity(game.textureBytes.get("texture")!)).toBe(revision);
+    expect(game.payloads.get("texture")?.byteLength).toBe(0);
     expect(game.areaEmissions.get("texture")?.rgba.every((value) => value === 200)).toBe(true);
     emission[emission.length - 1] = 0;
     const corrupted = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [{ guid: areaEmissionExportGuid("texture"), type: AREA_EMISSION_EXPORT_TYPE, bytes: emission, startupRequired: true, sceneGuid: "scene" }] });
@@ -314,7 +320,7 @@ describe("loadGameFromFiles", () => {
     if (!packed.ok) return;
     const loaded = await loadGameFromFiles(packed.value.files);
     expect(loaded.fontMsdfJson.get("font-1")).toEqual(new Uint8Array([9]));
-    expect(loaded.fontMsdfPng.get("font-1")).toEqual(new Uint8Array([8]));
+    expect(await bytesOf(loaded.fontMsdfPng.get("font-1"))).toEqual(new Uint8Array([8]));
   });
 
   it("peels packed Model payload so importScale reaches the player", async () => {
@@ -357,7 +363,11 @@ describe("loadGameFromFiles", () => {
     expect(packed.ok).toBe(true);
     if (!packed.ok) return;
     const loaded = await loadGameFromFiles(packed.value.files);
-    expect(loaded.modelBytes.get("hero-model")).toEqual(glb);
+    expect(await bytesOf(loaded.modelBytes.get("hero-model"))).toEqual(glb);
+    // The GLB is part of the verified packed payload: its identity derives from that revision, and only its Blob holds it.
+    const revision = packed.value.manifest.assets.find((entry) => entry.guid === "hero-model")!.revision!;
+    expect(installedAssetIdentity(loaded.modelBytes.get("hero-model")!)).toBe(`${revision}:source`);
+    expect(loaded.payloads.get("hero-model")?.byteLength).toBe(0);
     expect(loaded.modelPayloads.get("hero-model")?.importScale).toBe(4);
   });
 
@@ -451,7 +461,7 @@ describe("demand-driven exported sources", () => {
       expect(reads.filter(path => path === "assets/data-1.bin")).toHaveLength(1);
       expect(reads.filter(path => path === "assets/data-2.bin")).toHaveLength(1);
       first.release();
-      expect(game.textureBytes.get("texture")).toEqual(new Uint8Array([1, 2, 3]));
+      expect(await bytesOf(game.textureBytes.get("texture"))).toEqual(new Uint8Array([1, 2, 3]));
       second.release();
       game.assets!.trim({ force: true });
       expect(game.scenes.has("b")).toBe(false);
@@ -515,7 +525,7 @@ it("cancels a cold offline scene before publication and ignores its late storage
     delayed = false;
     finish(new Uint8Array([7]));
     const current = await game.acquireScene!("b", { consumer: "replacement instance", signal: new AbortController().signal });
-    expect(game.textureBytes.get("texture")).toEqual(new Uint8Array([7]));
+    expect(await bytesOf(game.textureBytes.get("texture"))).toEqual(new Uint8Array([7]));
     current.release();
     game.assets!.trim({ force: true });
     expect(game.payloads.has("b")).toBe(false);

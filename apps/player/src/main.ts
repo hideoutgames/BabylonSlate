@@ -172,9 +172,12 @@ async function launchLoaded(
         hostMemory = null;
       });
   };
-  refreshHostMemory();
-  // Session-scoped HUD feed; cleared with the page, same as the render loop.
-  const memoryInterval = window.setInterval(refreshHostMemory, 1000);
+  // Session-scoped feed of the Stats HUD, which only a debugger build has; cleared with the page, same as the render loop.
+  let memoryInterval: number | undefined;
+  if (game.manifest.bundleDebugger) {
+    refreshHostMemory();
+    memoryInterval = window.setInterval(refreshHostMemory, 1000);
+  }
   let stopped = false;
   let previewDiagnostics: ReturnType<typeof import("./preview-diagnostics")["installPreviewDiagnostics"]> | undefined;
   let preparingDiagnostics: Promise<void> | undefined;

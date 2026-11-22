@@ -320,6 +320,13 @@ function selectedChunks(asset: IndexedAsset, payload: Record<string, unknown>, f
   return [];
 }
 
+/** Editor Play holds Texture, Model and MSDF atlas bytes raw: the view installs them (`GameSourceContent` allows Blobs). */
+type EditorPlayGameSource = Omit<GameSourceContent, "textureBytes" | "modelBytes" | "fontMsdfPng"> & {
+  textureBytes: Map<string, Uint8Array>;
+  modelBytes: Map<string, Uint8Array>;
+  fontMsdfPng: Map<string, Uint8Array>;
+};
+
 type PlayAssetSourceOptions = {
   consumer: string;
   signal: AbortSignal;
@@ -381,7 +388,7 @@ async function acquirePlayAssetSourcesAttempt(
   const controls: ControlMessage[] = [];
   const fonts: Array<NonNullable<SceneSourceAssets["fonts"]>[number]> = [];
   let ownedContent: PackedGameContent | undefined;
-  const game: GameSourceContent = {
+  const game: EditorPlayGameSource = {
     manifest: {
       assetCatalogVersion: 1, startupSceneGuid: roots.find((id) => host.registry.getByGuid(id)?.header.type === "Scene") ?? "",
       bundleDebugger: true, render: project.settings.render, playFrameCap: project.settings.playFrameCap,

@@ -1,23 +1,48 @@
 import { environmentTextureContainer, readEnvironmentTextureInfo, type EnvironmentTextureInfo } from "./environment-texture";
+import { isKtx2Bytes } from "./texture-loader";
 
 const identities = new WeakMap<Blob, string>();
 const headers = new WeakMap<Blob, Uint8Array>();
 const environmentInfo = new WeakMap<Blob, EnvironmentTextureInfo>();
 let nextBlobGeneration = 0;
+/** Bytes of an installed source kept beside its Blob for synchronous header reads (`installedAssetHeader`). */
+const HEADER_BYTES = 64 * 1024;
 
 /**
- * Immutable installed content. Mutable source arrays are copied before publication. `identity` is the content's
- * identity when the caller already holds one verified for exactly these bytes (an exported asset's catalog revision,
- * its SHA-256), so installation does not hash them again; otherwise the bytes are hashed (`assetContentHash`).
+ * Immutable installed content. The Blob takes its own copy of the bytes when it is constructed, so a caller that
+ * drops its array afterwards leaves the Blob the only owner. `identity` is the content's identity when the caller
+ * already holds one verified for exactly these bytes (an exported asset's catalog revision, its SHA-256), so
+ * installation does not hash them again; otherwise the bytes are hashed (`assetContentHash`).
  */
 export function installAssetBytes(bytes: Uint8Array | Blob, mime = "application/octet-stream", identity?: string): Blob {
   if (bytes instanceof Blob) return bytes;
-  const copy = bytes.slice();
-  const blob = new Blob([copy], { type: mime });
-  identities.set(blob, identity ?? assetContentHash(copy));
-  headers.set(blob, copy.slice(0, 64 * 1024));
-  if (environmentTextureContainer(copy)) environmentInfo.set(blob, readEnvironmentTextureInfo(copy));
+  // Metadata reads before the Blob exists, from the same bytes the Blob copies.
+  const contentIdentity = identity ?? assetContentHash(bytes);
+  const header = bytes.slice(0, HEADER_BYTES);
+  const environment = environmentTextureContainer(bytes) ? readEnvironmentTextureInfo(bytes) : undefined;
+  // Asset bytes are never SharedArrayBuffer-backed (BlobPart needs ArrayBuffer).
+  const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime });
+  identities.set(blob, contentIdentity);
+  headers.set(blob, header);
+  if (environment) environmentInfo.set(blob, environment);
   return blob;
+}
+
+/** A Texture source installed with the MIME type its container needs (`installAssetBytes`). */
+export function installTextureSource(bytes: Uint8Array | Blob, identity?: string): Blob {
+  if (bytes instanceof Blob) return bytes;
+  const kind = environmentTextureContainer(bytes);
+  const mime = kind === "env" ? "application/vnd.babylon.env" : kind === "dds" ? "image/vnd-ms.dds"
+    : isKtx2Bytes(bytes) ? "image/ktx2" : "application/octet-stream";
+  return installAssetBytes(bytes, mime, identity);
+}
+
+/**
+ * The leading bytes of a source, raw or installed, for header reads (image size, container kind); undefined for a Blob
+ * not installed here. Never write into the result.
+ */
+export function assetSourceHeader(source: Uint8Array | Blob): Uint8Array | undefined {
+  return source instanceof Blob ? headers.get(source) : source;
 }
 
 /** Bounded copied header for synchronous upload admission; never exposes mutable installed content. */

@@ -353,13 +353,13 @@ describe("packedContentFromGame", () => {
       guid: "rock-model", positions: expect.any(Float32Array), indices: expect.any(Uint16Array),
     }]);
     // A script switching the simple Model to Complex Collision is served on demand.
-    expect(game.cookComplexCollision?.("hero-model")?.positions).toHaveLength(8 * 3);
-    expect(game.cookComplexCollision?.("unloaded-model")).toBeNull();
+    expect((await game.cookComplexCollision?.("hero-model"))?.positions).toHaveLength(8 * 3);
+    expect(await game.cookComplexCollision?.("unloaded-model")).toBeNull();
     // The cooked mesh outlives the Model's trimmed source bytes.
     const cooked = game.complexMeshes?.get("rock-model");
     expect(cooked).toBeDefined();
     game.modelBytes.delete("rock-model");
-    expect(game.cookComplexCollision?.("rock-model")).toBe(cooked);
+    expect(await game.cookComplexCollision?.("rock-model")).toBe(cooked);
   });
 
   it("resolves packed Animation Graph clips from Animation assets and maps clip guids", async () => {
