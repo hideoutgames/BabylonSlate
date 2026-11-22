@@ -148,6 +148,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       havok,
       worldId,
       bodies: this.bodies,
+      bodyIdByHpId: this.bodyIdByHpId,
       flushMutations: () => this.flushMutations(),
       failMutation: (record, failure) => this.failMutation(record, failure),
       setBodyPoseBeforeStep: (record) => this.setBodyPoseBeforeStep(record),

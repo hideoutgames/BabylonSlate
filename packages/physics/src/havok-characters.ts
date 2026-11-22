@@ -1,11 +1,14 @@
 import type {
+  ContactPoint,
   HavokPhysicsWithBindings,
+  HP_BodyId,
   HP_CollectorId,
   HP_ShapeId,
   HP_WorldId,
 } from "@babylonjs/havok";
 import type { CharacterControllerDesc, CharacterMovementResult, PhysicsTransform, Vec3 } from "./types";
 import { normalizedPhysicsPose } from "./collider-validation";
+import { rotateQuatVec } from "./collider-bake";
 import {
   colliderShapes,
   releaseHavokShape,
@@ -15,6 +18,7 @@ import {
 import {
   checked,
   checkedValue,
+  conjugateQuat,
   IDENTITY_HAVOK_QUAT,
   vec3Cross,
   vec3Dot,
@@ -32,12 +36,29 @@ type CharacterRecord = {
 const MAX_SLIDE_ITERATIONS = 6;
 const MOVE_EPS = 1e-6;
 const SUPPORT_PROBE_EXTRA = 0.005;
+/** Character solves shorter than this push bodies as if they took the nominal step (a discrete move with dt 0). */
+const MIN_CHARACTER_SOLVE_DT = 1e-3;
+const NOMINAL_CHARACTER_SOLVE_DT = 1 / 60;
+/** Share of the relative approach speed a push removes, and the penetration recovery rate (Babylon's controller). */
+const PUSH_DAMP_FACTOR = 0.9;
+const PUSH_RECOVERY_TAU = 0.4;
+
+/** A dynamic body the character touched during one solve, pushed once the solve ends. */
+type CharacterContact = {
+  bodyId: HP_BodyId;
+  position: Vec3;
+  /** Unit surface normal of the touched body, pointing at the character. */
+  normal: Vec3;
+  /** Separation along the normal; negative while penetrating. */
+  distance: number;
+};
 
 /** What character movement reads from and calls on the backend that owns the world. */
 export interface HavokCharacterHost {
   readonly havok: HavokPhysicsWithBindings;
   readonly worldId: HP_WorldId;
   readonly bodies: ReadonlyMap<string, BodyRecord>;
+  readonly bodyIdByHpId: ReadonlyMap<bigint, string>;
   flushMutations(): void;
   failMutation(record: BodyRecord, failure: Error): Error;
   setBodyPoseBeforeStep(record: BodyRecord): void;
@@ -49,7 +70,8 @@ export interface HavokCharacterHost {
 /**
  * Direct Havok WASM character controllers: owns one native capsule `HP_ShapeId` per controller (zero extra bodies or
  * Babylon `TransformNode`s) and solves depenetration, collide-and-slide, slope limits, and ground snapping directly
- * through `HP_World_ShapeProximityWithCollector` and `HP_World_ShapeCastWithCollector`.
+ * through `HP_World_ShapeProximityWithCollector` and `HP_World_ShapeCastWithCollector`. Dynamic bodies block the move
+ * like any surface and are pushed once the solve ends (`pushDynamicBodies`), so the character advances as they give way.
  */
 export class HavokCharacters {
   private readonly host: HavokCharacterHost;
@@ -205,6 +227,7 @@ export class HavokCharacters {
     let posX = startX;
     let posY = startY;
     let posZ = startZ;
+    const touched: CharacterContact[] = [];
 
     try {
       const ownShapes: HP_ShapeId[] = [];
@@ -245,6 +268,7 @@ export class HavokCharacters {
             havok.HP_QueryCollector_GetShapeProximityResult(this.proximityCollector, i),
             "character depenetration result",
           );
+          if (depen === 0) this.recordDynamicContact(touched, hitWorld, dist);
           if (dist < deepestDist) {
             deepestDist = dist;
             pushNx = hitWorld[4][0];
@@ -297,6 +321,7 @@ export class HavokCharacters {
         // Collectors with capacity > 1 are not guaranteed sorted; pick the earliest blocking hit.
         let minFrac = 2;
         let hitNx = 0, hitNy = 0, hitNz = 0;
+        let hitPoint: ContactPoint | null = null;
         for (let i = 0; i < numHits; i++) {
           const [fraction, , hitWorld] = checkedValue(
             havok,
@@ -308,6 +333,7 @@ export class HavokCharacters {
             hitNx = hitWorld[4][0];
             hitNy = hitWorld[4][1];
             hitNz = hitWorld[4][2];
+            hitPoint = hitWorld;
           }
         }
         if (minFrac > 1) {
@@ -316,6 +342,8 @@ export class HavokCharacters {
           posZ += remZ;
           break;
         }
+        // Separation along the normal before this cast, measured as Babylon's controller measures a cast contact.
+        if (hitPoint) this.recordDynamicContact(touched, hitPoint, -minFrac * (remX * hitNx + remY * hitNy + remZ * hitNz));
 
         const dirX = remX / len;
         const dirY = remY / len;
@@ -481,6 +509,12 @@ export class HavokCharacters {
           }
         }
       }
+
+      if (touched.length) {
+        // The requested velocity; a discrete move (dt 0) pushes as if it took the nominal step.
+        const solveDt = dt >= MIN_CHARACTER_SOLVE_DT ? dt : NOMINAL_CHARACTER_SOLVE_DT;
+        this.pushDynamicBodies(touched, translation.x / solveDt, translation.y / solveDt, translation.z / solveDt, solveDt);
+      }
     } finally {
       for (const [shape, membership] of memberships) {
         setShapeMembershipMask(havok, shape, membership);
@@ -514,5 +548,69 @@ export class HavokCharacters {
       velocity,
       grounded,
     };
+  }
+
+  /** Keeps the first contact with each dynamic body; the character never moves other bodies. */
+  private recordDynamicContact(touched: CharacterContact[], point: ContactPoint, distance: number): void {
+    const hpBodyId = point[0];
+    const bodyId = this.host.bodyIdByHpId.get(hpBodyId[0]);
+    if (bodyId === undefined || this.host.bodies.get(bodyId)?.desc.motionType !== "dynamic") return;
+    for (const contact of touched) if (contact.bodyId[0] === hpBodyId[0]) return;
+    touched.push({
+      bodyId: hpBodyId,
+      position: { x: point[3][0], y: point[3][1], z: point[3][2] },
+      normal: { x: point[4][0], y: point[4][1], z: point[4][2] },
+      distance: Number.isFinite(distance) ? distance : 0,
+    });
+  }
+
+  /**
+   * Pushes each touched dynamic body as Babylon's `PhysicsCharacterController._resolveContacts` does with its defaults
+   * (unlimited `characterStrength`, `characterMass` 0): an impulse along the contact normal at the contact point removes
+   * 90% of the speed at which the character approaches that point, plus a share of any penetration. The character is
+   * infinitely strong, so it pushes a body of any mass to the same speed; mass only scales the impulse. As in Babylon,
+   * the angular term weights the contact arm by Havok's unit-mass inertia in the inertia frame.
+   */
+  private pushDynamicBodies(touched: readonly CharacterContact[], vx: number, vy: number, vz: number, dt: number): void {
+    const havok = this.host.havok;
+    for (const contact of touched) {
+      const bodyId = this.host.bodyIdByHpId.get(contact.bodyId[0]);
+      const record = bodyId === undefined ? undefined : this.host.bodies.get(bodyId);
+      if (!record?.inWorld) continue;
+      const [centerOfMass, mass, inertia, inertiaOrientation] = checkedValue(
+        havok,
+        havok.HP_Body_GetMassProperties(record.hpBodyId),
+        "character push mass properties",
+      );
+      if (!(mass > 0)) continue;
+      const com = rotateQuatVec(record.pose.rotation, { x: centerOfMass[0], y: centerOfMass[1], z: centerOfMass[2] });
+      const rx = contact.position.x - record.pose.position.x - com.x;
+      const ry = contact.position.y - record.pose.position.y - com.y;
+      const rz = contact.position.z - record.pose.position.z - com.z;
+      const [lx, ly, lz] = checkedValue(havok, havok.HP_Body_GetLinearVelocity(record.hpBodyId), "character push velocity");
+      const [ax, ay, az] = checkedValue(havok, havok.HP_Body_GetAngularVelocity(record.hpBodyId), "character push spin");
+      const n = contact.normal;
+      // The touched point's velocity relative to the character, along the normal (negative while they approach).
+      const approach =
+        (lx + ay * rz - az * ry - vx) * n.x + (ly + az * rx - ax * rz - vy) * n.y + (lz + ax * ry - ay * rx - vz) * n.z;
+      let deltaVelocity = -approach * PUSH_DAMP_FACTOR;
+      if (contact.distance < 0) deltaVelocity += (contact.distance * PUSH_RECOVERY_TAU) / dt;
+      if (deltaVelocity >= 0) continue;
+      const arm = rotateQuatVec(
+        conjugateQuat({ x: inertiaOrientation[0], y: inertiaOrientation[1], z: inertiaOrientation[2], w: inertiaOrientation[3] }),
+        vec3Cross({ x: rx, y: ry, z: rz }, n),
+      );
+      const inverseMass = 1 / mass + inertia[0] * arm.x * arm.x + inertia[1] * arm.y * arm.y + inertia[2] * arm.z * arm.z;
+      const impulse = deltaVelocity / inverseMass;
+      checked(
+        havok,
+        havok.HP_Body_ApplyImpulse(
+          record.hpBodyId,
+          [contact.position.x, contact.position.y, contact.position.z],
+          [n.x * impulse, n.y * impulse, n.z * impulse],
+        ),
+        "character push impulse",
+      );
+    }
   }
 }
