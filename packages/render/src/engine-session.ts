@@ -1,4 +1,5 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { gltfGeometryDecodersReady } from "@haptic/assets";
 import { createAppEngine, type CreateEngineOptions } from "./create-engine";
 import { allowDirectViewPresentation } from "./direct-view-presentation";
 import { releaseResourceCacheForEngine } from "./resource-cache";
@@ -23,6 +24,10 @@ export interface EngineSessionOptions {
 /** One owned WebGL2 Engine on its own canvas, released together. */
 export async function createEngineSession(options: EngineSessionOptions): Promise<EngineSession> {
   const { signal } = options;
+  signal?.throwIfAborted();
+  // Collision cooks and geometry reads on this Engine's scenes (Drop, collision previews, the player's fallback cooks)
+  // are synchronous and decode meshopt geometry, so the decoder is ready before the Engine is.
+  await gltfGeometryDecodersReady();
   signal?.throwIfAborted();
   const canvas = options.createCanvas();
   let engine: AbstractEngine | undefined;
