@@ -51,6 +51,7 @@ export function HomepageProfileMenu({
   disabled,
   name = "Guest",
   email,
+  offline = false,
   imageUrl,
   details,
   nativeProfile,
@@ -66,6 +67,8 @@ export function HomepageProfileMenu({
   disabled?: boolean;
   name?: string;
   email?: string;
+  /** Signed in without reaching the account service; the status line says Offline. */
+  offline?: boolean;
   imageUrl?: string;
   /** Extra account facts for the Account dialog. */
   details?: Pick<AccountDetails, "memberSince" | "lastSignInAt" | "signInMethods">;
@@ -85,8 +88,9 @@ export function HomepageProfileMenu({
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const signedIn = Boolean(onSignOut);
-  const status =
-    email ?? (signedIn ? "Signed In" : "Not Signed In");
+  const status = offline
+    ? "Offline"
+    : (email ?? (signedIn ? "Signed In" : "Not Signed In"));
   useEffect(() => {
     onOpenChange?.(menuOpen || accountOpen);
   }, [menuOpen, accountOpen, onOpenChange]);

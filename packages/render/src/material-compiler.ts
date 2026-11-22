@@ -90,10 +90,12 @@ import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
 import { createDecalPlumbing } from "./decal-projection-block";
 import { MATERIAL_RECORD_BLOCK, MaterialRecord, MaterialRecordReadBlock, planMaterialRecord, type MaterialRecordValue } from "./material-record";
-import { MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
+import { LayerMultiplyBlock, MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
+import { followLayerMultiplyAlphaMode } from "./layer-composite";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 import { noteAdoptedProgram, noteMaterialBuild, noteSameShaderRebuild } from "./material-program-census";
+import { isLayerDepthVisual } from "./layer-depth-visuals";
 
 /** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
 const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
@@ -361,20 +363,20 @@ function operationBlockName(id: string): string {
  * Shadows, a text's atlas, mode and outline), and per-mesh ones of meshes that never
  * batch (bones, morphs, a lattice) or of a pass that draws no batch (a fragment output's geometry terms; its
  * logarithmic depth is the Scene's). The screen size (Screen Size, Screen UV, User Interface Input) is the render
- * target's, which every member of a batch draws into. A block that binds and is not listed keeps its Material out of
- * batches.
+ * target's, which every member of a batch draws into, and a Scene Layer Multiply's layer kind is the Scene's, which every
+ * member draws on. A block that binds and is not listed keeps its Material out of batches. Listed at the first compile,
+ * not as this module evaluates: a module cycle (the text block's, the unlit Material's) can leave a class undefined
+ * until then.
  */
-// Read at first use, not at module evaluation: the lighting block reaches this module back through the water and
-// unlit modules, so at evaluation one of these classes may not be defined yet.
-let batchBindings: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> | undefined;
-const BATCH_BINDINGS = (): ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> => batchBindings ??= [
-  BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
-  ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock, ScreenSizeBlock,
-  MaterialRecordReadBlock,
-];
+let batchBindings: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> | null = null;
 
 function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
-  return block.bind === NodeMaterialBlock.prototype.bind || BATCH_BINDINGS().some((known) => block instanceof known);
+  batchBindings ??= [
+    BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
+    ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
+    ScreenSizeBlock, LayerMultiplyBlock, MaterialRecordReadBlock,
+  ];
+  return block.bind === NodeMaterialBlock.prototype.bind || batchBindings.some((known) => block instanceof known);
 }
 
 /**
@@ -401,6 +403,7 @@ export function compileMaterialPlan(
   // `plannedStockVertexStage`: its plan's vertex stage is Babylon's own (identity World Position Offset, no custom
   // blocks), known before the build that `hasStockVertexStage` waits for (`instance-pool.ts` groups by it at once).
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0, materialDomain: plan.domain, plannedStockVertexStage: cacheableShadowShape };
+  if (!auxiliary && options.overlay) drawsLayer3DWithDepth(material, plan);
   const configureSurface = () => {
     if (auxiliary) {
       material.backFaceCulling = plan.twoSided !== true;
@@ -410,10 +413,13 @@ export function compileMaterialPlan(
       applyAuthoredSurfaceBlend(material, plan);
       if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text" && plan.domain !== "ui") registerAlphaToCoverage(material);
       if (options.overlay) {
+        // Scene Layer content sorts back to front by Z-Order in the blended list, and an actor's Opacity fades any
+        // Material: every draw blends (no depth writes), except a 3D visual's with an Opaque or Masked Material
+        // (`drawsLayer3DWithDepth`).
         material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false;
-        // A Multiply surface on a Scene Layer draws as Translucent (`attachSurfaceShading`).
-        if (plan.blendMode === "multiply") material.alphaMode = Constants.ALPHA_COMBINE;
       }
+      // A Scene Layer's Multiply (a Surface's overlay compile, any User Interface or Text Material) blends by its layer's kind.
+      if (plan.blendMode === "multiply" && (options.overlay || plan.domain === "text" || plan.domain === "ui")) followLayerMultiplyAlphaMode(material);
       syncSceneLighting(scene);
     }
   };
@@ -835,8 +841,18 @@ export function compileMaterialPlan(
       const styled = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_overlayFill`);
       multiply.output.connectTo(styled.left);
       style.rgba.connectTo(styled.right);
-      styled.output.connectTo(fragment.rgba);
       created.push(fragment, display, multiply, style, styled);
+      if (plan.blendMode === "multiply") {
+        // Fill × glyph coverage × style, in display colour: its rgb is the factor's colour, its alpha the amount.
+        const split = new ColorSplitterBlock(`${MATERIAL_BLOCK_PREFIX}_multiplyFill`);
+        const layer = new LayerMultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_layerMultiply`);
+        layer.linearInput = false;
+        styled.output.connectTo(split.rgba);
+        split.rgbOut.connectTo(layer.color);
+        split.a.connectTo(layer.alpha);
+        layer.rgba.connectTo(fragment.rgba);
+        created.push(split, layer);
+      } else styled.output.connectTo(fragment.rgba);
       outputNodes.push(fragment);
     } else if (plan.domain === "ui") {
       // (Color, Opacity) times the component's tint and opacity (`OverlayStyleBlock`, white by default).
@@ -851,8 +867,19 @@ export function compileMaterialPlan(
         tint.connectTo(multiply.right);
         return multiply.output;
       };
-      styled(outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true), style.rgb, "overlayColor").connectTo(fragment.rgb);
-      styled(outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false), style.alpha, "overlayAlpha").connectTo(fragment.a);
+      const color = styled(outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true), style.rgb, "overlayColor");
+      const alpha = styled(outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false), style.alpha, "overlayAlpha");
+      if (plan.blendMode === "multiply") {
+        // The linear factor; the output encodes its colour for display once, as any User Interface colour.
+        const layer = new LayerMultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_layerMultiply`);
+        created.push(layer);
+        color.connectTo(layer.color);
+        alpha.connectTo(layer.alpha);
+        layer.rgba.connectTo(fragment.rgba);
+      } else {
+        color.connectTo(fragment.rgb);
+        alpha.connectTo(fragment.a);
+      }
       outputNodes.push(fragment);
     } else if (plan.domain === "postProcess" || plan.domain === "particle") {
       const fragment = plan.domain === "particle"
@@ -1564,6 +1591,25 @@ function nodeMaterialBuildInProgress(material: NodeMaterial): boolean {
   return (material as unknown as { _buildIsInProgress?: boolean })._buildIsInProgress === true;
 }
 
+interface PlanIndex {
+  operations: ReadonlyMap<string, MaterialOperation>;
+  /** The first binding of each operation, as `textures.find` answered. */
+  textures: ReadonlyMap<string, MaterialBuildPlan["textures"][number]>;
+}
+/** Plans are shared and never changed, so each is indexed once for every compile of it. */
+const planIndices = new WeakMap<MaterialBuildPlan, PlanIndex>();
+
+function planIndex(plan: MaterialBuildPlan): PlanIndex {
+  let index = planIndices.get(plan);
+  if (index) return index;
+  const operations = new Map<string, MaterialOperation>();
+  for (const operation of plan.operations) if (!operations.has(operation.id)) operations.set(operation.id, operation);
+  const textures = new Map<string, MaterialBuildPlan["textures"][number]>();
+  for (const binding of plan.textures) if (!textures.has(binding.operationId)) textures.set(binding.operationId, binding);
+  planIndices.set(plan, (index = { operations, textures }));
+  return index;
+}
+
 
 /** Blend modes that draw over the scene by their opacity (the coverage passes read it as translucent ones do). */
 function blendsOverScene(mode: MaterialBuildPlan["blendMode"]): boolean {
@@ -1623,6 +1669,23 @@ function applyAuthoredSurfaceBlend(
   }
 }
 
+/**
+ * A Scene Layer Material (`overlay`) of the surface domain with an Opaque or Masked blend mode draws a 3D visual
+ * (`isLayerDepthVisual`: a MeshComponent's primitive or model, Text3D) as the world draws it: in its rendering group's
+ * opaque or alpha-tested list, so the draw writes depth and 3D meshes in the layer occlude each other, as in the editor's
+ * Scene Layer tab. Every other mesh it draws (2D layer content) keeps the blended list and its Z-Order sort. A mesh that
+ * fades (`visibility`, vertex alpha, or an actor's Opacity through `overlay-visual-style.ts`) still blends. Installed
+ * once, outside the surface setup a rebuild repeats, so the overlay style's wrapper around it stays.
+ */
+export function drawsLayer3DWithDepth(material: Material, plan: Pick<MaterialBuildPlan, "domain" | "blendMode">): void {
+  if (plan.domain !== "surface" || (plan.blendMode !== "opaque" && plan.blendMode !== "masked")) return;
+  const masked = plan.blendMode === "masked";
+  const blends = material.needAlphaBlendingForMesh.bind(material);
+  const tests = material.needAlphaTestingForMesh.bind(material);
+  material.needAlphaBlendingForMesh = (mesh) => isLayerDepthVisual(mesh) ? mesh.visibility < 1 || mesh.hasVertexAlpha : blends(mesh);
+  material.needAlphaTestingForMesh = (mesh) => isLayerDepthVisual(mesh) ? masked && !material.needAlphaBlendingForMesh(mesh) : tests(mesh);
+}
+
 /** Bind the shared sampler source for a parameter or an inline sample. */
 function bindTexture(
   operation: MaterialOperation,
@@ -1635,9 +1698,8 @@ function bindTexture(
   const operand = operation.inputs.texture;
   const producerId =
     operand?.kind === "operation" ? operand.operationId : undefined;
-  const binding =
-    plan.textures.find((entry) => entry.operationId === producerId) ??
-    plan.textures.find((entry) => entry.operationId === operation.id);
+  const { textures } = planIndex(plan);
+  const binding = (producerId === undefined ? undefined : textures.get(producerId)) ?? textures.get(operation.id);
   if (!binding) return true;
   const texture = options.resolveTexture?.(binding.textureGuid, binding.filter) ?? null;
   if (!texture || isDisposedGpuTexture(texture)) {
@@ -1684,13 +1746,12 @@ function collectWorldPositionOffsetOperationIds(
   plan: MaterialBuildPlan,
 ): Set<string> {
   const ids = new Set<string>();
+  const { operations } = planIndex(plan);
   const visit = (operand: MaterialOperand | null | undefined): void => {
     if (!operand || operand.kind !== "operation") return;
     if (ids.has(operand.operationId)) return;
     ids.add(operand.operationId);
-    const operation = plan.operations.find(
-      (entry) => entry.id === operand.operationId,
-    );
+    const operation = operations.get(operand.operationId);
     if (!operation) return;
     for (const input of Object.values(operation.inputs)) {
       visit(input);
@@ -1876,8 +1937,8 @@ function attachSurfaceShading(
     right.connectTo(add.right);
     return add.output;
   };
-  // A world Multiply surface writes its factor (`writeMultiplyFactor`); on a Scene Layer it draws as Translucent: a layer
-  // with post-processing composites through a transparent target, where a product with the scene has nothing to multiply.
+  // A world Multiply surface writes its factor (`writeMultiplyFactor`); a Scene Layer's writes its layer's
+  // (`LayerMultiplyBlock`, below).
   const multiply = plan.blendMode === "multiply" && !options.overlay;
   // The scene's fog, by the one rule every surface fogs by (`SceneFogBlock`); a Multiply factor fades toward 1.
   const applyFog = (color: NodeMaterialConnectionPoint) => {
@@ -1920,7 +1981,24 @@ function attachSurfaceShading(
         ? addColor(baseColor, emissive, "unlitEmission")
         : (baseColor ?? emissive);
     const opacity = outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false);
-    if (options.overlay) {
+    if (options.overlay && plan.blendMode === "multiply") {
+      // The colour × the style's tint, by Opacity × the style's alpha, as the layer's Multiply: a linear factor the
+      // output encodes for display, as it does every overlay colour.
+      const style = new OverlayStyleBlock(`${MATERIAL_BLOCK_PREFIX}_overlayStyle`);
+      const layer = new LayerMultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_layerMultiply`);
+      created.push(style, layer);
+      if (color) {
+        const tint = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_overlayColor`);
+        color.connectTo(tint.left); style.rgb.connectTo(tint.right); tint.output.connectTo(layer.color);
+        created.push(tint);
+      } else style.rgb.connectTo(layer.color);
+      if (opacity) {
+        const alpha = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_overlayAlpha`);
+        opacity.connectTo(alpha.left); style.alpha.connectTo(alpha.right); alpha.output.connectTo(layer.alpha);
+        created.push(alpha);
+      } else style.alpha.connectTo(layer.alpha);
+      layer.rgba.connectTo(fragment.rgba);
+    } else if (options.overlay) {
       const style = new OverlayStyleBlock(`${MATERIAL_BLOCK_PREFIX}_overlayStyle`);
       created.push(style);
       if (color) {

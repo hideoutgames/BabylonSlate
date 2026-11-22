@@ -43,7 +43,7 @@ import { sceneLightingLimits, syncSceneLighting } from "./scene-lighting";
 import { createPreviewLighting } from "./preview-lighting";
 import { ViewportShadingOverlay } from "./viewport-shading-mode";
 import { setSceneWorldDebug } from "./world-debug";
-import { createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
+import { coalesceShadowDraws, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
 import { shadowAllocationCheckpoint } from "./shadow-map-factory";
 
 /** An atlas edge for the tests that place tiles themselves. */
@@ -525,6 +525,56 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect([Math.abs(below.x) < 1e-6 && Math.abs(below.y) < 1e-6, below.z > 0 && below.z < 1]).toEqual([true, true]);
     expect(above.z < 0 || above.z > 1).toBe(true);
     expect(read("hapticShadowViews", (4 + 2) * VIEW, 16)).toEqual([...generator.drawnViews[2]!.m].map(Math.fround));
+  });
+
+  it("uploads the light block only when what it holds changed, and once for maps drawn one after another", () => {
+    // The breaks: a block uploaded on every sync or map draw whether or not anything changed (a dynamic buffer, which
+    // keeps no copy to compare), or uploaded after each map of a shadow pass instead of once after the last.
+    const { engine, scene } = host();
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), new Vector3(0, -1, 0), Math.PI / 2, 2, scene);
+    const spotMap = createAtlasShadowGenerator(spot, EDGE / 4, EDGE)!;
+    const lamp = new PointLight("lamp", new Vector3(3, 2, 0), scene);
+    const lampMap = createAtlasShadowGenerator(lamp, EDGE / 4, EDGE)!;
+    syncSceneLighting(scene);
+    const block = hapticLightBuffer(scene) as unknown as {
+      getBuffer(): unknown; _bufferData: Float32Array; _uniformLocations: Record<string, number>;
+    };
+    let uploads = 0;
+    const upload = engine.updateUniformBuffer.bind(engine);
+    vi.spyOn(engine, "updateUniformBuffer").mockImplementation((buffer, elements, offset, count) => {
+      if (buffer === block.getBuffer()) uploads++;
+      upload(buffer, elements, offset, count);
+    });
+    // A still Scene's frames write the same lights: nothing is uploaded.
+    syncSceneLighting(scene);
+    syncSceneLighting(scene);
+    expect(uploads).toBe(0);
+    // A moved light is.
+    lamp.position.x = 4;
+    syncSceneLighting(scene);
+    expect(uploads).toBe(1);
+    // A shadow pass draws both maps: the block takes their views once, after the last, as it would after each.
+    const read = (name: string, from: number, length: number) =>
+      [...block._bufferData.subarray(block._uniformLocations[name]! + from, block._uniformLocations[name]! + from + length)];
+    const view = (index: number) => read("hapticShadowViews", index * VIEW, 16);
+    // Each record names its first view.
+    const spotView = read("hapticSpot", 12, 1)[0]!;
+    const lampView = read("hapticPoint", 8, 1)[0]!;
+    expect([spotView, lampView].every((first) => first >= 0)).toBe(true);
+    uploads = 0;
+    coalesceShadowDraws(scene, () => {
+      spotMap.getShadowMap()!.render();
+      expect(uploads).toBe(0);
+      lampMap.getShadowMap()!.render();
+      expect(uploads).toBe(0);
+    });
+    expect(uploads).toBe(1);
+    expect(view(spotView)).toEqual([...spotMap.drawnViews[0]!.m].map(Math.fround));
+    expect(view(lampView + 2)).toEqual([...lampMap.drawnViews[2]!.m].map(Math.fround));
+    // Outside a pass (a reflection's own maps), each map's views reach the block as it draws.
+    lamp.position.x = 5;
+    lampMap.getShadowMap()!.render();
+    expect(view(lampView + 2)).toEqual([...lampMap.drawnViews[2]!.m].map(Math.fround));
   });
 
   it("writes the sun's cascades of the camera rendering: a view's own map while it draws, the scene view's after", () => {

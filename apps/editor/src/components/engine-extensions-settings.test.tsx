@@ -72,7 +72,8 @@ beforeEach(async () => {
     materials: { convertGlsl: unused },
   });
   harness.service.setEngineStorage(bundled);
-  await harness.service.refresh();
+  // This computer trusts the test project.
+  await harness.service.refresh(undefined, true);
 });
 
 afterEach(async () => {

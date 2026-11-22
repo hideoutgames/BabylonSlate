@@ -6,6 +6,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@haptic/ui/comp
 import { Input } from "@haptic/ui/components/input";
 import { getElectronGameShellBridge, getElectronSecretsBridge, type AndroidPackagingChange } from "@haptic/vfs";
 import { useAndroidPackaging } from "../lib/android-packaging";
+import { SessionSecretsNotice } from "./session-secrets-notice";
 import { SettingsSection } from "./settings-section";
 
 type Picked = "java" | "sdk" | "keystore";
@@ -168,6 +169,7 @@ export function AndroidPackagingSettings() {
         secretKey={ANDROID_SIGNING_SECRETS.key}
         disabled={loading || debugKey}
       />
+      <SessionSecretsNotice />
     </SettingsSection>
   );
 }

@@ -984,9 +984,10 @@ function MaterialDocumentDetails() {
   if ((document.domain !== "surface" && document.domain !== "landscape")) {
     // Particle emitters own blending (their Render module) and a post-process pass replaces the image, so neither has
     // Blend Mode. A decal draws a box's far faces over the surfaces in it, and its normal is the surface's: no Two
-    // Sided or Default Normals. A User Interface Material is always unlit and two-sided; it shows only its Blend Mode.
+    // Sided or Default Normals. User Interface and Text Materials are always unlit and two-sided; they show only their Blend
+    // Mode.
     const hidden = document.domain === "decal" ? ["twoSided", "defaultNormals"]
-      : document.domain === "ui" ? ["shadingModel", "twoSided", "defaultNormals"]
+      : document.domain === "ui" || document.domain === "text" ? ["shadingModel", "twoSided", "defaultNormals"]
         : ["shadingModel", "blendMode", "twoSided", "defaultNormals"];
     for (let i = rows.length - 1; i >= 0; i--) if (hidden.includes(rows[i]!.id)) rows.splice(i, 1);
   }

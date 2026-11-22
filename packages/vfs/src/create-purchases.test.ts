@@ -43,7 +43,7 @@ describe("createPurchases", () => {
 
     expect(purchases.store).toBe(store);
     expect(purchases.restore).toBeTypeOf("function");
-    await purchases.configure(options);
+    await purchases.ensureConfigured(options);
     expect(capacitorConfigure.mock.calls).toEqual([[{ apiKey: "public_key", appUserID: "user_1" }]]);
     expect(webConfigure).not.toHaveBeenCalled();
   });
@@ -53,7 +53,7 @@ describe("createPurchases", () => {
 
     expect(purchases.store).toBe("web");
     expect(purchases.restore).toBeUndefined();
-    await purchases.configure(options);
+    await purchases.ensureConfigured(options);
     expect(webConfigure.mock.calls).toEqual([[{ apiKey: "public_key", appUserId: "user_1" }]]);
     expect(capacitorConfigure).not.toHaveBeenCalled();
   });
@@ -64,7 +64,7 @@ describe("createPurchases", () => {
 
     expect(purchases.store).toBe("web");
     expect(purchases.restore).toBeUndefined();
-    await purchases.configure(options);
+    await purchases.ensureConfigured(options);
     expect(webConfigure).toHaveBeenCalledTimes(1);
     expect(capacitorConfigure).not.toHaveBeenCalled();
   });
@@ -72,8 +72,8 @@ describe("createPurchases", () => {
   it("shares one port so the SDK is configured once however often callers ask for it", async () => {
     const createPurchases = await createPurchasesOn("ios");
 
-    await createPurchases().configure(options);
-    await createPurchases().configure(options);
+    await createPurchases().ensureConfigured(options);
+    await createPurchases().ensureConfigured(options);
 
     expect(createPurchases()).toBe(createPurchases());
     expect(capacitorConfigure).toHaveBeenCalledTimes(1);

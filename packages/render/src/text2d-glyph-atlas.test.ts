@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./test-support/test-engine";
 import type { BitmapGlyphCell } from "./text2d-bitmap";
-import { sceneGlyphAtlas, type AtlasGlyph } from "./text2d-glyph-atlas";
+import { sceneGlyphAtlas, uploadSceneGlyphPages, type AtlasGlyph } from "./text2d-glyph-atlas";
 
 const handles: Array<ReturnType<typeof createTestEngine>> = [];
 afterEach(() => { for (const { scene, engine } of handles.splice(0)) { scene.dispose(); engine.dispose(); } });
@@ -117,6 +117,54 @@ describe("a Scene's glyph atlas", () => {
     // Nothing is held: a new cell takes the first page's first place, and the second page goes.
     expect(drawn(atlas.acquire(cell(9)))).toMatchObject({ page: 0, left: 1, top: 1 });
     expect(pages()).toHaveLength(1);
+  });
+
+  it("starts an emptied page's shelves again from its origin, clear of the cells it held", () => {
+    const { atlas, pages } = smallPages();
+    const held = [1, 2, 3, 4].map((value) => cell(value));
+    for (const entry of held) atlas.acquire(entry);
+    for (const entry of held) atlas.release(entry);
+    // No freed 6 x 6 slot holds a 10 x 10 cell; the emptied page does, rather than a second page.
+    const large = atlas.acquire(cell(5, 10, 10));
+    expect(drawn(large)).toEqual({ page: 0, left: 1, top: 1, right: 11, bottom: 11, values: [5] });
+    expect(pages()).toHaveLength(1);
+    const rows = texels(large);
+    expect(rows[1]).toEqual([0, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0, 0]);
+    expect(rows.slice(11)).toEqual(Array.from({ length: 5 }, () => new Array(16).fill(0)));
+  });
+
+  it("uploads only the rows written since the last upload, where a whole-page upload puts them", () => {
+    const { scene, atlas } = smallPages();
+    atlas.acquire(cell(1));
+    uploadSceneGlyphPages(scene);
+    const second = atlas.acquire(cell(2, 3, 2));
+    const third = atlas.acquire(cell(3, 2, 4));
+    const updates: Array<{ x: number; y: number; width: number; height: number; bytes: number; texels: number[] }> = [];
+    const engine = {
+      updateTextureData: (_texture: unknown, data: Uint8Array, x: number, y: number, width: number, height: number) => {
+        // The first channel of the band's first and last rows, top first.
+        const row = (index: number) => Array.from({ length: 16 }, (_, column) => data[(index * 16 + column) * 4]!);
+        updates.push({ x, y, width, height, bytes: data.byteLength, texels: [...row(0), ...row(height - 1)] });
+      },
+    };
+    const getEngine = vi.spyOn(scene, "getEngine").mockReturnValue(engine as never);
+    try {
+      uploadSceneGlyphPages(scene);
+      uploadSceneGlyphPages(scene);
+    } finally {
+      getEngine.mockRestore();
+    }
+    // The new cells cover rows 1 to 4 of 16 beside the first. The page is stored top row first and uploaded flipped,
+    // so their band of four full rows goes up once, 11 rows from the texture's first row.
+    expect(drawn(second)).toMatchObject({ left: 8, top: 1, right: 11, bottom: 3 });
+    expect(drawn(third)).toMatchObject({ left: 12, top: 1, right: 14, bottom: 5 });
+    expect(updates).toEqual([{
+      x: 0, y: 11, width: 16, height: 4, bytes: 16 * 4 * 4,
+      texels: [
+        0, 1, 1, 1, 1, 1, 1, 0, 2, 2, 2, 0, 3, 3, 0, 0,
+        0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 3, 3, 0, 0,
+      ],
+    }]);
   });
 
   it("keeps pixel fonts on pages sampled without filtering, apart from every other glyph", () => {

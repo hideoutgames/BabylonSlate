@@ -114,9 +114,11 @@ export function evaluateExtensionBundle(
 
 /**
  * Evaluates game libraries in the given order (dependencies first). Each module
- * sees the libraries loaded before it as `extensions`; the result is frozen.
- * A library that fails is passed to `onError` and left out (without `onError`
- * it throws), so independent libraries still load.
+ * sees the libraries loaded before it as `extensions`: a frozen snapshot, so a
+ * library can neither add, replace nor remove another's entry. Each library's
+ * exports are frozen once it has loaded, so no later code changes them; the
+ * result is frozen too. A library that fails is passed to `onError` and left
+ * out (without `onError` it throws), so independent libraries still load.
  */
 export function loadExtensionGameLibraries(
   libraries: readonly ExtensionGameLibrary[],
@@ -128,8 +130,9 @@ export function loadExtensionGameLibraries(
       if (Object.hasOwn(extensions, library.libraryName)) {
         throw new Error(`Library Name ${library.libraryName} is already used.`);
       }
-      extensions[library.libraryName] = evaluateExtensionBundle(library.bundle, library.label, { extensions },
-        { [EXTENSION_HOST_MODULE]: extensionHostModule(library) });
+      const loaded = Object.freeze(Object.assign(Object.create(null) as Record<string, Readonly<Record<string, unknown>>>, extensions));
+      extensions[library.libraryName] = Object.freeze(evaluateExtensionBundle(library.bundle, library.label, { extensions: loaded },
+        { [EXTENSION_HOST_MODULE]: extensionHostModule(library) }));
     } catch (cause) {
       const error = new Error(`Extension ${library.label} failed to load: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
       if (!onError) throw error;

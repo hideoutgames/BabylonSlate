@@ -207,19 +207,24 @@ export class SlotKeyedMap<V> extends Map<string, V> {
 export class SlotRootMap extends Map<number, Mesh> {
   /** How many slots hold each root. */
   private readonly rootSlots = new Map<AbstractMesh, number>();
+  /** Moves with every write (`set`, `delete`, `clear`): readers that derive from the slots know when to derive again. */
+  revision = 0;
 
   override set(slotId: number, root: Mesh): this {
+    this.revision++;
     this.release(slotId);
     this.rootSlots.set(root, (this.rootSlots.get(root) ?? 0) + 1);
     return super.set(slotId, root);
   }
 
   override delete(slotId: number): boolean {
+    this.revision++;
     this.release(slotId);
     return super.delete(slotId);
   }
 
   override clear(): void {
+    this.revision++;
     super.clear();
     this.rootSlots.clear();
   }

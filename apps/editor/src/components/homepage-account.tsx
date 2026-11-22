@@ -107,13 +107,16 @@ export function HomepageAccount({
       )
         return;
       pending = true;
+      // A background check: it waits out a sign-in in the dialog, which
+      // shares this client, instead of clearing that sign-in's client token.
       void desktopClient
-        .then((client) => client.restoreSession())
-        .then((session) => {
+        .then((client) => client.restore({ background: true }))
+        .then((result) => {
           if (cancelled) return;
           // Settles after the account is set, so the first report is not a guest.
-          if (session) return acceptDesktopSession(session);
-          setDesktopAccount(null);
+          if (result.status === "signed-in") return acceptDesktopSession(result.session);
+          if (result.status === "signed-out") setDesktopAccount(null);
+          // Offline or deferred: keep whatever the row shows now.
         })
         .catch(() => {
           /* Guests can still open local projects. */
@@ -146,6 +149,7 @@ export function HomepageAccount({
       disabled={disabled}
       name={account ? nativeAccountName(account.session) : "Guest"}
       email={account?.session.email}
+      offline={account?.offline}
       imageUrl={account?.session.imageUrl}
       nativeProfile={account ? nativeProfileEditing(account) : undefined}
       billing={billing}

@@ -479,9 +479,16 @@ it("retains a partial construction owner and refuses a stale plan without alloca
   expect(managedRenderReservations(h.engine).reservedBytes).toBe(0);
   declare.mockRestore();
   const other = host();
-  plan.entries[0]!.document.nodes.find(
-    (node) => node.id === "gain",
-  )!.properties.value = [0.9];
+  // Documents are replaced, never edited in place: the entry now holds an edited copy its plan no longer matches.
+  const stale = plan.entries[0]!;
+  plan.entries[0] = {
+    ...stale,
+    document: {
+      ...stale.document,
+      nodes: stale.document.nodes.map((node) =>
+        node.id === "gain" ? { ...node, properties: { ...node.properties, value: [0.9] } } : node),
+    },
+  };
   const changed = vi.spyOn(
     other.graph.textureManager,
     "createRenderTargetTexture",

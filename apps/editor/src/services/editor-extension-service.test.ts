@@ -50,6 +50,8 @@ async function fixture(options?: EditorExtensionWriteOptions, listed: { path: st
     log: (_extensionId, message) => { messages.push(message); },
   }, options);
   activeServices.push(service);
+  // This computer trusts the test project; later refreshes keep that unless a test changes it.
+  await service.refresh({}, true);
   return { project, service, messages };
 }
 
@@ -489,5 +491,97 @@ describe("EditorExtensionService code files and gameplay packages", () => {
     await service.remove("tools");
     expect(synced).toEqual([{ guids: ["tools"], folderExists: true }, { guids: [], folderExists: true }]);
     expect(await project.exists("extensions/tools")).toBe(false);
+  });
+});
+
+describe("EditorExtensionService Workspace Trust", () => {
+  it("runs no Project Extension of an untrusted project, in the editor or in Play, until it is trusted", async () => {
+    const { project, service, messages } = await fixture();
+    const started = vi.fn();
+    vi.stubGlobal("__extensionStarted", started);
+    await writeProjectExtension(project, "tools", enabledSettings("tools", { editorOnly: false, libraryName: "tools" }), `
+      export function activate(api) {
+        globalThis.__extensionStarted();
+        api.registerCommand({ id: "run", title: "Run", execute() { api.log("ran"); } });
+      }
+    `);
+    await project.writeText("extensions/tools/game.ts", "globalThis.__extensionStarted(); export const ready = true;");
+
+    await service.refresh({}, false);
+
+    expect(started).not.toHaveBeenCalled();
+    expect(service.getSnapshot()).toMatchObject({ trusted: false, untrusted: ["tools"], commands: [] });
+    // Listed, so the user can see and trust it, but never linked into Play, Preview Build or a package.
+    expect(service.getSnapshot().entries.map((entry) => entry.extensionGuid)).toEqual(["tools"]);
+    await expect(service.gameLibraries(WEB_PLAY)).rejects.toThrow("Project Extensions are not trusted on this computer, so tools cannot run.");
+    await expect(service.run("tools", "run", {})).rejects.toThrow();
+    expect(messages).toEqual([]);
+
+    await service.refresh(undefined, true);
+    expect(started).toHaveBeenCalledTimes(1);
+    expect(service.getSnapshot()).toMatchObject({ trusted: true, untrusted: [] });
+    expect((await service.gameLibraries(WEB_PLAY)).map((library) => library.libraryName)).toEqual(["tools"]);
+
+    // Revoking trust stops what runs and keeps it stopped through later refreshes.
+    await service.refresh(undefined, false);
+    expect(service.getSnapshot().commands).toEqual([]);
+    await service.refresh();
+    expect(service.getSnapshot()).toMatchObject({ trusted: false, untrusted: ["tools"], commands: [] });
+    expect(started).toHaveBeenCalledTimes(1);
+  });
+
+  it("forgets trust when the project closes", async () => {
+    const { project, service } = await fixture();
+    await writeProjectExtension(project, "tools", enabledSettings("tools"), originalModule);
+    await service.refresh();
+    expect(service.getSnapshot().commands).toHaveLength(1);
+
+    await service.close();
+    await service.refresh();
+
+    expect(service.getSnapshot()).toMatchObject({ trusted: false, untrusted: ["tools"], commands: [] });
+  });
+
+  it("keys trust by the project's folder and GUID, and trusts without asking only a project created here", async () => {
+    const { project, service } = await fixture();
+    const key = service.projectTrustKey("guid-a");
+    expect(key).toBe(JSON.stringify([project.getCurrentFolder()!.id, "guid-a"]));
+    expect(service.projectTrustKey("guid-b")).not.toBe(key);
+    expect(service.createdHere(key!)).toBe(false);
+
+    service.noteCreatedProject("guid-a");
+    expect(service.createdHere(key!)).toBe(true);
+    expect(service.createdHere(service.projectTrustKey("guid-b")!)).toBe(false);
+    service.forgetCreatedProject();
+    expect(service.createdHere(key!)).toBe(false);
+  });
+});
+
+describe("EditorExtensionService save rollback", () => {
+  it("restores every other file when one restore fails and reports both failures", async () => {
+    const { project, service } = await fixture();
+    await writeProjectExtension(project, "tools", enabledSettings("tools"), originalModule);
+    await project.mkdir("extensions/tools/code", true);
+    await project.writeText("extensions/tools/code/a.ts", "export const a = 1;");
+    await project.writeText("extensions/tools/code/b.ts", "export const b = 1;");
+    await service.refresh();
+    const writeText = project.writeText.bind(project);
+    vi.spyOn(project, "writeText").mockImplementation(async (path, data) => {
+      // The save writes a.ts and b.ts, then fails on c.ts; restoring a.ts fails too.
+      if (path === "extensions/tools/code/c.ts") throw new Error("disk full");
+      if (path === "extensions/tools/code/a.ts" && data === "export const a = 1;") throw new Error("a.ts is locked");
+      return writeText(path, data);
+    });
+
+    const saving = service.save("tools", enabledSettings("tools"), { write: [
+      { path: "code/a.ts", source: "export const a = 2;" },
+      { path: "code/b.ts", source: "export const b = 2;" },
+      { path: "code/c.ts", source: "export const c = 2;" },
+    ], remove: [] });
+
+    await expect(saving).rejects.toThrow("disk full Some files could not be restored: code/a.ts: a.ts is locked");
+    // b.ts comes back although a.ts, restored before it, failed.
+    expect(await project.readText("extensions/tools/code/b.ts")).toBe("export const b = 1;");
+    expect(await project.exists("extensions/tools/code/c.ts")).toBe(false);
   });
 });

@@ -15,7 +15,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { rectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
 import { isIlluminatingLight, sortLightsByAdmission, type ForwardLightSelection } from "./light-policy";
-import { CLUSTER_BLOCK_WORDS, CLUSTER_COUNT, CLUSTER_HEADER_FLOATS, buildLightClusters, type ClusterLight } from "./light-clusters";
+import { CLUSTER_BLOCK_WORDS, CLUSTER_COUNT, CLUSTER_HEADER_FLOATS, buildLightClusters, spotClusterSphere, type ClusterLight } from "./light-clusters";
 import { isReflectionCamera } from "./reflection-camera";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowAtlasTexture, watchShadowDraws } from "./shadow-atlas";
 import { shadowViewTexelRatios } from "./shadow-filter";
@@ -531,6 +531,7 @@ function clusterRecord(clusters: ClusterLight[], count: number, kind: ClusterLig
 }
 
 const spotDirection = new Vector3();
+const spotSphere = { x: 0, y: 0, z: 0, radius: 0 };
 const fillDirection = new Vector3();
 
 /**
@@ -608,7 +609,9 @@ export function writeHapticLights(scene: Scene): void {
       spot[at + 13] = Math.cos(light.innerAngle * 0.5);
       spot[at + 14] = 0;
       spot[at + 15] = 0;
-      if (clusterRecord(clusters, clustered++, "spot", spots, x, y, z, light.range)) clustersChanged = true;
+      // The clusters hold the cone's bounding sphere, not the range's about the apex: its far half reaches no cluster.
+      spotClusterSphere(x, y, z, direction, light.range, spot[at + 7]!, spotSphere);
+      if (clusterRecord(clusters, clustered++, "spot", spots, spotSphere.x, spotSphere.y, spotSphere.z, spotSphere.radius)) clustersChanged = true;
       spots++;
     } else if (light instanceof RectAreaLight) {
       if (rects === HAPTIC_LIGHT_MAXIMUM.rect) continue;

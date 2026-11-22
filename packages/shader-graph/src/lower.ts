@@ -20,7 +20,7 @@ import { createTypeResolver, type TypeResolver } from "./resolve";
 import { materialDefaultComponents, resolveMaterialPinDefault } from "./pin-defaults";
 import { conversionFor, convertMaterialValue, type MaterialConversion, type MaterialValueType } from "./types";
 import {
-  validateMaterialDocument,
+  checkMaterialDocument,
   type MaterialDiagnostic,
   type MaterialValidationContext,
 } from "./validate";
@@ -424,7 +424,7 @@ function lowerWithinBudget(
   doc: MaterialDocument,
   context: MaterialLowerContext,
 ): MaterialLowerResult {
-  const diagnostics = validateMaterialDocument(doc, context);
+  const { diagnostics, resolver, functionResolvers } = checkMaterialDocument(doc, context);
   if (diagnostics.some((row) => row.severity === "error")) {
     return { ok: false, diagnostics };
   }
@@ -439,7 +439,8 @@ function lowerWithinBudget(
 
   const rootFrame: Frame = {
     graph: doc,
-    resolver: createTypeResolver(doc, { functions }),
+    // Validation resolved this document's types against the same functions record; an error-free graph has no loop.
+    resolver: resolver ?? createTypeResolver(doc, { functions }),
     prefix: "",
     callPath: [],
   };
@@ -463,9 +464,12 @@ function lowerWithinBudget(
     const fn = typeof guid === "string" ? functions[guid] : undefined;
     if (!fn) return null;
     const bound = new Map<string, MaterialOperand>();
+    // A body's types follow its declared interface, not the call site, so every call of one function shares a resolver.
+    let bodyResolver = functionResolvers.get(guid as string);
+    if (!bodyResolver) functionResolvers.set(guid as string, (bodyResolver = createTypeResolver(fn, { functions, functionInterface: fn })));
     const child: Frame = {
       graph: fn,
-      resolver: createTypeResolver(fn, { functions, functionInterface: fn }),
+      resolver: bodyResolver,
       prefix: `${key}/`,
       callPath: [...frame.callPath, callNode.id],
       functionGuid: guid as string,
@@ -754,29 +758,6 @@ function hoistMaterialLiterals(
     }
   }
   return operations.filter((operation) => hoisted.has(operation.id) && !kept.has(operation.id)).map((operation) => operation.id);
-}
-
-const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = {};
-const lowerings = new WeakMap<
-  MaterialDocument,
-  WeakMap<Record<string, MaterialFunctionDocument>, MaterialLowerResult>
->();
-
-/**
- * `lowerMaterialDocument` with only Material Functions for context, remembered per document
- * object and functions record. For Play and packaged content, whose documents are replaced,
- * never edited in place; a host builds a new record whenever its functions change, and
- * callers must not change the result.
- */
-export function lowerMaterialDocumentCached(
-  doc: MaterialDocument,
-  functions: Record<string, MaterialFunctionDocument> = NO_FUNCTIONS,
-): MaterialLowerResult {
-  let byFunctions = lowerings.get(doc);
-  if (!byFunctions) lowerings.set(doc, (byFunctions = new WeakMap()));
-  let result = byFunctions.get(functions);
-  if (!result) byFunctions.set(functions, (result = lowerMaterialDocument(doc, { functions })));
-  return result;
 }
 
 function costOf(operations: readonly MaterialOperation[]): MaterialCostFeatures {

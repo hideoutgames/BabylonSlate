@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useThumbnailVersionsKey, type ThumbnailVersions } from "@haptic/editor-kit";
 import { syncContentBrowserThumbnailUrls, type ThumbnailUrlMap } from "./content-browser-thumbnails";
 
 export type LoadThumbnail = (guid: string) => Promise<Uint8Array | null>;
@@ -19,7 +20,7 @@ function sameUrls(a: ThumbnailUrlMap, b: ThumbnailUrlMap): boolean {
 export function useThumbnailUrls(
   guids: readonly string[],
   load: LoadThumbnail | undefined,
-  versions: Readonly<Record<string, number>> | undefined,
+  versions: ThumbnailVersions | undefined,
   enabled: boolean,
 ): ThumbnailUrlMap {
   const [urls, setUrls] = useState<ThumbnailUrlMap>({});
@@ -51,8 +52,10 @@ export function useThumbnailUrls(
     }
   }, [urls]);
 
+  // Renders again only when one of `guids` gets a new thumbnail version.
+  const versionsKey = useThumbnailVersionsKey(versions, guids, enabled && Boolean(load));
   const key = enabled && load
-    ? guids.map((guid) => `${guid}:${versions?.[guid] ?? 0}`).join("|")
+    ? versions ? versionsKey : guids.map((guid) => `${guid}:0`).join("|")
     : "";
   useEffect(() => {
     if (!key || !load) {

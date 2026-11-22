@@ -270,6 +270,25 @@ function applyDelta(doc: Doc, delta: TilemapDocumentDelta): Doc {
   return next;
 }
 
+/** Sizes of chunk patches already measured; composing a stroke keeps its earlier patches by identity. */
+const chunkPatchBytes = new WeakMap<TilemapChunkPatch, number>();
+
+function deltaBytes(delta: TilemapDocumentDelta): number {
+  let total = 0;
+  for (const patch of delta.chunks) {
+    let bytes = chunkPatchBytes.get(patch);
+    if (bytes === undefined) {
+      bytes = snapshotBytes(patch);
+      chunkPatchBytes.set(patch, bytes);
+    }
+    total += bytes;
+  }
+  if (delta.fields || delta.layers || delta.order) {
+    total += snapshotBytes({ fields: delta.fields, layers: delta.layers, order: delta.order });
+  }
+  return total;
+}
+
 /**
  * A Tilemap edit recorded as its delta (`diffTilemapDocument`). Applying it to
  * the document it was taken from gives the edited document, sharing every
@@ -287,9 +306,13 @@ export class PatchTilemapDocumentCommand implements EditCommand<Doc> {
     if (mergeKey !== undefined) this.mergeKey = mergeKey;
   }
 
-  /** The delta's serialized size, measured on first read: both sides of every part it holds. */
+  /**
+   * The delta's serialized size, measured on first read: both sides of every
+   * part it holds. Chunk patches are measured once each (`chunkPatchBytes`), so
+   * a folded stroke measures only the chunks its newest sample touched.
+   */
   get byteSize(): number {
-    return (this.#bytes ??= snapshotBytes(this.delta));
+    return (this.#bytes ??= deltaBytes(this.delta));
   }
 
   apply(doc: Doc): Doc {
