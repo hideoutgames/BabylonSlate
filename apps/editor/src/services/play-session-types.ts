@@ -98,6 +98,11 @@ export interface PlaySession {
   lastActorPositions: () => readonly PlayActorPosition[];
   /** Latest sim tick (in-process World clock, else last published snapshot). */
   lastTickIndex: () => number;
+  /**
+   * Published frames that differed from a whole-World pass, which must stay 0; null unless the session started with
+   * snapshot verification (`snapshot-verification-setting.ts`). The runtime reports it with its throttled `stats`.
+   */
+  snapshotMismatches: () => number | null;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
   /** Actor guids spawned this session (authored scene + explicit runtime spawns). */

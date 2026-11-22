@@ -7,7 +7,7 @@ import {
   normalizeScene,
   normalizeSceneLayer,
 } from "@haptic/core";
-import { exportGame, GAME_MANIFEST_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@haptic/exporter";
+import { exportGame, packedContentFromGame, GAME_MANIFEST_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@haptic/exporter";
 import { AREA_EMISSION_EDGE, encodeAreaEmission, installedAssetIdentity } from "@haptic/assets";
 import { createInProcessRuntime } from "@haptic/runtime";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
@@ -477,6 +477,29 @@ describe("loadGameFromFiles", () => {
 });
 
 describe("demand-driven exported sources", () => {
+  it("brings an Animation loaded on demand in with its root motion track, scaled by its Model's import scale", async () => {
+    const { encodePackedModelAsset } = await import("@haptic/assets");
+    const rootMotion = { bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 0.5], z: [0, -1], yaw: [0, 10] } };
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      // The Scene names the Animation only as a Soft reference (Play Slot Animation's pin): it ships, unloaded.
+      { guid: "scene", type: "Scene", sceneGuid: "scene", bytes: encoder.encode(JSON.stringify(createDefaultScene())), dependencies: ["throw"], requiredDependencies: [] },
+      { guid: "throw", type: "Animation", sceneGuid: "scene", name: "Throw", requiredDependencies: ["model"],
+        bytes: encoder.encode(JSON.stringify({ clipName: "Throw", modelGuid: "model", durationMs: 50, rootMotion })) },
+      { guid: "model", type: "Model", sceneGuid: "scene", requiredDependencies: [],
+        bytes: encodePackedModelAsset({ importScale: 2, materialSlots: [], skeletonGuid: null }, new Uint8Array([0x67, 0x6c, 0x54, 0x46])) },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const game = await loadGameFromFiles(exported.value.files);
+    try {
+      expect(packedContentFromGame(game).animClipCatalog.some((entry) => entry.guid === "throw")).toBe(false);
+      const source = await game.acquireAssets!(["throw"], { consumer: "Play Slot Animation", signal: new AbortController().signal });
+      // What the player publishes once the load settles: the clip, its track in the Model's units.
+      expect(packedContentFromGame(game).animClipCatalog.find((entry) => entry.guid === "throw")?.rootMotion).toEqual(
+        { bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 1], z: [0, -2], yaw: [0, 10] } });
+      source.release();
+    } finally { game.dispose?.(); }
+  });
+
   it("keeps deferred assets unread, shares source reads, and releases the last consumer", async () => {
     const scene = encoder.encode(JSON.stringify(createDefaultScene()));
     const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [

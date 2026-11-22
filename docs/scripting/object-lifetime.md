@@ -46,6 +46,8 @@ Haptic checks which created objects are still reachable at the end of a tick, wh
 - when the main Scene changes,
 - and at the end of the tick in which [Collect Garbage](class/collect-garbage.md) or the `gc` [console command](../debugging/console.md) runs.
 
+In a large world, a check started by the interval is spread over several ticks so that no single frame does all the work, and collects at the end of its last tick. A check from a Scene change, Collect Garbage or `gc` always completes in that tick. An object that something still references at the end of a check is never collected, whatever your graphs changed while the check was running.
+
 `gc stats` in the console prints how many created objects are alive and what the last check found. `stat memory` shows the count and the time the last check took, and the [Profiler](../debugging/profiler.md) shows a **Garbage Collection** phase.
 
 A collected object runs no events. Its waiting nodes stop, and every reference to it reads as empty.
@@ -57,6 +59,6 @@ A reference to an object that was destroyed or collected counts as empty straigh
 - [Is Valid](class/is-valid.md) returns false, and [Validated Get](class/validated-get.md) and [Cast To](class/cast-to.md) take their not-valid paths.
 - A node that acts on the object does nothing and reports an error such as `Tried to access "Health" from null of type "Enemy"`, once per node; see [Pin types](pin-types.md#empty-references).
 - A destroyed actor or component, or a collected object, keeps none of its variables once its own **Event Destroyed** and **Event End** have run, so a reference you still hold keeps nothing else alive. Those events still read the object's variables as usual.
-- At the next check, variables, array entries and map values that still hold it are set to empty, and map entries whose key is that object are removed.
+- A later check sets variables, array entries and map values that still hold it to empty, and removes map entries whose key is that object: usually the next one, or the one after when the object was destroyed while a check was running.
 
 [Save games](save-games.md) store actor and component references only: saving a variable that holds a created object fails with an error.

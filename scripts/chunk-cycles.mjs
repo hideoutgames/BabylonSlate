@@ -27,6 +27,9 @@ function listChunks(dir) {
   return out;
 }
 
+/** Text that may hold a static relative import or re-export (`from"./x.js"`, `import"../x.js"`). */
+const RELATIVE_SPECIFIER = /\b(?:from|import)\s*["'`]\.{1,2}\//;
+
 function chunkName(root, fromPath, specifier) {
   return relative(root, resolve(dirname(fromPath), specifier)).split(sep).join(posix.sep);
 }
@@ -173,19 +176,25 @@ export function findChunkCycles(roots) {
     const root = resolve(rootArg);
     if (!statSync(root, { throwIfNoEntry: false })?.isDirectory())
       throw new Error(`Build directory not found: ${rootArg} (build it first)`);
+    // Syntax trees are kept only for cycle members, so a large bundle is parsed in bounded memory. A file whose text
+    // names no relative module cannot import another chunk and is not parsed at all (vendored scripts, workers).
     const chunks = new Map();
+    const parse = (name, path, text) =>
+      ts.createSourceFile(name, text ?? readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
     for (const path of listChunks(root)) {
       const name = relative(root, path).split(sep).join(posix.sep);
-      const sourceFile = ts.createSourceFile(name, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true,
-        ts.ScriptKind.JS);
-      chunks.set(name, { sourceFile, ...readChunk(sourceFile, path, root) });
+      const text = readFileSync(path, "utf8");
+      chunks.set(name, RELATIVE_SPECIFIER.test(text)
+        ? { path, ...readChunk(parse(name, path, text), path, root) }
+        : { path, imports: [], exports: new Map(), hoisted: new Set() });
     }
     const graph = new Map([...chunks].map(([name, chunk]) => [name, chunk.imports.map((entry) => entry.from)]));
     for (const component of stronglyConnected(graph)) {
       cycles.push({ root: rootArg, chunks: component });
       const members = new Set(component);
       for (const name of component) {
-        const { sourceFile, imports } = chunks.get(name);
+        const { path, imports } = chunks.get(name);
+        const sourceFile = parse(name, path);
         const origin = new Map();
         for (const entry of imports)
           if (members.has(entry.from))
