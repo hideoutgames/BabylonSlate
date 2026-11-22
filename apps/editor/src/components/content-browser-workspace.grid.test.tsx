@@ -1114,7 +1114,7 @@ describe("ContentBrowserWorkspace grid window", () => {
           edges: [{ id: "e", source: "begin", target: "js", sourceHandle: "execOut", targetHandle: "execIn" }],
         },
       }, { parentClass: "Actor" });
-      const file = new File([bytes], `${name}.hasset`);
+      const file = new File([bytes.slice()], `${name}.hasset`);
       Object.defineProperty(file, "arrayBuffer", { value: async () => bytes.slice().buffer });
       return { file, bytes };
     }
@@ -1128,7 +1128,7 @@ describe("ContentBrowserWorkspace grid window", () => {
       const assets: IndexedAsset[] = [];
       installRegistry(assets);
       const createFolder = vi.fn(async () => {});
-      const importFile = vi.fn(async (_root: string, _folder: string, _name: string, _bytes: Uint8Array, _options?: { allowExecuteJavaScript?: boolean }) => {
+      const importFile = vi.fn<(root: string, folder: string, name: string, bytes: Uint8Array, options?: { allowExecuteJavaScript?: boolean }) => Promise<IndexedAsset[]>>(async () => {
         const asset = texture(assets.length);
         assets.push(asset);
         return [asset];

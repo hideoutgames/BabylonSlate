@@ -7,7 +7,7 @@ import { ProjectPluginsSettings } from "./project-plugins-settings";
 const harness = vi.hoisted(() => ({
   plugins: [] as PluginDescriptor[],
   overrides: {} as Record<string, PluginEnableOverride>,
-  importPlugin: (async () => ({ status: "kept" })) as (...args: unknown[]) => Promise<unknown>,
+  importPlugin: (async () => ({ status: "kept" })) as (bytes: unknown, decision?: unknown, options?: { allowExecuteJavaScript?: boolean }) => Promise<unknown>,
 }));
 
 vi.mock("../context/document-context", async () => {
@@ -27,7 +27,7 @@ vi.mock("../context/document-context", async () => {
       assetRegistry: null,
       showPluginContent: false,
       applyPluginOverrides: async () => {},
-      importPlugin: (...args: unknown[]) => harness.importPlugin(...args),
+      importPlugin: (bytes: unknown, decision?: unknown, options?: { allowExecuteJavaScript?: boolean }) => harness.importPlugin(bytes, decision, options),
       updateProjectSettings: (patch: { pluginOverrides: Record<string, PluginEnableOverride> }) => {
         harness.overrides = patch.pluginOverrides;
         setProject((current) => ({ ...current, settings: { ...current.settings, ...patch } }));
