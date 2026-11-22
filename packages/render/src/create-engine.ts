@@ -37,6 +37,8 @@ import { isFoliageDistanceOnlySceneEdit } from "./foliage-mesh";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
 import { setSceneWorldDebug, worldDebugFingerprint, worldDebugOff } from "./world-debug";
+import { recompileEngineDefaultMaterial } from "./default-material";
+import { recompileBuiltInWaterMaterial } from "./water-template";
 import { shadowDebugFingerprint } from "./shadow-debug";
 import { discardsSamples, setDiscardSamples } from "./sample-discard";
 import { RuntimeScalability } from "./runtime-scalability";
@@ -3596,8 +3598,13 @@ function initializeEngine(
       }
       if (command.type === "setWaterDebug" && setSceneWaterDebug(scene, command.part, command.enabled)) scheduler.invalidate("asset");
       if (command.type === "setWorldDebug" && setSceneWorldDebug(scene, command.part, command.enabled)) {
-        // The Material record is how a Material compiles: the Scene's Materials compile again, keeping their values.
-        if (command.part === "materialrecords") materialLibrary.recompileScene(scene);
+        // The Material record is how a Material compiles: the Scene's Materials compile again, keeping their values, and
+        // so do the engine default and built-in water, which no library holds.
+        if (command.part === "materialrecords") {
+          materialLibrary.recompileScene(scene);
+          void recompileEngineDefaultMaterial(scene);
+          void recompileBuiltInWaterMaterial(scene);
+        }
         syncWorldSpriteBatching();
         scheduler.invalidate("asset");
       }

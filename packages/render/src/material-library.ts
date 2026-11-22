@@ -123,6 +123,27 @@ function rebindMaterial(scene: Scene, from: Material, to: Material): void {
   }
 }
 
+/**
+ * Moves `scene`'s meshes from `from`, a Material compiled outside a library (the engine default, built-in water), to
+ * `to`, a new build of it, once `to` built and compiled for each mesh `draws` says draws `from`, as a library
+ * generation replaces its predecessor. False, with nothing moved, when the build or a warm-up failed or the Scene went:
+ * the caller disposes `to`.
+ */
+export async function replaceSceneMaterial(scene: Scene, from: Material, to: NodeMaterial, draws: (mesh: Mesh) => boolean): Promise<boolean> {
+  try {
+    for (const mesh of [...scene.meshes]) {
+      if (scene.isDisposed) return false;
+      if (mesh instanceof Mesh && mesh.getTotalVertices() && draws(mesh)) await prewarmMaterial(to, mesh);
+    }
+    await prewarmMaterial(to, null);
+  } catch {
+    return false;
+  }
+  if (scene.isDisposed || isDisposedNodeMaterial(from, scene) || isDisposedNodeMaterial(to, scene)) return false;
+  rebindMaterial(scene, from, to);
+  return true;
+}
+
 const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = Object.freeze({});
 
 /**
