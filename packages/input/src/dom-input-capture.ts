@@ -12,16 +12,97 @@ function pointerKind(type: string | undefined): PointerKind {
   return type === "touch" || type === "pen" ? type : "mouse";
 }
 
+/** Keys whose release macOS still reports while Cmd is held; every other key's keyup is lost then. */
+const MODIFIER_CODES: ReadonlySet<string> = new Set([
+  "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight", "AltLeft", "AltRight",
+  "MetaLeft", "MetaRight", "OSLeft", "OSRight", "CapsLock", "Fn", "FnLock",
+]);
+
+/** A deviation at or below this counts as at rest when deciding whether a held pad control was let go. */
+const PAD_REST = 0.01;
+/** A stick blocked at a boundary also comes back once it moves this far from where it was held. */
+const PAD_AXIS_FRESH = 0.25;
+const NO_AXES: readonly number[] = Object.freeze([]);
+const NO_BUTTONS: readonly GamepadButton[] = Object.freeze([]);
+
+/**
+ * One pad's controls across polls, in buffers that only grow when the pad
+ * reports more controls, so a poll that finds nothing changed allocates nothing.
+ */
+interface PadSnapshot {
+  /** Poll generation that last found the pad connected. */
+  seen: number;
+  axisCount: number;
+  buttonCount: number;
+  /** The device's values this poll (non-finite read as 0): what a release boundary blocks. */
+  rawAxes: Float64Array;
+  rawButtons: Float64Array;
+  /** This poll's values after blocking, before they are compared with what was sent. */
+  outAxes: Float64Array;
+  outButtons: Float64Array;
+  /** Where each stick was held across a release boundary (NaN: not blocked); it reports 0 until it rests or moves on. */
+  axisBlockedAt: Float64Array;
+  /** Buttons held across a release boundary (1), reported as 0 until they come back to rest. */
+  blockedButtons: Uint8Array;
+  /** The last sample pushed, at the wire's float32 precision. Unset until `announced`. */
+  sentAxes: Float32Array;
+  sentButtons: Float32Array;
+  sentAxisCount: number;
+  sentButtonCount: number;
+  announced: boolean;
+}
+
+function createPadSnapshot(): PadSnapshot {
+  return {
+    seen: 0, axisCount: 0, buttonCount: 0,
+    rawAxes: new Float64Array(4), rawButtons: new Float64Array(17),
+    outAxes: new Float64Array(4), outButtons: new Float64Array(17),
+    axisBlockedAt: new Float64Array(4).fill(Number.NaN), blockedButtons: new Uint8Array(17),
+    sentAxes: new Float32Array(4), sentButtons: new Float32Array(17),
+    sentAxisCount: 0, sentButtonCount: 0, announced: false,
+  };
+}
+
+function allZero(values: Float32Array, count: number): boolean {
+  for (let i = 0; i < count; i++) if (values[i] !== 0) return false;
+  return true;
+}
+
+/** Grows the pad's per-control buffers to `axes` and `buttons` controls, keeping blocked flags and the sent sample. */
+function reservePadControls(pad: PadSnapshot, axes: number, buttons: number): void {
+  if (axes > pad.rawAxes.length) {
+    pad.rawAxes = new Float64Array(axes);
+    pad.outAxes = new Float64Array(axes);
+    const blocked = new Float64Array(axes).fill(Number.NaN); blocked.set(pad.axisBlockedAt); pad.axisBlockedAt = blocked;
+    const sent = new Float32Array(axes); sent.set(pad.sentAxes); pad.sentAxes = sent;
+  }
+  if (buttons > pad.rawButtons.length) {
+    pad.rawButtons = new Float64Array(buttons);
+    pad.outButtons = new Float64Array(buttons);
+    const blocked = new Uint8Array(buttons); blocked.set(pad.blockedButtons); pad.blockedButtons = blocked;
+    const sent = new Float32Array(buttons); sent.set(pad.sentButtons); pad.sentButtons = sent;
+  }
+}
+
 export interface InputCaptureHandle {
   ring: InputRingBuffer;
   /** Current simulation tick used to stamp events. */
   setTick: (tick: number) => void;
   /**
    * Poll gamepads once per frame (axes have no events), and sample device
-   * motion when it is on. A pad sampled on the previous poll but missing now
-   * is reported as `gamepadDisconnect`.
+   * motion when it is on. A pad's whole state is pushed when it connects and
+   * whenever a control changes at the wire's float32 precision; an unchanged
+   * pad pushes nothing. A pad announced earlier but missing now is reported
+   * as `gamepadDisconnect`.
    */
   pollGamepads: () => void;
+  /**
+   * The runtime reset its input (a blocking pause ended): the next poll sends
+   * every pad's whole state again, so a stick still held reads again at once.
+   * Buttons still held stay released until they rest, as held keys do. Leaves
+   * the blocks a page blur or exclusive suppression set in place.
+   */
+  resyncGamepads: () => void;
   /** Opt into exclusive routing; suppressed input needs a fresh physical transition on return. */
   setSuppressed: (suppressed: boolean) => void;
   /** Release all game controls without advancing the game clock. Drain the ring at the runtime boundary. */
@@ -82,7 +163,6 @@ export function attachInputCapture(
   canvas.tabIndex = 0;
   canvas.focus({ preventScroll: true });
   const heldKeys = new Set<string>();
-  let sampledPads = new Set<number>();
   let exclusive = false;
   let suppressed = false;
   let focusBlocked = false;
@@ -101,9 +181,11 @@ export function attachInputCapture(
   const orientation = { beta: Number.NaN, gamma: Number.NaN };
   const motionSample = { accelerationX: 0, accelerationY: 0, accelerationZ: 0, peakAcceleration: 0, rotationX: 0, rotationY: 0, rotationZ: 0 };
   let motionReported = false;
-  const pads = new Map<number, { axes: number[]; buttons: number[] }>();
-  const blockedPadAxes = new Map<number, Set<number>>();
-  const blockedPadButtons = new Map<number, Set<number>>();
+  /** Pads by `Gamepad.index`; a pad's entry lives from its first poll until it disconnects. */
+  const pads: (PadSnapshot | undefined)[] = [];
+  let padGeneration = 0;
+  /** Set by `resyncGamepads`, consumed by the next poll that reads pads. */
+  let resyncingPads = false;
   const isSuppressed = () => exclusive && (suppressed || focusBlocked);
 
   const push = (raw: RawInputEvent) => {
@@ -138,11 +220,23 @@ export function attachInputCapture(
       if (value !== 0) blockedTouchAxes.add(controlId);
       push({ kind: "touchAxis", tick, controlId, value: 0 });
     }
+    // Released once: a stick still held reports again through setTouchAxis.
+    touchAxes.clear();
     releaseMotion();
-    for (const [index, pad] of pads) {
-      blockedPadAxes.set(index, new Set(pad.axes.flatMap((value, id) => Math.abs(value) > 0.01 ? [id] : [])));
-      blockedPadButtons.set(index, new Set(pad.buttons.flatMap((value, id) => Math.abs(value) > 0.01 ? [id] : [])));
-      push({ kind: "gamepad", tick, gamepadIndex: index, axes: pad.axes.map(() => 0), buttons: pad.buttons.map(() => 0) });
+    for (let index = 0; index < pads.length; index++) {
+      const pad = pads[index];
+      if (!pad) continue;
+      // Held controls stay at 0 until they come back to rest: a fresh press, never a replay.
+      for (let id = 0; id < pad.axisCount; id++) if (Math.abs(pad.rawAxes[id]!) > PAD_REST) pad.axisBlockedAt[id] = pad.rawAxes[id]!;
+      for (let id = 0; id < pad.buttonCount; id++) if (Math.abs(pad.rawButtons[id]!) > PAD_REST) pad.blockedButtons[id] = 1;
+      // A pad the game never saw has nothing to release; one already at rest is released once.
+      if (!pad.announced || (pad.sentAxisCount === pad.axisCount && pad.sentButtonCount === pad.buttonCount &&
+        allZero(pad.sentAxes, pad.axisCount) && allZero(pad.sentButtons, pad.buttonCount))) continue;
+      pad.sentAxes.fill(0, 0, pad.axisCount);
+      pad.sentButtons.fill(0, 0, pad.buttonCount);
+      pad.sentAxisCount = pad.axisCount;
+      pad.sentButtonCount = pad.buttonCount;
+      push({ kind: "gamepad", tick, gamepadIndex: index, axes: new Array<number>(pad.axisCount).fill(0), buttons: new Array<number>(pad.buttonCount).fill(0) });
     }
     if (canvas.ownerDocument.pointerLockElement === canvas) canvas.ownerDocument.exitPointerLock?.();
   };
@@ -221,7 +315,6 @@ export function attachInputCapture(
           canvas.focus({ preventScroll: true });
           if (exclusive) onFocus();
         }
-        canvas.setPointerCapture(event.pointerId);
       }
       if (options.skipPointerAndKeyboard?.()) return;
       const id = event.pointerId;
@@ -239,6 +332,10 @@ export function attachInputCapture(
         }
         if (phase !== "up" && phase !== "cancel") uiPointers.add(id);
         return;
+      }
+      // Only a pointer the game reads is captured here; free cam and engine UI capture their own.
+      if (phase === "down") {
+        try { canvas.setPointerCapture?.(id); } catch { /* The pointer may already be up (InvalidPointerId). */ }
       }
       const bit = BUTTON_BITS[event.button] ?? 0;
       const mask = pointerMasks.get(id) ?? 0;
@@ -284,8 +381,25 @@ export function attachInputCapture(
     for (const code of heldKeys) push({ kind: "key", tick, code, phase: "up" });
     heldKeys.clear();
   };
+  /**
+   * macOS (and iPadOS with a keyboard) sends no keyup for a key released
+   * while Cmd is held, so Cmd's own keyup lets go of every other key, as the
+   * editor's fly keys do. Unconditional: on Windows and Linux every keyup
+   * still arrives, and a key that stays down there only reads released early
+   * (the Windows key usually takes focus away anyway).
+   */
+  const releaseChordedKeys = () => {
+    for (const code of heldKeys) {
+      if (MODIFIER_CODES.has(code)) continue;
+      heldKeys.delete(code);
+      push({ kind: "key", tick, code, phase: "up" });
+    }
+    // A key blocked at a boundary would otherwise wait forever for its lost keyup.
+    for (const code of blockedKeys) if (!MODIFIER_CODES.has(code)) blockedKeys.delete(code);
+  };
   const onKey = (phase: "down" | "up") => (event: KeyboardEvent) => {
     if (phase === "up") {
+      if (event.key === "Meta" || event.code === "MetaLeft" || event.code === "MetaRight") releaseChordedKeys();
       blockedKeys.delete(event.code);
       if (heldKeys.delete(event.code)) push({ kind: "key", tick, code: event.code, phase });
       return;
@@ -305,10 +419,29 @@ export function attachInputCapture(
   };
   const keyDown = onKey("down");
   const keyUp = onKey("up");
-  const onBlur = () => {
+  /**
+   * Focus moved within the page (a text field, another panel). Shared routing
+   * only lets go of keys there, since gamepads, touches and pointers still
+   * drive the game; exclusive routing takes everything until focus returns.
+   */
+  const onCanvasBlur = () => {
     if (!exclusive) { releaseKeys(); return; }
     focusBlocked = true;
     neutralize();
+  };
+  /**
+   * The page lost focus or was hidden (another app, a backgrounded tab or
+   * WebView, a browser dialog): no lift or keyup is guaranteed to arrive, so
+   * every device lets go in either routing. Controls still held stay away
+   * from the game until they come back to rest; shared routing takes input
+   * again at once, exclusive routing when the canvas has focus again.
+   */
+  const onPageBlur = () => {
+    if (exclusive) focusBlocked = true;
+    neutralize();
+  };
+  const onVisibilityChange = () => {
+    if (canvas.ownerDocument.visibilityState === "hidden") onPageBlur();
   };
   const onFocus = () => {
     if (canvas.ownerDocument.activeElement !== canvas) return;
@@ -318,8 +451,9 @@ export function attachInputCapture(
   const onPointerEnd = (event: PointerEvent) => {
     blockedPointers.delete(event.pointerId);
     uiPointers.delete(event.pointerId);
+    // Its lift landed off the canvas (capture lost or never taken): the game hears a cancel, in either routing.
     const pointer = pointers.get(event.pointerId);
-    if (!pointer || !exclusive) return;
+    if (!pointer) return;
     forgetPointer(event.pointerId);
     push({ ...pointer, tick, phase: "cancel" });
     releasePointer(event.pointerId);
@@ -327,14 +461,16 @@ export function attachInputCapture(
   const onLostPointerCapture = (event: PointerEvent) => {
     // Its lift may now land elsewhere; a stale entry would swallow the id's next press.
     uiPointers.delete(event.pointerId);
+    // In either routing: nothing guarantees this contact's lift reaches the canvas now.
     const pointer = pointers.get(event.pointerId);
-    if (!exclusive || !pointer) return;
+    if (!pointer) return;
     forgetPointer(event.pointerId);
     blockedPointers.add(event.pointerId);
     push({ ...pointer, tick, phase: "cancel" });
   };
   const setTouchAxis = (controlId: string, value: number) => {
     if (disposed || !controlId || !Number.isFinite(value)) return;
+    const deflected = touchAxes.has(controlId);
     if (value === 0) touchAxes.delete(controlId);
     else touchAxes.set(controlId, value);
     if (isSuppressed()) {
@@ -346,33 +482,89 @@ export function attachInputCapture(
       if (value === 0) blockedTouchAxes.delete(controlId);
       return;
     }
+    // Already released for the game (a boundary sent its 0): no second release.
+    if (value === 0 && !deflected) return;
     push({ kind: "touchAxis", tick, controlId, value });
   };
-  const maskPadControls = (values: number[], index: number, blockedByPad: Map<number, Set<number>>) => {
-    const blocked = blockedByPad.get(index) ?? new Set<number>();
-    blockedByPad.set(index, blocked);
-    return values.map((value, id) => {
-      if (!Number.isFinite(value)) return 0;
-      if (isSuppressed()) {
-        if (Math.abs(value) > 0.01) blocked.add(id); else blocked.delete(id);
-        return 0;
-      }
-      if (blocked.has(id)) {
-        if (Math.abs(value) <= 0.01) blocked.delete(id);
-        return 0;
-      }
-      return value;
-    });
-  };
-  const samplePad = (present: Set<number>, index: number, axes: number[], buttons: number[]) => {
-    present.add(index);
-    if (exclusive) {
-      pads.set(index, { axes, buttons });
-      axes = maskPadControls(axes, index, blockedPadAxes);
-      buttons = maskPadControls(buttons, index, blockedPadButtons);
+  /** The value the game gets for one control this poll, keeping a control held across a boundary at 0. */
+  const maskAxis = (pad: PadSnapshot, id: number, value: number): number => {
+    const blockedAt = pad.axisBlockedAt[id]!;
+    if (isSuppressed()) {
+      pad.axisBlockedAt[id] = Math.abs(value) > PAD_REST ? value : Number.NaN;
+      return 0;
     }
-    if (!isSuppressed()) push({ kind: "gamepad", tick, gamepadIndex: index, axes, buttons });
+    if (Number.isNaN(blockedAt)) return value;
+    // At rest, or moved well away from where it was held: a stick resting off
+    // centre (wear, drift) never stays blocked.
+    if (Math.abs(value) > PAD_REST && Math.abs(value - blockedAt) <= PAD_AXIS_FRESH) return 0;
+    pad.axisBlockedAt[id] = Number.NaN;
+    return value;
   };
+  const maskButton = (pad: PadSnapshot, id: number, value: number): number => {
+    if (isSuppressed()) {
+      pad.blockedButtons[id] = Math.abs(value) > PAD_REST ? 1 : 0;
+      return 0;
+    }
+    if (pad.blockedButtons[id] === 0) return value;
+    if (Math.abs(value) > PAD_REST) return 0;
+    pad.blockedButtons[id] = 0;
+    return value;
+  };
+  /**
+   * Reads one pad into its snapshot and pushes its whole state only when it
+   * connected or a control changed at float32 precision (the wire's), so an
+   * idle pad pushes and allocates nothing. Takes the source's values by index
+   * rather than copying them.
+   */
+  const samplePad = (
+    index: number,
+    axisCount: number, axisAt: (id: number) => number,
+    buttonCount: number, buttonAt: (id: number) => number,
+  ) => {
+    let pad = pads[index];
+    if (!pad) pads[index] = pad = createPadSnapshot();
+    if (axisCount > pad.rawAxes.length || buttonCount > pad.rawButtons.length) reservePadControls(pad, axisCount, buttonCount);
+    pad.seen = padGeneration;
+    pad.axisCount = axisCount;
+    pad.buttonCount = buttonCount;
+    // The runtime forgot the pad: send it whole, with the buttons held now released until they rest.
+    if (resyncingPads) pad.announced = false;
+    let changed = !pad.announced || pad.sentAxisCount !== axisCount || pad.sentButtonCount !== buttonCount;
+    for (let id = 0; id < axisCount; id++) {
+      const raw = axisAt(id);
+      const value = Number.isFinite(raw) ? raw : 0;
+      pad.rawAxes[id] = value;
+      const out = maskAxis(pad, id, value);
+      pad.outAxes[id] = out;
+      if (!changed && Math.fround(out) !== pad.sentAxes[id]) changed = true;
+    }
+    for (let id = 0; id < buttonCount; id++) {
+      const raw = buttonAt(id);
+      const value = Number.isFinite(raw) ? raw : 0;
+      pad.rawButtons[id] = value;
+      if (resyncingPads && Math.abs(value) > PAD_REST) pad.blockedButtons[id] = 1;
+      const out = maskButton(pad, id, value);
+      pad.outButtons[id] = out;
+      if (!changed && Math.fround(out) !== pad.sentButtons[id]) changed = true;
+    }
+    if (!changed || isSuppressed()) return;
+    const axes = new Array<number>(axisCount);
+    const buttons = new Array<number>(buttonCount);
+    for (let id = 0; id < axisCount; id++) pad.sentAxes[id] = axes[id] = pad.outAxes[id]!;
+    for (let id = 0; id < buttonCount; id++) pad.sentButtons[id] = buttons[id] = pad.outButtons[id]!;
+    pad.sentAxisCount = axisCount;
+    pad.sentButtonCount = buttonCount;
+    pad.announced = true;
+    push({ kind: "gamepad", tick, gamepadIndex: index, axes, buttons });
+  };
+  // Hoisted readers for `samplePad`, so a poll creates no closures.
+  let deviceAxes: readonly number[] = NO_AXES;
+  let deviceButtons: readonly GamepadButton[] = NO_BUTTONS;
+  let syntheticPad: { index: number; axes: number[]; buttons: number[] } | null = null;
+  const deviceAxis = (id: number) => deviceAxes[id]!;
+  const deviceButton = (id: number) => deviceButtons[id]?.value ?? 0;
+  const syntheticAxis = (id: number) => syntheticPad!.axes[id]!;
+  const syntheticButton = (id: number) => syntheticPad!.buttons[id]!;
 
   canvas.addEventListener("pointerdown", down);
   canvas.addEventListener("pointermove", move);
@@ -380,8 +572,9 @@ export function attachInputCapture(
   canvas.addEventListener("pointercancel", cancel);
   window.addEventListener("keydown", keyDown);
   window.addEventListener("keyup", keyUp);
-  canvas.addEventListener("blur", onBlur);
-  window.addEventListener("blur", onBlur);
+  canvas.addEventListener("blur", onCanvasBlur);
+  window.addEventListener("blur", onPageBlur);
+  canvas.ownerDocument.addEventListener("visibilitychange", onVisibilityChange);
   canvas.addEventListener("focus", onFocus);
   window.addEventListener("focus", onFocus);
   window.addEventListener("pointerup", onPointerEnd);
@@ -399,25 +592,33 @@ export function attachInputCapture(
       pollMotion();
       if (typeof navigator === "undefined" || !navigator.getGamepads) return;
       const gamepads = navigator.getGamepads();
-      const present = new Set<number>();
+      padGeneration++;
       for (let i = 0; i < gamepads.length; i++) {
         const pad = gamepads[i];
         if (!pad || pad.connected === false) continue;
-        samplePad(present, pad.index, [...pad.axes], pad.buttons.map((b) => b.value));
+        deviceAxes = pad.axes;
+        deviceButtons = pad.buttons;
+        samplePad(pad.index, deviceAxes.length, deviceAxis, deviceButtons.length, deviceButton);
       }
-      const synthetic = options.syntheticGamepad?.();
-      if (synthetic) {
-        samplePad(present, synthetic.index, [...synthetic.axes], [...synthetic.buttons]);
+      // Hold no Gamepad snapshot past the poll.
+      deviceAxes = NO_AXES;
+      deviceButtons = NO_BUTTONS;
+      syntheticPad = options.syntheticGamepad?.() ?? null;
+      if (syntheticPad) {
+        samplePad(syntheticPad.index, syntheticPad.axes.length, syntheticAxis, syntheticPad.buttons.length, syntheticButton);
+        syntheticPad = null;
       }
-      for (const index of sampledPads) {
-        if (!present.has(index)) {
-          push({ kind: "gamepadDisconnect", tick, gamepadIndex: index });
-          pads.delete(index);
-          blockedPadAxes.delete(index);
-          blockedPadButtons.delete(index);
-        }
+      for (let index = 0; index < pads.length; index++) {
+        const pad = pads[index];
+        if (!pad || pad.seen === padGeneration) continue;
+        pads[index] = undefined;
+        // A pad the game never saw has nothing to disconnect.
+        if (pad.announced) push({ kind: "gamepadDisconnect", tick, gamepadIndex: index });
       }
-      sampledPads = present;
+      resyncingPads = false;
+    },
+    resyncGamepads: () => {
+      if (!disposed) resyncingPads = true;
     },
     setSuppressed: (value) => {
       if (disposed) return;
@@ -454,8 +655,9 @@ export function attachInputCapture(
       disposed = true;
       view?.removeEventListener("deviceorientation", onDeviceOrientation);
       view?.removeEventListener("devicemotion", onDeviceMotion);
-      canvas.removeEventListener("blur", onBlur);
-      window.removeEventListener("blur", onBlur);
+      canvas.removeEventListener("blur", onCanvasBlur);
+      window.removeEventListener("blur", onPageBlur);
+      canvas.ownerDocument.removeEventListener("visibilitychange", onVisibilityChange);
       canvas.removeEventListener("focus", onFocus);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("pointerup", onPointerEnd);
@@ -475,10 +677,7 @@ export function attachInputCapture(
       uiPointers.clear();
       touchAxes.clear();
       blockedTouchAxes.clear();
-      pads.clear();
-      blockedPadAxes.clear();
-      blockedPadButtons.clear();
-      sampledPads.clear();
+      pads.length = 0;
     },
   };
   return handle;

@@ -5,7 +5,7 @@ import { attachInputCapture as attachPlayerInputCapture } from "@haptic/input/do
 
 class FakeCanvas {
   tabIndex = 0;
-  readonly ownerDocument: { activeElement: FakeCanvas } = { activeElement: this };
+  readonly ownerDocument = { activeElement: this as FakeCanvas, visibilityState: "visible", addEventListener() {}, removeEventListener() {} };
   focus(): void {}
   style: { touchAction: string } = { touchAction: "" };
   readonly listeners = new Map<string, Set<EventListener>>();
@@ -166,8 +166,8 @@ describe.each([
     handle.ring.drain();
     pads = [null, second];
     handle.pollGamepads();
+    // The pad still connected has not changed, so it sends nothing.
     expect(handle.ring.drain()).toEqual([
-      { kind: "gamepad", tick: 7, gamepadIndex: 1, axes: [0.25], buttons: [0] },
       { kind: "gamepadDisconnect", tick: 7, gamepadIndex: 0 },
     ]);
     pads = [null, { ...second, connected: false }];
@@ -177,6 +177,218 @@ describe.each([
     ]);
     handle.pollGamepads();
     expect(handle.ring.drain()).toEqual([]);
+  });
+
+  it("releases a key whose keyup Cmd swallowed exactly once, when Cmd lifts", () => {
+    const { canvas, handle } = fixture();
+    canvas.dispatchEvent(key("keydown", "KeyW"));
+    canvas.dispatchEvent(new KeyboardEvent("keydown", { code: "MetaLeft", key: "Meta", metaKey: true, bubbles: true }));
+    // macOS delivers no keyup for W while Cmd is held.
+    canvas.dispatchEvent(new KeyboardEvent("keyup", { code: "MetaLeft", key: "Meta", bubbles: true }));
+    canvas.dispatchEvent(key("keyup", "KeyW"));
+    expect(handle.ring.drain()).toEqual([
+      { kind: "key", tick: 7, code: "KeyW", phase: "down" },
+      { kind: "key", tick: 7, code: "MetaLeft", phase: "down" },
+      { kind: "key", tick: 7, code: "KeyW", phase: "up" },
+      { kind: "key", tick: 7, code: "MetaLeft", phase: "up" },
+    ]);
+    canvas.dispatchEvent(key("keydown", "KeyW"));
+    expect(handle.ring.drain()).toEqual([{ kind: "key", tick: 7, code: "KeyW", phase: "down" }]);
+  });
+
+  it("lets go of every device once when the page is hidden, and takes input again in shared routing", () => {
+    const { canvas, handle } = fixture();
+    const pad = { index: 0, axes: [0.75], buttons: [{ value: 1 }] };
+    Object.assign(navigator, { getGamepads: () => [pad] });
+    const resolver = new InputResolver({
+      actions: [
+        { name: "Keyboard", bindings: [{ device: "key", code: "KeyW" }] },
+        { name: "Pointer", bindings: [{ device: "mouseButton", code: "0" }] },
+        { name: "Pad", bindings: [{ device: "gamepadButton", code: "0:0" }] },
+      ],
+      axes: [
+        { name: "Stick", bindings: [{ device: "gamepadAxis", code: "0:0" }] },
+        { name: "Touch", bindings: [{ device: "touch", code: "move" }] },
+      ],
+    });
+    const pointer = (type: string, pointerId: number) => canvas.dispatchEvent(Object.assign(
+      new Event(type, { cancelable: true }), { pointerId, offsetX: 1, offsetY: 2, button: 0, pointerType: "touch" }));
+    canvas.dispatchEvent(key("keydown", "KeyW"));
+    pointer("pointerdown", 1);
+    handle.setTouchAxis("move", 1);
+    handle.pollGamepads();
+    const held = resolver.resolve(handle.ring.drain());
+    expect([held.actions.Keyboard.held, held.actions.Pointer.held, held.actions.Pad.held]).toEqual([true, true, true]);
+    expect(held.axes).toEqual({ Stick: 0.75, Touch: 1 });
+
+    let visibility: DocumentVisibilityState = "hidden";
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+    try {
+      document.dispatchEvent(new Event("visibilitychange"));
+      document.dispatchEvent(new Event("visibilitychange"));
+      const released = handle.ring.drain();
+      expect(released.map(event => `${event.kind}:${"phase" in event ? event.phase : ""}`)).toEqual([
+        "key:up", "pointer:cancel", "touchAxis:", "gamepad:",
+      ]);
+      const state = resolver.resolve(released);
+      expect([state.actions.Keyboard.held, state.actions.Pointer.held, state.actions.Pad.held]).toEqual([false, false, false]);
+      expect(state.axes).toEqual({ Stick: 0, Touch: 0 });
+
+      visibility = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+      // Still held on return: a release, never a replayed press.
+      handle.pollGamepads();
+      canvas.dispatchEvent(key("keyup", "KeyW"));
+      pointer("pointerup", 1);
+      handle.setTouchAxis("move", 0);
+      expect(resolver.resolve(handle.ring.drain()).actions.Pad.held).toBe(false);
+      pad.axes[0] = 0; pad.buttons[0]!.value = 0;
+      handle.pollGamepads();
+      pad.axes[0] = 0.75; pad.buttons[0]!.value = 1;
+      handle.pollGamepads();
+      canvas.dispatchEvent(key("keydown", "KeyW"));
+      pointer("pointerdown", 2);
+      handle.setTouchAxis("move", 1);
+      const again = resolver.resolve(handle.ring.drain());
+      expect([again.actions.Keyboard.pressed, again.actions.Pointer.pressed, again.actions.Pad.pressed]).toEqual([true, true, true]);
+      expect(again.axes).toEqual({ Stick: 0.75, Touch: 1 });
+    } finally {
+      Reflect.deleteProperty(document, "visibilityState");
+    }
+  });
+
+  it("cancels a pointer whose capture is lost, so it cannot stay pressed for the game", () => {
+    const { canvas, handle } = fixture();
+    const resolver = new InputResolver({ actions: [{ name: "Fire", bindings: [{ device: "mouseButton", code: "0" }] }], axes: [] });
+    const pointer = (type: string) => canvas.dispatchEvent(Object.assign(
+      new Event(type, { cancelable: true }), { pointerId: 4, offsetX: 1, offsetY: 2, button: 0, pointerType: "touch" }));
+    pointer("pointerdown");
+    expect(resolver.resolve(handle.ring.drain()).actions.Fire.held).toBe(true);
+    pointer("lostpointercapture");
+    const lost = resolver.resolve(handle.ring.drain());
+    expect(lost.actions.Fire).toMatchObject({ held: false, released: true });
+    expect(lost.touchEvents).toEqual([expect.objectContaining({ Phase: "Cancelled" })]);
+    // Its lift lands elsewhere; the window still sees it, and nothing is left to end.
+    window.dispatchEvent(Object.assign(new Event("pointerup"), { pointerId: 4 }));
+    pointer("pointerdown");
+    expect(resolver.resolve(handle.ring.drain()).actions.Fire.pressed).toBe(true);
+  });
+
+  it("takes pointer capture only for a pointer the game reads, and survives a capture that throws", () => {
+    const canvas = document.createElement("canvas");
+    document.body.append(canvas);
+    const captured: number[] = [];
+    canvas.setPointerCapture = (id) => {
+      if (id === 9) throw new DOMException("The pointer is no longer active.", "NotFoundError");
+      captured.push(id);
+    };
+    const handle = attach(canvas, { ownsPointer: (id) => id === 2 });
+    handles.push(handle);
+    const pointer = (pointerId: number) => canvas.dispatchEvent(Object.assign(
+      new Event("pointerdown", { cancelable: true }), { pointerId, offsetX: 0, offsetY: 0, button: 0, pointerType: "touch" }));
+    pointer(1);
+    pointer(2);
+    expect(() => pointer(9)).not.toThrow();
+    expect(captured).toEqual([1]);
+    expect(handle.ring.drain().map(event => event.kind === "pointer" ? event.pointerId : -1)).toEqual([1, 9]);
+  });
+
+  it("pushes a pad's state when it connects, changes or disconnects, and nothing while it is idle", () => {
+    const { handle } = fixture();
+    const pad = { index: 0, axes: [0.3, 0], buttons: [{ value: 0 }, { value: 0 }] };
+    let pads: unknown[] = [pad];
+    Object.assign(navigator, { getGamepads: () => pads });
+    const kinds = () => handle.ring.drain().map(event => event.kind);
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([{ kind: "gamepad", tick: 7, gamepadIndex: 0, axes: [0.3, 0], buttons: [0, 0] }]);
+    for (let frame = 0; frame < 5; frame++) handle.pollGamepads();
+    expect(kinds()).toEqual([]);
+    // Below the wire's float32 precision: the game would read the same value.
+    pad.axes[0] = 0.3 + 1e-12;
+    handle.pollGamepads();
+    expect(kinds()).toEqual([]);
+    pad.axes[0] = 0.3001;
+    handle.pollGamepads();
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([{ kind: "gamepad", tick: 7, gamepadIndex: 0, axes: [0.3001, 0], buttons: [0, 0] }]);
+    pad.buttons[1]!.value = 1;
+    handle.pollGamepads();
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([{ kind: "gamepad", tick: 7, gamepadIndex: 0, axes: [0.3001, 0], buttons: [0, 1] }]);
+    pads = [];
+    handle.pollGamepads();
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([{ kind: "gamepadDisconnect", tick: 7, gamepadIndex: 0 }]);
+    pads = [pad];
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([{ kind: "gamepad", tick: 7, gamepadIndex: 0, axes: [0.3001, 0], buttons: [0, 1] }]);
+  });
+
+  it("sends a held stick again after the runtime resets its input, keeping a held button released until it rests", () => {
+    const { handle } = fixture();
+    const pad = { index: 0, axes: [1], buttons: [{ value: 1 }] };
+    Object.assign(navigator, { getGamepads: () => [pad] });
+    const resolver = new InputResolver({
+      actions: [{ name: "Fire", bindings: [{ device: "gamepadButton", code: "0:0" }] }],
+      axes: [{ name: "Stick", bindings: [{ device: "gamepadAxis", code: "0:0" }] }],
+    });
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain())).toMatchObject({ axes: { Stick: 1 }, actions: { Fire: { held: true } } });
+    // A blocking pause: the runtime forgets every device; the steady stick sends nothing by itself.
+    resolver.reset();
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).axes.Stick).toBe(0);
+    handle.resyncGamepads();
+    handle.pollGamepads();
+    const resumed = resolver.resolve(handle.ring.drain());
+    expect(resumed.axes.Stick).toBe(1);
+    // Like a held key, the button held through the pause does not start again.
+    expect(resumed.actions.Fire).toEqual({ held: false, pressed: false, released: false });
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([]);
+    pad.buttons[0]!.value = 0;
+    handle.pollGamepads();
+    pad.buttons[0]!.value = 1;
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).actions.Fire.pressed).toBe(true);
+  });
+
+  it("keeps a stick held through a page blur at 0 after a resync, until it rests or moves on", () => {
+    const { handle } = fixture();
+    const pad = { index: 0, axes: [1], buttons: [{ value: 0 }] };
+    Object.assign(navigator, { getGamepads: () => [pad] });
+    const resolver = new InputResolver({ actions: [], axes: [{ name: "Stick", bindings: [{ device: "gamepadAxis", code: "0:0" }] }] });
+    handle.pollGamepads();
+    resolver.resolve(handle.ring.drain());
+    window.dispatchEvent(new Event("blur"));
+    resolver.reset();
+    handle.resyncGamepads();
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).axes.Stick).toBe(0);
+    pad.axes[0] = 0.6;
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).axes.Stick).toBe(0.6);
+  });
+
+  it("still delivers a pad's last change when the queue overflows before the host drains it", () => {
+    const canvas = document.createElement("canvas");
+    canvas.setPointerCapture = () => {};
+    document.body.append(canvas);
+    const handle = attach(canvas, { ring: new InputRingBuffer(1) });
+    handles.push(handle);
+    const pad = { index: 0, axes: [0.9], buttons: [{ value: 1 }] };
+    Object.assign(navigator, { getGamepads: () => [pad] });
+    const resolver = new InputResolver({ actions: [], axes: [{ name: "Stick", bindings: [{ device: "gamepadAxis", code: "0:0" }] }] });
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).axes.Stick).toBe(0.9);
+    // The stick returns to rest (the button stays held), then a burst of key presses overflows the queue.
+    pad.axes[0] = 0;
+    handle.pollGamepads();
+    for (const code of ["KeyA", "KeyB", "KeyC", "KeyD", "KeyE"]) canvas.dispatchEvent(key("keydown", code));
+    resolver.resolve(handle.ring.drain());
+    // An idle poll sends nothing new; the game must already read the stick at rest.
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).axes.Stick).toBe(0);
   });
 
   it("reports chorded mouse buttons that change during one pointer contact", () => {
@@ -366,6 +578,23 @@ describe("exclusive game input ownership", () => {
     expect(resolver.resolve(handle.ring.drain()).actions.Fire.held).toBe(false);
     handle.pollGamepads();
     expect(resolver.resolve(handle.ring.drain()).actions.Fire.held).toBe(false);
+  });
+
+  it("keeps a stick held across a boundary at 0 until it rests or moves on, so one resting off centre still comes back", () => {
+    const { handle, pad, read } = fixture();
+    // A worn stick rests at 0.05; a held one sits at 0.75.
+    pad.axes = [0.05, 0.75];
+    handle.pollGamepads();
+    read();
+    handle.setSuppressed(true);
+    handle.setSuppressed(false);
+    expect(read().axes.Stick).toBe(0);
+    pad.axes = [0.05, 0.8];
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([]);
+    pad.axes = [0.6, 0.8];
+    handle.pollGamepads();
+    expect(handle.ring.drain()).toEqual([expect.objectContaining({ kind: "gamepad", axes: [0.6, 0] })]);
   });
 
   it("cancels lost pointer capture and blocks continuation until that contact ends", () => {

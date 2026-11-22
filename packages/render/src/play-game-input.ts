@@ -99,12 +99,28 @@ export function createPlayGameInput({
     const deltaX = sideways && Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
     options.onSceneLayerScroll?.({ layerId: hit.layer.layerId, actorId: hit.target.actorId, componentId: hit.target.componentId!, deltaX: deltaX * factor * hit.scaleX, deltaY: event.shiftKey ? 0 : event.deltaY * factor * hit.scaleY });
   };
+  const releaseCapture = (pointerId: number) => {
+    try { canvas.releasePointerCapture?.(pointerId); } catch { /* Capture may already have ended. */ }
+  };
+  /**
+   * A pointer lifted, cancelled or lost while the game takes no input: let go
+   * of what it held (scroll, control, stick, 2D presses) as a cancel, and
+   * deliver no click, commit or move.
+   */
+  const releasePausedPointer = (pointerId: number) => {
+    if (scrollDrag?.pointerId === pointerId) scrollDrag = null;
+    uiControls.release(pointerId, true);
+    joysticks.release(pointerId);
+    if (activeGamePointers.size === 0) {
+      for (const result of applyOverlayPointer(overlayPointerState, "cancel", [])) options.onSceneLayerPointer?.(result);
+    }
+  };
   const onPointerDown = (event: PointerEvent) => {
     if (!acceptsGameInput()) return;
     activeGamePointers.add(event.pointerId);
     event.preventDefault();
     canvas.focus({ preventScroll: true });
-    canvas.setPointerCapture?.(event.pointerId);
+    try { canvas.setPointerCapture?.(event.pointerId); } catch { /* The pointer may already be up (InvalidPointerId). */ }
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
@@ -114,6 +130,8 @@ export function createPlayGameInput({
     if (joysticks.owns(event.pointerId)) return;
     const controlOwns = uiControls.owns(event.pointerId);
     if (controlOwns && !uiControls.allowsScroll(event.pointerId)) return;
+    // The first finger keeps the scroll: a second one stays a plain press instead of taking over and stranding it.
+    if (scrollDrag && activeGamePointers.has(scrollDrag.pointerId)) return;
     const scrollTarget = event.pointerType === "touch" || event.pointerType === "pen" ? scrollTargetAt(x, y) : undefined;
     if (scrollTarget) scrollDrag = { pointerId: event.pointerId, startX: x, startY: y, x, y, active: false, target: scrollTarget };
   };
@@ -145,7 +163,8 @@ export function createPlayGameInput({
     dispatchOverlayPointer("move", x, y);
   };
   const onPointerUp = (event: PointerEvent) => {
-    if (!activeGamePointers.delete(event.pointerId) || !acceptsGameInput()) return;
+    if (!activeGamePointers.delete(event.pointerId)) return;
+    if (!acceptsGameInput()) { releasePausedPointer(event.pointerId); return; }
     const point = overlayPointerCanvasCoords(event);
     const wasScrolling = scrollDrag?.pointerId === event.pointerId && scrollDrag.active;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
@@ -156,7 +175,8 @@ export function createPlayGameInput({
     dispatchOverlayPointer("up", x, y);
   };
   const onPointerCancel = (event: PointerEvent) => {
-    if (!activeGamePointers.delete(event.pointerId) || !acceptsGameInput()) return;
+    if (!activeGamePointers.delete(event.pointerId)) return;
+    if (!acceptsGameInput()) { releasePausedPointer(event.pointerId); return; }
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
     if (uiControls.release(event.pointerId, true) || joysticks.release(event.pointerId)) return;
     const { x, y } = overlayPointerCanvasCoords(event);
@@ -180,11 +200,25 @@ export function createPlayGameInput({
     activeControlKeys.clear();
     const document = canvas.ownerDocument;
     if (document?.pointerLockElement === canvas) document.exitPointerLock?.();
-    for (const pointerId of captured) {
-      try { canvas.releasePointerCapture?.(pointerId); } catch { /* Capture may already have ended. */ }
-    }
+    for (const pointerId of captured) releaseCapture(pointerId);
   };
-  const onCanvasBlur = (event: FocusEvent) => { if (!uiControls.ownsElement(event.relatedTarget)) resetJoysticks(); };
+  /**
+   * Focus went to a 2D Text Input's native editor, which stays part of the
+   * game surface (the control keeps its pointer and focus), but typing has
+   * begun: on-screen sticks let go, and their fingers stay away until they lift.
+   */
+  const releaseJoysticksForEditor = () => {
+    for (const pointerId of activeGamePointers) {
+      if (!joysticks.owns(pointerId)) continue;
+      activeGamePointers.delete(pointerId);
+      releaseCapture(pointerId);
+    }
+    joysticks.reset();
+  };
+  const onCanvasBlur = (event: FocusEvent) => {
+    if (uiControls.ownsElement(event.relatedTarget)) releaseJoysticksForEditor();
+    else resetJoysticks();
+  };
   const onControlKeyDown = (event: KeyboardEvent) => {
     const key = event.code || event.key;
     if (!acceptsGameInput() || (event.repeat && !activeControlKeys.has(key))) return;
@@ -192,7 +226,7 @@ export function createPlayGameInput({
     uiControls.keyDown(event);
   };
   const onControlKeyUp = (event: KeyboardEvent) => { activeControlKeys.delete(event.code || event.key); };
-  const onJoystickVisibility = () => { if (typeof document !== "undefined" && document.hidden) resetJoysticks(); };
+  const onJoystickVisibility = () => { if (page?.hidden) resetJoysticks(); };
   const onJoystickLostCapture = (event: PointerEvent) => {
     if (!activeGamePointers.delete(event.pointerId)) return;
     if (scrollDrag?.pointerId === event.pointerId) scrollDrag = null;
@@ -202,6 +236,8 @@ export function createPlayGameInput({
   const onOverlayTouch = (event: TouchEvent) => {
     if (acceptsGameInput()) event.preventDefault();
   };
+  const view = typeof window !== "undefined" ? window : null;
+  const page = typeof document !== "undefined" ? document : null;
   /** Removes the game input listeners below; rollback and dispose both call it. */
   const detachGameInput = () => {
     canvas.removeEventListener("pointerdown", onPointerDown);
@@ -216,27 +252,28 @@ export function createPlayGameInput({
     canvas.removeEventListener("blur", onCanvasBlur);
     canvas.removeEventListener("keydown", onControlKeyDown);
     canvas.removeEventListener("keyup", onControlKeyUp);
-    if (typeof window !== "undefined") window.removeEventListener("blur", resetJoysticks);
-    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onJoystickVisibility);
+    view?.removeEventListener("blur", resetJoysticks);
+    page?.removeEventListener("visibilitychange", onJoystickVisibility);
   };
   if (!options.editor) {
     onRollback(detachGameInput);
+    // Every press is tracked and captured, so every view that takes presses also ends them.
     canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerCancel);
+    canvas.addEventListener("lostpointercapture", onJoystickLostCapture);
+    view?.addEventListener("blur", resetJoysticks);
+    page?.addEventListener("visibilitychange", onJoystickVisibility);
     if (options.playMode && sceneLayerCompositor) {
       canvas.addEventListener("pointermove", onPointerMove);
-      canvas.addEventListener("pointerup", onPointerUp);
-      canvas.addEventListener("pointercancel", onPointerCancel);
       canvas.addEventListener("pointerleave", onPointerLeave);
       canvas.addEventListener("touchstart", onOverlayTouch, { passive: false });
       canvas.addEventListener("touchmove", onOverlayTouch, { passive: false });
       canvas.addEventListener("wheel", onOverlayWheel, { passive: false });
-      canvas.addEventListener("lostpointercapture", onJoystickLostCapture);
       canvas.addEventListener("blur", onCanvasBlur);
       canvas.addEventListener("keydown", onControlKeyDown);
       canvas.addEventListener("keyup", onControlKeyUp);
       if (canvas.tabIndex < 0) canvas.tabIndex = 0;
-      if (typeof window !== "undefined") window.addEventListener("blur", resetJoysticks);
-      if (typeof document !== "undefined") document.addEventListener("visibilitychange", onJoystickVisibility);
     }
   }
   return { ownsGamePointer, resetJoysticks, detach: detachGameInput };
