@@ -928,7 +928,7 @@ function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
 }
 
 /**
- * A Math Expression node: a card in the style of an Animation Graph state, its formula in monospace
+ * A Math Expression node: a normal node's outline and selection ring around a centred title, its formula in monospace
  * under the title and its variables as ordinary pin rows, inputs left and outputs right. A
  * double-click, a double-tap, or Enter while the node is selected types the formula in place.
  */
@@ -977,7 +977,7 @@ function MathExpressionNode({ id, data, selected }: NodeProps<CanvasNode>) {
         <NodeBreakpointTab nodeId={id} data={data} placement="cardTop" />
         <div
           ref={cardRef}
-          className={cn("math-expression-node", selected && "anim-state-node-selected", disabled && "opacity-50")}
+          className={cn("math-expression-node border border-border shadow-sm rounded-lg", selected && "ring-2 ring-primary", disabled && "opacity-50")}
           data-node-kind="math-expression"
           data-disabled={disabled ? "true" : undefined}
           data-testid={`math-expression-${id}`}

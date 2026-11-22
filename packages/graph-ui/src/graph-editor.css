@@ -203,8 +203,8 @@
   flex-shrink: 0;
 }
 
-/* A Math Expression: a state card's look (grey border, rounded, centred title) holding its formula and ordinary pin
-   rows, its pins at the card's sides like any node's rather than a state's edge-wide handles. */
+/* A Math Expression: a centred title over its formula and ordinary pin rows, its pins at the card's sides like any
+   node's. Its border, radius, shadow and selection ring are a normal node's Tailwind utilities on the element. */
 .math-expression-node {
   position: relative;
   display: flex;
@@ -214,11 +214,8 @@
   width: max-content;
   max-width: 560px;
   padding: 10px 0 4px;
-  border-radius: var(--radius-lg);
   background: var(--graph-node);
-  border: 1px solid var(--input);
   color: var(--foreground);
-  box-shadow: var(--surface-shadow);
 }
 
 .math-expression-node-title {
