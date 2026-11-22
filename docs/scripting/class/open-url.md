@@ -24,4 +24,4 @@ Opens a web address in a new browser tab.
 - Only `http` and `https` addresses open. Anything else writes a warning to the **Output Log** and does nothing.
 - Browsers block new tabs unless the player has just tapped or clicked, so run it from a button.
 - When the browser blocks it, nothing opens and the game continues.
-- In the Haptic desktop app, Play and Preview Build open only Haptic's own pages. Test other addresses in the web editor or an exported game.
+- In the Haptic desktop app, Play opens only Haptic's own pages and Preview Build opens nothing. Test other addresses in the web editor or an exported game.

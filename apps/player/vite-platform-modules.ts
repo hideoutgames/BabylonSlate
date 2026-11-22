@@ -1,5 +1,6 @@
 import type { Plugin, Rolldown } from "vite";
 import { platformModuleCondition } from "../../packages/core/src/platform-directives";
+import { packageOfModuleId } from "./vite-bundled-packages";
 
 /** The list packaging reads to leave other platforms' modules out (`selectPlayerRuntimeFiles`). */
 export const PLATFORM_MODULES_FILE = "platform-modules.json";
@@ -74,13 +75,29 @@ export function platformModuleProblems(bundle: Rolldown.OutputBundle, modules: P
  * on any other use of platform directives and checks that each platform module's file can be left out. The page build
  * (`writeList`) writes {@link PLATFORM_MODULES_FILE} for its own and the worker build's files.
  */
-export function platformModules(modules: PlatformModules, options: { writeList: boolean }): Plugin {
+export function platformModules(
+  modules: PlatformModules,
+  options: {
+    writeList: boolean;
+    /**
+     * npm packages only platform modules use, by name → condition: each module of one is a platform module too, so it
+     * shares its condition's file and other platforms' games leave it out.
+     */
+    packages?: Readonly<Record<string, string>>;
+  },
+): Plugin {
   return {
     name: "player-platform-modules",
     // Before TypeScript is transpiled, so the directive comments are still there.
     enforce: "pre",
     transform(code, id) {
-      if (id.includes("/node_modules/") || id.includes("\\node_modules\\") || !/\.(?:[cm]?[jt]sx?)(?:\?.*)?$/.test(id)) return null;
+      if (id.includes("/node_modules/") || id.includes("\\node_modules\\")) {
+        const name = packageOfModuleId(id);
+        const condition = name ? options.packages?.[name] : undefined;
+        if (condition !== undefined) modules.conditions.set(id.replace(/\?.*$/, ""), condition);
+        return null;
+      }
+      if (!/\.(?:[cm]?[jt]sx?)(?:\?.*)?$/.test(id)) return null;
       const path = id.replace(/\?.*$/, "");
       try {
         const condition = platformModuleCondition(code, shortId(path));

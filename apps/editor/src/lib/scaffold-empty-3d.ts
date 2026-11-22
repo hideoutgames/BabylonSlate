@@ -7,14 +7,13 @@ import {
 import {
   DOCUMENT_CHUNK_ID,
   collectAssetDependencyMetadata,
-  decodeHasset,
-  encodeHasset,
   newAssetGuid,
   normalizeAnimationPayload,
   normalizeSkeletonPayload,
   type AssetRegistry,
   type ImportResult,
 } from "@haptic/assets";
+import { decodeHasset, encodeHasset } from "@haptic/assets/hasset";
 import {
   createMeshComponent,
   identitySerializedTransform,

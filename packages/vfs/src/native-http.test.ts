@@ -8,6 +8,8 @@ vi.mock("@capacitor/core", () => ({
   CapacitorHttp: { request },
   registerPlugin: () => ({}),
 }));
+// `getHostPlatform` reads the Capacitor bridge global that the native shells inject.
+(globalThis as { Capacitor?: unknown }).Capacitor = { getPlatform: () => getPlatform() };
 
 const { createNativeHttp } = await import("./native-http");
 const { getElectronHttpBridge, isElectronHost } = await import("./platform");
@@ -59,7 +61,9 @@ describe("nativeHttp", () => {
       method: "GET",
       url: "https://example.test/locks",
       headers: { Accept: "application/vnd.git-lfs+json" },
+      disableRedirects: true,
     });
+    // The desktop app refuses every redirect, so the flag is not sent.
     expect(fetch).toHaveBeenCalledWith({
       method: "GET",
       url: "https://example.test/locks",

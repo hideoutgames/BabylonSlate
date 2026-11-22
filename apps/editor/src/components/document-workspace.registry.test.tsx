@@ -23,7 +23,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     content: { nodes: [], edges: [] },
     layout: null,
   })),
-  projectDocument: { metadata: { name: "Test" } },
+  projectDocument: { metadata: { name: "Test" }, settings: { editorUtilityObjects: [] } },
   assetRegistry: state.registry,
   registryEpoch: state.registry?.generation ?? 0,
   sourceControl: { enabled: false, lockPrompt: [] },

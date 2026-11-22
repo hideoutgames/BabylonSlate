@@ -71,11 +71,8 @@ import {
   encodePluginSettingsDocument,
   normalizePluginSettings,
   stableStringify,
-  decodeHasset,
-  encodeHasset,
   carryStoredChunks,
   audioReverbChunk,
-  isCarriedChunk,
   AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
@@ -112,6 +109,7 @@ import {
   type ProjectTreeFile,
   type OwnAssetWrite,
 } from "@haptic/assets";
+import { decodeHasset, encodeHasset, isCarriedChunk } from "@haptic/assets/hasset";
 import { runImportOffMainThread } from "@haptic/assets/import-worker-client";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@haptic/vfs";
 import { NAVMESH_CHUNK_ID, navmeshChunk } from "@haptic/navigation/chunk";
@@ -752,6 +750,7 @@ export class ProjectService {
           }
         }
         this.projectGuid = guid;
+        // Templates are imported archives that may carry Extensions, so a project made from one starts untrusted.
         await this.projectPlugins.installEnginePluginDefaultsIfNeeded();
         return this.loadCurrentProject();
       },
@@ -1228,6 +1227,8 @@ export class ProjectService {
       document.metadata.appearance = appearance.image && stored.coverFile ? { ...stored, image: appearance.image } : stored;
     }
     this.projectGuid = newGuid();
+    // Its Extensions are copies of this computer's Engine Extensions: the new project starts trusted.
+    this.extensions.noteCreatedProject(this.projectGuid);
     this.loadedTextureSettings = document.settings.textures;
     this.textures.setSourceControlEnabled((document.settings.sourceControl?.mode ?? "off") !== "off");
     this.projectPlugins.setOverrides(document.settings.pluginOverrides ?? {});

@@ -466,8 +466,16 @@ describe("realizeParticleGraph", () => {
   it("starts particles on random cells, sets cells from Update Sprite Cell within the sheet, and needs a Sprite Sheet", () => {
     const sheet = (properties: Record<string, unknown>) => node("sheet", "sprite.setup", { columns: 2, rows: 2, startCell: 1, endCell: 3, ...properties });
     const random = built(realize(planOf(withSpine([sheet({ randomStartCell: true, framesPerSecond: 0 }), node("animate", "update.basicSprite")]))).result).system;
-    random.start(0);
-    step(random, 40);
+    // Babylon draws each start cell from Math.random: a fixed, evenly spread sequence makes every cell certain to
+    // appear, where real randomness leaves one out of a small live set now and then.
+    let draw = 0;
+    const spread = vi.spyOn(Math, "random").mockImplementation(() => ((draw++ * 7) % 16) / 16);
+    try {
+      random.start(0);
+      step(random, 40);
+    } finally {
+      spread.mockRestore();
+    }
     const cells = new Set(random.particles.map((particle) => particle.cellIndex));
     expect([...cells].sort()).toEqual([1, 2, 3]);
 

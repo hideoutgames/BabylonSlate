@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { navMeshDebugPrimitives } from "./debug-primitives";
-import { createNavigationBackend, generateNavMesh, initNavigation, navigationLoaded, withNavigation } from "./recast-backend";
+import { generateNavMesh } from "./bake";
+import { createNavigationBackend, initNavigation, navigationLoaded, withNavigation } from "./recast-backend";
 
 const ground = {
   positions: [-10, 0, -10, 10, 0, -10, 10, 0, 10, -10, 0, 10],

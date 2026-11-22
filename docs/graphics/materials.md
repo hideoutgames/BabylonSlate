@@ -30,7 +30,7 @@ Changing the domain removes nodes the new domain does not support.
 | Setting | Description |
 | --- | --- |
 | **Shading Model** | **PBR** (lit) or **Unlit**. Surface, Landscape and Decal only. |
-| **Blend Mode** | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (darkens what is behind by the colour; Surface, Landscape and Decal). User Interface Materials offer only **Translucent** and **Additive**. Particle emitters set their own blending. |
+| **Blend Mode** | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (darkens what is behind by the colour; Surface, Landscape and Decal). User Interface and Text Materials offer **Translucent**, **Additive** and **Multiply** ([Multiply on Scene Layers](../assets/material.md#multiply-on-scene-layers)). Particle emitters set their own blending. |
 | **Alpha Cutoff** | Masked only. Pixels with lower opacity are cut out. |
 | **Two Sided** | Draws back faces too. Surface and Landscape only. |
 | **Default Normals** | **Model Normals** or **Flat Normals** when the Normal input is unconnected. Flat Normals shade each triangle as a flat face. Surface and Landscape only. |

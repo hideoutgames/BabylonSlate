@@ -1,5 +1,6 @@
 import { PROJECT_FILE } from "@haptic/core";
-import { contentRootBlobFolder, FOLDER_MARKER_NAME, readHassetHeader, type AssetRegistry } from "@haptic/assets";
+import { contentRootBlobFolder, FOLDER_MARKER_NAME, type AssetRegistry } from "@haptic/assets";
+import { readHassetHeader } from "@haptic/assets/hasset";
 import { lfsObjectId, type ChangeKind, type FileChange, type PullChoice, type PullChoices, type PullConflict } from "@haptic/source-control";
 
 /** What the Source Control tab knows about an indexed asset: its registry entry, read without opening the file. */

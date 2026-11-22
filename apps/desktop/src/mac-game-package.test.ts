@@ -42,8 +42,12 @@ function tools(status = "Accepted") {
   let workRoot = "";
   /** The app's icon file when codesign first runs: what the signature seals. */
   let iconAtSigning: string | null = null;
+  /** The entitlements codesign was given, read while the file exists. */
+  let entitlements: string | null = null;
   const run: RunCommand = async (command, args) => {
     calls.push([command, ...args]);
+    const entitlementsAt = args.indexOf("--entitlements");
+    if (command.endsWith("codesign") && entitlementsAt >= 0) entitlements = await readFile(args[entitlementsAt + 1]!, "utf8");
     if (command.endsWith("codesign") && iconAtSigning === null) {
       iconAtSigning = await readFile(join(workRoot, "out", "Space Game.app", "Contents", "Resources", "electron.icns"), "utf8");
     }
@@ -62,7 +66,7 @@ function tools(status = "Accepted") {
     if (command.endsWith("xcrun") && args[0] === "notarytool") return { stdout: JSON.stringify({ id: "sub-1", status }), stderr: "" };
     return { stdout: "", stderr: "" };
   };
-  return { run, calls, resources: () => resources, iconAtSigning: () => iconAtSigning };
+  return { run, calls, resources: () => resources, iconAtSigning: () => iconAtSigning, entitlements: () => entitlements };
 }
 
 const shorten = (call: string[]) => call.map((part) => part.replace(/^.*haptic-macos-[^/]+\//, "<work>/"));
@@ -100,6 +104,9 @@ describe("macOS game packages", () => {
       "@",
     ]);
     expect(calls.find((call) => call[0] === "/usr/bin/codesign")!.slice(1, 6)).toEqual(["--force", "--timestamp", "--options", "runtime", "--entitlements"]);
+    // V8's JIT needs its two exceptions; every nested library carries the game's own signature, so library validation stays on.
+    expect(apple.entitlements()).toContain("com.apple.security.cs.allow-jit");
+    expect(apple.entitlements()).not.toContain("disable-library-validation");
     const order = calls.map((call) => `${call[0]!.split("/").pop()} ${call[1]}`);
     expect(order.slice(-6)).toEqual(["codesign --force", "codesign --verify", "ditto -c", "xcrun notarytool", "xcrun stapler", "ditto -c"]);
     expect(calls.find((call) => call[1] === "notarytool")).toEqual(["/usr/bin/xcrun", "notarytool", "submit", "<work>/notarize.zip", "--keychain-profile", "haptic-notary", "--wait", "--output-format", "json"]);

@@ -30,6 +30,7 @@ import {
 } from "@haptic/exporter";
 import {
   isExpectedPreviewHostMessage,
+  previewHostOrigin as hostOrigin,
   previewPackFromExpectedHostMessage,
 } from "./preview-protocol";
 
@@ -37,7 +38,7 @@ import {
 // Installed before any Engine exists, in this page's realm (a Preview Build host's own shim cannot reach it).
 if (import.meta.env.VITE_TEST_MODE === "true") installDirectViewReadSync();
 
-const previewHostOrigin = window.location.origin;
+const previewHostOrigin = hostOrigin(window.location);
 // The query string and frame nesting are fixed for the page's lifetime.
 const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
 const previewHosted = previewMode && window.parent !== window;
@@ -172,9 +173,12 @@ async function launchLoaded(
         hostMemory = null;
       });
   };
-  refreshHostMemory();
-  // Session-scoped HUD feed; cleared with the page, same as the render loop.
-  const memoryInterval = window.setInterval(refreshHostMemory, 1000);
+  // Session-scoped feed of the Stats HUD, which only a debugger build has; cleared with the page, same as the render loop.
+  let memoryInterval: number | undefined;
+  if (game.manifest.bundleDebugger) {
+    refreshHostMemory();
+    memoryInterval = window.setInterval(refreshHostMemory, 1000);
+  }
   let stopped = false;
   let previewDiagnostics: ReturnType<typeof import("./preview-diagnostics")["installPreviewDiagnostics"]> | undefined;
   let preparingDiagnostics: Promise<void> | undefined;

@@ -15,10 +15,12 @@ export interface AnchorEntry {
   btNodeId?: string;
 }
 
+// Any URL scheme: `haptic:` sources, and the page or worker's own code over `https:`, `blob:`, `file:`, `app:` (desktop)
+// or `capacitor:` (iOS), whose frames a stack interleaves with them.
 const V8_FRAME =
-  /^\s*at\s+(?:(.+?)\s+\()?((?:haptic:|blob:|file:|https?:).+?):(\d+):(\d+)\)?\s*$/;
+  /^\s*at\s+(?:(.+?)\s+\()?([a-zA-Z][\w+.-]*:.+?):(\d+):(\d+)\)?\s*$/;
 const WEBKIT_FRAME =
-  /^(?:(.*)@)?((?:haptic:|blob:|file:|https?:).+?):(\d+):(\d+)\s*$/;
+  /^(?:(.*)@)?([a-zA-Z][\w+.-]*:.+?):(\d+):(\d+)\s*$/;
 
 export function parseStackFrames(stack: string): StackFrame[] {
   const frames: StackFrame[] = [];
