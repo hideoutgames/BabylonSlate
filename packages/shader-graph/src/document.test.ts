@@ -79,6 +79,8 @@ describe("material document", () => {
     expect(doc).toMatchObject({ domain: "ui", shadingModel: "unlit", blendMode: "translucent", twoSided: true });
     expect(doc.nodes.map((node) => node.type)).toEqual(["output.ui"]);
     expect(normalizeMaterialDocument({ domain: "ui", blendMode: "additive" }).blendMode).toBe("additive");
+    expect(normalizeMaterialDocument({ domain: "ui", blendMode: "multiply" }).blendMode).toBe("multiply");
+    expect(materialBlendModesFor("ui")).toEqual(["translucent", "additive", "multiply"]);
     expect(normalizeMaterialDocument({ domain: "ui", blendMode: "masked" }).blendMode).toBe("translucent");
     expect(normalizeMaterialDocument(JSON.parse(JSON.stringify(createDefaultMaterialDocument("Panel", "ui"))))).toEqual(
       createDefaultMaterialDocument("Panel", "ui"),
@@ -248,13 +250,18 @@ describe("switching material domain", () => {
     expect(back.edges.map((edge) => edge.id)).toEqual(["e-color-output"]);
   });
 
-  it("keeps Multiply in every domain with blend modes but Text, which offers none of its own", () => {
+  it("keeps Multiply in every domain with blend modes, Text's blending ones included", () => {
     for (const domain of ["surface", "landscape", "decal"] as const) {
       expect(normalizeMaterialDocument({ ...createDefaultMaterialDocument("M", domain), blendMode: "multiply" }).blendMode, domain).toBe("multiply");
       expect(materialBlendModesFor(domain), domain).toEqual(["opaque", "masked", "translucent", "additive", "multiply"]);
     }
-    expect(normalizeMaterialDocument({ ...createDefaultMaterialDocument("T", "text"), blendMode: "multiply" }).blendMode).toBe("translucent");
-    expect(materialBlendModesFor("text")).toEqual(["translucent", "additive"]);
+    const text = (blendMode: string) => normalizeMaterialDocument({ ...createDefaultMaterialDocument("T", "text"), blendMode } as never).blendMode;
+    expect(text("multiply")).toBe("multiply");
+    expect(text("additive")).toBe("additive");
+    // Text always blends: a mode it does not offer reads as Translucent.
+    expect(text("opaque")).toBe("translucent");
+    expect(text("masked")).toBe("translucent");
+    expect(materialBlendModesFor("text")).toEqual(["translucent", "additive", "multiply"]);
     expect(materialBlendModesFor("particle")).toEqual([]);
     expect(materialBlendModesFor("postProcess")).toEqual([]);
   });

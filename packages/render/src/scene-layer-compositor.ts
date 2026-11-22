@@ -47,6 +47,7 @@ import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+import { beginPremultipliedLayerContent, endPremultipliedLayerContent, setTargetedLayerScene } from "./layer-composite";
 import { createDepthTextureTarget } from "./depth-texture-target";
 import { isPostProcessPanelResult, POST_PROCESS_PANEL_ENTRY_ID, ScenePostProcessPanels, type PostProcessPanelView } from "./post-process-panels";
 import type { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
@@ -749,7 +750,10 @@ export class SceneLayerCompositor {
       draw(record.layerId, () => {
         record.scene.autoClear = !cleared;
         record.scene.autoClearDepthAndStencil = !cleared || this.depthClears;
-        const result = this.renderLayer(record, this.validates(presentingLayers, record.layerId));
+        // The shared target holds premultiplied colour and coverage, which the blit composites as such.
+        beginPremultipliedLayerContent(this.engine);
+        let result: ReturnType<SceneRenderCoordinator["render"]>;
+        try { result = this.renderLayer(record, this.validates(presentingLayers, record.layerId)); } finally { endPremultipliedLayerContent(this.engine); }
         if (!result.rendered) {
           failed = true;
           return false;
@@ -1238,6 +1242,8 @@ export class SceneLayerCompositor {
     else {
       layer.scene.autoClear = false;
       layer.scene.autoClearDepthAndStencil = true;
+      // Straight over the world again: its Multiply visuals multiply by their colour (`layerMultiplyAlphaMode`).
+      setTargetedLayerScene(layer.scene, false);
     }
   }
 
@@ -1279,6 +1285,8 @@ export class SceneLayerCompositor {
     view.hasAlpha = true;
     layer.view = view;
     layer.camera.outputRenderTarget = view;
+    // Before any of its Multiply visuals draws: they darken the shared target by their grey from now on.
+    setTargetedLayerScene(layer.scene, true);
   }
 
   private createBlitScene(texture: RenderTargetTexture): Scene {
@@ -1289,10 +1297,12 @@ export class SceneLayerCompositor {
     blitScene.lightsEnabled = false;
     fullScreenCamera("sceneLayerBlitCamera", blitScene);
     const plane = MeshBuilder.CreatePlane("sceneLayerBlitPlane", { size: 2 }, blitScene);
-    // The passes' colour over the world, blended by its alpha.
-    setUnlitMaterial(plane, SCENE_LAYER_BLIT, {
+    // The passes' premultiplied colour over the world, which shows through by one minus its coverage. The held
+    // composite redraws this Scene, so it composites the same way. Only this Scene uses this instance.
+    const blit = setUnlitMaterial(plane, SCENE_LAYER_BLIT, {
       texture, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
     });
+    blit.alphaMode = Constants.ALPHA_PREMULTIPLIED;
     return blitScene;
   }
 

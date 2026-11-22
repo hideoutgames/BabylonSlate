@@ -353,7 +353,19 @@ describe("Material details panel", () => {
     expect(screen.queryByTestId("property-blendMode")).toBeNull();
   });
 
-  it("shows only Domain and Blend Mode for a User Interface Material, blending Translucent or Additive", async () => {
+  it("offers a Text Material Translucent, Additive and Multiply, and commits Multiply", async () => {
+    harness.content = createDefaultMaterialDocument("Ink", "text") as unknown as Record<string, unknown>;
+    render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.queryByTestId("property-shadingModel")).toBeNull();
+    fireEvent.click(screen.getByTestId("property-blendMode"));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Translucent", "Additive", "Multiply"]);
+    const multiply = screen.getByRole("option", { name: "Multiply" });
+    fireEvent.pointerDown(multiply, { pointerType: "mouse" });
+    fireEvent.click(multiply);
+    expect(lastCommit().blendMode).toBe("multiply");
+  });
+
+  it("shows only Domain and Blend Mode for a User Interface Material, blending Translucent, Additive or Multiply", async () => {
     harness.content = createDefaultMaterialDocument("Badge", "ui") as unknown as Record<string, unknown>;
     render(<MaterialDetailsPanel {...panelProps} />);
     const rows = [...screen.getByTestId("material-settings").querySelectorAll("[data-testid^='property-']")]
@@ -364,7 +376,7 @@ describe("Material details panel", () => {
     expect(screen.getByTestId("property-domain").textContent).toContain("User Interface");
     fireEvent.click(screen.getByTestId("property-blendMode"));
     const additive = await screen.findByRole("option", { name: "Additive" });
-    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Translucent", "Additive"]);
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Translucent", "Additive", "Multiply"]);
     fireEvent.pointerDown(additive, { pointerType: "mouse" });
     fireEvent.click(additive);
     expect(lastCommit().blendMode).toBe("additive");
