@@ -23,6 +23,11 @@ if (!existsSync(nodePreviewsFile)) {
 }
 const nodePreviews = JSON.parse(readFileSync(nodePreviewsFile, "utf8")) as NodePreviews;
 
+/** Where the published site lives (GitHub Pages); sitemap and share links name it whatever base this build uses. */
+const SITE_URL = "https://hideoutgames.github.io/BabylonSlate/docs/";
+const SITE_TITLE = "Haptic";
+const SITE_DESCRIPTION = "Documentation for Haptic, the portable game engine.";
+
 export default defineConfig({
   srcDir: path.resolve(repoRoot, "docs"),
   outDir: path.resolve(appRoot, ".vitepress/dist"),
@@ -32,13 +37,31 @@ export default defineConfig({
   // Keep the page map out of every HTML file; the site has about a thousand pages.
   metaChunk: true,
   ignoreDeadLinks: false,
-  title: "Haptic",
-  description: "Documentation for Haptic, the portable game engine.",
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
   head: [
     ["link", { rel: "icon", type: "image/png", href: `${base}${docsBrand.favicon.replace(/^\//, "")}` }],
     ["link", { rel: "icon", href: `${base}${docsBrand.faviconIco.replace(/^\//, "")}`, sizes: "any" }],
     ["link", { rel: "apple-touch-icon", href: `${base}${docsBrand.appleTouchIcon.replace(/^\//, "")}` }],
+    ["meta", { property: "og:site_name", content: SITE_TITLE }],
+    ["meta", { property: "og:type", content: "website" }],
+    ["meta", { property: "og:image", content: new URL(docsBrand.favicon.replace(/^\//, ""), SITE_URL).href }],
+    ["meta", { name: "twitter:card", content: "summary" }],
   ],
+  // Each page's share title, description and address.
+  transformHead({ pageData, title, description }) {
+    const page = pageData.relativePath.replace(/(^|\/)index\.md$/, "$1").replace(/\.md$/, "");
+    const url = new URL(page, SITE_URL).href;
+    return [
+      ["link", { rel: "canonical", href: url }],
+      ["meta", { property: "og:url", content: url }],
+      ["meta", { property: "og:title", content: title }],
+      ["meta", { property: "og:description", content: description }],
+      ["meta", { name: "twitter:title", content: title }],
+      ["meta", { name: "twitter:description", content: description }],
+    ];
+  },
+  sitemap: { hostname: SITE_URL },
   themeConfig: {
     logo: docsBrand.navLogo,
     siteTitle: false,
@@ -58,7 +81,17 @@ export default defineConfig({
       },
     ],
     sidebar: docsSidebar(),
-    search: { provider: "local" },
+    search: {
+      provider: "local",
+      options: {
+        // VitePress's default render, with node pages leaving their drawn node out of the index.
+        _render(src, env, md) {
+          (env as typeof env & { hapticSearchIndex?: boolean }).hapticSearchIndex = true;
+          const html = md.render(src, env);
+          return env.frontmatter?.search === false ? "" : html;
+        },
+      },
+    },
     outline: { level: [2, 3], label: "On this page" },
     docFooter: { prev: false, next: false },
     socialLinks: [

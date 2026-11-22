@@ -10,7 +10,7 @@ pnpm dev                 # editor dev server, localhost:5173 only
 pnpm dev --host          # also expose it on the local network (opt-in)
 pnpm docs:dev            # docs site from docs/
 pnpm test <files>        # focused unit tests (always name files; see testing.md)
-pnpm build:pages         # editor (test mode) + docs site, as deployed to GitHub Pages
+pnpm build:pages         # production editor + docs site, as deployed to GitHub Pages
 ```
 
 `pnpm dev` first bundles the player (`vite build`, with the player build's own checks), which the dev server serves at `/player/` for Preview Build and Export, and does not type-check it: the IDE, `pnpm typecheck --filter player` and the CI typecheck report type errors.
@@ -20,7 +20,8 @@ Local verification policy and the full command list: [testing.md](testing.md).
 ## Pages preview
 
 - Pushes to `main` deploy the editor to `https://hideoutgames.github.io/BabylonSlate/` and the docs site to `/BabylonSlate/docs/` (`.github/workflows/preview.yml`).
-- The Pages build runs in test mode (`VITE_TEST_MODE`): no folder prompts, Create Project prefills TestProject. `?test=1` behaves the same.
+- The Pages build is the production editor (`VITE_TEST_MODE=false`): it has no test-mode storage or test hooks and ignores `?test=1`. Test mode (no folder prompts, Create Project prefills TestProject) is for the dev server (`?test=1`) and Playwright builds.
+- The docs site writes `sitemap.xml` and each page's canonical, OpenGraph and Twitter tags with its Pages URL (`SITE_URL` in `apps/docs/.vitepress/config.ts`), whatever base a build uses. It has no `robots.txt`: crawlers read one only at the host root, which a project Pages site cannot serve.
 - Pages source must stay **GitHub Actions**. Switching it to "Deploy from a `/docs` folder" would replace the editor with Jekyll-rendered Markdown.
 - If the Preview workflow fails with a 404 deployment error, Pages is not enabled: Settings → Pages → Source: GitHub Actions, then re-run Preview.
 
@@ -34,7 +35,7 @@ A plain-HTTP LAN origin is not a secure context: service workers and the cross-o
 
 ## Manual iPad checklist (about 5 minutes)
 
-1. Homepage in test mode; Create Project prefills TestProject.
+1. Homepage in test mode (dev server with `?test=1`); Create Project prefills TestProject.
 2. Toolbar: Save All, Undo/Redo, Play, Windows, Focus, Search, Settings.
 3. Scene viewport (2D/3D toggle) and graph document tabs.
 4. Content Browser lists project assets.

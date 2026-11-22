@@ -41,6 +41,6 @@ describe("mobile derived data", () => {
   it("leaves user libraries in the projects tier", async () => {
     host.platform = "ios";
     await createTemplateStorage("__haptic_templates__");
-    expect(Filesystem.mkdir).toHaveBeenCalledWith({ path: "BabylonSlate/projects/__haptic_templates__", directory: "DOCUMENTS", recursive: true });
+    expect(Filesystem.mkdir).toHaveBeenCalledWith({ path: "Projects/__haptic_templates__", directory: "DOCUMENTS", recursive: true });
   });
 });

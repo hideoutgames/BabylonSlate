@@ -224,7 +224,8 @@ export function bootInProcessPlay(inProcess: RuntimeDriver, ctx: {
     resume: () => inProcess.resume(),
   });
   if (scripts.length > 0) {
-    boot.queueScripts(inProcess, scripts, []);
+    // The coordinator reports a failed load and holds Play until the load settles.
+    void boot.queueScripts(inProcess, scripts, []);
   }
   for (const entry of animGraphs ?? []) {
     const document = parseAnimGraphDocument(entry.document);

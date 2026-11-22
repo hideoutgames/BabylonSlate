@@ -102,7 +102,7 @@ for (const expected of [
 const publicDir = join(androidDir, "dist/public");
 await rm(publicDir, { recursive: true, force: true });
 await mkdir(publicDir, { recursive: true });
-const apkName = `BabylonSlate-${manifest.packageVersion}-android.apk`;
+const apkName = `Haptic-${manifest.packageVersion}-android.apk`;
 const apkBytes = await readFile(apk);
 await writeFile(join(publicDir, apkName), apkBytes);
 await writeFile(join(publicDir, "build-manifest.json"), JSON.stringify(manifest, null, 2) + "\n");

@@ -1,5 +1,5 @@
 appId: no.hideout.babylonslate
-productName: BabylonSlate
+productName: Haptic
 electronVersion: 44.9.3
 directories:
   app: dist/app
@@ -22,7 +22,7 @@ publish:
   repo: BabylonSlate
   channel: latest
   releaseType: release
-artifactName: BabylonSlate-${version}-${arch}.${ext}
+artifactName: Haptic-${version}-${arch}.${ext}
 win:
   target:
     - target: nsis
@@ -50,9 +50,9 @@ dmg:
 linux:
   target:
     - { target: AppImage, arch: [x64] }
-  artifactName: BabylonSlate-${version}-x64.${ext}
+  artifactName: Haptic-${version}-x64.${ext}
   category: Development
-  executableName: babylonslate
+  executableName: haptic
   maintainer: Hideout Games
-  synopsis: BabylonSlate editor
+  synopsis: Haptic editor
   syncDesktopName: true

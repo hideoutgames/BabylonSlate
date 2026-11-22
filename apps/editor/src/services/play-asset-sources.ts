@@ -7,7 +7,7 @@ import {
   AssetFormatVersionError, AssetLoadError, isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
   collectFoliageChunksForPlay,
   collectLandscapeChunksForPlay,
-  compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID,
+  compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, gltfGeometryDecodersReady, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID,
   normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload, normalizeSkeletonPayload, withSkeletonSockets,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset, sceneLayerPostProcessAssetGuids,
@@ -196,7 +196,8 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
   };
   const prefetch = (guids: readonly string[]) => {
     // The stack pops from the end, so the last name is read first.
-    for (let index = guids.length - 1; index >= 0; index--) if (!resolved(guids[index]!)) startRead(guids[index]!);
+    // A started read is kept in `reads` with its failure already handled; the walk awaits it when it gets there.
+    for (let index = guids.length - 1; index >= 0; index--) if (!resolved(guids[index]!)) void startRead(guids[index]!);
   };
   try {
     prefetch(pending);
@@ -495,6 +496,8 @@ async function acquirePlayAssetSourcesAttempt(
     key: `model-cpu:collision-v2:${host.documentOverrides?.get(guid)?.cacheKey ?? "saved"}`,
     estimate: { sourceBytes: 0, decodedBytes: source.byteLength, temporaryBytes: source.byteLength * 3 },
     load: async (_asset, loadSignal) => {
+      // The cook decodes meshopt geometry synchronously once the decoder has loaded.
+      await gltfGeometryDecodersReady();
       loadSignal.throwIfAborted();
       const mesh = cookComplexCollisionMesh(source, model);
       return { value: mesh, sourceBytes: 0, decodedBytes: mesh ? collisionTriangleMeshBytes(mesh) : 0 };

@@ -1,7 +1,7 @@
 import type { CollisionTriangleMesh } from "@haptic/core";
 import { newAssetGuid } from "./guid";
 import { convexHull3d, type HullVec3 } from "./convex-hull";
-import { extractGltfPositions, type GltfTriangles } from "./glb-geometry";
+import { readGltfPositionBounds, readGltfTriangles, type GltfBounds, type GltfTriangles } from "./glb-geometry";
 
 export type ModelSimpleColliderKind =
   | "box"
@@ -257,40 +257,58 @@ export function uniqueSimpleColliderName(
   return `${base} ${index}`;
 }
 
+/**
+ * The Generated Collision of a glTF or GLB file: the convex hull of its rest-pose triangles (Import Scale baked), or,
+ * when its geometry cannot be read (Draco, malformed), the box its declared POSITION bounds give
+ * ({@link cookGeneratedCollisionFromTriangles}).
+ */
 export function cookGeneratedCollisionFromGltf(
   bytes: Uint8Array,
   options?: { importScale?: number; id?: string; name?: string },
 ): ModelSimpleCollider {
-  // Babylon's glTF loader converts to our left-handed model space with a
-  // Y half-turn and negative Z scale (together an X reflection). Apply it
-  // after node transforms, before cooking, so saved hulls match loaded models.
-  const points = extractGltfPositions(bytes, options?.importScale ?? 1).map(
-    ({ x, y, z }) => ({ x: -x, y, z }),
-  );
-  return generateSimpleCollisionFromPoints(points, {
+  const importScale = options?.importScale ?? 1;
+  const { triangles, problem } = readGltfTriangles(bytes, importScale);
+  return cookGeneratedCollisionFromTriangles(triangles, {
     id: options?.id,
-    name: options?.name ?? SIMPLE_COLLIDER_KIND_LABELS.generated,
+    name: options?.name,
+    placeholderBounds: problem ? readGltfPositionBounds(bytes, importScale) : null,
   });
 }
 
 /**
- * {@link cookGeneratedCollisionFromGltf} from rest-pose triangles already read
- * with `readGltfTriangles` (Import Scale baked), so an importer that also
- * bakes an occluder reads the model's geometry once.
+ * {@link cookGeneratedCollisionFromGltf} from rest-pose triangles already read with `readGltfTriangles` (Import Scale
+ * baked), so an importer that also bakes an occluder reads the model's geometry once. Without triangles the collider
+ * is a placeholder box: over `placeholderBounds` (`readGltfPositionBounds`, which a caller passes only when the
+ * geometry read reported a problem), else 1 m at the origin.
  */
 export function cookGeneratedCollisionFromTriangles(
   triangles: GltfTriangles | null,
-  options?: { id?: string; name?: string },
+  options?: { id?: string; name?: string; placeholderBounds?: GltfBounds | null },
 ): ModelSimpleCollider {
+  // Babylon's glTF loader converts to our left-handed model space with a
+  // Y half-turn and negative Z scale (together an X reflection). Apply it
+  // after node transforms, before cooking, so saved hulls match loaded models.
   const positions = triangles?.positions ?? [];
+  const name = options?.name ?? SIMPLE_COLLIDER_KIND_LABELS.generated;
+  const bounds = options?.placeholderBounds;
+  if (positions.length === 0 && bounds) {
+    const { min, max } = bounds;
+    return {
+      ...createDefaultSimpleCollider("box", { id: options?.id, name }),
+      // The X mirror as for the hull points; `0 -` keeps a centred box at +0.
+      position: [0 - (min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2],
+      halfExtents: {
+        x: Math.max(0.01, (max[0] - min[0]) / 2),
+        y: Math.max(0.01, (max[1] - min[1]) / 2),
+        z: Math.max(0.01, (max[2] - min[2]) / 2),
+      },
+    };
+  }
   const points: HullVec3[] = [];
   for (let index = 0; index + 2 < positions.length; index += 3) {
     points.push({ x: -positions[index]!, y: positions[index + 1]!, z: positions[index + 2]! });
   }
-  return generateSimpleCollisionFromPoints(points, {
-    id: options?.id,
-    name: options?.name ?? SIMPLE_COLLIDER_KIND_LABELS.generated,
-  });
+  return generateSimpleCollisionFromPoints(points, { id: options?.id, name });
 }
 
 function coneConvexPoints(

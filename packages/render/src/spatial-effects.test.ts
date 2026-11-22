@@ -40,8 +40,9 @@ function spatialChain(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, mode = Ca
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   return {
     engine,
-    build: (failure?: EffectCompileFailure, mergedMarchSize?: { width: number; height: number }) => {
-      const stages = createSpatialStages(scene, camera, sceneRenderingSettings(scene).effectsPlan!, 64, 64, failure, mergedMarchSize);
+    build: (failure?: EffectCompileFailure, mergedMarchSize?: { width: number; height: number }, pairBlurs = false) => {
+      const stages = createSpatialStages(scene, camera, sceneRenderingSettings(scene).effectsPlan!, 64, 64, failure, mergedMarchSize,
+        pairBlurs);
       disposers.push(() => { for (const stage of stages) stage.wrapper?.dispose(); });
       return stages;
     },
@@ -206,6 +207,96 @@ it.each([
   expect(reads).toEqual({
     aoSampler: "Scene Ambient Occlusion Blur Y", reflectionSampler: "Scene Reflections Blur Y", fogSampler: "Scene Volumetric Lighting",
   });
+});
+
+/** Each stage's name, own Effect's name (or how it draws), attachments and reads, by stage name. */
+function structure(stages: SpatialStage[]) {
+  return stages.map((stage) => [
+    stage.name, stage.wrapper?.name ?? (stage.paired ? "paired" : "march"),
+    (stage.attachments ?? []).map((index) => stages[index]!.name),
+    Object.fromEntries(Object.entries(stage.reads ?? {}).map(([sampler, index]) => [sampler, stages[index]!.name])),
+  ]);
+}
+
+const SEPARATE_BLURS = [
+  ["Scene Ambient Occlusion", "Scene Ambient Occlusion", [], {}],
+  ["Scene Ambient Occlusion Blur X", "Scene Ambient Occlusion Blur X", [], {}],
+  ["Scene Ambient Occlusion Blur Y", "Scene Ambient Occlusion Blur Y", [], {}],
+  ["Scene Reflections", "Scene Reflections", [], {}],
+  ["Scene Reflections Blur X", "Scene Reflections Blur X", [], {}],
+  ["Scene Reflections Blur Y", "Scene Reflections Blur Y", [], {}],
+];
+
+it("draws each axis's occlusion and reflection blurs in one pass once paired, keeping every stage, target and reader", () => {
+  const separate = spatialChain({ ...OCCLUSION, ...REFLECTIONS, ...FOG }).build();
+  const paired = spatialChain({ ...OCCLUSION, ...REFLECTIONS, ...FOG }).build(undefined, undefined, true);
+  expect(structure(separate).slice(0, 6)).toEqual(SEPARATE_BLURS);
+  // The same stages in the same order: each reflection blur's pass also writes its axis's occlusion blur's target, and
+  // reads that blur's input (the march, then the X blur); the trace runs first.
+  expect(structure(paired).slice(0, 6)).toEqual([
+    ["Scene Ambient Occlusion", "Scene Ambient Occlusion", [], {}],
+    ["Scene Ambient Occlusion Blur X", "paired", [], {}],
+    ["Scene Ambient Occlusion Blur Y", "paired", [], {}],
+    ["Scene Reflections", "Scene Reflections", [], {}],
+    ["Scene Reflections Blur X", "Paired blurs X", ["Scene Ambient Occlusion Blur X"], { hapticOcclusionBlurSampler: "Scene Ambient Occlusion" }],
+    ["Scene Reflections Blur Y", "Paired blurs Y", ["Scene Ambient Occlusion Blur Y"], { hapticOcclusionBlurSampler: "Scene Ambient Occlusion Blur X" }],
+  ]);
+  expect(structure(paired).slice(6)).toEqual(structure(separate).slice(6));
+  expect(paired.map((stage) => [stage.scale, stage.format])).toEqual(separate.map((stage) => [stage.scale, stage.format]));
+  // The paired pass reads the view depth for the occlusion blur.
+  expect(paired[named(paired, "Scene Reflections Blur X")]!.geometry).toBe(true);
+});
+
+it("binds in the paired pass the occlusion step and the reflection offset each separate pass binds", () => {
+  const separate = spatialChain({ ...OCCLUSION, ...REFLECTIONS }).build();
+  const paired = spatialChain({ ...OCCLUSION, ...REFLECTIONS }).build(undefined, undefined, true);
+  for (const axis of ["X", "Y"]) {
+    const calls = (bind: (effect: never) => void) => {
+      const values: Record<string, unknown[]> = {};
+      bind({ setFloat2: (name: string, ...rest: unknown[]) => { values[name] = rest; } } as never);
+      return values;
+    };
+    const expected = {
+      ...calls((effect) => separate[named(separate, `Scene Ambient Occlusion Blur ${axis}`)]!.bind(effect)),
+      // Babylon's own blur binds its offset in its wrapper's bind.
+      ...calls((effect) => {
+        const wrapper = separate[named(separate, `Scene Reflections Blur ${axis}`)]!.wrapper!;
+        const real = wrapper.drawWrapper.effect!;
+        const set = vi.spyOn(real, "setFloat2").mockImplementation((name: string, x: number, y: number) =>
+          (effect as { setFloat2(name: string, x: number, y: number): void }).setFloat2(name, x, y) as never);
+        wrapper.bind();
+        set.mockRestore();
+      }),
+    };
+    delete expected.scale;
+    expect(calls((effect) => paired[named(paired, `Scene Reflections Blur ${axis}`)]!.bind(effect))).toEqual(expected);
+  }
+});
+
+it.each([
+  ["occlusion alone", OCCLUSION],
+  ["reflections alone", REFLECTIONS],
+  ["targets of two sizes", { ...REFLECTIONS, ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, resolutionScale: 1 } }],
+] as const)("keeps each blur in a pass of its own with %s", (_name, effects) => {
+  const separate = spatialChain(effects).build();
+  const paired = spatialChain(effects).build(undefined, undefined, true);
+  expect(structure(paired)).toEqual(structure(separate));
+  expect(paired.some((stage) => stage.paired || stage.attachments)).toBe(false);
+});
+
+it("declares in the paired blur program exactly the uniforms and samplers its Effect binds", () => {
+  const stages = spatialChain({ ...OCCLUSION, ...REFLECTIONS }).build(undefined, undefined, true);
+  const wrapper = stages[named(stages, "Scene Reflections Blur X")]!.wrapper!;
+  const uniforms = wrapper.options.uniforms.filter((name) => name !== "scale").sort();
+  const samplers = wrapper.options.samplers.sort();
+  const fragment = ShaderStore.ShadersStore[`${wrapper.options.fragmentShader}FragmentShader`]!;
+  const glsl = [...fragment.matchAll(/uniform\s+(?:highp\s+)?(\w+)\s+(\w+)/g)];
+  expect(glsl.filter(([, type]) => !type!.startsWith("sampler")).map(([, , name]) => name).sort()).toEqual(uniforms);
+  // Babylon adds the source, `textureSampler`, which the reflection blur reads.
+  expect(glsl.filter(([, type]) => type!.startsWith("sampler")).map(([, , name]) => name).sort()).toEqual(samplers);
+  expect(samplers).toEqual(["depthSampler", "hapticOcclusionBlurSampler", "textureSampler"]);
+  // Both axes draw one program.
+  expect(stages[named(stages, "Scene Reflections Blur Y")]!.wrapper!.effect).toBe(wrapper.effect);
 });
 
 it("declares in the merged march program exactly the uniforms and samplers its Effect binds, with one end per march and no return", () => {

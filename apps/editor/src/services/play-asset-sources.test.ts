@@ -17,6 +17,7 @@ import {
   type ChunkInput,
 } from "@haptic/assets";
 import { encodeHasset } from "@haptic/assets/hasset";
+import { meshoptBoxGlb } from "@haptic/assets/test-support/meshopt-gltf";
 import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
 import type { OpenDocument } from "./document-service";
 import { PlayRequiredAssetError } from "./play-asset-problems";
@@ -820,6 +821,38 @@ describe("Play source ownership", () => {
     expect(await prepared.cookComplexCollision("not-prepared")).toBeNull();
     prepared.release();
     expect(await prepared.cookComplexCollision("model")).toBeNull();
+    loading.dispose();
+  });
+
+  it("cooks Complex Collision for a meshopt-compressed Model, waiting for the decoder itself", async () => {
+    // Nothing in this file loads the meshopt decoder: a cook that did not wait would report no mesh.
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const scene = new TextEncoder().encode(JSON.stringify({ name: "Scene", actors: [{
+      id: "crate", name: "Crate", components: [{ id: "mesh", classId: "MeshComponent", properties: { assetGuid: "model", collisionMode: "complex" } }],
+    }] }));
+    await storage.writeBinary("assets/scene.hasset", await encodeHasset({
+      header: { guid: "scene", name: "scene", type: "Scene", version: SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin", payload: {},
+        dependencies: ["model"], requiredDependencies: ["model"], dependencyMetadataVersion: 1 },
+      chunks: [{ id: "document", kind: "document", mime: "application/json", data: scene }],
+    }));
+    await storage.writeBinary("assets/model.hasset", await encodeHasset({
+      header: { guid: "model", name: "model", type: "Model", version: 1, engineVersion: "0.0.0", mode: "thin", payload: {},
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1 },
+      chunks: [{ id: "source", kind: "model", mime: "model/gltf-binary", data: await meshoptBoxGlb("required") }],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "play" });
+    const prepared = await acquirePlayAssetSources({
+      registry, project: createEmptyProject("Play"), createScope: owner => loading.createScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }),
+    }, ["scene"], { consumer: "Scene", signal: new AbortController().signal });
+    const mesh = prepared.content.complexMeshes.get("model");
+    expect(Array.from(mesh?.positions ?? []).map(Math.abs)).toEqual(new Array(24).fill(0.5));
+    expect(mesh?.indices).toHaveLength(36);
+    prepared.release();
     loading.dispose();
   });
 

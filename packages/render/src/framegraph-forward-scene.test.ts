@@ -2468,6 +2468,55 @@ it("draws each march in a pass of its own by default, merges them with worlddebu
   graph.dispose();
 });
 
+// The paired blur passes (`paired-blurs.ts`): a temporary measurement switch, `worlddebug pairedblurs on`, off by default.
+const BLURS = {
+  ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+  reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+};
+const blurTasks = (names: string[]) =>
+  names.filter((name) => /^(Scene Ambient Occlusion|Scene Reflections)( Blur [XY])?$|^Paired blurs [XY]$|^Half-resolution marches$/.test(name));
+
+it("draws each blur in a pass of its own by default, pairs each axis's with worlddebug pairedblurs on, rebuilding the graph, and separates them again once off", async () => {
+  const { scene, camera, graph, frame } = await screenShadowsHost(true, BLURS, undefined, HIGH);
+  const separate = graph.taskNames();
+  expect(blurTasks(separate)).toEqual([
+    "Scene Ambient Occlusion", "Scene Ambient Occlusion Blur X", "Scene Ambient Occlusion Blur Y",
+    "Scene Reflections", "Scene Reflections Blur X", "Scene Reflections Blur Y",
+  ]);
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  const builds = graph.diagnostics().graphBuilds;
+  setSceneWorldDebug(scene, "pairedblurs", true);
+  expect(worldDebugFingerprint(scene)).toBe("pairedblurs on");
+  await graph.prepare(camera);
+  expect(graph.diagnostics().graphBuilds).toBeGreaterThan(builds);
+  const paired = graph.taskNames();
+  expect(blurTasks(paired)).toEqual(["Scene Ambient Occlusion", "Scene Reflections", "Paired blurs X", "Paired blurs Y"]);
+  expect(paired).toHaveLength(separate.length - 2);
+  // Each pass writes the reflection blur's RGBA16F target and the occlusion blur's R16F target, of one size.
+  const { tasks: graphTasks, textureManager } = (graph as unknown as { graph: FrameGraph }).graph;
+  for (const name of ["Paired blurs X", "Paired blurs Y"]) {
+    const pass = graphTasks.find((task) => task.name === name)!.passes[0] as FrameGraphRenderPass;
+    const targets = (pass.renderTarget as number[]).map((handle) => textureManager.getTextureDescription(handle));
+    expect(targets.map(({ options }) => [options.types?.[0], options.formats?.[0]])).toEqual([
+      [Constants.TEXTURETYPE_HALF_FLOAT, Constants.TEXTUREFORMAT_RGBA],
+      [Constants.TEXTURETYPE_HALF_FLOAT, Constants.TEXTUREFORMAT_R],
+    ]);
+    expect(new Set(targets.map(({ size }) => JSON.stringify(size))).size).toBe(1);
+  }
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  // With the marches merged too, the occlusion march draws in the merged pass and the pairing stays.
+  setSceneWorldDebug(scene, "mergedmarches", true);
+  await graph.prepare(camera);
+  expect(blurTasks(graph.taskNames())).toEqual([MERGED_MARCHES_NAME, "Scene Reflections", "Paired blurs X", "Paired blurs Y"]);
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  setSceneWorldDebug(scene, "mergedmarches", false);
+  setSceneWorldDebug(scene, "pairedblurs", false);
+  expect(worldDebugFingerprint(scene)).toBe("none");
+  await graph.prepare(camera);
+  expect(graph.taskNames()).toEqual(separate);
+  graph.dispose();
+});
+
 it("skips the merged pass and the geometry pass while neither its fog nor its screen shadows march, without rebuilding", async () => {
   // No light casts shadows, so the screen shadows idle; the fog marches while its Fog Volume is in front of the camera.
   const { camera, graph, skipped } = await fogHost({}, undefined, (scene) => {

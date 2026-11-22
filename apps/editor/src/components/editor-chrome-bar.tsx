@@ -19,6 +19,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  BookOpenIcon,
   ChevronDownIcon,
   HammerIcon,
   LayoutGridIcon,
@@ -84,6 +85,7 @@ import {
 import { cn } from "@haptic/ui/lib/utils";
 import { usePhoneLayout } from "../shell/use-platform-layout";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
+import { openDocumentation } from "../lib/documentation";
 import { ProjectIdentityMark } from "./project-identity-mark";
 import { DocumentSwitcher } from "./document-switcher";
 import {
@@ -777,6 +779,13 @@ export function EditorChromeBar({
               onSelect: openProjectBrowser,
             },
           ] satisfies NestedMenuItem[] : []),
+          { type: "separator", id: "documentation-separator" },
+          {
+            id: "documentation",
+            label: "Documentation",
+            icon: <BookOpenIcon />,
+            onSelect: () => openDocumentation(),
+          },
           ...settingsExtensionItems,
         ],
       }], (
@@ -853,6 +862,13 @@ export function EditorChromeBar({
               </DropdownMenuGroup>
             </>
           ) : null}
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem data-testid="documentation" onClick={() => openDocumentation()}>
+              <BookOpenIcon />
+              Documentation
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
           <ExtensionDropdownMenuItems items={settingsExtensionItems} />
         </DropdownMenuContent>
       </DropdownMenu>

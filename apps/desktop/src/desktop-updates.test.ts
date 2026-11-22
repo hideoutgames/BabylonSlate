@@ -27,7 +27,7 @@ afterEach(() => vi.useRealTimers());
 
 it.each([
   ["win32", { channel: "release", packageVersion: "1.2.3-release" }, {}, true],
-  ["linux", { channel: "release", packageVersion: "1.2.3-release" }, { APPIMAGE: "/tmp/BabylonSlate.AppImage" }, true],
+  ["linux", { channel: "release", packageVersion: "1.2.3-release" }, { APPIMAGE: "/tmp/Haptic.AppImage" }, true],
   ["linux", { channel: "release", packageVersion: "1.2.3-release" }, {}, false],
   ["darwin", { channel: "release", packageVersion: "1.2.3-release", macosSigned: true }, {}, true],
   ["darwin", { channel: "release", packageVersion: "1.2.3-release", macosSigned: false }, {}, false],

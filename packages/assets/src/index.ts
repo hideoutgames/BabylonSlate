@@ -35,6 +35,7 @@ export * from "./particle-parameters";
 export * from "./model-payload";
 export * from "./convex-hull";
 export * from "./glb-geometry";
+export * from "./gltf-geometry-decoders";
 export * from "./import-limits";
 export * from "./simple-collision";
 export * from "./occluder-bake";

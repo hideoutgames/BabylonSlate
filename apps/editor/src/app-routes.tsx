@@ -15,7 +15,12 @@ import {
 import { RouteErrorBoundary } from "./components/route-error-boundary";
 
 const HomeRoute = lazy(() => import("./routes/home-route"));
-const EditorRoute = lazy(() => import("./routes/editor-route"));
+// The editor reads Model geometry synchronously (collision, regenerated colliders, root motion) and decodes meshopt
+// geometry, so opening a project also waits for the decoder; the Homepage never loads it.
+const EditorRoute = lazy(() => Promise.all([
+  import("./routes/editor-route"),
+  import("@haptic/assets/gltf-geometry-decoders").then(({ gltfGeometryDecodersReady }) => gltfGeometryDecodersReady()),
+]).then(([route]) => route));
 
 export function AppRoutes() {
   const route = useAppRoute();

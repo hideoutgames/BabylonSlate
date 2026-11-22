@@ -230,6 +230,21 @@ describe("chrome Packaging", () => {
   });
 });
 
+describe("chrome Documentation", () => {
+  it("opens the published documentation outside the editor from the Settings menu", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    render(
+      <KeybindProvider>
+        <Chrome />
+      </KeybindProvider>,
+    );
+    fireEvent.click(screen.getByTestId("settings-menu"));
+    fireEvent.click(await screen.findByTestId("documentation"));
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith("https://hideoutgames.github.io/BabylonSlate/docs/", "_blank", "noopener,noreferrer");
+  });
+});
+
 describe("chrome Play Mode", () => {
   it("turns Play into a remembered Simulate when Simulate is chosen", async () => {
     state.canPlay = true;

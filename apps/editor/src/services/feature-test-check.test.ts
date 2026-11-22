@@ -181,7 +181,7 @@ function fingerprintAfter(
   const shadowOff = new Set<string>();
   // The parts away from their default: off for most, on for those off by default.
   const worldSwitched = new Set<string>();
-  const worldDefaultOff = new Set(["mergedmarches", "materialrecords"]);
+  const worldDefaultOff = new Set(["mergedmarches", "materialrecords", "pairedblurs"]);
   for (const line of commands) {
     const [name, first, second, third] = line.split(" ");
     if (name === "quality") {
@@ -758,9 +758,9 @@ describe("breakdown settling", () => {
       mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps: compilingFor(40_000).deps, signal: new AbortController().signal,
     });
     const rows = report.scenes[0]!.play.benchmark;
-    const at = rows.findIndex((sample) => sample.label === "light material records on");
+    const at = rows.findIndex((sample) => sample.label === "heavy material records on");
     const [records, after] = [rows[at]!, rows[at + 1]!];
-    expect(after.label).toMatch(/^light baseline/);
+    expect(after.label).toMatch(/^heavy baseline/);
     for (const row of [records, after]) {
       expect(row.failed, row.label).toEqual([]);
       expect(row.unsettled).toMatchObject({ firstDraws: 0, compiling: 0 });
@@ -770,7 +770,7 @@ describe("breakdown settling", () => {
     expect(records.switched!.firstDraws).toBeGreaterThan(0);
     expect(records.switched!.ms).toBeGreaterThanOrEqual(40_000);
     // Another step keeps the 20 s bound.
-    expect(rows.find((sample) => sample.label === "light shadow passes off")!.failed)
+    expect(rows.find((sample) => sample.label === "heavy shadow passes off")!.failed)
       .toEqual(["Shaders were still first drawn or compiling after 20 s; this step's frames include them."]);
   });
 
@@ -1229,8 +1229,9 @@ describe("Profile", { timeout: 30_000 }, () => {
     const plan = featureTestProfilePlan(SESSION);
     const splits = ["sun shadow passes off", "local shadow passes off", "shadow tiles half"];
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["samplers off", "world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once", "material records on"]],
-      ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "geometry pass drawn twice", "geometry pass drawn twice, scissored", "world drawn once", "material records on"]],
+      ["light", ['possess "Profile Light Camera"'], ["samplers off", "world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once"]],
+      ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "geometry pass drawn twice", "geometry pass drawn twice, scissored", "world drawn once",
+        "merged marches on", "paired blurs on", "merged marches + paired blurs on", "material records on"]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["captures off", "mirrors environment", "world drawn once"]],
     ]);
     const step = (view: string, label: string) => plan.views.find((entry) => entry.name === view)!.steps.find((entry) => entry.label === label)!;
@@ -1249,8 +1250,17 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(plan.views.flatMap((view) => view.steps).filter((entry) => entry.adds).map((entry) => entry.label))
       .toEqual(["geometry pass drawn twice", "geometry pass drawn twice, scissored"]);
     expect(step("heavy", "geometry effects off").commands).toHaveLength(4);
-    // The Material record, last at the light and heavy views, undone to the session's own state, its settle longer.
-    expect(step("light", "material records on")).toBe(step("heavy", "material records on"));
+    // The pass-joining switches, off by default, turned on for their windows and off again after: a saving each, the
+    // pair a share of both.
+    expect(["merged marches on", "paired blurs on", "merged marches + paired blurs on"].map((label) => step("heavy", label))).toMatchObject([
+      { commands: ["worlddebug mergedmarches on"], restore: ["worlddebug mergedmarches off"], fields: ["world.debug"], overlaps: true },
+      { commands: ["worlddebug pairedblurs on"], restore: ["worlddebug pairedblurs off"], fields: ["world.debug"], overlaps: true },
+      {
+        commands: ["worlddebug mergedmarches on", "worlddebug pairedblurs on"], restore: ["worlddebug mergedmarches off", "worlddebug pairedblurs off"],
+        fields: ["world.debug"], overlaps: true,
+      },
+    ]);
+    // The Material record, last at the heavy view, undone to the session's own state, its settle longer.
     expect(step("heavy", "material records on")).toMatchObject({
       commands: ["worlddebug materialrecords on"], restore: ["worlddebug materialrecords off"], fields: ["world.debug"], recompiles: true,
     });
@@ -1286,8 +1296,8 @@ describe("Profile", { timeout: 30_000 }, () => {
       "light baseline 1", "light samplers off", "light baseline 2", "light world hidden", "light baseline 3", "light world hidden",
       "light baseline 4", "light shadow passes off", "light baseline 5", "light shadow passes off", "light baseline 6",
     ]);
-    // The 78 rows the reference states: light 18 baselines and 17 steps, heavy 15 and 14, mirror 7 and 6, and the drift.
-    expect(sequence).toHaveLength(78);
+    // The 86 rows the reference states: light 16 baselines and 15 steps, heavy 21 and 20, mirror 7 and 6, and the drift.
+    expect(sequence).toHaveLength(86);
     // Only a view's first baseline moves the camera; every step sits between two baselines of its own view.
     expect(sequence.filter((entry) => entry.commands.some((line) => line.startsWith("possess"))).map((entry) => entry.label))
       .toEqual(["light baseline 1", "heavy baseline 1", "mirror baseline 1", "heavy drift"]);
