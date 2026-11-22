@@ -102,7 +102,7 @@ describe("glTF node traversal", () => {
 describe("importModel limits", () => {
   it("fails a model whose primitive declares more vertices than the cap", async () => {
     const glb = oneVertexGlb({ count: 20_000_000 });
-    await expect(importModel(glb, { fileName: "huge.glb" })).rejects.toThrow(
+    await expect(importModel(glb, { fileName: "huge.glb", existingGuids: new Set() })).rejects.toThrow(
       /vertex count of one part of mesh 0 is 20,000,000; the import limit is 16,777,216/,
     );
   });
@@ -111,6 +111,6 @@ describe("importModel limits", () => {
     const { json, bin } = splitGlbJsonBin(buildBoxGlbFixture(1))!;
     json.nodes = Array.from({ length: 50_000 }, (_, index) => (index === 49_999 ? { mesh: 0 } : { children: [index + 1] }));
     json.scenes = [{ nodes: [0] }];
-    await expect(importModel(encodeGlbJsonBin(json, bin), { fileName: "deep.glb" })).rejects.toThrow(ImportLimitError);
+    await expect(importModel(encodeGlbJsonBin(json, bin), { fileName: "deep.glb", existingGuids: new Set() })).rejects.toThrow(ImportLimitError);
   });
 });
