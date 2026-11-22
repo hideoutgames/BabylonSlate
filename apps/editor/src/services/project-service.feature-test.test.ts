@@ -365,7 +365,7 @@ describe("FeatureTest starter", () => {
     expect(materialErrors).toEqual([]);
     // Every Material domain is showcased, and the Decal domain in every Blend Mode, lit and unlit.
     expect([...new Set([...materials.values()].map((material) => material.domain))].sort())
-      .toEqual(["decal", "landscape", "particle", "postProcess", "surface", "text"]);
+      .toEqual(["decal", "landscape", "particle", "postProcess", "surface", "text", "ui"]);
     const decalMaterials = [...materials.values()].filter((material) => material.domain === "decal");
     expect([...new Set(decalMaterials.map((material) => material.blendMode))].sort())
       .toEqual(["additive", "masked", "multiply", "opaque", "translucent"]);

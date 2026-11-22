@@ -12,6 +12,7 @@ import {
 
 function materialDomainLabel(domain: MaterialDomain): string {
   if (domain === "text") return "text";
+  if (domain === "ui") return "user interface";
   if (domain === "landscape") return "landscape";
   if (domain === "postProcess") return "post-process";
   if (domain === "particle") return "particle";
@@ -21,6 +22,7 @@ function materialDomainLabel(domain: MaterialDomain): string {
 
 function materialTerminalTitle(domain: MaterialDomain): string {
   if (domain === "text") return "Text Output";
+  if (domain === "ui") return "User Interface Output";
   if (domain === "postProcess") return "Post Process Output";
   if (domain === "particle") return "Particle Output";
   if (domain === "decal") return "Decal Output";
@@ -212,7 +214,7 @@ function functionPlumbingDefinition(
 /** The output node of every Material domain. */
 /** Every domain once: a domain missing here fails to compile, so its output node cannot slip into a function. */
 const EVERY_DOMAIN: { readonly [domain in MaterialDomain]: true } = {
-  surface: true, landscape: true, text: true, postProcess: true, particle: true, decal: true,
+  surface: true, landscape: true, text: true, ui: true, postProcess: true, particle: true, decal: true,
 };
 const MATERIAL_TERMINAL_NODE_TYPES: ReadonlySet<string> = new Set(
   (Object.keys(EVERY_DOMAIN) as MaterialDomain[]).map((domain) => terminalNodeTypeFor(domain)),

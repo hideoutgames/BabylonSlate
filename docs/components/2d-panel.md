@@ -11,7 +11,7 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Pan
 | Setting | Description |
 | --- | --- |
 | Source | Texture (default) or Material. Decides which picker shows below. |
-| Texture or Material | The [Texture](../assets/texture.md) to slice, or the [Material](../assets/material.md) or Material Instance to draw. |
+| Texture or Material | The [Texture](../assets/texture.md) to slice, or the [Material](../assets/material.md) or Material Instance to draw: a [User Interface](../graphics/materials.md#user-interface-materials) Material or an Instance of one. Materials of other domains are not listed, and are not drawn if a script sets one. |
 | Margin Left, Margin Right, Margin Top, Margin Bottom | How much of each edge of the source stays unstretched, from 0 to 1. 0.5 is half of that edge. Default 0. |
 | Hit Test | Whether taps hit the panel. Ignore (default) lets them pass through. Block takes the tap and stops it. Pass Through takes it and lets it continue to what is behind. |
 
@@ -22,6 +22,7 @@ The Inspector also shows a preview of the source with the margins marked as dash
 - Scene Layers only.
 - The margins cut the source into nine parts. The corners keep their size when you resize the panel, the edges stretch along one direction, and the centre stretches both ways.
 - If the panel becomes smaller than its margins, the margins shrink to fit.
+- A Material spans the whole panel as one element, so [User Interface Input](../scripting/material/user-interface-input.md) gives the panel's own size in pixels. Use [Rounded Rectangle](../scripting/material/rounded-rectangle.md) for corners that keep their size.
 - Resize the panel with the box around the actor in the viewport. The panel is unlit.
 - The component has **Opacity** and **Tint** variables for graphs. Animate them with [Tween 2D Opacity](../scripting/class/tween-2d-opacity.md) and [Tween 2D Tint](../scripting/class/tween-2d-tint.md).
 - Add a [2D Button](2d-button.md) to the same actor to make the panel clickable.

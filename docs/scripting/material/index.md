@@ -11,6 +11,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Particle Output](particle-output.md) | Sets the colour and alpha of each particle drawn with the material. |
 | [Post Process Output](post-process-output.md) | Sets the colour of each pixel in a post-process pass. |
 | [Text Output](text-output.md) | Sets the colour of text drawn with a Text material. |
+| [User Interface Output](user-interface-output.md) | Sets the colour and opacity of a 2D element drawn with a User Interface material. |
 
 ## Input
 
@@ -27,7 +28,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Screen Size](screen-size.md) | Returns the width and height of the screen in pixels. |
 | [Screen UV](screen-uv.md) | Returns where the current pixel sits on the screen, from 0 to 1 on each axis. |
 | [Time](time.md) | Returns the elapsed time in seconds, for animating a material. |
-| [UV](uv.md) | Returns the texture coordinates of the surface, particle quad or text glyph being drawn. |
+| [UV](uv.md) | Returns the texture coordinates of the surface, particle quad, text glyph or 2D element being drawn. |
 | [Vertex Color](vertex-color.md) | Returns the vertex colour painted on the mesh, including alpha. |
 | [Vertex Normal (Local)](vertex-normal-local.md) | Returns the vertex normal in the mesh's local space, including morph target changes. |
 | [Vertex Position (Local)](vertex-position-local.md) | Returns the vertex position in the mesh's local space, including morph target changes. |
@@ -204,6 +205,16 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Landscape Height](landscape-height.md) | Returns the height of the ground at each point, as its world Y position in metres. |
 | [Landscape Paint Layers](landscape-paint-layers.md) | Returns the paint weight of each of the four landscape paint layers at each point. |
 | [Landscape Slope](landscape-slope.md) | Returns how steep the ground is, from 0 on flat ground to 1 on a vertical face. |
+
+## User Interface
+
+| Node | Description |
+| --- | --- |
+| [Ellipse](ellipse.md) | Returns masks for the ellipse that fits inside a rectangle, and the distance to its edge in pixels. |
+| [Linear Progress](linear-progress.md) | Returns a mask that fills the element in a straight line, for progress bars and health bars. |
+| [Radial Progress](radial-progress.md) | Returns a mask that fills the element like a clock hand sweeping around its centre, for cooldowns and round timers. |
+| [Rounded Rectangle](rounded-rectangle.md) | Returns masks for a rectangle with rounded corners, and the distance to its edge in pixels. |
+| [User Interface Input](user-interface-input.md) | Returns where the current pixel sits on the element being drawn and on the screen, in 0 to 1 coordinates and in pixels. |
 
 ## Functions
 

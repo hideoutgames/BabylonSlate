@@ -46,6 +46,7 @@ export const MATERIAL_DOMAIN_LABELS: Readonly<Record<MaterialDomain, string>> = 
   particle: "Particle",
   text: "Text",
   decal: "Decal",
+  ui: "User Interface",
 };
 
 type IndexedMaterialAsset = {

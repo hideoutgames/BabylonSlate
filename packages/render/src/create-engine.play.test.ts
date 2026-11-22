@@ -4344,12 +4344,12 @@ describe("Play createEngine view", () => {
     expect(handle.postProcessPassCount()).toBe(1);
   });
 
-  it("keeps overlay 2DMaterial assignMaterial as an overlay unlit compile", () => {
+  it("keeps overlay 2DMaterial assignMaterial as an overlay unlit compile of a User Interface Material", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
       sharedEngine: sharedEngine(),
       playMode: true,
-      materialDocuments: new Map([["mat-1", createDefaultMaterialDocument()]]),
+      materialDocuments: new Map([["mat-1", createDefaultMaterialDocument("Material", "ui")]]),
     });
     handles.push(handle);
     handle.applyCommand({

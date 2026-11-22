@@ -1412,27 +1412,36 @@ describe("EditorSceneSync", () => {
     expect(sync.meshForActor("a")?.material).toBe(assigned);
   });
 
-  it("binds 2DMaterialComponent.materialGuid onto the overlay plane", () => {
+  it("binds a User Interface 2DMaterialComponent.materialGuid onto the overlay plane, and leaves its look for another domain", () => {
     const { scene } = createHandle();
     const assigned = new StandardMaterial("mat-hud", scene);
+    assigned.metadata = { materialDomain: "ui" };
+    const surface = new StandardMaterial("mat-surface", scene);
+    surface.metadata = { materialDomain: "surface" };
+    let resolved: StandardMaterial = assigned;
     const sync = new EditorSceneSync(scene, undefined, {
-      resolveMaterial: (guid) => (guid === "mat-hud" ? assigned : null),
+      resolveMaterial: (guid) => (guid === "mat-hud" ? resolved : null),
     });
-    sync.apply(
-      sceneWith([
-        createActor("banner", "Banner", {
-          classId: "SceneLayerActor",
-          components: [
-            {
-              id: "mat",
-              classId: "2DMaterialComponent",
-              properties: { materialGuid: "mat-hud", hitTest: "ignore" },
-            },
-          ],
-        }),
-      ]),
-    );
+    const banner = sceneWith([
+      createActor("banner", "Banner", {
+        classId: "SceneLayerActor",
+        components: [
+          {
+            id: "mat",
+            classId: "2DMaterialComponent",
+            properties: { materialGuid: "mat-hud", hitTest: "ignore" },
+          },
+        ],
+      }),
+    ]);
+    sync.apply(banner);
     expect(sync.meshForActor("banner")?.material).toBe(assigned);
+    // The same asset edited into the Surface domain: the plane draws its white unlit fallback, never the surface.
+    resolved = surface;
+    sync.apply(structuredClone(banner));
+    const plane = sync.meshForActor("banner")!;
+    expect(isUnlitMaterial(plane.material)).toBe(true);
+    expect(unlitBinding(plane).color).toEqual([1, 1, 1]);
   });
 
   it("binds MeshComponent.materialGuid on a Prefab-shaped one-component actor", () => {

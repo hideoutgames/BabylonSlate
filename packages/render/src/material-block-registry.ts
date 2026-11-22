@@ -75,6 +75,8 @@ import type {
 } from "@haptic/shader-graph";
 import { componentCount, customGlslInterface, materialGradientStops, swizzleComponents, vectorMaskChannels, VECTOR_MASK_CHANNELS } from "@haptic/shader-graph";
 import { customGlslFunctionName } from "./material-glsl-diagnostics";
+import { UserInterfaceProgressBlock, UserInterfaceShapeBlock } from "./user-interface-blocks";
+import { ColorEncodingBlock } from "./color-encoding-block";
 
 /**
  * One lowered operation realised as Babylon blocks.
@@ -126,6 +128,8 @@ export interface MaterialPlumbing {
   uv?: NodeMaterialConnectionPoint;
   uv2?: NodeMaterialConnectionPoint;
   screenUv?: NodeMaterialConnectionPoint;
+  /** A User Interface Material's element values, made once by the first node that reads them (`userInterfaceElement`). */
+  userInterfaceElement?: { uv: NodeMaterialConnectionPoint; size: NodeMaterialConnectionPoint; position: NodeMaterialConnectionPoint };
   /** Clip-space transform vector input; connected after World Position Offset. */
   clipPosition?: NodeMaterialConnectionPoint;
   /** The Decal domain's projection (`createDecalPlumbing`). */
@@ -868,12 +872,14 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     return colorOutputs(context.name, color.outputs.color!, color.blocks);
   },
   "input.particleColor": (context) => {
-    if (!context.plumbing.particlePreview) {
-      const color = attributeInput("particle_color", NodeMaterialBlockConnectionPointTypes.Color4, "color")(context);
-      return colorOutputs(context.name, color.outputs.color!, color.blocks);
-    }
-    const block = new InputBlock(context.name); block.value = new Color4(1, 1, 1, 1);
-    return colorOutputs(context.name, block.output, [block]);
+    // The emitter's colour is a display colour: decoded to linear where it enters the graph, as every graph colour
+    // is linear; the Particle output encodes the result once. The preview's white is the same either way.
+    const source = context.plumbing.particlePreview
+      ? (() => { const block = new InputBlock(context.name); block.value = new Color4(1, 1, 1, 1); return single(block, {}, { color: block.output }); })()
+      : attributeInput("particle_color", NodeMaterialBlockConnectionPointTypes.Color4, "color")(context);
+    const linear = new ColorEncodingBlock(`${context.name}_linear`, "linear");
+    source.outputs.color!.connectTo(linear.input);
+    return colorOutputs(context.name, linear.output, [...source.blocks, linear]);
   },
   "input.time": ({ name }) => {
     const block = new GameTimeInputBlock(name);
@@ -1214,6 +1220,90 @@ function textureSampleAdapter(lod: boolean): BlockAdapter {
     return { blocks, inputs, outputs };
   };
 }
+
+/**
+ * A User Interface element's UV (the mesh's, 0 to 1 across its quad from the bottom left), its size in pixels,
+ * 1 / sqrt(dFdx(uv)² + dFdy(uv)²) per component (exact for any affine quad, turned ones included, with no per-mesh
+ * value, so a draw batch's members keep their own), and the position in pixels, UV × size. Made once per Material;
+ * the blocks are returned only to the node that made them.
+ */
+function userInterfaceElement(name: string, plumbing: MaterialPlumbing): NonNullable<MaterialPlumbing["userInterfaceElement"]> & { blocks: NodeMaterialBlock[] } {
+  if (plumbing.userInterfaceElement) return { ...plumbing.userInterfaceElement, blocks: [] };
+  const blocks: NodeMaterialBlock[] = [];
+  let uv = plumbing.uv;
+  if (!uv) {
+    const attribute = attributeVector(`${name}_elementUv`, "uv", 2);
+    blocks.push(attribute);
+    uv = attribute.output;
+  }
+  const derivative = new DerivativeBlock(`${name}_elementDerivative`);
+  const dx = new MultiplyBlock(`${name}_elementDx`);
+  const dy = new MultiplyBlock(`${name}_elementDy`);
+  const sum = new AddBlock(`${name}_elementRate`);
+  const length = new TrigonometryBlock(`${name}_elementLength`);
+  length.operation = TrigonometryBlockOperations.Sqrt;
+  const size = new ReciprocalBlock(`${name}_elementSize`);
+  const position = new MultiplyBlock(`${name}_elementPosition`);
+  uv.connectTo(derivative.input);
+  derivative.dx.connectTo(dx.left);
+  derivative.dx.connectTo(dx.right);
+  derivative.dy.connectTo(dy.left);
+  derivative.dy.connectTo(dy.right);
+  dx.output.connectTo(sum.left);
+  dy.output.connectTo(sum.right);
+  sum.output.connectTo(length.input);
+  length.output.connectTo(size.input);
+  uv.connectTo(position.left);
+  size.output.connectTo(position.right);
+  blocks.push(derivative, dx, dy, sum, length, size, position);
+  plumbing.userInterfaceElement = { uv, size: size.output, position: position.output };
+  return { ...plumbing.userInterfaceElement, blocks };
+}
+
+ADAPTERS["input.ui"] = (context) => {
+  const { name, plumbing } = context;
+  const element = userInterfaceElement(name, plumbing);
+  const screenUv = ADAPTERS["input.screenUv"]!({ ...context, name: `${name}_screenUv` });
+  const screenSize = new ScreenSizeBlock(`${name}_screenSize`);
+  const screenPosition = new FragCoordBlock(`${name}_screenPosition`);
+  return {
+    blocks: [...element.blocks, ...screenUv.blocks, screenSize, screenPosition],
+    inputs: {},
+    outputs: {
+      elementUv: element.uv, elementSize: element.size, elementPosition: element.position,
+      screenUv: screenUv.outputs.uv!, screenSize: screenSize.xy, screenPosition: screenPosition.xy,
+    },
+  };
+};
+
+/** Rounded Rectangle and Ellipse (`user-interface-blocks.ts`); an unwired Position or Size reads the element's. */
+const userInterfaceShapeAdapter = (shape: "roundedRectangle" | "ellipse"): BlockAdapter => ({ name, plumbing, operation }) => {
+  const block = new UserInterfaceShapeBlock(name, shape);
+  const blocks: NodeMaterialBlock[] = [block];
+  if (!operation.inputs.position || !operation.inputs.size) {
+    const element = userInterfaceElement(name, plumbing);
+    blocks.push(...element.blocks);
+    if (!operation.inputs.position) element.position.connectTo(block.position);
+    if (!operation.inputs.size) element.size.connectTo(block.size);
+  }
+  return {
+    blocks,
+    inputs: { position: block.position, size: block.size, border: block.border, ...(shape === "roundedRectangle" ? { radius: block.radius } : {}) },
+    outputs: { fill: block.fill, borderMask: block.borderMask, distance: block.distance },
+  };
+};
+ADAPTERS["ui.roundedRectangle"] = userInterfaceShapeAdapter("roundedRectangle");
+ADAPTERS["ui.ellipse"] = userInterfaceShapeAdapter("ellipse");
+
+/** Linear and Radial Progress (`user-interface-blocks.ts`); the compiler wires the element's UV into an unwired UV. */
+ADAPTERS["ui.linearProgress"] = ({ name }) => {
+  const block = new UserInterfaceProgressBlock(name, "linear");
+  return single(block, { uv: block.uv, progress: block.progress, direction: block.shaping }, { mask: block.mask });
+};
+ADAPTERS["ui.radialProgress"] = ({ name }) => {
+  const block = new UserInterfaceProgressBlock(name, "radial");
+  return single(block, { uv: block.uv, progress: block.progress, startAngle: block.shaping }, { mask: block.mask });
+};
 
 ADAPTERS["texture.sample"] = textureSampleAdapter(false);
 ADAPTERS["texture.sampleLod"] = textureSampleAdapter(true);

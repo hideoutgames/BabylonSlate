@@ -78,6 +78,7 @@ describe("scene-layer nodes", () => {
     ["scene.unregisterPostProcess", "material", "surface", "Needs a Post Process Material; this is a Surface Material."],
     ["decals.spawn", "material", "surface", "Needs a Decal Material; this is a Surface Material."],
     ["material.setMaterialInstance", "instance", "decal", "Needs a Surface Material; this is a Decal Material."],
+    ["material.setMaterialInstance", "instance", "ui", "Needs a Surface Material; this is a User Interface Material."],
   ])(
     "errors when %s's %s pin holds a %s Material",
     (typeId, pinId, domain, message) => {

@@ -77,8 +77,7 @@ test("a Scene Layer keeps its device-pixel size and sharpness at the Low and Hig
   const layerGuid = "00000000-0000-4000-8000-000000000041";
   const materialGuid = "00000000-0000-4000-8000-000000000042";
   const classGuid = "00000000-0000-4000-8000-000000000002";
-  const material = createDefaultMaterialDocument("Panel White");
-  material.shadingModel = "unlit";
+  const material = createDefaultMaterialDocument("Panel White", "ui");
   material.nodes[0]!.properties.value = [1, 1, 1];
   files.set("assets/PanelWhite.material.hasset", await encodeAssetDocument({
     guid: materialGuid, type: "Material", name: "Panel White", version: versions.currentVersion("Material"), payload: material as unknown as Record<string, unknown>,
