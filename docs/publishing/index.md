@@ -21,6 +21,8 @@ The web ZIP has `index.html` at its root. Upload it to itch.io as an HTML game, 
 
 If packaging fails, the reason appears in the **Packaging** window.
 
+Packaging finishes and saves even when the export has warnings, such as a Model whose complex collision can't be built or a file count above **File Count Warn**. The **Packaging** window then lists them under **Packaged With N Warnings**, and each one also goes to the **Output Log**.
+
 ## App icon
 
 Set **Project Settings > Export > App Identity > App Icon** to a Texture, and every package uses it as its icon. Without one, each platform keeps its default icon.
@@ -146,7 +148,7 @@ These settings are in **Project Settings > Export**, under **Game Packaging**, *
 | Setting | Description |
 | --- | --- |
 | Bundle Debugger | Includes debugging tools and Development Only nodes. Off by default. |
-| File Count Warn | Warning threshold for the number of files in the export. Default 800. Preview Build logs a warning above it. |
+| File Count Warn | Warning threshold for the number of files in the export. Default 800. Packaging and Preview Build report a warning above it. |
 | File Count Fail | File count above which the export fails. Default 1000. |
 | App ID | Identifies a native app to the operating system and app stores, such as `com.studio.game`: two or more parts of letters and digits, each starting with a letter. Keep it once you publish. |
 | Display Name | The name under the app's icon. The project name when empty. |

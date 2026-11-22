@@ -10,8 +10,9 @@ import { AppSettingsProvider } from "../context/app-settings-context";
 import type { GameShellManifest } from "../lib/game-shells";
 import { PackagingDialog } from "./packaging-dialog";
 
-const { exportGameArtifact, zipExportedGame, project, shells } = vi.hoisted(() => ({
+const { exportGameArtifact, zipExportedGame, appendLog, project, shells } = vi.hoisted(() => ({
   exportGameArtifact: vi.fn(),
+  appendLog: vi.fn(),
   zipExportedGame: vi.fn(),
   project: { startupSceneGuid: "scene-main" as string | null, iconTextureGuid: null as string | null },
   shells: { manifest: null as GameShellManifest | null, loadDesktopShell: vi.fn() },
@@ -27,6 +28,10 @@ vi.mock("../lib/game-shells", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/game-shells")>()),
   loadGameShellManifest: async () => shells.manifest,
   loadDesktopShell: shells.loadDesktopShell,
+}));
+
+vi.mock("../context/play-context", () => ({
+  usePlayDiagnosticsActions: () => ({ appendLog }),
 }));
 
 /** A build that carries Windows and Linux players. */
@@ -64,6 +69,7 @@ afterEach(() => {
   cleanup();
   exportGameArtifact.mockReset();
   zipExportedGame.mockReset();
+  appendLog.mockReset();
   project.startupSceneGuid = "scene-main";
   project.iconTextureGuid = null;
   shells.manifest = null;
@@ -91,7 +97,7 @@ function captureDownloads(): string[] {
 const summary = () => within(screen.getByTestId("packaging-summary"));
 
 it("packages the project for the web and downloads the archive named after it", async () => {
-  const artifact = { files: [] };
+  const artifact = { files: [], warnings: [] };
   exportGameArtifact.mockResolvedValue(ok(artifact));
   zipExportedGame.mockResolvedValue(new Uint8Array([1, 2, 3]));
   const downloads = captureDownloads();
@@ -112,6 +118,32 @@ it("packages the project for the web and downloads the archive named after it", 
   expect(zipExportedGame).toHaveBeenCalledWith(artifact);
   expect(downloads).toEqual(["Harbour_Run.zip"]);
   expect(screen.getByText("Game package downloaded. Check your downloads.")).toBeTruthy();
+});
+
+it("lists the export's warnings after packaging and writes each to the Output Log once", async () => {
+  const warnings = [
+    "Model SM_Rock uses Use Complex Collision, but it has no mesh. It has no collision in the game.",
+    "The game has 2400 files; packages over 2000 files load slowly on some hosts.",
+  ];
+  exportGameArtifact.mockResolvedValue(ok({ files: [], warnings }));
+  zipExportedGame.mockResolvedValue(new Uint8Array([1]));
+  captureDownloads();
+  await renderDialog();
+  expect(screen.queryByTestId("packaging-warnings")).toBeNull();
+
+  await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
+
+  const alert = within(screen.getByTestId("packaging-warnings"));
+  expect(alert.getByText("Packaged With 2 Warnings")).toBeTruthy();
+  expect(alert.getAllByRole("listitem").map((item) => item.textContent)).toEqual(warnings);
+  // Packaging still finishes and saves.
+  expect(screen.getByText("Game package downloaded. Check your downloads.")).toBeTruthy();
+  expect(appendLog.mock.calls).toEqual(warnings.map((warning) => [`Packaging warning: ${warning}`]));
+
+  exportGameArtifact.mockResolvedValue(ok({ files: [], warnings: [warnings[0]] }));
+  await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
+  expect(within(screen.getByTestId("packaging-warnings")).getByText("Packaged With 1 Warning")).toBeTruthy();
+  expect(appendLog).toHaveBeenCalledTimes(3);
 });
 
 it("shows the App Icon in each platform's shape, with the platform as a badge, or the platform mark without one", async () => {
@@ -201,7 +233,7 @@ it("packages a Windows game from the build's player and saves it named after the
   shells.manifest = SHELLS;
   const runtime = zipSync({ "electron.exe": strToU8("exe"), "resources/default_app.asar": strToU8("sample") });
   shells.loadDesktopShell.mockResolvedValue({ runtime, host: strToU8("host();") });
-  exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]) }));
+  exportGameArtifact.mockResolvedValue(ok({ warnings: [], files: new Map([["index.html", strToU8("<html>")]]) }));
   let saved: Blob | null = null;
   vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => { saved = blob as Blob; return "blob:game"; });
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
@@ -243,7 +275,7 @@ it("reports a damaged player instead of saving a package", async () => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   shells.manifest = SHELLS;
   shells.loadDesktopShell.mockRejectedValue(new Error("The Linux player in this copy of Haptic is damaged. Reload or reinstall Haptic."));
-  exportGameArtifact.mockResolvedValue(ok({ files: new Map() }));
+  exportGameArtifact.mockResolvedValue(ok({ warnings: [], files: new Map() }));
   const downloads = captureDownloads();
   await renderDialog();
   fireEvent.click(screen.getByTestId("packaging-target-linux"));
@@ -256,7 +288,7 @@ it("reports a damaged player instead of saving a package", async () => {
 it("packages a Linux game as a Debian package by default, or as a ZIP when chosen", async () => {
   shells.manifest = SHELLS;
   shells.loadDesktopShell.mockResolvedValue({ runtime: zipSync({ electron: strToU8("binary"), "chrome-sandbox": strToU8("sandbox") }), host: strToU8("host();") });
-  exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]) }));
+  exportGameArtifact.mockResolvedValue(ok({ warnings: [], files: new Map([["index.html", strToU8("<html>")]]) }));
   const saved: { name: string; type: string }[] = [];
   let blob: Blob | null = null;
   vi.spyOn(URL, "createObjectURL").mockImplementation((value) => { blob = value as Blob; return "blob:game"; });
@@ -285,7 +317,7 @@ it("packages a macOS game through the Mac desktop app with the project's identit
   shells.manifest = { ...SHELLS, shells: [...SHELLS.shells, { target: "macos-arm64", sha256: "3".repeat(64), size: 10, source: "bundled", parts: ["electron-macos-arm64.zip.000"] }] };
   const packageMac = vi.fn(async () => ({ fileName: "Harbour_Run-macOS.zip", bytes: new Uint8Array([1, 2]), notarized: false }));
   (globalThis as { haptic?: unknown }).haptic = { gameShell: { platform: "darwin", arch: "arm64", runtime: vi.fn(), macIdentities: vi.fn(async () => []), packageMac } };
-  exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]) }));
+  exportGameArtifact.mockResolvedValue(ok({ warnings: [], files: new Map([["index.html", strToU8("<html>")]]) }));
   const downloads = captureDownloads();
   try {
     await renderDialog();
@@ -309,7 +341,7 @@ it("packages a macOS game through the Mac desktop app with the project's identit
 
     // With an App Icon, the app receives it as an ICNS.
     const appIcon = appIconImages();
-    exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]), appIcon }));
+    exportGameArtifact.mockResolvedValue(ok({ warnings: [], files: new Map([["index.html", strToU8("<html>")]]), appIcon }));
     await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
     expect(packageMac).toHaveBeenLastCalledWith(expect.objectContaining({ icon: encodeIcns(appIcon) }));
   } finally {
@@ -331,7 +363,7 @@ function androidApp(status: { keystore: string | null; alias: string; problems: 
 it("packages an Android game in the desktop app in the chosen format, with the App Icon at the launcher sizes", async () => {
   const { packageAndroid } = androidApp({ keystore: null, alias: "", problems: [] });
   const appIcon = appIconImages();
-  exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]), appIcon }));
+  exportGameArtifact.mockResolvedValue(ok({ warnings: [], files: new Map([["index.html", strToU8("<html>")]]), appIcon }));
   const downloads = captureDownloads();
   try {
     await renderDialog();
@@ -383,7 +415,7 @@ function iosApp(problems: string[] = []) {
 
 it("packages an iOS game on a Mac with this Mac's team, and asks for an App Icon before an App Store package", async () => {
   const { packageIos } = iosApp();
-  exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]) }));
+  exportGameArtifact.mockResolvedValue(ok({ warnings: [], files: new Map([["index.html", strToU8("<html>")]]) }));
   const store = new MemoryAppSettingsStore();
   await store.save({ ...defaultEngineSettings(), iosSigning: { teamId: "ABCDE12345" } });
   const downloads = captureDownloads();
