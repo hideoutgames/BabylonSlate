@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { GITHUB_RELEASE_PLATFORMS } from "./contract.mjs";
-import { buildManifest, desktopManifestPlatforms } from "./metadata.mjs";
+import { buildManifest } from "./metadata.mjs";
 import { inspectAndroidToolchain } from "./android-toolchain.mjs";
 
 const declared = JSON.parse(await readFile("release/version.json", "utf8"));
@@ -24,8 +24,7 @@ const manifest = buildManifest(declared, {
   ...preflight,
   runAttempt,
   platform,
-  // A desktop package is signed only when its job provisions signing (`<PLATFORM>_SIGNING_AVAILABLE`); only macOS does today.
-  ...(desktopManifestPlatforms.includes(platform) ? { signed: process.env[`${platform.toUpperCase()}_SIGNING_AVAILABLE`] === "true" } : {}),
+  ...(platform === "macos" ? { macosSigned: process.env.MACOS_SIGNING_AVAILABLE === "true" } : {}),
   toolchains,
 });
 const contents = JSON.stringify(manifest, null, 2) + "\n";

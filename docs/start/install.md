@@ -50,7 +50,7 @@ Signing in does not sync projects. Projects stay where you saved them.
 
 ## Updates
 
-Signed desktop builds can download new releases and install them when you quit: on Windows, on Linux when you run the AppImage, and on macOS. Unsigned builds never update themselves; install each new release by hand. Turn this on or off with **Automatic Updates** in **Engine Settings > About** or in **Manage Account > Application** on the Homepage. It is on by default.
+The desktop app can download new releases and install them when you quit: on Windows, on Linux when you run the AppImage, and with signed macOS builds. Turn this on or off with **Automatic Updates** in **Engine Settings > About** or in **Manage Account > Application** on the Homepage. It is on by default.
 
 While a new release downloads, **Downloading Update** shows its progress above your name in the Homepage sidebar. When it is ready, **Restart to Update** appears there instead: choose it to install the update and reopen Haptic straight away, or keep working and it installs when you next quit. Hover over it to see the new version.
 
