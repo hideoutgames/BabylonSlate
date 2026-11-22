@@ -52,6 +52,7 @@ Windows and Linux games are the same web game in a desktop player built on Elect
 - Keep the whole folder together; the game reads its files from the `resources` folder beside the program.
 - The game's saves are stored per project in your user data folder under `Haptic Games`, so renaming the project keeps them.
 - The game window cannot open other pages. Links it opens go to the system browser.
+- Desktop games make no network requests: scripts, including **Execute JavaScript**, can load only the game's own files. Use the web package for a game that talks to a server.
 - The folder includes the licences of Electron and Chromium (`LICENSE`, `LICENSES.chromium.html`) beside `legal/THIRD-PARTY-NOTICES.txt` in `resources/game`. Keep them when you share the game.
 ### Linux formats
 
@@ -113,7 +114,7 @@ Android installs only signed apps. Without a keystore, Haptic signs with Android
 1. Make a keystore once, in Android Studio (**Build > Generate Signed App Bundle or APK**) or in a terminal: `keytool -genkeypair -keystore my-game.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000`. Keep it and its passwords safe; you sign every update with the same key.
 2. In **Engine Settings > Packaging > Android**, choose the **Keystore**, enter the **Key Alias** and the **Keystore Password**, and the **Key Password** if the key has its own.
 
-The passwords stay in this computer's secret store. For Google Play, this key is your upload key: Play signs the app players download.
+The passwords stay in this computer's secret store, encrypted by the operating system. On a computer without secure password storage, such as Linux without a keyring, Haptic keeps them only until it quits and says so under the passwords. For Google Play, this key is your upload key: Play signs the app players download.
 
 The app's ID, name, version and build number come from **Project Settings > Export > App Identity**. Android calls the build number the version code: raise it for every upload, and keep it at most 2,100,000,000.
 

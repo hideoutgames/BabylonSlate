@@ -29,6 +29,18 @@ Haptic asks only when the open project would change too. Without a project open,
 
 Rows also show **Experimental**, **Beta** and **Gameplay** badges, the version, dependencies and any errors. An extension whose dependency is missing, disabled or circular does not start.
 
+## Trust project extensions
+
+A project's own extensions are code that came with the project, for example from a repository you cloned or a folder someone sent you. Haptic does not run them until you trust the project on this computer.
+
+- When you open a project whose enabled extensions are not trusted, a banner names them. Choose **Trust Project Extensions** to run them, or **Not Now** to keep working without them.
+- You can trust a project, or take trust back, with **Trust Project Extensions** in **Project Settings > Project Extensions**. Taking trust back stops its extensions straight away.
+- Until you trust the project, its extensions add no commands, and Play, Preview Build and packaging stop with a message if a gameplay extension is enabled.
+- Trust belongs to this computer and to the project's folder. A copy of the project in another folder, or a different project in the same folder, asks again. Projects you create from scratch in Haptic are trusted. Projects made from a template, cloned or opened from a folder are not.
+- Engine extensions always run: they come with Haptic or you added them to this computer yourself.
+
+Trust a project only if you trust where it came from.
+
 ## GLSL to Material
 
 **GLSL to Material** is a bundled, Experimental extension, off by default. Its command converts fragment shader code into an editable Material.
@@ -95,7 +107,14 @@ Files import each other with relative paths, such as `import { clamp } from "./c
 
 ### Writing the code
 
-The editor entry exports an `activate(api)` function. It can be `async` and can return a cleanup function that runs when the extension stops. TypeScript is accepted without type checking. Dynamic `import()` is not supported.
+The editor entry exports an `activate(api)` function. It can be `async` and can return a cleanup function that runs when the extension stops. Dynamic `import()` is not supported.
+
+TypeScript is accepted without type checking: Haptic removes the types and keeps your code on the same lines, so errors point at the line you wrote. A few TypeScript features work differently:
+
+- `namespace` blocks with values are not supported. Use modules instead; type-only namespaces are fine.
+- A `const enum` works like an ordinary `enum`.
+- Decorators are not supported.
+- Imports used only as types are removed, so they can name anything.
 
 | API | Use |
 | --- | --- |
@@ -381,7 +400,7 @@ A directive that is malformed or names an unknown symbol stops Play and packagin
 ## Share extensions
 
 - **Export** offers **Export To File** (a `.hextension` file, saved as in [Saving exported files](index.md#saving-exported-files)) and **Export To Engine Extensions**. Both include every code file and the content folder.
-- **Import Extension** adds a `.hextension` file. Imported extensions stay disabled until you enable them. Replacing an installed extension asks first.
+- **Import Extension** adds a `.hextension` file. Imported extensions stay disabled until you enable them, and run only in a [trusted project](#trust-project-extensions). Replacing an installed extension asks first.
 - Packages are limited to 64 MiB compressed, 256 MiB expanded and 4,096 files, and each code file to 1 MiB.
 
 Extensions are saved in the project folder, so project backups include them. Assets an extension creates are ordinary project assets.
