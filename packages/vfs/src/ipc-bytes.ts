@@ -7,6 +7,9 @@
  */
 export function ipcArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const { buffer } = bytes;
-  if (buffer instanceof ArrayBuffer && bytes.byteOffset === 0 && bytes.byteLength === buffer.byteLength) return buffer;
+  // By tag, not `instanceof`: bytes made in another realm (a preload, Node's TextEncoder under jsdom) are still plain buffers.
+  if (Object.prototype.toString.call(buffer) === "[object ArrayBuffer]" && bytes.byteOffset === 0 && bytes.byteLength === buffer.byteLength) {
+    return buffer as ArrayBuffer;
+  }
   return bytes.slice().buffer;
 }

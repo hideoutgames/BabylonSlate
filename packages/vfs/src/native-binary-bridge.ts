@@ -91,7 +91,7 @@ async function failure(response: Response): Promise<NativeBinaryBridgeError> {
 
 /** A view fetch accepts as a body: never one over a SharedArrayBuffer, which no request may carry. */
 function requestBody(data: Uint8Array): Uint8Array<ArrayBuffer> {
-  return data.buffer instanceof ArrayBuffer ? data as Uint8Array<ArrayBuffer> : new Uint8Array(data);
+  return Object.prototype.toString.call(data.buffer) === "[object ArrayBuffer]" ? data as Uint8Array<ArrayBuffer> : new Uint8Array(data);
 }
 
 /**
