@@ -12,6 +12,7 @@ import {
 } from "@haptic/assets";
 import {
   applyTexturePixelSizeToSprite,
+  compactTilemapPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpritePayload,
@@ -565,7 +566,8 @@ export function playLoadTilemapsControl(
   }
   return {
     type: "loadTilemaps",
-    tilemaps: guidDocuments(tilemaps),
+    // Chunks cross to the game worker run-length encoded; the worker decodes each once.
+    tilemaps: [...(tilemaps ?? new Map()).entries()].map(([guid, map]) => ({ guid, document: compactTilemapPayload(map) })),
     tilesets: guidDocuments(tilesets),
     ...(typeof pixelsPerUnit === "number" && pixelsPerUnit > 0
       ? { pixelsPerUnit }

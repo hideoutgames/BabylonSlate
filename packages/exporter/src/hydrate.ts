@@ -26,6 +26,7 @@ import {
   particleLibraryFromAssets,
   buildParticleParameterCatalog,
   normalizeSoundAttenuationPayload,
+  compactTilemapPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
@@ -486,9 +487,10 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
   if (content.tilemapPayloads.size > 0 || content.tilesetPayloads.size > 0) {
     controls.push({
       type: "loadTilemaps",
+      // Chunks cross to the game worker run-length encoded; the worker decodes each once.
       tilemaps: [...content.tilemapPayloads.entries()].map(([guid, document]) => ({
         guid,
-        document,
+        document: compactTilemapPayload(document),
       })),
       tilesets: [...content.tilesetPayloads.entries()].map(([guid, document]) => ({
         guid,
