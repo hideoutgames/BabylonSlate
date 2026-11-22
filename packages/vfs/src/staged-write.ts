@@ -30,6 +30,14 @@ export function asideWriteName(target: string): string {
   return `.haptic-aside-${globalThis.crypto.randomUUID().slice(0, 8)}-${target}.tmp`;
 }
 
+/** The longest file name in bytes (UTF-8) an aside copy can hold: the name and the copy's 27 bytes of prefix and suffix fit the usual 255-byte limit. */
+export const ASIDE_TARGET_MAX_BYTES = 228;
+
+/** Whether a file of this name can be set aside (`ASIDE_TARGET_MAX_BYTES`). */
+export function asideWriteFits(target: string): boolean {
+  return new TextEncoder().encode(target).byteLength <= ASIDE_TARGET_MAX_BYTES;
+}
+
 /** The name of the file an aside copy holds; null for any other name. */
 export function asideWriteTarget(name: string): string | null {
   return ASIDE_WRITE.exec(name)?.[1] ?? null;

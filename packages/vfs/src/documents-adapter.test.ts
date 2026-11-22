@@ -195,6 +195,20 @@ describe("DocumentsStorageAdapter", () => {
       expect(text("saved")).toEqual(await storage.readBinary("project.json"));
     });
 
+    it("refuses, by name, to replace a file whose name leaves no room for its aside copy, and keeps it", async () => {
+      await storage.openDocumentsProject("Long");
+      const longest = `${"a".repeat(221)}.hasset`; // 228 bytes
+      const tooLong = `${"b".repeat(222)}.hasset`; // 229 bytes
+      // A new file needs no aside copy, whatever its name.
+      await storage.writeText(tooLong, "first");
+      await storage.writeText(longest, "first");
+      await expect(storage.writeText(tooLong, "second")).rejects.toThrow(`The file name "${tooLong}" is too long to save on this device. Use a name of at most 228 bytes.`);
+      expect(await storage.readText(tooLong)).toBe("first");
+      await storage.writeText(longest, "second");
+      expect(await storage.readText(longest)).toBe("second");
+      expect([...fs.tree.keys()].filter((key) => key.startsWith("Projects/Long/")).sort()).toEqual([`Projects/Long/${longest}`, `Projects/Long/${tooLong}`]);
+    });
+
     it("sets nothing aside through the binary transport, whose native commit is one rename with no gap", async () => {
       const bridgeWrite = vi.fn(async () => true);
       const bridged = new DocumentsStorageAdapter({ fs, bridge: { write: bridgeWrite } as unknown as NativeBinaryBridge });

@@ -12,7 +12,7 @@ import { Directory, Filesystem } from "@capacitor/filesystem";
 import { getHostPlatform, type HostPlatform } from "./platform";
 import { projectFolderName, projectRelativePath } from "./project-path";
 import { isAppOwnedFolder } from "./library-folders";
-import { asideWriteName, asideWriteTarget, isStagedWrite, stagedWriteName } from "./staged-write";
+import { ASIDE_TARGET_MAX_BYTES, asideWriteFits, asideWriteName, asideWriteTarget, isStagedWrite, stagedWriteName } from "./staged-write";
 import { nativeBinaryBridge, type NativeBinaryBridge, type NativeBinaryBridgePlugin, type NativeBinaryRange } from "./native-binary-bridge";
 
 /** Where projects live in app storage; the native plugin accepts app-storage paths under this root only. */
@@ -55,6 +55,14 @@ function rethrowFilesystemError(error: unknown, path: string): never {
     throw new StorageNotFoundError(path, { cause: error });
   }
   throw error;
+}
+
+/** A replace refused before anything was written: the file's name is too long for its aside copy (`ASIDE_TARGET_MAX_BYTES`). */
+export class FileNameTooLongError extends Error {
+  constructor(name: string) {
+    super(`The file name "${name}" is too long to save on this device. Use a name of at most ${ASIDE_TARGET_MAX_BYTES} bytes.`);
+    this.name = "FileNameTooLongError";
+  }
 }
 
 export interface DocumentsFilesystemApi {
@@ -384,19 +392,25 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   private async stagedWrite(full: string, content: { data: string; encoding?: "utf8" }): Promise<void> {
     const slash = full.lastIndexOf("/");
     const directory = this.directory;
+    const name = full.slice(slash + 1);
+    // A file whose name leaves no room for its aside copy cannot be replaced safely here; a new one needs no copy.
+    if (!asideWriteFits(name) && await this.fileExists(full)) throw new FileNameTooLongError(name);
     const staged = `${full.slice(0, slash)}/${stagedWriteName()}`;
-    const aside = `${full.slice(0, slash)}/${asideWriteName(full.slice(slash + 1))}`;
+    const aside = `${full.slice(0, slash)}/${asideWriteName(name)}`;
     let setAside = false;
     this.asidesInFlight.add(aside);
     try {
       try {
         await this.fs.writeFile({ path: staged, ...content, directory, recursive: true });
-        try {
-          await this.fs.rename({ from: full, to: aside, directory, toDirectory: directory });
-          setAside = true;
-        } catch (error) {
-          // A new file has nothing to set aside; any other failure leaves the file as it was.
-          if (!isMissing(error) && await this.fileExists(full)) throw error;
+        // A name too long for a copy got here only as a new file, with nothing to set aside.
+        if (asideWriteFits(name)) {
+          try {
+            await this.fs.rename({ from: full, to: aside, directory, toDirectory: directory });
+            setAside = true;
+          } catch (error) {
+            // A new file has nothing to set aside; any other failure leaves the file as it was.
+            if (!isMissing(error) && await this.fileExists(full)) throw error;
+          }
         }
         await this.fs.rename({ from: staged, to: full, directory, toDirectory: directory });
       } catch (error) {
