@@ -158,7 +158,32 @@ describe("material node catalog", () => {
     expect(parseMaterialDomain("particle")).toBe("particle");
     expect(parseMaterialDomain("postProcess")).toBe("postProcess");
     expect(parseMaterialDomain("surface")).toBe("surface");
+    expect(parseMaterialDomain("ui")).toBe("ui");
     expect(parseMaterialDomain("nope")).toBe("surface");
+    expect(parseMaterialDomain("UI")).toBe("surface");
+  });
+
+  const USER_INTERFACE_NODES = ["input.ui", "ui.roundedRectangle", "ui.ellipse", "ui.linearProgress", "ui.radialProgress"];
+
+  it("offers the User Interface palette its output, its own nodes and the element and screen inputs, and no surface-only node", () => {
+    const ui = materialPaletteEntries("ui").map((row) => row.type);
+    expect(ui).toEqual(expect.arrayContaining([
+      "output.ui", ...USER_INTERFACE_NODES, "input.uv", "input.screenUv", "input.screenSize", "input.time", "math.add", "const.color",
+    ]));
+    const surfaceOnly = MATERIAL_CATALOG.filter((definition) => definition.domains?.length === 1 && definition.domains[0] === "surface");
+    expect(surfaceOnly.length).toBeGreaterThan(0);
+    for (const definition of surfaceOnly) expect(ui, definition.type).not.toContain(definition.type);
+    for (const type of ["output.surface", "output.text", "input.particleColor", "input.sceneColor", "landscape.height"]) {
+      expect(ui, type).not.toContain(type);
+    }
+  });
+
+  it("keeps the User Interface nodes and output out of every other domain", () => {
+    for (const domain of ["surface", "landscape", "postProcess", "particle", "text"] as const) {
+      for (const type of [...USER_INTERFACE_NODES, "output.ui"]) {
+        expect(nodeIsLegalInDomain(type, domain), `${type} in ${domain}`).toBe(false);
+      }
+    }
   });
 
   it("filters palette entries by domain", () => {
@@ -177,7 +202,7 @@ describe("material node catalog", () => {
   });
 
   it("offers UV only where the domain has a UV attribute", () => {
-    for (const domain of ["surface", "landscape", "particle", "text"] as const) {
+    for (const domain of ["surface", "landscape", "particle", "text", "ui"] as const) {
       expect(nodeIsLegalInDomain("input.uv", domain), domain).toBe(true);
     }
     expect(nodeIsLegalInDomain("input.uv", "postProcess")).toBe(false);

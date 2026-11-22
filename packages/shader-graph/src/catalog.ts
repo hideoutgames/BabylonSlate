@@ -1,10 +1,13 @@
 import type { MaterialValueType } from "./types";
 
-/** Surface shades a mesh; post-process shades a camera pass; particle shades GPUParticleSystem quads. */
-export type MaterialDomain = "surface" | "landscape" | "postProcess" | "particle" | "text";
+/**
+ * Surface shades a mesh; post-process shades a camera pass; particle shades GPUParticleSystem quads; text shades
+ * 2D Text glyphs; ui (User Interface) shades the quads of Scene Layer 2D components.
+ */
+export type MaterialDomain = "surface" | "landscape" | "postProcess" | "particle" | "text" | "ui";
 
 export function parseMaterialDomain(value: unknown): MaterialDomain {
-  if (value === "postProcess" || value === "particle" || value === "landscape" || value === "text") {
+  if (value === "postProcess" || value === "particle" || value === "landscape" || value === "text" || value === "ui") {
     return value;
   }
   return "surface";
@@ -355,12 +358,12 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
   { type: "input.vertexNormal", title: "Vertex Normal (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "normal", name: "Normal", type: VEC3 }] },
   { type: "input.vertexPosition", title: "Vertex Position (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "position", name: "Position", type: VEC3 }] },
   {
-    // Mesh, particle quad and glyph UVs. A post-process quad has no UV
-    // attribute; it reads Screen UV instead.
+    // Mesh, particle quad, glyph and User Interface element UVs. A post-process
+    // quad has no UV attribute; it reads Screen UV instead.
     type: "input.uv",
     title: "UV",
     category: "Input",
-    domains: ["surface", "particle", "text"],
+    domains: ["surface", "particle", "text", "ui"],
     cost: 0,
     inputs: [],
     outputs: [{ id: "uv", name: "UV", type: VEC2 }],
@@ -1246,6 +1249,20 @@ const REROUTE_NODES: MaterialNodeDefinition[] = [
 
 const OUTPUT_NODES: MaterialNodeDefinition[] = [
   {
+    type: "output.ui",
+    title: "User Interface Output",
+    category: "Output",
+    searchAliases: ["widget", "hud", "ui"],
+    domains: ["ui"],
+    terminal: "ui",
+    cost: 0,
+    inputs: [
+      { id: "color", name: "Color", type: VEC3, colorHint: true, defaultValue: [1, 1, 1] },
+      { id: "opacity", name: "Opacity", type: FLOAT, defaultValue: [1] },
+    ],
+    outputs: [],
+  },
+  {
     type: "output.text",
     title: "Text Output",
     category: "Output",
@@ -1344,6 +1361,110 @@ const LANDSCAPE_NODES: MaterialNodeDefinition[] = [
     inputs: [], outputs: [1, 2, 3, 4].map((n) => ({ id: `layer${n}`, name: `Layer ${n}`, type: FLOAT })) },
 ];
 
+/**
+ * User Interface nodes. UV and positions start at the element's bottom left, like UV and Screen UV; "pixels" are
+ * pixels of the target being drawn into (the screen in Play). Position, Size and UV pins have no default: unwired,
+ * the compiler feeds them the element's own values (Element Position, Element Size, Element UV). Every node
+ * antialiases over one pixel, which needs screen-space derivatives.
+ */
+const UI_NODES: MaterialNodeDefinition[] = [
+  {
+    type: "input.ui",
+    title: "User Interface Input",
+    category: "User Interface",
+    searchAliases: ["widget", "hud", "ui", "element"],
+    domains: ["ui"],
+    stages: ["fragment"],
+    requires: ["derivatives"],
+    cost: 4,
+    inputs: [],
+    outputs: [
+      { id: "elementUv", name: "Element UV", type: VEC2 },
+      { id: "elementSize", name: "Element Size (Pixels)", type: VEC2 },
+      { id: "elementPosition", name: "Element Position (Pixels)", type: VEC2 },
+      { id: "screenUv", name: "Screen UV", type: VEC2 },
+      { id: "screenSize", name: "Screen Size (Pixels)", type: VEC2 },
+      { id: "screenPosition", name: "Screen Position (Pixels)", type: VEC2 },
+    ],
+  },
+  {
+    type: "ui.roundedRectangle",
+    title: "Rounded Rectangle",
+    category: "User Interface",
+    searchAliases: ["rounded box", "sdf", "panel", "rectangle", "border"],
+    domains: ["ui"],
+    stages: ["fragment"],
+    requires: ["derivatives"],
+    cost: 14,
+    inputs: [
+      { id: "position", name: "Position (Pixels)", type: VEC2 },
+      { id: "size", name: "Size (Pixels)", type: VEC2 },
+      // Top left, top right, bottom right, bottom left; each clamped to half the shorter side.
+      { id: "radius", name: "Corner Radius (Pixels)", type: VEC4, defaultValue: [8, 8, 8, 8] },
+      { id: "border", name: "Border Width (Pixels)", type: FLOAT, defaultValue: [0] },
+    ],
+    outputs: [
+      { id: "fill", name: "Fill", type: FLOAT },
+      { id: "borderMask", name: "Border", type: FLOAT },
+      { id: "distance", name: "Distance (Pixels)", type: FLOAT },
+    ],
+  },
+  {
+    type: "ui.ellipse",
+    title: "Ellipse",
+    category: "User Interface",
+    searchAliases: ["circle", "disc", "oval", "sdf"],
+    domains: ["ui"],
+    stages: ["fragment"],
+    requires: ["derivatives"],
+    cost: 12,
+    inputs: [
+      { id: "position", name: "Position (Pixels)", type: VEC2 },
+      { id: "size", name: "Size (Pixels)", type: VEC2 },
+      { id: "border", name: "Border Width (Pixels)", type: FLOAT, defaultValue: [0] },
+    ],
+    outputs: [
+      { id: "fill", name: "Fill", type: FLOAT },
+      { id: "borderMask", name: "Border", type: FLOAT },
+      { id: "distance", name: "Distance (Pixels)", type: FLOAT },
+    ],
+  },
+  {
+    type: "ui.linearProgress",
+    title: "Linear Progress",
+    category: "User Interface",
+    searchAliases: ["progress bar", "fill", "health bar", "bar"],
+    domains: ["ui"],
+    stages: ["fragment"],
+    requires: ["derivatives"],
+    cost: 6,
+    inputs: [
+      { id: "uv", name: "UV", type: VEC2 },
+      { id: "progress", name: "Progress", type: FLOAT, defaultValue: [0.5] },
+      // The fill grows along it: (0, 1) fills upward, negative values reverse.
+      { id: "direction", name: "Direction", type: VEC2, defaultValue: [1, 0] },
+    ],
+    outputs: [{ id: "mask", name: "Mask", type: FLOAT }],
+  },
+  {
+    type: "ui.radialProgress",
+    title: "Radial Progress",
+    category: "User Interface",
+    searchAliases: ["cooldown", "pie", "radial", "clock", "progress"],
+    domains: ["ui"],
+    stages: ["fragment"],
+    requires: ["derivatives"],
+    cost: 10,
+    inputs: [
+      { id: "uv", name: "UV", type: VEC2 },
+      { id: "progress", name: "Progress", type: FLOAT, defaultValue: [0.5] },
+      // 0 is up, positive is clockwise.
+      { id: "startAngle", name: "Start Angle (Degrees)", type: FLOAT, defaultValue: [0] },
+    ],
+    outputs: [{ id: "mask", name: "Mask", type: FLOAT }],
+  },
+];
+
 /** A node's own aliases plus the table's, so any node can be listed there. */
 function withSearchAliases(definition: MaterialNodeDefinition): MaterialNodeDefinition {
   const listed = MATERIAL_SEARCH_ALIASES[definition.type];
@@ -1353,6 +1474,7 @@ function withSearchAliases(definition: MaterialNodeDefinition): MaterialNodeDefi
 
 export const MATERIAL_CATALOG: readonly MaterialNodeDefinition[] = [
   ...LANDSCAPE_NODES,
+  ...UI_NODES,
   ...CONSTANT_NODES,
   ...INPUT_NODES,
   ...MATH_NODES,
@@ -1414,6 +1536,7 @@ export function materialPaletteEntries(
 
 export function terminalNodeTypeFor(domain: MaterialDomain): string {
   if (domain === "text") return "output.text";
+  if (domain === "ui") return "output.ui";
   if (domain === "postProcess") return "output.postProcess";
   if (domain === "particle") return "output.particle";
   return "output.surface";

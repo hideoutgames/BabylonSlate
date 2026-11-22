@@ -47,6 +47,39 @@ describe("material validation", () => {
     ).toEqual([]);
   });
 
+  it("accepts the default User Interface material and one using every User Interface node, unwired", () => {
+    const doc = createDefaultMaterialDocument("Panel", "ui");
+    expect(validateMaterialDocument(doc)).toEqual([]);
+    const types = ["input.ui", "ui.roundedRectangle", "ui.ellipse", "ui.linearProgress", "ui.radialProgress", "input.uv", "input.screenUv", "input.screenSize", "input.time"];
+    doc.nodes.push(...types.map((type, index) => ({ id: `n${index}`, type, position: { x: 0, y: index * 100 }, properties: {} })));
+    doc.edges.push({ id: "fill", sourceNodeId: "n1", sourcePinId: "fill", targetNodeId: "output", targetPinId: "opacity" });
+    expect(validateMaterialDocument(doc)).toEqual([]);
+  });
+
+  it("flags the User Interface nodes and output in every other domain, naming the domain", () => {
+    for (const domain of ["surface", "landscape", "postProcess", "particle", "text"] as const) {
+      const doc = createDefaultMaterialDocument("Other", domain);
+      const types = ["input.ui", "ui.roundedRectangle", "ui.ellipse", "ui.linearProgress", "ui.radialProgress", "output.ui"];
+      doc.nodes.push(...types.map((type) => ({ id: type, type, position: { x: 0, y: 0 }, properties: {} })));
+      const mismatches = validateMaterialDocument(doc).filter((row) => row.code === "material.domainMismatch");
+      expect(mismatches.map((row) => row.nodeId).sort(), domain).toEqual([...types].sort());
+    }
+    const surfaceInUi = createDefaultMaterialDocument("Panel", "ui");
+    surfaceInUi.nodes.push({ id: "wp", type: "input.worldPosition", position: { x: 0, y: 0 }, properties: {} });
+    expect(validateMaterialDocument(surfaceInUi)).toEqual([
+      expect.objectContaining({ code: "material.domainMismatch", nodeId: "wp", message: expect.stringContaining("user interface material") }),
+    ]);
+  });
+
+  it("asks for the User Interface Output when a User Interface material has none", () => {
+    const doc = createDefaultMaterialDocument("Panel", "ui");
+    doc.nodes = doc.nodes.filter((node) => node.type !== "output.ui");
+    doc.edges = [];
+    expect(validateMaterialDocument(doc)).toEqual([
+      expect.objectContaining({ code: "material.noOutput", message: "Material needs a User Interface Output node" }),
+    ]);
+  });
+
   it("flags an unknown node type", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({
@@ -445,8 +478,14 @@ describe("material validation", () => {
     expect(validateMaterialDocument(doc)).toContainEqual(expect.objectContaining({ code: "material.function.misplaced", nodeId: "stray" }));
 
     const fn = createDefaultMaterialFunctionDocument("Tint");
-    fn.nodes.push({ id: "surface", type: "output.surface", position: { x: 0, y: 0 }, properties: {} });
-    expect(validateMaterialFunctionDocument(fn)).toContainEqual(expect.objectContaining({ code: "material.function.misplaced", nodeId: "surface" }));
+    fn.nodes.push(
+      { id: "surface", type: "output.surface", position: { x: 0, y: 0 }, properties: {} },
+      { id: "ui", type: "output.ui", position: { x: 0, y: 100 }, properties: {} },
+    );
+    expect(validateMaterialFunctionDocument(fn)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "material.function.misplaced", nodeId: "surface" }),
+      expect.objectContaining({ code: "material.function.misplaced", nodeId: "ui" }),
+    ]));
     // Each graph's own plumbing is not flagged.
     expect(validateMaterialDocument(createDefaultMaterialDocument()).map((row) => row.code)).not.toContain("material.function.misplaced");
     expect(validateMaterialFunctionDocument(createDefaultMaterialFunctionDocument("Tint")).map((row) => row.code)).not.toContain("material.function.misplaced");

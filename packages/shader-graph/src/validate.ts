@@ -12,6 +12,7 @@ import {
 
 function materialDomainLabel(domain: MaterialDomain): string {
   if (domain === "text") return "text";
+  if (domain === "ui") return "user interface";
   if (domain === "landscape") return "landscape";
   if (domain === "postProcess") return "post-process";
   if (domain === "particle") return "particle";
@@ -20,6 +21,7 @@ function materialDomainLabel(domain: MaterialDomain): string {
 
 function materialTerminalTitle(domain: MaterialDomain): string {
   if (domain === "text") return "Text Output";
+  if (domain === "ui") return "User Interface Output";
   if (domain === "postProcess") return "Post Process Output";
   if (domain === "particle") return "Particle Output";
   return "Material Output";
@@ -209,7 +211,7 @@ function functionPlumbingDefinition(
 
 /** The output node of every Material domain. */
 const MATERIAL_TERMINAL_NODE_TYPES: ReadonlySet<string> = new Set(
-  (["surface", "landscape", "text", "postProcess", "particle"] as const).map((domain) => terminalNodeTypeFor(domain)),
+  (["surface", "landscape", "text", "ui", "postProcess", "particle"] as const).map((domain) => terminalNodeTypeFor(domain)),
 );
 
 function validateGraph(
