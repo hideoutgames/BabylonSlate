@@ -261,10 +261,11 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["layers:false", "layers:true"]);
   });
 
-  it("starts and stops GPU-busy timing and stores the drawing-buffer setting, in debug registries only", () => {
+  it("starts and stops GPU-busy timing and stores the drawing-buffer and Material record start-up settings, in debug registries only", () => {
     const host = recordingHost();
     host.setGpuBusyProbe = (enabled) => host.calls.push(`gpubusy:${enabled}`);
     host.setPreserveDrawingBuffer = (enabled) => host.calls.push(`preserve:${enabled}`);
+    host.setMaterialRecordsStartup = (enabled) => host.calls.push(`records:${enabled}`);
     const debug = createCommandRegistry({ includeDebug: true });
     const release = createCommandRegistry({ includeDebug: false });
     expect(debug.execute("gpubusy on", host)).toEqual({ success: true, output: "gpubusy on" });
@@ -272,9 +273,12 @@ describe("createCommandRegistry", () => {
     expect(debug.execute("preservebuffer off", host).success).toBe(true);
     expect(debug.execute("preservebuffer on", host).success).toBe(true);
     expect(debug.execute("preservebuffer maybe", host).success).toBe(false);
+    expect(debug.execute("materialrecords on", host)).toEqual({ success: true, output: "materialrecords on" });
+    expect(debug.execute("materialrecords off", host)).toEqual({ success: true, output: "materialrecords off" });
     expect(release.execute("gpubusy on", host).success).toBe(false);
     expect(release.execute("preservebuffer off", host).success).toBe(false);
-    expect(host.calls).toEqual(["gpubusy:true", "gpubusy:false", "preserve:false", "preserve:true"]);
+    expect(release.execute("materialrecords on", host).success).toBe(false);
+    expect(host.calls).toEqual(["gpubusy:true", "gpubusy:false", "preserve:false", "preserve:true", "records:true", "records:false"]);
   });
 
   it("turns each post-processing effect a tier allows off and back on until a reset", () => {

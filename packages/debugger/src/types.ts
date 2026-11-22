@@ -85,6 +85,8 @@ export type ConsoleCommandHost = {
   setFramesInFlight?(mode: "off" | 2 | 3): void;
   /** Store whether the next project Engine keeps its drawing buffer (applies after an editor reload). */
   setPreserveDrawingBuffer?(enabled: boolean): void;
+  /** Store whether the next project Engine starts with the Material record on (applies after an editor reload). */
+  setMaterialRecordsStartup?(enabled: boolean): void;
   dumpActors?(): string;
   inspectActor?(query: string): string;
   possessActorCamera?(query: string): CommandResult;

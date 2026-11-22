@@ -531,6 +531,10 @@ function settingNotes(
   const unsettled = sample.unsettled;
   if (unsettled && (unsettled.firstDraws > 0 || unsettled.compiling > 0))
     notes.push(`COMPILING: ${unsettled.firstDraws} first drawn, ${unsettled.compiling} compiling`);
+  // What its commands compiled before the window, apart from the window's frames.
+  const switched = sample.switched;
+  if (switched && (switched.firstDraws > 0 || (switched.programs ?? 0) !== 0))
+    notes.push(`switch: ${switched.firstDraws} first drawn (${switched.stalls} long), programs ${switched.programs === null ? "?" : `${switched.programs >= 0 ? "+" : ""}${switched.programs}`}, ${(switched.ms / 1000).toFixed(1)} s`);
   if (first?.settings && sample.settings && sample !== first) {
     const changes = settingsChanges(first.settings, sample.settings);
     const field = (change: string) => change.slice(0, change.indexOf("="));
@@ -868,7 +872,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   const drift = breakdownWarmupDrift(samples);
   const timed = samples.find((sample) => sample.gpuBusy);
   const lines = [
-    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 12 minutes on a desktop: a short warm-up at the control view, then at fixed camera views every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling for 1 s, then probed with serialised frames, a burst and the pass timers before it is restored (GPU probes, below):`,
+    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 14 minutes on a desktop: a short warm-up at the control view, then at fixed camera views every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling for 1 s, then probed with serialised frames, a burst and the pass timers before it is restored (GPU probes, below):`,
     `  Settings: ${first?.settings ? Object.entries(first.settings).map(([field, value]) => `${field} ${value}`).join(" · ") : "unknown"}`,
     `  Frames in flight: ${framesInFlightText(samples)}`,
     `  Resolution held: ${heldResolutionText(profile?.resolution ?? null)}`,

@@ -56,6 +56,7 @@ export const DEBUG_COMMAND_NAMES = [
   "gpuprobe",
   "framesinflight",
   "preservebuffer",
+  "materialrecords",
   "pause",
   "resume",
   "unpause",
@@ -343,6 +344,8 @@ export function builtinCommands(): RegisteredCommand[] {
     },
     flagCommand("preservebuffer", (host, enabled) => host.setPreserveDrawingBuffer?.(enabled),
       "Keep (on, the default) or drop the Engine's drawing buffer between presentations; applies after reloading the editor"),
+    flagCommand("materialrecords", (host, enabled) => host.setMaterialRecordsStartup?.(enabled),
+      "Start the project Engine with graph Materials reading their parameters and literals from a per-Material uniform block (on), or without (off, the default), so the load and its warm-up are measured with it; applies after reloading the editor (worlddebug materialrecords switches the running Play session)"),
     flagCommand(
       "freecam",
       (host, enabled) => host.setFreeCam?.(enabled),

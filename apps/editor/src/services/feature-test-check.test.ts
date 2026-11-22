@@ -154,9 +154,6 @@ function fakeEditor(
 
 const scene = (name: string) => ({ name, path: `assets/${name}.scene.hasset` });
 
-/** The `worlddebug` parts off by default, as `worldDebugFingerprint` lists them when switched (`<part> on`). */
-const WORLD_DEFAULT_OFF: ReadonlySet<string> = new Set(["mergedmarches", "materialrecords", "pairedblurs"]);
-
 const REMOVE_ONE: FeatureTestBreakdownInfo = { method: "remove-one", tier: "medium", ab: false, warmMinutes: null, passes: [], notes: [] };
 
 /**
@@ -182,7 +179,9 @@ function fingerprintAfter(
   let backbufferDepth = "kept";
   const waterOff = new Set<string>();
   const shadowOff = new Set<string>();
+  // The parts away from their default: off for most, on for those off by default.
   const worldSwitched = new Set<string>();
+  const worldDefaultOff = new Set(["mergedmarches", "materialrecords", "pairedblurs"]);
   for (const line of commands) {
     const [name, first, second, third] = line.split(" ");
     if (name === "quality") {
@@ -199,10 +198,7 @@ function fingerprintAfter(
     else if (name === "backbufferdiscard") backbufferDepth = first === "on" ? "discarded" : "kept";
     else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
     else if (name === "shadowdebug") { if (second === "off") shadowOff.add(first!); else shadowOff.delete(first!); }
-    else if (name === "worlddebug") {
-      // Switched from its default: off for most parts, on for those off by default.
-      if (second === (WORLD_DEFAULT_OFF.has(first!) ? "on" : "off")) worldSwitched.add(first!); else worldSwitched.delete(first!);
-    }
+    else if (name === "worlddebug") { if ((second === "off") !== worldDefaultOff.has(first!)) worldSwitched.add(first!); else worldSwitched.delete(first!); }
   }
   const quality = session.effective();
   return {
@@ -212,8 +208,7 @@ function fingerprintAfter(
     captures: captures ? "on" : "suspended",
     "water.debug": WATER_DEBUG_PARTS.filter((part) => waterOff.has(part)).join(",") || "none",
     "shadows.debug": SHADOW_DEBUG_PARTS.filter((part) => shadowOff.has(part)).join(",") || "none",
-    "world.debug": WORLD_DEBUG_PARTS.filter((part) => worldSwitched.has(part))
-      .map((part) => WORLD_DEFAULT_OFF.has(part) ? `${part} on` : part).join(",") || "none",
+    "world.debug": WORLD_DEBUG_PARTS.filter((part) => worldSwitched.has(part)).map((part) => worldDefaultOff.has(part) ? `${part} on` : part).join(",") || "none",
     "presentation.framesInFlight": framesInFlight,
     "msaa.discard": discard ? "on" : "off",
     layers: layers ? "shown" : "hidden",
@@ -719,7 +714,7 @@ describe("breakdown settling", () => {
         const play = editor.deps.play();
         return play && {
           ...play,
-          snapshot: () => ({ ...play.snapshot(), rendering: { firstDraws: { draws: firstDraws }, cpuMs: 10, gpuMs: null, width: 100, height: 100, scalingLevel: 1 } as unknown as RenderDiagnostics }),
+          snapshot: () => ({ ...play.snapshot(), rendering: { firstDraws: { draws: firstDraws, stalls: 0 }, cpuMs: 10, gpuMs: null, width: 100, height: 100, scalingLevel: 1 } as unknown as RenderDiagnostics }),
         };
       },
     };
@@ -755,6 +750,28 @@ describe("breakdown settling", () => {
     const first = benchmark.find((sample) => !sample.warmup)!;
     expect(first.failed).toEqual(["Shaders were still first drawn or compiling after 10 s; this step's frames include them."]);
     expect(first.unsettled!.compiling).toBeGreaterThan(0);
+  });
+
+  it("settles the Material record switch and the baseline it compiles back for past the Profile's 20 s, and reports what the switch compiled apart from its window", async () => {
+    // Every command compiles for 40 s: the switch, its restore, and every other step's.
+    const report = await runFeatureTestCheck({
+      mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps: compilingFor(40_000).deps, signal: new AbortController().signal,
+    });
+    const rows = report.scenes[0]!.play.benchmark;
+    const at = rows.findIndex((sample) => sample.label === "heavy material records on");
+    const [records, after] = [rows[at]!, rows[at + 1]!];
+    expect(after.label).toMatch(/^heavy baseline/);
+    for (const row of [records, after]) {
+      expect(row.failed, row.label).toEqual([]);
+      expect(row.unsettled).toMatchObject({ firstDraws: 0, compiling: 0 });
+      expect(row.unsettled!.settleMs, row.label).toBeGreaterThanOrEqual(40_000);
+    }
+    // Its compile, first drawn before the window, is the switch's own.
+    expect(records.switched!.firstDraws).toBeGreaterThan(0);
+    expect(records.switched!.ms).toBeGreaterThanOrEqual(40_000);
+    // Another step keeps the 20 s bound.
+    expect(rows.find((sample) => sample.label === "heavy shadow passes off")!.failed)
+      .toEqual(["Shaders were still first drawn or compiling after 20 s; this step's frames include them."]);
   });
 
   it("bounds a Profile's wait for quiet shaders at 20 s, where a Breakdown waits 90 s", async () => {
@@ -1205,16 +1222,16 @@ describe("frame pacing", () => {
 // A Profile test runs the whole Profile (about ten minutes on the fake clock): seconds of work, more than
 // Vitest's default timeout allows on a busy runner.
 describe("Profile", { timeout: 30_000 }, () => {
-  const SESSION: FeatureTestProfileState = { postProcessing: true, captures: true, layers: true };
+  const SESSION: FeatureTestProfileState = { postProcessing: true, captures: true, layers: true, materialRecords: false };
 
   it("measures each step twice at fixed camera views, each between two baselines of that view, revisits the control view, and keeps to about twelve minutes", () => {
     expect(FEATURE_TEST_PROFILE_SCENES).toEqual([{ name: "main", path: "assets/main.scene.hasset" }]);
     const plan = featureTestProfilePlan(SESSION);
     const splits = ["sun shadow passes off", "local shadow passes off", "shadow tiles half"];
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["samplers off", "world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once", "paired blurs on"]],
+      ["light", ['possess "Profile Light Camera"'], ["samplers off", "world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once"]],
       ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "geometry pass drawn twice", "geometry pass drawn twice, scissored", "world drawn once",
-        "merged marches on", "paired blurs on", "merged marches + paired blurs on"]],
+        "merged marches on", "paired blurs on", "merged marches + paired blurs on", "material records on"]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["captures off", "mirrors environment", "world drawn once"]],
     ]);
     const step = (view: string, label: string) => plan.views.find((entry) => entry.name === view)!.steps.find((entry) => entry.label === label)!;
@@ -1243,7 +1260,11 @@ describe("Profile", { timeout: 30_000 }, () => {
         fields: ["world.debug"], overlaps: true,
       },
     ]);
-    expect(step("light", "paired blurs on")).toBe(step("heavy", "paired blurs on"));
+    // The Material record, last at the heavy view, undone to the session's own state, its settle longer.
+    expect(step("heavy", "material records on")).toMatchObject({
+      commands: ["worlddebug materialrecords on"], restore: ["worlddebug materialrecords off"], fields: ["world.debug"], recompiles: true,
+    });
+    expect(featureTestProfilePlan({ ...SESSION, materialRecords: true }).views[1]!.steps.at(-1)!.restore).toEqual(["worlddebug materialrecords on"]);
     expect(step("light", "world hidden")).toMatchObject({
       commands: ["worlddebug world off", "shadowdebug passes off", "rendertargets off", "postprocessing off"],
       restore: ["worlddebug world on", "shadowdebug passes on", "rendertargets on", "postprocessing on"],
@@ -1258,7 +1279,7 @@ describe("Profile", { timeout: 30_000 }, () => {
     // No step releases or resizes the shadow atlas (`quality reset` would make it again): none changes the shadow level or switches shadows off.
     expect(plan.views.flatMap((view) => view.steps).flatMap((entry) => entry.commands).filter((line) => /^quality shadows (enabled|low|medium|high|ultra|mapSize)/.test(line))).toEqual([]);
     // Toggles come back to the session's own value.
-    const other = featureTestProfilePlan({ postProcessing: false, captures: false, layers: false });
+    const other = featureTestProfilePlan({ postProcessing: false, captures: false, layers: false, materialRecords: false });
     expect(other.views.flatMap((view) => view.steps).map((entry) => [entry.label, (entry.restore ?? []).filter((line) => !/^(shadow|world)debug/.test(line))]).filter(([, restore]) => restore!.length > 0))
       .toEqual([
       ["world hidden", ["rendertargets off", "postprocessing off"]],
@@ -1275,7 +1296,7 @@ describe("Profile", { timeout: 30_000 }, () => {
       "light baseline 1", "light samplers off", "light baseline 2", "light world hidden", "light baseline 3", "light world hidden",
       "light baseline 4", "light shadow passes off", "light baseline 5", "light shadow passes off", "light baseline 6",
     ]);
-    // The 86 rows the reference states: light 18 baselines and 17 steps, heavy 19 and 18, mirror 7 and 6, and the drift.
+    // The 86 rows the reference states: light 16 baselines and 15 steps, heavy 21 and 20, mirror 7 and 6, and the drift.
     expect(sequence).toHaveLength(86);
     // Only a view's first baseline moves the camera; every step sits between two baselines of its own view.
     expect(sequence.filter((entry) => entry.commands.some((line) => line.startsWith("possess"))).map((entry) => entry.label))
@@ -1293,7 +1314,8 @@ describe("Profile", { timeout: 30_000 }, () => {
   });
 
   it("reads the session's state from a baseline's fingerprint, with Play's defaults for what it lacks", () => {
-    expect(profileState({ "post.enabled": "false", captures: "suspended", layers: "hidden" })).toEqual({ postProcessing: false, captures: false, layers: false });
+    expect(profileState({ "post.enabled": "false", captures: "suspended", layers: "hidden", "world.debug": "mergedmarches on,materialrecords on" }))
+      .toEqual({ postProcessing: false, captures: false, layers: false, materialRecords: true });
     expect(profileState(undefined)).toEqual(SESSION);
   });
 
