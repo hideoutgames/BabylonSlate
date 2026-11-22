@@ -14,7 +14,8 @@ import {
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@haptic/core";
-import { generateNavMesh, initNavigation } from "@haptic/navigation";
+import { initNavigation } from "@haptic/navigation";
+import { generateNavMesh } from "@haptic/navigation/bake";
 import { ClassRegistry, World, type Actor } from "@haptic/object-model";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import { RenderSlots } from "./render-slots";

@@ -1,6 +1,8 @@
 export { authoredActorWorldTransform } from "./authored-transform-matrices";
 export * from "./editor-clear-color";
 export * from "./create-engine";
+export { createEngine } from "./editor-engine";
+export { editorEngineFeatures, type EditorEngineFeatures } from "./editor-engine-features";
 export * from "./context-lost-error";
 export {
   currentGlobalParameterCatalog,
@@ -126,8 +128,6 @@ export * from "./particle-system-factory";
 export * from "./particle-emission-driver";
 export * from "./particle-render-modes";
 export * from "./particle-preview";
-export * from "./convert-obj-to-glb";
-export * from "./convert-stl-to-glb";
 export * from "./node-rig";
 export type { FramePressureSample, RenderDiagnostics } from "./render-diagnostics";
 export type { SceneReadinessDirtyReason } from "./scene-readiness-signal";

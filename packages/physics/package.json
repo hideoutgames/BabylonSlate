@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": [
+    "./src/havok-backend.ts",
+    "./src/rapier-backend.ts"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./component-props": "./src/component-props.ts",

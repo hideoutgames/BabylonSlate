@@ -8,7 +8,8 @@ import {
   type SerializedScene,
 } from "@haptic/core";
 import type { BehaviourTreeDocument } from "@haptic/behaviour-tree";
-import { generateNavMesh, initNavigation } from "@haptic/navigation";
+import { initNavigation } from "@haptic/navigation";
+import { generateNavMesh } from "@haptic/navigation/bake";
 import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 

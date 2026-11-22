@@ -115,7 +115,7 @@ async function generateFeatureTestNavMesh(input: NavMeshGenerateInput): Promise<
       worker.terminate();
     }
   }
-  const { generateNavMesh } = await import("@haptic/navigation");
+  const { generateNavMesh } = await import("@haptic/navigation/bake");
   return generateNavMesh(input);
 }
 

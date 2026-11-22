@@ -10,7 +10,7 @@ In the **Content Browser**, choose **New Asset > World > Scene Layer**.
 
 Double-tap a Scene Layer to open it.
 
-- **Viewport**: always 2D and unlit, over a neutral mid grey that stands in for the world (a [Multiply](material.md#multiply-on-scene-layers) element darkens it). The orange frame is the layer's design canvas, placed by its **Canvas Size** and **Root Pivot**. It draws at the screen's full resolution and quality, as the game does, whatever the Scalability level or Engine Settings.
+- **Viewport**: always 2D and unlit, over a neutral mid grey that stands in for the world (a [Multiply](material.md#multiply-on-scene-layers) element darkens it). The orange frame is the layer's design canvas, placed by its **Canvas Size** and **Root Pivot**. It draws at the screen's full resolution and quality, as the game does, whatever the Scalability level or Engine Settings. As in the game, the project's post-processing never draws on a layer: no ambient occlusion, reflections, volumetric lighting, screen-space shadows, bloom, color grading, vignette or upscaling, including on a 3D mesh in it.
 - **Outliner**: the layer's actors. Tap **+** to place them; **Place Actors** adds an **Overlay** category of ready-made 2D elements.
 - **Inspector**: the selected actor, or the layer's settings when nothing is selected.
 - **Output Log** and **Compiler Results**: messages and script errors.

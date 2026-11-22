@@ -1,5 +1,6 @@
 import { isStorageNotFound, type ProjectStorage } from "@haptic/core";
-import { readAssetCatalog, readHassetHeader, STORAGE_MOVE_BACKUP_PREFIX } from "@haptic/assets";
+import { readAssetCatalog, STORAGE_MOVE_BACKUP_PREFIX } from "@haptic/assets";
+import { readHassetHeader } from "@haptic/assets/hasset";
 import { throwIfCancelled } from "@haptic/source-control";
 import { assetBlobFolder } from "../lib/source-control-changes";
 import type { UnusedFiles } from "./source-control-sync";

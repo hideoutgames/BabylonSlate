@@ -54,7 +54,7 @@ const plugins = [
   },
   {
     className: "BabylonSlateMemoryPlugin",
-    typescript: "device-memory.ts",
+    typescript: "device-memory-mobile.ts",
   },
   {
     className: "BabylonSlateFileExportPlugin",

@@ -6,6 +6,8 @@ vi.mock("@capacitor/core", () => ({
   Capacitor: { getPlatform: () => "ios" },
   registerPlugin: () => ({}),
 }));
+// `getHostPlatform` reads the Capacitor bridge global that the native shells inject.
+(globalThis as { Capacitor?: unknown }).Capacitor = { getPlatform: () => "ios" };
 
 const { capacitorFileTransfer } = await import("./capacitor-file-transfer");
 const { isFileTransferError } = await import("./native-file-transfer-port");

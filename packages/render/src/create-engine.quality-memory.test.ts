@@ -10,7 +10,7 @@ import {
   applyProjectQualityPatch, createDefaultScene, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeRenderProjectSettings,
   qualityPresetPatch, QUALITY_GROUPS, ScalabilitySession, type QualityGroup, type RenderProjectSettings,
 } from "@haptic/core";
-import { createEngine } from "./create-engine";
+import { createEngine } from "./editor-engine";
 import { releaseKeptEffects } from "./effect-bridge";
 import { estimateTextureBytes } from "./texture-memory-estimate";
 
