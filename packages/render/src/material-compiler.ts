@@ -91,6 +91,7 @@ import { MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 import { noteAdoptedProgram, noteMaterialBuild, noteSameShaderRebuild } from "./material-program-census";
+import { isLayerDepthVisual } from "./layer-depth-visuals";
 
 /** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
 const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
@@ -394,6 +395,7 @@ export function compileMaterialPlan(
   // `plannedStockVertexStage`: its plan's vertex stage is Babylon's own (identity World Position Offset, no custom
   // blocks), known before the build that `hasStockVertexStage` waits for (`instance-pool.ts` groups by it at once).
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0, materialDomain: plan.domain, plannedStockVertexStage: cacheableShadowShape };
+  if (!auxiliary && options.overlay) drawsLayer3DWithDepth(material, plan);
   const configureSurface = () => {
     if (auxiliary) {
       material.backFaceCulling = plan.twoSided !== true;
@@ -403,6 +405,9 @@ export function compileMaterialPlan(
       applyAuthoredSurfaceBlend(material, plan);
       if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text" && plan.domain !== "ui") registerAlphaToCoverage(material);
       if (options.overlay) {
+        // Scene Layer content sorts back to front by Z-Order in the blended list, and an actor's Opacity fades any
+        // Material: every draw blends (no depth writes), except a 3D visual's with an Opaque or Masked Material
+        // (`drawsLayer3DWithDepth`).
         material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false;
         // A Multiply surface on a Scene Layer draws as Translucent (`attachSurfaceShading`).
         if (plan.blendMode === "multiply") material.alphaMode = Constants.ALPHA_COMBINE;
@@ -1607,6 +1612,23 @@ function applyAuthoredSurfaceBlend(
     default:
       material.transparencyMode = Material.MATERIAL_OPAQUE;
   }
+}
+
+/**
+ * A Scene Layer Material (`overlay`) of the surface domain with an Opaque or Masked blend mode draws a 3D visual
+ * (`isLayerDepthVisual`: a MeshComponent's primitive or model, Text3D) as the world draws it: in its rendering group's
+ * opaque or alpha-tested list, so the draw writes depth and 3D meshes in the layer occlude each other, as in the editor's
+ * Scene Layer tab. Every other mesh it draws (2D layer content) keeps the blended list and its Z-Order sort. A mesh that
+ * fades (`visibility`, vertex alpha, or an actor's Opacity through `overlay-visual-style.ts`) still blends. Installed
+ * once, outside the surface setup a rebuild repeats, so the overlay style's wrapper around it stays.
+ */
+export function drawsLayer3DWithDepth(material: Material, plan: Pick<MaterialBuildPlan, "domain" | "blendMode">): void {
+  if (plan.domain !== "surface" || (plan.blendMode !== "opaque" && plan.blendMode !== "masked")) return;
+  const masked = plan.blendMode === "masked";
+  const blends = material.needAlphaBlendingForMesh.bind(material);
+  const tests = material.needAlphaTestingForMesh.bind(material);
+  material.needAlphaBlendingForMesh = (mesh) => isLayerDepthVisual(mesh) ? mesh.visibility < 1 || mesh.hasVertexAlpha : blends(mesh);
+  material.needAlphaTestingForMesh = (mesh) => isLayerDepthVisual(mesh) ? masked && !material.needAlphaBlendingForMesh(mesh) : tests(mesh);
 }
 
 /** Bind the shared sampler source for a parameter or an inline sample. */

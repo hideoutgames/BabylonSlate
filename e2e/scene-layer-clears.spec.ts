@@ -20,7 +20,7 @@ const CLASS_GUID = "00000000-0000-4000-8000-000000000002";
 const BLUE_GUID = "00000000-0000-4000-8000-000000000071";
 const GREEN_GUID = "00000000-0000-4000-8000-000000000072";
 const RED_GUID = "00000000-0000-4000-8000-000000000073";
-const LAYERS = ["PlainA", "PlainB", "PlainC", "BoxesFront", "BoxesBack", "Paneled"] as const;
+const LAYERS = ["PlainA", "PlainB", "PlainC", "BoxesFront", "BoxesBack", "Occlusion", "Paneled"] as const;
 const layerGuid = (index: number) => `00000000-0000-4000-8000-0000000000${(80 + index).toString()}`;
 
 type Diagnostics = { layerFrame?: { depthClears: number; targetSwitches: number; backbuffer: { clears: number; depthClears: number; elided: number } } };
@@ -50,15 +50,27 @@ async function settled(page: Page, unlike?: string): Promise<string> {
   return current;
 }
 
+/** The RGB of the Play canvas at a point of its layer units (the 32 × 18 canvas, x right, y up, fitted to the screen). */
+const colourAt = (page: Page, x: number, y: number) => page.getByTestId("play-canvas").evaluate((canvas: HTMLCanvasElement, [u, v]) => {
+  const copy = document.createElement("canvas");
+  copy.width = canvas.width; copy.height = canvas.height;
+  const context = copy.getContext("2d", { willReadFrequently: true })!;
+  context.drawImage(canvas, 0, 0);
+  const pixel = context.getImageData(Math.floor((u! + 16) / 32 * copy.width), Math.floor((9 - v!) / 18 * copy.height), 1, 1).data;
+  return [pixel[0]!, pixel[1]!, pixel[2]!];
+}, [x, y] as const);
+const isColour = (rgb: number[], channel: 0 | 1 | 2) => rgb[channel]! > 200 && rgb.every((value, index) => index === channel || value < 60);
+
 const layerWork = (page: Page) => page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.layerFrame ?? null);
 
 /**
  * Scene Layers leave out the depth-stencil clears the backbuffer already holds (the world output pass's clear takes the
  * first layer's): `layerdebug skipclears on` and `off` must draw the same bytes. Three plain layers of 2D quads, two
  * layers of turned 3D boxes overlapping each other on screen (the back layer's boxes behind the front layer's in depth),
- * a layer with a Post Processing Panel, then the shared Scene Layer stack with a pass. These layers' draws all blend, and
- * a blended draw writes no depth, so every layer clear here is left out; that a draw writing depth or stencil makes the
- * next clear run is `backbuffer-depth-tracker.test.ts`'s and `scene-layer-compositor.test.ts`'s.
+ * a layer of opaque boxes that overlap in pairs, the nearer one listed first in one pair and second in the other, a layer
+ * with a Post Processing Panel, then the shared Scene Layer stack with a pass. The boxes' Opaque Materials draw with
+ * depth writes, so the nearer box wins whatever the order, and the back layer's clear must run: its boxes, behind the
+ * front layer's in depth, still draw over them. The 2D quads blend and write no depth.
  */
 test("leaving out the Scene Layers' already-cleared depth-stencil clears changes no pixel", async ({ page }, testInfo) => {
   test.setTimeout(300_000);
@@ -111,10 +123,11 @@ test("leaving out the Scene Layers' already-cleared depth-stencil clears changes
   const quad = (id: string, materialGuid: string, position: [number, number], scale: [number, number]): SerializedActor =>
     createActor(id, id, { classId: "SceneLayerActor", transform: { position: [position[0], position[1], 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
       components: [{ id: `${id}-quad`, classId: "2DMaterialComponent", properties: { materialGuid }, transform: { position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [scale[0], scale[1], 1] } }] });
-  const box = (id: string, materialGuid: string, position: [number, number, number], rotation: [number, number, number]): SerializedActor => {
+  const box = (id: string, materialGuid: string, position: [number, number, number], rotation: [number, number, number],
+    scale: [number, number, number] = [2, 2, 2]): SerializedActor => {
     const mesh = createMeshComponent(`${id}-mesh`, "box");
     mesh.properties.materialGuid = materialGuid;
-    return createActor(id, id, { classId: "SceneLayerActor", transform: { position, rotation: turn(...rotation), scale: [2, 2, 2] }, components: [mesh] });
+    return createActor(id, id, { classId: "SceneLayerActor", transform: { position, rotation: turn(...rotation), scale }, components: [mesh] });
   };
   const contents: Record<(typeof LAYERS)[number], SerializedActor[]> = {
     PlainA: [quad("a1", BLUE_GUID, [-10, 4], [6, 4]), quad("a2", GREEN_GUID, [-6, 2], [4, 4])],
@@ -124,6 +137,13 @@ test("leaving out the Scene Layers' already-cleared depth-stencil clears changes
     BoxesFront: [box("f1", BLUE_GUID, [6, 2, 0], [30, 40, 10]), box("f2", GREEN_GUID, [7.5, 2.5, 0.5], [-20, 15, 35])],
     // Behind the front layer's boxes in depth (the camera looks along +Z): only the layer's own depth clear shows them.
     BoxesBack: [box("k1", RED_GUID, [6.5, 2, 4], [10, 60, 0]), box("k2", RED_GUID, [8, 1, 3], [45, 0, 20])],
+    // Two thin slabs 3 units across through one centre: one facing the camera, one turned 45° about Y, so it is nearer
+    // on one side of the centre and farther on the other. Only depth can show each slab where it is nearer: sorted by
+    // distance alone (they share a centre), one slab would cover the other on both sides.
+    Occlusion: [
+      box("facing", GREEN_GUID, [-2, 6, 1.5], [0, 0, 0], [2, 2, 0.1]),
+      box("turned", BLUE_GUID, [-2, 6, 1.5], [0, 45, 0], [2, 2, 0.1]),
+    ],
     Paneled: [
       createActor("frame", "Frame", { classId: "main", transform: { position: [0, -5, 0], rotation: [0, 0, 0, 1], scale: [8, 6, 1] }, components: [panel] }),
       createActor("icon", "Icon", { classId: "SceneLayerActor", parentId: "frame", transform: { position: [0.4, 0, 0], rotation: [0, 0, 0, 1], scale: [0.5, 0.5, 1] },
@@ -191,6 +211,15 @@ test("leaving out the Scene Layers' already-cleared depth-stencil clears changes
   expect(skippedWork!.backbuffer.clears).toBe(everyWork!.backbuffer.clears - skippedWork!.backbuffer.elided);
   expect(skippedWork!.backbuffer.depthClears).toBe(everyWork!.backbuffer.depthClears - skippedWork!.backbuffer.elided + 1);
   await canvas.screenshot({ path: testInfo.outputPath("scene-layer-clears-plain.png") });
+  // The crossing slabs: the turned one shows on the side where it is nearer, the facing one on the other.
+  const sides = [await colourAt(page, -2.6, 6), await colourAt(page, -1.4, 6)];
+  const slab = (rgb: number[]) => isColour(rgb, 2) ? "turned" : isColour(rgb, 1) ? "facing" : `other ${rgb.join(",")}`;
+  expect(sides.map(slab).sort(), "each slab where it is nearer").toEqual(["facing", "turned"]);
+  // The back layer draws over the front one, its boxes behind them in depth: its own depth clear ran.
+  expect(isColour(await colourAt(page, 6.25, 2), 0), "back layer over the front layer").toBe(true);
+  // The front and occluding layers write depth, so the clears after them run: more than the world's merged clear.
+  expect(skippedWork!.backbuffer.depthClears).toBeGreaterThanOrEqual(3);
+  expect(skippedWork!.backbuffer.elided).toBeLessThan(everyWork!.backbuffer.depthClears);
 
   const step = async (text: string) => {
     await closeConsole();
