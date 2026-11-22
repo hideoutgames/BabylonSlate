@@ -1,5 +1,5 @@
 import { useMemo, useReducer } from "react";
-import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
+import type { AnimClipCatalogEntry, AnimClipRootMotion } from "@haptic/anim-graph";
 import type {
   CollisionTriangleMesh,
   DataAssetCatalogEntry,
@@ -41,7 +41,7 @@ export interface PlayContent {
   scenes: Array<{ guid: string; scene: SerializedScene }>;
   sceneLayers: Array<{ guid: string; layer: SerializedSceneLayer }>;
   animGraphs: PlayAnimGraphEntry[];
-  /** Every clip in the project, with the root motion tracks of the prepared Animations (`playAnimClipCatalog`). */
+  /** Every clip in the project, each Animation with root motion carrying its track (`playAnimClipCatalog`). */
   animClipCatalog: AnimClipCatalogEntry[];
   behaviourTrees: PlayBehaviourTreeEntry[];
   blackboards: PlayBlackboardEntry[];
@@ -169,6 +169,8 @@ function playContentReducer(state: PlayContent, action: PlayContentAction): Play
 export function preparedPlayContent(
   prepared: PreparedPlaySources,
   catalog: Parameters<typeof playAssetCatalog>[0],
+  /** Every project Animation's root motion (`playRootMotionTracks`). */
+  rootMotionTracks: ReadonlyMap<string, AnimClipRootMotion>,
 ): PlayPreparedContent {
   const { game, content, sources } = prepared;
   return {
@@ -178,7 +180,7 @@ export function preparedPlayContent(
     globalParameterCatalog: content.globalParameterCatalog,
     assetCatalog: playAssetCatalog(catalog),
     animGraphs: content.animGraphs,
-    animClipCatalog: playAnimClipCatalog(catalog.registry.list(), content.animClipCatalog),
+    animClipCatalog: playAnimClipCatalog(catalog.registry.list(), rootMotionTracks),
     behaviourTrees: content.behaviourTrees,
     blackboards: content.blackboards,
     spritePayloads: content.spritePayloads,
