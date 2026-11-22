@@ -144,6 +144,14 @@ export async function replaceSceneMaterial(scene: Scene, from: Material, to: Nod
   return true;
 }
 
+/**
+ * Whether `plan` compiles differently with the Material record on: a Material-mode program's (Particle and Post Process
+ * programs keep plain uniforms, `compileMaterialPlan`).
+ */
+function readsMaterialRecord(plan: MaterialBuildPlan): boolean {
+  return plan.domain !== "particle" && plan.domain !== "postProcess";
+}
+
 const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = Object.freeze({});
 
 /**
@@ -228,7 +236,7 @@ export class MaterialLibrary {
     const base = this.options.textureIdentity
       ? JSON.stringify([plan.hash, plan.textures.map((texture) => [texture.textureGuid, this.options.textureIdentity!(texture.textureGuid) ?? null])])
       : plan.hash;
-    return materialRecordsOn(scene) ? `${base}:records` : base;
+    return materialRecordsOn(scene) && readsMaterialRecord(plan) ? `${base}:records` : base;
   }
 
   private entriesFor(scene: Scene): Map<string, CacheEntry> {
@@ -660,7 +668,8 @@ export class MaterialLibrary {
       if (isDisposedNodeMaterial(entry.material, scene)) continue;
       const { doc, options } = entry.source;
       const lowered = this.planFor(doc, options?.unlit);
-      if (!lowered.ok) continue;
+      // Particle and Post Process programs never read the record: their builds stay, as do the passes holding them.
+      if (!lowered.ok || !readsMaterialRecord(lowered.plan)) continue;
       const parameters = new Map<string, MaterialParameterValue>();
       for (const operation of lowered.plan.operations) {
         if (!operation.nodeType.startsWith("param.") || operation.source.callPath.length) continue;

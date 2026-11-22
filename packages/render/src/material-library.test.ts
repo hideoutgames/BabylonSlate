@@ -961,9 +961,15 @@ describe("material library", () => {
     const mesh = MeshBuilder.CreateBox("body", {}, scene);
     mesh.material = acquired.material;
     expect(acquired.material.compiledShaders).not.toContain("HapticMaterial");
+    // A Post Process Material never reads the record: its pass holds the build, which the switch must leave alone.
+    const grade = createDefaultMaterialDocument("Grade", "postProcess");
+    const pass = library.acquire(scene, "grade", grade);
+    if (!pass.ok) throw new Error("acquire failed");
+    expect(await pass.ready).toEqual([]);
 
     setSceneWorldDebug(scene, "materialrecords", true);
     library.recompileScene(scene);
+    expect([library.materialFor(scene, "grade"), library.isReady(scene, "grade", grade)]).toEqual([pass.material, true]);
     await vi.waitFor(() => expect(library.isReady(scene, "grit", doc, { instanceKey: "1|body" })).toBe(true));
     const recompiled = library.materialFor(scene, "grit", { instanceKey: "1|body" })!;
     expect(recompiled).not.toBe(acquired.material);
@@ -979,6 +985,8 @@ describe("material library", () => {
     expect(plain.compiledShaders).not.toContain("HapticMaterial");
     expect(mesh.material).toBe(plain);
     expect(library.getParameter(scene, "grit", "Grit", { instanceKey: "1|body" })).toEqual({ kind: "float", value: 0.8 });
+    expect(library.materialFor(scene, "grade")).toBe(pass.material);
+    expect(scene.materials.includes(pass.material)).toBe(true);
   });
 
   it("never shares one material instance across two scenes", () => {
