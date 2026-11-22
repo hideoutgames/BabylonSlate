@@ -1,6 +1,6 @@
 import { BabylonSlateScopedStorage, decodeBase64, encodeBase64, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
 import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, utf8ByteLength, validateStorageRange, validateStorageRangeResult } from "./storage-range";
-import { StorageNotFoundError } from "@haptic/core";
+import { PROJECT_FILE, StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
@@ -109,6 +109,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     name = projectFolderName(name);
     const root = `${PROJECTS_ROOT}/${name}`;
     await this.ensureDirectory(root);
+    await this.finishProjectFileReplace(root);
     this.folder = { id: `documents:${name}`, name, tier: "documents" };
     return this.folder;
   }
@@ -123,6 +124,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     const name = projectFolderName(handle.id.slice("documents:".length));
     const info = await this.fs.stat({ path: `${PROJECTS_ROOT}/${name}`, directory: this.directory });
     if (info.type !== "directory") throw new Error("Project folder is not a directory.");
+    await this.finishProjectFileReplace(`${PROJECTS_ROOT}/${name}`);
     this.folder = { id: `documents:${name}`, name, tier: "documents" };
     return this.folder;
   }
@@ -224,10 +226,16 @@ export class DocumentsStorageAdapter implements ProjectStorage {
    */
   private async writeStaged(path: string, data: string, encoding?: "utf8"): Promise<void> {
     const target = this.abs(path);
-    const staged = `${target.slice(0, target.lastIndexOf("/"))}/${stagedWriteName()}`;
+    const folder = target.slice(0, target.lastIndexOf("/"));
+    const stagedName = stagedWriteName();
+    const staged = `${folder}/${stagedName}`;
+    // `project.json` alone gets a marker naming its staged file, written once that file is complete:
+    // iOS's rename removes the target before it moves, so a kill in between would leave the project unopenable.
+    const marker = projectRelativePath(path, false) === PROJECT_FILE ? `${folder}/${stagedWriteName()}` : null;
     const directory = this.directory;
     try {
       await this.fs.writeFile({ path: staged, data, directory, ...(encoding ? { encoding } : {}), recursive: true });
+      if (marker) await this.fs.writeFile({ path: marker, data: JSON.stringify({ target: PROJECT_FILE, staged: stagedName }), directory, encoding: "utf8" });
       try {
         await this.fs.rename({ from: staged, to: target, directory, toDirectory: directory });
       } catch (error) {
@@ -238,6 +246,44 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     } catch (error) {
       await this.fs.deleteFile({ path: staged, directory }).catch(() => undefined);
       throw error;
+    } finally {
+      if (marker) await this.fs.deleteFile({ path: marker, directory }).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Finishes a `project.json` replacement a killed app left half done, from
+   * its marker (never by guessing from content): with `project.json` missing
+   * and the marker's complete staged file present, the staged file becomes
+   * `project.json`. Otherwise the marker and its staged file are leftovers of
+   * a write that finished or never got that far, and are removed. Failures
+   * leave everything as it was; opening goes on.
+   */
+  private async finishProjectFileReplace(root: string): Promise<void> {
+    const directory = this.directory;
+    try {
+      const { files } = await this.fs.readdir({ path: root, directory });
+      const names = new Set(files.map((file) => file.name));
+      for (const file of files) {
+        if (file.type !== "file" || !isStagedWrite(file.name) || file.size > 1024) continue;
+        let staged: string;
+        try {
+          const record = JSON.parse((await this.fs.readFile({ path: `${root}/${file.name}`, directory, encoding: "utf8" })).data) as { target?: unknown; staged?: unknown };
+          if (record.target !== PROJECT_FILE || typeof record.staged !== "string" || !isStagedWrite(record.staged)) continue;
+          staged = record.staged;
+        } catch {
+          continue;
+        }
+        if (!names.has(PROJECT_FILE) && names.has(staged)) {
+          await this.fs.rename({ from: `${root}/${staged}`, to: `${root}/${PROJECT_FILE}`, directory, toDirectory: directory });
+          names.add(PROJECT_FILE);
+        } else if (names.has(staged)) {
+          await this.fs.deleteFile({ path: `${root}/${staged}`, directory });
+        }
+        await this.fs.deleteFile({ path: `${root}/${file.name}`, directory });
+      }
+    } catch {
+      // Left for the next open.
     }
   }
 
