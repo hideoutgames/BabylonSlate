@@ -169,17 +169,59 @@ describe("prepareAssetThumbnailInput", () => {
     expect(inputs.collectTextureBytes).toHaveBeenCalledWith(["override"]);
   });
 
-  it("selects a front-facing capture for a sprite-only prefab", async () => {
-    const selected = asset("prefab", "Class", { components: [{
-      id: "sprite", classId: "SpriteComponent", properties: { assetGuid: "sprite" },
-      transform: identitySerializedTransform(),
-    }] }, "Actor");
-    const sprite = asset("sprite", "Sprite", { ...createDefaultSpritePayload() });
-    const result = await prepareAssetThumbnailInput({ asset: selected, ...fixture([selected, sprite]) });
+  describe("chooses the Class thumbnail's view", () => {
+    const component = (classId: string, properties: Record<string, unknown> = {}) => ({
+      id: classId, classId, properties, transform: identitySerializedTransform(),
+    });
+    const panel = component("2DPanelComponent", { source: "color" });
+    const text = component("2DTextComponent", { text: "Score" });
+    const sprite = component("SpriteComponent", { assetGuid: null });
+    const tilemap = component("TilemapComponent", { assetGuid: null });
+    const painter = component("2DPainterComponent");
+    const collider = component("ColliderComponent");
+    const audio = component("AudioComponent");
+    const landscape = component("LandscapeComponent");
+    const text3D = component("Text3DComponent", { text: "Title" });
+    const mesh = createMeshComponent("mesh", "box");
 
-    expect(result?.kind).toBe("ActorPrefab");
-    if (result?.kind !== "ActorPrefab") throw new Error("Expected an Actor Prefab");
-    expect(result.prefab.settings.physicsWorld).toBe("2d");
+    async function viewOf(payload: Record<string, unknown>, parentClass: string, ancestors: IndexedAsset[] = []) {
+      const selected = asset("selected", "Class", payload, parentClass);
+      const result = await prepareAssetThumbnailInput({ asset: selected, ...fixture([selected, ...ancestors]) });
+      if (result?.kind !== "ActorPrefab") throw new Error("Expected an Actor Prefab");
+      // A 2D view realises in a 2D world, as the Prefab editor realises a SceneLayerActor Class.
+      expect(result.prefab.settings.physicsWorld).toBe(result.view);
+      return result.view;
+    }
+
+    it.each([
+      ["2D components", { components: [panel, text] }],
+      ["no authored components", {}],
+      ["an empty component list", { components: [] }],
+      ["3D geometry beside 2D components", { components: [panel, mesh, text3D] }],
+    ])("draws a SceneLayerActor Class with %s in 2D, directly and through an intermediate Class", async (_, payload) => {
+      expect(await viewOf(payload, "SceneLayerActor")).toBe("2d");
+      const intermediate = asset("Widget", "Class", { components: [] }, "SceneLayerActor");
+      expect(await viewOf(payload, "Widget", [intermediate])).toBe("2d");
+    });
+
+    it.each([
+      ["only a Sprite", [sprite], "2d"],
+      ["only a Tilemap", [tilemap], "2d"],
+      ["only a 2D Painter", [painter], "2d"],
+      ["a 2D Text and a Collider", [text, collider], "2d"],
+      ["a Sprite and a Mesh", [sprite, mesh], "3d"],
+      ["a Tilemap and a Landscape", [tilemap, landscape], "3d"],
+      ["only non-visual components", [collider, audio], "3d"],
+      ["only 3D visuals", [mesh, text3D], "3d"],
+    ])("draws an Actor Class with %s in %s", async (_, components, view) => {
+      expect(await viewOf({ components }, "Actor")).toBe(view);
+    });
+
+    it("draws an inherited 2D visual under a child's Mesh in 3D", async () => {
+      const parent = asset("Flat", "Class", { components: [sprite] }, "Actor");
+      expect(await viewOf({ components: [] }, "Flat", [parent])).toBe("2d");
+      expect(await viewOf({ components: [mesh] }, "Flat", [parent])).toBe("3d");
+    });
   });
 
   it("does not capture an editor placeholder when a referenced Model source is missing", async () => {

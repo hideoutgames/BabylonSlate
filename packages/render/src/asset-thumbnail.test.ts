@@ -1,4 +1,5 @@
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Camera } from "@babylonjs/core/Cameras/camera";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
@@ -149,7 +150,10 @@ describe("asset thumbnail capture", () => {
         createActor("helper", "Audio", { components: [{ id: "audio", classId: "AudioComponent", properties: {} }] }),
       ],
     };
-    let captured: { positions: number[][]; modelMaterial: string | undefined; target: number[]; radius: number; names: string[] } | undefined;
+    let captured: {
+      positions: number[][]; modelMaterial: string | undefined; target: number[]; radius: number; names: string[];
+      pose: { mode: number; alpha: number; beta: number };
+    } | undefined;
     vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockImplementation(function (this: RenderTargetTexture) {
       order.push("thumbnail");
       const preview = this.getScene()!;
@@ -162,11 +166,12 @@ describe("asset thumbnail capture", () => {
         target: camera.target.asArray(),
         radius: camera.radius,
         names: meshes.map((mesh) => mesh.name),
+        pose: { mode: camera.mode, alpha: camera.alpha, beta: camera.beta },
       };
       return Promise.resolve(new Uint8Array(128 * 128 * 4));
     });
     const capture = captureAssetThumbnailPng(engine, {
-      kind: "ActorPrefab", prefab, materials: new Map([["paint", material]]),
+      kind: "ActorPrefab", prefab, view: "3d", materials: new Map([["paint", material]]),
       assets: {
         modelBytes: new Map([["triangle", encodeTriangleGlb()]]),
         modelPayloads: new Map([["triangle", normalizeModelPayload({
@@ -191,6 +196,70 @@ describe("asset thumbnail capture", () => {
     expect(captured?.target[0]).toBeCloseTo(11.125);
     expect(captured?.target[1]).toBeCloseTo(1.125);
     expect(captured?.radius).toBeLessThan(10);
+    // An angled perspective view, not the 2D view's front-on one.
+    expect(captured?.pose.mode).toBe(Camera.PERSPECTIVE_CAMERA);
+    expect(captured?.pose.beta).not.toBeCloseTo(Math.PI / 2);
+    expect(engine.scenes).toEqual([scene]);
+  });
+
+  // A SceneLayerActor Class, or one drawing only 2D surfaces, shows what the 2D view shows.
+  it.each([
+    ["wide", [4, 1, 1], 4],
+    ["tall", [1, 3, 1], 1 / 3],
+  ] as const)("captures a %s 2D Prefab front-on and orthographic, centred with its aspect kept", async (_, scale, aspect) => {
+    const { engine, scene } = fixture();
+    const panel = (id: string, position: [number, number, number], panelScale: readonly number[]) =>
+      createActor(id, id, {
+        transform: { ...identitySerializedTransform(), position, scale: [...panelScale] as [number, number, number] },
+        components: [{ id: `${id}-panel`, classId: "2DPanelComponent", properties: { source: "color" } }],
+      });
+    const prefab = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("marker", "Prefab Root", { components: [createMeshComponent("pivot", "pivot")] }),
+        // Two panels a Z-Order apart: the one behind is half the size, inside the front one's XY bounds.
+        panel("front", [10, 5, 0], scale),
+        panel("behind", [10, 5, 2], scale.map((value) => value / 2)),
+      ],
+    };
+    let captured: { mode: number; forward: number[]; up: number[]; clip: { min: number[]; max: number[] }; count: number } | undefined;
+    vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockImplementation(function (this: RenderTargetTexture) {
+      const preview = this.getScene()!;
+      const camera = preview.activeCamera as ArcRotateCamera;
+      const meshes = preview.meshes.filter((mesh) => mesh.isVisible && mesh.visibility > 0 && mesh.getTotalVertices() > 0 && !mesh.isBlocked);
+      const transform = camera.getViewMatrix(true).multiply(camera.getProjectionMatrix(true));
+      const min = [Infinity, Infinity, Infinity];
+      const max = [-Infinity, -Infinity, -Infinity];
+      for (const mesh of meshes) {
+        for (const corner of mesh.getBoundingInfo().boundingBox.vectorsWorld) {
+          const clip = Vector3.TransformCoordinates(corner, transform).asArray();
+          clip.forEach((value, axis) => { min[axis] = Math.min(min[axis]!, value); max[axis] = Math.max(max[axis]!, value); });
+        }
+      }
+      captured = {
+        mode: camera.mode,
+        forward: camera.getDirection(Vector3.Forward()).asArray(),
+        up: camera.getDirection(Vector3.Up()).asArray(),
+        clip: { min, max },
+        count: meshes.length,
+      };
+      return Promise.resolve(new Uint8Array(32 * 32 * 4));
+    });
+    const png = pngOf(await captureAssetThumbnailPng(engine, { kind: "ActorPrefab", prefab, view: "2d", materials: new Map() }, undefined, 32));
+    expect(png?.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+    expect(captured?.count).toBe(2);
+    expect(captured?.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    // Looking along +Z at the XY plane, Y up.
+    captured?.forward.forEach((value, axis) => expect(value).toBeCloseTo([0, 0, 1][axis]!));
+    captured?.up.forEach((value, axis) => expect(value).toBeCloseTo([0, 1, 0][axis]!));
+    const { min, max } = captured!.clip;
+    // Centred, the long side filling 90% of the square frame, the short side in proportion, depth inside the planes.
+    expect(min[0]).toBeCloseTo(-max[0]!);
+    expect(min[1]).toBeCloseTo(-max[1]!);
+    expect(Math.max(max[0]!, max[1]!)).toBeCloseTo(0.9);
+    expect(max[0]! / max[1]!).toBeCloseTo(aspect);
+    expect(min[2]).toBeGreaterThan(-1);
+    expect(max[2]).toBeLessThan(1);
     expect(engine.scenes).toEqual([scene]);
   });
 
@@ -386,7 +455,10 @@ describe("asset thumbnail capture", () => {
       kind: "Material", materialGuid: "missing", materials: new Map(),
     })).toEqual({ outcome: "failed" });
     expect(await captureAssetThumbnailPng(engine, {
-      kind: "ActorPrefab", prefab: { ...createDefaultScene(), actors: [] }, materials: new Map(),
+      kind: "ActorPrefab", prefab: { ...createDefaultScene(), actors: [] }, view: "3d", materials: new Map(),
+    })).toEqual({ outcome: "failed" });
+    expect(await captureAssetThumbnailPng(engine, {
+      kind: "ActorPrefab", prefab: { ...createDefaultScene(), actors: [] }, view: "2d", materials: new Map(),
     })).toEqual({ outcome: "failed" });
     expect(read).not.toHaveBeenCalled();
     expect(engine.scenes).toEqual([scene]);

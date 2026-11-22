@@ -102,6 +102,8 @@ While **Duplicate** or **Copy to Folder…** runs, a progress window shows the i
 
 A Sprite's thumbnail shows its whole Texture, a Tileset's its whole sheet, and a Tilemap's all the tiles its visible layers paint, over a checkerboard where nothing is drawn. They are drawn again when you save them or a Texture or Tileset they show, and **Create Tileset** draws the new Tileset's. A Sprite or Tileset without a Texture and a Tilemap with nothing painted keep the type icon, and a Sprite Animation always shows its icon.
 
+An actor Class's thumbnail shows its components. A Class whose parent, at any depth, is **Scene Layer Actor** is drawn flat and straight on, as the 2D view shows it, and so is any other Class that draws only 2D elements, such as Sprites, Tilemaps and 2D components. Every other Class is drawn from an angle.
+
 A new project, whether from a starter, a template or an imported project, draws a thumbnail for every asset that has one when it first opens. They appear one by one while you work.
 
 Asset pickers show the same thumbnail: in the closed picker in place of the type icon, and on each row of the **Pick Asset** list. An asset without a thumbnail, or a type that has none, keeps its icon.
