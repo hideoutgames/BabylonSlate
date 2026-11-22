@@ -16,6 +16,7 @@ import {
   type SerializedTransform,
 } from "@haptic/core";
 import {
+  foldHeightFieldMirror,
   parseColliderProperties,
   scaleColliderShape,
   type ColliderShape,
@@ -100,10 +101,15 @@ export function collisionSurfaces(
       )
     )
       return;
+    // A heightfield mirrored on one of X and Z is posed as physics poses it, so Drop meets the triangles drawn.
+    const folded = shape.kind === "heightfield"
+      ? foldHeightFieldMirror({ x: scale.x, y: scale.y, z: scale.z }, { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w })
+      : null;
     // Physics bakes dimensions (sphere=max axis, capsule/cylinder=max XZ),
     // rather than allowing inverse TRS to turn round shapes into ellipsoids.
-    const baked = scaleColliderShape(shape, scale);
-    const pose = Matrix.Compose(Vector3.One(), rotation, position);
+    const baked = scaleColliderShape(shape, folded?.scale ?? scale);
+    const turn = folded?.rotation;
+    const pose = Matrix.Compose(Vector3.One(), turn ? new Quaternion(turn.x, turn.y, turn.z, turn.w) : rotation, position);
     const triangles =
       baked.kind === "convex"
         ? convexHullMesh(baked.points)
