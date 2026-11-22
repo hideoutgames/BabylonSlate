@@ -177,7 +177,7 @@ export function setDrawPassStageListener(listener: DrawPassStageListener | null)
 
 /**
  * The attributed frame on `engine` has reached its tail: the passes that write the view's output at its full size (the
- * FSR upscale and sharpening, or the output copy) and what is drawn over it. A no-op outside an attributed frame and inside an owner pass, whose
+ * FSR upscale and sharpening, the chain stage that draws into the output, or the output copy) and what is drawn over it. A no-op outside an attributed frame and inside an owner pass, whose
  * own graph writes its own output.
  */
 export function markFrameTail(engine: object): void {
