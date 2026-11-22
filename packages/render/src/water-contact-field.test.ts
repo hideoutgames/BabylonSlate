@@ -589,6 +589,46 @@ describe("Water contact field", () => {
       forced.dispose(); field.dispose();
     });
 
+    it("ends exactly where a forced rebuild does after an envelope change whose re-slicing spans frames while the worker answers", async () => {
+      setup();
+      // Cones and slanted boxes, whose sections differ at every envelope, so a cell built from a section cut for the
+      // old envelope differs from the final one.
+      const meshes = Array.from({ length: 10 }, (_, i) => {
+        const mesh = i % 2
+          ? MeshBuilder.CreateCylinder(`cone ${i}`, { height: 3, diameterBottom: 2.4, diameterTop: 0.2, tessellation: 24 }, scene)
+          : MeshBuilder.CreateBox(`slab ${i}`, { width: 1.4, height: 0.5, depth: 0.8 }, scene);
+        mesh.position.set(-9 + i * 2, i % 2 ? 0 : 0.1, (i % 3) - 1);
+        mesh.rotation.z = i % 2 ? 0 : 0.35;
+        return mesh;
+      });
+      frame();
+      const worker = manualWorker(), surface = flatSurface(scene, 0.3, () => 0, 1);
+      const field = new WaterContactField(scene, surface, { raster: worker.client });
+      field.update(0, true);
+      // Each clock read is a millisecond: an update re-slices two placements, so the backlog spans five frames.
+      let clock = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => clock++);
+      const slices = meshes.map((mesh) => vi.spyOn(mesh, "getVerticesData"));
+      surface.amplitude = 0.8;
+      const slicedAt: number[] = meshes.map(() => -1);
+      let answeredBeforeLastSlice = 0;
+      for (let step = 1; step < 60 && field.queued + slicedAt.filter((at) => at < 0).length > 0; step++) {
+        frame(); field.update(step * 16);
+        slices.forEach((slice, i) => { if (slicedAt[i]! < 0 && slice.mock.calls.length > 0) slicedAt[i] = step; });
+        // The worker answers between frames, while placements still wait to be cut again.
+        if (worker.jobs.length > 0 && slicedAt.includes(-1)) answeredBeforeLastSlice += worker.jobs.length;
+        while (worker.jobs.length > 0) worker.answer();
+        await flush();
+      }
+      expect(new Set(slicedAt).size).toBeGreaterThanOrEqual(4);
+      expect(answeredBeforeLastSlice).toBeGreaterThan(0);
+      expect(field.queued).toBe(0);
+      const forced = new WaterContactField(scene, { ...surface, mesh: flatSurface(scene, 0.8).mesh }, { raster: null });
+      forced.update(0, true);
+      expect(differing(field, forced)).toBe(0);
+      forced.dispose(); field.dispose();
+    });
+
     it("falls back to the main thread when the worker fails, warning once, and still ends where a forced rebuild does", async () => {
       setup();
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

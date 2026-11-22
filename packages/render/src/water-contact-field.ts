@@ -605,7 +605,7 @@ export class WaterContactField {
       this.flight.splice(this.flight.indexOf(entry), 1);
       if (entry.superseded) { this.enqueue(entry.window, entry.since); continue; }
       this.place(entry.window, entry.texels!);
-      this.upload([entry.window], false);
+      this.upload([entry.window], false, entry.texels!);
       this.touched = true;
       this.wrote(entry.window, entry.seq);
     }
@@ -613,8 +613,7 @@ export class WaterContactField {
 
   /** Builds a window here and uploads it. */
   private write(window: Window): void {
-    this.fill(this.around(window), window);
-    this.upload([window], false);
+    this.upload([window], false, this.fill(this.around(window), window));
     this.touched = true;
     this.wrote(window, ++this.writes);
   }
@@ -1183,13 +1182,15 @@ export class WaterContactField {
    * Recomputes every layer of the cells in `write`, seeding from all objects within range of them (`rasterContactWindow`).
    * `target` (`write` or a window around it) is the region computed: the rounding filters read neighbours, so the cells
    * of `write` come out exact only when `target` reaches twice the smoothing radius past them (or the edge of the texture).
+   * Returns the written texels, tightly packed (shared scratch, valid until the next fill).
    */
-  private fill(target: Window, write: Window): void {
+  private fill(target: Window, write: Window): Uint8Array {
     const size = (write.x1 - write.x0) * (write.z1 - write.z0) * 4;
     if (scratchTexels.length < size) scratchTexels = new Uint8Array(size);
     const texels = scratchTexels.subarray(0, size);
     rasterContactWindow(this.job(target, write), texels);
     this.place(write, texels);
+    return texels;
   }
 
   /** Copies a window's texels (rows tightly packed) into `data`. */
@@ -1200,7 +1201,11 @@ export class WaterContactField {
     }
   }
 
-  private upload(windows: Window[], full: boolean): void {
+  /**
+   * Uploads `windows` of `data`, or all of it. `texels`, for a single window, are its rows already tightly packed (a
+   * worker result or a fresh build), which a partial upload sends as they are.
+   */
+  private upload(windows: Window[], full: boolean, texels?: Uint8Array): void {
     const data = this.data!;
     const engine = this.scene.getEngine() as AbstractEngine & Partial<Pick<ThinEngine, "updateTextureData">>;
     if (!this.texture) {
@@ -1220,6 +1225,11 @@ export class WaterContactField {
       return;
     }
     // Moving objects only re-upload their neighbourhood.
+    if (texels && windows.length === 1) {
+      const w = windows[0]!;
+      engine.updateTextureData(internal, texels, w.x0, w.z0, w.x1 - w.x0, w.z1 - w.z0);
+      return;
+    }
     for (const w of windows) {
       const rowBytes = (w.x1 - w.x0) * 4, part = new Uint8Array(rowBytes * (w.z1 - w.z0));
       for (let z = w.z0; z < w.z1; z++) part.set(data.subarray((z * this.width + w.x0) * 4, (z * this.width + w.x1) * 4), (z - w.z0) * rowBytes);
