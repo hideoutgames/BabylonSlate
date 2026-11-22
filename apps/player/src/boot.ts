@@ -30,6 +30,7 @@ import {
   createSceneLoadReadiness,
   createSceneStreamingReadiness,
   navDebugBlockersFromActors,
+  postProcessDiagnosticMessage,
   type EngineHandle,
   type RenderShadingSettings,
   type SceneLoadProgress,
@@ -320,13 +321,14 @@ function initializePlayer(
     navBlockers: navDebugBlockersFromActors(scene.actors),
     ...playerDecoderPaths(),
     onPostProcessDiagnostic: (diagnostic) => {
+      const message = postProcessDiagnosticMessage(diagnostic, (guid) => manifest.assets.find((entry) => entry.guid === guid)?.name);
       options.onConsoleEvent?.({
         type: "log",
-        message: diagnostic.message,
+        message,
         severity: "warning",
       });
       recordDiagnostic({
-        message: diagnostic.message,
+        message,
         severity: "warning",
         assetGuid: diagnostic.materialGuid,
         nodeId: diagnostic.nodeId,

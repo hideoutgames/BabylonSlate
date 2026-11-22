@@ -14,6 +14,7 @@ import type { DebugInspectSnapshot } from "@haptic/object-model";
 import {
   createEngine,
   navDebugBlockersFromActors,
+  postProcessDiagnosticMessage,
 } from "@haptic/render";
 import { spawnableLightsFromScripts } from "@haptic/render/spawnable-lights";
 import { encodeInputEvents } from "@haptic/input";
@@ -310,7 +311,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     dracoBasePath: editorDracoPublicBase(),
     meshoptBasePath: editorMeshoptPublicBase(),
     onPostProcessDiagnostic: (diagnostic) => {
-      options.onLog?.(diagnostic.message, "warning");
+      options.onLog?.(postProcessDiagnosticMessage(diagnostic, (guid) => options.assetCatalog?.find((entry) => entry.guid === guid)?.name), "warning");
     },
     onAudioDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
