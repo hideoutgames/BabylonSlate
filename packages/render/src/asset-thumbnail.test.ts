@@ -1,5 +1,6 @@
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
@@ -83,6 +84,34 @@ describe("asset thumbnail capture", () => {
     expect(read).toHaveBeenCalledOnce();
     expect(engine.scenes).toEqual([scene]);
     expect(scene.meshes).toHaveLength(0);
+  });
+
+  it("captures a User Interface Material on the flat quad filling the frame, not on the sphere", async () => {
+    const { engine } = fixture();
+    let captured: { sphere: boolean; quad: unknown; corners: boolean } | undefined;
+    vi.spyOn(RenderTargetTexture.prototype, "readPixels").mockImplementation(function (this: RenderTargetTexture) {
+      const preview = this.getScene()!;
+      const quad = preview.getMeshByName("materialPreviewUserInterface")!;
+      const camera = preview.activeCamera!;
+      const transform = camera.getViewMatrix(true).multiply(camera.getProjectionMatrix(true));
+      const positions = quad.getVerticesData("position")!;
+      const uvs = quad.getVerticesData("uv")!;
+      captured = {
+        sphere: preview.getMeshByName(MATERIAL_PREVIEW_MESH_NAME)!.isEnabled(),
+        quad: (quad.material?.metadata as { materialDomain?: string } | null)?.materialDomain,
+        // Each vertex on the frame's edge its UV names.
+        corners: Array.from({ length: uvs.length / 2 }, (_, index) => {
+          const clip = Vector3.TransformCoordinates(Vector3.FromArray(positions, index * 3), transform);
+          return Math.abs(clip.x - (uvs[index * 2]! * 2 - 1)) < 1e-5 && Math.abs(clip.y - (uvs[index * 2 + 1]! * 2 - 1)) < 1e-5;
+        }).every(Boolean),
+      };
+      return Promise.resolve(new Uint8Array(32 * 32 * 4));
+    });
+    const png = pngOf(await captureAssetThumbnailPng(engine, {
+      kind: "Material", materialGuid: "widget", materials: new Map([["widget", createDefaultMaterialDocument("Widget", "ui")]]),
+    }, undefined, 32));
+    expect(png?.subarray(0, 8)).toEqual(PNG_SIGNATURE);
+    expect(captured).toEqual({ sphere: false, quad: "ui", corners: true });
   });
 
   it("captures parented prefab models with slot materials and frames only visible authored geometry", async () => {

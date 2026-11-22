@@ -18,7 +18,8 @@ import { isColliderVisualMesh } from "./collider-visual";
 import { isSkyboxMesh } from "./skybox";
 import { hasSurfaceVisual } from "./scene-loader";
 import { MaterialLibrary, type MaterialResolveOptions } from "./material-library";
-import { createMaterialPreviewScene, createPreviewRenderTarget, renderPreviewFrame } from "./material-preview";
+import { createMaterialPreviewScene, createPreviewRenderTarget, MATERIAL_PREVIEW_USER_INTERFACE_NAME, renderPreviewFrame } from "./material-preview";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
 import { acquireMaterialTexture, bindResourceCacheToHandle, materialTextureSampling, resourceCacheForEngine, type TextureResources } from "./resource-cache";
@@ -207,9 +208,15 @@ export async function captureAssetThumbnailPng(
     if (request.kind === "Material") {
       const material = resolveMaterial(request.materialGuid);
       if (!material) return thumbnailMiss(shouldContinue());
-      // Always a sphere, independent of the Material document's preview choice.
-      applyMaterialToVisualMeshes(host.mesh, material);
-      meshes = [host.mesh];
+      if (acceptsUserInterfaceMaterial(material)) {
+        // A User Interface Material fills the frame on the preview's flat quad, as in the Material editor.
+        host.applyMaterial(material);
+        meshes = [host.scene.getMeshByName(MATERIAL_PREVIEW_USER_INTERFACE_NAME)!];
+      } else {
+        // Always a sphere, independent of the Material document's preview choice.
+        applyMaterialToVisualMeshes(host.mesh, material);
+        meshes = [host.mesh];
+      }
     } else {
       host.mesh.isVisible = false;
       host.scene.shadowsEnabled = false;
@@ -246,7 +253,8 @@ export async function captureAssetThumbnailPng(
         host.camera.beta = Math.PI / 2;
       }
     }
-    if (unavailable() || !frameMeshes(host, meshes)) return thumbnailMiss(shouldContinue());
+    // The flat quad's orthographic view already fills the frame.
+    if (unavailable() || (!host.flat && !frameMeshes(host, meshes))) return thumbnailMiss(shouldContinue());
     if (!(await whileCurrent(Promise.all(preparations), current, bounds)).every(Boolean)) return thumbnailMiss(shouldContinue());
     // A wait ends unready when the capture stopped being current (cancelled, past
     // its ceiling, or its Scene was disposed) or its bound ran out. A disposed
