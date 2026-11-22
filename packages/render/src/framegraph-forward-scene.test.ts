@@ -56,6 +56,7 @@ import { ParticleService } from "./particle-service";
 import { createParticleReadinessTexture } from "./particle-system-factory";
 import {
   allowSceneScreenShadows,
+  excludeSceneSpatialEffects,
   sceneRenderingSettings,
   setSceneEffectsEnabled,
   setSceneFsrOutputDebug,
@@ -2360,6 +2361,36 @@ it("idles Screen-Space Shadows and the geometry pass for an orthographic camera,
   expect(frame()).toEqual({ skipped: [], reads: true });
   graph.dispose();
 });
+
+// A Scene Layer's editor view (`excludeSceneSpatialEffects`) has no world for the spatial effects: it builds none of
+// their passes whatever the project enables, through later settings updates too, and keeps its screen effects.
+it("builds no spatial geometry, effect or Screen-Space Shadows pass for a Scene without spatial effects", async () => {
+  const spatialTasks = (names: string[]) => names.filter((name) => SPATIAL_TASK_PREFIXES.some((prefix) => name.startsWith(prefix)));
+  const effects = {
+    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+    reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+    volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true },
+    bloom: { ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true },
+  };
+  const { scene, camera, graph, frame } = await screenShadowsHost(true, effects);
+  expect(spatialTasks(graph.taskNames())).toEqual(expect.arrayContaining(
+    ["Spatial Geometry", "Screen shadows", "Scene Ambient Occlusion", "Scene Reflections", "Scene Effects Compose"]));
+  expect(frame().reads).toBe(true);
+  excludeSceneSpatialEffects(scene);
+  await graph.prepare(camera);
+  expect(spatialTasks(graph.taskNames())).toEqual([]);
+  expect(graph.taskNames()).toContain("Scene Effects Bloom");
+  expect(frame()).toEqual({ skipped: [], reads: false });
+  // A later project or quality update plans them out again.
+  updateSceneRenderingSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects } }, undefined, { screenShadows: "high" });
+  await graph.prepare(camera);
+  expect(spatialTasks(graph.taskNames())).toEqual([]);
+  expect(sceneRenderingSettings(scene).effectsPlan).toMatchObject(
+    { ambientOcclusion: null, reflections: null, volumetricLighting: null, screenShadows: null });
+  graph.dispose();
+});
+const SPATIAL_TASK_PREFIXES = ["Spatial Geometry", "Screen shadows", "Scene Ambient Occlusion", "Scene Reflections", "Scene Volumetric Lighting",
+  "Scene Effects Compose", MERGED_MARCHES_NAME];
 
 it("keeps the geometry pass for ambient occlusion while Screen-Space Shadows idle", async () => {
   const { graph, frame } = await screenShadowsHost(false, { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
