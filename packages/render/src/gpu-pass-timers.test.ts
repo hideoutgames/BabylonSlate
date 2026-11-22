@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GpuPassTimers, type PassTimerHost } from "./gpu-pass-timers";
+import { GpuPassTimers, webglPassTimerHost, type PassTimerHost } from "./gpu-pass-timers";
 
 /** Timer queries as numbers: one active at a time, each query's ns set by the test once the "GPU" finished it. */
 function fakeHost() {
@@ -187,5 +187,40 @@ describe("GPU pass timers", () => {
     timers.frameBegin();
     expect(timers.result()).toMatchObject({ frames: 1, frameMs: 3, cpuMs: 10, headStart: { ms: 30, starved: 1 } });
     expect(timers.result()!.passes.map((entry) => entry.label)).toEqual(["frame start", "Forward objects"]);
+  });
+});
+
+describe("WebGL2 timer queries", () => {
+  it("makes no query while the context is lost and never reuses one the lost context held or made", () => {
+    // A WebGL2 context with timer queries that can be lost: its objects, and those it makes meanwhile, are never valid again.
+    let lost = false;
+    const valid = new Set<object>(), created: object[] = [], begun: object[] = [];
+    const ext = { TIME_ELAPSED_EXT: 0x88bf, GPU_DISJOINT_EXT: 0x8fbb };
+    const gl = {
+      CURRENT_QUERY: 0x8865, QUERY_RESULT_AVAILABLE: 0x8867, QUERY_RESULT: 0x8866,
+      getExtension: () => ext,
+      getQuery: () => null,
+      isContextLost: () => lost,
+      createQuery: () => { const query = {}; created.push(query); if (!lost) valid.add(query); return query; },
+      isQuery: (query: object) => valid.has(query),
+      beginQuery: (_target: number, query: object) => { if (!lost) begun.push(query); },
+      endQuery: () => {},
+      deleteQuery: (query: object) => valid.delete(query),
+    } as unknown as WebGL2RenderingContext;
+    const host = webglPassTimerHost(gl)!;
+    const before = host.begin()!;
+    host.end();
+    host.release(before);
+
+    lost = true;
+    valid.clear();
+    expect(host.begin()).toBeNull();
+    expect(created).toEqual([before]);
+
+    lost = false;
+    const after = host.begin();
+    expect(after).not.toBe(before);
+    expect(created).toEqual([before, after]);
+    expect(begun).toEqual([before, after]);
   });
 });

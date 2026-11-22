@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   readSnapshotHeader,
@@ -8,8 +9,10 @@ import {
 import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import {
   createActor,
+  createDefaultScene,
   createDefaultSceneLayer,
   createDefaultSceneSettings,
+  createMeshComponent,
   type SerializedActor,
   type SerializedScene,
   type SerializedSceneLayer,
@@ -40,6 +43,9 @@ function tickScript(classId: string, body: string, parentClassId = "Actor"): Com
   };
 }
 
+/** The tick (`ctx.tickIndex`) on which the Nudger moves itself, once. */
+const NUDGE_TICK = 15;
+
 const scripts: CompiledScript[] = [
   tickScript("Mover", "ctx.addActorWorldOffset(ctx.self, { x: 1, y: 0, z: 0 });"),
   tickScript("Doomed", "if (ctx.tickIndex === 2) ctx.destroyActor(ctx.self);"),
@@ -48,6 +54,8 @@ const scripts: CompiledScript[] = [
     ctx.loadSceneBlocking(ctx.getAllActorsOfClass("SceneStreamingActor")[0]).catch(() => {});`),
   tickScript("Spawner", 'if (ctx.tickIndex === 3) ctx.spawnActor("Mover", { position: { x: 0, y: 1, z: 0 } });'),
   tickScript("LateDoomed", "if (ctx.tickIndex === 6) ctx.destroyActor(ctx.self);"),
+  tickScript("Idler", ""),
+  tickScript("Nudger", `if (ctx.tickIndex === ${NUDGE_TICK}) ctx.addActorWorldOffset(ctx.self, { x: 1, y: 0, z: 0 });`),
   tickScript("LayerBlocker", `if (ctx.tickIndex !== 2) return;
     ctx.setActorLocation(ctx.self, { x: 5, y: 5, z: 0 });
     ctx.loadSceneBlocking(ctx.getAllActorsOfClass("SceneStreamingActor")[0]).catch(() => {});`, "SceneLayerActor"),
@@ -75,6 +83,17 @@ function overlayList(): SerializedSceneLayer {
   };
 }
 
+/** A Scene Layer of a panel and a label that nothing changes. */
+function hud(): SerializedSceneLayer {
+  return {
+    ...createDefaultSceneLayer(),
+    actors: [createActor("hud", "Hud", { classId: "SceneLayerActor", components: [
+      { id: "panel", classId: "2DPanelComponent", properties: {} },
+      { id: "label", classId: "2DTextComponent", parentId: "panel", properties: { text: "Score" } },
+    ] })],
+  };
+}
+
 const streamTarget = () => createActor("stream", "Stream", {
   classId: "SceneStreamingActor",
   components: [{ id: "stream", classId: "SceneStreamingComponent", properties: { sceneGuid: "child", sceneName: "Child" } }],
@@ -87,7 +106,7 @@ async function launch(playScene: SerializedScene, navMesh?: Uint8Array) {
   const runtime: RuntimeDriver = createInProcessRuntime({
     seed: 7, maxActors: 32, preferSoftwarePhysics: true,
     playScene, sceneLibrary: { child: scene([createActor("streamed", "Streamed", { classId: "Mover" })]) },
-    sceneLayerLibrary: { list: overlayList() },
+    sceneLayerLibrary: { list: overlayList(), hud: hud() },
     onCommand: (command) => {
       commands.push(command);
       if (command.type === "spawn") slots.set(command.actorGuid, command.slotId);
@@ -378,6 +397,60 @@ describe("snapshot publishing", () => {
     } finally {
       deferred.runtime.stop();
       perTick.runtime.stop();
+    }
+  });
+
+  it("sends only the throttled stats and changes no published slot on idle ticks, then publishes only a moved actor's slot", async () => {
+    // The pipeline throttles `stats` by wall clock: ticks 20 ms apart make it every tenth tick.
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const level = createDefaultScene();
+    level.settings.sceneLayers = [{ assetGuid: "hud", zOrder: 0, enabled: true }];
+    level.actors.push(
+      createActor("crate", "Crate", { ...pose([2, 0.5, 0]), components: [createMeshComponent("mesh", "box", "simple")] }),
+      createActor("pillar", "Pillar", { ...pose([-2, 1, 0]), components: [createMeshComponent("mesh", "cylinder", "simple")] }),
+      createActor("idler", "Idler", { classId: "Idler" }),
+      createActor("nudger", "Nudger", { classId: "Nudger", ...pose([0, 0, 4]) }),
+    );
+    const { runtime, commands, slots } = await launch(level);
+    /** One tick: the commands it sent, how many snapshots it wrote, and the slots whose published row changed. */
+    const tick = () => {
+      const sent = commands.length;
+      const writes = runtime.snapshotSerial;
+      const before = comparable(runtime);
+      vi.advanceTimersByTime(20);
+      runtime.tick();
+      const after = comparable(runtime);
+      const rows = new Map(before.poses.map((row) => [row.slotId, row]));
+      return {
+        commands: commands.slice(sent).map((command) => command.type),
+        writes: runtime.snapshotSerial - writes,
+        changed: after.poses.filter((row) => !isDeepStrictEqual(row, rows.get(row.slotId))).map((row) => row.slotId),
+        header: { ...after.header, frameId: before.header.frameId, tickIndex: before.header.tickIndex },
+        before,
+      };
+    };
+    try {
+      // The colliders, the scripted actors and the layer's panel are live and published.
+      expect([...slots.keys()]).toEqual(expect.arrayContaining(["crate", "pillar", "idler", "nudger"]));
+      expect([...slots.keys()].some((guid) => guid.endsWith(":hud"))).toBe(true);
+      for (let warm = 0; warm < 5; warm++) tick();
+      // Ten idle ticks (5 to 14). Each writes the snapshot once, advancing only its tick and frame, and changes no slot.
+      const idle = Array.from({ length: NUDGE_TICK - 5 }, tick);
+      for (const [index, { before, writes, changed, header }] of idle.entries())
+        expect({ writes, changed, header }, `tick ${index + 5}`).toEqual({ writes: 1, changed: [], header: before.header });
+      // None sends a command but `stats`, when its 200 ms since the first tick's are due.
+      expect(idle.map((result) => result.commands)).toEqual([[], [], [], [], [], ["stats"], [], [], [], []]);
+      // The Nudger's one move publishes its slot and no other, and the tick after it is idle again.
+      const nudged = tick();
+      const settled = tick();
+      expect([nudged, settled].map(({ before, ...result }) => ({ ...result, header: isDeepStrictEqual(result.header, before.header) })))
+        .toEqual([
+          { commands: [], writes: 1, changed: [slots.get("nudger")], header: true },
+          { commands: [], writes: 1, changed: [], header: true },
+        ]);
+    } finally {
+      runtime.stop();
+      vi.useRealTimers();
     }
   });
 

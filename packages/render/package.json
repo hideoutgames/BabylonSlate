@@ -78,7 +78,8 @@
     "./preserve-drawing-buffer-setting": "./src/preserve-drawing-buffer-setting.ts",
     "./default-billboard-files": "./src/default-billboard/files.ts",
     "./babylon-registrations": "./src/babylon-registrations.ts",
-    "./editor-proofs": "./src/test-support/editor-proofs.ts"
+    "./editor-proofs": "./src/test-support/editor-proofs.ts",
+    "./direct-view-presentation": "./src/direct-view-presentation.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

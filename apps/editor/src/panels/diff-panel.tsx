@@ -1,19 +1,20 @@
 import type { DockviewPanelApi, IDockviewPanelProps } from "dockview-react";
 import { lazy, Suspense, useState, type ReactNode } from "react";
-import { ExternalLinkIcon, Undo2Icon } from "lucide-react";
+import { ExternalLinkIcon, SettingsIcon, Undo2Icon } from "lucide-react";
 import { assetSummaryGroup, valueRow, type AssetDiff, type GraphDiff, type PropertyDiffGroup, type PropertyDiffRow, type SceneDiff } from "@haptic/assets/asset-diff";
-import { documentKindForAssetType, humanizePropertyLabel } from "@haptic/core";
+import { documentKindForAssetType, humanizePropertyLabel, PROJECT_FILE } from "@haptic/core";
 import { PanelFrame, SelectableText } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Label } from "@haptic/ui/components/label";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { Switch } from "@haptic/ui/components/switch";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
+import { useOpenProjectSettings } from "../components/project-settings-opener";
 import { useSourceControlActions, useSourceControlDiff, useSourceControlDiffState } from "../components/source-control-actions";
 import { useDocumentActions, useIntegratedSyncState } from "../context/document-context";
 import { refLabel, type DiffTarget } from "../services/source-control-diff";
 import { DiffPlaceholder, StatusBadge, useDiffWindowShown } from "./diff-common";
-import { ASSET_ITEM, hasDiff } from "./diff-status";
+import { ASSET_ITEM, GROUP_PREFIX, hasDiff } from "./diff-status";
 import { graphDiffSection, hasDiffCanvas } from "./diff-graph-canvas-model";
 import { PropertyDiffTable, type DiffLayout as Layout } from "./diff-property-table";
 import { TextureDiffView } from "./diff-texture-view";
@@ -31,11 +32,12 @@ interface Shown {
   status: AssetDiff["status"];
 }
 
-/** The asset itself: its header and chunks, then its document-level fields. */
+/** The asset itself: its header and chunks (none for Project Settings, which are no asset), then its document-level fields. */
 function assetGroups(diff: AssetDiff): Shown {
   const view = diff.view;
   const fields = view.kind === "scene" ? view.scene : view.kind === "graph" || view.kind === "properties" ? view.groups : [];
-  return { title: diff.name, groups: [assetSummaryGroup(diff), ...fields], status: diff.status };
+  const summary = diff.header.length > 0 || diff.chunks.length > 0 ? [assetSummaryGroup(diff)] : [];
+  return { title: diff.name, groups: [...summary, ...fields], status: diff.status };
 }
 
 /** What the Scene view shows for the chosen row: an actor's groups, the asset itself, or why there is nothing. */
@@ -68,25 +70,46 @@ function graphGroups(diff: AssetDiff, graph: GraphDiff, selection: string | null
   };
 }
 
+/** The Actors window's chosen group, as the Project Settings category it names (`group:<category>`). */
+function selectedCategory(selection: string | null): string | undefined {
+  return selection?.startsWith(GROUP_PREFIX) ? selection.slice(GROUP_PREFIX.length) : undefined;
+}
+
 function Toolbar({ children, target, diff }: { children: ReactNode; target: DiffTarget; diff: AssetDiff }) {
   const { openDocument } = useDocumentActions();
   const actions = useSourceControlActions();
+  const { selection } = useSourceControlDiffState();
+  const openProjectSettings = useOpenProjectSettings();
+  const project = target.path === PROJECT_FILE;
   const kind = diff.type ? documentKindForAssetType(diff.type) : null;
   const label = diff.type ? kindLabel(diff.type) : "Asset";
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border p-1.5" data-testid="diff-toolbar">
       {children}
       <span className="flex-1" />
-      <Button
-        variant="outline"
-        size="sm"
-        data-testid="diff-open-asset"
-        disabled={!kind || diff.status === "removed"}
-        onClick={() => { if (kind) void openDocument({ kind, path: target.path, label: target.name }); }}
-      >
-        <ExternalLinkIcon data-icon="inline-start" />
-        Open {label}
-      </Button>
+      {project ? (
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="diff-open-project-settings"
+          disabled={!openProjectSettings}
+          onClick={() => openProjectSettings?.(selectedCategory(selection))}
+        >
+          <SettingsIcon data-icon="inline-start" />
+          Open Project Settings
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="diff-open-asset"
+          disabled={!kind || diff.status === "removed"}
+          onClick={() => { if (kind) void openDocument({ kind, path: target.path, label: target.name }); }}
+        >
+          <ExternalLinkIcon data-icon="inline-start" />
+          Open {label}
+        </Button>
+      )}
       <Button
         variant="outline"
         size="sm"
@@ -96,7 +119,7 @@ function Toolbar({ children, target, diff }: { children: ReactNode; target: Diff
         onClick={() => actions.requestRevert({ path: target.path, name: target.name, ref: target.base })}
       >
         <Undo2Icon data-icon="inline-start" />
-        Revert Asset
+        {project ? "Revert Project Settings" : "Revert Asset"}
       </Button>
     </div>
   );

@@ -151,7 +151,7 @@ function guideSidebar(): SidebarItem[] {
     section("AI", "ai", ["behaviour-trees", "navigation"]),
     section("Input", "input", ["rebinding"]),
     section("Debugging", "debugging", ["console", "profiler"]),
-    section("Publishing", "publishing", ["preview-build"]),
+    section("Publishing", "publishing", ["preview-build", "web-hosting"]),
     {
       text: "Reference",
       items: [

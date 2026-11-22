@@ -25,7 +25,6 @@ import {
   projectSceneCameraFraming,
   createEmptyLayouts,
   createEmptyProject,
-  normalizeProjectSettings,
   normalizeProjectAppearance,
   PROJECT_COVER_FILES,
   projectCoverDataUrl,
@@ -111,6 +110,9 @@ import {
   type IndexedAsset,
   type ProjectTreeFile,
   type OwnAssetWrite,
+  INCOMPLETE_PROJECT_MANIFEST,
+  isCompleteProjectManifest,
+  readProjectManifest,
 } from "@haptic/assets";
 import { decodeHasset, encodeHasset, isCarriedChunk } from "@haptic/assets/hasset";
 import { runImportOffMainThread } from "@haptic/assets/import-worker-client";
@@ -993,25 +995,12 @@ export class ProjectService {
       return this.scaffoldNewProject(folder.name);
     }
 
-    const raw = JSON.parse(
-      await this.storage.readText(PROJECT_FILE),
-    ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
-    const document = normalizeProjectDocument(raw);
+    const { document, guid } = readProjectManifest(await this.storage.readText(PROJECT_FILE), this.migrations);
     document.metadata.appearance = await readProjectCover(this.storage, document.metadata.appearance);
-    // Every project is created with its guid, the namespace of its player saves.
-    if (typeof raw.guid !== "string" || !raw.guid) {
-      throw new Error("Invalid project manifest: project.json has no project guid.");
-    }
-    this.projectGuid = raw.guid;
+    this.projectGuid = guid;
     this.loadedTextureSettings = document.settings.textures;
     this.textures.setSourceControlEnabled((document.settings.sourceControl?.mode ?? "off") !== "off");
     this.projectPlugins.setOverrides(document.settings.pluginOverrides ?? {});
-
-    // The manifest is read as stored, so it must be at the current Project version.
-    this.migrations.requireCurrent(
-      "Project",
-      typeof raw.version === "number" ? raw.version : this.migrations.currentVersion("Project"),
-    );
 
     const withDocuments = await this.ensureDocuments(document);
     const layouts = await this.loadLayouts();
@@ -2213,30 +2202,10 @@ export class ProjectService {
   }
 }
 
-const INCOMPLETE_PROJECT_MANIFEST =
-  "Invalid project manifest: project.json is missing metadata, settings, scenes or graphs.";
-
 /** An extension asset keeps the header type its extension declared; without one a save has nothing to write. */
 function extensionAssetTypeForSave(type: string | undefined): string {
   if (!type || !isExtensionAssetType(type)) throw new Error("An extension asset needs its extension's asset type.");
   return type;
-}
-
-function isCompleteProjectManifest(raw: Partial<ProjectDocument>): raw is ProjectDocument {
-  return Boolean(raw.metadata && raw.settings && raw.scenes && raw.graphs);
-}
-
-/** The stored manifest with its appearance and settings normalised; one missing a section is refused. */
-function normalizeProjectDocument(raw: Partial<ProjectDocument>): ProjectDocument {
-  if (!isCompleteProjectManifest(raw)) throw new Error(INCOMPLETE_PROJECT_MANIFEST);
-  return {
-    ...raw,
-    metadata: {
-      ...raw.metadata,
-      appearance: normalizeProjectAppearance(raw.metadata.appearance),
-    },
-    settings: normalizeProjectSettings(raw.settings),
-  };
 }
 
 function uniquePaths(paths: string[]): string[] {

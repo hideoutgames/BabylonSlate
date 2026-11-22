@@ -1,7 +1,8 @@
-import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { SOURCE_CONTROL_ID } from "@haptic/core";
-import { useActiveDocumentId, useDocumentActions, useIntegratedSync } from "../context/document-context";
-import { isAssetPath } from "../lib/source-control-changes";
+import { useActiveDocumentId, useDocumentActions, useIntegratedSync, useRegistryState } from "../context/document-context";
+import { projectDiffLookup } from "../lib/project-diff-lookup";
+import { hasVersionHistory } from "../lib/source-control-changes";
 import { SourceControlDiffService, type DiffRef, type DiffState, type DiffTarget } from "../services/source-control-diff";
 
 /** The Pull flow (unsaved documents, confirmation, conflicts) loads when a pull is first asked for. */
@@ -12,7 +13,7 @@ const SourceControlRevertFlow = lazy(() => import("./source-control-revert-flow"
 const SourceControlBranchFlow = lazy(() => import("./source-control-branch-flow"));
 const NewBranchDialog = lazy(() => import("./source-control-new-branch-dialog"));
 
-/** An asset to put back as a version holds it (Revert Asset; History's Revert To This Version). */
+/** An asset, or Project Settings, to put back as a version holds it (Revert Asset; History's Revert To This Version). */
 export interface RevertRequest {
   path: string;
   name: string;
@@ -43,15 +44,21 @@ export interface SourceControlActions {
   readonly commitRequest: number;
   /** Shows an asset's diff in the Source Control tab's Actors and Diff windows; History then follows that asset. */
   openDiff: (request: DiffRequest) => void;
-  /** Saves or discards the asset's unsaved edits, confirms, then writes `ref`'s version of it into the working copy; only a `.hasset` (`isAssetPath`), and not while another rewrite flow is open. */
+  /**
+   * Saves or discards the asset's unsaved edits (every unsaved document for
+   * Project Settings), confirms, then writes `ref`'s version of it into the
+   * working copy, and for Project Settings reloads the project; only a
+   * `.hasset` or `project.json` (`hasVersionHistory`), and not while another
+   * rewrite flow is open.
+   */
   requestRevert: (request: RevertRequest) => void;
   /** Saves or discards unsaved documents, confirms, then checks out `branch` and reloads the files it changed; not while another rewrite flow is open. */
   requestSwitchBranch: (branch: string) => void;
   /** Asks for a name, then starts that branch at HEAD and checks it out. */
   requestNewBranch: () => void;
-  /** Brings the Source Control tab forward with History, on `path`'s history when it is an asset. */
+  /** Brings the Source Control tab forward with History, on `path`'s history when it is an asset or Project Settings. */
   openHistory: (path?: string) => void;
-  /** The asset whose history History shows (**This Asset**): the last asset History opened on or a diff showed; never another file. */
+  /** The asset (or Project Settings) whose history History shows (**This Asset**): the last one History opened on or a diff showed; never another file. */
   readonly historyPath: string | null;
 }
 
@@ -73,7 +80,15 @@ export function SourceControlActionsProvider({ children }: { children: ReactNode
   const [commitRequest, setCommitRequest] = useState(0);
   const [newBranchRequest, setNewBranchRequest] = useState(0);
   const [historyPath, setHistoryPath] = useState<string | null>(null);
-  const diff = useMemo(() => new SourceControlDiffService(sync), [sync]);
+  // A Project Settings diff names assets, classes, plugins and extensions as the editor knows them when it loads.
+  const { assetRegistry, pluginDescriptors, extensionService } = useRegistryState();
+  const names = useRef({ assetRegistry, pluginDescriptors, extensionService });
+  names.current = { assetRegistry, pluginDescriptors, extensionService };
+  const diff = useMemo(() => new SourceControlDiffService(sync, (service) =>
+    import("../services/source-control-diff-loader").then((module) => module.createDiffLoader(service, () => {
+      const current = names.current;
+      return projectDiffLookup({ ...current, extensions: current.extensionService?.getSnapshot().entries ?? [] });
+    }))), [sync]);
   useEffect(() => diff.attach(), [diff]);
   const showWindow = useCallback((panel: string) => {
     setActiveDocument(SOURCE_CONTROL_ID);
@@ -84,19 +99,19 @@ export function SourceControlActionsProvider({ children }: { children: ReactNode
   const openSourceControl = useCallback(() => showWindow("changes"), [showWindow]);
   const openDiff = useCallback((request: DiffRequest) => {
     diff.open(request);
-    if (isAssetPath(request.path)) setHistoryPath(request.path);
+    if (hasVersionHistory(request.path)) setHistoryPath(request.path);
     showWindow("diff");
   }, [diff, showWindow]);
   const openHistory = useCallback((path?: string) => {
-    if (path && isAssetPath(path)) setHistoryPath(path);
+    if (path && hasVersionHistory(path)) setHistoryPath(path);
     showWindow("history");
   }, [showWindow]);
   const startRewrite = useCallback((flow: RewriteFlow) => setRewrite((current) => (current.flow ? current : { key: current.key + 1, flow })), []);
   const endRewrite = useCallback(() => setRewrite((current) => ({ key: current.key, flow: null })), []);
   const requestPull = useCallback(() => startRewrite({ kind: "pull" }), [startRewrite]);
   const requestRevert = useCallback((request: RevertRequest) => {
-    // Only an asset: a reverted project.json would reload the whole project, unsaved documents included.
-    if (isAssetPath(request.path)) startRewrite({ kind: "revert", request });
+    // An asset, or Project Settings (whose flow reloads the project); never a folder marker or another file.
+    if (hasVersionHistory(request.path)) startRewrite({ kind: "revert", request });
   }, [startRewrite]);
   const requestSwitchBranch = useCallback((branch: string) => startRewrite({ kind: "switch", branch }), [startRewrite]);
   const flow = rewrite.flow;

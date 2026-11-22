@@ -15,6 +15,9 @@ export function hasDiff(state: DiffState): boolean {
 /** The Actors window's first row: the asset itself (its header, chunks and document-level fields). */
 export const ASSET_ITEM = "asset";
 
+/** The Actors window's id of a property group: `group:<group id>` (for Project Settings, a dialog category). */
+export const GROUP_PREFIX = "group:";
+
 /** One line for a changed node: its first changed pin value, or what else changed. */
 export function nodeSummary(node: GraphNodeDiff): string {
   const pin = node.pins[0];

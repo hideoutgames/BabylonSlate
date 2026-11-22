@@ -99,9 +99,9 @@ In Integrated mode the **Source Control** tab opens on **Changes**, with **Histo
 
 - The top row shows the branch you are on (choose it to switch branches or start a **New Branch…**, see [Branches](#branches)), **Refresh**, **Pull** and **Push** with the number of commits each would bring in or send, and **More Actions** with **Remove Unused Files…** ([Remove unused files](#remove-unused-files)).
 - The status line says how many commits there are to pull and to push, and when Haptic last checked.
-- **Changes** lists each changed asset with its type, folder and a green **+** (added), **M** (modified) or a red **−** (deleted). A lock badge marks locked assets: filled for yours, an outlined red badge with a person for someone else's (a push that sends it is refused). The Content Browser marks the same assets on their tiles and in its folder tree: **+** for added, **M** for modified. An asset's change includes the large data stored with it, so it is always committed whole. Project settings and other project files appear by name.
+- **Changes** lists each changed asset with its type, folder and a green **+** (added), **M** (modified) or a red **−** (deleted). A lock badge marks locked assets: filled for yours, an outlined red badge with a person for someone else's (a push that sends it is refused). The Content Browser marks the same assets on their tiles and in its folder tree: **+** for added, **M** for modified. An asset's change includes the large data stored with it, so it is always committed whole. **Project Settings** and other project files appear by name.
 - **Incoming** lists the newest commits waiting to be pulled, with their author and age.
-- Choose an asset (anywhere on its row but the checkbox) to see what changed in it: see [Compare versions](#compare-versions).
+- Choose an asset or **Project Settings** (anywhere on its row but the checkbox) to see what changed in it: see [Compare versions](#compare-versions).
 
 Haptic reads changes after you save (while a game covers the editor, once you are back) and when you come back to the app, and checks the host when you open the project, come back to the app, choose **Refresh** and after a push.
 
@@ -174,13 +174,21 @@ Choosing a change opens its asset in **Actors** and **Diff**, comparing the last
   - Textures show both images over a checkerboard, **Side By Side**, as a **Swipe** or as their **Difference**, in **RGB** or **Alpha**, beside their size, file size, source image, usage and compression, and how many Materials use the Texture.
 - **Open Scene**, **Open Class** and the like open the asset for editing.
 
+**Project Settings** compare the same way, grouped as the **Project Settings** window groups them (**General**, **Source Control**, **Export**, **Game**, **Physics**, **Rendering** and so on, plus the project's name, version and appearance), with each setting under the name the window gives it:
+
+- Both versions are read as Haptic opens a project, so a setting a version doesn't store counts as its default, and only real differences are marked. Save times and the lists Haptic keeps for itself are left out.
+- Lists show one row per entry: Tags, Collision Layers, Collision Presets (their layer and the layers they block and overlap by name), Sorting Layers, the Scene Layer post-process passes, export presets, plugins and extensions and their settings, Editor Utility Objects and Always Package Folders. Added and removed entries show on one side only; when only the order of a list changed, a row shows both orders.
+- Scenes, Fonts, Textures and other assets show by name; one the project no longer has shows as **Missing Asset**.
+- **Open Project Settings** opens the **Project Settings** window on the category chosen in **Actors**, and **Revert Project Settings** puts the base version back (see [Revert an asset](#revert-an-asset)).
+- A version Haptic can't open, such as one from a newer version of Haptic, shows **Could Not Compare Project Settings** with the reason.
+
 Haptic reads the base version from the project's history, so a diff needs no network unless a large file the base used is no longer in your copy; it then downloads it from the host without adding it to your changes. While a game covers the editor, the diff waits. The diff follows your saves only while **Actors** or **Diff** is on screen: when you come back to them, it shows what changed meanwhile.
 
 ### History
 
 **History** lists commits, newest first, with their message, author and age:
 
-- **This Asset** shows the commits that changed the asset you last compared, or the one you were editing when you chose **Open History**. Project Settings and folders aren't assets, so comparing them leaves it as it was. **All Assets** shows every commit on your branch.
+- **This Asset** shows the commits that changed the asset or **Project Settings** you last compared, or the asset you were editing when you chose **Open History**. Folders have no history, so comparing one leaves it as it was. **All Assets** shows every commit on your branch.
 - **Uncommitted Changes** comes first while there are any; choose it to list them, and an asset to see its diff.
 - Choose a commit to see its full message, author, time and short id (**Copy Commit Id** copies the full one), and the assets it changed, marked **+**, **M** or **−** as in **Changes**: choose one to see what that commit did to it.
 - With **This Asset**, **Compare With Working Copy** opens the asset's diff from that commit to your working copy, and **Revert To This Version** puts the asset back as that commit has it, as [Revert Asset](#revert-an-asset) does.
@@ -188,7 +196,9 @@ Haptic reads the base version from the project's history, so a diff needs no net
 
 ### Revert an asset
 
-**Revert Asset** in **Diff** puts the base version of the asset back in your working copy, with the large files it uses (an asset the base didn't have is removed). If the asset has unsaved edits, choose **Save All** or **Discard** first. Reverting replaces the file and cannot be undone; when the base version doesn't have the asset, the confirmation says **Delete** instead. Documents are read-only while it runs, and the reverted asset reloads as after a pull. **Revert Asset** is unavailable when **Base** is the working copy. Only assets can be reverted, not Project Settings.
+**Revert Asset** in **Diff** puts the base version of the asset back in your working copy, with the large files it uses (an asset the base didn't have is removed). If the asset has unsaved edits, choose **Save All** or **Discard** first. Reverting replaces the file and cannot be undone; when the base version doesn't have the asset, the confirmation says **Delete** instead. Documents are read-only while it runs, and the reverted asset reloads as after a pull. **Revert Asset** is unavailable when **Base** is the working copy.
+
+**Revert Project Settings** works the same way for **Project Settings**, and **Revert To This Version** in **History** does too. Since the whole project reloads afterwards, choose **Save All** or **Discard** for every unsaved document first; the confirmation says the project reloads. Haptic doesn't revert to a version without Project Settings, one it can't open, or one whose settings turn Source Control **Off** or **Manual** or name another repository, since that would stop Haptic syncing your copy; it says why.
 
 ### Repositories Haptic didn't publish
 

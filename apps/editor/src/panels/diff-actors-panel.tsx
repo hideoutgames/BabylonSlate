@@ -6,7 +6,7 @@ import { PanelFrame, SearchInput, TreeView, type TreeViewNode } from "@haptic/ed
 import { useSourceControlDiff, useSourceControlDiffState } from "../components/source-control-actions";
 import { StatusMarker } from "../components/source-control-markers";
 import { DiffCountBadges, DiffPlaceholder, useDiffWindowShown } from "./diff-common";
-import { ASSET_ITEM, hasDiff, nodeSummary, STATUS_TONE } from "./diff-status";
+import { ASSET_ITEM, GROUP_PREFIX, hasDiff, nodeSummary, STATUS_TONE } from "./diff-status";
 
 /** One row of the tree before collapse and search: its parent and whether it changed. */
 interface ItemRow {
@@ -70,11 +70,16 @@ function graphRows(view: GraphDiff): ItemRow[] {
 /** The groups of an asset's other fields. */
 function groupRows(diff: AssetDiff): ItemRow[] {
   if (diff.view.kind !== "properties") return [];
-  return diff.view.groups.map((group) => ({ id: `group:${group.id}`, label: group.title, depth: 0, parent: null, status: group.status, changedBelow: false, hasChildren: false, icon: "group" }));
+  return diff.view.groups.map((group) => ({ id: `${GROUP_PREFIX}${group.id}`, label: group.title, depth: 0, parent: null, status: group.status, changedBelow: false, hasChildren: false, icon: "group" }));
 }
 
-/** The asset itself first (its header, chunks and document-level fields), then the items of its view. */
+/**
+ * The asset itself first (its header, chunks and document-level fields), then
+ * the items of its view. Project Settings have no header or chunks, so only
+ * their groups (the dialog's categories) are listed.
+ */
 function itemRows(diff: AssetDiff): ItemRow[] {
+  if (diff.header.length === 0 && diff.chunks.length === 0) return groupRows(diff);
   const asset: ItemRow = { id: ASSET_ITEM, label: diff.name, depth: 0, parent: null, status: diff.status, changedBelow: false, hasChildren: false, icon: "asset" };
   if (diff.view.kind === "scene") return [asset, ...sceneRows(diff.view)];
   if (diff.view.kind === "graph") return [asset, ...graphRows(diff.view)];

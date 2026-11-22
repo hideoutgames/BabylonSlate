@@ -18,6 +18,7 @@ import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import { SaveFailedDialog } from "../components/save-failed-dialog";
 import { JournalPausedNotice } from "../components/journal-paused-notice";
 import { SourceControlActionsProvider } from "../components/source-control-actions";
+import { ProjectSettingsOpenerProvider } from "../components/project-settings-opener";
 import {
   useDocumentActions,
   useActiveDocumentId,
@@ -515,15 +516,17 @@ function UnsavedChangesGuard() {
 function EditorLayout() {
   return (
     <div className="safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
-      <SourceControlActionsProvider>
-        <EditorChromeAndPrompts />
-        <RecoveryDialog />
-        <JournalPausedNotice />
-        <main className="flex min-h-0 flex-1 flex-col">
-          {profileRegion("document-workspace", <DocumentWorkspace />)}
-        </main>
-        {profileRegion("editor-status-bar", <EditorStatusBar />)}
-      </SourceControlActionsProvider>
+      <ProjectSettingsOpenerProvider>
+        <SourceControlActionsProvider>
+          <EditorChromeAndPrompts />
+          <RecoveryDialog />
+          <JournalPausedNotice />
+          <main className="flex min-h-0 flex-1 flex-col">
+            {profileRegion("document-workspace", <DocumentWorkspace />)}
+          </main>
+          {profileRegion("editor-status-bar", <EditorStatusBar />)}
+        </SourceControlActionsProvider>
+      </ProjectSettingsOpenerProvider>
       <UnsavedChangesGuard />
     </div>
   );
