@@ -331,6 +331,8 @@ describe("HapticLightingBlock and the HapticLights block", () => {
       samplerParameteri: (_sampler: object, name: number, value: number) => parameters.set(name, value),
       bindSampler: (unit: number, sampler: object | null) => bound.set(unit, sampler),
       deleteSampler: (sampler: object) => deleted.push(sampler),
+      isSampler: (sampler: object) => created.includes(sampler),
+      isContextLost: () => false,
       texParameteri: () => {},
     };
     const deleted: object[] = [];
@@ -355,6 +357,50 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(deleted).toEqual([]);
     engine.onDisposeObservable.notifyObservers(engine);
     expect(deleted).toEqual(created);
+  });
+
+  it("makes no atlas sampler object while the context is lost, and binds a new one after the restore, never one the lost context made", async () => {
+    const { engine, scene } = host();
+    const { mesh, material } = await litBox(scene);
+    await drawnDefines(scene, mesh, material);
+    // A WebGL2 context that can be lost: objects it creates meanwhile, and those it held, are never valid again.
+    let lost = false;
+    const valid = new Set<object>(), created: object[] = [], bound = new Map<number, object | null>();
+    const gl = {
+      TEXTURE_2D: 0x0de1, TEXTURE_MIN_FILTER: 0x2801, TEXTURE_MAG_FILTER: 0x2800, TEXTURE_WRAP_S: 0x2802, TEXTURE_WRAP_T: 0x2803,
+      TEXTURE_COMPARE_MODE: 0x884c, NEAREST: 0x2600, CLAMP_TO_EDGE: 0x812f, NONE: 0,
+      createSampler: () => { const sampler = {}; created.push(sampler); if (!lost) valid.add(sampler); return sampler; },
+      samplerParameteri: () => {},
+      bindSampler: (unit: number, sampler: object | null) => { if (!lost) bound.set(unit, sampler); },
+      deleteSampler: (sampler: object) => valid.delete(sampler),
+      isSampler: (sampler: object) => valid.has(sampler),
+      isContextLost: () => lost,
+      texParameteri: () => {},
+    };
+    Object.assign(engine, { _webGLVersion: 2, _gl: gl });
+    material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
+    const plain = 3;
+    const draw = () => engine.setDepthStencilTexture(plain, null, shadowAtlasTexture(scene), "hapticShadowAtlasDepth");
+    draw();
+    const [before] = created;
+    expect(bound.get(plain)).toBe(before);
+
+    lost = true;
+    valid.clear();
+    engine.onContextLostObservable.notifyObservers(engine);
+    // A frame drawn while the context is lost.
+    material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
+    draw();
+    expect(created).toEqual([before]);
+
+    // Babylon's restore forgets what each unit holds, rebuilds, then tells its observers.
+    lost = false;
+    engine.wipeCaches(true);
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    draw();
+    expect(created).toHaveLength(2);
+    expect(bound.get(plain)).toBe(created[1]);
+    expect(valid.has(created[1]!)).toBe(true);
   });
 
   it("writes the Scene's lights as records, the first hemispheric light as the fill and rect lights by their half extents", async () => {

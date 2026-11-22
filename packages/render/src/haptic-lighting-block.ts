@@ -54,6 +54,11 @@ const plainDepthEngines = new WeakSet<AbstractEngine>();
  * texture on another unit): Babylon's patched engine binds that uniform's unit a sampler object without compare,
  * nearest-filtered (a float depth texture filters only through compare), and every other unit none
  * (`_samplerObjectFor`). Made again after a lost context; deleted when the Engine is disposed.
+ *
+ * A lost context still returns objects from `createSampler`, and they never become valid: a frame drawn while the
+ * context is lost would cache one past the restore, and every later bind of it fails (`GL_INVALID_OPERATION`, which
+ * fails the presentation check). So none is made while the context is lost (the unit binds none; the lost context
+ * discards the draw), and the restore drops a cached sampler that is no longer valid.
  */
 function plainDepthSampler(engine: AbstractEngine): void {
   if (plainDepthEngines.has(engine) || !(engine instanceof ThinEngine) || engine.webGLVersion < 2) return;
@@ -62,15 +67,20 @@ function plainDepthSampler(engine: AbstractEngine): void {
   plainDepthEngines.add(engine);
   let sampler: WebGLSampler | null = null;
   const lost = engine.onContextLostObservable.add(() => { sampler = null; });
+  const restored = engine.onContextRestoredObservable.add(() => {
+    if (sampler && !gl.isSampler(sampler)) sampler = null;
+  });
   // The context can outlive the Engine (a canvas a new Engine takes over): delete the sampler with the Engine.
   engine.onDisposeObservable.addOnce(() => {
     engine.onContextLostObservable.remove(lost);
-    if (sampler) gl.deleteSampler(sampler);
+    engine.onContextRestoredObservable.remove(restored);
+    if (sampler && gl.isSampler(sampler)) gl.deleteSampler(sampler);
     sampler = null;
   });
   engine._samplerObjectFor = (name) => {
     if (name !== HAPTIC_SHADOW_ATLAS_DEPTH) return null;
     if (!sampler) {
+      if (gl.isContextLost()) return null;
       sampler = gl.createSampler();
       gl.samplerParameteri(sampler, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
       gl.samplerParameteri(sampler, gl.TEXTURE_MAG_FILTER, gl.NEAREST);

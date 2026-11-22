@@ -332,7 +332,12 @@ export function webglPassTimerHost(gl: WebGL2RenderingContext, load?: () => void
     begin: () => {
       // Another elapsed query running (Babylon's frame timer): this one cannot start.
       if (gl.getQuery(ext.TIME_ELAPSED_EXT, gl.CURRENT_QUERY)) return null;
-      const query = pool.pop() ?? gl.createQuery();
+      // A lost context's queries are never valid again, those it returns while lost included: make none then, and
+      // let go of pooled ones a restored context does not know.
+      if (gl.isContextLost()) return null;
+      let query: WebGLQuery | null | undefined = pool.pop();
+      while (query && !gl.isQuery(query)) query = pool.pop();
+      query ??= gl.createQuery();
       if (!query) return null;
       gl.beginQuery(ext.TIME_ELAPSED_EXT, query);
       return query;
