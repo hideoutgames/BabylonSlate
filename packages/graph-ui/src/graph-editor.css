@@ -203,6 +203,58 @@
   flex-shrink: 0;
 }
 
+/* A Math Expression: a state card's look (grey border, rounded, centred title) holding its formula and ordinary pin
+   rows, its pins at the card's sides like any node's rather than a state's edge-wide handles. */
+.math-expression-node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+  width: max-content;
+  max-width: 560px;
+  padding: 10px 0 4px;
+  border-radius: var(--radius-lg);
+  background: var(--graph-node);
+  border: 1px solid var(--input);
+  color: var(--foreground);
+  box-shadow: var(--surface-shadow);
+}
+
+.math-expression-node-title {
+  padding: 0 16px;
+}
+
+/* The formula: monospace, kept on its own lines, at least a touch target tall so a double-tap finds it. */
+.math-expression-node-formula {
+  margin: 0 12px;
+  min-height: var(--touch-target, 44px);
+  display: flex;
+  align-items: center;
+}
+
+.math-expression-node-formula > pre {
+  width: 100%;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.math-expression-node-error {
+  margin: 0 12px;
+  max-width: 480px;
+  color: var(--destructive);
+  font-size: 12px;
+  white-space: normal;
+}
+
 /* A State Alias plays nothing: a dashed card that only sends transitions. */
 .anim-alias-node {
   min-height: 64px;

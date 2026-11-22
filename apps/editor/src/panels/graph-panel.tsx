@@ -77,6 +77,7 @@ import {
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { isInputWired, wiredSource, wiredTargets } from "../lib/reroute-wires";
+import { mathExpressionMenuItems } from "../lib/math-expression-menu";
 import { classIdForGraphPath, functionGraphExportName } from "../services/script-compiler";
 import { logicGraphHostClass } from "../lib/embedded-script";
 import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipDispatcherSymbols, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
@@ -796,6 +797,8 @@ export function GraphPanel(
     const paletteNode = scriptReroutePaletteNode(defaultNodeRegistry());
     return paletteNode ? { paletteNode } : undefined;
   }, []);
+  // The canvas commit, for node menu actions that replace nodes (declared below the menu).
+  const commitConversionRef = useRef<((next: SerializedGraph) => void) | null>(null);
   const contextMenuItemsForNode = useCallback(
     (nodeId: string) => {
       const withExtensions = (entries: NestedMenuItem[]) => {
@@ -825,6 +828,15 @@ export function GraphPanel(
           },
         });
       }
+      if (graphContent && doc) {
+        items.push(...mathExpressionMenuItems(
+          latestGraph.current,
+          nodeId,
+          // A menu on an unselected node replaces the selection; on a selected node it acts on the group.
+          selectedNodeIds.includes(nodeId) ? selectedNodeIds : [nodeId],
+          (next) => commitConversionRef.current?.(next),
+        ));
+      }
       if (watchStore && watchAsset) {
         const pins = watchablePins(node?.data, (pinId) => isInputWired({ nodes, edges }, nodeId, pinId));
         items.push(...watchPinMenuItems(watchStore, pins, (pin) => ({
@@ -836,7 +848,7 @@ export function GraphPanel(
       return withExtensions(items);
     },
     [activeFunctionId, breakpointLabel, classId, doc, documentActions, documentId, graphContent, nodeExtensionItems, renameChord,
-      renameEvent, runGraphId, watchAsset, watchStore],
+      renameEvent, runGraphId, selectedNodeIds, watchAsset, watchStore],
   );
 
   // In a function graph, a wire dropped on the Input or Output node's body adds a pin of its type.
@@ -921,6 +933,7 @@ export function GraphPanel(
         }, classId);
     applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, merged));
   }, [activeFunctionId, classId, dataAssets, doc, documentActions, documentId, graph, graphContent]);
+  commitConversionRef.current = commitCanvasGraph;
   // Add Pin, Convert to <Type> wires and the pin menu, each one change through the canvas's commit.
   const pinActions = useScriptGraphPinActions({ graph, commit: commitCanvasGraph, hierarchy });
 

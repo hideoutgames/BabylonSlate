@@ -1712,7 +1712,14 @@ async function saveDataProbe(
       gNode("fields", "struct.break", 460, 160, { structGuid: types.itemStats, fields: ITEM_FIELDS }),
       gNode("children", "data.getChildren", 220, 400, { "default:tree": types.itemsTree, "default:entryPath": "Weapons" }),
       gNode("child-count", "array.length", 460, 400),
-      format("text", 700, 160, "{label}: {damage} dmg, {weight} kg (found {found}, {weapons} weapons)"),
+      format("text", 700, 160, "{label}: {damage} dmg, {weight} kg (found {found}, {weapons} weapons, Math Expression {length})"),
+      // A Math Expression node: Length = |(A, B, 0)|, 5 for its inline 3 and 4, asserted and printed.
+      gNode("math-expression", "math.expression", 13420, -560, {
+        formula: "Length = length(vec3(A, B, 0))",
+        "default:in_A": 3,
+        "default:in_B": 4,
+      }),
+      gNode("assert-math-expression", "debug.assertEqual", 13420, -200, { "default:expected": 5, "default:message": "Math Expression computed the wrong Length" }),
       gNode("assert-found", "debug.assert", 700, 0, { "default:message": "Data Probe could not read Weapons/Sword" }),
       gNode("assert-weapons", "debug.assertEqual", 700, 400, { "default:expected": 2, "default:message": "Data Probe expected two Weapons" }),
       printText("print", 2380, 0, "ft-data-probe", undefined, 8),
@@ -1727,7 +1734,7 @@ async function saveDataProbe(
       gWire("assert-loot-step", "execOut", "call-rewind-loot", "exec"),
       gWire("call-rewind-loot", "then", "assert-loot-rewound", "execIn"),
       ...gChain("assert-loot-rewound", "set-global-seed", "assert-global-roll", "assert-global-step", "assert-weighted", "assert-shuffled",
-        "assert-own-tag", "assert-class-tag", "assert-tagged-found", "assert-not-hidden", "assert-mesh-visible", "assert-is-actor", "assert-mesh-at-origin", "print"),
+        "assert-own-tag", "assert-class-tag", "assert-tagged-found", "assert-not-hidden", "assert-mesh-visible", "assert-is-actor", "assert-mesh-at-origin", "assert-math-expression", "print"),
       gWire("own-tag", "out", "assert-own-tag", "condition"),
       gWire("class-tag", "out", "assert-class-tag", "condition"),
       gWire("tagged", "actors", "tagged-count", "array"),
@@ -1803,6 +1810,8 @@ async function saveDataProbe(
       gWire("children", "paths", "child-count", "array"),
       gWire("child-count", "out", "text", fmtArg("weapons")),
       gWire("text", "out", "print", "inString"),
+      gWire("math-expression", "out_Length", "assert-math-expression", "actual"),
+      gWire("math-expression", "out_Length", "text", fmtArg("length")),
     ],
   });
   const ref = await saveClass(ctx, CLASS.dataProbe, "Actor", graph, DATA_FOLDER);
