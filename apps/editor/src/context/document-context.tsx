@@ -319,11 +319,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   // that reads, clears or abandons the journal flushes first. One buffer for
   // the provider's lifetime keeps each project's writes in order. Its flush
   // on hide is attached further down, where its effect has always run.
+  /** Re-renders when a project's journaling pauses or resumes; `journalPaused` reads the buffer. */
+  const [, setJournalPauseTick] = useState(0);
   const [journalBuffer] = useState(
     () =>
       new JournalBuffer(async (guid, lines) =>
         appendJournalLines(await ensureDerived(), guid, lines),
-      ),
+      { onPausedChange: () => setJournalPauseTick((tick) => tick + 1) }),
   );
   // Effects after the history-reopen subscription, before source control's.
   const {
@@ -1036,9 +1038,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [assetRegistry, registryEpoch, encodingTextures, projectGuid, extensionService, pluginDescriptors, pluginDiagnostics, showPluginContent, searchIndex],
   );
   const projectDirty = projectSaveState.current.isDirty(projectDocument);
+  const journalPaused = projectGuid !== null && journalBuffer.isPaused(projectGuid);
   const saveState = useMemo<SaveState>(
-    () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable }),
-    [stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable],
+    () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable, journalPaused }),
+    [stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable, journalPaused],
   );
   const graphsNeedCompile = compileSignatureIsStale(
     currentGraphSignature,

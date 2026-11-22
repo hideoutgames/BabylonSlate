@@ -199,6 +199,8 @@ export function useProjectLifecycle({
       const guid = projectService.guid;
       if (guid) {
         await sealJournalForRecovery(derived, guid);
+        // Everything written so far is sealed: this session journals from the files it just opened.
+        journalBuffer.resume(guid);
         const unreplayed = resolveJournalLines(await readSealedJournalLines(derived, guid));
         if (unreplayed.length === 0) await discardSealedJournal(derived, guid);
         setRecoveryAvailable(unreplayed.length > 0);
@@ -213,6 +215,7 @@ export function useProjectLifecycle({
       bump,
       documentService,
       ensureDerived,
+      journalBuffer,
       projectService,
       recordRecent,
       resetDockLayouts,

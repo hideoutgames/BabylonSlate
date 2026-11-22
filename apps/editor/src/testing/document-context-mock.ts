@@ -169,6 +169,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     listedProjects: [],
     needsReconnect: false,
     recoveryAvailable: false,
+    journalPaused: false,
     dirtyDocuments: [],
     projectDirty: false,
     autoSaveStatus: null,

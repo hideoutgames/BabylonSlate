@@ -227,6 +227,12 @@ export interface DocumentContextValue {
   listedProjects: ListedProject[];
   needsReconnect: boolean;
   recoveryAvailable: boolean;
+  /**
+   * Crash recovery stopped recording edits (storage stayed full, or too many
+   * records failed to write): a crash now loses the edits since, until a Save
+   * All leaves nothing unsaved.
+   */
+  journalPaused: boolean;
   /** Open documents with unsaved edits. */
   dirtyDocuments: OpenDocument[];
   projectDirty: boolean;
@@ -620,7 +626,7 @@ export type ActiveDocumentState = Pick<
  * (with the same labels) are dirty, so further edits of an already dirty
  * document do not change it.
  */
-export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus" | "recoveryAvailable">;
+export type SaveState = Pick<DocumentContextValue, "dirtyDocuments" | "projectDirty" | "autoSaveStatus" | "recoveryAvailable" | "journalPaused">;
 /** `useCompileState()`: compile staleness. */
 export type CompileState = Pick<DocumentContextValue, "graphsNeedCompile">;
 /** `useEditorShellState()`: Homepage, recovery, prompts and thumbnails. */

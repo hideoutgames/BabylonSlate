@@ -148,9 +148,30 @@ async function removeJournalFiles(
 }
 
 /**
+ * An append that failed after some of its lines were stored: the first
+ * `committed` lines are in the journal (whole segments are written, each
+ * replacing its file at once), the rest are not. A retry appends only the
+ * rest, so no line is stored twice.
+ */
+export class JournalAppendError extends Error {
+  readonly committed: number;
+  constructor(committed: number, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "JournalAppendError";
+    this.committed = committed;
+  }
+}
+
+/** How many lines of a failed `appendJournalLines` call were stored: 0 unless it is a `JournalAppendError`. */
+export function journalLinesCommitted(error: unknown): number {
+  return error instanceof JournalAppendError ? error.committed : 0;
+}
+
+/**
  * Append `lines` after the tail segment's `text`, rolling at the size bound.
  * A segment is written only once it holds a new line, so a full tail is never
- * rewritten unchanged.
+ * rewritten unchanged. A failure after an earlier segment was written rejects
+ * with `JournalAppendError`, naming how many lines are stored.
  */
 async function writeSegments(
   storage: ProjectStorage,
@@ -159,25 +180,31 @@ async function writeSegments(
   startText: string,
   lines: readonly string[],
 ): Promise<void> {
-  const write = async (index: number, text: string) => {
-    await storage.writeText(segmentPath(projectGuid, index), text);
+  let committed = 0;
+  const write = async (index: number, text: string, through: number) => {
+    try {
+      await storage.writeText(segmentPath(projectGuid, index), text);
+    } catch (error) {
+      throw committed > 0 ? new JournalAppendError(committed, error) : error;
+    }
     tailsFor(storage).set(projectGuid, { index, chars: text.length });
+    committed = through;
   };
   let index = startIndex;
   let text =
     startText.length > 0 && !startText.endsWith("\n") ? `${startText}\n` : startText;
   let changed = false;
-  for (const line of lines) {
+  for (const [position, line] of lines.entries()) {
     const chunk = `${line}\n`;
     if (text.length > 0 && text.length + chunk.length > JOURNAL_SEGMENT_MAX_CHARS) {
-      if (changed) await write(index, text);
+      if (changed) await write(index, text, position);
       index += 1;
       text = "";
     }
     text += chunk;
     changed = true;
   }
-  await write(index, text);
+  await write(index, text, lines.length);
 }
 
 /**

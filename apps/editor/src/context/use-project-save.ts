@@ -218,11 +218,14 @@ export function useProjectSave({
           // The journal holds document edits only; Project Settings changed
           // during the save are not in it and must not keep saved edits there.
           // Records sealed for a pending recovery stay.
-          await journalBuffer.clearAfterFlush(guid, () =>
+          const cleared = await journalBuffer.clearAfterFlush(guid, () =>
             truncateJournal(derived, guid, () =>
               projectService.guid === guid && documentService.getDirtyDocuments().length === 0,
             ),
           );
+          // Paused journaling restarts from the saved files: the journal holds no live record now, and no edit
+          // is unsaved in this tick (one dropped while paused since the clear would leave its document dirty).
+          if (cleared && projectService.guid === guid && documentService.getDirtyDocuments().length === 0) journalBuffer.resume(guid);
         }
         progress.phase("callbacks");
         if (savedScene) {
