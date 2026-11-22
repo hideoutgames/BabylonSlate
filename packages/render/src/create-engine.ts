@@ -2388,7 +2388,9 @@ function initializeEngine(
     if (audioService) {
       const camera = simulationEditMode ? resolvePlayGameCamera(scene, binding) : scene.activeCamera;
       let listener: AudioPose | null = null;
-      if (camera && !gameTimePaused) {
+      // Paused game time holds the listener still, but a session that starts paused still needs its first pose:
+      // until one arrives, spatial voices are silent.
+      if (camera && (!gameTimePaused || !audioService.hasListener())) {
         // The Layer Camera hears from its centre on the XY plane, where 2D content lies, not from its depth.
         const pos = camera === worldLayerCamera?.camera
           ? { x: camera.position.x, y: camera.position.y, z: 0 }

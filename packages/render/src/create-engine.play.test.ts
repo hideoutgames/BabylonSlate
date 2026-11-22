@@ -5122,7 +5122,7 @@ describe("Play createEngine view", () => {
         channels: new Map(),
         audio: new Map([["hum", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
         attenuations: new Map([["near", {
-          innerRadius: 1, maxRadius: 50, distanceModel: "linear", rolloff: 1,
+          innerRadius: 1, maxRadius: 50, falloff: "linear", falloffCurveGuid: null, customCurve: null,
           spatialisation: "equalPower", cone: null, doppler: null,
         }]]),
       },
@@ -5172,7 +5172,7 @@ describe("Play createEngine view", () => {
         channels: new Map(),
         audio: new Map([["hum", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
         attenuations: new Map([["near", {
-          innerRadius: 1, maxRadius: 50, distanceModel: "linear", rolloff: 1,
+          innerRadius: 1, maxRadius: 50, falloff: "linear", falloffCurveGuid: null, customCurve: null,
           spatialisation: "equalPower", cone: null, doppler: null,
         }]]),
       },
@@ -5222,7 +5222,7 @@ describe("Play createEngine view", () => {
         channels: new Map(),
         audio: new Map([["hum", { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" }]]),
         attenuations: new Map([["near", {
-          innerRadius: 1, maxRadius: 50, distanceModel: "linear", rolloff: 1,
+          innerRadius: 1, maxRadius: 50, falloff: "linear", falloffCurveGuid: null, customCurve: null,
           spatialisation: "equalPower", cone: null, doppler: null,
         }]]),
       },

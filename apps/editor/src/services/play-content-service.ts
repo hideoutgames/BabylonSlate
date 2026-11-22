@@ -68,7 +68,7 @@ import {
   collectSubsystemClassesForPalette,
   typeSchemasFromGraphAssets,
 } from "../lib/logic-graph-document";
-import { createPlayAudioSourceLoader, playAudioLibraryFromAssets } from "../lib/play-audio";
+import { attenuationCurveGuids, createPlayAudioSourceLoader, playAudioLibraryFromAssets } from "../lib/play-audio";
 import {
   collectAnimGraphCompileDocuments,
   collectPlayScriptDocuments,
@@ -595,6 +595,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       | "audio-mixer"
       | "audio-channel"
       | "sound-attenuation"
+      | "float-curve"
       | "particle-emitter"
       | "particle-graph"
       | "particle-system"
@@ -929,6 +930,15 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         payload: content,
       };
     });
+    // Only the Float Curves a Custom falloff names, with their open drafts.
+    const curveGuids = attenuationCurveGuids(payloads.filter((entry) => entry.type === "SoundAttenuation").map((entry) => entry.payload));
+    const curveAssets = (projectService.registry?.list() ?? []).filter((asset) =>
+      asset.header.type === "FloatCurve" && curveGuids.has(asset.header.guid));
+    payloads.push(...await mapBounded(curveAssets, COLLECTOR_READS, async (asset) => ({
+      guid: asset.header.guid,
+      type: asset.header.type,
+      payload: (await loadPlayAssetContent("float-curve", asset.path)) ?? asset.header.payload,
+    })));
     return {
       library: playAudioLibraryFromAssets({
         mixerGuid: options.projectDocument()?.settings.audio.audioMixerGuid ?? null,

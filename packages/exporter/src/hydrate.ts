@@ -26,6 +26,7 @@ import {
   particleLibraryFromAssets,
   buildParticleParameterCatalog,
   normalizeSoundAttenuationPayload,
+  soundAttenuationLibraryEntry,
   compactTilemapPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
@@ -45,6 +46,7 @@ import {
   type AudioPayload,
   type ParticleLibrary,
   type RetargetAnimationLoad,
+  type SoundAttenuationLibraryEntry,
   type SoundAttenuationPayload,
   type SpriteAnimationPayload,
   type SpritePayload,
@@ -91,7 +93,8 @@ export type PackedAudioLibrary = {
   mixers: Map<string, AudioMixerPayload>;
   channels: Map<string, AudioChannelPayload>;
   audio: Map<string, AudioPayload>;
-  attenuations: Map<string, SoundAttenuationPayload>;
+  /** Each attenuation with its Custom falloff curve resolved from the content's Float Curves. */
+  attenuations: Map<string, SoundAttenuationLibraryEntry>;
 };
 
 export type PackedGameContent = {
@@ -337,6 +340,11 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     else if (entry.type === "SpriteBlendSpace") spriteBlendSpaces.set(entry.guid, { name, payload: value as SpriteBlendSpacePayload });
   }
 
+  // A Custom falloff's curve travels inside its attenuation entry, so the audio library is complete on its own.
+  const floatCurves = new Map(curveAssets.filter((entry) => entry.type === CURVE_ASSET_TYPES.float).map((entry) => [entry.guid, entry.payload]));
+  const attenuationEntries = new Map<string, SoundAttenuationLibraryEntry>();
+  for (const [guid, payload] of attenuations) attenuationEntries.set(guid, soundAttenuationLibraryEntry(payload, (curveGuid) => floatCurves.get(curveGuid)));
+
   const startup = game.manifest.startupSceneGuid;
   const navmeshByScene = new Map(game.navmeshBytes);
   const navmeshBytes = navmeshByScene.get(startup) ?? null;
@@ -453,7 +461,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       mixers,
       channels,
       audio,
-      attenuations,
+      attenuations: attenuationEntries,
     },
     particleLibrary: particleLibraryFromAssets(particleAssets),
     modelClipAnimationGuids: modelClipAnimationGuidsFromAnimations(animations),

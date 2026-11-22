@@ -1,3 +1,4 @@
+import { evaluateCurve, normalizeCurveAssetPayload, type Curve, type CurveKey } from "@haptic/core";
 import { concatBytes, readU32LE, writeU32LE } from "./bytes";
 
 /** A16-oriented audio budgets (engineplan §2.6). */
@@ -69,7 +70,69 @@ export type AudioMixerPayload = {
   channels: AudioMixerChannelEntry[];
 };
 
-export type SoundAttenuationDistanceModel = "linear" | "inverse" | "exponential";
+/**
+ * How a spatial sound fades between Inner Radius and Max Radius: a built-in Float Curve (Natural, Linear, Inverse,
+ * Exponential) or Custom, a Float Curve asset (`falloffCurveGuid`).
+ */
+export const SOUND_ATTENUATION_FALLOFFS = ["natural", "linear", "inverse", "exponential", "custom"] as const;
+export type SoundAttenuationFalloff = (typeof SOUND_ATTENUATION_FALLOFFS)[number];
+export type BuiltInSoundAttenuationFalloff = Exclude<SoundAttenuationFalloff, "custom">;
+
+export const SOUND_ATTENUATION_FALLOFF_LABELS: Readonly<Record<SoundAttenuationFalloff, string>> = {
+  natural: "Natural",
+  linear: "Linear",
+  inverse: "Inverse",
+  exponential: "Exponential",
+  custom: "Custom",
+};
+
+/** The falloff new Sound Attenuation assets start with, and the one Custom falls back to without its curve. */
+export const DEFAULT_SOUND_ATTENUATION_FALLOFF: BuiltInSoundAttenuationFalloff = "natural";
+
+function falloffKey(Time: number, Value: number, slope: number): CurveKey<number> {
+  return { Time, Value, Interpolation: "custom", ArriveTangent: slope, LeaveTangent: slope };
+}
+
+function falloffCurve(keys: CurveKey<number>[]): Curve<number> {
+  return { Keys: keys, Before: "constant", After: "constant" };
+}
+
+/**
+ * The built-in falloffs as Float Curves over X 0 (Inner Radius) to 1 (Max Radius), Y volume. Each key's tangents are
+ * the slope of the shape it samples, so the cubic segments follow it closely:
+ * - Natural: (1 − x)³ (1 + 3x). Flat as it leaves Inner Radius and as it lands on Max Radius, so neither edge is heard.
+ * - Linear: 1 − x.
+ * - Inverse: (1 − x) / (1 + x), the inverse-distance shape normalized to reach 0 at Max Radius.
+ * - Exponential: (e^−x − e^−1) / (1 − e^−1), the exponential shape normalized to reach 0 at Max Radius.
+ */
+export const BUILT_IN_FALLOFF_CURVES: Readonly<Record<BuiltInSoundAttenuationFalloff, Curve<number>>> = {
+  natural: falloffCurve([
+    falloffKey(0, 1, 0),
+    falloffKey(0.25, 0.73828125, -1.6875),
+    falloffKey(0.5, 0.3125, -1.5),
+    falloffKey(0.75, 0.05078125, -0.5625),
+    falloffKey(1, 0, 0),
+  ]),
+  linear: falloffCurve([
+    { Time: 0, Value: 1, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
+    { Time: 1, Value: 0, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
+  ]),
+  inverse: falloffCurve([
+    falloffKey(0, 1, -2),
+    falloffKey(0.25, 0.6, -1.28),
+    falloffKey(0.5, 0.333333, -0.888889),
+    falloffKey(0.75, 0.142857, -0.653061),
+    falloffKey(1, 0, -0.5),
+  ]),
+  exponential: falloffCurve([
+    falloffKey(0, 1, -1.581977),
+    falloffKey(0.25, 0.650068, -1.232045),
+    falloffKey(0.5, 0.377541, -0.959517),
+    falloffKey(0.75, 0.165296, -0.747273),
+    falloffKey(1, 0, -0.581977),
+  ]),
+};
+
 export type SoundAttenuationSpatialisation = "equalPower" | "hrtf";
 
 export type SoundAttenuationCone = {
@@ -86,12 +149,23 @@ export type SoundAttenuationDoppler = {
 export type SoundAttenuationPayload = {
   innerRadius: number;
   maxRadius: number;
-  distanceModel: SoundAttenuationDistanceModel;
-  rolloff: number;
+  falloff: SoundAttenuationFalloff;
+  /** Custom: the Float Curve asset the falloff follows. Kept while another falloff is chosen. */
+  falloffCurveGuid: string | null;
   spatialisation: SoundAttenuationSpatialisation;
   cone: SoundAttenuationCone | null;
   doppler: SoundAttenuationDoppler | null;
 };
+
+/**
+ * A Sound Attenuation as an audio library carries it to playback: its payload and, for Custom, the Float Curve that
+ * `falloffCurveGuid` named when the library was built (null when that curve was not found). Resolving the curve when
+ * the library is built keeps every library one map of attenuations, whatever host builds it.
+ */
+export type SoundAttenuationLibraryEntry = SoundAttenuationPayload & { customCurve: Curve<number> | null };
+
+/** A Sound Attenuation ready to play: `curve` is the falloff it follows, a built-in or its Custom curve. */
+export type ResolvedSoundAttenuation = SoundAttenuationPayload & { curve: Curve<number> };
 
 export type AudioValidationResult = {
   ok: boolean;
@@ -198,8 +272,8 @@ export function createDefaultSoundAttenuationPayload(): SoundAttenuationPayload 
   return {
     innerRadius: 10,
     maxRadius: 250,
-    distanceModel: "linear",
-    rolloff: 1,
+    falloff: DEFAULT_SOUND_ATTENUATION_FALLOFF,
+    falloffCurveGuid: null,
     spatialisation: "equalPower",
     cone: null,
     doppler: null,
@@ -434,21 +508,55 @@ export function normalizeSoundAttenuationPayload(
     innerRadius = maxRadius;
     maxRadius = swap;
   }
-  const distanceModel: SoundAttenuationDistanceModel =
-    source.distanceModel === "inverse" || source.distanceModel === "exponential"
-      ? source.distanceModel
-      : "linear";
+  const falloff: SoundAttenuationFalloff = (SOUND_ATTENUATION_FALLOFFS as readonly unknown[]).includes(source.falloff)
+    ? source.falloff as SoundAttenuationFalloff
+    : DEFAULT_SOUND_ATTENUATION_FALLOFF;
   const spatialisation: SoundAttenuationSpatialisation =
     source.spatialisation === "hrtf" ? "hrtf" : "equalPower";
   return {
     innerRadius,
     maxRadius,
-    distanceModel,
-    rolloff: nonNegative(source.rolloff, 1),
+    falloff,
+    falloffCurveGuid: nullableGuid(source.falloffCurveGuid),
     spatialisation,
     cone: normalizeCone(source.cone),
     doppler: normalizeDoppler(source.doppler),
   };
+}
+
+/**
+ * A library entry for an attenuation payload. `floatCurve` returns the payload of the Float Curve asset with a guid
+ * (`{ curve }`), or undefined when the library holds none; it is asked only for a Custom falloff's curve.
+ */
+export function soundAttenuationLibraryEntry(
+  payload: unknown,
+  floatCurve: (guid: string) => unknown,
+): SoundAttenuationLibraryEntry {
+  const attenuation = normalizeSoundAttenuationPayload(payload);
+  const source = attenuation.falloff === "custom" && attenuation.falloffCurveGuid
+    ? floatCurve(attenuation.falloffCurveGuid)
+    : undefined;
+  return {
+    ...attenuation,
+    customCurve: source === undefined || source === null ? null : normalizeCurveAssetPayload("float", source).curve,
+  };
+}
+
+/**
+ * The falloff curve an attenuation follows: its built-in curve, or for Custom the curve it carries. Custom without
+ * a curve (none picked, or missing from the library) follows the default built-in and reports `missing`.
+ */
+export function resolveSoundAttenuationCurve(
+  attenuation: Pick<SoundAttenuationPayload, "falloff"> & { customCurve?: Curve<number> | null },
+): { curve: Curve<number>; missing: boolean } {
+  if (attenuation.falloff !== "custom") {
+    return {
+      curve: BUILT_IN_FALLOFF_CURVES[attenuation.falloff] ?? BUILT_IN_FALLOFF_CURVES[DEFAULT_SOUND_ATTENUATION_FALLOFF],
+      missing: false,
+    };
+  }
+  if (attenuation.customCurve) return { curve: attenuation.customCurve, missing: false };
+  return { curve: BUILT_IN_FALLOFF_CURVES[DEFAULT_SOUND_ATTENUATION_FALLOFF], missing: true };
 }
 
 export function resolveAudioReferences(
@@ -556,10 +664,11 @@ export function validateAudioChannelGraph(
 export function sanitizeAudioLibrary(input: {
   audio: ReadonlyMap<string, AudioPayload | unknown>;
   channels: ReadonlyMap<string, AudioChannelPayload>;
-  attenuations: ReadonlyMap<string, SoundAttenuationPayload>;
+  attenuations: ReadonlyMap<string, SoundAttenuationLibraryEntry>;
 }): {
   audio: Map<string, AudioPayload>;
   channels: Map<string, AudioChannelPayload>;
+  attenuations: Map<string, ResolvedSoundAttenuation>;
   diagnostics: AudioDiagnostic[];
 } {
   const diagnostics: AudioDiagnostic[] = [];
@@ -589,7 +698,20 @@ export function sanitizeAudioLibrary(input: {
       parentChannelGuid: graph.resolvedParents[guid] ?? null,
     });
   }
-  return { audio, channels, diagnostics };
+  const attenuations = new Map<string, ResolvedSoundAttenuation>();
+  for (const [guid, entry] of input.attenuations) {
+    const resolved = resolveSoundAttenuationCurve(entry);
+    if (resolved.missing) {
+      diagnostics.push({
+        code: "audio.missing_falloff_curve",
+        message: `Sound Attenuation's Falloff Curve is missing; it falls off as ${SOUND_ATTENUATION_FALLOFF_LABELS[DEFAULT_SOUND_ATTENUATION_FALLOFF]}.`,
+        guid,
+      });
+    }
+    const { customCurve: _customCurve, ...payload } = entry;
+    attenuations.set(guid, { ...payload, curve: resolved.curve });
+  }
+  return { audio, channels, attenuations, diagnostics };
 }
 
 function collectGuids(values: Array<string | null | undefined>): string[] {
@@ -615,6 +737,11 @@ export function audioAssetDependencies(
   if (assetType === "AudioChannel") {
     const channel = normalizeAudioChannelPayload(payload);
     return collectGuids([channel.parentChannelGuid]);
+  }
+  if (assetType === "SoundAttenuation") {
+    // A Custom falloff plays its curve, so the curve loads and ships with the attenuation.
+    const attenuation = normalizeSoundAttenuationPayload(payload);
+    return attenuation.falloff === "custom" ? collectGuids([attenuation.falloffCurveGuid]) : [];
   }
   return [];
 }
@@ -716,32 +843,32 @@ export function computeAudioOutputGain(options: {
 }
 
 /**
- * Distance gain of a spatial sound: 1 within Inner Radius, falling by the distance model to exactly 0 at Max Radius
- * and silent beyond. Playback applies this gain itself (the browser panner only pans), so it is what players hear.
+ * A falloff curve's volume at `t` (0 at Inner Radius, 1 at Max Radius): the curve at `t` clamped to 0..1, the value
+ * clamped to 0..1. A `t` or value that is not a finite number is silence, never full volume.
+ */
+export function sampleFalloffCurve(curve: Curve<number>, t: number): number {
+  if (Number.isNaN(t)) return 0;
+  const value = evaluateCurve("float", curve, t < 0 ? 0 : t > 1 ? 1 : t);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return value >= 1 ? 1 : value;
+}
+
+/**
+ * Distance gain of a spatial sound: full volume up to Inner Radius, the falloff curve between the radii (X 0 at Inner
+ * Radius, 1 at Max Radius), and silent beyond Max Radius, so a curve that ends above 0 cuts off there. Max Radius
+ * equal to Inner Radius is a hard edge: full volume up to it, silent beyond. A distance that is not a finite number
+ * is silent. Playback applies this gain itself (the browser panner only pans), so it is what players hear.
  */
 export function computeAttenuationGain(
   distance: number,
-  attenuation: Pick<SoundAttenuationPayload, "innerRadius" | "maxRadius" | "distanceModel" | "rolloff">,
+  attenuation: Pick<ResolvedSoundAttenuation, "innerRadius" | "maxRadius" | "curve">,
 ): number {
-  const d = typeof distance === "number" && Number.isFinite(distance) ? distance : 0;
+  if (typeof distance !== "number" || !Number.isFinite(distance)) return 0;
   const inner = attenuation.innerRadius;
   const max = attenuation.maxRadius;
-  if (d <= inner) return 1;
-  if (max <= inner || d >= max) return 0;
-  const t = (d - inner) / (max - inner);
-  const rolloff = attenuation.rolloff > 0 ? attenuation.rolloff : 1;
-  if (attenuation.distanceModel === "inverse") {
-    const raw = 1 / (1 + rolloff * t);
-    const atMax = 1 / (1 + rolloff);
-    return clampAudioGain((raw - atMax) / (1 - atMax));
-  }
-  if (attenuation.distanceModel === "exponential") {
-    const raw = Math.exp(-rolloff * t);
-    const atMax = Math.exp(-rolloff);
-    if (1 - atMax === 0) return clampAudioGain(1 - t);
-    return clampAudioGain((raw - atMax) / (1 - atMax));
-  }
-  return clampAudioGain(1 - t);
+  if (distance <= inner) return 1;
+  if (!(distance <= max)) return 0;
+  return sampleFalloffCurve(attenuation.curve, (distance - inner) / (max - inner));
 }
 
 /** Web Audio no longer has PannerNode Doppler; playbackRate carries the authored factor. */
@@ -770,21 +897,34 @@ export function computeDopplerPlaybackRate(options: {
   return rate;
 }
 
+/**
+ * The Sound Attenuation plot: volume by distance from 0 to `attenuationPlotEnd`, the curve sampled `samples` times
+ * between the radii. Where the volume jumps (at Inner Radius when the curve does not start at 1, at Max Radius when
+ * it does not end at 0) two points share the distance, so the line draws the step.
+ */
 export function attenuationPlotPoints(
-  attenuation: SoundAttenuationPayload,
+  attenuation: Pick<ResolvedSoundAttenuation, "innerRadius" | "maxRadius" | "curve">,
   samples = 32,
 ): Array<{ distance: number; gain: number }> {
-  const max = Math.max(attenuation.maxRadius, attenuation.innerRadius, 1);
-  const count = Math.max(2, samples);
-  const points: Array<{ distance: number; gain: number }> = [];
-  for (let i = 0; i < count; i += 1) {
-    const distance = (i / (count - 1)) * max;
-    points.push({
-      distance,
-      gain: computeAttenuationGain(distance, attenuation),
-    });
+  const inner = attenuation.innerRadius;
+  const max = attenuation.maxRadius;
+  const points: Array<{ distance: number; gain: number }> = [{ distance: 0, gain: 1 }];
+  if (inner > 0) points.push({ distance: inner, gain: 1 });
+  if (max > inner) {
+    const count = Math.max(2, samples);
+    for (let i = 0; i < count; i += 1) {
+      const t = i / (count - 1);
+      points.push({ distance: inner + t * (max - inner), gain: sampleFalloffCurve(attenuation.curve, t) });
+    }
   }
+  if (points[points.length - 1]!.gain !== 0) points.push({ distance: max, gain: 0 });
+  points.push({ distance: attenuationPlotEnd(attenuation), gain: 0 });
   return points;
+}
+
+/** The distance the Sound Attenuation plot ends at: a tenth past Max Radius, so a cut there shows; at least 1. */
+export function attenuationPlotEnd(attenuation: Pick<SoundAttenuationPayload, "maxRadius">): number {
+  return Math.max(attenuation.maxRadius * 1.1, 1);
 }
 
 /**
