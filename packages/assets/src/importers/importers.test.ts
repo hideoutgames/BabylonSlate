@@ -169,18 +169,22 @@ describe("importers", () => {
     expect(shapes(await modelOf(await meshoptBoxGlb("required", 2)))).toEqual(plain);
   });
 
-  it("imports a Draco-compressed model with a placeholder collider and no occluder instead of reading its compressed bytes", async () => {
+  it("imports a Draco-compressed model with a placeholder box the size of its declared bounds and no occluder", async () => {
     // 1000 vertices compressed into 2 KB: reading them as floats runs past the binary chunk.
     const draco = "KHR_draco_mesh_compression";
     const bytes = encodeGlbJsonBin({
       asset: { version: "2.0" }, extensionsUsed: [draco], extensionsRequired: [draco],
       buffers: [{ byteLength: 2000 }], bufferViews: [{ buffer: 0, byteLength: 2000 }],
-      accessors: [{ componentType: 5126, count: 1000, type: "VEC3", min: [-1, -1, -1], max: [1, 1, 1] }],
+      accessors: [{ componentType: 5126, count: 1000, type: "VEC3", min: [0, 0, -1], max: [2, 3, 1] }],
       meshes: [{ primitives: [{ attributes: { POSITION: 0 }, extensions: { [draco]: { bufferView: 0, attributes: { POSITION: 0 } } } }] }],
       nodes: [{ mesh: 0 }], scenes: [{ nodes: [0] }], scene: 0,
     }, new Uint8Array(2000).fill(0x41));
-    const model = (await importModel(bytes, { fileName: "statue.glb", existingGuids: new Set() })).find((result) => result.type === "Model")!;
-    expect(model.payload.simpleColliders).toEqual([expect.objectContaining({ kind: "box", position: [0, 0, 0], halfExtents: { x: 0.5, y: 0.5, z: 0.5 } })]);
+    const model = (await importModel(bytes, { fileName: "statue.glb", existingGuids: new Set(), modelImportScale: 2 }))
+      .find((result) => result.type === "Model")!;
+    // Import Scale 2 makes the bounds [0, 4] x [0, 6] x [-2, 2]; the loader's X mirror puts X at [-4, 0].
+    expect(model.payload.simpleColliders).toEqual([
+      expect.objectContaining({ kind: "box", position: [-2, 3, 0], halfExtents: { x: 2, y: 3, z: 2 } }),
+    ]);
     expect(model.payload.occluder).toBeNull();
   });
 

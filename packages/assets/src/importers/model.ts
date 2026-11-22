@@ -1,5 +1,5 @@
 import { bakeOccluderFromMesh } from "../occluder-bake";
-import { packGltfTriangles, readGltfTriangles } from "../glb-geometry";
+import { packGltfTriangles, readGltfPositionBounds, readGltfTriangles } from "../glb-geometry";
 import { gltfGeometryDecodersReady } from "../gltf-geometry-decoders";
 import { createDefaultMaterialDocument, createImportedMaterialDocument } from "@haptic/shader-graph";
 import { normalizeAnimationPayload } from "../animation-payload";
@@ -271,10 +271,16 @@ function importFromBrowse(
       : DEFAULT_MODEL_IMPORT_SCALE;
   // Rest-pose geometry is read once for the collider and the occluder. A
   // skinned model's vertices leave their rest pose, so it gets neither.
-  const triangles = skeletonGuid == null ? readGltfTriangles(bytes, importScale) : null;
+  // Geometry the read cannot decode (Draco, malformed) gets a placeholder box
+  // the size of the Model's declared bounds, and no occluder: an occluder must
+  // lie inside the surface, which bounds do not.
+  const read = skeletonGuid == null ? readGltfTriangles(bytes, importScale) : null;
+  const triangles = read?.triangles ?? null;
   const simpleColliders =
-    skeletonGuid == null
-      ? [cookGeneratedCollisionFromTriangles(triangles)]
+    read
+      ? [cookGeneratedCollisionFromTriangles(triangles, {
+          placeholderBounds: read.problem ? readGltfPositionBounds(bytes, importScale) : null,
+        })]
       : [];
   const occluder = triangles ? bakeOccluderFromMesh(packGltfTriangles(triangles)) : null;
 

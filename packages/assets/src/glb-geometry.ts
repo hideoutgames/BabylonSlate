@@ -427,6 +427,18 @@ function assertNotDracoOnly(json: Record<string, unknown>, primitive: Record<str
   if (typeof accessor.bufferView !== "number" && !accessor.sparse) throw new GltfGeometryUnreadableError(DRACO_UNREADABLE);
 }
 
+/** A primitive's draw mode when it draws triangles (a list, strip or fan); null for points and lines. */
+function triangleMode(primitive: Record<string, unknown>): number | null {
+  const mode = typeof primitive.mode === "number" ? primitive.mode : TRIANGLES;
+  return mode === TRIANGLES || mode === TRIANGLE_STRIP || mode === TRIANGLE_FAN ? mode : null;
+}
+
+/** A primitive's POSITION accessor index, or -1 without one. */
+function positionAccessor(primitive: Record<string, unknown>): number {
+  const position = asRecord(primitive.attributes).POSITION;
+  return typeof position === "number" ? position : -1;
+}
+
 /** Appends one primitive's baked xyz triples and re-based triangle-list indices; points and lines add nothing. */
 function appendPrimitive(
   json: Record<string, unknown>,
@@ -437,12 +449,9 @@ function appendPrimitive(
   positions: number[],
   indices: number[],
 ): void {
-  const mode = typeof primitive.mode === "number" ? primitive.mode : TRIANGLES;
-  if (mode !== TRIANGLES && mode !== TRIANGLE_STRIP && mode !== TRIANGLE_FAN) return;
-  const attributes = asRecord(primitive.attributes);
-  const positionIndex =
-    typeof attributes.POSITION === "number" ? attributes.POSITION : -1;
-  if (positionIndex < 0) return;
+  const mode = triangleMode(primitive);
+  const positionIndex = positionAccessor(primitive);
+  if (mode === null || positionIndex < 0) return;
   assertNotDracoOnly(json, primitive, positionIndex);
   assertNotDracoOnly(json, primitive, primitive.indices);
   const raw = accessorValues(json, bin, positionIndex, 3, GLTF_MAX_PRIMITIVE_VERTICES);
@@ -471,39 +480,50 @@ function appendPrimitive(
   }
 }
 
-function collectFromNode(
+/**
+ * Calls `visit` with every primitive of the default scene (every node when it has none) and its node's world matrix,
+ * as the cook reads them: a node reached twice (through a cycle, or from two parents) once, a node scaled to nothing on
+ * every axis skipped with its children, and a hierarchy deeper than {@link GLTF_MAX_NODE_DEPTH} an import limit.
+ */
+function forEachScenePrimitive(
   json: Record<string, unknown>,
-  bin: Uint8Array,
-  nodeIndex: number,
-  parent: Mat4,
-  scale: number,
-  positions: number[],
-  indices: number[],
-  seen: Set<number>,
-  depth: number,
+  visit: (primitive: Record<string, unknown>, world: Mat4) => void,
 ): void {
-  // A node reached twice (through a cycle, or from two parents) is collected once.
-  if (seen.has(nodeIndex)) return;
-  seen.add(nodeIndex);
-  if (depth > GLTF_MAX_NODE_DEPTH) throw gltfNodeDepthError();
   const nodes = Array.isArray(json.nodes) ? json.nodes : [];
   const meshes = Array.isArray(json.meshes) ? json.meshes : [];
-  const node = asRecord(nodes[nodeIndex]);
-  if (isCollapsedNode(node)) return;
-  const world = multiplyMat(parent, nodeMatrix(node));
-  if (typeof node.mesh === "number") {
-    const mesh = asRecord(meshes[node.mesh]);
-    const primitives = Array.isArray(mesh.primitives) ? mesh.primitives : [];
-    for (const primitive of primitives) {
-      appendPrimitive(json, bin, asRecord(primitive), world, scale, positions, indices);
+  const seen = new Set<number>();
+  const walk = (nodeIndex: number, parent: Mat4, depth: number): void => {
+    if (seen.has(nodeIndex)) return;
+    seen.add(nodeIndex);
+    if (depth > GLTF_MAX_NODE_DEPTH) throw gltfNodeDepthError();
+    const node = asRecord(nodes[nodeIndex]);
+    if (isCollapsedNode(node)) return;
+    const world = multiplyMat(parent, nodeMatrix(node));
+    if (typeof node.mesh === "number") {
+      const primitives = asRecord(meshes[node.mesh]).primitives;
+      for (const primitive of Array.isArray(primitives) ? primitives : []) visit(asRecord(primitive), world);
     }
-  }
-  const children = Array.isArray(node.children) ? node.children : [];
-  for (const child of children) {
-    if (typeof child === "number") {
-      collectFromNode(json, bin, child, world, scale, positions, indices, seen, depth + 1);
+    const children = Array.isArray(node.children) ? node.children : [];
+    for (const child of children) {
+      if (typeof child === "number") walk(child, world, depth + 1);
     }
+  };
+  const scenes = Array.isArray(json.scenes) ? json.scenes : [];
+  const sceneIndex = typeof json.scene === "number" ? json.scene : 0;
+  const scene = asRecord(scenes[sceneIndex] ?? scenes[0]);
+  const roots = Array.isArray(scene.nodes) ? scene.nodes : [];
+  if (roots.length > 0) {
+    for (const root of roots) {
+      if (typeof root === "number") walk(root, identityMat(), 1);
+    }
+  } else {
+    for (let i = 0; i < nodes.length; i++) walk(i, identityMat(), 1);
   }
+}
+
+/** A usable Import Scale: positive and finite, else 1. */
+function importScaleOf(importScale: number): number {
+  return typeof importScale === "number" && Number.isFinite(importScale) && importScale > 0 ? importScale : 1;
 }
 
 /** The node hierarchy is deeper than {@link GLTF_MAX_NODE_DEPTH}. */
@@ -533,7 +553,7 @@ export function extractGltfPositions(
   bytes: Uint8Array,
   importScale = 1,
 ): HullVec3[] {
-  const positions = readGltfTriangles(bytes, importScale)?.positions;
+  const positions = readGltfTriangles(bytes, importScale).triangles?.positions;
   if (!positions) return [];
   return Array.from({ length: positions.length / 3 }, (_, i) => ({
     x: positions[i * 3]!,
@@ -581,15 +601,16 @@ export interface GltfTriangles {
 }
 
 /**
- * A glTF or GLB file's rest-pose triangles with node transforms and Import Scale baked, or null when it has none or
- * its geometry cannot be read (Draco-compressed, meshopt before the decoder loaded, or malformed). Parse once and
- * share the result when both a collider and an occluder are cooked from it.
+ * A glTF or GLB file's rest-pose triangles with node transforms and Import Scale baked; `triangles` is null when it has
+ * none or its geometry cannot be read (Draco-compressed, meshopt before the decoder loaded, or malformed), and
+ * `problem` then says why for the latter. Parse once and share the result when both a collider and an occluder are
+ * cooked from it.
  */
 export function readGltfTriangles(
   bytes: Uint8Array,
   importScale: number,
-): GltfTriangles | null {
-  return collectGltfTriangles(bytes, importScale).triangles;
+): { triangles: GltfTriangles | null; problem: string | null } {
+  return collectGltfTriangles(bytes, importScale);
 }
 
 /**
@@ -620,30 +641,72 @@ function collectSceneTriangles(
   bin: Uint8Array,
   importScale: number,
 ): { positions: number[]; indices: number[] } | null {
-  const scale =
-    typeof importScale === "number" && Number.isFinite(importScale) && importScale > 0
-      ? importScale
-      : 1;
+  const scale = importScaleOf(importScale);
   const positions: number[] = [];
   const indices: number[] = [];
-  const seen = new Set<number>();
-  const scenes = Array.isArray(json.scenes) ? json.scenes : [];
-  const sceneIndex = typeof json.scene === "number" ? json.scene : 0;
-  const scene = asRecord(scenes[sceneIndex] ?? scenes[0]);
-  const roots = Array.isArray(scene.nodes) ? scene.nodes : [];
-  if (roots.length > 0) {
-    for (const root of roots) {
-      if (typeof root === "number") {
-        collectFromNode(json, bin, root, identityMat(), scale, positions, indices, seen, 1);
+  forEachScenePrimitive(json, (primitive, world) => appendPrimitive(json, bin, primitive, world, scale, positions, indices));
+  return positions.length === 0 ? null : { positions, indices };
+}
+
+/** An axis-aligned box: the smallest and largest x, y and z. */
+export interface GltfBounds {
+  min: [number, number, number];
+  max: [number, number, number];
+}
+
+/**
+ * A POSITION accessor's declared `min` or `max` as real values: glTF stores them as the buffer holds the data
+ * ("the normalized property has no effect on array values"), so a `normalized` integer accessor's bound is normalized
+ * here as `accessorValues` normalizes its elements. Null when it is missing or not three finite numbers.
+ */
+function positionBound(accessor: Record<string, unknown>, bound: unknown): [number, number, number] | null {
+  if (!Array.isArray(bound) || bound.length < 3) return null;
+  const componentType = typeof accessor.componentType === "number" ? accessor.componentType : FLOAT;
+  const values = bound.slice(0, 3).map((value) =>
+    typeof value === "number" && accessor.normalized === true ? normalizeComponent(value, componentType) : value);
+  return values.every((value) => typeof value === "number" && Number.isFinite(value))
+    ? values as [number, number, number]
+    : null;
+}
+
+/**
+ * The box around the default scene's triangle geometry, from each POSITION accessor's declared `min` and `max` (which
+ * glTF requires) instead of its data, so it is known for geometry the cook cannot read, such as Draco. The bounds of
+ * every primitive the cook would read are moved by their node's world matrix (its 8 corners, so a rotated node gets the
+ * box around its turned bounds, which can be larger than the mesh) and Import Scale, in the same space as
+ * {@link readGltfTriangles}' positions. Null when the file has no such primitive or any of their bounds is missing.
+ */
+export function readGltfPositionBounds(bytes: Uint8Array, importScale: number): GltfBounds | null {
+  const parsed = parseGltfJsonBin(bytes);
+  if (!parsed) return null;
+  const { json } = parsed;
+  const scale = importScaleOf(importScale);
+  const accessors = Array.isArray(json.accessors) ? json.accessors : [];
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  let complete = true;
+  forEachScenePrimitive(json, (primitive, world) => {
+    const positionIndex = positionAccessor(primitive);
+    if (!complete || triangleMode(primitive) === null || positionIndex < 0) return;
+    const accessor = asRecord(accessors[positionIndex]);
+    const low = positionBound(accessor, accessor.min);
+    const high = positionBound(accessor, accessor.max);
+    if (!low || !high) {
+      complete = false;
+      return;
+    }
+    for (let corner = 0; corner < 8; corner++) {
+      const x = corner & 1 ? high[0] : low[0];
+      const y = corner & 2 ? high[1] : low[1];
+      const z = corner & 4 ? high[2] : low[2];
+      for (let axis = 0; axis < 3; axis++) {
+        const value = (world[axis]! * x + world[4 + axis]! * y + world[8 + axis]! * z + world[12 + axis]!) * scale;
+        min[axis] = Math.min(min[axis]!, value);
+        max[axis] = Math.max(max[axis]!, value);
       }
     }
-  } else {
-    const nodes = Array.isArray(json.nodes) ? json.nodes : [];
-    for (let i = 0; i < nodes.length; i++) {
-      collectFromNode(json, bin, i, identityMat(), scale, positions, indices, seen, 1);
-    }
-  }
-  return positions.length === 0 ? null : { positions, indices };
+  });
+  return complete && min.every(Number.isFinite) && max.every(Number.isFinite) ? { min, max } : null;
 }
 
 /** Unit cube GLB (size 1, centered) for importer / hull tests. */
