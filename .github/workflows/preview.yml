@@ -45,6 +45,9 @@ jobs:
       # The whole report goes to the summary; a bundle over its budget in scripts/bundle-budgets.json fails the deploy.
       - name: Report bundle sizes and check budgets
         run: node scripts/bundle-report.mjs --budgets scripts/bundle-budgets.json apps/player/dist apps/editor/dist >> "$GITHUB_STEP_SUMMARY"
+      # A chunk that reads a binding from another chunk of its import cycle while it evaluates fails the deploy.
+      - name: Check the chunk graph
+        run: node scripts/chunk-cycles.mjs apps/editor/dist
       - name: Build docs site
         env:
           VITEPRESS_BASE: /BabylonSlate/docs/

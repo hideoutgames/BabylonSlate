@@ -73,6 +73,15 @@ jobs:
       # Type-aware promise rules read other files' types, so they never run from the per-file cache above.
       - run: pnpm lint:promises
       - run: pnpm --filter docs-site build
+      # The editor bundle as Pages ships it: no chunk may read a binding from another chunk of the same import cycle
+      # while it evaluates (scripts/chunk-cycles.mjs). The e2e shards load test-mode bundles, which chunk differently.
+      - name: Check the production editor's chunk graph
+        run: |
+          pnpm --filter editor exec vite build --logLevel warn
+          node scripts/chunk-cycles.mjs apps/editor/dist
+        env:
+          VITE_BASE_PATH: /BabylonSlate/
+          VITE_TEST_MODE: "false"
 
   unit:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
