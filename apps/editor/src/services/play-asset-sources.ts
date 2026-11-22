@@ -384,7 +384,8 @@ async function acquireWithRetries(
   host: PlayAssetSourceHost,
   roots: readonly string[],
   options: PlayAssetSourceOptions,
-  scriptsFrom?: PreparedPlaySources,
+  /** An earlier acquisition (`acquirePlayStartupSources`), keyed in `compiledScriptsSources`. */
+  scriptsFrom?: object,
 ) {
   for (let attempt = 1; ; attempt++) {
     options.signal.throwIfAborted();
@@ -418,7 +419,7 @@ const compiledScriptsSources = new WeakMap<object, CompiledScriptsSource>();
  * inputs. Its scripts for `required`'s owners are those a compile of `required` makes from the same documents (a Class
  * compiles from its own graph and what its closure names, which `required` holds).
  */
-function reusableScripts(from: PreparedPlaySources | undefined, host: PlayAssetSourceHost,
+function reusableScripts(from: object | undefined, host: PlayAssetSourceHost,
   required: ReadonlySet<string>, revisions: ReadonlyMap<string, string>, context: string): CompiledScriptsSource | null {
   const source = from && compiledScriptsSources.get(from);
   if (!source || source.host !== host || source.released() || source.context !== context) return null;
@@ -432,7 +433,7 @@ async function acquirePlayAssetSourcesAttempt(
   roots: readonly string[],
   options: PlayAssetSourceOptions,
   trust: boolean,
-  scriptsFrom?: PreparedPlaySources,
+  scriptsFrom?: object,
 ) {
   const referrers = new Map<string, string>();
   const catalogRevisions = await currentRequiredPlayAssets(host, roots, options.signal, undefined, trust, referrers);
