@@ -228,9 +228,14 @@ export function useAssetFileOperations({
       const journalGuid = projectService.guid;
       if (journalGuid) {
         const at = new Date().toISOString();
+        let retired = false;
         for (const id of rewritten) {
-          if (documentService.getDocument(id)?.dirty === false) journalBuffer.append(journalGuid, journalDiscardLine(id, at));
+          if (documentService.getDocument(id)?.dirty !== false) continue;
+          journalBuffer.append(journalGuid, journalDiscardLine(id, at));
+          retired = true;
         }
+        // Written before the rename reports done, as its checkpoints were: a reload right after must not find them alone.
+        if (retired) await journalBuffer.flush(journalGuid);
       }
       // The registry stamped the file's payload name; an open tab follows it.
       for (const doc of documentService.getOpenDocumentsOrdered()) {

@@ -300,7 +300,7 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().dirtyDocuments).toEqual([]);
     const guid = documents().projectGuid!;
     const derived = await createDerivedStorage();
-    await act(() => new Promise((resolve) => setTimeout(resolve, JOURNAL_FLUSH_DELAY_MS * 2)));
+    // Read at once, before the journal's batch timer: a reload right after the rename finds the same.
     expect(resolveJournalLines(await readJournalLines(derived, guid))).toEqual([]);
 
     // With an edit made before the rename, the Scene stays recoverable.
