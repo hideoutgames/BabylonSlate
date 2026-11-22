@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,16 +11,22 @@ afterEach(() => {
 });
 
 /** Builds `files` (entry `main.ts`) as the player does and returns the emitted files. */
-async function buildFixture(files: Record<string, string>): Promise<Map<string, Rolldown.OutputChunk | Rolldown.OutputAsset>> {
+async function buildFixture(
+  files: Record<string, string>,
+  packages?: Record<string, string>,
+): Promise<Map<string, Rolldown.OutputChunk | Rolldown.OutputAsset>> {
   const root = mkdtempSync(path.join(tmpdir(), "platform-modules-"));
   roots.push(root);
-  for (const [name, source] of Object.entries(files)) writeFileSync(path.join(root, name), source);
+  for (const [name, source] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
+    writeFileSync(path.join(root, name), source);
+  }
   const state = createPlatformModules();
   const output = await build({
     root,
     configFile: false,
     logLevel: "silent",
-    plugins: [platformModules(state, { writeList: true })],
+    plugins: [platformModules(state, { writeList: true, packages })],
     build: {
       write: false,
       minify: false,
@@ -49,6 +55,19 @@ describe("platform modules in the player build", () => {
     const chunk = files.get("player-platform-desktop.js") as Rolldown.OutputChunk;
     expect(chunk.code).toContain("desktop presence");
     expect((files.get("player.js") as Rolldown.OutputChunk).code).not.toContain("desktop presence");
+  });
+
+  it("puts an npm package only platform modules use in their file, and keeps it out of the others", async () => {
+    const files = await buildFixture({
+      "main.ts": "(globalThis as Record<string, unknown>).presence = async (onMobile: boolean): Promise<string> =>\n  onMobile ? (await import(\"./mobile\")).presence() : \"none\";\n",
+      "mobile.ts": "// #if WITH_MOBILE\nimport { bridge } from \"native-bridge\";\nexport const presence = (): string => bridge();\n// #endif\n",
+      "node_modules/native-bridge/package.json": "{\"name\":\"native-bridge\",\"type\":\"module\",\"main\":\"index.js\"}",
+      "node_modules/native-bridge/index.js": "export const bridge = () => \"native bridge\";\n",
+    }, { "native-bridge": "WITH_MOBILE" });
+    expect(JSON.parse(String((files.get("platform-modules.json") as Rolldown.OutputAsset).source))).toEqual({ "player-platform-mobile.js": "WITH_MOBILE" });
+    expect((files.get("player-platform-mobile.js") as Rolldown.OutputChunk).code).toContain("native bridge");
+    const plain = [...files.values()].filter((file) => file.type === "chunk" && file.fileName !== "player-platform-mobile.js");
+    for (const chunk of plain) expect((chunk as Rolldown.OutputChunk).code).not.toContain("native bridge");
   });
 
   it("fails the build when plain code imports a platform module statically", async () => {

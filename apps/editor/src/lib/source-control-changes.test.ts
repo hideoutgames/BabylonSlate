@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { AssetRegistry, createVfsBlobStore, encodeHasset, projectContentRoot, readHassetHeader } from "@haptic/assets";
+import { AssetRegistry, createVfsBlobStore, projectContentRoot } from "@haptic/assets";
+import { encodeHasset, readHassetHeader } from "@haptic/assets/hasset";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { testAsset } from "../testing/diff-assets";
 import { assetBlobFolder, commitPaths, conflictChoices, groupChanges, groupConflicts, registryChangeLookup, withWorkingHeaders, type ChangeLookup } from "./source-control-changes";

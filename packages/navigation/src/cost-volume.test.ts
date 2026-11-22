@@ -2,9 +2,9 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { NavMeshQuery } from "@recast-navigation/core";
 import { mergeNavBakeMeshes } from "./geometry";
 import { solidBlockerMesh } from "./blockers";
+import { generateNavMesh } from "./bake";
 import {
   createNavigationBackend,
-  generateNavMesh,
   initNavigation,
 } from "./recast-backend";
 import type { NavPoint } from "./types";

@@ -52,7 +52,7 @@ const playerFiles = new Map([
 ]);
 
 describe("collectAndExportGame", () => {
-  it("exports header-only Skeleton documents required by imported Models", async () => {
+  it("keeps a Model's Skeleton in the catalog without shipping its document", async () => {
     const mesh = createMeshComponent("hero-mesh", "box");
     mesh.properties.assetGuid = "hero-model";
     const scene = {
@@ -99,9 +99,10 @@ describe("collectAndExportGame", () => {
     expect(catalog.find(entry => entry.guid === "hero-model")?.requiredDependencies).toEqual(["hero-skeleton"]);
     const exportedSkeleton = catalog.find(entry => entry.guid === "hero-skeleton")!;
     expect(exportedSkeleton.requiredDependencies).toEqual(["hero-model"]);
-    expect(exportedSkeleton.encoding).toBe("json");
-    expect(JSON.parse(new TextDecoder().decode(result.value.files.get(exportedSkeleton.path!))))
-      .toEqual(skeleton);
+    // Its sockets travel on the Model payload; no game code reads the Skeleton document.
+    expect(exportedSkeleton.path).toBeUndefined();
+    expect(exportedSkeleton.byteLength).toBe(0);
+    expect([...result.value.files.values()].some(bytes => new TextDecoder().decode(bytes).includes(JSON.stringify(skeleton.bones)))).toBe(false);
   });
 
   it("fails once the game reaches an asset stored in an unsupported format", async () => {
@@ -484,7 +485,12 @@ describe("collectAndExportGame", () => {
     expect(result.value.manifest.bundleDebugger).toBe(false);
     const startupAsset = result.value.manifest.assets.find(entry => entry.guid === "scene-1")!;
     expect(startupAsset.path).toMatch(/^assets\/data-\d+\.bin$/);
-    expect(new TextDecoder().decode(result.value.files.get(startupAsset.path!))).toBe(JSON.stringify(scene));
+    // The Scene ships without its outliner folders and viewport settings; everything else is as authored.
+    const expected = JSON.parse(JSON.stringify(scene)) as { folders?: unknown; settings: Record<string, unknown>; actors: Array<Record<string, unknown>> };
+    delete expected.folders;
+    for (const key of ["grid", "editorJoystickEnabled", "showNavmesh"]) delete expected.settings[key];
+    for (const actor of expected.actors) delete actor.folderId;
+    expect(JSON.parse(new TextDecoder().decode(result.value.files.get(startupAsset.path!)))).toEqual(expected);
     expect(
       result.value.manifest.assets.some((entry) => entry.guid === "euo-1"),
     ).toBe(false);

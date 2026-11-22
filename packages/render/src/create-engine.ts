@@ -11,7 +11,7 @@ import { drainEngineAfterRelease } from "./idle-engine-drain";
 import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingLease, type EngineGpuTimingObservation } from "./engine-gpu-timing";
 import { RuntimeMaterialEditOwner } from "./runtime-material-edit";
 import { drainFinalAuthoringResources } from "./final-authoring-drain";
-import { createRuntimeTransformTools, type RuntimeTransformToolsOwner } from "./runtime-transform-tools";
+import type { RuntimeTransformToolsOwner } from "./runtime-transform-tools";
 import { beginRenderFrameCapture, RenderFrameReportFeed, type RenderFrameReportReceipt } from "./render-frame-report";
 import { pausedSceneRedrawIssue, setSceneGameTimePaused } from "./scene-game-time";
 import { applyDynamicRuntimeMeshUpdate } from "./dynamic-runtime-mesh";
@@ -116,13 +116,9 @@ import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@haptic/shader-graph";
-import { EditorSceneSync } from "./editor-scene-sync";
 import { applyCableFrame, stepEditorCables } from "./cable-mesh";
 import { applySpringArmProbes } from "./snapshot-spring-arms";
 import { createPreviewLighting } from "./preview-lighting";
-import {
-  ViewportShadingOverlay,
-} from "./viewport-shading-mode";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCompression";
 import {
@@ -245,7 +241,7 @@ import {
   sceneLayerOutputDesignSize,
   walkOverlayPointerHits,
 } from "@haptic/core";
-import { EditorDebugOverlay } from "./editor-debug-overlay";
+import type { EditorDebugOverlay } from "./editor-debug-overlay";
 import { beginEngineDrawCallFrame, readEngineDrawCalls } from "./draw-calls";
 import {
   beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, enterDrawPass, leaveDrawPass, publishDrawPassFrame,
@@ -272,7 +268,7 @@ import { findSceneShadowController } from "./shadow-controller";
 import { createHeldThreadTimer, SCENE_DRIVER_COMPILE_TIMEOUT_MS, type HeldThreadTimer } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 
-import { createEditorViewportTools } from "./editor-viewport-tools";
+import type { EditorEngineFeatures } from "./editor-engine-features";
 import { createPlayGameInput } from "./play-game-input";
 import { createPlayVisualBindings } from "./play-visual-bindings";
 import { createPlayHandleInspection } from "./play-handle-inspection";
@@ -347,14 +343,20 @@ function createPlayAudioBackend(
  * pass it via `sharedEngine` + registerView for Scene / Play canvases.
  * ResourceCache is keyed on that Engine (`resourceCacheForEngine`); shared
  * handles release their retains on dispose and must not dispose the cache.
+ *
+ * `editorFeatures` supplies the editor-only subsystems (document sync, viewport tools, Play's
+ * runtime transform tools). The exported game passes none (`createGameEngine`), so they stay out
+ * of its bundle; the editor's `createEngine` (`editor-engine.ts`) passes them.
  */
-export function createEngine(
+export function createSceneEngine(
   canvas: HTMLCanvasElement,
-  options: CreateEngineOptions = {},
+  options: CreateEngineOptions,
+  editorFeatures: EditorEngineFeatures | null,
 ): EngineHandle {
   const rollback: Array<() => void> = [];
   try {
-    return initializeEngine(canvas, options, (cleanup) => rollback.push(cleanup));
+    if (options.editor && !editorFeatures) throw new Error("An editor view needs the editor engine features.");
+    return initializeEngine(canvas, options, editorFeatures, (cleanup) => rollback.push(cleanup));
   } catch (error) {
     // Construction can fail before a handle exists. Release every acquired
     // owner even if one cleanup also fails, preserving the construction error.
@@ -365,6 +367,11 @@ export function createEngine(
     if (failures.length > 1) throw new AggregateError(failures, "Scene construction and rollback failed.", { cause: error });
     throw error;
   }
+}
+
+/** The exported game's view: the same setup as the editor's `createEngine`, without the editor-only subsystems. */
+export function createGameEngine(canvas: HTMLCanvasElement, options: CreateEngineOptions = {}): EngineHandle {
+  return createSceneEngine(canvas, options, null);
 }
 
 /** Rendered frames `RenderDiagnostics.cpuMeanMs` averages: half a second at 60 fps. */
@@ -406,6 +413,7 @@ const NO_LAYER_FRAME = emptyLayerFrameStats();
 function initializeEngine(
   canvas: HTMLCanvasElement,
   options: CreateEngineOptions,
+  editorFeatures: EditorEngineFeatures | null,
   onRollback: (cleanup: () => void) => void,
 ): EngineHandle {
   // This view owns its retained source references independently of the caller.
@@ -1567,13 +1575,13 @@ function initializeEngine(
     scheduler.invalidate("camera");
   };
 
-  const viewportShading = options.editor
-    ? new ViewportShadingOverlay(scene)
+  const viewportShading = options.editor && editorFeatures
+    ? editorFeatures.createViewportShading(scene)
     : null;
   // Set once the editor tools exist; an apply can finish before then.
   const editorToolsRef: { current: EditorTools | null } = { current: null };
-  const editorSync = options.editor
-    ? new EditorSceneSync(scene, scheduler, {
+  const editorSync = options.editor && editorFeatures
+    ? editorFeatures.createSceneSync(scene, scheduler, {
         resolveMaterial: (guid, options) => binding.resolveMaterial?.(guid, options) ?? null,
         releaseMaterialInstance: (key, guid) => binding.releaseMaterialInstance?.(key, guid),
         validateMaterialParameter: (guid, name, value) => binding.validateMaterialParameter?.(guid, name, value) ?? false,
@@ -1905,8 +1913,8 @@ function initializeEngine(
   let debugOverlay: EditorDebugOverlay | null = null;
   let disposeInput: (() => void) | null = null;
   let selectedActorIds: () => string[] = () => [];
-  if (options.editor && editorSync) {
-    ({ editor, debugOverlay, disposeInput, selectedActorIds } = createEditorViewportTools({
+  if (options.editor && editorSync && editorFeatures) {
+    ({ editor, debugOverlay, disposeInput, selectedActorIds } = editorFeatures.createViewportTools({
       canvas,
       scene,
       options,
@@ -3724,9 +3732,9 @@ function initializeEngine(
     },
     cancelFrameCapture: (reason) => frameReportFeed.cancel(reason),
     attachRuntimeTransformTools: (callbacks) => {
-      if (disposed || !options.playMode || options.editor || runtimeTransformTools)
+      if (disposed || !options.playMode || options.editor || runtimeTransformTools || !editorFeatures)
         throw new Error("Runtime transform tools require a live, unattached game view.");
-      const owner = createRuntimeTransformTools(scene, canvas, {
+      const owner = editorFeatures.createRuntimeTransformTools(scene, canvas, {
         mode: options.viewportMode ?? "3d", scheduler,
         requestRedraw: () => {
           if (gameTimePaused) scheduler.requestPausedFrame();

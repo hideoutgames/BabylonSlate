@@ -32,13 +32,15 @@ import {
 import { animationAssetGuids } from "./animation-payload";
 import { blendSpaceAssetGuids, spriteBlendSpaceAssetGuids } from "./blend-space-payload";
 import { audioAssetDependencies } from "./audio-payload";
-import { ASSET_DEPENDENCY_METADATA_VERSION } from "./hasset";
 import { dataAssetDependencies, dataGraphAssetDependencies, type DataDefinitionFieldsResolver } from "./data-asset-refs";
 import { modelAssetGuids } from "./model-payload";
 import { particleAssetDependencies } from "./particle-payload";
 import { skeletonAssetGuids } from "./skeleton-payload";
 import { skyboxCreatorAssetDependencies } from "./skybox-creator-payload";
 import { parseSpriteAnimationPayload, spriteAnimationDependencyGuids } from "./sprite-animation-payload";
+
+/** Header dependency metadata layout this engine writes and reads (`.hasset` headers, export catalogs). */
+export const ASSET_DEPENDENCY_METADATA_VERSION = 1;
 
 export interface AssetDependencyMetadata {
   dependencyMetadataVersion: number;

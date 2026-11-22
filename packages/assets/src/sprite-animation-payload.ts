@@ -1,3 +1,4 @@
+import { assetSourceHeader } from "./installed-asset";
 import { sniffSourceImageSize } from "./image-size";
 import {
   animationEventActionGuids,
@@ -428,7 +429,7 @@ export function hydrateSpriteAnimations(
   sources: {
     sprites: ReadonlyMap<string, SpritePayload>;
     textureSizes: ReadonlyMap<string, { width: number; height: number }>;
-    textureBytes: ReadonlyMap<string, Uint8Array>;
+    textureBytes: ReadonlyMap<string, Uint8Array | Blob>;
   },
 ): Map<string, SpriteAnimationPayload> {
   const cache = new Map<string, { width: number; height: number } | null>();
@@ -436,8 +437,9 @@ export function hydrateSpriteAnimations(
     const known = sources.textureSizes.get(guid);
     if (known) return known;
     if (cache.has(guid)) return cache.get(guid) ?? null;
-    const bytes = sources.textureBytes.get(guid);
-    const size = bytes ? sniffSourceImageSize(bytes) : null;
+    const source = sources.textureBytes.get(guid);
+    const header = source ? assetSourceHeader(source) : undefined;
+    const size = header ? sniffSourceImageSize(header) : null;
     cache.set(guid, size);
     return size;
   };
