@@ -20,6 +20,8 @@ export interface DesktopGamePackageInput {
   version: string;
   /** Stable per project; names the game's own storage folder, so saves survive renames. */
   gameId: string;
+  /** Project Settings App ID (`resolvedAppIdentity`): the Debian package's name, install folder and command. */
+  appId: string;
   /**
    * Project Settings App Icon: the Debian package's menu icon and, through
    * `packageWindowsGame`, the Windows executable's. The game window shows the

@@ -13,6 +13,7 @@ function input(overrides: Partial<DesktopGamePackageInput> = {}): DesktopGamePac
     name: "Space Game",
     version: "1.2.0",
     gameId: "project-guid",
+    appId: "com.example.spacegame",
     ...overrides,
   };
 }

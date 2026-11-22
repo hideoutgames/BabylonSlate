@@ -170,6 +170,7 @@ export function useGameExport(
         name: projectDocument.metadata.name,
         version: projectDocument.metadata.version,
         gameId: options.projectGuid ?? "game",
+        appId: resolvedAppIdentity(projectDocument.settings.appIdentity, projectDocument.metadata.name).appId,
         ...(result.value.appIcon ? { icon: result.value.appIcon } : {}),
       };
       // Packaging writes hundreds of megabytes, so it runs on a worker and the editor stays responsive.
