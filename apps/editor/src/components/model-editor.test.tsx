@@ -2,6 +2,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { encodeGlbJsonBin } from "@haptic/assets";
 import { encodeTriangleGlb } from "@haptic/render/glb-test-fixtures";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { ModelColliderSessionProvider } from "../context/model-collider-session";
@@ -330,6 +331,29 @@ describe("ModelColliders", () => {
     expect(screen.getByTestId("model-collider-tree").textContent).toContain(
       "Generated Collision",
     );
+  });
+
+  it("adds Generated Collision for a Draco-compressed Model as a box the size of its declared bounds", () => {
+    const draco = "KHR_draco_mesh_compression";
+    const dracoGlb = encodeGlbJsonBin({
+      asset: { version: "2.0" }, extensionsUsed: [draco], extensionsRequired: [draco],
+      buffers: [{ byteLength: 64 }], bufferViews: [{ buffer: 0, byteLength: 64 }],
+      accessors: [{ componentType: 5126, count: 100, type: "VEC3", min: [1, 0, -1], max: [3, 2, 1] }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, extensions: { [draco]: { bufferView: 0, attributes: { POSITION: 0 } } } }] }],
+      nodes: [{ mesh: 0 }], scenes: [{ nodes: [0] }], scene: 0,
+    }, new Uint8Array(64).fill(0x41));
+    const onChange = vi.fn();
+    render(
+      <ModelColliderSessionProvider>
+        <ModelColliders payload={{ materialSlots: [], importScale: 0.5 }} sourceBytes={dracoGlb} onChange={onChange} />
+      </ModelColliderSessionProvider>,
+    );
+    fireEvent.click(screen.getByTestId("model-add-collider"));
+    fireEvent.click(screen.getByTestId("model-add-collider-generated"));
+    // Import Scale 0.5 makes the bounds [0.5, 1.5] x [0, 1] x [-0.5, 0.5]; the loader's X mirror puts X at [-1.5, -0.5].
+    expect(onChange).toHaveBeenLastCalledWith({ ...onChange.mock.lastCall![0], simpleColliders: [expect.objectContaining({
+      kind: "box", name: "Generated Collision", position: [-1, 0.5, 0], halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
+    })] });
   });
 
   it("does not add Generated Collision until the Model source chunk is loaded", () => {
