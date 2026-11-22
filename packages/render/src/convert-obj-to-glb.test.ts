@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { FilesInputStore } from "@babylonjs/core/Misc/filesInputStore";
+import { OBJFileLoader } from "@babylonjs/loaders/OBJ/objFileLoader";
 import { Animation } from "@babylonjs/core/Animations/animation";
 import { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Quaternion } from "@babylonjs/core/Maths/math.vector";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
-import { importModel, parseGlbForBrowse } from "@haptic/assets";
+import { ImportLimitError, importModel, MESH_CONVERSION_MAX_SOURCE_BYTES, parseGlbForBrowse } from "@haptic/assets";
 import {
   convertObjImportBatch,
   convertObjToGlb,
@@ -72,6 +74,37 @@ describe("convertObjToGlb", () => {
     expect(errors).toEqual([]);
     expect(files.map((file) => file.name)).toEqual(["Hero.glb", "unrelated.png"]);
     expect(isGltfModelBytes(files[0]!.bytes)).toBe(true);
+  });
+
+  it("runs one conversion at a time, so each loader sees only its own files in Babylon's shared file store", async () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const seen: string[][] = [];
+    const load = OBJFileLoader.prototype.loadAssetContainerAsync;
+    const spy = vi.spyOn(OBJFileLoader.prototype, "loadAssetContainerAsync").mockImplementation(function (this: OBJFileLoader, ...args) {
+      seen.push(Object.keys(FilesInputStore.FilesToLoad).sort());
+      return load.apply(this, args);
+    });
+    try {
+      const encode = (text: string) => new TextEncoder().encode(text);
+      await Promise.all(["first", "second"].map((name) => convertObjToGlb(encode(TRIANGLE_OBJ), {
+        engine,
+        fileName: `${name}.obj`,
+        sidecars: [{ name: `${name}.mtl`, bytes: encode("newmtl Paint\nKd 1 0 0\n") }],
+      })));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(seen).toEqual([
+      ["first.mtl", "first.obj"],
+      ["second.mtl", "second.obj"],
+    ]);
+    expect(Object.keys(FilesInputStore.FilesToLoad)).toEqual([]);
+  });
+
+  it("refuses an OBJ larger than the conversion limit before reading it", async () => {
+    const huge = { byteLength: MESH_CONVERSION_MAX_SOURCE_BYTES + 1 } as Uint8Array;
+    await expect(convertObjToGlb(huge)).rejects.toThrow(ImportLimitError);
   });
 });
 

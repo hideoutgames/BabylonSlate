@@ -275,10 +275,7 @@ describe("GraphConnectionLineView refusal", () => {
 
 describe("GraphConnectionLine refusal lookup", () => {
   const baseContext: GraphEditorContextValue = {
-    pendingPin: null,
     onPinTap: () => {},
-    nodeErrorCount: () => 0,
-    pinHasError: () => false,
     pinDisplayType: () => undefined,
     connectEndMode: "default",
   };

@@ -194,6 +194,17 @@ describe.each(["whole-body", "native"] as const)("LfsTransfer over %s transfers"
     expect((await failure(offline.lfs.download([OBJECT], () => [PATH]))).kind).toBe("network");
   });
 
+  it("refuses to upload a same-length working file that is not the object its name says, sending no byte and verifying nothing", async () => {
+    const { lfs, requests, files } = host(transport, () => ({
+      objects: [{ ...OBJECT, actions: { upload: { href: "https://cdn.example/up" }, verify: { href: "https://git.example/team/game.git/verify" } } }],
+    }));
+    files.set(PATH, new TextEncoder().encode("abd"));
+    expect((await failure(lfs.upload([OBJECT], toPath))).code).toBe("lfs-object-corrupt");
+    // The native host is asked and refuses before sending (its fake throws on the mismatch); the whole-body path never asks.
+    expect(requests.map((request) => request.url)).toEqual(transport === "native" ? [BATCH_URL, "https://cdn.example/up"] : [BATCH_URL]);
+    expect(requests.some((request) => request.body instanceof Uint8Array)).toBe(false);
+  });
+
   it("hands over an object without leaving it in the working tree", async () => {
     const { lfs, files, removed } = host(transport, () => ({ objects: [{ ...OBJECT, actions: { download: { href: "https://cdn.example/a" } } }] }), () => ({ status: 200, bodyText: "", bodyBytes: BYTES }));
     files.clear();
@@ -223,15 +234,6 @@ describe("LfsTransfer over a native file transfer", () => {
       { method: "GET", url: "https://cdn.example/down", headers: {}, disableRedirects: true, path: PATH, expected: { size: 3, sha256: OID } },
     ]);
     expect(requests.every((request) => request.url === BATCH_URL || request.body === undefined)).toBe(true);
-  });
-
-  it("refuses to upload a working file that is not the object its name says, and verifies nothing", async () => {
-    const { lfs, requests, files } = host("native", () => ({
-      objects: [{ ...OBJECT, actions: { upload: { href: "https://cdn.example/up" }, verify: { href: "https://git.example/team/game.git/verify" } } }],
-    }));
-    files.set(PATH, new TextEncoder().encode("abd"));
-    expect((await failure(lfs.upload([OBJECT], toPath))).code).toBe("lfs-object-corrupt");
-    expect(requests.map((request) => request.url)).toEqual([BATCH_URL, "https://cdn.example/up"]);
   });
 
   it("removes the scratch file of a download that arrived damaged", async () => {

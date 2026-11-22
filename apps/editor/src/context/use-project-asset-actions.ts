@@ -96,6 +96,12 @@ export function useProjectAssetActions({
     return count;
   }, [bump, projectService, sourceControlRef]);
 
+  const reclaimUnusedProjectStorage = useCallback(async () => {
+    const result = await projectService.reclaimUnusedBlobs();
+    bump();
+    return result;
+  }, [bump, projectService]);
+
   const retryTextureEncoding = useCallback(
     async (
       guid: string,
@@ -320,6 +326,7 @@ export function useProjectAssetActions({
       | "readProjectDerivedText"
       | "writeProjectDerivedText"
       | "retryFailedTextureEncoding"
+      | "reclaimUnusedProjectStorage"
       | "prepareAreaEmission"
       | "reconvertHdrEnvironment"
       | "retryTextureEncoding"
@@ -347,6 +354,7 @@ export function useProjectAssetActions({
       readProjectDerivedText,
       writeProjectDerivedText,
       retryFailedTextureEncoding,
+      reclaimUnusedProjectStorage,
       prepareAreaEmission,
       reconvertHdrEnvironment,
       retryTextureEncoding,
@@ -375,6 +383,7 @@ export function useProjectAssetActions({
       readProjectDerivedText,
       writeProjectDerivedText,
       retryFailedTextureEncoding,
+      reclaimUnusedProjectStorage,
       prepareAreaEmission,
       reconvertHdrEnvironment,
       retryTextureEncoding,

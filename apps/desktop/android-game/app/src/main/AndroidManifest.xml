@@ -5,7 +5,10 @@
     <!-- WebGL 2 runs on OpenGL ES 3. -->
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
 
+    <!-- No backup: adb and cloud backup never copy the game's data. Device-to-device transfer, which Android 12 and
+         later govern with dataExtractionRules (none here), still moves it to a player's new device. -->
     <application
+        android:allowBackup="false"
         android:label="@string/app_name"
         android:icon="${appIcon}"
         android:theme="@style/GameTheme"

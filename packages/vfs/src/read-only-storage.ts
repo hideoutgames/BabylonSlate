@@ -8,6 +8,7 @@ export function createReadOnlyProjectStorage(
 ): ProjectStorage {
   return {
     get hasStrongSourceRevisions() { return inner.hasStrongSourceRevisions === true; },
+    get speculativeRangeReads() { return inner.speculativeRangeReads === true; },
     pickProjectFolder: () => inner.pickProjectFolder(),
     openDocumentsProject: (name) => inner.openDocumentsProject(name),
     openKnownFolder: (handle) => inner.openKnownFolder(handle),
@@ -36,6 +37,7 @@ export function createReadOnlyProjectStorage(
     ...(inner.withReadScope ? {
       withReadScope: <T>(operation: (storage: ProjectStorageReader) => Promise<T>) => inner.withReadScope!(reader => operation({
         get hasStrongSourceRevisions() { return reader.hasStrongSourceRevisions === true; },
+        get speculativeRangeReads() { return reader.speculativeRangeReads === true; },
         readText: (path, options) => reader.readText(path, options),
         readBinary: (path, options) => reader.readBinary(path, options),
         readBinaryRange: (path, offset, length, revision, options) => reader.readBinaryRange(path, offset, length, revision, options),

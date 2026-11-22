@@ -97,7 +97,7 @@ export interface StorageReadOptions {
 }
 
 /** Read-only view whose path lookup cache may live for one caller operation. */
-export type ProjectStorageReader = Pick<ProjectStorage, "readText" | "readBinary" | "readBinaryRange" | "hasStrongSourceRevisions" | "getReadMetrics" | "exists" | "readdir" | "stat">;
+export type ProjectStorageReader = Pick<ProjectStorage, "readText" | "readBinary" | "readBinaryRange" | "hasStrongSourceRevisions" | "speculativeRangeReads" | "getReadMetrics" | "exists" | "readdir" | "stat">;
 
 /**
  * Binary-capable project filesystem. UI never calls Capacitor directly.
@@ -146,12 +146,26 @@ export interface ProjectStorage {
    * Readers of mutable catalogs must refresh bounded metadata when omitted/false.
    */
   readonly hasStrongSourceRevisions?: boolean;
+  /**
+   * True when a few kilobytes more in one range read cost less than a second
+   * read (local files, a native bridge), so a catalog read may ask for more
+   * than the header it needs. Omitted where each read is costly per byte or
+   * per stored part (an HTTP catalog fetches every part it overlaps).
+   */
+  readonly speculativeRangeReads?: boolean;
   /** Cumulative I/O at this adapter's boundary; counters do not measure retained memory. */
   getReadMetrics?(): StorageReadMetrics;
   writeBinary(path: string, data: Uint8Array): Promise<void>;
   /** False only for a missing path; rejects on permission, I/O or invalid-path failures. */
   exists(path: string): Promise<boolean>;
   readdir(path: string): Promise<DirEntry[]>;
+  /**
+   * The staged write files (`.haptic-<uuid>.tmp`) directly in `path`, with
+   * their stats: what `readdir` leaves out. A killed app or native transfer
+   * can leave one; reclaiming them (blob folders) is its only use. Adapters
+   * that never leave one, or cannot list them, omit it.
+   */
+  listStagedWrites?(path: string): Promise<DirEntry[]>;
   mkdir(path: string, recursive?: boolean): Promise<void>;
   /** Rejects with `StorageNotFoundError` when the path is already missing. */
   remove(path: string): Promise<void>;

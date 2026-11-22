@@ -55,6 +55,38 @@ const CLONE_IGNORES = new Set([PROJECT_CREATION_MARKER, ".DS_Store", "Thumbs.db"
  */
 const LFS_SCRATCH = ".git/lfs/tmp";
 
+/**
+ * A staged native download (`.haptic-<uuid>.tmp` beside its `.blobs` file)
+ * at least this old is a killed app's: a running download's file is written
+ * as it streams and hashed just before its rename, and a cancelled one is
+ * removed. Younger ones are never touched, so a download in flight (another
+ * desktop window's) keeps its file.
+ */
+export const STALE_STAGED_DOWNLOAD_MS = 15 * 60_000;
+
+/** The project's own blob folder: the one `openRepository` checks, without walking the tree. */
+const PROJECT_BLOB_FOLDER = "assets/.blobs";
+
+/** Staged downloads in `folders` past `STALE_STAGED_DOWNLOAD_MS` by mtime against the wall clock `now` (one without an mtime, or from the future, stays), where storage can list them. */
+async function staleStagedDownloads(storage: ProjectStorage, folders: Iterable<string>, now: number): Promise<string[]> {
+  if (!storage.listStagedWrites) return [];
+  const stale: string[] = [];
+  for (const folder of folders) {
+    let entries;
+    try {
+      entries = await storage.listStagedWrites(folder);
+    } catch (error) {
+      if (isStorageNotFound(error)) continue;
+      throw error;
+    }
+    for (const entry of entries) {
+      const mtime = entry.mtime;
+      if (typeof mtime === "number" && mtime <= now && now - mtime >= STALE_STAGED_DOWNLOAD_MS) stale.push(`${folder}/${entry.name}`);
+    }
+  }
+  return stale.sort();
+}
+
 export interface GitRepositoryOptions {
   /** Bound to the project folder, which is the repository root (`.git` beside `assets/`). */
   storage: ProjectStorage;
@@ -73,6 +105,8 @@ export interface GitRepositoryOptions {
   branch: string;
   /** Commit times; tests pass a fixed clock. */
   now?: () => number;
+  /** The pack cache's cap (`MAX_PACK_CACHE_BYTES`); tests pass a small one. */
+  packCacheBytes?: number;
 }
 
 /** What the last operation cost, for the benchmark. */
@@ -99,11 +133,68 @@ interface Incoming {
 
 type StatusRow = [string, 0 | 1, 0 | 1 | 2, 0 | 1 | 2 | 3];
 
-function changeOf([path, head, workdir]: StatusRow): FileChange | null {
-  if (workdir === 2) return { path, kind: head === 0 ? "added" : "modified" };
-  if (workdir === 0 && head === 1) return { path, kind: "deleted" };
-  return null;
+/** What a failed pull puts back (`GitRepository.pullCheckpoint`). */
+interface PullCheckpoint {
+  /** `.git/index` as it was; null when there was none. */
+  index: Uint8Array | null;
+  /** Each working file the pull may write: its version then (null when absent) and the blob id the pull writes (null: it removes it). */
+  files: Array<{ path: string; theirs: string | null; was: null | { oid: string } | { bytes: Uint8Array } }>;
 }
+
+/** The working file differs from HEAD's. */
+function workingChanged([, head, workdir]: StatusRow): boolean {
+  return workdir === 2 || (workdir === 0 && head === 1);
+}
+
+/** The index entry differs from HEAD's (another Git app, or an interrupted operation, staged it). */
+function stagedChanged([, head, , stage]: StatusRow): boolean {
+  return head === 0 ? stage !== 0 : stage !== 1;
+}
+
+/**
+ * The index differs from both HEAD and the working file (`MM`, `AM`, `AD`,
+ * `MD`, or a staged deletion of a file still there), so the change list
+ * cannot show what a plain `git commit` would record: it is marked staged.
+ */
+function stagedOnly([, head, workdir, stage]: StatusRow): boolean {
+  return stage === 3 || (stage === 0 && head === 1 && workdir !== 0);
+}
+
+/**
+ * The index holds content that is in neither HEAD nor the working file
+ * (STAGE 3): putting its entry back to HEAD would lose that staged version.
+ * Any other entry (HEAD's, the working file's, or absent) resets losslessly.
+ */
+function stagedUnique(row: StatusRow): boolean {
+  return row[3] === 3;
+}
+
+function changeOf(row: StatusRow): FileChange | null {
+  const [path, head, workdir, stage] = row;
+  const staged = stagedOnly(row) ? { staged: true as const } : {};
+  if (workdir === 2) return { path, kind: head === 0 ? "added" : "modified", ...staged };
+  if (workdir === 0 && head === 1) return { path, kind: "deleted", ...staged };
+  if (!stagedChanged(row)) return null;
+  // The working file is HEAD's (or absent from both); only the index differs, so the change is the index's.
+  return { path, kind: head === 0 ? "added" : stage === 0 ? "deleted" : "modified", staged: true };
+}
+
+/**
+ * The `staged-elsewhere` refusal: which files, why nothing happened, and what
+ * to do: unstage or commit them in the other Git app, or (for a commit)
+ * choose them too, which commits the files as they are on disk.
+ */
+export function stagedElsewhereMessage(paths: readonly string[], action: "commit" | "pull"): string {
+  const named = paths.slice(0, 3).join(", ") + (paths.length > 3 ? ` and ${paths.length - 3} more` : "");
+  const what = action === "commit" ? "Nothing was committed" : "Nothing was pulled";
+  const next = action === "commit"
+    ? "Unstage or commit them in that app, or include them in this commit to commit the files as they are now."
+    : "Unstage or commit them in that app, then pull again.";
+  return `Another Git app staged changes to ${named} that differ from both the last commit and the files on disk, and setting them aside would lose them. ${what}. ${next}`;
+}
+
+/** At most this many bytes of packs stay in isomorphic-git's cache after an operation that reads history or the network. */
+export const MAX_PACK_CACHE_BYTES = 32 * 1024 * 1024;
 
 function parentOf(path: string): string {
   return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
@@ -145,6 +236,10 @@ export async function openRepository(options: Omit<GitRepositoryOptions, "branch
   // Objects downloaded for reading are removed once read; one is left only when the app was killed first.
   // Nothing reads the folder before an operation runs. A failure leaves it to the next open.
   if (await options.storage.exists(LFS_SCRATCH).catch(() => false)) await options.storage.remove(LFS_SCRATCH).catch(() => undefined);
+  // So are downloads a killed app staged beside the project's blobs (other blob folders go with Remove Unused Files).
+  for (const path of await staleStagedDownloads(options.storage, [PROJECT_BLOB_FOLDER], Date.now()).catch(() => [])) {
+    await options.storage.remove(path).catch(() => undefined);
+  }
   return new GitRepository({ ...options, branch });
 }
 
@@ -195,9 +290,15 @@ export class GitRepository implements SyncPort {
   /**
    * isomorphic-git's object and index cache: packs are immutable and the
    * index is checked by stat. It holds every pack an operation read, whole,
-   * until `releaseCaches` replaces it.
+   * until `releaseCaches` replaces it: when the app goes to the background,
+   * and after an operation that reads history or the network (fetch, pull,
+   * push, log, branches) once the packs it holds pass `packCacheBytes`. Status
+   * and commit never release it, so repeated status calls keep their packs.
    */
   private cache: object = {};
+  /** Pack bytes read into `cache` since it was last replaced. */
+  private cachedPackBytes = 0;
+  private readonly packCacheBytes: number;
   private queue: Promise<unknown> = Promise.resolve();
   /** The checked-out branch: HEAD's, moved only by a switch or a new branch. */
   private current: string;
@@ -213,6 +314,7 @@ export class GitRepository implements SyncPort {
     this.files = options.files ?? null;
     this.credential = options.credential;
     this.now = options.now ?? Date.now;
+    this.packCacheBytes = options.packCacheBytes ?? MAX_PACK_CACHE_BYTES;
   }
 
   get branch(): string {
@@ -274,16 +376,36 @@ export class GitRepository implements SyncPort {
     });
   }
 
+  /**
+   * Commits the working files of exactly `paths`. Index entries another Git
+   * app (or an interrupted operation) staged for other paths are put back to
+   * HEAD first, so they are never committed; one whose staged version exists
+   * nowhere else (STAGE 3) refuses the commit before anything changes, since
+   * putting it back would lose it. Nothing is written before every check passed.
+   */
   commit({ paths, message, author }: CommitInput): Promise<CommitResult> {
     return this.run(async (op) => {
       const selected = [...new Set(paths.map(storagePath))].filter((path) => path !== "").sort();
       if (selected.length === 0) throw new Error("Choose the files to commit.");
+      const head = await this.resolve(op, this.localRef);
       const rows = new Map(((await git.statusMatrix({ ...op.git, filepaths: selected })) as StatusRow[]).map((row) => [row[0], row]));
-      const changed = selected.filter((path) => rows.get(path)?.[2] === 2);
-      const removed = selected.filter((path) => rows.get(path)?.[1] === 1 && rows.get(path)?.[2] === 0);
+      const selectedRows = selected.flatMap((path) => {
+        const row = rows.get(path);
+        return row ? [row] : [];
+      });
+      if (!selectedRows.some(workingChanged)) {
+        throw new SyncError("conflict", "The chosen files already match the last commit.", { code: "nothing-to-commit" });
+      }
+      const chosen = new Set(selected);
+      const others = await this.stagedOutside(op, head, (path) => chosen.has(path), "commit");
+      const changed = selectedRows.filter((row) => row[2] === 2).map(([path]) => path);
+      const removed = selectedRows.filter((row) => row[2] === 0 && (row[1] === 1 || row[3] !== 0)).map(([path]) => path);
+      // Working file as HEAD has it, index not: the commit records the working file.
+      const restaged = selectedRows.filter((row) => row[2] === 1 && stagedChanged(row)).map(([path]) => path);
       if (changed.some((path) => lfsObjectId(path) !== null)) {
         await this.requireLfsRule(op, changed.includes(".gitattributes") ? "working" : removed.includes(".gitattributes") ? "removed" : "head");
       }
+      await this.resetIndexEntries(op, head, [...others, ...restaged]);
       if (changed.length > 0) await git.add({ ...op.git, filepath: changed });
       for (const path of removed) await git.remove({ ...op.git, filepath: path });
       const signature = this.signature(author);
@@ -292,11 +414,62 @@ export class GitRepository implements SyncPort {
     });
   }
 
+  /**
+   * Paths outside `inside` whose index entry differs from `commit`'s tree
+   * (every entry when there is no commit), from the tree and the index alone:
+   * no working file is read. Refuses, as `staged-elsewhere`, when one of them
+   * holds a staged version found in neither `commit` nor its working file.
+   */
+  private async stagedOutside(op: Op, commit: string | null, inside: (path: string) => boolean, action: "commit" | "pull"): Promise<string[]> {
+    const trees = commit ? [git.TREE({ ref: commit }), git.STAGE()] : [git.STAGE()];
+    const found = (await git.walk({
+      ...op.git,
+      trees,
+      map: async (path, entries) => {
+        if (path === ".") return undefined;
+        const [tree, stage] = commit ? entries : [null, entries[0]];
+        const treeType = tree ? await tree.type() : null;
+        const stageType = stage ? await stage.type() : null;
+        if (treeType === "tree" && stageType === "tree") return undefined;
+        // A file on one side and a folder on the other: no single entry to put back, so it counts as staged work to keep.
+        if (treeType === "tree" || stageType === "tree") return { path, mixed: true };
+        const treeOid = tree ? ((await tree.oid()) ?? null) : null;
+        const stageOid = stage ? ((await stage.oid()) ?? null) : null;
+        return treeOid === stageOid ? null : { path, mixed: false };
+      },
+    })) as Array<{ path: string; mixed: boolean }>;
+    const outside = found.filter(({ path }) => !inside(path));
+    const paths = outside.filter(({ mixed }) => !mixed).map(({ path }) => path);
+    const unique = outside.filter(({ mixed }) => mixed).map(({ path }) => path);
+    if (paths.length > 0) {
+      const rows = (await git.statusMatrix({ ...op.git, ...(commit ? { ref: commit } : {}), filepaths: paths })) as StatusRow[];
+      const wanted = new Set(paths);
+      unique.push(...rows.filter((row) => wanted.has(row[0]) && stagedUnique(row)).map(([path]) => path));
+    }
+    unique.sort();
+    if (unique.length > 0) {
+      throw new SyncError(
+        "conflict",
+        stagedElsewhereMessage(unique, action),
+        { code: "staged-elsewhere", paths: unique },
+      );
+    }
+    return paths;
+  }
+
+  /** Puts each path's index entry back to `commit`'s (removed when it has none); working files are never touched. */
+  private async resetIndexEntries(op: Op, commit: string | null, paths: readonly string[]): Promise<void> {
+    for (const path of paths) {
+      if (commit) await git.resetIndex({ ...op.git, filepath: path, ref: commit });
+      else await git.remove({ ...op.git, filepath: path });
+    }
+  }
+
   fetch(options: TransferOptions = {}): Promise<RemoteState> {
     return this.run(async (op) => {
       await this.fetchBranch(op);
       return this.state(op, true);
-    }, options.signal);
+    }, options.signal, true);
   }
 
   remoteState(): Promise<RemoteState> {
@@ -312,7 +485,7 @@ export class GitRepository implements SyncPort {
       // What a push sends: the branch's work since it left what the remote holds (its own branch, or before its first push every branch the remote has).
       const { base } = await this.relation(op, local, remote ? [remote] : await this.remoteHeads(op), false);
       return (await this.differing(op, base, local)).map((entry) => entry.path);
-    }, options.signal);
+    }, options.signal, true);
   }
 
   pull({ author, choices = {}, signal }: PullInput): Promise<PullResult> {
@@ -337,31 +510,108 @@ export class GitRepository implements SyncPort {
       const mine = await this.workingOids(op, incoming);
       const { conflicts, writes, kept, ready } = planPull(incoming.map((entry) => ({ ...entry, mine: mine.get(entry.path) ?? null })), choices);
       if (!ready) return { kind: "conflicts", conflicts };
+      const byPath = new Map(incoming.map((entry) => [entry.path, entry]));
+      const pulled = new Set([...writes, ...kept]);
+      // A merge commits the index: what another app staged elsewhere must not ride along (refused before any change when it would be lost).
+      const staged = fastForward ? [] : await this.stagedOutside(op, local, (path) => pulled.has(path), "pull");
 
       await this.downloadMissing(op, remote, new Set(writes));
-      if (writes.length > 0) await git.checkout({ ...op.git, ref: remote, filepaths: writes, force: true, noUpdateHead: true });
-      const theirs = new Map(incoming.map((entry) => [entry.path, entry.theirs]));
-      const changedPaths = writtenPaths(writes, theirs);
-      if (fastForward) {
-        // The index follows the new HEAD; a kept file then reads as an uncommitted change.
+      const checkpoint = await this.pullCheckpoint(op, writes.map((path) => byPath.get(path)!), mine);
+      try {
+        await this.resetIndexEntries(op, local, staged);
+        if (writes.length > 0) await git.checkout({ ...op.git, ref: remote, filepaths: writes, force: true, noUpdateHead: true });
+        const theirs = new Map(incoming.map((entry) => [entry.path, entry.theirs]));
+        const changedPaths = writtenPaths(writes, theirs);
+        // A kept file stays in the working tree. Its index entry takes what the branch records: the remote's version when only
+        // the working file differed (the branch never changed it, so the edit stays an uncommitted change against the result), else
+        // this branch's committed version (a merge keeps it). A fast-forward has no commits of its own, so always the remote's.
         for (const path of kept) {
-          const oid = theirs.get(path);
+          const entry = byPath.get(path)!;
+          const oid = fastForward || entry.head === entry.base ? entry.theirs : entry.head;
           if (oid) await git.updateIndex({ ...op.git, filepath: path, oid, add: true });
           else await git.updateIndex({ ...op.git, filepath: path, remove: true, force: true });
         }
-        await git.writeRef({ ...op.git, ref: this.localRef, value: remote, force: true });
-        return { kind: "fast-forward", head: remote, changedPaths };
+        if (fastForward) {
+          await git.writeRef({ ...op.git, ref: this.localRef, value: remote, force: true });
+          return { kind: "fast-forward", head: remote, changedPaths };
+        }
+        const signature = this.signature(author);
+        const head = await git.commit({
+          ...op.git,
+          message: `Merge remote-tracking branch 'origin/${this.current}'`,
+          author: signature,
+          committer: signature,
+          parent: [local!, remote],
+        });
+        return { kind: "merged", head, changedPaths };
+      } catch (error) {
+        // HEAD moves last: one that moved means the pull finished, so nothing is undone.
+        if ((await this.resolve(op, this.localRef).catch(() => local)) === local) await this.rollBack(checkpoint);
+        throw error;
       }
-      const signature = this.signature(author);
-      const head = await git.commit({
-        ...op.git,
-        message: `Merge remote-tracking branch 'origin/${this.current}'`,
-        author: signature,
-        committer: signature,
-        parent: [local!, remote],
-      });
-      return { kind: "merged", head, changedPaths };
-    }, signal);
+    }, signal, true);
+  }
+
+  /**
+   * What a pull's rollback restores, recorded before it changes anything: the
+   * index file's bytes, and for each working file it may write (LFS objects
+   * excepted: one is never rewritten, and a new one is only untracked) the
+   * version there now. A file at a committed version is recorded by its blob
+   * id, which the object store keeps; only an uncommitted edit the pull
+   * replaces (a "theirs" choice) is held as bytes.
+   */
+  private async pullCheckpoint(op: Op, writes: readonly Incoming[], mine: ReadonlyMap<string, string | null>): Promise<PullCheckpoint> {
+    const index = await this.storage.readBinary(".git/index").catch((error: unknown) => {
+      if (isStorageNotFound(error)) return null;
+      throw error;
+    });
+    const files: PullCheckpoint["files"] = [];
+    for (const entry of writes) {
+      if (lfsObjectId(entry.path)) continue;
+      const current = mine.get(entry.path) ?? null;
+      if (current === null) files.push({ path: entry.path, theirs: entry.theirs, was: null });
+      else if (current === entry.head || current === entry.base) files.push({ path: entry.path, theirs: entry.theirs, was: { oid: current } });
+      else files.push({ path: entry.path, theirs: entry.theirs, was: { bytes: (await op.fs.promises.readFile(entry.path)) as Uint8Array } });
+    }
+    return { index, files };
+  }
+
+  /**
+   * Puts back what `pullCheckpoint` recorded, through storage directly (a
+   * cancelled operation's own writes are refused). Only a file that holds
+   * what the pull wrote, or that the pull may have made, is put back: one
+   * changed since by anything else is left as it is. Every file is tried;
+   * the first failure is rethrown after the rest.
+   */
+  private async rollBack(checkpoint: PullCheckpoint): Promise<void> {
+    const failures: unknown[] = [];
+    const fs = new StorageFs(this.storage);
+    for (const { path, theirs, was } of checkpoint.files) {
+      try {
+        if (await this.storage.exists(path)) {
+          const now = await gitBlobSha1((await fs.promises.readFile(path)) as Uint8Array);
+          // Still as recorded (the pull never reached it), or changed by something else since: left as it is.
+          if (was && "oid" in was && now === was.oid) continue;
+          if (now !== theirs) continue;
+        } else if (was === null) {
+          continue;
+        }
+        if (was === null) await this.storage.remove(path);
+        else if ("bytes" in was) await this.storage.writeBinary(path, was.bytes);
+        else await this.storage.writeBinary(path, (await git.readBlob({ fs, dir: WORKTREE, gitdir: GITDIR, oid: was.oid })).blob);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    try {
+      if (checkpoint.index) await this.storage.writeBinary(".git/index", checkpoint.index);
+      else if (await this.storage.exists(".git/index")) await this.storage.remove(".git/index");
+    } catch (error) {
+      failures.push(error);
+    }
+    // The index changed under the cache's stat check; the next operation reads it afresh.
+    this.releaseCaches();
+    if (failures.length > 0) throw failures[0];
   }
 
   push(options: TransferOptions & { remoteBranch?: string } = {}): Promise<PushResult> {
@@ -390,7 +640,7 @@ export class GitRepository implements SyncPort {
         await this.setUpstream(op, this.current);
       }
       return { head, uploaded };
-    }, options.signal);
+    }, options.signal, true);
   }
 
   readFile(path: string, commit: string): Promise<Uint8Array | null> {
@@ -457,20 +707,23 @@ export class GitRepository implements SyncPort {
   releaseCaches(): void {
     // A running operation keeps the cache it started with; the next one starts empty.
     this.cache = {};
+    this.cachedPackBytes = 0;
   }
 
   removableLfsObjects({ signal, references }: RemovableLfsOptions): Promise<string[]> {
     return this.run(async (op) => {
       // Untracked: no HEAD entry and no index entry (a staged file has one). An untracked file is never hashed.
       const rows = (await git.statusMatrix({ ...op.git, filter: (path) => lfsObjectId(path) !== null })) as StatusRow[];
+      // Downloads a killed app staged in any blob folder: never part of the project or of Git (listings and `.gitignore` leave them out).
+      const staged = await staleStagedDownloads(this.storage, new Set([PROJECT_BLOB_FOLDER, ...rows.map(([path]) => parentOf(path))]), Date.now());
       const untracked = rows.filter(([, head, workdir, stage]) => head === 0 && workdir === 2 && stage === 0).map(([path]) => path);
-      if (untracked.length === 0) return [];
+      if (untracked.length === 0) return staged;
       const held = await this.heldByUnpushed(op, untracked, signal);
       const loose = untracked.filter((path) => !held.has(path));
-      if (loose.length === 0) return [];
+      if (loose.length === 0) return staged;
       const needed = await this.neededByCommittedAssets(op, loose, references, signal);
-      return loose.filter((path) => !needed.has(path)).sort();
-    }, signal);
+      return [...loose.filter((path) => !needed.has(path)), ...staged].sort();
+    }, signal, true);
   }
 
   /**
@@ -607,7 +860,7 @@ export class GitRepository implements SyncPort {
         shallow = await atBoundary(commits);
       }
       return { commits, hasMore: commits.length === limit || shallow, shallow };
-    }, signal);
+    }, signal, true);
   }
 
   /**
@@ -672,7 +925,7 @@ export class GitRepository implements SyncPort {
       // As a switch to it fetches it: its newest commit, older history on demand.
       if (!(await this.fetchBranch(op, { branch: name, depth: DEFAULT_CLONE_DEPTH }))) return null;
       return this.resolve(op, `refs/remotes/origin/${name}`);
-    }, options.signal);
+    }, options.signal, true);
   }
 
   switchBranch(name: string, options: TransferOptions = {}): Promise<SwitchResult> {
@@ -712,7 +965,7 @@ export class GitRepository implements SyncPort {
       await git.writeRef({ ...op.git, ref: "HEAD", value: `refs/heads/${name}`, symbolic: true, force: true });
       this.current = name;
       return { head: target, changedPaths: writtenPaths(writes, new Map(differing.map(({ path, to }) => [path, to]))) };
-    }, options.signal);
+    }, options.signal, true);
   }
 
   /**
@@ -720,15 +973,16 @@ export class GitRepository implements SyncPort {
    * and working tree writes are refused and the operation rejects as
    * `cancelled`, whatever the refusal looked like on its way out.
    */
-  private run<T>(work: (op: Op) => Promise<T>, signal?: AbortSignal): Promise<T> {
+  private run<T>(work: (op: Op) => Promise<T>, signal?: AbortSignal, trimCache = false): Promise<T> {
     const result = this.queue.then(async () => {
       throwIfCancelled(signal);
       const fs = new StorageFs(this.storage, signal);
+      const cache = this.cache;
       const transfer: TransferCounters = { sent: 0, received: 0 };
       const http = cancellableHttp(this.http, signal);
       const op: Op = {
         fs,
-        git: { fs, dir: WORKTREE, gitdir: GITDIR, cache: this.cache },
+        git: { fs, dir: WORKTREE, gitdir: GITDIR, cache },
         http: gitHttp(authorizedHttp(this.credential, http, "basic"), transfer),
         lfs: new LfsTransfer({
           repositoryUrl: this.repositoryUrl,
@@ -748,6 +1002,11 @@ export class GitRepository implements SyncPort {
         throw toSyncError(error);
       } finally {
         this.lastOperation = { storage: { ...fs.counters }, transfer };
+        // Counted only while the cache read into is still the current one (a release meanwhile left it).
+        if (cache === this.cache) {
+          this.cachedPackBytes += fs.packBytes;
+          if (trimCache && this.cachedPackBytes > this.packCacheBytes) this.releaseCaches();
+        }
       }
     });
     this.queue = result.catch(() => undefined);

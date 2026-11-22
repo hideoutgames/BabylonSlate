@@ -4,8 +4,9 @@ import WebKit
 /**
  * An exported Haptic game: one full-screen web view that plays the web game
  * packed in the app's `game` folder, served from `app://game/` with the
- * cross-origin isolation headers the editor and desktop games use. Links to
- * other sites open in Safari; the page cannot navigate away.
+ * cross-origin isolation headers and Content Security Policy desktop games
+ * use. Links the player follows to other sites open in Safari; the page and
+ * its frames cannot navigate away.
  */
 @main
 struct HapticGameApp: App {
@@ -50,7 +51,9 @@ final class GameNavigation: NSObject, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { return decisionHandler(.cancel) }
         if url.scheme == GameFiles.scheme && url.host == GameFiles.host { return decisionHandler(.allow) }
-        openExternally(url)
+        // A link the player follows in the page, or to a new window (no target frame), opens in Safari. A frame
+        // navigating elsewhere is refused without leaving the game.
+        if action.targetFrame?.isMainFrame ?? true { openExternally(url) }
         decisionHandler(.cancel)
     }
 
@@ -70,28 +73,65 @@ final class GameNavigation: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 }
 
-/** The bundle's `game` folder at `app://game/`; nothing outside it is served. */
+/**
+ * The bundle's `game` folder at `app://game/`; nothing outside it is served.
+ * Files are read on a background queue so a large data file never stalls the
+ * main thread, and a task WebKit stopped meanwhile is never answered (WebKit
+ * raises an exception for that).
+ */
 final class GameFiles: NSObject, WKURLSchemeHandler {
     static let scheme = "app"
     static let host = "game"
+    /**
+     * Exported desktop games' policy (`playerContentSecurityPolicy("'none'")` in
+     * apps/desktop/src/content-security-policy.ts): the game's own scripts, any
+     * HTTPS or secure WebSocket host for its network requests, no remote scripts
+     * or frames. content-security-policy.test.ts fails when this copy differs.
+     */
+    static let contentSecurityPolicy = "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self' data: blob: https: wss:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
     private let root = Bundle.main.bundleURL.appendingPathComponent("game", isDirectory: true).standardizedFileURL
+    private let reads = DispatchQueue(label: "game-files", qos: .userInitiated, attributes: .concurrent)
+    private let lock = NSLock()
+    /** Tasks started and neither answered nor stopped. */
+    private var active = Set<ObjectIdentifier>()
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        lock.lock()
+        active.insert(ObjectIdentifier(task))
+        lock.unlock()
         guard let url = task.request.url, url.host == GameFiles.host else { return respond(task, status: 404, data: Data(), type: "text/plain") }
         let path = url.path.isEmpty || url.path == "/" ? "index.html" : String(url.path.dropFirst())
         let file = root.appendingPathComponent(path).standardizedFileURL
-        guard file.path.hasPrefix(root.path + "/"), let data = try? Data(contentsOf: file, options: .mappedIfSafe) else {
-            return respond(task, status: 404, data: Data(), type: "text/plain")
+        guard file.path.hasPrefix(root.path + "/") else { return respond(task, status: 404, data: Data(), type: "text/plain") }
+        let type = GameFiles.mimeType(file.pathExtension.lowercased())
+        reads.async {
+            let data = try? Data(contentsOf: file, options: .mappedIfSafe)
+            DispatchQueue.main.async {
+                if let data {
+                    self.respond(task, status: 200, data: data, type: type)
+                } else {
+                    self.respond(task, status: 404, data: Data(), type: "text/plain")
+                }
+            }
         }
-        respond(task, status: 200, data: data, type: GameFiles.mimeType(file.pathExtension.lowercased()))
     }
 
-    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {
+        lock.lock()
+        active.remove(ObjectIdentifier(task))
+        lock.unlock()
+    }
 
+    /** Answers `task` once, unless WebKit stopped it first. */
     private func respond(_ task: WKURLSchemeTask, status: Int, data: Data, type: String) {
+        lock.lock()
+        let answerable = active.remove(ObjectIdentifier(task)) != nil
+        lock.unlock()
+        guard answerable else { return }
         guard let url = task.request.url, let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: [
             "Content-Type": type,
             "Content-Length": String(data.count),
+            "Content-Security-Policy": GameFiles.contentSecurityPolicy,
             "Cross-Origin-Opener-Policy": "same-origin",
             "Cross-Origin-Embedder-Policy": "require-corp",
             "Cross-Origin-Resource-Policy": "same-origin",

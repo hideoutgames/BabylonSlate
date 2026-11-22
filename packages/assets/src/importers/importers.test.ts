@@ -17,10 +17,30 @@ import { buildBoxGlbFixture } from "../glb-geometry";
 import { buildMinimalGlbFixture } from "../test-support/glb-fixtures";
 import { encodeGlbJsonBin } from "./glb-parse";
 import { gifHeader, webpHeader } from "../test-support/image-headers";
+import { ImportLimitError } from "../import-limits";
+
+/** The PNG signature: enough for an importer that stores the bytes without decoding them. */
+const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/** A RIFF WAVE header. */
+const WAV = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x04, 0, 0, 0, 0x57, 0x41, 0x56, 0x45]);
+/** A WOFF2 signature. */
+const WOFF2 = new TextEncoder().encode("wOF2\u0000\u0001\u0000\u0000");
+
+/** A PNG signature and IHDR declaring `width` × `height`. */
+function pngHeader(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(33);
+  bytes.set(PNG);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(8, 13);
+  bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  return bytes;
+}
 
 describe("importers", () => {
   it("imports images as Texture with pending compression state", async () => {
-    const results = await importImage(new Uint8Array([1, 2, 3]), {
+    const results = await importImage(PNG, {
       fileName: "albedo.png",
       existingGuids: new Set(),
     });
@@ -38,7 +58,7 @@ describe("importers", () => {
   });
 
   it("leaves pixel-art images uncompressed by policy", async () => {
-    const results = await importImage(new Uint8Array([1, 2, 3]), {
+    const results = await importImage(PNG, {
       fileName: "hero_pixel.png",
       existingGuids: new Set(),
     });
@@ -48,11 +68,11 @@ describe("importers", () => {
 
   it("imports lookup tables as uncompressed Color Grading textures", async () => {
     for (const fileName of ["Sunset_LUT.png", "lut-warm.png", "color_grading_teal.png"]) {
-      const [texture] = await importImage(new Uint8Array([1, 2, 3]), { fileName, existingGuids: new Set() });
+      const [texture] = await importImage(PNG, { fileName, existingGuids: new Set() });
       expect(texture!.payload.usage, fileName).toBe("colorGrading");
       expect(texture!.payload.compressionState, fileName).toBeUndefined();
     }
-    const [salute] = await importImage(new Uint8Array([1, 2, 3]), { fileName: "salute.png", existingGuids: new Set() });
+    const [salute] = await importImage(PNG, { fileName: "salute.png", existingGuids: new Set() });
     expect(salute!.payload.usage).toBe("albedo");
   });
 
@@ -69,7 +89,7 @@ describe("importers", () => {
       "tileset01.png": "pixelArt",
     };
     for (const [fileName, usage] of Object.entries(usages)) {
-      const [texture] = await importImage(new Uint8Array([1, 2, 3]), { fileName, existingGuids: new Set() });
+      const [texture] = await importImage(PNG, { fileName, existingGuids: new Set() });
       expect(texture!.payload.usage, fileName).toBe(usage);
     }
   });
@@ -83,12 +103,12 @@ describe("importers", () => {
       "ok_button.png": "ui",
     };
     for (const [fileName, usage] of Object.entries(usages)) {
-      const [texture] = await importImage(new Uint8Array([1, 2, 3]), { fileName, existingGuids: new Set(), nearestTextures: true });
+      const [texture] = await importImage(PNG, { fileName, existingGuids: new Set(), nearestTextures: true });
       expect(texture!.payload.usage, fileName).toBe(usage);
     }
-    const [hero] = await importImage(new Uint8Array([1, 2, 3]), { fileName: "hero.png", existingGuids: new Set(), nearestTextures: true });
+    const [hero] = await importImage(PNG, { fileName: "hero.png", existingGuids: new Set(), nearestTextures: true });
     expect(hero!.payload.compressionState).toBeUndefined();
-    const [rock] = await importImage(new Uint8Array([1, 2, 3]), { fileName: "rock_normal.png", existingGuids: new Set(), nearestTextures: true });
+    const [rock] = await importImage(PNG, { fileName: "rock_normal.png", existingGuids: new Set(), nearestTextures: true });
     expect(rock!.payload.compressionState).toBe("pending");
   });
 
@@ -218,9 +238,9 @@ describe("importers", () => {
     const options = (fileName: string) => ({ fileName, existingGuids: new Set<string>() });
     const imported = [
       ...(await importByExtension("mannequin.glb", mannequin, options("mannequin.glb"))),
-      ...(await importByExtension("albedo.png", new Uint8Array([1, 2, 3]), options("albedo.png"))),
-      ...(await importByExtension("hit.wav", new Uint8Array([1]), options("hit.wav"))),
-      ...(await importByExtension("Ui.woff2", new Uint8Array([1, 2]), options("Ui.woff2"))),
+      ...(await importByExtension("albedo.png", PNG, options("albedo.png"))),
+      ...(await importByExtension("hit.wav", WAV, options("hit.wav"))),
+      ...(await importByExtension("Ui.woff2", WOFF2, options("Ui.woff2"))),
     ];
     // The fixtures reach every kind of asset the importers create.
     expect(new Set(imported.map((result) => result.type))).toEqual(
@@ -276,19 +296,61 @@ describe("importers", () => {
     expect(pickerImportAccept().split(",")).toContain(".zip");
   });
 
-  it("imports audio with the MIME its bytes carry, else its extension's", async () => {
-    const results = await importAudio(new Uint8Array([1]), {
+  it("imports audio with the MIME its bytes carry, whatever its extension says", async () => {
+    const results = await importAudio(WAV, {
       fileName: "hit.wav",
       existingGuids: new Set(),
     });
     expect(results[0]!.type).toBe("Audio");
     expect(results[0]!.chunks[0]!.mime).toBe("audio/wav");
-    // An MP3 saved with a .wav name.
-    const renamed = await importAudio(new Uint8Array([0x49, 0x44, 0x33, 0x04]), {
-      fileName: "hit.wav",
-      existingGuids: new Set(),
-    });
-    expect(renamed[0]!.chunks[0]!.mime).toBe("audio/mpeg");
+    const mime = async (bytes: Uint8Array, fileName: string) =>
+      (await importAudio(bytes, { fileName, existingGuids: new Set() }))[0]!.chunks[0]!.mime;
+    // An MP3 saved with a .wav name, an Ogg file, a bare MPEG frame, and an MP3 whose first frame follows padding.
+    expect(await mime(Uint8Array.from([0x49, 0x44, 0x33, 0x04]), "hit.wav")).toBe("audio/mpeg");
+    expect(await mime(Uint8Array.from([0x4f, 0x67, 0x67, 0x53, 0x00]), "theme.ogg")).toBe("audio/ogg");
+    expect(await mime(Uint8Array.from([0xff, 0xfb, 0x90, 0x00]), "hit.mp3")).toBe("audio/mpeg");
+    expect(await mime(Uint8Array.from([0, 0, 0, 0xff, 0xfb, 0x90, 0x00]), "hit.mp3")).toBe("audio/mpeg");
+  });
+
+  it("refuses bytes that are not MP3, WAV or Ogg audio, whatever the extension", async () => {
+    for (const [fileName, bytes] of [
+      ["hit.wav", Uint8Array.from([1])],
+      ["hit.mp3", new Uint8Array(4096)],
+      ["theme.ogg", PNG],
+      ["voice.mp3", new TextEncoder().encode("<html>not found</html>")],
+    ] as const) {
+      await expect(importAudio(bytes, { fileName, existingGuids: new Set() }), fileName)
+        .rejects.toThrow("The file is not MP3, WAV or Ogg audio: its contents do not start with an audio signature.");
+    }
+  });
+
+  it("refuses bytes that are not a PNG, JPEG, WebP or GIF image, whatever the extension", async () => {
+    for (const [fileName, bytes] of [
+      ["albedo.png", Uint8Array.from([1, 2, 3])],
+      ["photo.jpg", WAV],
+      ["leaf.webp", Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45])],
+      ["page.gif", new TextEncoder().encode("<html>not found</html>")],
+    ] as const) {
+      await expect(importImage(bytes, { fileName, existingGuids: new Set() }), fileName).rejects.toThrow(/not a PNG, JPEG, WebP or GIF image/);
+    }
+    // A JPEG named .png still imports: the bytes decide, as browsers decode them.
+    await expect(importImage(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0]), { fileName: "photo.png", existingGuids: new Set() })).resolves.toHaveLength(1);
+  });
+
+  it("refuses an image larger than the size limit from its header, and imports one at the limit", async () => {
+    const at = await importImage(pngHeader(8192, 8192), { fileName: "big.png", existingGuids: new Set() });
+    expect(at[0]!.payload).toMatchObject({ width: 8192, height: 8192 });
+    for (const [fileName, bytes] of [
+      ["wide.png", pngHeader(8193, 16)],
+      ["tall.webp", webpHeader("VP8L", 16, 16384)],
+      ["huge.gif", gifHeader(60000, 60000)],
+    ] as const) {
+      const rejection = importImage(bytes, { fileName, existingGuids: new Set() });
+      await expect(rejection, fileName).rejects.toThrow(ImportLimitError);
+      await expect(rejection, fileName).rejects.toThrow(/the import limit is 8,192 × 8,192/);
+    }
+    await expect(importImage(pngHeader(8193, 16), { fileName: "wide.png", existingGuids: new Set() }))
+      .rejects.toThrow("The size of the image is 8,193 × 16 pixels; the import limit is 8,192 × 8,192. Resize it in an image editor before importing.");
   });
 
   it("labels preview blobs from WAV, MP3, and OGG bytes", () => {
@@ -308,7 +370,7 @@ describe("importers", () => {
   });
 
   it("imports fonts and attaches facetype JSON to an existing Font", async () => {
-    const font = await importFont(new Uint8Array([1, 2]), {
+    const font = await importFont(WOFF2, {
       fileName: "Ui.woff2",
       existingGuids: new Set(),
     });
@@ -329,6 +391,19 @@ describe("importers", () => {
     expect(attached[0]!.attachToGuid).toBe(font[0]!.guid);
     expect(attached[0]!.chunks[0]!.kind).toBe("font-facetype");
     expect(attached[0]!.chunks[0]!.id).toBe("facetype-glyphs");
+  });
+
+  it("imports every font signature and refuses bytes that are not a font, whatever the extension", async () => {
+    const tagged = (tag: string) => Uint8Array.from([...tag].map((character) => character.charCodeAt(0)).concat([0, 0, 0, 0]));
+    for (const [fileName, tag] of [
+      ["Sans.ttf", "\u0000\u0001\u0000\u0000"], ["Mac.ttf", "true"], ["Serif.otf", "OTTO"],
+      ["Family.ttf", "ttcf"], ["Web.woff", "wOFF"], ["Web.woff2", "wOF2"],
+    ] as const) {
+      await expect(importFont(tagged(tag), { fileName, existingGuids: new Set() }), fileName).resolves.toHaveLength(1);
+    }
+    for (const [fileName, bytes] of [["Ui.woff2", Uint8Array.from([1, 2])], ["Ui.ttf", PNG], ["Ui.otf", new TextEncoder().encode("<html>")]] as const) {
+      await expect(importFont(bytes, { fileName, existingGuids: new Set() }), fileName).rejects.toThrow(/not a TrueType, OpenType, WOFF or WOFF2 font/);
+    }
   });
 
   it("imports an MSDF JSON+PNG pair as Font chunks, not a Texture", async () => {

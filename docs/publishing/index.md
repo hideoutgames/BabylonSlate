@@ -32,13 +32,13 @@ Any image size works. Haptic uses the image's centre square, cutting equal parts
 | Package | Where the icon appears |
 | --- | --- |
 | Web | The browser tab (`icon.png` beside `index.html`) |
-| Windows | The `.exe` in File Explorer and on shortcuts, the game window and the taskbar. The `.exe` also shows the game's name and version in its file details and in Task Manager. |
+| Windows | The `.exe` in File Explorer and on shortcuts, the game window and the taskbar |
 | Linux | The app menu and the dock (Debian package); the game window |
 | macOS | The app in Finder, the Dock and the app switcher |
 | Android | The launcher and the app list, in the shape the device uses for every app |
 | iOS | The Home Screen, the App Library and Settings. iOS shows icons without transparency, so transparent areas turn black. |
 
-With an App Icon, packaging for Windows takes noticeably longer, because Haptic rewrites and recompresses the game's `.exe`.
+Whether or not there is an App Icon, the Windows `.exe` shows the game's name and version in its file details and in Task Manager, not Electron's, so packaging for Windows rewrites and recompresses it. Windows and Linux packages are written in the background, so the editor stays responsive while they are made.
 
 ## Desktop games
 
@@ -60,10 +60,17 @@ For Linux, choose the **Format** in the Packaging summary:
 
 | Format | Use it for | How players install it |
 | --- | --- | --- |
-| Debian Package (default) | Debian, Ubuntu and their derivatives | `sudo apt install ./Space_Game-Linux.deb`, or open it in the software installer. The game appears in the app menu and as the `space-game` command. |
+| Debian Package (default) | Debian, Ubuntu and their derivatives | `sudo apt install ./Space_Game-Linux.deb`, or open it in the software installer. The game appears in the app menu and as a command named after its App ID in lowercase, such as `com.studio.spacegame`. |
 | ZIP | Other distributions | Unzip and run the command in the folder. |
 
-Ubuntu 23.10 and later block the way the game's browser engine sandboxes itself unless its sandbox helper is installed by an administrator. The Debian package installs it that way, so the game starts with its sandbox on. From the ZIP on those systems, the game stops at start with a sandbox message until someone runs `sudo chown root chrome-sandbox && sudo chmod 4755 chrome-sandbox` in its folder.
+The Debian package is named after the **App ID**, so two games with the same name install side by side; keep the App ID once players have installed the game. `apt` installs the libraries the game's desktop player needs, including the newer library names Ubuntu 24.04 and Debian 13 use. The package's maintainer field names the game with a placeholder address ending in `.invalid`, because Haptic has no publisher contact setting.
+
+The game's browser engine sandboxes itself with Linux user namespaces; its sandbox helper is never installed with administrator rights. Ubuntu 23.10 and later allow user namespaces only to programs their AppArmor rules permit, so the Debian package installs an AppArmor profile for the game when it is installed there. Debian and other systems allow them by default.
+
+The game stops at start with a sandbox message when the system refuses it user namespaces:
+
+- From the ZIP on Ubuntu 23.10 or later, which has no AppArmor profile. Install the Debian package instead.
+- On a system where an administrator turned user namespaces off (for example `kernel.unprivileged_userns_clone=0`). Ask them to turn them back on.
 
 Which platforms you can package depends on where you run Haptic:
 
@@ -120,6 +127,8 @@ The app's ID, name, version and build number come from **Project Settings > Expo
 
 In the game, the device's Back button acts as <kbd>Esc</kbd>.
 
+Like desktop games, Android and iOS games can connect to any HTTPS and secure WebSocket (`wss`) server, but load scripts, pages and other files only from the game itself. A link the player follows opens in the browser; the game itself never navigates away. Android backup is off for the game: Android does not copy its saves to the cloud, though moving to a new device with Android's transfer still brings them.
+
 ## iOS games
 
 The Haptic desktop app on a Mac packages iOS games for iPhone and iPad running iOS 17 or later. The game runs in the system's web view, full screen, and plays as it does on the web. Haptic writes an Xcode project and builds it with Xcode on your Mac, so iOS games cannot be packaged anywhere else.
@@ -137,7 +146,9 @@ Xcode signs the game for your team and makes or renews its provisioning profile 
 | App Store (default) | Uploading to TestFlight and the App Store with Apple's **Transporter** app. Needs an [app icon](#app-icon). |
 | Development | Installing on the devices registered to your team, for example from Xcode's **Window > Devices and Simulators** |
 
-The app's ID, name, version and build number come from **Project Settings > Export > App Identity**. iOS needs the version as up to three numbers, such as `1.2.3`. Raise the build number for every upload. Packaging can take several minutes.
+The app's ID, name, version and build number come from **Project Settings > Export > App Identity**. iOS needs the version as up to three numbers, such as `1.2.3`, and the Display Name cannot contain `$(` or `${`, which Xcode would read as one of its settings. Raise the build number for every upload. Packaging can take several minutes.
+
+The game declares that it uses no encryption beyond the standard HTTPS the system provides, so TestFlight and App Store uploads skip the export compliance question. If your game's scripts add their own encryption, check Apple's export compliance rules before you upload.
 
 ## Packaging settings
 

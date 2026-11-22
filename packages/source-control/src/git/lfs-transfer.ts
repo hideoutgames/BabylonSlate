@@ -243,15 +243,26 @@ export class LfsTransfer {
     if (status !== 200) throw statusError(status, `Downloading LFS object ${entry.oid}`);
   }
 
-  /** The working file's bytes for a whole-body upload; one gone or of another size since `pathOf` is missing. */
+  /**
+   * The working file's bytes for a whole-body upload; one gone or of another
+   * size since `pathOf` is missing. They are hashed (the bytes already read,
+   * never a second read) and refused unless they are the object their name
+   * says, as the native transfer refuses them before sending.
+   */
   private async readObject(path: string, object: LfsObject): Promise<Uint8Array> {
+    let bytes: Uint8Array | null = null;
     try {
-      const bytes = await this.storage.readBinary(path);
-      if (bytes.byteLength === object.size) return bytes;
+      bytes = await this.storage.readBinary(path);
     } catch (error) {
       if (!isStorageNotFound(error)) throw error;
     }
-    throw new SyncError("lfs", `${path} is missing, so it cannot be uploaded.`, { code: "lfs-object-missing" });
+    if (!bytes || bytes.byteLength !== object.size) {
+      throw new SyncError("lfs", `${path} is missing, so it cannot be uploaded.`, { code: "lfs-object-missing" });
+    }
+    if ((await sha256Hex(bytes)) !== object.oid) {
+      throw new SyncError("lfs", `${path} is not the LFS object its name says, so it cannot be uploaded.`, { code: "lfs-object-corrupt" });
+    }
+    return bytes;
   }
 
   private async batch(operation: "upload" | "download", objects: readonly LfsObject[]): Promise<BatchObject[]> {

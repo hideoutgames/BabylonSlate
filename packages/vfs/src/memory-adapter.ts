@@ -1,4 +1,5 @@
 import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
+import { isStagedWrite } from "./staged-write";
 import { isStorageNotFound, StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
@@ -34,6 +35,7 @@ const textDecoder = new TextDecoder();
  */
 export class MemoryStorageAdapter implements ProjectStorage {
   readonly hasStrongSourceRevisions: boolean = true;
+  readonly speculativeRangeReads = true;
   private readonly reads = new StorageReadCounter();
   private nextRevision = 0;
   getReadMetrics() { return this.reads.snapshot(); }
@@ -211,7 +213,16 @@ export class MemoryStorageAdapter implements ProjectStorage {
     }
   }
 
+  /** Leaves out staged write files, as the disk adapters do (`listStagedWrites` lists them). */
   async readdir(path: string): Promise<DirEntry[]> {
+    return (await this.listAll(path)).filter((entry) => !isStagedWrite(entry.name));
+  }
+
+  async listStagedWrites(path: string): Promise<DirEntry[]> {
+    return (await this.listAll(path)).filter((entry) => !entry.isDir && isStagedWrite(entry.name));
+  }
+
+  private async listAll(path: string): Promise<DirEntry[]> {
     const parts = this.split(path);
     let dir = this.root();
     for (const seg of parts) {

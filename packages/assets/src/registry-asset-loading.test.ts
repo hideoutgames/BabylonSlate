@@ -3,6 +3,7 @@ import { createMountedProjectStorage, createReadOnlyProjectStorage, HttpCatalogS
 import { MAIN_CLASS_FILE, MAIN_SCENE_FILE, SourceRevisionChangedError, type StorageReadOptions } from "@haptic/core";
 import { HASSET_PREFIX_BYTES, encodeHasset, readHassetHeaderLength } from "./hasset";
 import { isAssetSourceRevisionChanged } from "./asset-loading-service";
+import { SPECULATIVE_CATALOG_READ_BYTES } from "./payload-loader";
 import { createVfsBlobStore } from "./blob-store";
 import { sha256Hex } from "./bytes";
 import { collectAssetDependencyMetadata } from "./asset-dependencies";
@@ -312,7 +313,8 @@ describe("registry source loading", () => {
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const catalogBytes = storage.getReadMetrics().actualBytesRead;
-    expect(catalogBytes).toBeLessThan(16 * 1024);
+    // One bounded catalog read per file: neither 512 KiB payload.
+    expect(catalogBytes).toBeLessThanOrEqual(2 * SPECULATIVE_CATALOG_READ_BYTES);
     const loader = createRegistryAssetLoadingService(registry, { projectId: "project" });
     const representation = await registryAssetRepresentation(registry, "model", { selectChunks: () => ["compact"] });
     const first = loader.createScope("scene one");

@@ -322,8 +322,14 @@ export class FakeSync implements SyncPort {
       this.head = remote;
       return { kind: "fast-forward", head: remote, changedPaths };
     }
-    const files = new Map(this.files(this.head!));
-    for (const path of plan.writes) {
+    const headFiles = this.files(this.head!);
+    const files = new Map(headFiles);
+    // As the Git core: a kept file the branch never changed since the base takes the remote's version, its edit staying uncommitted.
+    const keptUnchanged: string[] = [];
+    for (const path of plan.kept) {
+      if ((await contentId(headFiles.get(path))) === (await contentId(baseFiles.get(path)))) keptUnchanged.push(path);
+    }
+    for (const path of [...plan.writes, ...keptUnchanged]) {
       const bytes = theirsFiles.get(path);
       if (bytes) files.set(path, bytes);
       else files.delete(path);

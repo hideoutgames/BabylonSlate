@@ -27,15 +27,40 @@ function isMsdfFileName(fileName: string): boolean {
   return /msdf/i.test(fileName);
 }
 
+/**
+ * Parsed JSON objects by the bytes they came from. Deciding what a JSON file
+ * is, and then reading its atlas pages, look at the same bytes several times;
+ * an MSDF atlas can run to megabytes, so it is parsed once.
+ */
+const parsedJsonObjects = new WeakMap<Uint8Array, Record<string, unknown> | null>();
+
 function parseJsonObject(bytes: Uint8Array): Record<string, unknown> | null {
+  if (parsedJsonObjects.has(bytes)) return parsedJsonObjects.get(bytes)!;
+  let result: Record<string, unknown> | null = null;
   try {
     const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) result = parsed as Record<string, unknown>;
   } catch {
-    return null;
+    result = null;
   }
+  parsedJsonObjects.set(bytes, result);
+  return result;
+}
+
+const FONT_SIGNATURES: readonly string[] = [
+  "\u0000\u0001\u0000\u0000", // TrueType
+  "true", // TrueType (Apple)
+  "OTTO", // OpenType with CFF outlines
+  "ttcf", // TrueType or OpenType collection
+  "wOFF",
+  "wOF2",
+];
+
+/** Whether `bytes` start like a TrueType, OpenType, collection, WOFF or WOFF2 font. */
+export function hasFontSignature(bytes: Uint8Array): boolean {
+  if (bytes.length < 4) return false;
+  const tag = String.fromCharCode(bytes[0]!, bytes[1]!, bytes[2]!, bytes[3]!);
+  return FONT_SIGNATURES.includes(tag);
 }
 
 /** msdf-bmfont JSON: the `chars` glyph table the overlay's MSDF reader needs. */
@@ -76,28 +101,22 @@ export function fontFamilyFromRepresentationFileName(fileName: string): string {
 }
 
 export function msdfJsonAtlasPageNames(bytes: Uint8Array): string[] {
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as Record<
-      string,
-      unknown
-    >;
-    const names: string[] = [];
-    if (Array.isArray(parsed.pages)) {
-      for (const page of parsed.pages) {
-        if (typeof page === "string" && page.trim()) names.push(page.trim());
-        else if (page && typeof page === "object") {
-          const file = (page as { file?: unknown }).file;
-          if (typeof file === "string" && file.trim()) names.push(file.trim());
-        }
+  const parsed = parseJsonObject(bytes);
+  if (!parsed) return [];
+  const names: string[] = [];
+  if (Array.isArray(parsed.pages)) {
+    for (const page of parsed.pages) {
+      if (typeof page === "string" && page.trim()) names.push(page.trim());
+      else if (page && typeof page === "object") {
+        const file = (page as { file?: unknown }).file;
+        if (typeof file === "string" && file.trim()) names.push(file.trim());
       }
     }
-    if (typeof parsed.atlas === "string" && parsed.atlas.trim()) {
-      names.push(parsed.atlas.trim());
-    }
-    return names;
-  } catch {
-    return [];
   }
+  if (typeof parsed.atlas === "string" && parsed.atlas.trim()) {
+    names.push(parsed.atlas.trim());
+  }
+  return names;
 }
 
 function sidecarLookup(
@@ -230,6 +249,9 @@ export async function importFont(
   const mime = MIME_BY_EXTENSION[extension];
   if (!mime) {
     throw new Error(`${options.fileName} is not a font file, an MSDF atlas (msdf-bmfont JSON) or facetype.js glyphs`);
+  }
+  if (!hasFontSignature(bytes)) {
+    throw new Error("The file is not a TrueType, OpenType, WOFF or WOFF2 font: its contents do not start with a font signature.");
   }
   return [
     {

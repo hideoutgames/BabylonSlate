@@ -11,12 +11,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
-import { HistoryIcon } from "lucide-react";
 import { EditorChromeBar } from "../components/editor-chrome-bar";
 import { EditorStatusBar } from "../components/editor-status-bar";
 import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import { SaveFailedDialog } from "../components/save-failed-dialog";
+import { JournalPausedNotice } from "../components/journal-paused-notice";
 import { SourceControlActionsProvider } from "../components/source-control-actions";
 import {
   useDocumentActions,
@@ -160,57 +160,88 @@ const SESSION_KEPT_PROJECT_OPEN =
   "The running Play or Simulate session did not stop, so the project stays open.";
 
 /**
- * A floating notice over the workspace, so the layout does not shift when the
- * journal is found or resolved.
+ * The recovery choice, asked before editing starts: a modal, so no edit or
+ * save lands on a document before its unsaved edits from the last session are
+ * recovered or discarded (recovered edits replay onto the saved files). When
+ * Recover still finds documents changed since the project opened (an
+ * open-time update, or a save), it asks before replacing them; and it says so
+ * when the last session's records could not be read.
  */
-function RecoveryBanner() {
-  const { keepRecovery, dismissRecovery } = useDocumentActions();
-  const { recoveryAvailable } = useEditorShellState();
+function RecoveryDialog() {
+  const { keepRecovery, dismissRecovery, dismissRecoveryNotice } = useDocumentActions();
+  const { recoveryAvailable, recoveryNotice } = useEditorShellState();
   const [discarding, setDiscarding] = useState(false);
+  if (recoveryNotice?.kind === "unreadable") {
+    return (
+      <AlertDialog open>
+        <AlertDialogContent data-testid="recovery-unreadable">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved Edits Could Not Be Read</AlertDialogTitle>
+            <AlertDialogDescription>
+              The last session closed before saving, and the edits it recorded could not be read, so they were discarded. Your saved files are unchanged.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction data-testid="recovery-unreadable-ok" onClick={dismissRecoveryNotice}>OK</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+  }
   if (!recoveryAvailable) return null;
+  if (recoveryNotice?.kind === "changed") {
+    return (
+      <AlertDialog open>
+        <AlertDialogContent data-testid="recovery-changed">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Replace Changes Since Opening?</AlertDialogTitle>
+            <AlertDialogDescription>
+              These documents changed after the project opened. Recovering replaces their unsaved changes with the recovered edits; a document saved since then can't be recovered, and its edits from the last session are discarded.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ul className="max-h-48 divide-y overflow-y-auto overscroll-y-contain rounded-md border bg-muted/30 text-sm" data-testid="recovery-changed-documents">
+            {recoveryNotice.documents.map((label) => (
+              <li key={label} className="truncate px-3 py-1.5">{label}</li>
+            ))}
+          </ul>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="recovery-cancel" onClick={dismissRecoveryNotice}>Cancel</AlertDialogCancel>
+            <AlertDialogAction data-testid="recovery-replace-changed" onClick={() => keepRecovery({ replaceChanged: true })}>
+              Recover Edits
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+  }
   return (
-    <div
-      className="recovery-notice"
-      role="alert"
-      aria-labelledby="recovery-notice-title"
-      aria-describedby="recovery-notice-description"
-      data-testid="recovery-prompt"
-    >
-      <span className="recovery-notice-icon" aria-hidden="true">
-        <HistoryIcon />
-      </span>
-      <div className="recovery-notice-text">
-        <p id="recovery-notice-title">Recover Unsaved Edits?</p>
-        <p id="recovery-notice-description">
-          The last session closed before these edits were saved.
-        </p>
-      </div>
-      <div className="recovery-notice-actions">
-        <Button
-          variant="ghost"
-          size="sm"
-          data-testid="dismiss-journal"
-          disabled={discarding}
-          onClick={() => {
-            setDiscarding(true);
-            // A failed clear keeps the journal, so the notice stays for a retry.
-            dismissRecovery()
-              .catch((error: unknown) => console.error("[editor] could not discard the recovery journal", error))
-              .finally(() => setDiscarding(false));
-          }}
-        >
-          Discard
-        </Button>
-        <Button
-          size="sm"
-          data-testid="recover-journal"
-          disabled={discarding}
-          onClick={() => void keepRecovery()}
-        >
-          Recover Edits
-        </Button>
-      </div>
-    </div>
+    <AlertDialog open>
+      <AlertDialogContent data-testid="recovery-prompt">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Recover Unsaved Edits?</AlertDialogTitle>
+          <AlertDialogDescription>The last session closed before these edits were saved.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <Button
+            variant="secondary"
+            data-testid="dismiss-journal"
+            disabled={discarding}
+            onClick={() => {
+              setDiscarding(true);
+              // A failed clear keeps the journal, so the prompt stays for a retry.
+              dismissRecovery()
+                .catch((error: unknown) => console.error("[editor] could not discard the recovery journal", error))
+                .finally(() => setDiscarding(false));
+            }}
+          >
+            Discard
+          </Button>
+          <Button data-testid="recover-journal" disabled={discarding} onClick={() => keepRecovery()}>
+            Recover Edits
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -486,7 +517,8 @@ function EditorLayout() {
     <div className="safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
       <SourceControlActionsProvider>
         <EditorChromeAndPrompts />
-        <RecoveryBanner />
+        <RecoveryDialog />
+        <JournalPausedNotice />
         <main className="flex min-h-0 flex-1 flex-col">
           {profileRegion("document-workspace", <DocumentWorkspace />)}
         </main>

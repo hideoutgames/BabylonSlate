@@ -244,6 +244,23 @@ describe("reconcileCanvasGraph", () => {
     ).toBeNull();
   });
 
+  it("signs the incoming and last emitted graphs through the caller's lookup", () => {
+    const signed: GraphDocument[] = [];
+    const signatureOf = (graph: GraphDocument) => {
+      signed.push(graph);
+      return canonicalGraphSignature(graph);
+    };
+    const echoed = structuredClone(twoNodeGraph);
+    expect(reconcileCanvasGraph({ localNodes, localEdges, incoming: echoed, lastEmitted: twoNodeGraph, signatureOf })).toBeNull();
+    expect(signed).toEqual([echoed, twoNodeGraph]);
+    const moved: GraphDocument = {
+      ...twoNodeGraph,
+      nodes: twoNodeGraph.nodes.map((node) => ({ ...node, position: { x: node.position.x + 5, y: node.position.y } })),
+    };
+    expect(reconcileCanvasGraph({ localNodes, localEdges, incoming: moved, lastEmitted: twoNodeGraph, signatureOf })?.nodes[0]?.position)
+      .toEqual(moved.nodes[0]!.position);
+  });
+
   it("applies an incoming edge type change", () => {
     const incoming: GraphDocument = {
       ...twoNodeGraph,

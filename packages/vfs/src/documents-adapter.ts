@@ -1,6 +1,6 @@
 import { BabylonSlateScopedStorage, decodeBase64, encodeBase64, type BabylonSlateScopedStoragePlugin, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
 import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, utf8ByteLength, validateStorageRange, validateStorageRangeResult } from "./storage-range";
-import { StorageNotFoundError } from "@haptic/core";
+import { PROJECT_FILE, StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
@@ -92,6 +92,13 @@ export interface DocumentsFilesystemApi {
     path: string;
     directory?: Directory;
   }): Promise<void>;
+  /** Replaces an existing file at `to` (iOS removes it first, Android renames over it). */
+  rename(options: {
+    from: string;
+    to: string;
+    directory?: Directory;
+    toDirectory?: Directory;
+  }): Promise<void>;
   rmdir(options: {
     path: string;
     directory?: Directory;
@@ -128,6 +135,7 @@ const textEncoder = new TextEncoder();
  * has one, else the plugin calls; every write replaces its file atomically.
  */
 export class DocumentsStorageAdapter implements ProjectStorage {
+  readonly speculativeRangeReads = true;
   private readonly reads = new StorageReadCounter();
   getReadMetrics() { return this.reads.snapshot(); }
   private folder: ProjectFolderHandle | null = null;
@@ -161,6 +169,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     name = projectFolderName(name);
     const root = `${this.root}/${name}`;
     await this.ensureDirectory(root);
+    await this.finishProjectFileReplace(root);
     this.folder = { id: `documents:${name}`, name, tier: "documents" };
     return this.folder;
   }
@@ -175,6 +184,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     const name = projectFolderName(handle.id.slice("documents:".length));
     const info = await this.fs.stat({ path: `${this.root}/${name}`, directory: this.directory });
     if (info.type !== "directory") throw new Error("Project folder is not a directory.");
+    await this.finishProjectFileReplace(`${this.root}/${name}`);
     this.folder = { id: `documents:${name}`, name, tier: "documents" };
     return this.folder;
   }
@@ -269,6 +279,42 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     await this.stagedWrite(full, { data, encoding: "utf8" });
   }
 
+  /**
+   * Finishes a `project.json` replacement a killed app left half done, from
+   * its marker (never by guessing from content): with `project.json` missing
+   * and the marker's complete staged file present, the staged file becomes
+   * `project.json`. Otherwise the marker and its staged file are leftovers of
+   * a write that finished or never got that far, and are removed. Failures
+   * leave everything as it was; opening goes on.
+   */
+  private async finishProjectFileReplace(root: string): Promise<void> {
+    const directory = this.directory;
+    try {
+      const { files } = await this.fs.readdir({ path: root, directory });
+      const names = new Set(files.map((file) => file.name));
+      for (const file of files) {
+        if (file.type !== "file" || !isStagedWrite(file.name) || file.size > 1024) continue;
+        let staged: string;
+        try {
+          const record = JSON.parse((await this.fs.readFile({ path: `${root}/${file.name}`, directory, encoding: "utf8" })).data) as { target?: unknown; staged?: unknown };
+          if (record.target !== PROJECT_FILE || typeof record.staged !== "string" || !isStagedWrite(record.staged)) continue;
+          staged = record.staged;
+        } catch {
+          continue;
+        }
+        if (!names.has(PROJECT_FILE) && names.has(staged)) {
+          await this.fs.rename({ from: `${root}/${staged}`, to: `${root}/${PROJECT_FILE}`, directory, toDirectory: directory });
+          names.add(PROJECT_FILE);
+        } else if (names.has(staged)) {
+          await this.fs.deleteFile({ path: `${root}/${staged}`, directory });
+        }
+        await this.fs.deleteFile({ path: `${root}/${file.name}`, directory });
+      }
+    } catch {
+      // Left for the next open.
+    }
+  }
+
   async readBinary(path: string, options?: StorageReadOptions): Promise<Uint8Array> {
     const full = this.abs(path);
     const bridge = await this.bridge;
@@ -318,16 +364,29 @@ export class DocumentsStorageAdapter implements ProjectStorage {
    * Without the binary transport: the bytes go to a staged `.haptic-<uuid>.tmp`
    * beside the file, then move over it, so a failed or interrupted write never
    * leaves the file truncated. A failure removes the staged file.
+   *
+   * Capacitor's iOS `rename` removes an existing file before it moves the
+   * staged one (the transport's native commit is a single POSIX rename, with
+   * no such gap). A kill in between would leave no `project.json`, which
+   * makes the folder refuse to open, so for that file alone a marker naming
+   * the complete staged file is written before the rename and removed after;
+   * `finishProjectFileReplace` completes the move on the next open.
    */
   private async stagedWrite(full: string, content: { data: string; encoding?: "utf8" }): Promise<void> {
     const slash = full.lastIndexOf("/");
-    const staged = `${full.slice(0, slash)}/${stagedWriteName()}`;
+    const folder = full.slice(0, slash);
+    const stagedName = stagedWriteName();
+    const staged = `${folder}/${stagedName}`;
+    const marker = full.slice(slash + 1) === PROJECT_FILE && folder === this.abs("", true) ? `${folder}/${stagedWriteName()}` : null;
     try {
       await this.fs.writeFile({ path: staged, ...content, directory: this.directory, recursive: true });
+      if (marker) await this.fs.writeFile({ path: marker, data: JSON.stringify({ target: PROJECT_FILE, staged: stagedName }), directory: this.directory, encoding: "utf8" });
       await this.fs.rename({ from: staged, to: full, directory: this.directory, toDirectory: this.directory });
     } catch (error) {
       await this.fs.deleteFile({ path: staged, directory: this.directory }).catch(() => {});
       throw error;
+    } finally {
+      if (marker) await this.fs.deleteFile({ path: marker, directory: this.directory }).catch(() => {});
     }
   }
 
@@ -357,6 +416,18 @@ export class DocumentsStorageAdapter implements ProjectStorage {
           size: f.type === "file" ? f.size : null,
           mtime: f.mtime,
         }));
+    } catch (error) {
+      rethrowFilesystemError(error, path);
+    }
+  }
+
+  async listStagedWrites(path: string): Promise<DirEntry[]> {
+    const full = this.abs(path, true);
+    try {
+      const { files } = await this.fs.readdir({ path: full, directory: this.directory });
+      return files
+        .filter((f) => f.type === "file" && isStagedWrite(f.name))
+        .map((f) => ({ name: f.name, isDir: false, size: f.size, mtime: f.mtime }));
     } catch (error) {
       rethrowFilesystemError(error, path);
     }

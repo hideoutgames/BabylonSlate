@@ -49,7 +49,7 @@ interface Call { command: string; args: string[]; cwd?: string; env?: NodeJS.Pro
  * are recorded: Gradle writes its unsigned output, the signers write signed
  * copies, keytool writes a keystore. `files` holds what Gradle saw.
  */
-async function computer(options: { gradle?: () => never; javaOutput?: Record<string, string> } = {}) {
+async function computer(options: { gradle?: () => never; javaOutput?: Record<string, string>; verify?: () => { stdout: string; stderr: string } } = {}) {
   const home = await temp("haptic-android-home-");
   const calls: Call[] = [];
   const files: Record<string, string> = {};
@@ -77,7 +77,7 @@ async function computer(options: { gradle?: () => never; javaOutput?: Record<str
     } else if (command.endsWith("jarsigner") && args[0] !== "-verify") {
       await writeFile(at("-signedjar"), `jar-signed ${await readFile(args.at(-2)!, "utf8")}`);
     } else if (command.endsWith("jarsigner")) {
-      return { stdout: "jar verified.\n", stderr: "" };
+      return options.verify?.() ?? { stdout: "jar verified.\n", stderr: "" };
     } else if (command.endsWith("keytool")) {
       await writeFile(at("-keystore"), "debug keystore");
     }
@@ -147,7 +147,10 @@ describe("Android game packages", () => {
     expect(signing[0]!.args).toEqual(["-keystore", debugKeystore, "-storepass:env", "HAPTIC_ANDROID_STORE_PASSWORD", "-keypass:env", "HAPTIC_ANDROID_KEY_PASSWORD",
       "-signedjar", expect.stringMatching(/signed\.aab$/), expect.stringMatching(/app-release\.aab$/), "androiddebugkey"]);
     expect(signing[0]!.env).toMatchObject({ HAPTIC_ANDROID_STORE_PASSWORD: "android", HAPTIC_ANDROID_KEY_PASSWORD: "android" });
-    expect(signing[1]!.args).toEqual(["-verify", expect.stringMatching(/signed\.aab$/)]);
+    // Verified strictly against the key that signed it, with the password from the environment only.
+    expect(signing[1]!.args).toEqual(["-verify", "-strict", "-keystore", debugKeystore, "-storepass:env", "HAPTIC_ANDROID_STORE_PASSWORD",
+      expect.stringMatching(/signed\.aab$/), "androiddebugkey"]);
+    expect(signing[1]!.env).toMatchObject({ HAPTIC_ANDROID_STORE_PASSWORD: "android" });
     expect(pc.calls.find((call) => call.args.includes("org.gradle.wrapper.GradleWrapperMain"))!.args.at(-1)).toBe("bundleRelease");
     expect(pc.calls.some((call) => call.command.endsWith("zipalign"))).toBe(false);
 
@@ -157,6 +160,15 @@ describe("Android game packages", () => {
     await writeFile(join(again.home, ".android", "debug.keystore"), "kept");
     await pack(again.host, { settings: DEFAULT_ANDROID_PACKAGING });
     expect(again.calls.some((call) => call.command.endsWith("keytool"))).toBe(false);
+  });
+
+  it("refuse an App Bundle whose strict verification fails or does not report it verified", async () => {
+    // jarsigner -strict exits non-zero on a severe warning, such as a bundle not signed by the alias.
+    const failing = await computer({ verify: () => { throw new Error("jarsigner exited with code 36"); } });
+    await expect(pack(failing.host, { request: { format: "aab" } })).rejects.toThrow("The App Bundle's signature did not verify.");
+    // An unsigned file exits 0 and says only "no manifest."
+    const unsigned = await computer({ verify: () => ({ stdout: "no manifest.\n", stderr: "" }) });
+    await expect(pack(unsigned.host, { request: { format: "aab" } })).rejects.toThrow("The App Bundle's signature did not verify.");
   });
 
   it("sign with the keystore password when the key has none, and ask for a missing keystore password or alias", async () => {

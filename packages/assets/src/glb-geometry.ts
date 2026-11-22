@@ -1,6 +1,14 @@
 import { encodeGlbJsonBin, splitGlbJsonBin } from "./importers/glb-parse";
 import type { CollisionTriangleMesh } from "@haptic/core";
 import type { HullVec3 } from "./convex-hull";
+import {
+  formatImportCount,
+  GLTF_MAX_NODE_DEPTH,
+  GLTF_MAX_PRIMITIVE_INDICES,
+  GLTF_MAX_PRIMITIVE_VERTICES,
+  ImportLimitError,
+  importLimitError,
+} from "./import-limits";
 
 const textDecoder = new TextDecoder();
 
@@ -157,7 +165,7 @@ function normalizeComponent(value: number, componentType: number): number {
   }
 }
 
-/** Geometry that cannot be read: compressed with a codec the reader does not decode, or outside its buffer. */
+/** Geometry that cannot be read: compressed with a codec the reader does not decode, or malformed. */
 export class GltfGeometryUnreadableError extends Error {
   override readonly name = "GltfGeometryUnreadableError";
 }
@@ -170,12 +178,29 @@ const MESHOPT_UNREADABLE =
   "its geometry is meshopt-compressed (EXT_meshopt_compression), which collision cooking cannot decode; export the model without mesh compression and import it again";
 const MALFORMED_GEOMETRY = "its geometry is malformed: an accessor reads outside its buffer";
 
-/** `count` elements of `components` values from a buffer view, tightly packed or `byteStride` apart. */
+/** Malformed geometry, saying what is wrong. */
+function malformed(detail: string): GltfGeometryUnreadableError {
+  return new GltfGeometryUnreadableError(`its geometry is malformed: ${detail}`);
+}
+
+/** A non-negative safe integer from an optional glTF field, or `fallback` when absent; anything else is malformed. */
+function gltfIndexField(value: unknown, fallback: number, describe: () => string): number {
+  if (value === undefined) return fallback;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
+  throw malformed(`${describe()} must be a whole number of at least 0, not ${String(value)}`);
+}
+
+/**
+ * `count` elements of `components` values from a buffer view, tightly packed or (`strided`) `byteStride` apart.
+ * Everything that sizes the loop is checked first: offsets are whole and non-negative, a stride is whole and at
+ * least one element long, and the last element ends inside the view and the view inside the BIN. So a malformed
+ * file fails at once instead of reading past its data or looping over a count its bytes do not hold.
+ */
 function readElements(
   json: Record<string, unknown>,
   bin: Uint8Array,
   viewIndex: number,
-  byteOffset: number,
+  byteOffset: unknown,
   count: number,
   components: number,
   componentType: number,
@@ -190,20 +215,32 @@ function readElements(
   if ((record.buffer ?? 0) !== 0) {
     throw new GltfGeometryUnreadableError(asRecord(record.extensions)[MESHOPT] ? MESHOPT_UNREADABLE : MALFORMED_GEOMETRY);
   }
-  const viewOffset = Number(record.byteOffset ?? 0);
-  const viewEnd = viewOffset + Number(record.byteLength ?? 0);
-  const elementBytes = size * components;
-  const stride = strided && typeof record.byteStride === "number" && record.byteStride > 0 ? record.byteStride : elementBytes;
-  const start = viewOffset + byteOffset;
-  const end = count > 0 ? start + (count - 1) * stride + elementBytes : start;
-  if (!(byteOffset >= 0 && end <= viewEnd && viewEnd <= bin.byteLength)) {
-    throw new GltfGeometryUnreadableError(MALFORMED_GEOMETRY);
+  const viewLabel = `glTF buffer view ${viewIndex}`;
+  const viewOffset = gltfIndexField(record.byteOffset, 0, () => `${viewLabel}'s byteOffset`);
+  const viewLength = gltfIndexField(record.byteLength, 0, () => `${viewLabel}'s byteLength`);
+  if (viewOffset + viewLength > bin.byteLength) {
+    throw malformed(
+      `${viewLabel} ends at byte ${formatImportCount(viewOffset + viewLength)}, past the end of the ${formatImportCount(bin.byteLength)}-byte binary buffer`,
+    );
   }
+  const offset = gltfIndexField(byteOffset, 0, () => "an accessor's byteOffset");
+  const elementBytes = size * components;
+  // No stride (or 0) packs elements tightly; a stride shorter than an element would overlap them.
+  const declaredStride = strided ? record.byteStride : undefined;
+  const stride = declaredStride === undefined || declaredStride === 0 ? elementBytes : declaredStride;
+  if (typeof stride !== "number" || !Number.isSafeInteger(stride) || stride < elementBytes) {
+    throw malformed(`${viewLabel}'s byteStride must be a whole number of at least ${elementBytes} bytes, not ${String(declaredStride)}`);
+  }
+  // Checked once, before the loop: the last element ends inside the view.
+  if (count > 0 && offset + (count - 1) * stride + elementBytes > viewLength) {
+    throw malformed(`an accessor reads ${formatImportCount(count)} elements, which run past the end of ${viewLabel}`);
+  }
+  const start = viewOffset + offset;
   const data = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
-  const out: number[] = [];
-  for (let i = 0; i < count; i++) {
-    const offset = start + i * stride;
-    for (let c = 0; c < components; c++) out.push(readComponent(data, offset + c * size, componentType));
+  const out = new Array<number>(count * components);
+  for (let i = 0, at = 0; i < count; i++) {
+    const element = start + i * stride;
+    for (let c = 0; c < components; c++) out[at++] = readComponent(data, element + c * size, componentType);
   }
   return out;
 }
@@ -211,32 +248,46 @@ function readElements(
 /**
  * An accessor's values, `components` per element, as glTF defines them: `byteStride` honoured, sparse substitutions
  * applied, zeros without a buffer view, and `normalized` integer components mapped to [0, 1] or [-1, 1]
- * (KHR_mesh_quantization). Throws `GltfGeometryUnreadableError` for compressed data or data outside its buffer.
+ * (KHR_mesh_quantization). Throws `GltfGeometryUnreadableError` for compressed or malformed data (`readElements`),
+ * and `ImportLimitError` for a count or sparse count above `maxCount`, before anything is read or allocated.
  */
 export function accessorValues(
   json: Record<string, unknown>,
   bin: Uint8Array,
   accessorIndex: number,
   components: number,
+  maxCount: number = GLTF_MAX_PRIMITIVE_INDICES,
 ): number[] {
   const accessors = Array.isArray(json.accessors) ? json.accessors : [];
   const accessor = asRecord(accessors[accessorIndex]);
-  const count = typeof accessor.count === "number" && accessor.count > 0 ? accessor.count : 0;
+  const label = `glTF accessor ${accessorIndex}`;
+  const count = gltfIndexField(accessor.count, 0, () => `${label}'s count`);
+  const sparse = asRecord(accessor.sparse);
+  const sparseCount = gltfIndexField(sparse.count, 0, () => `${label}'s sparse count`);
+  // Before the zeros of a view-less accessor or any read are allocated.
+  for (const [what, value] of [["element count", count], ["sparse element count", sparseCount]] as const) {
+    if (value > maxCount) {
+      throw importLimitError(
+        `The ${what} of ${label}`,
+        formatImportCount(value),
+        formatImportCount(maxCount),
+        "Split the mesh into smaller parts before importing.",
+      );
+    }
+  }
   const componentType = typeof accessor.componentType === "number" ? accessor.componentType : FLOAT;
   const values = typeof accessor.bufferView === "number"
-    ? readElements(json, bin, accessor.bufferView, Number(accessor.byteOffset ?? 0), count, components, componentType, true)
+    ? readElements(json, bin, accessor.bufferView, accessor.byteOffset, count, components, componentType, true)
     : new Array<number>(count * components).fill(0);
-  const sparse = asRecord(accessor.sparse);
-  const sparseCount = typeof sparse.count === "number" ? sparse.count : 0;
   if (sparseCount > 0) {
     const targetsAt = asRecord(sparse.indices);
     const valuesAt = asRecord(sparse.values);
     if (typeof targetsAt.bufferView !== "number" || typeof valuesAt.bufferView !== "number") {
       throw new GltfGeometryUnreadableError(MALFORMED_GEOMETRY);
     }
-    const targets = readElements(json, bin, targetsAt.bufferView, Number(targetsAt.byteOffset ?? 0), sparseCount, 1,
+    const targets = readElements(json, bin, targetsAt.bufferView, targetsAt.byteOffset, sparseCount, 1,
       typeof targetsAt.componentType === "number" ? targetsAt.componentType : UNSIGNED_INT, false);
-    const replacements = readElements(json, bin, valuesAt.bufferView, Number(valuesAt.byteOffset ?? 0), sparseCount,
+    const replacements = readElements(json, bin, valuesAt.bufferView, valuesAt.byteOffset, sparseCount,
       components, componentType, false);
     for (let i = 0; i < sparseCount; i++) {
       const target = targets[i]!;
@@ -280,7 +331,7 @@ function appendPrimitive(
   if (positionIndex < 0) return;
   assertNotDracoOnly(json, primitive, positionIndex);
   assertNotDracoOnly(json, primitive, primitive.indices);
-  const raw = accessorValues(json, bin, positionIndex, 3);
+  const raw = accessorValues(json, bin, positionIndex, 3, GLTF_MAX_PRIMITIVE_VERTICES);
   const base = positions.length / 3;
   let count = 0;
   for (let i = 0; i + 2 < raw.length; i += 3, count++) {
@@ -292,7 +343,7 @@ function appendPrimitive(
     );
   }
   const order = typeof primitive.indices === "number"
-    ? accessorValues(json, bin, primitive.indices, 1)
+    ? accessorValues(json, bin, primitive.indices, 1, GLTF_MAX_PRIMITIVE_INDICES)
     : Array.from({ length: count }, (_, i) => i);
   if (mode === TRIANGLES) {
     for (let i = 0; i + 2 < order.length; i += 3) indices.push(base + order[i]!, base + order[i + 1]!, base + order[i + 2]!);
@@ -315,9 +366,12 @@ function collectFromNode(
   positions: number[],
   indices: number[],
   seen: Set<number>,
+  depth: number,
 ): void {
+  // A node reached twice (through a cycle, or from two parents) is collected once.
   if (seen.has(nodeIndex)) return;
   seen.add(nodeIndex);
+  if (depth > GLTF_MAX_NODE_DEPTH) throw gltfNodeDepthError();
   const nodes = Array.isArray(json.nodes) ? json.nodes : [];
   const meshes = Array.isArray(json.meshes) ? json.meshes : [];
   const node = asRecord(nodes[nodeIndex]);
@@ -333,9 +387,16 @@ function collectFromNode(
   const children = Array.isArray(node.children) ? node.children : [];
   for (const child of children) {
     if (typeof child === "number") {
-      collectFromNode(json, bin, child, world, scale, positions, indices, seen);
+      collectFromNode(json, bin, child, world, scale, positions, indices, seen, depth + 1);
     }
   }
+}
+
+/** The node hierarchy is deeper than {@link GLTF_MAX_NODE_DEPTH}. */
+export function gltfNodeDepthError(): ImportLimitError {
+  return new ImportLimitError(
+    `The model's node hierarchy is more than ${GLTF_MAX_NODE_DEPTH} levels deep; the import limit is ${GLTF_MAX_NODE_DEPTH}. Flatten the hierarchy before importing.`,
+  );
 }
 
 function parseGltfJsonBin(
@@ -358,7 +419,7 @@ export function extractGltfPositions(
   bytes: Uint8Array,
   importScale = 1,
 ): HullVec3[] {
-  const positions = collectGltfTriangles(bytes, importScale).triangles?.positions;
+  const positions = readGltfTriangles(bytes, importScale)?.positions;
   if (!positions) return [];
   return Array.from({ length: positions.length / 3 }, (_, i) => ({
     x: positions[i * 3]!,
@@ -376,17 +437,18 @@ export function readGltfCollisionMesh(
   importScale = 1,
 ): { mesh: CollisionTriangleMesh | null; problem: string | null } {
   const { triangles, problem } = collectGltfTriangles(bytes, importScale);
-  if (!triangles) return { mesh: null, problem };
+  return { mesh: triangles ? packGltfTriangles(triangles) : null, problem };
+}
+
+/** {@link readGltfTriangles}'s result packed as {@link readGltfCollisionMesh} returns its mesh. */
+export function packGltfTriangles(triangles: GltfTriangles): CollisionTriangleMesh {
   const { positions, indices } = triangles;
   const vertexCount = positions.length / 3;
   // Malformed out-of-range indices keep a Uint32 slot so collider validation still rejects them.
   const fits = vertexCount <= 0x10000 && indices.every((index) => index < 0x10000);
   return {
-    mesh: {
-      positions: Float32Array.from(positions),
-      indices: fits ? Uint16Array.from(indices) : Uint32Array.from(indices),
-    },
-    problem: null,
+    positions: Float32Array.from(positions),
+    indices: fits ? Uint16Array.from(indices) : Uint32Array.from(indices),
   };
 }
 
@@ -398,14 +460,33 @@ export function extractGltfCollisionMesh(
   return readGltfCollisionMesh(bytes, importScale).mesh;
 }
 
+/** Rest-pose triangles: xyz per vertex and three indices per triangle. */
+export interface GltfTriangles {
+  positions: number[];
+  indices: number[];
+}
+
+/**
+ * A glTF or GLB file's rest-pose triangles with node transforms and Import Scale baked, or null when it has none or
+ * its geometry cannot be read (compressed or malformed). Parse once and share the result when both a collider and
+ * an occluder are cooked from it.
+ */
+export function readGltfTriangles(
+  bytes: Uint8Array,
+  importScale: number,
+): GltfTriangles | null {
+  return collectGltfTriangles(bytes, importScale).triangles;
+}
+
 /**
  * Every triangle of the default scene, or none with the reason when any of its geometry cannot be read: part of a
- * model would collide wrongly, so a compressed or malformed model yields nothing.
+ * model would collide wrongly, so a compressed or malformed model yields nothing. Import limits (vertex and index
+ * caps, node depth) are not caught: they fail the import by name.
  */
 function collectGltfTriangles(
   bytes: Uint8Array,
   importScale: number,
-): { triangles: { positions: number[]; indices: number[] } | null; problem: string | null } {
+): { triangles: GltfTriangles | null; problem: string | null } {
   const parsed = parseGltfJsonBin(bytes);
   if (!parsed) return { triangles: null, problem: null };
   const { json, bin } = parsed;
@@ -439,13 +520,13 @@ function collectSceneTriangles(
   if (roots.length > 0) {
     for (const root of roots) {
       if (typeof root === "number") {
-        collectFromNode(json, bin, root, identityMat(), scale, positions, indices, seen);
+        collectFromNode(json, bin, root, identityMat(), scale, positions, indices, seen, 1);
       }
     }
   } else {
     const nodes = Array.isArray(json.nodes) ? json.nodes : [];
     for (let i = 0; i < nodes.length; i++) {
-      collectFromNode(json, bin, i, identityMat(), scale, positions, indices, seen);
+      collectFromNode(json, bin, i, identityMat(), scale, positions, indices, seen, 1);
     }
   }
   return positions.length === 0 ? null : { positions, indices };

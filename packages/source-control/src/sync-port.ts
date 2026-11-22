@@ -154,6 +154,12 @@ export type ChangeKind = "added" | "modified" | "deleted";
 export interface FileChange {
   path: string;
   kind: ChangeKind;
+  /**
+   * Another Git app (or an interrupted operation) staged a version of the
+   * file that is neither the last commit's nor the working file's. A commit
+   * records the working file, never the staged version.
+   */
+  staged?: true;
 }
 
 export interface SyncStatus {
@@ -288,6 +294,9 @@ export type SyncErrorCode =
   | "not-empty"
   | "repository-exists"
   | "uncommitted-changes"
+  /** Another Git app staged versions of `paths` found in neither HEAD nor the working files; a commit or merge would lose them. */
+  | "staged-elsewhere"
+  | "nothing-to-commit"
   | "branch-exists"
   | "invalid-branch-name"
   | "detached-head"
@@ -298,7 +307,7 @@ export class SyncError extends Error {
   readonly kind: SyncErrorKind;
   readonly code?: SyncErrorCode;
   readonly status?: number;
-  /** The files a refusal is about (`uncommitted-changes`), sorted. */
+  /** The files a refusal is about (`uncommitted-changes`, `staged-elsewhere`), sorted. */
   readonly paths?: readonly string[];
 
   constructor(kind: SyncErrorKind, message: string, options: { code?: SyncErrorCode; status?: number; paths?: readonly string[]; cause?: unknown } = {}) {

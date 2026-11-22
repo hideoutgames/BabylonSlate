@@ -734,6 +734,50 @@ describe("embedGlbExternalImages", () => {
     expect(browse?.images[0]?.bytes).toEqual(png);
   });
 
+  it("appends several images after the existing BIN, each 4-byte aligned, keeping the BIN's bytes", () => {
+    const existing = Uint8Array.from([9, 8, 7, 6]);
+    const images = [Uint8Array.from([1, 2, 3]), Uint8Array.from([4, 5, 6, 7, 8]), Uint8Array.from([9])];
+    const glb = encodeGlbJsonBin(
+      {
+        asset: { version: "2.0" },
+        buffers: [{ byteLength: 4 }],
+        bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 4 }],
+        images: images.map((_, index) => ({ uri: `t${index}.png` })),
+      },
+      existing,
+    );
+    const split = splitGlbJsonBin(
+      embedGlbExternalImages(glb, Object.fromEntries(images.map((bytes, index) => [`t${index}.png`, bytes]))),
+    )!;
+    const views = split.json.bufferViews as Array<{ byteOffset: number; byteLength: number }>;
+    expect(views.map(({ byteOffset, byteLength }) => [byteOffset, byteLength])).toEqual([[0, 4], [4, 3], [8, 5], [16, 1]]);
+    expect([...split.bin.subarray(0, 4)]).toEqual([9, 8, 7, 6]);
+    images.forEach((bytes, index) => {
+      const view = views[index + 1]!;
+      expect(split.bin.subarray(view.byteOffset, view.byteOffset + view.byteLength)).toEqual(bytes);
+    });
+    expect((split.json.buffers as Array<{ byteLength: number }>)[0]!.byteLength).toBe(20);
+  });
+
+  it("keeps a named placeholder for an image whose data URI does not decode", () => {
+    const glb = encodeGlbJsonBin(
+      { asset: { version: "2.0" }, images: [{ name: "broken", uri: "data:image/png;base64,***" }, { name: "escape", uri: "data:text/plain,%E0%A4%A" }] },
+      new Uint8Array(0),
+    );
+    const browse = parseGlbForBrowse(glb)!;
+    expect(browse.images.map((image) => [image.name, image.bytes.byteLength])).toEqual([["broken", 0], ["escape", 0]]);
+  });
+
+  it("fails a material nested past the depth limit by name", () => {
+    let nested: Record<string, unknown> = { index: 0 };
+    for (let level = 0; level < 100; level++) nested = { inner: nested };
+    const glb = packWithMissingImage({
+      textures: [{ source: 0 }, { source: 1 }, { source: 2 }],
+      materials: [{ name: "Deep", extensions: { deep: nested } }],
+    });
+    expect(() => stripUnmatchedGltfImageUris(glb)).toThrow(/nested more than 64 levels deep/);
+  });
+
   it("stripUnmatchedGltfImageUris removes relative image URIs so the GLB does not fetch", () => {
     const glb = kenneyStyleSidecarGlb();
     const stripped = stripUnmatchedGltfImageUris(glb);

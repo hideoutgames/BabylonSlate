@@ -1,11 +1,12 @@
-import { bakeGltfOccluder } from "../occluder-bake";
+import { bakeOccluderFromMesh } from "../occluder-bake";
+import { packGltfTriangles, readGltfTriangles } from "../glb-geometry";
 import { createDefaultMaterialDocument, createImportedMaterialDocument } from "@haptic/shader-graph";
 import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
 import { sniffSourceImageSize } from "../image-size";
 import { shouldCompressTexture } from "../texture-compression";
 import { MATERIAL_PAYLOAD_VERSION } from "../migration";
-import { cookGeneratedCollisionFromGltf } from "../simple-collision";
+import { cookGeneratedCollisionFromTriangles } from "../simple-collision";
 import { normalizeModelPayload, DEFAULT_MODEL_IMPORT_SCALE } from "../model-payload";
 import { normalizeSkeletonPayload } from "../skeleton-payload";
 import { findMatchingSkeleton } from "../skeleton-match";
@@ -13,6 +14,7 @@ import { nextCopyName } from "../unique-names";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 import { importedGltfMaterial } from "./gltf-material";
+import { assertImageSizeWithinLimits } from "./image";
 import {
   ingestGltfForImport,
   parseGlbForBrowse,
@@ -118,6 +120,7 @@ function importFromBrowse(
     // Recorded like an image import's, so Downsample, encode padding and
     // overlay sizes use the source size rather than the encoded one.
     const size = chunks.length > 0 ? sniffSourceImageSize(image.bytes) : null;
+    assertImageSizeWithinLimits(size, `the model's image ${image.name}`);
     // A nearest-filtered image (a pixel-art palette) keeps its exact texels: no compression, mipmaps or LOD.
     const usage = image.nearest ? "pixelArt" : "albedo";
     results.push({
@@ -262,12 +265,14 @@ function importFromBrowse(
     modelImportScale > 0
       ? modelImportScale
       : DEFAULT_MODEL_IMPORT_SCALE;
+  // Rest-pose geometry is read once for the collider and the occluder. A
+  // skinned model's vertices leave their rest pose, so it gets neither.
+  const triangles = skeletonGuid == null ? readGltfTriangles(bytes, importScale) : null;
   const simpleColliders =
     skeletonGuid == null
-      ? [cookGeneratedCollisionFromGltf(bytes, { importScale })]
+      ? [cookGeneratedCollisionFromTriangles(triangles)]
       : [];
-  // A skinned model's vertices leave their rest pose, so it never occludes.
-  const occluder = skeletonGuid == null ? bakeGltfOccluder(bytes, importScale) : null;
+  const occluder = triangles ? bakeOccluderFromMesh(packGltfTriangles(triangles)) : null;
 
   results.unshift({
     type: "Model",

@@ -120,6 +120,8 @@ A commit takes each asset with the large data it uses. Large data that no asset 
 
 If the host has moved on since your last pull, the push is refused: pull first.
 
+A commit holds only the assets you chose, as they are in the project folder. If another Git app staged changes in this folder, they show in **Changes** too, and Haptic unstages any you didn't choose before it commits, leaving their files as they are. If that app staged a version of a file that is neither the last commit's nor the file on disk, Haptic refuses the commit and names the file, since unstaging it would lose that version: commit or unstage it in that app first, or choose it, which commits the file on disk.
+
 ### Remove unused files
 
 Large asset data that no asset uses any more stays on your device: what an edit you reverted or discarded had stored, what a deleted asset used, and what another branch's assets use after you switch away from it. **Remove Unused Files…** in the **Changes** window's **More Actions** menu removes it.
@@ -138,6 +140,8 @@ Haptic keeps every file an asset uses, every file that is part of a commit (data
 2. Confirm. A pull replaces files and cannot be undone.
 3. **Pulling** covers the editor until the pull is done. Documents are read-only meanwhile, and Play, Simulate and Preview Build wait: the Output Log says why they didn't start.
 4. If an asset changed both on your device and on the branch, **Pull Conflicts** lists each one. Choose **Keep Mine** or **Take Theirs** for every asset; **Apply And Finish Pull** stays unavailable until each has a choice. **Cancel Pull** changes nothing. **Compare** shows that asset's diff in the Source Control tab, from the branch's version to yours: Pull Conflicts waits in the corner meanwhile, with your choices kept, until you choose **Back To Pull Conflicts**.
+
+If a pull fails or you cancel it partway, Haptic puts back the files it had replaced and leaves your branch where it was; pull again when the problem is solved. If the app closes partway, the files the pull had already written show as changes, and the next pull finishes the job.
 
 Open documents whose files the pull changed reload before you can edit again, as after any change on disk (the whole project reloads when project settings or many assets changed; if anything is still unsaved, Haptic asks first instead of replacing it). An asset you kept stays as an uncommitted change, ready to commit and push.
 

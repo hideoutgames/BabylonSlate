@@ -101,6 +101,8 @@ function statsOf(stat: FileStat): StorageStats {
  */
 export class StorageFs {
   readonly counters: StorageFsCounters = { workingReads: 0, pointerReads: 0, smudgedPointers: 0 };
+  /** Bytes of pack files and pack indexes read: what isomorphic-git's cache keeps of them. */
+  packBytes = 0;
   private readonly signal: AbortSignal | undefined;
   /** While a fetch runs: its `.git` writes outside `objects/` by path (null removes), written once it resolves. */
   private held: Map<string, Uint8Array | null> | null = null;
@@ -212,6 +214,7 @@ export class StorageFs {
     } else {
       bytes = await this.readBytes(path);
       if (!isGitPath(path)) this.counters.workingReads += 1;
+      else if (path.startsWith(".git/objects/pack/")) this.packBytes += bytes.byteLength;
     }
     return encoding === "utf8" ? new TextDecoder().decode(bytes) : bytes;
   }

@@ -4,24 +4,10 @@ import * as ResEdit from "resedit";
 import type { DesktopGamePackageInput } from "./native-desktop";
 import { packageWindowsGame, windowsFileVersion } from "./native-windows";
 import { readZipEntries } from "./zip-merge";
-import { appIconImages, pngHeader } from "./test-support/app-icon-images";
+import { appIconImages } from "./test-support/app-icon-images";
+import { electronExe } from "./test-support/windows-executable";
 
 const EN_US = { lang: 1033, codepage: 1200 };
-
-/** A stand-in for Electron's `electron.exe`: an empty executable with one icon group and Electron's version details. */
-function electronExe(): Uint8Array {
-  const exe = ResEdit.NtExecutable.createEmpty();
-  const resources = ResEdit.NtExecutableResource.from(exe);
-  ResEdit.Resource.IconGroupEntry.replaceIconsForResource(resources.entries, 1, 1033, [ResEdit.Data.RawIconItem.from(pngHeader(16), 16, 16, 32)]);
-  const info = ResEdit.Resource.VersionInfo.create(1033, { fileVersionMS: 0x2c0009, fileVersionLS: 0x30000 }, [{ ...EN_US, values: {
-    CompanyName: "GitHub, Inc.", FileDescription: "Electron", FileVersion: "44.9.3", InternalName: "electron.exe",
-    LegalCopyright: "Copyright (C) 2015 GitHub, Inc. All rights reserved.", OriginalFilename: "electron.exe",
-    ProductName: "Electron", ProductVersion: "44.9.3", SquirrelAwareVersion: "1",
-  } }]);
-  info.outputToResourceEntries(resources.entries);
-  resources.outputResource(exe);
-  return new Uint8Array(exe.generate());
-}
 
 function input(overrides: Partial<DesktopGamePackageInput> = {}): DesktopGamePackageInput {
   return {
@@ -32,6 +18,7 @@ function input(overrides: Partial<DesktopGamePackageInput> = {}): DesktopGamePac
     name: "Space Game",
     version: "1.2.0-beta.3",
     gameId: "project-guid",
+    appId: "com.example.spacegame",
     ...overrides,
   };
 }
@@ -62,15 +49,22 @@ describe("Windows game packages", () => {
     expect([info.fixedInfo.fileVersionMS, info.fixedInfo.fileVersionLS, info.fixedInfo.productVersionMS]).toEqual([0x10002, 0, 0x10002]);
   });
 
-  it("copy the executable unchanged without an App Icon, as every other runtime file", () => {
+  it("brand the executable's details without an App Icon, keeping the runtime's icon and copying every other runtime file", () => {
     const source = input().runtime;
     const { bytes } = packageWindowsGame(input({ runtime: source }));
     const original = new Map(readZipEntries(source).map((entry) => [entry.name, entry]));
     const entries = new Map(readZipEntries(bytes).map((entry) => [entry.name, entry]));
-    for (const [packaged, from] of [["Space Game/Space Game.exe", "electron.exe"], ["Space Game/resources.pak", "resources.pak"]] as const) {
-      expect(entries.get(packaged)).toMatchObject({ compressedSize: original.get(from)!.compressedSize, crc: original.get(from)!.crc });
-    }
-    expect(resourcesOf(unzipSync(bytes)["Space Game/Space Game.exe"]!).info.getStringValues(EN_US).ProductName).toBe("Electron");
+    expect(entries.get("Space Game/resources.pak")).toMatchObject({
+      compressedSize: original.get("resources.pak")!.compressedSize, crc: original.get("resources.pak")!.crc,
+    });
+    const { group, info } = resourcesOf(unzipSync(bytes)["Space Game/Space Game.exe"]!);
+    expect(info.getStringValues(EN_US)).toEqual({
+      FileDescription: "Space Game", ProductName: "Space Game", ProductVersion: "1.2.0-beta.3", FileVersion: "1.2.0.0",
+      InternalName: "Space Game.exe", OriginalFilename: "Space Game.exe", SquirrelAwareVersion: "1",
+    });
+    expect(info.fixedInfo.fileVersionMS).toBe(0x10002);
+    // Electron's one 16 px icon stays.
+    expect(group.icons.map((icon) => icon.width)).toEqual([16]);
   });
 
   it("refuse a runtime without one icon group, and Linux targets", () => {

@@ -1,13 +1,12 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { assertGameFilePath } from "@haptic/exporter/native-desktop";
 
 /** File work the native game packagers share. */
 
-/** A path under `root` for a package file, refusing anything that leaves it. */
+/** A path under `root` for a package file, refusing anything that leaves it (the exporter's game file path rules). */
 export function within(root: string, path: string): string {
-  if (path.startsWith("/") || path.includes("\\") || path.includes("\0") || path.split("/").some((part) => !part || part === "." || part === "..")) {
-    throw new Error(`Invalid game file path: ${path}`);
-  }
+  assertGameFilePath(path);
   return join(root, ...path.split("/"));
 }
 

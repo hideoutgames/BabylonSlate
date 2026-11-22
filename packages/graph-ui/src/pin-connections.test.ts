@@ -121,4 +121,35 @@ describe("passesReference", () => {
     const edges = [wire("get", "value", "knot", "in"), wire("knot", "out", "print", "text")];
     expect(passesReference(edges, lookup, "get", variable)).toBe(false);
   });
+
+  it("answers again for a new wire list or a changed node on the path, and reuses the answer while neither changes", () => {
+    const edges = [wire("get", "value", "knot", "in"), wire("knot", "out", "seeded", "seed")];
+    const reads = { count: 0 };
+    const counted = (entries: Map<string, { data: Record<string, unknown> }>) =>
+      new Proxy(entries, {
+        get(target, key) {
+          if (key === "get") return (id: string) => { reads.count += 1; return target.get(id); };
+          const value = Reflect.get(target, key, target) as unknown;
+          return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+    expect(passesReference(edges, counted(lookup), "get", variable)).toBe(true);
+    const walked = reads.count;
+    // A frame that moved nodes keeps their data objects: only the nodes the walk read are checked.
+    const moved = new Map(lookup);
+    expect(passesReference(edges, counted(moved), "get", variable)).toBe(true);
+    expect(reads.count - walked).toBeLessThanOrEqual(2);
+
+    // The Seed input stops taking a reference: a new data object for a node on the path.
+    const edited = new Map(lookup);
+    edited.set("seeded", { data: { __pins: [{ id: "seed", name: "Seed", kind: "data", direction: "in", type: { kind: "int" } }] } });
+    expect(passesReference(edges, edited, "get", variable)).toBe(false);
+    // The knot becomes an ordinary node.
+    const unknotted = new Map(lookup);
+    unknotted.set("knot", { data: { __pins: [] } });
+    expect(passesReference(edges, unknotted, "get", variable)).toBe(false);
+    // A new wire list: the knot now leads to a value input.
+    expect(passesReference([wire("get", "value", "knot", "in"), wire("knot", "out", "print", "text")], lookup, "get", variable)).toBe(false);
+    expect(passesReference(edges, lookup, "get", variable)).toBe(true);
+  });
 });

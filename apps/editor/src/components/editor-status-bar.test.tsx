@@ -11,6 +11,7 @@ import { SourceControlActionsProvider, useSourceControlActions } from "./source-
 
 const state = vi.hoisted(() => ({
   recoveryAvailable: false,
+  journalPaused: false,
   projectDirty: false,
   autoSaveStatus: null as { state: "saved" | "error"; message?: string } | null,
   sync: null as SourceControlSyncService | null,
@@ -26,6 +27,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   projectDirty: state.projectDirty,
   autoSaveStatus: state.autoSaveStatus,
   recoveryAvailable: state.recoveryAvailable,
+  journalPaused: state.journalPaused,
   setActiveDocument: state.setActiveDocument,
   ...(state.sync ? { sourceControlSync: state.sync } : {}),
 })));
@@ -36,6 +38,7 @@ vi.mock("../lib/build-identity", () => ({ getBuildLabel: () => "test" }));
 afterEach(() => {
   cleanup();
   state.recoveryAvailable = false;
+  state.journalPaused = false;
   state.projectDirty = false;
   state.autoSaveStatus = null;
   state.sync = null;
@@ -72,6 +75,14 @@ describe("EditorStatusBar", () => {
     state.projectDirty = true;
     render(<EditorStatusBar />);
     expect(screen.getByRole("status").textContent).toBe("Unsaved Project Changes");
+  });
+
+  it("says crash recovery paused, over unsaved work, until a save restarts it", () => {
+    state.journalPaused = true;
+    state.projectDirty = true;
+    render(<EditorStatusBar />);
+    expect(screen.getByRole("status").textContent).toBe("Crash Recovery Paused — Use Save All");
+    expect(screen.getByRole("status").getAttribute("title")).toMatch(/storage is full/i);
   });
 
   describe("in Integrated mode", () => {

@@ -8,6 +8,7 @@ export type { CarriedChunkInput, ChunkEntry, ChunkInput, DecodedHasset, Encodabl
 export * from "./hasset-carry";
 export * from "./hproject";
 export * from "./blob-store";
+export * from "./blob-sweep";
 export * from "./bounded-concurrency";
 export * from "./bytes";
 export * from "./installed-asset";
@@ -34,6 +35,7 @@ export * from "./particle-parameters";
 export * from "./model-payload";
 export * from "./convex-hull";
 export * from "./glb-geometry";
+export * from "./import-limits";
 export * from "./simple-collision";
 export * from "./occluder-bake";
 export * from "./mesh-collision";
