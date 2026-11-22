@@ -52,6 +52,8 @@ In **Add Node**, the **Input** category has [Event Input Action](../scripting/cl
 
 When several controls are active at once, an action stays held until all are released, and axis values add up and are clamped to -1 to 1. A quick tap between two ticks still runs both **Started** and **Released**.
 
+When the game's window loses focus or goes to the background, every held key, button, touch and stick runs **Released**. A gamepad button you are still holding when you come back counts again only after you let it go; a stick, once it returns to the centre or moves well away from where it was. When a published game resumes after a pause that kept its window in front, such as the console's `pause`, a stick you are holding moves the game again straight away, while a held button, like a held key, counts again only after you press it again. On a Mac, releasing Command also releases the other keys held with it, because macOS does not report their release while Command is down.
+
 Input events work in the event graphs of classes that tick, such as Actors. They do not work in functions or Animation Graphs.
 
 ## More input nodes

@@ -42,11 +42,17 @@ export const FEATURE_TEST_MATERIAL_NAMES = {
   postProcess: "FT_MatPostGrade",
   landscape: "FT_MatLandscape",
   overlayUnlit: "FT_MatOverlayUnlit",
+  /** User Interface Multiply: a warm stain over what is beneath (coloured on FT_HUD, grey on FT_LayerGrade). */
+  uiMultiply: "FT_MatUiMultiply",
   uiRoundedPanel: "FT_MatUiRoundedPanel",
   uiRoundedPanelInstance: "FT_MatUiRoundedPanelInstance",
   uiHealthBar: "FT_MatUiHealthBar",
   uiCooldown: "FT_MatUiCooldown",
   text: "FT_MatText",
+  /** Text Multiply: blue ink that darkens what is behind the glyphs. */
+  textMultiply: "FT_MatTextMultiply",
+  /** Scene Layer post-process: a warm grade that keeps the layer's alpha (FT_LayerGrade's stack). */
+  layerGrade: "FT_MatLayerGrade",
   globalTint: "FT_MatGlobalTint",
   decalLit: "FT_MatDecalLit",
   decalLitInstance: "FT_MatDecalLitInstance",
@@ -92,6 +98,8 @@ export function featureTestMaterialAssetGuid(
  * - particle / particleAdditive: `Intensity` (+ `Falloff` on the additive glow)
  * - particleSheet: `Sheet` (texture)
  * - postProcess: `Desaturation` (0..1), `Vignette` (0..1 edge darkening)
+ * - overlayUnlit: `Tint` (color), `Opacity`, `Scroll Speed`
+ * - uiMultiply: `Stain` (color), `Opacity`; textMultiply: `Ink` (color); layerGrade: `Grade` (color)
  * - overlayUnlit (user interface): `Tint` (color), `Opacity`, `Scroll Speed`
  * - uiRoundedPanel: `Fill Color` (color), `Border Color` (color), `Corner Radius`, `Border Width`
  * - uiHealthBar: `Progress` (0..1), `Track Color` (color)
@@ -133,6 +141,7 @@ export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promis
   const postProcess = await saveMaterial(ctx, NAMES.postProcess, postGradeMaterial(NAMES.postProcess));
   const landscape = await saveMaterial(ctx, NAMES.landscape, landscapeMaterial(NAMES.landscape));
   const overlayUnlit = await saveMaterial(ctx, NAMES.overlayUnlit, overlayUnlitMaterial(NAMES.overlayUnlit));
+  await saveMaterial(ctx, NAMES.uiMultiply, uiMultiplyMaterial(NAMES.uiMultiply));
   const uiRoundedPanel = await saveMaterial(ctx, NAMES.uiRoundedPanel, uiRoundedPanelMaterial(NAMES.uiRoundedPanel));
   // A darker, square-cornered track for the HUD's Progress Bar.
   await saveInstance(ctx, NAMES.uiRoundedPanelInstance, uiRoundedPanel, "ui", {
@@ -143,6 +152,8 @@ export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promis
   await saveMaterial(ctx, NAMES.uiHealthBar, uiHealthBarMaterial(NAMES.uiHealthBar));
   await saveMaterial(ctx, NAMES.uiCooldown, uiCooldownMaterial(NAMES.uiCooldown));
   await saveMaterial(ctx, NAMES.text, textMaterial(NAMES.text));
+  await saveMaterial(ctx, NAMES.textMultiply, textMultiplyMaterial(NAMES.textMultiply));
+  await saveMaterial(ctx, NAMES.layerGrade, layerGradeMaterial(NAMES.layerGrade));
   // Decal domain: one root per Blend Mode (each root is one program), lit and unlit, a normal-mapped and an emissive
   // one, and an Instance.
   const decalLit = await saveMaterial(ctx, NAMES.decalLit, decalLitMaterial(NAMES.decalLit, colormap));
@@ -1064,6 +1075,44 @@ function particleSheetMaterial(name: string, sheetGuid: string): MaterialDocumen
   wire(doc, "sample", "rgba", "lit", "a");
   wire(doc, "particleColor", "color", "lit", "b");
   wire(doc, "lit", "out", "output", "color");
+  return doc;
+}
+
+/**
+ * User Interface Multiply: multiplies what is beneath by `Stain` at `Opacity`. Without Scene Layer post-processing it
+ * tints the world and the layer's own earlier visuals; with it, it darkens by the stain's grey.
+ */
+function uiMultiplyMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "ui", { blendMode: "multiply" });
+  node(doc, "stain", "param.color", 0, 0, { name: "Stain", value: [1, 0.55, 0.25, 1] });
+  node(doc, "opacity", "param.float", 0, 1, { name: "Opacity", value: [1] });
+  node(doc, "output", "output.ui", 1, 0);
+  wire(doc, "stain", "rgb", "output", "color");
+  wire(doc, "opacity", "out", "output", "opacity");
+  return doc;
+}
+
+/** Text Multiply: `Ink` where the glyphs are darkens what is behind them by the ink's colour. */
+function textMultiplyMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "text", { blendMode: "multiply" });
+  node(doc, "ink", "param.color", 0, 0, { name: "Ink", value: [0.2, 0.45, 1, 1] });
+  node(doc, "output", "output.text", 1, 0);
+  wire(doc, "ink", "out", "output", "color");
+  return doc;
+}
+
+/** Post Process for a Scene Layer: Scene Color × `Grade` (alpha 1), so the layer keeps its coverage. */
+function layerGradeMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "postProcess");
+  node(doc, "screenUv", "input.screenUv", 0, 0);
+  node(doc, "sceneColor", "input.sceneColor", 1, 0);
+  node(doc, "grade", "param.color", 1, 1, { name: "Grade", value: [1, 0.95, 0.85, 1] });
+  node(doc, "graded", "math.multiply", 2, 0);
+  node(doc, "output", "output.postProcess", 3, 0);
+  wire(doc, "screenUv", "uv", "sceneColor", "uv");
+  wire(doc, "sceneColor", "color", "graded", "a");
+  wire(doc, "grade", "out", "graded", "b");
+  wire(doc, "graded", "out", "output", "color");
   return doc;
 }
 

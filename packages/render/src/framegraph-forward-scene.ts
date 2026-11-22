@@ -1,5 +1,6 @@
 // Its FrameGraph work needs Babylon's engine extensions on any Engine, including one a caller made without createEngine.
 import "./babylon-registrations";
+import type { Material } from "@babylonjs/core/Materials/material";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { rewriteRenderList } from "./observed-render-list";
 import { activeRenderFrameCapture } from "./render-frame-report";
@@ -259,8 +260,20 @@ function countEffectRequests(engine: object, run: () => void, named?: string[]):
   }
   return { requests: count, idle };
 }
-/** What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals. */
-const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh);
+/**
+ * Whether `material` is a Text or User Interface Material: its fragment output writes the colour alone, never the
+ * geometry targets, so a multi-target geometry pass drawing it leaves active draw buffers without an output (a GL error).
+ */
+const writesColourOnly = (material: Material | null): boolean => {
+  const domain = (material?.metadata as { materialDomain?: unknown } | null | undefined)?.materialDomain;
+  return domain === "text" || domain === "ui" ||
+    ((material as { subMaterials?: (Material | null)[] } | null)?.subMaterials?.some(writesColourOnly) ?? false);
+};
+/**
+ * What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals, and the
+ * Scene Layer visuals of a layer's editor view (Text and User Interface Materials), which write no geometry targets.
+ */
+const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh) && !writesColourOnly(mesh.material);
 /** What a spatial geometry pass seeded from the scene's depth draws of them: the meshes that depth lacks. */
 const isWorldMeshSceneDepthLacks = (mesh: AbstractMesh): boolean => isWorldMesh(mesh) && !writesSceneDepth(mesh);
 const isShown = (mesh: AbstractMesh): boolean => !isRevealPending(mesh);

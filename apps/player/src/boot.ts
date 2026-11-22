@@ -1007,6 +1007,8 @@ function initializePlayer(
         handle.setPaused(pauseState.viewPaused());
         pauseGate?.setPaused(paused);
         worker?.postControl({ type: "setPaused", paused });
+        // The pause reset the runtime's input: send the pads again, so a held stick moves the game at once.
+        if (!paused) input?.resyncGamepads();
       }
     }
     consoleHost.receive(command);
@@ -1244,6 +1246,7 @@ function initializePlayer(
         handle.setPaused(pauseState.viewPaused());
         pauseGate?.setPaused(effectivePaused);
         worker?.postControl({ type: "setPaused", paused: effectivePaused });
+        if (!effectivePaused) input?.resyncGamepads();
       }
       if (paused) {
         cancelAnimationFrame(raf);

@@ -4,7 +4,7 @@ import { attachInputCapture } from "@haptic/input/dom";
 
 class FakeCanvas {
   tabIndex = 0;
-  readonly ownerDocument: { activeElement: FakeCanvas } = { activeElement: this };
+  readonly ownerDocument = { activeElement: this as FakeCanvas, visibilityState: "visible", addEventListener() {}, removeEventListener() {} };
   focus(): void {}
   style: { touchAction: string } = { touchAction: "" };
   readonly listeners = new Map<string, Set<EventListener>>();

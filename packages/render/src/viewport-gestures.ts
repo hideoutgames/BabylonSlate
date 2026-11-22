@@ -231,7 +231,7 @@ export function attachViewportGestures(
     if (event.isPrimary === true && pointers.size > 0) dropStalePointers();
     const point = toCanvas(event);
     pointers.set(event.pointerId, point);
-    canvas.setPointerCapture?.(event.pointerId);
+    try { canvas.setPointerCapture?.(event.pointerId); } catch { /* The pointer may already be up (InvalidPointerId). */ }
     if (pointers.size === 1) {
       downPoint = point;
       lastPoint = point;
@@ -334,7 +334,8 @@ export function attachViewportGestures(
         panFromPointerDelta(dx, dy);
       }
     }
-    if (samples.length === 2 && pinchOrigin && pinchOrigin.spread > 0) {
+    // Game Camera preview owns the view: the editor camera's framing stays as it was.
+    if (samples.length === 2 && pinchOrigin && pinchOrigin.spread > 0 && editorActive()) {
       const factor = currentSpread / pinchOrigin.spread;
       controller.restoreFraming(pinchOrigin.framing);
       if (Math.abs(factor - 1) > 0.001) {
@@ -345,10 +346,11 @@ export function attachViewportGestures(
     lastSpread = currentSpread;
   };
 
-  const endPointer = (event: PointerEvent, cancelled = false) => {
-    const point = pointers.get(event.pointerId);
-    pointers.delete(event.pointerId);
-    forwardUp(event.pointerId, point);
+  const endPointer = (event: PointerEvent, cancelled = false) => endPointerId(event.pointerId, cancelled);
+  const endPointerId = (pointerId: number, cancelled: boolean) => {
+    const point = pointers.get(pointerId);
+    pointers.delete(pointerId);
+    forwardUp(pointerId, point);
     if (pointers.size === 1) {
       const remaining = [...pointers.values()][0]!;
       lastPoint = remaining;
@@ -440,6 +442,29 @@ export function attachViewportGestures(
     event.preventDefault();
   };
 
+  /**
+   * Ends every finger as a cancel: no tap or marquee, the gizmo drag gets its
+   * up, the marquee overlay and the render lease go, and captures are let go.
+   */
+  const cancelGesture = () => {
+    for (const pointerId of [...pointers.keys()]) {
+      try { canvas.releasePointerCapture?.(pointerId); } catch { /* Capture may already have ended. */ }
+      endPointerId(pointerId, true);
+    }
+  };
+  // The canvas's own window and document (a popout's, not the editor's): the
+  // main window blurs when focus moves into a popout, which is no reason to end
+  // a gesture there. Focus moving between elements of one page blurs no window.
+  const page = canvas.ownerDocument as Document | null | undefined;
+  const pageTarget = typeof page?.addEventListener === "function" ? page : null;
+  const pageView = page?.defaultView;
+  const viewTarget = typeof pageView?.addEventListener === "function" ? pageView : null;
+  /** The window lost focus (another app, a dialog, an iframe) or the page was hidden: no up is guaranteed to come. */
+  const onPageBlur = () => cancelGesture();
+  const onVisibilityChange = () => {
+    if (page?.visibilityState === "hidden") cancelGesture();
+  };
+
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", endPointer);
@@ -448,9 +473,15 @@ export function attachViewportGestures(
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("touchstart", onTouch, { passive: false });
   canvas.addEventListener("touchmove", onTouch, { passive: false });
+  viewTarget?.addEventListener("blur", onPageBlur);
+  pageTarget?.addEventListener("visibilitychange", onVisibilityChange);
 
   return {
     dispose: () => {
+      viewTarget?.removeEventListener("blur", onPageBlur);
+      pageTarget?.removeEventListener("visibilitychange", onVisibilityChange);
+      // A gesture under way ends as a cancel first: the gizmo drag gets its up and the overlay and lease go.
+      cancelGesture();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", endPointer);
