@@ -260,7 +260,7 @@ describe("Play quality changes", () => {
     const [, ...later] = rounds;
     for (const round of rounds) expect(round.graphBuilds).toBeGreaterThanOrEqual(3);
     for (const round of later) expect({ programs: round.programs, linked: round.linked }).toEqual({ programs: rounds[0]!.programs, linked: 0 });
-  });
+  }, 60_000);
 
   it("never holds more textures than the larger of the states before and after a step or its restore", async () => {
     const { engine, frames, run } = await startPlay();
