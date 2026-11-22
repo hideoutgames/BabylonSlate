@@ -67,12 +67,29 @@ export interface ScriptDiagnosticReport {
   location: ScriptNodeLocation | null;
 }
 
+/** One Play Slot Animation waiting for its clip: whether it still waits, and what runs once the load settles. */
+export interface SlotClipLoad {
+  /** False once a later request on the slot, a stop, or the graph's end superseded the play. */
+  current(): boolean;
+  ready(): void;
+  failed(): void;
+}
+
+/** Loads the clip a Play Slot Animation names when its owner did not load it (`ScriptAssetLoads`). */
+export interface SlotClipLoader {
+  needsLoad(guid: string): boolean;
+  loadSlotClip(component: ActorComponent, guid: string, play: SlotClipLoad): void;
+}
+
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
   getCurrentState(): { id: string; name: string } | null;
   jumpToState(state: string): void;
-  /** Play Slot Animation: queues the play for the next evaluation; its handle, or 0 when it cannot play. */
+  /**
+   * Play Slot Animation: queues the play for the next evaluation, or, when `clips` must load its clip first, once it
+   * has loaded; its handle, or 0 when it cannot play.
+   */
   playSlotAnimation(request: {
     animation: string;
     slot: string;
@@ -81,7 +98,7 @@ export type AnimGraphControl = {
     playRate: number;
     loopCount: number;
     startSeconds: number;
-  }): number;
+  }, clips?: SlotClipLoader): number;
   stopSlotAnimation(slot: string, blendOutSeconds: number): void;
   isSlotActive(slot: string): boolean;
 };

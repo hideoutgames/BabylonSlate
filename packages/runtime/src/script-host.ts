@@ -37,7 +37,9 @@ import { unchangedComponentWrite } from "./runtime-property-writes";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
 import { isThenable } from "./tick-wait";
 
-export type { AnimGraphControl, ScriptAssetLoadResult, ScriptColor, ScriptHostServices, SpawnActorOptions } from "./script-host-services";
+export type {
+  AnimGraphControl, ScriptAssetLoadResult, ScriptColor, ScriptHostServices, SlotClipLoad, SlotClipLoader, SpawnActorOptions,
+} from "./script-host-services";
 export type {
   CompiledScript,
   HostContextKey,

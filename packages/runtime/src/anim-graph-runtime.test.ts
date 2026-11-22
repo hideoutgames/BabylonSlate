@@ -9,6 +9,7 @@ import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type CommandMessage } from "@haptic/
 import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { ScriptBreakpoints, type BreakpointHit } from "./script-breakpoints";
+import type { SlotClipLoad, SlotClipLoader } from "./script-host";
 
 function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptBreakpoints(() => {})) {
   const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
@@ -314,5 +315,135 @@ describe("AnimGraphRuntime slots", () => {
     expect(runtime.traceStates()).toEqual([]);
     // Neither the graph nor its clips outlive the session.
     expect(runtime.control(actors[0]!.components[0]!)?.playSlotAnimation(request) ?? 0).toBe(0);
+  });
+
+  describe("a clip its owner did not load", () => {
+    const clips = [...catalog, { guid: "kick", type: "Animation", name: "Kick", clipName: "kick", durationMs: 300 }];
+    /** Loads clips not in `loaded`: each waits until the test settles it, as the host's load would. */
+    function clipLoader(loaded: readonly string[] = []) {
+      const loads: Array<{ guid: string; play: SlotClipLoad }> = [];
+      const loader: SlotClipLoader = {
+        needsLoad: (guid) => !loaded.includes(guid),
+        loadSlotClip: (_component, guid, play) => { loads.push({ guid, play }); },
+      };
+      return { loader, loads };
+    }
+    /** The clips the last evaluation showed. */
+    const shown = (emitted: readonly CommandMessage[]) =>
+      ((emitted.at(-1) as Extract<CommandMessage, { type: "animState" }> | undefined)?.layers ?? [])
+        .map((layer) => layer.clipAssetGuid).filter(Boolean);
+    /** Records how each of a play's waits answers. */
+    function outcome(runtime: AnimGraphRuntime, handle: number): string[] {
+      const answers: string[] = [];
+      settle(runtime.waitSlot(handle, "blendOut"), (value) => answers.push(`blendOut:${value}`));
+      settle(runtime.waitSlot(handle, "completed"), (value) => answers.push(`completed:${value}`));
+      return answers;
+    }
+    function slotted() {
+      const context = setup(slottedGraph());
+      context.runtime.replaceAnimClipCatalog(clips);
+      return { ...context, control: context.runtime.control(context.actors[0]!.components[0]!)! };
+    }
+
+    it("starts the play once the clip loads, and runs On Blend Out and On Completed from that start", () => {
+      const { emitted, runtime, control } = slotted();
+      const { loader, loads } = clipLoader();
+      const handle = control.playSlotAnimation(request, loader);
+      expect(handle).toBeGreaterThan(0);
+      expect(loads.map((load) => load.guid)).toEqual(["swing"]);
+      expect(control.isSlotActive("DefaultSlot")).toBe(true);
+      const answers = outcome(runtime, handle);
+      // However long the load takes, nothing plays and neither output runs meanwhile.
+      for (let tick = 0; tick < 5; tick++) runtime.tick(0.1);
+      expect(shown(emitted)).toEqual([]);
+      expect(answers).toEqual([]);
+      loads[0]!.play.ready();
+      runtime.tick(0.1);
+      expect(shown(emitted)).toEqual(["swing"]);
+      runtime.tick(0.1);
+      expect(answers).toEqual(["blendOut:true"]);
+      runtime.tick(0.1);
+      runtime.tick(0.1);
+      expect(answers).toEqual(["blendOut:true", "completed:true"]);
+      expect(control.isSlotActive("DefaultSlot")).toBe(false);
+    });
+
+    it("lets a later Play Slot Animation on the slot win: the earlier play ends unstarted and its late load plays nothing", () => {
+      const { emitted, runtime, control } = slotted();
+      const { loader, loads } = clipLoader();
+      const first = control.playSlotAnimation(request, loader);
+      const firstAnswers = outcome(runtime, first);
+      // A loaded clip supersedes the waiting one at once.
+      control.playSlotAnimation({ ...request, animation: "kick", loopCount: 0 }, clipLoader(["kick"]).loader);
+      expect(firstAnswers).toEqual(["blendOut:false", "completed:false"]);
+      expect(loads[0]!.play.current()).toBe(false);
+      loads[0]!.play.ready();
+      runtime.tick(0.1);
+      runtime.tick(0.1);
+      expect(shown(emitted)).toEqual(["kick"]);
+
+      // Two loading plays: the later one plays, whichever load arrives first.
+      const second = control.playSlotAnimation(request, loader);
+      const third = control.playSlotAnimation({ ...request, animation: "kick" }, clipLoader().loader);
+      expect(outcome(runtime, second)).toEqual(["blendOut:false", "completed:false"]);
+      expect(third).toBeGreaterThan(second);
+      loads[1]!.play.ready();
+      runtime.tick(0.1);
+      // The slot keeps what it played until its latest request starts.
+      expect(shown(emitted)).toEqual(["kick"]);
+    });
+
+    it("ends a waiting play on Stop Slot Animation, so its outputs do not run and its late load plays nothing", () => {
+      const { emitted, runtime, control } = slotted();
+      const { loader, loads } = clipLoader();
+      const handle = control.playSlotAnimation(request, loader);
+      const answers = outcome(runtime, handle);
+      control.stopSlotAnimation("", 0.2);
+      expect(answers).toEqual(["blendOut:false", "completed:false"]);
+      expect(control.isSlotActive("DefaultSlot")).toBe(false);
+      expect(loads[0]!.play.current()).toBe(false);
+      loads[0]!.play.ready();
+      runtime.tick(0.1);
+      runtime.tick(0.1);
+      expect(shown(emitted)).toEqual([]);
+      // Another slot's waiting play is not stopped.
+      const other = control.playSlotAnimation({ ...request, slot: "UpperBody" }, loader);
+      control.stopSlotAnimation("DefaultSlot", 0);
+      expect(loads[1]!.play.current()).toBe(true);
+      expect(outcome(runtime, other)).toEqual([]);
+    });
+
+    it("ends a waiting play when its load fails", () => {
+      const { emitted, runtime, control } = slotted();
+      const { loader, loads } = clipLoader();
+      const handle = control.playSlotAnimation(request, loader);
+      const answers = outcome(runtime, handle);
+      loads[0]!.play.failed();
+      expect(answers).toEqual(["blendOut:false", "completed:false"]);
+      expect(control.isSlotActive("DefaultSlot")).toBe(false);
+      runtime.tick(0.1);
+      expect(shown(emitted)).toEqual([]);
+    });
+
+    it("ends a waiting play when its actor is destroyed or the session stops, and never starts it later", () => {
+      const { emitted, runtime, control, actors } = slotted();
+      const { loader, loads } = clipLoader();
+      const destroyed = outcome(runtime, control.playSlotAnimation(request, loader));
+      runtime.retireActor(actors[0]!);
+      expect(destroyed).toEqual(["blendOut:false", "completed:false"]);
+      expect(loads[0]!.play.current()).toBe(false);
+      loads[0]!.play.ready();
+      runtime.tick(0.1);
+      expect(shown(emitted)).toEqual([]);
+
+      const { runtime: session, control: live, emitted: sessionEmitted } = slotted();
+      const stopped = outcome(session, live.playSlotAnimation(request, loader));
+      session.cancelPending();
+      expect(stopped).toEqual(["blendOut:false", "completed:false"]);
+      expect(loads[1]!.play.current()).toBe(false);
+      loads[1]!.play.ready();
+      session.tick(0.1);
+      expect(shown(sessionEmitted)).toEqual([]);
+    });
   });
 });
