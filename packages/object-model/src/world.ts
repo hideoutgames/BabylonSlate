@@ -922,7 +922,8 @@ export class World {
       subsystem.callOnSceneActorDestroyed(actor);
     }
     actor.destroyed = true;
-    for (const component of [...actor.components].reverse()) {
+    const components = [...actor.components].reverse();
+    for (const component of components) {
       if (!component.destroyed) {
         component.destroyed = true;
         component.callOnDestroyed();
@@ -937,6 +938,9 @@ export class World {
     for (let i = 0; i < this.changeObservers.length; i++) {
       this.changeObservers[i]!.onActorDestroyed?.(actor);
     }
+    // Every hook and observer has run: a stale reference now keeps none of their state alive.
+    for (const component of components) component.releaseState();
+    actor.releaseState();
   }
 
   /**

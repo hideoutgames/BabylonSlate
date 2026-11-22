@@ -1,3 +1,4 @@
+import { destroyedClassName, reportDestroyedAccess } from "./destroyed-access";
 import {
   assetLoadStateName,
   clampToRange,
@@ -278,6 +279,11 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     log: (severity, category, message) =>
       services.log(severity, category, message),
     nullAccess: (message) => services.log("error", "Script", message),
+    destroyedAccess: (location, target) => {
+      if (!(target instanceof EngineObject)) return;
+      const { assetGuid, graphId, nodeId, kind, member } = location;
+      reportDestroyedAccess(services, { kind, member, className: destroyedClassName(target), location: { assetGuid, graphId, nodeId } });
+    },
     eventDelegate: (object, name, kind, params) => host.dispatchers.delegate(object, name, kind, params),
     bindDispatcher: (owner, name, delegate) => host.dispatchers.bind(owner, name, delegate),
     unbindDispatcher: (owner, name, delegate) => host.dispatchers.unbind(owner, name, delegate),

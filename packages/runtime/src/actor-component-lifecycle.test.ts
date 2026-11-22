@@ -7,6 +7,7 @@ import {
 } from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
+import { variablesAtRelease } from "./testing/released-variables";
 
 function sceneOf(actors: SerializedActor[]): SerializedScene {
   return {
@@ -60,11 +61,12 @@ describe("ActorComponent lifecycle boundaries", () => {
       `)]);
       await runtime.realizePlayWorld();
       const component = runtime.getWorld().findActor("owner")!.components[0]!;
+      const released = variablesAtRelease(component);
       runtime.start();
       runtime.tick();
       expect(runtime.getWorld().findActor("owner")).toBeUndefined();
       expect(component.destroyed).toBe(true);
-      expect(component.getVariable("destroyedCount")).toBe(1);
+      expect(released.get("destroyedCount")).toBe(1);
     } finally {
       runtime.stop();
     }

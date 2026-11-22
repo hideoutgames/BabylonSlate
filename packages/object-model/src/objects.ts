@@ -257,6 +257,15 @@ export class EngineObject {
   > | null = null;
   private readonly hooks: LifecycleHooks;
   private _destroyed = false;
+  private _stateReleased = false;
+
+  /**
+   * Destruction finished and `releaseState` dropped the object's state. Unlike `destroyed`, which its own
+   * destruction hooks already see, a script touching such an object is touching nothing.
+   */
+  get stateReleased(): boolean {
+    return this._stateReleased;
+  }
 
   get destroyed(): boolean {
     return this._destroyed;
@@ -317,6 +326,19 @@ export class EngineObject {
 
   callOnDestroyed(): void {
     this.hooks.onDestroyed?.(this);
+  }
+
+  /**
+   * Once destruction has finished (its hooks and engine teardown ran): drops the variables, except `name`,
+   * which debug labels and messages still show, and the interface handlers. Reads then answer nothing.
+   */
+  releaseState(): void {
+    this._stateReleased = true;
+    const variables = this.variables;
+    const name = variables.get("name");
+    variables.clear();
+    if (name !== undefined) variables.set("name", name);
+    this.interfaceHandlers = null;
   }
 
   getVariable(name: string): unknown {

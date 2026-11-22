@@ -106,6 +106,7 @@ export class ObjectCollector {
       object.destroyed = true;
       this.result.collected++;
       for (const handler of this.releaseHandlers) handler(object);
+      object.releaseState();
     }
     this.collectables.length = kept;
     return this.result;

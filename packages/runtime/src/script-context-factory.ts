@@ -1,3 +1,4 @@
+import { isReleasedObject, reportDestroyedTarget } from "./destroyed-access";
 import {
   cloneSaveGameValue,
   DEFORMER_PROPERTY_KEYS,
@@ -368,6 +369,10 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           store?.setVariable(name, value);
         },
         getVariableFrom(object, name) {
+          if (isReleasedObject(object)) {
+            reportDestroyedTarget(services, "access", name, object);
+            return null;
+          }
           if (object instanceof ActorComponent && object.classId === "2DRichTextComponent" &&
             (name === "appearProgress" || name === "isRevealed")) {
             const progress = services.text2DAppearProgress?.(object) ?? 1;
@@ -389,6 +394,10 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           return object?.getVariable(name);
         },
         setVariableOn(object, name, value) {
+          if (isReleasedObject(object)) {
+            reportDestroyedTarget(services, "set", name, object);
+            return;
+          }
           if (object instanceof ActorComponent && object.classId === "DeformerComponent" &&
             (DEFORMER_PROPERTY_KEYS as readonly string[]).includes(name)) {
             if (!host.canInvokeOwner(object)) return;
@@ -562,6 +571,11 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const { deltaSeconds, tickIndex } = this;
           const registry = services.interfaceRegistry;
           if (!registry) return {};
+          if (isReleasedObject(target)) {
+            // No handler runs: the call reads the pin defaults, as for no receiver.
+            reportDestroyedTarget(services, "call", method, target);
+            return dispatchInterface(registry, NO_INTERFACE_RECEIVER, String(interfaceGuid), String(method), args ?? {});
+          }
           const receiver = target as InterfaceDispatchTarget | null | undefined;
           // A missing or unadmitted receiver runs no handler and reads the pin defaults.
           const dispatchTarget: InterfaceDispatchTarget = !receiver ? NO_INTERFACE_RECEIVER
@@ -604,6 +618,10 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           return findComponentById(ownedActor(services, self, String(actorId ?? "")), String(componentId ?? ""));
         },
         callComponentFunction(target, name, args) {
+          if (isReleasedObject(target)) {
+            reportDestroyedTarget(services, "call", name, target);
+            return {};
+          }
           return callNativeComponentFunction(host, target, String(name ?? ""), args ?? {});
         },
         addComponent(actor, classId, transform) {
@@ -679,6 +697,10 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         invokeCustomEvent(target, eventName, eventArgs) {
           const { deltaSeconds, tickIndex } = this;
+          if (isReleasedObject(target)) {
+            reportDestroyedTarget(services, "call", eventName, target);
+            return;
+          }
           const receiver = target as EngineObject | null | undefined;
           if (!receiver || !host.canInvokeOwner(receiver) || typeof eventName !== "string" || !eventName) return;
           // The event runs inside the caller's frame: delta, tick index and input
@@ -698,6 +720,8 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
             name,
             Array.isArray(values) ? values : [],
             (delegate, args) => {
+              // A listener whose object's destruction finished is gone, not a script's mistake: it runs nothing and reports nothing.
+              if (delegate.object.stateReleased) return;
               if (delegate.kind === "function") void this.invokeFunction(delegate.object, delegate.name, args);
               else this.invokeCustomEvent(delegate.object, delegate.name, args);
             },
@@ -734,6 +758,10 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
             loaded = host.functionScriptsFor(target, functionName);
           } else {
             const object = target as EngineObject | null | undefined;
+            if (isReleasedObject(object) && !extras?.saveMigrationData) {
+              reportDestroyedTarget(services, "call", functionName, object);
+              return {};
+            }
             if (!object || !host.canInvokeOwner(object)) {
               if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration function's owner is unavailable.");
               return {};

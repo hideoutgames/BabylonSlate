@@ -3,6 +3,7 @@ import { findPin } from "./ir";
 import { isPureNode, type HoistBodyAnchor } from "./node-registry";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { createPureExpressions } from "./pure-expressions";
+import { subjectAccessOf } from "./compile-pin-values";
 import type { CompileAnchor, CompileOptions } from "./compile-types";
 import { collapseReroutes } from "./reroute";
 import {
@@ -50,6 +51,8 @@ export type CodegenState = {
   readonly hoisted: HoistChunk[];
   /** Module-scope location constant per node a loop guard names, so a guard allocates nothing. */
   readonly loopLocations: Map<string, string>;
+  /** Nodes whose destroyed-access location constant is hoisted. */
+  readonly accessLocations: Set<string>;
   readonly body: BodyLine[];
   readonly loopStack: LoopFrame[];
   nextLabel: number;
@@ -116,6 +119,7 @@ export function createCodegenState(
     options,
     hoisted: [],
     loopLocations: new Map(),
+    accessLocations: new Set(),
     body: [],
     loopStack: [],
     nextLabel: 0,
@@ -202,6 +206,21 @@ export function emitBody(
  */
 export function traceProbe(call: string): string {
   return `  if (__dbg !== null) ${call};`;
+}
+
+/**
+ * The module-scope constant naming where `node` touches its subject and how (`subjectAccessOf`), passed by a
+ * destroyed-object report so the report allocates nothing on the path that never fails.
+ */
+export function accessLocation(s: CodegenState, node: GraphNode): string {
+  const name = `__access_${identifierSafe(s.graph.id)}_${identifierSafe(node.id)}`;
+  if (!s.accessLocations.has(node.id)) {
+    s.accessLocations.add(node.id);
+    s.hoisted.push({ nodeId: node.id, source: `var ${name} = Object.freeze(${JSON.stringify({
+      assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId: node.id, ...subjectAccessOf(node, s.options.registry),
+    })});` });
+  }
+  return name;
 }
 
 /** `id` as identifier text, one-to-one: every character outside [A-Za-z0-9] becomes `$<hex>$`. */

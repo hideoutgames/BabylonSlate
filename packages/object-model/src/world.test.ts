@@ -814,6 +814,28 @@ describe("World tick", () => {
     expect(spawnIndexWrites).toBeLessThanOrEqual(survivors.length);
   });
 
+  it("releases a destroyed actor's and its components' state once every destruction hook ran", () => {
+    const world = createTestWorld();
+    const seen: unknown[] = [];
+    const actor = world.createActor({ classId: "Actor", guid: "doomed", variables: { name: "Doomed", hp: 3 },
+      hooks: { onDestroyed: (self) => { seen.push(self.getVariable("hp"), component.getVariable("power")); } } });
+    const component = world.createComponent({ classId: "ActorComponent", variables: { power: 2 },
+      hooks: { onDestroyed: (self) => { seen.push(self.getVariable("power"), actor.getVariable("hp")); } } });
+    actor.attachComponent(component);
+    actor.interfaceHandlers = new Map([["iface:Hit", () => ({})]]);
+    world.addChangeObserver({ onActorDestroyed: (destroyed) => { seen.push(destroyed.getVariable("hp")); } });
+    world.spawnActorNow(actor);
+    world.destroyActorInstance(actor);
+    world.flushPending();
+    // The component's and actor's hooks and the observers all read the state.
+    expect(seen).toEqual([2, 3, 3, 2, 3]);
+    expect([actor.stateReleased, component.stateReleased]).toEqual([true, true]);
+    // Only the name, which labels and messages show, stays.
+    expect([...actor.variables]).toEqual([["name", "Doomed"]]);
+    expect([...component.variables]).toEqual([]);
+    expect(actor.interfaceHandlers).toBeNull();
+  });
+
   it("ticks exactly the actors and components present when each phase reached them", () => {
     const world = createTestWorld();
     const ticks: string[] = [];
