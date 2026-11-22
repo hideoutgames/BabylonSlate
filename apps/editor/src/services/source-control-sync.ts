@@ -729,12 +729,12 @@ export class SourceControlSyncService {
     return { key: parts.join("\n"), newest };
   }
 
-  /** The working copy's file (null when it has none), from the project folder only. */
   /** The repository the open project's settings name; empty while none is configured. */
   get repositoryUrl(): string {
     return this.input?.settings.repositoryUrl ?? "";
   }
 
+  /** The working copy's file (null when it has none), from the project folder only. */
   async readWorking(path: string): Promise<Uint8Array | null> {
     const storage = this.storage;
     if (!storage) throw new Error("The project's repository is not open.");
