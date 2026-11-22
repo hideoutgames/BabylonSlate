@@ -56,7 +56,7 @@ interface SceneRealizerHost {
   /** The host acknowledges the loading paint itself (`notifyLoadingPainted`). */
   deferLoadingPaint(): boolean;
   physics(): Pick<RuntimePhysicsWorlds, "kind" | "gravity" | "main" | "syncLayers" | "replacesNative" | "acquireNative" | "installScene" | "prepareScene">;
-  navigation(): Pick<RuntimeNavigation, "needsInitialization" | "markInitialized" | "prepareScene" | "registerAgents" | "registerObstacles">;
+  navigation(): Pick<RuntimeNavigation, "needsInitialization" | "prepareScene" | "registerAgents" | "registerObstacles">;
   layers(): Pick<SceneLayers, "createSteps" | "ownedReady">;
   scripts(): Pick<ScriptHost, "bindInterfaceHandlers">;
   /** Lifecycle of the Scene object's SceneScript (`Scene:<guid>`). */
@@ -279,7 +279,6 @@ export class SceneRealizer implements RuntimeSubsystem {
         }
         if (initializeNavigation) {
           await waitForSceneWork(initNavigation(), work.controller.signal);
-          this.host.navigation().markInitialized();
         }
         this.prepareSceneBackends(work);
         await runSceneRealizationWork(steps, work.controller.signal, this.host.cooperativeLoading() ?? {});

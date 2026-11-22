@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { navMeshDebugPrimitives } from "./debug-primitives";
-import { generateNavMesh, initNavigation, navigationLoaded, withNavigation } from "./recast-backend";
+import { createNavigationBackend, generateNavMesh, initNavigation, navigationLoaded, withNavigation } from "./recast-backend";
 
 const ground = {
   positions: [-10, 0, -10, 10, 0, -10, 10, 0, 10, -10, 0, 10],
@@ -39,9 +39,26 @@ describe("withNavigation", () => {
     expect(navigationLoaded()).toBe(false);
   });
 
-  it("never unloads a module a caller of initNavigation keeps", async () => {
+  it("keeps the module while a backend holds a navmesh, and unloads it with the last one", async () => {
     await initNavigation();
+    const [first, second] = [createNavigationBackend(), createNavigationBackend()];
+    first.importNavMesh(bytes);
+    first.importNavMesh(bytes);
+    second.importNavMesh(bytes);
     await withNavigation(() => navMeshDebugPrimitives(bytes));
     expect(navigationLoaded()).toBe(true);
+    // A disposed backend lets go once, however often it imported or is disposed.
+    first.dispose();
+    first.dispose();
+    expect(navigationLoaded()).toBe(true);
+    expect(second.findPath({ x: -4, y: 0, z: -4 }, { x: 4, y: 0, z: 4 }).length).toBeGreaterThan(1);
+    second.dispose();
+    expect(navigationLoaded()).toBe(false);
+    // The next session loads it again.
+    await initNavigation();
+    first.importNavMesh(bytes);
+    expect(first.findPath({ x: -4, y: 0, z: -4 }, { x: 4, y: 0, z: 4 }).length).toBeGreaterThan(1);
+    first.dispose();
+    expect(navigationLoaded()).toBe(false);
   });
 });

@@ -1097,7 +1097,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     if (bytes) this.navigation.setSceneNavMesh(sceneGuid, bytes);
     await initNavigation();
     if (this.stopped || lifecycleId !== this.lifecycleId) throw sceneRealizationCancelled();
-    this.navigation.markInitialized();
     if (sceneGuid !== this.playSceneGuid) return;
     this.navigation.importNavMesh(sceneGuid, navmesh);
     if (this.sceneRealizer.realized) {
