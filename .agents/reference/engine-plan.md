@@ -222,7 +222,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - **Class parents, not file types**: Object, Actor, ActorComponent, GameInstance, GameSubsystem, SceneSubsystem (hidden abstract `Subsystem` is never offered), FunctionLibrary, EditorFunctionLibrary, EditorUtilityObject, DebugCommand, BTTask, BTDecorator, BTService, BTComposite, plus scene/streaming/capture actor bases ([ids.ts](../../packages/object-model/src/ids.ts)).
 - Every creatable class picks a parent at creation; re-parenting is supported with cycle detection and a diff of broken inherited members.
 - EditorUtilityObject and EditorFunctionLibrary are editor-only and stripped from Play and export; leftover `EditorUtilityInterface` strings stay editor-only.
-- **UserInterface / game HUD is removed and must not be re-added**: no UserInterface asset, no `@haptic/ui-runtime`, no WidgetComponent, no `ui.*` nodes, no Interface-domain materials, no Play/player Babylon GUI (`AdvancedDynamicTexture`), no `.ui.hasset` migration. `documentKindForAssetType("UserInterface")` is `null`.
+- **UserInterface / game HUD is removed and must not be re-added**: no UserInterface asset, no `@haptic/ui-runtime`, no WidgetComponent, no `ui.*` script nodes, no Play/player Babylon GUI (`AdvancedDynamicTexture`), no `.ui.hasset` migration. `documentKindForAssetType("UserInterface")` is `null`. In-game UI is Scene Layers, and the **User Interface** Material domain (`ui`, its `output.ui` / `input.ui` and `ui.*` Material nodes) is the supported way to shade their 2D components ([shader-graph.md](architecture/shader-graph.md), [scene-layers.md](architecture/scene-layers.md)).
 
 ## Object model
 

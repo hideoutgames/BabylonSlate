@@ -43,7 +43,8 @@ import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext }
 import { attachMeshCollisionDashes } from "./mesh-collision-dashes";
 import { createMirrorSurfaceMesh } from "./mirrors";
 import { createOverlayPanelMesh } from "./overlay-panel-mesh";
-import { applyOverlayUnlitMaterial, createOverlayTextureQuad } from "./overlay-texture-quad";
+import { applyOverlayUnlitMaterial, applyUserInterfaceFallback, createOverlayTextureQuad } from "./overlay-texture-quad";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { createPainter2DMesh } from "./painter2d-mesh";
 import { parentStreamingComponentOf, stringProp, type SceneActorSource } from "./scene-visual-classify";
@@ -356,11 +357,11 @@ function createComponentMesh(
   }
   if (component.classId === "2DMaterialComponent") {
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    applyOverlayUnlitMaterial(mesh);
+    applyUserInterfaceFallback(mesh);
     const guid = stringProp(component.properties.materialGuid);
     if (guid && assets?.resolveMaterial) {
       const compiled = assets.resolveMaterial(guid, { scene, unlit: true });
-      if (compiled) mesh.material = compiled;
+      if (acceptsUserInterfaceMaterial(compiled)) mesh.material = compiled;
     }
     return mesh;
   }

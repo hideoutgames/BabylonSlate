@@ -77,6 +77,55 @@ describe("material lowering", () => {
     expect(plan.plan.outputs.baseColor).not.toBeNull();
   });
 
+  it("lowers the default User Interface material to its Color and Opacity outputs", () => {
+    const plan = lowerMaterialDocument(createDefaultMaterialDocument("Panel", "ui"));
+    expect(plan.ok).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.plan.domain).toBe("ui");
+    expect(Object.keys(plan.plan.outputs).sort()).toEqual(["color", "opacity"]);
+    expect(plan.plan.outputs.color).toEqual({ kind: "operation", operationId: "color", pinId: "out" });
+    expect(plan.plan.outputs.opacity).toEqual({ kind: "constant", type: "float", value: [1] });
+  });
+
+  it("omits the unwired element pins of the User Interface nodes and keeps their vector defaults", () => {
+    const doc = createDefaultMaterialDocument("Panel", "ui");
+    doc.nodes.push(
+      { id: "box", type: "ui.roundedRectangle", position: { x: 0, y: 0 }, properties: {} },
+      { id: "oval", type: "ui.ellipse", position: { x: 0, y: 0 }, properties: {} },
+      { id: "bar", type: "ui.linearProgress", position: { x: 0, y: 0 }, properties: { "default:direction": [0, 1] } },
+      { id: "pie", type: "ui.radialProgress", position: { x: 0, y: 0 }, properties: {} },
+      { id: "a", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+      { id: "b", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+      { id: "c", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+    );
+    doc.edges.push(
+      { id: "box-a", sourceNodeId: "box", sourcePinId: "fill", targetNodeId: "a", targetPinId: "a" },
+      { id: "oval-a", sourceNodeId: "oval", sourcePinId: "borderMask", targetNodeId: "a", targetPinId: "b" },
+      { id: "bar-b", sourceNodeId: "bar", sourcePinId: "mask", targetNodeId: "b", targetPinId: "a" },
+      { id: "pie-b", sourceNodeId: "pie", sourcePinId: "mask", targetNodeId: "b", targetPinId: "b" },
+      { id: "a-c", sourceNodeId: "a", sourcePinId: "out", targetNodeId: "c", targetPinId: "a" },
+      { id: "b-c", sourceNodeId: "b", sourcePinId: "out", targetNodeId: "c", targetPinId: "b" },
+      { id: "c-out", sourceNodeId: "c", sourcePinId: "out", targetNodeId: "output", targetPinId: "opacity" },
+    );
+    const result = lowerMaterialDocument(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const inputs = (id: string) => result.plan.operations.find((operation) => operation.id === id)!.inputs;
+    expect(inputs("box")).toEqual({
+      radius: { kind: "constant", type: "vec4", value: [8, 8, 8, 8] },
+      border: { kind: "constant", type: "float", value: [0] },
+    });
+    expect(inputs("oval")).toEqual({ border: { kind: "constant", type: "float", value: [0] } });
+    expect(inputs("bar")).toEqual({
+      progress: { kind: "constant", type: "float", value: [0.5] },
+      direction: { kind: "constant", type: "vec2", value: [0, 1] },
+    });
+    expect(inputs("pie")).toEqual({
+      progress: { kind: "constant", type: "float", value: [0.5] },
+      startAngle: { kind: "constant", type: "float", value: [0] },
+    });
+  });
+
   it("refuses to lower a graph with errors", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({

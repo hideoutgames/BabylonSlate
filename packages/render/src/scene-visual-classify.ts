@@ -3,8 +3,9 @@
  * origin root and which helper billboard an actor shows. `scene-loader.ts` re-exports the public names.
  */
 import {
-  identitySerializedTransform, isOverlayLayoutClass, isSceneLayerAnchorActor, isUIControl2DClass, MIRROR_CLASS_ID,
-  OVERLAY_LAYOUT_CLASSES, POST_PROCESSING_PANEL_CLASS_ID, SPRING_ARM_COMPONENT_CLASS_ID, UI_CONTROL_2D_CLASS_IDS, waterKindForClass, type SerializedActor,
+  componentSurface, identitySerializedTransform, isOverlayLayoutClass, isSceneLayerAnchorActor, isUIControl2DClass,
+  MIRROR_CLASS_ID, OVERLAY_LAYOUT_CLASSES, POST_PROCESSING_PANEL_CLASS_ID, SPRING_ARM_COMPONENT_CLASS_ID, UI_CONTROL_2D_CLASS_IDS,
+  waterKindForClass, type SerializedActor,
   type SerializedComponent, type SerializedTransform,
 } from "@haptic/core";
 import { authoredComponentActorTransform } from "./authored-transform-matrices";
@@ -60,30 +61,8 @@ export const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "ReflectionProbeComponent",
 ]);
 
-const SURFACE_COMPONENT_CLASS_IDS = new Set([
-  "TimelineProxyShapeComponent",
-  "2DPainterComponent",
-  "DynamicRuntimeMeshComponent",
-  "CableComponent",
-  MIRROR_CLASS_ID,
-  "SplineComponent",
-  "GlobalWaterVolumeComponent", "WaterOceanComponent", "WaterLakeComponent", "WaterRiverComponent", "WaterPuddleComponent",
-  "LandscapeComponent",
-  "FoliageComponent",
-  "MeshComponent",
-  "SpriteComponent",
-  "TilemapComponent",
-  "SkyboxComponent",
-  "Text3DComponent",
-  "2DTextComponent",
-  "2DRichTextComponent",
-  "2DJoystickComponent",
-  ...UI_CONTROL_2D_CLASS_IDS,
-  "2DTextureComponent",
-  "2DMaterialComponent",
-  "2DPanelComponent",
-  "2DButtonComponent",
-]);
+/** The Timeline Clip proxy's Outline is editor-only, so it has no engine descriptor. */
+const EDITOR_SURFACE_COMPONENT_CLASS_ID = "TimelineProxyShapeComponent";
 
 function overlayActorHasSurfaceVisual(actor: SerializedActor): boolean {
   return actor.components.some(
@@ -243,7 +222,7 @@ export function isBillboardComponent(component: SerializedComponent): boolean {
 /** Whether an actor owns an authored surface rather than only editor helpers. */
 export function hasSurfaceVisual(actor: SerializedActor): boolean {
   return actor.components.some((component) =>
-    SURFACE_COMPONENT_CLASS_IDS.has(component.classId),
+    component.classId === EDITOR_SURFACE_COMPONENT_CLASS_ID || componentSurface(component.classId) !== null,
   );
 }
 
