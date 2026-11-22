@@ -44,13 +44,8 @@ let insideFlags = new Uint8Array(64);
 /** The casters of the ring being drawn (`polarShadow2D`), emptied after each. */
 const casters: WorldOccluder2D[] = [];
 /** Each bin's ray direction, computed as `shadow2DBinAngle`'s cosine and sine are everywhere else. */
-const binCos = new Float64Array(SHADOW_2D_BINS);
-const binSin = new Float64Array(SHADOW_2D_BINS);
-for (let bin = 0; bin < SHADOW_2D_BINS; bin++) {
-  const angle = shadow2DBinAngle(bin);
-  binCos[bin] = Math.cos(angle);
-  binSin[bin] = Math.sin(angle);
-}
+const binCos = Float64Array.from({ length: SHADOW_2D_BINS }, (_, bin) => Math.cos(shadow2DBinAngle(bin)));
+const binSin = Float64Array.from({ length: SHADOW_2D_BINS }, (_, bin) => Math.sin(shadow2DBinAngle(bin)));
 /** Hits past this many sort with the engine's sort; fewer by insertion. Both give the one stable order. */
 const INSERTION_SORT_MAXIMUM = 32;
 const byDistance = (a: Hit, b: Hit) => a.t - b.t;
