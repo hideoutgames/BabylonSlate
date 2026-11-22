@@ -3,6 +3,8 @@ import { types } from "node:util";
 import {
   createDefaultBehaviourTree,
   evaluateBehaviourTree,
+  initialBehaviourTreeState,
+  stepBehaviourTree,
   type BehaviourTreeDocument,
   type BtDecorator,
   type BtEvalState,
@@ -1500,5 +1502,66 @@ describe("evaluation breakpoints", () => {
     expect(hits).toEqual(Array.from({ length: 8 }, (_, index) => index % 2 === 0 ? "leaf started" : "leaf failed"));
     expect(second.lastResults).toEqual({ root: "failure", leaf: "failure" });
     expect(types.isProxy(second.lastResults)).toBe(false);
+  });
+
+  it("steps a state in place exactly as evaluation copies it, across services, cooldowns, loops and aborts", () => {
+    // A selector guarded by a Blackboard decorator that aborts lower priority, a looping sequence with a cooldown
+    // child, a waiting task, and a service toggling the observed key.
+    const guarded = node("guarded", "task", "bt.task.custom");
+    guarded.decorators.push({ id: "gate", classId: "bt.decorator.blackboardIsSet", abortMode: "lowerPriority",
+      observedKeys: ["alert"], properties: { key: "alert" } });
+    const cooled = node("cooled", "task", "bt.task.custom");
+    cooled.decorators.push({ id: "cd", classId: "bt.decorator.cooldown", abortMode: "none", observedKeys: [], properties: { durationMs: 100 } });
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 70 };
+    const body = node("body", "sequence", "bt.composite.sequence", ["cooled", "wait"]);
+    body.decorators.push({ id: "loop", classId: "bt.decorator.loop", abortMode: "none", observedKeys: [], properties: { numLoops: 0 } });
+    const root = node("root", "selector", "bt.composite.selector", ["guarded", "body"]);
+    root.services.push({ id: "pulse", classId: "bt.service.custom", intervalMs: 50, randomDeviationMs: 0, properties: {} });
+    const doc = tree([root, guarded, body, cooled, wait], "root");
+    const run = (log: string[]) => {
+      let pulses = 0;
+      return {
+        seed: 7,
+        host: {
+          tick: (task: BtNode, _board: unknown, _dt: number, memory: Record<string, unknown>) => {
+            memory.ticks = Number(memory.ticks ?? 0) + 1;
+            log.push(`${task.id}:${String(memory.ticks)}`);
+            return task.id === "guarded" ? "running" as const : "success" as const;
+          },
+          abort: (task: BtNode) => { log.push(`abort:${task.id}`); },
+        },
+        serviceHost: {
+          tick: (_service: unknown, _node: unknown, board: Record<string, unknown>) => {
+            pulses += 1;
+            if (pulses % 5 === 0) board.alert = board.alert === true ? undefined : true;
+          },
+        },
+      };
+    };
+    const copiedLog: string[] = [];
+    const steppedLog: string[] = [];
+    const copiedOptions = run(copiedLog);
+    const steppedOptions = run(steppedLog);
+    let copied: BtEvalState | null = null;
+    const stepped = initialBehaviourTreeState({ score: 1 });
+    for (let tick = 0; tick < 60; tick++) {
+      copied = evaluateBehaviourTree(doc, copied, 0.02, { ...copiedOptions, blackboard: copied?.blackboard ?? { score: 1 } });
+      const same = stepBehaviourTree(doc, stepped, 0.02, steppedOptions);
+      expect(same).toBe(stepped);
+      expect(stepped).toEqual(copied);
+    }
+    expect(steppedLog).toEqual(copiedLog);
+    expect(copiedLog.some((entry) => entry.startsWith("abort:"))).toBe(true);
+  });
+
+  it("leaves the state it evaluates from unchanged", () => {
+    const wait = node("wait", "task", "bt.task.wait");
+    wait.properties = { durationMs: 100 };
+    const doc = tree([node("root", "sequence", "bt.composite.sequence", ["wait"]), wait], "root");
+    const first = evaluateBehaviourTree(doc, null, 0.02, { blackboard: { a: 1 } });
+    const before = structuredClone(first);
+    evaluateBehaviourTree(doc, first, 0.02);
+    expect(first).toEqual(before);
   });
 });

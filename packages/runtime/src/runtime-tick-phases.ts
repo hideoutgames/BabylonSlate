@@ -99,6 +99,8 @@ function tickWorld(rt: RuntimeComposition, pending: readonly RawInputEvent[], si
   rt.tweens.advance(simDt, pausedOwner);
   // Timeline Clips after tweens, before actors tick and physics syncs, so both see the animated values.
   if (!gamePaused) rt.timelines.advance(simDt, timelineOwners(rt), (owner) => rt.admission.canRun(owner));
+  // Paused clips hold, but the copies of Scene Layers destroyed meanwhile still go.
+  else rt.timelines.pruneEnded();
   rt.textAppear.advance(rt.world, simDt, canTickActor);
   rt.painters.beginFrame(rt.world, canTickActor);
   try {

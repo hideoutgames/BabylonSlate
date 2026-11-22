@@ -6,7 +6,8 @@ import type { PhysicsWorldKind } from "@haptic/physics";
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
   btEdgeId,
-  evaluateBehaviourTree,
+  initialBehaviourTreeState,
+  stepBehaviourTree,
   builtinClassId,
   type BehaviourTreeDocument,
   type BlackboardDocument,
@@ -624,24 +625,24 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     source.actor = actor;
     source.dtSeconds = dtSeconds;
     this.assetGuid = guid;
-    const previous = this.evalBySlot.get(slotId) ?? null;
-    // Evaluation copies its Blackboard input, so the previous state's is passed as is.
+    // The slot's state steps in place each tick; a new one starts from a copy of the Blackboard defaults.
+    let next = this.evalBySlot.get(slotId);
+    if (!next) {
+      next = initialBehaviourTreeState(this.blackboardDefaults(blackboardGuid));
+      this.evalBySlot.set(slotId, next);
+    }
     const followed = component === this.debugComponent;
     const options = source.options;
-    options.blackboard = previous ? previous.blackboard : this.blackboardDefaults(blackboardGuid);
     options.seed = this.host.seed();
     options.trace = followed ? this.followedTrace(guid) : this.frameTrace(component, guid);
     options.breakpoints = this.treeBreakpoints(guid, component, actor);
-    let next: BtEvalState;
     try {
-      next = evaluateBehaviourTree(document, previous, dtSeconds, options);
+      stepBehaviourTree(document, next, dtSeconds, options);
     } finally {
-      // Between ticks the options hold no Blackboard or debugger.
-      options.blackboard = undefined;
+      // Between ticks the options hold no debugger.
       options.trace = undefined;
       options.breakpoints = undefined;
     }
-    this.evalBySlot.set(slotId, next);
     this.nodeId = null;
     this.assetGuid = null;
     if (followed) this.publishState(slotId, next);
@@ -753,13 +754,13 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     if (last && baseline && last.status === next.status && last.btNodeId === next.btNodeId &&
       samePlainData(last.lastResults, next.lastResults) && samePlainData(last.stack, next.stack) &&
       sameBlackboard(baseline, next.blackboard)) return;
-    // Evaluation copies its inputs, so the published objects stay as emitted.
+    // The evaluation steps in place, so what is published (and compared next time) is a copy.
     const state: BtStatePayload = {
       status: next.status,
       btNodeId: next.btNodeId,
-      lastResults: next.lastResults,
+      lastResults: { ...next.lastResults },
       blackboard: snapshotBlackboard(next.blackboard),
-      stack: next.stack,
+      stack: next.stack.map((frame) => ({ ...frame })),
     };
     this.blackboardBaseline.set(slotId, copyBlackboard(next.blackboard));
     if (samePlainData(last, state)) return;
