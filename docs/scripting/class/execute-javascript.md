@@ -24,7 +24,7 @@ Runs your own JavaScript function body inline, with custom input and output pins
 | --- | --- |
 | Inputs | Pins the body can read. Each name is a case-sensitive variable. |
 | Outputs | Pins the body can set. Each name is a variable that you assign. |
-| JavaScript Function Body | The code that runs each time the node executes. |
+| Function Body | The code that runs each time the node executes. |
 
 ## Notes
 

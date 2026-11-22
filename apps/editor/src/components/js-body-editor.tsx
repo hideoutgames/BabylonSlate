@@ -17,6 +17,10 @@ export type JsBodyEditorProps = {
   names?: readonly string[];
   ariaLabel?: string;
   readOnly?: boolean;
+  /** Inline in an Inspector field: fills its parent, without the status line or the touch symbol bar. */
+  compact?: boolean;
+  /** Focus the editor once it has loaded. */
+  autoFocus?: boolean;
 };
 const externalValueSync = Annotation.define<boolean>();
 
@@ -58,7 +62,7 @@ const ACCESSORY = [
  * Touch-friendly code body editor (CodeMirror 6). Screens render it through
  * `LazyCodeBodyEditor`, so CodeMirror loads only when a code body is shown.
  */
-export function CodeBodyEditor({ value, onChange, bodyLine, language, names = [], ariaLabel, readOnly: readOnlyProp = false }: JsBodyEditorProps & { language: "javascript" | "glsl" }) {
+export function CodeBodyEditor({ value, onChange, bodyLine, language, names = [], ariaLabel, readOnly: readOnlyProp = false, compact = false, autoFocus = false }: JsBodyEditorProps & { language: "javascript" | "glsl" }) {
   const inheritedReadOnly = useEditorReadOnly();
   const readOnly = readOnlyProp || inheritedReadOnly;
   const readOnlyRef = useRef(readOnly);
@@ -114,6 +118,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
     });
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
+    if (autoFocus) view.focus();
     return () => {
       view.destroy();
       viewRef.current = null;
@@ -164,7 +169,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
   };
 
   return (
-    <div className="flex min-h-40 min-w-0 flex-1 flex-col" data-testid={language === "glsl" ? "glsl-body-editor" : "js-body-editor"}>
+    <div className={compact ? "flex h-full min-h-0 min-w-0 flex-1 flex-col" : "flex min-h-40 min-w-0 flex-1 flex-col"} data-testid={language === "glsl" ? "glsl-body-editor" : "js-body-editor"}>
       <div
         ref={hostRef}
         // min-w-0: long lines scroll inside CodeMirror instead of widening the host.
@@ -172,7 +177,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
         // Selection intentionally enabled for code editing.
         style={{ userSelect: "text", WebkitUserSelect: "text" }}
       />
-      <div className="hidden flex-wrap gap-1 border-t p-1 pointer-coarse:flex" data-testid="js-accessory-bar">
+      {compact ? null : <div className="hidden flex-wrap gap-1 border-t p-1 pointer-coarse:flex" data-testid="js-accessory-bar">
         <Button type="button" variant="outline" size="touch" disabled={readOnly} onPointerDown={(event) => event.preventDefault()} onClick={() => { if (viewRef.current) { viewRef.current.focus(); startCompletion(viewRef.current); } }}>Complete</Button>
         {ACCESSORY.map((token) => (
           <Button
@@ -187,8 +192,8 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
             {token === "Tab" ? "⇥" : token}
           </Button>
         ))}
-      </div>
-      <div className="flex shrink-0 justify-between border-t bg-sidebar px-2 py-1 text-xs text-muted-foreground"><span>{language === "glsl" ? "GLSL" : "JavaScript"}</span><span>Ctrl+Space: Complete · Enter: Accept · Esc: Dismiss</span></div>
+      </div>}
+      {compact ? null : <div className="flex shrink-0 justify-between border-t bg-sidebar px-2 py-1 text-xs text-muted-foreground"><span>{language === "glsl" ? "GLSL" : "JavaScript"}</span><span>Ctrl+Space: Complete · Enter: Accept · Esc: Dismiss</span></div>}
     </div>
   );
 }

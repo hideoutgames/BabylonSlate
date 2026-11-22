@@ -17,7 +17,6 @@ import {
 } from "@haptic/core";
 import {
   AssetPicker,
-  MultilineTextField,
   NamedListEditor,
   PropertyGrid,
   TypeVisualIcon,
@@ -28,7 +27,6 @@ import {
   type ClassPickerEntry,
   type PropertyRow,
 } from "@haptic/editor-kit";
-import { Field, FieldLabel } from "@haptic/ui/components/field";
 import { useRegistryState } from "../context/document-context";
 import { useAreaEmissionStatus } from "../lib/use-area-emission-status";
 import { saveGameVariableNames } from "../lib/save-game-property-rows";
@@ -50,6 +48,7 @@ import {
   useOpenDocumentsOfKinds,
 } from "../lib/use-open-documents-of-kinds";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
+import { ComponentTextField } from "../components/component-text-field";
 import { ClassCaptureActorsField } from "../components/class-capture-actors-field";
 import { ProjectRichTextAppearModesField } from "../components/rich-text-appear-modes-field";
 import { NineSlicePreview } from "../components/nine-slice-preview";
@@ -275,35 +274,27 @@ export function PrefabComponentDetails({
         ) : null}
       </div>
       {component.classId === "Text3DComponent" ? (
-        <Field>
-          <FieldLabel htmlFor={`text3d-text-${component.id}`}>Text</FieldLabel>
-          <MultilineTextField
-            id={`text3d-text-${component.id}`}
-            title="Text"
-            disabled={component.properties.editorOnly === true}
-            value={parseText3DProperties(component.properties).text}
-            onChange={(value) => onUpdate("text", value)}
-            data-testid={`text3d-text-${component.id}`}
-          />
-        </Field>
+        <ComponentTextField
+          key={component.id}
+          fieldKey={`component:${component.id}:text`}
+          id={`text3d-text-${component.id}`}
+          disabled={component.properties.editorOnly === true}
+          value={parseText3DProperties(component.properties).text}
+          onChange={(value) => onUpdate("text", value)}
+        />
       ) : null}
       {component.classId === "2DTextComponent" ||
       component.classId === "2DRichTextComponent" ? (
-        <Field>
-          <FieldLabel htmlFor={`text2d-text-${component.id}`}>Text</FieldLabel>
-          <MultilineTextField
-            id={`text2d-text-${component.id}`}
-            title="Text"
-            markup={component.classId === "2DRichTextComponent"}
-            value={
-              parseText2DProperties(component.properties, {
-                rich: component.classId === "2DRichTextComponent",
-              }).text
-            }
-            onChange={(value) => onUpdate("text", value)}
-            data-testid={`text2d-text-${component.id}`}
-          />
-        </Field>
+        <ComponentTextField
+          key={component.id}
+          fieldKey={`component:${component.id}:text`}
+          id={`text2d-text-${component.id}`}
+          markup={component.classId === "2DRichTextComponent"}
+          value={parseText2DProperties(component.properties, {
+            rich: component.classId === "2DRichTextComponent",
+          }).text}
+          onChange={(value) => onUpdate("text", value)}
+        />
       ) : null}
       <PrefabAssetPicker
         assetPick={assetPick}

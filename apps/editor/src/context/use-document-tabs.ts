@@ -6,7 +6,6 @@ import {
   documentId,
   isAssetDocumentKind,
   isSceneWorkspaceKind,
-  isChromeDocumentKind,
 } from "@haptic/core";
 import { listTraceDocuments, newAssetGuid, pruneTraceDocuments } from "@haptic/assets";
 import { journalDiscardLine, type EditSession } from "@haptic/edit";
@@ -93,7 +92,7 @@ export function useDocumentTabs({
       documentService.assertDocumentCanClose(id);
       const doc = documentService.getDocument(id);
       const guid = projectService.guid;
-      if (doc && !isChromeDocumentKind(doc.ref.kind) && guid) {
+      if (doc && isAssetDocumentKind(doc.ref.kind) && guid) {
         journalBuffer.append(guid, journalDiscardLine(id, new Date().toISOString()));
       }
       forgetDockLayouts(id);
@@ -145,7 +144,7 @@ export function useDocumentTabs({
       }
       const ids: string[] = [];
       for (const doc of documentService.getOpenDocumentsOrdered()) {
-        if (isChromeDocumentKind(doc.ref.kind)) continue;
+        if (!isAssetDocumentKind(doc.ref.kind)) continue;
         if (pathSet.has(doc.ref.path)) ids.push(doc.id);
       }
       for (const id of ids) performCloseDocument(id);
@@ -359,7 +358,7 @@ export function useDocumentTabs({
       const { activeDocumentId } = documentService.getState();
       if (id === activeDocumentId) return;
       const target = documentService.getState().openDocuments.get(id);
-      if (target?.content === null && !isChromeDocumentKind(target.ref.kind)) {
+      if (target?.content === null && isAssetDocumentKind(target.ref.kind)) {
         // A restored tab reads its asset when first selected. Callers do not
         // wait for it, so a failed read is reported here.
         finishOpenDocument(target.ref).catch((error: unknown) => {
@@ -381,6 +380,21 @@ export function useDocumentTabs({
       bump();
     },
     [bump, captureLayoutForId, documentService, finishOpenDocument, setDocumentOpenError],
+  );
+
+  /** A transient tab opens synchronously: it has nothing to read. */
+  const openTransientDocument = useCallback(
+    (ref: DocumentRef, setActive = true): string => {
+      if (setActive) {
+        activationRequest.current += 1;
+        const { activeDocumentId } = documentService.getState();
+        if (activeDocumentId) captureLayoutForId(activeDocumentId);
+      }
+      const id = documentService.openTransientDocument(ref, setActive);
+      bump();
+      return id;
+    },
+    [bump, captureLayoutForId, documentService],
   );
 
   const reorderClosableTabs = useCallback(
@@ -409,6 +423,7 @@ export function useDocumentTabs({
       | "openTraceDocument"
       | "confirmExclusiveSceneOpen"
       | "cancelExclusiveSceneOpen"
+      | "openTransientDocument"
       | "closeDocument"
       | "closeDocumentsForPaths"
       | "setActiveDocument"
@@ -422,6 +437,7 @@ export function useDocumentTabs({
       openTraceDocument,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
+      openTransientDocument,
       closeDocument,
       closeDocumentsForPaths,
       setActiveDocument,
@@ -436,6 +452,7 @@ export function useDocumentTabs({
       openTraceDocument,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
+      openTransientDocument,
       closeDocument,
       closeDocumentsForPaths,
       setActiveDocument,

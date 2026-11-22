@@ -343,6 +343,8 @@ export interface DocumentContextValue {
   pendingExclusiveScene: DocumentRef | null;
   confirmExclusiveSceneOpen: (mode: "save" | "discard") => Promise<void>;
   cancelExclusiveSceneOpen: () => void;
+  /** Opens or activates a transient tab (a Text Editor tab: no asset, never saved or restored). Returns its id. */
+  openTransientDocument: (ref: DocumentRef, setActive?: boolean) => string;
   closeDocument: (id: string) => void;
   closeDocumentsForPaths: (paths: Iterable<string>) => void;
   replaceClassReferencesBeforeDelete: (

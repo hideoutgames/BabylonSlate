@@ -83,7 +83,7 @@ test("gallery primitives, dialogs, and editor composites", async ({ page }) => {
     await page.keyboard.press("Escape");
 
     await expect(page.getByTestId("gallery-markup-autocomplete")).toBeVisible();
-    await page.getByTestId("gallery-markup-autocomplete").click();
+    await page.getByTestId("gallery-markup-autocomplete-editor").click();
     await expect(
       page.getByTestId("gallery-markup-autocomplete-editor-suggestions"),
     ).toBeVisible();

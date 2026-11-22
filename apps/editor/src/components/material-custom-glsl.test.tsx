@@ -1,8 +1,16 @@
 import { useState } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { newCustomGlslProperties } from "@haptic/shader-graph";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
+
+// The Inspector field binds its Text Editor tab to the Material document.
+vi.mock("../context/document-workspace-context", () => ({
+  useDocumentWorkspace: () => ({ documentId: "material:assets/Rock.material.hasset" }),
+}));
+vi.mock("../context/document-context", async () =>
+  (await import("../testing/document-context-mock")).documentContextMock(() => ({})),
+);
 
 afterEach(cleanup);
 

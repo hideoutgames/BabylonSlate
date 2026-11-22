@@ -30,6 +30,7 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { IconActionButton } from "../components/icon-action-button";
+import { useTextEditorTab } from "../lib/use-text-editor-tab";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { PLUGIN_ICON_OPTIONS, resolvePluginIcon } from "../lib/plugin-icons";
 import {
@@ -62,6 +63,16 @@ export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
     if (readOnly) return;
     void applyAssetDocumentChange(documentId, { ...settings, ...patch });
   };
+
+  const commitDescription = (description: string) => commit({ description });
+  const openDescriptionInTab = useTextEditorTab({
+    fieldKey: "plugin:description",
+    title: "Description",
+    mode: "text",
+    value: settings.description,
+    onChange: commitDescription,
+    disabled: readOnly,
+  });
 
   const identityRows: PropertyRow[] = pluginSettingsIdentityFields(settings)
     .filter((field) => field.id !== "iconKey")
@@ -160,15 +171,13 @@ export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
           </SearchDropdown>
         </Field>
         <Field>
-          <FieldLabel htmlFor="plugin-settings-description">
-            Description
-          </FieldLabel>
           <MultilineTextField
             id="plugin-settings-description"
-            title="Description"
+            label="Description"
             value={settings.description}
             disabled={readOnly}
-            onChange={(description) => commit({ description })}
+            onChange={commitDescription}
+            onOpenInTab={openDescriptionInTab}
             data-testid="plugin-settings-description"
           />
         </Field>

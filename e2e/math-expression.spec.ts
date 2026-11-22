@@ -90,6 +90,40 @@ test.describe("Math Expression", () => {
     await playAndRead(page, "7");
   });
 
+  test("the Inspector's Formula opens in a Text Editor tab that edits the node", async ({ page }) => {
+    test.setTimeout(120_000);
+    await openTestProject(page);
+    const print = printOnTick(null);
+    const editor = await installAndOpen(page, {
+      nodes: [...print.nodes, node("mx", "math.expression", 600, 300, { formula: "y = a * 2" })],
+      edges: print.edges,
+    });
+    const mx = editor.locator('.react-flow__node[data-id="mx"]');
+    await mx.click();
+    const field = page.getByTestId("math-expression-formula-field-editor");
+    await expect(field).toHaveValue("y = a * 2");
+
+    await page.getByTestId("math-expression-formula-field-open-tab").click();
+    const textTab = page.locator('[data-testid="document-tab"][data-document-kind="text-editor"]');
+    await expect(textTab).toHaveAttribute("data-active", "true");
+    await expect(textTab).toContainText("Formula: ");
+    const tabEditor = page.getByTestId("document-workspace-text-editor").getByTestId("text-editor-workspace-editor");
+    await expect(tabEditor).toBeFocused();
+    await expect(tabEditor).toHaveValue("y = a * 2");
+    await tabEditor.fill("y = speed * 3");
+
+    // Leaving the tab commits; the source tab's Inspector and node show the new formula.
+    await page.locator('[data-testid="document-tab"][data-document-kind="graph"]').getByRole("button", { name: /Mannequin/ }).first().click();
+    await expect(field).toHaveValue("y = speed * 3");
+    await expect(mx.getByTestId("math-expression-formula")).toHaveText("y = speed * 3");
+    await expect(mx.locator('[data-handleid="in_speed"]')).toHaveCount(1);
+
+    await textTab.getByTestId("document-tab-close").click();
+    await expect(textTab).toHaveCount(0);
+    await expect(field).toHaveValue("y = speed * 3");
+    await expect(mx.getByTestId("math-expression-formula")).toHaveText("y = speed * 3");
+  });
+
   test("three math nodes convert to one Math Expression and back with the same result", async ({ page }) => {
     test.setTimeout(240_000);
     await openTestProject(page);

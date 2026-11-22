@@ -27,7 +27,8 @@ import { Input } from "@haptic/ui/components/input";
 import { Button } from "@haptic/ui/components/button";
 import { useRegistryState } from "../context/document-context";
 import { GraphDataLiteralDefaults } from "../components/graph-data-literal-editor";
-import { LazyGlslCodePreview, LazyJsBodyEditor } from "../components/lazy-code-editors";
+import { LazyJsBodyEditor } from "../components/lazy-code-editors";
+import { useTextEditorTab } from "../lib/use-text-editor-tab";
 import { DataTreeEntryField } from "../components/data-tree-entry-picker";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import { executeJavaScriptNameError } from "@haptic/scripting-nodes";
@@ -117,6 +118,34 @@ export interface GraphNodeDetailsProps {
   delegateSignatures?: readonly DelegateSignatureEntry[];
   /** In an Animation Graph's state graph: the graph, so a clip row offers only the assets it can play. */
   animClipGraph?: AnimClipPickGraph | null;
+}
+
+/** An Execute JavaScript node's Function Body: CodeMirror inline, or full size in its own tab. */
+function ExecuteJavaScriptBodyField({ nodeId, value, onChange, bodyLine, names }: {
+  nodeId: string;
+  value: string;
+  onChange: (body: string) => void;
+  bodyLine?: number;
+  names: readonly string[];
+}) {
+  const openInTab = useTextEditorTab({
+    fieldKey: `node:${nodeId}:body`,
+    title: "Function Body",
+    mode: "javascript",
+    value,
+    onChange,
+    names,
+  });
+  return (
+    <Field>
+      <MultilineTextField code label="Function Body" data-testid="class-node-code"
+        value={value}
+        onChange={onChange}
+        onOpenInTab={openInTab}
+        renderEditor={(draft, setDraft) => <LazyJsBodyEditor compact value={draft} onChange={setDraft} bodyLine={bodyLine} names={names} />}
+      />
+    </Field>
+  );
 }
 
 function pickWiredInputTypes(data: Record<string, unknown> | undefined): Record<string, unknown> {
@@ -280,6 +309,8 @@ export function GraphNodeDetails({
         <GraphNodeRowSections sections={sections} />
         {selectedNode.type === MATH_EXPRESSION_NODE_ID ? (
           <MathExpressionDetails
+            key={selectedNode.id}
+            nodeId={selectedNode.id}
             data={mathExpressionData}
             onFormula={(formula) => persistGraph(commitMathExpressionFormula(
               graph, selectedNode.id, formula, activeFunctionId, mathExpressionData.wiredInputTypes))}
@@ -366,11 +397,13 @@ export function GraphNodeDetails({
             {jsNameError ? (
               <FieldError data-testid="js-name-error">{jsNameError}</FieldError>
             ) : null}
-            <MultilineTextField code title="JavaScript Function Body" data-testid="class-node-code"
+            <ExecuteJavaScriptBodyField
+              key={selectedNode.id}
+              nodeId={selectedNode.id}
               value={String(selectedNode.data.body ?? "")}
               onChange={(body) => updateNodeData({ body })}
-              renderPreview={(value) => <LazyGlslCodePreview value={value} language="javascript" />}
-              renderEditor={(value, onChange) => <LazyJsBodyEditor value={value} onChange={onChange} bodyLine={focusBodyLine} names={[...inputs, ...outputs].map((pin) => pin.name)} />}
+              bodyLine={focusBodyLine}
+              names={[...inputs, ...outputs].map((pin) => pin.name)}
             />
           </>
         ) : null}

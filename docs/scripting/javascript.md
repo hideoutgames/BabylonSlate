@@ -6,7 +6,7 @@ The [Execute JavaScript](class/execute-javascript.md) node runs a short piece of
 
 1. In **Add Node**, search for **Execute JavaScript**. It is in the **Debug** category.
 2. Select the node. In the **Inspector**, add pins under **Inputs** and **Outputs**. Each pin has a name and a type, and can be **Single**, **Array** or **Map**.
-3. Tap **JavaScript Function Body** to open the code editor, write the code, then choose **Done**.
+3. Write the code in **Function Body** in the **Inspector**. The change applies when you leave the editor. For more room, tap the button next to **Function Body** to open it in its own tab ([Long text and code](../start/editor-tour.md#long-text-and-code)).
 
 The node keeps its execution input and output. Your pins appear between them.
 

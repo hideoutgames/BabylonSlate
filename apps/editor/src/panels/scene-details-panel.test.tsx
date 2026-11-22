@@ -987,7 +987,9 @@ describe("SceneDetailsPanel authoring", () => {
     const target = () => screen.getByTestId("property-stream-stream-scene-streaming-sceneGuid");
     expect(screen.getByTestId("component-transform-grid-stream-scene-streaming")).toBeTruthy();
     expect(screen.getByTestId("property-stream-stream-scene-streaming-position-x")).toBeTruthy();
-    expect(screen.getByTestId("text3d-text-stream-scene-name")).toHaveProperty("disabled", true);
+    expect(screen.getByTestId("text3d-text-stream-scene-name-editor")).toHaveProperty("disabled", true);
+    // A read-only Text still opens in its own tab, where it shows read-only.
+    expect(screen.getByRole("button", { name: "Open Text in Tab" })).toHaveProperty("disabled", false);
     fireEvent.click(target());
     expect(await screen.findByTestId("search-item-scene-cave")).toBeTruthy();
     expect(screen.queryByTestId("search-item-mesh-1")).toBeNull();
@@ -1567,7 +1569,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("panel-nine-slice-overlay")).toBeNull();
   });
 
-  it("hosts 3D Text in a sibling read-only trigger that opens a modal editor", () => {
+  it("edits 3D Text inline and commits it when focus leaves the field", () => {
     scene().actors = [
       createActor("label", "3D Text", {
         components: [createText3DComponent("text3d")],
@@ -1577,22 +1579,19 @@ describe("SceneDetailsPanel authoring", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.queryByTestId("property-label-text3d-text")).toBeNull();
     expect(screen.getByTestId("property-label-text3d-alignment")).toBeTruthy();
-    const trigger = screen.getByTestId("text3d-text-text3d");
-    expect(trigger.tagName).toBe("BUTTON");
-    expect(trigger.textContent).toContain("Text");
-    fireEvent.click(trigger);
     const field = screen.getByTestId(
       "text3d-text-text3d-editor",
     ) as HTMLTextAreaElement;
     expect(field.value).toBe("Text");
     fireEvent.change(field, { target: { value: "Hello\nWorld" } });
-    fireEvent.click(screen.getByTestId("text3d-text-text3d-done"));
-    expect(harness.applySceneChange).toHaveBeenCalled();
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    fireEvent.blur(field, { relatedTarget: document.body });
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(1);
     const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
     expect(next.actors[0]?.components[0]?.properties.text).toBe("Hello\nWorld");
   });
 
-  it("hosts 2D Text in a sibling read-only trigger that opens a modal editor", () => {
+  it("edits 2D Text inline and commits it when focus leaves the field", () => {
     scene().actors = [
       createActor("hud", "Label", {
         components: [createText2DComponent("label")],
@@ -1601,24 +1600,21 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["hud"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.queryByTestId("property-hud-label-text")).toBeNull();
-    const trigger = screen.getByTestId("text2d-text-label");
-    expect(trigger.tagName).toBe("BUTTON");
-    expect(trigger.textContent).toContain("Text");
-    fireEvent.click(trigger);
     const field = screen.getByTestId(
       "text2d-text-label-editor",
     ) as HTMLTextAreaElement;
     expect(field.value).toBe("Text");
     fireEvent.change(field, { target: { value: "Hello overlay" } });
-    fireEvent.click(screen.getByTestId("text2d-text-label-done"));
-    expect(harness.applySceneChange).toHaveBeenCalled();
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    fireEvent.blur(field, { relatedTarget: document.body });
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(1);
     const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
     expect(next.actors[0]?.components[0]?.properties.text).toBe(
       "Hello overlay",
     );
   });
 
-  it("hosts 2D Rich Text markup in a sibling trigger", () => {
+  it("shows 2D Rich Text markup in its inline field", () => {
     scene().actors = [
       createActor("hud", "Rich", {
         components: [createRichText2DComponent("rich")],
@@ -1627,7 +1623,7 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["hud"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.queryByTestId("property-hud-rich-text")).toBeNull();
-    expect(screen.getByTestId("text2d-text-rich").textContent).toContain(
+    expect((screen.getByTestId("text2d-text-rich-editor") as HTMLTextAreaElement).value).toContain(
       "[color=green]",
     );
   });
@@ -1650,7 +1646,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(next.actors[0]?.components[0]?.properties.appearModes).toEqual(["fade"]);
   });
 
-  it("opens markup tag suggestions for 2D Rich Text in the modal editor", () => {
+  it("offers markup tag suggestions for 2D Rich Text inline", () => {
     scene().actors = [
       createActor("hud", "Rich", {
         components: [createRichText2DComponent("rich")],
@@ -1658,7 +1654,6 @@ describe("SceneDetailsPanel authoring", () => {
     ];
     harness.selectedActorIds = ["hud"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    fireEvent.click(screen.getByTestId("text2d-text-rich"));
     const field = screen.getByTestId(
       "text2d-text-rich-editor",
     ) as HTMLTextAreaElement;

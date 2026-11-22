@@ -9,7 +9,7 @@ import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withExclu
 import { guardProjectAssetRegistry } from "./project-authoring-ports";
 import { isExtensionPackagePath, isAssetSourceRevisionChanged, mountExtensionContentRoots, resolveExtensionFieldValues, type AssetDocument, type ExtensionDescriptor } from "@haptic/assets";
 import type {
-  DocumentKind,
+  AssetDocumentKind,
   PluginEnableOverride,
   ProjectLayouts,
   SerializedGraph,
@@ -1391,7 +1391,7 @@ export class ProjectService {
   }
 
   async loadDocument(
-    kind: Exclude<DocumentKind, "content-browser" | "source-control">,
+    kind: AssetDocumentKind,
     path: string,
     options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
   ): Promise<
@@ -1419,7 +1419,7 @@ export class ProjectService {
    * read (Play preparation's closure), without reading it again.
    */
   documentContentFromStored(
-    kind: Exclude<DocumentKind, "content-browser" | "source-control" | "trace">,
+    kind: Exclude<AssetDocumentKind, "trace">,
     stored: { type: string; version: number; payload: Record<string, unknown> },
   ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
     return this.documentContent(kind, stored);
@@ -1431,7 +1431,7 @@ export class ProjectService {
    * `documentContent` to each in its own order.
    */
   private async readStoredAssetDocument(
-    kind: Exclude<DocumentKind, "content-browser" | "source-control">,
+    kind: AssetDocumentKind,
     path: string,
     options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
@@ -1448,7 +1448,7 @@ export class ProjectService {
    * hold are absent from `chunks`.
    */
   async loadDocumentWithChunks(
-    kind: Exclude<DocumentKind, "content-browser" | "source-control" | "trace">,
+    kind: Exclude<AssetDocumentKind, "trace">,
     path: string,
     chunks: DocumentChunkSelection,
     options: { signal?: AbortSignal } = {},
@@ -1533,7 +1533,7 @@ export class ProjectService {
   }
 
   private documentContent(
-    kind: Exclude<DocumentKind, "content-browser" | "source-control">,
+    kind: AssetDocumentKind,
     raw: { type: string; version: number; payload: Record<string, unknown> },
   ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
     this.migrations.requireCurrent(raw.type, raw.version);
@@ -1652,7 +1652,7 @@ export class ProjectService {
 
   /** Writes a `.hasset` document in its asset's write queue. */
   async saveDocument(
-    kind: Exclude<DocumentKind, "content-browser" | "source-control">,
+    kind: AssetDocumentKind,
     path: string,
     content:
       | SerializedScene
@@ -1689,7 +1689,7 @@ export class ProjectService {
   }
 
   private async saveDocumentUnlocked(
-    kind: Exclude<DocumentKind, "content-browser" | "source-control">,
+    kind: AssetDocumentKind,
     path: string,
     content: SerializedScene | SerializedSceneLayer | SerializedGraph | Record<string, unknown>,
     options?: { parentClass?: string | null; type?: string },

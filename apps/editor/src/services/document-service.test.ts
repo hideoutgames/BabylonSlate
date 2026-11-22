@@ -16,6 +16,7 @@ import {
   type DocumentRevisions,
 } from "./document-service";
 import { ProjectService } from "./project-service";
+import { getTextEditorSession, upsertTextEditorSession } from "./text-editor-sessions";
 
 function activeDocument(service: DocumentService) {
   const id = service.getState().activeDocumentId;
@@ -36,6 +37,92 @@ function createMockProjectService(
       }),
   } as unknown as ProjectService;
 }
+
+describe("DocumentService Text Editor tabs", () => {
+  const sessionId = (source: string) => `${source}#node:n1:formula`;
+  const textRef = (source: string) => ({ kind: "text-editor" as const, path: sessionId(source), label: "Formula: Main" });
+  function addSession(source: string) {
+    upsertTextEditorSession({
+      id: sessionId(source), sourceDocumentId: source, title: "Formula", mode: "formula",
+      value: "y = 1", readOnly: false, names: [], error: null, commit: () => {},
+    });
+  }
+
+  it("opens a closable, never dirty tab after the asset tabs and reopening only activates it", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const graph = await service.openDocument(createMockProjectService(), { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" });
+    const before = service.getRevisions()["text-editor"];
+    const id = service.openTransientDocument(textRef(graph));
+    expect(id).toBe(`text-editor:${sessionId(graph)}`);
+    expect(service.getState().tabOrder).toEqual([CONTENT_BROWSER_ID, graph, id]);
+    expect(service.getState().activeDocumentId).toBe(id);
+    expect(service.getRevisions()["text-editor"]).toBeGreaterThan(before);
+    expect(service.getScrollableDocumentsOrdered().map((doc) => doc.id)).toEqual([graph, id]);
+    expect(service.getDirtyDocuments()).toEqual([]);
+
+    service.setActiveDocument(graph);
+    expect(service.openTransientDocument(textRef(graph))).toBe(id);
+    expect(service.getState().tabOrder).toEqual([CONTENT_BROWSER_ID, graph, id]);
+    expect(service.getState().activeDocumentId).toBe(id);
+
+    // Sortable among the closable tabs.
+    service.reorderClosableTabs(1, 0);
+    expect(service.getState().tabOrder).toEqual([CONTENT_BROWSER_ID, id, graph]);
+  });
+
+  it("closes like an asset tab, removes its session and returns to the field's document", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const graph = await service.openDocument(createMockProjectService(), { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" });
+    addSession(graph);
+    const id = service.openTransientDocument(textRef(graph));
+    service.closeDocument(id);
+    expect(service.getDocument(id)).toBeUndefined();
+    expect(service.getState().tabOrder).toEqual([CONTENT_BROWSER_ID, graph]);
+    expect(service.getState().activeDocumentId).toBe(graph);
+    expect(getTextEditorSession(sessionId(graph))).toBeUndefined();
+  });
+
+  it("opens only transient kinds without a read", () => {
+    const service = new DocumentService();
+    expect(() => service.openTransientDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" })).toThrow();
+  });
+
+  it("is never saved in layout.json: an active Text Editor tab saves its field's document as active", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const graph = await service.openDocument(createMockProjectService(), { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" });
+    const id = service.openTransientDocument(textRef(graph));
+    service.setPanelPlacement(id, "panel", { referencePanelId: "x", direction: "right" });
+    service.setLayout(id, { grid: {} });
+    const layouts = service.buildLayouts();
+    expect(layouts.tabOrder).toEqual([CONTENT_BROWSER_ID, graph]);
+    expect(layouts.activeDocumentId).toBe(graph);
+    expect(Object.keys(layouts.documents)).not.toContain(id);
+    expect(layouts.panelPlacements?.[id]).toBeUndefined();
+
+    // Without its document open, the Content Browser is saved as active.
+    service.closeDocument(graph);
+    service.setActiveDocument(id);
+    expect(service.buildLayouts().activeDocumentId).toBe(CONTENT_BROWSER_ID);
+  });
+
+  it("ignores a Text Editor id in a restored layout and drops open sessions on project open", async () => {
+    const service = new DocumentService();
+    addSession("graph:assets/Other.class.hasset");
+    const textId = `text-editor:${sessionId(documentId({ kind: "graph", path: MAIN_CLASS_FILE }))}`;
+    const project = { ...createMockProjectService(), documentExists: vi.fn(async () => true) } as unknown as ProjectService;
+    await service.initializeFromProject(project, createEmptyProject("Restore"), {
+      ...createEmptyLayouts(),
+      tabOrder: [CONTENT_BROWSER_ID, textId],
+      activeDocumentId: textId,
+    });
+    expect(service.getState().tabOrder).toEqual([CONTENT_BROWSER_ID]);
+    expect(service.getDocument(textId)).toBeUndefined();
+    expect(getTextEditorSession(sessionId("graph:assets/Other.class.hasset"))).toBeUndefined();
+  });
+});
 
 describe("DocumentService Source Control tab", () => {
   it("pins Source Control after every other tab, never closes it and drops it when the mode turns Off", async () => {

@@ -18,6 +18,8 @@ import {
   isChromeDocumentId,
   isChromeDocumentKind,
   isSceneWorkspaceKind,
+  isTransientDocumentId,
+  isTransientDocumentKind,
   parseDocumentId,
   SOURCE_CONTROL_ID,
   SOURCE_CONTROL_REF,
@@ -28,6 +30,7 @@ import { recordDocumentDirty } from "../lib/dirty-trace";
 import { documentContentIdentity } from "../lib/document-content-identity";
 import { editorTabContentForKind } from "../lib/scene-layer-document";
 import type { ProjectService } from "./project-service";
+import { removeTextEditorSession, clearTextEditorSessions, textEditorSourceDocumentId } from "./text-editor-sessions";
 
 export type DocumentContent =
   | SerializedScene
@@ -100,6 +103,7 @@ export type DocumentRevisions = Readonly<Record<DocumentKind, number>>;
 const DOCUMENT_KINDS: readonly DocumentKind[] = [
   "content-browser",
   "source-control",
+  "text-editor",
   ...ASSET_DOCUMENT_KINDS,
 ];
 
@@ -412,6 +416,8 @@ export class DocumentService {
     this.pendingLoads.clear();
     for (const scope of this.assetScopes.values()) scope.dispose();
     this.assetScopes.clear();
+    // Text Editor tabs belong to the fields of the documents being dropped.
+    clearTextEditorSessions();
     const closedKinds = [...this.state.openDocuments.values()].map(
       (doc) => doc.ref.kind,
     );
@@ -487,9 +493,13 @@ export class DocumentService {
   ): Promise<string> {
     const activate = () => typeof setActive === "function" ? setActive() : setActive;
     options?.signal?.throwIfAborted();
-    if (options?.background && (isChromeDocumentKind(ref.kind) || isSceneWorkspaceKind(ref.kind))) {
-      throw new Error("Scene workspaces, Content Browser and Source Control cannot be background documents.");
+    if (options?.background && !isAssetDocumentKind(ref.kind)) {
+      throw new Error("Content Browser, Source Control and Text Editor tabs cannot be background documents.");
     }
+    if (options?.background && isSceneWorkspaceKind(ref.kind)) {
+      throw new Error("Scene workspaces cannot be background documents.");
+    }
+    if (isTransientDocumentKind(ref.kind)) return this.openTransientDocument(ref, activate());
     if (isChromeDocumentKind(ref.kind)) {
       if (ref.kind === "content-browser") this.ensureContentBrowserTab();
       if (setActive && this.state.openDocuments.has(ref.kind)) {
@@ -607,6 +617,24 @@ export class DocumentService {
     }
   }
 
+  /**
+   * Opens (or activates) a transient tab: no asset, no content, never dirty,
+   * saved, persisted or restored. Synchronous; the Text Editor tab's body
+   * reads its session from `text-editor-sessions`.
+   */
+  openTransientDocument(ref: DocumentRef, setActive = true): string {
+    if (!isTransientDocumentKind(ref.kind)) throw new Error(`${ref.kind} is not a transient document kind.`);
+    const id = documentId(ref);
+    if (!this.state.openDocuments.has(id)) {
+      this.state.openDocuments.set(id, { id, ref, content: null, layout: null, dirty: false });
+      this.state.tabOrder.push(id);
+    }
+    if (setActive) this.state.activeDocumentId = id;
+    this.pinStickyTabs();
+    this.advanceKinds([ref.kind]);
+    return id;
+  }
+
   closeDocument(id: string): void {
     if (isChromeDocumentId(id)) {
       return;
@@ -622,8 +650,14 @@ export class DocumentService {
     this.state.openDocuments.delete(id);
     this.state.tabOrder = this.state.tabOrder.filter((tabId) => tabId !== id);
     delete this.state.panelPlacements[id];
+    const transient = closed !== undefined && isTransientDocumentKind(closed.ref.kind);
+    if (transient) removeTextEditorSession(closed.ref.path);
     if (this.state.activeDocumentId === id) {
-      this.state.activeDocumentId = this.state.tabOrder.find((tabId) => !this.state.openDocuments.get(tabId)?.background) ?? CONTENT_BROWSER_ID;
+      // A closed Text Editor tab returns to the document its field belongs to.
+      const source = transient ? this.state.openDocuments.get(textEditorSourceDocumentId(closed.ref.path)) : undefined;
+      this.state.activeDocumentId = source && !source.background && (source.content !== null || !isAssetDocumentKind(source.ref.kind))
+        ? source.id
+        : this.state.tabOrder.find((tabId) => !this.state.openDocuments.get(tabId)?.background) ?? CONTENT_BROWSER_ID;
     }
     this.pinStickyTabs();
     if (closed) this.advanceKinds([closed.ref.kind]);
@@ -638,7 +672,7 @@ export class DocumentService {
     const pathSet = paths instanceof Set ? paths : new Set(paths);
     const ids: string[] = [];
     for (const doc of this.state.openDocuments.values()) {
-      if (isChromeDocumentKind(doc.ref.kind)) continue;
+      if (!isAssetDocumentKind(doc.ref.kind)) continue;
       if (pathSet.has(doc.ref.path)) ids.push(doc.id);
     }
     for (const id of ids) this.closeDocument(id);
@@ -710,7 +744,7 @@ export class DocumentService {
   setActiveDocument(id: string): void {
     const doc = this.state.openDocuments.get(id);
     if (doc) {
-      if (!isChromeDocumentKind(doc.ref.kind) && doc.content === null) {
+      if (isAssetDocumentKind(doc.ref.kind) && doc.content === null) {
         throw new Error("Open the restored document asynchronously before activating it");
       }
       this.promoteDocument(doc);
@@ -796,7 +830,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (
       !doc ||
-      isChromeDocumentKind(doc.ref.kind) ||
+      !isAssetDocumentKind(doc.ref.kind) ||
       isSceneWorkspaceKind(doc.ref.kind) ||
       doc.ref.kind === "graph"
     ) {
@@ -845,7 +879,7 @@ export class DocumentService {
     const changed: DocumentKind[] = [];
     for (const snapshot of saved) {
       const doc = this.state.openDocuments.get(snapshot.id);
-      if (doc && !isChromeDocumentKind(doc.ref.kind) && doc.ref.path === snapshot.ref.path) {
+      if (doc && isAssetDocumentKind(doc.ref.kind) && doc.ref.path === snapshot.ref.path) {
         if (doc.ref.kind === "scene" && snapshot.content) this.savedScenes.set(doc, snapshot.content as SerializedScene);
         const savedIdentity = documentContentIdentity(snapshot.content);
         this.savedContent.set(doc, savedIdentity);
@@ -862,7 +896,7 @@ export class DocumentService {
   replaceLoadedContent(id: string, content: DocumentContent): void {
     this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
-    if (!doc || isChromeDocumentKind(doc.ref.kind)) return;
+    if (!doc || !isAssetDocumentKind(doc.ref.kind)) return;
     doc.content = content;
     if (doc.ref.kind === "scene") this.savedScenes.set(doc, content as SerializedScene);
     this.savedContent.set(doc, documentContentIdentity(content));
@@ -874,7 +908,7 @@ export class DocumentService {
   patchLoadedContent(id: string, content: DocumentContent): void {
     this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
-    if (!doc || isChromeDocumentKind(doc.ref.kind)) return;
+    if (!doc || !isAssetDocumentKind(doc.ref.kind)) return;
     doc.content = content;
     if (!doc.dirty) this.savedContent.set(doc, documentContentIdentity(content));
     this.advanceKinds([doc.ref.kind]);
@@ -896,7 +930,7 @@ export class DocumentService {
    */
   applyAssetRename(id: string, name: string): void {
     const doc = this.state.openDocuments.get(id);
-    if (!doc || isChromeDocumentKind(doc.ref.kind) || isSceneWorkspaceKind(doc.ref.kind)) return;
+    if (!doc || !isAssetDocumentKind(doc.ref.kind) || isSceneWorkspaceKind(doc.ref.kind)) return;
     const content = doc.content;
     if (!content || typeof (content as { name?: unknown }).name !== "string") return;
     const renamed = { ...content, name } as DocumentContent;
@@ -905,22 +939,31 @@ export class DocumentService {
     else this.replaceLoadedContent(id, renamed);
   }
 
+  /** `layout.json`'s view of the tabs: background and transient (Text Editor) documents are left out. */
   buildLayouts(): ProjectLayouts {
+    const persisted = (id: string) => !isTransientDocumentId(id) && !this.state.openDocuments.get(id)?.background;
     const documents: Record<string, Record<string, unknown>> = {};
     for (const [id, doc] of this.state.openDocuments) {
-      if (doc.layout && !doc.background) {
+      if (doc.layout && persisted(id)) {
         documents[id] = doc.layout;
       }
     }
     const panelPlacements = Object.fromEntries(
       Object.entries(this.state.panelPlacements).filter(
-        ([id, placements]) => !this.state.openDocuments.get(id)?.background && Object.keys(placements).length > 0,
+        ([id, placements]) => persisted(id) && Object.keys(placements).length > 0,
       ),
     );
+    const tabOrder = this.state.tabOrder.filter(persisted);
+    let activeDocumentId = this.state.activeDocumentId;
+    if (activeDocumentId && isTransientDocumentId(activeDocumentId)) {
+      // An active Text Editor tab saves its field's document as active instead.
+      const source = textEditorSourceDocumentId(this.state.openDocuments.get(activeDocumentId)?.ref.path ?? "");
+      activeDocumentId = tabOrder.includes(source) ? source : CONTENT_BROWSER_ID;
+    }
     return {
       documents,
-      tabOrder: this.state.tabOrder.filter((id) => !this.state.openDocuments.get(id)?.background),
-      activeDocumentId: this.state.activeDocumentId,
+      tabOrder,
+      activeDocumentId,
       showPluginContent: this.state.showPluginContent,
       ...(Object.keys(panelPlacements).length > 0 ? { panelPlacements } : {}),
     };
@@ -932,7 +975,7 @@ export class DocumentService {
 
   getDirtyDocuments(): OpenDocument[] {
     return [...this.state.openDocuments.values()].filter(
-      (doc) => doc.dirty && !isChromeDocumentKind(doc.ref.kind),
+      (doc) => doc.dirty && isAssetDocumentKind(doc.ref.kind),
     );
   }
 }

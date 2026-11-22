@@ -1315,7 +1315,7 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
         ]} />}
       /></div> : null}
       {node.type === "custom.glsl" ? (
-        <MaterialCustomGlsl node={node} setProperties={setProperties} bodyLine={editing.compileDiagnostics.find((diagnostic) => diagnostic.nodeId === node.id)?.line} />
+        <MaterialCustomGlsl key={node.id} node={node} setProperties={setProperties} bodyLine={editing.compileDiagnostics.find((diagnostic) => diagnostic.nodeId === node.id)?.line} />
       ) : null}
       {isTextureNode ? (
         <div className="px-3">

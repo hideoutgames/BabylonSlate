@@ -6,7 +6,7 @@ Draws text from a Font on a Scene Layer.
 
 Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Text**. You can also place a ready-made actor from **Place Actors > Overlay > 2D Text**.
 
-Type the words in the **Text** field below the other settings.
+Type the words in the **Text** field below the other settings. For more room, open it in its own tab with the button next to **Text** ([Long text and code](../start/editor-tour.md#long-text-and-code)).
 
 ## Settings
 

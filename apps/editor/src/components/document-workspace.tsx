@@ -5,9 +5,9 @@ import { BlackboardEditingProvider } from "../context/blackboard-editing-context
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
 import { DataAssetEditingProvider } from "../context/data-asset-editing-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
-import { CONTENT_BROWSER_ID, isChromeDocumentKind, isSceneWorkspaceKind, type SerializedScene, isAnimGraphDocumentKind } from "@haptic/core";
+import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, isTransientDocumentKind, type SerializedScene, isAnimGraphDocumentKind } from "@haptic/core";
 import type { DockviewApi } from "dockview-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import {
   useDocumentActions,
   useActiveDocumentId,
@@ -67,6 +67,12 @@ import { EditorReadOnlyContext, walkAncestry } from "@haptic/editor-kit";
 import { useAuthoringLock } from "../lib/use-authoring-lock";
 import { type DockviewDocumentKind } from "../shell/window-catalog";
 import { parseSceneDocumentLayout, type SceneMode } from "../shell/scene-document-layout";
+import { listTextEditorSessions, subscribeTextEditorSessions } from "../services/text-editor-sessions";
+
+// A Text Editor tab loads its page (and CodeMirror) when first opened, never with the Editor route.
+const TextEditorWorkspace = lazy(() =>
+  import("./text-editor-workspace").then((module) => ({ default: module.TextEditorWorkspace })),
+);
 
 function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
@@ -276,6 +282,12 @@ export function DocumentWorkspace() {
         ? activeDocumentId
         : (visibleTabOrder.find((id) => id === CONTENT_BROWSER_ID) ?? visibleTabOrder[0]);
 
+  // An open Text Editor tab's field lives in its source document's Inspector, which must stay mounted.
+  const textEditorSessions = useSyncExternalStore(subscribeTextEditorSessions, listTextEditorSessions);
+  const textEditorSources = textEditorSessions
+    .filter((session) => visibleIds.has(`text-editor:${session.id}`))
+    .map((session) => session.sourceDocumentId);
+
   const workingTabIds = projectKey ? visibleTabOrder : [];
   const mountedIds = useDocumentWorkingSet(
     workingTabIds,
@@ -284,6 +296,7 @@ export function DocumentWorkspace() {
       id: doc.id,
       kind: doc.ref.kind,
     })),
+    textEditorSources,
   );
 
   if (visibleTabOrder.length === 0) {
@@ -305,11 +318,27 @@ export function DocumentWorkspace() {
         const doc = openDocuments.find((entry) => entry.id === id);
         if (!doc) return null;
         // Restored tabs become consumers only after their asynchronous activation.
-        if (!isChromeDocumentKind(doc.ref.kind) && doc.content === null) return null;
+        if (isAssetDocumentKind(doc.ref.kind) && doc.content === null) return null;
         const active = id === resolvedActiveId;
         const shouldMount =
           id === simulationDocumentId || mountedIds.has(id) ||
-          (isChromeDocumentKind(doc.ref.kind) && active);
+          (!isAssetDocumentKind(doc.ref.kind) && active);
+
+        if (isTransientDocumentKind(doc.ref.kind)) {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
+              <div
+                className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                data-testid="document-workspace-text-editor"
+              >
+                <Suspense fallback={null}>
+                  <TextEditorWorkspace documentId={id} sessionId={doc.ref.path} active={active} />
+                </Suspense>
+              </div>
+            </WorkspaceErrorBoundary>
+          );
+        }
 
         if (doc.ref.kind === "source-control") {
           if (!shouldMount) return null;

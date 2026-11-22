@@ -1,5 +1,5 @@
 import type { AssetRegistry } from "@haptic/assets";
-import { assetTypeForDocumentKind, isChromeDocumentKind, type DocumentRef } from "@haptic/core";
+import { assetTypeForDocumentKind, isAssetDocumentKind, type DocumentRef } from "@haptic/core";
 import { resolveTypeVisual } from "@haptic/editor-kit";
 import {
   classParentLookup,
@@ -22,15 +22,12 @@ export function createDocumentTypeVisualResolver(
     return parents(id);
   };
   return (ref: DocumentRef) => {
+    // Chrome and Text Editor tabs have no asset behind them.
+    if (!isAssetDocumentKind(ref.kind)) return resolveTypeVisual({});
     const indexed = registry?.getByPath(ref.path);
     return indexed
       ? visualForIndexedAsset(indexed, parentOf, extensionTypes)
-      : resolveTypeVisual({
-          assetType:
-            isChromeDocumentKind(ref.kind)
-              ? undefined
-              : assetTypeForDocumentKind(ref.kind),
-        });
+      : resolveTypeVisual({ assetType: assetTypeForDocumentKind(ref.kind) });
   };
 }
 

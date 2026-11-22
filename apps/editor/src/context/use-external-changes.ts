@@ -1,4 +1,4 @@
-import { isChromeDocumentKind, PROJECT_FILE } from "@haptic/core";
+import { isAssetDocumentKind, PROJECT_FILE } from "@haptic/core";
 import {
   useCallback,
   useEffect,
@@ -121,7 +121,7 @@ export function useExternalChanges({
         const doc = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.path === path,
         );
-        if (!doc || isChromeDocumentKind(doc.ref.kind)) continue;
+        if (!doc || !isAssetDocumentKind(doc.ref.kind)) continue;
         try {
           const loaded = await projectService.loadDocument(doc.ref.kind, doc.ref.path);
           reads.contents.push({ id: doc.id, content: editorTabContentForKind(doc.ref.kind, loaded) as NonNullable<typeof doc.content> });
@@ -205,7 +205,7 @@ export function useExternalChanges({
     if (previous) {
       const openDocs = documentService
         .getOpenDocumentsOrdered()
-        .filter((doc) => !isChromeDocumentKind(doc.ref.kind))
+        .filter((doc) => isAssetDocumentKind(doc.ref.kind))
         .map((doc) => ({ path: doc.ref.path, dirty: doc.dirty }));
       const result = classifyExternalChanges({
         previousAssets: previous.assets,
@@ -234,7 +234,7 @@ export function useExternalChanges({
     setProjectDocument(document);
     const paths = documentService
       .getOpenDocumentsOrdered()
-      .filter((doc) => !isChromeDocumentKind(doc.ref.kind))
+      .filter((doc) => isAssetDocumentKind(doc.ref.kind))
       .map((doc) => doc.ref.path);
     await reloadDocumentsFromDisk(paths);
     await captureMtimeSnapshot();
@@ -292,7 +292,7 @@ export function useExternalChanges({
       const nextProject = await readProjectJsonMtime(projectService.storagePort);
       const openDocs = documentService
         .getOpenDocumentsOrdered()
-        .filter((doc) => !isChromeDocumentKind(doc.ref.kind))
+        .filter((doc) => isAssetDocumentKind(doc.ref.kind))
         .map((doc) => ({ path: doc.ref.path, dirty: doc.dirty }));
       // The files the pull wrote count as changed even when the snapshot already has their times
       // (a foreground rescan during a long pull, or a write within the clock's resolution).

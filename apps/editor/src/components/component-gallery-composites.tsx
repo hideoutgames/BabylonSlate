@@ -642,13 +642,15 @@ export function GalleryComposites() {
         </SearchDropdown>
         <div className="w-full max-w-md">
           <Field>
-            <FieldLabel htmlFor="gallery-markup-autocomplete">Markup</FieldLabel>
+            {/* The editor opens the value in a Text Editor tab; the gallery has no tabs, so the button does nothing. */}
             <MultilineTextField
               id="gallery-markup-autocomplete"
-              title="Markup"
+              label="Markup"
+              hint="Inline at a fixed height; the button beside the label opens the value in its own tab."
               markup
               value={markup}
               onChange={setMarkup}
+              onOpenInTab={() => {}}
               data-testid="gallery-markup-autocomplete"
             />
           </Field>
