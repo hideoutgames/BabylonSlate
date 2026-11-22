@@ -96,7 +96,7 @@ describe("rapierHostedWasmVitePlugin", () => {
 
   it("fails the build when the Rapier glue no longer embeds one base64 wasm", () => {
     const plugin = rapierHostedWasmVitePlugin();
-    const transform = plugin.transform as {
+    const transform = plugin.transform as unknown as {
       handler: (this: { error: (message: string) => never; emitFile: () => string }, code: string, id: string) => unknown;
     };
     const context = { error: (message: string): never => { throw new Error(message); }, emitFile: () => "ref" };

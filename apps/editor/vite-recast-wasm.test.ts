@@ -79,7 +79,7 @@ const wasmFiles = (files: Output[]) => files.filter((file) => file.fileName.ends
 const embedsWasm = (script: { code: string }) => script.code.includes("AGFzbQ");
 
 type Handler = (this: { error: (message: string) => never; emitFile: () => string }, code: string, id: string) => { code: string } | undefined;
-const handler = (recastHostedWasmVitePlugin().transform as { handler: Handler }).handler;
+const handler = (recastHostedWasmVitePlugin().transform as unknown as { handler: Handler }).handler;
 const context = { error: (message: string): never => { throw new Error(message); }, emitFile: () => "ref" };
 
 describe("recastHostedWasmVitePlugin", () => {
