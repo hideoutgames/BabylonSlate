@@ -113,7 +113,7 @@ export interface HavokQueryHost {
   readonly havok: HavokPhysicsWithBindings;
   readonly worldId: HP_WorldId;
   readonly bodies: ReadonlyMap<string, BodyRecord>;
-  readonly bodyIdByHpId: ReadonlyMap<bigint, string>;
+  readonly bodyIdByHpId: ReadonlyMap<number, string>;
   readonly collidersByOwner: ReadonlyMap<string, ReadonlySet<ColliderRecord>>;
   readonly triggerColliders: ReadonlySet<ColliderRecord>;
   isDisposed(): boolean;
@@ -209,7 +209,7 @@ export class HavokQueries {
     for (;;) {
       const result = find();
       if ((!options?.onlyTriggers && !this.peelingIgnores) || !result.hasHit) return result;
-      const bodyId = this.host.bodyIdByHpId.get(result.bodyHpId);
+      const bodyId = this.host.bodyIdByHpId.get(Number(result.bodyHpId));
       const peeled = this.peelHit(options, bodyId ? this.host.bodies.get(bodyId) : undefined, result.shapeHpId);
       if (peeled === "keep") return result;
       if (peeled === "stop") return null;
@@ -337,7 +337,7 @@ export class HavokQueries {
               havok.HP_QueryCollector_GetPointProximityResult(this.collector, 0),
               "point proximity result",
             );
-            const bodyId = this.host.bodyIdByHpId.get(cp[0][0]);
+            const bodyId = this.host.bodyIdByHpId.get(Number(cp[0][0]));
             const record = bodyId ? this.host.bodies.get(bodyId) : undefined;
             if (!record) break;
             const hitShapeId = cp[1][0];
@@ -627,7 +627,7 @@ export class HavokQueries {
   }
 
   private castHitOwner(bodyHpId: bigint, shapeHpId: bigint): { bodyId: string | null; actorId: string | null } {
-    const bodyId = this.host.bodyIdByHpId.get(bodyHpId) ?? null;
+    const bodyId = this.host.bodyIdByHpId.get(Number(bodyHpId)) ?? null;
     const record = bodyId ? this.host.bodies.get(bodyId) : undefined;
     if (!bodyId || !record) return { bodyId, actorId: null };
     return { bodyId, actorId: shapeOwner(record, shapeHpId) };

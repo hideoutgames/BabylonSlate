@@ -58,7 +58,7 @@ export interface HavokCharacterHost {
   readonly havok: HavokPhysicsWithBindings;
   readonly worldId: HP_WorldId;
   readonly bodies: ReadonlyMap<string, BodyRecord>;
-  readonly bodyIdByHpId: ReadonlyMap<bigint, string>;
+  readonly bodyIdByHpId: ReadonlyMap<number, string>;
   flushMutations(): void;
   failMutation(record: BodyRecord, failure: Error): Error;
   setBodyPoseBeforeStep(record: BodyRecord): void;
@@ -553,7 +553,7 @@ export class HavokCharacters {
   /** Keeps the first contact with each dynamic body; the character never moves other bodies. */
   private recordDynamicContact(touched: CharacterContact[], point: ContactPoint, distance: number): void {
     const hpBodyId = point[0];
-    const bodyId = this.host.bodyIdByHpId.get(hpBodyId[0]);
+    const bodyId = this.host.bodyIdByHpId.get(Number(hpBodyId[0]));
     if (bodyId === undefined || this.host.bodies.get(bodyId)?.desc.motionType !== "dynamic") return;
     for (const contact of touched) if (contact.bodyId[0] === hpBodyId[0]) return;
     touched.push({
@@ -574,7 +574,7 @@ export class HavokCharacters {
   private pushDynamicBodies(touched: readonly CharacterContact[], vx: number, vy: number, vz: number, dt: number): void {
     const havok = this.host.havok;
     for (const contact of touched) {
-      const bodyId = this.host.bodyIdByHpId.get(contact.bodyId[0]);
+      const bodyId = this.host.bodyIdByHpId.get(Number(contact.bodyId[0]));
       const record = bodyId === undefined ? undefined : this.host.bodies.get(bodyId);
       if (!record?.inWorld) continue;
       const [centerOfMass, mass, inertia, inertiaOrientation] = checkedValue(

@@ -107,7 +107,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private readonly collidersByOwner = new Map<string, Set<ColliderRecord>>();
   private readonly triggerColliders = new Set<ColliderRecord>();
   private readonly constraints = new Map<string, { desc: ConstraintDesc; jointId: HP_ConstraintId }>();
-  private readonly bodyIdByHpId = new Map<bigint, string>();
+  private readonly bodyIdByHpId = new Map<number, string>();
   /** A kinematic target normalized in place before writing to Havok. */
   private readonly targetPose: PhysicsTransform = {
     position: { x: 0, y: 0, z: 0 },
@@ -291,7 +291,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.contacts.applyEventMask(record);
       this.bodies.set(desc.id, record);
       if (desc.motionType !== "static") this.activeMotionBodies.add(record);
-      this.bodyIdByHpId.set(hpBodyId[0], desc.id);
+      this.bodyIdByHpId.set(Number(hpBodyId[0]), desc.id);
       let owned = this.bodiesByActor.get(desc.actorId);
       if (!owned) this.bodiesByActor.set(desc.actorId, (owned = new Set()));
       owned.add(record);
@@ -1087,7 +1087,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   private disposeBodyRecord(record: BodyRecord): void {
-    this.bodyIdByHpId.delete(record.hpBodyId[0]);
+    this.bodyIdByHpId.delete(Number(record.hpBodyId[0]));
     if (record.inWorld) {
       this.havok.HP_World_RemoveBody(this.worldId, record.hpBodyId);
       record.inWorld = false;
