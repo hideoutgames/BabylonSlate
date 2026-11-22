@@ -8,6 +8,14 @@ interface RenderSlotsHost {
   findActor(guid: string): Actor | undefined;
 }
 
+/** Passive listener for slot table changes (the snapshot publisher's dirty sets). */
+export interface RenderSlotObserver {
+  /** `previous` is another slot `actor` still owns: its own slot until now. */
+  onSlotAllocated(slotId: number, actor: Actor, previous: number | undefined): void;
+  /** Runs after the slot left the table; `owner` is the actor that held it. */
+  onSlotReleased(slotId: number, owner: Actor | undefined): void;
+}
+
 /**
  * Render slot table: which actor owns each snapshot slot. Released slots are
  * reused last-released first, then new ids grow from 0, so ids stay
@@ -22,6 +30,10 @@ export class RenderSlots {
   private readonly free: number[] = [];
   private nextUnused = 0;
   private _revision = 0;
+  /** Each slot's allocation number: live slots iterate (`entries`) in this order. */
+  private readonly allocationOrder: number[] = [];
+  private allocations = 0;
+  private readonly observers: RenderSlotObserver[] = [];
   private readonly subsystems: RuntimeSubsystems;
   private readonly host: RenderSlotsHost;
 
@@ -35,9 +47,12 @@ export class RenderSlots {
     const slotId = this.free.pop() ?? this.nextUnused;
     this.host.ensureCapacity(slotId + 1);
     if (slotId === this.nextUnused) this.nextUnused += 1;
+    const previous = this.actorSlot(actor);
     this.owners.set(slotId, actor);
     this.byActor.set(actor, slotId);
+    this.allocationOrder[slotId] = this.allocations++;
     this._revision += 1;
+    for (let i = 0; i < this.observers.length; i++) this.observers[i]!.onSlotAllocated(slotId, actor, previous);
     return slotId;
   }
 
@@ -52,6 +67,21 @@ export class RenderSlots {
     this.owners.delete(slotId);
     this.free.push(slotId);
     this._revision += 1;
+    for (let i = 0; i < this.observers.length; i++) this.observers[i]!.onSlotReleased(slotId, owner);
+  }
+
+  /** Register a passive observer; returns the unsubscribe callback. */
+  addObserver(observer: RenderSlotObserver): () => void {
+    if (!this.observers.includes(observer)) this.observers.push(observer);
+    return () => {
+      const index = this.observers.indexOf(observer);
+      if (index >= 0) this.observers.splice(index, 1);
+    };
+  }
+
+  /** Orders live slots as `entries` iterates them: a smaller number was allocated earlier. */
+  allocationNumber(slotId: number): number {
+    return this.allocationOrder[slotId] ?? -1;
   }
 
   /** The render slot this actor's own commands target. */

@@ -464,8 +464,7 @@ describe("snapshot removal pass", () => {
     world.flushPending();
     snapshots.publish();
     expect(despawns).toEqual(["doomed"]);
-    // Its own release changed the slot table, so the next publish checks once more, then stops.
-    snapshots.publish();
+    // Its own release names no other slot to check.
     lookups.mockClear();
     snapshots.publish();
     expect(lookups).not.toHaveBeenCalled();
