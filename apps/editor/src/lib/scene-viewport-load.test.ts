@@ -74,9 +74,10 @@ describe("runSceneViewportBlockingLoad", () => {
     stopWatchingEncodes();
     vi.unstubAllGlobals();
   });
-  const paint = () => {
-    frames.shift()?.(0);
-    frames.shift()?.(16);
+  /** Crosses the load's paint barrier: a task, then one animation frame, then a task. */
+  const paint = async () => {
+    await vi.waitFor(() => expect(frames.length).toBeGreaterThan(0));
+    frames.shift()!(0);
   };
 
   it("yields for modal paint before realization and stays loading through the first frame", async () => {
@@ -99,11 +100,11 @@ describe("runSceneViewportBlockingLoad", () => {
     expect(realize).not.toHaveBeenCalled();
     expect(collect).not.toHaveBeenCalled();
     expect(encodesPaused).toBe(true);
-    paint();
+    await paint();
     await vi.waitFor(() => expect(progress.at(-1)?.value).toBe(90));
     expect(progress.at(-1)).toEqual({ value: 90, phase: "Presenting First Frame" });
     expect(presentFirstFrame).not.toHaveBeenCalled();
-    paint();
+    await paint();
     await vi.waitFor(() => expect(presentFirstFrame).toHaveBeenCalledOnce());
     expect(encodesPaused).toBe(true);
     present();
@@ -133,7 +134,7 @@ describe("runSceneViewportBlockingLoad", () => {
       presentFirstFrame,
       onProgress: () => {},
     });
-    paint();
+    await paint();
     await task;
     expect(presentFirstFrame).toHaveBeenCalledOnce();
     expect(frames).toEqual([]);
@@ -152,12 +153,12 @@ describe("runSceneViewportBlockingLoad", () => {
       presentFirstFrame: async () => {},
       onProgress: () => {},
     });
-    paint();
+    await paint();
     await vi.waitFor(() => expect(order).toEqual(["collect", "realize"]));
     expect(whenModelsReady).not.toHaveBeenCalled();
     finish();
     await vi.waitFor(() => expect(frames).toHaveLength(1));
-    paint();
+    await paint();
     await task;
     expect(whenModelsReady).toHaveBeenCalledOnce();
   });
@@ -179,10 +180,10 @@ describe("runSceneViewportBlockingLoad", () => {
       };
       const task = runSceneViewportBlockingLoad(options);
       const result = expect(task).rejects.toBe(failure);
-      paint();
+      await paint();
       if (stage === "presentFirstFrame") {
         await vi.waitFor(() => expect(frames).toHaveLength(1));
-        paint();
+        await paint();
       }
       await result;
       expect(onProgress.mock.calls.some(([value]) => value === 100)).toBe(false);
@@ -205,7 +206,7 @@ describe("runSceneViewportBlockingLoad", () => {
       warmShaders, presentFirstFrame, onProgress,
     });
     const result = expect(task).rejects.toMatchObject({ name: "AbortError" });
-    paint();
+    await paint();
     await vi.waitFor(() => expect(collect).toHaveBeenCalledOnce());
     expect(encodesPaused).toBe(true);
     controller.abort();
