@@ -134,7 +134,7 @@ it("lists the export's warnings after packaging and writes each to the Output Lo
   await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
 
   const alert = within(screen.getByTestId("packaging-warnings"));
-  expect(alert.getByText("Packaged With 2 Warnings")).toBeTruthy();
+  expect(alert.getByText("2 Packaging Warnings")).toBeTruthy();
   expect(alert.getAllByRole("listitem").map((item) => item.textContent)).toEqual(warnings);
   // Packaging still finishes and saves.
   expect(screen.getByText("Game package downloaded. Check your downloads.")).toBeTruthy();
@@ -142,7 +142,7 @@ it("lists the export's warnings after packaging and writes each to the Output Lo
 
   exportGameArtifact.mockResolvedValue(ok({ files: [], warnings: [warnings[0]] }));
   await act(async () => { fireEvent.click(screen.getByTestId("packaging-package")); });
-  expect(within(screen.getByTestId("packaging-warnings")).getByText("Packaged With 1 Warning")).toBeTruthy();
+  expect(within(screen.getByTestId("packaging-warnings")).getByText("1 Packaging Warning")).toBeTruthy();
   expect(appendLog).toHaveBeenCalledTimes(3);
 });
 

@@ -402,7 +402,7 @@ export function PackagingDialog({
                 {warnings.length > 0 ? (
                   <Alert data-testid="packaging-warnings">
                     <TriangleAlertIcon className="text-(--warning)" />
-                    <AlertTitle>Packaged With {warnings.length} {warnings.length === 1 ? "Warning" : "Warnings"}</AlertTitle>
+                    <AlertTitle>{warnings.length} Packaging {warnings.length === 1 ? "Warning" : "Warnings"}</AlertTitle>
                     <AlertDescription>
                       <ul className="flex max-h-32 touch-pan-y flex-col gap-1 overflow-y-auto overscroll-y-contain text-xs">
                         {warnings.map((warning, index) => <li key={index}>{warning}</li>)}
