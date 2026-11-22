@@ -114,6 +114,6 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 
 ## Native Havok rules
 
-- `@babylonjs/havok` 1.3.14 is driven directly via its WASM C-API: detaching the last shape calls `HP_Body_SetShape(hpBodyId, [0n])` directly.
+- `@babylonjs/havok` 1.3.14 is driven directly via its WASM C-API: detaching the last shape calls `HP_Body_SetShape(hpBodyId, [0n])` directly. Contact events and body poses are read from WASM memory at the 1.3.14 struct offsets (`havok-contacts.ts`, `readBodyBufferTransform`); `contact-reporting.test.ts` and `havok-body-buffer.test.ts` check them against known collisions and Havok's own transforms, so a version bump that moves a field fails there.
 - Attachment changes and teleports remove and reinsert the same native body handle (`HP_World_RemoveBody` / `HP_World_AddBody`) to refresh world/query membership without a solver step and avoid Havok 1.3.14 hangs when replacing overlapping compounds in-world; native removal sends no trigger exit, so the backend ends pair generations explicitly.
 - `applyColliderChanges` prepares all upserts/removals before attaching; failed preparation keeps the working set, failed attachment rolls back. Native bodies retire before their shapes. No caller code runs inside `step` (contacts are drained from native buffers and returned by `pollContacts`), so mutations never interleave with a native step and need no queue.
