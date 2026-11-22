@@ -27,6 +27,7 @@ function createMockPlugin(): BabylonSlateScopedStoragePlugin {
   return {
     pickFolder: vi.fn(),
     openFolder: vi.fn(),
+    releaseFolder: vi.fn().mockResolvedValue(undefined),
     readFile: vi.fn(),
     readFileRange: vi.fn(),
     writeFile: vi.fn(),
@@ -157,6 +158,21 @@ describe("ScopedStorageAdapter", () => {
       JSON.stringify({ id: "uuid-2", name: "World" }),
     );
     expect(adapter.getCurrentFolder()).toEqual(handle);
+  });
+
+  it("ends the native folder access when the folder is released", async () => {
+    const plugin = createMockPlugin();
+    vi.mocked(plugin.pickFolder).mockResolvedValue({ folder: { id: "uuid-2", name: "World" } });
+    const adapter = new ScopedStorageAdapter(plugin);
+    await adapter.pickProjectFolder();
+
+    await adapter.releaseFolder();
+    await adapter.releaseFolder();
+
+    expect(plugin.releaseFolder).toHaveBeenCalledTimes(1);
+    expect(plugin.releaseFolder).toHaveBeenCalledWith({ folder: "uuid-2" });
+    expect(adapter.getCurrentFolder()).toBeNull();
+    expect(prefs.has("haptic:scoped-folder")).toBe(false);
   });
 
   it("retains the failed recent folder as the reconnect target", async () => {
@@ -303,7 +319,7 @@ describe("ScopedStorageAdapter", () => {
     });
   });
 
-  it("lists entries from the plugin and maps isDir", async () => {
+  it("lists entries from the plugin, maps isDir and leaves out staged replacements", async () => {
     const plugin = createMockPlugin();
     prefs.set(
       "haptic:scoped-folder",
@@ -312,6 +328,7 @@ describe("ScopedStorageAdapter", () => {
     vi.mocked(plugin.readdir).mockResolvedValue({
       entries: [
         { name: "assets", isDir: true },
+        { name: ".haptic-0f8e2a4c-6b1d-4e3f-9a7b-2c5d8e1f4a6b.tmp", isDir: false, size: 3 },
         { name: "main.ts", isDir: false, size: 12, mtime: 1_700_000_000_000 },
       ],
     });
