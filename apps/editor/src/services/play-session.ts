@@ -455,6 +455,8 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
   let recordedTrace: TracePayload | null = null;
   const bridgeRate = createMessageRateMeter(() => performance.now());
   let hudStats: PlayHudStats | undefined;
+  /** The runtime's count of published frames that differed from a whole-World pass; null while verification is off. */
+  let snapshotMismatches: number | null = null;
   let lastWorkerTickIndex = 0;
   let input: InputCaptureHandle | null = null;
 
@@ -635,6 +637,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     const printEntry = printEntryFromCommand(command);
     if (printEntry) options.onPrint?.(printEntry);
     if (command.type === "stats") {
+      if (command.snapshotMismatches !== undefined) snapshotMismatches = command.snapshotMismatches;
       emitHudStats(
         applyWorkerPlayStats(hudStats, {
           fps: command.fps,
@@ -893,6 +896,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
         runtime?.getWorld().clock.tickIndex,
         lastWorkerTickIndex,
       ),
+    snapshotMismatches: () => snapshotMismatches,
     setFrameCap: (fps: number) => {
       handle.scheduler.setFrameCap(fps);
     },

@@ -1360,6 +1360,8 @@ function PlayOverlayView({
         whenModelsReady: () => Promise<void>;
         modelLoadCount: () => number;
         tickIndex: () => number;
+        /** Published frames that differed from a whole-World pass (must stay 0); null unless the session verifies them. */
+        snapshotMismatches: () => number | null;
         inspectWorld: PlaySession["inspectWorld"];
         runtimeMode: () => PlaySession["runtimeMode"] | null;
         /** Play's error and warning log lines (the Debug Console's), oldest first. */
@@ -1468,6 +1470,7 @@ function PlayOverlayView({
         sessionRef.current?.whenModelsReady() ?? Promise.resolve(),
       modelLoadCount: () => sessionRef.current?.modelLoadCount() ?? 0,
       tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
+      snapshotMismatches: () => sessionRef.current?.snapshotMismatches() ?? null,
       inspectWorld: () => sessionRef.current?.inspectWorld() ?? Promise.resolve({ tickIndex: 0, nodes: [] }),
       runtimeMode: () => sessionRef.current?.runtimeMode ?? null,
       problemLogs: () => playProbes.get(PLAY_PROBE_KEY)?.problemLogs() ?? [],
