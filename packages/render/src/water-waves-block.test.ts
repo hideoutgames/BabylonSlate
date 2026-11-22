@@ -81,18 +81,18 @@ describe("Water Waves node", () => {
     }
     expect(fragment.split(uniform(WATER_NODE_FOAM_UNIFORM)).length - 1).toBe(1);
     const attribute = (name: string, components: number) => `attribute vec${components} ${name};`;
-    for (const [name, components, define] of [["slateWaterData", 4, "SLATE_WATER_SURFACE"], ["slateWaterBaseNormal", 3, "SLATE_WATER_SURFACE"], ["slateWaterBlend", 4, "defined(SLATE_WATER_BLEND) || defined(SLATE_WATER_NODE_BLEND)"]] as const) {
+    for (const [name, components, define] of [["hapticWaterData", 4, "HAPTIC_WATER_SURFACE"], ["hapticWaterBaseNormal", 3, "HAPTIC_WATER_SURFACE"], ["hapticWaterBlend", 4, "defined(HAPTIC_WATER_BLEND) || defined(HAPTIC_WATER_NODE_BLEND)"]] as const) {
       expect(declaredUnder(source, define, attribute(name, components)), name).toBe(true);
       expect(source.split(attribute(name, components)).length - 1, name).toBe(1);
     }
     // The spectrum's sampler in both stages, its foam in the fragment only, and no source prefix left unbound.
-    expect(vertex).toContain("slateWaterFftSampler");
-    expect(vertex).not.toContain("slateWaterFoamSampler");
-    expect(fragment).toContain("slateWaterFoamSampler");
-    expect(source).not.toMatch(/\b[UAOS]\.slate|\bIN\./);
-    expect(source).toContain("#ifdef SLATE_WATER_GPU_WAVES");
+    expect(vertex).toContain("hapticWaterFftSampler");
+    expect(vertex).not.toContain("hapticWaterFoamSampler");
+    expect(fragment).toContain("hapticWaterFoamSampler");
+    expect(source).not.toMatch(/\b[UAOS]\.haptic|\bIN\./);
+    expect(source).toContain("#ifdef HAPTIC_WATER_GPU_WAVES");
     expect(source).toMatch(/vec3 swvNormal = normalize\(vec3\(/);
-    expect(source).toMatch(/uniform highp sampler2DArray slateWaterFftSampler;/);
+    expect(source).toMatch(/uniform highp sampler2DArray hapticWaterFftSampler;/);
   });
 
   it("displaces the rest point by the spectrum at Wave Scale, λ and the bank fade, with the surface's normal", () => {
@@ -126,11 +126,11 @@ describe("Water Waves node", () => {
     ordinary.material = result.material;
     const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), result.material);
     const [ordinaryDefines, lakeDefines] = [(await programFor(result.material, ordinary)).defines as string, (await programFor(result.material, lake)).defines as string];
-    expect(ordinaryDefines).not.toContain("SLATE_WATER_GPU_WAVES");
-    expect(ordinaryDefines).not.toContain("SLATE_WATER_SURFACE");
-    expect(lakeDefines).toMatch(/^#define SLATE_WATER_GPU_WAVES$/m);
-    expect(lakeDefines).toMatch(/^#define SLATE_WATER_SURFACE$/m);
-    expect(lakeDefines).not.toContain("SLATE_WATER_BLEND");
+    expect(ordinaryDefines).not.toContain("HAPTIC_WATER_GPU_WAVES");
+    expect(ordinaryDefines).not.toContain("HAPTIC_WATER_SURFACE");
+    expect(lakeDefines).toMatch(/^#define HAPTIC_WATER_GPU_WAVES$/m);
+    expect(lakeDefines).toMatch(/^#define HAPTIC_WATER_SURFACE$/m);
+    expect(lakeDefines).not.toContain("HAPTIC_WATER_BLEND");
   });
 
   it("is found in a built material, and only there", () => {
@@ -148,7 +148,7 @@ describe("Water Waves node", () => {
       expect(await variant.compiled.ready).toEqual([]);
       expect(materialHasWaterWaves(variant.compiled.material)).toBe(true);
       const source = variant.compiled.material.compiledShaders;
-      expect(source).toContain("slateWaterFftCascade0");
+      expect(source).toContain("hapticWaterFftCascade0");
       expect(source).toMatch(/swvD = swvD \* swvGain;/);
     } finally { await variant.release(); }
   });
@@ -160,23 +160,23 @@ describe("Water Waves node", () => {
     const result = compile(scene, doc);
     expect(await result.ready).toEqual([]);
     const source = result.material.compiledShaders;
-    expect(declaredUnder(source, "SLATE_WATER_SURFACE", "attribute vec4 slateWaterData;")).toBe(true);
-    expect(declaredUnder(source, "SLATE_WATER_SURFACE", "attribute vec3 slateWaterFlow;")).toBe(true);
-    expect(source).not.toMatch(/SLATE_WATER_GPU_WAVES|slateWaterClock|slateWaterBaseNormal/);
-    expect(source).toMatch(/\w+ = slateWaterData\.y;/);
+    expect(declaredUnder(source, "HAPTIC_WATER_SURFACE", "attribute vec4 hapticWaterData;")).toBe(true);
+    expect(declaredUnder(source, "HAPTIC_WATER_SURFACE", "attribute vec3 hapticWaterFlow;")).toBe(true);
+    expect(source).not.toMatch(/HAPTIC_WATER_GPU_WAVES|hapticWaterClock|hapticWaterBaseNormal/);
+    expect(source).toMatch(/\w+ = hapticWaterData\.y;/);
   });
 
   it("gives Water Surface the node's Wave Height and Simulation Time, because a GPU mesh's vertex data carries neither", async () => {
     const scene = host(), result = compile(scene, wavesDocument(true));
     expect(await result.ready).toEqual([]);
     const source = result.material.compiledShaders;
-    const height = /(\w+) = swvH;/.exec(source)?.[1], time = /(\w+) = slateWaterClock\.x;/.exec(source)?.[1];
+    const height = /(\w+) = swvH;/.exec(source)?.[1], time = /(\w+) = hapticWaterClock\.x;/.exec(source)?.[1];
     expect(height).toBeDefined();
     expect(time).toBeDefined();
-    const gpu = [...source.matchAll(/#ifdef SLATE_WATER_GPU_WAVES\s+(\w+) = (\w+);\s+#endif/g)].map((match) => match[2]);
+    const gpu = [...source.matchAll(/#ifdef HAPTIC_WATER_GPU_WAVES\s+(\w+) = (\w+);\s+#endif/g)].map((match) => match[2]);
     expect(gpu).toEqual(expect.arrayContaining([height, time]));
     // The vertex data stays the source for every other mesh: the node's values are added under the define, not instead.
-    expect(source.match(/\b\w+ = slateWaterData\.w;/g)).toHaveLength(1);
+    expect(source.match(/\b\w+ = hapticWaterData\.w;/g)).toHaveLength(1);
   });
 
   it("binds each draw's own grid offset and the water clock when meshes share a frozen material", async () => {
@@ -197,14 +197,14 @@ describe("Water Waves node", () => {
     result.material.freeze();
     const bound = new Map<string, number[]>();
     vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
-    const bind = (mesh: typeof a) => { result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!); return [...bound.get("slateWaterGridOffset")!]; };
+    const bind = (mesh: typeof a) => { result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!); return [...bound.get("hapticWaterGridOffset")!]; };
     // The snapped centre is the camera within one cell; each volume's offset is the camera relative to it, in world space.
     const cell = Math.min(3, Math.max(0.2, createDefaultWaterDefinition().waveLength / 20)) / RENDER_QUALITY_PROFILES.medium.water.meshDensity;
     const offsetA = bind(a), offsetB = bind(b);
     for (const [i, expected] of [40, 0, -25].entries()) expect(Math.abs(offsetA[i]! - expected)).toBeLessThanOrEqual(cell);
     for (const [i, expected] of [-60, 0, 5].entries()) expect(Math.abs(offsetB[i]! - expected)).toBeLessThanOrEqual(cell);
     const drift = waterFoamDrift(createDefaultWaterDefinition(), normalizeWaterBody({}, "global").waveScale, { x: 0, z: 0 });
-    expect(bound.get("slateWaterClock")).toEqual([2, drift.x, drift.z, 0]);
+    expect(bound.get("hapticWaterClock")).toEqual([2, drift.x, drift.z, 0]);
   });
 });
 
@@ -219,14 +219,14 @@ function shaderSample(
   baseNormal: number[] = [0, 1, 0], source = waterWaveBlockSource(),
 ) {
   const variables = new Map<string, Value>();
-  variables.set("slateWaterGridOffset", [0, 0, 0, 0]);
-  variables.set("slateWaterSwellInfo", [terms.fade, 0, 0, 0]);
-  variables.set("slateWaterFft", [terms.scale, terms.lambda, size, 7.13]);
-  variables.set("slateWaterFftCascade0", [1 / terms.patch, 0.5 / size, 0.5 / size, 0]);
-  for (let c = 1; c < WATER_FFT_CASCADES_MAX; c++) variables.set(`slateWaterFftCascade${c}`, [0, 0, 0, 0]);
-  variables.set("slateWaterEye", [x, 10, z, 0]);
-  variables.set("slateWaterData", [spacing, bank, 5, 0]);
-  variables.set("slateWaterBaseNormal", baseNormal);
+  variables.set("hapticWaterGridOffset", [0, 0, 0, 0]);
+  variables.set("hapticWaterSwellInfo", [terms.fade, 0, 0, 0]);
+  variables.set("hapticWaterFft", [terms.scale, terms.lambda, size, 7.13]);
+  variables.set("hapticWaterFftCascade0", [1 / terms.patch, 0.5 / size, 0.5 / size, 0]);
+  for (let c = 1; c < WATER_FFT_CASCADES_MAX; c++) variables.set(`hapticWaterFftCascade${c}`, [0, 0, 0, 0]);
+  variables.set("hapticWaterEye", [x, 10, z, 0]);
+  variables.set("hapticWaterData", [spacing, bank, 5, 0]);
+  variables.set("hapticWaterBaseNormal", baseNormal);
   variables.set("worldPos", [x, 0, z, 1]);
   const tap = (uv: Value, layer: Value) => {
     const [u, v] = lanes(uv) as [number, number], grid = layers[lanes(layer)[0]!]!;
@@ -234,7 +234,7 @@ function shaderSample(
     const at = (ix: number, iy: number, channel: number) => grid[((((iy % size) + size) % size) * size + (((ix % size) + size) % size)) * 4 + channel]!;
     return [0, 1, 2, 3].map((c) => (at(x0, y0, c) * (1 - tx) + at(x0 + 1, y0, c) * tx) * (1 - ty) + (at(x0, y0 + 1, c) * (1 - tx) + at(x0 + 1, y0 + 1, c) * tx) * ty);
   };
-  evaluateShader(source, variables, { SLATE_WATER_GPU_WAVES: 1, SLATE_WATER_FFT: 1 }, { swFftTapLod: tap });
+  evaluateShader(source, variables, { HAPTIC_WATER_GPU_WAVES: 1, HAPTIC_WATER_FFT: 1 }, { swFftTapLod: tap });
   return { position: variables.get("worldPos") as number[], height: variables.get("swvH") as number, normal: variables.get("swvNormal") as number[] };
 }
 

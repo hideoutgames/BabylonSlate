@@ -115,7 +115,7 @@ it("leases the scene cube only for a compiled raw consumer, preserves bindings a
     true,
   );
   expect(parameters.mock.calls).toContainEqual([
-    expect.stringContaining("slateEnvironmentPrefilter"),
+    expect.stringContaining("hapticSampledEnvironmentPrefilter"),
     2,
     0.5,
     0.25,

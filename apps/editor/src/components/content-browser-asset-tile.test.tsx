@@ -12,7 +12,7 @@ import {
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   resolveTypeVisual,
 } from "@haptic/editor-kit";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
 import { classParentLookup, visualForIndexedAsset } from "../lib/content-browser-helpers";
 

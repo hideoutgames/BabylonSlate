@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { ANDROID_ICON_SIZES } from "../../../packages/exporter/src/native-android";
-import { pngHeader } from "../../../packages/exporter/src/test-support/app-icon-images";
+import { ANDROID_ICON_SIZES } from "@haptic/exporter/native-android";
+import { pngHeader } from "@haptic/exporter/test-support/app-icon-images";
 import {
   DEFAULT_ANDROID_PACKAGING, findAndroidToolchain, gradleFailure, javaVersion, normalizeAndroidPackaging, packageAndroidGame,
   type AndroidGamePackageRequest, type AndroidPackagingSettings, type ToolchainHost,

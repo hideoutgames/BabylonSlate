@@ -18,7 +18,7 @@ import { LATTICE_SAMPLER, LATTICE_WORLD_POSITION_PATTERN, latticeNormalShaderFun
  * keep ordinary draws of a shared or frozen material free of a vertex sampler. */
 export class LatticeDeformerPlugin extends MaterialPluginBase {
   constructor(material: Material) {
-    super(material, "SlateLattice", 220, { SLATE_LATTICE: false }, true, false);
+    super(material, "HapticLattice", 220, { HAPTIC_LATTICE: false }, true, false);
     this.registerForExtraEvents = true;
     // Material.clone rebuilds a serialized plugin as a bare MaterialPluginBase carrying this name, which
     // would then pass for the real one. The owner attaches a fresh plugin to the clone instead.
@@ -27,27 +27,27 @@ export class LatticeDeformerPlugin extends MaterialPluginBase {
   }
   override isCompatible(): boolean { return true; }
   override prepareDefines(defines: MaterialDefines, _scene: Scene, mesh: AbstractMesh): void {
-    (defines as MaterialDefines & { SLATE_LATTICE: boolean }).SLATE_LATTICE = hasMeshLatticeDeformer(mesh);
+    (defines as MaterialDefines & { HAPTIC_LATTICE: boolean }).HAPTIC_LATTICE = hasMeshLatticeDeformer(mesh);
   }
   override hardBindForSubMesh(buffer: UniformBuffer, _scene: Scene, _engine: unknown, subMesh: SubMesh): void {
     // Only an effect compiled with the cage reads it: ordinary draws skip the parent walk and the uniform write.
-    if (!(subMesh.materialDefines as (MaterialDefines & { SLATE_LATTICE?: boolean }) | null)?.SLATE_LATTICE) return;
+    if (!(subMesh.materialDefines as (MaterialDefines & { HAPTIC_LATTICE?: boolean }) | null)?.HAPTIC_LATTICE) return;
     bindMeshLatticeDeformerBuffer(buffer, subMesh.getEffectiveMesh());
   }
   override getSamplers(samplers: string[]): void { samplers.push(LATTICE_SAMPLER); }
   override getUniforms() {
     const uniforms = ["lattice_cellSize", "lattice_min", "lattice_max", "lattice_resolution", "lattice_position"].map((name) => ({ name, size: 3, type: "vec3" }));
-    uniforms.push({ name: "slateWorldToLattice", size: 16, type: "mat4" }, { name: "slateLatticeToWorld", size: 16, type: "mat4" }, { name: "slateLatticeEnabled", size: 1, type: "float" });
+    uniforms.push({ name: "hapticWorldToLattice", size: 16, type: "mat4" }, { name: "hapticLatticeToWorld", size: 16, type: "mat4" }, { name: "hapticLatticeEnabled", size: 1, type: "float" });
     return { ubo: uniforms, vertex: uniforms.map(({ name, type }) => `uniform ${type} ${name};`).join("\n") };
   }
   override getCustomCode(type: string): Record<string, string> | null {
-    const objectNormalVaryings = `#if defined(SLATE_LATTICE) && defined(OBJECTSPACE_NORMALMAP)\n${[0, 1, 2].map((i) => `varying vec3 vSlateLatticeJ${i};`).join("\n")}\n#endif\n`;
+    const objectNormalVaryings = `#if defined(HAPTIC_LATTICE) && defined(OBJECTSPACE_NORMALMAP)\n${[0, 1, 2].map((i) => `varying vec3 vHapticLatticeJ${i};`).join("\n")}\n#endif\n`;
     if (type === "fragment") {
       const normalMap = "(normalW\\s*=\\s*normalize\\(mat3\\(normalMatrix[^;]*\\*\\s*normalW\\);)";
       checkedShader(bumpFragment.shader, "lattice object normal map").replace(new RegExp(normalMap), "$1");
       return {
-        CUSTOM_FRAGMENT_DEFINITIONS: objectNormalVaryings + `#if defined(SLATE_LATTICE) && defined(OBJECTSPACE_NORMALMAP)\n${latticeNormalShaderFunction()}\n#endif\n`,
-        ["!" + normalMap]: `$1\n#ifdef SLATE_LATTICE\nnormalW = slateLatticeNormal(mat3(vSlateLatticeJ0,vSlateLatticeJ1,vSlateLatticeJ2),normalW);\n#endif\n`,
+        CUSTOM_FRAGMENT_DEFINITIONS: objectNormalVaryings + `#if defined(HAPTIC_LATTICE) && defined(OBJECTSPACE_NORMALMAP)\n${latticeNormalShaderFunction()}\n#endif\n`,
+        ["!" + normalMap]: `$1\n#ifdef HAPTIC_LATTICE\nnormalW = hapticLatticeNormal(mat3(vHapticLatticeJ0,vHapticLatticeJ1,vHapticLatticeJ2),normalW);\n#endif\n`,
       };
     }
     if (type !== "vertex") return null;
@@ -61,20 +61,20 @@ export class LatticeDeformerPlugin extends MaterialPluginBase {
     return {
       CUSTOM_VERTEX_DEFINITIONS: objectNormalVaryings + latticeShaderDeclarations(false) + latticeShaderFunctions(this._material.getScene()),
       ["!" + LATTICE_WORLD_POSITION_PATTERN]: "$1" + latticeWorldPositionCode(),
-      ["!" + normal]: `$1\n#ifdef SLATE_LATTICE\nvNormalW = slateLatticeNormal(slateLatticeResult.jacobian,vNormalW);\n#endif\n`,
+      ["!" + normal]: `$1\n#ifdef HAPTIC_LATTICE\nvNormalW = hapticLatticeNormal(hapticLatticeResult.jacobian,vNormalW);\n#endif\n`,
       // Stock bumpVertex uses untouched normalUpdated/tangentUpdated. Rebuild
       // an orthonormal frame from its original T/B and the final normal; the
       // transformed original B retains UV/world/cage reflection handedness.
       CUSTOM_VERTEX_MAIN_END: `
-#if defined(SLATE_LATTICE) && defined(OBJECTSPACE_NORMALMAP)
-vSlateLatticeJ0 = slateLatticeResult.jacobian[0];
-vSlateLatticeJ1 = slateLatticeResult.jacobian[1];
-vSlateLatticeJ2 = slateLatticeResult.jacobian[2];
+#if defined(HAPTIC_LATTICE) && defined(OBJECTSPACE_NORMALMAP)
+vHapticLatticeJ0 = hapticLatticeResult.jacobian[0];
+vHapticLatticeJ1 = hapticLatticeResult.jacobian[1];
+vHapticLatticeJ2 = hapticLatticeResult.jacobian[2];
 #endif
-#if defined(SLATE_LATTICE) && defined(TANGENT) && defined(NORMAL) && (defined(BUMP) || defined(PARALLAX) || defined(CLEARCOAT_BUMP) || defined(ANISOTROPIC))
-vec3 slateLatticeBasisT = slateLatticeTangent(slateLatticeResult.jacobian,vTBN[0],vNormalW);
-vTBN = mat3(slateLatticeBasisT,
- slateLatticeBitangent(slateLatticeResult.jacobian,slateLatticeBasisT,vTBN[1],vNormalW),vNormalW);
+#if defined(HAPTIC_LATTICE) && defined(TANGENT) && defined(NORMAL) && (defined(BUMP) || defined(PARALLAX) || defined(CLEARCOAT_BUMP) || defined(ANISOTROPIC))
+vec3 hapticLatticeBasisT = hapticLatticeTangent(hapticLatticeResult.jacobian,vTBN[0],vNormalW);
+vTBN = mat3(hapticLatticeBasisT,
+ hapticLatticeBitangent(hapticLatticeResult.jacobian,hapticLatticeBasisT,vTBN[1],vNormalW),vNormalW);
 #endif`,
     };
   }
@@ -86,7 +86,7 @@ const supportedClasses = new Set(["StandardMaterial", "PBRMaterial", "PBRMetalli
  * Babylon's plugin constructor resets the draw cache and rebuilds the native UBO
  * layout of a material that already compiled, so the next draw recompiles it. */
 export function ensureLatticeDeformerPlugin(material: Material): LatticeDeformerPlugin | null {
-  const existing = material.pluginManager?.getPlugin<LatticeDeformerPlugin>("SlateLattice");
+  const existing = material.pluginManager?.getPlugin<LatticeDeformerPlugin>("HapticLattice");
   if (existing) return existing;
   return supportedClasses.has(material.getClassName()) && (material instanceof PBRBaseMaterial || material instanceof StandardMaterial) ? new LatticeDeformerPlugin(material) : null;
 }

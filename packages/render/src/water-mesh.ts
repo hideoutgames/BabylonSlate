@@ -284,7 +284,7 @@ function animateSurface(s: Surface, time: number): void {
   }
   s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
   s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);
-  s.mesh.updateVerticesData("slateWaterData", s.data);
+  s.mesh.updateVerticesData("hapticWaterData", s.data);
   s.time = time;
 }
 

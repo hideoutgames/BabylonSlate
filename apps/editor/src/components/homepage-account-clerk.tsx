@@ -36,7 +36,7 @@ function AccountButton({ onOverlayChange, onAccountChange, ...props }: Props) {
   const guestBilling = useSubscriptionBilling(undefined);
   useEffect(() => {
     const update = () =>
-      onOverlayChange(Boolean(document.querySelector(".slate-clerk-overlay")));
+      onOverlayChange(Boolean(document.querySelector(".haptic-clerk-overlay")));
     const observer = new MutationObserver(update);
     observer.observe(document.body, { childList: true, subtree: true });
     update();

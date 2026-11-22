@@ -26,7 +26,7 @@ import { instantiatePrefabComponents } from "./prefab-preview";
 import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
 import { duplicateSceneActor, spawnPlacedActor } from "./place-actors";
 import { decodeAssetDocument } from "@haptic/assets";
-import { minimalProjectFiles } from "../../../../packages/assets/src/test-support/minimal-project";
+import { minimalProjectFiles } from "@haptic/assets/test-support/minimal-project";
 
 const identity = identitySerializedTransform();
 

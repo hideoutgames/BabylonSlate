@@ -1,5 +1,5 @@
 import { ENGINE_VERSION } from "@haptic/core";
-import { collectAssetDependencyMetadata } from "./asset-dependencies";
+import { collectAssetDependencyMetadata } from "../asset-dependencies";
 import {
   capsuleMesh,
   coneMesh,
@@ -16,19 +16,19 @@ import {
   wedgeMesh,
   type PrimitiveMesh,
 } from "./editor-primitive-geometry";
-import { encodeHasset } from "./hasset";
-import type { ProjectTreeFile } from "./hproject";
-import { encodeGlbJsonBin } from "./importers/glb-parse";
-import { modelHeaderSummary, normalizeModelPayload } from "./model-payload";
-import { DOCUMENT_CHUNK_ID } from "./document-chunk";
-import { stableStringify } from "./bytes";
-import { bakeGltfOccluder } from "./occluder-bake";
-import { createDefaultPluginSettings, encodePluginSettingsDocument } from "./plugin-settings";
+import { encodeHasset } from "../hasset";
+import type { ProjectTreeFile } from "../hproject";
+import { encodeGlbJsonBin } from "../importers/glb-parse";
+import { modelHeaderSummary, normalizeModelPayload } from "../model-payload";
+import { DOCUMENT_CHUNK_ID } from "../document-chunk";
+import { stableStringify } from "../bytes";
+import { bakeGltfOccluder } from "../occluder-bake";
+import { createDefaultPluginSettings, encodePluginSettingsDocument } from "../plugin-settings";
 import {
   cookGeneratedCollisionFromGltf,
   createDefaultSimpleCollider,
   type ModelSimpleCollider,
-} from "./simple-collision";
+} from "../simple-collision";
 
 export const EDITOR_PRIMITIVES_DISPLAY_NAME = "EditorPrimitives";
 export const EDITOR_PRIMITIVES_PLUGIN_GUID = "c0ffee00-0001-4000-8000-000000000001";

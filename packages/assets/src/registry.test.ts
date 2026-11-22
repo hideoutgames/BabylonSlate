@@ -4,10 +4,8 @@ import { encodeAssetDocument, decodeAssetDocument } from "./asset-document";
 import { encodeHasset, readHassetHeader } from "./hasset";
 import { createVfsBlobStore } from "./blob-store";
 import { projectContentRoot, type ContentRoot } from "./content-root";
-import {
-  buildMinimalGlbFixture,
-  encodeGlbJsonBin,
-} from "./importers/glb-parse";
+import { encodeGlbJsonBin } from "./importers/glb-parse";
+import { buildMinimalGlbFixture } from "./test-support/glb-fixtures";
 import { EncodeQueue } from "./encode-queue";
 import { AssetRegistry, RegistryGenerationClock } from "./registry";
 import { ThumbnailDecodeLru } from "./thumbnails";

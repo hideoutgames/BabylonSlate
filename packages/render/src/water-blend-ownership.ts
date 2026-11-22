@@ -2,7 +2,7 @@
  * Per-pixel blend ownership (`WATER_OWNERSHIP_DEFINE`): which of a blending water surface's participants owns a pixel,
  * evaluated in the Water Cut from the participants' footprints, so the seam is exact at any grid cell size.
  *
- * The per-vertex ownership margin (`slateWaterBlend.z`) is interpolated linearly across the surface's triangles. Global
+ * The per-vertex ownership margin (`hapticWaterBlend.z`) is interpolated linearly across the surface's triangles. Global
  * Water and spectrum Oceans grade their grids around the camera, so away from it a cell can span the whole blend band
  * or a whole neighbour: there the interpolated seam misses the neighbour's own, which leaves gaps (and overlaps, where
  * both draw and their depth pre-passes fight). For bodies whose footprints are analytic (Global Water Volume, Ocean,
@@ -14,18 +14,18 @@
  */
 import { waterBlendVerticalTolerance, type WaterBlendIndex } from "@haptic/core";
 
-export const WATER_OWNERSHIP_DEFINE = "SLATE_WATER_OWNERSHIP";
+export const WATER_OWNERSHIP_DEFINE = "HAPTIC_WATER_OWNERSHIP";
 /** Participants the per-pixel ownership evaluates: the surface itself and up to three neighbours. */
 export const WATER_OWNERSHIP_PARTICIPANTS = 4;
 /**
- * Per participant k: `slateWaterOwnA{k}` (world position X, Z; scale X, Z), `slateWaterOwnB{k}` (the world directions
- * of local X and Z in X/Z), `slateWaterOwnC{k}` (footprint: 0 open water, 1 box, 2 ellipse; half width; half length;
- * vertical fade, 0 for an empty slot); `slateWaterOwnClass` (the four blend classes) and `slateWaterOwnInfo` (x: half
+ * Per participant k: `hapticWaterOwnA{k}` (world position X, Z; scale X, Z), `hapticWaterOwnB{k}` (the world directions
+ * of local X and Z in X/Z), `hapticWaterOwnC{k}` (footprint: 0 open water, 1 box, 2 ellipse; half width; half length;
+ * vertical fade, 0 for an empty slot); `hapticWaterOwnClass` (the four blend classes) and `hapticWaterOwnInfo` (x: half
  * the Blend Distance).
  */
 export const WATER_OWNERSHIP_UNIFORMS = [
-  ...Array.from({ length: WATER_OWNERSHIP_PARTICIPANTS }, (_, k) => [`slateWaterOwnA${k}`, `slateWaterOwnB${k}`, `slateWaterOwnC${k}`]).flat(),
-  "slateWaterOwnClass", "slateWaterOwnInfo",
+  ...Array.from({ length: WATER_OWNERSHIP_PARTICIPANTS }, (_, k) => [`hapticWaterOwnA${k}`, `hapticWaterOwnB${k}`, `hapticWaterOwnC${k}`]).flat(),
+  "hapticWaterOwnClass", "hapticWaterOwnInfo",
 ];
 /** Floats `blendOwnership` writes: the uniforms above in order, four per vector. */
 const WATER_OWNERSHIP_FLOATS = WATER_OWNERSHIP_UNIFORMS.length * 4;
@@ -80,9 +80,9 @@ export function blendOwnership(index: WaterBlendIndex, self: number, out: Float3
  */
 export function ownershipSource(): string {
   const n = WATER_OWNERSHIP_PARTICIPANTS, k = Array.from({ length: n }, (_, i) => i), c = "xyzw";
-  const phi = k.map((i) => `  float swOwnPhi${i} = smoothstep(-swOwnHalf, swOwnHalf, swOwnEdge(U.slateWaterOwnA${i}, U.slateWaterOwnB${i}, U.slateWaterOwnC${i}, p)) * U.slateWaterOwnC${i}.w;`);
+  const phi = k.map((i) => `  float swOwnPhi${i} = smoothstep(-swOwnHalf, swOwnHalf, swOwnEdge(U.hapticWaterOwnA${i}, U.hapticWaterOwnB${i}, U.hapticWaterOwnC${i}, p)) * U.hapticWaterOwnC${i}.w;`);
   const raw = k.map((a) => `  float swOwnRaw${a} = swOwnPhi${a}${k.filter((b) => b !== a).map((b) =>
-    ` * mix(1.0, 1.0 - swOwnPhi${b}, step(U.slateWaterOwnClass.${c[a]} + 0.5, U.slateWaterOwnClass.${c[b]}))`).join("")};`);
+    ` * mix(1.0, 1.0 - swOwnPhi${b}, step(U.hapticWaterOwnClass.${c[a]} + 0.5, U.hapticWaterOwnClass.${c[b]}))`).join("")};`);
   return `
 float swOwnEdge(vec4 a, vec4 b, vec4 c, vec2 p) {
   if (c.x < 0.5) { return 1000000.0; }
@@ -101,7 +101,7 @@ float swOwnEdge(vec4 a, vec4 b, vec4 c, vec2 p) {
   return (1.0 - r) * r / gl / length(g / gl / a.zw);
 }
 float swOwnership(vec2 p) {
-  float swOwnHalf = U.slateWaterOwnInfo.x;
+  float swOwnHalf = U.hapticWaterOwnInfo.x;
 ${phi.join("\n")}
 ${raw.join("\n")}
   float swOwnTotal = ${k.map((i) => `swOwnRaw${i}`).join(" + ")};

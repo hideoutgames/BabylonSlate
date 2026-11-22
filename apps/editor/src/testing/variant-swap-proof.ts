@@ -29,10 +29,10 @@ import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocu
 import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";
 import { glErrorTraceEntries, installGlErrorTrace } from "@haptic/render/gl-error-trace";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
-import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
-import { isRevealPending } from "../../../../packages/render/src/reveal-pending";
-import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
+import { compileMaterialPlan } from "@haptic/render/editor-proofs";
+import { isRevealPending } from "@haptic/render/editor-proofs";
+import { warmSpawnables } from "@haptic/render/editor-proofs";
 
 /** A graph Material of one base colour; `variant` changes its document's settings, so it compiles its own program. */
 async function graphMaterial(scene: Scene, name: string, color: number[], variant: (doc: MaterialDocument) => void = () => undefined) {

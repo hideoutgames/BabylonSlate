@@ -13,7 +13,7 @@ import {
   setReducedMotion,
   setScrubSnapStrength,
 } from "@haptic/editor-kit";
-import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
+import { MemoryAppSettingsStore } from "@haptic/vfs/test-support/memory-app-settings";
 import type { EngineSettings } from "@haptic/vfs";
 import { AppSettingsProvider, useAppSettings } from "./app-settings-context";
 import { EditorThemeProvider } from "./theme-context";

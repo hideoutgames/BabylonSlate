@@ -15,7 +15,7 @@ async function openTrees(page: Page) {
   await page.waitForFunction(() => window.crossOriginIsolated, undefined, {
     timeout: 15_000,
   });
-  await expect(page.locator(".slate-loading")).toHaveCount(0, {
+  await expect(page.locator(".haptic-loading")).toHaveCount(0, {
     timeout: 30_000,
   });
   await page.getByTestId("gallery-tree-examples").scrollIntoViewIfNeeded();

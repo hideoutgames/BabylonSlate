@@ -15,7 +15,9 @@
     "./area-emission-client": "./src/area-emission-client.ts",
     "./asset-diff": "./src/asset-diff.ts",
     "./asset-diff-client": "./src/asset-diff-client.ts",
-    "./import-worker-client": "./src/import-worker-client.ts"
+    "./import-worker-client": "./src/import-worker-client.ts",
+    "./test-support/*": "./src/test-support/*.ts",
+    "./audio-reverb-worker": "./src/audio-reverb-worker.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -33,7 +35,9 @@
   "devDependencies": {
     "@haptic/test-kit": "workspace:*",
     "@haptic/vfs": "workspace:*",
+    "fast-check": "^4.3.0",
     "ktx-parse": "^1.1.0",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
   }
 }

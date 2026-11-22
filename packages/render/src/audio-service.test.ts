@@ -12,7 +12,7 @@ import {
   type SoundAttenuationPayload,
 } from "@haptic/assets";
 import { createActor, createDefaultSceneSettings } from "@haptic/core";
-import { createInProcessRuntime } from "@haptic/test-kit";
+import { createInProcessRuntime } from "@haptic/runtime";
 import { AudioBufferCache } from "./audio-buffer-cache";
 import { FakeAudioPlaybackBackend, type AudioPose } from "./audio-playback-backend";
 import { AudioService } from "./audio-service";

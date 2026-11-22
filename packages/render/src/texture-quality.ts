@@ -74,7 +74,7 @@ export class QualityTextureBlock extends TextureBlock {
     // A connected image source binds the shared source first; sample this scene's variant.
     if (this.hasImageSource && this.qualityLease) effect.setTexture(this.samplerName, this.qualityLease.resource);
     effect.setFloat(
-      "slateTextureLodBias",
+      "hapticTextureLodBias",
       settings && material?.mode === 0 ? settings.textureLodBias : 0,
     );
   }
@@ -85,14 +85,14 @@ export class QualityTextureBlock extends TextureBlock {
     const result = super._buildBlock(state);
     if (state.target !== NodeMaterialBlockTargets.Fragment) return result;
     state._emitUniformFromString(
-      "slateTextureLodBias",
+      "hapticTextureLodBias",
       NodeMaterialBlockConnectionPointTypes.Float,
     );
     const generated = state.compilationString
       .slice(start)
       .replace(
         new RegExp(textureLodSamplePattern(this.samplerName), "g"),
-        "texture2D($1,$2,slateTextureLodBias)",
+        "texture2D($1,$2,hapticTextureLodBias)",
       );
     state.compilationString =
       state.compilationString.slice(0, start) + generated;
@@ -105,7 +105,7 @@ const MATERIAL_SAMPLERS =
   "(?:albedo|diffuse|ambient|opacity|emissive|specular|reflectivity|metallicReflectance|reflectance|microSurface|bump|lightmap)Sampler";
 export class TextureQualityPlugin extends MaterialPluginBase {
   constructor(material: Material) {
-    super(material, "SlateTextureQuality", 210, {}, true, false);
+    super(material, "HapticTextureQuality", 210, {}, true, false);
     this.registerForExtraEvents = true;
     this._enable(true);
   }
@@ -114,21 +114,21 @@ export class TextureQualityPlugin extends MaterialPluginBase {
   }
   override hardBindForSubMesh(buffer: UniformBuffer, scene: Scene): void {
     buffer.updateFloat(
-      "slateTextureLodBias",
+      "hapticTextureLodBias",
       sceneRenderingSettings(scene).textureLodBias,
     );
   }
   override getUniforms() {
-    return { ubo: [{ name: "slateTextureLodBias", size: 1, type: "float" }] };
+    return { ubo: [{ name: "hapticTextureLodBias", size: 1, type: "float" }] };
   }
   override getCustomCode(type: string) {
     if (type !== "fragment") return null;
     return {
-      ["!" + textureLodSamplePattern(MATERIAL_SAMPLERS)]: "texture2D($1,$2,slateTextureLodBias)",
+      ["!" + textureLodSamplePattern(MATERIAL_SAMPLERS)]: "texture2D($1,$2,hapticTextureLodBias)",
     };
   }
 }
-registerPersistentMaterialPlugin("SlateTextureQuality", (material) =>
+registerPersistentMaterialPlugin("HapticTextureQuality", (material) =>
   material instanceof PBRBaseMaterial || material instanceof StandardMaterial
     ? new TextureQualityPlugin(material)
     : null,

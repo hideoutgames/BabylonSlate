@@ -80,6 +80,16 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
       revisions.set(p, String(++revision));
       return {};
     },
+    async rename({ from, to }) {
+      const source = normalize(from);
+      const node = tree.get(source);
+      if (!node || node.kind !== "file") throw missing();
+      const target = normalize(to);
+      if (tree.get(target)?.kind === "dir") throw new Error("Cannot replace a directory with a file");
+      tree.delete(source);
+      tree.set(target, node);
+      revisions.set(target, String(++revision));
+    },
     async deleteFile({ path }) {
       if (!tree.delete(normalize(path))) throw missing();
     },

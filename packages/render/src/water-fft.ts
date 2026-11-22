@@ -104,7 +104,7 @@ const RETRY_RUNS = 120;
 /** Completed unit spectra kept per engine (CPU memory; 3 MiB each at 256²×3, 0.5 MiB at 128²×2). */
 const SPECTRUM_CACHE_BYTES = 12 * 1024 ** 2;
 
-const VERTEX = "slateWaterFft", EVOLVE = "slateWaterFftEvolve", BUTTERFLY = "slateWaterFftButterfly", FOAM = "slateWaterFftFoam";
+const VERTEX = "hapticWaterFft", EVOLVE = "hapticWaterFftEvolve", BUTTERFLY = "hapticWaterFftButterfly", FOAM = "hapticWaterFftFoam";
 const OVERWRITTEN = new Color4(0, 0, 0, 0);
 /**
  * Every pass draws over its whole bound target (a work atlas, or one layer of an output), so nothing it held is read: a
@@ -128,7 +128,7 @@ uniform sampler2D h0Texture;
 uniform vec4 fftParams;
 uniform vec4 fftPatch;
 uniform vec4 fftShear;
-vec2 slatePack(vec2 a, vec2 b) { return vec2(a.x - b.y, a.y + b.x); }
+vec2 hapticPack(vec2 a, vec2 b) { return vec2(a.x - b.y, a.y + b.x); }
 void main(void) {
 int size = int(fftParams.x);
 ivec2 p = ivec2(gl_FragCoord.xy);
@@ -153,9 +153,9 @@ vec2 u = k / max(length(k), 1e-30);
 vec2 ih = vec2(-h.y, h.x);
 vec4 result;
 if (segment - cascade * 2 == 0) {
-result = vec4(slatePack(ih * u.x, h), slatePack(ih * u.y, -h * (k.x * u.y * shear)));
+result = vec4(hapticPack(ih * u.x, h), hapticPack(ih * u.y, -h * (k.x * u.y * shear)));
 } else {
-result = vec4(slatePack(ih * k.x, ih * k.y), slatePack(-h * (k.x * u.x), -h * (k.y * u.y)));
+result = vec4(hapticPack(ih * k.x, ih * k.y), hapticPack(-h * (k.x * u.x), -h * (k.y * u.y)));
 }
 gl_FragColor = result;
 }`;

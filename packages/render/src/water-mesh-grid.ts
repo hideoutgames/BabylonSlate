@@ -273,16 +273,16 @@ export function updateLayout(s: Surface, world: Matrix, inverse: Matrix): Layout
   const data = new VertexData();
   data.positions = s.positions; data.normals = s.normals; data.indices = indices; data.uvs = uvs;
   data.applyToMesh(mesh, true);
-  mesh.setVerticesData("slateWaterData", s.data, true, 4);
-  mesh.setVerticesData("slateWaterFlow", s.flow, true, 3);
-  mesh.setVerticesData("slateWaterBaseNormal", s.baseNormals, true, 3);
+  mesh.setVerticesData("hapticWaterData", s.data, true, 4);
+  mesh.setVerticesData("hapticWaterFlow", s.flow, true, 3);
+  mesh.setVerticesData("hapticWaterBaseNormal", s.baseNormals, true, 3);
   if (s.blend) {
     s.blendData = new Float32Array(count * 4); s.blendColors = new Float32Array(count * 2); s.blendRest = new Float32Array(count * 6);
-    mesh.setVerticesData("slateWaterBlend", s.blendData, true, 4);
-    mesh.setVerticesData("slateWaterBlendColors", s.blendColors, true, 2);
-  } else if (mesh.isVerticesDataPresent("slateWaterBlend")) {
-    mesh.removeVerticesData("slateWaterBlend");
-    mesh.removeVerticesData("slateWaterBlendColors");
+    mesh.setVerticesData("hapticWaterBlend", s.blendData, true, 4);
+    mesh.setVerticesData("hapticWaterBlendColors", s.blendColors, true, 2);
+  } else if (mesh.isVerticesDataPresent("hapticWaterBlend")) {
+    mesh.removeVerticesData("hapticWaterBlend");
+    mesh.removeVerticesData("hapticWaterBlendColors");
   }
   return REBUILT;
 }

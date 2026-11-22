@@ -8,7 +8,7 @@ import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
 import { defaultPixelShader } from "@babylonjs/core/Shaders/default.fragment";
-import { checkedShader } from "../../../../packages/render/src/checked-shader";
+import { checkedShader } from "@haptic/render/editor-proofs";
 
 const PLUGIN_NAME = "HapticStandardFog";
 

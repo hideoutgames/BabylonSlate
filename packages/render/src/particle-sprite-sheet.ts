@@ -17,7 +17,7 @@ type SheetSystem = Pick<ParticleSystem, "spriteCellWidth" | "spriteCellHeight" |
   _sheetCreation?: QueueItem;
   _updateQueueStart: QueueItem | null;
   /** The Sprite Sheet nearest Emitter Output, which builds last. */
-  _slateSpriteSheet?: ParticleSpriteSheetSettings;
+  _hapticSpriteSheet?: ParticleSpriteSheetSettings;
 };
 
 const sheetSystem = (system: unknown) => system as SheetSystem;
@@ -56,7 +56,7 @@ function appendUpdate(system: SheetSystem, process: QueueItem["process"]): void 
  * age-based cell update is off for node-built systems, so only Animate Sprite Sheet and Update
  * Sprite Cell change it.
  */
-export class SlateSpriteSheetBlock extends NodeParticleBlock {
+export class HapticSpriteSheetBlock extends NodeParticleBlock {
   sheet: ParticleSpriteSheetSettings = {
     columns: 4, rows: 4, startCell: 0, endCell: 15, framesPerSecond: 30, loop: true, randomStartCell: false,
   };
@@ -68,7 +68,7 @@ export class SlateSpriteSheetBlock extends NodeParticleBlock {
   }
 
   override getClassName(): string {
-    return "SlateSpriteSheetBlock";
+    return "HapticSpriteSheetBlock";
   }
 
   get particle(): NodeParticleConnectionPoint {
@@ -93,12 +93,12 @@ export class SlateSpriteSheetBlock extends NodeParticleBlock {
     system.spriteCellLoop = sheet.loop;
     system.spriteRandomStartCell = sheet.randomStartCell;
     system.spriteCellChangeSpeed = 0;
-    system._slateSpriteSheet = sheet;
+    system._hapticSpriteSheet = sheet;
     creation.process = (particle) => {
       const first = sheet.randomStartCell
         ? sheet.startCell + Math.floor(Math.random() * (sheet.endCell - sheet.startCell + 1))
         : sheet.startCell;
-      (particle as SheetParticle)._properties.slateSpriteFirstCell = first;
+      (particle as SheetParticle)._properties.hapticSpriteFirstCell = first;
       particle.cellIndex = first;
     };
     this.output._storedValue = built;
@@ -106,7 +106,7 @@ export class SlateSpriteSheetBlock extends NodeParticleBlock {
 }
 
 /** Animate Sprite Sheet: each frame, the cell `animatedSpriteCell` gives for the particle's age. */
-export class SlateSpriteAnimateBlock extends NodeParticleBlock {
+export class HapticSpriteAnimateBlock extends NodeParticleBlock {
   constructor(name: string) {
     super(name);
     this.registerInput("particle", NodeParticleBlockConnectionPointTypes.Particle);
@@ -114,7 +114,7 @@ export class SlateSpriteAnimateBlock extends NodeParticleBlock {
   }
 
   override getClassName(): string {
-    return "SlateSpriteAnimateBlock";
+    return "HapticSpriteAnimateBlock";
   }
 
   get particle(): NodeParticleConnectionPoint {
@@ -129,11 +129,11 @@ export class SlateSpriteAnimateBlock extends NodeParticleBlock {
     const built = this.particle.getConnectedValue(state) as ParticleSystem;
     const system = sheetSystem(built);
     appendUpdate(system, (particle) => {
-      const sheet = system._slateSpriteSheet;
+      const sheet = system._hapticSpriteSheet;
       if (!sheet) return;
       state.particleContext = particle;
       state.systemContext = built;
-      const first = (particle as SheetParticle)._properties.slateSpriteFirstCell;
+      const first = (particle as SheetParticle)._properties.hapticSpriteFirstCell;
       particle.cellIndex = animatedSpriteCell(sheet, typeof first === "number" ? first : sheet.startCell, particle.age);
     });
     this.output._storedValue = built;
@@ -141,7 +141,7 @@ export class SlateSpriteAnimateBlock extends NodeParticleBlock {
 }
 
 /** Update Sprite Cell: the Cell input, rounded down and kept within the sheet. */
-export class SlateSpriteCellBlock extends NodeParticleBlock {
+export class HapticSpriteCellBlock extends NodeParticleBlock {
   constructor(name: string) {
     super(name);
     this.registerInput("particle", NodeParticleBlockConnectionPointTypes.Particle);
@@ -150,7 +150,7 @@ export class SlateSpriteCellBlock extends NodeParticleBlock {
   }
 
   override getClassName(): string {
-    return "SlateSpriteCellBlock";
+    return "HapticSpriteCellBlock";
   }
 
   get particle(): NodeParticleConnectionPoint {
@@ -169,7 +169,7 @@ export class SlateSpriteCellBlock extends NodeParticleBlock {
     const built = this.particle.getConnectedValue(state) as ParticleSystem;
     const system = sheetSystem(built);
     appendUpdate(system, (particle) => {
-      const sheet = system._slateSpriteSheet;
+      const sheet = system._hapticSpriteSheet;
       if (!sheet) return;
       state.particleContext = particle;
       state.systemContext = built;

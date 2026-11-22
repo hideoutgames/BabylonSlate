@@ -713,17 +713,17 @@ struct hapticCelLights {
   vec3 highlight;
 };
 void hapticCelAccumulate(inout hapticCelLight result, vec3 diffuse) {
-  float strength = slateCelStrength(diffuse);
+  float strength = hapticCelStrength(diffuse);
   float wins = strength > result.peak + max(1.0, result.peak) * 0.00001 ? 1.0 : 0.0;
   result.peak = max(result.peak, strength);
-  result.diffuse = slateCelAccumulate(result.diffuse, diffuse, wins);
+  result.diffuse = hapticCelMixDiffuse(result.diffuse, diffuse, wins);
 }
 // A light's diffuse light before its shadow, and its shadow's lit share.
 void hapticCelAdd(inout hapticCelLights result, vec3 diffuse, float lit) {
   hapticCelAccumulate(result.on, lit > 0.0 ? diffuse : vec3(0.0));
   hapticCelAccumulate(result.off, lit < 1.0 ? vec3(0.0) : diffuse);
   result.open += diffuse;
-  float strength = slateCelStrength(diffuse);
+  float strength = hapticCelStrength(diffuse);
   result.openPeak = max(result.openPeak, strength);
   if (lit > 0.0 && lit < 1.0 && strength > result.partial) {
     result.partial = strength;
@@ -736,31 +736,31 @@ void hapticCelAdd(inout hapticCelLights result, vec3 diffuse, float lit) {
 void hapticCelHighlight(inout hapticCelLights result, float signal, vec3 color) {
   if (signal > result.signal) {
     result.signal = signal;
-    result.highlight = color / max(slateCelStrength(color), 0.00001);
+    result.highlight = color / max(hapticCelStrength(color), 0.00001);
   }
 }
 // The ramp's brightness of summed lights: the strongest light's under Blend, the sum's otherwise.
 float hapticCelBrightness(hapticCelLight result) {
-  return slateCelLight.y > 1.5 ? result.peak : slateCelStrength(result.diffuse);
+  return hapticCelParams.y > 1.5 ? result.peak : hapticCelStrength(result.diffuse);
 }
 // Summed lights' colour at their band \`level\` with the fill's \`ambient\` light: Strongest takes the brighter,
 // Additive sums the two, Blend mixes their hues at the brighter level.
 vec3 hapticCelSurfaceLight(hapticCelLight result, float level, vec3 ambient) {
-  float strength = slateCelStrength(result.diffuse);
+  float strength = hapticCelStrength(result.diffuse);
   vec3 hue = result.diffuse / max(strength, 0.00001);
-  float ambientStrength = slateCelStrength(ambient);
-  if (slateCelLight.y < 0.5) {
+  float ambientStrength = hapticCelStrength(ambient);
+  if (hapticCelParams.y < 0.5) {
     if (ambientStrength > level) {
       hue = ambient / ambientStrength;
       level = ambientStrength;
     }
   } else {
     vec3 sum = hue * level + ambient;
-    float total = slateCelStrength(sum);
+    float total = hapticCelStrength(sum);
     hue = sum / max(total, 0.00001);
-    level = slateCelLight.y < 1.5 ? total : max(level, ambientStrength);
+    level = hapticCelParams.y < 1.5 ? total : max(level, ambientStrength);
   }
-  return mix(vec3(slateCelBands.z), slateCelTint(hue), min(level, 1.0));
+  return mix(vec3(hapticCelBands.z), hapticCelTint(hue), min(level, 1.0));
 }
 // Rect i at a fixed roughness of one half, as Babylon's light block evaluates it: its diffuse form factor, and its
 // specular one only where highlights are on (the only read of the LTC table; CEL never reads its Fresnel half).
@@ -775,7 +775,7 @@ void hapticCelAreaLight(vec3 P, vec3 N, vec3 V, int i, out vec3 diffuse, out vec
   float layer = hapticRect[i * 4 + 3].w;
   diffuse = hapticLtcEvaluate(N, V, P, mat3(1.0), c0, c1, c2, c3, layer);
   specular = vec3(0.0);
-  if (slateCelSpecular.x > 0.0) {
+  if (hapticCelSpecular.x > 0.0) {
     vec2 uv = vec2(0.5, sqrt(1.0 - clamp(dot(N, V), 0.0, 1.0))) * (63.0 / 64.0) + 0.5 / 64.0;
     vec4 t1 = textureLod(hapticAreaLtcSampler, vec2(uv.x, uv.y * 0.5), 0.0);
     specular = hapticLtcEvaluate(N, V, P, mat3(vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w)), c0, c1, c2, c3, layer);
@@ -785,17 +785,17 @@ void hapticCelAreaLight(vec3 P, vec3 N, vec3 V, int i, out vec3 diffuse, out vec
 // fade out as its \`roughness\` rises from one half (none at one).
 vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInfluence, float roughness) {
   // A Scene with its lights disabled draws its colour as it is.
-  if (slateCelLight.z > 0.5) return base;
+  if (hapticCelParams.z > 0.5) return base;
   vec3 dPdx = dFdx(P);
   vec3 dPdy = dFdy(P);
   hapticCelLights result = hapticCelLights(hapticCelLight(vec3(0.0), 0.0), hapticCelLight(vec3(0.0), 0.0), vec3(0.0), 0.0, 0.0, 1.0, -1.0, vec3(0.0));
-  bool highlights = slateCelSpecular.x > 0.0;
+  bool highlights = hapticCelSpecular.x > 0.0;
   // The fill is ambient: its wrapped N.L banded before mixing ground and sky (so it adds no smooth hue gradient), then
   // added after the ramp at its own strength, so a cast shadow shows wherever the fill differs from the lit band. It
   // has no highlight, as on the PBR path.
   vec3 ambient = vec3(0.0);
   if (hapticFillDirection.w > 0.0) {
-    ambient = mix(hapticFillGround.rgb, hapticFillSky.rgb, slateCelBand(dot(N, normalize(hapticFillDirection.xyz)) * 0.5 + 0.5));
+    ambient = mix(hapticFillGround.rgb, hapticFillSky.rgb, hapticCelBand(dot(N, normalize(hapticFillDirection.xyz)) * 0.5 + 0.5));
   }
   // The sun's two cascade lookups, then the lights of P's cluster (\`light-clusters.ts\`), points before spots, in one
   // loop with one shadow lookup, as \`hapticDirectLights\` has.
@@ -856,7 +856,7 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
         vec3 diffuse = record.rgb * max(dot(N, L), 0.0);
         hapticCelAdd(result, diffuse, shadow);
         diffuse *= shadow;
-        if (highlights) hapticCelHighlight(result, min(dot(N, normalize(V + L)) - slateCelSpecular.y, slateCelStrength(diffuse) - slateCelBands.w), record.rgb);
+        if (highlights) hapticCelHighlight(result, min(dot(N, normalize(V + L)) - hapticCelSpecular.y, hapticCelStrength(diffuse) - hapticCelBands.w), record.rgb);
       }
       continue;
     }
@@ -869,7 +869,7 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     vec3 diffuse = color.rgb * (max(dot(N, L), 0.0) * falloff);
     hapticCelAdd(result, diffuse, lit);
     diffuse *= lit;
-    if (highlights) hapticCelHighlight(result, min(dot(N, normalize(V + L)) - slateCelSpecular.y, slateCelStrength(diffuse) - slateCelBands.w), color.rgb);
+    if (highlights) hapticCelHighlight(result, min(dot(N, normalize(V + L)) - hapticCelSpecular.y, hapticCelStrength(diffuse) - hapticCelBands.w), color.rgb);
   }
   // Rect lights: the highlight is the specular form factor past its threshold, where the light reaches the lit band.
   for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.rect}; i++) {
@@ -880,22 +880,22 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     vec3 color = hapticRect[i * 4 + 3].rgb;
     vec3 diffuse = color * areaDiffuse;
     hapticCelAdd(result, diffuse, 1.0);
-    if (highlights) hapticCelHighlight(result, min(slateCelStrength(areaSpecular) - slateCelSpecular.z, slateCelStrength(diffuse) - slateCelBands.w), color * areaSpecular);
+    if (highlights) hapticCelHighlight(result, min(hapticCelStrength(areaSpecular) - hapticCelSpecular.z, hapticCelStrength(diffuse) - hapticCelBands.w), color * areaSpecular);
   }
-  if (slateCelEnvironment.x > 0.0) hapticCelAdd(result, slateCelEnvironmentLight(N) * environmentInfluence, 1.0);
+  if (hapticCelEnvironment.x > 0.0) hapticCelAdd(result, hapticCelEnvironmentLight(N) * environmentInfluence, 1.0);
   // After the loop, in uniform control flow: the ramp, its edge as wide as the unshadowed light's change across the
   // pixel, then the fill, then the shadow's and the highlight's anti-aliased edges.
-  float rampOn = slateCelShift(hapticCelBrightness(result.on));
-  float rampOpen = slateCelShift(slateCelLight.y > 0.5 && slateCelLight.y < 1.5 ? slateCelStrength(result.open) : result.openPeak);
-  float width = min(slateCelEdge(rampOn), slateCelEdge(rampOpen));
-  vec3 light = hapticCelSurfaceLight(result.on, slateCelRamp(rampOn, width), ambient);
+  float rampOn = hapticCelShift(hapticCelBrightness(result.on));
+  float rampOpen = hapticCelShift(hapticCelParams.y > 0.5 && hapticCelParams.y < 1.5 ? hapticCelStrength(result.open) : result.openPeak);
+  float width = min(hapticCelEdge(rampOn), hapticCelEdge(rampOpen));
+  vec3 light = hapticCelSurfaceLight(result.on, hapticCelRamp(rampOn, width), ambient);
   if (result.coverage < 1.0) {
-    float rampOff = slateCelShift(hapticCelBrightness(result.off));
-    light = mix(hapticCelSurfaceLight(result.off, slateCelRamp(rampOff, width), ambient), light, result.coverage);
+    float rampOff = hapticCelShift(hapticCelBrightness(result.off));
+    light = mix(hapticCelSurfaceLight(result.off, hapticCelRamp(rampOff, width), ambient), light, result.coverage);
   }
   // The Material's gloss scales the highlight's strength after its edge, never its shape.
   float gloss = clamp(2.0 * (1.0 - roughness), 0.0, 1.0);
-  return light * base + slateCelStep(result.signal) * slateCelSpecular.x * gloss * slateCelTint(result.highlight);
+  return light * base + hapticCelStep(result.signal) * hapticCelSpecular.x * gloss * hapticCelTint(result.highlight);
 }
 #endif
 
@@ -957,7 +957,7 @@ vec3 hapticV = normalize(${input.cameraPosition} - hapticP);
 float hapticInfluence = clamp(${input.environmentInfluence}, 0.0, 1.0);
 #ifdef HAPTIC_CEL
 // CEL lights in display space; the Material's display conversion encodes this back to the same colour.
-${output.diffuseDirect} = hapticToLinear(max(hapticCelLighting(hapticP, hapticN, hapticV, slateCelTextureToDisplay(${input.baseColor}), hapticInfluence,
+${output.diffuseDirect} = hapticToLinear(max(hapticCelLighting(hapticP, hapticN, hapticV, hapticCelTextureToDisplay(${input.baseColor}), hapticInfluence,
   clamp(${input.roughness}, 0.0, 1.0)), vec3(0.0)));
 #else
 float hapticNdotVUnclamped = dot(hapticN, hapticV);

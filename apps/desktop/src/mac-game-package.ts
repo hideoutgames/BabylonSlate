@@ -3,7 +3,7 @@ import { lstat, mkdir, mkdtemp, open, readdir, readFile, rename, rm, writeFile }
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { isValidAppId } from "@haptic/core/app-identity";
-import { gameAppFiles, macGameNames } from "../../../packages/exporter/src/native-desktop";
+import { gameAppFiles, macGameNames } from "@haptic/exporter/native-desktop";
 import { within } from "./package-files";
 
 /**
