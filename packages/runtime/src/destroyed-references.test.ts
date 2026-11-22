@@ -134,8 +134,10 @@ const toucher = (source: string) => compileClassScript({
 });
 
 describe("script calls on a destroyed object", () => {
-  it("read null, write and call nothing, and report each access once", async () => {
-    const victimWithState = compileClassScript({ registry, classId: "Victim", graph: { id: "event-graph", kind: "event", nodes: [], edges: [] } });
+  it("read null, write and call nothing, and report each access once, naming the Class as the editor does", async () => {
+    // The Class's name as the editor shows it names the object; reports still dedupe on its id.
+    const victimWithState = { ...compileClassScript({ registry, classId: "Victim", graph: { id: "event-graph", kind: "event", nodes: [], edges: [] } }),
+      className: "Victim Pawn" };
     scenario = await startGraphScenario({
       scripts: [victimWithState, toucher(`
         const gone = ctx.getVariable("Target");
@@ -155,9 +157,9 @@ describe("script calls on a destroyed object", () => {
     expect(toucherActor.getVariable("read")).toBeNull();
     expect(toucherActor.getVariable("called")).toEqual({});
     expect(scenario.diagnostics().map((diagnostic) => [diagnostic.code, diagnostic.message, diagnostic.nodeId])).toEqual([
-      ["runtime.destroyedAccess", 'Tried to access "health" from null of type "Victim"', "touch"],
-      ["runtime.destroyedAccess", 'Tried to set "health" on null of type "Victim"', "touch"],
-      ["runtime.destroyedAccess", 'Tried to call "Heal" on null of type "Victim"', "touch"],
+      ["runtime.destroyedAccess", 'Tried to access "health" from null of type "Victim Pawn"', "touch"],
+      ["runtime.destroyedAccess", 'Tried to set "health" on null of type "Victim Pawn"', "touch"],
+      ["runtime.destroyedAccess", 'Tried to call "Heal" on null of type "Victim Pawn"', "touch"],
     ]);
   });
 });

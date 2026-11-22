@@ -84,7 +84,7 @@ export function createOutputHostBindings(deps: OutputHostDeps): Pick<ScriptHostS
       const location: Pick<AnchorEntry, "assetGuid" | "graphId" | "nodeId" | "bodyLine"> | null =
         access.location ?? mapStackToAnchor(new Error().stack ?? "", deps.anchors);
       const key = `${location?.assetGuid ?? ""}|${location?.graphId ?? ""}|${location?.nodeId ?? ""}|` +
-        `${location?.bodyLine ?? ""}|${access.kind}|${access.member}|${access.className}`;
+        `${location?.bodyLine ?? ""}|${access.kind}|${access.member}|${access.classId}`;
       if (reportedDestroyedAccesses.has(key)) return;
       reportedDestroyedAccesses.add(key);
       reportError(DESTROYED_ACCESS_DIAGNOSTIC_CODE, "Script", destroyedAccessMessage(access), location ?? undefined);

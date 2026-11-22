@@ -154,6 +154,7 @@ export class ScriptHost {
       materials: this.materials,
       dispatchers: this.dispatchers,
       canInvokeOwner,
+      classDisplayName: (classId: string) => this.classDisplayName(classId),
       applyComponentVariable: (component: ActorComponent, name: string, value: unknown) =>
         this.applyComponentVariable(component, name, value),
       writeComponentVariable: (component: ActorComponent, name: string, value: unknown) =>
@@ -321,6 +322,15 @@ export class ScriptHost {
    * first. Scripts keyed by a locked engine id answer only for that exact id
    * and are never inherited.
    */
+  /** The name a loaded Class or Prefab script gives its class, as the editor shows it. */
+  classDisplayName(classId: string): string | undefined {
+    for (const loaded of this.byClassId.get(classId) ?? []) {
+      const name = loaded.script.className?.trim();
+      if (name) return name;
+    }
+    return undefined;
+  }
+
   private scriptLineage(classId: string): readonly LoadedScript[][] {
     const cached = this.lineageByClassId.get(classId);
     if (cached) return cached;

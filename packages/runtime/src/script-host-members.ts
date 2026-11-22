@@ -282,7 +282,8 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     destroyedAccess: (location, target) => {
       if (!(target instanceof EngineObject)) return;
       const { assetGuid, graphId, nodeId, kind, member } = location;
-      reportDestroyedAccess(services, { kind, member, className: destroyedClassName(target), location: { assetGuid, graphId, nodeId } });
+      reportDestroyedAccess(services, { kind, member, classId: target.classId,
+        className: destroyedClassName(target, host.classDisplayName), location: { assetGuid, graphId, nodeId } });
     },
     eventDelegate: (object, name, kind, params) => host.dispatchers.delegate(object, name, kind, params),
     bindDispatcher: (owner, name, delegate) => host.dispatchers.bind(owner, name, delegate),

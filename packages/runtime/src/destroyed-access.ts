@@ -23,16 +23,24 @@ export interface ScriptAccessLocation {
 export interface DestroyedAccess {
   kind: DestroyedAccessKind;
   member: string;
-  /** The destroyed object's class as messages name it. */
+  /** The destroyed object's class id: reports of one access dedupe on it. */
+  classId: string;
+  /** The destroyed object's class as messages name it (`destroyedClassName`). */
   className: string;
   location?: { assetGuid: string; graphId: string; nodeId: string };
 }
 
-/** A destroyed object's class as a message names it: a Scene or Scene Layer by its kind, any other by its class. */
-export function destroyedClassName(object: EngineObject): string {
+/** A Class's name as the editor shows it, when the host knows one (a loaded Class or Prefab script's name). */
+export type ClassDisplayName = (classId: string) => string | undefined;
+
+/**
+ * A destroyed object's class as a message names it: a Scene or Scene Layer by its kind, a Class or Prefab by its
+ * display name, and an engine class, or a class without a known name, by its id.
+ */
+export function destroyedClassName(object: EngineObject, displayName: ClassDisplayName): string {
   if (isSceneAssetClassId(object.classId)) return "Scene";
   if (isSceneLayerAssetClassId(object.classId)) return "Scene Layer";
-  return object.classId;
+  return displayName(object.classId) ?? object.classId;
 }
 
 export function destroyedAccessMessage({ kind, member, className }: Pick<DestroyedAccess, "kind" | "member" | "className">): string {
@@ -58,10 +66,13 @@ export function reportDestroyedAccess(services: Pick<ScriptHostServices, "log" |
  */
 export function reportDestroyedTarget(
   services: Pick<ScriptHostServices, "log" | "reportDestroyedAccess">,
+  displayName: ClassDisplayName,
   kind: DestroyedAccessKind,
   member: unknown,
   target: unknown,
 ): void {
   if (!(target instanceof EngineObject)) return;
-  reportDestroyedAccess(services, { kind, member: String(member ?? ""), className: destroyedClassName(target) });
+  reportDestroyedAccess(services, {
+    kind, member: String(member ?? ""), classId: target.classId, className: destroyedClassName(target, displayName),
+  });
 }

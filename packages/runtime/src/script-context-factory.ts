@@ -370,7 +370,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         getVariableFrom(object, name) {
           if (isReleasedObject(object)) {
-            reportDestroyedTarget(services, "access", name, object);
+            reportDestroyedTarget(services, host.classDisplayName, "access", name, object);
             return null;
           }
           if (object instanceof ActorComponent && object.classId === "2DRichTextComponent" &&
@@ -395,7 +395,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         setVariableOn(object, name, value) {
           if (isReleasedObject(object)) {
-            reportDestroyedTarget(services, "set", name, object);
+            reportDestroyedTarget(services, host.classDisplayName, "set", name, object);
             return;
           }
           if (object instanceof ActorComponent && object.classId === "DeformerComponent" &&
@@ -573,7 +573,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           if (!registry) return {};
           if (isReleasedObject(target)) {
             // No handler runs: the call reads the pin defaults, as for no receiver.
-            reportDestroyedTarget(services, "call", method, target);
+            reportDestroyedTarget(services, host.classDisplayName, "call", method, target);
             return dispatchInterface(registry, NO_INTERFACE_RECEIVER, String(interfaceGuid), String(method), args ?? {});
           }
           const receiver = target as InterfaceDispatchTarget | null | undefined;
@@ -619,7 +619,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         callComponentFunction(target, name, args) {
           if (isReleasedObject(target)) {
-            reportDestroyedTarget(services, "call", name, target);
+            reportDestroyedTarget(services, host.classDisplayName, "call", name, target);
             return {};
           }
           return callNativeComponentFunction(host, target, String(name ?? ""), args ?? {});
@@ -698,7 +698,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         invokeCustomEvent(target, eventName, eventArgs) {
           const { deltaSeconds, tickIndex } = this;
           if (isReleasedObject(target)) {
-            reportDestroyedTarget(services, "call", eventName, target);
+            reportDestroyedTarget(services, host.classDisplayName, "call", eventName, target);
             return;
           }
           const receiver = target as EngineObject | null | undefined;
@@ -759,7 +759,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           } else {
             const object = target as EngineObject | null | undefined;
             if (isReleasedObject(object) && !extras?.saveMigrationData) {
-              reportDestroyedTarget(services, "call", functionName, object);
+              reportDestroyedTarget(services, host.classDisplayName, "call", functionName, object);
               return {};
             }
             if (!object || !host.canInvokeOwner(object)) {
