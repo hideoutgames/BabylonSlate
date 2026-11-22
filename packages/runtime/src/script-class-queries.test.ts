@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import { ClassRegistry, World, type Actor, type ActorComponent } from "@haptic/object-model";
 import { ScriptHost } from "./script-host";
 import type { ScriptHostServices } from "./script-host-services";
@@ -23,6 +24,7 @@ function fixture() {
     return actor;
   };
   const services: ScriptHostServices = {
+    moduleLoader: functionModuleLoader,
     log: () => {}, print: () => {}, destroyActor: () => {}, executeConsoleCommand: () => ({ success: true, output: "" }),
     delay: async () => {}, reportError: () => {},
     classRegistry, getActors: () => world.getActors(), getWorld: () => world,

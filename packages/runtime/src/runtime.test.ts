@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseStackFrames, lookupAnchor, type AnchorEntry } from "./stack-map";
 import { LogRingBuffer } from "./log-ring";
-import { loadCompiledModule } from "./module-loader";
+import { loadCompiledModule } from "./function-module-loader";
 import { createInProcessRuntime } from "./driver";
 import { readSnapshotHeader, snapshotFloatCount } from "@haptic/bridge";
 

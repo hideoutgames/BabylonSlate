@@ -183,7 +183,11 @@ describe("exportGame", () => {
       extensionLibraries: [library], scripts: [], assets: [], playerFiles: stubPlayer(),
     });
     if (!withLibrary.ok) throw new Error(withLibrary.error);
-    expect(parseGameManifest(new TextDecoder().decode(withLibrary.value.files.get(GAME_MANIFEST_FILE))).extensionLibraries).toEqual([library]);
+    // The code ships in the scripts module, as a function; game.json keeps the rest of the bundle.
+    const shipped = parseGameManifest(new TextDecoder().decode(withLibrary.value.files.get(GAME_MANIFEST_FILE)));
+    expect(shipped.extensionLibraries).toEqual([{ ...library, bundle: { ...library.bundle, modules: [{ path: "game.ts", code: "", imports: {} }] } }]);
+    expect(new TextDecoder().decode(withLibrary.value.files.get(shipped.scriptsModule!.path))).toContain(
+      `"game.ts": function (exports, module, require, extensions) {\nexports.rain = 1;\n},`);
     const without = await exportGame({
       platform: "web",
       bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -575,7 +579,8 @@ describe("exportGame", () => {
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBe("Export file count 4 exceeds the limit of 3.");
+    // index.html, player.js, the scripts module, the Scene and game.json.
+    expect(result.error).toBe("Export file count 5 exceeds the limit of 3.");
   });
 
   it("warns when the file count crosses the warn threshold", async () => {

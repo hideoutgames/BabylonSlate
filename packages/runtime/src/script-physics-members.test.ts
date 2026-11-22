@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import { identityTransform } from "@haptic/core";
 import { ClassRegistry, World, type Actor } from "@haptic/object-model";
 import { createPhysicsBackend, createSoftwarePhysicsBackend, type PhysicsBackend } from "@haptic/physics";
@@ -31,6 +32,7 @@ function physicsContext(world: World, sync: PhysicsWorldSync) {
     projectTouchToScene: () => { throw new Error("unused"); },
   });
   return new ScriptHost({
+    moduleLoader: functionModuleLoader,
     log: () => {}, print: () => {}, destroyActor: () => {}, reportError: () => {}, delay: async () => {},
     executeConsoleCommand: () => ({ success: true, output: "" }),
     findActor: (id) => world.findActor(id),
@@ -49,7 +51,7 @@ function spawnBody(world: World, guid: string, x: number, motionType: string, sh
 
 describe("Ease host member", () => {
   it("clamps Alpha to 0..1 and shapes it by the named Easing Curve", () => {
-    const ctx = new ScriptHost({ log: () => {}, print: () => {}, destroyActor: () => {}, reportError: () => {}, delay: async () => {},
+    const ctx = new ScriptHost({ moduleLoader: functionModuleLoader, log: () => {}, print: () => {}, destroyActor: () => {}, reportError: () => {}, delay: async () => {},
       executeConsoleCommand: () => ({ success: true, output: "" }) }).createContext(null, 0, 0);
     expect([ctx.easeAlpha("linear", 0.25), ctx.easeAlpha("linear", 2), ctx.easeAlpha("linear", -1), ctx.easeAlpha("linear", Number.NaN)])
       .toEqual([0.25, 1, 0, 0]);

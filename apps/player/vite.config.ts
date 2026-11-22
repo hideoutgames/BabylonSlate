@@ -7,6 +7,7 @@ import { havokHostedWasmVitePlugin } from "../editor/vite-havok-wasm";
 import { rapierHostedWasmVitePlugin } from "../editor/vite-rapier-wasm";
 import { recastHostedWasmVitePlugin } from "../editor/vite-recast-wasm";
 import { bundledPackagesReport } from "./vite-bundled-packages";
+import { noEvaluationReport } from "./vite-no-eval";
 import { createPlatformModules, platformModuleGroup, platformModules } from "./vite-platform-modules";
 import { previewDiagnosticsEntry } from "./vite-preview-diagnostics";
 import { leaveOutUnusedBabylonModules } from "../editor/vite-unused-babylon-modules";
@@ -17,6 +18,13 @@ const editorPublic = path.join(repoRoot, "apps/editor/public");
 const bundledPackages = bundledPackagesReport({
   gamePackagesFile: path.join(repoRoot, "scripts/third-party-notices/game-packages.json"),
 });
+/**
+ * Modules the player bundles that evaluate text, each with why a game never runs that code (`noEvaluationReport`).
+ */
+const EVALUATION_ALLOWED: Record<string, string> = {
+  "@babylonjs/core/Misc/tools.pure.js": "Tools._LoadScriptNative evaluates a script only under Babylon Native (`_native`), never in a browser.",
+};
+const noEvaluation = noEvaluationReport(EVALUATION_ALLOWED);
 /** Platform modules of this build's page and worker, each in its own file that packaging can leave out. */
 const platformModuleState = createPlatformModules();
 /** npm packages only the iOS and Android games load (through the `vfs` platform modules): web and desktop games leave them out. */
@@ -91,6 +99,7 @@ export default defineConfig({
     recastHostedWasmVitePlugin(),
     previewDiagnosticsEntry(rootDir),
     bundledPackages.main,
+    noEvaluation.main,
     writePlayerFileList(),
     leaveOutUnusedBabylonModules(),
     platformModules(platformModuleState, { writeList: true, packages: PLATFORM_PACKAGES }),
@@ -126,7 +135,7 @@ export default defineConfig({
   worker: {
     format: "es",
     plugins: () => [
-      havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), recastHostedWasmVitePlugin(), bundledPackages.worker(),
+      havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), recastHostedWasmVitePlugin(), bundledPackages.worker(), noEvaluation.worker(),
       leaveOutUnusedBabylonModules(),
       platformModules(platformModuleState, { writeList: false, packages: PLATFORM_PACKAGES }),
     ],

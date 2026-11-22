@@ -2,16 +2,17 @@ import type { CommandMessage, ControlMessage } from "@haptic/bridge";
 import { normalizeGameEnvironment, type SerializedScene, type SerializedSceneLayer } from "@haptic/core";
 import { isSceneAssetClassId, isSceneLayerAssetClassId } from "@haptic/object-model";
 import {
-  createInProcessRuntime,
+  createRuntime,
   type RuntimeDriver,
   type RuntimeDriverOptions,
 } from "./driver";
 import type { AcquireRuntimeScene } from "./scene-source";
+import type { ScriptModuleLoader } from "./module-loader";
 
 export type PlayLoadControl = Extract<ControlMessage, { type: "load" }>;
 
 /**
- * Map a worker `load` control message onto `createInProcessRuntime` physics
+ * Map a worker `load` control message onto `createRuntime` physics
  * options so Play's scene settings actually reach the backend factory.
  */
 export function runtimeOptionsFromLoadControl(
@@ -166,15 +167,20 @@ export function runtimeOptionsFromLoadControl(
 export function createRuntimeFromLoad(
   msg: PlayLoadControl,
   onCommand: (command: CommandMessage) => void,
-  saveGameStorage?: import("@haptic/core").SaveGameStorage,
-  sourceHost?: { acquireScene?: AcquireRuntimeScene },
+  host: {
+    /** How the session's scripts become code: source text in Editor Play, the game's static scripts module in a game. */
+    moduleLoader: ScriptModuleLoader;
+    saveGameStorage?: import("@haptic/core").SaveGameStorage;
+    acquireScene?: AcquireRuntimeScene;
+  },
 ): RuntimeDriver {
-  const runtime = createInProcessRuntime({
+  const runtime = createRuntime({
     ...runtimeOptionsFromLoadControl(msg),
-    ...(sourceHost?.acquireScene ? { acquireScene: sourceHost.acquireScene } : {}),
+    ...(host.acquireScene ? { acquireScene: host.acquireScene } : {}),
+    moduleLoader: host.moduleLoader,
     onCommand,
   });
-  if (msg.saveGame && saveGameStorage) runtime.configureSaveGame({ ...msg.saveGame, storage: saveGameStorage });
+  if (msg.saveGame && host.saveGameStorage) runtime.configureSaveGame({ ...msg.saveGame, storage: host.saveGameStorage });
   return runtime;
 }
 

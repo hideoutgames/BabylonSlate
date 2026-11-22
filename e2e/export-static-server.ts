@@ -33,7 +33,7 @@ export type ServedExportRequest = {
 
 export async function serveExportFiles(
   files: Map<string, Uint8Array>,
-  options: { honorRange: boolean },
+  options: { honorRange: boolean; headers?: Readonly<Record<string, string>> },
 ): Promise<{ url: string; requests: ServedExportRequest[]; close: () => Promise<void> }> {
   const requests: ServedExportRequest[] = [];
   const server: Server = createServer((req, res) => {
@@ -50,6 +50,7 @@ export async function serveExportFiles(
     const range = options.honorRange ? parseRange(req.headers.range, body.byteLength) : null;
     res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
     res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+    for (const [name, value] of Object.entries(options.headers ?? {})) res.setHeader(name, value);
     if (range) {
       const slice = body.subarray(range.start, range.end + 1);
       requests.push({ path: rel, status: 206, range: req.headers.range ?? null, bytes: slice.byteLength });

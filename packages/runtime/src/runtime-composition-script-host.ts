@@ -56,6 +56,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
   const continueSimulation = (owner: EngineObject | null): Promise<void> | undefined => rt.waits.continueSimulation(owner);
   const assetCatalog = new RuntimeAssetCatalog(options.assetCatalog);
   return new ScriptHost({
+    moduleLoader: options.moduleLoader,
     data: rt.dataCatalog,
     curves: rt.curveCatalog,
     getAssetCatalog: () => assetCatalog,

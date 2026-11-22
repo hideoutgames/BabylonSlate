@@ -61,6 +61,11 @@ export type LoadedGame = {
   releaseStartup?: () => void;
   systemAssetGuids?: ReadonlySet<string>;
   manifest: GameManifest;
+  /**
+   * The URL of the game's static scripts module (`manifest.scriptsModule`), which the game worker imports: beside
+   * `game.json` when served, otherwise an object URL of its verified bytes (Preview Build, in-memory exports).
+   */
+  scriptsModuleUrl?: string;
   scripts: ScriptBundleEntry[];
   scenes: Map<string, SerializedScene>;
   sceneLayers: Map<string, SerializedSceneLayer>;
@@ -169,6 +174,17 @@ export async function loadGameFromFiles(
     }
   }
   const projectId = options.baseUrl ?? `memory-export:${manifest.project?.name ?? "game"}`;
+  // A served game's module loads by URL, as player.js does; one without a URL is read, verified and handed over as an
+  // object URL (no Content Security Policy applies to Preview Build's frame).
+  let scriptsModuleUrl: string | undefined;
+  const scriptsModule = manifest.scriptsModule;
+  if (scriptsModule && options.baseUrl) scriptsModuleUrl = new URL(scriptsModule.path, options.baseUrl).href;
+  else if (scriptsModule) {
+    const bytes = files.get(scriptsModule.path) ?? (options.readFile ? await options.readFile(scriptsModule.path, options.signal ?? new AbortController().signal) : null);
+    if (!bytes) throw new Error(`Export is missing ${scriptsModule.path}`);
+    if (bytes.byteLength !== scriptsModule.byteLength || await sha256Hex(bytes) !== scriptsModule.revision) throw new Error(`${scriptsModule.path} has a corrupt revision.`);
+    scriptsModuleUrl = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "text/javascript" }));
+  }
   async function readResponse(entry: GameAssetIndexEntry, response: Response): Promise<Uint8Array> {
     readMetrics.operations++;
     readMetrics.fullReads++;
@@ -351,6 +367,7 @@ export async function loadGameFromFiles(
   const game: LoadedGame = {
     assets: service,
     manifest,
+    ...(scriptsModuleUrl ? { scriptsModuleUrl } : {}),
     scripts,
     scenes,
     sceneLayers,
@@ -516,7 +533,10 @@ export async function loadGameFromFiles(
     if (!scene) { source.release(); throw new Error(`Asset ${guid} is not a Scene.`); }
     return { scene, release: source.release, assetGuids: source.assetGuids };
   };
-  game.dispose = () => { sourceListeners.clear(); for (const scope of liveScopes) scope.dispose(); liveScopes.clear(); service.dispose(); };
+  game.dispose = () => {
+    sourceListeners.clear(); for (const scope of liveScopes) scope.dispose(); liveScopes.clear(); service.dispose();
+    if (scriptsModuleUrl?.startsWith("blob:")) URL.revokeObjectURL(scriptsModuleUrl);
+  };
   // Startup reads the entry Scene's closure and the startup-required systems.
   const roots = entries.has(manifest.startupSceneGuid) ? [manifest.startupSceneGuid] : [];
   try {

@@ -70,13 +70,20 @@ export type ExtensionLibraries = Readonly<Record<string, Readonly<Record<string,
 export type ExtensionModuleScope = Readonly<Record<string, unknown>>;
 
 /**
- * Evaluates a linked bundle with CommonJS semantics (one instance per module,
- * cycles see partial exports) and returns the entry's exports. Extensions are
- * trusted code, not a sandbox.
+ * One extension module as a function of `exports`, `module`, `require` and the scope's names, in that order. Editor
+ * code compiles it from its source (`evaluateExtensionBundle`, `extension-eval.ts`); an exported game takes it from its
+ * static scripts module, so games never evaluate source text.
  */
-export function evaluateExtensionBundle(
+export type ExtensionModuleFunction = (...args: unknown[]) => void;
+export type ExtensionModuleCompiler = (module: ExtensionModule, scopeNames: readonly string[]) => ExtensionModuleFunction;
+
+/**
+ * Runs a linked bundle with CommonJS semantics (one instance per module, cycles see partial exports) and returns the
+ * entry's exports, each module made a function by `compile`. Extensions are trusted code, not a sandbox.
+ */
+export function linkExtensionBundle(
   bundle: ExtensionModuleBundle,
-  label: string,
+  compile: ExtensionModuleCompiler,
   scope: ExtensionModuleScope = {},
   hostModules: Readonly<Record<string, unknown>> = {},
 ): Record<string, unknown> {
@@ -104,22 +111,20 @@ export function evaluateExtensionBundle(
       }
       return load(target);
     };
-    const evaluate = new Function("exports", "module", "require", ...names,
-      `${module.code}\n//# sourceURL=haptic-extension:///${encodeURIComponent(label)}/${module.path}`);
-    evaluate(instance.exports, instance, require, ...values);
+    compile(module, names)(instance.exports, instance, require, ...values);
     return instance.exports;
   };
   return load(bundle.entry);
 }
 
 /**
- * Evaluates game libraries in the given order (dependencies first). Each module
- * sees the libraries loaded before it as `extensions`; the result is frozen.
- * A library that fails is passed to `onError` and left out (without `onError`
- * it throws), so independent libraries still load.
+ * Links game libraries in the given order (dependencies first), each module made a function by `compileFor(library)`.
+ * Each module sees the libraries loaded before it as `extensions`; the result is frozen. A library that fails is passed
+ * to `onError` and left out (without `onError` it throws), so independent libraries still load.
  */
-export function loadExtensionGameLibraries(
+export function linkExtensionGameLibraries(
   libraries: readonly ExtensionGameLibrary[],
+  compileFor: (library: ExtensionGameLibrary) => ExtensionModuleCompiler,
   onError?: (error: Error) => void,
 ): ExtensionLibraries {
   const extensions = Object.create(null) as Record<string, Readonly<Record<string, unknown>>>;
@@ -128,7 +133,7 @@ export function loadExtensionGameLibraries(
       if (Object.hasOwn(extensions, library.libraryName)) {
         throw new Error(`Library Name ${library.libraryName} is already used.`);
       }
-      extensions[library.libraryName] = evaluateExtensionBundle(library.bundle, library.label, { extensions },
+      extensions[library.libraryName] = linkExtensionBundle(library.bundle, compileFor(library), { extensions },
         { [EXTENSION_HOST_MODULE]: extensionHostModule(library) });
     } catch (cause) {
       const error = new Error(`Extension ${library.label} failed to load: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import { SaveGameService, type SaveGameDefinition, type SaveGameStorage } from "@haptic/core";
 import { Actor } from "@haptic/object-model";
 import { compileGraph, type GraphNode, type LogicGraph } from "@haptic/scripting";
@@ -12,7 +13,7 @@ function storage(): SaveGameStorage {
     withLock: async (_key, operation) => operation() };
 }
 function services(extra: Partial<ScriptHostServices> = {}): ScriptHostServices {
-  return { log: () => {}, print: () => {}, destroyActor: () => {}, delay: async () => {},
+  return { moduleLoader: functionModuleLoader, log: () => {}, print: () => {}, destroyActor: () => {}, delay: async () => {},
     executeConsoleCommand: () => ({ success: true, output: "" }), reportError: () => {}, ...extra };
 }
 const definition: SaveGameDefinition = { id: "progress", schemaVersion: 1, fields: [{ id: "coins", name: "Coins", type: "int", defaultValue: 0 }] };

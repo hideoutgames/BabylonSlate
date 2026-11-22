@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ScriptHost } from "@haptic/runtime";
+import { functionModuleLoader, ScriptHost } from "@haptic/runtime";
 import { compileGraphDocuments } from "../services/script-compiler";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -135,6 +135,7 @@ describe("editor utility ScriptHost events", () => {
   it("dispatches On Editor Startup for loaded utility classes", async () => {
     const logs: string[] = [];
     const host = new ScriptHost({
+      moduleLoader: functionModuleLoader,
       log: (_severity, _category, message) => {
         logs.push(message);
       },

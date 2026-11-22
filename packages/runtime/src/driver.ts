@@ -1,4 +1,5 @@
 import type { SimulationSceneCaptureResult } from "./simulation-scene-capture";
+import { functionModuleLoader } from "./function-module-loader";
 import type { SimulationSession } from "./simulation-session";
 import type { RuntimeInspectorService } from "./runtime-inspector-service";
 import { RuntimeDataCatalog } from "./data-catalog";
@@ -182,10 +183,19 @@ import type { RuntimeDriver, RuntimeDriverOptions } from "./driver-types";
 
 export type { RuntimeDriver, RuntimeDriverOptions, RuntimeSaveGameOptions } from "./driver-types";
 
-export function createInProcessRuntime(
-  options: RuntimeDriverOptions,
-): RuntimeDriver {
+/** A runtime whose scripts come from `options.moduleLoader`: an exported game's static scripts module, or source text. */
+export function createRuntime(options: RuntimeDriverOptions): RuntimeDriver {
   return new InProcessRuntime(options);
+}
+
+/**
+ * A runtime that compiles its scripts from their source text (`functionModuleLoader`): Editor Play and tests. A game
+ * creates its runtime with `createRuntime` and its static scripts module, so it never bundles this.
+ */
+export function createInProcessRuntime(
+  options: Omit<RuntimeDriverOptions, "moduleLoader"> & Partial<Pick<RuntimeDriverOptions, "moduleLoader">>,
+): RuntimeDriver {
+  return new InProcessRuntime({ moduleLoader: functionModuleLoader, ...options });
 }
 
 /** Tile animation time is sent only while a tilemap could show an animated tile. */

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { ScriptHost, type ScriptHostServices } from "@haptic/runtime";
+import { functionModuleLoader, ScriptHost, type ScriptHostServices } from "@haptic/runtime";
 import { ClassRegistry } from "@haptic/object-model";
 import { applyClipboardWrite, applyOpenUrl } from "@haptic/render";
 import { deviceEnvironment } from "@haptic/vfs";
@@ -25,6 +25,8 @@ function editorHostServices(
   appendLog: (line: string) => void,
 ): ScriptHostServices {
   return {
+    // Editor utilities run their graphs from source, as Editor Play does.
+    moduleLoader: functionModuleLoader,
     classRegistry: new ClassRegistry(),
     log: (_severity, category, message) => {
       appendLog(`[${category}] ${message}`);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import type { CommandMessage } from "@haptic/bridge";
 import { Actor } from "@haptic/object-model";
 import { createAudioHostBindings } from "./audio-particle-emitter";
@@ -14,6 +15,7 @@ function soundContext() {
     voices.observe(command);
   };
   const ctx = new ScriptHost({
+    moduleLoader: functionModuleLoader,
     log: () => {}, print: () => {}, destroyActor: () => {}, reportError: () => {}, delay: async () => {},
     executeConsoleCommand: () => ({ success: true, output: "" }),
     ...createAudioHostBindings({ frameId: () => 7, scriptVoiceId: () => voices.scriptVoiceId(), emit, voices }),

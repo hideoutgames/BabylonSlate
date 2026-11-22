@@ -1,6 +1,6 @@
 import { browserDeviceFacts, classIdForAssetPath, createSaveStorageServer, newGuid, newSessionSeed } from "@haptic/core";
 import { createSaveGameStorage } from "@haptic/vfs/save-game-storage";
-import type { ScalabilityAcknowledgement, RenderProjectSettings, RuntimeAssetLoadState } from "@haptic/core";
+import type { GameScriptsModule, ScalabilityAcknowledgement, RenderProjectSettings, RuntimeAssetLoadState } from "@haptic/core";
 import { buildMaterialParameterCatalog } from "@haptic/shader-graph";
 import { buildParticleParameterCatalog, cookComplexCollisionMesh, materialParameterTextureAssetGuids } from "@haptic/assets";
 import { captureShadowDiagnostics, lightsDebugText, setGlobalParameterCatalog } from "@haptic/render";
@@ -20,6 +20,7 @@ import {
   createPlayBootCoordinator,
   createPlayPauseGate,
   createRuntimeFromLoad,
+  createStaticModuleLoader,
   captureConsoleLogs,
   type RuntimeDriver,
 } from "@haptic/runtime";
@@ -524,6 +525,8 @@ function initializePlayer(
     thirdPartyNoticesUrl: new URL("legal/THIRD-PARTY-NOTICES.txt", document.baseURI).href,
     saveGame: manifest.saveGame,
     type: "load" as const,
+    // The game worker imports the game's compiled scripts from this module; nothing evaluates text.
+    ...(game.scriptsModuleUrl ? { scriptsModuleUrl: game.scriptsModuleUrl } : {}),
     sceneAssetGuid: startup,
     scene,
     physicsWorld: manifest.physicsWorld,
@@ -1101,11 +1104,15 @@ function initializePlayer(
     try { releaseWorker(); } catch (cleanupError) { failures.push(cleanupError); }
     if (failures.length > 1)
       throw new AggregateError(failures, "Player worker startup and termination failed.", { cause: error });
-    const inProcess = createRuntimeFromLoad(loadControl, (command) =>
-      onCommand(command as never),
-      saveStorage,
-      acquireScene ? { acquireScene } : undefined,
-    );
+    const scriptsModuleUrl = game.scriptsModuleUrl;
+    const inProcess = createRuntimeFromLoad(loadControl, (command) => onCommand(command as never), {
+      // The page imports the same static module the worker would have.
+      moduleLoader: createStaticModuleLoader(() => scriptsModuleUrl
+        ? import(/* @vite-ignore */ scriptsModuleUrl) as Promise<GameScriptsModule>
+        : Promise.reject(new Error("This game has no scripts module; rebuild the game."))),
+      saveGameStorage: saveStorage,
+      ...(acquireScene ? { acquireScene } : {}),
+    });
     runtime = inProcess;
     publishAssetStates();
     own(() => inProcess.stop());

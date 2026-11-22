@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "sideEffects": [
+    "./src/game-worker-entry.ts",
     "./src/worker-entry.ts"
   ],
   "exports": {
     ".": "./src/index.ts",
     "./worker-entry": "./src/worker-entry.ts",
+    "./game-worker-entry": "./src/game-worker-entry.ts",
     "./component-authoring": "./src/component-authoring.ts"
   },
   "scripts": {

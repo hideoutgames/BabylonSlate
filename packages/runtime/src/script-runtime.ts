@@ -41,7 +41,7 @@ interface ScriptRuntimeOptions {
 interface ScriptRuntimeHost {
   world(): World;
   stopped(): boolean;
-  scriptHost(): Pick<ScriptHost, "replaceScripts" | "hooksFor" | "classTicks" | "invokeEvent" | "invokeGameShutdownEvent" | "bindInterfaceHandlers" | "scriptsFor" | "invokeEngineFunction" | "releaseObject">;
+  scriptHost(): Pick<ScriptHost, "replaceScripts" | "scriptSourceLocation" | "hooksFor" | "classTicks" | "invokeEvent" | "invokeGameShutdownEvent" | "bindInterfaceHandlers" | "scriptsFor" | "invokeEngineFunction" | "releaseObject">;
   /** The custom easing curves baked from the loaded Classes, by Class id: every load, empty when there are none. */
   customEasingCurvesBaked(curves: Record<string, number[]>): void;
   /** The Rich Text Decorators of the loaded Classes, by tag: every load, empty when there are none. */
@@ -80,6 +80,8 @@ type GameLifecycleHooks = {
 export class ScriptRuntime {
   private readonly classGuids = new Map<string, string>();
   private readonly scriptSources = new Map<string, CompiledScript>();
+  /** Files holding several scripts (an exported game's scripts module), whose anchor tables are keyed by URL. */
+  private readonly sharedSourceUrls = new Set<string>();
   private scriptSourceWork: Promise<void> = Promise.resolve();
   private readonly gameInstanceClass: string;
   private gameInstanceBound = false;
@@ -142,6 +144,9 @@ export class ScriptRuntime {
         this.host.deleteAnchors(compiledScriptSourceLabel(previous));
         this.host.deleteAnchors(previous.assetGuid);
       }
+      for (const url of this.sharedSourceUrls) this.host.deleteAnchors(url);
+      this.sharedSourceUrls.clear();
+      const sharedAnchors = new Map<string, AnchorEntry[]>();
       this.scriptSources.clear();
       const ownerAnchors = new Map<string, AnchorEntry[]>();
       for (const script of ordered) {
@@ -155,6 +160,15 @@ export class ScriptRuntime {
           const anchors = ownerAnchors.get(script.assetGuid) ?? [];
           anchors.push(...script.anchors);
           ownerAnchors.set(script.assetGuid, anchors);
+          // A script inside a shared file (an exported game's scripts module): its anchors at the file's lines, after a
+          // boundary entry with no node at its first line, so a frame before its first anchor maps to no other script.
+          const location = this.host.scriptHost().scriptSourceLocation(script);
+          if (location) {
+            const shared = sharedAnchors.get(location.url) ?? [];
+            shared.push({ line: location.firstLine, column: 0, assetGuid: script.assetGuid, graphId: "", nodeId: "" },
+              ...script.anchors.map((anchor) => ({ ...anchor, line: anchor.line + location.firstLine - 1 })));
+            sharedAnchors.set(location.url, shared);
+          }
         }
         if (script.command) {
           this.host.bindUserCommand({
@@ -165,6 +179,10 @@ export class ScriptRuntime {
       }
       for (const [guid, anchors] of ownerAnchors)
         this.host.registerAnchors(guid, anchors.sort((a, b) => a.line - b.line || a.column - b.column));
+      for (const [url, anchors] of sharedAnchors) {
+        this.sharedSourceUrls.add(url);
+        this.host.registerAnchors(url, anchors.sort((a, b) => a.line - b.line || a.column - b.column));
+      }
       this.applyGameInstanceClassDefaults();
       this.installSubsystems();
       this.bakeCustomEasingCurves();

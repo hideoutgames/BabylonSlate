@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import { Actor, ActorComponent } from "@haptic/object-model";
 import { createActor, createDefaultSceneSettings, createDefaultWaterDefinition, type SerializedActor } from "@haptic/core";
 import { compileGraph, type LogicGraph } from "@haptic/scripting";
@@ -17,6 +18,7 @@ describe("Water graph queries", () => {
     water.update([lake], 0);
     const logs: string[] = [];
     const ctx = new ScriptHost({
+      moduleLoader: functionModuleLoader,
       log: (_severity, _category, message) => logs.push(message), print: () => {}, destroyActor: () => {},
       executeConsoleCommand: () => ({ success: true, output: "" }), delay: async () => {}, reportError: (error) => { throw error; },
       sampleWater: (point, actorId) => water.sample(point, actorId), findActor: (id) => id === lake.guid ? lake : undefined,

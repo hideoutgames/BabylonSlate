@@ -42,7 +42,7 @@ export function preloadPlayerWorkerPhysics(worker: PlayerWorkerHost | undefined,
 
 export function createPlayerWorkerHost(): PlayerWorkerHost {
   const worker = new Worker(
-    new URL("@haptic/runtime/worker-entry", import.meta.url),
+    new URL("@haptic/runtime/game-worker-entry", import.meta.url),
     { type: "module" },
   );
   const commandHandlers: Array<(command: CommandMessage) => void> = [];

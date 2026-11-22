@@ -52,10 +52,11 @@ describe("loadGameFromFiles", () => {
     const request = (consumer: string) => game.acquireAssets!(["prefab"], { consumer, signal: new AbortController().signal });
     const [first, second] = await Promise.all([request("left"), request("right")]);
     expect(paths.filter(path => path === scriptPath)).toHaveLength(1);
-    expect(game.scripts).toEqual([script]);
+    // Its code is in the scripts module; the sidecar carries the rest.
+    expect(game.scripts).toEqual([{ ...script, source: "" }]);
     first.release();
     game.assets!.trim({ force: true });
-    expect(game.scripts).toEqual([script]);
+    expect(game.scripts).toEqual([{ ...script, source: "" }]);
     second.release();
     game.assets!.trim({ force: true });
     expect(game.scripts).toEqual([]);

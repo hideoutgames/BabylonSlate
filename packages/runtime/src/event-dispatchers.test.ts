@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import { createActor } from "@haptic/core";
 import { Actor } from "@haptic/object-model";
 import type { GraphEdge, GraphNode, LogicGraph } from "@haptic/scripting";
@@ -125,6 +126,7 @@ describe("Event Dispatcher nodes", () => {
 
 function services(log: string[], extras: Partial<ScriptHostServices> = {}): ScriptHostServices {
   return {
+    moduleLoader: functionModuleLoader,
     log: (_severity, category, message) => { log.push(`${category}: ${message}`); },
     print: () => {},
     destroyActor: () => {},

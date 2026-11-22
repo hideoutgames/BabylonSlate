@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import { Actor, ActorComponent } from "@haptic/object-model";
 import { identityTransform, setCustomEasingCurves } from "@haptic/core";
 import { compileGraph, type GraphNode, type LogicGraph } from "@haptic/scripting";
@@ -12,6 +13,7 @@ function harness() {
   const refresh = vi.fn(), teleport = vi.fn();
   const actors = new Map([[actor.guid, actor]]);
   const services: ScriptHostServices = {
+    moduleLoader: functionModuleLoader,
     log: () => {}, print: () => {}, destroyActor: () => {}, executeConsoleCommand: () => ({ success: true, output: "" }),
     delay: async () => {}, reportError: error => { throw error; }, tween: request => tweens.start(request),
     refreshComponent: refresh, teleportActor: teleport, findActor: id => actors.get(id),

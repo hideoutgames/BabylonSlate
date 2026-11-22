@@ -125,6 +125,8 @@ export interface ScriptHostServices {
   quitGame?(): void;
   /** Where the session runs; `DEFAULT_GAME_ENVIRONMENT` when absent. */
   environment?: GameEnvironment;
+  /** Turns compiled scripts and Extension libraries into code: source text in Editor Play, a game's static scripts module in exports. */
+  moduleLoader: import("./module-loader").ScriptModuleLoader;
   /** Gameplay Extension libraries, evaluated with the first script load; compiled modules see them as `extensions`. */
   extensionLibraries?: readonly import("@haptic/core").ExtensionGameLibrary[];
   /** The game view's size in CSS pixels, the space cursor and touch positions use. */

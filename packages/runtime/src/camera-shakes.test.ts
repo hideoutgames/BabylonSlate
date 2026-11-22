@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import type { CommandMessage } from "@haptic/bridge";
 import { createDefaultCameraShakePayload, normalizeCameraShakePayload, type CameraShakePayload } from "@haptic/core";
 import { SceneLayer } from "@haptic/object-model";
@@ -111,6 +112,7 @@ describe("CameraShakes", () => {
     const f = fixture({ layers: new Set(["hud"]) });
     const warnings: string[] = [];
     const ctx = new ScriptHost({
+      moduleLoader: functionModuleLoader,
       log: () => {}, print: () => {}, destroyActor: () => {}, reportError: () => {}, delay: async () => {},
       executeConsoleCommand: () => ({ success: true, output: "" }),
       ...createCameraShakeHostBindings({

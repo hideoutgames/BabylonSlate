@@ -36,7 +36,9 @@ export type {
   AnchorEntry,
   StackFrame,
 } from "./stack-map";
-export { loadCompiledModule, type CompiledModuleExports } from "./module-loader";
+export { type CompiledModuleExports, type ScriptModuleLoader, type ScriptSourceLocation } from "./module-loader";
+export { functionModuleLoader, loadCompiledModule } from "./function-module-loader";
+export { createStaticModuleLoader } from "./static-module-loader";
 export {
   ScriptHost,
   compiledScriptKey,

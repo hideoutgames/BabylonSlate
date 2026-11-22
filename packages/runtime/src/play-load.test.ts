@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import { readFileSync } from "node:fs";
 import type { ControlMessage } from "@haptic/bridge";
 import { createDefaultSceneLayer, type InputAssetDefinition } from "@haptic/core";
@@ -237,7 +238,7 @@ describe("runtimeOptionsFromLoadControl", () => {
 describe("createRuntimeFromLoad", () => {
   it("queries the configured frame cap, overrides it for the session, and restores it on reload", () => {
     const message = { type: "load" as const, sceneAssetGuid: "empty", frameCap: 30 };
-    const runtime = createRuntimeFromLoad(message, () => {});
+    const runtime = createRuntimeFromLoad(message, () => {}, { moduleLoader: functionModuleLoader });
     try {
       expect(runtime.executeConsoleCommand("framecap").output).toBe("framecap 30");
       expect(runtime.executeConsoleCommand("framecap 15").output).toBe("framecap 15");
@@ -246,7 +247,7 @@ describe("createRuntimeFromLoad", () => {
     } finally {
       runtime.stop();
     }
-    const next = createRuntimeFromLoad(message, () => {});
+    const next = createRuntimeFromLoad(message, () => {}, { moduleLoader: functionModuleLoader });
     try {
       expect(next.executeConsoleCommand("framecap").output).toBe("framecap 30");
     } finally {
@@ -265,7 +266,7 @@ describe("createRuntimeFromLoad", () => {
       sceneAssetGuid: "empty",
       inputAssets: [keyAction("Fire", ["KeyF"]), keyAction("Jump", ["KeyH", "KeyG"])],
     };
-    const runtime = createRuntimeFromLoad(message, () => {});
+    const runtime = createRuntimeFromLoad(message, () => {}, { moduleLoader: functionModuleLoader });
     try {
       runtime.start();
       runtime.pushInput([{ kind: "key", tick: 0, code, phase: "down" }]);
@@ -279,7 +280,7 @@ describe("createRuntimeFromLoad", () => {
 
   it("H13: explicitly deleted mappings stay empty at runtime", () => {
     const message = { type: "load" as const, sceneAssetGuid: "empty", inputAssets: [] };
-    const runtime = createRuntimeFromLoad(message, () => {});
+    const runtime = createRuntimeFromLoad(message, () => {}, { moduleLoader: functionModuleLoader });
     try {
       runtime.start();
       runtime.pushInput([{ kind: "key", tick: 0, code: "Space", phase: "down" }]);
@@ -302,8 +303,7 @@ describe("createRuntimeFromLoad", () => {
         physicsWorld: "3d",
         sceneLayers: [{ guid: "overlay", layer: { ...createDefaultSceneLayer(), settings: { ...createDefaultSceneLayer().settings, physicsEnabled: true } } }],
       },
-      () => {},
-    );
+      () => {}, { moduleLoader: functionModuleLoader });
     await runtime.loadPhysics();
     const layer = runtime.createSceneLayer("overlay", 0)!;
     expect(runtime.getPhysicsSync()!.getBackend().constructor.name).toBe(
@@ -326,8 +326,7 @@ describe("createRuntimeFromLoad", () => {
         physicsWorld: "3d",
         sceneLayers: [{ guid: "overlay", layer: createDefaultSceneLayer() }],
       },
-      () => {},
-    );
+      () => {}, { moduleLoader: functionModuleLoader });
     await runtime.loadPhysics();
     const layer = runtime.createSceneLayer("overlay", 0)!;
     expect(runtime.getSceneLayerPhysicsSync(layer.guid)).toBeNull();
@@ -344,8 +343,7 @@ describe("createRuntimeFromLoad", () => {
         sceneAssetGuid: "play-scene",
         physicsWorld: "2d",
       },
-      () => {},
-    );
+      () => {}, { moduleLoader: functionModuleLoader });
     await runtime.loadPhysics();
     expect(runtime.getPhysicsSync()!.getBackend().constructor.name).toBe(
       "Rapier2DPhysicsBackend",
@@ -378,8 +376,7 @@ describe("createRuntimeFromLoad", () => {
           physicsWorld: "3d",
           havokWasmUrl: "https://editor.test/havok/HavokPhysics.wasm",
         },
-        () => {},
-      );
+        () => {}, { moduleLoader: functionModuleLoader });
       await runtime.loadPhysics();
       expect(
         requested.some((url) => url.includes("/havok/HavokPhysics.wasm")),
@@ -406,7 +403,7 @@ describe("createRuntimeFromLoad", () => {
       const runtime = createRuntimeFromLoad({
         type: "load", sceneAssetGuid: "play-scene", physicsWorld: "3d",
         havokWasmUrl: "https://editor.test/havok/HavokPhysics.wasm",
-      }, () => {});
+      }, () => {}, { moduleLoader: functionModuleLoader });
       runtime.preloadPhysics();
       await vi.waitFor(() => expect(requested).toEqual(["https://editor.test/havok/HavokPhysics.wasm"]));
       await runtime.loadPhysics();
@@ -459,7 +456,7 @@ describe("unmatchedScriptSpawns", () => {
 it("uses input asset identities and controls through worker load, including an explicit empty catalog", () => {
   const inputAssets = [{ guid: "jump", name: "Jump", type: "InputAction" as const, valueType: "button" as const, bindings: [{ id: "keyboard", device: "key" as const, code: "KeyJ" }] }];
   for (const assets of [inputAssets, []]) {
-    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "empty", inputAssets: assets }, () => {});
+    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "empty", inputAssets: assets }, () => {}, { moduleLoader: functionModuleLoader });
     try {
       runtime.start();
       runtime.pushInput([{ kind: "key", tick: 0, code: "KeyJ", phase: "down" }]);

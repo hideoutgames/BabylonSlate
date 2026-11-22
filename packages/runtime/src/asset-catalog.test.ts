@@ -4,7 +4,7 @@ import { compileGraph, mergeEngineTypeSchemas, structInstanceDefault, type Graph
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { RuntimeAssetCatalog, emptyAssetData, type AssetFilterValue } from "./asset-catalog";
 import { createInProcessRuntime } from "./driver";
-import { loadCompiledModule } from "./module-loader";
+import { functionModuleLoader, loadCompiledModule } from "./function-module-loader";
 import { runtimeOptionsFromLoadControl } from "./play-load";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 
@@ -253,6 +253,7 @@ describe("RuntimeAssetCatalog", () => {
 
 function host(catalog?: RuntimeAssetCatalog, logs: string[] = []): ScriptHost {
   const services: ScriptHostServices = {
+    moduleLoader: functionModuleLoader,
     ...(catalog ? { getAssetCatalog: () => catalog } : {}),
     log: (_severity, _category, message) => { logs.push(message); },
     print: () => {}, destroyActor: () => {},

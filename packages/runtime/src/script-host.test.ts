@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import type { CommandMessage } from "@haptic/bridge";
 import { GameInstance } from "@haptic/object-model";
 import { interfaceHandlerKey } from "@haptic/object-model";
@@ -160,7 +161,7 @@ describe("script host runs compiled graphs", () => {
       edges: [edge("exec", "tick", "execOut", "log", "execIn"), edge("value", "value", pinId, "log", "message")],
     };
     const commands: CommandMessage[] = [];
-    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "preview", project: { name: "Orbit Workshop", version: "2.4.0-beta.3", buildNumber: 42 } }, command => commands.push(command));
+    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "preview", project: { name: "Orbit Workshop", version: "2.4.0-beta.3", buildNumber: 42 } }, command => commands.push(command), { moduleLoader: functionModuleLoader });
     try {
       await runtime.loadScripts([toScript(graph, registry, "Identity", "identity")]);
       runtime.spawnScriptedActor({ classId: "Identity" });
@@ -193,7 +194,7 @@ describe("script host runs compiled graphs", () => {
     const fetchMock = vi.fn(async () => new Response("Third-party notices\n"));
     vi.stubGlobal("fetch", fetchMock);
     const commands: CommandMessage[] = [];
-    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "preview", ...(thirdPartyNoticesUrl ? { thirdPartyNoticesUrl } : {}) }, command => commands.push(command));
+    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "preview", ...(thirdPartyNoticesUrl ? { thirdPartyNoticesUrl } : {}) }, command => commands.push(command), { moduleLoader: functionModuleLoader });
     try {
       await runtime.loadScripts([toScript(graph, registry, "Notices", "notices")]);
       runtime.spawnScriptedActor({ classId: "Notices" });

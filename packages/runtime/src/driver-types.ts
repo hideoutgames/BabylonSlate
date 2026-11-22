@@ -61,6 +61,8 @@ import type { AnchorEntry } from "./stack-map";
 // re-export them, so existing imports keep working.
 
 export interface RuntimeDriverOptions {
+  /** How compiled scripts and Extension libraries become code (`ScriptModuleLoader`). */
+  moduleLoader: import("./module-loader").ScriptModuleLoader;
   sessionGeneration?: number;
   /** Ticks between object collection passes (Project Settings › Garbage Collection Interval). */
   garbageCollectionIntervalTicks?: number;

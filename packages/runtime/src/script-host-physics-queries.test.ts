@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import { Actor } from "@haptic/object-model";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 
@@ -6,6 +7,7 @@ function stubServices(
   extras: Partial<ScriptHostServices> = {},
 ): ScriptHostServices {
   return {
+    moduleLoader: functionModuleLoader,
     log: () => {},
     print: () => {},
     destroyActor: () => {},

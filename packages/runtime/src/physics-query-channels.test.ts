@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { functionModuleLoader } from "./function-module-loader";
 import { identityTransform } from "@haptic/core";
 import { ClassRegistry, World } from "@haptic/object-model";
 import { createPhysicsBackend, createSoftwarePhysicsBackend } from "@haptic/physics";
@@ -62,7 +63,7 @@ describe("script physics query channels", () => {
       }
       sync.syncFromWorld(world);
       backend.step(1 / 60);
-      const ctx = new ScriptHost({ log: () => {}, print: () => {}, destroyActor: () => {},
+      const ctx = new ScriptHost({ moduleLoader: functionModuleLoader, log: () => {}, print: () => {}, destroyActor: () => {},
         executeConsoleCommand: () => ({ success: true, output: "" }), delay: async () => {}, reportError: () => {},
         findActor: (id) => world.findActor(id),
         lineTrace: (start, end, options) => sync.lineTrace(start, end, options),
@@ -126,7 +127,7 @@ describe("script physics query channels", () => {
       expect(backend.getBodyTransform("body:ragdoll")).toBeNull();
       sync.syncFromWorld(world);
       backend.step(1 / 60);
-      const ctx = new ScriptHost({ log: () => {}, print: () => {}, destroyActor: () => {},
+      const ctx = new ScriptHost({ moduleLoader: functionModuleLoader, log: () => {}, print: () => {}, destroyActor: () => {},
         executeConsoleCommand: () => ({ success: true, output: "" }), delay: async () => {}, reportError: () => {},
         findActor: (id) => world.findActor(id),
         lineTrace: (start, end, options) => sync.lineTrace(start, end, options),

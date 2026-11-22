@@ -441,7 +441,7 @@ describe("player startup and Stop ownership", () => {
     const message = TestWorker.instances[0]!.messages.find((entry) =>
       entry.channel === "control" && entry.payload.type === "load");
     if (message?.channel !== "control" || message.payload.type !== "load") throw new Error("Player did not load its runtime");
-    const runtime = runtimes.createRuntimeFromLoad(message.payload, () => {});
+    const runtime = runtimes.createRuntimeFromLoad(message.payload, () => {}, { moduleLoader: runtimes.functionModuleLoader });
     try {
       const world = runtime.getWorld();
       world.spawnActorNow(world.createActor({

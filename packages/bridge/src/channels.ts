@@ -229,6 +229,8 @@ export type ControlMessage =
   | { type: "ragdollPoseCaptured"; slotId: number; requestId: string; bones?: import("@haptic/core").RagdollBonePose[]; error?: string }
   | {
       type: "load";
+      /** An exported game's static scripts module (`GAME_SCRIPTS_MODULE_FILE`), as the game worker imports it. */
+      scriptsModuleUrl?: string;
       sessionGeneration?: number;
       sessionMode?: GameSessionMode;
       deferMaterialEdits?: boolean;
