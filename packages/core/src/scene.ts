@@ -1,6 +1,6 @@
 import { normalizeCelShadingOverrides } from "./cel-shading";
 import { normalizeSerializedLandscapeProperties } from "./landscape";
-import { normalizeFoliageGroups, parseFoliageProperties, type FoliageGroup } from "./foliage";
+import { normalizeFoliageGroups, normalizeSerializedFoliageProperties, type FoliageGroup } from "./foliage";
 import { normalizeMaterialInstanceOverrides, normalizeMaterialParameterOverrides, type MaterialInstanceOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
@@ -269,7 +269,7 @@ export interface SerializedScene {
   timelineClips?: SerializedTimelineClip[];
 }
 
-export const SCENE_SCHEMA_VERSION = 4;
+export const SCENE_SCHEMA_VERSION = 1;
 
 /**
  * Keep an authored embedded script (SceneScript, SceneLayerScript) as a graph
@@ -454,7 +454,7 @@ function normalizeComponent(
       source.classId === SPLINE_COMPONENT_CLASS_ID ? { ...parseSplineProperties(source.properties) } :
       source.classId === "SceneStreamingComponent" ? { ...normalizeSceneStreamingProperties(source.properties) } :
       source.classId === "LandscapeComponent" ? { ...normalizeSerializedLandscapeProperties(source.properties) } :
-      source.classId === "FoliageComponent" ? { ...parseFoliageProperties(source.properties) } :
+      source.classId === "FoliageComponent" ? { ...normalizeSerializedFoliageProperties(source.properties) } :
       source.classId === MIRROR_CLASS_ID ? { ...parseMirrorProperties(source.properties) } :
       source.classId === "FogVolumeComponent" ? { ...parseFogVolumeProperties(source.properties) } :
       source.classId === "DecalComponent" ? { ...parseDecalProperties(source.properties) } :

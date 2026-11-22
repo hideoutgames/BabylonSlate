@@ -11,13 +11,13 @@ function tree() {
       Label: "texture", assetGuid: "texture", ClassText: "Hero", ClassGuidText: "hero",
       Icon: "texture", Spawn: "Hero", Stats: { Portrait: "texture", Caption: "texture", Grade: "Common" },
     }, schema: [
-      { name: "Label", typeId: "string" }, { name: "assetGuid", typeId: "string" },
-      { name: "ClassText", typeId: "string" }, { name: "ClassGuidText", typeId: "string" },
-      { name: "Icon", typeId: "asset", typeClassId: "Texture" },
-      { name: "Spawn", typeId: "class", typeClassId: "Hero" },
-      { name: "Stats", typeId: "struct", typeClassId: "stats", fields: [
-        { name: "Portrait", typeId: "asset", typeClassId: "Texture" },
-        { name: "Caption", typeId: "string" }, { name: "Grade", typeId: "enum", typeClassId: "grade" },
+      { id: "Label", name: "Label", typeId: "string" }, { id: "assetGuid", name: "assetGuid", typeId: "string" },
+      { id: "ClassText", name: "ClassText", typeId: "string" }, { id: "ClassGuidText", name: "ClassGuidText", typeId: "string" },
+      { id: "Icon", name: "Icon", typeId: "asset", typeClassId: "Texture" },
+      { id: "Spawn", name: "Spawn", typeId: "class", typeClassId: "Hero" },
+      { id: "Stats", name: "Stats", typeId: "struct", typeClassId: "stats", fields: [
+        { id: "Portrait", name: "Portrait", typeId: "asset", typeClassId: "Texture" },
+        { id: "Caption", name: "Caption", typeId: "string" }, { id: "Grade", name: "Grade", typeId: "enum", typeClassId: "grade" },
       ] },
     ],
   }] };
@@ -53,7 +53,7 @@ describe("Data Definition and owned entry reference lifecycle", () => {
         { id: "stats", name: "Stats", typeId: "struct", typeClassId: "stats" },
         { id: "title", name: "Title", typeId: "string", defaultValue: "stats" },
       ] }),
-      imported("Structure", "stats", { kind: "structure", guid: "stats", fields: [{ name: "Grade", typeId: "enum", typeClassId: "grade" }] }),
+      imported("Structure", "stats", { kind: "structure", guid: "stats", fields: [{ id: "Grade", name: "Grade", typeId: "enum", typeClassId: "grade" }] }),
       imported("Enum", "grade", { kind: "enum", guid: "grade", name: "grade", members: [{ name: "Common", value: 0 }] }),
       imported("Texture", "texture", {}),
     ];
@@ -116,7 +116,7 @@ describe("Data Definition and owned entry reference lifecycle", () => {
   });
 
   it("retains explicit schema references on damaged hierarchies without guessing inherited schemas", () => {
-    const fields = [{ name: "Icon", typeId: "asset", typeClassId: "Texture" }];
+    const fields = [{ id: "Icon", name: "Icon", typeId: "asset", typeClassId: "Texture" }];
     const source = { kind: "dataTree", defaultDefinitionGuid: "weapon", entries: [
       { id: "explicit", parentId: "missing", name: "Explicit", definitionGuid: "weapon", values: { Icon: "explicit-texture" } },
       { id: "saved", parentId: "missing", name: "Saved", values: { Icon: "saved-texture" }, schema: fields },
@@ -222,10 +222,10 @@ describe("Data Definition and owned entry reference lifecycle", () => {
       Actors: ["Hero", "Keep"], Tags: ["texture", "hero"],
       ByClass: [{ key: "Hero", value: "Hero" }, { key: "Keep", value: "Hero" }],
     }, schema: [
-      { name: "Icons", typeId: "asset", container: "array" },
-      { name: "ByAsset", typeId: "string", container: "map", keyTypeId: "asset" },
-      { name: "ByStats", typeId: "string", container: "map", keyTypeId: "struct", keyTypeClassId: "stats", keyFields: [
-        { name: "Icon", typeId: "asset", typeClassId: "Texture" }, { name: "Caption", typeId: "string" },
+      { id: "Icons", name: "Icons", typeId: "asset", container: "array" },
+      { id: "ByAsset", name: "ByAsset", typeId: "string", container: "map", keyTypeId: "asset" },
+      { id: "ByStats", name: "ByStats", typeId: "string", container: "map", keyTypeId: "struct", keyTypeClassId: "stats", keyFields: [
+        { id: "Icon", name: "Icon", typeId: "asset", typeClassId: "Texture" }, { id: "Caption", name: "Caption", typeId: "string" },
       ] },
       { name: "Actors", typeId: "class", container: "array" }, { name: "Tags", typeId: "tag", container: "array" },
       { name: "ByClass", typeId: "class", container: "map", keyTypeId: "class", keyTypeClassId: "Hero" },
@@ -243,8 +243,8 @@ describe("Data Definition and owned entry reference lifecycle", () => {
 
   it("tracks graph assets and typed literals without treating entry paths as assets", () => {
     const props = { definitionGuid: "weapon", "default:tree": "tree", "default:entryPath": "texture", "default:name": "texture", dataSchema: [
-      { name: "Icon", typeId: "asset", typeClassId: "Texture" },
-      { name: "Metadata", typeId: "struct", typeClassId: "metadata", fields: [{ name: "Name", typeId: "string" }, { name: "Asset", typeId: "string" }] },
+      { id: "Icon", name: "Icon", typeId: "asset", typeClassId: "Texture" },
+      { id: "Metadata", name: "Metadata", typeId: "struct", typeClassId: "metadata", fields: [{ id: "Name", name: "Name", typeId: "string" }, { id: "Asset", name: "Asset", typeId: "string" }] },
     ], "default:values": { Icon: "texture", Metadata: { Name: "Label", Asset: "texture" } } };
     const graph = { nodes: [
       { type: "editorData.updateEntry", data: { properties: props } },

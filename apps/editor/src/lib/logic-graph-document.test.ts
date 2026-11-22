@@ -663,7 +663,7 @@ describe("collectGraphTypeAssets", () => {
             payload: {
               guid: "struct-stats",
               name: "Stats",
-              fields: [{ name: "Health", typeId: "int" }],
+              fields: [{ id: "Health", name: "Health", typeId: "int" }],
             },
           },
         },
@@ -699,11 +699,11 @@ describe("collectGraphTypeAssets", () => {
         guid: "engine:HitResult",
         name: "Hit Result",
         fields: [
-          { name: "Hit", typeId: "bool" },
-          { name: "Location", typeId: "vec3" },
-          { name: "Normal", typeId: "vec3" },
-          { name: "Actor", typeId: "object", typeClassId: "Actor" },
-          { name: "Distance", typeId: "float" },
+          { id: "engine:HitResult.Hit", name: "Hit", typeId: "bool" },
+          { id: "engine:HitResult.Location", name: "Location", typeId: "vec3" },
+          { id: "engine:HitResult.Normal", name: "Normal", typeId: "vec3" },
+          { id: "engine:HitResult.Actor", name: "Actor", typeId: "object", typeClassId: "Actor" },
+          { id: "engine:HitResult.Distance", name: "Distance", typeId: "float" },
         ],
       },
       expect.objectContaining({ guid: "engine:InputType", name: "Input Type" }),
@@ -711,14 +711,14 @@ describe("collectGraphTypeAssets", () => {
       expect.objectContaining({
         guid: "engine:ScalabilitySnapshot", name: "Scalability Snapshot",
         fields: expect.arrayContaining([
-          { name: "requested", typeId: "struct", typeClassId: "engine:RuntimeRenderingSettings" },
-          { name: "effective", typeId: "struct", typeClassId: "engine:RuntimeRenderingSettings" },
+          { id: "engine:ScalabilitySnapshot.requested", name: "requested", typeId: "struct", typeClassId: "engine:RuntimeRenderingSettings" },
+          { id: "engine:ScalabilitySnapshot.effective", name: "effective", typeId: "struct", typeClassId: "engine:RuntimeRenderingSettings" },
         ]),
       }),
       {
         guid: "struct-stats",
         name: "Stats",
-        fields: [{ name: "Health", typeId: "int" }],
+        fields: [{ id: "Health", name: "Health", typeId: "int" }],
       },
     ]));
     expect(catalog.enums).toEqual(expect.arrayContaining([

@@ -64,7 +64,7 @@ it("adds fields without a Structure asset and initializes changed collection def
   const view = render(<View />);
   fireEvent.click(screen.getByTestId("definition-field-add"));
   fireEvent.click(await screen.findByTestId("search-item-float"));
-  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ name: "Damage" }, { name: "NewField", typeId: "float", defaultValue: 0 }] }));
+  await waitFor(() => expect(state.documents[0]!.content).toMatchObject({ fields: [{ name: "Damage" }, { id: expect.any(String), name: "NewField", typeId: "float", defaultValue: 0 }] }));
   view.rerender(<View />);
   expect((within(screen.getByTestId("data-definition-details-panel")).getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("NewField");
   // Closing Fields must not lose the document's selected field.

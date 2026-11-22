@@ -8,6 +8,8 @@ export {
   SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
   TRANSFORMLESS_COMPONENT_CLASS_IDS,
   componentHasTransform,
+  componentSurface,
+  type ComponentSurface,
   type EngineComponentClassId,
   type EngineComponentPlacement,
 } from "./engine-components";

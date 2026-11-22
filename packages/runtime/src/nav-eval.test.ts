@@ -437,6 +437,8 @@ describe("runtime navmesh import and crowd", () => {
   });
 
   it("imports baked bytes without generating and copies the agent pose into the snapshot", async () => {
+    // An earlier session's stop unloaded the module with its navmesh.
+    await initNavigation();
     const generated = createNavigationBackend();
     generated.importNavMesh(bytes);
     expect(generated.findPath({ x: -4, y: 0, z: -4 }, { x: 4, y: 0, z: 4 }).length).toBeGreaterThan(1);

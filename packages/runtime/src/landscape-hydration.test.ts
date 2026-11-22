@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createActor,
   createDefaultScene,
+  encodeFoliageChunk,
   encodeLandscapeBase64,
   encodeLandscapeChunk,
+  foliageChunkId,
   landscapeChunkId,
+  packFoliageTransforms,
+  serializeFoliageProperties,
   parseLandscapeProperties,
   type SaveGameStorage,
   type SerializedComponent,
@@ -50,7 +54,7 @@ describe("Landscape terrain on every runtime actor", () => {
     ] };
     const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: parent, playSceneGuid: "parent",
       sceneLibrary: { child }, deferSceneModelsReady: true, onCommand: (command) => commands.push(command),
-      sceneLandscapeBytes: {
+      sceneComponentChunks: {
         [`parent:${landscapeChunkId("terrain")}`]: encodeLandscapeChunk(plateau(1)),
         [`child:${landscapeChunkId("terrain")}`]: encodeLandscapeChunk(plateau(7)),
       } });
@@ -99,7 +103,7 @@ describe("Landscape terrain on every runtime actor", () => {
       { id: "save", classId: "SaveGameComponent", properties: { saveTransform: true } },
     ] })] };
     const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: scene, playSceneGuid: "level",
-      sceneLandscapeBytes: { [`level:${landscapeChunkId("terrain")}`]: encodeLandscapeChunk(plateau(5)) } });
+      sceneComponentChunks: { [`level:${landscapeChunkId("terrain")}`]: encodeLandscapeChunk(plateau(5)) } });
     const service = runtime.configureSaveGame({ projectId: "project", storage: new MemoryStorage(),
       definition: { id: "progress", schemaVersion: 1, fields: [] } });
     try {
@@ -126,7 +130,7 @@ describe("Landscape terrain on every runtime actor", () => {
     ] };
     const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: scene, playSceneGuid: "level",
       onCommand: (command) => commands.push(command),
-      sceneLandscapeBytes: { [`level:${landscapeChunkId("damaged")}`]: encodeLandscapeChunk(plateau(2)).slice(0, 40) } });
+      sceneComponentChunks: { [`level:${landscapeChunkId("damaged")}`]: encodeLandscapeChunk(plateau(2)).slice(0, 40) } });
     try {
       await runtime.realizePlayWorld();
       const warnings = commands.filter((command) => command.type === "log" && command.severity === "warning" && command.message.includes("Landscape terrain"));
@@ -136,6 +140,50 @@ describe("Landscape terrain on every runtime actor", () => {
         expect((terrain.heights as Float32Array).every((height) => height === 0)).toBe(true);
         expect(terrain.chunkId).toBeUndefined();
       }
+    } finally { runtime.stop(); }
+  });
+});
+
+describe("Foliage instances on every runtime actor", () => {
+  const batch = (x: number) => ({ modelGuid: "oak", materialGuid: null, cullDistance: 120, fadeRange: 15, shadowDistance: 45,
+    transforms: packFoliageTransforms([{ position: [x, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }]) });
+  const chunkedFoliage = (id: string): SerializedComponent => ({ id, classId: "FoliageComponent", properties: {
+    groupId: "g", batches: [{ modelGuid: "oak", materialGuid: null, cullDistance: 120, fadeRange: 15, shadowDistance: 45 }], chunkId: foliageChunkId(`grove/${id}`) } });
+  const firstX = (actor: Actor | undefined) => {
+    const batches = actor?.components.find((entry) => entry.classId === "FoliageComponent")?.getVariable("batches") as Array<{ transforms: Float32Array }> | undefined;
+    return batches?.[0]?.transforms[0];
+  };
+
+  it("decodes a streamed Scene's instances from its own chunks and a spawned Class's inline instances", async () => {
+    const commands: CommandMessage[] = [];
+    const child: SerializedScene = { ...createDefaultScene(), name: "Child", actors: [createActor("grove", "Grove", { components: [chunkedFoliage("trees")] })] };
+    const parent: SerializedScene = { ...createDefaultScene(), actors: [
+      createActor("grove", "Grove", { components: [chunkedFoliage("trees")] }),
+      createActor("marker", "Marker", { classId: "SceneStreamingActor", components: [
+        { id: "stream", classId: "SceneStreamingComponent", properties: { sceneGuid: "child", sceneName: "Child" } }] }),
+    ] };
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: parent, playSceneGuid: "parent",
+      sceneLibrary: { child }, deferSceneModelsReady: true, onCommand: (command) => commands.push(command),
+      sceneComponentChunks: {
+        [`parent:${foliageChunkId("grove/trees")}`]: encodeFoliageChunk([batch(1)]),
+        [`child:${foliageChunkId("grove/trees")}`]: encodeFoliageChunk([batch(7)]),
+      } });
+    try {
+      await runtime.loadScripts([{ assetGuid: "orchard-class", classId: "Orchard", parentClassId: "Actor", anchors: [], entryPoints: [], source: "",
+        components: [{ id: "trees", classId: "FoliageComponent", properties: { ...serializeFoliageProperties({ groupId: "g", batches: [batch(3)] }) } }] }]);
+      await runtime.realizePlayWorld();
+      runtime.notifySceneModelsReady("parent", 1);
+      runtime.start();
+      const marker = runtime.getWorld().findActor("marker")!;
+      const loading = runtime.loadSceneStream(marker);
+      await vi.waitFor(() => expect(commands.some((command) => command.type === "sceneStreamRealized")).toBe(true));
+      const realized = commands.find((command): command is Extract<CommandMessage, { type: "sceneStreamRealized" }> => command.type === "sceneStreamRealized")!;
+      runtime.notifySceneStreamReady(realized.actorGuid, realized.streamLoadId);
+      await loading;
+      const groves = runtime.getWorld().getActors().filter((actor) => actor.getVariable("name") === "Grove");
+      expect(groves.map(firstX).sort()).toEqual([1, 7]);
+      expect(firstX(runtime.spawnScriptedActor({ classId: "Orchard" })!)).toBe(3);
+      expect(commands.some((command) => command.type === "log" && command.severity === "warning" && command.message.includes("Foliage"))).toBe(false);
     } finally { runtime.stop(); }
   });
 });

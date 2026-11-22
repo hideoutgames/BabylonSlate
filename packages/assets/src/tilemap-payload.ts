@@ -743,6 +743,54 @@ function isNormalizedTiles(tiles: unknown, length: number): tiles is number[] {
   return true;
 }
 
+/**
+ * A stored chunk's cells as run-length pairs `[count, gid, count, gid, ...]`
+ * in row order: empty (`0`) and filled areas collapse into one pair each.
+ * The `.hasset` document and export payloads store chunks as `{ cx, cy, runs }`;
+ * normalizing decodes them back into dense `tiles`.
+ */
+export function encodeTilemapRuns(tiles: readonly number[]): number[] {
+  const runs: number[] = [];
+  let at = 0;
+  while (at < tiles.length) {
+    const gid = tiles[at]!;
+    let end = at + 1;
+    while (end < tiles.length && tiles[end] === gid) end++;
+    runs.push(end - at, gid);
+    at = end;
+  }
+  return runs;
+}
+
+/** Dense cells of `runs`; pairs past `length` are cut, missing cells stay empty, malformed pairs read as empty. */
+export function decodeTilemapRuns(runs: readonly unknown[], length: number): number[] {
+  const tiles = new Array<number>(length).fill(0);
+  let at = 0;
+  for (let i = 0; i + 1 < runs.length && at < length; i += 2) {
+    const count = Number(runs[i]);
+    const gid = Number(runs[i + 1]) || 0;
+    if (!Number.isInteger(count) || count <= 0) break;
+    const end = Math.min(length, at + count);
+    if (gid !== 0) tiles.fill(gid, at, end);
+    at = end;
+  }
+  return tiles;
+}
+
+/**
+ * The payload as stored in a `.hasset` and in exported games: every chunk's
+ * dense `tiles` become `runs`. Normalizing reads it back.
+ */
+export function compactTilemapPayload(payload: TilemapPayload): Record<string, unknown> {
+  return {
+    ...payload,
+    layers: payload.layers.map((layer) => ({
+      ...layer,
+      chunks: layer.chunks.map((chunk) => ({ cx: chunk.cx, cy: chunk.cy, runs: encodeTilemapRuns(chunk.tiles) })),
+    })),
+  };
+}
+
 function normalizeChunks(value: unknown, chunkSize: number): TilemapChunk[] {
   if (!Array.isArray(value)) return [];
   const length = chunkSize * chunkSize;
@@ -757,6 +805,8 @@ function normalizeChunks(value: unknown, chunkSize: number): TilemapChunk[] {
     let tiles: number[];
     if (isNormalizedTiles(row.tiles, length)) {
       tiles = row.tiles;
+    } else if (Array.isArray(row.runs)) {
+      tiles = decodeTilemapRuns(row.runs, length);
     } else {
       const raw = Array.isArray(row.tiles) ? row.tiles.map((n) => Number(n) || 0) : [];
       tiles = emptyChunkTiles(chunkSize);

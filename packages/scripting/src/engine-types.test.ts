@@ -39,10 +39,10 @@ it("exposes native input asset references and readable runtime binding labels", 
   expect(
     ENGINE_STRUCTS.find((entry) => entry.id === "engine:InputType")?.fields,
   ).toEqual([
-    { name: "Name", typeId: "string" },
-    { name: "Asset", typeId: "asset" },
+    { id: "engine:InputType.Name", name: "Name", typeId: "string" },
+    { id: "engine:InputType.Asset", name: "Asset", typeId: "asset" },
   ]);
   expect(
     ENGINE_STRUCTS.find((entry) => entry.id === "engine:InputBinding")?.fields,
-  ).toContainEqual({ name: "Label", typeId: "string", defaultValue: "" });
+  ).toContainEqual({ id: "engine:InputBinding.Label", name: "Label", typeId: "string", defaultValue: "" });
 });

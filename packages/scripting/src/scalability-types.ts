@@ -1,6 +1,5 @@
 import { ANTI_ALIASING_MODES, DEFAULT_SHADOW_SETTINGS, RENDER_QUALITY_PROFILES, SCREEN_SHADOWS_QUALITIES } from "@haptic/core";
-import type { EngineEnum, EngineStruct } from "./engine-types";
-import type { StructField } from "./type-assets";
+import type { EngineEnum, EngineStructDefinition, EngineStructField } from "./engine-types";
 
 const enumeration = (name: string, members: string[]): EngineEnum => ({
   id: `engine:${name}`, name: name.replace(/([a-z])([A-Z])/g, "$1 $2"), members: members.map((name, value) => ({ name, value })),
@@ -16,22 +15,22 @@ export const SCALABILITY_ENUMS: EngineEnum[] = [
   enumeration("AntiAliasingMode", [...ANTI_ALIASING_MODES]),
   enumeration("CelLightMixing", ["strongest", "additive", "blend"]),
   enumeration("ToneMapping", ["none", "standard", "aces", "neutral"]),
-  enumeration("ColorPipeline", ["legacyDisplay", "sceneLinear"]),
+  enumeration("ColorPipeline", ["displaySpace", "sceneLinear"]),
   enumeration("WaterShadingDetail", ["low", "medium", "high", "ultra"]),
   enumeration("WaterReflectionMode", ["sky", "screenSpace", "planar"]),
   enumeration("MirrorReflects", ["everything", "movingActors", "environment"]),
 ];
-const field = (name: string, typeId: string, defaultValue?: unknown, typeClassId?: string): StructField =>
+const field = (name: string, typeId: string, defaultValue?: unknown, typeClassId?: string): EngineStructField =>
   ({ name, typeId, ...(defaultValue !== undefined ? { defaultValue } : {}), ...(typeClassId ? { typeClassId: `engine:${typeClassId}` } : {}) });
 const number = (name: string, value: number) => field(name, "float", value);
 const bool = (name: string, value: boolean) => field(name, "bool", value);
 const choice = (name: string, type: string, value: string) => field(name, "enum", value, type);
 const structure = (name: string, type: string) => field(name, "struct", undefined, type);
-const define = (name: string, fields: StructField[]): EngineStruct => ({ id: `engine:${name}`, name: name.replace(/([a-z])([A-Z])/g, "$1 $2"), fields });
+const define = (name: string, fields: EngineStructField[]): EngineStructDefinition => ({ id: `engine:${name}`, name: name.replace(/([a-z])([A-Z])/g, "$1 $2"), fields });
 /** Quality structs default to the Medium tier. */
 const medium = RENDER_QUALITY_PROFILES.medium, shadows = DEFAULT_SHADOW_SETTINGS;
 /** Stable built-in types use the same property keys as runtime readback. */
-export const SCALABILITY_STRUCTS: EngineStruct[] = [
+export const SCALABILITY_STRUCTS: EngineStructDefinition[] = [
   define("ScalabilityResult", [number("revision", 0), choice("status", "ScalabilityStatus", "rebuildPending"), field("message", "string", "")]),
   define("ResolutionQuality", [number("scale", medium.resolution.scale)]),
   define("TextureQuality", [number("lodBias", medium.textures.lodBias), number("anisotropy", medium.textures.anisotropy),
@@ -59,7 +58,7 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("EnvironmentLighting", [bool("enabled", true), number("intensity", 1), number("rotationYDegrees", 0), number("celStrength", 0)]),
   define("BloomSettings", [bool("enabled", false), number("threshold", 0.9), number("weight", 0.15), number("kernel", 64), number("scale", 0.5)]),
   define("VignetteSettings", [bool("enabled", false), number("weight", 1.5)]),
-  define("ColorPipelineSettings", [choice("mode", "ColorPipeline", "legacyDisplay")]),
+  define("ColorPipelineSettings", [choice("mode", "ColorPipeline", "displaySpace")]),
   define("RenderEffects", [structure("colorPipeline", "ColorPipelineSettings"), choice("toneMapping", "ToneMapping", "none"), number("exposure", 1),
     number("contrast", 1), structure("vignette", "VignetteSettings"), structure("bloom", "BloomSettings")]),
   define("RenderingQuality", [structure("resolution", "ResolutionQuality"), structure("textures", "TextureQuality"),

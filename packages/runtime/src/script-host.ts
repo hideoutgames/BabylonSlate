@@ -154,6 +154,7 @@ export class ScriptHost {
       materials: this.materials,
       dispatchers: this.dispatchers,
       canInvokeOwner,
+      classDisplayName: (classId: string) => this.classDisplayName(classId),
       applyComponentVariable: (component: ActorComponent, name: string, value: unknown) =>
         this.applyComponentVariable(component, name, value),
       writeComponentVariable: (component: ActorComponent, name: string, value: unknown) =>
@@ -284,6 +285,19 @@ export class ScriptHost {
     this.byClassId.clear();
     this.clearLineageCaches();
     this.orphanFlowStates.clear();
+    this.textChangeDispatches.clear();
+    this.materials.releaseAllPostProcessPreloads();
+    this.debugObject = null;
+    this.debugSink = null;
+    this.frameTraces = null;
+    this.invokingOwner = null;
+    this.finalizingOwner = null;
+    this.interfaceCaller = null;
+  }
+
+  /** Releases the preloads of post-process Material Objects whose pass is gone (`ScriptMaterialOwnership`). */
+  releaseRetiredPostProcessPreloads(): void {
+    this.materials.releaseRetiredPostProcessPreloads();
   }
 
   private clearLineageCaches(): void {
@@ -308,6 +322,15 @@ export class ScriptHost {
    * first. Scripts keyed by a locked engine id answer only for that exact id
    * and are never inherited.
    */
+  /** The name a loaded Class or Prefab script gives its class, as the editor shows it. */
+  classDisplayName(classId: string): string | undefined {
+    for (const loaded of this.byClassId.get(classId) ?? []) {
+      const name = loaded.script.className?.trim();
+      if (name) return name;
+    }
+    return undefined;
+  }
+
   private scriptLineage(classId: string): readonly LoadedScript[][] {
     const cached = this.lineageByClassId.get(classId);
     if (cached) return cached;
@@ -434,14 +457,13 @@ export class ScriptHost {
       onTick: (self, ctx: TickContext) => {
         // Input first, as the tick's Event Tick may act on it.
         for (const loaded of this.inputScriptsFor(classId)) {
-          this.dispatchEvent(loaded, INPUT_EVENT, self, ctx.dt, ctx.tickIndex, {});
+          // No arguments: the context reads the shared frozen empty record.
+          this.dispatchEvent(loaded, INPUT_EVENT, self, ctx.dt, ctx.tickIndex);
           if (self.destroyed) return;
         }
         const loaded = this.lifecycleScriptsFor(classId, "onTick");
         if (!loaded) return;
-        this.dispatchEvent(
-          loaded, "onTick", self, ctx.dt, ctx.tickIndex, {},
-        );
+        this.dispatchEvent(loaded, "onTick", self, ctx.dt, ctx.tickIndex);
       },
       onDestroyed: (self) => {
         const loaded = this.lifecycleScriptsFor(classId, "onDestroyed");
@@ -745,7 +767,7 @@ export class ScriptHost {
    * user ancestors are inherited; the nearest declaring class wins.
    */
   bindInterfaceHandlers(object: EngineObject): void {
-    for (const key of this.boundInterfaceKeys.get(object) ?? []) object.interfaceHandlers.delete(key);
+    for (const key of this.boundInterfaceKeys.get(object) ?? []) object.interfaceHandlers?.delete(key);
     const owned = new Set<string>();
     this.boundInterfaceKeys.set(object, owned);
     const lineage = this.scriptLineage(object.classId);
@@ -759,7 +781,7 @@ export class ScriptHost {
             const exportName = impl.exportName;
             const key = interfaceHandlerKey(iface, impl.method);
             owned.add(key);
-            object.interfaceHandlers.set(key, this.boundInterfaceHandler(object, entry.script.assetGuid, entry.script.classId, exportName));
+            (object.interfaceHandlers ??= new Map()).set(key, this.boundInterfaceHandler(object, entry.script.assetGuid, entry.script.classId, exportName));
           }
         }
       }

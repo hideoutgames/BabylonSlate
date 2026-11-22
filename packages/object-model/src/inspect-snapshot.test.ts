@@ -243,6 +243,11 @@ describe("sanitizeInspectValue", () => {
     expect(sanitizeInspectValue(true)).toBe(true);
     expect(sanitizeInspectValue(null)).toBe(null);
     expect(sanitizeInspectValue(undefined)).toBe(null);
+    // Numbers JSON cannot hold read as JSON gives them: null, and -0 as 0.
+    expect(sanitizeInspectValue(Number.NaN)).toBe(null);
+    expect(sanitizeInspectValue(Number.POSITIVE_INFINITY)).toBe(null);
+    expect(sanitizeInspectValue(-0)).toBe(0);
+    expect(Object.is(sanitizeInspectValue(-0), 0)).toBe(true);
     expect(
       sanitizeInspectValue(new Actor({ classId: "Actor", guid: "a1" })),
     ).toEqual({ guid: "a1", classId: "Actor" });

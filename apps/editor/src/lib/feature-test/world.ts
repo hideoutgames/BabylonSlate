@@ -11,6 +11,8 @@ import {
   RENDER_TARGET_CAPTURE_QUALITY_LABELS,
   serializeLandscapeProperties,
   waterRiverCentreline,
+  packFoliageTransforms,
+  serializeFoliageProperties,
   type FoliageBatch,
   type FoliageGroup,
   type LandscapeProperties,
@@ -394,8 +396,7 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
   const models = ctx.assets.models;
   add(actor("ft-world-foliage", "Island Foliage", tf(land(0, 0, 0)), [
     comp("ft-world-foliage-instances", "FoliageComponent", {
-      groupId: FOLIAGE_GROUP_ID,
-      batches: scatterIsland(island, models, keepOut),
+      ...serializeFoliageProperties({ groupId: FOLIAGE_GROUP_ID, batches: scatterIsland(island, models, keepOut) }),
     }),
   ]));
   const group = foliageGroup(models);
@@ -405,8 +406,7 @@ export async function placeFeatureTestWorld(ctx: FeatureTestContext): Promise<vo
   addFoliageGroup(ctx.stressScene, group);
   ctx.addActor(actor("ft-world-stress-foliage", "Stress Foliage", tf(stressPoint("foliage")), [
     comp("ft-world-stress-foliage-instances", "FoliageComponent", {
-      groupId: FOLIAGE_GROUP_ID,
-      batches: stressFoliage(models),
+      ...serializeFoliageProperties({ groupId: FOLIAGE_GROUP_ID, batches: stressFoliage(models) }),
     }),
   ]), { scene: ctx.stressScene });
 
@@ -825,22 +825,16 @@ function scatterIsland(
       cullDistance: 120,
       fadeRange: 18,
       shadowDistance: 45,
-      transforms,
+      transforms: packFoliageTransforms(transforms),
     };
   });
 }
 
+
 /** Jittered grid on the flat stress floor: half trees, then snow piles and rocks. */
 function stressFoliage(models: Record<FeatureTestHolidayModel, string>): FoliageBatch[] {
   const picks: FeatureTestHolidayModel[] = ["tree-snow-a", "snow-pile", "rocks-medium"];
-  const batches = picks.map((model): FoliageBatch => ({
-    modelGuid: requireRef(models[model], `the ${model} Model`),
-    materialGuid: null,
-    cullDistance: 90,
-    fadeRange: 15,
-    shadowDistance: 35,
-    transforms: [],
-  }));
+  const instances = picks.map((): SerializedTransform[] => []);
   const rng = createSeededRng(101);
   const extent = ((STRESS_FOLIAGE_GRID - 1) * STRESS_FOLIAGE_SPACING) / 2;
   for (let iz = 0; iz < STRESS_FOLIAGE_GRID; iz++) {
@@ -850,10 +844,17 @@ function stressFoliage(models: Record<FeatureTestHolidayModel, string>): Foliage
       const roll = rng.nextFloat();
       const yaw = rng.nextFloat() * 360;
       const scale = 0.45 + rng.nextFloat() * 0.35;
-      batches[roll < 0.5 ? 0 : roll < 0.8 ? 1 : 2]!.transforms.push(foliageTransform(x, 0, z, yaw, scale));
+      instances[roll < 0.5 ? 0 : roll < 0.8 ? 1 : 2]!.push(foliageTransform(x, 0, z, yaw, scale));
     }
   }
-  return batches;
+  return picks.map((model, index): FoliageBatch => ({
+    modelGuid: requireRef(models[model], `the ${model} Model`),
+    materialGuid: null,
+    cullDistance: 90,
+    fadeRange: 15,
+    shadowDistance: 35,
+    transforms: packFoliageTransforms(instances[index]!),
+  }));
 }
 
 function foliageGroup(models: Record<FeatureTestHolidayModel, string>): FoliageGroup {

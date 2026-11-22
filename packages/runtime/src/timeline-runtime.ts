@@ -60,6 +60,7 @@ export interface TimelineRuntimeHost {
 
 /** What one object track writes to: an actor, or a Component proxy's component, and the proxy's binding. */
 type TrackTarget = { object: Actor | ActorComponent; binding?: TimelineProxyBinding };
+const NO_TARGETS: readonly TrackTarget[] = [];
 
 /** A bound object that was destroyed, or a component whose actor was. */
 const boundTargetGone = ({ target }: TimelineProxyBinding): boolean =>
@@ -257,7 +258,7 @@ export class TimelineRuntime {
     for (const owner of owners) this.ensure(owner);
     if (this.ownersWithClips === 0) {
       // No clip to step, so no script runs: only copies that ended are dropped.
-      for (const owner of this.owners.keys()) if (owner.destroyed) this.remove(owner);
+      this.pruneEnded();
     } else {
       // Clip events run scripts, which may load or end copies: walk the owners present when the tick began.
       const tickOwners = this.tickOwners;
@@ -404,16 +405,25 @@ export class TimelineRuntime {
   /** Writes every unmuted track's value at the clip's time to its actor or bound objects. */
   apply(clip: TimelineClipObject): void {
     if (clip.destroyed) return;
+    const instance = clip instanceof TimelineClipInstance;
     for (const object of clip.clip.objects) {
-      const targets = this.trackTargets(clip, object.actorId, true);
-      if (targets.length === 0) continue;
+      // A scene clip animates one placed actor: written directly, with no target list built per tick.
+      const actor = instance ? null : this.host.ownedActor(clip.owner, object.actorId);
+      const targets = instance ? this.trackTargets(clip, object.actorId, true) : NO_TARGETS;
+      if (instance ? targets.length === 0 : !actor || actor.destroyed) continue;
       for (const track of object.tracks) {
         if (track.muted) continue;
         const value = evaluateTimelineTrack(track, clip.playback.time);
         if (value === undefined) continue;
-        for (const target of targets) this.write(target, object.actorId, track, value);
+        if (actor) this.write(actor, undefined, object.actorId, track, value);
+        else for (const target of targets) this.write(target.object, target.binding, object.actorId, track, value);
       }
     }
+  }
+
+  /** Drops the copies of owners that ended, without stepping any clip (a game pause steps none). */
+  pruneEnded(): void {
+    for (const owner of this.owners.keys()) if (owner.destroyed) this.remove(owner);
   }
 
   /**
@@ -442,7 +452,7 @@ export class TimelineRuntime {
     return [];
   }
 
-  private write({ object, binding }: TrackTarget, actorId: string, track: TimelinePropertyTrack, value: unknown): void {
+  private write(object: Actor | ActorComponent, binding: TimelineProxyBinding | undefined, actorId: string, track: TimelinePropertyTrack, value: unknown): void {
     const { target } = track;
     if (target.kind === "transform") {
       const channel = CHANNEL[target.property as keyof typeof CHANNEL];

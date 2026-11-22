@@ -1164,10 +1164,13 @@ describe("ViewportPanel engine", () => {
   });
 
   it("gives the engine each Tilemap's revision, which holds while other assets are saved and moves with its own save or open document", async () => {
+    // A Tilemap is stored as its normalized map, so each revision saves a different map width.
     const saved = async (type: string, guid: string, value: number) => ({
       rootId: "project",
       path: `assets/${guid}.hasset`,
-      header: readAssetDocumentHeader(await encodeAssetDocument({ type, guid, name: guid, version: 1, payload: { value } })),
+      header: readAssetDocumentHeader(await encodeAssetDocument({
+        type, guid, name: guid, version: 1, payload: type === "Tilemap" ? { width: 16 + value } : { value },
+      })),
     });
     const scene = {
       id: "scene:S",

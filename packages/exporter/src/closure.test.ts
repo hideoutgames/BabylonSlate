@@ -42,12 +42,12 @@ describe("collectExportReachability", () => {
   });
   it("packs owned entries, their definition and typed nested dependencies without packing entry paths or text", () => {
     const schema = [
-      { name: "assetGuid", typeId: "string" },
-      { name: "Spawn", typeId: "class", typeClassId: "Hero" },
-      { name: "Stats", typeId: "struct", typeClassId: "stats", fields: [
-        { name: "Icon", typeId: "asset", typeClassId: "Texture" },
-        { name: "classId", typeId: "string" },
-        { name: "Grade", typeId: "enum", typeClassId: "grade" },
+      { id: "assetGuid", name: "assetGuid", typeId: "string" },
+      { id: "Spawn", name: "Spawn", typeId: "class", typeClassId: "Hero" },
+      { id: "Stats", name: "Stats", typeId: "struct", typeClassId: "stats", fields: [
+        { id: "Icon", name: "Icon", typeId: "asset", typeClassId: "Texture" },
+        { id: "classId", name: "classId", typeId: "string" },
+        { id: "Grade", name: "Grade", typeId: "enum", typeClassId: "grade" },
       ] },
     ];
     const payloads: Record<string, unknown> = {

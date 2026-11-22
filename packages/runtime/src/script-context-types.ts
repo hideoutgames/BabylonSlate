@@ -45,6 +45,7 @@ import type {
 import type { ColliderShape, OverlapResult, PhysicsTransform, TeleportOptions, Vec3 } from "@haptic/physics";
 import type { AnimStateFacts } from "@haptic/anim-graph";
 import type { ScriptLoopLocation } from "@haptic/debugger";
+import type { ScriptAccessLocation } from "./destroyed-access";
 import type { InputBindingControls } from "@haptic/input";
 import type { EditorDataApi } from "@haptic/scripting";
 import type { ScriptAssetRegistry } from "./asset-catalog";
@@ -112,6 +113,11 @@ export interface ScriptContext {
    * ("Hero: Destroy Actor (Target) tried to access null.") every time, and never throws.
    */
   nullAccess(message: string): void;
+  /**
+   * A compiled node found its subject destroyed and skipped itself: reports `Tried to access "<member>" from null
+   * of type "<Class>"` (or set / call) once per node and member, at `location`. Never throws.
+   */
+  destroyedAccess(location: ScriptAccessLocation, target: unknown): void;
   /**
    * Compiled async entries register their locals while they run, so objects a
    * waiting Delay holds stay alive. Returns the function that ends the frame.
@@ -827,7 +833,7 @@ export type LoadedScript = {
  * is a value set per call or a method reading the call from its context (`createScriptContextClass`).
  */
 export type HostContextKey =
-  | "getSaveData" | "getSaveField" | "setSaveField" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "holdFrame" | "createObject" | "collectGarbage" | "assertFailed" | "assertEqual" | "print"
+  | "getSaveData" | "getSaveField" | "setSaveField" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "destroyedAccess" | "holdFrame" | "createObject" | "collectGarbage" | "assertFailed" | "assertEqual" | "print"
   | "eventDelegate" | "bindDispatcher" | "unbindDispatcher" | "unbindAllDispatcher"
   | "setGlobalFloatParameter" | "setGlobalVector2Parameter" | "setGlobalVector3Parameter" | "setGlobalVector4Parameter" | "setGlobalColorParameter"
   | "getGlobalFloatParameter" | "getGlobalVector2Parameter" | "getGlobalVector3Parameter" | "getGlobalVector4Parameter" | "getGlobalColorParameter"

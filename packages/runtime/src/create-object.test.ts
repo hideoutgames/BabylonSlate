@@ -4,6 +4,7 @@ import { EngineObject, TICKABLE_OBJECT_INTERFACE_GUID } from "@haptic/object-mod
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { compileClassScript, graphNode, startGraphScenario, wire, type GraphScenario } from "./testing/graph-scenario";
 import type { RuntimeObjectLifetime } from "./object-lifetime";
+import { variablesAtRelease } from "./testing/released-variables";
 
 const registry = createDefaultNodeRegistry();
 const own = (name: string, typeId: string, typeClassId?: string) =>
@@ -127,17 +128,20 @@ describe("Create Object in Play", () => {
     await scenario.tick();
     const held = makerActor.getVariable("Held") as EngineObject;
     const kept = makerActor.getVariable("Kept") as EngineObject;
+    const released = variablesAtRelease(held);
 
     scenario.runtime.invokeScriptEvent("Maker", "Drop", makerActor);
     await scenario.tick();
     expect(held.destroyed).toBe(true);
     expect(kept.destroyed).toBe(false);
     expect(lifetime.lastPass).toMatchObject({ collected: 1, collectable: 1 });
+    expect(released.get("Late")).toBe(false);
+    // A collected object releases its state.
+    expect([...held.variables.keys()]).toEqual([]);
 
-    const ticksAtCollection = held.getVariable("Ticks");
     // 0.25 s at the default step: well past the 0.1 s Delay both objects started in On Init.
     await scenario.tick(15);
-    expect(held.getVariable("Ticks")).toBe(ticksAtCollection);
-    expect([held.getVariable("Late"), kept.getVariable("Late")]).toEqual([false, true]);
+    // Neither a tick nor the Delay wrote the collected object again.
+    expect([held.getVariable("Ticks"), held.getVariable("Late"), kept.getVariable("Late")]).toEqual([undefined, undefined, true]);
   });
 });

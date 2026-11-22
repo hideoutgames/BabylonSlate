@@ -7,7 +7,6 @@ describe("planPlayPreviewPrepare", () => {
       planPlayPreviewPrepare({
         dirtyDocuments: [],
         scriptsStale: false,
-        migrationPending: false,
       }),
     ).toEqual({ action: "launch" });
   });
@@ -20,7 +19,6 @@ describe("planPlayPreviewPrepare", () => {
           { label: "main.scene.hasset" },
         ],
         scriptsStale: true,
-        migrationPending: false,
       }),
     ).toEqual({
       action: "prepare",
@@ -35,7 +33,6 @@ describe("planPlayPreviewPrepare", () => {
       planPlayPreviewPrepare({
         dirtyDocuments: [],
         scriptsStale: true,
-        migrationPending: false,
       }),
     ).toEqual({
       action: "prepare",
@@ -50,38 +47,12 @@ describe("planPlayPreviewPrepare", () => {
       planPlayPreviewPrepare({
         dirtyDocuments: [{ label: "main.scene.hasset" }],
         scriptsStale: false,
-        migrationPending: false,
       }),
     ).toEqual({
       action: "prepare",
       needsSave: true,
       needsCompile: false,
       dirtyNames: ["main.scene.hasset"],
-    });
-  });
-
-  it("requires migration approval before saving dirty documents", () => {
-    expect(
-      planPlayPreviewPrepare({
-        dirtyDocuments: [{ label: "main.class.hasset" }],
-        scriptsStale: true,
-        migrationPending: true,
-      }),
-    ).toEqual({ action: "migrate" });
-  });
-
-  it("skips migration when only compile is stale", () => {
-    expect(
-      planPlayPreviewPrepare({
-        dirtyDocuments: [],
-        scriptsStale: true,
-        migrationPending: true,
-      }),
-    ).toEqual({
-      action: "prepare",
-      needsSave: false,
-      needsCompile: true,
-      dirtyNames: [],
     });
   });
 });

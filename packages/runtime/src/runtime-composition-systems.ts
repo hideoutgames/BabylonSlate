@@ -128,7 +128,6 @@ function applyAnimRootMotion(rt: RuntimeComposition, actor: Actor, motion: AnimR
 export function createBehaviourTrees(rt: RuntimeComposition): BehaviourTreeRuntime {
   return new BehaviourTreeRuntime({
     world: () => rt.world,
-    frameActors: () => rt.navFrameActors ?? undefined,
     stopped: () => rt.stopped,
     canTick: (actor) => rt.admission.canTickActor(actor),
     slot: (actor) => rt.actorSlot(actor),

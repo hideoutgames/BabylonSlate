@@ -17,7 +17,6 @@ import {
   appendJournalLines,
   type AssetLoadScope,
   type AssetLoadPriority,
-  type MigrationPending,
 } from "@haptic/assets";
 import {
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -190,9 +189,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [projectDocument, setProjectDocument] = useRefState(projectDocumentRef);
   const projectSaveState = useRef(new ProjectSaveState());
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
-  const [migrationPending, setMigrationPending] = useState<MigrationPending[]>(
-    [],
-  );
   /** Re-renders the provider after service state its slices read changed (edits, tabs, saves). */
   const [, setContextTick] = useState(0);
   /** Registry-adjacent changes outside the registry itself; part of `registryEpoch`. */
@@ -391,7 +387,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     refreshProjectList,
     refreshTemplates,
     actions: projectListActions,
-  } = useProjectList({ projectService, settingsStore, route });
+  } = useProjectList({ projectService, settingsStore, route, ensureDerived });
 
   useEffect(() => {
     documentService.ensureContentBrowserTab();
@@ -470,7 +466,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setAutoSaveStatus,
     saveFailed,
     dismissSaveFailed,
-    migrationPromptRequest,
     cancelDebouncedSave,
     enqueueProjectWrite,
     scheduleDebouncedSave,
@@ -488,7 +483,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     captureMtimeSnapshot: afterEditorSave,
     playContent,
     setLastCompiledSignature,
-    setMigrationPending,
     sourceControlRef,
     bump,
   });
@@ -576,7 +570,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     projectSaveState,
     setProjectDocument,
     setRoute,
-    setMigrationPending,
     setRecoveryAvailable,
     setDocumentOpenError,
     setPublishNotice,
@@ -1060,8 +1053,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       listedProjects,
       needsReconnect,
       recoveryAvailable,
-      migrationPending,
-      migrationPromptRequest,
       saveFailed,
       templates,
       homepageReady,
@@ -1071,7 +1062,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       publishNotice,
       thumbnailsEnabled,
     }),
-    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, saveFailed, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, publishNotice, thumbnailsEnabled],
+    [listedProjects, needsReconnect, recoveryAvailable, saveFailed, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, publishNotice, thumbnailsEnabled],
   );
 
   return (

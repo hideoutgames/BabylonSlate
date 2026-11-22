@@ -40,6 +40,12 @@ export class AudioBufferCache {
     this.evictListeners.push(listener);
   }
 
+  /** Stops calling `listener` (one `addEvictListener` registration of it) on evictions. */
+  removeEvictListener(listener: (assetGuid: string, reason: string) => void): void {
+    const index = this.evictListeners.indexOf(listener);
+    if (index >= 0) this.evictListeners.splice(index, 1);
+  }
+
   setByteCeiling(bytes: number): void {
     if (!Number.isFinite(bytes) || bytes <= 0) return;
     this.ceiling = bytes;

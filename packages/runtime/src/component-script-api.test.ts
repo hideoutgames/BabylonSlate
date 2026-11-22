@@ -935,16 +935,17 @@ describe("component script API", () => {
       return () => [guid, count];
     });
     const finished = () => commands.flatMap((command) => (command.type === "log" && command.category === "Finished" ? [command.message] : []));
-    // A script or Behaviour Tree voice is no component: only the owners are looked at, and nothing runs.
+    // A script or Behaviour Tree voice is no component: no actor is looked at, and nothing runs.
     runtime.applyAudioVoiceEnded({ type: "audioVoiceEnded", voiceId: "script:3" });
     runtime.applyAudioVoiceEnded({ type: "audioVoiceEnded", voiceId: "bt:tree:node" });
     expect(finished()).toEqual([]);
-    expect(searched.map((read) => read())).toEqual([["bystander-1", 0], ["bystander-2", 0], ["speaker", 2], ["later", 2]]);
-    // The first live owner in world order ends the search.
+    expect(searched.map((read) => read())).toEqual([["bystander-1", 0], ["bystander-2", 0], ["speaker", 0], ["later", 0]]);
+    // Only the owners are looked at, and the first live one in world order ends the search.
     runtime.applyAudioVoiceEnded({ type: "audioVoiceEnded", voiceId: "audio-1" });
     expect(finished()).toEqual(["speaker"]);
+    // (Running its event reads the speaker's components again.)
     expect(searched.map((read) => read()).filter(([guid]) => guid !== "speaker"))
-      .toEqual([["bystander-1", 0], ["bystander-2", 0], ["later", 2]]);
+      .toEqual([["bystander-1", 0], ["bystander-2", 0], ["later", 0]]);
     // A destroyed owner is passed over, and its own voice runs nothing.
     world.findActor("removed")!.destroyed = true;
     runtime.applyAudioVoiceEnded({ type: "audioVoiceEnded", voiceId: "removed-audio" });

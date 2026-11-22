@@ -20,7 +20,7 @@ Under the settings, the **Options** list holds the choices. Type a name and tap 
 | Text Color | Colour of the text. Default white. |
 | Opacity | Fades the whole control, from 0 to 1. Default 1. |
 | Tint | Colour and alpha multiplied into every part. Default white. |
-| Background Material, Background Texture | Replace the default look of the control and its rows. A Material or Material Instance, or a Texture. A Material wins when both are set. |
+| Background Material, Background Texture | Replace the default look of the control and its rows. A Texture, or a [User Interface](../graphics/materials.md#user-interface-materials) Material or an Instance of one. Materials of other domains are not listed, and are not drawn if a script sets one. A Material wins when both are set. |
 | Indicator Material, Indicator Texture | Replace the plus or minus sign at the right edge. |
 | Focus Enabled, Initial Focus, Focus Up, Focus Down, Focus Left, Focus Right | Keyboard and gamepad focus. See [Scene Layers](../scenes/scene-layers.md). |
 

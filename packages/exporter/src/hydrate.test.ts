@@ -119,7 +119,7 @@ describe("packedContentFromGame", () => {
 
   it("names data type schemas after their catalog entries", () => {
     const game = sources([{ guid: "stats", type: "Structure", name: "Weapon Stats", encoding: "json" }],
-      { stats: { fields: [{ name: "Power", typeId: "int" }] } });
+      { stats: { fields: [{ id: "Power", name: "Power", typeId: "int" }] } });
     expect(packedContentFromGame(game).dataAssets).toMatchObject([{ guid: "stats", name: "Weapon Stats" }]);
   });
 

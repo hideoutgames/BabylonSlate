@@ -20,7 +20,8 @@ const valueKey = (actorGuid: string, componentId: string) => `${actorGuid}\n${co
 export class RuntimeParticles {
   private readonly byActor = new Map<string, Map<string, ComponentState>>();
   private nextGeneration = 1;
-  private activeSceneGuid: string | undefined;
+  /** The load of the active Scene (`activeScene`'s `sceneLoadId`), once one is active. */
+  private activeSceneLoadId: number | undefined;
   private catalog = new Map<string, Map<string, ParticleParameterCatalogEntry>>();
   /** Runtime parameter values by component (`valueKey`), then name. */
   private readonly values = new Map<string, Map<string, number[]>>();
@@ -103,12 +104,13 @@ export class RuntimeParticles {
         if (command.playing && command.generation !== undefined) state.generation = command.generation;
       }
     } else if (command.type === "activeScene") {
-      // The render host retires every particle system when the active Scene changes.
-      if (this.activeSceneGuid !== undefined && command.sceneAssetGuid !== this.activeSceneGuid) {
+      // The render host retires every particle system for every Scene load after the boot Scene's, the same Scene
+      // loaded again (a level restart) included.
+      if (this.activeSceneLoadId !== undefined && command.sceneLoadId !== this.activeSceneLoadId) {
         this.byActor.clear();
         this.values.clear();
       }
-      this.activeSceneGuid = command.sceneAssetGuid;
+      this.activeSceneLoadId = command.sceneLoadId;
     }
   }
 

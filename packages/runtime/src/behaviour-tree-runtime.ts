@@ -6,7 +6,8 @@ import type { PhysicsWorldKind } from "@haptic/physics";
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
   btEdgeId,
-  evaluateBehaviourTree,
+  initialBehaviourTreeState,
+  stepBehaviourTree,
   builtinClassId,
   type BehaviourTreeDocument,
   type BlackboardDocument,
@@ -60,8 +61,6 @@ type SlotSource = {
 
 interface BehaviourTreeRuntimeHost {
   world(): World;
-  /** Frame index (live actor per guid) shared with the crowd tick. */
-  frameActors(): ReadonlyMap<string, Actor> | undefined;
   stopped(): boolean;
   canTick(actor: Actor): boolean;
   /** The render slot this actor's own commands target. */
@@ -92,7 +91,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
   private readonly documents = new Map<string, BehaviourTreeDocument>();
   private readonly blackboards = new Map<string, BlackboardDocument>();
   private readonly evalBySlot = new Map<number, BtEvalState>();
-  private readonly missingWarned = new Set<string>();
+  /** The missing-tree reasons reported for each actor (`emitMissing`), forgotten when its slot is released. */
+  private readonly missingWarned = new Map<string, Set<string>>();
   private nodeId: string | null = null;
   private assetGuid: string | null = null;
   /** Audio asset guids known to this Play session (PlaySound fail-on-missing). */
@@ -189,12 +189,29 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.lastState.delete(slotId);
     this.blackboardBaseline.delete(slotId);
     this.playAnimOwnedSlots.delete(slotId);
-    if (owner) this.stopPlaySound(owner.guid);
+    if (owner) {
+      this.stopPlaySound(owner.guid);
+      this.missingWarned.delete(owner.guid);
+    }
   }
 
-  /** Stop clears the debug overlay the session was streaming. */
+  /** Stop clears the debug overlay the session was streaming, and forgets everything the session held. */
   dispose(): void {
     if (this.debug) this.host.emit({ type: "behaviourTreeSnapshot", trees: [] });
+    this.documents.clear();
+    this.blackboards.clear();
+    this.evalBySlot.clear();
+    this.missingWarned.clear();
+    this.audioAssetGuids.clear();
+    this.animClipCatalog.clear();
+    this.playAnimOwnedSlots.clear();
+    this.voiceByActor.clear();
+    this.sourceBySlot.clear();
+    this.lastState.clear();
+    this.blackboardBaseline.clear();
+    this.debugComponent = null;
+    this.debugSink = null;
+    this.debugTrace = null;
   }
 
   /** Per-slot evaluation state recorded with each trace frame. */
@@ -256,7 +273,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     if (builtinClassId(node.classId) === "bt.task.moveToBlackboardKey") {
       const key = typeof node.properties?.key === "string" ? node.properties.key : "";
       return this.host.navigation().tickMoveTo(actor, node, memory, blackboardTargetPosition(
-        blackboard[key], this.host.world(), this.host.frameActors(),
+        blackboard[key], this.host.world(),
       ));
     }
     if (builtinClassId(node.classId) === "bt.task.rotateToFace") {
@@ -553,9 +570,10 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
 
   /** Report once per actor and reason, so a tree that goes missing differently later is still reported. */
   private emitMissing(actorGuid: string, message: string): void {
-    const key = `${actorGuid}\0${message}`;
-    if (this.missingWarned.has(key)) return;
-    this.missingWarned.add(key);
+    let reported = this.missingWarned.get(actorGuid);
+    if (!reported) this.missingWarned.set(actorGuid, (reported = new Set()));
+    if (reported.has(message)) return;
+    reported.add(message);
     const frameId = this.host.frameId();
     const diag: RuntimeDiagnostic = {
       code: "bt.missing_tree",
@@ -607,24 +625,24 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     source.actor = actor;
     source.dtSeconds = dtSeconds;
     this.assetGuid = guid;
-    const previous = this.evalBySlot.get(slotId) ?? null;
-    // Evaluation copies its Blackboard input, so the previous state's is passed as is.
+    // The slot's state steps in place each tick; a new one starts from a copy of the Blackboard defaults.
+    let next = this.evalBySlot.get(slotId);
+    if (!next) {
+      next = initialBehaviourTreeState(this.blackboardDefaults(blackboardGuid));
+      this.evalBySlot.set(slotId, next);
+    }
     const followed = component === this.debugComponent;
     const options = source.options;
-    options.blackboard = previous ? previous.blackboard : this.blackboardDefaults(blackboardGuid);
     options.seed = this.host.seed();
     options.trace = followed ? this.followedTrace(guid) : this.frameTrace(component, guid);
     options.breakpoints = this.treeBreakpoints(guid, component, actor);
-    let next: BtEvalState;
     try {
-      next = evaluateBehaviourTree(document, previous, dtSeconds, options);
+      stepBehaviourTree(document, next, dtSeconds, options);
     } finally {
-      // Between ticks the options hold no Blackboard or debugger.
-      options.blackboard = undefined;
+      // Between ticks the options hold no debugger.
       options.trace = undefined;
       options.breakpoints = undefined;
     }
-    this.evalBySlot.set(slotId, next);
     this.nodeId = null;
     this.assetGuid = null;
     if (followed) this.publishState(slotId, next);
@@ -736,13 +754,13 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     if (last && baseline && last.status === next.status && last.btNodeId === next.btNodeId &&
       samePlainData(last.lastResults, next.lastResults) && samePlainData(last.stack, next.stack) &&
       sameBlackboard(baseline, next.blackboard)) return;
-    // Evaluation copies its inputs, so the published objects stay as emitted.
+    // The evaluation steps in place, so what is published (and compared next time) is a copy.
     const state: BtStatePayload = {
       status: next.status,
       btNodeId: next.btNodeId,
-      lastResults: next.lastResults,
+      lastResults: { ...next.lastResults },
       blackboard: snapshotBlackboard(next.blackboard),
-      stack: next.stack,
+      stack: next.stack.map((frame) => ({ ...frame })),
     };
     this.blackboardBaseline.set(slotId, copyBlackboard(next.blackboard));
     if (samePlainData(last, state)) return;

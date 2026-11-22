@@ -1,5 +1,5 @@
 import { Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
-import { parseFoliageProperties, type FoliageBatch, type FoliageProperties } from "@haptic/core";
+import { FOLIAGE_FLOATS_PER_INSTANCE, parseFoliageProperties, type FoliageBatch, type FoliageProperties } from "@haptic/core";
 
 type Batch = { source: FoliageBatch; positions: Float64Array; alive: Uint8Array; count: number };
 
@@ -22,10 +22,14 @@ export class FoliageEraseSession {
     const data = parseFoliageProperties(properties);
     this.groupId = data.groupId;
     this.batches = data.batches.map((source) => {
-      const count = source.transforms.length;
+      const transforms = source.transforms;
+      const count = transforms.length / FOLIAGE_FLOATS_PER_INSTANCE;
       const positions = new Float64Array(count * 3);
+      const local = new Vector3(), position = new Vector3();
       for (let i = 0; i < count; i++) {
-        const position = Vector3.TransformCoordinates(Vector3.FromArray(source.transforms[i]!.position), world);
+        const at = i * FOLIAGE_FLOATS_PER_INSTANCE;
+        local.copyFromFloats(transforms[at]!, transforms[at + 1]!, transforms[at + 2]!);
+        Vector3.TransformCoordinatesToRef(local, world, position);
         positions[i * 3] = position.x; positions[i * 3 + 1] = position.y; positions[i * 3 + 2] = position.z;
       }
       this.remaining += count;
@@ -51,7 +55,16 @@ export class FoliageEraseSession {
 
   /** The surviving instances, in their original order; batches that lost every instance are dropped. */
   snapshot(): FoliageProperties {
-    return { groupId: this.groupId, batches: this.batches.filter((batch) => batch.count > 0)
-      .map((batch) => ({ ...batch.source, transforms: batch.source.transforms.filter((_, i) => batch.alive[i]) })) };
+    return { groupId: this.groupId, batches: this.batches.filter((batch) => batch.count > 0).map((batch) => {
+      const source = batch.source.transforms;
+      const transforms = new Float32Array(batch.count * FOLIAGE_FLOATS_PER_INSTANCE);
+      let to = 0;
+      for (let i = 0; i < batch.alive.length; i++) {
+        if (!batch.alive[i]) continue;
+        transforms.set(source.subarray(i * FOLIAGE_FLOATS_PER_INSTANCE, (i + 1) * FOLIAGE_FLOATS_PER_INSTANCE), to);
+        to += FOLIAGE_FLOATS_PER_INSTANCE;
+      }
+      return { ...batch.source, transforms };
+    }) };
   }
 }

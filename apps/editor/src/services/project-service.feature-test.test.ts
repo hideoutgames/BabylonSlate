@@ -76,7 +76,6 @@ describe("FeatureTest starter", () => {
   let created: ProjectService;
   let reopened: ProjectService;
   let document: ProjectDocument;
-  let migrationPending: readonly unknown[];
 
   beforeAll(async () => {
     created = new ProjectService(storage, { encode: async () => ({ ktx2: new Uint8Array(), wallMs: 0 }) });
@@ -84,7 +83,6 @@ describe("FeatureTest starter", () => {
     reopened = new ProjectService(storage, { encode: async () => ({ ktx2: new Uint8Array(), wallMs: 0 }) });
     const loaded = await reopened.loadCurrentProject();
     document = loaded.document;
-    migrationPending = loaded.migrationPending;
   }, 300_000);
 
   afterAll(() => {
@@ -106,7 +104,6 @@ describe("FeatureTest starter", () => {
   }
 
   it("reopens cleanly with every asset resolved", () => {
-    expect(migrationPending).toEqual([]);
     const assets = reopened.registry!.list();
     expect(assets.filter((asset) => asset.placeholder || asset.header.type === "Unresolved")).toEqual([]);
   });
@@ -368,7 +365,7 @@ describe("FeatureTest starter", () => {
     expect(materialErrors).toEqual([]);
     // Every Material domain is showcased, and the Decal domain in every Blend Mode, lit and unlit.
     expect([...new Set([...materials.values()].map((material) => material.domain))].sort())
-      .toEqual(["decal", "landscape", "particle", "postProcess", "surface", "text"]);
+      .toEqual(["decal", "landscape", "particle", "postProcess", "surface", "text", "ui"]);
     const decalMaterials = [...materials.values()].filter((material) => material.domain === "decal");
     expect([...new Set(decalMaterials.map((material) => material.blendMode))].sort())
       .toEqual(["additive", "masked", "multiply", "opaque", "translucent"]);

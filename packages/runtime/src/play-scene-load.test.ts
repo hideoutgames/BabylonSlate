@@ -1546,7 +1546,7 @@ describe("p7-play-scene-load", () => {
     const guard = runtime.getWorld().findActor("guard");
     expect(guard?.implementedInterfaces).toEqual(["iface-damageable"]);
     expect(
-      guard?.interfaceHandlers.has(
+      guard?.interfaceHandlers?.has(
         "iface-damageable:ApplyDamage",
       ),
     ).toBe(true);

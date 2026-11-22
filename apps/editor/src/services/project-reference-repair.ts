@@ -41,7 +41,7 @@ export interface ReferenceRepairHost extends Pick<ProjectService, "loadDocument"
   /** The stored payload `loadDocument` starts from, without migration bookkeeping. */
   readStoredAssetDocument(kind: Exclude<DocumentKind, "content-browser" | "source-control">, path: string): Promise<StoredDocument>;
   /** What `loadDocument` makes of a stored payload. */
-  documentContent(kind: Exclude<DocumentKind, "content-browser" | "source-control">, path: string, raw: StoredDocument): DocumentContent;
+  documentContent(kind: Exclude<DocumentKind, "content-browser" | "source-control">, raw: StoredDocument): DocumentContent;
 }
 
 async function planClassReferenceReplacements(
@@ -250,7 +250,7 @@ export async function clearDeletedAssetReferences(
         catch { stored = undefined; }
       }
       content = stored
-        ? host.documentContent(kind, asset.path, stored)
+        ? host.documentContent(kind, stored)
         : await host.loadDocument(kind, asset.path);
     } catch {
       continue;

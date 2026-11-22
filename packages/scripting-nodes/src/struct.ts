@@ -20,9 +20,12 @@ function structGuidOf(properties: Record<string, unknown>): string {
     : "";
 }
 
+/** A Make or Break Structure node's pins: the fields' shapes, without their identities. */
+type StructPinField = Omit<StructField, "id">;
+
 function structFieldsOf(
   properties: Record<string, unknown>,
-): StructField[] {
+): StructPinField[] {
   if (!Array.isArray(properties.fields)) return [];
   return properties.fields.flatMap((row) => {
     if (!row || typeof row !== "object") return [];
@@ -50,7 +53,7 @@ function structFieldsOf(
 const MAKE_PIN_IDS: ReadonlySet<string> = new Set(["out"]);
 const BREAK_PIN_IDS: ReadonlySet<string> = new Set(["in"]);
 
-function fieldPins(fields: readonly StructField[], direction: "in" | "out") {
+function fieldPins(fields: readonly StructPinField[], direction: "in" | "out") {
   const fixedIds = direction === "in" ? MAKE_PIN_IDS : BREAK_PIN_IDS;
   return fields.map((field) =>
     pin(
@@ -66,7 +69,7 @@ function fieldPins(fields: readonly StructField[], direction: "in" | "out") {
 }
 
 function makeStructLiteral(
-  fields: readonly StructField[],
+  fields: readonly StructPinField[],
   input: (name: string) => string,
 ): string {
   if (fields.length === 0) return "{}";

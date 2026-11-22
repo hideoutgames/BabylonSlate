@@ -6,6 +6,7 @@ import type { BtResult } from "@haptic/behaviour-tree";
 import {
   createNavigationBackend,
   facingYawFromVelocity,
+  navigationLoaded,
   parseNavAgentParams,
   parseNavMeshBlockerProperties,
   recastToWorld,
@@ -66,7 +67,6 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   }>();
   private readonly sceneNavmeshBytes = new Map<string, Uint8Array>();
   private navSceneGuid: string | null = null;
-  private navigationInitialized = false;
   private readonly navAgentByActor = new Map<string, string>();
   /** A Rotate To Face heading the next crowd tick applies to an idle agent. */
   private readonly navFacingRequests = new Map<string, number>();
@@ -79,6 +79,10 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   private readonly navTargetByActor = new Map<string, NavPoint>();
   /** `actorGuid:reason` of each blocked Move To already reported this session. */
   private readonly warnedMoveBlocks = new Set<string>();
+  /** Advances whenever an agent is added or removed. */
+  private agentChanges = 0;
+  /** When the last registration pass left no owner waiting: the structure, agent changes and backend it saw. */
+  private agentsSettled: { revision: number; agents: number; nav: NavigationBackend } | null = null;
   private readonly navSteeredActors = new Set<string>();
   private readonly navPhysicalAgents = new Set<string>();
   private readonly navAgentActors: Actor[] = [];
@@ -128,13 +132,12 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     return this.sceneNavmeshBytes.get(sceneGuid);
   }
 
-  /** Recast wasm must initialize before this Scene's baked navmesh can import. */
+  /**
+   * Recast wasm must load before this Scene's baked navmesh can import. It unloads whenever no navmesh holds it (a
+   * Scene without one, a stopped session), so this asks whether it is loaded now.
+   */
   needsInitialization(sceneGuid: string): boolean {
-    return this.sceneNavmeshBytes.has(sceneGuid) && !this.navigationInitialized;
-  }
-
-  markInitialized(): void {
-    this.navigationInitialized = true;
+    return this.sceneNavmeshBytes.has(sceneGuid) && !navigationLoaded();
   }
 
   /** Import a navmesh for the current Scene into the existing (or a new) backend. */
@@ -301,6 +304,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     const agent = this.navAgentByActor.get(actorGuid);
     if (agent) this.nav?.removeAgent(agent);
     this.navAgentByActor.delete(actorGuid);
+    this.agentChanges++;
     this.navTargetByActor.delete(actorGuid);
     this.navFacingRequests.delete(actorGuid);
     this.navSteeredActors.delete(actorGuid);
@@ -354,6 +358,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
       }
     }
     this.navAgentByActor.clear();
+    this.agentChanges++;
     this.navFacingRequests.clear();
     this.navTargetByActor.clear();
     this.navSteeredActors.clear();
@@ -446,35 +451,51 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     transforms: ActorTransformMap = actorWorldTransforms(this.host.world().getActors()),
   ): void {
     if (!this.nav) return;
+    const world = this.host.world();
+    let pending = false;
     // Only a NavAgentComponent owner can register, and the index lists those in world order.
-    for (const actor of componentOwners(this.host.world(), "NavAgentComponent")) {
-      this.registerAgent(actor, transforms);
+    for (const actor of componentOwners(world, "NavAgentComponent")) {
+      if (this.registerAgent(actor, transforms)) pending = true;
     }
+    // Nothing left to try: until the structure changes or an agent leaves, a crowd tick has none to register.
+    this.agentsSettled = pending ? null : { revision: world.structuralRevision, agents: this.agentChanges, nav: this.nav };
   }
 
+  /** The crowd tick's registration: skipped while every owner that can have an agent has one. */
+  private registerPendingAgents(transforms: ActorTransformMap): void {
+    const settled = this.agentsSettled;
+    if (settled && settled.nav === this.nav && settled.revision === this.host.world().structuralRevision &&
+      settled.agents === this.agentChanges) return;
+    this.registerAgents(transforms);
+  }
+
+  /** Registers `actor`'s agent; true when it has none yet but may get one later (not ready, or no reachable point). */
   private registerAgent(
     actor: Actor,
     transforms?: ReadonlyMap<string, Transform>,
-  ): void {
-    if (!this.nav || actor.destroyed || !this.host.streamActorReady(actor)) return;
-    if (this.navAgentByActor.has(actor.guid)) return;
+  ): boolean {
+    if (!this.nav || actor.destroyed) return false;
+    if (!this.host.streamActorReady(actor)) return true;
+    if (this.navAgentByActor.has(actor.guid)) return false;
     // Agents are keyed by guid and belong to the live actor holding it.
-    if (this.host.world().findActor(actor.guid) !== actor) return;
+    if (this.host.world().findActor(actor.guid) !== actor) return false;
     const component = actor.components.find(
       (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
     );
-    if (!component) return;
+    if (!component) return false;
     const params = parseNavAgentParams(
       Object.fromEntries(component.variables),
     );
     const world = this.toNav(transforms?.get(actor.guid)?.position ?? this.navActorWorldPosition(actor));
     const position = this.isDynamicNavActor(actor) ? this.nav.closestPoint(world) : world;
-    if (!position) return;
+    if (!position) return true;
     const id = this.nav.addAgent(position, params);
-    if (!id) return;
+    if (!id) return true;
     this.navAgentByActor.set(actor.guid, id);
+    this.agentChanges++;
     const target = this.navTargetByActor.get(actor.guid);
     if (target) this.nav.setAgentTarget(id, target);
+    return false;
   }
 
   updateAgentParams(actor: Actor): void {
@@ -644,7 +665,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     this.syncNavBlockers(actors);
     this.syncNavCostVolumes();
     const worldTransforms = this.navAgentWorldTransforms();
-    this.registerAgents(worldTransforms);
+    this.registerPendingAgents(worldTransforms);
     const physicalAgents = this.navPhysicalAgents;
     physicalAgents.clear();
     let removed = false;
@@ -654,6 +675,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
         this.stopAgent(actorGuid);
         nav.removeAgent(agentId);
         this.navAgentByActor.delete(actorGuid);
+        this.agentChanges++;
         this.navFacingRequests.delete(actorGuid);
         removed = true;
         continue;
@@ -667,6 +689,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
         // Reattach with the pending target once its physical pose is reachable.
         nav.removeAgent(agentId);
         this.navAgentByActor.delete(actorGuid);
+        this.agentChanges++;
         removed = true;
         if (this.navSteeredActors.delete(actorGuid)) {
           this.host.physics().setActorLinearVelocity(actorGuid, { x: 0, z: 0 });

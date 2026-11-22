@@ -1,3 +1,4 @@
+import { Camera } from "@babylonjs/core/Cameras/camera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
 import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
@@ -18,7 +19,10 @@ import { isColliderVisualMesh } from "./collider-visual";
 import { isSkyboxMesh } from "./skybox";
 import { hasSurfaceVisual } from "./scene-loader";
 import { MaterialLibrary, type MaterialResolveOptions } from "./material-library";
-import { createMaterialPreviewScene, createPreviewRenderTarget, isDecalDomainMaterial, renderPreviewFrame } from "./material-preview";
+import {
+  createMaterialPreviewScene, createPreviewRenderTarget, isDecalDomainMaterial, MATERIAL_PREVIEW_USER_INTERFACE_NAME, renderPreviewFrame,
+} from "./material-preview";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 import type { MeshAssetContext } from "./mesh-assets";
 import { applyMaterialToVisualMeshes } from "./visual-meshes";
 import { acquireMaterialTexture, bindResourceCacheToHandle, materialTextureSampling, resourceCacheForEngine, type TextureResources } from "./resource-cache";
@@ -92,7 +96,8 @@ export function thumbnailMaterials(
 
 export type AssetThumbnailRequest = ThumbnailAssets & (
   | { kind: "Material"; materialGuid: string }
-  | { kind: "ActorPrefab"; prefab: SerializedScene }
+  /** `view` "2d" draws the Prefab as the 2D view shows it (`frameMeshes2D`); "3d" from the angled preview pose. */
+  | { kind: "ActorPrefab"; prefab: SerializedScene; view: "2d" | "3d" }
 );
 
 const PREPARATION_TIMEOUT_MS = 30_000;
@@ -144,8 +149,8 @@ function drawnSurface(mesh: AbstractMesh): boolean {
     !isEditorCameraModel(mesh) && !isEditorVolumeMesh(mesh) && !isSkyboxMesh(mesh);
 }
 
-/** Frame all visual parts together, including offset children and imported bounds. */
-function frameMeshes(host: ReturnType<typeof createMaterialPreviewScene>, meshes: AbstractMesh[]): boolean {
+/** The world bounds of all visual parts together, including offset children and imported bounds. */
+function worldBounds(meshes: AbstractMesh[]): { min: Vector3; max: Vector3 } {
   const min = new Vector3(Infinity, Infinity, Infinity);
   const max = new Vector3(-Infinity, -Infinity, -Infinity);
   for (const mesh of meshes) {
@@ -158,6 +163,12 @@ function frameMeshes(host: ReturnType<typeof createMaterialPreviewScene>, meshes
     Vector3.CheckExtends(box.minimumWorld, min, max);
     Vector3.CheckExtends(box.maximumWorld, min, max);
   }
+  return { min, max };
+}
+
+/** Frame all visual parts together from the preview's angled pose. */
+function frameMeshes(host: ReturnType<typeof createMaterialPreviewScene>, meshes: AbstractMesh[]): boolean {
+  const { min, max } = worldBounds(meshes);
   const diameter = Vector3.Distance(min, max);
   if (!Number.isFinite(diameter) || diameter <= 0) return false;
   host.camera.setTarget(min.add(max).scale(0.5));
@@ -166,6 +177,38 @@ function frameMeshes(host: ReturnType<typeof createMaterialPreviewScene>, meshes
   host.camera.radius = diameter * 1.2;
   host.camera.minZ = Math.max(0.0001, diameter / 1000);
   host.camera.maxZ = Math.max(100, diameter * 4);
+  return true;
+}
+
+/** The share of the square frame a 2D capture's larger side fills: a 5% margin on each side. */
+const FLAT_FILL = 0.9;
+
+/**
+ * Frame the parts as the 2D view shows them: orthographic and front-on, looking along +Z at the XY plane (X right,
+ * Y up), so depth (Z-Order) only orders the draw. The square window centres the XY bounds and keeps their aspect.
+ */
+function frameMeshes2D(host: ReturnType<typeof createMaterialPreviewScene>, meshes: AbstractMesh[]): boolean {
+  const { min, max } = worldBounds(meshes);
+  const half = Math.max(max.x - min.x, max.y - min.y) / 2 / FLAT_FILL;
+  const depth = max.z - min.z;
+  if (!Number.isFinite(half) || !Number.isFinite(depth) || half <= 0) return false;
+  const { camera } = host;
+  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+  camera.orthoLeft = -half;
+  camera.orthoRight = half;
+  camera.orthoBottom = -half;
+  camera.orthoTop = half;
+  camera.lowerRadiusLimit = null;
+  camera.upperRadiusLimit = null;
+  // The target first: setting it recomputes the angles from the camera's position.
+  camera.setTarget(new Vector3((min.x + max.x) / 2, (min.y + max.y) / 2, (min.z + max.z) / 2));
+  camera.alpha = -Math.PI / 2;
+  camera.beta = Math.PI / 2;
+  // Stand clear of the nearest part by `clearance`; the far plane passes the farthest by as much.
+  const clearance = Math.max(1, half, depth);
+  camera.radius = depth / 2 + clearance;
+  camera.minZ = clearance / 2;
+  camera.maxZ = depth + 2 * clearance;
   return true;
 }
 
@@ -207,12 +250,16 @@ export async function captureAssetThumbnailPng(
     if (request.kind === "Material") {
       const material = resolveMaterial(request.materialGuid);
       if (!material) return thumbnailMiss(shouldContinue());
-      // Always a sphere, independent of the Material document's preview choice; a Decal Material projects onto the
-      // preview's decal stage instead.
-      if (isDecalDomainMaterial(material)) {
+      if (acceptsUserInterfaceMaterial(material)) {
+        // A User Interface Material fills the frame on the preview's flat quad, as in the Material editor.
+        host.applyMaterial(material);
+        meshes = [host.scene.getMeshByName(MATERIAL_PREVIEW_USER_INTERFACE_NAME)!];
+      } else if (isDecalDomainMaterial(material)) {
+        // A Decal Material projects onto the preview's decal stage.
         host.applyMaterial(material);
         meshes = [...host.decalStageMeshes()];
       } else {
+        // Always a sphere, independent of the Material document's preview choice.
         applyMaterialToVisualMeshes(host.mesh, material);
         meshes = [host.mesh];
       }
@@ -247,12 +294,10 @@ export async function captureAssetThumbnailPng(
       // outputRenderTarget renders the Scene's active queue; keep helper meshes
       // out without disabling a parent that carries authored child transforms.
       for (const mesh of host.scene.meshes) if (!surfaces.has(mesh)) mesh.isVisible = false;
-      if (request.prefab.settings.physicsWorld === "2d") {
-        host.camera.alpha = -Math.PI / 2;
-        host.camera.beta = Math.PI / 2;
-      }
     }
-    if (unavailable() || !frameMeshes(host, meshes)) return thumbnailMiss(shouldContinue());
+    // The flat quad's orthographic view already fills the frame.
+    const frame = request.kind === "ActorPrefab" && request.view === "2d" ? frameMeshes2D : frameMeshes;
+    if (unavailable() || (!host.flat && !frame(host, meshes))) return thumbnailMiss(shouldContinue());
     if (!(await whileCurrent(Promise.all(preparations), current, bounds)).every(Boolean)) return thumbnailMiss(shouldContinue());
     // A wait ends unready when the capture stopped being current (cancelled, past
     // its ceiling, or its Scene was disposed) or its bound ran out. A disposed

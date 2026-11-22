@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
-import { createActor, createDefaultScene, parseLandscapeProperties, serializeLandscapeProperties, type SerializedScene, type SerializedTransform } from "@haptic/core";
+import { createActor, createDefaultScene, FOLIAGE_FLOATS_PER_INSTANCE, packFoliageTransforms, parseFoliageProperties, parseLandscapeProperties, serializeFoliageProperties, serializeLandscapeProperties, type SerializedScene, type SerializedTransform } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input";
@@ -173,14 +173,22 @@ it.each(["pointercancel", "second-touch", "escape"])("restores the landscape wit
 
 it("paints mixed Models as one component per stroke and erases them together with undo", async () => {
   const f = fixture("foliage");
-  f.pointer("pointerdown"); f.pointer("pointermove", 3); f.pointer("pointerup", 3);
+  // Instances are encoded once, on release, and the stroke is one history entry however many dabs it makes.
+  const encode = vi.spyOn(globalThis, "btoa");
+  f.pointer("pointerdown"); f.pointer("pointermove", 1); f.pointer("pointermove", 2); f.pointer("pointermove", 3); f.pointer("pointerup", 3);
   await Promise.resolve();
+  expect(encode).toHaveBeenCalledTimes(1);
+  encode.mockRestore();
+  expect(f.committed).toHaveLength(1);
   const painted = f.state.scene!;
   expect(painted.actors).toHaveLength(2);
   const components = painted.actors[1]!.components;
   expect(components).toHaveLength(1);
   expect(components[0]!.classId).toBe("FoliageComponent");
   expect((components[0]!.properties.batches as Array<{ modelGuid: string }>).map((batch) => batch.modelGuid).sort()).toEqual(["oak", "pine"]);
+  // The stroke is committed as one base64 HPFG chunk holding every instance, not one object per instance.
+  expect(typeof components[0]!.properties.data).toBe("string");
+  expect(parseFoliageProperties(components[0]!.properties).batches.every((batch) => batch.transforms.length >= FOLIAGE_FLOATS_PER_INSTANCE)).toBe(true);
   await Promise.resolve(); await Promise.resolve();
   f.state.foliageTool = "erase"; f.state.foliageBrush.radius = 10;
   f.pointer("pointerdown"); f.pointer("pointerup");
@@ -214,7 +222,14 @@ it("shows a stroke painted beyond its group's Cull Distance in the viewport, eve
 type Instance = { position: [number, number, number]; rotation: [number, number, number, number]; scale: [number, number, number] };
 const instanceAt = (x: number, z: number): Instance => ({ position: [x, 0, z], rotation: [0, 0, 0, 1], scale: [1, 1, 1] });
 const foliageActor = (id: string, parentId: string | null, batches: Array<{ modelGuid: string; transforms: Instance[] }>) => createActor(id, id, {
-  parentId, components: [{ id: `${id}-foliage`, classId: "FoliageComponent", properties: { groupId: "trees", batches: batches.map((batch) => ({ ...batch, materialGuid: null })) } }],
+  parentId, components: [{ id: `${id}-foliage`, classId: "FoliageComponent", properties: { ...serializeFoliageProperties({ groupId: "trees", batches: batches.map((batch) => ({
+    modelGuid: batch.modelGuid, materialGuid: null, cullDistance: 120, fadeRange: 15, shadowDistance: 45, transforms: packFoliageTransforms(batch.transforms),
+  })) }) } }],
+});
+/** A decoded batch's instances as transforms. */
+const instancesOf = (transforms: Float32Array): Instance[] => Array.from({ length: transforms.length / FOLIAGE_FLOATS_PER_INSTANCE }, (_, i) => {
+  const at = i * FOLIAGE_FLOATS_PER_INSTANCE;
+  return { position: [transforms[at]!, transforms[at + 1]!, transforms[at + 2]!], rotation: [transforms[at + 3]!, transforms[at + 4]!, transforms[at + 5]!, transforms[at + 6]!], scale: [transforms[at + 7]!, transforms[at + 8]!, transforms[at + 9]!] };
 });
 /** Replaces the fixture scene with the landscape plus these actors, as an applied, committed document. */
 function populate(f: ReturnType<typeof fixture>, actors: ReturnType<typeof foliageActor>[]) {
@@ -237,12 +252,12 @@ it("erases the instances along a drag, keeping the rest of each batch and droppi
   expect(f.committed).toHaveLength(1);
   const erased = f.committed[0]!;
   expect(erased.actors.map((actor) => actor.id)).toEqual(["land", "grove"]);
-  const properties = erased.actors[1]!.components[0]!.properties as { groupId: string; batches: Array<{ modelGuid: string; materialGuid: null; transforms: Instance[] }> };
+  const properties = parseFoliageProperties(erased.actors[1]!.components[0]!.properties);
   expect(properties.groupId).toBe("trees");
   expect(properties.batches.map((batch) => batch.modelGuid)).toEqual(["oak"]);
   // Distance to the swept segment from (-3, 0) to (3, 0), where dabs of radius 2 fall every 0.4.
   const toPath = ([x, , z]: Instance["position"]) => Math.hypot(x - Math.min(3, Math.max(-3, x)), z);
-  const survivors = properties.batches[0]!.transforms;
+  const survivors = instancesOf(properties.batches[0]!.transforms);
   const kept = new Set(survivors.map((instance) => instance.position.join()));
   expect(oak.filter((instance) => toPath(instance.position) > 2.01).every((instance) => kept.has(instance.position.join()))).toBe(true);
   expect(survivors.every((instance) => toPath(instance.position) > 1.8)).toBe(true);

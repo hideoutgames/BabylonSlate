@@ -7,7 +7,7 @@ import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
-import { parseFoliageProperties, type FoliageBatch, type SerializedActor, type SerializedScene } from "@haptic/core";
+import { FOLIAGE_FLOATS_PER_INSTANCE, foliageBatchInfos, foliageInstancesFingerprint, parseFoliageProperties, type FoliageBatch, type FoliageBatchInfo, type SerializedActor, type SerializedScene } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { acquireGlbContainer, prepareInstanceMaterials } from "./glb-anim";
 import { installAssetBytes } from "@haptic/assets";
@@ -21,7 +21,7 @@ import { sharedVertexBuffer } from "./shared-vertex-buffer";
 import { sceneRenderingSettings } from "./render-settings";
 import { setShadowDistanceCulled } from "./shadow-caster-list";
 import type { ModelLodSet } from "./model-lod";
-import "./foliage-fade";
+import { setFoliageFadeRange } from "./foliage-fade";
 
 type SubMeshSpec = {
   materialIndex: number;
@@ -175,6 +175,15 @@ function foliageDistanceState(scene: Scene): FoliageDistanceState {
 const editorViews = new WeakSet<Scene>();
 
 /**
+ * Whether a cell of a batch with `distances` dither-fades, which compiles the fade into its variants: in a Play view,
+ * with a Cull Distance and a Fade Range. Set as the cell is made and changed only by a distance edit, never by the
+ * camera, so moving through foliage compiles nothing.
+ */
+function cellCanFade(distances: FoliageDistances, editorView: boolean): boolean {
+  return !editorView && distances.cullDistance > 0 && distances.fadeRange > 0;
+}
+
+/**
  * Marks `scene` as an editor view (`EditorSceneSync`: the viewport and thumbnails): its foliage cells never distance-cull,
  * shadow-cull or fade, so a far overview shows every stroke and every cell can be selected. Levels of detail still swap.
  */
@@ -241,17 +250,14 @@ export function updateFoliageDistances(
     }
 
     setShadowDistanceCulled(cell.mesh, !showAll && (!withinCull || (effectiveShadow > 0 && dist > effectiveShadow)));
-    const metadata = (cell.mesh.metadata ?? (cell.mesh.metadata = {})) as Record<string, unknown>;
 
-    if (!showAll && withinCull && effectiveCull > 0 && effectiveFadeRange > 0) {
+    // Only a cell that can fade compiles the fade (its discard); one in its band binds the range, rewritten in place.
+    const fade = setFoliageFadeRange(cell.mesh, cellCanFade(cell.distances, showAll));
+    if (fade) {
       const fadeStart = Math.max(0, effectiveCull - effectiveFadeRange);
-      if (centerDist + radius >= fadeStart) {
-        metadata.hapticFoliageFade = [fadeStart, effectiveCull];
-      } else if (metadata.hapticFoliageFade !== null) {
-        metadata.hapticFoliageFade = null;
-      }
-    } else if (metadata.hapticFoliageFade !== null) {
-      metadata.hapticFoliageFade = null;
+      const fading = withinCull && effectiveCull > 0 && effectiveFadeRange > 0 && centerDist + radius >= fadeStart;
+      fade[0] = fading ? fadeStart : 0;
+      fade[1] = fading ? effectiveCull : 0;
     }
 
     if (withinCull && cell.lods.length > 1) {
@@ -285,9 +291,9 @@ type FoliageSummary = { json: string; models: readonly string[]; distances: read
 const summaries = new WeakMap<object, FoliageSummary>();
 
 /**
- * Serialized properties and distinct model guids, computed once per properties
- * object, so an unchanged component does not re-serialize up to
- * MAX_FOLIAGE_INSTANCES transforms on every apply.
+ * Fingerprint and distinct model guids, computed once per properties object.
+ * The fingerprint names the instances by `foliageInstancesFingerprint` (a hash
+ * of the encoded chunk or its id) and never serializes them.
  *
  * Contract: the memo is keyed on object identity, so hosts must replace a
  * Foliage component's properties (and the batches inside) rather than mutate
@@ -300,9 +306,14 @@ function foliageSummary(properties: unknown): FoliageSummary {
   const memo = properties !== null && typeof properties === "object" ? properties : null;
   const cached = memo ? summaries.get(memo) : undefined;
   if (cached) return cached;
-  const batches = parseFoliageProperties(properties).batches;
+  const batches = foliageBatchInfos(properties);
+  const groupId = (properties as { groupId?: unknown } | null)?.groupId;
   const summary = {
-    json: JSON.stringify(withoutDistances(properties)),
+    json: JSON.stringify({
+      groupId: typeof groupId === "string" ? groupId : "",
+      batches: batches.map((batch) => ({ modelGuid: batch.modelGuid, materialGuid: batch.materialGuid })),
+      instances: foliageInstancesFingerprint(properties),
+    }),
     models: [...new Set(batches.map((batch) => batch.modelGuid))],
     distances: batches.map(distancesOf),
   };
@@ -312,28 +323,13 @@ function foliageSummary(properties: unknown): FoliageSummary {
 
 const DISTANCE_KEYS = ["cullDistance", "fadeRange", "shadowDistance"] as const;
 
-function distancesOf(batch: FoliageBatch): FoliageDistances {
+function distancesOf(batch: FoliageBatchInfo): FoliageDistances {
   return { cullDistance: batch.cullDistance, fadeRange: batch.fadeRange, shadowDistance: batch.shadowDistance };
 }
 
-/** The properties with each batch's distances left out: they apply in place (`applyFoliageDistances`). */
-function withoutDistances(properties: unknown): unknown {
-  const batches = (properties as { batches?: unknown } | null)?.batches;
-  if (!Array.isArray(batches)) return properties;
-  return {
-    ...(properties as object),
-    batches: batches.map((batch: unknown) => {
-      if (batch === null || typeof batch !== "object") return batch;
-      const rest: Record<string, unknown> = { ...(batch as Record<string, unknown>) };
-      for (const key of DISTANCE_KEYS) delete rest[key];
-      return rest;
-    }),
-  };
-}
-
 /**
- * `JSON.stringify(properties)` without the batches' Cull Distance, Fade Range and Shadow Distance: any other edit of
- * the authored foliage changes it and rebuilds the visual; a distance edit applies to its cells in place.
+ * The authored foliage without the batches' Cull Distance, Fade Range and Shadow Distance: any other edit of the
+ * authored foliage changes it and rebuilds the visual; a distance edit applies to its cells in place.
  */
 export function foliagePropertiesFingerprint(properties: unknown): string {
   return foliageSummary(properties).json;
@@ -417,6 +413,12 @@ export function refreshFoliageMaterials(root: Mesh, assets?: MeshAssetContext): 
   }
 }
 
+/** Scratch for composing instance matrices from a batch's floats. */
+const composeScale = new Vector3();
+const composeRotation = new Quaternion();
+const composePosition = new Vector3();
+const composeInstance = new Matrix();
+
 /** Thin-instance attributes belong to Geometry, so every cell needs its own. */
 function isolateFoliageGeometry(mesh: Mesh, source: Mesh): void {
   const geometry = new Geometry(mesh.name, mesh.getScene());
@@ -433,6 +435,7 @@ function isolateFoliageGeometry(mesh: Mesh, source: Mesh): void {
 /** One thin-instance draw per model primitive/material/spatial cell; never one actor per plant. */
 export function createFoliageMesh(scene: Scene, name: string, properties: unknown, assets?: MeshAssetContext): Mesh {
   const data = parseFoliageProperties(properties);
+  if (data.unreadable) console.warn(`[render] Foliage ${name} has instance data that could not be read; it draws nothing.`);
   const root = new Mesh(name, scene);
   root.isPickable = false;
   const bundle = new VisualBundle();
@@ -465,18 +468,20 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
       batchRoot.isPickable = false;
       batches.push({ root: batchRoot, batch });
       const scale = assets?.modelPayloads?.get(batch.modelGuid)?.importScale ?? 1;
-      const cells = new Map<string, typeof batch.transforms>();
-      for (const transform of batch.transforms) {
-        const key = `${Math.floor(transform.position[0] / 32)}:${Math.floor(transform.position[2] / 32)}`;
-        const cell = cells.get(key) ?? [];
-        cell.push(transform); cells.set(key, cell);
+      // Instance indices by 32 m spatial cell, read straight from the batch's floats.
+      const transforms = batch.transforms;
+      const cells = new Map<string, number[]>();
+      for (let instance = 0, at = 0; at < transforms.length; instance++, at += FOLIAGE_FLOATS_PER_INSTANCE) {
+        const key = `${Math.floor(transforms[at]! / 32)}:${Math.floor(transforms[at + 2]! / 32)}`;
+        const cell = cells.get(key);
+        if (cell) cell.push(instance); else cells.set(key, [instance]);
       }
       const batchCellRecords: FoliageCellRecord[] = [];
       for (const sourceMesh of container.meshes) {
         const geometry = sourceMesh instanceof InstancedMesh ? sourceMesh.sourceMesh : sourceMesh;
         if (!(geometry instanceof Mesh) || !geometry.getTotalVertices()) continue;
         const modelMatrix = sourceMesh.computeWorldMatrix(true).multiply(Matrix.Scaling(scale, scale, scale));
-        for (const [cell, transforms] of cells) {
+        for (const [cell, instances] of cells) {
           const mesh = geometry.clone(`${name}:foliage:${batchIndex}:${sourceMesh.uniqueId}:${cell}`, batchRoot, true);
           bundle.ownRenderUser(mesh);
           isolateFoliageGeometry(mesh, geometry);
@@ -487,11 +492,17 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
           mesh.receiveShadows = true;
           mesh.isPickable = true;
           mesh.thinInstanceEnablePicking = true;
-          mesh.metadata = { foliageRoot: root, hapticFoliageFade: null };
-          const matrices = new Float32Array(transforms.length * 16);
-          transforms.forEach((transform, i) => {
-            modelMatrix.multiply(Matrix.Compose(Vector3.FromArray(transform.scale), Quaternion.FromArray(transform.rotation), Vector3.FromArray(transform.position))).copyToArray(matrices, i * 16);
-          });
+          // Fade capability from the start, so the load's warm-up compiles the variant the cell draws with.
+          mesh.metadata = { foliageRoot: root, hapticFoliageFade: cellCanFade(distances[batchIndex]!, editorViews.has(scene)) ? [0, 0] : null };
+          const matrices = new Float32Array(instances.length * 16);
+          for (let i = 0; i < instances.length; i++) {
+            const at = instances[i]! * FOLIAGE_FLOATS_PER_INSTANCE;
+            composeScale.set(transforms[at + 7]!, transforms[at + 8]!, transforms[at + 9]!);
+            composeRotation.set(transforms[at + 3]!, transforms[at + 4]!, transforms[at + 5]!, transforms[at + 6]!);
+            composePosition.set(transforms[at]!, transforms[at + 1]!, transforms[at + 2]!);
+            Matrix.ComposeToRef(composeScale, composeRotation, composePosition, composeInstance);
+            modelMatrix.multiplyToArray(composeInstance, matrices, i * 16);
+          }
           mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
           mesh.thinInstanceRefreshBoundingInfo(true);
           // A cell's instances are final: a view that does not see its bounds draws none of them.

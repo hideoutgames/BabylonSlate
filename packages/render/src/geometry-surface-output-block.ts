@@ -12,7 +12,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
-import { foliageFadeForMesh, HAPTIC_BAYER_4X4_GLSL } from "./foliage-fade";
+import { FOLIAGE_FADE_DEFINE, foliageFadeForMesh, HAPTIC_BAYER_4X4_GLSL, meshCanFoliageFade } from "./foliage-fade";
 import { meshCastsShadows } from "./instance-pool";
 import { WORLD_DEBUG_FLAT_DEFINE, worldDebugOff } from "./world-debug";
 import type { MaterialPlumbing } from "./material-block-registry";
@@ -54,18 +54,23 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
   override prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial, mesh?: AbstractMesh): void {
     if (this.linearFactor) this.convertToGammaSpace = !nodeMaterial.imageProcessingConfiguration.applyByPostProcess;
     super.prepareDefines(defines, nodeMaterial);
+    if (!mesh) return;
     // `worlddebug shading off`: one constant colour, so the compiler drops the surface's shading and texture reads.
-    if (mesh) defines.setValue(WORLD_DEBUG_FLAT_DEFINE, worldDebugOff(mesh.getScene(), "shading"), true);
+    defines.setValue(WORLD_DEBUG_FLAT_DEFINE, worldDebugOff(mesh.getScene(), "shading"), true);
+    // The foliage fade's discard compiles only for a mesh that fades: every other draw keeps early depth testing.
+    defines.setValue(FOLIAGE_FADE_DEFINE, meshCanFoliageFade(mesh), true);
   }
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
     super.bind(effect, material, mesh);
     effect.setFloat(this.casterUniform, mesh && meshCastsShadows(mesh) ? 1 : 0);
+    // Only the fading variant declares the range.
+    if (!meshCanFoliageFade(mesh)) return;
     const fade = foliageFadeForMesh(mesh);
-    if (fade) effect.setFloat2(this.foliageFadeUniform, fade[0], fade[1]);
-    else effect.setFloat2(this.foliageFadeUniform, 0, 0);
+    effect.setFloat2(this.foliageFadeUniform, fade ? fade[0] : 0, fade ? fade[1] : 0);
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
+    const inputsEnd = state.compilationString.length;
     super._buildBlock(state);
     const vec4 = state._getShaderType(Types.Vector4);
     const normal = this.geometryNormal.associatedVariableName;
@@ -82,13 +87,17 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
     this.casterUniform = state._getFreeVariableName("hapticGeometryCaster");
     state._emitUniformFromString(this.casterUniform, Types.Float);
     this.foliageFadeUniform = state._getFreeVariableName("hapticFoliageFade");
-    state._emitUniformFromString(this.foliageFadeUniform, Types.Vector2);
-    state._emitFunction("hapticBayer4x4", HAPTIC_BAYER_4X4_GLSL, "");
+    state._emitUniformFromString(this.foliageFadeUniform, Types.Vector2, FOLIAGE_FADE_DEFINE);
+    state._emitFunction("hapticBayer4x4", `#ifdef ${FOLIAGE_FADE_DEFINE}\n${HAPTIC_BAYER_4X4_GLSL}#endif\n`, "");
     state.sharedData.forcedBindableBlocks.push(this);
     const caster = this.casterUniform;
     const fade = this.foliageFadeUniform;
     const color = "gl_FragColor";
-    state.compilationString += `if (${fade}.y > 0.0) { float _hapticFadeDist = length((${view} * ${position}).xyz); float _hapticFadeT = clamp((_hapticFadeDist - ${fade}.x) / max(0.001, ${fade}.y - ${fade}.x), 0.0, 1.0); if (_hapticFadeT > 0.0 && _hapticFadeT >= hapticBayer4x4(gl_FragCoord.xy)) discard; }\n`;
+    const foliageFade = `#ifdef ${FOLIAGE_FADE_DEFINE}\nif (${fade}.y > 0.0) { float _hapticFadeDist = length((${view} * ${position}).xyz); float _hapticFadeT = clamp((_hapticFadeDist - ${fade}.x) / max(0.001, ${fade}.y - ${fade}.x), 0.0, 1.0); if (_hapticFadeT > 0.0 && _hapticFadeT >= hapticBayer4x4(gl_FragCoord.xy)) discard; }\n#endif\n`;
+    // A faded pixel is discarded before the surface samples a texture or lights: at the start of the fragment's main
+    // when the position and view are a varying and a uniform, as a Surface's are, else ahead of this block's writes.
+    const at = readableAtMainStart(this.geometryPosition) && readableAtMainStart(this.geometryView) ? 0 : inputsEnd;
+    state.compilationString = state.compilationString.slice(0, at) + foliageFade + state.compilationString.slice(at);
     state.compilationString += `#ifdef ${WORLD_DEBUG_FLAT_DEFINE}\n${color} = ${vec4}(0.5, 0.5, 0.5, ${color}.a);\n#endif\n`;
     const savedColor = state._getFreeVariableName("geometrySurfaceColor");
     state.compilationString += `#ifdef PREPASS\n${state._declareLocalVar(savedColor, Types.Vector4)} = ${color};\n#endif\n`;
@@ -108,6 +117,13 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
   }
 }
 RegisterClass("BABYLON.GeometrySurfaceOutputBlock", GeometrySurfaceOutputBlock);
+
+/** Whether a fragment input holds its value from the start of `main`: a varying from the vertex stage, or a uniform. */
+function readableAtMainStart(input: NodeMaterialConnectionPoint): boolean {
+  if (input._enforceAssociatedVariableName) return true;
+  const source = input.connectedPoint?.ownerBlock;
+  return source instanceof InputBlock && source.isUniform;
+}
 
 /** The geometry outputs this block writes besides the colour. */
 const GEOMETRY_DATA_OUTPUTS = ["PREPASS_DEPTH", "PREPASS_REFLECTIVITY", "PREPASS_NORMALIZED_VIEW_DEPTH", "PREPASS_WORLD_NORMAL"] as const;
