@@ -17,6 +17,7 @@ const harness = vi.hoisted(() => {
     hydrated: true,
     createdHere: false,
     settingsUpdates: [] as string[][],
+    trustSource: null as (() => boolean) | null,
   };
   return {
     state,
@@ -30,6 +31,7 @@ const harness = vi.hoisted(() => {
       projectTrustKey: (guid: string) => JSON.stringify(["opfs:Extensions", guid]),
       createdHere: () => state.createdHere,
       forgetCreatedProject: () => { state.createdHere = false; },
+      setTrustSource: (source: (() => boolean) | null) => { state.trustSource = source; },
     },
     getOpenDocuments: () => state.open,
   };
@@ -51,6 +53,11 @@ vi.mock("../context/document-context", async () =>
 vi.mock("../context/app-settings-context", async () => {
   const { defaultEngineSettings: defaults } = await import("@haptic/vfs");
   return {
+    getAppSettingsSnapshot: () => ({
+      settings: { ...defaults(), trustedProjects: harness.state.trusted },
+      version: 1,
+      hydrated: harness.state.hydrated,
+    }),
     useAppSettings: () => ({
       settings: { ...defaults(), trustedProjects: harness.state.trusted },
       version: 1,
@@ -75,6 +82,20 @@ afterEach(() => {
   harness.state.hydrated = true;
   harness.state.createdHere = false;
   harness.state.settingsUpdates = [];
+  harness.state.trustSource = null;
+});
+
+it("gives Execute JavaScript's gate the trust Engine Settings hold at the moment it asks", () => {
+  const { unmount } = render(<EditorExtensionsRuntime />);
+  const source = harness.state.trustSource!;
+  expect(source()).toBe(false);
+  // Recorded after the last render: the gate still sees it.
+  harness.state.trusted = [TRUST_KEY];
+  expect(source()).toBe(true);
+  harness.state.hydrated = false;
+  expect(source()).toBe(false);
+  unmount();
+  expect(harness.state.trustSource).toBeNull();
 });
 
 it("hands the project's extension setting values to the service before extensions start", () => {

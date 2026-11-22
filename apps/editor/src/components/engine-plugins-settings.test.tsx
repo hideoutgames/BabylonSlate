@@ -246,8 +246,8 @@ describe("EnginePluginsSettings", () => {
       };
       fireEvent.click(within(await toggle()).getByTestId("execute-javascript-import-cancel"));
       await waitFor(() => expect(screen.queryByTestId("execute-javascript-import-dialog")).toBeNull());
-      // The action finished (its list refresh ran), so the page takes the next one.
-      await waitFor(() => expect(library.list).toHaveBeenCalledTimes(2));
+      // The action finished (the page's load, the bundled check and the action's own list refresh ran), so the page takes the next one.
+      await waitFor(() => expect(library.list).toHaveBeenCalledTimes(3));
       expect(project.importPlugin).toHaveBeenCalledTimes(1);
       expect(project.applyPluginOverrides).not.toHaveBeenCalled();
       expect(library.setEnabledByDefault).not.toHaveBeenCalled();
