@@ -38,15 +38,32 @@ function parseDocument(asset: ExportAssetBytes): unknown {
   try { return JSON.parse(decoder.decode(asset.bytes)); } catch { return undefined; }
 }
 
+type ParseDocument = (asset: ExportAssetBytes) => unknown;
+
+/**
+ * One export's parsed JSON documents by their bytes, so the passes that only read a document (Scene Layer physics,
+ * the Complex Collision scan, dependency metadata, editor-only field stripping) share one parse. `undefined` is an
+ * unreadable document.
+ */
+function documentParser(): ParseDocument {
+  const parsed = new WeakMap<Uint8Array, unknown>();
+  return (asset) => {
+    if (parsed.has(asset.bytes)) return parsed.get(asset.bytes);
+    const document = parseDocument(asset);
+    parsed.set(asset.bytes, document);
+    return document;
+  };
+}
+
 /**
  * Complex Collision sidecars (`HPCC`) for the Models this export's Scenes, Scene Layers and Classes simulate with Use
  * Complex Collision, cooked here exactly as the player cooked them at runtime, so a game never parses a GLB for its
  * collision. Each is a soft dependency of its Model: the player loads it only for a closure that needs it. A Model
  * whose geometry cannot be cooked (Draco or meshopt compression) ships none and gets a warning: it has no collision.
  */
-function complexCollisionSidecars(assets: readonly ExportAssetBytes[]): { sidecars: ExportAssetBytes[]; warnings: string[] } {
+function complexCollisionSidecars(assets: readonly ExportAssetBytes[], parse: ParseDocument): { sidecars: ExportAssetBytes[]; warnings: string[] } {
   const documents = assets.flatMap((asset) => asset.type === "Scene" || asset.type === "SceneLayer" || asset.type === "Class" || asset.type === "CompiledScript"
-    ? [parseDocument(asset)] : []);
+    ? [parse(asset)] : []);
   const needed = complexCollisionModelGuids(documents);
   const sidecars: ExportAssetBytes[] = [];
   const warnings: string[] = [];
@@ -66,7 +83,7 @@ function complexCollisionSidecars(assets: readonly ExportAssetBytes[]): { sideca
  * The assets as a game ships them (`EXPORT_ASSET_FORMS`): `omit` types and every edge to them are dropped, `catalog`
  * types keep their entry with no payload, and JSON documents lose their editor-only fields.
  */
-function shipAssets(assets: readonly ExportAssetBytes[]): ExportAssetBytes[] {
+function shipAssets(assets: readonly ExportAssetBytes[], parse: ParseDocument): ExportAssetBytes[] {
   const omitted = new Set(assets.flatMap((asset) => exportAssetForm(asset.type) === "omit" ? [asset.guid] : []));
   const kept = (refs: readonly string[] | undefined) => refs?.filter((ref) => !omitted.has(ref));
   return assets.flatMap((asset) => {
@@ -75,7 +92,7 @@ function shipAssets(assets: readonly ExportAssetBytes[]): ExportAssetBytes[] {
     const form = exportAssetForm(asset.type);
     if (form === "catalog") return [{ ...asset, ...edges, encoding: "bytes" as const, bytes: new Uint8Array(0) }];
     if (form !== "json" || encodingFor(asset) !== "json") return [{ ...asset, ...edges }];
-    const document = parseDocument(asset);
+    const document = parse(asset);
     const stripped = stripEditorOnlyFields(asset.type, document);
     return [{ ...asset, ...edges, bytes: stripped === document ? asset.bytes : encoder.encode(JSON.stringify(stripped)) }];
   });
@@ -249,29 +266,24 @@ async function writeAssetFiles(
  * An exported Scene Layer gets a Rapier 2D world only with Enable Physics, read
  * as the player reads it. An unreadable layer payload keeps Rapier.
  */
-function enablesSceneLayerPhysics(asset: ExportAssetBytes): boolean {
+function enablesSceneLayerPhysics(asset: ExportAssetBytes, parse: ParseDocument): boolean {
   if (asset.type !== "SceneLayer" || encodingFor(asset) !== "json") return false;
+  const document = parse(asset);
+  if (document === undefined) return true;
   try {
-    return normalizeSceneLayer(JSON.parse(decoder.decode(asset.bytes))).settings.physicsEnabled;
+    return normalizeSceneLayer(document).settings.physicsEnabled;
   } catch {
     return true;
   }
 }
 
-function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetBytes[] {
+function dependencyCatalog(assets: readonly ExportAssetBytes[], parse: ParseDocument): ExportAssetBytes[] {
   const byId = new Map(assets.map(asset => [asset.guid, asset]));
-  const documents = new Map<string, Record<string, unknown>>();
+  // An unreadable document has no metadata here; the player reports corrupt requested payloads.
   const document = (asset: ExportAssetBytes) => {
-    if (documents.has(asset.guid)) return documents.get(asset.guid);
     if (encodingFor(asset) !== "json") return undefined;
-    try {
-      const value: unknown = JSON.parse(decoder.decode(asset.bytes));
-      if (value && typeof value === "object" && !Array.isArray(value)) {
-        documents.set(asset.guid, value as Record<string, unknown>);
-        return value as Record<string, unknown>;
-      }
-    } catch { /* The player reports corrupt requested payloads. */ }
-    return undefined;
+    const value = parse(asset);
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
   };
   const classes: AssetDependencyClass[] = assets.filter(asset => asset.type === "Class").map(asset => {
     const payload = document(asset);
@@ -344,6 +356,7 @@ export async function exportGame(
   const failAt = options.fileCountFail ?? DEFAULT_FILE_COUNT_FAIL;
   const gameInstanceClass = options.gameInstanceClass?.trim() || undefined;
   const files = new Map<string, Uint8Array>();
+  const parse = documentParser();
 
   if (options.playerFiles) {
     const physicsWorld = options.physicsWorld ?? "3d";
@@ -351,7 +364,7 @@ export async function exportGame(
       physicsWorld,
       platform: options.platform,
       includePreviewDiagnostics: options.includePreviewDiagnostics === true && options.bundleDebugger,
-      hasPhysicsSceneLayers: options.assets.some(enablesSceneLayerPhysics),
+      hasPhysicsSceneLayers: options.assets.some(asset => enablesSceneLayerPhysics(asset, parse)),
     })) {
       files.set(path, bytes);
     }
@@ -376,19 +389,19 @@ export async function exportGame(
     sourceAssets.push({ guid: `script:${script.assetGuid}:${encodeURIComponent(script.classId)}`, ownerGuid: script.assetGuid, type: "CompiledScript", classId: script.classId,
       sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify(script)), requiredDependencies: [] });
   }
-  const complexCollision = complexCollisionSidecars(sourceAssets);
+  const complexCollision = complexCollisionSidecars(sourceAssets, parse);
   sourceAssets.push(...complexCollision.sidecars);
 
   // Project-level assets Play reads from its first frame: the LUT and the Scene Layer post-processing passes.
   const projectAssetGuids = new Set([...renderEffectsAssetGuids(options.renderSettings?.effects),
     ...sceneLayerPostProcessAssetGuids(options.sceneLayerPostProcessStack)]);
-  const prepared = dependencyCatalog(sourceAssets).map(asset => ({ ...asset,
+  const prepared = dependencyCatalog(sourceAssets, parse).map(asset => ({ ...asset,
     startupRequired: asset.startupRequired || projectAssetGuids.has(asset.guid) || asset.guid === options.audioMixerGuid ||
       (!!gameInstanceClass && classIdOf(asset) === gameInstanceClass) || asset.type === "InputAction" || asset.type === "InputAxis",
   }));
   // Every asset is its own immutable file. A ZIP is only the delivery
   // container; static hosts serve the files independently.
-  const index = await writeAssetFiles(files, shipAssets(prepared));
+  const index = await writeAssetFiles(files, shipAssets(prepared, parse));
 
   inlineCssIntoIndex(files);
 

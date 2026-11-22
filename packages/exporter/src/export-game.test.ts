@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createActor,
   createDefaultScene,
@@ -839,6 +839,30 @@ describe("exportGame", () => {
     expect(result.value.files.has("assets/HavokPhysics_es.js")).toBe(true);
     expect(result.value.manifest.assets.filter((asset) => asset.type === "SceneLayer").map((asset) => asset.guid))
       .toEqual(["hud", "pause-menu"]);
+  });
+
+  it("parses each Scene and Scene Layer document once per export, and keeps Rapier for an unreadable layer", async () => {
+    const layer = sceneLayerAsset("hud", false);
+    const scene = { guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: new TextEncoder().encode(JSON.stringify({ name: "Level", actors: [] })) };
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      const result = await exportGame({
+        platform: "web", bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+        physicsWorld: "3d", scripts: [], assets: [scene, layer], playerFiles: physicsPlayerFiles(),
+      });
+      if (!result.ok) throw new Error(result.error);
+      // Layer physics, the Complex Collision scan, dependency metadata and editor-only field stripping read one parse.
+      const parsesOf = (bytes: Uint8Array) => parse.mock.calls.filter(([text]) => text === new TextDecoder().decode(bytes)).length;
+      expect(parsesOf(layer.bytes)).toBe(1);
+      expect(parsesOf(scene.bytes)).toBe(1);
+      expect(result.value.files.has("assets/rapier.es.js")).toBe(false);
+    } finally { parse.mockRestore(); }
+    const unreadable = await exportGame({
+      platform: "web", bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      physicsWorld: "3d", scripts: [], assets: [scene, { ...layer, bytes: new TextEncoder().encode("{") }], playerFiles: physicsPlayerFiles(),
+    });
+    if (!unreadable.ok) throw new Error(unreadable.error);
+    expect(unreadable.value.files.has("assets/rapier.es.js")).toBe(true);
   });
 
   it("inlines every link to a stylesheet verbatim and keeps an unlinked stylesheet", async () => {

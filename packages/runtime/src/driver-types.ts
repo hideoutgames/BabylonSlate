@@ -123,7 +123,10 @@ export interface RuntimeDriverOptions {
   sceneComponentChunks?: Readonly<Record<string, Uint8Array>>;
   /** Display name or library key → canonical scene asset guid. */
   sceneGuidByKey?: Readonly<Record<string, string>>;
-  /** Overlay documents the session compositor can instantiate by guid or name. */
+  /**
+   * Overlay documents the session compositor can instantiate by guid or name. Each is already
+   * `normalizeSceneLayer` output (Play and the player normalize as they read); the runtime reads it as is.
+   */
   sceneLayerLibrary?: Readonly<Record<string, SerializedSceneLayer>>;
   /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
   includeDebugCommands?: boolean;
