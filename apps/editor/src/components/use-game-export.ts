@@ -20,6 +20,8 @@ export interface GameExport {
   stage: string | null;
   error: string | null;
   notice: string | null;
+  /** The last run's export warnings: set once the game is collected, kept if a later packaging step fails. */
+  warnings: string[];
   packageTarget: (target: PackagingTarget, options?: PackageOptions) => Promise<void>;
 }
 
@@ -59,13 +61,19 @@ const COLLECTING = "Collecting the assets the game reaches.";
 /** Packages the project for a platform and saves the ZIP. */
 export function useGameExport(
   projectDocument: ProjectDocument | null,
-  options: { manifest: GameShellManifest | null; projectGuid: string | null },
+  options: {
+    manifest: GameShellManifest | null;
+    projectGuid: string | null;
+    /** Writes a line to the Output Log; each export warning is written once per run. */
+    log: (line: string) => void;
+  },
 ): GameExport {
   const { exportGameArtifact, zipExportedGame, updateProjectSettings } = useDocumentActions();
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
   // The project as it is when a package finishes, so the increment keeps settings changed meanwhile.
   const latestProjectRef = useRef(projectDocument);
   useEffect(() => {
@@ -78,6 +86,7 @@ export function useGameExport(
     setStage(COLLECTING);
     setError(null);
     setNotice(null);
+    setWarnings([]);
     const builtNumber = projectDocument.settings.appIdentity.buildNumber;
     /** Shows where the package went; a package that was kept (not a cancelled save) moves the Build Number on. */
     const delivered = (subject: string, result: SaveFileResult) => {
@@ -93,6 +102,8 @@ export function useGameExport(
         setError(exportGameFailureMessage(result.error));
         return;
       }
+      setWarnings(result.value.warnings);
+      for (const warning of result.value.warnings) options.log(`Packaging warning: ${warning}`);
       if (target.id === "ios") {
         const bridge = getElectronGameShellBridge();
         if (!bridge?.packageIos) throw new Error("iOS games are packaged in the Haptic desktop app on a Mac.");
@@ -193,5 +204,5 @@ export function useGameExport(
     }
   };
 
-  return { busy, stage, error, notice, packageTarget };
+  return { busy, stage, error, notice, warnings, packageTarget };
 }

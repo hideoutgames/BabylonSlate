@@ -75,6 +75,7 @@ vi.mock("../context/play-context", () => ({
     previewBuild: false, setPreviewBuild: vi.fn(), playFromScene: true,
     sessionState: state.sessionState, sessionOwner: { stop: state.stopSession }, simulationDocumentId: null,
   }),
+  usePlayDiagnosticsActions: () => ({ appendLog: vi.fn() }),
 }));
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({ errorCount: state.errorCount, setDiagnostics: state.setDiagnostics }),
