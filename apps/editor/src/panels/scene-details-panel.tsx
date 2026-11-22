@@ -27,7 +27,6 @@ import {
   ACTOR_TAGS_PROPERTY,
   DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
-  findActor,
   normalizeTagContainer,
   identitySerializedTransform,
   isFocusTargetClass,
@@ -106,7 +105,7 @@ import {
   prefabTemplateKey,
 } from "../lib/prefab-instance-sync";
 import { physicsConstraintTargets } from "../lib/physics-constraint-targets";
-import { sceneActorDisplayNames } from "../lib/scene-actor-names";
+import { createActorDisplayNamesSelector } from "../lib/scene-actor-names";
 import { useRetainedValue } from "../lib/use-retained-value";
 import type { ComponentPropertyUpdate } from "../lib/component-property-row-helpers";
 import { particleParameterOverrideRows } from "../lib/particle-parameter-override-rows";
@@ -305,21 +304,25 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     () => normalizeScenePostProcessStack(scene?.settings.postProcessStack),
     [scene?.settings.postProcessStack],
   );
+  // Actors by id, first of an id winning as `findActor` does: a large selection looks each up once.
+  const sceneActors = scene?.actors;
+  const actorsById = useMemo(() => {
+    const byId = new Map<string, SerializedActor>();
+    for (const entry of sceneActors ?? []) if (!byId.has(entry.id)) byId.set(entry.id, entry);
+    return byId;
+  }, [sceneActors]);
   const actorId = selectedActorIds[0] ?? null;
-  const actor = scene && actorId ? (findActor(scene, actorId) ?? null) : null;
+  const actor = actorId ? (actorsById.get(actorId) ?? null) : null;
   // The primary actor first; a multi-selection shows what they all share.
   const selectedActors = useMemo(
-    () => scene
-      ? selectedActorIds
-          .map((id) => findActor(scene, id))
-          .filter((entry): entry is SerializedActor => entry !== undefined && entry !== null)
-      : [],
-    [scene, selectedActorIds],
+    () => selectedActorIds
+      .map((id) => actorsById.get(id))
+      .filter((entry): entry is SerializedActor => entry !== undefined),
+    [actorsById, selectedActorIds],
   );
-  const actorDisplayNames = useMemo(
-    () => scene ? sceneActorDisplayNames(scene) : new Map<string, string>(),
-    [scene],
-  );
+  // Kept while the actors' ids and names are unchanged (a transform edit), so what reads it stays put.
+  const [selectActorDisplayNames] = useState(createActorDisplayNamesSelector);
+  const actorDisplayNames = selectActorDisplayNames(scene);
   const pickingCableTarget = actor?.components.find((component) => component.id === constraintTargetPick?.componentId)?.classId === "CableComponent";
   const particleParameters = useParticleSystemParameters(
     particleSystemGuidsOf({ components: selectedActors.flatMap((entry) => entry.components) }),
@@ -398,11 +401,12 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     [actorId, updateActorById],
   );
 
-  // Focus Target choices across the Scene, read by every component's rows:
-  // built once per Scene edit, not once per component per render.
+  // Focus Target choices across the Scene, read only by the focus rows of focus-target components
+  // (`isFocusTargetClass`): built once per Scene edit while the selection has one, else not at all.
+  const selectionHasFocusRows = selectedActors.some((entry) => entry.components.some((component) => isFocusTargetClass(component.classId)));
   const focusTargets = useMemo(
     () =>
-      scene
+      scene && selectionHasFocusRows
         ? scene.actors.flatMap((candidate) =>
             candidate.components
               .filter((entry) => isFocusTargetClass(entry.classId))
@@ -412,7 +416,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
               })),
           )
         : [],
-    [actorDisplayNames, scene],
+    [actorDisplayNames, scene, selectionHasFocusRows],
   );
 
   // The constraint / cable target list covers every actor, so it is built only
