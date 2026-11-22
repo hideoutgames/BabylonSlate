@@ -50,11 +50,17 @@ export async function retryTextureEncoding(
   const usage = options?.usage ?? String(asset.header.payload.usage ?? "albedo");
   if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return false;
   const latest = host.byGuid.get(guid) ?? asset;
+  // A pending Texture requeued as it is (a project open) takes its source from the header,
+  // without reading the pixels until the job starts; it is already marked pending.
+  const fromHeader = !options?.guard && !options?.force && latest.header.payload.compressionState === "pending"
+    ? headerSource(latest)
+    : null;
   // A guarded job wrote no state, so a missing source leaves the Texture as it was.
-  const source = options?.guard ? await loadSourcePixels(host, latest) : await encodeSource(host, latest);
+  const source = fromHeader
+    ?? (options?.guard ? await loadSourcePixels(host, latest) : await encodeSource(host, latest));
   if (!source) return false;
   const settings = encodeSettingsFor(host, latest, usage, {
-    sourceSize: sniffSourceImageSize(source.bytes),
+    ...(source.bytes ? { sourceSize: sniffSourceImageSize(source.bytes) } : {}),
     ...(options?.maxDimension
       ? { maxDimension: effectiveTextureMaxDimension(options.maxDimension, host.encodeSettings().maxDimension) }
       : {}),
@@ -78,7 +84,7 @@ export async function retryTextureEncoding(
   // commit is refused, or already landed ahead of this write in the
   // Texture's write order). A request the Texture already has needs no mark
   // of its own: its job wrote it, or is about to commit past it.
-  if (outcome !== "duplicate" && !options?.guard) {
+  if (outcome !== "duplicate" && !options?.guard && !fromHeader) {
     await host.setCompressionState(guid, "pending", {
       canWrite: (_guid, current) => current.payload.compressionState !== "pending",
     });
@@ -120,9 +126,9 @@ export async function maybeEnqueueTextureEncode(host: RegistryHost, asset: Index
   const usage = String(asset.header.payload.usage ?? "albedo");
   if (isEnvironmentTexturePayload(asset.header.payload) || !shouldCompressTexture(usage)) return;
   if (asset.header.payload.compressionState !== "pending") return;
-  const source = await encodeSource(host, asset);
+  const source = headerSource(asset) ?? await encodeSource(host, asset);
   if (!source) return;
-  const settings = encodeSettingsFor(host, asset, usage, { sourceSize: sniffSourceImageSize(source.bytes) });
+  const settings = encodeSettingsFor(host, asset, usage, source.bytes ? { sourceSize: sniffSourceImageSize(source.bytes) } : {});
   const chunkId = await textureEncodeChunkId(settings, usage);
   host.encodeQueue()?.enqueue({
     assetGuid: asset.header.guid,
@@ -350,6 +356,18 @@ async function loadSourcePixels(
 }
 
 /**
+ * What a job needs of its source, from the header alone: the pixels chunk's mime and sha256
+ * (a chunk read is verified against that digest, so it is the bytes' sha256) when the payload
+ * records the source size, which then decides the encode settings instead of a sniffed size.
+ * Null when either is missing: the caller reads the pixels.
+ */
+function headerSource(asset: IndexedAsset): { bytes?: undefined; mime?: string; sha256: string } | null {
+  const pixels = asset.header.chunks.find((chunk) => chunk.kind === "pixels");
+  if (!pixels || !payloadPixelSize(asset.header.payload)) return null;
+  return { mime: pixels.mime, sha256: pixels.sha256 };
+}
+
+/**
  * An encode job's `loadSource`: the Texture's source pixels, read again when
  * the job starts so a waiting job holds no bytes. Null when the Texture or its
  * pixels are gone, or its pixels are no longer `sha256`, the source the job
@@ -366,7 +384,8 @@ function lazySourcePixels(host: RegistryHost, guid: string, sha256: string): () 
     } catch (cause) {
       // Replaced on disk meanwhile: the next rescan indexes the new file.
       if (cause instanceof SourceRevisionChangedError) return null;
-      throw cause;
+      // Fails the job (`encode_failed`) with the reason an enqueue-time read would give.
+      throw new Error(`The Texture's source pixels could not be read: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
   };
 }

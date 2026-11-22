@@ -320,6 +320,22 @@ describe("EncodeQueue", () => {
     await vi.waitFor(() => expect(completed).toEqual(["a:3"]));
     expect(dropped).toEqual(["a:2"]);
     expect(encoded).toEqual([2]);
+
+    // A project closed while a source loads: the late source is never encoded or reported.
+    let releaseClosed!: () => void;
+    queue.enqueue({
+      assetGuid: "closed",
+      loadSource: () => new Promise((resolve) => { releaseClosed = () => resolve(new Uint8Array([9])); }),
+      settings,
+    });
+    await vi.waitFor(() => expect(releaseClosed).toBeTypeOf("function"));
+    queue.clear();
+    expect(queue.has("closed")).toBe(false);
+    releaseClosed();
+    await vi.waitFor(() => expect(dropped).toEqual(["a:2", "closed:2"]));
+    expect(encoded).toEqual([2]);
+    expect(completed).toEqual(["a:3"]);
+    expect(queue.depth).toBe(0);
   });
 });
 
@@ -671,7 +687,10 @@ describe("registry encode pipeline", () => {
     registry.setEncodePipeline(queue);
     await registry.mountRoot(projectContentRoot());
     queue.pause();
+    const chunkReads = vi.spyOn(registry, "readChunk");
     expect(await registry.requeueUncompressedTextures()).toBe(4);
+    // Requeued from their headers (source size and pixels digest recorded): no pixels read yet.
+    expect(chunkReads).not.toHaveBeenCalled();
 
     await registry.deleteAsset("gone");
     // Replaced on disk (a git pull) before any rescan saw it.
