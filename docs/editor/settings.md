@@ -136,3 +136,5 @@ Each topic's guide covers its settings: for example [Graphics](../graphics/index
 To build a playable copy of your game, choose **Settings > Packaging** in the toolbar (<kbd>Mod</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>). See [Publishing](../publishing/index.md).
 
 To close the project and return to the Homepage, choose **Settings > Project Browser** in the toolbar.
+
+To read this documentation from the editor, choose **Settings > Documentation** in the toolbar. It opens in a new browser tab on the web, and in your browser in the apps.

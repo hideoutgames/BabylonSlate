@@ -127,6 +127,15 @@ describe("packaged renderer boundary", () => {
     // Source Control device sign-in opens exactly these two pages.
     expect(externalOpenUrl("https://github.com/login/device")).toBe("https://github.com/login/device");
     expect(externalOpenUrl("https://gitlab.com/oauth/device")).toBe("https://gitlab.com/oauth/device");
+    // Settings > Documentation opens the docs site, and only it, on GitHub Pages.
+    expect(externalOpenUrl("https://hideoutgames.github.io/BabylonSlate/docs/")).toBe("https://hideoutgames.github.io/BabylonSlate/docs/");
+    expect(externalOpenUrl("https://hideoutgames.github.io/BabylonSlate/docs/scripting/class/branch#inputs"))
+      .toBe("https://hideoutgames.github.io/BabylonSlate/docs/scripting/class/branch#inputs");
+    for (const url of [
+      "https://hideoutgames.github.io/BabylonSlate/", "https://hideoutgames.github.io/BabylonSlate/docs", "https://hideoutgames.github.io/BabylonSlate/docs/../player/",
+      "https://hideoutgames.github.io/BabylonSlate/docsx/", "https://hideoutgames.github.io/other/docs/", "https://evil.github.io/BabylonSlate/docs/",
+      "https://hideoutgames.github.io.evil.example/BabylonSlate/docs/", "http://hideoutgames.github.io/BabylonSlate/docs/", "https://user@hideoutgames.github.io/BabylonSlate/docs/",
+    ]) expect(externalOpenUrl(url)).toBeNull();
     for (const url of [
       "https://github.com/", "https://github.com/login", "https://github.com/login/device/select_account", "https://github.com/login/device?next=/evil",
       "https://github.com/evil/repo", "https://gist.github.com/login/device", "https://github.com.evil.example/login/device", "http://github.com/login/device",

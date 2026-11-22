@@ -145,9 +145,11 @@ const HAPTIC_SITE_HOST = /(^|\.)haptic\.no$/;
 const STORE_MANAGEMENT_HOSTS = new Set(["apps.apple.com", "play.google.com"]);
 /** GitHub's and gitlab.com's device sign-in pages, where the user enters the code Source Control shows. */
 const DEVICE_SIGN_IN_PAGES = new Set(["https://github.com/login/device", "https://gitlab.com/oauth/device"]);
+/** The documentation site the editor's Settings > Documentation opens (HAPTIC_DOCS_URL in apps/editor/src/lib/documentation.ts). */
+const DOCS_SITE = { origin: "https://hideoutgames.github.io", path: "/BabylonSlate/docs/" };
 
 /**
- * Links the editor hands to the system browser or mail client: Haptic's site,
+ * Links the editor hands to the system browser or mail client: Haptic's site and documentation,
  * Web Billing and store subscription pages and the GitHub and GitLab device
  * sign-in pages over HTTPS, and mailto. Anything else stays denied, so project
  * scripts in the Preview frame cannot open arbitrary sites.
@@ -160,6 +162,7 @@ export function externalOpenUrl(rawUrl: string): string | null {
     return HAPTIC_SITE_HOST.test(url.hostname) ||
       STORE_MANAGEMENT_HOSTS.has(url.hostname) ||
       isBillingFrameUrl(url.href) ||
+      (url.origin === DOCS_SITE.origin && url.pathname.startsWith(DOCS_SITE.path)) ||
       (DEVICE_SIGN_IN_PAGES.has(`${url.origin}${url.pathname}`) && !url.search && !url.hash)
       ? url.href
       : null;
