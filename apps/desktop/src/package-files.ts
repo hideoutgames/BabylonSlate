@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { assertGameFilePath } from "../../../packages/exporter/src/native-desktop";
+import { assertGameFilePath } from "@haptic/exporter/native-desktop";
 
 /** File work the native game packagers share. */
 
