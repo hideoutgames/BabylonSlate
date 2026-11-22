@@ -189,6 +189,15 @@ describe("animClipCatalogFromAssets", () => {
     ]);
   });
 
+  it("lists an Animation's root motion as the bone its header names, with no track", () => {
+    const [moving, inPlace] = animClipCatalogFromAssets([
+      { header: { guid: "fall", type: "Animation", name: "Death_A", payload: { clipName: "Death_A", rootMotionBone: "hips" } } },
+      { header: { guid: "idle", type: "Animation", name: "Idle_A", payload: { clipName: "Idle_A" } } },
+    ]);
+    expect(moving!.rootMotion).toEqual({ bone: "hips" });
+    expect(inPlace).not.toHaveProperty("rootMotion");
+  });
+
   it("lists a Blend Space with its Skeleton, axes and samples", () => {
     const [entry] = animClipCatalogFromAssets([
       {

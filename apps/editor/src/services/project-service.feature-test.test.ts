@@ -454,7 +454,12 @@ describe("FeatureTest starter", () => {
     expect(aliasTransitions).toBeGreaterThan(0);
     // An additive Animation is showcased (Apply Additive adds it), and one with root motion.
     expect(clipCatalog.some((entry) => entry.type === "Animation" && entry.additive)).toBe(true);
-    expect(clipCatalog.find((entry) => entry.type === "Animation" && entry.rootMotion)?.rootMotion?.bone).toBe("hips");
+    const rootMotionClip = clipCatalog.find((entry) => entry.type === "Animation" && entry.rootMotion);
+    expect(rootMotionClip?.rootMotion?.bone).toBe("hips");
+    // Its track lives in its document; scanned Animation headers name only the bone.
+    const rootMotionDocument = await reopened.loadDocument("animation", reopened.registry!.getByGuid(rootMotionClip!.guid)!.path);
+    expect(normalizeAnimationPayload(rootMotionDocument).rootMotion?.track.x.length).toBeGreaterThan(1);
+    expect(ofType("Animation").filter((asset) => "rootMotion" in asset.header.payload).map((asset) => asset.path)).toEqual([]);
     // Per-bone layering, cached poses, additive poses and a skeletal control are showcased.
     expect([...poseNodeTypes]).toEqual(expect.arrayContaining([
       "anim.pose.layeredBlendPerBone",
