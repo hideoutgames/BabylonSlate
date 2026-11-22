@@ -13,6 +13,7 @@ import { Input } from "@haptic/ui/components/input";
 import { isTestModeEnabled } from "@haptic/vfs";
 import { deviceClientId } from "../lib/source-control-client-ids";
 import { useSourceControlCredentials } from "../lib/use-source-control-credentials";
+import { SessionSecretsNotice } from "./session-secrets-notice";
 import { SettingsSection } from "./settings-section";
 import { useHostLink, type HostLinkRequest } from "./use-host-link";
 
@@ -143,6 +144,7 @@ export default function EngineSourceControlSettings() {
   return (
     <>
       {error ? <FieldError className="settings-row">{error}</FieldError> : null}
+      <SessionSecretsNotice />
       {accountRows.length > 0 ? (
         <SettingsSection id="accounts" title="Accounts">
           {accountRows.map(({ host, label, origin, credential }) => {

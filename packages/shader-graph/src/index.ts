@@ -33,7 +33,6 @@ export {
 } from "./document";
 export {
   lowerMaterialDocument,
-  lowerMaterialDocumentCached,
   materialCompileKeyFromLowering,
   type MaterialBuildPlan,
   type MaterialBufferRequirements,
@@ -46,6 +45,7 @@ export {
   type MaterialTextureBinding,
   type MaterialTextureFilter,
 } from "./lower";
+export { lowerMaterialDocumentCached } from "./lower-cache";
 export { createWaterMaterialDocument } from "./water-materials";
 export type { TypeResolver } from "./resolve";
 export {

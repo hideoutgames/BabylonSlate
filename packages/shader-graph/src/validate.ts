@@ -34,7 +34,7 @@ import type {
   MaterialGraphEdge,
   MaterialGraphNode,
 } from "./document";
-import { callDefinition, createTypeResolver } from "./resolve";
+import { callDefinition, createTypeResolver, type TypeResolver } from "./resolve";
 import { customGlslDefinition, customGlslFunctionBodyError, customGlslInterfaceError } from "./custom-glsl";
 import { swizzleDefinition, swizzleError, vectorMaskDefinition, vectorMaskError } from "./vector-mask";
 import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, materialGlobalParameterDefinition, validateMaterialGlobalParameter } from "./global-parameter";
@@ -220,10 +220,16 @@ const MATERIAL_TERMINAL_NODE_TYPES: ReadonlySet<string> = new Set(
   (Object.keys(EVERY_DOMAIN) as MaterialDomain[]).map((domain) => terminalNodeTypeFor(domain)),
 );
 
+/** A graph's diagnostics, and the type resolver they were checked with (null when the graph has a loop). */
+interface GraphCheck {
+  diagnostics: MaterialDiagnostic[];
+  resolver: TypeResolver | null;
+}
+
 function validateGraph(
   graph: GraphLike,
   options: ValidateGraphOptions,
-): MaterialDiagnostic[] {
+): GraphCheck {
   // A usage feeding its own declaration is a loop the wires alone do not show (`findGraphCycle`).
   const rerouteLoops = namedRerouteLoopDeclarations(graph);
   const diagnostics: MaterialDiagnostic[] = [
@@ -395,8 +401,9 @@ function validateGraph(
   }
 
   // Generic resolution and type checks only make sense on an acyclic graph.
+  let resolver: TypeResolver | null = null;
   if (!cycle && rerouteLoops.size === 0) {
-    const resolver = createTypeResolver(graph, {
+    resolver = createTypeResolver(graph, {
       functions: options.functions,
       functionInterface: options.functionInterface,
     });
@@ -475,15 +482,34 @@ function validateGraph(
     }
   }
 
-  return diagnostics;
+  return { diagnostics, resolver };
+}
+
+/**
+ * A Material document's diagnostics, with the type resolvers validation built: the document's own (null when its
+ * graph has a loop) and one per reached Material Function body by guid (absent for a body with a loop). Lowering the
+ * same document with the same functions record reuses them instead of resolving every type again.
+ */
+export interface MaterialDocumentCheck {
+  diagnostics: MaterialDiagnostic[];
+  resolver: TypeResolver | null;
+  functionResolvers: Map<string, TypeResolver>;
 }
 
 export function validateMaterialDocument(
   doc: MaterialDocument,
   context: MaterialValidationContext = {},
 ): MaterialDiagnostic[] {
-  const diagnostics = validateGraph(doc, { ...context, functions: context.functions ?? {}, domain: doc.domain });
-  diagnostics.push(...validateCalledFunctions(doc, context, doc.domain));
+  return checkMaterialDocument(doc, context).diagnostics;
+}
+
+export function checkMaterialDocument(
+  doc: MaterialDocument,
+  context: MaterialValidationContext = {},
+): MaterialDocumentCheck {
+  const { diagnostics, resolver } = validateGraph(doc, { ...context, functions: context.functions ?? {}, domain: doc.domain });
+  const functionResolvers = new Map<string, TypeResolver>();
+  diagnostics.push(...validateCalledFunctions(doc, context, doc.domain, functionResolvers));
   // Function Input and Function Output only mean something inside a Material Function: here they would do nothing.
   for (const node of doc.nodes) {
     if (node.type !== "function.input" && node.type !== "function.output") continue;
@@ -540,7 +566,7 @@ export function validateMaterialDocument(
     });
   }
 
-  return diagnostics;
+  return { diagnostics, resolver, functionResolvers };
 }
 
 interface WorldPositionOffsetWalkFrame {
@@ -711,7 +737,7 @@ export function validateMaterialFunctionDocument(
   fn: MaterialFunctionDocument,
   context: MaterialValidationContext = {},
 ): MaterialDiagnostic[] {
-  const diagnostics = validateGraph(fn, {
+  const { diagnostics } = validateGraph(fn, {
     ...context,
     // The caller supplies the domain; standalone functions may use any domain.
     functionInterface: fn,
@@ -744,6 +770,7 @@ function validateCalledFunctions(
   graph: GraphLike,
   context: MaterialValidationContext,
   domain?: MaterialDomain,
+  resolvers?: Map<string, TypeResolver>,
 ): MaterialDiagnostic[] {
   const functions = context.functions ?? {};
   const diagnostics: MaterialDiagnostic[] = [];
@@ -765,10 +792,9 @@ function validateCalledFunctions(
     const fn = functions[guid];
     if (!fn) continue; // validateGraph reports the missing call at this level.
     const callPrefix = `${frame.prefix}${call.id}/`;
-    const local = [
-      ...validateGraph(fn, { ...context, functions, domain, functionInterface: fn }),
-      ...validateFunctionInterface(fn),
-    ];
+    const body = validateGraph(fn, { ...context, functions, domain, functionInterface: fn });
+    if (body.resolver) resolvers?.set(guid, body.resolver);
+    const local = [...body.diagnostics, ...validateFunctionInterface(fn)];
     diagnostics.push(...local.map((diagnostic) => ({
       ...diagnostic,
       nodeId: diagnostic.nodeId ? `${callPrefix}${diagnostic.nodeId}` : `${frame.prefix}${call.id}`,

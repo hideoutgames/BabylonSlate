@@ -26,7 +26,7 @@ import { formatSceneLoadReport, hostMemoryLine, textureMemoryLine, worldLoadLine
 import { nextStatGroups, type StatGroup } from "@haptic/debugger";
 import type { SceneLoadProgress, SpawnableLight } from "@haptic/render";
 import type { RenderDiagnostics } from "@haptic/render";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   clampRenderResolution,
   pixelatedExtend,
@@ -51,7 +51,6 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { createAppSettingsStore } from "@haptic/vfs";
 import {
   startPlaySession,
-  type PlayHudStats,
   type PlaySession,
   type PlaySessionResult,
   type PlaySceneSourceLoader,
@@ -74,7 +73,8 @@ import type { DebugBehaviourTree } from "@haptic/bridge";
 import { ConnectedDebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { PlayFreeCamJoystick } from "./play-freecam-joystick";
-import { StatsHud } from "./stats-hud";
+import { StatsHud, type StatsHudProps } from "./stats-hud";
+import { useLiveValue, useLiveValueOwner, type LiveValue } from "../lib/live-value";
 import { useBreakpointStore } from "../context/breakpoints-context";
 import { playConsoleCommands } from "../lib/play-console";
 import { nextPlayInspectorOpen, profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
@@ -101,7 +101,6 @@ import {
   ENGINE_SETTINGS_CHANGED_EVENT,
   getHostMemoryStats,
   latestHostMemoryStats,
-  type HostMemoryStats,
 } from "@haptic/vfs";
 import {
   audioDebugOverlayText,
@@ -256,6 +255,122 @@ function polledValues() {
   };
 }
 
+/** The Stats HUD's streamed and polled values, apart from its rendering diagnostics. */
+type PlayHudReadout = Omit<StatsHudProps, "rendering" | "groups" | "visible">;
+
+const EMPTY_HUD_READOUT: PlayHudReadout = {
+  fps: 0, scriptMs: 0, physicsMs: 0, publishMs: 0, memoryBytes: 0, hostMemory: null,
+  geometryBytes: 0, meshCount: 0, textureCount: 0, draws: 0, bridgeMessagesPerSec: 0,
+};
+
+/** Replaces the readout only when a field changed, so an idle poll renders nothing. */
+function patchHudReadout(hud: LiveValue<PlayHudReadout>, patch: Partial<PlayHudReadout>) {
+  const current = hud.get();
+  for (const key of Object.keys(patch) as Array<keyof PlayHudReadout>) {
+    if (!Object.is(current[key], patch[key])) {
+      hud.set({ ...current, ...patch });
+      return;
+    }
+  }
+}
+
+/**
+ * The Stats HUD fed from live values: stats ticks and polls render it alone,
+ * not the Play overlay around it.
+ */
+function LiveStatsHud({ hud, rendering, groups, visible }: {
+  hud: LiveValue<PlayHudReadout>;
+  rendering: LiveValue<RenderDiagnostics | undefined>;
+  groups: readonly StatGroup[];
+  visible: boolean;
+}) {
+  return <StatsHud {...useLiveValue(hud)} rendering={useLiveValue(rendering)} groups={groups} visible={visible} />;
+}
+
+function LightsDebugReadout({ rendering }: { rendering: LiveValue<RenderDiagnostics | undefined> }) {
+  const diagnostics = useLiveValue(rendering);
+  const text = diagnostics ? lightsDebugText(diagnostics) : null;
+  if (!text) return null;
+  return (
+    <pre className="play-debug-readout pointer-events-none absolute top-14 right-3 m-0 max-h-64 max-w-xl overflow-hidden whitespace-pre-wrap" data-testid="lights-debug-overlay">
+      <SelectableText>{text}</SelectableText>
+    </pre>
+  );
+}
+
+function OcclusionDebugReadout({ rendering, canvasRef }: {
+  rendering: LiveValue<RenderDiagnostics | undefined>;
+  canvasRef: RefObject<HTMLCanvasElement | null>;
+}) {
+  const occlusion = useLiveValue(rendering)?.occlusion;
+  return (
+    <div className="play-debug-readout pointer-events-none absolute bottom-3 left-3 z-20 m-0" data-testid="occlusion-debug-overlay">
+      {occlusion ? <canvas ref={canvasRef} className="block h-32 w-64 [image-rendering:pixelated]" /> : null}
+      <SelectableText>
+        {occlusion
+          ? `occlusion culled ${occlusion.culled}/${occlusion.tested} · ${occlusion.occluders} occluders${occlusion.idle ? " · idle" : ""}`
+          : "occlusion culling off"}
+      </SelectableText>
+    </div>
+  );
+}
+
+/**
+ * The `audiodebug` voice list, refreshed every frame while it shows and the
+ * Play view is on screen; each frame renders this readout alone.
+ */
+function AudioDebugReadout({ running }: { running: boolean }) {
+  const [text, setText] = useState(() => audioDebugOverlayText(audioStats));
+  useEffect(() => {
+    if (!running) return;
+    let raf = 0;
+    const tick = () => {
+      setText(audioDebugOverlayText(audioStats));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [running]);
+  if (text === null) return null;
+  return (
+    <pre
+      className="play-debug-readout pointer-events-none absolute bottom-3 right-3 z-20 m-0 max-h-48 max-w-md overflow-hidden whitespace-pre"
+      data-testid="audio-debug-overlay"
+    >
+      <SelectableText>{text}</SelectableText>
+    </pre>
+  );
+}
+
+/** The e2e readouts of a test build; the Play session's stats ticks render them alone. */
+function PlayTestReadouts({ moveX, actorGuids, actorYs }: {
+  moveX: LiveValue<number | null>;
+  actorGuids: LiveValue<readonly string[]>;
+  actorYs: LiveValue<readonly number[]>;
+}) {
+  const x = useLiveValue(moveX);
+  const guids = useLiveValue(actorGuids);
+  const ys = useLiveValue(actorYs);
+  return (
+    <>
+      <span
+        data-testid="play-move-x"
+        data-move-x={x === null ? "" : String(x)}
+        className="sr-only"
+      >
+        <SelectableText>
+          move.x={x === null ? "—" : x.toFixed(2)}
+        </SelectableText>
+      </span>
+      <span
+        data-testid="play-actor-guids"
+        data-guids={guids.join(",")}
+      />
+      <span data-testid="play-actor-y" data-ys={ys.join(",")} />
+    </>
+  );
+}
+
 function emptyPlayResult(): PlaySessionResult {
   return {
     diagnostics: [],
@@ -392,22 +507,11 @@ function PlayOverlayView({
   const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
-  const [fps, setFps] = useState(0);
-  /** Latest nonzero runtime FPS; the Stats HUD state above only updates while the HUD is visible. */
+  // Stats ticks and polls write these live values; only the readouts that show them render.
+  const hudReadout = useLiveValueOwner(EMPTY_HUD_READOUT);
+  /** Latest nonzero runtime FPS; the Stats HUD readout above only updates while the HUD is visible. */
   const runtimeFpsRef = useRef<number | null>(null);
-  const [scriptMs, setScriptMs] = useState(0);
-  const [physicsMs, setPhysicsMs] = useState(0);
-  const [publishMs, setPublishMs] = useState(0);
-  const [memoryBytes, setMemoryBytes] = useState(0);
-  const [hostMemory, setHostMemory] = useState<HostMemoryStats | null>(null);
-  const [geometryBytes, setGeometryBytes] = useState(0);
-  const [meshCount, setMeshCount] = useState(0);
-  const [textureCount, setTextureCount] = useState(0);
-  const [draws, setDraws] = useState(0);
-  const [rendering, setRendering] = useState<RenderDiagnostics>();
-  const [bridgeRate, setBridgeRate] = useState(0);
-  const [threadStats, setThreadStats] = useState<Pick<PlayHudStats,
-    "ticks" | "liveActors" | "snapshotCapacity" | "phaseMs" | "collectableObjects" | "garbageCollectionMs">>({});
+  const renderingReadout = useLiveValueOwner<RenderDiagnostics | undefined>(undefined);
   // Lines reach the console through the feed, not this component's state, so a printing game
   // does not re-render the overlay every frame.
   const logFeed = useDebugConsoleLogs();
@@ -416,12 +520,12 @@ function PlayOverlayView({
   const [trees, setTrees] = useState<readonly DebugBehaviourTree[]>([]);
   // Test builds (or `?test`) expose e2e hooks as data attributes; other builds skip their polling.
   const testMode = useMemo(() => isTestModeEnabled(), []);
-  const [moveX, setMoveX] = useState<number | null>(null);
-  const [actorGuids, setActorGuids] = useState<string[]>([]);
-  const [actorYs, setActorYs] = useState<number[]>([]);
+  const moveXReadout = useLiveValueOwner<number | null>(null);
+  const actorGuidsReadout = useLiveValueOwner<readonly string[]>([]);
+  const actorYsReadout = useLiveValueOwner<readonly number[]>([]);
   const [audioQueued, setAudioQueued] = useState(0);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
-  const [audioDebugText, setAudioDebugText] = useState<string | null>(null);
+  const [audioDebugShown, setAudioDebugShown] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [freeCamEnabled, setFreeCamEnabled] = useState(false);
@@ -1010,14 +1114,14 @@ function PlayOverlayView({
             // The FeatureTest probe reads the latest FPS even while the Stats HUD is hidden.
             if (stats.fps > 0) runtimeFpsRef.current = stats.fps;
             if (statsVisibleRef.current) {
-              setFps(stats.fps);
-              setScriptMs(stats.scriptMs);
-              setPhysicsMs(stats.physicsMs);
-              setPublishMs(stats.publishMs);
-              setThreadStats({ ticks: stats.ticks, liveActors: stats.liveActors, snapshotCapacity: stats.snapshotCapacity, phaseMs: stats.phaseMs,
-                collectableObjects: stats.collectableObjects, garbageCollectionMs: stats.garbageCollectionMs });
+              hudReadout.set({
+                ...hudReadout.get(),
+                fps: stats.fps, scriptMs: stats.scriptMs, physicsMs: stats.physicsMs, publishMs: stats.publishMs,
+                ticks: stats.ticks, liveActors: stats.liveActors, snapshotCapacity: stats.snapshotCapacity, phaseMs: stats.phaseMs,
+                collectableObjects: stats.collectableObjects, garbageCollectionMs: stats.garbageCollectionMs,
+              });
             }
-            if (testMode) setMoveX(sessionRef.current?.lastMoveX() ?? null);
+            if (testMode) moveXReadout.set(sessionRef.current?.lastMoveX() ?? null);
           },
           onLog: (message, severity) => pushLog(severity, message),
           onRuntimeLog: (entry) => appendLog(formatRuntimeLogLine(entry)),
@@ -1169,12 +1273,14 @@ function PlayOverlayView({
       const movePoll = window.setInterval(() => {
         const current = sessionRef.current;
         if (testMode) {
-          update("moveX", current?.lastMoveX() ?? null, setMoveX);
-          update("guids", [...(current?.spawnedActorGuids() ?? [])], setActorGuids);
-          update("ys", (current?.lastActorPositions() ?? []).map((entry) => entry.y), setActorYs);
+          moveXReadout.set(current?.lastMoveX() ?? null);
+          update("guids", [...(current?.spawnedActorGuids() ?? [])], (guids) => actorGuidsReadout.set(guids));
+          update("ys", (current?.lastActorPositions() ?? []).map((entry) => entry.y), (ys) => actorYsReadout.set(ys));
         }
         update("audioQueued", audioStats.queued, setAudioQueued);
         update("audioUnlocked", audioStats.unlocked, setAudioUnlocked);
+        // `audiodebug` is on while the audio service publishes voices; its readout then refreshes per frame.
+        update("audioDebug", audioStats.debugVoices !== undefined, setAudioDebugShown);
         if (current) {
           // Rendering diagnostics scan the Scene's meshes and lights, and the first read keeps
           // frame-phase timing on. Only the Stats HUD and the lights debug overlay show them.
@@ -1184,7 +1290,7 @@ function PlayOverlayView({
           const occlusion = current.handle.occlusionOverlay();
           update("occlusion", occlusion !== null, setOcclusionShown);
           if (occlusion?.buffer && occlusionCanvasRef.current) drawOcclusionOverlay(occlusionCanvasRef.current, occlusion.buffer);
-          if (statsVisibleRef.current || lights || occlusion) setRendering(current.handle.renderDiagnostics());
+          if (statsVisibleRef.current || lights || occlusion) renderingReadout.set(current.handle.renderDiagnostics());
           if (testMode) {
             update("passes", current.handle.postProcessPassCount(), setPostProcessPasses);
             update("materials", current.handle.assignedMaterialGuids().join(","), setAssignedMaterials);
@@ -1192,22 +1298,24 @@ function PlayOverlayView({
           update("freeCam", current.handle.isFreeCamEnabled(), setFreeCamEnabled);
           // Only the Stats HUD shows these; skip their reads while it is hidden.
           if (statsVisibleRef.current) {
-            update("memory", current.accountedBytes(), setMemoryBytes);
             if (!hostMemoryInFlight.current) {
               hostMemoryInFlight.current = true;
               void getHostMemoryStats()
-                .then(setHostMemory)
-                .catch(() => setHostMemory(null))
+                .then((hostMemory) => patchHudReadout(hudReadout, { hostMemory }))
+                .catch(() => patchHudReadout(hudReadout, { hostMemory: null }))
                 .finally(() => {
                   hostMemoryInFlight.current = false;
                 });
             }
-            update("geometry", current.handle.accountedGeometryBytes(), setGeometryBytes);
             const counts = current.liveObjectCounts();
-            update("meshes", counts.meshes, setMeshCount);
-            update("textures", counts.textures, setTextureCount);
-            update("draws", current.drawCalls(), setDraws);
-            update("bridgeRate", current.bridgeMessagesPerSec(), setBridgeRate);
+            patchHudReadout(hudReadout, {
+              memoryBytes: current.accountedBytes(),
+              geometryBytes: current.handle.accountedGeometryBytes(),
+              meshCount: counts.meshes,
+              textureCount: counts.textures,
+              draws: current.drawCalls(),
+              bridgeMessagesPerSec: current.bridgeMessagesPerSec(),
+            });
           }
         }
       }, 200);
@@ -1233,7 +1341,8 @@ function PlayOverlayView({
       };
     });
     return () => { cancelled = true; disposePresentation?.(); };
-  }, [sharedEngine, injectFixtureThrow, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, graphDebug, breakpointStore, simulationSession, diagnosticStore, testMode]);
+  }, [sharedEngine, injectFixtureThrow, pushLog, appendLog, sessionOwner, sessionTicket, simulating, simulationSaveStorage, simulationAssetGuids, inspectionStore, graphDebug, breakpointStore, simulationSession, diagnosticStore, testMode,
+    hudReadout, renderingReadout, moveXReadout, actorGuidsReadout, actorYsReadout]);
 
   useEffect(() => {
     if (!isTestModeEnabled()) return;
@@ -1439,17 +1548,6 @@ function PlayOverlayView({
     stop: () => finishSessionRef.current(),
   }), [logFeed]);
 
-  useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      const next = audioDebugOverlayText(audioStats);
-      setAudioDebugText((prev) => (prev === next ? prev : next));
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
   return (
     <div
       ref={overlayRef}
@@ -1489,20 +1587,9 @@ function PlayOverlayView({
         onStep={simulating ? undefined : () => sessionRef.current?.step()}
         onClose={() => finishSessionRef.current()}
         stats={
-          <StatsHud
-            fps={fps}
-            scriptMs={scriptMs}
-            physicsMs={physicsMs}
-            publishMs={publishMs}
-            memoryBytes={memoryBytes}
-            hostMemory={hostMemory}
-            geometryBytes={geometryBytes}
-            meshCount={meshCount}
-            textureCount={textureCount}
-            draws={draws}
-            rendering={rendering}
-            bridgeMessagesPerSec={bridgeRate}
-            {...threadStats}
+          <LiveStatsHud
+            hud={hudReadout}
+            rendering={renderingReadout}
             groups={statGroups}
             visible={statsVisible}
           />
@@ -1515,22 +1602,7 @@ function PlayOverlayView({
             {simulating && inputMode === "edit" ? <>
               <SimulationTransformToolbar tool={transformTool} onToolChange={tool => { setTransformTool(tool); transformToolsRef.current?.setTool(tool); }} />
             </> : null}
-            {testMode ? <>
-              <span
-                data-testid="play-move-x"
-                data-move-x={moveX === null ? "" : String(moveX)}
-                className="sr-only"
-              >
-                <SelectableText>
-                  move.x={moveX === null ? "—" : moveX.toFixed(2)}
-                </SelectableText>
-              </span>
-              <span
-                data-testid="play-actor-guids"
-                data-guids={actorGuids.join(",")}
-              />
-              <span data-testid="play-actor-y" data-ys={actorYs.join(",")} />
-            </> : null}
+            {testMode ? <PlayTestReadouts moveX={moveXReadout} actorGuids={actorGuidsReadout} actorYs={actorYsReadout} /> : null}
             {shouldShowPlayAudioUnlockHint({
               queued: audioQueued,
               unlocked: audioUnlocked,
@@ -1559,29 +1631,10 @@ function PlayOverlayView({
           sessionRef.current?.handle.steerPlayFreeCam(forward, right)
         }
       />
-      {lightsDebug && rendering && lightsDebugText(rendering) ? (
-        <pre className="play-debug-readout pointer-events-none absolute top-14 right-3 m-0 max-h-64 max-w-xl overflow-hidden whitespace-pre-wrap" data-testid="lights-debug-overlay">
-          <SelectableText>{lightsDebugText(rendering)}</SelectableText>
-        </pre>
-      ) : null}
-      {occlusionShown ? (
-        <div className="play-debug-readout pointer-events-none absolute bottom-3 left-3 z-20 m-0" data-testid="occlusion-debug-overlay">
-          {rendering?.occlusion ? <canvas ref={occlusionCanvasRef} className="block h-32 w-64 [image-rendering:pixelated]" /> : null}
-          <SelectableText>
-            {rendering?.occlusion
-              ? `occlusion culled ${rendering.occlusion.culled}/${rendering.occlusion.tested} · ${rendering.occlusion.occluders} occluders${rendering.occlusion.idle ? " · idle" : ""}`
-              : "occlusion culling off"}
-          </SelectableText>
-        </div>
-      ) : null}
-      {audioDebugText !== null ? (
-        <pre
-          className="play-debug-readout pointer-events-none absolute bottom-3 right-3 z-20 m-0 max-h-48 max-w-md overflow-hidden whitespace-pre"
-          data-testid="audio-debug-overlay"
-        >
-          <SelectableText>{audioDebugText}</SelectableText>
-        </pre>
-      ) : null}
+      {lightsDebug ? <LightsDebugReadout rendering={renderingReadout} /> : null}
+      {occlusionShown ? <OcclusionDebugReadout rendering={renderingReadout} canvasRef={occlusionCanvasRef} /> : null}
+      {/* A Play stopped at a breakpoint hides the view, so the readout stops its frame loop. */}
+      {audioDebugShown ? <AudioDebugReadout running={!playBreak} /> : null}
       <PlayDebugConsole
         open={consoleOpen}
         onOpenChange={setConsoleOpen}

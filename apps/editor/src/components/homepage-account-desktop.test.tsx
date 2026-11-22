@@ -12,7 +12,8 @@ import { HomepageAccount } from "./homepage-account";
 
 const auth = vi.hoisted(() => ({
   create: vi.fn(),
-  restoreSession: vi.fn(),
+  restore: vi.fn(),
+  cancelSignIn: vi.fn(),
   beginEmail: vi.fn(),
   verifyCode: vi.fn(),
   resendCode: vi.fn(),
@@ -32,6 +33,7 @@ const session = {
   email: "ada@example.test",
   name: "Ada Lovelace",
 };
+const signedIn = (value: unknown) => ({ status: "signed-in", session: value });
 const challenge = {
   id: "sign_in_ada",
   kind: "sign-in",
@@ -81,7 +83,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
-  auth.restoreSession.mockResolvedValue(null);
+  auth.restore.mockResolvedValue({ status: "signed-out" });
   auth.beginEmail.mockResolvedValue(challenge);
   auth.verifyCode.mockResolvedValue(session);
   auth.signOut.mockResolvedValue(undefined);
@@ -100,7 +102,7 @@ describe("optional desktop account", () => {
         <HomepageAccount />
       </>,
     );
-    await waitFor(() => expect(auth.restoreSession).toHaveBeenCalled());
+    await waitFor(() => expect(auth.restore).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId("homepage-account"));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Sign In" }));
     const email = await screen.findByLabelText("Email Address");
@@ -124,7 +126,7 @@ describe("optional desktop account", () => {
   });
 
   it("keeps guests and the plans available when restoration fails", async () => {
-    auth.restoreSession.mockRejectedValue(
+    auth.restore.mockRejectedValue(
       new Error("Secure account storage is unavailable."),
     );
     render(
@@ -133,7 +135,7 @@ describe("optional desktop account", () => {
         <HomepageAccount />
       </>,
     );
-    await waitFor(() => expect(auth.restoreSession).toHaveBeenCalled());
+    await waitFor(() => expect(auth.restore).toHaveBeenCalled());
     fireEvent.click(screen.getByTestId("homepage-account"));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Manage Account/ }));
     const dialog = await screen.findByRole("dialog", { name: "Account" });
@@ -163,7 +165,7 @@ describe("desktop account profile", () => {
   it("edits the name and picture in the dialog and shows them where the launcher shows the account", async () => {
     const renamed = { ...editable, name: "Ada King", lastName: "King" };
     const pictured = { ...renamed, imageUrl: "https://img.example.test/ada.png" };
-    auth.restoreSession.mockResolvedValue(editable);
+    auth.restore.mockResolvedValue(signedIn(editable));
     auth.updateName.mockResolvedValue(renamed);
     auth.setProfileImage.mockResolvedValue(pictured);
     auth.removeProfileImage.mockResolvedValue(renamed);
@@ -194,17 +196,17 @@ describe("desktop account profile", () => {
   });
 
   it("shows the username, then the email, when the account has no name", async () => {
-    auth.restoreSession.mockResolvedValue({ id: "session_ada", userId: "user_ada", email: "ada@example.test", username: "ada" });
+    auth.restore.mockResolvedValue(signedIn({ id: "session_ada", userId: "user_ada", email: "ada@example.test", username: "ada" }));
     const view = render(<HomepageAccount />);
     await waitFor(() => expect(launcher().getAttribute("aria-label")).toBe("ada, ada@example.test"));
     view.unmount();
-    auth.restoreSession.mockResolvedValue({ id: "session_ada", userId: "user_ada", email: "ada@example.test" });
+    auth.restore.mockResolvedValue(signedIn({ id: "session_ada", userId: "user_ada", email: "ada@example.test" }));
     render(<HomepageAccount />);
     await waitFor(() => expect(launcher().getAttribute("aria-label")).toBe("ada@example.test, ada@example.test"));
   });
 
   it("keeps the dialog editable and shows why when Clerk refuses a name or a picture", async () => {
-    auth.restoreSession.mockResolvedValue(editable);
+    auth.restore.mockResolvedValue(signedIn(editable));
     auth.updateName.mockRejectedValue(new Error("That first name is too long."));
     auth.setProfileImage.mockRejectedValue(new Error("That picture is too large. Choose one under 10 MB."));
     render(<HomepageAccount />);
@@ -223,7 +225,7 @@ describe("desktop account profile", () => {
   });
 
   it("offers Delete Account only when Clerk lets people delete themselves", async () => {
-    auth.restoreSession.mockResolvedValue({ ...editable, deleteSelfEnabled: undefined });
+    auth.restore.mockResolvedValue(signedIn({ ...editable, deleteSelfEnabled: undefined }));
     render(<HomepageAccount />);
     const dialog = await openAccount();
     expect(within(dialog).getByLabelText("First Name")).toBeTruthy();
@@ -238,7 +240,7 @@ describe("desktop account profile", () => {
   }
 
   it("asks for confirmation, says local projects stay and that subscriptions are not cancelled", async () => {
-    auth.restoreSession.mockResolvedValue(editable);
+    auth.restore.mockResolvedValue(signedIn(editable));
     render(<HomepageAccount />);
     const dialog = await openAccount();
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete Account" }));
@@ -252,7 +254,7 @@ describe("desktop account profile", () => {
   });
 
   it("deletes only after the emailed code is verified, then returns the launcher to guest", async () => {
-    auth.restoreSession.mockResolvedValue(editable);
+    auth.restore.mockResolvedValue(signedIn(editable));
     auth.beginReverification.mockResolvedValue(reverification);
     auth.completeReverification.mockResolvedValue(undefined);
     auth.deleteAccount.mockResolvedValue(undefined);
@@ -276,7 +278,7 @@ describe("desktop account profile", () => {
   });
 
   it("keeps the account when the code is wrong and never asks Clerk to delete it", async () => {
-    auth.restoreSession.mockResolvedValue(editable);
+    auth.restore.mockResolvedValue(signedIn(editable));
     auth.beginReverification.mockResolvedValue(reverification);
     auth.completeReverification.mockRejectedValue(new Error("That code is not correct. Please try again."));
     render(<HomepageAccount />);
@@ -292,7 +294,7 @@ describe("desktop account profile", () => {
   });
 
   it("sends the code again to the same verification", async () => {
-    auth.restoreSession.mockResolvedValue(editable);
+    auth.restore.mockResolvedValue(signedIn(editable));
     auth.beginReverification.mockResolvedValue(reverification);
     auth.resendReverificationCode.mockResolvedValue(reverification);
     render(<HomepageAccount />);
@@ -303,7 +305,7 @@ describe("desktop account profile", () => {
   });
 
   it("keeps the account and explains when Clerk refuses the deletion", async () => {
-    auth.restoreSession.mockResolvedValue(editable);
+    auth.restore.mockResolvedValue(signedIn(editable));
     auth.beginReverification.mockResolvedValue(reverification);
     auth.completeReverification.mockResolvedValue(undefined);
     auth.deleteAccount.mockRejectedValue(new Error("Your account could not be deleted. Please try again."));

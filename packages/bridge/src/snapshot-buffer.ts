@@ -113,6 +113,11 @@ export function snapshotTickIndex(buf: Float32Array): number | null {
   return readSnapshotHeader(buf).tickIndex;
 }
 
+/** The snapshot's frame id, or null when the buffer is unpublished; reads the one header field, building no header. */
+export function snapshotFrameId(buf: Float32Array): number | null {
+  return isPublishedSnapshot(buf) ? floatBitsToU32(buf[2]!) : null;
+}
+
 /** A worker host's input tick after a snapshot: its tickIndex once published, so throttled stats cannot drop sticks. */
 export function applySnapshotTick(previous: number, buf: Float32Array): number {
   return snapshotTickIndex(buf) ?? previous;

@@ -83,14 +83,17 @@ vi.mock("../services/play-asset-sources", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../services/play-asset-sources")>()),
   requiredProjectAssets: () => [],
   playDocumentOverrides: () => new Map(),
-  acquirePlayAssetSources: async () => ({
-    game: { scenes: new Map([[host.scene.header.guid, createDefaultScene()]]), scripts: [], decodedPayloads: new Map() },
-    content: {},
-    sources: {},
-    diagnostics: [],
-    required: [],
-    audioChunks: new Map(),
-    release: () => {},
+  acquirePlayStartupSources: async () => ({
+    prepared: {
+      game: { scenes: new Map([[host.scene.header.guid, createDefaultScene()]]), scripts: [], decodedPayloads: new Map() },
+      content: {},
+      sources: {},
+      diagnostics: [],
+      required: [],
+      audioChunks: new Map(),
+      release: () => {},
+    },
+    persistent: null,
   }),
 }));
 vi.mock("./use-play-content", async (importOriginal) => ({

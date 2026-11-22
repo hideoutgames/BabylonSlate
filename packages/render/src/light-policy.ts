@@ -4,6 +4,7 @@ import type { Light } from "@babylonjs/core/Lights/light";
 import { RectAreaLight } from "@babylonjs/core/Lights/rectAreaLight";
 import { ShadowLight } from "@babylonjs/core/Lights/shadowLight";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
 
 
@@ -21,6 +22,8 @@ const scratchLightPosition = new Vector3();
 const scratchCandidates: Light[] = [];
 const scratchCandidateSet = new Set<Light>();
 const scratchDistances = new Map<Light, number>();
+/** The parents one ranking refreshed. */
+const refreshedParents = new Set<Node>();
 const scratchLights: Light[] = [];
 const scratchAuthored: boolean[] = [];
 
@@ -227,7 +230,12 @@ export function sortLightsByAdmission(
       ) {
         // Excluded children never reach normal shader binding. Refresh parented
         // positions before either quality or shader-capacity selection.
-        light.parent?.computeWorldMatrix(true);
+        // Once per parent: lights sharing one (an actor's lamps) read the same refreshed matrix.
+        const parent = light.parent;
+        if (parent && !refreshedParents.has(parent)) {
+          refreshedParents.add(parent);
+          parent.computeWorldMatrix(true);
+        }
         if (light instanceof ShadowLight) light.computeTransformedInformation();
       }
       const squared =
@@ -249,5 +257,6 @@ export function sortLightsByAdmission(
     );
   } finally {
     distances.clear();
+    refreshedParents.clear();
   }
 }

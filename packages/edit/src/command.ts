@@ -17,10 +17,13 @@ export interface EditCommand<TDoc = unknown> {
    */
   coalesce?(next: EditCommand<TDoc>): EditCommand<TDoc> | undefined;
   /**
-   * Snapshot cost in bytes; required in both directions for history
-   * admission. Commands measure it lazily: only Undo history reads it.
+   * Serialized size of what the command retains, which Undo history charges
+   * to its byte budget. Every command declares it, so none is free history.
+   * Commands measure it lazily (only Undo history reads it), memoise it, and
+   * carry measured parts through `invert` and `coalesce` instead of
+   * re-serializing them.
    */
-  readonly byteSize?: number;
+  readonly byteSize: number;
 }
 
 export interface StackEntry<TDoc> {

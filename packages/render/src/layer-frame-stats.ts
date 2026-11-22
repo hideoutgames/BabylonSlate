@@ -26,10 +26,20 @@ export interface LayerFrameStats {
   uploads: number;
   /** The layer work done before the world draws: its time, its uploads and copies, and its framebuffer changes. */
   beforeWorld: { ms: number; uploads: number; targetSwitches: number };
+  /**
+   * What reached the backbuffer (the default framebuffer) from the work before the world to the end of the layer pass,
+   * the world's own clears included (`backbuffer-depth-tracker.ts`): its clears, those that cleared depth or stencil,
+   * and the layer depth-stencil clears left out because the backbuffer already held cleared depth and stencil. All
+   * zero on an Engine without a WebGL context.
+   */
+  backbuffer: { clears: number; depthClears: number; elided: number };
 }
 
 export function emptyLayerFrameStats(): LayerFrameStats {
-  return { scenes: 0, ms: 0, batchMs: 0, clears: 0, depthClears: 0, targetSwitches: 0, uploads: 0, beforeWorld: { ms: 0, uploads: 0, targetSwitches: 0 } };
+  return {
+    scenes: 0, ms: 0, batchMs: 0, clears: 0, depthClears: 0, targetSwitches: 0, uploads: 0, beforeWorld: { ms: 0, uploads: 0, targetSwitches: 0 },
+    backbuffer: { clears: 0, depthClears: 0, elided: 0 },
+  };
 }
 
 /** Copies `from`'s counts into `to` (a new one when not given) and returns it. */
@@ -38,6 +48,8 @@ export function copyLayerFrameStats(from: LayerFrameStats, to: LayerFrameStats =
   to.targetSwitches = from.targetSwitches; to.uploads = from.uploads;
   to.beforeWorld.ms = from.beforeWorld.ms; to.beforeWorld.uploads = from.beforeWorld.uploads;
   to.beforeWorld.targetSwitches = from.beforeWorld.targetSwitches;
+  to.backbuffer.clears = from.backbuffer.clears; to.backbuffer.depthClears = from.backbuffer.depthClears;
+  to.backbuffer.elided = from.backbuffer.elided;
   return to;
 }
 

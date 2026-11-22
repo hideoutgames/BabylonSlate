@@ -57,8 +57,8 @@ export function NativeProfileFields({
   const fileInput = useRef<HTMLInputElement>(null);
   const pickerHold = useRef<(() => void) | null>(null);
   const holdSessionCheck = profile.holdSessionCheck;
-  // Returning from the system picker must not run the foreground session
-  // check that hides the app (mobile) before the change event delivers the file.
+  // Returning from the system picker must not run the mobile session check,
+  // which could sign out and unmount the input before the change event delivers the file.
   useEffect(() => {
     const input = fileInput.current;
     const cancelled = () => release(pickerHold);
@@ -258,8 +258,8 @@ export function NativeDeleteAccount({
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<"send" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Reading the code in a mail app must not run the foreground session check
-  // that hides the app (mobile) and would drop this dialog.
+  // Reading the code in a mail app must not run the mobile session check,
+  // which could sign out and drop this dialog.
   const codeHold = useRef<(() => void) | null>(null);
   useEffect(() => () => release(codeHold), []);
   if (!profile.canDelete) return null;

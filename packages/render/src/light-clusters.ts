@@ -96,9 +96,78 @@ function clusterReaches(tx: number, ty: number, s: number, x: number, y: number,
   return dx * dx + dy * dy + dz * dz < r * r;
 }
 
-/** Whether a cluster lies wholly behind a plane test: at every corner `f(v) + tolerance * (reach + |v|) < 0`. */
-function cornerBehind(ax: number, ay: number, az: number, b: number, tolerance: number, reach: number, x: number, y: number, z: number): boolean {
-  return ax * x + ay * y + az * z + b + tolerance * (reach + Math.sqrt(x * x + y * y + z * z)) < 0;
+/** How far past a spot light's cone sphere its clusters reach, per unit of range: far wider than float32 rounding. */
+const CONE_TOLERANCE = 1e-4;
+/** Ranges beyond this keep the apex sphere: a cone sphere's centre would sit so far out that a cluster test loses it. */
+const CONE_RANGE_LIMIT = 1e5;
+
+/**
+ * The smallest sphere holding what a spot light lights (`out`: centre and radius): the points within `range` of its
+ * apex (x, y, z) and inside its cone of half-angle cosine `cosHalf` about the unit `direction`, beyond which the shader
+ * adds exactly zero. A cone narrower than a right angle across (cos > 1/√2) is held by the sphere through its apex and
+ * its rim, centred range / (2 cos) along its axis; a wider one by the sphere on its rim's circle, centred range · cos
+ * along its axis with radius range · sin. A cone of a half-angle of 90° or more, or an unbounded range, keeps the sphere
+ * about the apex. The radius carries `CONE_TOLERANCE`, so the clusters stay conservative.
+ */
+export function spotClusterSphere(x: number, y: number, z: number, direction: { x: number; y: number; z: number },
+  range: number, cosHalf: number, out: { x: number; y: number; z: number; radius: number }): void {
+  if (!(cosHalf > 0) || !(range < CONE_RANGE_LIMIT)) {
+    out.x = x; out.y = y; out.z = z; out.radius = range;
+    return;
+  }
+  const wide = cosHalf <= Math.SQRT1_2;
+  const along = wide ? range * cosHalf : range / (2 * cosHalf);
+  out.x = x + direction.x * along;
+  out.y = y + direction.y * along;
+  out.z = z + direction.z * along;
+  out.radius = (wide ? range * Math.sqrt(Math.max(0, 1 - cosHalf * cosHalf)) : along) + range * CONE_TOLERANCE;
+}
+
+/** The cluster grid's vertices per axis: every tile edge, and every slice's near depth. */
+const GRID_X = CLUSTER_TILES_X + 1;
+const GRID_Y = CLUSTER_TILES_Y + 1;
+const GRID_LEVEL = GRID_X * GRID_Y;
+/**
+ * A build's cluster corners, which neighbouring clusters share, for the rect lights' plane tests: each corner's view
+ * space position and its length, by slice depth, then tile edge y, then x; and for the last slice, which has no far
+ * end, each of its edges' run per unit of depth and that run's length. They depend on the view alone, so a build
+ * computes them once (`gridBuilt`), at its first rect light, and every rect light then tests each shared corner once.
+ */
+const gridPositions = new Float64Array(CLUSTER_SLICES * GRID_LEVEL * 3);
+const gridLengths = new Float64Array(CLUSTER_SLICES * GRID_LEVEL);
+const runDirections = new Float64Array(GRID_LEVEL * 2);
+const runLengths = new Float64Array(GRID_LEVEL);
+/** Per corner, and per last-slice edge, whether the rect light being marked has it behind its plane. */
+const cornerBehind = new Uint8Array(CLUSTER_SLICES * GRID_LEVEL);
+const runBehind = new Uint8Array(GRID_LEVEL);
+let gridBuilt = false;
+
+/** Tile edge `index` of `count` tiles: a tile's high edge is the next one's low edge, computed alike. */
+function tileEdge(edges: Float64Array, count: number, index: number): number {
+  return index < count ? edges[index * 2]! : edges[(count - 1) * 2 + 1]!;
+}
+
+function buildGrid(perspective: boolean): void {
+  gridBuilt = true;
+  for (let iy = 0; iy < GRID_Y; iy++)
+    for (let ix = 0; ix < GRID_X; ix++) {
+      const ex = tileEdge(tileEdgesX, CLUSTER_TILES_X, ix);
+      const ey = tileEdge(tileEdgesY, CLUSTER_TILES_Y, iy);
+      const edge = iy * GRID_X + ix;
+      const dx = perspective ? ex : 0, dy = perspective ? ey : 0;
+      runDirections[edge * 2] = dx;
+      runDirections[edge * 2 + 1] = dy;
+      runLengths[edge] = Math.sqrt(dx * dx + dy * dy + 1);
+      for (let level = 0; level < CLUSTER_SLICES; level++) {
+        const z = sliceDepths[level]!;
+        const x = perspective ? ex * z : ex, y = perspective ? ey * z : ey;
+        const at = level * GRID_LEVEL + edge;
+        gridPositions[at * 3] = x;
+        gridPositions[at * 3 + 1] = y;
+        gridPositions[at * 3 + 2] = z;
+        gridLengths[at] = Math.sqrt(x * x + y * y + z * z);
+      }
+    }
 }
 
 /**
@@ -106,8 +175,9 @@ function cornerBehind(ax: number, ay: number, az: number, b: number, tolerance: 
  * is exactly zero behind it, so a cluster wholly behind may drop it. The plane in view space is f(v) = a·v + b (f >= 0
  * in front), through the view's inverse, so a mirrored view keeps its sides. A perspective cluster is the frustum piece
  * between its slice's depths and its tile's edges, an orthographic one the box between them; f plus the tolerance is
- * convex, so its corners bound it. The last slice has no far end: it is behind only where each of its edges also runs
- * away from the plane. A projection of another form marks every cluster.
+ * convex, so its corners bound it: a cluster is behind when at every corner `f(v) + tolerance * (reach + |v|) < 0`.
+ * The last slice has no far end: it is behind only where each of its edges also runs away from the plane. A projection
+ * of another form marks every cluster. Each shared corner is tested once per light (`buildGrid`).
  */
 function markRect(masks: Uint32Array, word: number, flag: number, light: ClusterLight, perspective: boolean, standard: boolean): void {
   const inv = inverseView.m;
@@ -117,26 +187,32 @@ function markRect(masks: Uint32Array, word: number, flag: number, light: Cluster
   const az = inv[8]! * nx + inv[9]! * ny + inv[10]! * nz;
   const b = inv[12]! * nx + inv[13]! * ny + inv[14]! * nz - (nx * light.x + ny * light.y + nz * light.z);
   const tolerance = PLANE_TOLERANCE * Math.sqrt(ax * ax + ay * ay + az * az);
+  if (!standard || !(tolerance > 0)) {
+    for (let cluster = 0; cluster < CLUSTER_COUNT; cluster++) masks[cluster * 2 + word] = (masks[cluster * 2 + word]! | flag) >>> 0;
+    return;
+  }
   Vector3.TransformCoordinatesFromFloatsToRef(light.x, light.y, light.z, relativeView, center);
   const v = relativeView.m;
   const reach = 1 + center.length() + Math.sqrt(v[12]! * v[12]! + v[13]! * v[13]! + v[14]! * v[14]!);
+  if (!gridBuilt) buildGrid(perspective);
+  for (let at = 0; at < cornerBehind.length; at++) {
+    const x = gridPositions[at * 3]!, y = gridPositions[at * 3 + 1]!, z = gridPositions[at * 3 + 2]!;
+    cornerBehind[at] = ax * x + ay * y + az * z + b + tolerance * (reach + gridLengths[at]!) < 0 ? 1 : 0;
+  }
+  // The edge's direction: f must not rise along it.
+  for (let edge = 0; edge < GRID_LEVEL; edge++)
+    runBehind[edge] = ax * runDirections[edge * 2]! + ay * runDirections[edge * 2 + 1]! + az + tolerance * runLengths[edge]! < 0 ? 1 : 0;
   for (let s = 0; s < CLUSTER_SLICES; s++) {
     const last = s === CLUSTER_SLICES - 1;
-    const z0 = sliceDepths[s]!;
-    const z1 = last ? z0 : sliceDepths[s + 1]!;
+    const near = s * GRID_LEVEL;
+    const far = (s + 1) * GRID_LEVEL;
     for (let ty = 0; ty < CLUSTER_TILES_Y; ty++)
       for (let tx = 0; tx < CLUSTER_TILES_X; tx++) {
-        let behind = standard && tolerance > 0;
-        for (let corner = 0; behind && corner < 8; corner++) {
-          const ex = tileEdgesX[tx * 2 + (corner & 1)]!;
-          const ey = tileEdgesY[ty * 2 + ((corner >> 1) & 1)]!;
-          const z = corner & 4 ? z1 : z0;
-          if (corner & 4 && last) {
-            // The edge's direction: f must not rise along it.
-            const dx = perspective ? ex : 0, dy = perspective ? ey : 0;
-            behind = ax * dx + ay * dy + az + tolerance * Math.sqrt(dx * dx + dy * dy + 1) < 0;
-          } else behind = cornerBehind(ax, ay, az, b, tolerance, reach, perspective ? ex * z : ex, perspective ? ey * z : ey, z);
-        }
+        const e00 = ty * GRID_X + tx, e10 = e00 + 1, e01 = e00 + GRID_X, e11 = e01 + 1;
+        const behind = cornerBehind[near + e00]! & cornerBehind[near + e10]! & cornerBehind[near + e01]! & cornerBehind[near + e11]! &
+          (last
+            ? runBehind[e00]! & runBehind[e10]! & runBehind[e01]! & runBehind[e11]!
+            : cornerBehind[far + e00]! & cornerBehind[far + e10]! & cornerBehind[far + e01]! & cornerBehind[far + e11]!);
         if (behind) continue;
         const cluster = (s * CLUSTER_TILES_Y + ty) * CLUSTER_TILES_X + tx;
         masks[cluster * 2 + word] = (masks[cluster * 2 + word]! | flag) >>> 0;
@@ -191,6 +267,8 @@ export function buildLightClusters(
     : p[15] === 1 && p[1] === 0 && p[3] === 0 && p[4] === 0 && p[7] === 0 && p[8] === 0 && p[9] === 0;
   fillTileEdges(tileEdgesX, CLUSTER_TILES_X, p[0]!, perspective ? p[8]! : p[12]!);
   fillTileEdges(tileEdgesY, CLUSTER_TILES_Y, p[5]!, perspective ? p[9]! : p[13]!);
+  // Rect lights test the grid of this view: its first rect light builds it.
+  gridBuilt = false;
   for (const light of lights) {
     const bit = light.kind === "point" ? light.index : light.kind === "spot" ? CLUSTER_SPOT_BIT + light.index : CLUSTER_RECT_BIT + light.index;
     const word = light.kind === "point" ? 0 : 1;

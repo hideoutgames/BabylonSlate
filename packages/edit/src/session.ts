@@ -10,46 +10,118 @@ import {
 /** Default per-document Undo memory limit (16 MB). */
 export const DEFAULT_EDIT_BYTE_BUDGET = 16 * 1024 * 1024;
 
+/**
+ * Append-only part storage that the batches of one gesture share.
+ * `inverses[i]` is `items[i].invert()`, filled as batches are inverted.
+ * `exposed` is set once a caller holds `items` itself
+ * (`CommandBatch.commands`); later appends then copy, so an array handed
+ * out never changes.
+ */
+interface BatchParts<TDoc> {
+  items: EditCommand<TDoc>[];
+  inverses: EditCommand<TDoc>[];
+  exposed: boolean;
+}
+
 /** One editor operation may contain several journalled deltas. */
 export class CommandBatch<TDoc> implements EditCommand<TDoc> {
   readonly type = "edit.batch";
-  readonly commands: readonly EditCommand<TDoc>[];
   /** A keyed batch folds the next batch of its gesture into one Undo step. */
   readonly mergeKey?: string;
-  #byteSize?: number;
+  /** This batch runs the first `#length` parts; a coalesced batch extends the same storage. */
+  #parts: BatchParts<TDoc>;
+  #length: number;
+  /** Set on an inverse: it runs `#parts.inverses` last to first, and costs what `#forward` costs. */
+  #forward?: CommandBatch<TDoc>;
+  #sliced?: readonly EditCommand<TDoc>[];
+  /** Measured size of the first `#measuredLength` parts. */
+  #measuredBytes = 0;
+  #measuredLength = 0;
 
   constructor(commands: readonly EditCommand<TDoc>[], mergeKey?: string) {
-    this.commands = [...commands];
+    this.#parts = { items: [...commands], inverses: [], exposed: false };
+    this.#length = commands.length;
     this.mergeKey = mergeKey;
   }
 
-  /** Sum of the parts' sizes, measured on first read and memoised. */
+  get commands(): readonly EditCommand<TDoc>[] {
+    if (this.#forward) {
+      return (this.#sliced ??= this.#parts.inverses.slice(0, this.#length).reverse());
+    }
+    if (this.#length === this.#parts.items.length) {
+      this.#parts.exposed = true;
+      return this.#parts.items;
+    }
+    return (this.#sliced ??= this.#parts.items.slice(0, this.#length));
+  }
+
+  /**
+   * Sum of the parts' sizes. Parts are measured once: a coalesced batch
+   * starts from its predecessor's measured total and adds only the new parts.
+   * An inverse retains the same snapshots as its forward batch, so it costs
+   * the same.
+   */
   get byteSize(): number {
-    return (this.#byteSize ??= this.commands.reduce(
-      (sum, command) => sum + (command.byteSize ?? 0),
-      0,
-    ));
+    if (this.#forward) return this.#forward.byteSize;
+    const items = this.#parts.items;
+    for (; this.#measuredLength < this.#length; this.#measuredLength++) {
+      this.#measuredBytes += items[this.#measuredLength]!.byteSize;
+    }
+    return this.#measuredBytes;
   }
 
   apply(doc: TDoc): TDoc {
-    return this.commands.reduce(
-      (current, command) => command.apply(current),
-      doc,
-    );
+    let current = doc;
+    if (this.#forward) {
+      const inverses = this.#parts.inverses;
+      for (let index = this.#length - 1; index >= 0; index--) current = inverses[index]!.apply(current);
+      return current;
+    }
+    const items = this.#parts.items;
+    for (let index = 0; index < this.#length; index++) current = items[index]!.apply(current);
+    return current;
   }
 
+  /**
+   * The parts' inverses, last part first. Each part is inverted once for the
+   * shared storage, so inverting a coalesced batch inverts only its new parts.
+   */
   invert(): EditCommand<TDoc> {
-    return new CommandBatch(
-      [...this.commands].reverse().map((command) => command.invert()),
-    );
+    if (this.#forward) return this.#forward;
+    const { items, inverses } = this.#parts;
+    while (inverses.length < this.#length) inverses.push(items[inverses.length]!.invert());
+    const inverse = new CommandBatch<TDoc>([]);
+    inverse.#parts = this.#parts;
+    inverse.#length = this.#length;
+    inverse.#forward = this;
+    return inverse;
   }
 
   /** One batch running both, so Undo reverts and Redo replays the whole gesture. */
   coalesce(next: EditCommand<TDoc>): EditCommand<TDoc> | undefined {
-    if (this.mergeKey === undefined || !(next instanceof CommandBatch) || next.mergeKey !== this.mergeKey) {
+    if (
+      this.#forward || this.mergeKey === undefined ||
+      !(next instanceof CommandBatch) || next.mergeKey !== this.mergeKey
+    ) {
       return undefined;
     }
-    return new CommandBatch([...this.commands, ...next.commands], this.mergeKey);
+    const added = next.commands;
+    // Extend the shared storage in place unless another batch already
+    // extended it past this one or a caller holds the array.
+    const parts = this.#length === this.#parts.items.length && !this.#parts.exposed
+      ? this.#parts
+      : {
+          items: this.#parts.items.slice(0, this.#length),
+          inverses: this.#parts.inverses.slice(0, this.#length),
+          exposed: false,
+        };
+    for (const command of added) parts.items.push(command);
+    const merged = new CommandBatch<TDoc>([], this.mergeKey);
+    merged.#parts = parts;
+    merged.#length = this.#length + added.length;
+    merged.#measuredBytes = this.#measuredBytes;
+    merged.#measuredLength = this.#measuredLength;
+    return merged;
   }
 }
 

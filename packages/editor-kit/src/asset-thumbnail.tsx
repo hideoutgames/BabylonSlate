@@ -1,12 +1,13 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { isCheckeredThumbnailType, isThumbnailableAssetType, thumbnailMime } from "@haptic/assets";
 import { cn } from "@haptic/ui/lib/utils";
+import { useThumbnailVersion, type ThumbnailVersions } from "./thumbnail-versions";
 import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 
-/** Reads asset thumbnails for closed pickers: the project's stored thumbnail bytes and a version that changes when one is rewritten. */
+/** Reads asset thumbnails for closed pickers: the project's stored thumbnail bytes and their versions. */
 export type AssetThumbnailApi = {
   load: (guid: string) => Promise<Uint8Array | null>;
-  versions: Readonly<Record<string, number>>;
+  versions: ThumbnailVersions;
 };
 
 const AssetThumbnailContext = createContext<AssetThumbnailApi | null>(null);
@@ -26,7 +27,7 @@ export const PickerAssetGuidContext = createContext<string | null>(null);
 export function useAssetThumbnailUrl(guid: string | null | undefined): string | null {
   const api = useContext(AssetThumbnailContext);
   const load = api?.load;
-  const version = guid ? (api?.versions[guid] ?? 0) : 0;
+  const version = useThumbnailVersion(api?.versions, guid);
   const key = guid && load ? `${guid}:${version}` : null;
   const [shown, setShown] = useState<{ key: string; url: string } | null>(null);
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { defaultPlayerIndexHtml } from "@haptic/exporter";
 import { KTX2_TRANSCODER_RELATIVE_FILES, GLTF_MESH_DECODER_RELATIVE_FILES } from "@haptic/assets";
-import { playerHostBase } from "../lib/player-host-url";
+import { playerHostBase } from "../lib/player-host-base";
 
 const PLAYER_CANDIDATES = [
   "player-files.json",
