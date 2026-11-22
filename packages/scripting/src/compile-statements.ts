@@ -3,7 +3,7 @@ import type { CodegenContext, NodeDefinition } from "./node-registry";
 import { defaultValueLiteral } from "./types";
 import { jsIdent } from "./compile-events";
 import { deadReference, reportDeadReference, subjectPinsOf } from "./compile-pin-values";
-import { emitBody, traceProbe, type CodegenState } from "./compile-codegen-state";
+import { accessLocation, emitBody, traceProbe, type CodegenState } from "./compile-codegen-state";
 import { inputExpression, makeCtx, tracedRead } from "./compile-expressions";
 
 /** An exec node runs: the followed instance records it, and a breakpoint on it stops the session. */
@@ -41,7 +41,7 @@ export function emitStatementNode(
     emitBody(s, `  ${slot} = ${tracedRead(s, node, subject.pin, inputExpression(s, node, subject.pin))};`, anchor);
   }
   for (const subject of subjects) {
-    emitBody(s, `  ${reportDeadReference(subject, bound.get(subject.pin.id)!)}`, anchor);
+    emitBody(s, `  ${reportDeadReference(subject, bound.get(subject.pin.id)!, accessLocation(s, node))}`, anchor);
   }
   const ctx = makeCtx(s, node, flow?.continuation, flow?.branch, bound, flow?.runOutput);
   if (def.latent) s.isAsync = true;

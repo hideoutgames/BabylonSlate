@@ -803,7 +803,7 @@ export function MaterialPreviewSurface({
       <div className="relative flex h-full min-h-0 flex-col">
         {/* Frames the canvas so a node's value is never taken for the Material. */}
         {previewedNode ? <div className="pointer-events-none absolute inset-0 z-10 ring-2 ring-inset ring-(--warning)" aria-hidden="true" /> : null}
-        {domain !== "particle" && domain !== "text" && domain !== "decal" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+        {domain !== "particle" && domain !== "text" && domain !== "decal" && domain !== "ui" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto toolbar-island flex-wrap"
             data-testid="material-preview-overlay"
@@ -855,9 +855,12 @@ export function MaterialPreviewSurface({
         />
         {/* The zoom buttons sit in the corner, above the error line while one shows. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-end">
-          <div className="mb-3 mr-3">
-            <ViewportZoomControls drive={editing.previewZoomDrive} testId="material-preview-zoom-controls" />
-          </div>
+          {/* A User Interface Material fills the view on a flat quad that cannot zoom. */}
+          {domain !== "ui" ? (
+            <div className="mb-3 mr-3">
+              <ViewportZoomControls drive={editing.previewZoomDrive} testId="material-preview-zoom-controls" />
+            </div>
+          ) : null}
           {editing.previewState.lastError ? (
             <p
               className="pointer-events-auto w-full px-3 py-1 text-xs text-destructive"
@@ -923,6 +926,7 @@ function MaterialDocumentDetails() {
         { value: "particle", label: "Particle" },
         { value: "text", label: "Text" },
         { value: "decal", label: "Decal" },
+        { value: "ui", label: "User Interface" },
       ],
       onChange: (value) =>
         commit(setMaterialDomain(document, parseMaterialDomain(value))),
@@ -980,8 +984,10 @@ function MaterialDocumentDetails() {
   if ((document.domain !== "surface" && document.domain !== "landscape")) {
     // Particle emitters own blending (their Render module) and a post-process pass replaces the image, so neither has
     // Blend Mode. A decal draws a box's far faces over the surfaces in it, and its normal is the surface's: no Two
-    // Sided or Default Normals.
-    const hidden = document.domain === "decal" ? ["twoSided", "defaultNormals"] : ["shadingModel", "blendMode", "twoSided", "defaultNormals"];
+    // Sided or Default Normals. A User Interface Material is always unlit and two-sided; it shows only its Blend Mode.
+    const hidden = document.domain === "decal" ? ["twoSided", "defaultNormals"]
+      : document.domain === "ui" ? ["shadingModel", "twoSided", "defaultNormals"]
+        : ["shadingModel", "blendMode", "twoSided", "defaultNormals"];
     for (let i = rows.length - 1; i >= 0; i--) if (hidden.includes(rows[i]!.id)) rows.splice(i, 1);
   }
   if ((document.domain === "surface" || document.domain === "landscape" || document.domain === "decal") && document.blendMode === "masked") {

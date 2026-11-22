@@ -159,12 +159,12 @@ function fakeLibraryBridge(): ElectronLibraryBridge & { files: Map<string, Uint8
 describe("ElectronLibraryStorageAdapter", () => {
   it("keeps each library's files in its own main-process scope", async () => {
     const bridge = fakeLibraryBridge();
-    const templates = new ElectronLibraryStorageAdapter("__slate_templates__", bridge);
-    const plugins = new ElectronLibraryStorageAdapter("__slate_engine_plugins__", bridge);
-    expect(await templates.openDocumentsProject("__slate_templates__")).toMatchObject({ name: "__slate_templates__" });
+    const templates = new ElectronLibraryStorageAdapter("__haptic_templates__", bridge);
+    const plugins = new ElectronLibraryStorageAdapter("__haptic_engine_plugins__", bridge);
+    expect(await templates.openDocumentsProject("__haptic_templates__")).toMatchObject({ name: "__haptic_templates__" });
     await templates.writeBinary("Starter.zip", new Uint8Array([1, 2, 3]));
 
-    expect([...bridge.files.keys()]).toEqual(["__slate_templates__/Starter.zip"]);
+    expect([...bridge.files.keys()]).toEqual(["__haptic_templates__/Starter.zip"]);
     expect(await templates.readBinary("Starter.zip")).toEqual(new Uint8Array([1, 2, 3]));
     expect((await templates.readBinaryRange("Starter.zip", 1, 2)).bytes).toEqual(new Uint8Array([2, 3]));
     expect(await plugins.exists("Starter.zip")).toBe(false);
@@ -174,7 +174,7 @@ describe("ElectronLibraryStorageAdapter", () => {
 
   it("refuses project folder operations and other folder names", async () => {
     const bridge = fakeLibraryBridge();
-    const storage = new ElectronLibraryStorageAdapter("__slate_templates__", bridge);
+    const storage = new ElectronLibraryStorageAdapter("__haptic_templates__", bridge);
     await expect(storage.openDocumentsProject("Game")).rejects.toThrow("cannot open, list or delete project folders");
     await expect(storage.pickProjectFolder()).rejects.toThrow("cannot open, list or delete project folders");
     await expect(storage.listProjects()).rejects.toThrow("cannot open, list or delete project folders");
@@ -186,7 +186,7 @@ describe("ElectronLibraryStorageAdapter", () => {
   });
 
   it("reports a missing desktop library bridge", async () => {
-    const storage = new ElectronLibraryStorageAdapter("__slate_templates__", null);
+    const storage = new ElectronLibraryStorageAdapter("__haptic_templates__", null);
     await expect(storage.exists("Starter.zip")).rejects.toThrow("bridge is not installed");
   });
 });

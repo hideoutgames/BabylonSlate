@@ -12,6 +12,7 @@ import { MaterialLibrary } from "./material-library";
 import { applySceneToBabylonScene, editorMeshName } from "./scene-loader";
 import { authoredMaterialInstancePreparation } from "./authored-material-instance";
 import type { MeshAssetContext } from "./mesh-assets";
+import { isUnlitMaterial } from "./unlit-material";
 import { nodeBlockName } from "./test-support/material-node-blocks";
 
 const disposers: Array<() => void> = [];
@@ -107,6 +108,28 @@ describe("saved component material instances", () => {
     await f.sync.whenEditorModelsReady();
     expect(f.sync.meshForActor("actor")!.material).not.toBe(privateMaterial);
     expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["ui", "surface"] as const)("gives a 2D Material's saved values a private %s Material only in the User Interface domain", async (domain) => {
+    const document = createDefaultMaterialDocument("Widget", domain);
+    document.nodes.push({ id: "fade", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Fade", value: [0.5] } });
+    document.edges.push({ id: "fade-output", sourceNodeId: "fade", sourcePinId: "out", targetNodeId: "output",
+      targetPinId: domain === "ui" ? "opacity" : "roughness" });
+    const f = fixture(document);
+    f.sync.apply({ ...createDefaultScene(), actors: [createActor("actor", "Banner", { classId: "SceneLayerActor", components: [{
+      id: "banner", classId: "2DMaterialComponent", properties: { materialGuid: "material", hitTest: "ignore" },
+      materialInstance: { materialGuid: "material", parameters: { Fade: { kind: "float", value: 0.2 } } },
+    }] })] });
+    await f.sync.whenEditorModelsReady();
+    const material = f.sync.meshForActor("actor")!.material;
+    if (domain === "ui") {
+      expect(material).not.toBe(f.library.materialFor(f.scene, "material", { unlit: true }));
+      expect(((material as NodeMaterial).getBlockByName(nodeBlockName(document, "fade")) as InputBlock).value).toBe(0.2);
+    } else {
+      // Not drawn, and no private copy made for it: the plane keeps its unlit look.
+      expect(isUnlitMaterial(material)).toBe(true);
+      expect(f.scene.materials.filter((entry) => entry.metadata?.materialDomain === "surface")).toHaveLength(1);
+    }
   });
 
   it("reapplies saved values on a full scene load and ignores values for a different assignment", async () => {

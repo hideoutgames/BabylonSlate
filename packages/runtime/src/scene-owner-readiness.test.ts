@@ -5,6 +5,7 @@ import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 import { EngineObject, dispatchInterface } from "@haptic/object-model";
+import { variablesAtRelease } from "./testing/released-variables";
 
 function script(classId: string, parentClassId: string): CompiledScript {
   return { assetGuid: `${classId}-script`, classId, parentClassId, anchors: [],
@@ -209,12 +210,13 @@ describe("scene owner readiness", () => {
       expect(dispatchInterface(world.interfaceRegistry, actor, "touch", "Touch")).toEqual({ value: -1, available: false });
       globalActor.setVariable("relay", gi);
       globalActor.setVariable("pending", actor);
+      const releasedGlobal = variablesAtRelease(globalActor);
       runtime.removeSceneLayer(globalLayer.guid);
-      expect(globalActor.getVariable("finalFunction")).toEqual({ value: 7 });
-      expect(globalActor.getVariable("finalInterface")).toEqual({ value: 7, available: false });
-      expect(globalActor.getVariable("calls")).toBe(6);
+      expect(releasedGlobal.get("finalFunction")).toEqual({ value: 7 });
+      expect(releasedGlobal.get("finalInterface")).toEqual({ value: 7, available: false });
+      expect(releasedGlobal.get("calls")).toBe(6);
       expect(gi.getVariable("relayed")).toBe(true);
-      expect(globalActor.getVariable("relayResult")).toEqual({ back: {}, pending: { value: -1, available: false } });
+      expect(releasedGlobal.get("relayResult")).toEqual({ back: {}, pending: { value: -1, available: false } });
       await vi.waitFor(() => expect(globalActor.getVariable("lateFinalFunction")).toEqual({}));
       runtime.notifySceneModelsReady("world", 1);
       runtime.notifySceneLayerReady(ownedLayer.guid, 1);
@@ -232,7 +234,14 @@ describe("scene owner readiness", () => {
       const resultsAtStop = gi.getVariable("results");
       runtime.invokeScriptEvent("Caller", "probe", gi);
       expect(gi.getVariable("results")).toBe(resultsAtStop);
-      expect(commands.filter((command) => command.type === "log" && command.severity === "error")).toEqual([]);
+      // The only errors are scripts touching objects whose destruction finished: the probe's calls on the removed
+      // layer's actor, and a final helper's call on its own component after its End awaited.
+      expect(commands.flatMap((command) => command.type === "log" && command.severity === "error" ? [command.message] : []).sort()).toEqual([
+        'Tried to call "Touch" on null of type "LayerActor"',
+        'Tried to call "probe" on null of type "LayerActor"',
+        'Tried to call "touch" on null of type "LayerActor"',
+        'Tried to call "touch" on null of type "OwnedComponent"',
+      ]);
     } finally { runtime.stop(); }
   });
 

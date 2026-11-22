@@ -4,7 +4,7 @@ import { newGuid } from "./guid-result";
 /** Persisted data assets. Identity and display names live in the .hasset header. */
 export interface DataFieldSnapshot {
   /** Stable field identity, retained across renames. */
-  id?: string;
+  id: string;
   name: string;
   typeId: string;
   typeClassId?: string;
@@ -17,14 +17,6 @@ export interface DataFieldSnapshot {
   keyFields?: DataFieldSnapshot[];
   /** Asset and Class fields only: `"hard"` loads the reference with the asset that owns the value. Missing is Soft. */
   loading?: "hard";
-}
-
-/**
- * A field's stable identity: its persisted `id`, or `legacy:<name>` for a field declared without one (the engine's
- * built-in Structures). Editors persist the derived id before renaming such a field.
- */
-export function dataFieldIdentity(field: Pick<DataFieldSnapshot, "id" | "name">): string {
-  return field.id || `legacy:${field.name}`;
 }
 
 /** Independent authoring schema; no Structure asset is required. */
@@ -153,8 +145,8 @@ export function normalizeDataTreeEntry(value: unknown): DataTreeEntry {
 
 function normalizeSnapshot(fields: unknown[], depth = 0): DataFieldSnapshot[] {
   if (depth > 64) return [];
-  return fields.filter(record).filter((field) => typeof field.name === "string" && typeof field.typeId === "string").map((field) => ({
-    ...(typeof field.id === "string" && field.id ? { id: field.id } : {}),
+  return fields.filter(record).filter((field) => typeof field.id === "string" && field.id && typeof field.name === "string" && typeof field.typeId === "string").map((field) => ({
+    id: field.id as string,
     name: field.name as string,
     typeId: field.typeId as string,
     ...(typeof field.typeClassId === "string" ? { typeClassId: field.typeClassId } : {}),

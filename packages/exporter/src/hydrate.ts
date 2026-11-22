@@ -26,6 +26,7 @@ import {
   particleLibraryFromAssets,
   buildParticleParameterCatalog,
   normalizeSoundAttenuationPayload,
+  compactTilemapPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
@@ -114,8 +115,8 @@ export type PackedGameContent = {
   navmeshByScene: Map<string, Uint8Array>;
   audioReverbBytes: Uint8Array | null;
   audioReverbByScene: Map<string, Uint8Array>;
-  /** Binary `BSLD` landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
-  landscapeBytes: Map<string, Uint8Array>;
+  /** Binary Landscape (`HPLD`) and Foliage (`HPFG`) component chunks keyed by `<ownerGuid>:<chunkId>`. */
+  componentChunks: Map<string, Uint8Array>;
   materialDocuments: Map<string, MaterialDocument>;
   materialFunctions: Map<string, MaterialFunctionDocument>;
   renderTargets: Map<string, RenderTargetPayload>;
@@ -429,7 +430,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     navmeshByScene,
     audioReverbBytes,
     audioReverbByScene,
-    landscapeBytes: new Map(game.landscapeBytes),
+    componentChunks: new Map(game.componentChunks),
     materialDocuments,
     materialFunctions,
     renderTargets,
@@ -486,9 +487,10 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
   if (content.tilemapPayloads.size > 0 || content.tilesetPayloads.size > 0) {
     controls.push({
       type: "loadTilemaps",
+      // Chunks cross to the game worker run-length encoded; the worker decodes each once.
       tilemaps: [...content.tilemapPayloads.entries()].map(([guid, document]) => ({
         guid,
-        document,
+        document: compactTilemapPayload(document),
       })),
       tilesets: [...content.tilesetPayloads.entries()].map(([guid, document]) => ({
         guid,
@@ -546,8 +548,8 @@ export function packedSourceControls(game: GameSourceContent, content = packedCo
     type: "loadSceneContent", assetGuids: [...game.payloads.keys(), ...(game.decodedPayloads?.keys() ?? [])],
     sceneLayers: [...game.sceneLayers].map(([guid, layer]) => ({ guid, layer })),
     sceneNavmeshBytes: Object.fromEntries(game.navmeshBytes),
-    ...(game.landscapeBytes && game.landscapeBytes.size > 0
-      ? { sceneLandscapeBytes: Object.fromEntries(game.landscapeBytes) }
+    ...(game.componentChunks && game.componentChunks.size > 0
+      ? { sceneComponentChunks: Object.fromEntries(game.componentChunks) }
       : {}),
     dataAssets: content.dataAssets, curveAssets: content.curveAssets, cameraShakeAssets: content.cameraShakeAssets, globalParameterCatalog: content.globalParameterCatalog, timelineClipAssets: content.timelineClipAssets, audioAssetGuids: game.manifest.assets.filter(entry => entry.type === "Audio").map(entry => entry.guid),
     materialParameterCatalog: buildMaterialParameterCatalog(content.materialDocuments, content.materialFunctions),

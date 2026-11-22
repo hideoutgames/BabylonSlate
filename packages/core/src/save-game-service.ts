@@ -20,11 +20,16 @@ import {
 } from "./save-game";
 
 /** The only save file format version the service writes and reads. */
-const FORMAT_VERSION = 2;
+const FORMAT_VERSION = 1;
 const MAX_SAVE_BYTES = 16 * 1024 * 1024;
 const generationNames = ["generation-a.save", "generation-b.save"] as const;
+/**
+ * A save file is one header line, `haptic-save <formatVersion> <sha256>`, a
+ * newline, then the JSON body; the checksum is over the body's UTF-8 bytes.
+ */
+const SAVE_HEADER_PREFIX = "haptic-save ";
+const SAVE_HEADER = /^haptic-save (\d{1,9}) ([a-f0-9]{64})$/;
 interface SaveBody extends SaveGameMigrationData {
-  formatVersion: number;
   projectId: string;
   definitionId: string;
   profile: string;
@@ -54,6 +59,18 @@ function failure(error: unknown): SaveGameFailure {
   const record = error as { name?: unknown; code?: unknown; message?: unknown } | null;
   if (record?.name === "QuotaExceededError" || record?.name === "StorageFullError" || record?.code === "ENOSPC" || record?.code === "EDQUOT") return { code: "storage-full", message: "There is not enough storage to save the game. The previous save is preserved." };
   return { code: "unavailable", message: typeof record?.message === "string" ? record.message : "Save storage is unavailable." };
+}
+
+function encodeSaveFile(hash: string, payload: string): string {
+  return `${SAVE_HEADER_PREFIX}${FORMAT_VERSION} ${hash}\n${payload}`;
+}
+
+/** The header's format version and checksum, and the body text after it. */
+function splitSaveFile(text: string): { formatVersion: number; checksum: string; payload: string } {
+  const newline = text.indexOf("\n");
+  const header = SAVE_HEADER.exec(newline < 0 ? "" : text.slice(0, newline));
+  if (!header) throw new SaveGameError("corrupt", "Save file header is missing or invalid.");
+  return { formatVersion: Number(header[1]), checksum: header[2]!, payload: text.slice(newline + 1) };
 }
 
 async function checksum(text: string): Promise<string> {
@@ -328,11 +345,8 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
 
   private async decode(text: string): Promise<SaveBody> {
     if (typeof text !== "string" || text.length > MAX_SAVE_BYTES * 2 || new TextEncoder().encode(text).byteLength > MAX_SAVE_BYTES * 2) throw new SaveGameError("corrupt", "Save file exceeds the supported size.");
-    let outer: unknown;
-    try { outer = JSON.parse(text); } catch { throw new SaveGameError("corrupt", "Save file is not valid JSON."); }
-    if (!isSaveGameRecord(outer) || !Number.isSafeInteger(outer.formatVersion)) throw new SaveGameError("corrupt", "Save envelope is invalid.");
+    const outer = splitSaveFile(text);
     if (outer.formatVersion !== FORMAT_VERSION) throw new SaveGameError("incompatible", "This save uses an unsupported format version.");
-    if (typeof outer.payload !== "string" || typeof outer.checksum !== "string" || !/^[a-f0-9]{64}$/.test(outer.checksum)) throw new SaveGameError("corrupt", "Save checksum is missing or invalid.");
     let hash: string;
     try { hash = await checksum(outer.payload); }
     catch (error) { if (error instanceof SaveGameError && error.code === "invalid") throw new SaveGameError("corrupt", error.message); throw error; }
@@ -340,12 +354,12 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
     let parsed: unknown;
     try { parsed = cloneSaveGameValue(JSON.parse(outer.payload)); }
     catch { throw new SaveGameError("corrupt", "Save payload is invalid."); }
-    if (!isSaveGameRecord(parsed) || parsed.formatVersion !== outer.formatVersion || typeof parsed.projectId !== "string" || typeof parsed.definitionId !== "string" || typeof parsed.profile !== "string" || typeof parsed.slot !== "string" || !Number.isSafeInteger(parsed.schemaVersion) || (parsed.schemaVersion as number) < 1 || !Number.isSafeInteger(parsed.sequence) || (parsed.sequence as number) < 1 || typeof parsed.createdAt !== "string" || !Number.isFinite(Date.parse(parsed.createdAt)) || !isSaveGameRecord(parsed.fields) || !Object.hasOwn(parsed, "state")) throw new SaveGameError("corrupt", "Save metadata or gameplay fields are invalid.");
+    if (!isSaveGameRecord(parsed) || typeof parsed.projectId !== "string" || typeof parsed.definitionId !== "string" || typeof parsed.profile !== "string" || typeof parsed.slot !== "string" || !Number.isSafeInteger(parsed.schemaVersion) || (parsed.schemaVersion as number) < 1 || !Number.isSafeInteger(parsed.sequence) || (parsed.sequence as number) < 1 || typeof parsed.createdAt !== "string" || !Number.isFinite(Date.parse(parsed.createdAt)) || !isSaveGameRecord(parsed.fields) || !Object.hasOwn(parsed, "state")) throw new SaveGameError("corrupt", "Save metadata or gameplay fields are invalid.");
     return parsed as unknown as SaveBody;
   }
 
   private async archive(address: Address, body: SaveBody, text: string): Promise<void> {
-    const originalHash = (JSON.parse(text) as { checksum: string }).checksum;
+    const originalHash = splitSaveFile(text).checksum;
     const key = `${address.prefix}/original-v${body.schemaVersion}-${body.sequence}-${originalHash}.save`;
     const archived = await this.options.storage.read(key);
     if (archived === null) {
@@ -361,13 +375,13 @@ export class SaveGameService<TData extends object = Record<string, SaveGameValue
     if (last && last.body.schemaVersion < this.definition.schemaVersion) await this.archive(address, last.body, last.text);
     const sequence = (last?.body.sequence ?? 0) + 1;
     if (!Number.isSafeInteger(sequence)) throw new SaveGameError("incompatible", "The save sequence is exhausted.");
-    const body: SaveBody = { formatVersion: FORMAT_VERSION, projectId: this.projectId, definitionId: this.definition.id, schemaVersion: this.definition.schemaVersion, profile: address.profile, slot: address.slot, sequence, createdAt: new Date().toISOString(), fields: captured.fields, state: captured.state };
+    const body: SaveBody = { projectId: this.projectId, definitionId: this.definition.id, schemaVersion: this.definition.schemaVersion, profile: address.profile, slot: address.slot, sequence, createdAt: new Date().toISOString(), fields: captured.fields, state: captured.state };
     validateSaveGameValue(body);
     // Release the simulation boundary before encoding. Worker hosts already encode
     // off the rendering thread; other hosts may inject an asynchronous codec.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     const payload = this.options.encode ? await this.options.encode(body as unknown as SaveGameValue) : JSON.stringify(body);
-    const text = JSON.stringify({ formatVersion: FORMAT_VERSION, checksum: await checksum(payload), payload });
+    const text = encodeSaveFile(await checksum(payload), payload);
     // Never replace the newest valid generation, including when its sibling was torn.
     const index = last?.index === 0 ? 1 : 0;
     const key = `${address.prefix}/${generationNames[index]}`;

@@ -42,6 +42,10 @@ export const FEATURE_TEST_MATERIAL_NAMES = {
   postProcess: "FT_MatPostGrade",
   landscape: "FT_MatLandscape",
   overlayUnlit: "FT_MatOverlayUnlit",
+  uiRoundedPanel: "FT_MatUiRoundedPanel",
+  uiRoundedPanelInstance: "FT_MatUiRoundedPanelInstance",
+  uiHealthBar: "FT_MatUiHealthBar",
+  uiCooldown: "FT_MatUiCooldown",
   text: "FT_MatText",
   globalTint: "FT_MatGlobalTint",
   decalLit: "FT_MatDecalLit",
@@ -75,9 +79,10 @@ export function featureTestMaterialAssetGuid(
 
 /**
  * Material Functions, Materials (every domain: surface, landscape, post
- * process, particle, text, decal: one Decal root per Blend Mode) and Material
- * Instances (a chained surface pair, a particle-domain instance and a decal
- * instance). Fills every `ctx.assets.materials` key.
+ * process, particle, text, decal: one Decal root per Blend Mode, user
+ * interface) and Material Instances (a chained surface pair, a particle-domain
+ * instance, a decal instance and a user interface instance). Fills every
+ * `ctx.assets.materials` key.
  *
  * Parameter names (override keys for instances, post-process entries,
  * scene-owned overrides and `material.set*Parameter` script nodes):
@@ -87,7 +92,10 @@ export function featureTestMaterialAssetGuid(
  * - particle / particleAdditive: `Intensity` (+ `Falloff` on the additive glow)
  * - particleSheet: `Sheet` (texture)
  * - postProcess: `Desaturation` (0..1), `Vignette` (0..1 edge darkening)
- * - overlayUnlit: `Tint` (color), `Opacity`, `Scroll Speed`
+ * - overlayUnlit (user interface): `Tint` (color), `Opacity`, `Scroll Speed`
+ * - uiRoundedPanel: `Fill Color` (color), `Border Color` (color), `Corner Radius`, `Border Width`
+ * - uiHealthBar: `Progress` (0..1), `Track Color` (color)
+ * - uiCooldown: `Cooldown Speed` (sweeps per second), `Ready Color` (color), `Charging Color` (color)
  * - landscape: none (see `landscapeMaterial` for the paint layer semantics)
  * - decalLit: `Albedo` (texture), `Tint` (color), `Roughness`; decalGlow: `Glow Color` (color);
  *   decalMultiply: `Stain Color` (color); decalMasked: `Cell Density`; decalOpaque: `Stripe Color` (color)
@@ -125,6 +133,15 @@ export async function buildFeatureTestMaterials(ctx: FeatureTestContext): Promis
   const postProcess = await saveMaterial(ctx, NAMES.postProcess, postGradeMaterial(NAMES.postProcess));
   const landscape = await saveMaterial(ctx, NAMES.landscape, landscapeMaterial(NAMES.landscape));
   const overlayUnlit = await saveMaterial(ctx, NAMES.overlayUnlit, overlayUnlitMaterial(NAMES.overlayUnlit));
+  const uiRoundedPanel = await saveMaterial(ctx, NAMES.uiRoundedPanel, uiRoundedPanelMaterial(NAMES.uiRoundedPanel));
+  // A darker, square-cornered track for the HUD's Progress Bar.
+  await saveInstance(ctx, NAMES.uiRoundedPanelInstance, uiRoundedPanel, "ui", {
+    "Fill Color": color(0.08, 0.1, 0.16, 0.9),
+    "Border Color": color(0.55, 0.85, 1),
+    "Corner Radius": float(4),
+  });
+  await saveMaterial(ctx, NAMES.uiHealthBar, uiHealthBarMaterial(NAMES.uiHealthBar));
+  await saveMaterial(ctx, NAMES.uiCooldown, uiCooldownMaterial(NAMES.uiCooldown));
   await saveMaterial(ctx, NAMES.text, textMaterial(NAMES.text));
   // Decal domain: one root per Blend Mode (each root is one program), lit and unlit, a normal-mapped and an emissive
   // one, and an Instance.
@@ -269,7 +286,7 @@ async function saveFunction(ctx: FeatureTestContext, name: string, doc: Material
   return (await ctx.createAsset("MaterialFunction", FOLDER, name, { payload: payload(doc) })).guid;
 }
 
-/** Instances carry their root's domain so domain-filtered pickers (particle, post process, decal) list them. */
+/** Instances carry their root's domain so domain-filtered pickers (particle, post process, decal, user interface) list them. */
 async function saveInstance(
   ctx: FeatureTestContext,
   name: string,
@@ -281,7 +298,7 @@ async function saveInstance(
     ...createDefaultMaterialInstanceDocument(name, parentGuid),
     domain,
     overrides,
-    preview: { mesh: domain === "particle" ? "plane" : "sphere", customMeshGuid: null },
+    preview: { mesh: domain === "particle" || domain === "ui" ? "plane" : "sphere", customMeshGuid: null },
   };
   return (await ctx.createAsset("MaterialInstance", FOLDER, name, { payload: payload(doc) })).guid;
 }
@@ -594,14 +611,12 @@ function noiseMaskedMaterial(name: string): MaterialDocument {
   return doc;
 }
 
-/** Unlit, alpha-blended scrolling color bands for overlay 2D Material widgets, panels and sprites. */
+// ---------------------------------------------------------------------------
+// User Interface Materials (2D Material, 2D Panel, 2D Joystick and 2D control parts)
+
+/** Scrolling color bands for the HUD's 2D Material widgets, Material panels and the Progress Bar fill. */
 function overlayUnlitMaterial(name: string): MaterialDocument {
-  const doc = blankMaterial(name, "surface", {
-    shadingModel: "unlit",
-    blendMode: "translucent",
-    twoSided: true,
-    preview: { mesh: "plane", customMeshGuid: null },
-  });
+  const doc = blankMaterial(name, "ui");
   node(doc, "uv", "input.uv", 0, 0);
   node(doc, "time", "input.time", 0, 1);
   node(doc, "speed", "param.float", 0, 2, { name: "Scroll Speed", value: [0.2] });
@@ -619,7 +634,7 @@ function overlayUnlitMaterial(name: string): MaterialDocument {
     ],
   });
   node(doc, "tinted", "math.multiply", 5, 1);
-  node(doc, "output", "output.surface", 6, 1);
+  node(doc, "output", "output.ui", 6, 1);
   wire(doc, "uv", "uv", "split", "value");
   wire(doc, "time", "time", "scroll", "a");
   wire(doc, "speed", "out", "scroll", "b");
@@ -629,8 +644,115 @@ function overlayUnlitMaterial(name: string): MaterialDocument {
   wire(doc, "band", "out", "ramp", "value");
   wire(doc, "ramp", "out", "tinted", "a");
   wire(doc, "tintColor", "rgb", "tinted", "b");
-  wire(doc, "tinted", "out", "output", "baseColor");
+  wire(doc, "tinted", "out", "output", "color");
   wire(doc, "opacity", "out", "output", "opacity");
+  return doc;
+}
+
+/**
+ * A rounded panel with a border, in pixels of the element: User Interface Input feeds a Rounded Rectangle, whose
+ * Border mask mixes Border Color over Fill Color and whose Fill (× the fill's alpha) is the Opacity.
+ */
+function uiRoundedPanelMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "ui");
+  node(doc, "element", "input.ui", 0, 0);
+  node(doc, "radius", "param.float", 0, 2, { name: "Corner Radius", value: [12] });
+  node(doc, "border", "param.float", 0, 3, { name: "Border Width", value: [3] });
+  node(doc, "fillColor", "param.color", 0, 4, { name: "Fill Color", value: [0.12, 0.16, 0.26, 0.85] });
+  node(doc, "borderColor", "param.color", 0, 5, { name: "Border Color", value: [1, 0.86, 0.42, 1] });
+  const radiusPin = splat(doc, "corners", "radius", "out", 1, 2, 4);
+  node(doc, "shape", "ui.roundedRectangle", 2, 0);
+  node(doc, "edge", "math.mix", 3, 4);
+  // The border is opaque; inside it the fill keeps its own alpha.
+  node(doc, "alpha", "math.mix", 3, 5);
+  node(doc, "opacity", "math.multiply", 4, 1);
+  node(doc, "output", "output.ui", 5, 2);
+  wire(doc, "element", "elementPosition", "shape", "position");
+  wire(doc, "element", "elementSize", "shape", "size");
+  wire(doc, "corners", radiusPin, "shape", "radius");
+  wire(doc, "border", "out", "shape", "border");
+  wire(doc, "fillColor", "rgb", "edge", "a");
+  wire(doc, "borderColor", "rgb", "edge", "b");
+  wire(doc, "shape", "borderMask", "edge", "alpha");
+  wire(doc, "fillColor", "a", "alpha", "a");
+  wire(doc, "shape", "borderMask", "alpha", "alpha");
+  wire(doc, "shape", "fill", "opacity", "a");
+  wire(doc, "alpha", "out", "opacity", "b");
+  wire(doc, "edge", "out", "output", "color");
+  wire(doc, "opacity", "out", "output", "opacity");
+  return doc;
+}
+
+/**
+ * A health bar: Linear Progress at the Progress parameter fills a red-to-green gradient (keyed by Progress) over the
+ * Track Color, inside a fully rounded Rounded Rectangle mask.
+ */
+function uiHealthBarMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "ui");
+  node(doc, "element", "input.ui", 0, 0);
+  node(doc, "progress", "param.float", 0, 2, { name: "Progress", value: [0.7] });
+  node(doc, "track", "param.color", 0, 3, { name: "Track Color", value: [0.1, 0.1, 0.12, 1] });
+  // Corner radii past half the bar's height clamp to it: round ends at any size.
+  node(doc, "shape", "ui.roundedRectangle", 1, 0, { "default:radius": [999, 999, 999, 999], "default:border": [2] });
+  node(doc, "bar", "ui.linearProgress", 1, 2);
+  node(doc, "health", "color.gradient", 1, 4, {
+    stops: [
+      { position: 0, color: [0.9, 0.15, 0.1] },
+      { position: 0.5, color: [0.95, 0.8, 0.15] },
+      { position: 1, color: [0.25, 0.85, 0.3] },
+    ],
+  });
+  node(doc, "filled", "math.mix", 2, 3);
+  // A light rim on the border ring.
+  node(doc, "rim", "math.mix", 3, 2, { "default:b": [0.9, 0.95, 1] });
+  node(doc, "output", "output.ui", 4, 1);
+  wire(doc, "element", "elementPosition", "shape", "position");
+  wire(doc, "element", "elementSize", "shape", "size");
+  wire(doc, "element", "elementUv", "bar", "uv");
+  wire(doc, "progress", "out", "bar", "progress");
+  wire(doc, "progress", "out", "health", "value");
+  wire(doc, "track", "rgb", "filled", "a");
+  wire(doc, "health", "out", "filled", "b");
+  wire(doc, "bar", "mask", "filled", "alpha");
+  wire(doc, "filled", "out", "rim", "a");
+  wire(doc, "shape", "borderMask", "rim", "alpha");
+  wire(doc, "rim", "out", "output", "color");
+  wire(doc, "shape", "fill", "output", "opacity");
+  return doc;
+}
+
+/**
+ * A radial cooldown: Radial Progress sweeps clockwise from the top once every 1 / Cooldown Speed seconds (Time × Speed,
+ * Fraction), lighting Ready Color over Charging Color inside an Ellipse with a white ring.
+ */
+function uiCooldownMaterial(name: string): MaterialDocument {
+  const doc = blankMaterial(name, "ui");
+  node(doc, "element", "input.ui", 0, 0);
+  node(doc, "time", "input.time", 0, 2);
+  node(doc, "speed", "param.float", 0, 3, { name: "Cooldown Speed", value: [0.25] });
+  node(doc, "ready", "param.color", 0, 4, { name: "Ready Color", value: [0.35, 0.75, 1, 1] });
+  node(doc, "charging", "param.color", 0, 5, { name: "Charging Color", value: [0.08, 0.12, 0.2, 1] });
+  node(doc, "cycles", "math.multiply", 1, 2);
+  node(doc, "sweep", "math.fract", 2, 2);
+  node(doc, "disc", "ui.ellipse", 1, 0, { "default:border": [3] });
+  node(doc, "wedge", "ui.radialProgress", 3, 1);
+  node(doc, "charged", "math.mix", 4, 4);
+  node(doc, "ring", "math.mix", 5, 2, { "default:b": [1, 1, 1] });
+  node(doc, "output", "output.ui", 6, 1);
+  wire(doc, "element", "elementPosition", "disc", "position");
+  wire(doc, "element", "elementSize", "disc", "size");
+  wire(doc, "time", "time", "cycles", "a");
+  wire(doc, "speed", "out", "cycles", "b");
+  wire(doc, "cycles", "out", "sweep", "value");
+  wire(doc, "element", "elementUv", "wedge", "uv");
+  wire(doc, "sweep", "out", "wedge", "progress");
+  wire(doc, "charging", "rgb", "charged", "a");
+  wire(doc, "ready", "rgb", "charged", "b");
+  wire(doc, "wedge", "mask", "charged", "alpha");
+  wire(doc, "charged", "out", "ring", "a");
+  wire(doc, "disc", "borderMask", "ring", "alpha");
+  wire(doc, "ring", "out", "output", "color");
+  wire(doc, "disc", "fill", "output", "opacity");
   return doc;
 }
 

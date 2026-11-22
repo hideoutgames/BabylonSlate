@@ -101,7 +101,7 @@ export class SceneEffectsGraph {
         source = options.authoredOutputTexture;
       } else {
         // Linear HDR keeps float intermediates until the display stage;
-        // Legacy Display and CEL keep the established byte pipeline.
+        // Display Space and CEL keep the established byte pipeline.
         this.sceneColorTexture =
           graph.textureManager.createRenderTargetTexture(
             "Scene Effects Scene Color",

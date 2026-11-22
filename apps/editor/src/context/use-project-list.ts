@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ProjectFolderHandle, ProjectMetadata } from "@haptic/core";
+import { storedProjectAppearance, type ProjectFolderHandle, type ProjectMetadata, type ProjectStorage } from "@haptic/core";
 import type { ProjectTemplateCatalogEntry } from "@haptic/assets";
 import type { createAppSettingsStore } from "@haptic/vfs";
 import {
   listedProjectsFromRecents,
+  recentProjectCoverPath,
   recentProjectsWithOpenedProject,
   removeDeletesProject,
+  syncRecentProjectCover,
+  withRecentProjectCovers,
   type ListedProject,
   type UpdateListedProjectOptions,
 } from "../lib/listed-projects";
@@ -19,6 +22,8 @@ export interface ProjectListDeps {
   settingsStore: ReturnType<typeof createAppSettingsStore>;
   /** Homepage refreshes the list whenever the app comes back to the foreground. */
   route: AppRoute;
+  /** App-private storage holding the recent projects' pictures. */
+  ensureDerived: () => Promise<ProjectStorage>;
 }
 
 /**
@@ -30,6 +35,7 @@ export function useProjectList({
   projectService,
   settingsStore,
   route,
+  ensureDerived,
 }: ProjectListDeps) {
   const [listedProjects, setListedProjects] = useState<ListedProject[]>([]);
   const [needsReconnect, setNeedsReconnect] = useState(false);
@@ -44,6 +50,7 @@ export function useProjectList({
       sourceControl: boolean,
     ) => {
       if (!handle) return;
+      await syncRecentProjectCover(await ensureDerived(), handle.id, metadata.appearance);
       await settingsStore.update((settings) => {
         settings.recents = recentProjectsWithOpenedProject(
           settings.recents,
@@ -54,17 +61,17 @@ export function useProjectList({
         );
       });
     },
-    [settingsStore],
+    [ensureDerived, settingsStore],
   );
 
   const refreshProjectList = useCallback(async () => {
     const fromStorage = await projectService.listProjects();
     const settings = await settingsStore.load();
     setListedProjects(
-      listedProjectsFromRecents(settings.recents, fromStorage),
+      await withRecentProjectCovers(await ensureDerived(), listedProjectsFromRecents(settings.recents, fromStorage)),
     );
     setNeedsReconnect(await projectService.needsReconnect());
-  }, [projectService, settingsStore]);
+  }, [ensureDerived, projectService, settingsStore]);
 
   // Projects can be deleted outside the editor (e.g. in Files on iPad) while it is in the background.
   useEffect(() => {
@@ -84,24 +91,25 @@ export function useProjectList({
     async (handle: ProjectFolderHandle, details: UpdateListedProjectOptions) => {
       const trimmed = details.name.trim();
       if (!trimmed) return;
-      await projectService.updateListedProject(handle, {
+      const stored = await projectService.updateListedProject(handle, {
         ...details,
         name: trimmed,
       });
+      if (details.appearance) await syncRecentProjectCover(await ensureDerived(), handle.id, details.appearance);
       await settingsStore.update((settings) => {
         settings.recents = settings.recents.map((recent) =>
           recent.id === handle.id
             ? {
                 ...recent,
                 name: trimmed,
-                ...(details.appearance ? { appearance: details.appearance } : {}),
+                ...(stored ? { appearance: stored } : details.appearance ? { appearance: storedProjectAppearance(details.appearance) } : {}),
               }
             : recent,
         );
       });
       await refreshProjectList();
     },
-    [projectService, refreshProjectList, settingsStore],
+    [ensureDerived, projectService, refreshProjectList, settingsStore],
   );
 
   const removeListedProject = useCallback(
@@ -114,9 +122,11 @@ export function useProjectList({
           (recent) => recent.id !== handle.id,
         );
       });
+      const derived = await ensureDerived();
+      if (await derived.exists(recentProjectCoverPath(handle.id))) await derived.remove(recentProjectCoverPath(handle.id));
       await refreshProjectList();
     },
-    [projectService, refreshProjectList, settingsStore],
+    [ensureDerived, projectService, refreshProjectList, settingsStore],
   );
 
   const actions = useMemo(

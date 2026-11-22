@@ -27,7 +27,7 @@ Float indices, little-endian views. `SNAPSHOT_HEADER_FLOATS = 16`, `SNAPSHOT_ACT
 
 | Header float | Field |
 | --- | --- |
-| 0 | `magic`: `SNAPSHOT_MAGIC_U32 = 0x42534e50` ("BSNP", big-endian u32) stored as f32 bits |
+| 0 | `magic`: `SNAPSHOT_MAGIC_U32 = 0x48504e50` ("HPNP", big-endian u32) stored as f32 bits |
 | 1 | `version` (2) |
 | 2, 3 | `frameId`, `tickIndex`: raw u32 bits (exact past 2^24) |
 | 4 | `actorCount` |
@@ -41,6 +41,7 @@ Actor slot `i` starts at `16 + i * 16`: `slotId` (0), position xyz (1–3), rota
 
 - Guids never travel in the hot buffer: guid ↔ `slotId` is maintained on the command channel (`spawn` / `despawn`). Slot ids are dense and recycled; interpolation matches `slotId`, not row index.
 - Each publishing tick's removal pass (`SnapshotPublisher.retireRemovedActors`) despawns slots whose actor left the World. It walks the slots only when `World.structuralRevision` or `RenderSlots.revision` moved since the last pass, or that pass kept a slot for a spawn-queued actor, because a cancelled spawn moves neither.
+- Rows are rewritten incrementally across the two buffers of the seq-locked pair (`SnapshotPublisher.write`). The first publish and any structure, slot-table, capacity or origin-cell change recompose every pose and rewrite every row in both buffers (two full writes), which fixes row order and `actorCount`. Otherwise only the rows of actors whose pose changed (transform notifications, with their descendants, recomposed by `WorldTransformComposer.composeDirty`) or whose `visible` changed are rewritten in place at their recorded row, once in each buffer (`dirtySlotFrames`), because the other buffer still holds the frame before; every other row keeps its bits. A parent cycle among dirty actors falls back to a full recomposition.
 - Positions are relative to a camera-selected 1024-unit origin cell (`snapshot-publisher.ts`); readers reconstruct world coordinates before interpolating, so an origin change cannot jump.
 - `maxActors` is an initial allocation, not an Actor limit. Growth allocates a complete replacement pair, sends `snapshotLayout { capacity, generation }`, and waits for `snapshotLayoutAck` before publishing. Receivers ignore frames from non-installed generations.
 - Copies carry only `snapshotActiveFloatCount` (header + `actorCount` rows). Buffers are not zero-filled: **never read past `actorCount`**.

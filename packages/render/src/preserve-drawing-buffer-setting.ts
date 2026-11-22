@@ -1,5 +1,5 @@
 /** Browser storage key of the `preservebuffer` debug setting. */
-const PRESERVE_DRAWING_BUFFER_KEY = "haptic.debug.preserveDrawingBuffer";
+const PRESERVE_DRAWING_BUFFER_KEY = "haptic:debug:preserveDrawingBuffer";
 
 /**
  * Whether the project Engine keeps its drawing buffer between presentations: on unless the `preservebuffer off` debug

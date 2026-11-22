@@ -116,7 +116,7 @@ export interface PhysicsBackend {
   /** Optional optimized query for repeated sphere casts, excluding triggers. Own until disposed. */
   createSphereSweep?(radius: number): SphereSweepQuery;
 
-  /** 2D Rapier kinematic character controller; 3D uses Babylon `PhysicsCharacterController`. */
+  /** A character controller on an existing body: Rapier's kinematic controller in 2D, a custom collide-and-slide solve in Havok, an AABB slide in software. */
   createCharacterController(desc: CharacterControllerDesc): void;
   destroyCharacterController(id: string): void;
   /**

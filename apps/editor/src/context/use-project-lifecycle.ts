@@ -11,7 +11,6 @@ import {
   readSealedJournalLines,
   sealJournalForRecovery,
   truncateJournal,
-  type MigrationPending,
   type ProjectTemplateCatalogEntry,
 } from "@haptic/assets";
 import { resolveJournalLines, type EditSession } from "@haptic/edit";
@@ -67,7 +66,6 @@ export interface ProjectLifecycleDeps {
   projectSaveState: RefObject<ProjectSaveState>;
   setProjectDocument: (document: ProjectDocument | null) => void;
   setRoute: (route: AppRoute) => void;
-  setMigrationPending: (pending: MigrationPending[]) => void;
   setRecoveryAvailable: (available: boolean) => void;
   setDocumentOpenError: (error: string | null) => void;
   /** A Remote New Project's notice belongs to the project it opened. */
@@ -126,7 +124,6 @@ export function useProjectLifecycle({
   projectSaveState,
   setProjectDocument,
   setRoute,
-  setMigrationPending,
   setRecoveryAvailable,
   setDocumentOpenError,
   setPublishNotice,
@@ -159,7 +156,6 @@ export function useProjectLifecycle({
       layouts: Awaited<
         ReturnType<ProjectService["loadCurrentProject"]>
       >["layouts"],
-      pending: MigrationPending[] = [],
     ) => {
       cancelSceneDocumentLoad();
       const sceneLoadController = new AbortController();
@@ -188,7 +184,6 @@ export function useProjectLifecycle({
       }
       projectSaveState.current.reset(document);
       setProjectDocument(document);
-      setMigrationPending(pending);
       setLastCompiledSignature(null);
       playContent.clearCompileCache();
       // A reload as soon as editing starts must still find this project on Homepage.
@@ -231,7 +226,6 @@ export function useProjectLifecycle({
       resetThumbnails,
       sceneDocumentLoadRef,
       setLastCompiledSignature,
-      setMigrationPending,
       setRecoveryAvailable,
       setRoute,
       setSceneDocumentLoad,
@@ -254,8 +248,8 @@ export function useProjectLifecycle({
     try {
       const result = await projectService.openProject(source);
       if (!result) return;
-      const { document, layouts, migrationPending: pending } = result;
-      await enterEditor(document, layouts, pending);
+      const { document, layouts } = result;
+      await enterEditor(document, layouts);
     } finally {
       setNeedsReconnect(await projectService.needsReconnect());
     }
@@ -265,10 +259,10 @@ export function useProjectLifecycle({
     async (name: string, options?: CreateProjectOptions): Promise<CreateProjectOutcome> => {
       if (!await documentTransitions.check({ kind: "replace-project" })) return "refused";
       await attachEnginePlugins(true);
-      const { document, layouts, migrationPending: pending, created } =
+      const { document, layouts, created } =
         await projectService.createEmptyProject(name, options);
       options?.onPhase?.("opening");
-      await enterEditor(document, layouts, pending);
+      await enterEditor(document, layouts);
       return created ? "created" : "opened";
     },
     [attachEnginePlugins, enterEditor, projectService, documentTransitions],
@@ -286,7 +280,7 @@ export function useProjectLifecycle({
       }
       if (!await documentTransitions.check({ kind: "replace-project" })) return "refused";
       await attachEnginePlugins(true);
-      const { document, layouts, migrationPending: pending } =
+      const { document, layouts } =
         await projectService.createFromTemplate({
           templateFiles: await loadSelectedTemplateFiles(template.id),
           name,
@@ -294,7 +288,7 @@ export function useProjectLifecycle({
           appearance: options?.appearance,
         });
       options?.onPhase?.("opening");
-      await enterEditor(document, layouts, pending);
+      await enterEditor(document, layouts);
       return "created";
     },
     [attachEnginePlugins, enterEditor, projectService, documentTransitions, templatesRef],
@@ -327,9 +321,9 @@ export function useProjectLifecycle({
       if (!await documentTransitions.check({ kind: "replace-project" })) return;
       await attachEnginePlugins();
       try {
-        const { document, layouts, migrationPending: pending } =
+        const { document, layouts } =
           await projectService.openListedProject(handle);
-        await enterEditor(document, layouts, pending);
+        await enterEditor(document, layouts);
       } finally {
         setNeedsReconnect(await projectService.needsReconnect());
       }
@@ -340,9 +334,9 @@ export function useProjectLifecycle({
   const reconnectProject = useCallback(async () => {
     await attachEnginePlugins();
     try {
-      const { document, layouts, migrationPending: pending } =
+      const { document, layouts } =
         await projectService.reconnect();
-      await enterEditor(document, layouts, pending);
+      await enterEditor(document, layouts);
     } finally {
       setNeedsReconnect(await projectService.needsReconnect());
     }
@@ -407,7 +401,6 @@ export function useProjectLifecycle({
     projectSaveState.current.reset(null);
     setProjectDocument(null);
     setRecoveryAvailable(false);
-    setMigrationPending([]);
     setLastCompiledSignature(null);
     playContent.clearCompileCache();
     setRoute("home");
@@ -443,7 +436,6 @@ export function useProjectLifecycle({
     setDocumentOpenError,
     setPublishNotice,
     setLastCompiledSignature,
-    setMigrationPending,
     setRecoveryAvailable,
     setRoute,
     sourceControlRef,

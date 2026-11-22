@@ -118,7 +118,7 @@ function renderScriptNode(def: ScriptNodeDefinition, pins: ReturnType<ScriptNode
   return renderNode(def.id, resolveNodeType(def.id, data), data);
 }
 
-const MATERIAL_DOMAINS: MaterialDomain[] = ["surface", "landscape", "postProcess", "particle", "text"];
+const MATERIAL_DOMAINS: MaterialDomain[] = ["surface", "landscape", "postProcess", "particle", "text", "decal", "ui"];
 
 function materialPreviews(previews: NodePreviews): void {
   const palette = new Map(MATERIAL_DOMAINS.flatMap((domain) => materialPaletteNodes(domain)).map((node) => [node.id, node]));

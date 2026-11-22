@@ -101,11 +101,9 @@ export async function runSceneLayerBatchingProof(images: "filtered" | "nearest" 
         rect: { width: 32, height: 18, center: [0, 0] },
       } });
     const textures = new Map<string, RawTexture>();
-    // An authored Scene Layer Material for every second tinted background: its draws batch too.
-    const document = createDefaultMaterialDocument();
-    document.shadingModel = "unlit";
-    document.blendMode = "translucent";
-    const lowered = lowerMaterialDocument(document);
+    // An authored User Interface Material, the only domain 2D components draw, for every second tinted background:
+    // its draws batch too.
+    const lowered = lowerMaterialDocument(createDefaultMaterialDocument("Panel", "ui"));
     if (!lowered.ok) throw new Error("The proof's authored Material did not lower");
     const authored = compileMaterialPlan(lowered.plan, { scene: layer.scene, name: "authoredPanel", overlay: true });
     if (!authored.ok) throw new Error("The proof's authored Material did not compile");

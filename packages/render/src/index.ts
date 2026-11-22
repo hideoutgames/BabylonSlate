@@ -71,14 +71,7 @@ export { nearestTexturesEnabled, observeNearestTextures, setNearestTextures } fr
 export * from "./flip-read-pixels";
 export * from "./font-registry";
 export * from "./sprite-quad";
-export {
-  setSceneWorldSpriteBatching,
-  sceneWorldSpriteBatching,
-  setSceneWorldSpriteImagePages,
-  worldSpriteBatchStats,
-  findWorldSpriteBatcher,
-  type WorldSpriteBatchStats,
-} from "./world-sprite-batcher";
+export type { WorldSpriteBatchStats } from "./world-sprite-batcher";
 export * from "./overlay-texture-quad";
 export * from "./overlay-panel-mesh";
 export * from "./tilemap-mesh";

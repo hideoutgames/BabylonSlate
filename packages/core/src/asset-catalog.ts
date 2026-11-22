@@ -1,4 +1,4 @@
-import { ASSET_DOCUMENT_KINDS, assetTypeForDocumentKind } from "./document";
+import { ASSET_DOCUMENT_KINDS, assetTypeForDocumentKind, type AssetType } from "./document";
 
 /**
  * One packaged authored asset as the NodeGraph Asset Registry sees it. Editor
@@ -27,8 +27,11 @@ export interface RuntimeAssetCatalogEntry {
  * Every asset header type an authored or imported asset can have, in document
  * kind order. `Find Assets` can only target types listed here.
  */
-export const ASSET_TYPES: readonly string[] = [
-  ...new Set(ASSET_DOCUMENT_KINDS.filter((kind) => kind !== "extension-asset").map(assetTypeForDocumentKind)),
+export const ASSET_TYPES: readonly AssetType[] = [
+  ...new Set(ASSET_DOCUMENT_KINDS.flatMap((kind) => {
+    const type = assetTypeForDocumentKind(kind);
+    return type === "ExtensionAsset" ? [] : [type];
+  })),
 ];
 
 /** Class id of a Class asset: its file stem with non-identifier characters replaced by `_`. */

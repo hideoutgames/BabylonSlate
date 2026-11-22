@@ -90,6 +90,22 @@ describe("worker Material parameter catalog", () => {
     });
   });
 
+  it("keeps User Interface graphs and their exposed parameters across the host/worker boundary", () => {
+    const document = createDefaultMaterialDocument("Health Bar", "ui");
+    document.nodes.push(
+      { id: "health", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Health", value: [0.75] } },
+      { id: "bar", type: "ui.linearProgress", position: { x: 0, y: 0 }, properties: {} },
+    );
+    document.edges.push(
+      { id: "progress", sourceNodeId: "health", sourcePinId: "out", targetNodeId: "bar", targetPinId: "progress" },
+      { id: "mask", sourceNodeId: "bar", sourcePinId: "mask", targetNodeId: "output", targetPinId: "opacity" },
+    );
+    const catalog = buildMaterialParameterCatalog(new Map([["hud", document]]));
+    expect(normalizeMaterialParameterCatalog(structuredClone(catalog)).hud).toMatchObject({
+      domain: "ui", parameters: { Health: { kind: "float", value: 0.75 } },
+    });
+  });
+
   it("requires full function lowering and exposes only the actual root parameter bindings", () => {
     const { document, fn } = fixture();
     const documents = new Map([["post", document]]);

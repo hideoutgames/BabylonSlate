@@ -4,12 +4,21 @@ import { Ray } from "@babylonjs/core/Culling/ray";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import { createActor, createDefaultScene, parseLandscapeProperties, sculptLandscape } from "@haptic/core";
+import { createActor, createDefaultScene, LandscapeSculptSession, parseLandscapeProperties, type LandscapeBrush, type LandscapeProperties } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createLandscapeMesh, intersectLandscapeChunk, updateLandscapeMesh } from "./landscape-mesh";
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); });
+
+const raise: LandscapeBrush = { tool: "raise", radius: 5, strength: 3, falloff: 0.5, height: 0, layer: 0 };
+
+/** The terrain after one dab, from a session over `terrain` (which keeps its own arrays). */
+function sculpted(terrain: LandscapeProperties, x: number, z: number, brush: LandscapeBrush): LandscapeProperties {
+  const session = new LandscapeSculptSession(terrain);
+  session.dab(x, z, brush);
+  return session.liveProperties();
+}
 
 it("updates chunked geometry and shared-edge normals in place through scene editing", () => {
   const { engine, scene } = createTestEngine(); const sync = new EditorSceneSync(scene);
@@ -24,7 +33,7 @@ it("updates chunked geometry and shared-edge normals in place through scene edit
   const chunks = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh);
   expect(chunks).toHaveLength(4);
   expect(chunks.every((chunk) => chunk.getBoundingInfo().boundingBox.maximum.y === 2)).toBe(true);
-  const edited = sculptLandscape(landscape, 0, 0, { tool: "raise", radius: 5, strength: 3, falloff: 0.5, height: 0, layer: 0 });
+  const edited = sculpted(landscape, 0, 0, raise);
   sync.apply({ ...before, actors: [{ ...before.actors[0]!, components: [{ id: "land", classId: "LandscapeComponent", properties: { ...edited } }] }] });
   expect(sync.meshForComponent("terrain", "land")).toBe(root);
   expect(root.getChildMeshes()).toEqual(chunks);
@@ -68,29 +77,31 @@ it.each([
   const root = createLandscapeMesh(scene, "terrain", landscape, assets);
   root.position.set(100, 10, 50);
   const chunks = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh);
-  // A frame computes each chunk's world matrix and culls it by its bounds: the quarter of the landscape it covers.
-  // Downward perimeter skirts drop minimum.y by skirtDepth = Math.max(dx, dz) * 1.5 = 1.5 so frustum culling never clips skirts.
-  const skirtDepth = 1.5;
+  // A frame computes each chunk's world matrix and culls it by its bounds: the quarter of the landscape it covers, down
+  // to the skirts hanging from its edges shared with the other chunks.
   const frame = () => chunks.map((chunk) => {
     chunk.computeWorldMatrix();
     const box = chunk.getBoundingInfo().boundingBox;
-    return [box.minimumWorld.asArray(), box.maximumWorld.asArray()];
+    expect(box.minimumWorld.y).toBeLessThan(10 - pad);
+    return [[box.minimumWorld.x, box.minimumWorld.z], box.maximumWorld.asArray()];
   });
   const quarters = (top: number) => [
-    [[68 - pad, 10 - skirtDepth - pad, 18 - pad], [100 + pad, top + pad, 50 + pad]],
-    [[100 - pad, 10 - skirtDepth - pad, 18 - pad], [132 + pad, top + pad, 50 + pad]],
-    [[68 - pad, 10 - skirtDepth - pad, 50 - pad], [100 + pad, top + pad, 82 + pad]],
-    [[100 - pad, 10 - skirtDepth - pad, 50 - pad], [132 + pad, top + pad, 82 + pad]],
+    [[68 - pad, 18 - pad], [100 + pad, top + pad, 50 + pad]],
+    [[100 - pad, 18 - pad], [132 + pad, top + pad, 50 + pad]],
+    [[68 - pad, 50 - pad], [100 + pad, top + pad, 82 + pad]],
+    [[100 - pad, 50 - pad], [132 + pad, top + pad, 82 + pad]],
   ];
   expect(frame()).toEqual(quarters(10));
 
   // Raise the middle of the landscape, where its four chunks meet, by 3. The landscape itself does not move.
-  updateLandscapeMesh(root, sculptLandscape(landscape, 0, 0, { tool: "raise", radius: 5, strength: 3, falloff: 0.5, height: 0, layer: 0 }), assets);
+  updateLandscapeMesh(root, sculpted(landscape, 0, 0, raise), assets);
 
   expect(frame()).toEqual(quarters(13));
 });
 
-it("finds a trace's hit on a chunk from the cells under it, exactly as the chunk's own intersection does", () => {
+it("picks every chunk on its full-resolution surface at any drawn LOD, never on a skirt", async () => {
+  const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
+  const { updateLandscapeLods } = await import("./landscape-mesh");
   const { engine, scene } = createTestEngine();
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   const subdivisions = 48;
@@ -103,9 +114,33 @@ it("finds a trace's hit on a chunk from the cells under it, exactly as the chunk
   root.rotationQuaternion = Quaternion.RotationAxis(new Vector3(0.2, 1, 0.1).normalize(), 0.6);
   root.scaling.set(1.5, 0.8, 1.2);
   const chunks = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh);
-  expect(chunks.length).toBeGreaterThan(1);
-  // Traces down the landscape's own up axis (one cell tests a few faces) and tilted ones, over cells, along grid
-  // lines, through vertices and past the edges.
+  expect(chunks.length).toBe(4);
+  // Far away, every chunk draws a coarse LOD with skirts on its inner edges.
+  const camera = new FreeCamera("cam", new Vector3(0, 400, 0), scene);
+  camera.getViewMatrix();
+  updateLandscapeLods(scene, camera);
+  expect(chunks.every((chunk) => chunk.subMeshes[0]!.indexStart > 0)).toBe(true);
+  /**
+   * The nearest hit on the chunk's LOD0 surface triangles (its first `2 * w * d` faces), tested one by one after the
+   * bounds test every Babylon mesh intersection starts with.
+   */
+  const reference = (chunk: Mesh, ray: Ray) => {
+    const bounds = chunk.getBoundingInfo();
+    if (!ray.intersectsSphere(bounds.boundingSphere, 0) || !ray.intersectsBox(bounds.boundingBox, 0)) return null;
+    const [x, z] = chunk.name.split(":").slice(-2).map(Number);
+    const cells = (x === 0 ? 32 : 16) * (z === 0 ? 32 : 16);
+    const positions = chunk.getVerticesData(VertexBuffer.PositionKind)!;
+    const indices = chunk.getIndices()!;
+    const vertex = (i: number) => Vector3.FromArray(positions, indices[i]! * 3);
+    let best: { distance: number; faceId: number } | null = null;
+    for (let face = 0; face < cells * 2; face++) {
+      const hit = ray.intersectsTriangle(vertex(face * 3), vertex(face * 3 + 1), vertex(face * 3 + 2));
+      if (hit && hit.distance >= 0 && (!best || hit.distance < best.distance)) best = { distance: hit.distance, faceId: face };
+    }
+    return best;
+  };
+  // Traces down the landscape's own up axis and tilted ones, over cells, along grid lines, through vertices and past
+  // the edges, and long ones crossing many cells.
   const up = Vector3.TransformNormal(Vector3.Up(), root.computeWorldMatrix(true)).normalize();
   const rays: Ray[] = [];
   for (let i = 0; i < 160; i++) {
@@ -119,32 +154,50 @@ it("finds a trace's hit on a chunk from the cells under it, exactly as the chunk
     rays.push(new Ray(top, direction, long ? 40 : 6));
   }
   const compare = () => {
-    let cellTested = 0;
+    let hits = 0;
     for (const ray of rays) {
+      let nearest = Infinity;
       for (const chunk of chunks) {
         const world = chunk.computeWorldMatrix(true);
         const local = Ray.Transform(ray, world.clone().invert());
-        const expected = chunk.intersects(local, false, undefined, false, world);
-        const actual = intersectLandscapeChunk(chunk, local, world);
-        if (!actual) continue;
-        cellTested++;
-        expect(actual.hit).toBe(expected.hit);
-        if (!expected.hit) continue;
-        expect(actual.distance).toBe(expected.distance);
-        expect(actual.faceId).toBe(expected.faceId);
-        expect([actual.bu, actual.bv]).toEqual([expected.bu, expected.bv]);
-        expect(actual.pickedPoint!.asArray()).toEqual(expected.pickedPoint!.asArray());
-        expect(actual.getNormal(true, true)!.asArray()).toEqual(expected.getNormal(true, true)!.asArray());
+        const expected = reference(chunk, local);
+        const actual = chunk.intersects(local, false, undefined, false, world);
+        expect(actual.hit).toBe(expected !== null);
+        if (!expected) continue;
+        hits++;
+        const point = Vector3.TransformCoordinates(local.origin.add(local.direction.scale(expected.distance)), world);
+        expect(Vector3.Distance(actual.pickedPoint!, point)).toBeLessThan(1e-4);
+        nearest = Math.min(nearest, Vector3.Distance(ray.origin, point));
+        // Away from cell edges, where two faces meet at one point, the face is the same one.
+        if (ray.direction.y !== 0 && rays.indexOf(ray) % 4 !== 0) expect(actual.faceId).toBe(expected.faceId);
+        expect(actual.getNormal(true, true)!.length()).toBeCloseTo(1, 5);
       }
+      // A scene pick meets the same nearest surface.
+      const picked = scene.pickWithRay(ray, (mesh) => chunks.includes(mesh as Mesh));
+      expect(picked?.hit ?? false).toBe(Number.isFinite(nearest));
+      if (picked?.hit) expect(picked.distance).toBeCloseTo(nearest, 4);
     }
-    return cellTested;
+    return hits;
   };
-  // Every short trace tests only its cells; a long tilted one crossing many cells is left to the whole mesh.
-  expect(compare()).toBeGreaterThan(rays.length * chunks.length * 0.8);
-  expect(rays.some((ray) => chunks.some((chunk) => intersectLandscapeChunk(chunk, Ray.Transform(ray, chunk.computeWorldMatrix(true).clone().invert()), chunk.getWorldMatrix()) === undefined))).toBe(true);
+  expect(compare()).toBeGreaterThan(rays.length * 0.8);
   // Sculpted heights are traced as drawn.
   updateLandscapeMesh(root, { ...properties, heights: heights(1.5) });
   compare();
+  // A trace just under a flat landscape's surface, across the seam of its chunks (local x = 0), crosses the drawn
+  // skirts but picks nothing.
+  const flat = createLandscapeMesh(scene, "flat", { width: 64, depth: 64, subdivisions: 64 });
+  updateLandscapeLods(scene, camera);
+  const seam = flat.getChildMeshes().find((chunk) => chunk.name.endsWith(":0:0")) as Mesh;
+  const world = seam.computeWorldMatrix(true);
+  const under = new Ray(new Vector3(-0.5, -0.2, -10), new Vector3(1, 0, 0), 1);
+  const positions = seam.getVerticesData(VertexBuffer.PositionKind)!;
+  const indices = seam.getIndices()!;
+  const { indexStart, indexCount } = seam.subMeshes[0]!;
+  const vertex = (i: number) => Vector3.FromArray(positions, indices[i]! * 3);
+  let skirtHits = 0;
+  for (let i = indexStart; i < indexStart + indexCount; i += 3) if (under.intersectsTriangle(vertex(i), vertex(i + 1), vertex(i + 2))) skirtHits++;
+  expect(skirtHits).toBeGreaterThan(0);
+  expect(seam.intersects(under, false, undefined, false, world).hit).toBe(false);
 });
 
 it("transitions chunks across LOD0..LOD3 with hysteresis, lodDistanceScale, autoLod, zero geometry/readiness churn, and LOD0-pinned picking", async () => {
@@ -184,49 +237,105 @@ it("transitions chunks across LOD0..LOD3 with hysteresis, lodDistanceScale, auto
   const placeCameraAtDist = (dist: number) => {
     camera.position.set(0, 0, -(dist + radius));
     camera.getViewMatrix();
-    updateLandscapeLods(scene, camera, true);
+    updateLandscapeLods(scene, camera);
   };
 
-  // LOD1 (stride 2): 16x16x2 surface + 4x16x2 skirts = 640 tris (1920 indices)
+  // A lone chunk's edges are all the landscape's outer border, which has no skirts.
+  // LOD1 (stride 2): 16x16x2 surface = 512 tris (1536 indices)
   placeCameraAtDist(50);
   expect(subMesh.indexStart).toBeGreaterThan(0);
-  expect(subMesh.indexCount).toBe((16 * 16 + 4 * 16) * 6);
+  expect(subMesh.indexCount).toBe(16 * 16 * 6);
 
   // Hysteresis: stepping slightly inside 45m (to 44m, above 45 * 0.95 = 42.75m) keeps LOD1.
   placeCameraAtDist(44);
-  expect(subMesh.indexCount).toBe((16 * 16 + 4 * 16) * 6);
+  expect(subMesh.indexCount).toBe(16 * 16 * 6);
 
-  // LOD2 (stride 4): 8x8x2 surface + 4x8x2 skirts = 192 tris (576 indices)
+  // LOD2 (stride 4): 8x8x2 surface = 128 tris (384 indices)
   placeCameraAtDist(130);
-  expect(subMesh.indexCount).toBe((8 * 8 + 4 * 8) * 6);
+  expect(subMesh.indexCount).toBe(8 * 8 * 6);
 
-  // LOD3 (stride 8): 4x4x2 surface + 4x4x2 skirts = 64 tris (192 indices)
+  // LOD3 (stride 8): 4x4x2 surface = 32 tris (96 indices)
   placeCameraAtDist(280);
-  expect(subMesh.indexCount).toBe((4 * 4 + 4 * 4) * 6);
+  expect(subMesh.indexCount).toBe(4 * 4 * 6);
 
   // Zero geometry replacement, zero subMesh replacement, and zero readiness invalidation across all LOD transitions.
   expect(chunk.geometry).toBe(initialGeometry);
   expect(chunk.subMeshes).toBe(initialSubMeshes);
   expect(sceneReadinessRevision(scene)).toBe(readinessBefore);
 
-  // Picking while the chunk is actively rendering at LOD3 still hits the exact LOD0 spike at (x=1, z=1) -> y=9!
-  const world = chunk.computeWorldMatrix(true);
-  const pickAtLod3 = intersectLandscapeChunk(chunk, new Ray(new Vector3(1, 20, 1), Vector3.Down(), 40), world);
-  expect(pickAtLod3?.hit).toBe(true);
+  // A scene pick (brush, foliage, placement) while the chunk draws LOD3 still meets the LOD0 spike at (x=1, z=1), as
+  // foot placement's trace does.
+  const pickAtLod3 = scene.pickWithRay(new Ray(new Vector3(1, 20, 1), Vector3.Down(), 40));
+  expect(pickAtLod3?.pickedMesh).toBe(chunk);
   expect(pickAtLod3!.pickedPoint!.y).toBeCloseTo(9, 4);
+  expect(intersectLandscapeChunk(chunk, new Ray(new Vector3(1, 20, 1), Vector3.Down(), 40), chunk.computeWorldMatrix(true))!.pickedPoint!.y).toBeCloseTo(9, 4);
 
   // Scaling lodDistanceScale to 2 doubles thresholds -> 280m drops from LOD3 back to LOD2.
   updateSceneRenderingSettings(scene, {
     quality: { ...RENDER_QUALITY_PROFILES.medium, geometry: { ...RENDER_QUALITY_PROFILES.medium.geometry, lodDistanceScale: 2, autoLod: true } },
   });
-  updateLandscapeLods(scene, camera, true);
-  expect(subMesh.indexCount).toBe((8 * 8 + 4 * 8) * 6);
+  updateLandscapeLods(scene, camera);
+  expect(subMesh.indexCount).toBe(8 * 8 * 6);
 
   // Disabling autoLod pins the chunk back to LOD0 even at 280m.
   updateSceneRenderingSettings(scene, {
     quality: { ...RENDER_QUALITY_PROFILES.medium, geometry: { ...RENDER_QUALITY_PROFILES.medium.geometry, lodDistanceScale: 1, autoLod: false } },
   });
-  updateLandscapeLods(scene, camera, true);
+  updateLandscapeLods(scene, camera);
   expect(subMesh.indexStart).toBe(0);
   expect(subMesh.indexCount).toBe(32 * 32 * 6);
+});
+
+it.each([
+  { title: "a valley", amplitude: -40 },
+  { title: "a ridge", amplitude: 40 },
+])("leaves no crack where a LOD0 chunk meets a LOD3 chunk along $title on their seam", async ({ amplitude }) => {
+  const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
+  const { RENDER_QUALITY_PROFILES } = await import("@haptic/core");
+  const { updateSceneRenderingSettings } = await import("./render-settings");
+  const { updateLandscapeLods } = await import("./landscape-mesh");
+  const { engine, scene } = createTestEngine();
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  updateSceneRenderingSettings(scene, {
+    quality: { ...RENDER_QUALITY_PROFILES.medium, geometry: { ...RENDER_QUALITY_PROFILES.medium.geometry, lodDistanceScale: 0.25, autoLod: true } },
+  });
+  // 2 x 2 chunks of 32 cells, 10 m each. Rows of the field rise or sag by `amplitude` between every eighth row, so a
+  // LOD3 edge (every eighth sample) is a straight line while the LOD0 edge beside it follows the full relief.
+  const side = 65;
+  const heights = Float32Array.from({ length: side * side }, (_, i) => amplitude * Math.sin(Math.PI * (Math.floor(i / side) % 8) / 8));
+  const root = createLandscapeMesh(scene, "terrain", { width: 640, depth: 640, subdivisions: 64, heights });
+  const chunks = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh);
+  const near = chunks.find((chunk) => chunk.name.endsWith(":0:0"))!;
+  const far = chunks.find((chunk) => chunk.name.endsWith(":32:0"))!;
+  const camera = new FreeCamera("cam", new Vector3(-160, 0, -160), scene);
+  camera.getViewMatrix();
+  updateLandscapeLods(scene, camera);
+  expect(near.subMeshes[0]!.indexStart).toBe(0);
+  expect(far.subMeshes[0]!.indexCount).toBeLessThan(32 * 32 * 6 / 16);
+  // The drawn triangles of a chunk at its active LOD, as the GPU sees them.
+  const drawn = (chunk: Mesh) => {
+    const positions = chunk.getVerticesData(VertexBuffer.PositionKind)!;
+    const indices = chunk.getIndices()!;
+    const { indexStart, indexCount } = chunk.subMeshes[0]!;
+    const vertex = (i: number) => new Vector3(positions[i * 3]!, positions[i * 3 + 1]!, positions[i * 3 + 2]!);
+    const triangles: Vector3[][] = [];
+    for (let i = indexStart; i < indexStart + indexCount; i += 3) triangles.push([vertex(indices[i]!), vertex(indices[i + 1]!), vertex(indices[i + 2]!)]);
+    return triangles;
+  };
+  const surfaces = [...drawn(near), ...drawn(far)];
+  // Look across the seam (local x = 0) between the two chunks' edges, between the far chunk's samples (rows 0 and 8).
+  let probes = 0;
+  const holes: string[] = [];
+  for (let row = 1; row < 8; row++) {
+    const z = row * 10 - 320 + 0.5;
+    const trueEdge = amplitude * Math.sin(Math.PI * (row + 0.05) / 8);
+    for (let f = 0.1; f < 0.95; f += 0.2) {
+      const y = trueEdge * f;
+      probes++;
+      const ray = new Ray(new Vector3(-1, y, z), new Vector3(1, 0, 0), 2);
+      if (!surfaces.some(([a, b, c]) => ray.intersectsTriangle(a!, b!, c!))) holes.push(`z ${z.toFixed(1)} y ${y.toFixed(1)}`);
+    }
+  }
+  expect(probes).toBe(35);
+  expect(holes).toEqual([]);
 });

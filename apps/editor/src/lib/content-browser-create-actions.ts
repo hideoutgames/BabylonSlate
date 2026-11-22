@@ -218,16 +218,7 @@ export function buildParticleSystemAssetResult(emitterGuids: readonly string[], 
 
 /** A Data Definition whose fields start as the Structure's; fields without an id get `field-N`. */
 export function dataDefinitionFromStructure(structure: StructureAsset): DataDefinitionAsset {
-  const used = new Set(structure.fields.flatMap((field) => (field.id ? [field.id] : [])));
-  let next = 1;
-  const fields = structure.fields.map((field): DataDefinitionField => {
-    if (field.id) return { ...field, id: field.id };
-    while (used.has(`field-${next}`)) next += 1;
-    const id = `field-${next}`;
-    used.add(id);
-    return { ...field, id };
-  });
-  return createDataDefinitionAsset(fields);
+  return createDataDefinitionAsset(structure.fields.map((field): DataDefinitionField => ({ ...field })));
 }
 
 /** A Render Target Texture bound to `renderTargetGuid`. */

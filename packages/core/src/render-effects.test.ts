@@ -78,7 +78,7 @@ describe("render effects settings", () => {
   });
 
   it("accepts only declared enum values", () => {
-    for (const mode of ["sceneLinear", "legacyDisplay"] as const) {
+    for (const mode of ["sceneLinear", "displaySpace"] as const) {
       expect(
         normalizeRenderEffectsSettings({ colorPipeline: { mode } })
           .colorPipeline.mode,
@@ -181,7 +181,7 @@ describe("Scene Post Processing overrides", () => {
     expect(resolved.vignette).toEqual({ ...DEFAULT_RENDER_EFFECTS.vignette, enabled: true });
     expect(resolved.exposure).toBe(2);
     expect(resolved.contrast).toBe(3);
-    expect(resolved.colorPipeline).toEqual({ mode: "legacyDisplay" });
+    expect(resolved.colorPipeline).toEqual({ mode: "displaySpace" });
     expect(resolveRenderEffectsSettings(project, undefined)).toEqual(normalizeRenderEffectsSettings(project));
   });
 

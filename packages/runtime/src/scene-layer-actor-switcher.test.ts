@@ -4,6 +4,7 @@ import { Actor, ClassRegistry, SceneLayerActorSwitcher, World } from "@haptic/ob
 import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 import { SceneLayerActorSwitchers } from "./scene-layer-actor-switcher";
+import { variablesAtRelease } from "./testing/released-variables";
 
 const entryPoints = (...names: string[]) => names.map(name => ({ name, event: name, isAsync: false }));
 
@@ -69,6 +70,7 @@ describe("SceneLayer actor switcher", () => {
 
       const nested = runtime.getWorld().createActor({ classId: "SceneLayerActor", sceneLayerId: liveLayer.guid, variables: { parentId: first.guid } });
       runtime.getWorld().spawnActorNow(nested);
+      const releasedFirst = variablesAtRelease(first);
       switcher.setVariable("nextIndex", 1);
       runtime.tick();
       const second = switcher.currentActor!;
@@ -76,8 +78,8 @@ describe("SceneLayer actor switcher", () => {
       expect(second.getVariable("title")).toBe("Second");
       expect(first.destroyed).toBe(true);
       expect(nested.destroyed).toBe(true);
-      expect(first.getVariable("left")).toBe(0);
-      expect(first.getVariable("ended")).toBe(true);
+      expect(releasedFirst.get("left")).toBe(0);
+      expect(releasedFirst.get("ended")).toBe(true);
       expect(switcher.getVariable("returned")).toBe(second);
       expect(switcher.getVariable("queried")).toBe(second);
       expect(switcher.getVariable("switchingIndex")).toBe(1);

@@ -76,7 +76,7 @@ afterEach(() => {
     guid: "e1",
     name: "Colors",
     members: [{ name: "None", value: 0 }],
-    fields: [{ name: "Health", typeId: "float" }],
+    fields: [{ id: "Health", name: "Health", typeId: "float" }],
   };
 });
 
@@ -166,7 +166,7 @@ describe("type asset member table", () => {
       kind: "structure",
       guid: "s1",
       name: "Stats",
-      fields: [{ name: "Health", typeId: "float" }],
+      fields: [{ id: "Health", name: "Health", typeId: "float" }],
     };
     render(
       <TypeAssetEditingProvider>

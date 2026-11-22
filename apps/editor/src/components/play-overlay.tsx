@@ -213,7 +213,7 @@ export interface PlayOverlayProps {
   touchMinTargetPx?: number;
   navmeshBytes?: Uint8Array | null;
   sceneNavmeshBytes?: ReadonlyMap<string, Uint8Array>;
-  sceneLandscapeBytes?: ReadonlyMap<string, Uint8Array>;
+  sceneComponentChunks?: ReadonlyMap<string, Uint8Array>;
   audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
   audioReverbBytes?: Uint8Array | null;
   audioProjectSettings?: Partial<
@@ -356,7 +356,7 @@ function PlayOverlayView({
   touchMinTargetPx,
   navmeshBytes,
   sceneNavmeshBytes,
-  sceneLandscapeBytes,
+  sceneComponentChunks,
   audioReverbByScene,
   audioReverbBytes,
   audioProjectSettings,
@@ -720,8 +720,8 @@ function PlayOverlayView({
   navmeshBytesRef.current = navmeshBytes;
   const sceneNavmeshBytesRef = useRef(sceneNavmeshBytes);
   sceneNavmeshBytesRef.current = sceneNavmeshBytes;
-  const sceneLandscapeBytesRef = useRef(sceneLandscapeBytes);
-  sceneLandscapeBytesRef.current = sceneLandscapeBytes;
+  const sceneComponentChunksRef = useRef(sceneComponentChunks);
+  sceneComponentChunksRef.current = sceneComponentChunks;
   const audioReverbBySceneRef = useRef(audioReverbByScene);
   audioReverbBySceneRef.current = audioReverbByScene;
   const audioReverbBytesRef = useRef(audioReverbBytes);
@@ -967,7 +967,7 @@ function PlayOverlayView({
           pixelMatchedCameras: pixelMatchedCamerasRef.current,
           navmeshBytes: navmeshBytesRef.current,
           sceneNavmeshBytes: sceneNavmeshBytesRef.current,
-          sceneLandscapeBytes: sceneLandscapeBytesRef.current,
+          sceneComponentChunks: sceneComponentChunksRef.current,
           audioReverbByScene: audioReverbBySceneRef.current,
           audioReverbBytes: audioReverbBytesRef.current,
           audioProjectSettings: audioProjectSettingsRef.current,

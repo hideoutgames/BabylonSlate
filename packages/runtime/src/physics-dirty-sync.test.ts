@@ -10,6 +10,7 @@ import { createSoftwarePhysicsBackend } from "@haptic/physics";
 import { HavokPhysicsBackend } from "@haptic/physics/havok-backend";
 import { Rapier2DPhysicsBackend } from "@haptic/physics/rapier-backend";
 import { PhysicsWorldSync } from "./physics-sync";
+import { PhysicsChainComposer } from "./physics-preparation";
 import { DynamicRuntimeMeshSync } from "./dynamic-runtime-mesh";
 
 function createTestWorld(): World {
@@ -73,6 +74,182 @@ function spawnBox(
     }),
   );
   return world.spawnActorNow(actor);
+}
+
+function spawnPlain(world: World, guid: string, options: { x?: number; parentId?: string } = {}): Actor {
+  return world.spawnActorNow(world.createActor({
+    classId: "Actor",
+    guid,
+    variables: options.parentId ? { parentId: options.parentId } : {},
+    transform: {
+      position: { x: options.x ?? 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+    },
+  }));
+}
+
+function attachBox(world: World, actor: Actor, motionType: "static" | "dynamic"): void {
+  actor.attachComponent(world.createComponent({
+    classId: "RigidBodyComponent",
+    variables: { motionType, mass: motionType === "static" ? 0 : 1, linearDamping: 0.4, angularDamping: 0.4 },
+  }));
+  actor.attachComponent(world.createComponent({
+    classId: "ColliderComponent",
+    variables: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } },
+  }));
+}
+
+type BackendCase = "havok" | "rapier2d" | "software";
+
+async function zeroGravityBackend(kind: BackendCase) {
+  if (kind === "havok") return HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+  if (kind === "rapier2d") return Rapier2DPhysicsBackend.create({ kind: "2d", gravity: { x: 0, y: 0, z: 0 } });
+  return createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+}
+
+/** The private pose slots of a sync's pre-step composition; their count must follow the live World. */
+function compositionPoseCount(sync: PhysicsWorldSync): number {
+  return (sync as unknown as { composition: { poses: ReadonlyMap<string, unknown> } }).composition.poses.size;
+}
+
+describe("dirty-tracked PhysicsWorldSync review fixes", () => {
+  it.each([
+    ["havok", "body-less"],
+    ["havok", "static"],
+    ["rapier2d", "body-less"],
+    ["rapier2d", "static"],
+    ["software", "body-less"],
+    ["software", "static"],
+  ] as const)("keeps a resting dynamic child fixed in world space when its %s backend's %s parent moves", async (kind, parentKind) => {
+    const world = createTestWorld();
+    const backend = await zeroGravityBackend(kind);
+    const sync = new PhysicsWorldSync(backend);
+    try {
+      const planar = kind === "rapier2d";
+      const parent = parentKind === "static"
+        ? spawnBox(world, { guid: "parent", motionType: "static", planar })
+        : spawnPlain(world, "parent");
+      const child = spawnBox(world, { guid: "child", motionType: "dynamic", y: 3, parentId: parent.guid, planar });
+      for (let tick = 0; tick < 4; tick++) sync.step(1 / 60, world);
+
+      parent.transform.position.x = 10;
+      sync.step(1 / 60, world);
+      sync.step(1 / 60, world);
+
+      // The body never moved, so the actor's local pose compensates for its parent's move, as every backend did
+      // when readback read each simulated body every step.
+      expect(backend.getBodyTransform("body:child")!.position.x).toBeCloseTo(0, 4);
+      expect(child.transform.position.x).toBeCloseTo(-10, 4);
+    } finally {
+      sync.dispose();
+    }
+  });
+
+  it("releases the composition poses of destroyed actors and their ancestors under spawn and destroy churn", () => {
+    const world = createTestWorld();
+    const sync = new PhysicsWorldSync(createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 }));
+    try {
+      spawnBox(world, { guid: "keeper", motionType: "dynamic" });
+      sync.step(1 / 60, world);
+      for (let index = 0; index < 500; index++) {
+        const holder = spawnPlain(world, `holder-${index}`, { x: index });
+        const body = spawnBox(world, { guid: `crate-${index}`, motionType: "dynamic", y: 2, parentId: holder.guid });
+        sync.step(1 / 60, world);
+        world.destroyActor(body.guid);
+        world.destroyActor(holder.guid);
+        world.flushPending();
+        sync.step(1 / 60, world);
+      }
+      expect(world.getActors()).toHaveLength(1);
+      expect(compositionPoseCount(sync)).toBe(1);
+    } finally {
+      sync.dispose();
+    }
+  });
+
+  it("walks a moved actor's subtree once per sync, not once per coordinate write", () => {
+    const world = createTestWorld();
+    const sync = new PhysicsWorldSync(createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 }));
+    try {
+      const root = spawnPlain(world, "root");
+      const middle = spawnPlain(world, "middle", { parentId: root.guid });
+      spawnBox(world, { guid: "leaf", motionType: "static", parentId: middle.guid });
+      sync.syncFromWorld(world);
+
+      const children = vi.spyOn(world, "getChildren");
+      root.transform.position.x = 1;
+      const firstWalk = children.mock.calls.length;
+      expect(firstWalk).toBeGreaterThan(0);
+      root.transform.position.y = 2;
+      root.transform.position.z = 3;
+      middle.transform.position.x = 1;
+      expect(children).toHaveBeenCalledTimes(firstWalk);
+
+      sync.syncFromWorld(world);
+      expect(backendPose(sync, "leaf")).toEqual({ x: 2, y: 2, z: 3 });
+      // A new sync cycle walks again.
+      root.transform.position.x = 5;
+      expect(children.mock.calls.length).toBeGreaterThan(firstWalk);
+    } finally {
+      sync.dispose();
+    }
+  });
+
+  it("keeps the steady-state fast path while actors without physics move, and still places physics added later", () => {
+    const world = createTestWorld();
+    const sync = new PhysicsWorldSync(createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 }));
+    try {
+      spawnBox(world, { guid: "floor", motionType: "static", y: -1 });
+      const camera = spawnPlain(world, "camera");
+      const group = spawnPlain(world, "group");
+      const prop = spawnPlain(world, "prop", { x: 1, parentId: group.guid });
+      const carrier = spawnPlain(world, "carrier");
+      spawnBox(world, { guid: "rider", motionType: "static", x: 1, parentId: carrier.guid });
+      sync.syncFromWorld(world);
+
+      // Neither the camera nor the group (or anything under it) takes part in physics: the pass does no work.
+      const lookups = vi.spyOn(world, "findActor");
+      camera.transform.position.x = 4;
+      group.transform.position.x = 7;
+      sync.syncFromWorld(world);
+      expect(lookups).not.toHaveBeenCalled();
+
+      // A body-less ancestor of a participant still moves its body.
+      carrier.transform.position.x = 3;
+      sync.syncFromWorld(world);
+      expect(backendPose(sync, "rider").x).toBe(4);
+
+      // Physics added later under the moved group composes from its current pose.
+      attachBox(world, prop, "static");
+      attachBox(world, group, "static");
+      sync.syncFromWorld(world);
+      expect(backendPose(sync, "group").x).toBe(7);
+      expect(backendPose(sync, "prop").x).toBe(8);
+    } finally {
+      sync.dispose();
+    }
+  });
+
+  it("composes dirty chains into one reused map and pose pool", () => {
+    const world = createTestWorld();
+    const carrier = spawnPlain(world, "carrier", { x: 1 });
+    const rider = spawnBox(world, { guid: "rider", motionType: "kinematic", x: 1, parentId: carrier.guid });
+    const composer = new PhysicsChainComposer((guid) => world.findActor(guid), "3d");
+    const first = composer.compose([rider]);
+    const pose = first.get("rider");
+    expect(pose).toMatchObject({ position: { x: 2, y: 0, z: 0 } });
+    carrier.transform.position.x = 5;
+    const second = composer.compose([rider]);
+    expect(second).toBe(first);
+    expect(second.get("rider")).toBe(pose);
+    expect(pose).toMatchObject({ position: { x: 6, y: 0, z: 0 } });
+    expect([...second.keys()]).toEqual(["carrier", "rider"]);
+  });
+});
+
+function backendPose(sync: PhysicsWorldSync, guid: string) {
+  return sync.getBackend().getBodyTransform(`body:${guid}`)!.position;
 }
 
 describe("event-driven dirty-tracked PhysicsWorldSync", () => {

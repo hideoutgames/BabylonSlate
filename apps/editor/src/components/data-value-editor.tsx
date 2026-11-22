@@ -51,7 +51,7 @@ export function DataValueEditor({ field, value, defaultValue, onChange, label, p
         items={parseMapDefaultEntries(value)} touchAdaptive addLabel="Add Entry" countNoun={{ one: "entry", other: "entries" }}
         onCreate={() => ({ key: seed(field.keyTypeId ?? "string", field.keyTypeClassId), value: seed(field.typeId, field.typeClassId) })} onChange={change}
         renderItem={({ item, index, onChange: changeItem }) => <>
-          <DataValueEditor {...shared} field={{ name: "Key", typeId: field.keyTypeId ?? "string", typeClassId: field.keyTypeClassId }} value={item.key} defaultValue={seed(field.keyTypeId ?? "string", field.keyTypeClassId)} onChange={(key) => changeItem({ ...item, key })} label={`${label} Key ${index + 1}`} path={`${path}.${index}.key`} />
+          <DataValueEditor {...shared} field={{ id: `${field.id}.key`, name: "Key", typeId: field.keyTypeId ?? "string", typeClassId: field.keyTypeClassId }} value={item.key} defaultValue={seed(field.keyTypeId ?? "string", field.keyTypeClassId)} onChange={(key) => changeItem({ ...item, key })} label={`${label} Key ${index + 1}`} path={`${path}.${index}.key`} />
           <DataValueEditor {...shared} field={single} value={item.value} defaultValue={seed(field.typeId, field.typeClassId)} onChange={(next) => changeItem({ ...item, value: next })} label={`${label} Value ${index + 1}`} path={`${path}.${index}.value`} />
         </>}
       />}

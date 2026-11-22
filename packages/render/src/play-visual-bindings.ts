@@ -19,7 +19,7 @@ import { isSceneStreamSlotPending } from "./scene-stream-admission";
 import { meshForPlayComponent, type SnapshotSceneBinding } from "./snapshot-apply";
 import { ejectPooledLeaf, onPooledLeafEjected } from "./pooled-visuals";
 import { visualMeshes } from "./visual-meshes";
-import { ejectBatchedSprite } from "./world-sprite-batcher";
+import { ejectPlaySprite } from "./anim-apply";
 
 /** What Play's per-slot visual bindings read from the Engine handle being built. */
 export interface PlayVisualBindingsContext {
@@ -80,12 +80,12 @@ export function createPlayVisualBindings({
     ejectingForDeformers = true;
     try {
       ejectPooledLeaf(root);
-      ejectBatchedSprite(root);
+      ejectPlaySprite(binding, slotId, root);
       for (const part of binding.meshParts.get(slotId) ?? []) {
         const target = meshForPlayComponent(binding, slotId, part.componentId);
         if (target) {
           ejectPooledLeaf(target);
-          ejectBatchedSprite(target);
+          ejectPlaySprite(binding, slotId, target);
         }
       }
     } finally { ejectingForDeformers = false; }
@@ -171,10 +171,10 @@ export function createPlayVisualBindings({
     }
     if (!actorId || !root) return;
     if (authored?.bindings.length) {
-      ejectBatchedSprite(root);
+      ejectPlaySprite(binding, slotId, root);
       for (const part of binding.meshParts.get(slotId) ?? []) {
         const target = meshForPlayComponent(binding, slotId, part.componentId);
-        if (target) ejectBatchedSprite(target);
+        if (target) ejectPlaySprite(binding, slotId, target);
       }
     }
     // Runtime transforms are normally world-space. If a caller attaches actor

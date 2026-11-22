@@ -62,7 +62,8 @@ export async function runWaterReflectionProof() {
       // The mirror is requested by the water's first draws and drawn from the next renders.
       for (let frame = 0; frame < 8; frame++) {
         scene.incrementRenderId();
-        updateSceneWater(scene);
+        // Contacts settle each frame, as a load's do, so no capture depends on when the contact worker answers.
+        updateSceneWater(scene, false, true);
         await graph.prepare(camera);
         engine.beginFrame();
         try { graph.render(camera, false); } finally { engine.endFrame(); }

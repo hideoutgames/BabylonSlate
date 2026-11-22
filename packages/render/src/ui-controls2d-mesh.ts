@@ -6,7 +6,8 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import { parseUIControl2DProperties, uiControl2DDisplayText, uiControl2DFraction, type UIControl2DProperties } from "@haptic/core";
 import { applyAlbedoTexture, restoreAlbedoMaterial, type MeshAssetContext } from "./mesh-assets";
-import { applyOverlayUnlitMaterial, type OverlayUnlitFallback } from "./overlay-texture-quad";
+import { applyUserInterfaceFallback, type OverlayUnlitFallback } from "./overlay-texture-quad";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { copyMaterialOf } from "./unlit-material";
 import { updateUnlitBinding } from "./unlit-material-blocks";
@@ -45,7 +46,9 @@ export function refreshUIControl2DMaterials(root: Mesh, assets?: MeshAssetContex
     for (const surface of visual.surfaces) {
       const materialGuid = visual.properties[`${surface.role}MaterialGuid`];
       const textureGuid = visual.properties[`${surface.role}TextureGuid`];
-      const material = materialGuid ? assets?.resolveMaterial?.(materialGuid, { scene: mesh.getScene(), unlit: true }) : null;
+      const resolved = materialGuid ? assets?.resolveMaterial?.(materialGuid, { scene: mesh.getScene(), unlit: true }) : null;
+      // Only a User Interface Material; any other leaves the part as a missing one does.
+      const material = acceptsUserInterfaceMaterial(resolved) ? resolved : null;
       if (textureGuid && !materialGuid) {
         if (!restoreAlbedoMaterial(surface.mesh)) surface.fallback.apply();
         applyAlbedoTexture(surface.mesh, mesh.getScene(), textureGuid, assets, { alwaysBlend: true });
@@ -68,7 +71,7 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
   const labels = new Map<string, { mesh: Mesh; key: string }>();
   const surface = (role: Surface["role"], suffix: string, color: string, alpha = 1): Mesh => {
     const mesh = bundle.ownRenderUser(MeshBuilder.CreatePlane(suffix, { size: 1 }, scene));
-    const fallback = applyOverlayUnlitMaterial(mesh, Color3.FromHexString(color).asArray() as [number, number, number], alpha);
+    const fallback = applyUserInterfaceFallback(mesh, Color3.FromHexString(color).asArray() as [number, number, number], alpha);
     mesh.isPickable = false;
     mesh.alphaIndex = surfaces.length;
     surfaces.push({ mesh, role, fallback });

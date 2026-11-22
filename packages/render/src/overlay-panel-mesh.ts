@@ -10,8 +10,10 @@ import {
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import {
   applyOverlayUnlitMaterial,
+  applyUserInterfaceFallback,
   overlayTextureWorldSize,
 } from "./overlay-texture-quad";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 
 export type OverlayPanelMeshOptions = OverlayPanelProperties & {
   destWidth?: number;
@@ -97,8 +99,10 @@ export function createOverlayPanelMesh(
           unlit: true,
         }) ?? null
       : null;
-  if (compiled) mesh.material = compiled;
+  // A User Interface Material draws over the fallback look; any other leaves it.
+  if (parsed.source === "material") applyUserInterfaceFallback(mesh);
   else applyOverlayUnlitMaterial(mesh);
+  if (acceptsUserInterfaceMaterial(compiled)) mesh.material = compiled;
   if (parsed.source === "texture") {
     applyAlbedoTexture(mesh, scene, parsed.textureGuid, assets);
   }

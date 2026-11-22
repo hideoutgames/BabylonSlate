@@ -50,6 +50,32 @@ describe("Script timers", () => {
     expect(system.exists(looping)).toBe(true);
   });
 
+  it("keep an event's restarted timer when its old handle is cleared, and restart a timer its own event sets again", () => {
+    const fired: string[] = [];
+    const hero = owner();
+    let restarted = 0;
+    const system: ScriptTimers = new ScriptTimers({ canRunActions: () => true }, (delegate) => {
+      fired.push(delegate.name);
+      // A one-shot timer is gone before its event runs, so setting it again starts a new one.
+      if (delegate.name === "Again") restarted = system.set(hero, event(hero, "Again"), 1, false);
+    });
+    const first = system.set(hero, event(hero, "Tick"), 1, false);
+    const second = system.set(hero, event(hero, "Tick"), 1, false);
+    system.clear(first);
+    expect(system.exists(second)).toBe(true);
+    const again = system.set(hero, event(hero, "Again"), 0.5, false);
+    system.advance(0.5);
+    expect(fired).toEqual(["Again"]);
+    expect(restarted).not.toBe(again);
+    expect(system.exists(restarted)).toBe(true);
+    system.clear(second);
+    // Setting the cleared event again starts afresh.
+    const third = system.set(hero, event(hero, "Tick"), 1, false);
+    system.advance(1);
+    expect(fired).toEqual(["Again", "Again", "Tick"]);
+    expect(system.exists(third)).toBe(false);
+  });
+
   it("hold while paused, end when cleared or when the owner or event object goes, and hold for an owner that may not run", () => {
     let running = true;
     const { system, fired } = timers(() => running);

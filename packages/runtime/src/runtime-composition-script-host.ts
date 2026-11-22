@@ -76,6 +76,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
       recordDiagnostic: (diagnostic) => recordDiagnostic(rt, diagnostic),
       recordPrint: (print) => rt.ticks.recordPrint(print),
       emit,
+      stopped: () => rt.stopped,
     }),
     createObject: (classId) => rt.createScriptedObject(classId),
     collectGarbage: () => rt.objectLifetime.request(),

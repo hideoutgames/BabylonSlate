@@ -8,7 +8,7 @@ const edit = (value: number, identity = target) => ({ kind: "setProperty" as con
 function reply(request: RuntimeInspectorRequest): RuntimeInspectorResult {
   const action = request.action;
   return { sessionGeneration: request.sessionGeneration, requestId: request.requestId, success: true,
-    tickIndex: 40, frameId: 80, commandRevision: 3, structuralRevision: 1,
+    tickIndex: 40, frameId: 80, commandRevision: 3, identityRevision: 1,
     payload: action.kind === "identities" ? { kind: "identities", rows: [], unchanged: false }
       : action.kind === "resolvePick" ? { kind: "identity", row: { identity: target, classId: "Actor", name: "Actor", kind: "actor", parent: null, renderSlotId: action.slotId } }
       : action.kind === "selection" ? { kind: "selection", target: action.target, classId: "Actor", properties: [], transformCapability: "live",

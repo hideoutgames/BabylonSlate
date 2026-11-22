@@ -10,7 +10,8 @@ import { applyMaterialBounds } from "./material-bounds";
 import { restoreAlbedoMaterial } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
-import { ejectBatchedSprite } from "./world-sprite-batcher";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
+import { ejectPlaySprite } from "./anim-apply";
 import {
   componentIdForPlayMesh,
   isMesh,
@@ -195,6 +196,25 @@ export function wantsOverlayUnlitMaterial(
   }
 }
 
+/**
+ * Whether `slotId` is a Scene Layer 2D component that draws only User Interface Materials (2D Material, 2D Panel, a 2D
+ * control, 2D Joystick). Any other Material assigned to it is not drawn, as one that does not resolve is not.
+ */
+export function takesUserInterfaceMaterial(
+  binding: Pick<SnapshotSceneBinding, "meshKinds">,
+  slotId: number,
+): boolean {
+  switch (binding.meshKinds.get(slotId)) {
+    case "2dmaterial":
+    case "2dpanel":
+    case "2dcontrol":
+    case "2djoystick":
+      return true;
+    default:
+      return false;
+  }
+}
+
 /** The parameter values recorded for `slotId`'s component (or its actor) drawn with `guid`, and their instance key. */
 function assignedParameters(binding: SnapshotSceneBinding, slotId: number, componentId: string | null, guid: string) {
   let instanceKey = materialInstanceKey(slotId, componentId);
@@ -251,6 +271,7 @@ export function applyMaterialToActorMeshes(
   const targets: AbstractMesh[] = [root, ...root.getChildMeshes().filter((mesh) => isMesh(mesh) ||
     (isPoolMember(mesh) && (!mesh.parent || pooledLeafOf(mesh.parent as AbstractMesh) !== mesh)))];
   const components = new Map<SceneNode, string | null>();
+  const userInterface = takesUserInterfaceMaterial(binding, slotId);
   for (const target of targets) {
     // Text Materials are composed with glyph coverage by the text builder.
     if (target.metadata?.text2d || target.metadata?.text2dGlyph) continue;
@@ -270,9 +291,14 @@ export function applyMaterialToActorMeshes(
       guid,
       componentId,
     );
-    if (material) {
-      // A custom Material override promotes a batched sprite to a standalone quad mesh in place.
-      ejectBatchedSprite(target);
+    // A 2D component's surfaces draw only a User Interface Material; any other is not drawn, as a missing one is not.
+    if (material && (!userInterface || acceptsUserInterfaceMaterial(material))) {
+      // A custom Material override promotes a batched sprite to a standalone quad mesh in place; its new crossfade
+      // overlay draws with the Material too, as an unbatched sprite's does.
+      if (ejectPlaySprite(binding, slotId, target)) {
+        const overlay = binding.spriteOverlays?.get(slotId);
+        if (overlay?.parent === target && !targets.includes(overlay)) targets.push(overlay);
+      }
       // A Material no pool group can draw (World Position Offset pads its bounds) gives the visual a mesh of its own.
       const drawn = setDrawnMaterial(target, material);
       if (!target.isDisposed()) applyMaterialBounds(target);

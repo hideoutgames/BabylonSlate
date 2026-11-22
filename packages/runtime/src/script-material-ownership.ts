@@ -16,6 +16,8 @@ export interface MaterialOwnershipHost {
 export class ScriptMaterialOwnership {
   private readonly materialReplacements = new WeakMap<EngineObject, Map<string, number>>();
   private readonly materialPreloads = new WeakMap<EngineObject, Map<string, { id: string; guid: string }>>();
+  /** Post-process Material Objects holding a preload, released once their pass is gone (`releaseRetiredPostProcessPreloads`). */
+  private readonly postProcessHolders = new Set<PostProcessMaterialObject>();
   private readonly host: MaterialOwnershipHost;
 
   constructor(host: MaterialOwnershipHost) {
@@ -44,8 +46,25 @@ export class ScriptMaterialOwnership {
     if (preload?.id) {
       if (!scopes) { scopes = new Map(); this.materialPreloads.set(owner, scopes); }
       scopes.set(key, preload);
+      if (owner instanceof PostProcessMaterialObject) this.postProcessHolders.add(owner);
     } else scopes?.delete(key);
     if (previous && previous.id !== preload?.id) this.host.services.releaseAcquiredAssets?.(previous.id);
+  }
+
+  /**
+   * Releases what each post-process Material Object whose pass is gone held: one unregistered, replaced, or of an
+   * owner (a Scene) that was destroyed. Nothing else reaches such an object to release it, and its preloads would keep
+   * their assets loaded until Play stops.
+   */
+  releaseRetiredPostProcessPreloads(): void {
+    for (const material of this.postProcessHolders) {
+      if (!material.isCurrent()) this.releaseMaterialPreloads(material);
+    }
+  }
+
+  /** Releases every preload a post-process Material Object holds (Play stops). */
+  releaseAllPostProcessPreloads(): void {
+    for (const material of this.postProcessHolders) this.releaseMaterialPreloads(material);
   }
 
   /** A synchronous set keeps the scope's preload only while it holds the asset being set. */
@@ -57,6 +76,7 @@ export class ScriptMaterialOwnership {
   releaseMaterialPreloads(owner: EngineObject): void {
     const scopes = this.materialPreloads.get(owner);
     this.materialPreloads.delete(owner);
+    if (owner instanceof PostProcessMaterialObject) this.postProcessHolders.delete(owner);
     for (const { id } of scopes?.values() ?? []) this.host.services.releaseAcquiredAssets?.(id);
   }
 

@@ -153,7 +153,7 @@ export async function runColorGradingProof() {
       effects.colorPipeline.mode = "sceneLinear";
       effects.toneMapping = "none";
       const linearInverted = await draw();
-      effects.colorPipeline.mode = "legacyDisplay";
+      effects.colorPipeline.mode = "displaySpace";
       effects.colorGrading = { enabled: true, lutTextureGuid: "missing" };
       const missing = await draw();
       effects.colorGrading = { enabled: false, lutTextureGuid: "invert" };

@@ -28,7 +28,8 @@ export class RuntimeVoices {
   private rng: Rng | null = null;
   private clockSeconds = 0;
   private nextScriptVoice = 1;
-  private activeSceneGuid: string | undefined;
+  /** The load of the active Scene (`activeScene`'s `sceneLoadId`), once one is active. */
+  private activeSceneLoadId: number | undefined;
 
   /** `seed` is read at the first draw: the session seed. */
   constructor(seed: () => number) {
@@ -135,12 +136,13 @@ export class RuntimeVoices {
       const voice = this.live.get(command.voiceId);
       if (voice) voice.volume = command.volume;
     } else if (command.type === "activeScene") {
-      // Hosts reset their audio session when the active Scene changes from the boot Scene onward.
-      if (this.activeSceneGuid !== undefined && command.sceneAssetGuid !== this.activeSceneGuid) {
+      // Hosts reset their audio session for every Scene load after the boot Scene's, the same Scene loaded again
+      // (a level restart) included.
+      if (this.activeSceneLoadId !== undefined && command.sceneLoadId !== this.activeSceneLoadId) {
         this.live.clear();
         this.fades.clear();
       }
-      this.activeSceneGuid = command.sceneAssetGuid;
+      this.activeSceneLoadId = command.sceneLoadId;
     }
   }
 

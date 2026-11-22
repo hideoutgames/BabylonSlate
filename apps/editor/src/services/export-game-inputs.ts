@@ -9,6 +9,9 @@ import {
 import {
   AUDIO_DEFAULT_SOURCE_CHUNK,
   AUDIO_REVERB_CHUNK_ID,
+  collectFoliageChunksForPlay,
+  compactTilemapPayload,
+  normalizeTilemapPayload,
   collectLandscapeChunksForPlay,
   currentAreaEmissionChunk,
   decodeAreaEmission,
@@ -22,6 +25,7 @@ import {
   FONT_MSDF_CHUNK_ID,
   FONT_MSDF_PNG_CHUNK_ID,
   isKtx2BlockAligned,
+  foliageChunkIdsInHeader,
   landscapeChunkIdsInHeader,
   normalizeAudioPayload,
   normalizeModelPayload,
@@ -137,8 +141,8 @@ export type LoadedExportDocuments = {
   navmeshByGuid: (guid: string) => Uint8Array | null;
   /** Throws for a Scene the reverb bake could not read or save, so its chunk may be stale. */
   audioReverbByGuid: (guid: string) => Uint8Array | null;
-  /** Raw binary `BSLD` landscape chunks owned by a Scene. */
-  landscapeChunksByGuid: (guid: string) => ReadonlyArray<{ chunkId: string; bytes: Uint8Array }>;
+  /** Raw binary Landscape (`HPLD`) and Foliage (`HPFG`) chunks owned by a Scene. */
+  componentChunksByGuid: (guid: string) => ReadonlyArray<{ chunkId: string; bytes: Uint8Array }>;
 };
 
 /** Audio clip chunks: the clip importer allocates only `source` and `source:N`. */
@@ -155,7 +159,7 @@ function fontSourceChunkId(header: HassetHeader): string | undefined {
 /** Chunks packed with a type's document, or null for a type that packs its document alone. */
 function exportChunkSelection(type: string): ExportChunkSelection | null {
   switch (type) {
-    case "Scene": return (header) => [...SCENE_EXPORT_CHUNK_IDS, ...landscapeChunkIdsInHeader(header.chunks)];
+    case "Scene": return (header) => [...SCENE_EXPORT_CHUNK_IDS, ...landscapeChunkIdsInHeader(header.chunks), ...foliageChunkIdsInHeader(header.chunks)];
     case "Audio": return (header) => header.chunks.map((chunk) => chunk.id).filter(isAudioClipChunkId);
     case "Model": return ["source"];
     case "Font": return (header) => [fontSourceChunkId(header), ...FONT_SIDECAR_CHUNK_IDS].filter((id) => id !== undefined);
@@ -245,6 +249,10 @@ async function bytesForAsset(
   // A Timeline Clip asset ships its keys, events and proxies; its Editor Preview never leaves the editor.
   if (isTimelineClipAssetType(asset.header.type) && document) {
     return encoder.encode(JSON.stringify(stripTimelineClipAssetEditorData(normalizeTimelineClipAsset(document))));
+  }
+  // A Tilemap ships its chunks run-length encoded, as its .hasset stores them.
+  if (asset.header.type === "Tilemap" && document) {
+    return encoder.encode(JSON.stringify(compactTilemapPayload(normalizeTilemapPayload(document))));
   }
   if (JSON_TYPES.has(asset.header.type) && document) {
     return encoder.encode(JSON.stringify(document));
@@ -360,15 +368,14 @@ export async function loadExportDocuments(
       }
     }
     if (asset.header.type === "Scene" && document) {
-      const collected = collectLandscapeChunksForPlay(document as SerializedScene, snapshot?.chunks);
-      document = collected.payload;
-      if (collected.chunks.size > 0) {
-        landscapes.set(
-          asset.header.guid,
-          [...collected.chunks.entries()].map(([chunkId, chunkBytes]) => ({ chunkId, bytes: chunkBytes })),
-        );
+      const landscape = collectLandscapeChunksForPlay(document as SerializedScene, snapshot?.chunks);
+      const foliage = collectFoliageChunksForPlay(landscape.payload, snapshot?.chunks);
+      document = foliage.payload;
+      const collected = [...landscape.chunks, ...foliage.chunks];
+      if (collected.length > 0) {
+        landscapes.set(asset.header.guid, collected.map(([chunkId, chunkBytes]) => ({ chunkId, bytes: chunkBytes })));
       }
-      scenes.set(asset.header.guid, collected.payload);
+      scenes.set(asset.header.guid, foliage.payload);
     }
     if (asset.header.type === "Texture") {
       // Texture settings live in the header read with its chunks.
@@ -450,6 +457,6 @@ export async function loadExportDocuments(
       if (audioReverbErrors.has(guid)) throw audioReverbErrors.get(guid);
       return audioReverbs.get(guid) ?? null;
     },
-    landscapeChunksByGuid: (guid) => landscapes.get(guid) ?? [],
+    componentChunksByGuid: (guid) => landscapes.get(guid) ?? [],
   };
 }

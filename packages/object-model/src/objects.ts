@@ -169,10 +169,6 @@ class ColliderVariables extends ComponentVariables {
   }
 }
 
-/** Variables that change actor identity/hierarchy and so the World's structural revision. */
-const isStructuralActorVariable = (name: string): boolean =>
-  name === "parentId" || name === "name";
-
 /** Every write path, including direct `variables` map writes, marks structural and variable changes. */
 class ActorVariables extends VersionedVariables {
   private readonly actor: Actor;
@@ -188,35 +184,35 @@ class ActorVariables extends VersionedVariables {
     this.actor?.world?.noteActorVariableChanged?.(this.actor, name);
   }
 
+  // `parentId` changes the hierarchy and so the World's structural revision. A
+  // `name` write reaches the World as a variable change (`World.actorNameRevision`).
   override set(name: string, value: unknown): this {
-    const previous = isStructuralActorVariable(name) ? this.get(name) : undefined;
-    const prevParent = name === "parentId" ? normalizeParentGuid(previous) : null;
-    const nextParent = name === "parentId" ? normalizeParentGuid(value) : null;
+    if (name !== "parentId") return super.set(name, value);
+    const previous = this.get(name);
+    const prevParent = normalizeParentGuid(previous);
+    const nextParent = normalizeParentGuid(value);
     super.set(name, value);
-    if (name === "parentId" && value !== previous) {
+    if (value !== previous) {
       if (prevParent !== nextParent && this.actor?.world?.noteActorParentChanged) {
         this.actor.world.noteActorParentChanged(this.actor, prevParent, nextParent);
       } else {
         this.markStructureChanged();
       }
-    } else if (name === "name" && value !== previous) {
-      this.markStructureChanged();
     }
     return this;
   }
 
   override delete(name: string): boolean {
-    const previous = isStructuralActorVariable(name) ? this.get(name) : undefined;
-    const prevParent = name === "parentId" ? normalizeParentGuid(previous) : null;
+    if (name !== "parentId") return super.delete(name);
+    const previous = this.get(name);
+    const prevParent = normalizeParentGuid(previous);
     const deleted = super.delete(name);
-    if (name === "parentId" && previous !== undefined) {
+    if (previous !== undefined) {
       if (prevParent !== null && this.actor?.world?.noteActorParentChanged) {
         this.actor.world.noteActorParentChanged(this.actor, prevParent, null);
       } else {
         this.markStructureChanged();
       }
-    } else if (name === "name" && previous !== undefined) {
-      this.markStructureChanged();
     }
     return deleted;
   }
@@ -224,11 +220,10 @@ class ActorVariables extends VersionedVariables {
   override clear(): void {
     const prevParentVal = this.get("parentId");
     const prevParent = normalizeParentGuid(prevParentVal);
-    const hadName = this.get("name") !== undefined;
     super.clear();
     if (prevParent !== null && this.actor?.world?.noteActorParentChanged) {
       this.actor.world.noteActorParentChanged(this.actor, prevParent, null);
-    } else if (prevParentVal !== undefined || hadName) {
+    } else if (prevParentVal !== undefined) {
       this.markStructureChanged();
     }
   }
@@ -247,17 +242,30 @@ function freezeCollisionValue(value: unknown, seen = new WeakSet<object>()): unk
   return value;
 }
 
+/** Shared by every object built without hooks; never written. */
+const NO_HOOKS: LifecycleHooks = Object.freeze({});
+
 export class EngineObject {
   readonly guid: Guid;
   readonly classId: string;
   readonly variables: Map<string, unknown>;
   implementedInterfaces: string[] = [];
-  interfaceHandlers = new Map<
+  /** Per-instance interface handlers keyed by `interfaceGuid:methodName`; null until the first is bound. */
+  interfaceHandlers: Map<
     string,
     (args: Record<string, unknown>) => Record<string, unknown>
-  >();
+  > | null = null;
   private readonly hooks: LifecycleHooks;
   private _destroyed = false;
+  private _stateReleased = false;
+
+  /**
+   * Destruction finished and `releaseState` dropped the object's state. Unlike `destroyed`, which its own
+   * destruction hooks already see, a script touching such an object is touching nothing.
+   */
+  get stateReleased(): boolean {
+    return this._stateReleased;
+  }
 
   get destroyed(): boolean {
     return this._destroyed;
@@ -282,7 +290,7 @@ export class EngineObject {
     this.guid = options.guid ?? newGuid(options.guidFactory);
     this.classId = options.classId;
     this.variables = this.createVariables(Object.entries(options.variables ?? {}));
-    this.hooks = options.hooks ?? {};
+    this.hooks = options.hooks ?? NO_HOOKS;
     this.implementedInterfaces = [...(options.implementedInterfaces ?? [])];
   }
 
@@ -320,6 +328,19 @@ export class EngineObject {
     this.hooks.onDestroyed?.(this);
   }
 
+  /**
+   * Once destruction has finished (its hooks and engine teardown ran): drops the variables, except `name`,
+   * which debug labels and messages still show, and the interface handlers. Reads then answer nothing.
+   */
+  releaseState(): void {
+    this._stateReleased = true;
+    const variables = this.variables;
+    const name = variables.get("name");
+    variables.clear();
+    if (name !== undefined) variables.set("name", name);
+    this.interfaceHandlers = null;
+  }
+
   getVariable(name: string): unknown {
     return this.variables.get(name);
   }
@@ -334,8 +355,13 @@ export class Actor extends EngineObject {
   private _transformRevision = 0;
   readonly components: ActorComponent[] = [];
   world: WorldLike | null = null;
-  /** Stable spawn index assigned by World. */
+  /** Dense position in the World's actor list, reassigned after removals. */
   spawnIndex = -1;
+  /**
+   * The World's spawn count when this actor spawned: never reassigned, so it
+   * orders actors across removals (the actor list is ascending in it).
+   */
+  spawnOrder = -1;
   private _generateHitEvents = true;
   private _generateOverlapEvents = true;
   /** When false, World skips this actor's Event Tick (`onTick`). Components still tick. */
@@ -509,6 +535,9 @@ export class ActorComponent extends EngineObject {
   override callOnDestroyed(): void {
     this.owner?.world?.markStructureChanged?.();
     super.callOnDestroyed();
+    // A script holding the component's Material object sees it destroyed, and the component lets go of it.
+    if (this.materialObject) this.materialObject.destroyed = true;
+    this.materialObject = null;
   }
 
   protected override onDestroyedFlagChanged(): void {

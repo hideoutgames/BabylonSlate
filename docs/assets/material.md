@@ -1,6 +1,6 @@
 # Material
 
-A node graph that decides how a surface, landscape, particle, piece of text or full-screen pass looks.
+A node graph that decides how a surface, landscape, particle, piece of text, 2D interface element or full-screen pass looks.
 
 ## Create
 
@@ -13,7 +13,7 @@ Or select Textures, right-click one and choose **Create Material**. Textures nam
 Double-tap a Material to open it.
 
 - **Graph**: place nodes with **Add Node** and wire them into the output node for the Material's domain. **Format** in the graph toolbar lays out what feeds the output, flowing in from the left ([Format](../scripting/index.md#format)).
-- **Preview**: the Material on a shape. Pick **Cube**, **Sphere**, **Cylinder**, **Cone**, **Plane** or **Custom** to preview on one of your Models. A key light from the upper right and a soft fill light the shape, as they light thumbnails. The default sky behind the shape also lights it, so metallic and glossy Materials reflect it.
+- **Preview**: the Material on a shape. Pick **Cube**, **Sphere**, **Cylinder**, **Cone**, **Plane** or **Custom** to preview on one of your Models. A key light from the upper right and a soft fill light the shape, as they light thumbnails. The default sky behind the shape also lights it, so metallic and glossy Materials reflect it. A User Interface Material instead fills the whole Preview window as one flat element, with no shape to pick and no orbit or zoom ([User Interface Materials](../graphics/materials.md#user-interface-materials)).
 - **Inspector**: the Material's settings, or the selected node's properties. With several nodes selected, it shows the properties and input defaults they all have, such as **A** and **B** for an **Add** and a **Multiply**, with **Mixed Values** where they differ. An edit changes every selected node, and typing a sum such as `Mixed Values+4` changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)).
 - **Compiler Results**: problems with the graph. Tap one to jump to its node, or double-tap it to also bring **Graph** forward. Right-click or hold one to copy it.
 
@@ -53,15 +53,17 @@ With no node selected, the **Inspector** shows these settings. Some apply to onl
 
 | Setting | Description |
 | --- | --- |
-| Domain | **Surface** (meshes and models), **Landscape**, **Post Process** (full-screen passes), **Particle**, **Text** (2D text in Scene Layers) or **Decal** (projected by a [Decal](../components/decal.md) or [Spawn Decal](../scripting/class/spawn-decal.md)). Changing it removes nodes the new domain does not support; between Surface and Decal the output node keeps the wires both outputs have. |
+| Domain | **Surface** (meshes and models), **Landscape**, **Post Process** (full-screen passes), **Particle**, **Text** (2D text in Scene Layers), **Decal** (projected by a [Decal](../components/decal.md) or [Spawn Decal](../scripting/class/spawn-decal.md)) or **User Interface** (2D Materials, 2D Panels, 2D Joysticks and 2D controls in Scene Layers). Changing it removes nodes the new domain does not support; between Surface and Decal the output node keeps the wires both outputs have. |
 | Shading Model | **PBR** (lit) or **Unlit**. Surface, Landscape and Decal. |
-| Blend Mode | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (Surface, Landscape and Decal): Multiply darkens what is behind by the colour, scaled by Opacity. A Multiply Material on a Scene Layer draws as Translucent. Not shown for Particle, Post Process or Text: particle emitters set their own blending, and a post-process pass replaces the picture. |
+| Blend Mode | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (Surface, Landscape and Decal): Multiply darkens what is behind by the colour, scaled by Opacity. A Multiply Material on a Scene Layer draws as Translucent. User Interface offers only **Translucent** and **Additive**. Not shown for Particle, Post Process or Text: particle emitters set their own blending, and a post-process pass replaces the picture. |
 | Alpha Cutoff | Masked only. Pixels with lower opacity are cut out. Under [MSAA](../graphics/post-processing.md#anti-aliasing) the cut-out edges are smoothed (not on decals). |
 | Two Sided | Draws back faces too. Surface and Landscape. |
 | Default Normals | **Model Normals** or **Flat Normals**, used when the Normal input is unconnected. Surface and Landscape. |
 | Bounds Padding (Local) | Enlarges culling bounds for Materials that move vertices, so displaced meshes do not vanish at screen edges. Surface and Landscape. |
 
-Each domain has its own output node: [Material Output](../scripting/material/material-output.md) for Surface and Landscape, [Post Process Output](../scripting/material/post-process-output.md), [Particle Output](../scripting/material/particle-output.md), [Text Output](../scripting/material/text-output.md) and [Decal Output](../scripting/material/decal-output.md).
+Each domain has its own output node: [Material Output](../scripting/material/material-output.md) for Surface and Landscape, [Post Process Output](../scripting/material/post-process-output.md), [Particle Output](../scripting/material/particle-output.md), [Text Output](../scripting/material/text-output.md), [Decal Output](../scripting/material/decal-output.md) and [User Interface Output](../scripting/material/user-interface-output.md).
+
+Text and User Interface Materials are always unlit and two-sided, so a User Interface Material shows only **Domain** and **Blend Mode**.
 
 A Decal Material previews projected onto a floor and a ball. In its graph, [UV](../scripting/material/uv.md) gives the decal's projected coordinates and World Position and World Normal the surface under it. A Per Instance parameter is an ordinary parameter in a Decal Material: each decal's own Tint and Opacity are its per-decal values.
 
@@ -71,10 +73,11 @@ Every Material field takes Materials of one domain, and its picker lists only th
 
 | Domain | Fields |
 | --- | --- |
-| Surface | **Material** on a Mesh, Dynamic Runtime Mesh, Cable or Mirror; a Model's material slots; a Foliage Model's **Material Override**; a Water's **Custom Material**; Scene Layer **Material** fields (2D Material, 2D Panel, 2D Joystick and the 2D controls' part Materials); the **Set Material Instance** node |
+| Surface | **Material** on a Mesh, Dynamic Runtime Mesh, Cable or Mirror, including a 3D mesh in a Scene Layer; a Model's material slots; a Foliage Model's **Material Override**; a Water's **Custom Material**; the **Set Material Instance** node |
 | Landscape | **Landscape Material** |
 | Decal | **Material** on a Decal; the **Spawn Decal** node |
 | Text | **Text Material** on 2D Text and 2D Rich Text |
+| User Interface | Scene Layer **Material** fields: 2D Material, 2D Panel (Source set to Material), 2D Joystick and the 2D controls' part Materials |
 | Particle | an emitter's **Material** |
 | Post Process | **Post-Process Passes** (Scene and Scene Layers); the **Material** of a Scene Layer post-processing panel; the Register and Unregister Post-Processing nodes |
 
@@ -84,7 +87,7 @@ Every Material field takes Materials of one domain, and its picker lists only th
 ## Notes
 
 - Add a [Float Parameter](../scripting/material/float-parameter.md), [Vector2 Parameter](../scripting/material/vector2-parameter.md), [Vector3 Parameter](../scripting/material/vector3-parameter.md), [Vector4 Parameter](../scripting/material/vector4-parameter.md), [Color Parameter](../scripting/material/color-parameter.md) or [Texture Parameter](../scripting/material/texture-parameter.md) to expose a value to Material Instances and scripts.
-- Assign a Material to a [Mesh component's](../components/mesh.md) **Material** field.
+- Assign a Material to a [Mesh component's](../components/mesh.md) **Material** field. 2D components in Scene Layers take a User Interface Material instead ([User Interface Materials](../graphics/materials.md#user-interface-materials)).
 - In CEL projects, lit Surface Materials switch to CEL lighting automatically.
 
 ## Related

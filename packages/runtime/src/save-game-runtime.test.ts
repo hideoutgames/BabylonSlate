@@ -3,6 +3,7 @@ import { createActor, createDefaultScene, createDefaultSceneLayer, type SaveGame
 import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";
+import { variablesAtRelease } from "./testing/released-variables";
 
 class MemoryStorage implements SaveGameStorage {
   readonly files = new Map<string, string>();
@@ -93,12 +94,13 @@ describe("runtime Save Game", () => {
       expect(component.getVariable("beganCoins")).toBe(7);
       expect(row.getVariable("beganWhenLoaded")).toBe(7);
       expect(component.getVariable("beganWhenLoaded")).toBe(7);
+      const [releasedRow, releasedComponent] = [variablesAtRelease(row), variablesAtRelease(component)];
       list.setVariable("itemCount", 0);
       expect((await service.loadGame()).ok).toBe(true);
       runtime.tick();
       expect(row.destroyed).toBe(true);
-      expect(row.getVariable("ended")).toBe(true);
-      expect(component.getVariable("ended")).toBe(true);
+      expect(releasedRow.get("ended")).toBe(true);
+      expect(releasedComponent.get("ended")).toBe(true);
     } finally { runtime.stop(); }
   });
 
@@ -404,13 +406,13 @@ describe("runtime Save Game", () => {
       const original = [...storage.files];
       const exported = await service.exportSave();
       if (!exported.ok) throw new Error(exported.error.message);
-      const envelope = JSON.parse(exported.value);
-      const payload = JSON.parse(envelope.payload);
+      // A save file is a `haptic-save <format> <sha256>` line, then the JSON body.
+      const payload = JSON.parse(exported.value.slice(exported.value.indexOf("\n") + 1));
       payload.state.actors.find((actor: { id: string }) => actor.id === "hero").variables.target = invalidMap;
-      envelope.payload = JSON.stringify(payload);
-      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(envelope.payload));
-      envelope.checksum = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
-      expect(await service.importSave(JSON.stringify(envelope))).toMatchObject({ ok: false, error: { code: "corrupt" } });
+      const body = JSON.stringify(payload);
+      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+      const file = `haptic-save 1 ${Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("")}\n${body}`;
+      expect(await service.importSave(file)).toMatchObject({ ok: false, error: { code: "corrupt" } });
       expect([...storage.files]).toEqual(original);
       expect(hero(runtime).getVariable("target")).toBe(liveMap);
     } finally { runtime.stop(); }

@@ -39,7 +39,7 @@ export function EffectRow({
   toggle?: boolean;
   /** Indented under the row that enables it. */
   dependent?: boolean;
-  /** Disabled in every scope, such as a Scene Linear setting in Legacy Display. */
+  /** Disabled in every scope, such as a Scene Linear setting in Display Space. */
   disabled?: boolean;
   /** The project value as the Scene status line shows it. */
   display?: (value: unknown) => string;

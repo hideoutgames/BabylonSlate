@@ -66,7 +66,7 @@ Read the current state from **Velocity**, **Speed** (horizontal), **Is Grounded*
 
 The [Rigid Body](../components/rigid-body.md)'s **Motion Type** decides who moves the actor.
 
-- **No Rigid Body, or Kinematic.** Movement moves its own capsule with collision and its own gravity. [Add Impulse](../scripting/class/add-impulse.md) adds the impulse divided by the actor's mass to Movement's velocity: 1 without a Rigid Body, or the Kinematic Rigid Body's **Mass**. A launch pad can launch a walker this way.
+- **No Rigid Body, or Kinematic.** Movement moves its own capsule with collision and its own gravity. [Add Impulse](../scripting/class/add-impulse.md) adds the impulse divided by the actor's mass to Movement's velocity: 1 without a Rigid Body, or the Kinematic Rigid Body's **Mass**. A launch pad can launch a walker this way. In 3D the capsule pushes a Dynamic Rigid Body it walks into to about its own speed, however heavy the body, and follows as it gives way; in 2D the body stops it like a wall.
 - **Dynamic.** Physics moves the actor, and Movement steers it every physics step. It moves the body's horizontal speed toward the input using **Max Speed**, **Acceleration**, **Braking** and **Air Control**, and leaves the vertical speed to physics. The Rigid Body's mass, **Gravity Scale**, damping, collisions and impulses all apply.
 - **Static.** A static body cannot move, so Movement stops and **Compiler Results** warns.
 

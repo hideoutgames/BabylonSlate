@@ -57,7 +57,6 @@ import {
   useActiveDocumentId,
   useCompileState,
   useDocumentActions,
-  useEditorShellState,
   useProjectState,
   useRegistryState,
   useSaveState,
@@ -264,8 +263,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   const [simulationAssetGuids, setSimulationAssetGuids] = useState<readonly string[] | undefined>();
   const [playSaveGame, setPlaySaveGame] = useState<import("@haptic/core").SaveGameConfiguration>();
   const [preparing, setPreparing] = useState(false);
-  const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
-  const [playResumeRequested, setPlayResumeRequested] = useState(false);
   const [prepareState, setPrepareState] = useState<{
     phase: PlayPreparePhase;
     dirtyNames: string[];
@@ -350,7 +347,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     [projectBuildNumber, projectName, projectVersion],
   );
   const { assetRegistry, registryEpoch, projectGuid, extensionService } = useRegistryState();
-  const { migrationPending } = useEditorShellState();
   const { dirtyDocuments, projectDirty } = useSaveState();
   const { graphsNeedCompile } = useCompileState();
   // Edits of other kinds leave this list alone; the save, compile and shell
@@ -480,7 +476,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     dirtyDocuments,
     projectDirty,
     graphsNeedCompile,
-    migrationPending,
     sceneDocuments,
     openPlaySceneGuid,
     openPlaySceneDocumentId: openPlayScene?.sceneAssetGuid ?? null,
@@ -569,7 +564,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setPrepareState(null);
     setPlayBlockedOpen(false);
     setBlockedDiagnostics([]);
-    setPlayAwaitingMigration(false);
     pendingScriptsRef.current = null;
     pendingPlayOptionsRef.current = undefined;
   }, [projectDocument, sessionOwner]);
@@ -751,7 +745,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     setSessionPlayScene,
     setStartupAlertOpen,
     setUnsavedPrompt,
-    setPlayAwaitingMigration,
     appendLog,
     showPreviewReport,
     loadSaveGameDefinition,
@@ -777,7 +770,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       }
       // Read at call time (see playRequestInputsRef); shadows the render values.
       const {
-        activeDocumentId, assetRegistry, dirtyDocuments, extensionService, graphsNeedCompile, migrationPending,
+        activeDocumentId, assetRegistry, dirtyDocuments, extensionService, graphsNeedCompile,
         projectDirty, projectDocument, sceneDocuments,
         hasStartupScene,
         openPlaySceneGuid,
@@ -806,17 +799,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       const plan = planPlayPreviewPrepare({
         dirtyDocuments: skipSave ? [] : dirtyLabels.map((label) => ({ label })),
         scriptsStale: graphsNeedCompile,
-        migrationPending: migrationPending.length > 0,
       });
 
       const dirtyNames = plan.action === "prepare" ? plan.dirtyNames : dirtyLabels;
-      // Ask before writing anything (including a migrate-on-save) to disk.
+      // Ask before writing anything to disk.
       if (!skipSave && options?.saveChoice !== "save" && dirtyNames.length > 0) {
         setUnsavedPrompt({ dirtyNames, previewBuild: false, options });
-        return;
-      }
-      if (plan.action === "migrate") {
-        setPlayAwaitingMigration(true);
         return;
       }
 
@@ -853,9 +841,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             const outcome = await current(saveAll("play"));
             if (outcome !== "saved") {
               setPrepareState(null);
-              // Pending migrations wait for Migrate On Save, then Play resumes. A document
-              // someone else has locked stays unsaved: Save Failed says Play did not start.
-              if (outcome === "migrations") setPlayAwaitingMigration(true);
+              // A document someone else has locked stays unsaved: Save Failed says Play did not start.
               return;
             }
           }
@@ -1051,25 +1037,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     return () => { delete host.__hapticSimulationTest; };
   }, [requestSimulate, sessionOwner]);
 
-  const resumePlayAfterMigration = useCallback(async () => {
-    setPlayAwaitingMigration(false);
-    setPlayResumeRequested(true);
-  }, []);
-
-  useEffect(() => {
-    if (!playResumeRequested || migrationPending.length > 0) return;
-    // Resume only after the cleared migrations and current project reach this
-    // render; requestPlay reads them from the inputs its layout effect stored.
-    setPlayResumeRequested(false);
-    void requestPlay(pendingPlayOptionsRef.current);
-  }, [migrationPending.length, playResumeRequested, requestPlay]);
-
-  const cancelPlayMigration = useCallback(() => {
-    setPlayAwaitingMigration(false);
-    setPlayResumeRequested(false);
-    pendingPlayOptionsRef.current = undefined;
-  }, []);
-
   const handleClose = useCallback(
     (result: PlaySessionResult, ticket?: GameSessionTicket) => {
       if (ticket && sessionOwner.getSnapshot().generation !== ticket.generation) return;
@@ -1138,7 +1105,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       registerSimulationViewport,
       playing,
       preparing,
-      playAwaitingMigration,
       requestPlay,
       canPlay,
       previewBuild,
@@ -1156,8 +1122,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setOverlayProfiler,
       setPauseOnPlay,
       launchPlay,
-      resumePlayAfterMigration,
-      cancelPlayMigration,
       registerSharedEngine,
       ensureSharedEngine: ensureEngine,
       sharedEngineGeneration,
@@ -1179,7 +1143,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       registerSimulationViewport,
       playing,
       preparing,
-      playAwaitingMigration,
       requestPlay,
       canPlay,
       previewBuild,
@@ -1197,8 +1160,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       setOverlayProfiler,
       setPauseOnPlay,
       launchPlay,
-      resumePlayAfterMigration,
-      cancelPlayMigration,
       registerSharedEngine,
       ensureEngine,
       sharedEngineGeneration,
@@ -1364,11 +1325,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             const prompt = unsavedPrompt;
             setUnsavedPrompt(null);
             if (!prompt) return;
-            if (prompt.previewBuild) {
-              // A migrate-on-save approval resumes through requestPlay.
-              pendingPlayOptionsRef.current = { saveChoice };
-              void requestPreviewBuild(saveChoice === "save");
-            }
+            if (prompt.previewBuild) void requestPreviewBuild(saveChoice === "save");
             else void requestPlay({ ...prompt.options, saveChoice });
           }}
         />

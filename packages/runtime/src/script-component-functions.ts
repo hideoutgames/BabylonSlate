@@ -8,6 +8,8 @@ import { splineComponentFunction } from "./spline-script";
 /** What native component functions read from their `ScriptHost`. */
 export interface ComponentFunctionHost {
   readonly services: ScriptHostServices;
+  /** A Class's or Prefab's name as the editor shows it, from its loaded script; undefined for an engine class. */
+  classDisplayName(classId: string): string | undefined;
   canInvokeOwner(owner: EngineObject): boolean;
   /** Sends what a component property already stored changes. */
   applyComponentVariable(component: ActorComponent, name: string, value: unknown): void;

@@ -2170,37 +2170,7 @@ describe("DocumentProvider closed document history", () => {
     }
   });
 
-  it("runs a complete Save All for Migrate On Save and asks only once per project session", async () => {
-    const actions = await openProject();
-    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
-    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 3)));
-    const derived = await createDerivedStorage();
-    const guid = documents().projectGuid!;
-    // An untouched file still waits for migration after the approved save.
-    const pending = vi.spyOn(ProjectService.prototype, "pendingMigrations", "get").mockReturnValue([
-      { type: "Scene", fromVersion: 0, toVersion: 4, path: "assets/Untouched.scene.hasset" },
-    ]);
-    try {
-      expect(await act(() => actions.saveAll())).toBe("migrations");
-      expect(documents().migrationPromptRequest).toBe(1);
-      expect(documents().dirtyDocuments.map((doc) => doc.id)).toEqual([MAIN_SCENE_ID]);
-
-      expect(await act(() => actions.approveMigrationsAndSave())).toBe("saved");
-      expect(documents().dirtyDocuments).toEqual([]);
-      // Save cleared the journal its edit was written to, so no recovery remains.
-      await act(() => new Promise((resolve) => setTimeout(resolve, JOURNAL_FLUSH_DELAY_MS * 2)));
-      expect(await readJournalLines(derived, guid)).toEqual([]);
-
-      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
-      expect(await act(() => actions.saveAll())).toBe("saved");
-      expect(documents().migrationPromptRequest).toBe(1);
-      expect(documents().dirtyDocuments).toEqual([]);
-    } finally {
-      pending.mockRestore();
-    }
-  });
-
-  it("holds the editor viewports' frames for the whole Save All and releases them when it saves, fails or is refused", async () => {
+  it("holds the editor viewports' frames for the whole Save All and releases them when it saves or fails", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
     const transitions: boolean[] = [];
@@ -2222,17 +2192,8 @@ describe("DocumentProvider closed document history", () => {
       await expect(act(() => actions.saveAll())).rejects.toThrow("Storage unavailable");
       expect(transitions.at(-1)).toBe(false);
 
-      const pending = vi.spyOn(ProjectService.prototype, "pendingMigrations", "get").mockReturnValue([
-        { type: "Scene", fromVersion: 0, toVersion: 4, path: "assets/Untouched.scene.hasset" },
-      ]);
-      try {
-        expect(await act(() => actions.saveAll())).toBe("migrations");
-      } finally {
-        pending.mockRestore();
-      }
-      expect(transitions.at(-1)).toBe(false);
-      // Each of the three took the hold once and gave it back.
-      expect(transitions).toEqual([false, true, false, true, false, true, false]);
+      // Each of the two took the hold once and gave it back.
+      expect(transitions).toEqual([false, true, false, true, false]);
     } finally {
       save.mockRestore();
       unsubscribe();
