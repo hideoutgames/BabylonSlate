@@ -13,6 +13,7 @@ import { writeRenderListEntry } from "./observed-render-list";
 import { OcclusionBuffer } from "./occlusion-raster";
 import { keepsDrawingOutsideView } from "./play-view-culling";
 import { sceneRenderingSettings } from "./render-settings";
+import { verifiesRetainedFrustumCull } from "./retained-frustum-cull";
 import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { RENDERING_GROUP } from "./sorting";
 
@@ -325,7 +326,7 @@ export class ViewOcclusion {
    * last computed); `meshes` itself when nothing is hidden or the view is not culled. `renderPassId` is the colour
    * pass whose first draws keep a mesh drawn.
    */
-  filter(meshes: readonly AbstractMesh[], camera: Camera, renderPassId: number): readonly AbstractMesh[] {
+  filter(meshes: readonly AbstractMesh[], camera: Camera, renderPassId: number, bounds?: OcclusionBounds): readonly AbstractMesh[] {
     const diagnostics = this.diagnostics;
     this.culled.clear();
     const scene = camera.getScene();
@@ -360,9 +361,9 @@ export class ViewOcclusion {
         const occluders = this.drawOccluders(meshes, camera, held);
         if (!occluders) return meshes;
         this.drawn = { occluders: diagnostics.occluders, triangles: diagnostics.triangles };
-        if (occluders === "kept" && verifyingKeptBuffers) return this.checkKept(meshes, camera, scene.getEngine(), renderPassId);
+        if (occluders === "kept" && verifyingKeptBuffers) return this.checkKept(meshes, camera, scene.getEngine(), renderPassId, bounds);
       }
-      return this.cull(meshes, scene.getEngine(), renderPassId);
+      return this.cull(meshes, scene.getEngine(), renderPassId, bounds);
     } finally {
       diagnostics.ms = performance.now() - start;
       if (!frozen) this.noteRun(diagnostics.culled);
@@ -480,16 +481,16 @@ export class ViewOcclusion {
   }
 
   /** Filters with the kept buffer, then draws the occluders again and filters once more; counts a list that differs. */
-  private checkKept(meshes: readonly AbstractMesh[], camera: Camera, engine: AbstractEngine, renderPassId: number): readonly AbstractMesh[] {
+  private checkKept(meshes: readonly AbstractMesh[], camera: Camera, engine: AbstractEngine, renderPassId: number, bounds?: OcclusionBounds): readonly AbstractMesh[] {
     const check = this.checkList, diagnostics = this.diagnostics;
-    const kept = this.cull(meshes, engine, renderPassId);
+    const kept = this.cull(meshes, engine, renderPassId, bounds);
     check.length = 0;
     for (const mesh of kept) check.push(mesh);
     const occluders = diagnostics.occluders, triangles = diagnostics.triangles;
     diagnostics.tested = diagnostics.culled = 0;
     this.culled.clear();
     this.rasterizeOccluders(camera);
-    const drawn = this.cull(meshes, engine, renderPassId);
+    const drawn = this.cull(meshes, engine, renderPassId, bounds);
     diagnostics.keptChecks += 1;
     let differs = drawn.length !== check.length || occluders !== diagnostics.occluders || triangles !== diagnostics.triangles;
     for (let index = 0; !differs && index < drawn.length; index++) differs = drawn[index] !== check[index];
@@ -535,7 +536,7 @@ export class ViewOcclusion {
     return 2;
   }
 
-  private cull(meshes: readonly AbstractMesh[], engine: AbstractEngine, renderPassId: number): readonly AbstractMesh[] {
+  private cull(meshes: readonly AbstractMesh[], engine: AbstractEngine, renderPassId: number, bounds?: OcclusionBounds): readonly AbstractMesh[] {
     // The object passes observe `kept` once they have drawn it, so it is written in place (`writeRenderListEntry`).
     const kept = this.kept;
     let count = 0;
@@ -544,9 +545,19 @@ export class ViewOcclusion {
       const mesh = meshes[index]!;
       if (occludable(mesh) && !firstDrawPending(mesh, engine, renderPassId)) {
         diagnostics.tested += 1;
-        const box = mesh.getBoundingInfo().boundingBox;
-        const min = box.minimumWorld, max = box.maximumWorld;
-        if (this.buffer.occluded(min.x, min.y, min.z, max.x, max.y, max.z)) {
+        const slot = bounds ? bounds.slots[index]! : -1;
+        let hidden: boolean;
+        if (slot >= 0) {
+          // The frustum cull's copy of the mesh's world box: the same six numbers, read without touching the mesh.
+          const boxes = bounds!.boxes, at = slot * 6;
+          if (verifiesRetainedFrustumCull()) checkBoundsCopy(mesh, boxes, at);
+          hidden = this.buffer.occluded(boxes[at]!, boxes[at + 1]!, boxes[at + 2]!, boxes[at + 3]!, boxes[at + 4]!, boxes[at + 5]!);
+        } else {
+          const box = mesh.getBoundingInfo().boundingBox;
+          const min = box.minimumWorld, max = box.maximumWorld;
+          hidden = this.buffer.occluded(min.x, min.y, min.z, max.x, max.y, max.z);
+        }
+        if (hidden) {
           // The first hidden mesh starts the own list with every mesh before it.
           if (diagnostics.culled === 0) for (let before = 0; before < index; before++) writeRenderListEntry(kept, count++, meshes[before]!);
           diagnostics.culled += 1;
@@ -574,6 +585,21 @@ export class ViewOcclusion {
 }
 
 const PLANE_INDICES = [0, 1, 3, 0, 3, 2];
+
+/**
+ * The world boxes of a filtered list's meshes as a frustum cull already holds them (`RetainedFrustumCull.outputBounds`):
+ * per list entry, the slot of its six numbers in `boxes` (minimum x, y, z, maximum x, y, z at `slot * 6`), or -1 for a
+ * mesh to ask itself.
+ */
+export type OcclusionBounds = { readonly slots: Int32Array; readonly boxes: Float64Array };
+
+/** While the retained frustum cull is verified: a box copy that is not the mesh's world box throws. */
+function checkBoundsCopy(mesh: AbstractMesh, boxes: Float64Array, at: number): void {
+  const box = mesh.getBoundingInfo().boundingBox, min = box.minimumWorld, max = box.maximumWorld;
+  if (Object.is(boxes[at], min.x) && Object.is(boxes[at + 1], min.y) && Object.is(boxes[at + 2], min.z) &&
+    Object.is(boxes[at + 3], max.x) && Object.is(boxes[at + 4], max.y) && Object.is(boxes[at + 5], max.z)) return;
+  throw new Error(`Occlusion: the retained box of "${mesh.name}" is not its world box.`);
+}
 
 /** The determinant of a Babylon matrix's upper 3 × 3 (negative for a mirror). */
 function determinant3(m: ArrayLike<number>): number {
