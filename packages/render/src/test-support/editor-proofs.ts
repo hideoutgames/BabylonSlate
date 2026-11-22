@@ -2,12 +2,14 @@
  * Render internals the editor's in-browser proofs (`apps/editor/src/testing`) drive directly. The proofs run only
  * in test-mode builds; production code imports render through its other exports.
  */
+export { applyAnimStateToScene, sceneAnimHostFromBinding } from "../anim-apply";
 export { setRectLightEmission } from "../area-emission-array";
 export { retainAreaLightLookup } from "../area-light-resources";
 export { OwnedRectAreaLight } from "../area-rect-light";
 export { checkedShader } from "../checked-shader";
 export { cullSceneByWhatShows } from "../cull-accuracy";
 export { createDepthTextureTarget } from "../depth-texture-target";
+export { readEngineDrawCalls } from "../draw-calls";
 export { pendingDriverEffects } from "../driver-compile";
 export { retainFilteredEnvironment } from "../environment-prefilter";
 export { LogicalGeometryTask } from "../framegraph-logical-buffers";
@@ -23,26 +25,36 @@ export { instanceParameterOf, prepareInstanceParameters, setMeshInstanceParamete
 export { sceneInstancePool, setSceneInstancing } from "../instance-pool";
 export { isForwardLightExcluded, setAuthoredLightEnabled } from "../light-policy";
 export { add2DLight, add2DOccluder } from "../lights-2d";
+export { compileMaterialPlan } from "../material-compiler";
+export { ownedVisualTexturePreparation } from "../mesh-assets";
 export { createMirrorSurfaceMesh, mirrorDiagnostics } from "../mirrors";
 export { loadModelContainer } from "../model-container";
 export { attachModelLods, generateModelLods } from "../model-lod";
 export { sceneImagePages, setSceneDrawBatching, setSceneImagePages } from "../overlay-draw-batcher";
 export { applyOverlayVisualStyle, enableOverlayVisualMaterial, overlayVisualStyle } from "../overlay-visual-style";
+export { encodeRgbaPng } from "../png-encode";
 export { poolModelLeaves } from "../pooled-model-leaves";
 export { createPooledPrimitiveVisual } from "../pooled-primitive-visual";
 export { pooledLeafOf, setActorMeshMaterial, setDrawnMaterial } from "../pooled-visuals";
 export { followsPose, setScenePoseBounds } from "../pose-bounds";
+export { ResourceCache } from "../resource-cache";
 export { isRevealPending } from "../reveal-pending";
+export { SceneLayerCompositor } from "../scene-layer-compositor";
 export { buildSceneLayerHud } from "../scene-layer-hud-fixture";
 export { setSceneOutputScale } from "../scene-output-scale";
+export { setSceneRenderSettings } from "../scene-render-mode";
 export { SCREEN_SHADOW_LEVELS } from "../screen-shadows";
 export { AtlasCascadedShadowGenerator, discardParkedShadowAtlas, isAtlasShadow, shadowAtlasDrawCounts, shadowAtlasRenderTarget, shadowAtlasTexture, shadowTileSize } from "../shadow-atlas";
 export { findSceneShadowController, sceneShadowController, SceneShadowController } from "../shadow-controller";
 export { ShadowMapRefresh } from "../shadow-map-refresh";
 export { type ShadowParticipation } from "../shadow-mesh-policy";
 export { type RetainedShadowDiagnostics, setRetainedShadowCasters } from "../shadow-retained-casters";
+export { applyAssignMesh, applySnapshotToScene, createSnapshotSceneBinding, disposeSnapshotBinding } from "../snapshot-apply";
+export { applyWorldVisualGroup, RENDERING_GROUP } from "../sorting";
 export { type SpatialEffectsGraph } from "../spatial-effects-graph";
 export { warmSpawnables } from "../spawnable-warm";
+export { createSpriteQuad, setSpriteQuadSize, setSpriteQuadUvs } from "../sprite-quad";
+export { createTilemapMeshes } from "../tilemap-mesh";
 export { atlasImageProcessing, setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "../unlit-material";
 export { setSceneBindsPreviousEffects } from "../variant-swaps";
 export { allowSceneOcclusionCulling } from "../view-occlusion";

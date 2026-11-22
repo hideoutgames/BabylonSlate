@@ -20,11 +20,15 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, createPrimitiveMesh, setSceneRenderSettings, readEngineDrawCalls } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, createPrimitiveMesh, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { encodeGlbJsonBin } from "@haptic/assets";
-import { cullSceneByWhatShows, loadModelContainer, followsPose, setScenePoseBounds, setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
+import { cullSceneByWhatShows } from "@haptic/render/editor-proofs";
+import { readEngineDrawCalls } from "@haptic/render/editor-proofs";
+import { loadModelContainer } from "@haptic/render/editor-proofs";
+import { followsPose, setScenePoseBounds } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
 
 const WIDTH = 240;
 const HEIGHT = 160;

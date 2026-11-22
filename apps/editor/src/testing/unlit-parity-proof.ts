@@ -22,7 +22,8 @@ import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderEffectsSettings, type RenderMode } from "@haptic/core";
 import { setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
-import { applyOverlayVisualStyle, enableOverlayVisualMaterial, atlasImageProcessing, setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "@haptic/render/editor-proofs";
+import { applyOverlayVisualStyle, enableOverlayVisualMaterial } from "@haptic/render/editor-proofs";
+import { atlasImageProcessing, setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "@haptic/render/editor-proofs";
 import { msdfReferenceMaterial } from "./msdf-reference";
 import { StandardFogPlugin } from "./standard-reference";
 

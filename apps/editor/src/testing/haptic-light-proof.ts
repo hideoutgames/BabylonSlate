@@ -42,7 +42,13 @@ import {
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import type { AreaEmissionPixels } from "@haptic/assets";
-import { setRectLightEmission, retainAreaLightLookup, OwnedRectAreaLight, retainFilteredEnvironment, setSceneBindsPreviousEffects, setAuthoredLightEnabled, isAtlasShadow } from "@haptic/render/editor-proofs";
+import { setRectLightEmission } from "@haptic/render/editor-proofs";
+import { retainAreaLightLookup } from "@haptic/render/editor-proofs";
+import { OwnedRectAreaLight } from "@haptic/render/editor-proofs";
+import { retainFilteredEnvironment } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
+import { setAuthoredLightEnabled } from "@haptic/render/editor-proofs";
+import { isAtlasShadow } from "@haptic/render/editor-proofs";
 
 type Surface = { name: string; baseColor: readonly number[]; metallic: number; specular: number; roughness: number; environmentInfluence: number };
 const SURFACES: Surface[] = [

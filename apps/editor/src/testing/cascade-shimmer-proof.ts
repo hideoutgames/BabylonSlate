@@ -18,7 +18,8 @@ import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { setSceneBindsPreviousEffects, setAuthoredLightEnabled } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
+import { setAuthoredLightEnabled } from "@haptic/render/editor-proofs";
 import type { AtlasCascadedShadowGenerator } from "@haptic/render/editor-proofs";
 import { floorShadowMask } from "./haptic-contact-shadow-proof";
 

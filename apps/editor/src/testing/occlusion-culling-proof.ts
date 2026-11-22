@@ -18,8 +18,9 @@ import {
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { readEngineDrawCalls } from "@haptic/render";
-import { setSceneBindsPreviousEffects, allowSceneOcclusionCulling } from "@haptic/render/editor-proofs";
+import { readEngineDrawCalls } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
+import { allowSceneOcclusionCulling } from "@haptic/render/editor-proofs";
 
 export async function runOcclusionCullingProof() {
   const canvas = document.createElement("canvas");

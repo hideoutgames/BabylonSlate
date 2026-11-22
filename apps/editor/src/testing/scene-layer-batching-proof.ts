@@ -19,8 +19,13 @@ import type { LayerCameraState } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 // The engine-wide registrations a shipped Engine loads before it exists (multiple render targets among them).
 import "@haptic/render/babylon-registrations";
-import { readEngineDrawCalls, compileMaterialPlan, SceneLayerCompositor, createSpriteQuad, setSpriteQuadUvs } from "@haptic/render";
-import { sceneImagePages, setSceneDrawBatching, setSceneImagePages, buildSceneLayerHud, setUnlitMaterial } from "@haptic/render/editor-proofs";
+import { readEngineDrawCalls } from "@haptic/render/editor-proofs";
+import { compileMaterialPlan } from "@haptic/render/editor-proofs";
+import { sceneImagePages, setSceneDrawBatching, setSceneImagePages } from "@haptic/render/editor-proofs";
+import { SceneLayerCompositor } from "@haptic/render/editor-proofs";
+import { buildSceneLayerHud } from "@haptic/render/editor-proofs";
+import { createSpriteQuad, setSpriteQuadUvs } from "@haptic/render/editor-proofs";
+import { setUnlitMaterial } from "@haptic/render/editor-proofs";
 
 const WIDTH = 960;
 const HEIGHT = 540;

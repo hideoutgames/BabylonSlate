@@ -28,7 +28,10 @@ import {
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { setSceneBindsPreviousEffects, setAuthoredLightEnabled, isAtlasShadow, type AtlasCascadedShadowGenerator, setRetainedShadowCasters } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
+import { setAuthoredLightEnabled } from "@haptic/render/editor-proofs";
+import { isAtlasShadow, type AtlasCascadedShadowGenerator } from "@haptic/render/editor-proofs";
+import { setRetainedShadowCasters } from "@haptic/render/editor-proofs";
 
 /** `passes`: the light's map passes the capture's frame drew, and `originMoved` whether the render origin moved, where counted. */
 type Capture = { name: string; atlas: boolean; pixels: number[]; passes?: number; originMoved?: boolean };

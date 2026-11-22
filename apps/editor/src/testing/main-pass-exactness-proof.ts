@@ -50,12 +50,30 @@ import type { FrameGraphRenderTarget } from "@babylonjs/core/FrameGraph/frameGra
 import { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
 import type { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { Constants } from "@babylonjs/core/Engines/constants";
-import { retainAreaLightLookup, OwnedRectAreaLight, LogicalGeometryTask, ManagedShadowObjectRendererTask, pendingDriverEffects, fullTargetClear, drawGeometryDepthSeed, setMeshInstanceParameters, setSceneOutputScale, GlSignatureRecorder, installGlSignature, HapticLightingBlock, createMirrorSurfaceMesh, mirrorDiagnostics, shadowAtlasDrawCounts, findSceneShadowController, SceneShadowController, AtlasCascadedShadowGenerator, ShadowMapRefresh, hasOwnerNotifiedGeometry } from "@haptic/render/editor-proofs";
+import { retainAreaLightLookup } from "@haptic/render/editor-proofs";
+import { OwnedRectAreaLight } from "@haptic/render/editor-proofs";
+import { LogicalGeometryTask } from "@haptic/render/editor-proofs";
+import { ManagedShadowObjectRendererTask } from "@haptic/render/editor-proofs";
+import { pendingDriverEffects } from "@haptic/render/editor-proofs";
+import { fullTargetClear } from "@haptic/render/editor-proofs";
+import { drawGeometryDepthSeed } from "@haptic/render/editor-proofs";
+import { setMeshInstanceParameters } from "@haptic/render/editor-proofs";
+import { setSceneOutputScale } from "@haptic/render/editor-proofs";
+import { GlSignatureRecorder, installGlSignature } from "@haptic/render/editor-proofs";
+import { HapticLightingBlock } from "@haptic/render/editor-proofs";
+import { createMirrorSurfaceMesh, mirrorDiagnostics } from "@haptic/render/editor-proofs";
 import { allowSceneScreenShadows } from "@haptic/render/render-settings";
-import { setSceneRenderSettings, createSpriteQuad, setSpriteQuadSize, createTilemapMeshes } from "@haptic/render";
+import { setSceneRenderSettings } from "@haptic/render/editor-proofs";
+import { shadowAtlasDrawCounts } from "@haptic/render/editor-proofs";
+import { findSceneShadowController, SceneShadowController } from "@haptic/render/editor-proofs";
 import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
+import { AtlasCascadedShadowGenerator } from "@haptic/render/editor-proofs";
+import { ShadowMapRefresh } from "@haptic/render/editor-proofs";
+import { hasOwnerNotifiedGeometry } from "@haptic/render/editor-proofs";
+import { createSpriteQuad, setSpriteQuadSize } from "@haptic/render/editor-proofs";
+import { createTilemapMeshes } from "@haptic/render/editor-proofs";
 
 /**
  * The shadow maps' savings as before them, from the current; returns the restore. Every cascade of a sun's atlas map

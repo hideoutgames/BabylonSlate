@@ -13,11 +13,16 @@ import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
-import { compileMaterialPlan, setSceneRenderSettings, RENDERING_GROUP } from "@haptic/render";
+import { compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { encodeUvSphereGlb } from "@haptic/render/glb-test-fixtures";
-import { setSceneInstancing, loadModelContainer, attachModelLods, generateModelLods, poolModelLeaves, setDrawnMaterial } from "@haptic/render/editor-proofs";
+import { setSceneInstancing } from "@haptic/render/editor-proofs";
+import { loadModelContainer } from "@haptic/render/editor-proofs";
+import { attachModelLods, generateModelLods } from "@haptic/render/editor-proofs";
+import { poolModelLeaves } from "@haptic/render/editor-proofs";
+import { setDrawnMaterial } from "@haptic/render/editor-proofs";
+import { RENDERING_GROUP } from "@haptic/render/editor-proofs";
 
 const WIDTH = 160;
 const HEIGHT = 90;

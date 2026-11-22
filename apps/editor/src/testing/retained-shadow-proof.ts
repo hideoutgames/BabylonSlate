@@ -22,7 +22,9 @@ import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core
 import { applyAuthoredLightProperties, compileMaterialPlan, createPrimitiveMesh, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { sceneShadowController, setRetainedShadowCasters, type RetainedShadowDiagnostics, setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
+import { sceneShadowController } from "@haptic/render/editor-proofs";
+import { setRetainedShadowCasters, type RetainedShadowDiagnostics } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
 import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
 
 const WIDTH = 200;

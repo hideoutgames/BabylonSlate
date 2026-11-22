@@ -26,10 +26,13 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
-import { applyAuthoredLightProperties, setSceneRenderSettings, compileMaterialPlan } from "@haptic/render";
+import { applyAuthoredLightProperties, setSceneRenderSettings } from "@haptic/render";
 import { glErrorTraceEntries, installGlErrorTrace } from "@haptic/render/gl-error-trace";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
-import { setSceneBindsPreviousEffects, isRevealPending, warmSpawnables } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
+import { compileMaterialPlan } from "@haptic/render/editor-proofs";
+import { isRevealPending } from "@haptic/render/editor-proofs";
+import { warmSpawnables } from "@haptic/render/editor-proofs";
 
 /** A graph Material of one base colour; `variant` changes its document's settings, so it compiles its own program. */
 async function graphMaterial(scene: Scene, name: string, color: number[], variant: (doc: MaterialDocument) => void = () => undefined) {

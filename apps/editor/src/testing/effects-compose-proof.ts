@@ -30,9 +30,11 @@ import {
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings, largeWorldEngineOptions } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialBlendMode } from "@haptic/shader-graph";
-import { GlSignatureRecorder, installGlSignature, setSceneWorldDebug, setUnlitMaterial } from "@haptic/render/editor-proofs";
+import { GlSignatureRecorder, installGlSignature } from "@haptic/render/editor-proofs";
 import { allowSceneScreenShadows } from "@haptic/render/render-settings";
 import type { SpatialEffectsGraph } from "@haptic/render/editor-proofs";
+import { setSceneWorldDebug } from "@haptic/render/editor-proofs";
+import { setUnlitMaterial } from "@haptic/render/editor-proofs";
 
 export type EffectsComposeVariant =
   | "ao" | "fog" | "reflections" | "ao-fog" | "all" | "screen-shadows" | "marches" | "marches-fog-idle" | "marches-sun-unshadowed";

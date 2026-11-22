@@ -23,12 +23,20 @@ import {
 } from "@haptic/assets";
 import { SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
 import { normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, applyAnimStateToScene, sceneAnimHostFromBinding, readEngineDrawCalls, ownedVisualTexturePreparation, encodeRgbaPng, ResourceCache, setSceneRenderSettings, applyAssignMesh, applySnapshotToScene, createSnapshotSceneBinding, disposeSnapshotBinding } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 // The engine-wide registrations a shipped Engine loads before it exists (multiple render targets among them).
 import "@haptic/render/babylon-registrations";
-import { pendingDriverEffects, setSceneWorldSpriteBatching, worldSpriteBatchStats } from "@haptic/render/editor-proofs";
+import { applyAnimStateToScene, sceneAnimHostFromBinding } from "@haptic/render/editor-proofs";
+import { pendingDriverEffects } from "@haptic/render/editor-proofs";
+import { readEngineDrawCalls } from "@haptic/render/editor-proofs";
+import { ownedVisualTexturePreparation } from "@haptic/render/editor-proofs";
+import { encodeRgbaPng } from "@haptic/render/editor-proofs";
+import { ResourceCache } from "@haptic/render/editor-proofs";
+import { setSceneRenderSettings } from "@haptic/render/editor-proofs";
+import { applyAssignMesh, applySnapshotToScene, createSnapshotSceneBinding, disposeSnapshotBinding } from "@haptic/render/editor-proofs";
+import { setSceneWorldSpriteBatching, worldSpriteBatchStats } from "@haptic/render/editor-proofs";
 
 const WIDTH = 320;
 const HEIGHT = 200;

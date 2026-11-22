@@ -29,9 +29,11 @@ import {
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings, largeWorldEngineOptions } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialBlendMode } from "@haptic/shader-graph";
-import { GEOMETRY_PASS_WITHOUT_COLOR, HapticLightingBlock, setUnlitMaterial } from "@haptic/render/editor-proofs";
+import { GEOMETRY_PASS_WITHOUT_COLOR } from "@haptic/render/editor-proofs";
+import { HapticLightingBlock } from "@haptic/render/editor-proofs";
 import { allowSceneScreenShadows } from "@haptic/render/render-settings";
 import type { SpatialEffectsGraph } from "@haptic/render/editor-proofs";
+import { setUnlitMaterial } from "@haptic/render/editor-proofs";
 
 /** A light block statement of the lighting itself, in main() (`hapticLightingGlsl`). */
 const LIGHTING_STATEMENT = /hapticSurface hapticS;|vec3 hapticN = normalize\(/;
