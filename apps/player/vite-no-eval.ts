@@ -1,7 +1,10 @@
 import type { Plugin } from "vite";
 
-/** A call that evaluates text: `eval(` or the `Function` constructor (`new Function(`, or `Function(` as minifiers write it). */
-const EVALUATION = /(?<![\w$.])(?:new\s+)?Function\s*\(|(?<![\w$.])eval\s*\(/g;
+/**
+ * A call that evaluates text: `eval(` or the `Function` constructor (`new Function(`, or `Function(` as minifiers write
+ * it), bare or read off the global object (`window.eval(`); a method of another object with the same name is not one.
+ */
+const EVALUATION = /(?:(?<![\w$.])|(?<=\b(?:window|globalThis|self)\.))(?:(?:new\s+)?Function|eval)\s*\(/g;
 
 /** The module id as the report names it: its path from `node_modules/` or the repository's `packages/` and `apps/`. */
 function shortId(id: string): string {
