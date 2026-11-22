@@ -41,6 +41,14 @@ type Hit = { t: number; caster: number };
 const hits: Hit[] = [];
 const hitPool: Hit[] = [];
 let insideFlags = new Uint8Array(64);
+/** The casters of the ring being drawn (`polarShadow2D`), emptied after each. */
+const casters: WorldOccluder2D[] = [];
+/** Each bin's ray direction, computed as `shadow2DBinAngle`'s cosine and sine are everywhere else. */
+const binCos = Float64Array.from({ length: SHADOW_2D_BINS }, (_, bin) => Math.cos(shadow2DBinAngle(bin)));
+const binSin = Float64Array.from({ length: SHADOW_2D_BINS }, (_, bin) => Math.sin(shadow2DBinAngle(bin)));
+/** Hits past this many sort with the engine's sort; fewer by insertion. Both give the one stable order. */
+const INSERTION_SORT_MAXIMUM = 32;
+const byDistance = (a: Hit, b: Hit) => a.t - b.t;
 
 /** Each bin's segments, as (caster, segment index) pairs in caster then segment order: bin `b`'s are `binStart[b]` to `binStart[b + 1]`. */
 const binStart = new Int32Array(SHADOW_2D_BINS + 1);
@@ -106,9 +114,37 @@ function segmentBins(ax: number, ay: number, bx: number, by: number): number {
   return listed;
 }
 
-/** Sorts every caster segment into the bins whose ray can cross it (`segmentBins`), keeping caster and segment order within a bin. */
-function bucketSegments(x: number, y: number, casters: readonly WorldOccluder2D[]): void {
+/**
+ * Whether no ray from the light can cross the segment from (ax, ay) to (bx, by) (world XY) at a distance `shadowStart`
+ * accepts (at most `radius`), so the segment can be left out of every bin: then every bin's hits, and so the ring, are
+ * the ones testing it gives. Both ends must lie beyond one side of the square `edge` (`radius` (1 + 10⁻⁹) + 10⁻⁹)
+ * round the light, measured from the light (the margin keeps a segment touching the radius whose crossing computes to
+ * at most `radius`), within `BUCKETED_REACH`, and:
+ * - a ray more than 0.05 rad off the segment's direction crosses it within 10⁻⁹ of where its computed distance and
+ *   along-segment share put the crossing (rounding of at most about 2·10⁻¹⁶ (|o| + |e| + t) / sin 0.05 within that
+ *   reach), so an accepted crossing would lie within the radius, inside the square;
+ * - a ray within 0.05 rad of it, where those computations are ill-conditioned (an end past the square can still compute
+ *   to a crossing inside the radius), is turned away by its distance alone: `shadowStart`'s distance is the cross
+ *   product below over a denominator of at most 0.0500…1 |e| for such a ray, so a product above 0.051 `radius` |e|₁
+ *   (the line farther than about that from the light) puts every such crossing past the radius or behind the light.
+ *   A segment whose line passes closer stays in its bins.
+ * The cross product is computed from the same values, in the same order, as `shadowStart`'s distance numerator.
+ */
+function segmentOutOfReach(ax: number, ay: number, bx: number, by: number, x: number, y: number, radius: number, edge: number): boolean {
+  const ox = ax - x, oy = ay - y, px = bx - x, py = by - y;
+  if (!((ox > edge && px > edge) || (ox < -edge && px < -edge) || (oy > edge && py > edge) || (oy < -edge && py < -edge))) return false;
+  if (!(Math.max(Math.abs(ox), Math.abs(oy), Math.abs(px), Math.abs(py)) <= BUCKETED_REACH)) return false;
+  const ex = bx - ax, ey = by - ay;
+  return Math.abs(ox * ey - oy * ex) > 0.051 * radius * (Math.abs(ex) + Math.abs(ey));
+}
+
+/**
+ * Sorts every caster segment into the bins whose ray can cross it (`segmentBins`), keeping caster and segment order
+ * within a bin; a segment no accepted crossing can come from (`segmentOutOfReach`) takes no bin.
+ */
+function bucketSegments(x: number, y: number, radius: number, casters: readonly WorldOccluder2D[]): void {
   binStart.fill(0);
+  const edge = radius * (1 + 1e-9) + 1e-9;
   // Count each bin's segments, turn the counts into each bin's first slot, then fill in the same order.
   for (let pass = 0; pass < 2; pass++) {
     if (pass === 1) {
@@ -132,7 +168,9 @@ function bucketSegments(x: number, y: number, casters: readonly WorldOccluder2D[
       const segments = occluder.closed ? count : count - 1;
       for (let index = 0; index < segments; index++) {
         const next = (index + 1) % count;
-        const listed = segmentBins(points[index * 2]! - x, points[index * 2 + 1]! - y, points[next * 2]! - x, points[next * 2 + 1]! - y);
+        const ax = points[index * 2]!, ay = points[index * 2 + 1]!, bx = points[next * 2]!, by = points[next * 2 + 1]!;
+        if (segmentOutOfReach(ax, ay, bx, by, x, y, radius, edge)) continue;
+        const listed = segmentBins(ax - x, ay - y, bx - x, by - y);
         for (let at = 0; at < listed; at++) {
           const bin = segmentBinList[at]!;
           if (pass === 0) binStart[bin]!++;
@@ -153,7 +191,7 @@ function bucketSegments(x: number, y: number, casters: readonly WorldOccluder2D[
  * Each direction tests only the segments its ray can cross (`bucketSegments`), in the order it would test them all.
  */
 export function polarShadow2D(x: number, y: number, radius: number, occluders: readonly WorldOccluder2D[], out: Float32Array): void {
-  const casters: WorldOccluder2D[] = [];
+  casters.length = 0;
   for (const occluder of occluders) {
     if (occluder.maxX < x - radius || occluder.minX > x + radius || occluder.maxY < y - radius || occluder.minY > y + radius) continue;
     if (occluderContains(occluder, x, y)) continue;
@@ -164,10 +202,26 @@ export function polarShadow2D(x: number, y: number, radius: number, occluders: r
     return;
   }
   if (insideFlags.length < casters.length) insideFlags = new Uint8Array(casters.length * 2);
-  bucketSegments(x, y, casters);
-  for (let bin = 0; bin < SHADOW_2D_BINS; bin++) {
-    const angle = shadow2DBinAngle(bin);
-    out[bin] = shadowStart(x, y, Math.cos(angle), Math.sin(angle), radius, casters, binStart[bin]!, binStart[bin + 1]!) / radius;
+  bucketSegments(x, y, radius, casters);
+  for (let bin = 0; bin < SHADOW_2D_BINS; bin++)
+    out[bin] = shadowStart(x, y, binCos[bin]!, binSin[bin]!, radius, casters, binStart[bin]!, binStart[bin + 1]!) / radius;
+  casters.length = 0;
+}
+
+/**
+ * Orders `hits` by distance, stably: equal distances keep caster and segment order, which coincident tile edges depend
+ * on. A comparator that is consistent has one stable order, so the insertion sort, which moves an earlier hit past only
+ * a strictly nearer one, gives what the engine's stable sort gives; with a NaN distance the comparator is not
+ * consistent, and only the engine's sort gives its own order.
+ */
+function sortHits(unordered: boolean): void {
+  const count = hits.length;
+  if (unordered || count > INSERTION_SORT_MAXIMUM) { hits.sort(byDistance); return; }
+  for (let index = 1; index < count; index++) {
+    const hit = hits[index]!;
+    let at = index;
+    while (at > 0 && hits[at - 1]!.t > hit.t) { hits[at] = hits[at - 1]!; at--; }
+    hits[at] = hit;
   }
 }
 
@@ -177,6 +231,7 @@ function shadowStart(
 ): number {
   hits.length = 0;
   let pooled = 0;
+  let unordered = false;
   for (let slot = from; slot < to; slot++) {
     const caster = binCasters[slot]!;
     const index = binSegments[slot]!;
@@ -197,9 +252,11 @@ function shadowStart(
     hit.t = t;
     hit.caster = caster;
     hits.push(hit);
+    // A non-finite caster can give a NaN distance, which passes the tests above.
+    if (t !== t) unordered = true;
   }
   if (!hits.length) return radius;
-  hits.sort((a, b) => a.t - b.t);
+  sortHits(unordered);
   insideFlags.fill(0, 0, casters.length);
   let solid = 0;
   let entered = false;

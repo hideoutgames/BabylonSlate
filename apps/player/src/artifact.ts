@@ -29,6 +29,7 @@ import {
 } from "@haptic/exporter";
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import type { DecoderPrefetch } from "./decoder-prefetch";
+import { DocumentCache, type CachedDocument } from "./document-cache";
 import {
   AssetLoadingService,
   complexCollisionModelGuids,
@@ -109,6 +110,38 @@ function textFromFiles(files: Map<string, Uint8Array>, name: string): string {
 
 function parseJsonAsset(bytes: Uint8Array): unknown {
   return JSON.parse(decoder.decode(bytes));
+}
+
+type FontMode = "facetype" | "msdf" | "bitmap";
+/** A text component's Font (none: the project default Font) and the representation it draws with, in document order. */
+type DocumentFont = readonly [guid: string | null | undefined, mode: FontMode];
+
+/** Per loaded document, which is never changed in place, so a document loaded again is not walked again. */
+const documentFontsCache = new WeakMap<object, readonly DocumentFont[]>();
+
+/** The Fonts a document's text components draw with, from a walk of the whole document. */
+function documentFonts(document: unknown): readonly DocumentFont[] {
+  if (!document || typeof document !== "object") return [];
+  const cached = documentFontsCache.get(document);
+  if (cached) return cached;
+  const fonts: DocumentFont[] = [];
+  const inspect = (value: unknown): void => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) { for (const child of value) inspect(child); return; }
+    const row = value as Record<string, unknown>;
+    const properties = row.properties as Record<string, unknown> | undefined;
+    if (row.classId === "Text3DComponent") {
+      // 3D Text without a Font draws the bundled face, never the project default Font.
+      if (typeof properties?.fontAssetGuid === "string" && properties.fontAssetGuid) fonts.push([properties.fontAssetGuid, "facetype"]);
+    } else if (row.classId === "2DTextComponent" || row.classId === "2DRichTextComponent") {
+      const text = parseText2DProperties(properties);
+      fonts.push([text.fontAssetGuid, text.renderer === "msdf" ? "msdf" : "bitmap"]);
+    }
+    for (const child of Object.values(row)) if (child && typeof child === "object") inspect(child);
+  };
+  inspect(document);
+  documentFontsCache.set(document, fonts);
+  return fonts;
 }
 
 export async function loadGameFromFiles(
@@ -224,9 +257,12 @@ export async function loadGameFromFiles(
     signal.throwIfAborted();
     return bytes;
   }
-  type PreparedAsset = { decodedBytes: number; document?: unknown; model?: { source: Blob; payload: ModelPayload }; publish: () => void };
-  async function decode(entry: GameAssetIndexEntry, bytes: Uint8Array): Promise<PreparedAsset> {
-    const document = entry.encoding === "json" ? parseJsonAsset(bytes) : undefined;
+  // Decoded JSON documents outlive the loader's entries for the session (`DocumentCache` holds the bound).
+  const documents = new DocumentCache();
+  type PreparedAsset = { decodedBytes: number; document?: unknown; normalized?: unknown; model?: { source: Blob; payload: ModelPayload }; publish: () => void };
+  async function decode(entry: GameAssetIndexEntry, bytes: Uint8Array, cached?: CachedDocument): Promise<PreparedAsset> {
+    const document = cached ? cached.document : entry.encoding === "json" ? parseJsonAsset(bytes) : undefined;
+    let normalized: unknown;
     let decodedBytes = document === undefined ? 0 : bytes.byteLength * 2;
     let install = () => {};
     let model: PreparedAsset["model"];
@@ -237,8 +273,8 @@ export async function loadGameFromFiles(
       if (!guid) throw new Error(`Invalid ${entry.type} asset identity: ${entry.guid}`);
       return guid;
     };
-    if (entry.type === "Scene") { const value = normalizeScene(document); install = () => { scenes.set(entry.guid, value); }; }
-    else if (entry.type === "SceneLayer") { const value = normalizeSceneLayer(document); install = () => { sceneLayers.set(entry.guid, value); }; }
+    if (entry.type === "Scene") { const value = (cached?.value as SerializedScene | undefined) ?? normalizeScene(document); normalized = value; install = () => { scenes.set(entry.guid, value); }; }
+    else if (entry.type === "SceneLayer") { const value = (cached?.value as SerializedSceneLayer | undefined) ?? normalizeSceneLayer(document); normalized = value; install = () => { sceneLayers.set(entry.guid, value); }; }
     else if (entry.type === "Texture") {
       options.prefetchDecoders?.texture(bytes);
       // The catalog revision is the SHA-256 `read` verified for exactly these bytes.
@@ -295,9 +331,10 @@ export async function loadGameFromFiles(
       retained = new Uint8Array(0);
       install = () => { complexMeshes.set(guid, mesh); };
     }
-    // Every acquisition of a loaded asset publishes these same objects, and nothing edits them in place:
-    // boot's `loadedSourcesChanged` and `packedContentFromGame`'s per-payload documents rely on that identity.
-    return { decodedBytes, document, model, retained, publish: () => { payloads.set(entry.guid, retained); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } } as PreparedAsset & { retained: Uint8Array };
+    // Every acquisition of a loaded asset, and every later load of a cached document, publishes these same objects,
+    // and nothing edits them in place: boot's `loadedSourcesChanged`, `packedContentFromGame`'s per-payload documents
+    // and `DocumentCache` rely on that identity.
+    return { decodedBytes, document, normalized, model, retained, publish: () => { payloads.set(entry.guid, retained); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } } as PreparedAsset & { retained: Uint8Array };
   }
 
   const sourceListeners = new Set<() => void>();
@@ -338,9 +375,12 @@ export async function loadGameFromFiles(
       const entry = entries.get(record.id)!;
       const size = entry.byteLength ?? 0;
       return { key: "export-source", estimate: { sourceBytes: size, decodedBytes: size * 2, temporaryBytes: size },
-        load: async (_record, signal) => {
-          const bytes = await read(entry, signal);
-          const prepared = await decode(entry, bytes) as PreparedAsset & { retained: Uint8Array };
+        load: async (record, signal) => {
+          // A cached document was read, verified and decoded at this revision already.
+          const cached = entry.encoding === "json" ? documents.get(entry.guid, record.revision) : undefined;
+          const bytes = cached?.bytes ?? await read(entry, signal);
+          const prepared = await decode(entry, bytes, cached) as PreparedAsset & { retained: Uint8Array };
+          if (entry.encoding === "json" && !cached) documents.set(entry.guid, record.revision, { bytes, document: prepared.document, value: prepared.normalized });
           signal.throwIfAborted();
           const retained = prepared.retained;
           return { value: prepared, sourceBytes: bytes.byteLength, decodedBytes: prepared.decodedBytes, dispose: () => evict(entry, retained) };
@@ -438,21 +478,7 @@ export async function loadGameFromFiles(
     } : undefined, { signal, priority, dependencies: "none" });
     const documentIds = [...closure];
     const prepared = await Promise.all(documentIds.map(id => acquire(id, entries.get(id)?.type === "Font")));
-    const inspect = (value: unknown): void => {
-      if (!value || typeof value !== "object") return;
-      if (Array.isArray(value)) { for (const child of value) inspect(child); return; }
-      const row = value as Record<string, unknown>;
-      const properties = row.properties as Record<string, unknown> | undefined;
-      if (row.classId === "Text3DComponent") {
-        // 3D Text without a Font draws the bundled face, never the project default Font.
-        if (typeof properties?.fontAssetGuid === "string" && properties.fontAssetGuid) requireFont(properties.fontAssetGuid, "facetype");
-      } else if (row.classId === "2DTextComponent" || row.classId === "2DRichTextComponent") {
-        const text = parseText2DProperties(properties);
-        requireFont(text.fontAssetGuid, text.renderer === "msdf" ? "msdf" : "bitmap");
-      }
-      for (const child of Object.values(row)) if (child && typeof child === "object") inspect(child);
-    };
-    for (const asset of prepared) inspect(asset.document);
+    for (const asset of prepared) for (const [guid, mode] of documentFonts(asset.document)) requireFont(guid, mode);
     const inheritModes = (guid: string, selected: ReadonlySet<"facetype" | "msdf" | "bitmap">, seen = new Set<string>()) => {
       if (seen.has(guid)) return;
       seen.add(guid);
@@ -516,7 +542,7 @@ export async function loadGameFromFiles(
     if (!scene) { source.release(); throw new Error(`Asset ${guid} is not a Scene.`); }
     return { scene, release: source.release, assetGuids: source.assetGuids };
   };
-  game.dispose = () => { sourceListeners.clear(); for (const scope of liveScopes) scope.dispose(); liveScopes.clear(); service.dispose(); };
+  game.dispose = () => { sourceListeners.clear(); documents.clear(); for (const scope of liveScopes) scope.dispose(); liveScopes.clear(); service.dispose(); };
   // Startup reads the entry Scene's closure and the startup-required systems.
   const roots = entries.has(manifest.startupSceneGuid) ? [manifest.startupSceneGuid] : [];
   try {

@@ -20,6 +20,8 @@ export type GraphEditorContextValue = {
   renderNodeBody?: (nodeId: string, data: Record<string, unknown>) => React.ReactNode;
   pendingPin: { nodeId: string; pinId: string } | null;
   onPinDefaultChange?: (nodeId: string, pinId: string, value: unknown) => void;
+  /** A Math Expression node's formula typed on the canvas; unset when the graph is read-only. */
+  onFormulaCommit?: (nodeId: string, formula: string) => void;
   onPinTap: (nodeId: string, pinId: string, direction: "in" | "out") => void;
   nodeErrorCount: (nodeId: string) => number;
   pinHasError: (nodeId: string, pinId: string) => boolean;

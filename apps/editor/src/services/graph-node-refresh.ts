@@ -18,6 +18,8 @@ import {
   isDevelopmentOnlyByDefaultTypeId,
   pinTypeKey,
   resolveWildcardPinTypes,
+  retypeMathExpressionInputs,
+  MATH_EXPRESSION_NODE_ID,
   REROUTE_NODE_TYPE,
   type GraphPin,
 } from "@haptic/scripting";
@@ -156,6 +158,8 @@ export function shouldRegeneratePins(typeId: string): boolean {
     typeId === "scene.change" ||
     // Operand and Out types follow the operand type properties.
     isNumericOperatorNode(typeId) ||
+    // Pins follow the formula and the input types.
+    typeId === MATH_EXPRESSION_NODE_ID ||
     isDevelopmentOnlyByDefaultTypeId(typeId)
   );
 }
@@ -281,6 +285,11 @@ export function castPinProperties(
 }
 
 type RetypeNode = { id: string; type: string; data: Record<string, unknown> };
+
+/** Nodes whose input types follow the wires into them: the numeric operators and Math Expression. */
+export function followsWireTypes(typeId: string): boolean {
+  return isNumericOperatorNode(typeId) || typeId === MATH_EXPRESSION_NODE_ID;
+}
 type RetypeEdge = SerializedGraph["edges"][number];
 
 /**
@@ -301,13 +310,21 @@ export function retypeNumericOperatorNodes<N extends RetypeNode>(
 ): readonly N[] {
   const operators: number[] = [];
   nodes.forEach((node, index) => {
-    if (isNumericOperatorNode(catalogTypeId(node))) operators.push(index);
+    if (followsWireTypes(catalogTypeId(node))) operators.push(index);
   });
   if (operators.length === 0) return nodes;
   const into = new Map<string, RetypeEdge>();
-  for (const edge of edges) into.set(pinTypeKey(edge.target, edge.targetHandle ?? ""), edge);
-  const hasWiredOperand = operators.some((index) =>
-    numericOperands(catalogTypeId(nodes[index]!)).some((operand) => into.has(pinTypeKey(nodes[index]!.id, operand.pinId))));
+  const wiredNodes = new Set<string>();
+  for (const edge of edges) {
+    into.set(pinTypeKey(edge.target, edge.targetHandle ?? ""), edge);
+    wiredNodes.add(edge.target);
+  }
+  const hasWiredOperand = operators.some((index) => {
+    const node = nodes[index]!;
+    const typeId = catalogTypeId(node);
+    if (typeId === MATH_EXPRESSION_NODE_ID) return wiredNodes.has(node.id);
+    return numericOperands(typeId).some((operand) => into.has(pinTypeKey(node.id, operand.pinId)));
+  });
   if (!hasWiredOperand) return nodes;
   const isKnot = rerouteNodeIdLookup(nodes);
   const sourceOf = (nodeId: string, pinId: string): { nodeId: string; pinId: string } | undefined => {
@@ -341,10 +358,15 @@ export function retypeNumericOperatorNodes<N extends RetypeNode>(
     for (const index of operators) {
       const node = current[index]!;
       const typeId = catalogTypeId(node);
-      const next = retypeNumericOperands(typeId, node.data, (pinId) => {
-        const source = sourceOf(node.id, pinId);
-        return source ? { wired: true, type: numericOperandTypeOf(sourceType(source)) } : { wired: false };
-      });
+      const next = typeId === MATH_EXPRESSION_NODE_ID
+        ? retypeMathExpressionInputs(node.data, (pinId) => {
+          const source = sourceOf(node.id, pinId);
+          return source ? sourceType(source) : undefined;
+        })
+        : retypeNumericOperands(typeId, node.data, (pinId) => {
+          const source = sourceOf(node.id, pinId);
+          return source ? { wired: true, type: numericOperandTypeOf(sourceType(source)) } : { wired: false };
+        });
       if (next === node.data) continue;
       const def = nodeRegistry.get(typeId);
       current[index] = { ...node, data: { ...next, __pins: def ? def.pins(next) : next.__pins } };

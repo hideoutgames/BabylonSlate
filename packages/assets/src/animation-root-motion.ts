@@ -1,4 +1,4 @@
-import { accessorValues, multiplyMat, nodeMatrix } from "./glb-geometry";
+import { accessorValues, GltfGeometryUnreadableError, multiplyMat, nodeMatrix } from "./glb-geometry";
 import { gltfAnimationClips, splitGlbJsonBin } from "./importers/glb-parse";
 
 /**
@@ -50,17 +50,6 @@ export function normalizeAnimationRootMotion(value: unknown): AnimationRootMotio
   return { bone, track: { durationMs, stepMs, x: x.slice(0, count), z: z.slice(0, count), yaw: yaw.slice(0, count) } };
 }
 
-/** Normalized integer components, as glTF reads a `normalized` accessor. */
-function normalizedScale(componentType: number): number {
-  switch (componentType) {
-    case 5120: return 127;
-    case 5121: return 255;
-    case 5122: return 32767;
-    case 5123: return 65535;
-    default: return 1;
-  }
-}
-
 interface Sampler {
   times: number[];
   values: number[];
@@ -70,13 +59,10 @@ interface Sampler {
 
 function readSampler(json: Record<string, unknown>, bin: Uint8Array, sampler: Record<string, unknown>, components: number): Sampler | null {
   if (typeof sampler.input !== "number" || typeof sampler.output !== "number") return null;
-  const accessors = Array.isArray(json.accessors) ? json.accessors : [];
-  const output = asRecord(accessors[sampler.output]);
-  const scale = output.normalized === true && typeof output.componentType === "number" ? normalizedScale(output.componentType) : 1;
-  const values = accessorValues(json, bin, sampler.output, components).map((value) => (scale === 1 ? value : Math.max(-1, value / scale)));
   return {
     times: accessorValues(json, bin, sampler.input, 1),
-    values,
+    // `accessorValues` maps a normalized (KHR_mesh_quantization) rotation to [-1, 1].
+    values: accessorValues(json, bin, sampler.output, components),
     components,
     interpolation: typeof sampler.interpolation === "string" ? sampler.interpolation : "LINEAR",
   };
@@ -183,13 +169,19 @@ export function extractAnimationRootMotion(
   const channels = Array.isArray(animation.channels) ? animation.channels : [];
   let translation: Sampler | null = null;
   let rotation: Sampler | null = null;
-  for (const entry of channels) {
-    const channel = asRecord(entry);
-    const target = asRecord(channel.target);
-    if (target.node !== boneIndex || typeof channel.sampler !== "number") continue;
-    const sampler = asRecord(samplers[channel.sampler]);
-    if (target.path === "translation") translation = readSampler(json, bin, sampler, 3);
-    if (target.path === "rotation") rotation = readSampler(json, bin, sampler, 4);
+  try {
+    for (const entry of channels) {
+      const channel = asRecord(entry);
+      const target = asRecord(channel.target);
+      if (target.node !== boneIndex || typeof channel.sampler !== "number") continue;
+      const sampler = asRecord(samplers[channel.sampler]);
+      if (target.path === "translation") translation = readSampler(json, bin, sampler, 3);
+      if (target.path === "rotation") rotation = readSampler(json, bin, sampler, 4);
+    }
+  } catch (error) {
+    // Meshopt-compressed or malformed keys: no root motion rather than a track sampled from the wrong bytes.
+    if (error instanceof GltfGeometryUnreadableError) return null;
+    throw error;
   }
   // The bone's parent at rest, from the scene root down.
   const parents = new Map<number, number>();
