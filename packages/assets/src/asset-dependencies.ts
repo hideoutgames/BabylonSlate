@@ -108,6 +108,7 @@ const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
   "camera.playShake": "shake",
   "camera.playShakeOnSceneLayer": "shake",
   "camera.playWorldShake": "shake",
+  "anim.actor.playSlotAnimation": "animation",
   "particles.spawnAtLocation": "system",
   "particles.spawnAttached": "system",
   "decals.spawn": "material",
@@ -418,6 +419,9 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         entry.nodeType.startsWith("curveObject.get") ||
         // Play Camera Shake reads its Camera Shake (and the shake's curves) from the session catalog.
         ["camera.playShake", "camera.playShakeOnSceneLayer", "camera.playWorldShake"].includes(entry.nodeType) ||
+        // Play Slot Animation starts its clip at once: the runtime times it from the clip catalog and the renderer
+        // poses it from the clip bound to the actor's Model, so its Animation (and that Model) loads with the owner.
+        entry.nodeType === "anim.actor.playSlotAnimation" ||
         // Set and Get Global Parameter resolve their collection from the session catalog the owner loads with.
         entry.nodeType.startsWith("globalParameters.") ||
         // Get Render Target Mode and Get Texture Target read the asset's settings at once, from the assets loaded.

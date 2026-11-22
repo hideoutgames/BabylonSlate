@@ -247,6 +247,28 @@ describe("typed asset dependencies", () => {
     expect(variable.requiredVariableNames).toEqual(["tint"]);
   });
 
+  it("loads the Animation a Play Slot Animation plays with its owner, through a literal or a variable", () => {
+    const literal = collectAssetDependencyMetadata("Class", {
+      nodes: [
+        { id: "play", type: "anim.actor.playSlotAnimation", data: { "default:animation": "throw", "default:slotName": "UpperBody" } },
+        { id: "unused", type: "literal.makeAsset", data: { "default:in": "spare-clip" } },
+      ],
+      edges: [],
+    });
+    expect(literal.dependencies).toEqual(["spare-clip", "throw"]);
+    expect(literal.requiredDependencies).toEqual(["throw"]);
+    const variable = collectAssetDependencyMetadata("Class", {
+      nodes: [
+        { id: "value", type: "variables.get", data: { variableName: "Attack", propertyKey: "attack" } },
+        { id: "play", type: "anim.actor.playSlotAnimation", data: {} },
+      ],
+      edges: [{ source: "value", target: "play", targetHandle: "animation" }],
+      members: [{ kind: "variable", name: "Attack", propertyKey: "attack", typeId: "asset", typeClassId: "Animation", defaultValue: "slash" }],
+    });
+    expect(variable.requiredDependencies).toEqual(["slash"]);
+    expect(variable.requiredVariableNames).toEqual(["attack"]);
+  });
+
   it("loads the Render Target a Get Render Target Mode or Get Texture Target reads with its owner, through a literal or a variable", () => {
     const literal = collectAssetDependencyMetadata("Class", {
       nodes: [

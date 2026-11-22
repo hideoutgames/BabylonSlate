@@ -33,4 +33,5 @@ Plays an Animation (3D) or Sprite Animation (2D) once on a slot of the graph, ov
 - **On Blend Out** runs once it starts blending out: near its end, or when stopped or replaced. **On Completed** runs once it has played through and blended out. A play that is stopped, or replaced by another play on its slot, runs On Blend Out but not On Completed.
 - A new play on a slot replaces the one playing there, which blends out under it.
 - It starts on the next animation update. Nothing runs if the Animation is not one the graph can play.
+- The Animation given here, picked on the pin or in a variable wired to it, loads with the object that runs this node, so it is ready to play at once.
 - Available in Actor class graphs and in Scene and Scene Layer scripts.
