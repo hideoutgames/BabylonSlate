@@ -497,9 +497,36 @@ export type ActorDefaults = {
   generateHitEvents?: boolean;
   generateOverlapEvents?: boolean;
   eventTick?: ActorEventTickMode;
+  /**
+   * Tick Interval: seconds between the actor's Event Ticks; 0 runs Event Tick on every simulation
+   * step. Input events ignore it. Read through `normalizeActorTickInterval`.
+   */
+  tickInterval?: number;
   /** Keep ticking while a script has paused the game (Set Game Paused). */
   tickOnPause?: boolean;
 };
+
+/** The longest Tick Interval, in seconds; a longer authored value clamps to it. */
+export const MAX_ACTOR_TICK_INTERVAL_SECONDS = 3600;
+
+/**
+ * An authored Tick Interval clamped to 0..`MAX_ACTOR_TICK_INTERVAL_SECONDS`, or undefined when it
+ * is not a finite number, so the Class chain treats it as unset.
+ */
+export function normalizeActorTickInterval(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.min(MAX_ACTOR_TICK_INTERVAL_SECONDS, Math.max(0, value));
+}
+
+/**
+ * Whole fixed steps between an actor's Event Ticks: the Tick Interval over the undilated fixed step,
+ * rounded to the nearest step and never below 1, so an interval shorter than one step ticks every
+ * step. The interval counts simulation steps, so time dilation stretches it as it stretches the step.
+ */
+export function actorTickStride(tickIntervalSeconds: number, fixedStepSeconds: number): number {
+  if (!(tickIntervalSeconds > 0) || !(fixedStepSeconds > 0)) return 1;
+  return Math.max(1, Math.round(tickIntervalSeconds / fixedStepSeconds));
+}
 
 /**
  * The actor property holding an actor's Tags (a Tag Container): a Class sets it in Actor Defaults
@@ -521,6 +548,8 @@ export type ResolvedActorDefaults = {
   generateHitEvents: boolean;
   generateOverlapEvents: boolean;
   eventTick: boolean;
+  /** Seconds between Event Ticks; 0 ticks every step. */
+  tickInterval: number;
   tickOnPause: boolean;
 };
 
@@ -545,7 +574,7 @@ export function resolveGameInstanceDefaults(
 /**
  * Resolve Actor Defaults along a Class chain ordered nearest first. The
  * nearest explicit value wins; engine base classes leave every flag enabled
- * except Tick On Pause, which is off.
+ * except Tick On Pause, which is off, and tick every step (Tick Interval 0).
  */
 export function resolveActorDefaults(
   chain: Iterable<ActorDefaults | undefined>,
@@ -553,6 +582,7 @@ export function resolveActorDefaults(
   let generateHitEvents: boolean | undefined;
   let generateOverlapEvents: boolean | undefined;
   let eventTick: boolean | undefined;
+  let tickInterval: number | undefined;
   let tickOnPause: boolean | undefined;
   for (const defaults of chain) {
     if (!defaults) continue;
@@ -565,6 +595,7 @@ export function resolveActorDefaults(
     if (eventTick === undefined && (defaults.eventTick === "enabled" || defaults.eventTick === "disabled")) {
       eventTick = defaults.eventTick === "enabled";
     }
+    tickInterval ??= normalizeActorTickInterval(defaults.tickInterval);
     if (tickOnPause === undefined && typeof defaults.tickOnPause === "boolean") {
       tickOnPause = defaults.tickOnPause;
     }
@@ -573,6 +604,7 @@ export function resolveActorDefaults(
     generateHitEvents: generateHitEvents ?? true,
     generateOverlapEvents: generateOverlapEvents ?? true,
     eventTick: eventTick ?? true,
+    tickInterval: tickInterval ?? 0,
     tickOnPause: tickOnPause ?? false,
   };
 }

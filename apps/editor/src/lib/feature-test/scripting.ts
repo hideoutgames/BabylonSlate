@@ -99,6 +99,7 @@ const CLASS = {
   spawned: "FT_ScriptSpawned",
   spinner: "FT_ScriptSpinner",
   spinnerFast: "FT_ScriptSpinnerFast",
+  spinnerStepped: "FT_ScriptSpinnerStepped",
   interfaceProbe: "FT_ScriptInterfaceProbe",
   touchProbe: "FT_ScriptTouchProbe",
   statsCommand: "FT_ScriptStatsCommand",
@@ -404,6 +405,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
   await saveSpawned(ctx, materials.emissive ?? null);
   const spinner = await saveSpinner(ctx, types, materials.surface ?? null);
   await saveSpinnerFast(ctx, types);
+  await saveSpinnerStepped(ctx);
   await saveSceneWatcher(ctx);
   await saveGameInstance(ctx);
   const interfaceProbe = await saveInterfaceProbe(ctx, types, font, materials.surfaceInstance ?? null);
@@ -1109,6 +1111,14 @@ async function saveSpinnerFast(ctx: FeatureTestContext, types: ScriptingTypes): 
     actorDefaults: { tickOnPause: true },
   });
   await saveClass(ctx, CLASS.spinnerFast, CLASS.spinner, graph);
+}
+
+/**
+ * Child Class with a Tick Interval of 0.25 s: the inherited Event Tick runs four times a second with the time since
+ * the last one, so it turns as fast as a Spinner on average, in visible steps.
+ */
+async function saveSpinnerStepped(ctx: FeatureTestContext): Promise<void> {
+  await saveClass(ctx, CLASS.spinnerStepped, CLASS.spinner, classGraph({ actorDefaults: { tickInterval: 0.25 } }));
 }
 
 /** Scene Subsystem: counts spawned scene actors, names Spawn Actor results, reports streaming. */
@@ -2303,6 +2313,11 @@ function placeScriptingZone(ctx: FeatureTestContext, refs: ScriptingRefs, types:
     classId: CLASS.spinnerFast,
     properties: { SpeedMode: "Fast" },
     overrides: emissive ? { "prefab-mesh": { materialGuid: emissive } } : {},
+  });
+
+  placeClass("ft-scripting-spinner-stepped", "Stepped Spinner", refs.spinner, zone.at(2, 1.2, -6), spinnersFolder, {
+    classId: CLASS.spinnerStepped,
+    properties: { SpeedMode: "Fast" },
   });
 
   placeClass("ft-scripting-interface-probe", "Interface Probe", refs.interfaceProbe, zone.at(4.5, 0.6, -9), probesFolder);

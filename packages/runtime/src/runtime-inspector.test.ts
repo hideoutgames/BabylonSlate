@@ -17,7 +17,7 @@ async function fixture(mode: "simulate" | "play" = "simulate", deferMaterialEdit
     onCommand: command => commands.push(command) });
   await runtime.loadScripts([{ classId: "Hero", assetGuid: "hero-class", parentClassId: "Actor", source: "", anchors: [], entryPoints: [],
     variables: [{ name: "health", type: "float", defaultValue: 10 }, { name: "target", type: "actor", defaultValue: null },
-      { name: "inventory", type: "string", container: "array", defaultValue: [] }] }]);
+      { name: "inventory", type: "string", container: "array", defaultValue: [] }], actorDefaults: { tickInterval: 0.5 } }]);
   runtime.realizePlayWorld(); runtime.start();
   let requestId = 0;
   const request = (action: RuntimeInspectorAction) => runtime.requestRuntimeInspector({ sessionGeneration: 4, requestId: ++requestId, action });
@@ -71,7 +71,11 @@ describe("bounded runtime Inspector", () => {
       const selection = await request({ kind: "selection", target: actor });
       expect(selection.payload).toMatchObject({ kind: "selection", properties: expect.arrayContaining([
         expect.objectContaining({ key: "health", typeId: "float", capability: "live", value: 10 }),
+        // The resolved Actor Defaults Tick Interval, shown but applied only at spawn.
+        expect.objectContaining({ key: "tickInterval", name: "Tick Interval", capability: "readOnly", value: 0.5 }),
       ]) });
+      expect((await request({ kind: "setProperty", target: actor, sequence: 7, property: "tickInterval", value: 1 })).success).toBe(false);
+      expect(runtime.getWorld().findActor("hero")!.tickStride).toBe(30);
       const result = await request(mutation(actor, 1, 42));
       expect(result).toMatchObject({ success: true, tickIndex: 0, payload: { kind: "mutation", sequence: 1, effectiveValue: 42 } });
       expect(runtime.getWorld().findActor("hero")!.getVariable("health")).toBe(42);

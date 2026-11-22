@@ -10,6 +10,15 @@ import { useSimulationInspection } from "../context/simulation-inspection-contex
 import type { SimulationInspectionStore } from "../services/simulation-inspection-store";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
 import { scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
+import {
+  componentMaterialDomain,
+  materialDomainsFromAssets,
+  materialSlotPickerAssets,
+  materialSlotRowState,
+  materialSlotTakes,
+  type MaterialDomainLookup,
+} from "../lib/material-asset-filters";
+import { MATERIAL_DOCUMENT_KINDS, useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 
 const MATERIAL_ASSET_TYPES = ["Material", "MaterialInstance"];
 const TEXTURE_ASSET_TYPES = ["Texture"];
@@ -68,8 +77,11 @@ function RuntimeTransformFields({ store, target, transform, mode, disabled, reas
   </div>;
 }
 
-function RuntimePropertyField({ descriptor, target, store, materialGuid, assets }: {
+function RuntimePropertyField({ descriptor, target, store, materialGuid, assets, materialDomain, domainOf }: {
   descriptor: RuntimePropertyDescriptor; target: RuntimeObjectIdentity; store: SimulationInspectionStore; materialGuid?: string; assets: AssetPickerEntry[];
+  /** The domain the selected component's Material field draws, as its Inspector row; undefined takes any Material. */
+  materialDomain?: string;
+  domainOf: MaterialDomainLookup;
 }) {
   const field = useRuntimeDraft(descriptor.value);
   const [picker, setPicker] = useState(false);
@@ -107,11 +119,14 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid, assets 
     : next;
   const base = { id: `simulation-${descriptor.key}`, label: descriptor.name, disabled: !writable, description };
   const assetType = descriptor.key === "materialGuid" ? "Material" : descriptor.typeId === "material:texture" ? "Texture" : null;
+  // A Material field lists, pastes and accepts only Materials of the domain it draws, as in the Inspector.
+  const slotDomain = assetType === "Material" ? materialDomain : undefined;
   let row: PropertyRow;
   if (assetType && (value === null || typeof value === "string")) {
     const selected = assets.find(asset => asset.guid === value);
     row = { ...base, kind: "asset", value: value as string | null, displayLabel: selected?.name, displayType: selected?.type,
-      onPick: () => setPicker(true), onChange: next => send(wrap(next)) };
+      onPick: () => setPicker(true), onChange: next => send(wrap(next)),
+      ...materialSlotRowState(slotDomain, value as string | null, domainOf) };
   } else if (descriptor.typeId === "material:color" && Array.isArray(value) && value.length === 4 && value.every(item => typeof item === "number")) {
     row = { ...base, kind: "color4", value: value as [number, number, number, number], onChange: next => sendColor(wrap(next)) };
   } else if ((descriptor.typeId === "material:vec2" || descriptor.typeId === "material:vec3") && Array.isArray(value) &&
@@ -159,8 +174,9 @@ function RuntimePropertyField({ descriptor, target, store, materialGuid, assets 
     {canExpand ? <Button size="sm" variant="ghost" onClick={() => { if (expandedValue) setExpandedValue(null); else void expand(); }}>{expandedValue ? "Close Value" : "Inspect Value"}</Button> : null}
     {expandedValue ? <div className="px-2"><pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(expandedValue, null, 2)}</pre><p className="text-xs text-muted-foreground">Last requested value · does not poll while expanded.</p>{nextOffset !== undefined ? <Button size="sm" variant="outline" onClick={() => void expand(nextOffset)}>Next Value Page</Button> : null}</div> : null}
     {valueError ? <p role="status" className="px-2 text-xs text-destructive">{valueError}</p> : null}
-    {assetType ? <AssetPicker open={picker} onOpenChange={setPicker} assets={assets} allowedTypes={assetType === "Material" ? MATERIAL_ASSET_TYPES : TEXTURE_ASSET_TYPES}
-      createTypes={[]} title={`Pick ${assetType ?? "Asset"}`} onPick={guid => { send(wrap(guid)); setPicker(false); }} /> : null}
+    {assetType ? <AssetPicker open={picker} onOpenChange={setPicker} assets={materialSlotPickerAssets(slotDomain, assets, domainOf)}
+      allowedTypes={assetType === "Material" ? MATERIAL_ASSET_TYPES : TEXTURE_ASSET_TYPES} createTypes={[]} title={`Pick ${assetType ?? "Asset"}`}
+      onPick={guid => { if (!materialSlotTakes(slotDomain, guid, domainOf)) return; send(wrap(guid)); setPicker(false); }} /> : null}
   </div>;
 }
 
@@ -171,6 +187,13 @@ export function SimulationInspector({ store, panel }: { store: SimulationInspect
     void registryEpoch;
     return (assetRegistry?.list() ?? []).map(asset => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }));
   }, [assetRegistry, registryEpoch]);
+  // An open Material tab's unsaved domain wins over its saved header.
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
+  const materialDomains = useMemo(() => {
+    void registryEpoch;
+    return materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
+  }, [assetRegistry, materialDocuments, registryEpoch]);
+  const domainOf = useMemo<MaterialDomainLookup>(() => guid => materialDomains[guid], [materialDomains]);
 
   const mode = useOptionalSceneEditing()?.viewportMode ?? "3d";
   const [search, setSearch] = useState("");
@@ -186,7 +209,8 @@ export function SimulationInspector({ store, panel }: { store: SimulationInspect
       {!search ? <RuntimeTransformFields store={store} target={selection.target} transform={selection.transform} mode={mode}
         disabled={selection.transformCapability !== "live"} reason={selection.transformReason} /> : null}
       {selection.properties.filter(property => `${property.name} ${property.typeId}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())).map(descriptor =>
-        <RuntimePropertyField key={descriptor.key} descriptor={descriptor} target={selection.target} store={store} assets={assets} materialGuid={typeof materialGuid === "string" ? materialGuid : undefined} />)}
+        <RuntimePropertyField key={descriptor.key} descriptor={descriptor} target={selection.target} store={store} assets={assets}
+          materialGuid={typeof materialGuid === "string" ? materialGuid : undefined} materialDomain={componentMaterialDomain(selection.classId)} domainOf={domainOf} />)}
       {selection.nextOffset !== undefined ? <Button size="sm" variant="outline" className="mx-2" onClick={store.loadMoreProperties}>Next Property Page</Button> : null}
       <Button size="sm" variant="ghost" className="mx-2" onClick={store.firstProperties}>First Property Page</Button>
     </div></EditorReadOnlyContext.Provider> : state.selected && !state.selectionError ? <p role="status" className="p-2 text-xs">Loading Selection…</p> : null}

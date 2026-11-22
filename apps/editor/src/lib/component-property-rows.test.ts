@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SerializedComponent } from "@haptic/core";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 import { MODEL_MATERIALS_PICKER_VALUE, patchInspectorComponentProperty } from "./mesh-material-properties";
+import { componentMaterialDomain } from "./material-asset-filters";
 import {
   applyPrefabPropertyDefaults,
   componentPropertyRows,
@@ -1693,6 +1694,20 @@ describe("Material slots by domain", () => {
     expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property, materialDomain: domain }));
     expect(Object.keys(domains).filter((guid) => row.acceptsAsset?.(guid))).toEqual(Object.keys(domains).filter((guid) => domains[guid] === domain));
     expect(row.error).toBeUndefined();
+  });
+
+  // The Simulation Inspector has a running component's class but not its rows: its lookup must name the row's domain.
+  it.each([
+    ["MeshComponent", {}], ["DynamicRuntimeMeshComponent", {}], ["CableComponent", {}], ["MirrorComponent", {}],
+    ["LandscapeComponent", {}], ["DecalComponent", {}], ["2DTextComponent", {}], ["2DRichTextComponent", {}],
+    ["2DMaterialComponent", {}], ["2DPanelComponent", { source: "material" }], ["2DPostProcessingPanelComponent", {}],
+  ])("names %s's Material domain for the Simulation Inspector as its Inspector row draws", (classId, properties) => {
+    const { rows, onPickAsset } = rowsFor({ id: "c", classId, properties: { ...defaultPropertiesFor(classId), ...properties, materialGuid: null } }, context);
+    const row = rows.find((entry) => entry.id === "actor-1-c-materialGuid");
+    if (row?.kind !== "asset") throw new Error("Missing materialGuid row");
+    row.onPick();
+    expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ materialDomain: componentMaterialDomain(classId) }));
+    expect(componentMaterialDomain(classId)).toBeDefined();
   });
 
   it("flags a slot that already holds a Material of another domain, and an Instance by its root's domain", () => {

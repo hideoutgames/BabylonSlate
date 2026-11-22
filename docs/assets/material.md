@@ -91,6 +91,7 @@ Every Material field takes Materials of one domain, and its picker lists only th
 | Post Process | **Post-Process Passes** (Scene and Scene Layers); the **Material** of a Scene Layer post-processing panel; the Register and Unregister Post-Processing nodes |
 
 - Paste refuses a Material of another domain, as the picker does.
+- While you Simulate, the **Simulation Inspector** filters a running component's **Material** the same way.
 - A field that already holds a Material of another domain, for example after its Material's **Domain** changed, shows an error under it until you pick another. A node pin that does shows an error in **Compiler Results**.
 
 ## Notes
