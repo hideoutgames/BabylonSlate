@@ -112,7 +112,9 @@ describe("buildEditorPrimitivesFiles", () => {
       const header = readHassetHeader(file.data);
       expect(header).toMatchObject({ type: "Model", name: shape.name, dependencies: [], requiredDependencies: [] });
       guids.add(header.guid);
-      const payload = normalizeModelPayload(header.payload);
+      // The header keeps a summary; the document chunk holds the collision shape.
+      expect(header.payload.simpleColliderCount).toBe(1);
+      const payload = normalizeModelPayload((await decodeAssetDocument(file.data)).payload);
       expect(payload.materialSlots).toEqual([{ index: 0, name: "Material", materialGuid: null }]);
       expect(payload).toMatchObject({ importScale: 1, skeletonGuid: null, autoLod: shape.autoLod });
       expect(payload.simpleColliders).toHaveLength(1);
@@ -128,7 +130,7 @@ describe("buildEditorPrimitivesFiles", () => {
     }
     // The plugin and its 13 Models.
     expect(guids.size).toBe(14);
-    const ids = new Set((await modelFiles()).map((file) => normalizeModelPayload(readHassetHeader(file.data).payload).simpleColliders[0]!.id));
+    const ids = new Set(await Promise.all((await modelFiles()).map(async (file) => normalizeModelPayload((await decodeAssetDocument(file.data)).payload).simpleColliders[0]!.id)));
     expect(ids.size).toBe(13);
   });
 

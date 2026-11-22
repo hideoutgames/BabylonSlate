@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeProjectAppearance } from "./project-appearance";
+import { normalizeProjectAppearance, projectCoverDataUrl, projectCoverFromDataUrl, storedProjectAppearance } from "./project-appearance";
 
 describe("normalizeProjectAppearance", () => {
   it("keeps a portable raster badge while normalizing its catalog identifiers", () => {
@@ -48,4 +48,17 @@ describe("normalizeProjectAppearance", () => {
       expect(normalizeProjectAppearance(value)).toBeUndefined();
     },
   );
+});
+
+describe("project cover pictures", () => {
+  it("stores a picture as cover file bytes and loads it back, never storing the data URL", () => {
+    const cover = projectCoverFromDataUrl("data:image/jpeg;base64,/9j/");
+    expect(cover?.file).toBe("cover.jpg");
+    expect(Array.from(cover!.bytes)).toEqual([0xff, 0xd8, 0xff]);
+    expect(projectCoverDataUrl("cover.jpg", cover!.bytes)).toBe("data:image/jpeg;base64,/9j/");
+    expect(projectCoverFromDataUrl("data:image/svg+xml;base64,PHN2Zz4=")).toBeNull();
+    expect(storedProjectAppearance({ icon: "box", color: "mint", coverFile: "cover.jpg", image: "data:image/jpeg;base64,/9j/" }))
+      .toEqual({ icon: "box", color: "mint", coverFile: "cover.jpg" });
+    expect(normalizeProjectAppearance({ icon: "box", color: "mint", coverFile: "cover.gif" })).toEqual({ icon: "box", color: "mint" });
+  });
 });

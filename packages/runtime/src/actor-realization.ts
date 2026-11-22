@@ -47,10 +47,8 @@ interface ActorRealizationHost {
   textAppear(): Pick<Text2DAppearRuntime, "remove">;
   subsystems(): Pick<RuntimeSubsystems, "retireActor">;
   cancelInvalidTweens(): void;
-  /** The tick's live actor index by guid while behaviour trees and the crowd run, else null. */
-  frameActors(): Map<string, Actor> | null;
   /** Decodes the actor's Landscape terrain once, before anything reads it. */
-  hydrateLandscapes(actor: Actor): void;
+  hydrateComponentChunks(actor: Actor): void;
   reportLog(message: string, severity: LogSeverity, category: string): void;
   emit(command: CommandMessage): void;
 }
@@ -249,7 +247,7 @@ export class ActorRealization {
 
   realize(actor: Actor, checkpoint: () => void = () => {}): void {
     checkpoint();
-    this.host.hydrateLandscapes(actor);
+    this.host.hydrateComponentChunks(actor);
     this.host.boundaries().trackRealized(actor);
     const world = this.host.world();
     if (world.classRegistry.isA(actor.classId, "RenderTargetCapture") && !captureComponent(actor) && !actor.sceneLayerId) {
@@ -283,8 +281,6 @@ export class ActorRealization {
     checkpoint();
     this.admission.flushSpawned(actor);
     checkpoint();
-    // A spawn queued mid-tick joins the frame index once it commits, next frame.
-    if (world.findActor(actor.guid) === actor) this.host.frameActors()?.set(actor.guid, actor);
   }
 
   /** Allocate the actor's render slot and announce it (`spawn`). */

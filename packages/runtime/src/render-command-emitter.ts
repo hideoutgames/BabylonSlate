@@ -49,7 +49,6 @@ import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { Text2DAppearRuntime } from "./text2d-appear-runtime";
 import type { UIControls2DRuntime } from "./ui-controls2d-runtime";
-import { currentComponentOwners } from "./world-component-index";
 
 interface RenderCommandEmitterHost {
   world(): World;
@@ -571,9 +570,14 @@ export function liveOverlayButtons(actor: Actor): ActorComponent[] {
  * component index is current; callers keep the live buttons with `liveOverlayButtons`. A stale index is not rebuilt:
  * each realize spawns, so a burst of layer realizations would otherwise rebuild it once per actor.
  */
+/** `actor`'s live direct children in world order, from the World's parent index rather than a scan of every actor. */
 export function overlayButtonChildren(world: World, actor: Actor): Actor[] {
-  return (currentComponentOwners(world, "2DButtonComponent") ?? world.getActors())
-    .filter((child) => actorParentGuid(child) === actor.guid);
+  const children = world.getChildren(actor.guid);
+  if (!children || children.size === 0) return [];
+  const ordered = [...children];
+  // The index holds children in link order; world order is spawn order.
+  if (ordered.length > 1) ordered.sort((a, b) => a.spawnOrder - b.spawnOrder);
+  return ordered;
 }
 
 function overlayMeshInteraction(

@@ -179,7 +179,7 @@ describe("recast generate / import round-trip", () => {
       indices: [0, 3, 2, 0, 2, 1],
       settings: { tiled: true },
     });
-    expect(String.fromCharCode(...tiled.subarray(0, 4))).not.toBe("BSNT");
+    expect(String.fromCharCode(...tiled.subarray(0, 4))).not.toBe("HPNT");
     const decoded = importNavMesh(tiled).navMesh;
     // 40 m at 0.2 m cells is several 32-cell tiles; a solo bake has one.
     expect(decoded.getMaxTiles()).toBeGreaterThan(1);

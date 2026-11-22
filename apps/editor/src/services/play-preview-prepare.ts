@@ -5,12 +5,10 @@ export type PlayPreviewDirtyDoc = {
 export type PlayPreviewPrepareInput = {
   dirtyDocuments: readonly PlayPreviewDirtyDoc[];
   scriptsStale: boolean;
-  migrationPending: boolean;
 };
 
 export type PlayPreviewPreparePlan =
   | { action: "launch" }
-  | { action: "migrate" }
   | {
       action: "prepare";
       needsSave: boolean;
@@ -25,9 +23,6 @@ export function planPlayPreviewPrepare(
   const needsSave = dirtyNames.length > 0;
   const needsCompile = input.scriptsStale;
 
-  if (needsSave && input.migrationPending) {
-    return { action: "migrate" };
-  }
   if (!needsSave && !needsCompile) {
     return { action: "launch" };
   }

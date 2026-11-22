@@ -59,9 +59,9 @@ describe("ScriptInterface dispatch", () => {
       variables: { health: 50 },
       implementedInterfaces: ["iface-damageable"],
     });
-    target.interfaceHandlers.set(
+    (target.interfaceHandlers ??= new Map()).set(
       interfaceHandlerKey("iface-damageable", "ApplyDamage"),
-      (args) => {
+      (args: Record<string, unknown>) => {
         const amount = Number(args.amount ?? 0);
         const health = Number(target.getVariable("health") ?? 0) - amount;
         target.setVariable("health", health);

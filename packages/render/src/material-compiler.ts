@@ -43,7 +43,7 @@ import type {
   MaterialTextureFilter,
   MaterialValueType,
 } from "@haptic/shader-graph";
-import { globalParameterSelection } from "@haptic/core";
+import { fnv1a, globalParameterSelection } from "@haptic/core";
 import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, componentCount, isPerInstanceParameter, materialNodeDefinition } from "@haptic/shader-graph";
 import { globalParameterDefaults, type GlobalParameterValueSource } from "./global-parameter-values";
 import { createGlobalParameterBlock } from "./material-global-parameter";
@@ -1424,29 +1424,34 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
   material.onDisposeObservable.addOnce(leave);
 }
 
-/** Build ids of particle programs by key and generated code, for the Engine's life. */
-const particlePrograms = new WeakMap<AbstractEngine, Map<string, Map<string, number>>>();
+/** Particle programs an Engine remembers for adoption (`shareParticleProgram`), least recently used first out. */
+export const PARTICLE_PROGRAM_CACHE_SIZE = 256;
+/** A remembered particle program: its generated code, the equality check behind its digest, and its build id. */
+type ParticleProgram = { shaders: string; buildId: number };
+/** Per Engine, particle programs by key and digest of their generated code, least recently used first. */
+const particlePrograms = new WeakMap<AbstractEngine, Map<string, ParticleProgram>>();
 
 /**
  * A particle NodeMaterial names its Effect after the material and its build id (`name + buildId + "_" +
  * blendMode`), and the Engine's Effect cache keys on that name, so every build compiles its own program even when
  * its code is the same, as it is for each emitter's instance of one particle Material. After the first build, adopt
  * the id an earlier build under the same key and byte-identical code took, so they share one Effect. Ids outlive
- * their materials: a later Play's emitters then name the Effect the last one kept (`keepPlayEffects`). Particle
+ * their materials: a later Play's emitters then name the Effect the last one kept (`keepPlayEffects`). The Engine
+ * remembers the last `PARTICLE_PROGRAM_CACHE_SIZE` programs, keyed by a digest of their code and checked against the
+ * code itself, so a digest collision adopts nothing; forgetting one only means a later build compiles its own program
+ * (no Effect is disposed: they belong to the Engine's cache and the materials using them). Particle
  * Materials never rebuild, and every particle Effect is created right after its source is registered. Post-process
  * Materials do not share: Babylon creates a pass's Effect a tick after registering its source, and a pass's cleanup
  * (`OwnedPostProcess`) or a rebuild deletes the sources by that name, which another Material's pass would still read.
  */
 function shareParticleProgram(material: NodeMaterial, key: string): void {
   const engine = material.getScene().getEngine();
-  let byKey = particlePrograms.get(engine);
-  if (!byKey) particlePrograms.set(engine, (byKey = new Map()));
-  let programs = byKey.get(key);
-  if (!programs) byKey.set(key, (programs = new Map()));
+  let programs = particlePrograms.get(engine);
+  if (!programs) particlePrograms.set(engine, (programs = new Map()));
   const registry = programs;
-  let shaders: string | undefined;
+  let entry: string | undefined;
   sharedProgramForgetters.set(material, () => {
-    if (shaders !== undefined && registry.get(shaders) === material.buildId) registry.delete(shaders);
+    if (entry !== undefined && registry.get(entry)?.buildId === material.buildId) registry.delete(entry);
   });
   let adopted: number | undefined;
   let firstBuild = true;
@@ -1454,16 +1459,23 @@ function shareParticleProgram(material: NodeMaterial, key: string): void {
     if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
     adopted = undefined;
     if (!firstBuild) {
-      shaders = undefined;
+      entry = undefined;
       return;
     }
     firstBuild = false;
-    shaders = material.compiledShaders;
-    const known = registry.get(shaders);
-    if (known !== undefined) {
-      material.buildId = adopted = known;
+    const shaders = material.compiledShaders;
+    entry = `${key}#${fnv1a(shaders)}`;
+    const known = registry.get(entry);
+    registry.delete(entry);
+    if (known?.shaders === shaders) {
+      registry.set(entry, known);
+      material.buildId = adopted = known.buildId;
       noteAdoptedProgram(engine);
-    } else registry.set(shaders, material.buildId);
+      return;
+    }
+    // Unknown code, or other code under the same digest: this build's program takes the slot.
+    registry.set(entry, { shaders, buildId: material.buildId });
+    if (registry.size > PARTICLE_PROGRAM_CACHE_SIZE) registry.delete(registry.keys().next().value!);
   }, undefined, true);
 }
 
@@ -1765,8 +1777,8 @@ RegisterClass(
 );
 
 // Particle and Text outputs write display color: Particle Color and glyph span
-// colors are display-space (a Text or Particle graph's own linear colour is encoded first, `ColorEncodingBlock`), and Legacy
-// Display shows the output unchanged. Like
+// colors are display-space (a Text or Particle graph's own linear colour is encoded first, `ColorEncodingBlock`), and Display
+// Space shows the output unchanged. Like
 // Babylon's own particle and Standard shaders, they decode to linear when a
 // Scene Linear display stage (applyByPostProcess) encodes the frame once.
 class DisplayFragmentOutputBlock extends FragmentOutputBlock {

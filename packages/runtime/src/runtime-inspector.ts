@@ -17,7 +17,7 @@ const FORBIDDEN = new Set(["__proto__", "constructor", "prototype", "parentId", 
 
 type Target = Actor | ActorComponent;
 type Descriptor = Omit<RuntimePropertyDescriptor, "value"> & { keyTypeId?: string };
-type Boundary = Pick<RuntimeInspectorResult, "tickIndex" | "frameId" | "commandRevision" | "structuralRevision">;
+type Boundary = Pick<RuntimeInspectorResult, "tickIndex" | "frameId" | "commandRevision" | "identityRevision">;
 export interface RuntimeInspectorHost {
   world: World;
   materials: RuntimeMaterialParameters;
@@ -116,7 +116,7 @@ export class RuntimeInspector {
       this.tokens.get(component) === identity.componentToken) ?? null;
   }
   private identities(action: Extract<RuntimeInspectorAction, { kind: "identities" }>): RuntimeInspectorPayload {
-    const revision = this.host.boundary().structuralRevision;
+    const revision = this.host.boundary().identityRevision;
     if (action.knownRevision === revision && !action.cursor) return { kind: "identities", rows: [], unchanged: true };
     const cursor: RuntimeIdentityCursor = action.cursor ?? { revision, actorIndex: 0, componentIndex: -1 };
     if (cursor.revision !== revision) throw new Error("The runtime structure changed; restart identity paging.");

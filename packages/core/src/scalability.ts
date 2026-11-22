@@ -48,7 +48,7 @@ const ENUMS: Record<string, readonly unknown[]> = {
   "shadows.localLightMode": ["auto", "manual"], "quality.lighting.localLightMode": ["auto", "manual"],
   "quality.water.shadingDetail": WATER_SHADING_DETAILS, "quality.water.reflections": WATER_REFLECTION_MODES,
   "quality.geometry.mirrorReflections": MIRROR_REFLECTS,
-  "effects.colorPipeline.mode": ["legacyDisplay", "sceneLinear"],
+  "effects.colorPipeline.mode": ["displaySpace", "sceneLinear"],
   "effects.toneMapping": ["none", "standard", "aces", "neutral"],
 };
 const LIVE_FIELDS = new Set([

@@ -783,89 +783,95 @@ export function attenuationPlotPoints(
   return points;
 }
 
-const PACKED_AUDIO_MAGIC = new Uint8Array([0x42, 0x53, 0x41, 0x55]); // BSAU
+/**
+ * Packed Audio envelope: magic `HPAU`, `u16 version`, `u16 flags` (none
+ * defined, must be 0), `u32 jsonLength`, the payload JSON, `u32 clipCount`,
+ * then each clip as `u32 length` and its bytes. All integers little-endian.
+ * `clipCount` is 0 for a metadata-only envelope (exported streamed Audio).
+ */
+const PACKED_AUDIO_MAGIC = new Uint8Array([0x48, 0x50, 0x41, 0x55]); // HPAU
+const PACKED_AUDIO_VERSION = 1;
+const PACKED_AUDIO_PREFIX_BYTES = 12;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/** Pack Audio JSON payload with source bytes so export can ship both. */
+/** Pack Audio JSON payload with its clips' source bytes so export can ship both. */
 export function encodePackedAudioAsset(
   payload: AudioPayload | Record<string, unknown>,
   source: Uint8Array | readonly Uint8Array[],
 ): Uint8Array {
   const json = encoder.encode(JSON.stringify(normalizeAudioPayload(payload)));
   const blobs = Array.isArray(source) ? source : [source];
-  if (blobs.length <= 1) {
-    return concatBytes([
-      PACKED_AUDIO_MAGIC,
-      writeU32LE(json.byteLength),
-      json,
-      blobs[0] ?? new Uint8Array(),
-    ]);
-  }
-  const parts: Uint8Array[] = [
-    PACKED_AUDIO_MAGIC,
-    writeU32LE(json.byteLength),
-    json,
-    writeU32LE(blobs.length),
-  ];
-  for (const blob of blobs) {
-    parts.push(writeU32LE(blob.byteLength), blob);
-  }
+  const prefix = new Uint8Array(PACKED_AUDIO_PREFIX_BYTES);
+  const view = new DataView(prefix.buffer);
+  prefix.set(PACKED_AUDIO_MAGIC, 0);
+  view.setUint16(4, PACKED_AUDIO_VERSION, true);
+  view.setUint16(6, 0, true);
+  view.setUint32(8, json.byteLength, true);
+  const parts: Uint8Array[] = [prefix, json, writeU32LE(blobs.length)];
+  for (const blob of blobs) parts.push(writeU32LE(blob.byteLength), blob);
   return concatBytes(parts);
 }
 
-function decodePackedClipTable(rest: Uint8Array): Uint8Array[] | null {
-  if (rest.byteLength < 4) return null;
-  const count = readU32LE(rest, 0);
-  if (count < 2 || count > AUDIO_MAX_CLIPS) return null;
-  let offset = 4;
-  const clips: Uint8Array[] = [];
-  for (let i = 0; i < count; i++) {
-    if (offset + 4 > rest.byteLength) return null;
-    const len = readU32LE(rest, offset);
-    offset += 4;
-    if (len < 0 || offset + len > rest.byteLength) return null;
-    clips.push(rest.subarray(offset, offset + len));
-    offset += len;
-  }
-  if (offset !== rest.byteLength) return null;
-  return clips;
-}
-
-/** JSON payload from a BSAU envelope without copying clip blobs. */
-export function peekPackedAudioPayload(bytes: Uint8Array): AudioPayload | null {
-  if (bytes.byteLength < 8) return null;
+function hasPackedAudioMagic(bytes: Uint8Array): boolean {
+  if (bytes.byteLength < PACKED_AUDIO_MAGIC.length) return false;
   for (let i = 0; i < PACKED_AUDIO_MAGIC.length; i++) {
-    if (bytes[i] !== PACKED_AUDIO_MAGIC[i]) return null;
+    if (bytes[i] !== PACKED_AUDIO_MAGIC[i]) return false;
   }
-  const jsonLen = readU32LE(bytes, 4);
-  const jsonStart = 8;
-  const jsonEnd = jsonStart + jsonLen;
-  if (jsonLen < 0 || jsonEnd > bytes.byteLength) return null;
-  try {
-    return normalizeAudioPayload(
-      JSON.parse(decoder.decode(bytes.subarray(jsonStart, jsonEnd))),
-    );
-  } catch {
-    return null;
-  }
+  return true;
 }
 
-/** Unwrap a packed Audio envelope; raw WAV/MP3/OGG returns null. */
+/** End of the JSON; throws for an `HPAU` envelope this engine cannot read. */
+function packedAudioJsonEnd(bytes: Uint8Array): number {
+  if (bytes.byteLength < PACKED_AUDIO_PREFIX_BYTES) throw new Error("Invalid HPAU audio envelope: truncated header");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const version = view.getUint16(4, true);
+  if (version !== PACKED_AUDIO_VERSION) throw new Error(`Unsupported HPAU audio envelope version: ${version}`);
+  if (view.getUint16(6, true) !== 0) throw new Error("Invalid HPAU audio envelope: unknown flags");
+  const jsonEnd = PACKED_AUDIO_PREFIX_BYTES + view.getUint32(8, true);
+  if (jsonEnd > bytes.byteLength) throw new Error("Invalid HPAU audio envelope: truncated payload");
+  return jsonEnd;
+}
+
+/**
+ * JSON payload from an `HPAU` envelope without copying clip blobs; null for
+ * bytes that are not an envelope (raw WAV / MP3 / OGG). Throws for a
+ * malformed envelope.
+ */
+export function peekPackedAudioPayload(bytes: Uint8Array): AudioPayload | null {
+  if (!hasPackedAudioMagic(bytes)) return null;
+  const jsonEnd = packedAudioJsonEnd(bytes);
+  return normalizeAudioPayload(JSON.parse(decoder.decode(bytes.subarray(PACKED_AUDIO_PREFIX_BYTES, jsonEnd))));
+}
+
+/**
+ * Unwrap a packed Audio envelope into its payload and clips (views, not
+ * copies); raw WAV / MP3 / OGG returns null. Throws for a malformed envelope.
+ */
 export function decodePackedAudioAsset(
   bytes: Uint8Array,
 ): { payload: AudioPayload; source: Uint8Array; sources: Uint8Array[] } | null {
   const payload = peekPackedAudioPayload(bytes);
   if (!payload) return null;
-  const jsonLen = readU32LE(bytes, 4);
-  const rest = bytes.subarray(8 + jsonLen);
-  const table = decodePackedClipTable(rest);
-  const sources = table ?? [rest];
-  const source = sources[0] ?? new Uint8Array();
-  return { payload, source, sources };
+  let offset = packedAudioJsonEnd(bytes);
+  if (offset + 4 > bytes.byteLength) throw new Error("Invalid HPAU audio envelope: missing clip count");
+  const count = readU32LE(bytes, offset);
+  offset += 4;
+  if (count > AUDIO_MAX_CLIPS) throw new Error(`Invalid HPAU audio envelope: ${count} clips`);
+  const sources: Uint8Array[] = [];
+  for (let i = 0; i < count; i++) {
+    if (offset + 4 > bytes.byteLength) throw new Error("Invalid HPAU audio envelope: truncated clip table");
+    const length = readU32LE(bytes, offset);
+    offset += 4;
+    if (offset + length > bytes.byteLength) throw new Error("Invalid HPAU audio envelope: truncated clip");
+    sources.push(bytes.subarray(offset, offset + length));
+    offset += length;
+  }
+  if (offset !== bytes.byteLength) throw new Error("Invalid HPAU audio envelope: trailing bytes");
+  return { payload, source: sources[0] ?? new Uint8Array(), sources };
 }
 
-/** One clip's bytes from a BSAU envelope; anything else holds no clip. */
+/** One clip's bytes from an HPAU envelope; anything else holds no clip. */
 export function extractPackedAudioClipBytes(
   bytes: Uint8Array,
   chunkId: string,

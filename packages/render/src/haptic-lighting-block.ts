@@ -52,7 +52,7 @@ const plainDepthEngines = new WeakSet<AbstractEngine>();
  * WebGL2: the shadow atlas read without compare beside its compare sampler (`HAPTIC_SHADOW_ATLAS_DEPTH`, the same depth
  * texture on another unit): Babylon's patched engine binds that uniform's unit a sampler object without compare,
  * nearest-filtered (a float depth texture filters only through compare), and every other unit none
- * (`_samplerObjectFor`). Made again after a lost context.
+ * (`_samplerObjectFor`). Made again after a lost context; deleted when the Engine is disposed.
  */
 function plainDepthSampler(engine: AbstractEngine): void {
   if (plainDepthEngines.has(engine) || !(engine instanceof ThinEngine) || engine.webGLVersion < 2) return;
@@ -60,7 +60,13 @@ function plainDepthSampler(engine: AbstractEngine): void {
   if (typeof gl?.createSampler !== "function") return;
   plainDepthEngines.add(engine);
   let sampler: WebGLSampler | null = null;
-  engine.onContextLostObservable.add(() => { sampler = null; });
+  const lost = engine.onContextLostObservable.add(() => { sampler = null; });
+  // The context can outlive the Engine (a canvas a new Engine takes over): delete the sampler with the Engine.
+  engine.onDisposeObservable.addOnce(() => {
+    engine.onContextLostObservable.remove(lost);
+    if (sampler) gl.deleteSampler(sampler);
+    sampler = null;
+  });
   engine._samplerObjectFor = (name) => {
     if (name !== HAPTIC_SHADOW_ATLAS_DEPTH) return null;
     if (!sampler) {

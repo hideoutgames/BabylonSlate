@@ -43,12 +43,45 @@ function catalogFlag(
   return (catalog ?? pin)[flag] === true;
 }
 
-export type SubjectPin = { pin: GraphPin; message: string; destroyedMessage: string };
+/** What a node does to its subject, as a destroyed-object diagnostic names it. */
+export type SubjectAccess = { kind: "access" | "set" | "call"; member: string };
+
+export type SubjectPin = { pin: GraphPin; message: string };
+
+function propertyText(properties: Record<string, unknown>, key: string): string {
+  const value = properties[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * What `node` does to its subject: reads or writes a variable (by its name), or calls a function, interface
+ * method or anything else (by the function's name, else the node's title).
+ */
+export function subjectAccessOf(node: GraphNode, registry: NodeRegistry): SubjectAccess {
+  const title = propertyText(node.properties, "title") || registry.get(node.typeId)?.title || node.typeId;
+  const variable = propertyText(node.properties, "variableName") || "Value";
+  switch (node.typeId) {
+    case "variables.get":
+    case "variables.getValidated":
+      return { kind: "access", member: variable };
+    case "variables.set":
+    case "variables.setByRef":
+      return { kind: "set", member: variable };
+    case "functions.call":
+      return { kind: "call", member: propertyText(node.properties, "functionName") || title };
+    case "flow.event.call":
+      return { kind: "call", member: propertyText(node.properties, "name") || title };
+    case "interface.call":
+      return { kind: "call", member: propertyText(node.properties, "method") || title };
+    default:
+      return { kind: "call", member: title };
+  }
+}
 
 /**
  * A node's subject inputs: the objects it reads, writes, calls or moves. The
- * message is logged each time one is null as the node runs, and the destroyed
- * message each time one holds an object that has been destroyed.
+ * message is logged each time one is null as the node runs; one holding a
+ * destroyed object reports a destroyed access at the node's location.
  */
 export function subjectPinsOf(
   node: GraphNode,
@@ -68,7 +101,6 @@ export function subjectPinsOf(
       return {
         pin,
         message: `${subject} tried to access null.`,
-        destroyedMessage: `${subject} tried to access a destroyed object.`,
       };
     });
 }
@@ -81,14 +113,17 @@ export function deadReference(name: string): string {
   return `(${name} == null || ${name}.destroyed === true)`;
 }
 
-/** The statement that logs why the reference in `name` is unusable, when it is. */
-export function reportDeadReference(subject: SubjectPin, name: string): string {
-  return `if (${name} == null) ctx.nullAccess(${JSON.stringify(subject.message)}); else if (${name}.destroyed === true) ctx.nullAccess(${JSON.stringify(subject.destroyedMessage)});`;
+/**
+ * The statement that reports why the reference in `name` is unusable, when it is: null logs the subject's
+ * message, a destroyed object reports a destroyed access at `location` (a module-scope location constant).
+ */
+export function reportDeadReference(subject: SubjectPin, name: string, location: string): string {
+  return `if (${name} == null) ctx.nullAccess(${JSON.stringify(subject.message)}); else if (${name}.destroyed === true) ctx.destroyedAccess(${location}, ${name});`;
 }
 
 /**
  * A pure node's output expression behind its subject guard: a null or destroyed
- * subject logs and the output reads `fallback`. The inputs are bound to
+ * subject reports and the output reads `fallback`. The inputs are bound to
  * `__s<n>` so each is evaluated once.
  */
 export function guardPureExpression(
@@ -96,13 +131,14 @@ export function guardPureExpression(
   args: readonly string[],
   expression: string,
   fallback: string,
+  location: string,
 ): string {
   const names = subjects.map((_, index) => `__s${index}`);
   const report = subjects
     .map((subject, index) => {
       const name = names[index];
       const nullLog = `ctx.nullAccess(${JSON.stringify(subject.message)})`;
-      const destroyedLog = `ctx.nullAccess(${JSON.stringify(subject.destroyedMessage)})`;
+      const destroyedLog = `ctx.destroyedAccess(${location}, ${name})`;
       return `(${name} == null ? ${nullLog} : ${name}.destroyed === true && ${destroyedLog})`;
     })
     .join(", ");

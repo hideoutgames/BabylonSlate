@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Actor, ActorComponent, MaterialObject } from "@haptic/object-model";
+import { Actor, ActorComponent, MaterialObject, Scene, getPostProcessMaterialObject } from "@haptic/object-model";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 import type { MaterialParameterValue } from "@haptic/bridge";
 
@@ -144,4 +144,31 @@ it("releases a texture's preload when the parameter resets to its default", asyn
   await ctx.setMaterialTextureParameterAsync(material, "Diffuse", "texture");
   expect(ctx.resetMaterialTextureParameter(material, "Diffuse")).toBe(true);
   expect(released).toEqual(["preload:texture"]);
+});
+
+it("releases a post-process pass's texture preload once the pass is unregistered or its Scene is gone", async () => {
+  const actor = new Actor({ classId: "Hero", guid: "hero" });
+  const scene = new Scene({ assetGuid: "level", sceneName: "Level", postProcessStack: [] });
+  const released: string[] = [];
+  const bound = new Map<string, MaterialParameterValue>();
+  const host = new ScriptHost(services({
+    prepareAssets: async () => {},
+    acquireAssets: async (guids) => ({ success: true, progress: 1, preloadId: `preload:${guids[0]}`, errorMessage: "" }),
+    releaseAcquiredAssets: id => { released.push(id); },
+    getAssetLoadState: () => "ready",
+    setMaterialParameter: (_material, name, value) => { bound.set(name, value); },
+    getMaterialParameter: (_material, name) => bound.get(name) ?? null,
+    unregisterScenePostProcess: (guid) => { scene.postProcessStack = scene.postProcessStack.filter((entry) => entry.materialGuid !== guid); },
+  }));
+  const ctx = host.createContext(actor, 0, 0);
+  scene.postProcessStack.push({ id: "grain", materialGuid: "grain", enabled: true }, { id: "tint", materialGuid: "tint", enabled: true });
+  const [grain, tint] = ["grain", "tint"].map((id) => getPostProcessMaterialObject(scene, id)!);
+  await ctx.setMaterialTextureParameterAsync(grain, "Noise", "noise");
+  await ctx.setMaterialTextureParameterAsync(tint, "Ramp", "ramp");
+  ctx.unregisterScenePostProcess("grain");
+  expect(released).toEqual(["preload:noise"]);
+  // A Scene change destroys the Scene that owned the rest.
+  scene.destroyed = true;
+  host.releaseRetiredPostProcessPreloads();
+  expect(released).toEqual(["preload:noise", "preload:ramp"]);
 });

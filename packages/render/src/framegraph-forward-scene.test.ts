@@ -198,7 +198,7 @@ it("draws a multisampled world view into its own scene targets, copies them to t
   graph.dispose();
 });
 
-it.each(["legacyDisplay", "sceneLinear"] as const)(
+it.each(["displaySpace", "sceneLinear"] as const)(
   "merges bloom over the multisampled %s scene colour into a single-sample target of its type",
   async (mode) => {
     const { engine, scene, camera } = host();
@@ -230,7 +230,7 @@ it.each(["legacyDisplay", "sceneLinear"] as const)(
   },
 );
 
-it.each(["legacyDisplay", "sceneLinear"] as const)(
+it.each(["displaySpace", "sceneLinear"] as const)(
   "clears the %s scene targets inside the objects pass, with the view's clear settings as each frame finds them",
   async (mode) => {
     const { engine, scene, camera } = host();
@@ -1489,7 +1489,7 @@ it("composes the settings effect chain in Scene Linear, its last stage drawing t
   graph.dispose();
 });
 
-it("keeps Legacy Display effects display-space without a display stage", async () => {
+it("keeps Display Space effects display-space without a display stage", async () => {
   const { scene, camera } = host();
   setTierFxaa(scene, true);
   updateSceneRenderingSettings(scene, {

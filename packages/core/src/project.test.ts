@@ -182,11 +182,11 @@ describe("project schema", () => {
     expect(createDefaultScene("2d").settings.fogColor).toEqual([0.5, 0.5, 0.5]);
   });
 
-  it("starts 3D projects in Scene Linear with Neutral tone mapping, and 2D and pixel-art projects in Legacy Display", () => {
+  it("starts 3D projects in Scene Linear with Neutral tone mapping, and 2D and pixel-art projects in Display Space", () => {
     const look = (settings: ProjectSettings) => [settings.render.effects?.colorPipeline.mode, settings.render.effects?.toneMapping];
     expect(look(createEmptyProject("Three").settings)).toEqual(["sceneLinear", "neutral"]);
-    expect(look(createEmptyProject("Two", { kind: "2d" }).settings)).toEqual(["legacyDisplay", "neutral"]);
-    expect(look(createEmptyProject("Pixels", { pixelArt: true }).settings)).toEqual(["legacyDisplay", "neutral"]);
+    expect(look(createEmptyProject("Two", { kind: "2d" }).settings)).toEqual(["displaySpace", "neutral"]);
+    expect(look(createEmptyProject("Pixels", { pixelArt: true }).settings)).toEqual(["displaySpace", "neutral"]);
     expect(createEmptyProject("Three").settings.render.effects?.volumetricLighting.density).toBe(0.003);
     expect(createEmptyProject("Three").settings.render.quality?.geometry).toMatchObject({ occlusionCulling: true, preset: "high" });
     expect(createEmptyProject("Two", { kind: "2d" }).settings.render.quality?.geometry).toMatchObject({ occlusionCulling: false, preset: "custom" });

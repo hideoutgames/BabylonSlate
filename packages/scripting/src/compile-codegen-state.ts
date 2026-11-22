@@ -3,6 +3,7 @@ import { findPin } from "./ir";
 import { isPureNode, type HoistBodyAnchor } from "./node-registry";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { createPureExpressions } from "./pure-expressions";
+import { subjectAccessOf } from "./compile-pin-values";
 import type { CompileAnchor, CompileOptions } from "./compile-types";
 import { collapseReroutes } from "./reroute";
 import {
@@ -48,6 +49,10 @@ export type CodegenState = {
   readonly index: GraphIndex;
   readonly options: CompileOptions;
   readonly hoisted: HoistChunk[];
+  /** Module-scope location constant per node a loop guard names, so a guard allocates nothing. */
+  readonly loopLocations: Map<string, string>;
+  /** Nodes whose destroyed-access location constant is hoisted. */
+  readonly accessLocations: Set<string>;
   readonly body: BodyLine[];
   readonly loopStack: LoopFrame[];
   nextLabel: number;
@@ -113,6 +118,8 @@ export function createCodegenState(
     index,
     options,
     hoisted: [],
+    loopLocations: new Map(),
+    accessLocations: new Set(),
     body: [],
     loopStack: [],
     nextLabel: 0,
@@ -201,10 +208,38 @@ export function traceProbe(call: string): string {
   return `  if (__dbg !== null) ${call};`;
 }
 
+/**
+ * The module-scope constant naming where `node` touches its subject and how (`subjectAccessOf`), passed by a
+ * destroyed-object report so the report allocates nothing on the path that never fails.
+ */
+export function accessLocation(s: CodegenState, node: GraphNode): string {
+  const name = `__access_${identifierSafe(s.graph.id)}_${identifierSafe(node.id)}`;
+  if (!s.accessLocations.has(node.id)) {
+    s.accessLocations.add(node.id);
+    s.hoisted.push({ nodeId: node.id, source: `var ${name} = Object.freeze(${JSON.stringify({
+      assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId: node.id, ...subjectAccessOf(node, s.options.registry),
+    })});` });
+  }
+  return name;
+}
+
+/** `id` as identifier text, one-to-one: every character outside [A-Za-z0-9] becomes `$<hex>$`. */
+function identifierSafe(id: string): string {
+  return id.replace(/[^A-Za-z0-9]/g, (char) => `$${char.charCodeAt(0).toString(16)}$`);
+}
+
 export function loopCheck(s: CodegenState, nodeId: string): string {
-  return `ctx.checkInfiniteLoop(${JSON.stringify({
-    assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId,
-  })});`;
+  let name = s.loopLocations.get(nodeId);
+  if (name === undefined) {
+    // Unique per graph and node: one module joins the graphs of an asset. `var` lets the same graph's
+    // identical declaration repeat.
+    name = `__loop_${identifierSafe(s.graph.id)}_${identifierSafe(nodeId)}`;
+    s.loopLocations.set(nodeId, name);
+    s.hoisted.push({ nodeId, source: `var ${name} = Object.freeze(${JSON.stringify({
+      assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId,
+    })});` });
+  }
+  return `ctx.checkInfiniteLoop(${name});`;
 }
 
 /** Starts a statement epoch on a line of its own. */

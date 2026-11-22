@@ -361,6 +361,7 @@ export class ClassRegistry {
       interfaces.add(iface);
     }
     existing.implementedInterfaces = [...interfaces];
+    this.revision++;
     return ok(undefined);
   }
 
@@ -396,6 +397,7 @@ export class ClassRegistry {
     const before = new Set(this.inheritedVariables(classId).map((v) => v.name));
     const previousParentId = def.parentClassId;
     def.parentClassId = newParentId;
+    this.revision++;
     const after = new Set(this.inheritedVariables(classId).map((v) => v.name));
     const invalidatedMembers = [...before].filter((name) => !after.has(name));
     invalidatedMembers.sort();

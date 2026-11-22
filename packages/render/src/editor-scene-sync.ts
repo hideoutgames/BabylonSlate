@@ -63,6 +63,8 @@ import { refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";
 import { pruneEditorCables } from "./cable-mesh";
 import { authoredMaterialInstancePreparation } from "./authored-material-instance";
 import type { NativePreparationPriority } from "./native-preparation";
+import { updateLandscapeMesh } from "./landscape-mesh";
+import { applyFoliageDistances, refreshFoliageMaterials, showEveryFoliageCell } from "./foliage-mesh";
 
 export type EditorSceneSyncOptions = {
   resolveMaterial?: MeshAssetContext["resolveMaterial"];
@@ -1438,6 +1440,18 @@ export class EditorSceneSync {
     this.actorMaterials.clear();
     this.materialActors.clear();
     this.meshKinds.clear();
+    // The bytes, payloads and documents the last apply held: nothing reads them once disposed.
+    this.assets = undefined;
+    this.modelLoadBinding.modelBytes = undefined;
+    this.modelLoadBinding.modelSources = undefined;
+    this.modelLoadBinding.modelPayloads = undefined;
+    this.modelLoadBinding.slotPoseClips?.clear();
+    this.lastScene = null;
+    this.lastSceneActors = null;
+    this.liveTilemaps.clear();
+    this.liveTilemapsOwed.clear();
+    this.rejectedVisuals.clear();
+    this.deferredMaterialRefresh = undefined;
     pruneEditorCables(this.scene);
   }
 }
@@ -1504,5 +1518,3 @@ function meshAndDescendantMeshes(root: Mesh): AbstractMesh[] {
       : isPoolMember(child) && (!child.parent || pooledLeafOf(child.parent as AbstractMesh) !== child));
   return [root, ...children];
 }
-import { updateLandscapeMesh } from "./landscape-mesh";
-import { applyFoliageDistances, refreshFoliageMaterials, showEveryFoliageCell } from "./foliage-mesh";

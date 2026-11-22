@@ -1,4 +1,4 @@
-import { dataFieldIdentity, hardLoadingProperty, type DataFieldSnapshot } from "@haptic/core";
+import { hardLoadingProperty, type DataFieldSnapshot } from "@haptic/core";
 import type { StructField } from "./type-assets";
 import type { TypeSchemas } from "./type-defaults";
 
@@ -8,7 +8,7 @@ const record = (value: unknown): value is Record<string, unknown> =>
 
 export function defaultFieldSnapshot(field: StructField): DataFieldSnapshot {
   return {
-    id: dataFieldIdentity(field), name: field.name, typeId: field.typeId,
+    id: field.id, name: field.name, typeId: field.typeId,
     ...(field.typeClassId ? { typeClassId: field.typeClassId } : {}),
     ...(field.container ? { container: field.container } : {}),
     ...(field.keyTypeId ? { keyTypeId: field.keyTypeId } : {}),
@@ -26,15 +26,15 @@ function sameType(field: StructField, previous: DataFieldSnapshot): boolean {
 
 /** One collection snapshot must retain the metadata used by every occupied item. */
 function mergeFields(left: readonly DataFieldSnapshot[] = [], right: readonly DataFieldSnapshot[] = [], authored: readonly DataFieldSnapshot[] = []): DataFieldSnapshot[] {
-  const result = new Map(left.map(field => [dataFieldIdentity(field), field]));
-  const original = new Map(authored.map(field => [dataFieldIdentity(field), field]));
+  const result = new Map(left.map(field => [field.id, field]));
+  const original = new Map(authored.map(field => [field.id, field]));
   for (const field of right) {
-    const previous = result.get(dataFieldIdentity(field));
-    const retained = previous && !sameType(previous, field) ? original.get(dataFieldIdentity(field)) ?? previous : previous;
-    result.set(dataFieldIdentity(field), previous ? {
+    const previous = result.get(field.id);
+    const retained = previous && !sameType(previous, field) ? original.get(field.id) ?? previous : previous;
+    result.set(field.id, previous ? {
       ...retained!, name: previous.name,
-      ...(previous.fields || field.fields ? { fields: mergeFields(previous.fields, field.fields, original.get(dataFieldIdentity(field))?.fields) } : {}),
-      ...(previous.keyFields || field.keyFields ? { keyFields: mergeFields(previous.keyFields, field.keyFields, original.get(dataFieldIdentity(field))?.keyFields) } : {}),
+      ...(previous.fields || field.fields ? { fields: mergeFields(previous.fields, field.fields, original.get(field.id)?.fields) } : {}),
+      ...(previous.keyFields || field.keyFields ? { keyFields: mergeFields(previous.keyFields, field.keyFields, original.get(field.id)?.keyFields) } : {}),
     } : field);
   }
   return [...result.values()];
@@ -59,7 +59,7 @@ export function projectStoredDataDefault(
   const snapshot = defaultFieldSnapshot(field);
   if (depth > 64) return { value, snapshot: original, conflict: true };
   if (previous && !sameType(field, previous)) {
-    return { value, snapshot: { ...previous, name: field.name, id: dataFieldIdentity(field) }, conflict: false };
+    return { value, snapshot: { ...previous, name: field.name, id: field.id }, conflict: false };
   }
   if (field.container === "array" || field.container === "map") {
     if (!Array.isArray(value)) return { value, snapshot: original, conflict: false };
@@ -74,7 +74,7 @@ export function projectStoredDataDefault(
         return result.value;
       }
       if (!record(item) || !own(item, "key") || !own(item, "value")) return item;
-      const keyField = { name: "key", typeId: field.keyTypeId || "string", typeClassId: field.keyTypeClassId };
+      const keyField = { id: `${field.id}.key`, name: "key", typeId: field.keyTypeId || "string", typeClassId: field.keyTypeClassId };
       const key = projectStoredDataDefault(keyField, item.key, schemas,
         previous ? { ...keyField, fields: previous.keyFields } : undefined, depth + 1);
       const entry = projectStoredDataDefault(scalar, item.value, schemas, scalarPrevious, depth + 1);
@@ -89,18 +89,18 @@ export function projectStoredDataDefault(
     ? schemas.structs[field.typeClassId] : undefined;
   if (!nested || !record(value)) return { value, snapshot: { ...snapshot, ...(previous?.fields ? { fields: previous.fields } : {}) }, conflict: false };
   const before = previous?.fields ?? [];
-  const byId = new Map(before.map(item => [dataFieldIdentity(item), item]));
+  const byId = new Map(before.map(item => [item.id, item]));
   const byName = new Map(before.map(item => [item.name, item]));
   const sources = nested.fields.map(item => {
-    const old = byId.get(dataFieldIdentity(item));
+    const old = byId.get(item.id);
     const sameName = byName.get(item.name);
     const source = old && own(value, old.name) ? old.name :
-      (!sameName || dataFieldIdentity(sameName) === dataFieldIdentity(item)) && own(value, item.name) ? item.name : undefined;
+      (!sameName || sameName.id === item.id) && own(value, item.name) ? item.name : undefined;
     return { field: item, old, source };
   });
   const consumed = new Set(sources.flatMap(item => item.source === undefined ? [] : [item.source]));
   let conflict = byId.size !== before.length || byName.size !== before.length ||
-    new Set(nested.fields.map(dataFieldIdentity)).size !== nested.fields.length ||
+    new Set(nested.fields.map((field) => field.id)).size !== nested.fields.length ||
     new Set(nested.fields.map(item => item.name)).size !== nested.fields.length;
   const projected = { ...value };
   const names = new Set(nested.fields.map(item => item.name));
@@ -114,7 +114,7 @@ export function projectStoredDataDefault(
     if (source !== item.name && !names.has(source)) delete projected[source];
     Object.defineProperty(projected, item.name, { value: result.value, enumerable: true, writable: true, configurable: true });
   }
-  const ids = new Set(fields.map(dataFieldIdentity));
-  for (const old of before) if (!consumed.has(old.name) && own(value, old.name) && !ids.has(dataFieldIdentity(old)) && !names.has(old.name)) fields.push(old);
+  const ids = new Set(fields.map((field) => field.id));
+  for (const old of before) if (!consumed.has(old.name) && own(value, old.name) && !ids.has(old.id) && !names.has(old.name)) fields.push(old);
   return conflict ? { value, snapshot: original, conflict } : { value: projected, snapshot: { ...snapshot, fields }, conflict };
 }

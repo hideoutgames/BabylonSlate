@@ -6,6 +6,7 @@ import {
   initNavigation,
 } from "./recast-backend";
 import { mergeNavBakeMeshes } from "./geometry";
+import { trackRecastHandles } from "./recast-test-handles";
 import { recastWalkableQuadFromXy, recastWallsFromXyChains, solidBlockerMesh } from "./blockers";
 
 function groundPrism(): { positions: number[]; indices: number[] } {
@@ -112,6 +113,47 @@ describe("tile-cache obstacles and static carve", () => {
       expect(detours(nav.findPath({ x: -4, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }), { x: 4, z: 0 }, 0.8)).toBe(true);
       // Outside radius 1 the straight line stays open.
       expect(nav.findPath({ x: -4, y: 0, z: 1.6 }, { x: 4, y: 0, z: 1.6 })).toHaveLength(2);
+    } finally { nav.dispose(); }
+  });
+
+  it("leaves no Recast object on the heap across navmesh imports, agents and obstacles", async () => {
+    const bytes = await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } });
+    const keeper = createNavigationBackend();
+    // A second navmesh keeps the module loaded, so the handles stay readable after the first backend lets go.
+    keeper.importNavMesh(bytes);
+    const handles = trackRecastHandles(["Vec3", "dtCrowdAgentParams", "NavMeshExport"]);
+    try {
+      const nav = createNavigationBackend();
+      for (let cycle = 0; cycle < 3; cycle++) {
+        nav.importNavMesh(bytes);
+        const agent = nav.addAgent({ x: -4, y: 0, z: -4 }, { radius: 0.4 });
+        nav.updateAgent(agent, { maxSpeed: 2, radius: 0.3 });
+        const obstacle = nav.addObstacle("cylinder", { x: 0, y: 1, z: 0 }, { x: 2, y: 2, z: 2 });
+        nav.stepCrowd(1 / 60);
+        nav.removeObstacle(obstacle);
+        nav.removeAgent(agent);
+      }
+      nav.dispose();
+      expect(handles.made()).toMatchObject({ Vec3: 3, dtCrowdAgentParams: 3, NavMeshExport: 3 });
+      expect(handles.live()).toEqual({ Vec3: 0, dtCrowdAgentParams: 0, NavMeshExport: 0 });
+      // Each import's tile cache (the first two when the next replaced them, the last on dispose), wrapper and all.
+      expect(handles.tileCachesFreed()).toBe(3);
+      expect(handles.tileCacheWrappersLeft()).toBe(0);
+    } finally {
+      handles.restore();
+      keeper.dispose();
+    }
+  });
+
+  it("updates an agent's parameters in place", async () => {
+    const nav = createNavigationBackend();
+    nav.importNavMesh(await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } }));
+    try {
+      const agent = nav.addAgent({ x: -4, y: 0, z: -4 }, { radius: 0.4, height: 1.5, maxSpeed: 3, maxAcceleration: 6 });
+      nav.updateAgent(agent, { maxSpeed: 2, height: Number.NaN });
+      expect(nav.agentDebugState(agent)).toMatchObject({ radius: expect.closeTo(0.4, 5), height: 1.5 });
+      nav.updateAgent(agent, { radius: 0.25, height: 2 });
+      expect(nav.agentDebugState(agent)).toMatchObject({ radius: 0.25, height: 2 });
     } finally { nav.dispose(); }
   });
 

@@ -1,4 +1,4 @@
-/** Binary `BSLD` chunk prefix inside Scene/Prefab/Class `.hasset` files. */
+/** Binary `HPLD` chunk prefix inside Scene/Prefab/Class `.hasset` files. */
 export const LANDSCAPE_CHUNK_PREFIX = "landscape:";
 
 /** Return the `.hasset` binary chunk id for a `LandscapeComponent`. */
@@ -29,9 +29,9 @@ export interface SerializedLandscapeProperties {
   width: number;
   depth: number;
   subdivisions: number;
-  /** Compact base64-encoded `BSLD` bytes in Editor JSON; omitted/null when flat or externalized to `chunkId`. */
+  /** Compact base64-encoded `HPLD` bytes in Editor JSON; omitted/null when flat or externalized to `chunkId`. */
   data?: string | null;
-  /** `.hasset` binary chunk id (e.g. `"landscape:<componentId>"`) when externalized on disk or in exports. */
+  /** `.hasset` binary chunk id (e.g. `"landscape:<actorId>/<componentId>"`) when externalized on disk or in exports. */
   chunkId?: string | null;
   materialGuid: string | null;
   collisionsEnabled: boolean;
@@ -57,12 +57,12 @@ export interface LandscapeBrush {
   layer: number;
 }
 
-const BSLD_MAGIC_0 = 0x42; // 'B'
-const BSLD_MAGIC_1 = 0x53; // 'S'
-const BSLD_MAGIC_2 = 0x4c; // 'L'
-const BSLD_MAGIC_3 = 0x44; // 'D'
-const BSLD_FORMAT = 1;
-const BSLD_HEADER_BYTES = 16;
+const HPLD_MAGIC_0 = 0x48; // 'H'
+const HPLD_MAGIC_1 = 0x50; // 'P'
+const HPLD_MAGIC_2 = 0x4c; // 'L'
+const HPLD_MAGIC_3 = 0x44; // 'D'
+const HPLD_FORMAT = 1;
+const HPLD_HEADER_BYTES = 16;
 const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 
 type DecodedField = {
@@ -145,7 +145,7 @@ export function isFlatDefaultLandscape(
   return true;
 }
 
-/** Encode landscape heights (`Float32Array`) and paint weights (`Uint8Array`) into a compact `BSLD` binary chunk. */
+/** Encode landscape heights (`Float32Array`) and paint weights (`Uint8Array`) into a compact `HPLD` binary chunk. */
 export function encodeLandscapeChunk(
   data: Pick<LandscapeProperties, "subdivisions" | "heights" | "weights">,
 ): Uint8Array<ArrayBuffer> {
@@ -156,29 +156,29 @@ export function encodeLandscapeChunk(
   }
   const heightBytes = vertexCount * 4;
   const weightBytes = vertexCount * 4;
-  const buffer = new ArrayBuffer(BSLD_HEADER_BYTES + heightBytes + weightBytes);
+  const buffer = new ArrayBuffer(HPLD_HEADER_BYTES + heightBytes + weightBytes);
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
-  bytes[0] = BSLD_MAGIC_0;
-  bytes[1] = BSLD_MAGIC_1;
-  bytes[2] = BSLD_MAGIC_2;
-  bytes[3] = BSLD_MAGIC_3;
-  view.setUint32(4, BSLD_FORMAT, true);
+  bytes[0] = HPLD_MAGIC_0;
+  bytes[1] = HPLD_MAGIC_1;
+  bytes[2] = HPLD_MAGIC_2;
+  bytes[3] = HPLD_MAGIC_3;
+  view.setUint32(4, HPLD_FORMAT, true);
   view.setUint16(8, subdivisions, true);
   view.setUint16(10, 0, true);
   view.setUint32(12, 0, true);
 
   if (LITTLE_ENDIAN) {
-    const outHeights = new Float32Array(buffer, BSLD_HEADER_BYTES, vertexCount);
+    const outHeights = new Float32Array(buffer, HPLD_HEADER_BYTES, vertexCount);
     for (let i = 0; i < vertexCount; i++) {
       outHeights[i] = finite(data.heights[i], 0, -10000, 10000);
     }
   } else {
     for (let i = 0; i < vertexCount; i++) {
-      view.setFloat32(BSLD_HEADER_BYTES + i * 4, finite(data.heights[i], 0, -10000, 10000), true);
+      view.setFloat32(HPLD_HEADER_BYTES + i * 4, finite(data.heights[i], 0, -10000, 10000), true);
     }
   }
-  const outWeights = new Uint8Array(buffer, BSLD_HEADER_BYTES + heightBytes, weightBytes);
+  const outWeights = new Uint8Array(buffer, HPLD_HEADER_BYTES + heightBytes, weightBytes);
   for (let i = 0; i < vertexCount; i++) {
     const at = i * 4;
     const w0 = data.weights[at]!, w1 = data.weights[at + 1]!, w2 = data.weights[at + 2]!, w3 = data.weights[at + 3]!;
@@ -195,38 +195,38 @@ export function encodeLandscapeChunk(
 }
 
 /**
- * Decode a `BSLD` binary chunk into typed `Float32Array` heights and `Uint8Array` RGBA8 paint weights; null when the
+ * Decode a `HPLD` binary chunk into typed `Float32Array` heights and `Uint8Array` RGBA8 paint weights; null when the
  * bytes are not a well-formed chunk (truncated, wrong magic, format, subdivisions or length). Never throws, so one
  * damaged chunk cannot stop a Scene from opening, saving or playing.
  */
 export function decodeLandscapeChunk(bytes: Uint8Array): DecodedField | null {
-  if (bytes.byteLength < BSLD_HEADER_BYTES) return null;
+  if (bytes.byteLength < HPLD_HEADER_BYTES) return null;
   if (
-    bytes[0] !== BSLD_MAGIC_0 ||
-    bytes[1] !== BSLD_MAGIC_1 ||
-    bytes[2] !== BSLD_MAGIC_2 ||
-    bytes[3] !== BSLD_MAGIC_3
+    bytes[0] !== HPLD_MAGIC_0 ||
+    bytes[1] !== HPLD_MAGIC_1 ||
+    bytes[2] !== HPLD_MAGIC_2 ||
+    bytes[3] !== HPLD_MAGIC_3
   ) {
     return null;
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (view.getUint32(4, true) !== BSLD_FORMAT) return null;
+  if (view.getUint32(4, true) !== HPLD_FORMAT) return null;
   const subdivisions = view.getUint16(8, true);
   if (subdivisions < 4 || subdivisions > 256) return null;
   const vertexCount = (subdivisions + 1) ** 2;
   const heightBytes = vertexCount * 4;
-  if (bytes.byteLength !== BSLD_HEADER_BYTES + heightBytes + vertexCount * 4) return null;
+  if (bytes.byteLength !== HPLD_HEADER_BYTES + heightBytes + vertexCount * 4) return null;
   const heights = new Float32Array(vertexCount);
-  if (LITTLE_ENDIAN && (bytes.byteOffset + BSLD_HEADER_BYTES) % 4 === 0) {
-    const src = new Float32Array(bytes.buffer, bytes.byteOffset + BSLD_HEADER_BYTES, vertexCount);
+  if (LITTLE_ENDIAN && (bytes.byteOffset + HPLD_HEADER_BYTES) % 4 === 0) {
+    const src = new Float32Array(bytes.buffer, bytes.byteOffset + HPLD_HEADER_BYTES, vertexCount);
     for (let i = 0; i < vertexCount; i++) heights[i] = finite(src[i], 0, -10000, 10000);
   } else {
     for (let i = 0; i < vertexCount; i++) {
-      heights[i] = finite(view.getFloat32(BSLD_HEADER_BYTES + i * 4, true), 0, -10000, 10000);
+      heights[i] = finite(view.getFloat32(HPLD_HEADER_BYTES + i * 4, true), 0, -10000, 10000);
     }
   }
   const weights = new Uint8Array(vertexCount * 4);
-  const weightOffset = BSLD_HEADER_BYTES + heightBytes;
+  const weightOffset = HPLD_HEADER_BYTES + heightBytes;
   for (let i = 0; i < vertexCount; i++) {
     const at = i * 4;
     const w0 = bytes[weightOffset + at]!;
@@ -266,14 +266,14 @@ function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> | null {
   return out;
 }
 
-/** Encode landscape field data as a compact base64 `BSLD` string for JSON-only editor undo/journal snapshots. */
+/** Encode landscape field data as a compact base64 `HPLD` string for JSON-only editor undo/journal snapshots. */
 export function encodeLandscapeBase64(
   data: Pick<LandscapeProperties, "subdivisions" | "heights" | "weights">,
 ): string {
   return bytesToBase64(encodeLandscapeChunk(data));
 }
 
-/** Decode a base64 `BSLD` string into raw binary `BSLD` bytes; null when it is not base64. */
+/** Decode a base64 `HPLD` string into raw binary `HPLD` bytes; null when it is not base64. */
 export function decodeLandscapeBase64ToBytes(encoded: string): Uint8Array<ArrayBuffer> | null {
   return base64ToBytes(encoded);
 }
@@ -303,7 +303,7 @@ function cachedDecodeBase64(encoded: string): DecodedField | null {
 }
 
 /**
- * A `LandscapeComponent`'s heightfield from the field data it names: raw binary `BSLD` bytes (Play/Player, matched to
+ * A `LandscapeComponent`'s heightfield from the field data it names: raw binary `HPLD` bytes (Play/Player, matched to
  * the component's `chunkId`), already-parsed typed arrays, or base64 `data` (Editor JSON, LRU-cached). A component
  * naming no field data is the flat default terrain. Null when the field data it names cannot be read: bytes or base64
  * that are not a well-formed chunk, a chunk for other subdivisions, or a `chunkId` whose bytes were not supplied.
@@ -501,7 +501,7 @@ function sculptPatch(
  * `takeDirtyRegion()` names the samples changed since the last preview, so only the chunks over them re-upload.
  * Paint keeps the stroke's weights unrounded (`floatWeights`): every dab blends from them, and the RGBA8 bytes are
  * rounded from them (summing to 255), so a low-strength stroke accumulates as the float maths does instead of
- * stalling on byte rounding. `toSerializedProperties()` encodes `BSLD` once on pointer-up for Undo/Redo.
+ * stalling on byte rounding. `toSerializedProperties()` encodes `HPLD` once on pointer-up for Undo/Redo.
  */
 export class LandscapeSculptSession {
   private readonly terrain: LandscapeProperties;

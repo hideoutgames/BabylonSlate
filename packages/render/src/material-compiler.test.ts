@@ -32,7 +32,8 @@ import {
   type MaterialDocument,
 } from "@haptic/shader-graph";
 import { isBoundedMaterial, isDrawBatchMaterial, isDrawBatchTextMaterial } from "./draw-batch-world-block";
-import { acquireAuthoredMaterialVariant, compileMaterialPlan, isGpuTextureSampleReady, MATERIAL_BLOCK_PREFIX, prewarmMaterial } from "./material-compiler";
+import { acquireAuthoredMaterialVariant, compileMaterialPlan, isGpuTextureSampleReady, MATERIAL_BLOCK_PREFIX, PARTICLE_PROGRAM_CACHE_SIZE, prewarmMaterial } from "./material-compiler";
+import { fnv1a } from "@haptic/core";
 import { nodeBlockName } from "./test-support/material-node-blocks";
 import { materialProgramCensus } from "./material-program-census";
 import { blockAdapterFor } from "./material-block-registry";
@@ -51,6 +52,12 @@ import { MultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/multiplyBlo
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
 import { ColorEncodingBlock } from "./color-encoding-block";
+import { fragmentCanDiscard } from "./test-support/preprocessed-glsl";
+
+vi.mock("@haptic/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/core")>();
+  return { ...actual, fnv1a: vi.fn(actual.fnv1a) };
+});
 
 const disposers: Array<() => void> = [];
 
@@ -132,6 +139,38 @@ it("rebinds each mesh's Receive Shadows and caster mark when sharing a frozen co
   expect(values(/^hapticGeometryCaster/).at(-1)).toBe(0);
   expect(values(/^hapticShadowReceiver$/)).toContain(1);
   expect(values(/^hapticGeometryCaster/)).toContain(1);
+});
+
+it("compiles a Surface's foliage fade only for fading meshes, discarding before the surface samples or lights", async () => {
+  const scene = host();
+  scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+  const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "shared-surface" });
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  const [wall, cell] = ["wall", "cell"].map((name) => {
+    const mesh = MeshBuilder.CreateBox(name, {}, scene);
+    mesh.material = result.material;
+    return mesh;
+  });
+  // A Play foliage cell in its fade band (`setFoliageFadeRange`, then `updateFoliageDistances`).
+  cell!.metadata = { hapticFoliageFade: [40, 60] };
+  for (const mesh of [wall!, cell!]) {
+    await result.material.forceCompilationAsync(mesh);
+    expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes![0]!)).toBe(true);
+  }
+  const fragment = result.material.compiledShaders.split("// Fragment shader")[1]!.replace(/\s+/g, " ");
+  // The fade is the first thing the fragment's main does, under its define.
+  expect(fragment).toMatch(/void main\(void\) \{ #ifdef HAPTIC_FOLIAGE_FADE if \((\w+)\.y > 0\.0\) \{ float _hapticFadeDist = length\(\(\w+ \* v_\w+\)\.xyz\);[^}]* discard; \} #endif/);
+  const wallEffect = wall!.subMeshes![0]!.effect!;
+  const cellEffect = cell!.subMeshes![0]!.effect!;
+  expect(fragmentCanDiscard(wallEffect)).toBe(false);
+  expect(fragmentCanDiscard(cellEffect)).toBe(true);
+  result.material.freeze();
+  const setFloat2 = [wallEffect, cellEffect].map((effect) => vi.spyOn(effect, "setFloat2"));
+  for (const mesh of [wall!, cell!]) result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes![0]!);
+  const fades = setFloat2.map((spy) => spy.mock.calls.filter(([name]) => /^hapticFoliageFade/.test(name)).map(([, x, y]) => [x, y]));
+  // Only the fading variant declares and binds the range.
+  expect(fades[0]).toEqual([]);
+  expect(fades[1]!.at(-1)).toEqual([40, 60]);
 });
 
 it("rebinds the caster mark of a pool member drawn on its own when sharing a frozen compiled material", async () => {
@@ -367,7 +406,7 @@ describe("material compiler", () => {
       }
       return defines.match(/^#define CONVERTTOLINEAR\d*$/gm) ?? [];
     };
-    // Legacy Display shows Particle Color and glyph span colors unchanged.
+    // Display Space shows Particle Color and glyph span colors unchanged.
     expect(await linearDecodes()).toEqual([]);
     // Scene Linear: decoded once so the Display Color stage encodes them once.
     scene.imageProcessingConfiguration.applyByPostProcess = true;
@@ -615,6 +654,49 @@ describe("material compiler", () => {
     expect(glass.material.transparencyMode).toBe(Material.MATERIAL_ALPHABLEND);
     expect(glass.material.needDepthPrePass).toBe(true);
     expect(glass.material.backFaceCulling).toBe(false);
+  });
+
+  describe("particle program sharing", () => {
+    /** A particle Material whose colour is the particle's times `scale`, a literal in its code. */
+    const particle = async (scene: Scene, scale: number) => {
+      const doc = createDefaultMaterialDocument("Sparks", "particle");
+      doc.nodes.push({ id: "scale", type: "math.multiply", position: { x: 200, y: 0 }, properties: { [materialPinDefaultPropertyKey("b")]: [scale] } });
+      doc.edges = [
+        { id: "e-color-scale", sourceNodeId: "particleColor", sourcePinId: "color", targetNodeId: "scale", targetPinId: "a" },
+        { id: "e-scale-output", sourceNodeId: "scale", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" },
+      ];
+      const result = compileMaterialPlan(planFor(doc), { scene, name: "sparks" });
+      if (!result.ok) throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+      disposers.push(result.dispose);
+      expect(await result.ready).toEqual([]);
+      return result.material;
+    };
+
+    afterEach(() => vi.mocked(fnv1a).mockReset());
+
+    it("shares one program between particle Materials with the same code, never one whose digest only matches", async () => {
+      const scene = host();
+      const first = await particle(scene, 2);
+      expect((await particle(scene, 2)).buildId).toBe(first.buildId);
+      // Every program's digest the same: other code under it is not the same program.
+      vi.mocked(fnv1a).mockReturnValue("00000000");
+      const other = await particle(scene, 3);
+      expect(other.compiledShaders).not.toBe(first.compiledShaders);
+      expect(other.buildId).not.toBe(first.buildId);
+      expect((await particle(scene, 3)).buildId).toBe(other.buildId);
+    });
+
+    it("remembers only the most recently used particle programs", async () => {
+      const scene = host();
+      const first = await particle(scene, 2);
+      const second = await particle(scene, 4);
+      for (let index = 0; index < PARTICLE_PROGRAM_CACHE_SIZE - 2; index++) await particle(scene, 10 + index);
+      // Adopting the first program makes the second the least recently used: the next new program pushes it out.
+      expect((await particle(scene, 2)).buildId).toBe(first.buildId);
+      await particle(scene, 9);
+      expect((await particle(scene, 2)).buildId).toBe(first.buildId);
+      expect((await particle(scene, 4)).buildId).not.toBe(second.buildId);
+    });
   });
 
   it("compiles a particle-domain graph in Particle mode for createEffectForParticles", () => {

@@ -177,7 +177,7 @@ export class RuntimeInspectorService {
         return `scene:${this.host.playSceneGuid()}:${this.host.sceneRealizer().loadId}:${this.host.world().currentScene?.guid ?? ""}`;
       },
       boundary: () => ({ tickIndex: this.host.world().clock.tickIndex, frameId: this.host.frameId(),
-        commandRevision: this.host.commandRevision(), structuralRevision: this.host.world().structuralRevision }),
+        commandRevision: this.host.commandRevision(), identityRevision: this.host.world().identityRevision }),
       applyProperty: (target, key, value) => {
         const materialAssignment = target instanceof ActorComponent && key === "materialGuid";
         const priorSourcePresent = materialAssignment && target.variables.has("materialSource");

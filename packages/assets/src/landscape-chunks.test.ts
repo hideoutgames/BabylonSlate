@@ -13,11 +13,11 @@ import {
   hydrateLandscapeChunksToEditor,
   LANDSCAPE_CHUNK_KIND,
   LANDSCAPE_CHUNK_MIME,
-  unreadableLandscapes,
+  unreadableComponentChunks,
 } from "./landscape-chunks";
 
 describe("landscape binary .hasset chunks", () => {
-  it("extracts sculpted terrain into raw BSLD chunks and hydrates back to editor JSON", () => {
+  it("extracts sculpted terrain into raw HPLD chunks and hydrates back to editor JSON", () => {
     const heights = new Float32Array(25);
     heights[12] = 6.25;
     const weights = new Uint8Array(25 * 4);
@@ -52,7 +52,7 @@ describe("landscape binary .hasset chunks", () => {
     const extracted = extractLandscapeChunks(scene);
     expect(extracted.chunks).toHaveLength(1);
     const chunk = extracted.chunks[0]!;
-    expect(chunk.id).toBe(landscapeChunkId("comp-sculpted"));
+    expect(chunk.id).toBe(landscapeChunkId("actor-terrain/comp-sculpted"));
     expect(chunk.kind).toBe(LANDSCAPE_CHUNK_KIND);
     expect(chunk.mime).toBe(LANDSCAPE_CHUNK_MIME);
     expect(chunk.data.byteLength).toBe(16 + 25 * 8);
@@ -113,7 +113,7 @@ describe("landscape binary .hasset chunks", () => {
 
     // Path 1: unsaved Editor scene with base64 `data` -> stripped to `chunkId` + raw Uint8Array.
     const fromEditor = collectLandscapeChunksForPlay(scene);
-    const id = landscapeChunkId("comp-hill");
+    const id = landscapeChunkId("actor-hill/comp-hill");
     expect(fromEditor.payload.actors[0]!.components[0]!.properties.data).toBeUndefined();
     expect(fromEditor.payload.actors[0]!.components[0]!.properties.chunkId).toBe(id);
     expect(decodeLandscapeChunk(fromEditor.chunks.get(id)!)?.heights[6]).toBeCloseTo(4.5, 5);
@@ -143,15 +143,15 @@ describe("landscape binary .hasset chunks", () => {
     const hydrated = hydrateLandscapeChunksToEditor(scene, damaged);
     expect(hydrated.actors[0]!.components[1]!.properties.chunkId).toBe(landscapeChunkId("bad-chunk"));
     expect(hydrated.actors[0]!.components[1]!.properties.data).toBeUndefined();
-    expect(unreadableLandscapes(hydrated)).toEqual([
-      { actorName: "Ruin", componentId: "bad-data" },
-      { actorName: "Ruin", componentId: "bad-chunk" },
+    expect(unreadableComponentChunks(hydrated)).toEqual([
+      { actorName: "Ruin", componentId: "bad-data", kind: "Landscape" },
+      { actorName: "Ruin", componentId: "bad-chunk", kind: "Landscape" },
     ]);
 
     // Play keeps a chunk id with no bytes for each, which the runtime reports and plays flat.
     const play = collectLandscapeChunksForPlay(scene, damaged);
     expect(play.chunks.size).toBe(0);
     expect(play.payload.actors[0]!.components.map((component) => component.properties.chunkId))
-      .toEqual([landscapeChunkId("bad-data"), landscapeChunkId("bad-chunk")]);
+      .toEqual([landscapeChunkId("actor-ruin/bad-data"), landscapeChunkId("bad-chunk")]);
   });
 });
