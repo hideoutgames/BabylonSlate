@@ -131,21 +131,47 @@ describe("the unfinished Feature Test Check", () => {
     expect(loadCheckEnded()).toBeNull();
   });
 
-  it("ignores a record it cannot read, discarding a report with incomplete frame statistics, and runs on without storage", () => {
-    store.set("haptic:feature-test-check:unfinished", "{not json");
-    expect(loadSavedCheck()).toBeNull();
-    // A sample's frames without their mean, median and pacing would format as a missing field.
-    const { frames, durationMs, fps, p95Ms, maxMs, stalls } = report.scenes[0]!.play.benchmark[0]!.frames!;
-    const partial = { frames, durationMs, fps, p95Ms, maxMs, stalls };
-    const incomplete = { ...report, scenes: [{ ...report.scenes[0]!, play: { ...report.scenes[0]!.play,
-      benchmark: [{ ...report.scenes[0]!.play.benchmark[0]!, frames: partial }] } }] };
-    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ finished: true, report: incomplete }));
+  it("discards, and never formats, a check another build left: one stopped on the 2026-11-20 build reads no Material builds", () => {
+    const environment = {
+      appVersion: "1.2.3", userAgent: "iPhone", platform: "iPhone", touchPoints: 5, devicePixelRatio: 3, screen: "393x852", viewport: "393x852", cores: 6, memoryGb: null,
+    };
+    // That build's Play snapshot counted the Engine's programs without the Material compiler's census (`materials`).
+    const rendering = { cpuMs: 9, gpuMs: null, gpuStatus: "unsupported", width: 1179, height: 2556, scalingLevel: 1, qualityLimits: [],
+      programs: { programs: 120, neverDrawn: 35, passes: { objects: 50 }, shaders: 70, mostVariants: 6, splitBy: [] } };
+    const scene = report.scenes[0]!;
+    const older = { ...report, scenes: [{ ...scene, play: { ...scene.play, snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 0, rendering } } }] };
+    // It wrote no build of its own, as every build before this record named its build.
+    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ step: "main: benchmarking high", report: older, resources: [] }));
+    expect(() => {
+      const saved = loadSavedCheck();
+      if (saved) formatFeatureTestCheckReport(saved, environment);
+    }).not.toThrow();
+    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
+    // A record of this build's shape from another deploy goes the same way.
+    saveUnfinishedCheck({ step: "main: benchmarking high", report, resources: [] });
+    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ ...JSON.parse(store.get("haptic:feature-test-check:unfinished")!), build: "index-0ld8u1ld.js" }));
     expect(loadSavedCheck()).toBeNull();
     expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
-    // Play's sampled renderer work without the causes of its readiness probes would format as a missing field.
-    const work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 4, readinessProbeMs: 40, outlineReadinessChecks: 0 };
-    const causeless = { ...report, scenes: [{ ...report.scenes[0]!, play: { ...report.scenes[0]!.play, work: { drawn: 10, work } } }] };
-    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ finished: true, report: causeless }));
+  });
+
+  it("names a deploy by its hashed entry scripts, so the next deploy's page discards the record and the same one resumes it", () => {
+    const deployed = (entry: string) => vi.stubGlobal("document", {
+      querySelectorAll: () => [`/BabylonSlate/assets/${entry}`, "/BabylonSlate/sw-register.js"].map((src) => ({ getAttribute: () => src })),
+    });
+    deployed("index-a1b2c3d4.js");
+    saveUnfinishedCheck({ step: "main: benchmarking high", report, resources: [] });
+    expect(loadSavedCheck()?.unfinished?.step).toBe("main: benchmarking high");
+    deployed("index-e5f6a7b8.js");
+    expect(loadSavedCheck()).toBeNull();
+    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
+  });
+
+  it("discards a record it cannot read, and runs on without storage", () => {
+    store.set("haptic:feature-test-check:unfinished", "{not json");
+    expect(loadSavedCheck()).toBeNull();
+    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
+    saveUnfinishedCheck({ step: "x", report, resources: [] });
+    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ ...JSON.parse(store.get("haptic:feature-test-check:unfinished")!), step: 4 }));
     expect(loadSavedCheck()).toBeNull();
     expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("full"); }, removeItem: () => { throw new Error("denied"); } });

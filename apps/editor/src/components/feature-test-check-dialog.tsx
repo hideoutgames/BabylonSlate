@@ -186,10 +186,20 @@ function hostMemoryOf(host: HostMemoryStats | null): HostMemory {
 
 type Phase = { kind: "idle" } | { kind: "running"; message: string } | { kind: "done"; text: string; report: FeatureTestCheckReport };
 
-/** The report a check the app stopped during, or a finished one not yet shown, left behind; idle without one. */
+/**
+ * The report a check the app stopped during, or a finished one not yet shown, left behind; idle without one. The
+ * dialog mounts with the project, so a stored report that cannot be formatted is discarded rather than breaking it.
+ */
 function savedPhase(): Phase {
   const report = loadSavedCheck();
-  return report ? { kind: "done", report, text: formatFeatureTestCheckReport(report, collectDiagnosticEnvironment()) } : { kind: "idle" };
+  if (!report) return { kind: "idle" };
+  try {
+    return { kind: "done", report, text: formatFeatureTestCheckReport(report, collectDiagnosticEnvironment()) };
+  } catch (error) {
+    clearUnfinishedCheck();
+    console.error("[editor] discarded a saved Feature Test Check report it could not format", error);
+    return { kind: "idle" };
+  }
 }
 
 export interface FeatureTestCheckDialogProps {

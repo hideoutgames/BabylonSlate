@@ -66,7 +66,9 @@ function readAll(storage: SessionTrailHost["storage"]): StoredSessionTrail[] {
     try {
       const stored = JSON.parse(storage.getItem(key) ?? "") as Partial<StoredSessionTrail>;
       if (typeof stored.alive !== "number" || !Array.isArray(stored.marks)) continue;
-      trails.push({ page: key.slice(PREFIX.length), alive: stored.alive, marks: stored.marks });
+      // Trails outlive a deploy on purpose (a crash, then an update); a mark another build wrote keeps only what is read.
+      const marks = stored.marks.filter((mark: Partial<SessionTrailMark> | null) => typeof mark?.at === "number" && typeof mark.stage === "string");
+      trails.push({ page: key.slice(PREFIX.length), alive: stored.alive, marks });
     } catch {
       // A record this build cannot read tells nothing.
     }
