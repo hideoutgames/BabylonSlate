@@ -10,7 +10,8 @@
     "./native-windows": "./src/native-windows.ts",
     "./app-icon": "./src/app-icon.ts",
     "./native-android": "./src/native-android.ts",
-    "./native-ios": "./src/native-ios.ts"
+    "./native-ios": "./src/native-ios.ts",
+    "./desktop-package-client": "./src/desktop-package-client.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
