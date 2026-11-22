@@ -5,6 +5,7 @@ import { Button } from "@haptic/ui/components/button";
 import { useRegistryState } from "../context/document-context";
 import { useProjectTrust } from "./use-project-trust";
 import { useRegisteredEditorUtilities } from "./use-registered-editor-utilities";
+import { trustGateNodeLabel } from "../services/trust-gate";
 
 /**
  * Workspace Trust's prompt: shown while project code is held back because this
@@ -25,7 +26,7 @@ export function ProjectTrustBanner() {
   const held = [
     ...(snapshot.untrusted.length > 0 ? [`Extensions (${snapshot.untrusted.join(", ")})`] : []),
     ...(utilities.length > 0 ? ["Editor Utilities"] : []),
-    ...snapshot.untrustedNodes.map((finding) => `${finding.title} (${finding.assets.join(", ")})`),
+    ...snapshot.untrustedNodes.map((finding) => `${trustGateNodeLabel(finding)} (${finding.assets.join(", ")})`),
   ];
   // Not Now hides the prompt only for what it showed: a later refusal shows it again.
   const dismissKey = JSON.stringify([projectGuid, held, snapshot.trustRefusals]);

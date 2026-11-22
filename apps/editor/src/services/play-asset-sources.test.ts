@@ -1462,7 +1462,7 @@ describe.each(TRUST_GATED_NODES)("Workspace Trust for $title", (gated) => {
     expect(asked).toEqual([]);
     // A slot of the running session that brings the node in (a streamed Scene, a spawn) is refused too.
     await expect(acquire(untrusted, "scene-danger")).rejects.toThrow("not trusted");
-    expect(asked).toEqual([[{ title: gated.title, assets: ["Danger"] }]]);
+    expect(asked).toEqual([[{ kind: gated.kind, title: gated.title, assets: ["Danger"] }]]);
     safe.release();
     loading.dispose();
   });
@@ -1470,7 +1470,7 @@ describe.each(TRUST_GATED_NODES)("Workspace Trust for $title", (gated) => {
   it("refuses the node when the host makes no trust decision, and runs it once trusted", async () => {
     const { host, loading } = await trustFixture();
     await expect(acquire(host(), "scene-danger")).rejects.toThrow(
-      `This project is not trusted on this computer, so the ${gated.title} in Danger cannot run.`);
+      `This project is not trusted on this computer, so the ${gated.kind === "extension" ? "Extension node " : ""}${gated.title} in Danger cannot run.`);
     const trusted = await acquire(host(() => {}), "scene-danger");
     expect(trusted.game.scripts[0]?.trustGatedNodes).toEqual([gated]);
     trusted.release();

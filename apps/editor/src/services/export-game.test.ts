@@ -273,10 +273,10 @@ describe("collectAndExportGame", () => {
 
   // Each kind of trust-gated node, as Hero's Begin Play would call it, with code its compiled module carries.
   describe.each([
-    { title: "Execute JavaScript", node: { id: "gated", type: "debug.executeJavaScript", data: { body: "ctx.log('hi');", inputs: [], outputs: [] } }, code: "ctx.log('hi');" },
-    { title: "Open URL", node: { id: "gated", type: "system.openUrl", data: { "default:url": "https://example.com/" } }, code: "ctx.openUrl(" },
-    { title: "Ping Server", node: { id: "gated", type: "extension.net-guid.ping", data: {} }, code: '__extensionCall("net", "ping")' },
-  ])("Workspace Trust for $title", ({ title, node, code }) => {
+    { kind: "executeJavaScript", title: "Execute JavaScript", named: "Execute JavaScript", node: { id: "gated", type: "debug.executeJavaScript", data: { body: "ctx.log('hi');", inputs: [], outputs: [] } }, code: "ctx.log('hi');" },
+    { kind: "openUrl", title: "Open URL", named: "Open URL", node: { id: "gated", type: "system.openUrl", data: { "default:url": "https://example.com/" } }, code: "ctx.openUrl(" },
+    { kind: "extension", title: "Ping Server", named: "Extension node Ping Server", node: { id: "gated", type: "extension.net-guid.ping", data: {} }, code: '__extensionCall("net", "ping")' },
+  ] as const)("Workspace Trust for $title", ({ kind, title, named, node, code }) => {
     // An Extension's nodes are in the registry while it is enabled: here for this block only.
     beforeAll(() => syncExtensionNodes(defaultNodeRegistry(), [{
       extensionGuid: "net-guid", folderName: "net", folderPath: "extensions/net", settingsPath: "extensions/net/extension.json",
@@ -316,11 +316,11 @@ describe("collectAndExportGame", () => {
         throw new Error("not trusted");
       } });
       expect(refused).toEqual({ ok: false, error: "not trusted" });
-      expect(asked).toEqual([[{ title, assets: ["Hero"] }]]);
+      expect(asked).toEqual([[{ kind, title, assets: ["Hero"] }]]);
       // A caller that makes no trust decision packages none either.
       expect(await exportHero({ previewBuild })).toEqual({
         ok: false,
-        error: expect.stringContaining(`so the ${title} in Hero cannot run.`),
+        error: expect.stringContaining(`so the ${named} in Hero cannot run.`),
       });
     });
 

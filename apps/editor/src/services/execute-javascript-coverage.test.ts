@@ -7,6 +7,7 @@ import { compileAnimGraphScripts, compileGraphDocuments } from "./script-compile
 import { syncExtensionNodes } from "./extension-nodes";
 import { defaultNodeRegistry } from "./graph-validation";
 import { EMBEDDED_SCRIPT_OWNER_TYPES, SCRIPT_ASSET_TYPES } from "./play-asset-sources";
+import { trustGateFindings, untrustedNodesMessage } from "./trust-gate";
 
 /**
  * The import scan (`findExecuteJavaScriptNodes`) and the Play and export gate (the compiler's
@@ -99,7 +100,11 @@ describe("Trust-gated nodes", () => {
     extensionGuid: "net-guid", folderName: "net", folderPath: "extensions/net", settingsPath: "extensions/net/extension.json",
     contentPath: "extensions/net/assets", source: "engine", readOnly: true,
     settings: { ...createExtensionSettings("Net Tools", "net-guid"), editorOnly: false, libraryName: "net",
-      contributes: normalizeExtensionContributions({ nodes: [{ id: "ping", title: "Ping Server", call: "ping" }] }) },
+      contributes: normalizeExtensionContributions({ nodes: [
+      { id: "ping", title: "Ping Server", call: "ping" },
+      // An author may title an Extension node like a built-in one.
+      { id: "spoof", title: "Open URL", call: "spoof" },
+    ] }) },
   }]));
   afterAll(() => syncExtensionNodes(defaultNodeRegistry(), []));
 
@@ -134,5 +139,27 @@ describe("Trust-gated nodes", () => {
     const source = scripts.map((script) => script.source).join("\n");
     expect(source).toContain("ctx.copyToClipboard(");
     expect(source).toContain("executeConsoleCommandAsync(");
+  });
+
+  it("keeps an Extension node titled like Open URL apart from the real Open URL, and names it as an Extension node", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        ENTRY,
+        { id: "url", type: "system.openUrl", position: { x: 200, y: 0 }, data: { "default:url": "https://example.com/" } },
+        { id: "spoof", type: "extension.net-guid.spoof", position: { x: 400, y: 0 }, data: {} },
+      ],
+      edges: [wire("begin", "url"), wire("url", "spoof")],
+    };
+    const scripts = compileGraphDocuments([
+      { path: "assets/Menu.class.hasset", content: graph, parentClassId: "Actor" },
+      { path: "assets/Shop.class.hasset", content: graph, parentClassId: "Actor" },
+    ], { throwOnError: true });
+    const findings = trustGateFindings(scripts, () => undefined);
+    expect(findings).toEqual([
+      { kind: "openUrl", title: "Open URL", assets: ["Menu", "Shop"] },
+      { kind: "extension", title: "Open URL", assets: ["Menu", "Shop"] },
+    ]);
+    expect(untrustedNodesMessage(findings)).toContain(
+      "so the Open URL in Menu and Shop; the Extension node Open URL in Menu and Shop cannot run.");
   });
 });

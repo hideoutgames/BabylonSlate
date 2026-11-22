@@ -10,13 +10,13 @@ const harness = vi.hoisted(() => ({
   trusted: [] as string[],
   updates: [] as string[][],
   utilities: [] as string[],
-  untrustedNodes: [] as { title: string; assets: string[] }[],
+  untrustedNodes: [] as { kind: string; title: string; assets: string[] }[],
   refusals: 0,
 }));
 
 /** One snapshot object per held-back list, as the service keeps its snapshot until it changes. */
 const snapshots = new Map<string, object>();
-function snapshotFor(untrusted: string[], untrustedNodes: { title: string; assets: string[] }[], trustRefusals: number): object {
+function snapshotFor(untrusted: string[], untrustedNodes: { kind: string; title: string; assets: string[] }[], trustRefusals: number): object {
   const key = JSON.stringify([untrusted, untrustedNodes, trustRefusals]);
   if (!snapshots.has(key)) {
     snapshots.set(key, { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted, untrustedNodes, trustRefusals });
@@ -103,7 +103,7 @@ it("asks for trust when only registered Editor Utilities are held back", () => {
 
 it("names the assets whose Execute JavaScript was refused, and shows again after Not Now when more are refused", () => {
   harness.untrusted = [];
-  harness.untrustedNodes = [{ title: "Execute JavaScript", assets: ["Hero"] }];
+  harness.untrustedNodes = [{ kind: "executeJavaScript", title: "Execute JavaScript", assets: ["Hero"] }];
   harness.refusals = 1;
   const { rerender } = render(<ProjectTrustBanner />);
   const banner = screen.getByTestId("project-trust-banner");
@@ -111,7 +111,7 @@ it("names the assets whose Execute JavaScript was refused, and shows again after
   expect(banner.textContent).not.toContain("Extensions (");
   fireEvent.click(screen.getByRole("button", { name: "Not Now" }));
   expect(screen.queryByTestId("project-trust-banner")).toBeNull();
-  harness.untrustedNodes = [{ title: "Execute JavaScript", assets: ["Hero", "Level 1"] }];
+  harness.untrustedNodes = [{ kind: "executeJavaScript", title: "Execute JavaScript", assets: ["Hero", "Level 1"] }];
   harness.refusals = 2;
   rerender(<ProjectTrustBanner />);
   expect(screen.getByTestId("project-trust-banner").textContent).toContain("Execute JavaScript (Hero, Level 1)");
@@ -122,16 +122,16 @@ it("names the assets whose Execute JavaScript was refused, and shows again after
   expect(screen.getByTestId("project-trust-banner").textContent).toContain("Execute JavaScript (Hero, Level 1)");
 });
 
-it("names each kind of refused node by its title in one prompt", () => {
+it("names each kind of refused node by its title in one prompt, an Extension node as one", () => {
   harness.untrusted = [];
   harness.untrustedNodes = [
-    { title: "Execute JavaScript", assets: ["Hero"] },
-    { title: "Open URL", assets: ["Menu"] },
-    { title: "Start Discord Rich Presence", assets: ["Game"] },
+    { kind: "executeJavaScript", title: "Execute JavaScript", assets: ["Hero"] },
+    { kind: "openUrl", title: "Open URL", assets: ["Menu"] },
+    { kind: "extension", title: "Open URL", assets: ["Game"] },
   ];
   harness.refusals = 1;
   render(<ProjectTrustBanner />);
   expect(screen.getAllByTestId("project-trust-banner")).toHaveLength(1);
   expect(screen.getByTestId("project-trust-banner").textContent).toContain(
-    "This project's Execute JavaScript (Hero), Open URL (Menu) and Start Discord Rich Presence (Game) would run on this computer.");
+    "This project's Execute JavaScript (Hero), Open URL (Menu) and Extension node Open URL (Game) would run on this computer.");
 });

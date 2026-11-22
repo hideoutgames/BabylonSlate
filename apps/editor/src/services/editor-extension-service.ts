@@ -12,7 +12,7 @@ import { EditorExtensionHost, type EditorExtensionServices, type EditorExtension
 import { extensionAssetTypeDiagnostics, extensionAssetTypes, type ExtensionAssetTypeDescriptor } from "../lib/extension-asset-types";
 import { linkExtensionModules } from "../lib/extension-modules";
 import { resolvedExtensionSettings, type ExtensionSettingValues } from "../lib/extension-settings-ui";
-import { untrustedNodesMessage, type TrustGateFinding } from "./trust-gate";
+import { compareTrustGateFindings, trustGateFindingKey, untrustedNodesMessage, type TrustGateFinding } from "./trust-gate";
 
 /** Code file edits applied by one Save. */
 export interface ExtensionFileChanges {
@@ -274,9 +274,13 @@ export class EditorExtensionService {
    */
   assertTrustGatedNodesAllowed(findings: readonly TrustGateFinding[]): void {
     if (findings.length === 0 || this.trustedNow()) return;
-    const held = new Map(this.state.untrustedNodes.map((finding) => [finding.title, new Set(finding.assets)]));
-    for (const finding of findings) held.set(finding.title, new Set([...held.get(finding.title) ?? [], ...finding.assets]));
-    const untrustedNodes = [...held].map(([title, assets]) => ({ title, assets: [...assets].sort((a, b) => a.localeCompare(b)) }));
+    const held = new Map(this.state.untrustedNodes.map((finding) => [trustGateFindingKey(finding), finding]));
+    for (const finding of findings) {
+      const key = trustGateFindingKey(finding);
+      held.set(key, { ...finding, assets: [...new Set([...held.get(key)?.assets ?? [], ...finding.assets])] });
+    }
+    const untrustedNodes = [...held.values()].sort(compareTrustGateFindings)
+      .map((finding) => ({ ...finding, assets: [...finding.assets].sort((a, b) => a.localeCompare(b)) }));
     this.publish({ untrustedNodes, trustRefusals: this.state.trustRefusals + 1 });
     throw new Error(untrustedNodesMessage(findings));
   }

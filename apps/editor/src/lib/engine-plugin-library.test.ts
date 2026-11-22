@@ -219,6 +219,29 @@ describe("EnginePluginLibrary", () => {
       expect(await guids(await store.createStorageSnapshot({ forNewProject: true }))).toEqual(["bundled-guid", "plain-guid"]);
     });
 
+    it("captures what it disclosed when the library changes while the question is open", async () => {
+      const store = await scriptedLibrary();
+      let answer!: (include: boolean) => void;
+      let captured: Awaited<ReturnType<EnginePluginLibrary["createStorageSnapshot"]>> | undefined;
+      const asked = new Promise<void>((resolve) => {
+        void store.createStorageSnapshot({ forNewProject: true, reviewExecuteJavaScript: () => {
+          resolve();
+          return new Promise<boolean>((settle) => { answer = settle; });
+        } }).then((snapshot) => { captured = snapshot; });
+      });
+      await asked;
+      // Removed, and replaced with other content, before the answer: generations are never deleted.
+      await store.remove("scripted-guid");
+      await store.import(await archive("plain-guid", "Plain Pack", "replacement"), { replaceGuid: "plain-guid" });
+      answer(true);
+      await vi.waitFor(() => expect(captured).toBeDefined());
+      expect(await guids(captured!)).toEqual(["bundled-guid", "plain-guid", "scripted-guid"]);
+      // The disclosed generation's files, not the replacement's.
+      expect(await captured!.readText("scripted-pack/assets/data.txt")).toBe("original");
+      expect(await captured!.readText("plain-pack/assets/data.txt")).toBe("original");
+      expect(await captured!.exists("scripted-pack/assets/Hero.class.hasset")).toBe(true);
+    });
+
     it("asks nothing when no such plugin is in the library", async () => {
       const store = await scriptedLibrary(false);
       const review = vi.fn(async () => false);

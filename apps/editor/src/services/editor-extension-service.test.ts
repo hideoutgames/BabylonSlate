@@ -17,7 +17,7 @@ import { ProjectWriteAdmission } from "./project-write-admission";
 /** Play in the web editor. */
 const WEB_PLAY = { platform: "web", editor: true } as const;
 /** What Play and packaging report for Execute JavaScript in `assets`. */
-const javaScriptIn = (...assets: string[]) => [{ title: "Execute JavaScript", assets }];
+const javaScriptIn = (...assets: string[]) => [{ kind: "executeJavaScript" as const, title: "Execute JavaScript", assets }];
 
 const activeServices: EditorExtensionService[] = [];
 
@@ -536,19 +536,23 @@ describe("EditorExtensionService Workspace Trust", () => {
     const { service } = await fixture();
     await service.refresh({}, false);
     expect(() => service.assertTrustGatedNodesAllowed(javaScriptIn("Hero", "Level 1"))).toThrow(
-      "This project is not trusted on this computer, so the Execute JavaScript in Hero, Level 1 cannot run.");
+      "This project is not trusted on this computer, so the Execute JavaScript in Hero and Level 1 cannot run.");
     expect(() => service.assertTrustGatedNodesAllowed(javaScriptIn("Boss"))).toThrow("Execute JavaScript in Boss cannot run.");
-    expect(service.getSnapshot()).toMatchObject({ untrustedNodes: [{ title: "Execute JavaScript", assets: ["Boss", "Hero", "Level 1"] }], trustRefusals: 2 });
+    expect(service.getSnapshot()).toMatchObject({ untrustedNodes: [{ kind: "executeJavaScript", title: "Execute JavaScript", assets: ["Boss", "Hero", "Level 1"] }], trustRefusals: 2 });
     // Open URL and Extension nodes are refused the same way, in one message naming each, and join the prompt's list.
+    // An Extension node titled like a built-in node stays an Extension node, named as one.
     expect(() => service.assertTrustGatedNodesAllowed([
-      { title: "Execute JavaScript", assets: ["Hero"] },
-      { title: "Open URL", assets: ["Menu", "Hero"] },
-      { title: "Start Discord Rich Presence", assets: ["Game"] },
-    ])).toThrow("so the Execute JavaScript in Hero, the Open URL in Menu, Hero and the Start Discord Rich Presence in Game cannot run.");
+      { kind: "executeJavaScript", title: "Execute JavaScript", assets: ["Hero"] },
+      { kind: "openUrl", title: "Open URL", assets: ["Menu", "Hero"] },
+      { kind: "extension", title: "Open URL", assets: ["Shop"] },
+      { kind: "extension", title: "Start Discord Rich Presence", assets: ["Game"] },
+    ])).toThrow("so the Execute JavaScript in Hero; the Open URL in Menu and Hero; the Extension node Open URL in Shop; "
+      + "the Extension node Start Discord Rich Presence in Game cannot run.");
     expect(service.getSnapshot()).toMatchObject({ untrustedNodes: [
-      { title: "Execute JavaScript", assets: ["Boss", "Hero", "Level 1"] },
-      { title: "Open URL", assets: ["Hero", "Menu"] },
-      { title: "Start Discord Rich Presence", assets: ["Game"] },
+      { kind: "executeJavaScript", title: "Execute JavaScript", assets: ["Boss", "Hero", "Level 1"] },
+      { kind: "openUrl", title: "Open URL", assets: ["Hero", "Menu"] },
+      { kind: "extension", title: "Open URL", assets: ["Shop"] },
+      { kind: "extension", title: "Start Discord Rich Presence", assets: ["Game"] },
     ], trustRefusals: 3 });
     // Nothing to refuse without a trust-gated node.
     expect(() => service.assertTrustGatedNodesAllowed([])).not.toThrow();

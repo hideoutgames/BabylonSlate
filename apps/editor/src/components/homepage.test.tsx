@@ -359,6 +359,8 @@ describe("Haptic project browser", () => {
     fireEvent.click(screen.getByTestId("create-project-submit"));
     const dialog = await screen.findByTestId("execute-javascript-import-dialog");
     expect(dialog.textContent).toContain("Include Execute JavaScript?");
+    // A starter is created from scratch, so it starts trusted and Include makes this code playable at once.
+    expect(dialog.textContent).toContain("The new project is trusted on this computer, so this code runs when you press Play.");
     expect([...screen.getByTestId("execute-javascript-import-list").querySelectorAll("li")].map((row) => row.textContent))
       .toEqual(["Hero (Class) in Combat Pack1 node", "Net (Class) in Net Pack2 nodes"]);
     fireEvent.click(screen.getByRole("button", { name: button }));
@@ -407,6 +409,24 @@ describe("Haptic project browser", () => {
         expect.any(Object),
       ),
     );
+  });
+
+  it("says a template project's included Execute JavaScript waits for trust", async () => {
+    const onCreateFromTemplate = vi.fn<ComponentProps<typeof Homepage>["onCreateFromTemplate"]>(async (_id, _name, options) => {
+      await options!.reviewExecuteJavaScript!([{ pluginGuid: "a", displayName: "Combat Pack", assets: [
+        { guid: "hero", name: "Hero", type: "Class", nodes: [{ nodeId: "js", body: "1" }] },
+      ] }]);
+    });
+    renderHomepage({ templates: [{ id: "arena", name: "Arena" }], onCreateFromTemplate });
+    fireEvent.click(screen.getByTestId("create-project"));
+    fireEvent.click(screen.getByTestId("create-project-template:arena"));
+    fireEvent.change(screen.getByTestId("create-project-name"), { target: { value: "My Arena" } });
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+    const dialog = await screen.findByTestId("execute-javascript-import-dialog");
+    expect(dialog.textContent).toContain("A project made from a template is not trusted, so this code runs only once you trust the project.");
+    expect(dialog.textContent).not.toContain("The new project is trusted");
+    fireEvent.click(screen.getByRole("button", { name: "Create Without" }));
+    await waitFor(() => expect(onCreateFromTemplate).toHaveBeenCalledTimes(1));
   });
 
   it("creates the suggested name when the field is left empty", async () => {

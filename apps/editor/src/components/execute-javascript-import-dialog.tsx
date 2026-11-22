@@ -25,6 +25,11 @@ export type ExecuteJavaScriptImportDialogProps = {
    * plugins, Include or Create Without, which creates the project without them.
    */
   purpose?: "import" | "newProject";
+  /**
+   * `newProject` only: whether the new project starts trusted on this computer (one created from
+   * scratch), so the included code runs at Play; a project from a template waits for trust.
+   */
+  newProjectTrusted?: boolean;
   /** Extra classes for the dialog, such as a theme or a layer above the launcher's loading card. */
   className?: string;
   onConfirm: () => void;
@@ -36,7 +41,9 @@ export type ExecuteJavaScriptImportDialogProps = {
  * files, ZIPs and drops, or a `.hplugin`), or the Engine Plugins a New Project would copy. One dialog
  * per batch, listing each asset with its node count.
  */
-export function ExecuteJavaScriptImportDialog({ assets, purpose = "import", className, onConfirm, onCancel }: ExecuteJavaScriptImportDialogProps) {
+export function ExecuteJavaScriptImportDialog({
+  assets, purpose = "import", newProjectTrusted = false, className, onConfirm, onCancel,
+}: ExecuteJavaScriptImportDialogProps) {
   const list = assets ?? [];
   const newProject = purpose === "newProject";
   return (
@@ -51,7 +58,10 @@ export function ExecuteJavaScriptImportDialog({ assets, purpose = "import", clas
             <AlertDialogDescription>
               Engine Plugins from your library contain Execute JavaScript nodes. Their code runs without a sandbox, with
               the same access as the game, when the project plays or is packaged. Include them only if you trust where
-              they came from; otherwise the project is created without them.
+              they came from; otherwise the project is created without them.{" "}
+              {newProjectTrusted
+                ? "The new project is trusted on this computer, so this code runs when you press Play."
+                : "A project made from a template is not trusted, so this code runs only once you trust the project."}
             </AlertDialogDescription>
           ) : (
             <AlertDialogDescription>
