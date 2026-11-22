@@ -122,8 +122,9 @@ type Queued = Window & { since: number; stamp: number; hidden: boolean };
  * A window sent to the contact worker. `generation` is the field's when it was sent: a result from an older generation
  * is dropped. `seq` orders every write of the field's texels; a result older than a write that overlapped it while it
  * was out (`superseded`) is dropped too, and its window queued again, so an older result never lands over a newer one.
+ * `texels` is the result once it is back, waiting to be applied.
  */
-type Flight = { window: Window; since: number; generation: number; seq: number; superseded: boolean };
+type Flight = { window: Window; since: number; generation: number; seq: number; superseded: boolean; texels: Uint8Array | null };
 /** `WaterContactField.next`'s answer, reused: the queue index of the window to build next and its sort key (lowest first). */
 const pick = { index: -1, key: Infinity };
 const boxView: BoxView = { visible: true, distance: 0 };
@@ -339,7 +340,7 @@ export class WaterContactField {
   /** Windows of `data` that changed and wait for the frame budget; none overlap. */
   private readonly queue: Queued[] = [];
   /** Windows at the contact worker, and results back from it that wait to be applied (`texels`). */
-  private readonly flight: (Flight & { texels: Uint8Array | null })[] = [];
+  private readonly flight: Flight[] = [];
   /** Bumped whenever results sent earlier could be wrong to apply: a new allocation, a synchronous rebuild, a release. */
   private generation = 0;
   /** Counts every write of texels (built here, or sent to the worker), ordering them for `Flight.seq`. */
@@ -409,6 +410,7 @@ export class WaterContactField {
     this.reshaped = true;
   }
 
+  /** One update in `mode` (`FRAME`, `FORCE` or `SETTLE`); returns whether the texture changed. */
   private step(now: number, mode: number): boolean {
     const surface = this.syncSurface();
     if (surface === SURFACE_MOVED) this.surfaceMoved = true;
@@ -571,7 +573,7 @@ export class WaterContactField {
     const write: Window = { x0: window.x0, z0: window.z0, x1: window.x1, z1: window.z1 };
     const job = this.job(this.around(write), write);
     if (job.pieces.length === 0) { this.write(write); return true; }
-    const entry = { window: write, since: window.since, generation: this.generation, seq: ++this.writes, superseded: false, texels: null as Uint8Array | null };
+    const entry: Flight = { window: write, since: window.since, generation: this.generation, seq: ++this.writes, superseded: false, texels: null };
     this.flight.push(entry);
     const size = (write.x1 - write.x0) * (write.z1 - write.z0) * 4;
     worker.run(job).then(
@@ -587,7 +589,7 @@ export class WaterContactField {
 
   /** A window the worker did not build (it failed, and is disabled): queued again, keeping its age, unless already stale. */
   private returned(entry: Flight): void {
-    const index = this.flight.indexOf(entry as Flight & { texels: Uint8Array | null });
+    const index = this.flight.indexOf(entry);
     if (entry.generation !== this.generation || index < 0) return;
     this.flight.splice(index, 1);
     this.enqueue(entry.window, entry.since);
