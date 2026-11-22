@@ -826,7 +826,7 @@ export class PhysicsWorldSync {
   };
 
   /** A dirty pass adds a host whose hosted shapes changed, with its composed chain and classified source. */
-  private admitHost(host: Actor | null, world: World): void {
+  private admitHost(host: Actor | null | undefined, world: World): void {
     const affected = this.dirtyAffected;
     if (!host || host.destroyed || world.findActor(host.guid) !== host || affected.has(host)) return;
     affected.add(host);
