@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BlobReclaimResult } from "../services/project-service";
-import { ProjectStorageCleanup, projectStorageCleanupStatus } from "./project-storage-cleanup";
+import { ProjectStorageCleanup } from "./project-storage-cleanup";
+import { projectStorageCleanupStatus } from "../lib/project-storage-cleanup-status";
 
 const reclaim = vi.hoisted(() => ({ fn: vi.fn<() => Promise<BlobReclaimResult>>() }));
 
