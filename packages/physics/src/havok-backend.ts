@@ -69,6 +69,11 @@ function needsOverlapProxy(desc: ColliderDesc): boolean {
   return !desc.isTrigger && (desc.overlapMask ?? 0) !== 0;
 }
 
+/** The longest native step: a longer `dt` (a hitch, or a large time dilation) simulates only this much, as Babylon's physics engine did. */
+const MAX_STEP_SECONDS = 0.1;
+/** The ideal step time a new world starts with. */
+const INITIAL_IDEAL_STEP_SECONDS = 1 / 60;
+
 function havokMotionType(havok: HavokPhysicsWithBindings, motion: MotionType): HavokMotionType {
   switch (motion) {
     case "static":
@@ -118,6 +123,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private stepping = false;
   private pendingMutations: Array<() => void> = [];
   private colliderSeq = 0;
+  /** The ideal step time last given to Havok; every step's length becomes the ideal before the step runs. */
+  private idealStepTime = INITIAL_IDEAL_STEP_SECONDS;
   private readonly queries: HavokQueries;
   private readonly contacts: HavokContacts;
   private readonly characterControllers: HavokCharacters;
@@ -167,7 +174,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const worldId = checkedValue(havok, havok.HP_World_Create(), "world creation");
     try {
       checked(havok, havok.HP_World_SetGravity(worldId, toHavokVec3(options.gravity)), "world gravity");
-      checked(havok, havok.HP_World_SetIdealStepTime(worldId, 1 / 60), "world ideal step time");
+      checked(havok, havok.HP_World_SetIdealStepTime(worldId, INITIAL_IDEAL_STEP_SECONDS), "world ideal step time");
       return new HavokPhysicsBackend(havok, worldId);
     } catch (error) {
       havok.HP_World_Release(worldId);
@@ -847,9 +854,15 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   step(dt: number): void {
     this.flushMutations();
     if (dt <= 0) return;
+    const stepTime = Math.min(dt, MAX_STEP_SECONDS);
+    // Havok tunes its solver to the ideal step time, so a step of another length (time dilation) must announce it.
+    if (stepTime !== this.idealStepTime) {
+      checked(this.havok, this.havok.HP_World_SetIdealStepTime(this.worldId, stepTime), "world ideal step time");
+      this.idealStepTime = stepTime;
+    }
     this.stepping = true;
     try {
-      checked(this.havok, this.havok.HP_World_Step(this.worldId, dt), "world step");
+      checked(this.havok, this.havok.HP_World_Step(this.worldId, stepTime), "world step");
       this.syncSteppedBodyTransforms();
       this.contacts.drainNativeEvents(this.onStepCollision);
     } finally {
