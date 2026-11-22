@@ -136,6 +136,14 @@ export class SaveGameWorld {
     if (scene !== this.scene) { this.tracked.clear(); this.scene = scene; }
   }
 
+  /**
+   * The tracked actors' Scene was unloaded, the same Scene loading again (a level restart, whose id does not change)
+   * included, or Play stopped: the entries would hold departed actors until the next Save Game call.
+   */
+  forgetTracked(): void {
+    this.tracked.clear();
+  }
+
   register(actor: Actor, spawned = false, persistentId?: string): void {
     this.updateScene();
     const selected = selection(actor);

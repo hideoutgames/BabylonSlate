@@ -59,7 +59,7 @@ Typed Save Game definitions, the save/load service shared by Play, Preview Build
 ## Gameplay state
 
 - **Save Game** component selects actor transforms, actor/script variables and component variables (inherited ones included). Each save captures the selection at that moment.
-- Spawned actors must be registered with stable identities (`ctx.registerSaveActor(actor, persistentId)` before first capture). A restored spawned actor takes its persistent id as its guid; ids already used by a live actor are rejected.
+- Spawned actors must be registered with stable identities (`ctx.registerSaveActor(actor, persistentId)` before first capture). A restored spawned actor takes its persistent id as its guid; ids already used by a live actor are rejected. The tracked actors are forgotten when the main Scene departs (the same Scene loading again included) and when Play stops (`SessionBoundaries.resetForSceneLoad` / `dispose`); the next Scene's actors register as they realize.
 - Transform saves include stable parent references; missing or cyclic parents reject the load. Actor references resolve after actors are restored and before **On Game Loaded**.
 - Selected variables support nested Maps with string or finite-number keys (kept distinct). Cycles, unsupported keys or malformed Map data reject the operation without replacing the checkpoint.
 

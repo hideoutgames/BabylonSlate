@@ -4,6 +4,8 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import { UpdateSizeBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateSizeBlock";
 import { NodeParticleConnectionPoint } from "@babylonjs/core/Particles/Node/nodeParticleBlockConnectionPoint";
+import { ParticleInputBlock } from "@babylonjs/core/Particles/Node/Blocks/particleInputBlock";
+import { NodeParticleBlockConnectionPointTypes } from "@babylonjs/core/Particles/Node/Enums/nodeParticleBlockConnectionPointTypes";
 import type { Particle } from "@babylonjs/core/Particles/particle";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
@@ -25,6 +27,7 @@ import {
 import { createTestEngine } from "./test-support/test-engine";
 import { PARTICLE_BLOCK_ADAPTERS, type ParticleBlockAdapter } from "./particle-graph-blocks";
 import { realizeParticleGraph, type RealizeParticleGraphResult } from "./particle-graph-realize";
+import { PARTICLE_MAX_EMITTED_STATEMENTS } from "./particle-update-compiler";
 import { GlobalParameterSession, type GlobalParameterValueSource } from "./global-parameter-values";
 import { animatedSpriteCell } from "./particle-sprite-sheet";
 
@@ -720,6 +723,87 @@ describe("Particle Graph update compilation", () => {
     expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument())).result).system)).toEqual(["processPosition", ""]);
     expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument()), "world", undefined, undefined, false).result).system))
       .toEqual(["processPosition", "processColor"]);
+  });
+
+  /** `levels` Adds each reading the one below twice, from `source`, into Update Size: 2^levels reads of it by pulling. */
+  const diamond = (levels: number, source: ParticleGraphNode) => {
+    const extra = [source];
+    const edges: ReturnType<typeof edge>[] = [];
+    let previous = source.id;
+    for (let level = 0; level < levels; level++) {
+      extra.push(node(`sum${level}`, "math.add"));
+      edges.push(edge(previous, "out", `sum${level}`, "a"), edge(previous, "out", `sum${level}`, "b"));
+      previous = `sum${level}`;
+    }
+    return withSpine([node("size", "update.size")], extra, [...edges, edge(previous, "out", "size", "size")]);
+  };
+  const sizeProcess = (system: ParticleSystem) => {
+    let item = (system as unknown as { _updateQueueStart: Queue | null })._updateQueueStart;
+    // Apply Velocity, then Update Size.
+    item = item!.nextItem;
+    return item!.process as unknown as (...args: unknown[]) => void;
+  };
+
+  it("evaluates a value read along many paths once per update, as Babylon's closures value it", () => {
+    const doc = diamond(10, node("age", "input.contextual.normalizedAge"));
+    const compiled = built(realize(planOf(doc)).result).system;
+    // A thousand reads by pulling; one evaluation per level here.
+    expect(sizeProcess(compiled).name).toBe("");
+    expect(sizeProcess(compiled).toString().split("\n").length).toBeLessThan(80);
+    const babylon = seededRun(built(realize(planOf(doc), "world", undefined, undefined, false).result).system, 150);
+    expect(babylon.deaths).toBeGreaterThan(0);
+    expect(seededRun(compiled, 150)).toEqual(babylon);
+  });
+
+  it("keeps Babylon's update, with a warning, for reads too many to generate", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // A Random rolled on every read is read along every path: 2^13 reads, more statements than one update holds.
+      expect(2 ** 13).toBeGreaterThan(PARTICLE_MAX_EMITTED_STATEMENTS);
+      const doc = diamond(13, node("roll", "random.range", { lock: "everyRead" }));
+      const { system } = built(realize(planOf(doc)).result);
+      expect(sizeProcess(system).name).toBe("processSize");
+      expect(warn).toHaveBeenCalledOnce();
+      expect(String(warn.mock.calls[0]![0])).toContain(`${PARTICLE_MAX_EMITTED_STATEMENTS} statements`);
+      system.start(0);
+      step(system, 20);
+      expect(system.getActiveCount()).toBeGreaterThan(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("truncates Math only to an Int result: an Int times a vector or a Float keeps its value", () => {
+    // Babylon makes no Int constants from a graph; this one does, as a Babylon block that outputs an Int would.
+    const int: ParticleBlockAdapter = ({ name }) => {
+      const block = new ParticleInputBlock(name, NodeParticleBlockConnectionPointTypes.Int);
+      block.value = 2;
+      return { blocks: [block], inputs: {}, outputs: { out: block.output } };
+    };
+    const doc = withSpine([node("direction", "update.direction"), node("size", "update.size")], [
+      node("two", "const.float"),
+      node("heading", "const.vec3", { value: [0.5, 1.5, -2.5] }),
+      node("half", "const.float"),
+      node("toward", "math.multiply"),
+      node("scaled", "math.multiply"),
+    ], [
+      edge("two", "out", "toward", "a"), edge("heading", "out", "toward", "b"), edge("toward", "out", "direction", "direction"),
+      edge("two", "out", "scaled", "a"), edge("half", "out", "scaled", "b"), edge("scaled", "out", "size", "size"),
+    ]);
+    // "two" is the Int; "half" keeps the Float constant adapter with its value.
+    doc.nodes.find((entry) => entry.id === "half")!.properties.value = [0.75];
+    const adapters = { "const.float": (context: Parameters<ParticleBlockAdapter>[0]) =>
+      context.operation.id === "two" ? int(context) : PARTICLE_BLOCK_ADAPTERS["const.float"]!(context) };
+    const { system } = built(realize(planOf(doc), "world", adapters).result);
+    system.start(0);
+    step(system, 20);
+    // Those born on the last step have not run the update yet.
+    const updated = (system as unknown as { _particles: Particle[] })._particles.filter((particle) => particle.age > 0.05);
+    expect(updated.length).toBeGreaterThan(0);
+    for (const particle of updated) {
+      expect(particle.direction.asArray()).toEqual([1, 3, -5]);
+      expect(particle.size).toBe(1.5);
+    }
   });
 
   it("simulates a Local Space graph exactly as Babylon's own update closures do", () => {

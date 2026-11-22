@@ -17,16 +17,20 @@ describe("RuntimeVoices live voices", () => {
     expect(liveIds(voices)).toEqual([]);
   });
 
-  it("moves a replayed voice to the end and forgets every voice when the active Scene changes", () => {
+  it("moves a replayed voice to the end and forgets every voice with each Scene load after the first", () => {
     const voices = new RuntimeVoices(() => 1);
     voices.observe(play("a"));
     voices.observe(play("b"));
     voices.observe(play("a"));
     expect(liveIds(voices)).toEqual(["b", "a"]);
 
+    // The boot Scene's load keeps the voices it started with.
     voices.observe({ type: "activeScene", sceneAssetGuid: "first", sceneLoadId: 1 });
-    voices.observe({ type: "activeScene", sceneAssetGuid: "first", sceneLoadId: 2 });
     expect(liveIds(voices)).toEqual(["b", "a"]);
+    // The same Scene loaded again (a level restart): the host's audio session starts over.
+    voices.observe({ type: "activeScene", sceneAssetGuid: "first", sceneLoadId: 2 });
+    expect(liveIds(voices)).toEqual([]);
+    voices.observe(play("c"));
     voices.observe({ type: "activeScene", sceneAssetGuid: "second", sceneLoadId: 3 });
     expect(liveIds(voices)).toEqual([]);
   });

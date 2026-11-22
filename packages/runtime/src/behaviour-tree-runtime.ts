@@ -92,7 +92,8 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
   private readonly documents = new Map<string, BehaviourTreeDocument>();
   private readonly blackboards = new Map<string, BlackboardDocument>();
   private readonly evalBySlot = new Map<number, BtEvalState>();
-  private readonly missingWarned = new Set<string>();
+  /** The missing-tree reasons reported for each actor (`emitMissing`), forgotten when its slot is released. */
+  private readonly missingWarned = new Map<string, Set<string>>();
   private nodeId: string | null = null;
   private assetGuid: string | null = null;
   /** Audio asset guids known to this Play session (PlaySound fail-on-missing). */
@@ -189,12 +190,29 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     this.lastState.delete(slotId);
     this.blackboardBaseline.delete(slotId);
     this.playAnimOwnedSlots.delete(slotId);
-    if (owner) this.stopPlaySound(owner.guid);
+    if (owner) {
+      this.stopPlaySound(owner.guid);
+      this.missingWarned.delete(owner.guid);
+    }
   }
 
-  /** Stop clears the debug overlay the session was streaming. */
+  /** Stop clears the debug overlay the session was streaming, and forgets everything the session held. */
   dispose(): void {
     if (this.debug) this.host.emit({ type: "behaviourTreeSnapshot", trees: [] });
+    this.documents.clear();
+    this.blackboards.clear();
+    this.evalBySlot.clear();
+    this.missingWarned.clear();
+    this.audioAssetGuids.clear();
+    this.animClipCatalog.clear();
+    this.playAnimOwnedSlots.clear();
+    this.voiceByActor.clear();
+    this.sourceBySlot.clear();
+    this.lastState.clear();
+    this.blackboardBaseline.clear();
+    this.debugComponent = null;
+    this.debugSink = null;
+    this.debugTrace = null;
   }
 
   /** Per-slot evaluation state recorded with each trace frame. */
@@ -553,9 +571,10 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
 
   /** Report once per actor and reason, so a tree that goes missing differently later is still reported. */
   private emitMissing(actorGuid: string, message: string): void {
-    const key = `${actorGuid}\0${message}`;
-    if (this.missingWarned.has(key)) return;
-    this.missingWarned.add(key);
+    let reported = this.missingWarned.get(actorGuid);
+    if (!reported) this.missingWarned.set(actorGuid, (reported = new Set()));
+    if (reported.has(message)) return;
+    reported.add(message);
     const frameId = this.host.frameId();
     const diag: RuntimeDiagnostic = {
       code: "bt.missing_tree",

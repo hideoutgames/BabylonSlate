@@ -210,8 +210,12 @@ function functionPlumbingDefinition(
 }
 
 /** The output node of every Material domain. */
+/** Every domain once: a domain missing here fails to compile, so its output node cannot slip into a function. */
+const EVERY_DOMAIN: { readonly [domain in MaterialDomain]: true } = {
+  surface: true, landscape: true, text: true, postProcess: true, particle: true, decal: true,
+};
 const MATERIAL_TERMINAL_NODE_TYPES: ReadonlySet<string> = new Set(
-  (["surface", "landscape", "text", "postProcess", "particle"] as const).map((domain) => terminalNodeTypeFor(domain)),
+  (Object.keys(EVERY_DOMAIN) as MaterialDomain[]).map((domain) => terminalNodeTypeFor(domain)),
 );
 
 function validateGraph(

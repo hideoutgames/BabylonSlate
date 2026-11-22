@@ -1,7 +1,7 @@
 import {
   Crowd,
+  CrowdAgent,
   Detour,
-  type CrowdAgent,
   NavMesh,
   NavMeshQuery,
   Recast,
@@ -9,12 +9,13 @@ import {
   TileCache,
   TileCacheMeshProcess,
   Raw,
+  crowdAgentParamsDefaults,
   exportNavMesh,
   exportTileCache,
-  importNavMesh,
-  importTileCache,
   init,
   statusDetail,
+  type CrowdAgentParams,
+  type CylinderObstacle,
   type Obstacle,
 } from "@recast-navigation/core";
 import {
@@ -67,9 +68,12 @@ const COST_VOLUME_QUERY_POLYS = 512;
 
 let recastReady: Promise<void> | null = null;
 
-/** Loads this context's Recast module for good: a caller that keeps Recast objects alive pins it (`withNavigation`). */
+/**
+ * Loads this context's Recast module, for a backend to import into (`createNavigationBackend`). It stays loaded while
+ * something holds it: a backend holding a navmesh, or `withNavigation` work. When the last of them lets go, the module
+ * unloads (`unloadNavigation`), and a later import needs this again.
+ */
 export function initNavigation(): Promise<void> {
-  pinned = true;
   return loadNavigation();
 }
 
@@ -78,26 +82,31 @@ function loadNavigation(): Promise<void> {
   return recastReady;
 }
 
-/** Callers of `withNavigation` whose work has not finished. */
-let scopedUsers = 0;
-/** Whether a caller of `initNavigation` keeps the module: then `withNavigation` never unloads it. */
-let pinned = false;
+/** Holders of this context's Recast module: unfinished `withNavigation` work, and backends holding a navmesh. */
+let holders = 0;
+
+function holdNavigation(): void {
+  holders += 1;
+}
+
+/** Lets go of the module, and unloads it when nothing holds it any more. */
+function releaseNavigation(): void {
+  holders -= 1;
+  if (holders === 0) unloadNavigation();
+}
 
 /**
- * Runs `work` with the Recast module loaded, and unloads it once no such work is left (`unloadNavigation`): for a
- * context whose only Recast use is short work that leaves no Recast object alive (the main thread's navmesh overlay,
- * which decodes a bake into debug triangles). The module's memory is 64 MiB, fixed in its binary; the next work loads it
- * again. A context that keeps navmeshes, queries or crowds alive (the Play worker) calls `initNavigation` instead, which
- * keeps the module loaded from then on.
+ * Runs `work` with the Recast module loaded and held: for short work that leaves no Recast object alive (the main
+ * thread's navmesh overlay, which decodes a bake into debug triangles). The module unloads once nothing holds it, so a
+ * context that only does such work keeps none of the module's memory between them; the next work loads it again.
  */
 export async function withNavigation<T>(work: () => T | Promise<T>): Promise<T> {
-  scopedUsers += 1;
+  holdNavigation();
   try {
     await loadNavigation();
     return await work();
   } finally {
-    scopedUsers -= 1;
-    if (scopedUsers === 0 && !pinned) unloadNavigation();
+    releaseNavigation();
   }
 }
 
@@ -108,7 +117,7 @@ export function navigationLoaded(): boolean {
 
 /**
  * Drops this context's Recast module, its WebAssembly memory with it, so the next `initNavigation` loads a new one.
- * Only for a context with no Recast object alive: one would point into the dropped memory.
+ * Only once nothing holds it (`releaseNavigation`): a live Recast object would point into the dropped memory.
  */
 function unloadNavigation(): void {
   if (!recastReady) return;
@@ -147,6 +156,103 @@ export function walkableTileCacheMeshProcess(): TileCacheMeshProcess {
       polyFlags.set(i, WALKABLE_FLAGS);
     }
   });
+}
+
+/**
+ * Frees a tile cache whole: Recast's `TileCache.destroy` frees Detour's tile cache but not the wrapper object that held
+ * it, which the generator or importer allocated.
+ */
+export function destroyTileCache(tileCache: TileCache): void {
+  tileCache.destroy();
+  Raw.destroy(tileCache.raw);
+}
+
+/** A decoded bake: its navmesh, and for a tile-cache bake its tile cache and the allocator and compressor it uses. */
+export type ImportedNavMesh = {
+  navMesh: NavMesh;
+  tileCache: { tileCache: TileCache; allocator: unknown; compressor: unknown } | null;
+};
+
+/**
+ * Recast's `importNavMesh` / `importTileCache`, without the request each leaves on the heap: they never free the
+ * `NavMeshExport` that hands Recast the bytes. The importer copies what it keeps, so the bytes and request are freed here.
+ */
+export function importBakedNavMesh(bytes: Uint8Array, meshProcess: TileCacheMeshProcess | null): ImportedNavMesh {
+  const module = Raw.Module;
+  const pointer = module._malloc(bytes.byteLength);
+  const request = new module.NavMeshExport();
+  try {
+    module.HEAPU8.set(bytes, pointer);
+    request.dataPointer = pointer;
+    request.size = bytes.byteLength;
+    // The result is the importer's static record: nothing to free but what it points to.
+    const result = Raw.NavMeshImporter.importNavMesh(request, meshProcess?.raw as never);
+    const navMesh = new NavMesh(result.navMesh);
+    if (!meshProcess) return { navMesh, tileCache: null };
+    return { navMesh, tileCache: { tileCache: new TileCache(result.tileCache), allocator: result.allocator, compressor: result.compressor } };
+  } finally {
+    Raw.destroy(request);
+    module._free(pointer);
+  }
+}
+
+/** Frees everything an import made (`importBakedNavMesh`). */
+export function destroyImportedNavMesh(imported: ImportedNavMesh): void {
+  if (imported.tileCache) {
+    destroyTileCache(imported.tileCache.tileCache);
+    Raw.destroy(imported.tileCache.allocator);
+    Raw.destroy(imported.tileCache.compressor);
+  }
+  imported.navMesh.destroy();
+}
+
+/** Writes `params` over Recast's defaults into a Detour agent parameter record. */
+function writeAgentParams(target: InstanceType<typeof Raw.Module.dtCrowdAgentParams>, params: CrowdAgentParams): void {
+  target.radius = params.radius;
+  target.height = params.height;
+  target.maxAcceleration = params.maxAcceleration;
+  target.maxSpeed = params.maxSpeed;
+  target.collisionQueryRange = params.collisionQueryRange;
+  target.pathOptimizationRange = params.pathOptimizationRange;
+  target.separationWeight = params.separationWeight;
+  target.updateFlags = params.updateFlags;
+  target.obstacleAvoidanceType = params.obstacleAvoidanceType;
+  target.queryFilterType = params.queryFilterType;
+  target.userData = params.userData;
+}
+
+/**
+ * Recast's `Crowd.addAgent`, freeing the parameter record it leaves on the heap (Detour copies it into the agent).
+ * Null when the crowd has no free slot.
+ */
+function addCrowdAgent(crowd: Crowd, position: NavPoint, params: Partial<CrowdAgentParams>): CrowdAgent | null {
+  const record = new Raw.Module.dtCrowdAgentParams();
+  try {
+    writeAgentParams(record, { ...crowdAgentParamsDefaults, ...params });
+    const index = crowd.raw.addAgent([position.x, position.y, position.z], record);
+    if (index < 0) return null;
+    const agent = new CrowdAgent(crowd, index);
+    crowd.agents[index] = agent;
+    return agent;
+  } finally {
+    Raw.destroy(record);
+  }
+}
+
+/**
+ * Recast's `TileCache.addCylinderObstacle`, freeing the position it leaves on the heap (its box obstacles free theirs).
+ */
+function addCylinderObstacle(tileCache: TileCache, position: NavPoint, radius: number, height: number): { success: boolean; obstacle?: Obstacle } {
+  const rawPosition = new Raw.Module.Vec3(position.x, position.y, position.z);
+  try {
+    const result = tileCache.raw.addCylinderObstacle(rawPosition, radius, height);
+    if (result.status !== Detour.DT_SUCCESS) return { success: false };
+    const obstacle: CylinderObstacle = { type: "cylinder", ref: result.ref, position: { ...position }, radius, height };
+    tileCache.obstacles.set(obstacle.ref, obstacle);
+    return { success: true, obstacle };
+  } finally {
+    Raw.destroy(rawPosition);
+  }
 }
 
 function wrapTileCacheBytes(bytes: Uint8Array): Uint8Array {
@@ -224,7 +330,7 @@ function generateTileCacheBytes(
         }
         return wrapTileCacheBytes(exportTileCache(result.navMesh, result.tileCache));
       } finally {
-        result.tileCache.destroy();
+        destroyTileCache(result.tileCache);
         result.navMesh.destroy();
       }
     } finally {
@@ -234,39 +340,32 @@ function generateTileCacheBytes(
 }
 
 type LoadedNavMesh = {
-  navMesh: NavMesh;
-  tileCache: TileCache | null;
-  release: (() => void) | null;
+  imported: ImportedNavMesh;
+  /** The tile-cache bake's mesh process, which its tile cache calls for every rebuilt tile. */
+  meshProcess: TileCacheMeshProcess | null;
 };
 
 /** Decode baked bytes without touching any live navigation state. */
 function loadNavMesh(bytes: Uint8Array): LoadedNavMesh {
   const tileBytes = unwrapTileCacheBytes(bytes);
-  if (!tileBytes) return { navMesh: importNavMesh(bytes).navMesh, tileCache: null, release: null };
-  const process = walkableTileCacheMeshProcess();
+  if (!tileBytes) return { imported: importBakedNavMesh(bytes, null), meshProcess: null };
+  const meshProcess = walkableTileCacheMeshProcess();
   try {
-    const imported = importTileCache(tileBytes, process);
-    return {
-      navMesh: imported.navMesh,
-      tileCache: imported.tileCache,
-      release: () => {
-        Raw.destroy(imported.allocator);
-        Raw.destroy(imported.compressor);
-        Raw.destroy(process.raw);
-      },
-    };
+    return { imported: importBakedNavMesh(tileBytes, meshProcess), meshProcess };
   } catch (error) {
-    Raw.destroy(process.raw);
+    Raw.destroy(meshProcess.raw);
     throw error;
   }
 }
 
 class RecastNavigationBackend implements NavigationBackend {
+  private loaded: LoadedNavMesh | null = null;
   private navMesh: NavMesh | null = null;
   private query: NavMeshQuery | null = null;
   private crowd: Crowd | null = null;
   private tileCache: TileCache | null = null;
-  private releaseTileCacheResources: (() => void) | null = null;
+  /** Whether this backend holds the Recast module (`holdNavigation`): from its first import until `dispose`. */
+  private holdsModule = false;
   private tileCacheDirty = false;
   /** Obstacle requests queued in the tile cache since its last update. */
   private pendingObstacleRequests = 0;
@@ -291,10 +390,14 @@ class RecastNavigationBackend implements NavigationBackend {
   importNavMesh(bytes: Uint8Array): void {
     // A failed decode leaves the current navmesh, crowd and obstacles live.
     const loaded = loadNavMesh(bytes);
-    this.dispose();
-    this.navMesh = loaded.navMesh;
-    this.tileCache = loaded.tileCache;
-    this.releaseTileCacheResources = loaded.release;
+    if (!this.holdsModule) {
+      holdNavigation();
+      this.holdsModule = true;
+    }
+    this.releaseNavMesh();
+    this.loaded = loaded;
+    this.navMesh = loaded.imported.navMesh;
+    this.tileCache = loaded.imported.tileCache?.tileCache ?? null;
     this.query = new NavMeshQuery(this.navMesh);
     this.crowd = new Crowd(this.navMesh, {
       maxAgents: CROWD_MAX_AGENTS,
@@ -375,7 +478,8 @@ class RecastNavigationBackend implements NavigationBackend {
       if (kind === "cylinder") {
         // Tile-cache cylinders stand on their base; callers pass the volume center.
         const height = extent(size.y);
-        return tileCache.addCylinderObstacle(
+        return addCylinderObstacle(
+          tileCache,
           { x: pose.x, y: pose.y - height / 2, z: pose.z },
           Math.max(extent(size.x), extent(size.z)) / 2,
           height,
@@ -459,16 +563,13 @@ class RecastNavigationBackend implements NavigationBackend {
     this.flushPendingChanges();
     // Detour has no slot for another agent once the crowd is full.
     if (!this.crowd || this.agents.size >= CROWD_MAX_AGENTS) return "";
-    const agent = this.crowd.addAgent(position, {
+    const agent = addCrowdAgent(this.crowd, position, {
       radius: params?.radius ?? DEFAULT_NAV_AGENT_PARAMS.radius,
       height: params?.height ?? DEFAULT_NAV_AGENT_PARAMS.height,
       maxSpeed: params?.maxSpeed ?? DEFAULT_NAV_AGENT_PARAMS.maxSpeed,
       maxAcceleration: params?.maxAcceleration ?? DEFAULT_NAV_AGENT_PARAMS.maxAcceleration,
     });
-    if (agent.agentIndex < 0) {
-      delete this.crowd.agents[agent.agentIndex];
-      return "";
-    }
+    if (!agent) return "";
     const id = `agent-${this.nextAgent}`;
     this.nextAgent += 1;
     this.agents.set(id, agent);
@@ -478,29 +579,13 @@ class RecastNavigationBackend implements NavigationBackend {
   updateAgent(id: string, params: NavAgentParams): void {
     const agent = this.agents.get(id);
     if (!agent) return;
-    const next: {
-      radius?: number;
-      height?: number;
-      maxSpeed?: number;
-      maxAcceleration?: number;
-    } = {};
-    if (typeof params.radius === "number" && Number.isFinite(params.radius)) {
-      next.radius = params.radius;
-    }
-    if (typeof params.height === "number" && Number.isFinite(params.height)) {
-      next.height = params.height;
-    }
-    if (typeof params.maxSpeed === "number" && Number.isFinite(params.maxSpeed)) {
-      next.maxSpeed = params.maxSpeed;
-    }
-    if (
-      typeof params.maxAcceleration === "number" &&
-      Number.isFinite(params.maxAcceleration)
-    ) {
-      next.maxAcceleration = params.maxAcceleration;
-    }
-    if (Object.keys(next).length === 0) return;
-    agent.updateParameters(next);
+    // Written into the agent's own parameters, as Detour's `updateAgentParameters` copies them: Recast's
+    // `updateParameters` would leave a parameter record on the heap for every call.
+    const finite = (value: number | undefined): value is number => typeof value === "number" && Number.isFinite(value);
+    if (finite(params.radius)) agent.radius = params.radius;
+    if (finite(params.height)) agent.height = params.height;
+    if (finite(params.maxSpeed)) agent.maxSpeed = params.maxSpeed;
+    if (finite(params.maxAcceleration)) agent.maxAcceleration = params.maxAcceleration;
   }
 
   stopAgent(id: string): void {
@@ -726,7 +811,17 @@ class RecastNavigationBackend implements NavigationBackend {
     }
   }
 
+  /** Frees the navmesh and everything built on it, and lets go of the Recast module. Idempotent. */
   dispose(): void {
+    this.releaseNavMesh();
+    if (this.holdsModule) {
+      this.holdsModule = false;
+      releaseNavigation();
+    }
+  }
+
+  /** Frees the navmesh and everything built on it; the backend keeps holding the module. */
+  private releaseNavMesh(): void {
     // Recast's NavMeshQuery.destroy frees only the native query, leaving its C++ wrapper and default filter allocated,
     // and the crowd holds a second such wrapper and filter. Deleting a wrapper never frees the query it points to, so
     // the crowd's wrapper is released here while freeing the crowd frees that query.
@@ -740,15 +835,16 @@ class RecastNavigationBackend implements NavigationBackend {
       Raw.destroy(this.query.defaultFilter.raw);
       Raw.destroy(this.query.raw);
     }
-    this.tileCache?.destroy();
-    this.navMesh?.destroy();
+    if (this.loaded) {
+      destroyImportedNavMesh(this.loaded.imported);
+      if (this.loaded.meshProcess) Raw.destroy(this.loaded.meshProcess.raw);
+    }
+    this.loaded = null;
     this.crowd = null;
     this.query = null;
     this.tileCache = null;
     this.navMesh = null;
     this.meshRevision += 1;
-    this.releaseTileCacheResources?.();
-    this.releaseTileCacheResources = null;
     this.tileCacheDirty = false;
     this.pendingObstacleRequests = 0;
     this.tileCacheStalled = false;

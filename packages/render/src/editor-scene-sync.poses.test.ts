@@ -84,3 +84,22 @@ describe("EditorSceneSync.applyPoses", () => {
     expect(sync.serializedScene()).toBe(edited);
   });
 });
+
+describe("EditorSceneSync.dispose", () => {
+  it("lets go of the scene document, model bytes and payloads it was given", () => {
+    const sync = createSync();
+    const modelBytes = new Map([["model", new Uint8Array(64)]]);
+    sync.setMeshAssets({ modelBytes, modelPayloads: new Map() });
+    sync.apply(sceneOf([box("crate")]));
+    const binding = (sync as unknown as { modelLoadBinding: { modelBytes?: unknown; modelPayloads?: unknown } }).modelLoadBinding;
+    // What model loads read the bytes through.
+    binding.modelBytes = modelBytes;
+    expect((sync as unknown as { assets?: { modelBytes?: unknown } }).assets?.modelBytes).toBe(modelBytes);
+    sync.dispose();
+    // A disposed sync can stay reachable (a view's teardown in flight): it must not keep the project's bytes with it.
+    expect(sync.serializedScene()).toBeNull();
+    expect(binding.modelBytes).toBeUndefined();
+    expect(binding.modelPayloads).toBeUndefined();
+    expect((sync as unknown as { assets?: unknown }).assets).toBeUndefined();
+  });
+});

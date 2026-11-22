@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { generateNavMesh, initNavigation } from "./recast-backend";
 import { navMeshDebugPrimitives } from "./debug-primitives";
+import { trackRecastHandles } from "./recast-test-handles";
 
 function groundPrism(): { positions: number[]; indices: number[] } {
   const half = 10;
@@ -31,11 +32,21 @@ describe("navMeshDebugPrimitives", () => {
   });
 
   it("draws BSNT tile-cache navmeshes repeatedly when dynamic obstacles are enabled", async () => {
-    const tiled = await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } });
-    for (let i = 0; i < 3; i += 1) {
-      const primitives = navMeshDebugPrimitives(tiled);
-      const tris = primitives.find((primitive) => primitive.type === "tris");
-      expect(tris?.vertices.length).toBeGreaterThan(2);
+    const handles = trackRecastHandles(["NavMeshExport"]);
+    try {
+      const tiled = await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } });
+      for (let i = 0; i < 3; i += 1) {
+        const primitives = navMeshDebugPrimitives(tiled);
+        const tris = primitives.find((primitive) => primitive.type === "tris");
+        expect(tris?.vertices.length).toBeGreaterThan(2);
+      }
+      // The bake and each decode free what they made: the import request, and the tile cache with its wrapper.
+      expect(handles.made()).toEqual({ NavMeshExport: 3 });
+      expect(handles.live()).toEqual({ NavMeshExport: 0 });
+      expect(handles.tileCachesFreed()).toBe(4);
+      expect(handles.tileCacheWrappersLeft()).toBe(0);
+    } finally {
+      handles.restore();
     }
   });
 });

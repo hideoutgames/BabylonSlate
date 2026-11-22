@@ -143,6 +143,31 @@ describe("Babylon audio backend lifecycle", () => {
     backend.dispose();
   });
 
+  it("starts a stopped voice unpaused when its id plays again", async () => {
+    const backend = new BabylonAudioPlaybackBackend();
+    await backend.play({ ...request, voiceId: "music" });
+    backend.setVoicePaused("music", true);
+    backend.stop("music");
+    await backend.play({ ...request, voiceId: "music" });
+    const replayed = await audio.createSound.mock.results[1]!.value as ReturnType<typeof audio.sound>;
+    expect(replayed.play).toHaveBeenCalledOnce();
+    expect(replayed.pause).not.toHaveBeenCalled();
+    backend.dispose();
+  });
+
+  it("forgets a voice whose sound could not be made, and every paused voice on dispose", async () => {
+    const backend = new BabylonAudioPlaybackBackend();
+    const held = backend as unknown as { pendingVoices: Map<string, symbol>; pausedVoices: Set<string> };
+    audio.createBuffer.mockRejectedValueOnce(new Error("undecodable"));
+    await expect(backend.play({ ...request, voiceId: "broken" })).rejects.toThrow("undecodable");
+    audio.createSound.mockRejectedValueOnce(new Error("no sound"));
+    await expect(backend.play({ ...request, voiceId: "silent", assetGuid: "other" })).rejects.toThrow("no sound");
+    expect([...held.pendingVoices.keys()]).toEqual([]);
+    backend.setVoicePaused("later", true);
+    backend.dispose();
+    expect([...held.pausedVoices]).toEqual([]);
+  });
+
   it("streams without decoding PCM, sets playbackRate on the media element, and releases WebKit decoder state on stop", async () => {
     const createdElements: Array<{
       crossOrigin: string;

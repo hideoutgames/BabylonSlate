@@ -6,6 +6,7 @@ import type { BtResult } from "@haptic/behaviour-tree";
 import {
   createNavigationBackend,
   facingYawFromVelocity,
+  navigationLoaded,
   parseNavAgentParams,
   parseNavMeshBlockerProperties,
   recastToWorld,
@@ -66,7 +67,6 @@ export class RuntimeNavigation implements RuntimeSubsystem {
   }>();
   private readonly sceneNavmeshBytes = new Map<string, Uint8Array>();
   private navSceneGuid: string | null = null;
-  private navigationInitialized = false;
   private readonly navAgentByActor = new Map<string, string>();
   /** A Rotate To Face heading the next crowd tick applies to an idle agent. */
   private readonly navFacingRequests = new Map<string, number>();
@@ -128,13 +128,12 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     return this.sceneNavmeshBytes.get(sceneGuid);
   }
 
-  /** Recast wasm must initialize before this Scene's baked navmesh can import. */
+  /**
+   * Recast wasm must load before this Scene's baked navmesh can import. It unloads whenever no navmesh holds it (a
+   * Scene without one, a stopped session), so this asks whether it is loaded now.
+   */
   needsInitialization(sceneGuid: string): boolean {
-    return this.sceneNavmeshBytes.has(sceneGuid) && !this.navigationInitialized;
-  }
-
-  markInitialized(): void {
-    this.navigationInitialized = true;
+    return this.sceneNavmeshBytes.has(sceneGuid) && !navigationLoaded();
   }
 
   /** Import a navmesh for the current Scene into the existing (or a new) backend. */

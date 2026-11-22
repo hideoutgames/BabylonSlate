@@ -509,6 +509,9 @@ export class ActorComponent extends EngineObject {
   override callOnDestroyed(): void {
     this.owner?.world?.markStructureChanged?.();
     super.callOnDestroyed();
+    // A script holding the component's Material object sees it destroyed, and the component lets go of it.
+    if (this.materialObject) this.materialObject.destroyed = true;
+    this.materialObject = null;
   }
 
   protected override onDestroyedFlagChanged(): void {

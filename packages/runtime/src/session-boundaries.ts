@@ -83,6 +83,16 @@ export class SessionBoundaries {
     return this.boundaryRequests.some(({ request }) => request.action.kind === "pause" && request.action.paused);
   }
 
+  /** The main Scene is being replaced (or loaded again): the actors Save Game tracked went with it. */
+  resetForSceneLoad(): void {
+    this.saveGameWorld?.forgetTracked();
+  }
+
+  /** Play stops: Save Game tracks nothing more. */
+  dispose(): void {
+    this.saveGameWorld?.forgetTracked();
+  }
+
   /** A script or console spawn: Save Game removes it on reset and recreates it on load. */
   markSpawned(actor: Actor): void { this.savedActors.add(actor); }
 

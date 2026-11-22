@@ -185,6 +185,26 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     for (const guid of this.documents.keys()) if (!retained.has(guid)) this.documents.delete(guid);
   }
 
+  /** Stop, phase 1: every Play Slot Animation ends, so its waits answer false and their continuations go. */
+  cancelPending(): void {
+    for (const componentGuid of new Set([...this.slotPlays.values()].map((play) => play.component))) this.dropSlotPlays(componentGuid);
+    this.slotRequestsByComponent.clear();
+  }
+
+  /** Stop, phase 2: forget every graph, clip, component state and debug follower the session held. */
+  dispose(): void {
+    this.cancelPending();
+    this.documents.clear();
+    this.clipCatalog.clear();
+    this.evalByComponent.clear();
+    this.initializedGraphByComponent.clear();
+    this.liveGraphByComponent.clear();
+    this.pendingJumpByComponent.clear();
+    this.graphByComponent.clear();
+    this.debugComponent = null;
+    this.debugSink = null;
+  }
+
   /** Forget a removed actor's component evaluations, pending jumps and initialization. */
   retireActor(actor: Actor): void {
     for (const component of actor.components) {

@@ -758,8 +758,9 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     if (!voiceId) return;
     this.voices.ended(voiceId);
     if (message.dropped) return;
-    // Only AudioComponent owners can match, in the world order a walk over every actor meets them in; a script or
-    // Behaviour Tree voice id matches none of them.
+    // A script or Behaviour Tree voice id names no component: nothing to look for.
+    if (voiceId.startsWith("script:") || voiceId.startsWith("bt:")) return;
+    // Only AudioComponent owners can match, in the world order a walk over every actor meets them in.
     for (const actor of componentOwners(this.world, "AudioComponent")) {
       if (actor.destroyed) continue;
       const component = actor.components.find(
@@ -1097,7 +1098,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     if (bytes) this.navigation.setSceneNavMesh(sceneGuid, bytes);
     await initNavigation();
     if (this.stopped || lifecycleId !== this.lifecycleId) throw sceneRealizationCancelled();
-    this.navigation.markInitialized();
     if (sceneGuid !== this.playSceneGuid) return;
     this.navigation.importNavMesh(sceneGuid, navmesh);
     if (this.sceneRealizer.realized) {
@@ -1226,10 +1226,17 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.sceneRealizer.releaseSceneSources();
     this.playScene = undefined;
     this.sceneLibrary.clear();
+    this.sceneGuidByKey.clear();
+    this.sceneLayerLibrary.clear();
+    this.sourceRenderTargets.clear();
+    this.sourceRenderTargetTextures.clear();
     this.sceneLandscapeBytes.clear();
+    this.navFrameActors = null;
+    this.guidIndexCache = null;
     // Dispose.
     this.admission.clear();
     this.layers.clear();
+    this.boundaries.dispose();
     this.subsystems.dispose();
   }
 

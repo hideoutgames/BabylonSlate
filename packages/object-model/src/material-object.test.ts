@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Actor, ActorComponent, EngineObject, Scene, SceneLayerPostProcessing, getPostProcessMaterialObject } from "./objects";
 import { ClassRegistry } from "./class-registry";
+import { World } from "./world";
 import { engineScriptApiFor } from "./engine-script-api";
 
 it.each(["scene", "sceneLayers"] as const)("keeps %s pass handles isolated across reorder and rejects replacement or teardown", (kind) => {
@@ -74,5 +75,18 @@ describe.each(["MeshComponent", "DynamicRuntimeMeshComponent"])("%s Material Obj
     expect(mesh.getVariable("materialObject")).not.toBe(first);
     mesh.destroyed = true;
     expect(mesh.getVariable("materialObject")).toBeNull();
+  });
+
+  it("destroys the Material Object a script holds when its actor is destroyed", () => {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    const actor = new Actor({ classId: "Actor", guid: "actor" });
+    const mesh = new ActorComponent({ classId, guid: "mesh", variables: { materialGuid: "mat-a" } });
+    actor.attachComponent(mesh);
+    world.spawnActorNow(actor);
+    const held = mesh.getVariable("materialObject") as EngineObject;
+    world.destroyActorInstance(actor);
+    world.flushPending();
+    // A script holding it sees it gone, without asking the component again.
+    expect(held.destroyed).toBe(true);
   });
 });
