@@ -45,6 +45,14 @@ describe("asEnumAsset", () => {
 });
 
 describe("asStructureAsset", () => {
+  it("drops a stored field without a stable identity instead of inventing one", () => {
+    expect(asStructureAsset({ fields: [
+      { name: "Legacy", typeId: "int" },
+      { id: "  ", name: "Blank", typeId: "int" },
+      { id: " health ", name: "Health", typeId: "int" },
+    ] }).fields).toEqual([{ id: "health", name: "Health", typeId: "int" }]);
+  });
+
   it("keeps typed collection metadata for Structure defaults and data editors", () => {
     expect(asStructureAsset({ fields: [
       { id: "materials", name: "Materials", typeId: "asset", typeClassId: "Material", container: "map", keyTypeId: " enum ", keyTypeClassId: " tiers " },

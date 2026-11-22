@@ -225,8 +225,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       },
       {
         header: { guid: "struct-loadout", name: "Loadout", type: "Structure", payload: { fields: [
-          { name: "Cue", typeId: "asset", typeClassId: "Audio" },
-          { name: "Count", typeId: "int" },
+          { id: "Cue", name: "Cue", typeId: "asset", typeClassId: "Audio" },
+          { id: "Count", name: "Count", typeId: "int" },
         ] } },
         path: "assets/Loadout.structure.hasset",
       },

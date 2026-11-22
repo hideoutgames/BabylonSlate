@@ -32,7 +32,7 @@ describe("Value units", () => {
     expect(variableDefaultPropertyRows("float", 15, vi.fn(), { unit: "deg" })[0]).toMatchObject({ kind: "number", unit: "deg" });
     expect(variableDefaultPropertyRows("vec2", undefined, vi.fn(), { unit: "px" })[0]).toMatchObject({ kind: "vector3", unit: "px" });
     expect(variableDefaultPropertyRows("string", "", vi.fn(), { unit: "px" })[0]).not.toHaveProperty("unit");
-    const schemas = { structs: { size: { fields: [{ name: "Width", typeId: "float", unit: "px" }, { name: "Label", typeId: "string" }] } }, enums: {} };
+    const schemas = { structs: { size: { fields: [{ id: "Width", name: "Width", typeId: "float", unit: "px" }, { id: "Label", name: "Label", typeId: "string" }] } }, enums: {} };
     const rows = variableDefaultPropertyRows("struct", undefined, vi.fn(), { typeClassId: "size", schemas } as never);
     expect(rows.map((row) => [row.label, "unit" in row ? row.unit : undefined])).toEqual([["Width", "px"], ["Label", undefined]]);
   });
