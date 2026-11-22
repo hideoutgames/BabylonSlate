@@ -20,10 +20,10 @@ export const DISPLAY_COLOR_SHADER = "hapticDisplayColor";
 
 /**
  * One full-screen pass, its stages in the order the separate passes they replace ran, each behind its define:
- * - `BLOOM`: Babylon's bloom merge (`bloomMerge.fragment`), the blurred highlights added at `bloomWeight`, then held as
- *   the merge's own target, of the source's type, held it: clamped and in 1/255 steps for RGBA8 (`BLOOM_UNORM8`), rounded
- *   to half floats for half-float (`BLOOM_HALF_FLOAT`). The next stage reads the merged colour the separate merge pass
- *   stored, bit for bit; the RGBA8 clamp is also what keeps a Display Space vignette from darkening bloom past white.
+ * - `BLOOM`: Babylon's bloom merge (`bloomMerge.fragment`), the blurred highlights added at `bloomWeight`, then rounded
+ *   as the merge pass's own target (of the source's type) stored it: clamped to [0, 1] and rounded half to even in 1/255
+ *   steps for RGBA8 (`BLOOM_UNORM8`), to half floats for half-float (`BLOOM_HALF_FLOAT`). Later stages thus read what
+ *   they read after a separate merge pass: a Display Space vignette still darkens bloom clipped at white, not above it.
  * - `DISPLAY_COLOR`: Babylon's image processing (`imageProcessing.fragment`) with its own includes and defines.
  * The result is written last, so a stage that follows image processing goes before that write.
  */
