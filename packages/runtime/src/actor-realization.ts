@@ -47,8 +47,6 @@ interface ActorRealizationHost {
   textAppear(): Pick<Text2DAppearRuntime, "remove">;
   subsystems(): Pick<RuntimeSubsystems, "retireActor">;
   cancelInvalidTweens(): void;
-  /** The tick's live actor index by guid while behaviour trees and the crowd run, else null. */
-  frameActors(): Map<string, Actor> | null;
   reportLog(message: string, severity: LogSeverity, category: string): void;
   emit(command: CommandMessage): void;
 }
@@ -280,8 +278,6 @@ export class ActorRealization {
     checkpoint();
     this.admission.flushSpawned(actor);
     checkpoint();
-    // A spawn queued mid-tick joins the frame index once it commits, next frame.
-    if (world.findActor(actor.guid) === actor) this.host.frameActors()?.set(actor.guid, actor);
   }
 
   /** Allocate the actor's render slot and announce it (`spawn`). */

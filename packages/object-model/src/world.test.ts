@@ -786,6 +786,34 @@ describe("World tick", () => {
     expect(indexed()).toBe("a0@0,a2@1,a6@2");
   });
 
+  it("tears down thousands of actors in spawn-order hooks while reassigning each survivor's spawn index once", () => {
+    const world = createTestWorld();
+    const events: string[] = [];
+    let spawnIndexWrites = 0;
+    const survivors: string[] = [];
+    for (let i = 0; i < 2000; i++) {
+      const guid = `a${i}`;
+      const actor = world.createActor({ classId: "Actor", guid, hooks: { onDestroyed: () => { events.push(guid); } } });
+      actor.attachComponent(world.createComponent({ classId: "ActorComponent", hooks: { onDestroyed: () => { events.push(`${guid}.c`); } } }));
+      world.spawnActorNow(actor);
+      let index = actor.spawnIndex;
+      Object.defineProperty(actor, "spawnIndex", {
+        get: () => index,
+        set: (value: number) => { spawnIndexWrites++; index = value; },
+      });
+      if (i % 3 === 0) survivors.push(guid);
+      else world.destroyActor(guid);
+    }
+    world.flushPending();
+    const expected: string[] = [];
+    for (let i = 0; i < 2000; i++) if (i % 3 !== 0) expected.push(`a${i}.c`, `a${i}`);
+    expect(events).toEqual(expected);
+    expect(world.getActors().map((actor) => `${actor.guid}@${actor.spawnIndex}`))
+      .toEqual(survivors.map((guid, index) => `${guid}@${index}`));
+    // Removing one at a time and re-indexing every later actor would write ~888,000 times.
+    expect(spawnIndexWrites).toBeLessThanOrEqual(survivors.length);
+  });
+
   it("ticks exactly the actors and components present when each phase reached them", () => {
     const world = createTestWorld();
     const ticks: string[] = [];
@@ -823,23 +851,32 @@ describe("World tick", () => {
     expect(ticks).toEqual(["first", "second", "third", "late", "first-c", "first-added", "second-added"]);
   });
 
-  it("marks the structural revision for direct actor parent/name map writes", () => {
+  it("marks the structural revision for direct actor parent map writes and the name revision for renames", () => {
     const world = createTestWorld();
-    const actor = world.createActor({ classId: "Actor", variables: { name: "Hero" } });
+    const actor = world.createActor({ classId: "Actor", variables: { name: "Hero", parentId: "root" } });
     world.spawnActorNow(actor);
     const revision = () => world.structuralRevision;
+    const names = () => world.actorNameRevision;
     let before = revision();
-    actor.variables.set("parentId", "root");
+    let namesBefore = names();
+    actor.variables.set("parentId", "other");
     expect(revision()).toBeGreaterThan(before);
+    expect(names()).toBe(namesBefore);
     before = revision();
-    actor.variables.set("parentId", "root");
+    actor.variables.set("parentId", "other");
     actor.variables.set("health", 3);
     expect(revision()).toBe(before);
+    expect(names()).toBe(namesBefore);
+    // Renaming changes no structure, so caches of what the World holds stay valid.
+    actor.variables.set("name", "Renamed");
     actor.variables.delete("name");
-    expect(revision()).toBeGreaterThan(before);
-    before = revision();
+    expect(revision()).toBe(before);
+    expect(names()).toBe(namesBefore + 2);
+    expect(world.identityRevision).toBe(revision() + names());
+    namesBefore = names();
     actor.variables.clear();
     expect(revision()).toBeGreaterThan(before);
+    expect(names()).toBeGreaterThan(namesBefore);
   });
 
   it("advances variablesRevision on every change a reader could see, for actors and components", () => {

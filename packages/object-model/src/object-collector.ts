@@ -149,6 +149,7 @@ export class ObjectCollector {
     if (Array.isArray(value)) {
       for (let index = 0; index < value.length; index++) {
         const entry: unknown = value[index];
+        if (entry === null || typeof entry !== "object") continue;
         if (entry instanceof EngineObject && entry.destroyed) {
           value[index] = null;
           this.result.cleared++;

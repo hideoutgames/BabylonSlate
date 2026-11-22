@@ -1,8 +1,9 @@
 import { isSceneLayerAnchorActor, SaveGameError, type SaveGameResult, type SaveGameService } from "@haptic/core";
-import { Actor, ActorComponent, Scene, SceneLayer, type EngineObject } from "@haptic/object-model";
+import { Actor, ActorComponent, Scene, SceneLayer, type EngineObject, type World } from "@haptic/object-model";
 import type { Vec3 } from "@haptic/physics";
 import { actorLabel } from "./actor-world-transform";
 import { componentsOfClass } from "./script-class-queries";
+import { worldComponentIndex } from "./world-component-index";
 import type { ScriptHostServices } from "./script-host-services";
 
 /** The installed save service, read on each call because `setSaveGameService` installs it after construction. */
@@ -106,14 +107,27 @@ export function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
+/**
+ * A component by id on an actor, or anywhere in the current Scene's world (the first match in world order). With
+ * `world`, the Scene-wide search answers from the per-structure component index instead of walking every actor.
+ */
 export function findComponentByIdFromTarget(
   target: unknown,
   componentId: string,
   actors: readonly Actor[] | undefined,
   currentScene: Scene | null,
+  world?: World,
 ): ActorComponent | null {
   if (target instanceof Scene) {
     if (target.destroyed || currentScene !== target) return null;
+    if (typeof componentId !== "string" || !componentId) return null;
+    if (world) {
+      const indexed = worldComponentIndex(world).componentById(componentId);
+      if (!indexed) return null;
+      if (!indexed.destroyed && indexed.owner && !indexed.owner.destroyed) return indexed;
+      // Destroyed without a structural change since the index was built: search the live list.
+      actors = world.getActors();
+    }
     if (!actors) return null;
     for (const actor of actors) {
       if (actor.destroyed) continue;

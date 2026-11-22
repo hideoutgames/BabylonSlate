@@ -588,6 +588,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
             services.resolveInstanceId?.(target, componentId) ?? componentId,
             services.getActors?.(),
             services.getSceneReference?.(target) ?? null,
+            services.getWorld?.(),
           );
         },
         getOwnedActor(actorId) {

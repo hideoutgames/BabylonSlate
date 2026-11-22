@@ -60,8 +60,6 @@ type SlotSource = {
 
 interface BehaviourTreeRuntimeHost {
   world(): World;
-  /** Frame index (live actor per guid) shared with the crowd tick. */
-  frameActors(): ReadonlyMap<string, Actor> | undefined;
   stopped(): boolean;
   canTick(actor: Actor): boolean;
   /** The render slot this actor's own commands target. */
@@ -274,7 +272,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     if (builtinClassId(node.classId) === "bt.task.moveToBlackboardKey") {
       const key = typeof node.properties?.key === "string" ? node.properties.key : "";
       return this.host.navigation().tickMoveTo(actor, node, memory, blackboardTargetPosition(
-        blackboard[key], this.host.world(), this.host.frameActors(),
+        blackboard[key], this.host.world(),
       ));
     }
     if (builtinClassId(node.classId) === "bt.task.rotateToFace") {

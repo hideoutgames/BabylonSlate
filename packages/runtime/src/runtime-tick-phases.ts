@@ -2,7 +2,6 @@ import { isInfiniteLoopError } from "@haptic/debugger";
 import type { RawInputEvent } from "@haptic/input";
 import type { Actor, EngineObject } from "@haptic/object-model";
 import { ticksWhilePaused } from "./runtime-game-pause";
-import { actorGuidIndex } from "./actor-world-transform";
 import type { RuntimeComposition } from "./runtime-composition";
 
 /**
@@ -133,25 +132,11 @@ function tickSceneSystems(rt: RuntimeComposition, simDt: number): void {
   if (rt.admission.canTickScene() || rt.admission.hasReadyLayers()) {
     rt.tilemapAnimationTimeMs += simDt * 1000;
     if (rt.hasAnimatedTiles) rt.emit({ type: "tilemapAnimationTime", elapsedMs: rt.tilemapAnimationTimeMs });
-    // Only behaviour trees and the crowd read the frame index.
-    rt.navFrameActors = rt.navigation.active || rt.behaviourTrees.hasTrees ? liveActorGuidIndex(rt) : null;
-    try {
-      rt.behaviourTrees.tick(simDt);
-      if (rt.navigation.active && rt.admission.canTickScene()) {
-        rt.navigation.tickCrowd(rt.navFrameActors ?? liveActorGuidIndex(rt), simDt);
-      }
-    } finally {
-      rt.navFrameActors = null;
+    rt.behaviourTrees.tick(simDt);
+    if (rt.navigation.active && rt.admission.canTickScene()) {
+      rt.navigation.tickCrowd(rt.world.liveActorsByGuid(), simDt);
     }
   }
-}
-
-function liveActorGuidIndex(rt: RuntimeComposition): Map<string, Actor> {
-  const revision = rt.world.structuralRevision;
-  if (rt.guidIndexCache?.revision !== revision) {
-    rt.guidIndexCache = { revision, index: actorGuidIndex(rt.world.getActors()) };
-  }
-  return rt.guidIndexCache.index;
 }
 
 /** Tick phase 4. */

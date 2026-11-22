@@ -758,7 +758,7 @@ export class ScriptHost {
    * user ancestors are inherited; the nearest declaring class wins.
    */
   bindInterfaceHandlers(object: EngineObject): void {
-    for (const key of this.boundInterfaceKeys.get(object) ?? []) object.interfaceHandlers.delete(key);
+    for (const key of this.boundInterfaceKeys.get(object) ?? []) object.interfaceHandlers?.delete(key);
     const owned = new Set<string>();
     this.boundInterfaceKeys.set(object, owned);
     const lineage = this.scriptLineage(object.classId);
@@ -772,7 +772,7 @@ export class ScriptHost {
             const exportName = impl.exportName;
             const key = interfaceHandlerKey(iface, impl.method);
             owned.add(key);
-            object.interfaceHandlers.set(key, this.boundInterfaceHandler(object, entry.script.assetGuid, entry.script.classId, exportName));
+            (object.interfaceHandlers ??= new Map()).set(key, this.boundInterfaceHandler(object, entry.script.assetGuid, entry.script.classId, exportName));
           }
         }
       }

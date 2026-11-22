@@ -241,14 +241,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   hasAnimatedTiles = false;
   /** Simulated water time: physics, buoyancy, script queries and Play water rendering share it. */
   readonly waterClock = new WaterClock();
-  /** Frame index (live actor per guid) the BT and crowd ticks share. */
-  navFrameActors: Map<string, Actor> | null = null;
-  /**
-   * The guid index built at `revision`. The live actor behind a guid changes only when an actor spawns or is destroyed,
-   * both of which bump `structuralRevision`, so ticks without such a change reuse one index. Entries an actor joins
-   * the frame index with (`ActorRealization.realize`) follow a spawn, which already outdates it.
-   */
-  guidIndexCache: { revision: number; index: Map<string, Actor> } | null = null;
 
   // Scene documents and render target sources.
   playScene: SerializedScene | undefined;
@@ -1231,8 +1223,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.sourceRenderTargets.clear();
     this.sourceRenderTargetTextures.clear();
     this.sceneLandscapeBytes.clear();
-    this.navFrameActors = null;
-    this.guidIndexCache = null;
     // Dispose.
     this.admission.clear();
     this.layers.clear();

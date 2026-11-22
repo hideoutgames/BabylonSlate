@@ -8,7 +8,7 @@ import {
   type World,
 } from "@haptic/object-model";
 import type { NavPoint } from "@haptic/navigation";
-import { actorWorldTransform, composeParentChildTransform, actorGuidIndex } from "./actor-world-transform";
+import { actorWorldTransform, composeParentChildTransform } from "./actor-world-transform";
 
 /** Keep live objects inside the evaluator; only transport/trace copies use references. */
 export function snapshotBlackboard(values: BlackboardValues): BlackboardValues {
@@ -149,15 +149,12 @@ export function blackboardInspectTypes(document?: BlackboardDocument): Record<st
   return Object.fromEntries(document.keys.map((key) => [key.name, inspectType(key.type)]));
 }
 
-/**
- * World position of a blackboard Vector or spatial reference. `actorsByGuid`
- * answers each guid with its live actor (the frame index or `actorGuidIndex`).
- */
+/** World position of a blackboard Vector or spatial reference, resolving guids through the World's live index. */
 export function blackboardTargetPosition(
   value: unknown,
   world: World,
-  actorsByGuid: ReadonlyMap<string, Actor> = actorGuidIndex(world.getActors()),
 ): NavPoint | null {
+  const actorsByGuid = world.liveActorsByGuid();
   if (!value || typeof value !== "object") return null;
   if (value instanceof EngineObject && value.destroyed) return null;
   const row = value as { guid?: unknown };
