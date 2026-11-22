@@ -33,6 +33,8 @@ Everything on the actor and under it in the Outliner is the panel's content: its
 - Child actors inherit the actor's scale, as under any scaled actor.
 - Change the Material's parameters while the game runs: call **Get Material** on the component, or read its **Material Object** variable, and use [Set Material Float Parameter](../scripting/class/set-material-float-parameter.md) or the other Set Material Parameter nodes. **Get Material** is empty while the panel has no Material.
 - Switch the panel on and off with its **Enabled** variable.
+- A Material a script sets that has not loaded yet, such as one from a **Soft (Load On Demand)** variable, loads first: the panel keeps its current Material until then. See [Soft and Hard assets](../scripting/variables.md#soft-and-hard-assets).
+- If the game draws the panel without its Material, the **Output Log** warns that the post-process Material is missing and names it: it was not loaded, or the game does not include it.
 
 ## Related
 

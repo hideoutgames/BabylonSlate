@@ -1,6 +1,12 @@
 import type { MaterialBuildPlan, MaterialDocument } from "@haptic/shader-graph";
 import type { MaterialLibrary } from "./material-library";
-import { normalizePostProcessStack, type PostProcessStackDiagnostic, type PostProcessStackEntry } from "./post-process-material";
+import {
+  normalizePostProcessStack,
+  POST_PROCESS_MATERIAL_MISSING_CODE,
+  postProcessMaterialMissingMessage,
+  type PostProcessStackDiagnostic,
+  type PostProcessStackEntry,
+} from "./post-process-material";
 
 export interface PreparedScenePostProcessEntry {
   entry: PostProcessStackEntry;
@@ -31,8 +37,9 @@ export function prepareScenePostProcessPlan(
     if (!entry.enabled) continue;
     const source = documentFor(entry.materialGuid);
     if (!source || source.domain !== "postProcess") {
-      result.diagnostics.push({ materialGuid: entry.materialGuid, code: "material.framegraph.domain",
-        message: source ? "Material is not a Post Process material" : "Post-process material is missing" });
+      result.diagnostics.push(source
+        ? { materialGuid: entry.materialGuid, code: "material.framegraph.domain", message: "Material is not a Post Process material" }
+        : { materialGuid: entry.materialGuid, code: POST_PROCESS_MATERIAL_MISSING_CODE, message: postProcessMaterialMissingMessage(entry.materialGuid) });
       continue;
     }
     const document = structuredClone(source);

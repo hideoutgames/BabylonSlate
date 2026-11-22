@@ -20,4 +20,5 @@ Returns what a Render Target records: Scene Color, Depth Pass or World Normal.
 
 ## Notes
 
+- The Render Target loads with the object that runs this node, so its mode is ready at once.
 - A missing asset returns Scene Color.

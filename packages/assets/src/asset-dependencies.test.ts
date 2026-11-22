@@ -247,6 +247,25 @@ describe("typed asset dependencies", () => {
     expect(variable.requiredVariableNames).toEqual(["tint"]);
   });
 
+  it("loads the Render Target a Get Render Target Mode or Get Texture Target reads with its owner, through a literal or a variable", () => {
+    const literal = collectAssetDependencyMetadata("Class", {
+      nodes: [
+        { id: "mode", type: "render-target.getMode", data: { "default:target": "mirror-target" } },
+        { id: "target", type: "render-target.getTextureTarget", data: { "default:texture": "mirror-texture" } },
+      ],
+      edges: [],
+    });
+    expect(literal.requiredDependencies).toEqual(["mirror-target", "mirror-texture"]);
+    const variable = collectAssetDependencyMetadata("Class", {
+      nodes: [
+        { id: "value", type: "variables.get", data: { variableName: "Screen", propertyKey: "screen" } },
+        { id: "mode", type: "render-target.getMode", data: {} },
+      ],
+      edges: [{ source: "value", target: "mode", targetHandle: "target" }],
+    });
+    expect(variable.requiredVariableNames).toEqual(["screen"]);
+  });
+
   it("ships a Timeline Asset a node names or a clip is bound to, without loading it with its owner", () => {
     const graph = collectAssetDependencyMetadata("Class", {
       nodes: [{ id: "timeline", type: "timeline.fromAsset", data: { "default:timelineAsset": "story" } }],

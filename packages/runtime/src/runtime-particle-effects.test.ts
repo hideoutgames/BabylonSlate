@@ -9,8 +9,10 @@ const catalog: RuntimeAssetCatalogEntry[] = [
 ];
 
 /** A Hero whose Begin Play runs `body` (the effects it spawns are logged by guid). */
-async function session(body: string[], commands: CommandMessage[]) {
+async function session(body: string[], commands: CommandMessage[], options: { demand?: boolean } = {}) {
   const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, assetCatalog: catalog,
+    // A Class catalog makes the host load assets on demand.
+    ...(options.demand ? { classAssetGuids: { Hero: "hero-script" } } : {}),
     playScene: { name: "Test", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [
       createActor("hero", "Hero", { classId: "Hero", transform: { position: [10, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } }),
     ] },
@@ -133,5 +135,43 @@ describe("Spawn Particles", () => {
     expect(stopped).toEqual(guids.slice(0, extra));
     expect(logged(commands, "particles").filter((message) => message.startsWith("particle.transient_budget"))).toHaveLength(1);
     runtime.stop();
+  });
+
+  it("returns the effect at once and plays a Particle System its owner did not load once it loads", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = await session(['ctx.log("log", "effect", ctx.spawnParticlesAtLocation("sparks", { x: 0, y: 0, z: 0 }).guid);'], commands,
+      { demand: true });
+    try {
+      const [guid] = logged(commands, "effect");
+      expect(runtime.getWorld().findActor(guid!)).toBeDefined();
+      expect(assignments(commands).filter((command) => command.actorGuid === guid)).toEqual([]);
+      const request = commands.find((command): command is Extract<CommandMessage, { type: "assetPreload" }> => command.type === "assetPreload")!;
+      expect(request).toMatchObject({ assetGuids: ["sparks"], ownerId: guid });
+      expect(logged(commands, "Assets")).toEqual([
+        'Particle System "Sparks" was not loaded with this Class; it applies to Particle System on Particle of actor "' + guid +
+        '" when loaded. Set the variable to Hard (Load With Owner), or load it first with Load Asset (Async), to have it ready at once.',
+      ]);
+      runtime.setAssetLoadStates([{ guid: "sparks", state: "ready" }]);
+      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: true });
+      for (let index = 0; index < 12; index++) await Promise.resolve();
+      runtime.tick();
+      expect(assignments(commands).find((command) => command.actorGuid === guid)).toMatchObject({ particleSystemGuid: "sparks", play: true });
+    } finally { runtime.stop(); }
+  });
+
+  it("ends the effect when its Particle System fails to load", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = await session(['ctx.log("log", "effect", ctx.spawnParticlesAtLocation("sparks", { x: 0, y: 0, z: 0 }).guid);'], commands,
+      { demand: true });
+    try {
+      const [guid] = logged(commands, "effect");
+      const request = commands.find((command): command is Extract<CommandMessage, { type: "assetPreload" }> => command.type === "assetPreload")!;
+      runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success: false, error: "Sparks is damaged" });
+      for (let index = 0; index < 12; index++) await Promise.resolve();
+      runtime.tick();
+      expect(runtime.getWorld().findActor(guid!)).toBeUndefined();
+      expect(commands.some((command) => command.type === "log" && command.severity === "error" &&
+        command.message.startsWith('Particle System "Sparks" failed to load'))).toBe(true);
+    } finally { runtime.stop(); }
   });
 });

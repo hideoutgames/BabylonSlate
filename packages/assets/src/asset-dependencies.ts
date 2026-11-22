@@ -89,6 +89,8 @@ const values = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 
 /** Nodes whose Material loads with their owner: the pass they add is drawn from it as soon as they run. */
 const POST_PROCESS_REGISTER_NODES: ReadonlySet<string> = new Set(["scene.registerPostProcess", "scene-layer.registerPostProcess"]);
+/** Nodes that read a Render Target or Render Target Texture asset synchronously, so it loads with their owner. */
+const RENDER_TARGET_READ_NODES: ReadonlySet<string> = new Set(["render-target.getMode", "render-target.getTextureTarget"]);
 
 // Asset pin ids of built-in nodes, for a graph read without pin snapshots.
 // Dynamic pins use host schemas.
@@ -418,6 +420,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         ["camera.playShake", "camera.playShakeOnSceneLayer", "camera.playWorldShake"].includes(entry.nodeType) ||
         // Set and Get Global Parameter resolve their collection from the session catalog the owner loads with.
         entry.nodeType.startsWith("globalParameters.") ||
+        // Get Render Target Mode and Get Texture Target read the asset's settings at once, from the assets loaded.
+        RENDER_TARGET_READ_NODES.has(entry.nodeType) ||
         // Register Scene (Layer) Post-Processing attaches its Material at once: the renderer compiles the pass from
         // the Material's document, which nothing else loads when no Scene or Project Setting names it.
         POST_PROCESS_REGISTER_NODES.has(entry.nodeType)) requireInputs(String(entry.node.id));

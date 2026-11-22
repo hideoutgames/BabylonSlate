@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { createDefaultMaterialDocument, createDefaultMaterialFunctionDocument } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
 import { prepareScenePostProcessPlan } from "./scene-post-process-plan";
+import { postProcessDiagnosticMessage } from "./post-process-material";
 
 function depthFunction() {
   const fn = createDefaultMaterialFunctionDocument("Depth");
@@ -65,5 +66,21 @@ it("isolates missing functions and wrong domains before they can request geometr
   expect(plan.entries.map(({ entry }) => entry.id)).toEqual(["good"]);
   expect(plan.buffers).toEqual({ sceneDepth: false, sceneNormal: false });
   expect(plan.diagnostics.map(({ materialGuid }) => materialGuid)).toEqual(expect.arrayContaining(["depth", "surface"]));
+  library.dispose();
+});
+
+it("names a missing Material and hints that it was not loaded, by name when the host knows it", () => {
+  const library = new MaterialLibrary();
+  const plan = prepareScenePostProcessPlan(library, [{ id: "grade", materialGuid: "grade-guid", enabled: true, order: 0 }], () => null);
+  expect(plan.entries).toEqual([]);
+  const [diagnostic] = plan.diagnostics;
+  expect(diagnostic).toMatchObject({ materialGuid: "grade-guid", code: "material.framegraph.missing" });
+  expect(diagnostic!.message).toMatch(/^Post-process Material grade-guid is missing: it was not loaded, or the game does not include it\./);
+  expect(postProcessDiagnosticMessage(diagnostic!, (guid) => guid === "grade-guid" ? "Grade" : undefined))
+    .toMatch(/^Post-process Material "Grade" \(grade-guid\) is missing: .*Hard \(Load With Owner\)/);
+  // A name the host does not know, and any other diagnostic, keep the renderer's message.
+  expect(postProcessDiagnosticMessage(diagnostic!, () => undefined)).toBe(diagnostic!.message);
+  const other = { materialGuid: "grade-guid", code: "material.framegraph.domain", message: "Material is not a Post Process material" };
+  expect(postProcessDiagnosticMessage(other, () => "Grade")).toBe(other.message);
   library.dispose();
 });

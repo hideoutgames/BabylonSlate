@@ -23,6 +23,8 @@ export interface ParticleEffectRequest {
   attachTo?: unknown;
   bone?: string;
   autoDestroy: boolean;
+  /** The system is still loading: the effect spawns without it, and the script sets it once loaded. */
+  deferSystem?: boolean;
 }
 
 interface ParticleEffectsHost {
@@ -94,7 +96,7 @@ export class RuntimeParticleEffects implements RuntimeSubsystem {
     };
     const actor = this.host.spawnEngineActor({
       transform,
-      components: [{ id: PARTICLE_COMPONENT_ID, classId: "ParticleComponent", properties: { particleSystemGuid: guid, playOnStart: true } }],
+      components: [{ id: PARTICLE_COMPONENT_ID, classId: "ParticleComponent", properties: { particleSystemGuid: request.deferSystem ? "" : guid, playOnStart: true } }],
       streamOwner: owner,
     });
     const component = actor?.components.find((entry) => entry.classId === "ParticleComponent");

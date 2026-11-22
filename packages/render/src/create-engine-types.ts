@@ -579,6 +579,11 @@ export interface CreateEngineOptions {
     canvasHeight: number;
     safeAreaInsets?: { left: number; right: number; top: number; bottom: number };
   }) => void;
+  /**
+   * The view a Play world draw went through a possessed camera, whenever it changed (`DrawnCameraViewReporter`):
+   * Project Cursor and Touch To Scene cast through it, so they trace through what the player sees.
+   */
+  onGameView?: (view: import("@haptic/core").DrawnCameraView) => void;
   /** Finished non-looping AudioComponent voice (Play graph On Audio Finished). */
   onAudioVoiceEnded?: (voiceId: string, dropped?: boolean) => void;
   /** A ParticleComponent stopped playing (Play graph On Particles Finished and Is Playing). */

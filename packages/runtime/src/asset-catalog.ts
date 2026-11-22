@@ -122,6 +122,11 @@ export class RuntimeAssetCatalog implements ScriptAssetRegistry {
     return entry ? this.dataOf(entry) : emptyAssetData();
   }
 
+  /** How many assets the catalog lists; zero when the host passed none. */
+  get assetCount(): number {
+    return this.entries.length;
+  }
+
   hasAsset(asset: string): boolean {
     return this.byGuid.has(asset);
   }

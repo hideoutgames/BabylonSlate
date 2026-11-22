@@ -79,6 +79,7 @@ import {
 } from "./script-host-helpers";
 import { actorsOfClass as actorsOfClassIn } from "./script-class-queries";
 import type { ScriptMaterialOwnership } from "./script-material-ownership";
+import type { ScriptAssetLoads } from "./script-asset-loads";
 import { scriptValuesEqual } from "./script-values-equal";
 import type { LatentFrameRoots } from "./latent-frame-roots";
 
@@ -130,6 +131,7 @@ export interface HostMembersHost extends ComponentFunctionHost {
   /** Locals of waiting latent frames, which keep objects alive. */
   readonly frames: Pick<LatentFrameRoots, "hold">;
   readonly materials: ScriptMaterialOwnership;
+  readonly assetLoads: ScriptAssetLoads;
   /** Read on each call because `setBreakpoints` replaces them after construction. */
   breakpoints(): ScriptBreakpoints | null;
   /**
@@ -693,13 +695,18 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getRenderTargetCaptureProperty: (target, key) => {
       const component = captureComponent(target);
       if (!component || !host.canInvokeOwner(component)) return createDefaultRenderTargetCaptureProperties()[key];
-      return key === "actorIds" ? captureActorReferences(component, (id) => services.findActor?.(id)) : captureProperties(component)[key];
+      if (key === "actorIds") return captureActorReferences(component, (id) => services.findActor?.(id));
+      // A Render Target still loading reads back as set, as Set Variable's does.
+      const pending = host.assetLoads.pendingValue(component, key);
+      return pending ? pending.value : captureProperties(component)[key];
     },
     setRenderTargetCaptureProperty: (target, key, value) => {
       const component = captureComponent(target);
-      if (component && host.canInvokeOwner(component) && setCaptureProperty(component, key, value, (id) => services.findActor?.(id))) {
-        host.applyComponentVariable(component, key, value);
-      }
+      if (!component || !host.canInvokeOwner(component)) return;
+      const write = () => {
+        if (setCaptureProperty(component, key, value, (id) => services.findActor?.(id))) host.applyComponentVariable(component, key, value);
+      };
+      if (!host.assetLoads.deferComponentWrite(component, key, value, null, write)) write();
     },
     getCameraFieldOfView: (target) =>
       Number(cameraComponentOf(target)?.getVariable("fieldOfView") ?? 60),

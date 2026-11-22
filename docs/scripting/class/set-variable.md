@@ -25,4 +25,5 @@ Sets a variable to a new value and passes that value on.
 
 - **Add Node** lists a Set entry for each writable variable. Read-only variables have none.
 - The Value pins take the variable's name and type.
+- Setting a component's asset (a Material, Mesh, Texture and so on) that has not loaded yet loads it first: the component keeps its current asset until then, while reading the variable returns the new one at once. See [Soft and Hard assets](../variables.md#soft-and-hard-assets).
 - A variable of another class needs its **Target** connected. When it is connected to an empty reference nothing is written and an error is logged; an empty **Value** is written as it is.
