@@ -387,7 +387,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     refreshProjectList,
     refreshTemplates,
     actions: projectListActions,
-  } = useProjectList({ projectService, settingsStore, route });
+  } = useProjectList({ projectService, settingsStore, route, ensureDerived });
 
   useEffect(() => {
     documentService.ensureContentBrowserTab();

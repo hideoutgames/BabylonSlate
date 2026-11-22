@@ -27,6 +27,10 @@ import {
   createEmptyProject,
   normalizeProjectSettings,
   normalizeProjectAppearance,
+  PROJECT_COVER_FILES,
+  projectCoverDataUrl,
+  projectCoverFromDataUrl,
+  storedProjectAppearance,
   normalizeScene,
   normalizeSceneLayer,
   normalizePrefab,
@@ -737,7 +741,7 @@ export class ProjectService {
           };
           // A manifest without metadata stays as it is, so the load below refuses it.
           if (manifest.metadata) {
-            manifest.metadata.appearance = appearance;
+            manifest.metadata.appearance = await writeProjectCover(this.storage, appearance);
             await this.storage.writeText(
               PROJECT_FILE,
               JSON.stringify(manifest, null, 2),
@@ -819,9 +823,9 @@ export class ProjectService {
   async updateListedProject(
     handle: ProjectFolderHandle,
     details: UpdateListedProjectOptions,
-  ): Promise<void> {
+  ): Promise<ProjectAppearance | undefined> {
     const name = details.name.trim();
-    if (!name) return;
+    if (!name) return undefined;
     await this.storage.openKnownFolder(handle);
     try {
       if (!(await this.storage.exists(PROJECT_FILE))) {
@@ -832,9 +836,11 @@ export class ProjectService {
       raw.metadata.name = name;
       raw.metadata.updatedAt = new Date().toISOString();
       if (details.appearance !== undefined) {
-        raw.metadata.appearance = normalizeProjectAppearance(details.appearance);
+        const appearance = normalizeProjectAppearance(details.appearance);
+        raw.metadata.appearance = appearance ? await writeProjectCover(this.storage, appearance) : undefined;
       }
       await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+      return raw.metadata.appearance;
     } finally {
       await this.storage.releaseFolder();
     }
@@ -895,6 +901,7 @@ export class ProjectService {
       await this.storage.readText(PROJECT_FILE),
     ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
     const document = normalizeProjectDocument(raw);
+    document.metadata.appearance = await readProjectCover(this.storage, document.metadata.appearance);
     // Every project is created with its guid, the namespace of its player saves.
     if (typeof raw.guid !== "string" || !raw.guid) {
       throw new Error("Invalid project manifest: project.json has no project guid.");
@@ -1212,7 +1219,11 @@ export class ProjectService {
       pixelArt: renderOptions?.pixelArt === true,
     });
     const appearance = normalizeProjectAppearance(renderOptions?.appearance);
-    if (appearance) document.metadata.appearance = appearance;
+    if (appearance) {
+      // The picture's bytes go to its cover file; the document keeps the picture in memory for the editor.
+      const stored = await writeProjectCover(this.storage, appearance);
+      document.metadata.appearance = appearance.image && stored.coverFile ? { ...stored, image: appearance.image } : stored;
+    }
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
     this.textures.setSourceControlEnabled((document.settings.sourceControl?.mode ?? "off") !== "off");
@@ -2022,9 +2033,10 @@ export class ProjectService {
     layouts: ProjectLayouts,
   ): Promise<void> {
     const guid = this.projectGuid ?? newGuid();
+    const appearance = document.metadata.appearance;
     const text = (updatedAt: string) => JSON.stringify({
       ...document,
-      metadata: { ...document.metadata, updatedAt },
+      metadata: { ...document.metadata, updatedAt, ...(appearance ? { appearance: storedProjectAppearance(appearance) } : {}) },
       guid,
       kind: "project",
       version: this.migrations.currentVersion("Project"),
@@ -2177,4 +2189,29 @@ function prepareComponentChunksForSave(
     keepStoredChunk: (chunkId: string) =>
       (!isLandscapeChunkId(chunkId) && !isFoliageChunkId(chunkId)) || (referencedChunkIds.has(chunkId) && !extractedIds.has(chunkId)),
   };
+}
+/**
+ * Writes the picture of `appearance` (its in-memory `image`) to its project-root cover file, removing any other cover
+ * file, and returns the appearance as `project.json` stores it. Without a picture every cover file is removed.
+ */
+async function writeProjectCover(storage: ProjectStorage, appearance: ProjectAppearance): Promise<ProjectAppearance> {
+  const cover = appearance.image ? projectCoverFromDataUrl(appearance.image) : null;
+  if (cover) await storage.writeBinary(cover.file, cover.bytes);
+  for (const file of PROJECT_COVER_FILES) {
+    if (file !== cover?.file && await storage.exists(file)) await storage.remove(file);
+  }
+  const stored = storedProjectAppearance(appearance);
+  delete stored.coverFile;
+  return cover ? { ...stored, coverFile: cover.file } : stored;
+}
+
+/** The appearance with its cover file's picture loaded into `image`; a missing or unreadable file shows the icon. */
+async function readProjectCover(storage: ProjectStorage, appearance: ProjectAppearance | undefined): Promise<ProjectAppearance | undefined> {
+  if (!appearance?.coverFile) return appearance;
+  try {
+    return { ...appearance, image: projectCoverDataUrl(appearance.coverFile, await storage.readBinary(appearance.coverFile)) };
+  } catch (error) {
+    if (!isStorageNotFound(error)) throw error;
+    return storedProjectAppearance(appearance);
+  }
 }

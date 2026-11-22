@@ -1,8 +1,12 @@
-import type {
-  ProjectAppearance,
-  ProjectFolderHandle,
-  ProjectMetadata,
-  StorageTier,
+import {
+  projectCoverDataUrl,
+  projectCoverFromDataUrl,
+  storedProjectAppearance,
+  type ProjectAppearance,
+  type ProjectFolderHandle,
+  type ProjectMetadata,
+  type ProjectStorage,
+  type StorageTier,
 } from "@haptic/core";
 import type { EngineSettings } from "@haptic/vfs";
 
@@ -38,11 +42,43 @@ export function recentProjectsWithOpenedProject(
       lastOpenedAt,
       createdAt: metadata.createdAt,
       bookmark: handle.tier === "external" ? handle.id : null,
-      ...(metadata.appearance ? { appearance: metadata.appearance } : {}),
+      // The picture stays out of app settings; `syncRecentProjectCover` keeps a copy in derived storage.
+      ...(metadata.appearance ? { appearance: storedProjectAppearance(metadata.appearance) } : {}),
       sourceControl,
     },
     ...recents.filter((recent) => recent.id !== handle.id),
   ].slice(0, 20);
+}
+
+/** Derived-storage file holding a recent project's picture, so Homepage shows it without opening the folder. */
+export function recentProjectCoverPath(id: string): string {
+  return `recent-covers/${encodeURIComponent(id)}`;
+}
+
+/** Writes the recent's picture copy from `appearance.image`, or removes it when there is none. */
+export async function syncRecentProjectCover(derived: ProjectStorage, id: string, appearance: ProjectAppearance | undefined): Promise<void> {
+  const cover = appearance?.image ? projectCoverFromDataUrl(appearance.image) : null;
+  const path = recentProjectCoverPath(id);
+  if (cover) {
+    await derived.mkdir("recent-covers", true);
+    await derived.writeBinary(path, cover.bytes);
+  } else if (await derived.exists(path)) {
+    await derived.remove(path);
+  }
+}
+
+/** Listed projects with each recent's picture loaded from derived storage; a missing copy shows the icon. */
+export async function withRecentProjectCovers(derived: ProjectStorage, projects: ListedProject[]): Promise<ListedProject[]> {
+  return Promise.all(projects.map(async (project) => {
+    const file = project.appearance?.coverFile;
+    if (!file) return project;
+    try {
+      const bytes = await derived.readBinary(recentProjectCoverPath(project.id));
+      return { ...project, appearance: { ...project.appearance!, image: projectCoverDataUrl(file, bytes) } };
+    } catch {
+      return project;
+    }
+  }));
 }
 
 /**

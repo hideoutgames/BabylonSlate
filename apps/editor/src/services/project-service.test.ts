@@ -801,7 +801,7 @@ describe("project round-trip", () => {
     expect(storage.getCurrentFolder()?.name).toBe("RenameMe.hproject");
   });
 
-  it("persists the selected project badge through creation and reopening", async () => {
+  it("persists the selected project badge through creation and reopening, its picture as a cover file", async () => {
     const storage = new MemoryStorageAdapter("documents");
     const service = new ProjectService(storage);
     const created = await service.createEmptyProject("Badge Game", {
@@ -809,14 +809,25 @@ describe("project round-trip", () => {
       appearance: { icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA" },
     });
     expect(created.document.metadata.appearance).toEqual({
-      icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA",
+      icon: "rocket", color: "lilac", coverFile: "cover.png", image: "data:image/png;base64,AAAA",
     });
+    // project.json names the file and holds no picture data.
+    expect(JSON.parse(await storage.readText(PROJECT_FILE)).metadata.appearance).toEqual({ icon: "rocket", color: "lilac", coverFile: "cover.png" });
+    expect(Array.from(await storage.readBinary("cover.png"))).toEqual([0, 0, 0]);
+    await service.saveProject(created.document, created.layouts);
+    expect(await storage.readText(PROJECT_FILE)).not.toContain("base64");
     const handle = storage.getCurrentFolder()!;
     await service.closeProject();
     const reopened = await service.openListedProject(handle);
     expect(reopened.document.metadata.appearance).toEqual({
-      icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA",
+      icon: "rocket", color: "lilac", coverFile: "cover.png", image: "data:image/png;base64,AAAA",
     });
+    await service.closeProject();
+    // Choosing no picture removes the cover file.
+    expect(await service.updateListedProject(handle, { name: "Badge Game", appearance: { icon: "rocket", color: "lilac" } }))
+      .toEqual({ icon: "rocket", color: "lilac" });
+    await service.openListedProject(handle);
+    expect(await storage.exists("cover.png")).toBe(false);
   });
 
   it("edits project identity without changing the folder or its assets", async () => {

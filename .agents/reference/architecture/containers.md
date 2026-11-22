@@ -66,6 +66,7 @@ One codec, manifest kind `project` | `plugin`:
 MyGame/                      (directory) or MyGame.zip
   project.json               # kind=project
   layout.json                # editor dock layout (projects only)
+  cover.webp|cover.jpg|cover.png  # Homepage picture, when the project has one
   assets/                    # .hasset tree = Content Browser tree
     .blobs/
   plugins/<folder>/          # project plugins
@@ -77,6 +78,7 @@ MyGame/                      (directory) or MyGame.zip
 - Directory backend writes incrementally (OPFS, Documents, external folders, desktop); the folder name is the display name. Zip backend (`fflate`) is for Export Project and interchange.
 - `project.json` without a project `guid` does not open (the guid namespaces saves and derived data).
 - `project.json` holds `metadata` (the project's `name`), `settings`, `scenes` and `graphs`. A manifest missing any of them does not open and its Homepage identity cannot be edited; nothing rebuilds an empty project from it. Only `plugin.json` keeps a top-level `name`, which templates rewrite.
+- The project picture is a root cover file named by `metadata.appearance.coverFile`; `project.json` and app-settings recents never hold its data URL (`storedProjectAppearance`). `ProjectAppearance.image` is in memory only: `loadCurrentProject` reads it from the cover file, create and **Edit** write the file (`writeProjectCover`, removing other cover files), and Homepage keeps each recent's copy in derived storage at `recent-covers/<encoded folder id>` (`syncRecentProjectCover`, loaded into cards by `withRecentProjectCovers`, removed with the recent).
 - Export Game output (`assets/data-<n>.bin` + `game.json`) is export-only; the editor project stays one `.hasset` per asset ([exporter](exporter.md)).
 
 ## Derived data
