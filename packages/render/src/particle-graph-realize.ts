@@ -27,7 +27,7 @@ import { createParticleReadinessTexture } from "./particle-system-factory";
 import type { ParticleMeshShapeSource } from "./particle-mesh-shape";
 import type { ParticleSpawnSink } from "./particle-spawn";
 import type { ParticleNoiseSource } from "./particle-noise";
-import { ParticleUpdateQueueOwners, type ParticleUpdateKernels } from "./particle-update-compiler";
+import { ParticleUpdateQueueOwners } from "./particle-update-compiler";
 
 /** Render-side Particle Graph build problems, anchored to the graph node (and pin) when known. */
 export type ParticleGraphCompileCode =
@@ -67,11 +67,6 @@ export interface RealizeParticleGraphOptions {
    * (`particle-update-compiler.ts`); tests compare the two. True when omitted.
    */
   compileUpdate?: boolean;
-  /**
-   * Where compiled updates find their kernels (`particle-update-compiler.ts`): Editor Play compiles them, an exported
-   * game reads them from its scripts module. Without it every update keeps Babylon's evaluation.
-   */
-  updateKernels?: ParticleUpdateKernels;
 }
 
 export type RealizeParticleGraphResult =
@@ -257,7 +252,7 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
     state.emitErrors();
     pinPortTypes(set.attachedBlocks);
     // After the pin: the compiled reads resolve each port's type once.
-    if (options.compileUpdate !== false && options.updateKernels) queueOwners.compile(system, state, options.updateKernels);
+    if (options.compileUpdate !== false) queueOwners.compile(system, state);
     // Created only after a successful build, so a failed build never leaks it; the
     // system's default dispose (through the SystemBlock hook) releases it.
     system.particleTexture = createParticleReadinessTexture(scene);

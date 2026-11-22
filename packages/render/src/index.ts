@@ -3,14 +3,6 @@ export * from "./editor-clear-color";
 export * from "./create-engine";
 export { createEngine } from "./editor-engine";
 export { editorEngineFeatures, type EditorEngineFeatures } from "./editor-engine-features";
-export {
-  particleUpdateKernelKey,
-  recordingParticleUpdateKernels,
-  staticParticleUpdateKernels,
-  type ParticleUpdateKernel,
-  type ParticleUpdateKernels,
-} from "./particle-update-compiler";
-export { functionParticleUpdateKernels } from "./particle-update-function-kernels";
 export * from "./context-lost-error";
 export {
   currentGlobalParameterCatalog,

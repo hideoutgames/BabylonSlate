@@ -52,7 +52,6 @@
     "./fbx-conversion": "./src/fbx-conversion.ts",
     "./convert-obj-to-glb": "./src/convert-obj-to-glb.ts",
     "./convert-stl-to-glb": "./src/convert-stl-to-glb.ts",
-    "./particle-kernel-export": "./src/particle-kernel-export.ts",
     "./glb-test-fixtures": "./src/glb-test-fixtures.ts",
     "./framegraph-test-fixtures": "./src/framegraph-test-fixtures.ts",
     "./light-block-engine": "./src/test-support/light-block-engine.ts",

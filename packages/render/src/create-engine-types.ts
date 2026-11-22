@@ -321,11 +321,6 @@ export interface EngineHandle {
 }
 
 export interface CreateEngineOptions {
-  /**
-   * Particle Graph update kernels: an exported game's, from its scripts module (`staticParticleUpdateKernels`). The
-   * editor's views get Editor Play's (`editorEngineFeatures`) when this is absent.
-   */
-  particleUpdateKernels?: import("./particle-update-compiler").ParticleUpdateKernels;
   /** Existing app-lifetime engine; when set, this canvas is registerView'd. */
   sharedEngine?: AbstractEngine;
   /**

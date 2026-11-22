@@ -1,4 +1,4 @@
-import { type GameScriptsModule, collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, type CollisionTriangleMesh, type SerializedScene, type SerializedSceneLayer, type StorageReadMetrics } from "@haptic/core";
+import { collisionTriangleMeshBytes, normalizeScene, normalizeSceneLayer, parseText2DProperties, type CollisionTriangleMesh, type SerializedScene, type SerializedSceneLayer, type StorageReadMetrics } from "@haptic/core";
 import {
   parseGameManifest,
   GAME_MANIFEST_FILE,
@@ -66,12 +66,6 @@ export type LoadedGame = {
    * `game.json` when served, otherwise an object URL of its verified bytes (Preview Build, in-memory exports).
    */
   scriptsModuleUrl?: string;
-  /**
-   * The scripts module as the page imports it, for its Particle Graph update kernels (which run on the page): only when
-   * it holds any (`manifest.scriptsModule.particleKernels`), started when the catalog is read, so it loads beside the
-   * startup assets; null when it failed to load (the worker reports a failed module itself).
-   */
-  scriptsModule?: Promise<GameScriptsModule | null>;
   scripts: ScriptBundleEntry[];
   scenes: Map<string, SerializedScene>;
   sceneLayers: Map<string, SerializedSceneLayer>;
@@ -120,10 +114,6 @@ function textFromFiles(files: Map<string, Uint8Array>, name: string): string {
 
 function parseJsonAsset(bytes: Uint8Array): unknown {
   return JSON.parse(decoder.decode(bytes));
-}
-
-function importScriptsModule(url: string): Promise<GameScriptsModule | null> {
-  return (import(/* @vite-ignore */ url) as Promise<GameScriptsModule>).catch(() => null);
 }
 
 export async function loadGameFromFiles(
@@ -378,7 +368,6 @@ export async function loadGameFromFiles(
     assets: service,
     manifest,
     ...(scriptsModuleUrl ? { scriptsModuleUrl } : {}),
-    ...(scriptsModuleUrl && manifest.scriptsModule?.particleKernels ? { scriptsModule: importScriptsModule(scriptsModuleUrl) } : {}),
     scripts,
     scenes,
     sceneLayers,

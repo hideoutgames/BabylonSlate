@@ -1148,8 +1148,6 @@ function initializeEngine(
         onPlaybackEnded: options.onParticlePlaybackEnded,
         sortingLayers: () => binding.sortingLayers,
         globalParameters,
-        ...(options.particleUpdateKernels ?? editorFeatures?.particleUpdateKernels
-          ? { updateKernels: options.particleUpdateKernels ?? editorFeatures!.particleUpdateKernels } : {}),
       })
     : null;
   onRollback(() => particleService?.dispose());

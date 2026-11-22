@@ -47,7 +47,7 @@ index.html          # player CSS inlined; <title> is the project name; itch requ
 icon.png            # the App Icon at 256 px, linked as the page's favicon; only with an App Icon
 player.js           # every module a game runs; workers and the page's on-demand code stay separate files
 game.json           # catalog: required dependencies, paths, byte lengths, SHA-256; scriptsModule
-scripts/game-scripts.js # every compiled script, Extension module and Particle Graph update kernel as a function (no eval at runtime)
+scripts/game-scripts.js # every compiled script and Extension module as a function (no eval at runtime)
 assets/data-<n>.bin # one per asset or sidecar with a payload
 coi-serviceworker.js, havok/ (3D), assets/rapier-*.js and rapier/ (2D or physics SceneLayers), assets/recast-*.js, recast/, ktx2/, draco/, meshopt/
 player-rapier.js, player-HavokPhysics_es.js, player-recast-navigation.wasm.js

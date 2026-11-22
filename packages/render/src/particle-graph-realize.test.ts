@@ -27,21 +27,7 @@ import {
 import { createTestEngine } from "./test-support/test-engine";
 import { PARTICLE_BLOCK_ADAPTERS, type ParticleBlockAdapter } from "./particle-graph-blocks";
 import { realizeParticleGraph, type RealizeParticleGraphResult } from "./particle-graph-realize";
-import {
-  compiledParticleUpdateSize,
-  PARTICLE_MAX_EMITTED_STATEMENTS,
-  recordingParticleUpdateKernels,
-  staticParticleUpdateKernels,
-  type ParticleUpdateKernel,
-  type ParticleUpdateKernels,
-} from "./particle-update-compiler";
-import { functionParticleUpdateKernels } from "./particle-update-function-kernels";
-import { collectParticleUpdateKernels } from "./particle-kernel-export";
-import { writeGameScriptsModule } from "@haptic/core";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { PARTICLE_MAX_EMITTED_STATEMENTS } from "./particle-update-compiler";
 import { GlobalParameterSession, type GlobalParameterValueSource } from "./global-parameter-values";
 import { animatedSpriteCell } from "./particle-sprite-sheet";
 
@@ -83,9 +69,9 @@ function planOf(doc: ParticleGraphDocument, settings: Partial<ParticleGraphSetti
 }
 
 function realize(plan: ParticleBuildPlan, space: ParticleSpace = "world", adapters?: Record<string, ParticleBlockAdapter>,
-  globalParameters?: GlobalParameterValueSource, compileUpdate = true, updateKernels: ParticleUpdateKernels = functionParticleUpdateKernels) {
+  globalParameters?: GlobalParameterValueSource, compileUpdate = true) {
   const { scene, emitter } = host();
-  const result = realizeParticleGraph(plan, { scene, name: "graph", emitter, space, adapters, compileUpdate, updateKernels,
+  const result = realizeParticleGraph(plan, { scene, name: "graph", emitter, space, adapters, compileUpdate,
     ...(globalParameters ? { globalParameters } : {}) });
   return { scene, emitter, result };
 }
@@ -717,74 +703,7 @@ function typedValueGraph(type: string, kind: ParticleNumericType): ParticleGraph
   return withSpine([node("consumer", consumer.type)], extra, [...edges, edge("subject", output.id, "consumer", consumer.pin)]);
 }
 
-type Queue = { process: { name: string }; nextItem: Queue | null };
-const processNames = (system: ParticleSystem) => {
-  const names: string[] = [];
-  for (let item = (system as unknown as { _updateQueueStart: Queue | null })._updateQueueStart; item; item = item.nextItem) names.push(item.process.name);
-  return names;
-};
-
-/** The kernels an export writes for `doc`, imported from a scripts module written as the exporter writes it. */
-async function exportedKernels(doc: ParticleGraphDocument): Promise<ParticleUpdateKernels> {
-  const sources = collectParticleUpdateKernels([doc]);
-  const root = mkdtempSync(path.join(tmpdir(), "particle-kernels-"));
-  try {
-    const file = path.join(root, "game-scripts.js");
-    writeFileSync(file, writeGameScriptsModule([], [], Object.fromEntries(sources)));
-    const module = await import(/* @vite-ignore */ pathToFileURL(file).href) as { particleKernels: Record<string, ParticleUpdateKernel> };
-    return staticParticleUpdateKernels(module.particleKernels);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-}
-
 describe("Particle Graph update compilation", () => {
-  it.each(typedValueGraphs())("simulates %s at %s from an exported game's scripts module exactly as Babylon's closures do", async (type, kind) => {
-    const warn = vi.spyOn(console, "warn");
-    try {
-      const kernels = await exportedKernels(typedValueGraph(type, kind));
-      const exported = seededRun(built(realize(planOf(typedValueGraph(type, kind)), "world", undefined, undefined, true, kernels).result).system, 150);
-      const babylon = seededRun(built(realize(planOf(typedValueGraph(type, kind)), "world", undefined, undefined, false).result).system, 150);
-      expect(exported).toEqual(babylon);
-      // Every compiled block found its kernel: none fell back to Babylon's evaluation.
-      expect(warn.mock.calls.filter(([message]) => String(message).includes("has no kernel"))).toEqual([]);
-    } finally { warn.mockRestore(); }
-  });
-
-  it("writes into the scripts module the same kernel source, byte for byte, that Editor Play evaluates", () => {
-    const doc = withSpine([node("size", "update.size"), node("direction", "update.direction")], [
-      node("age", "input.contextual.normalizedAge"), node("sin", "math.sin"), node("heading", "const.vec3", { value: [0.5, 1.5, -2.5] }),
-      node("scaled", "math.multiply"),
-    ], [edge("age", "out", "sin", "value"), edge("sin", "out", "size", "size"), edge("age", "out", "scaled", "a"),
-      edge("heading", "out", "scaled", "b"), edge("scaled", "out", "direction", "direction")]);
-    const evaluated = new Map<string, string>();
-    const editorPlay: ParticleUpdateKernels = { kernel: (key, source) => { evaluated.set(key, source()); return functionParticleUpdateKernels.kernel(key, source); } };
-    built(realize(planOf(doc), "world", undefined, undefined, true, editorPlay).result);
-    const exported = collectParticleUpdateKernels([doc]);
-    expect(evaluated.size).toBeGreaterThan(0);
-    for (const [key, source] of evaluated) expect(exported.get(key)).toBe(source);
-    const module = writeGameScriptsModule([], [], Object.fromEntries(exported));
-    for (const [key, source] of evaluated) expect(module).toContain(`${JSON.stringify(key)}: ${source},`);
-  });
-
-  it("keeps Babylon's evaluation, with one warning, for a block an exported game has no kernel for", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { system } = built(realize(planOf(createDefaultParticleGraphDocument()), "world", undefined, undefined, true,
-        staticParticleUpdateKernels({})).result);
-      expect(processNames(system)).toEqual(["processPosition", "processColor"]);
-      expect(warn).toHaveBeenCalledOnce();
-      expect(String(warn.mock.calls[0]![0])).toMatch(/^\[render\] Particle update pk1:.* has no kernel/);
-    } finally { warn.mockRestore(); }
-  });
-
-  it("records each kernel once while the recorded system keeps Babylon's processes", () => {
-    const sources = new Map<string, string>();
-    const { system } = built(realize(planOf(createDefaultParticleGraphDocument()), "world", undefined, undefined, true,
-      recordingParticleUpdateKernels(sources)).result);
-    expect(processNames(system)).toEqual(["processPosition", "processColor"]);
-    expect([...sources.values()].every((source) => source.startsWith("function (R, O, state, system) {"))).toBe(true);
-    expect(sources.size).toBe(1);
-  });
-
   it.each(typedValueGraphs())("simulates %s at %s, every input wired, exactly as Babylon's own update closures do", (type, kind) => {
     const compiled = seededRun(built(realize(planOf(typedValueGraph(type, kind))).result).system, 150);
     const babylon = seededRun(built(realize(planOf(typedValueGraph(type, kind)), "world", undefined, undefined, false).result).system, 150);
@@ -792,10 +711,16 @@ describe("Particle Graph update compilation", () => {
     expect(compiled).toEqual(babylon);
   });
 
+  type Queue = { process: { name: string }; nextItem: Queue | null };
+  const processNames = (system: ParticleSystem) => {
+    const names: string[] = [];
+    for (let item = (system as unknown as { _updateQueueStart: Queue | null })._updateQueueStart; item; item = item.nextItem) names.push(item.process.name);
+    return names;
+  };
 
   it("replaces the processes of the update blocks it compiles and keeps Babylon's for the rest", () => {
     // The default graph: Apply Velocity (Babylon's, kept) then Update Color (compiled).
-    expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument())).result).system)).toEqual(["processPosition", "compiledParticleUpdate"]);
+    expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument())).result).system)).toEqual(["processPosition", ""]);
     expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument()), "world", undefined, undefined, false).result).system))
       .toEqual(["processPosition", "processColor"]);
   });
@@ -823,8 +748,8 @@ describe("Particle Graph update compilation", () => {
     const doc = diamond(10, node("age", "input.contextual.normalizedAge"));
     const compiled = built(realize(planOf(doc)).result).system;
     // A thousand reads by pulling; one evaluation per level here.
-    expect(sizeProcess(compiled).name).toBe("compiledParticleUpdate");
-    expect(compiledParticleUpdateSize(sizeProcess(compiled))).toBeLessThan(80);
+    expect(sizeProcess(compiled).name).toBe("");
+    expect(sizeProcess(compiled).toString().split("\n").length).toBeLessThan(80);
     const babylon = seededRun(built(realize(planOf(doc), "world", undefined, undefined, false).result).system, 150);
     expect(babylon.deaths).toBeGreaterThan(0);
     expect(seededRun(compiled, 150)).toEqual(babylon);

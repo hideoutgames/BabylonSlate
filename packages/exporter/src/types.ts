@@ -167,11 +167,10 @@ export type GameManifest = {
   extensionLibraries?: import("@haptic/core").ExtensionGameLibrary[];
   /**
    * The static scripts module (`GAME_SCRIPTS_MODULE_FILE`, `writeGameScriptsModule`): every compiled script and Extension
-   * module as a function, and the Particle Graph update kernels. The game worker imports it by URL; the page imports it
-   * too only when `particleKernels` (how many it holds) is not zero. Compiled script sidecars carry no source of their
-   * own. Every export writes it; Editor Play's in-memory catalog has none.
+   * module as a function. The game worker imports it by URL; compiled script sidecars carry no source of their own. Every
+   * export writes it; Editor Play's in-memory catalog has none.
    */
-  scriptsModule?: { path: string; byteLength: number; revision: string; particleKernels: number };
+  scriptsModule?: { path: string; byteLength: number; revision: string };
   assets: GameAssetIndexEntry[];
   /** Present only when `bundleDebugger` is true. */
   infiniteLoopDetection?: boolean;
@@ -219,11 +218,6 @@ export type ExportGameOptions = {
   scripts: readonly ScriptBundleEntry[];
   /** Game libraries of enabled gameplay Extensions, dependencies first. */
   extensionLibraries?: readonly import("@haptic/core").ExtensionGameLibrary[];
-  /**
-   * Particle Graph update kernel sources by key (`collectParticleUpdateKernels` in `@haptic/render`), written into the
-   * scripts module so the game runs the kernels Editor Play runs without evaluating text.
-   */
-  particleUpdateKernels?: Readonly<Record<string, string>>;
   assets: readonly ExportAssetBytes[];
   playerFiles?: ReadonlyMap<string, Uint8Array>;
   fileCountWarn?: number;

@@ -125,8 +125,6 @@ export type PlayerTestHandle = Pick<PlayerBootHandle,
 > & { tickIndex: () => number };
 
 export type PlayerBootOptions = {
-  /** Particle Graph update kernels from the game's scripts module; without them updates keep Babylon's evaluation. */
-  particleUpdateKernels?: import("@haptic/render").ParticleUpdateKernels;
   /** Only the editor-hosted Preview path grants the lazy diagnostic transport. */
   previewDiagnostics?: boolean;
   canvas: HTMLCanvasElement;
@@ -253,7 +251,6 @@ function initializePlayer(
   /** The game asked for device motion, perhaps before input capture was attached. */
   let deviceMotionRequested = false;
   const handle: EngineHandle = createGameEngine(canvas, {
-    ...(options.particleUpdateKernels ? { particleUpdateKernels: options.particleUpdateKernels } : {}),
     sharedEngine: options.sharedEngine,
     playMode: true,
     onCompileHold: (held) => compileHoldChanged(held),

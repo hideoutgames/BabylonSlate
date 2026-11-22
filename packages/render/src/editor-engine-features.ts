@@ -4,8 +4,6 @@ import { createEditorViewportTools, type EditorViewportToolsContext } from "./ed
 import type { RenderScheduler } from "./render-scheduler";
 import { createRuntimeTransformTools } from "./runtime-transform-tools";
 import { ViewportShadingOverlay } from "./viewport-shading-mode";
-import type { ParticleUpdateKernels } from "./particle-update-compiler";
-import { functionParticleUpdateKernels } from "./particle-update-function-kernels";
 
 /**
  * The editor-only subsystems a scene view constructs: document sync, viewport shading, the viewport's camera, gizmos
@@ -17,8 +15,6 @@ export interface EditorEngineFeatures {
   createViewportShading(scene: Scene): ViewportShadingOverlay;
   createViewportTools(context: EditorViewportToolsContext): ReturnType<typeof createEditorViewportTools>;
   createRuntimeTransformTools: typeof createRuntimeTransformTools;
-  /** Particle Graph update kernels compiled from their source (`new Function`), so a changed graph runs at once. */
-  particleUpdateKernels: ParticleUpdateKernels;
 }
 
 export const editorEngineFeatures: EditorEngineFeatures = {
@@ -26,5 +22,4 @@ export const editorEngineFeatures: EditorEngineFeatures = {
   createViewportShading: (scene) => new ViewportShadingOverlay(scene),
   createViewportTools: createEditorViewportTools,
   createRuntimeTransformTools,
-  particleUpdateKernels: functionParticleUpdateKernels,
 };
