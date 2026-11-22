@@ -126,7 +126,8 @@ export interface EngineCanvasPlacement {
   /**
    * Cover `view`'s canvas and show it; while it does, `sync` writes the shown
    * image into the view canvas on a read (see `syncDirectViewCanvas`). False
-   * when that canvas cannot be covered.
+   * when that canvas cannot be covered. `sync` is taken when the cover starts;
+   * a view that stays covered keeps the first one.
    */
   show(view: EngineView, sync: () => void): boolean;
   /** Re-measure the covered view's box (resize, dock moves). */
@@ -215,10 +216,13 @@ export function createEngineCanvasPlacement(canvas: HTMLCanvasElement, isDispose
           observer ??= new ResizeObserver(() => measure());
           observer.observe(target);
         }
+        // Tracked until the view stops being covered (`vacate` untracks it), so a covered view's frames add nothing.
+        trackDirectViewTarget(target, sync);
       }
-      trackDirectViewTarget(target, sync);
+      // Measured every frame: no event reports the view canvas moving while its box keeps its size (a sibling
+      // above it growing, a margin or inline style changing), and the overlay must not lag it by a frame.
       measure();
-      style.visibility = "visible";
+      if (style.visibility !== "visible") style.visibility = "visible";
       return true;
     },
     follow: measure,
