@@ -371,7 +371,7 @@ export type ControlMessage =
       /** Host answer to `requestComplexCollision`; kept beside `loadModels` meshes for the session. */
       type: "loadComplexCollision";
       meshes: CookedCollisionMeshEntry[];
-      /** Requested Models the host could not cook (source not loaded, or no triangles). */
+      /** Requested Models the host could not cook (source not loaded, no triangles, or Draco or meshopt geometry). */
       unavailable?: string[];
     }
   | {
