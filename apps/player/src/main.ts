@@ -30,6 +30,7 @@ import {
 } from "@haptic/exporter";
 import {
   isExpectedPreviewHostMessage,
+  previewHostOrigin as hostOrigin,
   previewPackFromExpectedHostMessage,
 } from "./preview-protocol";
 
@@ -37,7 +38,7 @@ import {
 // Installed before any Engine exists, in this page's realm (a Preview Build host's own shim cannot reach it).
 if (import.meta.env.VITE_TEST_MODE === "true") installDirectViewReadSync();
 
-const previewHostOrigin = window.location.origin;
+const previewHostOrigin = hostOrigin(window.location);
 // The query string and frame nesting are fixed for the page's lifetime.
 const previewMode = new URLSearchParams(window.location.search).get("preview") === "1";
 const previewHosted = previewMode && window.parent !== window;

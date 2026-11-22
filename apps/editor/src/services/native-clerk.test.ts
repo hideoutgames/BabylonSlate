@@ -73,8 +73,9 @@ describe("NativeClerkClient", () => {
       accountSecrets,
       http: { fetch: http },
     });
-    expect(await createNativeClerkClient(key).restoreSession()).toMatchObject({
-      id: "sess_one",
+    expect(await createNativeClerkClient(key).restore()).toMatchObject({
+      status: "signed-in",
+      session: { id: "sess_one" },
     });
     expect(http.mock.calls[0]?.[0]).toMatchObject({
       headers: { Authorization: "desktop-client" },
@@ -83,6 +84,8 @@ describe("NativeClerkClient", () => {
       "desktop-rotated",
     );
     expect(legacyRead).not.toHaveBeenCalled();
+    // The account row and its sign-in dialog share one client and request queue.
+    expect(createNativeClerkClient(key)).toBe(createNativeClerkClient(key));
   });
 
   it("carries rotating client tokens across email verification and a cold client restart", async () => {
@@ -99,7 +102,7 @@ describe("NativeClerkClient", () => {
       response(client, "client-f"),
     ]);
     const auth = new NativeClerkClient(key, http, secrets);
-    expect(await auth.restoreSession()).toBeNull();
+    expect(await auth.restore()).toEqual({ status: "signed-out" });
     const challenge = await auth.beginEmail(" sam@example.com ", "sign-in");
     expect(await auth.verifyCode(challenge, "123456")).toEqual({
       id: "sess_one",
@@ -110,8 +113,8 @@ describe("NativeClerkClient", () => {
       lastName: "Slate",
     });
     expect(
-      await new NativeClerkClient(key, http, secrets).restoreSession(),
-    ).toMatchObject({ id: "sess_one" });
+      await new NativeClerkClient(key, http, secrets).restore(),
+    ).toMatchObject({ status: "signed-in", session: { id: "sess_one" } });
     expect(requests.map((request) => request.headers.Authorization)).toEqual([
       undefined,
       "client-a",
@@ -176,7 +179,7 @@ describe("NativeClerkClient", () => {
     await expect(auth.verifyCode(challenge, "123456")).rejects.toMatchObject({
       code: "additional_verification_required",
     });
-    expect(await auth.restoreSession()).toBeNull();
+    expect(await auth.restore()).toEqual({ status: "signed-out" });
   });
 
   it("clears an expired client token and keeps sign-up existing-user recovery available", async () => {
@@ -208,7 +211,7 @@ describe("NativeClerkClient", () => {
       code: "form_identifier_exists",
       message: "An account already uses this email. Sign in instead.",
     });
-    expect(await auth.restoreSession()).toBeNull();
+    expect(await auth.restore()).toEqual({ status: "signed-out" });
     expect(await auth.beginEmail("sam@example.com", "sign-in")).toMatchObject({
       kind: "sign-in",
     });
@@ -236,8 +239,8 @@ describe("NativeClerkClient", () => {
     // The removal still carries the client credential it revokes.
     expect(requests[3]!.headers.Authorization).toBe("client-a");
     expect(
-      await new NativeClerkClient(key, http, secrets).restoreSession(),
-    ).toBeNull();
+      await new NativeClerkClient(key, http, secrets).restore(),
+    ).toEqual({ status: "signed-out" });
   });
 
   it("finishes local sign-out when the server has already removed the session", async () => {
@@ -257,7 +260,7 @@ describe("NativeClerkClient", () => {
       userId: "user_one",
       email: "sam@example.com",
     });
-    expect(await auth.restoreSession()).toBeNull();
+    expect(await auth.restore()).toEqual({ status: "signed-out" });
   });
 
   it("redacts transport failures and never sends credentials to malformed key URLs", async () => {
@@ -325,16 +328,14 @@ describe("NativeClerkClient account management", () => {
       response(clientOf({ username: "sam", has_image: true, image_url: "https://img.clerk.com/sam.png" })),
       response(clientOf({ delete_self_enabled: false, first_name: null, last_name: null })),
     ]);
-    expect(await auth.restoreSession()).toEqual({
-      ...current,
-      username: "sam",
-      imageUrl: "https://img.clerk.com/sam.png",
+    expect(await auth.restore()).toEqual({
+      status: "signed-in",
+      session: { ...current, username: "sam", imageUrl: "https://img.clerk.com/sam.png" },
     });
     // Clerk still reports a generated avatar URL for users without a picture.
-    expect(await auth.restoreSession()).toEqual({
-      id: "sess_one",
-      userId: "user_one",
-      email: "sam@example.com",
+    expect(await auth.restore()).toEqual({
+      status: "signed-in",
+      session: { id: "sess_one", userId: "user_one", email: "sam@example.com" },
     });
   });
 
@@ -409,7 +410,7 @@ describe("NativeClerkClient account management", () => {
     expect(path(requests[0])).toBe("/v1/me?_is_native=1&_method=DELETE&_clerk_session_id=sess_one");
     expect(requests[0]).toMatchObject({ method: "POST", headers: { Authorization: "client-a" } });
     expect(await secrets.get(`slate-clerk-client:${key}`)).toBeNull();
-    expect(await auth.restoreSession()).toBeNull();
+    expect(await auth.restore()).toEqual({ status: "signed-out" });
     expect(requests).toHaveLength(1);
   });
 
@@ -601,5 +602,279 @@ describe("NativeClerkClient social sign-in", () => {
     await expect(
       auth.completeOAuth(oauth, `${redirectUrl}?rotating_token_nonce=n3`),
     ).rejects.toMatchObject({ code: "additional_verification_required" });
+  });
+});
+
+describe("NativeClerkClient sign-in in progress", () => {
+  const tokenKey = `slate-clerk-client:${key}`;
+  const pendingClient = (signInValue: unknown) => ({
+    object: "client",
+    sessions: [],
+    sign_in: signInValue,
+    sign_up: null,
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it("lets an email-code sign-in finish while a window focus checks the session", async () => {
+    const secrets = new MemorySecretStore();
+    const { http, requests } = transport([
+      response({ object: "client", sessions: [] }, "client-a"),
+      response(signIn, "client-b"),
+      response(signIn, "client-c"),
+      // A session check that does run while the person reads their mail.
+      response(pendingClient(signIn), "client-d"),
+      response({ id: "sia_one", status: "complete", created_session_id: "sess_one" }, "client-e"),
+      response(client, "client-f"),
+    ]);
+    const auth = new NativeClerkClient(key, http, secrets);
+    const challenge = await auth.beginEmail("sam@example.com", "sign-in");
+
+    // The account row's focus check waits for the sign-in instead of running.
+    expect(await auth.restore({ background: true })).toEqual({ status: "deferred" });
+    expect(requests).toHaveLength(3);
+    // A check that does run sees the pending sign-in and keeps its client.
+    expect(await auth.restore()).toEqual({ status: "signed-out" });
+    expect(await secrets.get(tokenKey)).toBe("client-d");
+
+    expect(await auth.verifyCode(challenge, "123456")).toMatchObject({ id: "sess_one" });
+    expect(requests[4]!.headers.Authorization).toBe("client-d");
+    expect(auth.signInInProgress).toBe(false);
+  });
+
+  it("lets a social sign-in finish when the app is focused on the way back from the browser", async () => {
+    const secrets = new MemorySecretStore();
+    const { http, requests } = transport([
+      response({ object: "client", sessions: [] }, "client-a"),
+      response(
+        {
+          id: "sia_oauth",
+          first_factor_verification: { external_verification_redirect_url: "https://github.com/login" },
+        },
+        "client-b",
+      ),
+      response({ id: "sia_oauth", status: "complete", created_session_id: "sess_one" }, "client-c"),
+      response(client, "client-d"),
+      response(client, "client-e"),
+    ]);
+    const auth = new NativeClerkClient(key, http, secrets);
+    const oauth = await auth.beginOAuth("oauth_github", "haptic://sso-callback");
+
+    expect(await auth.restore({ background: true })).toEqual({ status: "deferred" });
+    expect(await secrets.get(tokenKey)).toBe("client-b");
+    await auth.completeOAuth(oauth, "haptic://sso-callback?rotating_token_nonce=n1");
+
+    expect(requests[2]!.headers.Authorization).toBe("client-b");
+    expect(await auth.restore({ background: true })).toMatchObject({ status: "signed-in" });
+  });
+
+  it("clears the client token when no sign-in is pending on it", async () => {
+    const secrets = new MemorySecretStore();
+    await secrets.set(tokenKey, "client-a");
+    const { http } = transport([response(pendingClient(null))]);
+
+    expect(await new NativeClerkClient(key, http, secrets).restore()).toEqual({ status: "signed-out" });
+    expect(await secrets.get(tokenKey)).toBeNull();
+  });
+
+  const signInStarted = (extra: NativeHttpResponse[] = []) => {
+    const { http } = transport([
+      response({ object: "client", sessions: [] }, "client-a"),
+      response(signIn),
+      response(signIn),
+      ...extra,
+    ]);
+    return new NativeClerkClient(key, http, new MemorySecretStore());
+  };
+  type Challenge = Parameters<NativeClerkClient["verifyCode"]>[0];
+
+  it.each([
+    {
+      exit: "a verified code",
+      run: async (auth: NativeClerkClient, challenge: Challenge) => {
+        await auth.verifyCode(challenge, "123456");
+      },
+      replies: [response({ id: "sia_one", status: "complete", created_session_id: "sess_one" }), response(client)],
+    },
+    {
+      exit: "a lost client",
+      run: async (auth: NativeClerkClient, challenge: Challenge) => {
+        await auth.verifyCode(challenge, "123456").catch(() => undefined);
+      },
+      replies: [{ status: 401, bodyText: JSON.stringify({ errors: [{ code: "client_expired" }] }) }],
+    },
+    {
+      exit: "a cancelled form",
+      run: async (auth: NativeClerkClient) => auth.cancelSignIn(),
+      replies: [],
+    },
+    {
+      exit: "a sign-out",
+      run: async (auth: NativeClerkClient) =>
+        auth.signOut({ id: "sess_one", userId: "user_one", email: "sam@example.com" }),
+      replies: [response({})],
+    },
+  ])("ends the sign-in on $exit", async ({ run, replies }) => {
+    const auth = signInStarted(replies);
+    const challenge = await auth.beginEmail("sam@example.com", "sign-in");
+    expect(auth.signInInProgress).toBe(true);
+
+    await run(auth, challenge);
+
+    expect(auth.signInInProgress).toBe(false);
+  });
+
+  it("keeps the sign-in in progress after a wrong code, so the person can try again", async () => {
+    const auth = signInStarted([
+      { status: 422, bodyText: JSON.stringify({ errors: [{ code: "form_code_incorrect" }] }) },
+    ]);
+    const challenge = await auth.beginEmail("sam@example.com", "sign-in");
+
+    await expect(auth.verifyCode(challenge, "000000")).rejects.toMatchObject({ code: "form_code_incorrect" });
+    expect(auth.signInInProgress).toBe(true);
+  });
+
+  it.each([
+    {
+      exit: "an email step that failed",
+      start: (auth: NativeClerkClient) => auth.beginEmail("sam@example.com", "sign-in"),
+      replies: [response({ object: "client", sessions: [] }, "client-a"), { status: 500, bodyText: "{}" }],
+    },
+    {
+      exit: "a social sign-in that could not start",
+      start: (auth: NativeClerkClient) => auth.beginOAuth("oauth_github", "haptic://sso-callback"),
+      replies: [response({ object: "client", sessions: [] }, "client-a"), response({ id: "sia_oauth" })],
+    },
+  ])("ends the sign-in on $exit", async ({ start, replies }) => {
+    const { http } = transport(replies);
+    const auth = new NativeClerkClient(key, http, new MemorySecretStore());
+
+    await expect(start(auth)).rejects.toBeInstanceOf(Error);
+
+    expect(auth.signInInProgress).toBe(false);
+  });
+
+  it("ends a social sign-in whose callback failed", async () => {
+    const { http } = transport([
+      response({ object: "client", sessions: [] }, "client-a"),
+      response({
+        id: "sia_oauth",
+        first_factor_verification: { external_verification_redirect_url: "https://github.com/login" },
+      }),
+    ]);
+    const auth = new NativeClerkClient(key, http, new MemorySecretStore());
+    const oauth = await auth.beginOAuth("oauth_github", "haptic://sso-callback");
+    expect(auth.signInInProgress).toBe(true);
+
+    await expect(
+      auth.completeOAuth(oauth, "haptic://sso-callback?__clerk_status=failed&__clerk_error_code=oauth_access_denied"),
+    ).rejects.toMatchObject({ code: "oauth_access_denied" });
+
+    expect(auth.signInInProgress).toBe(false);
+  });
+
+  it("stops holding off background checks after a sign-in left unfinished for fifteen minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-22T10:00:00Z"));
+    const auth = signInStarted();
+    await auth.beginEmail("sam@example.com", "sign-in");
+
+    vi.setSystemTime(new Date("2026-11-22T10:14:59Z"));
+    expect(auth.signInInProgress).toBe(true);
+    vi.setSystemTime(new Date("2026-11-22T10:15:01Z"));
+    expect(auth.signInInProgress).toBe(false);
+  });
+});
+
+describe("NativeClerkClient offline sessions", () => {
+  const tokenKey = `slate-clerk-client:${key}`;
+  const userKey = `slate-clerk-user:${key}`;
+  const verified = {
+    id: "sess_one",
+    userId: "user_one",
+    email: "sam@example.com",
+    name: "Sam Slate",
+    firstName: "Sam",
+    lastName: "Slate",
+  };
+
+  /** A device that signed in earlier: a stored token and the user cached by an online check. */
+  async function signedInBefore(reply: NativeHttpResponse | Error) {
+    const secrets = new MemorySecretStore();
+    await secrets.set(tokenKey, "client-secret-token");
+    const replies = [response(client)];
+    const requests: NativeHttpRequest[] = [];
+    const http = async (request: NativeHttpRequest) => {
+      requests.push(request);
+      const next = replies.length > 0 ? replies.shift()! : reply;
+      if (next instanceof Error) throw next;
+      return next;
+    };
+    const auth = new NativeClerkClient(key, http, secrets);
+    expect(await auth.restore()).toMatchObject({ status: "signed-in" });
+    return { auth, secrets, requests };
+  }
+
+  it("caches the verified user without any token material", async () => {
+    const { secrets } = await signedInBefore(new Error("unused"));
+
+    const cached = (await secrets.get(userKey))!;
+    expect(JSON.parse(cached)).toEqual(verified);
+    expect(cached).not.toContain("client-secret-token");
+  });
+
+  it.each([
+    { name: "no connection", reply: new Error("The Internet connection appears to be offline.") },
+    { name: "a captive portal page", reply: { status: 200, bodyText: "<html>Sign in to the Wi-Fi</html>" } },
+    { name: "a captive portal's refusal", reply: { status: 403, bodyText: "<html>Forbidden</html>" } },
+    { name: "a proxy's 401 page", reply: { status: 401, bodyText: "Proxy authentication required" } },
+    { name: "JSON that is not a client", reply: { status: 200, bodyText: JSON.stringify({ ok: true }) } },
+    { name: "a server error", reply: { status: 500, bodyText: JSON.stringify({ errors: [{ code: "internal" }] }) } },
+    { name: "a bad gateway page", reply: { status: 502, bodyText: "<html>Bad Gateway</html>" } },
+    { name: "rate limiting", reply: { status: 429, bodyText: JSON.stringify({ errors: [{ code: "too_many" }] }) } },
+  ])("stays signed in offline as the cached user on $name", async ({ reply }) => {
+    const { auth, secrets } = await signedInBefore(reply);
+
+    expect(await auth.restore()).toEqual({ status: "offline", session: verified });
+    expect(await auth.restore({ background: true })).toEqual({ status: "offline", session: verified });
+    expect(await secrets.get(tokenKey)).toBe("client-secret-token");
+  });
+
+  it.each([
+    { name: "a 401 from Clerk", reply: { status: 401, bodyText: JSON.stringify({ errors: [{ code: "authentication_invalid" }] }) } },
+    { name: "a 403 from Clerk", reply: { status: 403, bodyText: JSON.stringify({ errors: [{ code: "client_revoked" }] }) } },
+    { name: "no client for the token", reply: { status: 200, bodyText: JSON.stringify({ response: null, client: null }) } },
+    { name: "a client without a session", reply: response({ object: "client", sessions: [], sign_in: null }) },
+  ])("signs out and forgets the token and cached user on $name", async ({ reply }) => {
+    const { auth, secrets } = await signedInBefore(reply);
+
+    expect(await auth.restore({ background: true })).toEqual({ status: "signed-out" });
+    expect(await secrets.get(tokenKey)).toBeNull();
+    expect(await secrets.get(userKey)).toBeNull();
+  });
+
+  it("asks to connect when offline without a cached user", async () => {
+    const secrets = new MemorySecretStore();
+    await secrets.set(tokenKey, "client-a");
+    const auth = new NativeClerkClient(
+      key,
+      async () => {
+        throw new Error("offline");
+      },
+      secrets,
+    );
+
+    expect(await auth.restore()).toEqual({ status: "offline", session: null });
+  });
+
+  it("signs out offline by forgetting the token and the cached user", async () => {
+    const { auth, secrets, requests } = await signedInBefore(new Error("offline"));
+
+    await auth.signOut(verified);
+
+    expect(new URL(requests[1]!.url).pathname).toBe("/v1/client/sessions/sess_one/remove");
+    expect(await secrets.get(tokenKey)).toBeNull();
+    expect(await secrets.get(userKey)).toBeNull();
+    expect(await auth.restore()).toEqual({ status: "signed-out" });
   });
 });

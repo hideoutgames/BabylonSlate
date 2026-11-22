@@ -92,6 +92,7 @@ import { followLayerMultiplyAlphaMode } from "./layer-composite";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 import { noteAdoptedProgram, noteMaterialBuild, noteSameShaderRebuild } from "./material-program-census";
+import { isLayerDepthVisual } from "./layer-depth-visuals";
 
 /** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
 const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
@@ -399,6 +400,7 @@ export function compileMaterialPlan(
   // `plannedStockVertexStage`: its plan's vertex stage is Babylon's own (identity World Position Offset, no custom
   // blocks), known before the build that `hasStockVertexStage` waits for (`instance-pool.ts` groups by it at once).
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0, materialDomain: plan.domain, plannedStockVertexStage: cacheableShadowShape };
+  if (!auxiliary && options.overlay) drawsLayer3DWithDepth(material, plan);
   const configureSurface = () => {
     if (auxiliary) {
       material.backFaceCulling = plan.twoSided !== true;
@@ -407,7 +409,12 @@ export function compileMaterialPlan(
     } else {
       applyAuthoredSurfaceBlend(material, plan);
       if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text" && plan.domain !== "ui") registerAlphaToCoverage(material);
-      if (options.overlay) { material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false; }
+      if (options.overlay) {
+        // Scene Layer content sorts back to front by Z-Order in the blended list, and an actor's Opacity fades any
+        // Material: every draw blends (no depth writes), except a 3D visual's with an Opaque or Masked Material
+        // (`drawsLayer3DWithDepth`).
+        material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false;
+      }
       // A Scene Layer's Multiply (a Surface's overlay compile, any User Interface or Text Material) blends by its layer's kind.
       if (plan.blendMode === "multiply" && (options.overlay || plan.domain === "text" || plan.domain === "ui")) followLayerMultiplyAlphaMode(material);
       syncSceneLighting(scene);
@@ -1160,7 +1167,7 @@ export function compileMaterialPlan(
   // compiled for another material, whatever its name. Particle programs share only under one name: Babylon names a
   // particle Effect after its material.
   if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
-    shareCompiledProgram(material, JSON.stringify([options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]));
+    shareCompiledProgram(material, JSON.stringify([options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]), () => ownRebuilds > 0);
   } else if (material.mode === NodeMaterialModes.Particle && plan.cost.customBlocks === 0) {
     shareParticleProgram(material, JSON.stringify([options.name, material.shaderLanguage]));
   }
@@ -1402,7 +1409,7 @@ function freshBuildId(): number {
  * differ. Source equality is the test, so a changed graph or a texture-dependent variant never reuses a mismatched
  * program.
  */
-export function shareCompiledProgram(material: NodeMaterial, key: string): void {
+export function shareCompiledProgram(material: NodeMaterial, key: string, ownRebuild: () => boolean = () => false): void {
   const engine = material.getScene().getEngine();
   let byKey = sharedPrograms.get(engine);
   if (!byKey) sharedPrograms.set(engine, (byKey = new Map()));
@@ -1428,11 +1435,18 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
     // A rebuild that kept an adopted id may no longer match that program.
     if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
     adopted = undefined;
-    leave();
     const shaders = material.compiledShaders;
+    // The compiler's own rebuild (a texture arriving) whose code did not change keeps the program it had: Babylon gave
+    // the build a new id, which would link the same program again. Any other rebuild keeps its new id.
+    const kept = !firstBuild && ownRebuild() && registered === shaders ? registry.get(registered) : undefined;
+    if (kept?.users.has(material)) {
+      material.buildId = adopted = kept.buildId;
+      return;
+    }
+    leave();
     const known = registry.get(shaders);
-    // Only the compiler's own first build adopts: any later rebuild keeps a
-    // new id so policies that trust a compiled build id still see the change.
+    // Only the compiler's own first build adopts another material's program: a rebuild whose code changed keeps its
+    // new id, so policies that trust a compiled build id see the change.
     if (firstBuild && known) {
       firstBuild = false;
       material.buildId = adopted = known.buildId;
@@ -1643,6 +1657,23 @@ function applyAuthoredSurfaceBlend(
     default:
       material.transparencyMode = Material.MATERIAL_OPAQUE;
   }
+}
+
+/**
+ * A Scene Layer Material (`overlay`) of the surface domain with an Opaque or Masked blend mode draws a 3D visual
+ * (`isLayerDepthVisual`: a MeshComponent's primitive or model, Text3D) as the world draws it: in its rendering group's
+ * opaque or alpha-tested list, so the draw writes depth and 3D meshes in the layer occlude each other, as in the editor's
+ * Scene Layer tab. Every other mesh it draws (2D layer content) keeps the blended list and its Z-Order sort. A mesh that
+ * fades (`visibility`, vertex alpha, or an actor's Opacity through `overlay-visual-style.ts`) still blends. Installed
+ * once, outside the surface setup a rebuild repeats, so the overlay style's wrapper around it stays.
+ */
+export function drawsLayer3DWithDepth(material: Material, plan: Pick<MaterialBuildPlan, "domain" | "blendMode">): void {
+  if (plan.domain !== "surface" || (plan.blendMode !== "opaque" && plan.blendMode !== "masked")) return;
+  const masked = plan.blendMode === "masked";
+  const blends = material.needAlphaBlendingForMesh.bind(material);
+  const tests = material.needAlphaTestingForMesh.bind(material);
+  material.needAlphaBlendingForMesh = (mesh) => isLayerDepthVisual(mesh) ? mesh.visibility < 1 || mesh.hasVertexAlpha : blends(mesh);
+  material.needAlphaTestingForMesh = (mesh) => isLayerDepthVisual(mesh) ? masked && !material.needAlphaBlendingForMesh(mesh) : tests(mesh);
 }
 
 /** Bind the shared sampler source for a parameter or an inline sample. */

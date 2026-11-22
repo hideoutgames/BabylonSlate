@@ -19,7 +19,12 @@ import {
 import { createEditorDataReader } from "../services/editor-data-reader";
 import { createEditorDataAuthoringApi } from "../services/editor-data-authoring";
 import { createRegistryCatalogSource } from "../services/asset-catalog";
-import { mergePluginEditorUtilityObjects } from "../lib/plugin-ui";
+import { useProjectTrust } from "./use-project-trust";
+import { useRegisteredEditorUtilities } from "./use-registered-editor-utilities";
+
+/** What the Output Log says when a registered Editor Utility is held back by Workspace Trust. */
+export const UNTRUSTED_EDITOR_UTILITIES_MESSAGE =
+  "Editor Utilities did not start: this project is not trusted on this computer. Turn on Trust This Project in Project Settings to run them.";
 
 function editorHostServices(
   appendLog: (line: string) => void,
@@ -53,7 +58,7 @@ export function EditorUtilityRuntime() {
   const actions = useDocumentActions();
   const { collectEditorUtilityScripts, getOpenDocuments } = actions;
   const { projectDocument, projectName } = useProjectState();
-  const { projectGuid, pluginDescriptors, assetRegistry } = useRegistryState();
+  const { projectGuid, assetRegistry } = useRegistryState();
   // What the data reader and authoring API read: actions and the registry.
   const documents = useMemo(() => ({ ...actions, assetRegistry }), [actions, assetRegistry]);
   const { appendLog } = usePlayDiagnosticsActions();
@@ -73,15 +78,17 @@ export function EditorUtilityRuntime() {
   });
   const hostRef = useRef<ScriptHost | null>(null);
   const startedRef = useRef(false);
-  const registeredKey = mergePluginEditorUtilityObjects(
-    projectDocument?.settings.editorUtilityObjects ?? [],
-    pluginDescriptors
-      .filter((plugin) => assetRegistry?.getRoot(`plugin:${plugin.pluginGuid}`))
-      .map((plugin) => plugin.settings),
-  ).join("|");
+  const registeredKey = useRegisteredEditorUtilities().join("|");
+  // Workspace Trust: Editor Utility graphs run project code in the editor, so they start only in a trusted project.
+  const { ready: trustReady, trusted } = useProjectTrust();
 
   useEffect(() => {
-    if (!projectName) {
+    if (!projectName || !trustReady) {
+      return;
+    }
+    if (!trusted) {
+      // Registering a utility in an untrusted project says why nothing starts instead of doing nothing.
+      if (registeredKey) latestRef.current.appendLog(UNTRUSTED_EDITOR_UTILITIES_MESSAGE);
       return;
     }
     let cancelled = false;
@@ -124,7 +131,7 @@ export function EditorUtilityRuntime() {
       hostRef.current = null;
       startedRef.current = false;
     };
-  }, [projectName, projectGuid, registeredKey]);
+  }, [projectName, projectGuid, registeredKey, trustReady, trusted]);
 
   useEffect(() => {
     const onLifecycle = (event: Event) => {

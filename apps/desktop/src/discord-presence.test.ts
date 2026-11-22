@@ -66,7 +66,7 @@ describe("discordIpcPaths", () => {
 });
 
 /** A stand-in for the Discord app: answers the handshake and SET_ACTIVITY as Discord does, and records frames. */
-async function fakeDiscord(options: { refuse?: string; closeOnHandshake?: string } = {}) {
+async function fakeDiscord(options: { refuse?: string; closeOnHandshake?: string; oversizedReady?: boolean } = {}) {
   const directory = mkdtempSync(join(tmpdir(), "discord-ipc-"));
   const path = join(directory, "discord-ipc-0");
   const frames: { op: number; body: Record<string, unknown> }[] = [];
@@ -80,6 +80,8 @@ async function fakeDiscord(options: { refuse?: string; closeOnHandshake?: string
   };
   const server: Server = createServer((socket) => {
     sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    socket.on("error", () => undefined);
     let buffered = Buffer.alloc(0);
     socket.on("data", (chunk) => {
       buffered = Buffer.concat([buffered, chunk]);
@@ -88,7 +90,13 @@ async function fakeDiscord(options: { refuse?: string; closeOnHandshake?: string
         const body = JSON.parse(buffered.subarray(8, 8 + buffered.readUInt32LE(4)).toString()) as Record<string, unknown>;
         buffered = buffered.subarray(8 + buffered.readUInt32LE(4));
         frames.push({ op, body });
-        if (op === 0 && options.closeOnHandshake) send(socket, 2, { code: 4000, message: options.closeOnHandshake });
+        if (op === 0 && options.oversizedReady) {
+          // A header announcing a 2 MiB frame, then its first bytes.
+          const header = Buffer.alloc(8);
+          header.writeUInt32LE(1, 0);
+          header.writeUInt32LE(2 * 1024 * 1024, 4);
+          socket.write(Buffer.concat([header, Buffer.alloc(64 * 1024, 0x20)]));
+        } else if (op === 0 && options.closeOnHandshake) send(socket, 2, { code: 4000, message: options.closeOnHandshake });
         else if (op === 0) send(socket, 1, { cmd: "DISPATCH", evt: "READY", data: { v: 1 } });
         else if (op === 1 && options.refuse) send(socket, 1, { cmd: "SET_ACTIVITY", evt: "ERROR", nonce: body.nonce, data: { code: 4000, message: options.refuse } });
         else if (op === 1) send(socket, 1, { cmd: "SET_ACTIVITY", evt: null, nonce: body.nonce, data: {} });
@@ -100,6 +108,7 @@ async function fakeDiscord(options: { refuse?: string; closeOnHandshake?: string
     path,
     frames,
     ping: (socketIndex = 0) => send([...sockets][socketIndex]!, 3, { ping: 1 }),
+    connections: () => sockets.size,
     close: async () => {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -164,6 +173,14 @@ describe("createDiscordPresence", () => {
     await expect(presence.set({ applicationId: APP, activity: { details: "Harbour Run" } })).rejects.toThrow(message);
   });
 
+  it("closes the connection when Discord announces a frame larger than 1 MiB", async () => {
+    const discord = await fakeDiscord({ oversizedReady: true });
+    cleanups.push(discord.close);
+    const presence = await presenceWith(discord);
+    await expect(presence.set({ applicationId: APP, activity: null })).rejects.toThrow("Discord sent a message that is too large.");
+    await expect.poll(() => discord.connections()).toBe(0);
+  });
+
   it("says Discord is not running when no socket answers", async () => {
     const presence = await presenceWith(null);
     await expect(presence.set({ applicationId: APP, activity: null })).rejects.toThrow("Discord is not running on this computer.");
@@ -173,8 +190,8 @@ describe("createDiscordPresence", () => {
 describe("handleDiscordPresenceRequest", () => {
   const sent: unknown[] = [];
   const presence: DiscordPresence = { set: async (request) => { sent.push(request); }, dispose: () => undefined };
-  const post = (body: unknown, headers: Record<string, string> = { origin: "app://game", "content-type": "application/json" }, method = "POST") =>
-    handleDiscordPresenceRequest(new Request("app://game/.haptic/discord-presence", { method, headers, ...(method === "POST" ? { body: JSON.stringify(body) } : {}) }), "app://game", presence);
+  const post = (body: unknown, headers: Record<string, string> = { origin: "app://game", "content-type": "application/json" }, method = "POST", text?: string) =>
+    handleDiscordPresenceRequest(new Request("app://game/.haptic/discord-presence", { method, headers, ...(method === "POST" ? { body: text ?? JSON.stringify(body) } : {}) }), "app://game", presence);
 
   it("sets a checked presence for the game's own origin", async () => {
     sent.length = 0;
@@ -192,6 +209,40 @@ describe("handleDiscordPresenceRequest", () => {
     const response = await post({ applicationId: APP, activity: null }, headers, method);
     expect(response.status).toBe(status);
     expect(sent).toEqual([]);
+  });
+
+  it("refuses a body over 16 KiB as soon as it passes the limit, without reading the rest", async () => {
+    sent.length = 0;
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) { pulled += 1; controller.enqueue(new Uint8Array(4096).fill(0x20)); },
+    });
+    const request = new Request("app://game/.haptic/discord-presence", {
+      method: "POST", headers: { origin: "app://game", "content-type": "application/json" }, body: endless, duplex: "half",
+    } as RequestInit);
+    const response = await handleDiscordPresenceRequest(request, "app://game", presence);
+    expect(response.status).toBe(413);
+    // Five 4 KiB chunks pass 16 KiB; the stream is cancelled there (a reader may pull one ahead).
+    expect(pulled).toBeLessThanOrEqual(7);
+    expect(sent).toEqual([]);
+  });
+
+  it("refuses a declared length over 16 KiB unread", async () => {
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({ pull(controller) { pulled += 1; controller.enqueue(new Uint8Array(1)); } });
+    const request = new Request("app://game/.haptic/discord-presence", {
+      method: "POST", headers: { origin: "app://game", "content-type": "application/json", "content-length": String(16 * 1024 + 1) }, body, duplex: "half",
+    } as RequestInit);
+    expect((await handleDiscordPresenceRequest(request, "app://game", presence)).status).toBe(413);
+    expect(pulled).toBeLessThanOrEqual(1);
+  });
+
+  it("accepts a body of exactly 16 KiB", async () => {
+    sent.length = 0;
+    const json = JSON.stringify({ applicationId: APP, activity: null });
+    const response = await post(undefined, undefined, "POST", json + " ".repeat(16 * 1024 - json.length));
+    expect(response.status).toBe(200);
+    expect(sent).toHaveLength(1);
   });
 
   it("reports a malformed request without reaching Discord", async () => {

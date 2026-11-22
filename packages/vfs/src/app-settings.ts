@@ -183,6 +183,12 @@ export type GraphCutToolMode = (typeof GRAPH_CUT_TOOL_MODES)[number];
 export const engineSettingsSchema = z.object({
   automaticUpdatesEnabled: z.boolean().default(true),
   seenReleaseVersions: z.array(z.string()).catch([]).default([]),
+  /**
+   * Workspace Trust: projects whose Extensions and Editor Utilities may run on this computer,
+   * each keyed by its folder and project GUID (`projectTrustKeyFor`).
+   * Kept in Engine Settings, never in the project, so a project cannot trust itself.
+   */
+  trustedProjects: z.array(z.string()).catch([]).default([]),
   recents: z
     .array(
       z.object({

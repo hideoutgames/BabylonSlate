@@ -43,6 +43,7 @@ import {
   createPrimitiveMesh,
 } from "./scene-loader";
 import { createColliderVisualMesh } from "./collider-visual";
+import { markLayerDepthVisual } from "./layer-depth-visuals";
 import {
   applyComponentSorting,
   applyWorldVisualGroup,
@@ -558,5 +559,7 @@ function batchesPlaySprite(
 
 function finishPlayWorldMesh(mesh: Mesh): Mesh {
   applyWorldVisualGroup(mesh, { components: [] });
+  // In a Scene Layer, an Opaque or Masked Material draws it with depth writes, as in the world (`layer-depth-visuals.ts`).
+  markLayerDepthVisual(mesh);
   return mesh;
 }

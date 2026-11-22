@@ -71,7 +71,7 @@ export type ConsoleCommandHost = {
   /** `heldimage`: copy each frame Play presents directly into its held image (on), or skip the copy (off). */
   setHeldImage?(enabled: boolean): void;
   /** `layerdebug clears`: clear depth and stencil before each Scene Layer drawn over the world (on), or leave them (off). */
-  setLayerDebug?(part: "clears", enabled: boolean): void;
+  setLayerDebug?(part: "clears" | "skipclears", enabled: boolean): void;
   /** `renderreset`: rebuild the Play view's frame graph, reallocate its shadow maps, or render nothing for 3 s. */
   resetRendering?(what: "graph" | "shadows" | "idle"): void;
   /** Start (restart) or stop measuring GPU-busy time per frame; the Play view's diagnostics report it. */

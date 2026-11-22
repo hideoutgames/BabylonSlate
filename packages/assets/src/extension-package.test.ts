@@ -4,11 +4,75 @@ import { encodeAssetDocument } from "./asset-document";
 import { decodeProjectZip, encodeProjectZip, exportProjectZip, writeProjectTree } from "./hproject";
 import { projectContentRoot } from "./content-root";
 import { createExtensionSettings, discoverEngineExtensions, discoverProjectExtensions, shadowEngineExtensions, writeProjectExtension } from "./extension-host";
-import { applyExtensionImport, exportExtensionZip, inspectHextension, installEngineExtensionDefaults, planExtensionImport, unpackEngineExtensionZip } from "./extension-package";
+import * as fflate from "fflate";
+import { applyExtensionImport, exportExtensionZip, inspectHextension, installEngineExtensionDefaults, planExtensionImport, unpackEngineExtensionZip, unzipExtensionArchive } from "./extension-package";
 import { encodeExtensionSettings } from "./extension-settings";
 import { AssetRegistry } from "./registry";
 
 const text = (value: string) => new TextEncoder().encode(value);
+
+/**
+ * A one-file ZIP whose deflate data is a literal zero then `copies` 258-byte
+ * back-references (fixed Huffman), so it inflates to 1 + 258 × copies bytes,
+ * while both headers declare `declaredSize`.
+ */
+function zeroBombZip(name: string, copies: number, declaredSize: number): Uint8Array {
+  const out: number[] = [];
+  let bits = 0;
+  let count = 0;
+  const write = (value: number, length: number) => {
+    for (let index = 0; index < length; index += 1) {
+      bits |= ((value >> index) & 1) << count;
+      count += 1;
+      if (count === 8) { out.push(bits); bits = 0; count = 0; }
+    }
+  };
+  // Huffman codes go most significant bit first.
+  const code = (value: number, length: number) => { for (let index = length - 1; index >= 0; index -= 1) write((value >> index) & 1, 1); };
+  write(1, 1); // final block
+  write(1, 2); // fixed Huffman
+  code(0x30, 8); // literal 0
+  for (let index = 0; index < copies; index += 1) {
+    code(0xc5, 8); // length 258 (symbol 285)
+    code(0, 5); // distance 1
+  }
+  code(0, 7); // end of block
+  if (count > 0) out.push(bits);
+  const data = Uint8Array.from(out);
+  const fileName = text(name);
+  const local = new Uint8Array(30 + fileName.length);
+  const localView = new DataView(local.buffer);
+  localView.setUint32(0, 0x04034b50, true);
+  localView.setUint16(4, 20, true);
+  localView.setUint16(8, 8, true);
+  localView.setUint32(18, data.length, true);
+  localView.setUint32(22, declaredSize, true);
+  localView.setUint16(26, fileName.length, true);
+  local.set(fileName, 30);
+  const central = new Uint8Array(46 + fileName.length);
+  const centralView = new DataView(central.buffer);
+  centralView.setUint32(0, 0x02014b50, true);
+  centralView.setUint16(4, 20, true);
+  centralView.setUint16(6, 20, true);
+  centralView.setUint16(10, 8, true);
+  centralView.setUint32(20, data.length, true);
+  centralView.setUint32(24, declaredSize, true);
+  centralView.setUint16(28, fileName.length, true);
+  central.set(fileName, 46);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(8, 1, true);
+  endView.setUint16(10, 1, true);
+  endView.setUint32(12, central.length, true);
+  endView.setUint32(16, local.length + data.length, true);
+  const zip = new Uint8Array(local.length + data.length + central.length + end.length);
+  zip.set(local, 0);
+  zip.set(data, local.length);
+  zip.set(central, local.length + data.length);
+  zip.set(end, local.length + data.length + central.length);
+  return zip;
+}
 
 async function storage() {
   const storage = new MemoryStorageAdapter("documents");
@@ -115,6 +179,24 @@ describe("Extension packages", () => {
     // The cap is for code: other package files may be larger.
     const largeData = [...incoming.files, { path: "data.bin", data: new Uint8Array(1024 * 1024 + 1) }];
     await expect(inspectHextension(encodeProjectZip(largeData))).resolves.toMatchObject({ settings: { extensionGuid: "tools" } });
+  });
+
+  it("stops inflating a ZIP bomb whose headers declare a small size once the real bytes pass the cap", () => {
+    // About 100 MiB of zeros in 650 KiB of deflate, declared as 10 bytes in both the local and the central header.
+    const bomb = zeroBombZip("data.bin", 400_000, 10);
+    const pushes = vi.spyOn(fflate.Unzip.prototype, "push");
+    try {
+      expect(() => unzipExtensionArchive(bomb, 1024 * 1024)).toThrow(/expanded size limit/);
+      // A cap of 1 MiB stops the stream within the first compressed chunks, long before the rest of the archive.
+      const pushed = pushes.mock.calls.reduce((total, call) => total + call[0].byteLength, 0);
+      expect(pushed).toBeLessThan(bomb.byteLength / 4);
+    } finally {
+      pushes.mockRestore();
+    }
+    // Under the cap, the real bytes come back whatever the headers declared.
+    const [file] = unzipExtensionArchive(zeroBombZip("data.bin", 100, 10), 1024 * 1024);
+    expect(file).toMatchObject({ path: "data.bin" });
+    expect(file!.data.byteLength).toBe(1 + 258 * 100);
   });
 
   it("requires a gameplay package's game entry and keeps added code files in exports", async () => {
