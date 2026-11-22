@@ -1136,7 +1136,7 @@ export function compileMaterialPlan(
   // compiled for another material, whatever its name. Particle programs share only under one name: Babylon names a
   // particle Effect after its material.
   if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
-    shareCompiledProgram(material, JSON.stringify([options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]));
+    shareCompiledProgram(material, JSON.stringify([options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]), () => ownRebuilds > 0);
   } else if (material.mode === NodeMaterialModes.Particle && plan.cost.customBlocks === 0) {
     shareParticleProgram(material, JSON.stringify([options.name, material.shaderLanguage]));
   }
@@ -1378,7 +1378,7 @@ function freshBuildId(): number {
  * differ. Source equality is the test, so a changed graph or a texture-dependent variant never reuses a mismatched
  * program.
  */
-export function shareCompiledProgram(material: NodeMaterial, key: string): void {
+export function shareCompiledProgram(material: NodeMaterial, key: string, ownRebuild: () => boolean = () => false): void {
   const engine = material.getScene().getEngine();
   let byKey = sharedPrograms.get(engine);
   if (!byKey) sharedPrograms.set(engine, (byKey = new Map()));
@@ -1404,11 +1404,18 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
     // A rebuild that kept an adopted id may no longer match that program.
     if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
     adopted = undefined;
-    leave();
     const shaders = material.compiledShaders;
+    // The compiler's own rebuild (a texture arriving) whose code did not change keeps the program it had: Babylon gave
+    // the build a new id, which would link the same program again. Any other rebuild keeps its new id.
+    const kept = !firstBuild && ownRebuild() && registered === shaders ? registry.get(registered) : undefined;
+    if (kept?.users.has(material)) {
+      material.buildId = adopted = kept.buildId;
+      return;
+    }
+    leave();
     const known = registry.get(shaders);
-    // Only the compiler's own first build adopts: any later rebuild keeps a
-    // new id so policies that trust a compiled build id still see the change.
+    // Only the compiler's own first build adopts another material's program: a rebuild whose code changed keeps its
+    // new id, so policies that trust a compiled build id see the change.
     if (firstBuild && known) {
       firstBuild = false;
       material.buildId = adopted = known.buildId;
