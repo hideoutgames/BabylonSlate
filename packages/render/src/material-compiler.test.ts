@@ -42,6 +42,7 @@ import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { setTestTextureBudget } from "./test-support/resource-cache-budget";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { installTimerClock, installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
+import { fragmentCanDiscard } from "./test-support/preprocessed-glsl";
 
 const disposers: Array<() => void> = [];
 
@@ -123,6 +124,38 @@ it("rebinds each mesh's Receive Shadows and caster mark when sharing a frozen co
   expect(values(/^hapticGeometryCaster/).at(-1)).toBe(0);
   expect(values(/^hapticShadowReceiver$/)).toContain(1);
   expect(values(/^hapticGeometryCaster/)).toContain(1);
+});
+
+it("compiles a Surface's foliage fade only for fading meshes, discarding before the surface samples or lights", async () => {
+  const scene = host();
+  scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+  const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "shared-surface" });
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  const [wall, cell] = ["wall", "cell"].map((name) => {
+    const mesh = MeshBuilder.CreateBox(name, {}, scene);
+    mesh.material = result.material;
+    return mesh;
+  });
+  // A Play foliage cell in its fade band (`setFoliageFadeRange`, then `updateFoliageDistances`).
+  cell!.metadata = { hapticFoliageFade: [40, 60] };
+  for (const mesh of [wall!, cell!]) {
+    await result.material.forceCompilationAsync(mesh);
+    expect(result.material.isReadyForSubMesh(mesh, mesh.subMeshes![0]!)).toBe(true);
+  }
+  const fragment = result.material.compiledShaders.split("// Fragment shader")[1]!.replace(/\s+/g, " ");
+  // The fade is the first thing the fragment's main does, under its define.
+  expect(fragment).toMatch(/void main\(void\) \{ #ifdef HAPTIC_FOLIAGE_FADE if \((\w+)\.y > 0\.0\) \{ float _hapticFadeDist = length\(\(\w+ \* v_\w+\)\.xyz\);[^}]* discard; \} #endif/);
+  const wallEffect = wall!.subMeshes![0]!.effect!;
+  const cellEffect = cell!.subMeshes![0]!.effect!;
+  expect(fragmentCanDiscard(wallEffect)).toBe(false);
+  expect(fragmentCanDiscard(cellEffect)).toBe(true);
+  result.material.freeze();
+  const setFloat2 = [wallEffect, cellEffect].map((effect) => vi.spyOn(effect, "setFloat2"));
+  for (const mesh of [wall!, cell!]) result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes![0]!);
+  const fades = setFloat2.map((spy) => spy.mock.calls.filter(([name]) => /^hapticFoliageFade/.test(name)).map(([, x, y]) => [x, y]));
+  // Only the fading variant declares and binds the range.
+  expect(fades[0]).toEqual([]);
+  expect(fades[1]!.at(-1)).toEqual([40, 60]);
 });
 
 it("rebinds the caster mark of a pool member drawn on its own when sharing a frozen compiled material", async () => {

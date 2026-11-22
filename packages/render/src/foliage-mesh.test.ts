@@ -7,6 +7,7 @@ import { createActor, createDefaultScene, identitySerializedTransform } from "@h
 import { installAssetBytes, normalizeModelPayload } from "@haptic/assets";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createTestEngine } from "./test-support/test-engine";
+import { fragmentCanDiscard, preprocessedFragment } from "./test-support/preprocessed-glsl";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { createFoliageMesh, foliagePreparation, refreshFoliageMaterials } from "./foliage-mesh";
 import { glbContainerLoadCount } from "./glb-anim";
@@ -191,6 +192,7 @@ async function meadow(editor: boolean) {
     });
     material.bindForSubMesh(cell.getWorldMatrix(), cell, cell.subMeshes[0]!);
     spy.mockRestore();
+    // A draw compiled without the fade binds no range (undefined).
     return ranges[0];
   };
   return { scene, camera, root, near: at(5), mid: at(50), far: at(100), casts, fade };
@@ -206,6 +208,8 @@ it("distance-culls, shadow-culls and fades Play's foliage cells from the frame's
   expect([near, mid, far].map(casts)).toEqual([true, false, false]);
   expect(fade(near)).toEqual([0, 0]);
   expect(fade(mid)).toEqual([45, 60]);
+  // Every cell that can fade draws the fade variant, in its band or not: the camera never changes a cell's program.
+  expect([near, mid].map(fragmentDiscards)).toEqual([true, true]);
   // A hidden actor stays hidden whatever its distance: culling enables and disables, never changes visibility.
   near.isVisible = false;
   camera.position.set(95, 2, 0);
@@ -231,7 +235,9 @@ it("applies new distances to Play's existing cells in the next frame", async () 
   // Low quality: cull 150 m, no fade, shadows to 75 m.
   expect([near, mid, far].map((cell) => cell.isEnabled())).toEqual([true, true, true]);
   expect([near, mid, far].map(casts)).toEqual([true, true, false]);
-  expect(fade(mid)).toEqual([0, 0]);
+  // Without a Fade Range the cells draw the Material's variant without the fade's discard, and bind no range.
+  expect(fade(mid)).toBeUndefined();
+  expect(fragmentDiscards(mid)).toBe(false);
 });
 
 it("applies a Foliage distance edit to the editor's foliage in place, through undo, and rebuilds for any other edit", async () => {
@@ -286,7 +292,9 @@ it("never culls or fades foliage cells in an editor view, however far its camera
   for (const cell of [near, mid, far]) {
     expect(cell.isEnabled()).toBe(true);
     expect(casts(cell)).toBe(true);
-    expect(fade(cell)).toEqual([0, 0]);
+    // An editor view's foliage never fades, so it draws without the fade's discard.
+    expect(fade(cell)).toBeUndefined();
+    expect(fragmentDiscards(cell)).toBe(false);
   }
 });
 
@@ -357,7 +365,48 @@ it("swaps pre-built per-cell LOD geometries while sharing thin-instance matrix b
   expect(mid.geometry).toBe(midLod0Geometry);
 });
 
-it("updates FoliageFadePlugin uniforms per mesh across consecutive draws sharing a frozen material", async () => {
+/** The fragment source a mesh's first sub-mesh draws with, after Babylon's preprocessor: whether it can discard. */
+function fragmentDiscards(mesh: Mesh): boolean {
+  return fragmentCanDiscard(mesh.subMeshes[0]!.effect!);
+}
+
+it("compiles the foliage fade's discard only into the variant of a Material its fading meshes draw", async () => {
+  const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
+  const { CreateBox } = await import("@babylonjs/core/Meshes/Builders/boxBuilder");
+  const { PBRMaterial } = await import("@babylonjs/core/Materials/PBR/pbrMaterial");
+  const { setFoliageFadeRange } = await import("./foliage-fade");
+  const { engine, scene } = createTestEngine();
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  const camera = new FreeCamera("cam", new Vector3(0, 2, -5), scene);
+  camera.getViewMatrix();
+  scene.activeCamera = camera;
+  for (const material of [new StandardMaterial("shared-standard", scene), new PBRMaterial("shared-pbr", scene)]) {
+    const wall = CreateBox(`${material.name}-wall`, { size: 1 }, scene);
+    const cell = CreateBox(`${material.name}-cell`, { size: 1 }, scene);
+    wall.material = material;
+    cell.material = material;
+    setFoliageFadeRange(cell, true);
+    await vi.waitFor(() => expect(material.isReadyForSubMesh(wall, wall.subMeshes[0]!, false)).toBe(true));
+    await vi.waitFor(() => expect(material.isReadyForSubMesh(cell, cell.subMeshes[0]!, false)).toBe(true));
+    // The opaque wall keeps early depth testing: no discard in its program; the cell's can dither.
+    expect(fragmentDiscards(wall)).toBe(false);
+    expect(fragmentDiscards(cell)).toBe(true);
+    expect(preprocessedFragment(cell.subMeshes[0]!.effect!)).toContain("hapticBayer4x4(gl_FragCoord.xy)");
+    const wallProgram = wall.subMeshes[0]!.effect;
+    const fadeProgram = cell.subMeshes[0]!.effect;
+    // A frozen Material re-prepares a mesh that loses or gains the fade, and the variants come from the Effect cache.
+    material.freeze();
+    setFoliageFadeRange(cell, false);
+    await vi.waitFor(() => expect(material.isReadyForSubMesh(cell, cell.subMeshes[0]!, false)).toBe(true));
+    expect(cell.subMeshes[0]!.effect).toBe(wallProgram);
+    setFoliageFadeRange(cell, true);
+    await vi.waitFor(() => expect(material.isReadyForSubMesh(cell, cell.subMeshes[0]!, false)).toBe(true));
+    expect(cell.subMeshes[0]!.effect).toBe(fadeProgram);
+    expect(wall.subMeshes[0]!.effect).toBe(wallProgram);
+  }
+});
+
+it("updates FoliageFadePlugin uniforms per fading mesh across consecutive draws sharing a frozen material", async () => {
   const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
   const { CreateBox } = await import("@babylonjs/core/Meshes/Builders/boxBuilder");
   const { engine, scene } = createTestEngine();
@@ -369,13 +418,13 @@ it("updates FoliageFadePlugin uniforms per mesh across consecutive draws sharing
   const material = new StandardMaterial("shared-foliage", scene);
   const nearMesh = CreateBox("near", { size: 1 }, scene);
   const fadeMesh = CreateBox("fade", { size: 1 }, scene);
-  nearMesh.material = material;
-  fadeMesh.material = material;
-  nearMesh.metadata = { hapticFoliageFade: null };
+  const wall = CreateBox("wall", { size: 1 }, scene);
+  for (const mesh of [nearMesh, fadeMesh, wall]) mesh.material = material;
+  // Both cells can fade; only one is in its band.
+  nearMesh.metadata = { hapticFoliageFade: [0, 0] };
   fadeMesh.metadata = { hapticFoliageFade: [85, 100] };
 
-  expect(material.isReadyForSubMesh(nearMesh, nearMesh.subMeshes[0]!, false)).toBe(true);
-  expect(material.isReadyForSubMesh(fadeMesh, fadeMesh.subMeshes[0]!, false)).toBe(true);
+  for (const mesh of [nearMesh, fadeMesh, wall]) expect(material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!, false)).toBe(true);
   material.freeze();
 
   const ubo = (material as unknown as { _uniformBuffer: { updateFloat2: (name: string, x: number, y: number) => void } })._uniformBuffer;
@@ -387,10 +436,9 @@ it("updates FoliageFadePlugin uniforms per mesh across consecutive draws sharing
     origUpdateFloat2(name, x, y);
   });
 
-  // Consecutive binds on the same frozen material skip mustRebind; hardBindForSubMesh must still update each mesh.
-  material.bindForSubMesh(nearMesh.getWorldMatrix(), nearMesh, nearMesh.subMeshes[0]!);
-  material.bindForSubMesh(fadeMesh.getWorldMatrix(), fadeMesh, fadeMesh.subMeshes[0]!);
-  material.bindForSubMesh(nearMesh.getWorldMatrix(), nearMesh, nearMesh.subMeshes[0]!);
+  // Consecutive binds on the same frozen material skip mustRebind; hardBindForSubMesh must still update each mesh,
+  // and a draw compiled without the fade binds nothing.
+  for (const mesh of [nearMesh, fadeMesh, wall, nearMesh]) material.bindForSubMesh(mesh.getWorldMatrix(), mesh, mesh.subMeshes[0]!);
 
   expect(fadeCalls).toEqual([
     [0, 0],

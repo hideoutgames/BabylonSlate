@@ -21,7 +21,7 @@ import { sharedVertexBuffer } from "./shared-vertex-buffer";
 import { sceneRenderingSettings } from "./render-settings";
 import { setShadowDistanceCulled } from "./shadow-caster-list";
 import type { ModelLodSet } from "./model-lod";
-import "./foliage-fade";
+import { setFoliageFadeRange } from "./foliage-fade";
 
 type SubMeshSpec = {
   materialIndex: number;
@@ -175,6 +175,15 @@ function foliageDistanceState(scene: Scene): FoliageDistanceState {
 const editorViews = new WeakSet<Scene>();
 
 /**
+ * Whether a cell of a batch with `distances` dither-fades, which compiles the fade into its variants: in a Play view,
+ * with a Cull Distance and a Fade Range. Set as the cell is made and changed only by a distance edit, never by the
+ * camera, so moving through foliage compiles nothing.
+ */
+function cellCanFade(distances: FoliageDistances, editorView: boolean): boolean {
+  return !editorView && distances.cullDistance > 0 && distances.fadeRange > 0;
+}
+
+/**
  * Marks `scene` as an editor view (`EditorSceneSync`: the viewport and thumbnails): its foliage cells never distance-cull,
  * shadow-cull or fade, so a far overview shows every stroke and every cell can be selected. Levels of detail still swap.
  */
@@ -241,17 +250,14 @@ export function updateFoliageDistances(
     }
 
     setShadowDistanceCulled(cell.mesh, !showAll && (!withinCull || (effectiveShadow > 0 && dist > effectiveShadow)));
-    const metadata = (cell.mesh.metadata ?? (cell.mesh.metadata = {})) as Record<string, unknown>;
 
-    if (!showAll && withinCull && effectiveCull > 0 && effectiveFadeRange > 0) {
+    // Only a cell that can fade compiles the fade (its discard); one in its band binds the range, rewritten in place.
+    const fade = setFoliageFadeRange(cell.mesh, cellCanFade(cell.distances, showAll));
+    if (fade) {
       const fadeStart = Math.max(0, effectiveCull - effectiveFadeRange);
-      if (centerDist + radius >= fadeStart) {
-        metadata.hapticFoliageFade = [fadeStart, effectiveCull];
-      } else if (metadata.hapticFoliageFade !== null) {
-        metadata.hapticFoliageFade = null;
-      }
-    } else if (metadata.hapticFoliageFade !== null) {
-      metadata.hapticFoliageFade = null;
+      const fading = withinCull && effectiveCull > 0 && effectiveFadeRange > 0 && centerDist + radius >= fadeStart;
+      fade[0] = fading ? fadeStart : 0;
+      fade[1] = fading ? effectiveCull : 0;
     }
 
     if (withinCull && cell.lods.length > 1) {
@@ -487,7 +493,8 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
           mesh.receiveShadows = true;
           mesh.isPickable = true;
           mesh.thinInstanceEnablePicking = true;
-          mesh.metadata = { foliageRoot: root, hapticFoliageFade: null };
+          // Fade capability from the start, so the load's warm-up compiles the variant the cell draws with.
+          mesh.metadata = { foliageRoot: root, hapticFoliageFade: cellCanFade(distances[batchIndex]!, editorViews.has(scene)) ? [0, 0] : null };
           const matrices = new Float32Array(transforms.length * 16);
           transforms.forEach((transform, i) => {
             modelMatrix.multiply(Matrix.Compose(Vector3.FromArray(transform.scale), Quaternion.FromArray(transform.rotation), Vector3.FromArray(transform.position))).copyToArray(matrices, i * 16);
