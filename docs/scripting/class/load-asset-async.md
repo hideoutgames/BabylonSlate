@@ -28,6 +28,6 @@ Loads an asset and its required dependencies in the background while gameplay co
 ## Notes
 
 - Runs **Completed** when the asset is ready, or **Failed** with an **Error** if it cannot load.
-- **Soft (Load On Demand)** references need this; **Hard (Load With Owner)** references already load with their owner.
+- **Soft (Load On Demand)** references need this to be ready at once; **Hard (Load With Owner)** references already load with their owner. A Soft asset set on a component, or used by Spawn Decal or Spawn Particles, also loads on its own and applies a little later ([Soft and Hard assets](../variables.md#soft-and-hard-assets)).
 - The load belongs to the calling object until you release it, that object is destroyed or Play stops.
 - Latent: the node finishes later without pausing the rest of the game.
