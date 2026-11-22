@@ -1424,7 +1424,7 @@ describe("content-browser-helpers", () => {
     expect(atten.payload).toMatchObject({
       innerRadius: 10,
       maxRadius: 250,
-      distanceModel: "linear",
+      falloff: "natural",
     });
   });
 

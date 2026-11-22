@@ -41,6 +41,8 @@ export async function createProjectAsset(options: {
   materialDomain?: MaterialDomain;
   /** A new Surface Material starts as the starter Water Material (built-in water's look, wired from the water nodes). */
   waterMaterial?: boolean;
+  /** A new Float, Vector or Color Curve starts as this curve. */
+  curve?: unknown;
   /** Use the live Definition catalog so unsaved field edits supply defaults. */
   defaultDefinitionGuid?: string | null;
   typeSchemas?: TypeSchemas;
@@ -104,6 +106,7 @@ export async function createProjectAsset(options: {
     parentGraphs: type === "Class" ? options.parentGraphs : undefined,
     materialDomain: options.materialDomain,
     waterMaterial: options.waterMaterial,
+    curve: options.curve,
     defaultDefinitionGuid,
     dataDefinition,
     dataTree: options.dataTree,
@@ -302,6 +305,7 @@ export async function createPickerAsset(options: {
   materialDomain?: MaterialDomain;
   waterMaterial?: boolean;
   defaultDefinitionGuid?: string | null;
+  curve?: unknown;
 }): Promise<IndexedAsset> {
   const { registry, type } = options;
   const assets = registry.list();
@@ -340,6 +344,7 @@ export async function createPickerAsset(options: {
     materialDomain: options.materialDomain,
     waterMaterial: options.waterMaterial,
     defaultDefinitionGuid: options.defaultDefinitionGuid,
+    curve: options.curve,
     typeSchemas: type === "DataDefinition" || type === "DataTree"
       ? typeSchemasFromGraphAssets(collectGraphTypeAssets({ assets, openDocuments: options.openDocuments }))
       : undefined,

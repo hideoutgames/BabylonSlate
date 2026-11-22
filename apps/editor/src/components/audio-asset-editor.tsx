@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
   PanelFrame,
   PropertyGrid,
   assetRowIdentity,
+  useAssetCreate,
+  useAssetOpen,
   type PropertyRow,
 } from "@haptic/editor-kit";
 import {
@@ -16,11 +18,13 @@ import {
   normalizeSoundAttenuationPayload,
   resolveSoundAttenuationCurve,
   setAudioChannelEffect,
+  SOUND_ATTENUATION_FALLOFF_LABELS,
   validateAudioMixer,
   type ResolvedSoundAttenuation,
   type SoundAttenuationPayload,
 } from "@haptic/assets";
 import { normalizeCurveAssetPayload, type Curve } from "@haptic/core";
+import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import { FieldDescription } from "@haptic/ui/components/field";
 import {
@@ -325,12 +329,52 @@ export function SoundAttenuationDetailsPanel(_props: IDockviewPanelProps) {
   };
   const rows = soundAttenuationDetailRows(attenuation, commit, () => setPickCurve(true),
     (guid) => entries.find((asset) => asset.header.guid === guid && asset.header.type === "FloatCurve")?.header.name);
+  const createAsset = useAssetCreate();
+  const openAsset = useAssetOpen();
+  const [deriving, setDeriving] = useState<"busy" | string | null>(null);
+  const latest = useRef(attenuation);
+  latest.current = attenuation;
+  // The built-in falloff as an editable Float Curve beside the attenuation, made its Custom curve and opened.
+  const createFalloffCurve = () => {
+    if (!createAsset || attenuation.falloff === "custom") return;
+    setDeriving("busy");
+    void createAsset.createAsset({
+      type: "FloatCurve",
+      name: `${doc?.ref.label ?? "Sound Attenuation"} Falloff`,
+      curve,
+      ownerPath: doc?.ref.path,
+    }).then((falloffCurveGuid) => {
+      setDeriving(null);
+      commit({ ...latest.current, falloff: "custom", falloffCurveGuid });
+      if (openAsset?.canOpen(falloffCurveGuid)) openAsset.openAsset(falloffCurveGuid);
+    }, (failure: unknown) => setDeriving(failure instanceof Error ? failure.message : String(failure)));
+  };
 
   return (
     <PanelFrame data-testid="sound-attenuation-details-panel">
       <div className="flex flex-col gap-3 p-2">
         <AttenuationFalloffPlot attenuation={{ ...attenuation, curve }} />
         <PropertyGrid rows={rows} />
+        {attenuation.falloff !== "custom" && createAsset?.canCreate("FloatCurve") ? (
+          <div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="pointer-coarse:min-h-11"
+              disabled={deriving === "busy"}
+              onClick={createFalloffCurve}
+              data-testid="sound-attenuation-create-curve"
+            >
+              Create Curve From {SOUND_ATTENUATION_FALLOFF_LABELS[attenuation.falloff]}
+            </Button>
+          </div>
+        ) : null}
+        {deriving && deriving !== "busy" ? (
+          <Alert variant="destructive">
+            <AlertTitle>Could Not Create Curve</AlertTitle>
+            <AlertDescription>{deriving}</AlertDescription>
+          </Alert>
+        ) : null}
       </div>
       <AssetPicker
         open={pickCurve}
@@ -338,6 +382,9 @@ export function SoundAttenuationDetailsPanel(_props: IDockviewPanelProps) {
         assets={pickerAssets(entries, ["FloatCurve"])}
         allowedTypes={["FloatCurve"]}
         title="Pick Float Curve"
+        // A curve made here starts as the falloff the plot shows.
+        createTypes={["FloatCurve"]}
+        createOptions={{ curve }}
         allowNone
         onPick={(falloffCurveGuid) => {
           commit({ ...attenuation, falloffCurveGuid });

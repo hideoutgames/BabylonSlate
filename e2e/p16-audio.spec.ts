@@ -35,6 +35,7 @@ test.describe("P16 audio", () => {
     await createContentBrowserAsset(page, "AudioChannel", "SFX");
     await createContentBrowserAsset(page, "AudioMixer", "Master");
     await createContentBrowserAsset(page, "SoundAttenuation", "Near");
+    await createContentBrowserAsset(page, "FloatCurve", "Fade");
 
     await openAssetFromBrowser(page, "assets/SFX.channel.hasset");
     await expect(
@@ -52,6 +53,17 @@ test.describe("P16 audio", () => {
     await expect(page.getByTestId("attenuation-falloff-plot")).toBeVisible();
     await expect(page.getByTestId("property-coneEnabled")).toBeVisible();
     await expect(page.getByTestId("property-dopplerEnabled")).toBeVisible();
+    await expect(page.getByTestId("property-falloff")).toContainText("Natural");
+    await expect(page.getByTestId("property-falloffCurveGuid")).toHaveCount(0);
+    // Custom follows a Float Curve asset.
+    await page.getByTestId("property-falloff").click();
+    await page.getByRole("option", { name: "Custom", exact: true }).click();
+    await expect(page.getByTestId("property-falloffCurveGuid")).toBeVisible();
+    const curveGuid = await guidForPath(page, "assets/Fade.floatcurve.hasset");
+    expect(curveGuid.length).toBeGreaterThan(0);
+    await page.getByTestId("property-falloffCurveGuid").click();
+    await pickAsset(page, "sound-attenuation-curve-picker", curveGuid);
+    await expect(page.getByTestId("property-falloffCurveGuid")).toContainText("Fade");
 
     await openAssetFromBrowser(page, "assets/Master.mixer.hasset");
     await expect(
