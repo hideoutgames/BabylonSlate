@@ -121,13 +121,13 @@ test("the browser cache is keyed on the installed Playwright release, not the wh
 test("static restores ESLint's cache only for the same lockfile and saves it only from main", async () => {
   const { steps } = (await verifyWorkflow()).jobs.static;
   const lint = steps.findIndex((step) => step.run === "pnpm lint");
-  const restore = steps.findIndex((step) => step.uses?.startsWith("actions/cache/restore@"));
-  const save = steps.findIndex((step) => step.uses?.startsWith("actions/cache/save@"));
+  const cacheStep = (action) =>
+    steps.findIndex((step) => step.uses?.startsWith(`actions/cache/${action}@`) && step.with?.path === ".cache/eslint");
+  const restore = cacheStep("restore");
+  const save = cacheStep("save");
   assert.ok(restore >= 0 && restore < lint && lint < save, "restore, lint, then save");
   const lockfile = "${{ hashFiles('pnpm-lock.yaml') }}";
   for (const step of [steps[restore], steps[save]]) {
-    // The directory the lint runner passes as --cache-location.
-    assert.equal(step.with.path, ".cache/eslint");
     // ESLint's per-file check covers the config but not plugin code, so a dependency change must miss.
     assert.ok(step.with.key.includes(lockfile), step.with.key);
     assert.ok(step.with.key.includes("${{ hashFiles('eslint.config.js') }}"), step.with.key);
@@ -135,4 +135,23 @@ test("static restores ESLint's cache only for the same lockfile and saves it onl
   assert.equal(steps[save].with.key, steps[restore].with.key);
   assert.equal(steps[restore].with["restore-keys"], `eslint-\${{ runner.os }}-${lockfile}-`);
   assert.equal(steps[save].if, "github.event_name == 'push'");
+});
+
+test("static restores tsc's build info before the workspace typecheck and saves it only from main", async () => {
+  const { steps } = (await verifyWorkflow()).jobs.static;
+  const typecheck = steps.findIndex((step) => step.run === "pnpm typecheck");
+  // The directory scripts/typecheck-incremental.mjs writes build info to.
+  const cacheStep = (action) =>
+    steps.findIndex((step) => step.uses?.startsWith(`actions/cache/${action}@`) && step.with?.path === ".cache/typecheck");
+  const restore = cacheStep("restore");
+  const save = cacheStep("save");
+  assert.ok(restore >= 0 && restore < typecheck && typecheck < save, "restore, typecheck, then save");
+  assert.equal(steps[save].with.key, steps[restore].with.key);
+  // A pull request never writes build info that later runs trust.
+  assert.equal(steps[save].if, "github.event_name == 'push'");
+  // Nor does a fork's pull request read build info from its own scope, which a workflow its author changed could fill.
+  assert.equal(
+    steps[restore].if,
+    "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository",
+  );
 });

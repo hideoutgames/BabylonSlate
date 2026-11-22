@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { batches, chooseJobs, memoryBudgetGiB, PROGRAMS } from "../apps/editor/scripts/typecheck.mjs";
 
@@ -48,5 +49,31 @@ test("an unknown program or a malformed job count fails before any program runs"
     assert.equal(result.status, 2, args.join(" "));
     assert.match(result.stderr, message);
     assert.doesNotMatch(result.stdout, /passed|failed in/);
+  }
+});
+
+/** A tsconfig as tsc parses it, `extends` and comments included. */
+async function parseConfig(path) {
+  const ts = (await import("typescript")).default;
+  return ts.getParsedCommandLineOfConfigFile(path, {}, {
+    ...ts.sys,
+    onUnRecoverableConfigFileDiagnostic: (diagnostic) => assert.fail(String(diagnostic.messageText)),
+  });
+}
+
+test("the programs are exactly the projects tsconfig.json references, each one tsc -p checks whole", async () => {
+  const editor = fileURLToPath(new URL("../apps/editor/", import.meta.url));
+  const solution = await parseConfig(join(editor, "tsconfig.json"));
+  const referenced = solution.projectReferences.map((reference) => relative(editor, reference.path).replaceAll("\\", "/"));
+  // A reference added to tsconfig.json but not to PROGRAMS would go unchecked; one only in PROGRAMS checks a stray config.
+  assert.deepEqual([...referenced].sort(), PROGRAMS.map((program) => program.config).sort());
+  for (const config of [...referenced.map((name) => join(editor, name)), fileURLToPath(new URL("../apps/player/tsconfig.json", import.meta.url))]) {
+    const project = await parseConfig(config);
+    // `tsc -b` also builds a project's own references and emits a composite project's declarations; `tsc -p` does
+    // neither, so the incremental runner checks the same program as `tsc -b` only while neither exists.
+    assert.equal(project.projectReferences, undefined, `${config} references no project`);
+    assert.ok(!project.options.composite, `${config} is not composite`);
+    assert.equal(project.options.noEmit, true, `${config} emits nothing`);
+    assert.ok(project.fileNames.length > 0, `${config} includes files`);
   }
 });
