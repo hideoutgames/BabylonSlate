@@ -12,6 +12,7 @@ import {
   CLUSTER_TILES_X,
   CLUSTER_TILES_Y,
   buildLightClusters,
+  spotClusterSphere,
   type ClusterLight,
 } from "./light-clusters";
 
@@ -119,7 +120,123 @@ function rectRecord(index: number, rect: Rect): ClusterLight {
   };
 }
 
+/**
+ * The rect light marking as it was before the cluster corners were shared: every cluster's eight corners computed and
+ * tested on their own, each with its own square root. The masks a build writes must match it bit for bit.
+ */
+function referenceRectMasks(camera: Camera, lights: ClusterLight[], viewMatrix: Matrix): Uint32Array {
+  const masks = new Uint32Array(CLUSTER_COUNT * 2);
+  const relative = viewMatrix.clone();
+  const inverse = relative.clone().invert();
+  const p = camera.getProjectionMatrix().m;
+  const near = Math.max(camera.minZ, 1e-4);
+  const far = Math.max(near * 2, Math.min(camera.maxZ > 0 ? camera.maxZ : 500, 500));
+  const logScale = CLUSTER_SLICES / Math.log(far / near);
+  const perspective = p[11] !== 0;
+  const standard = perspective
+    ? p[11] === 1 && p[15] === 0 && p[1] === 0 && p[3] === 0 && p[4] === 0 && p[7] === 0 && p[12] === 0 && p[13] === 0
+    : p[15] === 1 && p[1] === 0 && p[3] === 0 && p[4] === 0 && p[7] === 0 && p[8] === 0 && p[9] === 0;
+  const depths = Array.from({ length: CLUSTER_SLICES }, (_, s) => near * Math.exp(s / logScale));
+  const edges = (count: number, scale: number, shift: number) => Array.from({ length: count * 2 }, (_, at) =>
+    at % 2 === 0 ? (((at / 2) / count) * 2 - 1 - shift) / scale : ((((at - 1) / 2 + 1) / count) * 2 - 1 - shift) / scale);
+  const edgesX = edges(CLUSTER_TILES_X, p[0]!, perspective ? p[8]! : p[12]!);
+  const edgesY = edges(CLUSTER_TILES_Y, p[5]!, perspective ? p[9]! : p[13]!);
+  for (const light of lights) {
+    const inv = inverse.m;
+    const { nx, ny, nz } = light;
+    const ax = inv[0]! * nx + inv[1]! * ny + inv[2]! * nz;
+    const ay = inv[4]! * nx + inv[5]! * ny + inv[6]! * nz;
+    const az = inv[8]! * nx + inv[9]! * ny + inv[10]! * nz;
+    const b = inv[12]! * nx + inv[13]! * ny + inv[14]! * nz - (nx * light.x + ny * light.y + nz * light.z);
+    const tolerance = 1e-4 * Math.sqrt(ax * ax + ay * ay + az * az);
+    const center = Vector3.TransformCoordinatesFromFloatsToRef(light.x, light.y, light.z, relative, new Vector3());
+    const v = relative.m;
+    const reach = 1 + center.length() + Math.sqrt(v[12]! * v[12]! + v[13]! * v[13]! + v[14]! * v[14]!);
+    const flag = (1 << (16 + light.index)) >>> 0;
+    for (let s = 0; s < CLUSTER_SLICES; s++) {
+      const last = s === CLUSTER_SLICES - 1;
+      const z0 = depths[s]!, z1 = last ? z0 : depths[s + 1]!;
+      for (let ty = 0; ty < CLUSTER_TILES_Y; ty++)
+        for (let tx = 0; tx < CLUSTER_TILES_X; tx++) {
+          let behind = standard && tolerance > 0;
+          for (let corner = 0; behind && corner < 8; corner++) {
+            const ex = edgesX[tx * 2 + (corner & 1)]!, ey = edgesY[ty * 2 + ((corner >> 1) & 1)]!;
+            const z = corner & 4 ? z1 : z0;
+            if (corner & 4 && last) {
+              const dx = perspective ? ex : 0, dy = perspective ? ey : 0;
+              behind = ax * dx + ay * dy + az + tolerance * Math.sqrt(dx * dx + dy * dy + 1) < 0;
+            } else {
+              const x = perspective ? ex * z : ex, y = perspective ? ey * z : ey;
+              behind = ax * x + ay * y + az * z + b + tolerance * (reach + Math.sqrt(x * x + y * y + z * z)) < 0;
+            }
+          }
+          if (behind) continue;
+          const cluster = (s * CLUSTER_TILES_Y + ty) * CLUSTER_TILES_X + tx;
+          masks[cluster * 2 + 1] = (masks[cluster * 2 + 1]! | flag) >>> 0;
+        }
+    }
+  }
+  return masks;
+}
+
 describe("light clusters", () => {
+  it.each([["perspective", false, false], ["orthographic", true, false], ["mirrored perspective", false, true]] as const)(
+    "marks rect lights in exactly the clusters each corner's own test marked, testing each shared corner once, under a %s view",
+    (_name, orthographic, mirrored) => {
+      // The breaks: a shared corner standing for the wrong cluster corner (a dropped or extra light in some cluster),
+      // and the corners' lengths computed again per cluster and light (15,360 square roots per rect light).
+      const camera = view(orthographic);
+      const viewMatrix = mirrored
+        ? Matrix.ReflectionToRef(Plane.FromPositionAndNormal(new Vector3(0, -0.5, 0), new Vector3(0, 1, 0)), new Matrix()).multiply(camera.getViewMatrix())
+        : camera.getViewMatrix();
+      const next = random(orthographic ? 23 : mirrored ? 29 : 17);
+      let partial = 0;
+      for (let round = 0; round < 6; round++) {
+        const rects: ClusterLight[] = [];
+        for (let index = 0; index < 4; index++) {
+          const rect = { center: [next() * 40 - 20, next() * 8 - 1, next() * 40 - 10], width: [next() * 4 - 2, next() * 4 - 2, next() * 4 - 2], height: [next() * 4 - 2, next() * 4 - 2, next() * 4 - 2] };
+          rects.push(rectRecord(index, rect));
+        }
+        // A light facing straight along the view, and one at the camera: planes through the clusters' corners.
+        if (round === 0) rects[3] = { kind: "rect", index: 3, x: 2, y: 9, z: -14, radius: Infinity, nx: 0, ny: 0, nz: 1 };
+        const sqrt = vi.spyOn(Math, "sqrt");
+        const { masks } = build(camera, rects, viewMatrix);
+        const roots = sqrt.mock.calls.length;
+        sqrt.mockRestore();
+        expect(roots).toBeLessThan((CLUSTER_TILES_X + 1) * (CLUSTER_TILES_Y + 1) * (CLUSTER_SLICES + 1) + 4 * 8);
+        expect(masks).toEqual(referenceRectMasks(camera, rects, viewMatrix));
+        for (let cluster = 0; cluster < CLUSTER_COUNT; cluster++) if (masks[cluster * 2 + 1] !== 0 && masks[cluster * 2 + 1] !== 0xf0000) partial++;
+      }
+      // The lights drop some clusters and keep others: the comparison covers both outcomes.
+      expect(partial).toBeGreaterThan(100);
+    });
+
+  it("bounds a spot light by its cone, holding every point it lights and less than its range's sphere", () => {
+    // The breaks: a cone sphere that misses part of the cone (a lit position in a cluster without the light), or one
+    // no tighter than the range's sphere about the apex.
+    const next = random(31);
+    const out = { x: 0, y: 0, z: 0, radius: 0 };
+    for (const degrees of [5, 30, 44.9, 45, 45.1, 60, 89, 90, 120]) {
+      const cosHalf = Math.fround(Math.cos((degrees * Math.PI) / 180));
+      const direction = new Vector3(next() - 0.5, next() - 0.5, next() - 0.5).normalize();
+      const apex = new Vector3(next() * 10, next() * 10, next() * 10);
+      const range = 2 + next() * 20;
+      spotClusterSphere(apex.x, apex.y, apex.z, direction, range, cosHalf, out);
+      if (degrees > 90) expect(out).toEqual({ x: apex.x, y: apex.y, z: apex.z, radius: range });
+      else expect(out.radius).toBeLessThan(range * (degrees > 45 ? Math.sin((degrees * Math.PI) / 180) + 1e-3 : 0.72));
+      for (let sample = 0; sample < 4000; sample++) {
+        // Points of the lit sector, its rim and cap included (the cap lies on the range's sphere: lit just inside it).
+        const offset = new Vector3(next() - 0.5, next() - 0.5, next() - 0.5).normalize().scale(range * Math.sqrt(sample % 4 === 0 ? 1 : next()));
+        if (Vector3.Dot(direction, offset.normalizeToNew()) <= cosHalf) continue;
+        const point = apex.add(offset);
+        expect(Math.hypot(point.x - out.x, point.y - out.y, point.z - out.z), `${degrees}° spot`).toBeLessThanOrEqual(out.radius + 1e-9);
+      }
+    }
+    // A spot with no bound on its range keeps the apex sphere.
+    spotClusterSphere(1, 2, 3, new Vector3(0, 0, 1), Number.MAX_VALUE, Math.cos(0.4), out);
+    expect(out).toEqual({ x: 1, y: 2, z: 3, radius: Number.MAX_VALUE });
+  });
+
   it.each([["perspective", false], ["orthographic", true]] as const)(
     "list every light whose range holds a position in view, under a %s camera", (_name, orthographic) => {
       const camera = view(orthographic);
