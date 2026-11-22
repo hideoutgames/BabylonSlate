@@ -37,15 +37,20 @@ import { findXcode, packageIosGame, type IosGamePackageRequest } from "./ios-gam
 import {
   allowsEditorPermission,
   authProviderUrl,
-  externalOpenUrl,
+  EDITOR_ORIGIN,
   isBillingFrameUrl,
   insidePreviewFrame,
+  isEditorIpcSender,
   isEditorSender,
   isPreviewFrameUrl,
   knownProjectFolder,
+  PREVIEW_HOST,
+  previewFile,
   rendererFile,
   validateIpcArguments,
+  windowOpenExternalUrl,
 } from "./packaged-security";
+import { editorContentSecurityPolicy, inlineScriptHashes, playerContentSecurityPolicy } from "./content-security-policy";
 import { automaticUpdatesEnabled, createDesktopUpdates, updatesSupported, type DesktopUpdateStatus } from "./desktop-updates";
 import { deleteDesktopProject, DesktopLibraries, libraryIpcHandlers, STORAGE_OPERATIONS } from "./desktop-storage-ipc";
 
@@ -94,7 +99,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: t
 
 function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
   ipcMain.handle(channel, (event, ...args: unknown[]) => {
-    if (!editorWindows.has(event.sender.id) || !isEditorSender(event.senderFrame?.url ?? "", event.senderFrame === event.sender.mainFrame)) throw new Error("Untrusted IPC sender");
+    if (!isEditorIpcSender(event, editorWindows)) throw new Error("Untrusted IPC sender");
     validateIpcArguments(channel, args);
     return listener(event, ...args);
   });
@@ -156,16 +161,16 @@ async function createWindow(): Promise<void> {
   // Windows can terminate an installer during shutdown/logoff. Keep it cached
   // for a subsequent normal exit instead.
   window.on("session-end", () => updates?.setEnabled(false));
-  // Pricing, billing management and mail links open outside the app.
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    const external = externalOpenUrl(url);
+  // Pricing, billing management and mail links open outside the app; the Preview frame opens nothing.
+  window.webContents.setWindowOpenHandler(details => {
+    const external = windowOpenExternalUrl(details);
     if (external) void shell.openExternal(external);
     return { action: "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
     if (!isEditorSender(url, true)) event.preventDefault();
   });
-  // Subframes may load the Preview player, or Web Billing checkout outside it.
+  // Subframes may load the Preview player (at its own origin), or Web Billing checkout outside it.
   window.webContents.on("will-frame-navigate", event => {
     if (event.isMainFrame || isPreviewFrameUrl(event.url)) return;
     if (isBillingFrameUrl(event.url) && !insidePreviewFrame(event.frame)) return;
@@ -394,19 +399,28 @@ void app.whenReady().then(async () => {
     callback(editorWindows.has(contents.id) && allowsEditorPermission(permission, details.requestingUrl, details.isMainFrame)));
   session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
     contents !== null && editorWindows.has(contents.id) && allowsEditorPermission(permission, details.requestingUrl ?? "", details.isMainFrame));
+  // Built once: the editor's inline boot scripts are allowed by their hashes.
+  const editorPolicy = editorContentSecurityPolicy(inlineScriptHashes(
+    await readFile(join(rendererRoot, "index.html"), "utf8").catch(() => "")));
+  const previewPolicy = playerContentSecurityPolicy(EDITOR_ORIGIN);
   protocol.handle("app", async request => {
     try {
       // Play in the desktop editor sets Discord Rich Presence as a packaged desktop game does.
       const url = new URL(request.url);
       if (url.host === "babylonslate" && url.pathname === DISCORD_PRESENCE_PATH) {
-        return handleDiscordPresenceRequest(request, "app://babylonslate", presence ??= createDiscordPresence());
+        return handleDiscordPresenceRequest(request, EDITOR_ORIGIN, presence ??= createDiscordPresence());
       }
       if (!["GET", "HEAD"].includes(request.method)) return new Response(null, { status: 405 });
-      const file = rendererFile(request.url, rendererRoot);
+      // Preview Build's player is served at its own origin, so project code in it is cross-origin to the editor.
+      const preview = url.host === PREVIEW_HOST;
+      const file = preview ? previewFile(request.url, rendererRoot) : rendererFile(request.url, rendererRoot);
       const response = await net.fetch(pathToFileURL(file).href, { method: request.method });
       const headers = new Headers(response.headers);
       headers.set("Cross-Origin-Opener-Policy", "same-origin");
       headers.set("Cross-Origin-Embedder-Policy", "require-corp");
+      // The editor, a cross-origin and cross-origin-isolated page, embeds the Preview frame.
+      if (preview) headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+      headers.set("Content-Security-Policy", preview ? previewPolicy : editorPolicy);
       headers.set("X-Content-Type-Options", "nosniff");
       return new Response(response.body, { status: response.status, headers });
     } catch { return new Response(null, { status: 404 }); }

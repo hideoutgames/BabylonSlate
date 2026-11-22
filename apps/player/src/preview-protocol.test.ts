@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { previewPackFromFiles } from "@haptic/exporter";
-import { previewPackFromExpectedHostMessage } from "./preview-protocol";
+import { previewHostOrigin, previewPackFromExpectedHostMessage } from "./preview-protocol";
+
+describe("preview host origin", () => {
+  it("talks to the embedding editor's origin, which the desktop app keeps apart from the player's", () => {
+    expect(previewHostOrigin({ origin: "app://preview", ancestorOrigins: ["app://babylonslate"] })).toBe("app://babylonslate");
+    expect(previewHostOrigin({ origin: "https://site.example", ancestorOrigins: ["https://site.example"] })).toBe("https://site.example");
+  });
+
+  it("trusts only its own origin without a known embedder", () => {
+    expect(previewHostOrigin({ origin: "https://site.example" })).toBe("https://site.example");
+    expect(previewHostOrigin({ origin: "https://site.example", ancestorOrigins: [] })).toBe("https://site.example");
+    expect(previewHostOrigin({ origin: "app://preview", ancestorOrigins: ["null"] })).toBe("app://preview");
+  });
+});
 
 describe("preview pack protocol", () => {
   it("delivers a handoff with its trace budget only from the expected parent and origin", () => {

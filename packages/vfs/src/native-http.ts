@@ -25,9 +25,14 @@ export function createNativeHttp(): NativeHttp | null {
   return null;
 }
 
-/** IPC takes a byte body as an exact `ArrayBuffer`, which the main process validates and bounds. */
+/**
+ * IPC takes a byte body as an exact `ArrayBuffer`, which the main process
+ * validates and bounds. The desktop app never follows a redirect, so
+ * `disableRedirects` has nothing to say there and is not sent.
+ */
 function electronRequest(request: NativeHttpRequest): Parameters<ElectronHttpBridge["fetch"]>[0] {
-  const { body, ...rest } = request;
+  const { body, disableRedirects, ...rest } = request;
+  void disableRedirects;
   if (!(body instanceof Uint8Array)) return { ...rest, ...(body === undefined ? {} : { body }) };
   return { ...rest, body: body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer };
 }

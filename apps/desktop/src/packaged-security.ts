@@ -44,6 +44,23 @@ export function gameFile(rawUrl: string, root: string): string {
   return bundledFile(rawUrl, root, GAME_HOST);
 }
 
+/**
+ * The origin Preview Build's player runs at. It differs from the editor's
+ * (`app://babylonslate`), so project code in the Preview frame cannot reach
+ * the editor's window, its preload bridge or its storage.
+ */
+export const PREVIEW_HOST = "preview";
+export const PREVIEW_ORIGIN = `app://${PREVIEW_HOST}`;
+export const EDITOR_ORIGIN = "app://babylonslate";
+
+/** The bundled player's file for an `app://preview/player/` URL; nothing else of the renderer is served there. */
+export function previewFile(rawUrl: string, root: string): string {
+  const file = bundledFile(rawUrl, root, PREVIEW_HOST);
+  const within = relative(resolve(root, "player"), file);
+  requireValue(within !== "" && !within.startsWith("..") && !isAbsolute(within));
+  return file;
+}
+
 /** The origin an exported desktop game runs at. */
 export const GAME_HOST = "game";
 
@@ -68,10 +85,10 @@ export function gameExternalUrl(rawUrl: string): string | null {
   } catch { return null; }
 }
 
-function bundledUrl(rawUrl: string): URL | null {
+function bundledUrl(rawUrl: string, host = "babylonslate"): URL | null {
   try {
     const url = new URL(rawUrl);
-    return url.protocol === "app:" && url.host === "babylonslate" && !url.username && !url.password ? url : null;
+    return url.protocol === "app:" && url.host === host && !url.username && !url.password ? url : null;
   } catch { return null; }
 }
 
@@ -80,10 +97,33 @@ export function isEditorSender(rawUrl: string, mainFrame: boolean): boolean {
   return mainFrame && url !== null && ["/", "/index.html"].includes(url.pathname);
 }
 
-/** A subframe may only host the bundled Preview player. */
+/** An IPC event as Electron hands it to `ipcMain.handle`: the sending page and the frame that sent it. */
+export interface IpcSenderEvent {
+  readonly sender: { readonly id: number; readonly mainFrame: unknown };
+  readonly senderFrame: { readonly url: string; readonly parent: unknown } | null;
+}
+
+/**
+ * Only the editor page's own top frame may call privileged IPC: the sending
+ * page must be an editor window, the frame its main frame with no parent, and
+ * the frame's document the editor at `app://babylonslate/`. A subframe is
+ * refused even when it is same-origin with the editor.
+ */
+export function isEditorIpcSender(event: IpcSenderEvent, editorWindows: ReadonlySet<number>): boolean {
+  const frame = event.senderFrame;
+  return editorWindows.has(event.sender.id) && frame !== null && frame === event.sender.mainFrame &&
+    frame.parent === null && isEditorSender(frame.url, true);
+}
+
+/** A subframe may only host the bundled Preview player, at its own origin. */
 export function isPreviewFrameUrl(rawUrl: string): boolean {
-  const url = bundledUrl(rawUrl);
+  const url = bundledUrl(rawUrl, PREVIEW_HOST);
   return url !== null && ["/player/", "/player/index.html"].includes(url.pathname);
+}
+
+/** Whether a URL belongs to the Preview origin, where project code runs. */
+export function isPreviewUrl(rawUrl: string): boolean {
+  return bundledUrl(rawUrl, PREVIEW_HOST) !== null;
 }
 
 /** RevenueCat Web Billing checkout and its Stripe payment frames. */
@@ -115,7 +155,7 @@ const DEVICE_SIGN_IN_PAGES = new Set(["https://github.com/login/device", "https:
 export function externalOpenUrl(rawUrl: string): string | null {
   try {
     const url = new URL(rawUrl);
-    if (url.protocol === "mailto:") return url.href;
+    if (url.protocol === "mailto:") return safeMailto(url.href);
     if (url.protocol !== "https:" || url.username || url.password) return null;
     return HAPTIC_SITE_HOST.test(url.hostname) ||
       STORE_MANAGEMENT_HOSTS.has(url.hostname) ||
@@ -126,6 +166,36 @@ export function externalOpenUrl(rawUrl: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** The longest mailto link handed to the mail client; the editor's own are far shorter. */
+export const MAX_MAILTO_LENGTH = 2048;
+/** C0 controls, DEL and C1 controls. */
+function hasControlCharacter(text: string): boolean {
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true;
+  }
+  return false;
+}
+
+/** A mailto link within the length limit with no control character, written or percent-encoded (header injection). */
+function safeMailto(href: string): string | null {
+  if (href.length > MAX_MAILTO_LENGTH || hasControlCharacter(href)) return null;
+  let decoded: string;
+  try { decoded = decodeURIComponent(href); } catch { return null; }
+  return hasControlCharacter(decoded) ? null : href;
+}
+
+/**
+ * What a `window.open` from an editor window may open outside the app: the
+ * {@link externalOpenUrl} allowlist, never for a request the Preview origin
+ * made. The Preview iframe's sandbox already withholds popups; this check
+ * also refuses one whose referrer names the Preview origin.
+ */
+export function windowOpenExternalUrl(details: { url: string; referrer?: { url?: string } }): string | null {
+  if (isPreviewUrl(details.referrer?.url ?? "")) return null;
+  return externalOpenUrl(details.url);
 }
 
 /** Where Clerk returns the system browser after a third-party sign-in. */
@@ -450,7 +520,6 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     } else if (request.body !== undefined) text(request.body);
     if (request.upload !== undefined) validateImageUpload(request);
     requireValue(request.responseType === undefined || request.responseType === "text" || request.responseType === "binary");
-    requireValue(request.disableRedirects === undefined || typeof request.disableRedirects === "boolean");
     if (request.headers !== undefined) headerRecord(request.headers);
   } else if (args.length > 0) {
     projectPath(args[0], channel !== "project:remove" && channel !== "project:writeBinary");
