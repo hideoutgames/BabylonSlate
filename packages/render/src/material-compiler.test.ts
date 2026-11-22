@@ -384,7 +384,7 @@ describe("material compiler", () => {
     disposers.push(() => result.dispose());
     expect(await result.ready).toEqual([]);
     // The constant is the decoded pick; written as is, a picked mid grey showed at its linear value (128 as 55 of 255).
-    const fill = result.material.getBlockByName("letters_textFill") as MultiplyBlock;
+    const fill = result.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_textFill`) as MultiplyBlock;
     const encode = fill.left.connectedPoint!.ownerBlock;
     expect(encode).toBeInstanceOf(ColorEncodingBlock);
     expect((encode as ColorEncodingBlock).to).toBe("display");
@@ -721,7 +721,7 @@ describe("material compiler", () => {
     // Decoded from the emitter's colour (the preview's white constant), encoded from the graph's result.
     const decoded = decode.input.connectedPoint!.ownerBlock as InputBlock;
     expect(decoded.isAttribute ? decoded.name : "constant").toBe(particlePreview ? "constant" : "particle_color");
-    expect(encode.input.connectedPoint!.ownerBlock.name).toMatch(/tint/);
+    expect(encode.input.connectedPoint!.ownerBlock.name).toBe(nodeBlockName(doc, "tint"));
     const fragment = result.material.attachedBlocks.find((block): block is FragmentOutputBlock => block instanceof FragmentOutputBlock)!;
     const fed = fragment.rgba.connectedPoint!.ownerBlock;
     expect(particlePreview ? fed : (fed as ParticleBlendMultiplyBlock).color.connectedPoint!.ownerBlock).toBe(encode);

@@ -124,7 +124,7 @@ describe("saved component material instances", () => {
     const material = f.sync.meshForActor("actor")!.material;
     if (domain === "ui") {
       expect(material).not.toBe(f.library.materialFor(f.scene, "material", { unlit: true }));
-      expect(((material as NodeMaterial).getBlockByName("fade") as InputBlock).value).toBe(0.2);
+      expect(((material as NodeMaterial).getBlockByName(nodeBlockName(document, "fade")) as InputBlock).value).toBe(0.2);
     } else {
       // Not drawn, and no private copy made for it: the plane keeps its unlit look.
       expect(isUnlitMaterial(material)).toBe(true);
