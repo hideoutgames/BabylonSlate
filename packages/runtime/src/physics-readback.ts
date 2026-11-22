@@ -20,6 +20,11 @@ export interface PhysicsReadbackHost {
   readonly simulatedBodies: ReadonlyMap<string, string>;
   /** Actor guids whose current body is dynamic (eligible for unchanged/sleeping skip). */
   readonly dynamicBodyActors: ReadonlySet<string>;
+  /**
+   * Dynamic bodies read back this step even when they did not move: their actor or an ancestor changed since the
+   * last step, so their actor-local pose must be recomputed against the new chain.
+   */
+  readonly forcedReadback: ReadonlySet<string>;
   /** The actor each body was created for, by actor guid. */
   readonly bodyOwners: ReadonlyMap<string, Actor>;
   /** Physics eligibility; a whole-world recomposition calls it unbound. */
@@ -66,7 +71,8 @@ export class PhysicsReadback {
    * bodies are skipped: they follow their actor, so authored depth, tilt and
    * quaternions stay as written and a static child keeps its local pose under a
    * moving parent. Sleeping/unchanged dynamic bodies are skipped when
-   * `!recompose` and no ancestor moved during the step. An unparented body
+   * `!recompose`, no ancestor body moved during the step and neither the actor
+   * nor any ancestor changed since the last step (`forcedReadback`). An unparented body
    * copies its native pose without composition; a parented body resolves only
    * its own ancestor chain against post-step parent body poses, where a static
    * ancestor composes under its own parent like a nonphysics actor. With
@@ -139,6 +145,7 @@ export class PhysicsReadback {
       !this.recomposePass &&
       host.dynamicBodyActors.has(actorId) &&
       host.backend.didBodyMoveLastStep !== undefined &&
+      !host.forcedReadback.has(actorId) &&
       !host.backend.didBodyMoveLastStep(bodyId)
     ) {
       if (actorParentGuid(owner) !== null) {
