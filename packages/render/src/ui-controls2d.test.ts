@@ -10,6 +10,8 @@ import { applyAssignMesh, applyUIControl2DCommand, createSnapshotSceneBinding, t
 import { applySceneToBabylonScene } from "./scene-loader";
 import type { TextureResources } from "./resource-cache";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 
 describe("SceneLayer controls", () => {
   const engines: NullEngine[] = [];
@@ -162,8 +164,9 @@ describe("SceneLayer controls", () => {
 
   it("renders controls in the editor, refreshes borrowed per-part materials, and releases texture leases on disposal", () => {
     const { layer } = setup();
-    const material = new StandardMaterial("authored", layer.scene);
-    const nextMaterial = new StandardMaterial("reloaded", layer.scene);
+    const userInterface = (name: string, domain = "ui") => Object.assign(new StandardMaterial(name, layer.scene), { metadata: { materialDomain: domain } });
+    const material = userInterface("authored");
+    const nextMaterial = userInterface("reloaded");
     let selected = material;
     const resolveMaterial = () => selected;
     const scene = createDefaultScene();
@@ -175,8 +178,15 @@ describe("SceneLayer controls", () => {
     expect(visual.surfaces.find(part => part.role === "thumb")?.mesh.material).toBe(material);
     selected = nextMaterial; refreshUIControl2DMaterials(visual.mesh, { resolveMaterial });
     expect(visual.surfaces.find(part => part.role === "thumb")?.mesh.material).toBe(nextMaterial);
+    // A Surface Material is not drawn: the thumb takes its own unlit look, as without a Material.
+    const surface = userInterface("surface", "surface");
+    selected = surface; refreshUIControl2DMaterials(visual.mesh, { resolveMaterial });
+    const thumb = visual.surfaces.find(part => part.role === "thumb")!.mesh;
+    expect(isUnlitMaterial(thumb.material)).toBe(true);
+    expect(unlitBinding(thumb).color).toEqual([238 / 255, 238 / 255, 238 / 255]);
+    selected = nextMaterial; refreshUIControl2DMaterials(visual.mesh, { resolveMaterial });
     visual.mesh.dispose();
-    expect(layer.scene.materials).toEqual(expect.arrayContaining([material, nextMaterial]));
+    expect(layer.scene.materials).toEqual(expect.arrayContaining([material, nextMaterial, surface]));
 
     const texture = RawTexture.CreateRGBATexture(new Uint8Array([255, 255, 255, 255]), 1, 1, layer.scene);
     const release = vi.fn();

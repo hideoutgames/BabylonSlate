@@ -80,6 +80,7 @@ export {
   applySetMaterialParameter,
   assignedMaterialGuids,
   wantsOverlayUnlitMaterial,
+  takesUserInterfaceMaterial,
   applyMaterialToActorMeshes,
 } from "./snapshot-materials";
 export {

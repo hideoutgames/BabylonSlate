@@ -27,7 +27,9 @@ import {
 import {
   createOverlayTextureQuad,
   applyOverlayUnlitMaterial,
+  applyUserInterfaceFallback,
 } from "./overlay-texture-quad";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 import { createOverlayPanelMesh } from "./overlay-panel-mesh";
 import {
   beginSlotModelAnimLoad,
@@ -389,14 +391,15 @@ export function createPlayMesh(
       return mesh;
     }
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    applyOverlayUnlitMaterial(mesh);
+    if (meshKind === "2dmaterial") applyUserInterfaceFallback(mesh);
+    else applyOverlayUnlitMaterial(mesh);
     mesh.isPickable = meshKind === "2dbutton";
     if (meshKind === "2dmaterial" && assetGuid && binding?.resolveMaterial) {
       const compiled = binding.resolveMaterial(assetGuid, {
         scene,
         unlit: true,
       });
-      if (compiled) mesh.material = compiled;
+      if (acceptsUserInterfaceMaterial(compiled)) mesh.material = compiled;
     }
     return mesh;
   }

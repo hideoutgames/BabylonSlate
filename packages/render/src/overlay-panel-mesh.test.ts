@@ -1,4 +1,5 @@
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { isUnlitMaterial } from "./unlit-material";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./test-support/test-engine";
@@ -14,6 +15,19 @@ describe("createOverlayPanelMesh", () => {
       handle?.scene.dispose();
       handle?.engine.dispose();
     }
+  });
+
+  it("draws a Material source only from a User Interface Material, else its unlit look", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const materials = new Map(["ui", "surface"].map((domain) =>
+      [domain, Object.assign(new StandardMaterial(domain, handle.scene), { metadata: { materialDomain: domain } })]));
+    const panel = (materialGuid: string) => createOverlayPanelMesh(handle.scene, materialGuid, {
+      source: "material", textureGuid: null, materialGuid,
+      marginLeft: 0.1, marginRight: 0.1, marginTop: 0.1, marginBottom: 0.1, hitTest: "ignore",
+    }, { pixelsPerUnit: 100, resolveMaterial: (guid) => materials.get(guid) ?? null });
+    expect(panel("ui").material).toBe(materials.get("ui"));
+    expect(isUnlitMaterial(panel("surface").material)).toBe(true);
   });
 
   it("keeps unscaled 9-slice corner UVs on a 1x1 dest", () => {

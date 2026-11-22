@@ -10,6 +10,7 @@ import {
   createSnapshotSceneBinding,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
+import { isUnlitMaterial } from "./unlit-material";
 
 const disposers: Array<() => void> = [];
 
@@ -63,6 +64,7 @@ describe("runtime material assignment", () => {
     const binding = createSnapshotSceneBinding();
     binding.isOverlaySlot = () => true;
     const overlayMat = new StandardMaterial("overlay-unlit", overlay);
+    overlayMat.metadata = { materialDomain: "ui" };
     const worldMat = new StandardMaterial("world-lit", world);
     binding.resolveMaterial = (guid, options) =>
       options?.unlit === true && options.scene === overlay
@@ -81,6 +83,32 @@ describe("runtime material assignment", () => {
       materialAssetGuid: "mat-1",
     });
     expect(binding.meshes.get(1)?.material).toBe(overlayMat);
+  });
+
+  it("draws only a User Interface Material on a 2D Material, and a Surface Material on a Scene Layer's 3D mesh", () => {
+    const engine = new NullEngine();
+    const overlay = new Scene(engine);
+    disposers.push(() => {
+      overlay.dispose();
+      engine.dispose();
+    });
+    const binding = createSnapshotSceneBinding();
+    binding.isOverlaySlot = () => true;
+    const surface = Object.assign(new StandardMaterial("surface", overlay), { metadata: { materialDomain: "surface" } });
+    const userInterface = Object.assign(new StandardMaterial("ui", overlay), { metadata: { materialDomain: "ui" } });
+    binding.resolveMaterial = (guid) => (guid === "surface" ? surface : guid === "ui" ? userInterface : null);
+    applyAssignMesh(overlay, binding, { type: "assignMesh", slotId: 1, meshKind: "2dmaterial", meshAssetGuid: null });
+    applyAssignMesh(overlay, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: null });
+    spawn(overlay, binding, [1, 2]);
+    const assign = (slotId: number, materialAssetGuid: string) =>
+      applyAssignMaterial(overlay, binding, { type: "assignMaterial", slotId, materialAssetGuid });
+    assign(1, "surface");
+    // Not drawn: the plane keeps its white unlit look.
+    expect(isUnlitMaterial(binding.meshes.get(1)?.material)).toBe(true);
+    assign(1, "ui");
+    expect(binding.meshes.get(1)?.material).toBe(userInterface);
+    assign(2, "surface");
+    expect(binding.meshes.get(2)?.material).toBe(surface);
   });
 
   it("applies an assigned material to a spawned actor", () => {

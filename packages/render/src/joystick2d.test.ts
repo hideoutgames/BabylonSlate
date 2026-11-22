@@ -9,6 +9,8 @@ import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { applyAssignMesh, createSnapshotSceneBinding, type AssignMeshCommand } from "./snapshot-apply";
 import { applySceneToBabylonScene } from "./scene-loader";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 
 describe("SceneLayer joystick", () => {
   const engines: NullEngine[] = [];
@@ -124,8 +126,9 @@ describe("SceneLayer joystick", () => {
 
   it("renders independently assigned materials in the editor and preserves borrowed materials through replacement and disposal", () => {
     const { layer } = setup();
-    const background = new StandardMaterial("background", layer.scene);
-    const thumb = new StandardMaterial("thumb", layer.scene);
+    const userInterface = (name: string) => Object.assign(new StandardMaterial(name, layer.scene), { metadata: { materialDomain: "ui" } });
+    const background = userInterface("background");
+    const thumb = userInterface("thumb");
     const materials = new Map([["bg", background], ["thumb", thumb]]);
     const resolveMaterial = (guid: string, options?: { scene?: unknown; unlit?: boolean }) => {
       // By identity: a subset match walks the whole Scene graph on every call (seconds under coverage).
@@ -143,11 +146,18 @@ describe("SceneLayer joystick", () => {
     expect(visual.thumb.material).toBe(thumb);
     mesh.computeWorldMatrix(true);
     expect(mesh.getBoundingInfo().boundingBox.extendSize).toEqual(new Vector3(2, 2, 0));
-    const replacement = new StandardMaterial("replacement", layer.scene);
+    const replacement = userInterface("replacement");
     materials.set("thumb", replacement);
     refreshJoystick2DMaterials(visual.mesh, { resolveMaterial });
     expect(visual.thumb.material).toBe(replacement);
+    // A Surface Material is not drawn: the thumb takes its fallback look, its grey at 0.85 opacity.
+    const surface = Object.assign(new StandardMaterial("surface", layer.scene), { metadata: { materialDomain: "surface" } });
+    materials.set("thumb", surface);
+    refreshJoystick2DMaterials(visual.mesh, { resolveMaterial });
+    expect(isUnlitMaterial(visual.thumb.material)).toBe(true);
+    expect([unlitBinding(visual.thumb).color, unlitBinding(visual.thumb).alpha]).toEqual([[0.75, 0.75, 0.75], 0.85]);
+    expect(mesh.material).toBe(background);
     visual.mesh.dispose();
-    expect(layer.scene.materials).toEqual(expect.arrayContaining([background, thumb, replacement]));
+    expect(layer.scene.materials).toEqual(expect.arrayContaining([background, thumb, replacement, surface]));
   });
 });

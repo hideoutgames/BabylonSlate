@@ -50,6 +50,7 @@ import { isEditorCameraModel } from "./editor-camera-model";
 import { attachmentParentFor } from "./spring-arm";
 import { refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";
 import { applyAuthoredMaterialInstance } from "./authored-material-instance";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 import {
   applyWorldVisualGroup,
   RENDERING_GROUP,
@@ -289,7 +290,13 @@ export function applyAuthoredActorMaterialInstances(
       ? parts.find((mesh) => mesh.name === editorComponentMeshName(actor.id, component.id)) : root;
     if (!visual) continue;
     const text = component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent";
-    applyAuthoredMaterialInstance(visual, component, assets, {
+    // A 2D Material or Panel draws only a User Interface Material: another's saved values make no instance.
+    const guid = component.properties.materialGuid;
+    const userInterface = component.classId === "2DMaterialComponent" || component.classId === "2DPanelComponent";
+    const shared = userInterface && component.materialInstance && typeof guid === "string"
+      ? assets?.resolveMaterial?.(guid, { scene: visual.getScene(), unlit: true }) : null;
+    const declined = !!shared && !acceptsUserInterfaceMaterial(shared);
+    applyAuthoredMaterialInstance(visual, declined ? { ...component, materialInstance: undefined } : component, assets, {
       unlit: text || component.classId.startsWith("2D"), onPublished,
       ...(text ? { apply: (material: import("@babylonjs/core/Materials/material").Material) => refreshText2DMaterials(visual, {
         ...assets, resolveMaterial: (guid, options) => guid === component.properties.materialGuid

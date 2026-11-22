@@ -11,6 +11,7 @@ import { isPoolMember } from "./instance-pool";
 import { withNetMaterialChanges } from "./material-change-batch";
 import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
+import { acceptsUserInterfaceMaterial, restoreUserInterfaceFallback } from "./user-interface-material";
 import type {
   SerializedActor,
   SerializedComponent,
@@ -1334,7 +1335,7 @@ export class EditorSceneSync {
           actor.id,
           root,
           authoredMaterialGuid(component.properties.materialGuid),
-          { unlit: true },
+          { unlit: true, userInterface: true },
         );
         continue;
       }
@@ -1345,7 +1346,7 @@ export class EditorSceneSync {
             actor.id,
             root,
             authoredMaterialGuid(component.properties.materialGuid),
-            { unlit: true },
+            { unlit: true, userInterface: true },
           );
         }
         continue;
@@ -1385,7 +1386,7 @@ export class EditorSceneSync {
     actorId: string,
     visual: Mesh,
     guid: string | null,
-    options?: { unlit?: boolean },
+    options?: { unlit?: boolean; userInterface?: boolean },
   ): void {
     if (!guid) return;
     const targets = meshAndDescendantMeshes(visual).filter(
@@ -1398,9 +1399,15 @@ export class EditorSceneSync {
       }
     }
     this.noteMaterialUse(actorId, guid);
+    const { userInterface, ...resolveOptions } = options ?? {};
     const material =
-      this.resolveMaterial?.(guid, { ...options, scene: this.scene }) ?? null;
+      this.resolveMaterial?.(guid, { ...resolveOptions, scene: this.scene }) ?? null;
     if (!material) return;
+    // A 2D Material or Panel draws only a User Interface Material; any other leaves its fallback look.
+    if (userInterface && !acceptsUserInterfaceMaterial(material)) {
+      for (const target of targets) restoreUserInterfaceFallback(target);
+      return;
+    }
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;
       assignActorMeshMaterial(target, material, this.constructionMaterials);
