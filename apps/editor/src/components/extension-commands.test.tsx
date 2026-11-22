@@ -50,7 +50,8 @@ beforeEach(async () => {
     code: { read: (path) => storage.readText(path), write: async (path, value) => { await storage.mkdir("code", true); await storage.writeText(path, value); } },
     materials: { convertGlsl: convertGlslToMaterial },
   });
-  await harness.service.refresh();
+  // This computer trusts the test project.
+  await harness.service.refresh(undefined, true);
 });
 
 afterEach(async () => {

@@ -1,5 +1,5 @@
 import { newGuid, type ProjectStorage } from "@haptic/core";
-import { unzipSync } from "fflate";
+import { Unzip, UnzipInflate, unzipSync } from "fflate";
 import { encodeProjectZip, readProjectTree, writeProjectTree, type ProjectTreeFile } from "./hproject";
 import { discoverEngineExtensions, discoverProjectExtensions, type ExtensionDescriptor } from "./extension-host";
 import { decodeExtensionSettings, encodeExtensionSettings, EXTENSIONS_DIR, EXTENSION_MANIFEST_FILE, EXTENSION_MANIFEST_MAX_BYTES, isExtensionCodePath, isExtensionPackagePath, type ExtensionSettings } from "./extension-settings";
@@ -72,29 +72,99 @@ function inspectExtensionFiles(files: ProjectTreeFile[]): InspectedHextension {
   return { settings, settingsPath: EXTENSION_MANIFEST_FILE, files: regularFiles };
 }
 
+/** Compressed bytes handed to the inflater at a time, so one step inflates at most about 16 MiB. */
+const INFLATE_INPUT_CHUNK_BYTES = 16 * 1024;
+
+function limitExceeded(): Error {
+  return new Error("Extension package exceeds its file count or expanded size limit.");
+}
+
+/** Counts package files and checks their paths, rejecting a duplicate (case-insensitively). */
+function packagePathCheck(): (name: string) => void {
+  let fileCount = 0;
+  const paths = new Set<string>();
+  return (name) => {
+    fileCount += 1;
+    const folded = name.toLowerCase();
+    if (!isExtensionPackagePath(name) || paths.has(folded)) {
+      throw new Error(`Invalid or duplicate Extension package path: ${name}`);
+    }
+    paths.add(folded);
+    if (fileCount > MAX_PACKAGE_FILES) throw limitExceeded();
+  };
+}
+
+/**
+ * The archive's files, with every limit enforced on the bytes actually
+ * inflated. The sizes a ZIP declares are only a first check: the files are
+ * inflated as a stream, a little compressed input at a time, and the running
+ * total is counted, so a forged size cannot make the inflater run on past
+ * `maxExpandedBytes`; it stops as soon as the total passes it.
+ */
+export function unzipExtensionArchive(bytes: Uint8Array, maxExpandedBytes = MAX_EXPANDED_BYTES): ProjectTreeFile[] {
+  // Declared sizes, names and counts from the central directory reject most bad archives before anything inflates.
+  const declaredPath = packagePathCheck();
+  let declaredBytes = 0;
+  unzipSync(bytes, { filter(file) {
+    if (file.name.endsWith("/") && file.originalSize === 0) return false;
+    declaredPath(file.name);
+    declaredBytes += Math.max(file.originalSize, file.size);
+    if (declaredBytes > maxExpandedBytes ||
+        (file.name === EXTENSION_MANIFEST_FILE && file.originalSize > EXTENSION_MANIFEST_MAX_BYTES)) {
+      throw limitExceeded();
+    }
+    return false;
+  } });
+  const files: ProjectTreeFile[] = [];
+  const checkPath = packagePathCheck();
+  let expandedBytes = 0;
+  let failure: unknown = null;
+  const unzip = new Unzip((file) => {
+    if (failure !== null) return;
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    file.ondata = (error, data, final) => {
+      if (failure !== null) return;
+      try {
+        if (error) throw error;
+        size += data.byteLength;
+        expandedBytes += data.byteLength;
+        if (expandedBytes > maxExpandedBytes || (file.name === EXTENSION_MANIFEST_FILE && size > EXTENSION_MANIFEST_MAX_BYTES)) {
+          throw limitExceeded();
+        }
+        chunks.push(data);
+        if (!final) return;
+        // A folder entry carries no data; one with data is checked as a file and refused.
+        if (file.name.endsWith("/") && size === 0) return;
+        checkPath(file.name);
+        const joined = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+          joined.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        files.push({ path: file.name, data: joined });
+      } catch (cause) {
+        failure = cause;
+        file.terminate();
+      }
+    };
+    file.start();
+  });
+  unzip.register(UnzipInflate);
+  for (let offset = 0; offset < bytes.byteLength && failure === null; offset += INFLATE_INPUT_CHUNK_BYTES) {
+    const end = Math.min(offset + INFLATE_INPUT_CHUNK_BYTES, bytes.byteLength);
+    unzip.push(bytes.subarray(offset, end), end === bytes.byteLength);
+  }
+  if (failure !== null) throw failure;
+  return files;
+}
+
 export async function inspectHextension(bytes: Uint8Array): Promise<InspectedHextension> {
   if (bytes.byteLength > MAX_ARCHIVE_BYTES) throw new Error("Extension archive exceeds 64 MiB.");
   // iOS pickers show every file; name a wrong pick rather than fail to unzip it.
   if (!isZipArchive(bytes)) throw new Error("Not a .hextension: the file is not an Extension archive.");
-  let expandedBytes = 0;
-  let fileCount = 0;
-  const paths = new Set<string>();
-  const decoded = unzipSync(bytes, { filter(file) {
-    if (file.name.endsWith("/") && file.originalSize === 0) return false;
-    fileCount += 1;
-    expandedBytes += Math.max(file.originalSize, file.size);
-    const folded = file.name.toLowerCase();
-    if (!isExtensionPackagePath(file.name) || paths.has(folded)) {
-      throw new Error(`Invalid or duplicate Extension package path: ${file.name}`);
-    }
-    paths.add(folded);
-    if (fileCount > MAX_PACKAGE_FILES || expandedBytes > MAX_EXPANDED_BYTES ||
-        (file.name === EXTENSION_MANIFEST_FILE && file.originalSize > EXTENSION_MANIFEST_MAX_BYTES)) {
-      throw new Error("Extension package exceeds its file count or expanded size limit.");
-    }
-    return true;
-  } });
-  return inspectExtensionFiles(Object.entries(decoded).map(([path, data]) => ({ path, data })));
+  return inspectExtensionFiles(unzipExtensionArchive(bytes));
 }
 
 export async function exportExtensionZip(storage: ProjectStorage, descriptor: ExtensionDescriptor): Promise<Uint8Array> {

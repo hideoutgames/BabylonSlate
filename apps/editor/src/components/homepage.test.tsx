@@ -43,7 +43,7 @@ vi.mock("./settings-modal", () => ({
 }));
 
 // The mobile account gate's native auth adapter (FAPI and secure storage have their own tests).
-const nativeAuth = vi.hoisted(() => ({ restoreSession: vi.fn() }));
+const nativeAuth = vi.hoisted(() => ({ restore: vi.fn(), cancelSignIn: vi.fn() }));
 vi.mock("../services/native-clerk", () => ({
   createNativeClerkClient: () => nativeAuth,
 }));
@@ -88,7 +88,7 @@ afterEach(() => {
   cleanup();
   getHostPlatform.mockReturnValue("web");
   pickImportFiles.mockReset();
-  nativeAuth.restoreSession.mockReset();
+  nativeAuth.restore.mockReset();
 });
 
 const noop = async () => {};
@@ -438,13 +438,13 @@ describe("Slate project browser", () => {
   });
 
   // The iOS and Android apps check the account again whenever the window regains focus (iOS also sends focus while
-  // the app stays in front) and cover the Homepage meanwhile, so a check while a form is open would drop what is
-  // being filled in. The check waits while a form is open and runs once the last one closes.
-  it("keeps New Project, Clone and Engine Settings open through the mobile account's foreground check, and checks once they close", async () => {
+  // the app stays in front). The check runs in the background, but a definitive sign-out would still drop what is
+  // being filled in, so it waits while a form is open and runs once the last one closes.
+  it("keeps New Project, Clone and Engine Settings open through the mobile account's session check, and checks once they close", async () => {
     getHostPlatform.mockReturnValue("ios");
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     vi.stubGlobal("PointerEvent", MouseEvent);
-    nativeAuth.restoreSession.mockResolvedValue(nativeSession);
+    nativeAuth.restore.mockResolvedValue({ status: "signed-in", session: nativeSession });
     renderHomepage({ onCloneProject: vi.fn() }, { mobileAccountGate: true });
 
     fireEvent.click(await screen.findByTestId("create-project"));
@@ -455,19 +455,19 @@ describe("Slate project browser", () => {
     const create = screen.getByTestId("create-project-dialog");
     expect(screen.getByTestId("create-project-name")).toHaveProperty("value", "Orbit");
     expect(within(create).getByText("Options").closest("details")?.open).toBe(true);
-    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(1);
+    expect(nativeAuth.restore).toHaveBeenCalledTimes(1);
     fireEvent.click(within(create).getByRole("button", { name: "Cancel" }));
     // The check that waited runs as soon as New Project closes.
-    await waitFor(() => expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(nativeAuth.restore).toHaveBeenCalledTimes(2));
     expect(await screen.findByTestId("create-project")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("clone-project"));
     const clone = await screen.findByTestId("clone-project-dialog");
     fireEvent(window, new Event("focus"));
     expect(screen.getByTestId("clone-project-dialog")).toBe(clone);
-    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(2);
+    expect(nativeAuth.restore).toHaveBeenCalledTimes(2);
     fireEvent.click(within(clone).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(nativeAuth.restore).toHaveBeenCalledTimes(3));
     expect(await screen.findByTestId("clone-project")).toBeTruthy();
 
     fireEvent.click(
@@ -477,30 +477,32 @@ describe("Slate project browser", () => {
     const settings = await screen.findByRole("dialog", { name: "Engine Settings" });
     fireEvent(window, new Event("focus"));
     expect(screen.getByRole("dialog", { name: "Engine Settings" })).toBe(settings);
-    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(3);
+    expect(nativeAuth.restore).toHaveBeenCalledTimes(3);
     fireEvent.click(within(settings).getByRole("button", { name: "Close Engine Settings" }));
-    await waitFor(() => expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(nativeAuth.restore).toHaveBeenCalledTimes(4));
 
     // Closing a form with no focus while it was open runs no check; with every form closed, focus checks at once
-    // and covers the Homepage while it does.
+    // without covering the Homepage.
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Engine Settings" })).toBeNull());
     expect(await screen.findByTestId("create-project")).toBeTruthy();
     fireEvent.click(screen.getByTestId("clone-project"));
     const quiet = await screen.findByTestId("clone-project-dialog");
     fireEvent.click(within(quiet).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByTestId("clone-project-dialog")).toBeNull());
-    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(4);
+    expect(nativeAuth.restore).toHaveBeenCalledTimes(4);
     fireEvent(window, new Event("focus"));
-    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(5);
-    expect(screen.queryByTestId("create-project")).toBeNull();
-    expect(await screen.findByTestId("create-project")).toBeTruthy();
+    expect(nativeAuth.restore).toHaveBeenCalledTimes(5);
+    expect(nativeAuth.restore).toHaveBeenLastCalledWith({ background: true });
+    expect(screen.getByTestId("create-project")).toBeTruthy();
   });
 
   it("keeps a check that finds no session waiting until the open form closes, then returns to sign-in", async () => {
     getHostPlatform.mockReturnValue("ios");
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     vi.stubGlobal("PointerEvent", MouseEvent);
-    nativeAuth.restoreSession.mockResolvedValueOnce(nativeSession).mockResolvedValueOnce(null);
+    nativeAuth.restore
+      .mockResolvedValueOnce({ status: "signed-in", session: nativeSession })
+      .mockResolvedValueOnce({ status: "signed-out" });
     renderHomepage({ onCloneProject: vi.fn() }, { mobileAccountGate: true });
     fireEvent.click(await screen.findByTestId("clone-project"));
     const clone = await screen.findByTestId("clone-project-dialog");
