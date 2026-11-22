@@ -117,6 +117,28 @@ test.describe("Source Control in Integrated mode", () => {
     expect(await remoteText(page, "project.json")).toContain('"integrated"');
     await expect(page.getByTestId("status-source-control-changes")).toHaveText("0 Changes");
 
+    // A Project Setting changed and saved: Changes lists Project Settings, whose Compare shows the setting's two values.
+    await page.getByTestId("settings-menu").click();
+    await page.getByTestId("project-settings").click();
+    await page.getByTestId("settings-modal-category-general").click();
+    await page.getByTestId("settings-compile-on-save").click();
+    await closeSettings(page);
+    await saveAllIfEnabled(page);
+    await expect(page.getByTestId("status-source-control-changes")).toHaveText("1 Change", { timeout: 30_000 });
+    await page.getByTestId("status-source-control-changes").click();
+    await page.getByTestId("changes-panel").filter({ visible: true }).getByTestId("changes-open-project.json").click();
+    const settingsDiff = page.getByTestId("diff-panel").filter({ visible: true });
+    const compileOnSave = settingsDiff.getByTestId("diff-row-compileOnSave");
+    await expect(compileOnSave).toHaveAttribute("data-changed", "true", { timeout: 30_000 });
+    await expect(compileOnSave).toHaveText("Compile On SaveOnOff");
+    await expect(settingsDiff.getByTestId("diff-group-asset")).toHaveCount(0);
+    // Revert Project Settings puts HEAD's file back and reloads the project.
+    await settingsDiff.getByTestId("diff-revert").click();
+    await expect(page.getByTestId("source-control-revert-confirm")).toContainText("then the project reloads");
+    await page.getByTestId("source-control-revert-confirm-action").click();
+    await expect(page.getByTestId("source-control-revert-running")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByTestId("status-source-control-changes")).toHaveText("0 Changes", { timeout: 30_000 });
+
     // Clone it as a teammate's copy, which opens in Integrated mode.
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
