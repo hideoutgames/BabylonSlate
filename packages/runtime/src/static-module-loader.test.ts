@@ -130,7 +130,7 @@ describe("exported game scripts", () => {
     const scenario = await startGraphScenario({
       scripts: [{ ...quiet, source: "" }, { ...throwing, source: "" }],
       actors: [createActor("quiet", "Quiet", { classId: "Quiet" }), createActor("thrower", "Thrower", { classId: "Thrower" })],
-      runtime: { moduleLoader: createStaticModuleLoader(async () => ({ url, scripts, extensions: {} })) },
+      runtime: { moduleLoader: createStaticModuleLoader(async () => ({ url, scripts, extensions: {}, particleKernels: {} })) },
     });
     scenario.stop();
     expect(scenario.diagnostics()).toEqual([expect.objectContaining({
