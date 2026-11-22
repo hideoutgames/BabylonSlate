@@ -132,6 +132,11 @@ export interface HostMembersHost extends ComponentFunctionHost {
   readonly materials: ScriptMaterialOwnership;
   /** Read on each call because `setBreakpoints` replaces them after construction. */
   breakpoints(): ScriptBreakpoints | null;
+  /**
+   * The delta of the Event Tick running now for an actor with a Tick Interval, else null. Get Delta
+   * Seconds returns it, so it agrees with that Event Tick's Delta Seconds.
+   */
+  intervalTickDeltaSeconds(): number | null;
 }
 
 /**
@@ -547,7 +552,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getProjectName: () => services.getProjectName?.() ?? "",
     getProjectVersion: () => services.getProjectVersion?.() ?? "",
     getBuildNumber: () => services.getBuildNumber?.() ?? 1,
-    getDeltaSeconds: () => services.getDeltaSeconds?.() ?? 0,
+    getDeltaSeconds: () => host.intervalTickDeltaSeconds() ?? services.getDeltaSeconds?.() ?? 0,
     getFrameCount: () => services.getFrameCount?.() ?? 0,
     getTimeNow: () => utcTimeOfDay(Date.now()),
     getDateNow: () => utcCalendarDate(Date.now()),

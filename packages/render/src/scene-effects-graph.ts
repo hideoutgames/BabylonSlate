@@ -5,30 +5,22 @@ import { hasSpatialEffects, reserveSpatialEffects, spatialEffectsUnsupported } f
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
-import { FrameGraphBloomTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/bloomTask";
 import { FrameGraphFXAATask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/fxaaTask";
 import { FrameGraphFsr1SharpenTask, FrameGraphFsr1UpscaleTask } from "./fsr1-tasks";
-import { FrameGraphImageProcessingTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/imageProcessingTask";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
-import { ThinImageProcessingPostProcess } from "@babylonjs/core/PostProcesses/thinImageProcessingPostProcess";
 import type { RenderEffectsSettings } from "@haptic/core";
 import type { Effect } from "@babylonjs/core/Materials/effect";
-import {
-  disposeKeepingLinkingEffects,
-  retireOwnedEffect,
-  type OwnedEffectRetirement,
-} from "./owned-effect-retirement";
+import { disposeKeepingLinkingEffects } from "./owned-effect-retirement";
+import { FrameGraphBloomBlurTask } from "./bloom-blur-task";
+import { FrameGraphDisplayColorTask } from "./display-color-task";
 import {
   sceneEffectsImageProcessingConfiguration,
   type SceneEffectsPlan,
 } from "./scene-effects";
 
-/** The Effects a chain task draws with: a post-process task's own, and those of a bloom task's four stages. */
+/** The Effects a chain task draws with: a post-process task's own, and those of the bloom blur's three stages. */
 function chainTaskEffects(task: FrameGraphTask): Array<Effect | null> {
-  if (task instanceof FrameGraphBloomTask) {
-    const { _downscale, _blurX, _blurY, _merge } = task.bloom;
-    return [_downscale, _blurX, _blurY, _merge].map((stage) => stage.drawWrapper.effect);
-  }
+  if (task instanceof FrameGraphBloomBlurTask) return task.effects;
   return task instanceof FrameGraphPostProcessTask ? [task.drawWrapper.effect] : [];
 }
 
@@ -40,8 +32,12 @@ export interface SceneEffectsGraphOptions {
   /** Authored-stack output feeding the chain. Absent when the object
    * renderer draws this chain's own scene color instead. */
   authoredOutputTexture?: FrameGraphTextureHandle;
-  /** Caller-owned display-space composition, after tone mapping and before
-   * FXAA. The caller retires the injected task with the enclosing graph. */
+  /**
+   * Caller-owned display-space composition, after tone mapping and before FXAA. It blends in place onto `source`, the
+   * image the stage before it wrote, and returns that image as its `outputTexture`. With no FXAA or FSR after it, the
+   * stage before it writes the view's output when it can (`rendersToOutput`), so the composition blends onto the output.
+   * The caller retires the injected task with the enclosing graph.
+   */
   beforeAntialiasing?: (source: FrameGraphTextureHandle) => {
     task: FrameGraphTask;
     outputTexture: FrameGraphTextureHandle;
@@ -59,20 +55,22 @@ export interface SceneEffectsGraphOptions {
    * (`SpatialEffectsGraph.seeded`), the graph's own or, with an authored stack, that chain's (`authoredDepthTexture`).
    */
   geometryOverSceneDepth?: { authoredDepthTexture?: FrameGraphTextureHandle };
-  /** The view's output colour. When the chain ends in one of its own post processes at the output size, that stage
-   * renders straight into it (`rendersToOutput`), so the caller needs no output copy. */
+  /** The view's output colour. When the chain's last own stage is one of its post processes at the output size,
+   * followed by nothing or only the in-place composition, that stage renders straight into it (`rendersToOutput`), so
+   * the caller needs no output copy. */
   outputTarget?: FrameGraphTextureHandle;
 }
 
 /**
  * Settings-driven Display Color stage and display-space effects as FrameGraph
- * tasks: [authored stack output | own scene color] → bloom → image
- * processing → FXAA → FSR 1 upscale and sharpen → the view's output, written by
- * the last stage itself when it can, else by the caller's single output copy.
- * Every stage before the upscale runs at the internal render size. Babylon tasks own
- * their internal targets through graph disposal; this object owns the
- * optional scene-color declaration and any image-processing compile
- * generation orphaned by the display-space recompile.
+ * tasks: [authored stack output | own scene color] → spatial effects → bloom's
+ * blurs → Display Color (bloom's merge, then image processing, in one pass) →
+ * the caller's composition → FXAA → FSR 1 upscale and sharpen → the view's output,
+ * written by the last own stage itself when it can, else by the caller's single
+ * output copy. Every stage before the upscale runs at the internal render size.
+ * Tasks own their internal targets through graph disposal; this object owns the
+ * optional scene-color declaration and waits for the Display Color effects a
+ * configuration change replaced.
  */
 export class SceneEffectsGraph {
   /** Declared only without an authored stack; the object renderer draws it. */
@@ -82,11 +80,13 @@ export class SceneEffectsGraph {
   readonly depthTexture: FrameGraphTextureHandle | null = null;
   /** The last chain output: the view's output when `rendersToOutput`, else the caller's output copy reads it. */
   readonly outputTexture: FrameGraphTextureHandle;
-  /** The last stage renders into `outputTarget`: a full-screen copy fewer per frame. */
+  /** An own stage renders into `outputTarget` (`outputWriter`): a full-screen copy fewer per frame. */
   readonly rendersToOutput: boolean = false;
+  /** The stage that writes the view's output when `rendersToOutput`; the caller's composition may blend onto it after. */
+  readonly outputWriter: FrameGraphPostProcessTask | undefined;
   readonly tasks: FrameGraphTask[] = [];
   readonly spatial?: SpatialEffectsGraph;
-  private readonly retirements: OwnedEffectRetirement[] = [];
+  private displayColor: FrameGraphDisplayColorTask | undefined;
   private readonly externalTasks = new Set<FrameGraphTask>();
   private tasksDisposed = false;
   private disposed: Promise<void> | null = null;
@@ -158,73 +158,62 @@ export class SceneEffectsGraph {
           console.warn("Spatial effects disabled: shared Engine render-target budget is exhausted.");
         }
       }
+      let bloom: FrameGraphBloomBlurTask | undefined;
       if (plan.bloom) {
-        // `kernel` is relative to final output size; the task
-        // scales its internal targets through `bloom.scale` itself.
-        const bloom = new FrameGraphBloomTask(
-          "Scene Effects Bloom",
-          graph,
-          plan.bloom.weight,
-          plan.bloom.kernel,
-          plan.bloom.threshold,
-          plan.sceneLinear,
-          plan.bloom.scale,
-        );
+        // `kernel` is relative to the source size; the task scales its targets and kernel through `scale` itself.
+        bloom = new FrameGraphBloomBlurTask("Scene Effects Bloom", graph, {
+          threshold: plan.bloom.threshold, kernel: plan.bloom.kernel, scale: plan.bloom.scale, hdr: plan.sceneLinear,
+        });
         bloom.sourceTexture = source;
-        // Babylon 9.29's bloom task gives its merge output the source's creation options, samples included, so over
-        // the multisampled scene colour (no spatial stage before it) it would be a full-size MSAA target. It merges
-        // into a single-sample one of the scene colour's type instead, as every later stage reads.
-        if (source === this.sceneColorTexture && samples > 1)
-          bloom.targetTexture = graph.textureManager.createRenderTargetTexture("Scene Effects Bloom Merge", {
-            size: { width: options.width, height: options.height },
-            sizeIsPercentage: false,
-            options: {
-              createMipMaps: false,
-              types: [plan.sceneLinear ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE],
-              formats: [Constants.TEXTUREFORMAT_RGBA],
-              samples: 1,
-              useSRGBBuffers: [false],
-            },
-          });
         this.tasks.push(bloom);
-        source = bloom.outputTexture;
       }
-      if (plan.imageProcessing) {
-        // A dedicated configuration is required: the thin pass sets
-        // applyByPostProcess on whatever configuration it receives, so the
-        // Scene's shared one must never be handed over.
-        const thin = new ThinImageProcessingPostProcess(
-          "Scene Effects Display Color",
-          graph.engine,
+      if (plan.bloom || plan.imageProcessing) {
+        // Bloom's merge and image processing in one full-size pass, which compiles once: no merge target between them.
+        // Its target takes the source's type, single-sample over the multisampled scene colour. A dedicated image
+        // processing configuration is required: the pass sets applyByPostProcess on it and resets it when disposed, so
+        // the Scene's shared one must never be handed over. Without image processing (a Display Space plan's bloom) the
+        // pass is bloom's merge alone.
+        const display = new FrameGraphDisplayColorTask(
+          plan.imageProcessing ? "Scene Effects Display Color" : "Scene Effects Bloom Merge",
+          graph,
           {
-            imageProcessingConfiguration:
-              sceneEffectsImageProcessingConfiguration(
-                options.effects,
-                plan.imageProcessing,
-              ),
+            bloom: plan.bloom ? { weight: plan.bloom.weight } : null,
+            imageProcessing: plan.imageProcessing ? {
+              configuration: sceneEffectsImageProcessingConfiguration(options.effects, plan.imageProcessing),
+              fromLinearSpace: plan.imageProcessing.sceneLinear,
+            } : null,
           },
         );
-        // The constructor compiles its linear default first; switching a
-        // display-space plan recompiles and orphans the first Effect, whose
-        // program must settle before release.
-        const previous = thin.effect;
-        thin.fromLinearSpace = plan.imageProcessing.sceneLinear;
-        const current = thin.effect;
-        if (previous && previous !== current) {
-          this.retirements.push(
-            retireOwnedEffect(previous, () => previous.dispose()),
-          );
-        }
-        const image = new FrameGraphImageProcessingTask(
-          "Scene Effects Display Color",
-          graph,
-          thin,
-        );
-        image.sourceTexture = source;
-        this.tasks.push(image);
-        source = image.outputTexture;
+        display.sourceTexture = source;
+        display.bloomTexture = bloom?.outputTexture;
+        this.displayColor = display;
+        this.tasks.push(display);
+        source = display.outputTexture;
       }
+      const outputWidth = options.outputWidth ?? options.width;
+      const outputHeight = options.outputHeight ?? options.height;
+      const fsr = plan.upscale && (outputWidth !== options.width || outputHeight !== options.height) ? plan.upscale : null;
+      const outputSized = fsr !== null || (options.width === outputWidth && options.height === outputHeight);
+      /**
+       * Has the last stage so far render into the output when it is this chain's own post process drawing the output's
+       * size: its output handle then resolves to the target. Returns that stage, or undefined when it cannot.
+       */
+      const intoOutput = (): FrameGraphPostProcessTask | undefined => {
+        const stage = this.tasks.at(-1);
+        if (options.outputTarget === undefined || !(stage instanceof FrameGraphPostProcessTask) ||
+          this.externalTasks.has(stage) || !outputSized || stage.outputTexture !== source) return undefined;
+        stage.targetTexture = options.outputTarget;
+        // Babylon's post processes depth-test by default, which an intermediate target without depth never notices.
+        // The backbuffer has depth, and another pass (a view drawn without a chain) may have left it there: the
+        // stage must cover every pixel.
+        stage.depthTest = false;
+        return stage;
+      };
+      let writer: FrameGraphPostProcessTask | undefined;
       if (options.beforeAntialiasing) {
+        // The composition only blends onto the image before it and samples none of it (the outline compose reads its
+        // masks, styles and mask depth), so with nothing after it that image may be the output itself.
+        if (!plan.fxaa && !fsr) writer = intoOutput();
         const composition = options.beforeAntialiasing(source);
         this.tasks.push(composition.task);
         this.externalTasks.add(composition.task);
@@ -236,10 +225,7 @@ export class SceneEffectsGraph {
         this.tasks.push(fxaa);
         source = fxaa.outputTexture;
       }
-      const outputWidth = options.outputWidth ?? options.width;
-      const outputHeight = options.outputHeight ?? options.height;
-      let fsrTail = false;
-      if (plan.upscale && (outputWidth !== options.width || outputHeight !== options.height)) {
+      if (fsr) {
         // EASU expects display-referred input, so it follows the Display Color
         // stage and antialiasing; RCAS then sharpens at the output size.
         const upscaled = graph.textureManager.createRenderTargetTexture("Scene Effects FSR Upscale", {
@@ -258,26 +244,16 @@ export class SceneEffectsGraph {
         upscale.targetTexture = upscaled;
         this.tasks.push(upscale);
         const sharpen = new FrameGraphFsr1SharpenTask("Scene Effects FSR Sharpen", graph);
-        sharpen.sharpness = plan.upscale.sharpness;
+        sharpen.sharpness = fsr.sharpness;
         sharpen.sourceTexture = upscale.outputTexture;
         this.tasks.push(sharpen);
         source = sharpen.outputTexture;
-        fsrTail = true;
       }
-      // The last stage writes the output itself when it is this chain's own post process drawing the output's size:
-      // its output handle then resolves to the target. Bloom, the spatial effects and a caller's composition keep the
-      // copy, as does a chain drawn at a scale of the output without FSR.
-      const last = this.tasks.at(-1);
-      const outputSized = fsrTail || (options.width === outputWidth && options.height === outputHeight);
-      if (options.outputTarget !== undefined && last instanceof FrameGraphPostProcessTask && !this.externalTasks.has(last) &&
-        outputSized && last.outputTexture === source) {
-        last.targetTexture = options.outputTarget;
-        // Babylon's post processes depth-test by default, which an intermediate target without depth never notices.
-        // The backbuffer has depth, and another pass (a view drawn without a chain) may have left it there: the
-        // stage must cover every pixel.
-        last.depthTest = false;
-        this.rendersToOutput = true;
-      }
+      // Otherwise the last stage writes the output itself when it can. The spatial effects, a caller's composition over
+      // a stage that could not, and a chain drawn at a scale of the output without FSR keep the copy.
+      writer ??= intoOutput();
+      this.outputWriter = writer;
+      this.rendersToOutput = writer !== undefined;
       this.outputTexture = source;
     } catch (error) {
       this.disposeTasks();
@@ -315,13 +291,14 @@ export class SceneEffectsGraph {
           "Dispose scene effects tasks before awaiting their retirement.",
         ),
       );
+    const retirements = this.displayColor?.postProcess.retirements ?? [];
     this.disposed ??= Promise.all(
-      [...this.retirements.map((retirement) => retirement.completion), this.spatial?.whenDisposed()],
+      [...retirements.map((retirement) => retirement.completion), this.spatial?.whenDisposed()],
     ).then(() => {});
     return this.disposed;
   }
 
-  /** Confirmed CPU/native release after every orphaned compile generation. */
+  /** Confirmed CPU/native release after every Display Color effect a configuration change replaced. */
   whenReleased(): Promise<void> {
     if (!this.tasksDisposed)
       return Promise.reject(
@@ -329,8 +306,9 @@ export class SceneEffectsGraph {
           "Dispose scene effects tasks before awaiting their release.",
         ),
       );
+    const retirements = this.displayColor?.postProcess.retirements ?? [];
     this.released ??= Promise.all(
-      [...this.retirements.map((retirement) => retirement.released), this.spatial?.whenReleased()],
+      [...retirements.map((retirement) => retirement.released), this.spatial?.whenReleased()],
     ).then(() => {});
     return this.released;
   }
