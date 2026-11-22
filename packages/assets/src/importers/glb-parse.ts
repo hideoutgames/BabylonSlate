@@ -8,6 +8,16 @@
 
 import type { SkeletonBone, SkeletonRestChannel } from "../skeleton-payload";
 import { decomposeMatrix, multiplyMatrices, trsMatrix, type Matrix4 } from "../skeleton-match";
+import {
+  formatImportBytes,
+  formatImportCount,
+  GLTF_MAX_DATA_URI_BYTES,
+  GLTF_MAX_MATERIAL_DEPTH,
+  GLTF_MAX_PRIMITIVE_INDICES,
+  GLTF_MAX_PRIMITIVE_VERTICES,
+  ImportLimitError,
+  importLimitError,
+} from "../import-limits";
 
 export const MISSING_GLTF_BIN =
   "glTF import needs the matching .bin buffer. Select the .gltf file together with its .bin sidecar.";
@@ -198,19 +208,17 @@ export function embedGlbExternalImages(
   const bufferViews = Array.isArray(split.json.bufferViews)
     ? [...(split.json.bufferViews as Record<string, unknown>[])]
     : [];
-  let bin = new Uint8Array(split.bin);
-  let changed = false;
+  // Lay every matched image out after the BIN first, then copy each byte once.
+  const placed: Array<{ bytes: Uint8Array; byteOffset: number }> = [];
+  let length = split.bin.byteLength;
   for (const image of images) {
     const uri = typeof image.uri === "string" ? image.uri : "";
     if (!uri || uri.startsWith("data:")) continue;
     const sidecar = sidecarBytesForUri(uri, map);
     if (!sidecar) continue;
-    const byteOffset = bin.byteLength;
-    const pad = pad4(sidecar.byteLength);
-    const next = new Uint8Array(byteOffset + sidecar.byteLength + pad);
-    next.set(bin, 0);
-    next.set(sidecar, byteOffset);
-    bin = next;
+    const byteOffset = length;
+    length += sidecar.byteLength + pad4(sidecar.byteLength);
+    placed.push({ bytes: sidecar, byteOffset });
     bufferViews.push({
       buffer: 0,
       byteOffset,
@@ -222,9 +230,11 @@ export function embedGlbExternalImages(
         ? image.mimeType
         : mimeFromImageUri(uri);
     delete image.uri;
-    changed = true;
   }
-  if (!changed) return bytes;
+  if (placed.length === 0) return bytes;
+  const bin = new Uint8Array(length);
+  bin.set(split.bin, 0);
+  for (const { bytes: image, byteOffset } of placed) bin.set(image, byteOffset);
   split.json.bufferViews = bufferViews;
   split.json.images = images;
   const buffers = Array.isArray(split.json.buffers)
@@ -287,12 +297,22 @@ function textureSourceHolders(texture: unknown): Array<Record<string, unknown>> 
   return holders;
 }
 
-/** Repoint material texture references through `indexMap`; a reference to a texture it lacks is removed. */
+/**
+ * Repoint material texture references through `indexMap`; a reference to a texture it lacks is removed. Parsed
+ * JSON holds no cycles, but its nesting is the file's to choose, so a material nested deeper than
+ * {@link GLTF_MAX_MATERIAL_DEPTH} fails by name rather than with a stack overflow.
+ */
 function remapMaterialTextureRefs(
   node: unknown,
   indexMap: ReadonlyMap<number, number>,
+  depth = 1,
 ): void {
   if (!node || typeof node !== "object") return;
+  if (depth > GLTF_MAX_MATERIAL_DEPTH) {
+    throw new ImportLimitError(
+      `A material in the model is nested more than ${GLTF_MAX_MATERIAL_DEPTH} levels deep; the import limit is ${GLTF_MAX_MATERIAL_DEPTH}. Re-export the model from its authoring tool.`,
+    );
+  }
   const record = node as Record<string, unknown>;
   for (const key of Object.keys(record)) {
     if (key === "extras") continue;
@@ -305,7 +325,7 @@ function remapMaterialTextureRefs(
       if (next === undefined) delete record[key];
       else (value as { index: number }).index = next;
     } else {
-      remapMaterialTextureRefs(value, indexMap);
+      remapMaterialTextureRefs(value, indexMap, depth + 1);
     }
   }
 }
@@ -437,11 +457,7 @@ function gltfJsonToGlb(
       bytes = sidecarBytesForUri(bufferUri, sidecars);
       if (!bytes) throw new Error(MISSING_GLTF_BIN);
     } else if (bufferUri.startsWith("data:")) {
-      try {
-        bytes = decodeDataUri(bufferUri)?.bytes ?? null;
-      } catch {
-        bytes = null;
-      }
+      bytes = decodeBudgetedDataUri(bufferUri, { used: 0 })?.bytes ?? null;
       if (!bytes) throw new Error("glTF buffer 0 has an unreadable data URI.");
     } else {
       throw new Error("glTF import needs buffer 0 as a .bin file or a data URI, not a URL.");
@@ -501,9 +517,18 @@ export function parseGltfJsonForBrowse(
   jsonText: string,
   bin: Uint8Array | null = null,
 ): GlbBrowseParse | null {
+  let json: unknown;
   try {
-    return browseFromGltfJson(JSON.parse(jsonText) as Record<string, unknown>, bin);
+    json = JSON.parse(jsonText);
   } catch {
+    return null;
+  }
+  if (!json || typeof json !== "object" || Array.isArray(json)) return null;
+  try {
+    return browseFromGltfJson(json as Record<string, unknown>, bin);
+  } catch (error) {
+    // An import limit fails by name rather than as an unreadable file.
+    if (error instanceof ImportLimitError) throw error;
     return null;
   }
 }
@@ -520,10 +545,12 @@ function browseFromGltfJson(
   const animationsJson = Array.isArray(json.animations) ? json.animations : [];
   const texturesJson = Array.isArray(json.textures) ? json.textures : [];
   const bufferViews = Array.isArray(json.bufferViews) ? json.bufferViews : [];
+  assertGltfPrimitiveLimits(json);
 
+  const dataUris: DataUriBudget = { used: 0 };
   const images: GlbBrowseImage[] = [];
   for (let i = 0; i < imagesJson.length; i++) {
-    const image = imagesJson[i] as Record<string, unknown>;
+    const image = (imagesJson[i] && typeof imagesJson[i] === "object" ? imagesJson[i] : {}) as Record<string, unknown>;
     const name =
       typeof image.name === "string" && image.name.length > 0
         ? image.name
@@ -531,8 +558,9 @@ function browseFromGltfJson(
     const mime =
       typeof image.mimeType === "string" ? image.mimeType : "image/png";
 
+    // A malformed data URI keeps the named placeholder below, as an unmatched file does.
     if (typeof image.uri === "string" && image.uri.startsWith("data:")) {
-      const parsed = decodeDataUri(image.uri);
+      const parsed = decodeBudgetedDataUri(image.uri, dataUris);
       if (parsed) {
         images.push({ name, mime: parsed.mime || mime, bytes: parsed.bytes });
         continue;
@@ -544,12 +572,12 @@ function browseFromGltfJson(
         | Record<string, unknown>
         | undefined;
       const byteLength =
-        typeof view?.byteLength === "number" ? (view.byteLength as number) : 0;
+        typeof view?.byteLength === "number" && Number.isSafeInteger(view.byteLength) ? (view.byteLength as number) : 0;
       const byteOffset = Number(view?.byteOffset ?? 0);
       if (
         view &&
         byteLength > 0 &&
-        Number.isFinite(byteOffset) &&
+        Number.isSafeInteger(byteOffset) &&
         byteOffset >= 0 &&
         byteOffset + byteLength <= bin.byteLength
       ) {
@@ -627,6 +655,48 @@ function browseFromGltfJson(
 
   const hasMeshes = Array.isArray(json.meshes) && json.meshes.length > 0;
   return { materials, images: images_out, animations, rigKind, bones, hasMeshes };
+}
+
+/**
+ * Every mesh primitive's vertex and index counts against the import caps, read
+ * from the accessors' declared counts before any geometry is read, so a model
+ * too large to import fails at once whether or not it is skinned.
+ */
+function assertGltfPrimitiveLimits(json: Record<string, unknown>): void {
+  const meshes = Array.isArray(json.meshes) ? json.meshes : [];
+  const accessors = Array.isArray(json.accessors) ? json.accessors : [];
+  const countOf = (index: unknown): number => {
+    if (typeof index !== "number") return 0;
+    const count = (accessors[index] as Record<string, unknown> | undefined)?.count;
+    return typeof count === "number" ? count : 0;
+  };
+  for (const [meshIndex, mesh] of meshes.entries()) {
+    const primitives = Array.isArray((mesh as Record<string, unknown> | undefined)?.primitives)
+      ? ((mesh as Record<string, unknown>).primitives as unknown[])
+      : [];
+    for (const primitive of primitives) {
+      const record = (primitive ?? {}) as Record<string, unknown>;
+      const attributes = (record.attributes ?? {}) as Record<string, unknown>;
+      const vertices = countOf(attributes.POSITION);
+      if (vertices > GLTF_MAX_PRIMITIVE_VERTICES) {
+        throw importLimitError(
+          `The vertex count of one part of mesh ${meshIndex}`,
+          formatImportCount(vertices),
+          formatImportCount(GLTF_MAX_PRIMITIVE_VERTICES),
+          "Split the mesh into smaller parts or decimate it before importing.",
+        );
+      }
+      const indices = countOf(record.indices);
+      if (indices > GLTF_MAX_PRIMITIVE_INDICES) {
+        throw importLimitError(
+          `The index count of one part of mesh ${meshIndex}`,
+          formatImportCount(indices),
+          formatImportCount(GLTF_MAX_PRIMITIVE_INDICES),
+          "Split the mesh into smaller parts or decimate it before importing.",
+        );
+      }
+    }
+  }
 }
 
 /** Clip ranges in source seconds; names agree between import and Babylon loading. */
@@ -916,6 +986,39 @@ function hierarchyTreeNodes(
   const indices: number[] = [];
   for (let i = 0; i < nodeCount; i++) if (include.has(i)) indices.push(i);
   return indices;
+}
+
+/** Bytes the `data:` URIs of one glTF file decode to so far, against {@link GLTF_MAX_DATA_URI_BYTES}. */
+interface DataUriBudget {
+  used: number;
+}
+
+/**
+ * A `data:` URI's bytes, or null when it is malformed. Its decoded size is
+ * estimated from its length (base64 holds three bytes per four characters)
+ * and charged to `budget` before anything is decoded.
+ */
+function decodeBudgetedDataUri(
+  uri: string,
+  budget: DataUriBudget,
+): { mime: string; bytes: Uint8Array } | null {
+  const comma = uri.indexOf(",");
+  const dataLength = comma < 0 ? 0 : uri.length - comma - 1;
+  const base64 = comma >= 0 && uri.slice(0, comma).endsWith(";base64");
+  budget.used += base64 ? Math.floor((dataLength * 3) / 4) : dataLength;
+  if (budget.used > GLTF_MAX_DATA_URI_BYTES) {
+    throw importLimitError(
+      "The data embedded in the model's data: URIs",
+      `at least ${formatImportBytes(budget.used)}`,
+      formatImportBytes(GLTF_MAX_DATA_URI_BYTES),
+      "Export the model as GLB, or with its images and buffers as separate files.",
+    );
+  }
+  try {
+    return decodeDataUri(uri);
+  } catch {
+    return null;
+  }
 }
 
 function decodeDataUri(
