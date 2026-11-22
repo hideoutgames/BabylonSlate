@@ -4,6 +4,7 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
 import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
 import { ImageProcessingBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/imageProcessingBlock";
+import { ScreenSizeBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/screenSizeBlock";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { ParticleBlendMultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleBlendMultiplyBlock";
 import { BonesBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/bonesBlock";
@@ -338,11 +339,13 @@ function operationBlockName(id: string): string {
  * style, a text glyph's rectangles, colour and visibility) or requires its members to share (the lighting's Receive
  * Shadows, a text's atlas, mode and outline), and per-mesh ones of meshes that never
  * batch (bones, morphs, a lattice) or of a pass that draws no batch (a fragment output's geometry terms; its
- * logarithmic depth is the Scene's). A block that binds and is not listed keeps its Material out of batches.
+ * logarithmic depth is the Scene's). The screen size (Screen Size, Screen UV, User Interface Input) is the render
+ * target's, which every member of a batch draws into. A block that binds and is not listed keeps its Material out of
+ * batches.
  */
 const BATCH_BINDINGS: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> = [
   BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
-  ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
+  ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock, ScreenSizeBlock,
 ];
 
 function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
@@ -380,7 +383,7 @@ export function compileMaterialPlan(
       material.alphaMode = Constants.ALPHA_DISABLE;
     } else {
       applyAuthoredSurfaceBlend(material, plan);
-      if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text") registerAlphaToCoverage(material);
+      if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text" && plan.domain !== "ui") registerAlphaToCoverage(material);
       if (options.overlay) { material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false; }
       syncSceneLighting(scene);
     }
@@ -458,6 +461,8 @@ export function compileMaterialPlan(
       created.push(uv, textGlyph);
       plumbing.worldPosition?.connectTo(plumbing.clipPosition!);
     }
+    // A User Interface Material draws the mesh where it is, from its UV (Element UV), unlit and unfogged.
+    if (plan.domain === "ui") plumbing.worldPosition?.connectTo(plumbing.clipPosition!);
   } catch (error) {
     diagnostics.push({
       code: "material.compile.plumbingFailed",
@@ -776,6 +781,22 @@ export function compileMaterialPlan(
       styled.output.connectTo(fragment.rgba);
       created.push(fragment, multiply, style, styled);
       outputNodes.push(fragment);
+    } else if (plan.domain === "ui") {
+      // (Color, Opacity) times the component's tint and opacity (`OverlayStyleBlock`, white by default).
+      const fragment = new UserInterfaceFragmentOutputBlock(`${options.name}_fragment`);
+      const style = new OverlayStyleBlock(`${options.name}_overlayStyle`);
+      created.push(fragment, style);
+      const styled = (value: NodeMaterialConnectionPoint | null, tint: NodeMaterialConnectionPoint, suffix: string) => {
+        if (!value) return tint;
+        const multiply = new MultiplyBlock(`${options.name}_${suffix}`);
+        created.push(multiply);
+        value.connectTo(multiply.left);
+        tint.connectTo(multiply.right);
+        return multiply.output;
+      };
+      styled(outputPoint("color", `${options.name}_color`, true), style.rgb, "overlayColor").connectTo(fragment.rgb);
+      styled(outputPoint("opacity", `${options.name}_opacity`, false), style.alpha, "overlayAlpha").connectTo(fragment.a);
+      outputNodes.push(fragment);
     } else if (plan.domain === "postProcess" || plan.domain === "particle") {
       const fragment = plan.domain === "particle"
         ? new DisplayFragmentOutputBlock(`${options.name}_fragment`)
@@ -1038,15 +1059,17 @@ export function compileMaterialPlan(
     (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock | OverlayStyleBlock | WaterWavesBlock | GeometrySurfaceOutputBlock =>
       block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock || block instanceof OverlayStyleBlock || block instanceof WaterWavesBlock || block instanceof GeometrySurfaceOutputBlock,
   );
-  // The stock vertex stage keeps a surface's or a text's vertices on its mesh: no custom blocks, and no World Position
-  // Offset (which is also how a graph's water waves move them).
-  const bounded = (plan.domain === "surface" || plan.domain === "text") && plan.cost.customBlocks === 0 &&
+  // The stock vertex stage keeps a surface's, a text's or a User Interface Material's vertices on its mesh: no custom
+  // blocks, and no World Position Offset (which is also how a graph's water waves move them).
+  const bounded = (plan.domain === "surface" || plan.domain === "text" || plan.domain === "ui") && plan.cost.customBlocks === 0 &&
     isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
   if (bounded) markBoundedMaterial(material);
   // A Scene Layer Material with the stock vertex stage draws every mesh the same but for its world matrix, its overlay
   // style and Receive Shadows, so its draws may batch, provided nothing else it binds can depend on the mesh. A text's
-  // Material binds each glyph's own rectangles, colour and visibility, which a batch of glyphs carries with them.
-  if (bounded && (options.overlay || plan.domain === "text") && created.every(bindsAsABatchDoes)) markDrawBatchMaterial(material, plan.domain === "text");
+  // Material binds each glyph's own rectangles, colour and visibility, which a batch of glyphs carries with them. A
+  // User Interface Material is a Scene Layer's whether or not it compiles with `overlay`.
+  if (bounded && (options.overlay || plan.domain === "text" || plan.domain === "ui") && created.every(bindsAsABatchDoes))
+    markDrawBatchMaterial(material, plan.domain === "text");
   // The light block rebinds only its receiver terms.
   const lightingBlocks = created.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
   if (perMeshBlocks.length > 0 || lightingBlocks.length > 0) {
@@ -1440,7 +1463,7 @@ function applyAuthoredSurfaceBlend(
   material: NodeMaterial,
   plan: MaterialBuildPlan,
 ): void {
-  if (plan.domain === "text") {
+  if (plan.domain === "text" || plan.domain === "ui") {
     material.backFaceCulling = false;
     material.alphaMode = plan.blendMode === "additive" ? Constants.ALPHA_ADD : Constants.ALPHA_COMBINE;
     material.transparencyMode = Material.MATERIAL_ALPHABLEND;
@@ -1662,6 +1685,30 @@ class DisplayFragmentOutputBlock extends FragmentOutputBlock {
 RegisterClass(
   "BABYLON.DisplayFragmentOutputBlock",
   DisplayFragmentOutputBlock,
+);
+
+// User Interface colour is linear, as a Color node's or an unlit surface's is: encoded for display here (as a Scene
+// Layer's unlit surface encodes it, plain `toGammaSpace`, no image processing), except under a Scene Linear display
+// stage (applyByPostProcess), which encodes the frame once. Scene Layer Scenes never have that stage; the editor's Scene
+// Layer tab and the Material preview may.
+class UserInterfaceFragmentOutputBlock extends FragmentOutputBlock {
+  override getClassName(): string {
+    return "UserInterfaceFragmentOutputBlock";
+  }
+
+  override prepareDefines(
+    defines: NodeMaterialDefines,
+    material: NodeMaterial,
+  ): void {
+    this.convertToLinearSpace = false;
+    this.convertToGammaSpace = !material.imageProcessingConfiguration.applyByPostProcess;
+    super.prepareDefines(defines, material);
+  }
+}
+
+RegisterClass(
+  "BABYLON.UserInterfaceFragmentOutputBlock",
+  UserInterfaceFragmentOutputBlock,
 );
 
 /**

@@ -513,4 +513,71 @@ describe("material node contracts", () => {
     doc.blendMode = "additive";
     expect((await compile(doc)).material.alphaMode).toBe(Constants.ALPHA_ADD);
   });
+
+  describe("User Interface nodes", () => {
+    const uiDocument = () => createDefaultMaterialDocument("Widget", "ui");
+    const replaceInto = (doc: MaterialDocument, source: string, sourcePin: string, targetPin: string) => {
+      doc.edges = doc.edges.filter((edge) => !(edge.targetNodeId === "output" && edge.targetPinId === targetPin));
+      wire(doc, source, sourcePin, "output", targetPin);
+    };
+    it.each(["elementUv", "elementSize", "elementPosition", "screenUv", "screenSize", "screenPosition"])(
+      "compiles User Interface Input with only %s wired, building nothing for the others",
+      async (pin) => {
+        const doc = uiDocument();
+        node(doc, "element", "input.ui");
+        replaceInto(doc, "element", pin, "color");
+        const shaders = (await compile(doc)).material.compiledShaders;
+        // Element Size and Position derive from the UV's screen derivatives; the screen's size is a bound uniform.
+        expect(shaders.includes("dFdx(")).toBe(pin === "elementSize" || pin === "elementPosition");
+        expect(/uniform vec2 \w*screenSize/.test(shaders)).toBe(pin === "screenSize" || pin === "screenUv");
+        expect(shaders.includes("gl_FragCoord")).toBe(pin === "screenUv" || pin === "screenPosition");
+      },
+    );
+    it.each([
+      ["ui.roundedRectangle", "hapticUiRoundedRectangleDistance("],
+      ["ui.ellipse", "hapticUiEllipseDistance("],
+    ])("compiles %s unwired on the element's position and size, and wired, for each output", async (type, call) => {
+      for (const output of ["fill", "borderMask", "distance"]) {
+        const unwired = uiDocument();
+        node(unwired, "shape", type);
+        replaceInto(unwired, "shape", output, "opacity");
+        const shaders = (await compile(unwired)).material.compiledShaders;
+        expect(shaders).toContain(call);
+        expect(shaders).toContain("dFdx(");
+        const wired = uiDocument();
+        node(wired, "element", "input.ui");
+        node(wired, "shape", type);
+        node(wired, "size", "const.vec2", { value: [120, 40] });
+        node(wired, "width", "param.float", { name: "Border", value: [2] });
+        wire(wired, "element", "elementPosition", "shape", "position");
+        wire(wired, "size", "out", "shape", "size");
+        wire(wired, "width", "out", "shape", "border");
+        if (type === "ui.roundedRectangle") {
+          node(wired, "radius", "const.vec4", { value: [4, 8, 12, 16] });
+          wire(wired, "radius", "out", "shape", "radius");
+        }
+        replaceInto(wired, "shape", output, "opacity");
+        expect((await compile(wired)).material.compiledShaders).toContain(call);
+      }
+    });
+    it.each([
+      ["ui.linearProgress", "direction", "const.vec2", [0, 1], "hapticUiLinearProgress("],
+      ["ui.radialProgress", "startAngle", "const.float", [90], "hapticUiRadialProgress("],
+    ] as const)("compiles %s unwired on the element's UV, and wired", async (type, shaping, constant, value, call) => {
+      const unwired = uiDocument();
+      node(unwired, "progress", type);
+      replaceInto(unwired, "progress", "mask", "opacity");
+      expect((await compile(unwired)).material.compiledShaders).toContain(call);
+      const wired = uiDocument();
+      node(wired, "element", "input.ui");
+      node(wired, "progress", type);
+      node(wired, "amount", "param.float", { name: "Progress", value: [0.25] });
+      node(wired, "shaping", constant, { value });
+      wire(wired, "element", "screenUv", "progress", "uv");
+      wire(wired, "amount", "out", "progress", "progress");
+      wire(wired, "shaping", "out", "progress", shaping);
+      replaceInto(wired, "progress", "mask", "opacity");
+      expect((await compile(wired)).material.compiledShaders).toContain(call);
+    });
+  });
 });

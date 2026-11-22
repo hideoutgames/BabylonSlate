@@ -42,6 +42,11 @@ import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { setTestTextureBudget } from "./test-support/resource-cache-budget";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { installTimerClock, installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { ImageProcessingBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/imageProcessingBlock";
+import { MultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/multiplyBlock";
+import { OverlayStyleBlock } from "./overlay-style-block";
+import { SceneFogBlock } from "./scene-fog-block";
 
 const disposers: Array<() => void> = [];
 
@@ -2574,4 +2579,122 @@ it("gates optional vertex streams behind defines so meshes without them still dr
       new RegExp(`#ifdef INSTANCES\\nattribute vec4 ${attribute};`),
     );
   }
+});
+
+describe("User Interface Materials", () => {
+  function uiDocument(edit: (doc: MaterialDocument) => void = () => {}): MaterialDocument {
+    const doc = createDefaultMaterialDocument("Widget", "ui");
+    edit(doc);
+    return doc;
+  }
+  async function compileUi(doc: MaterialDocument, overlay = false, scene = host(), name = "widget") {
+    const result = compileMaterialPlan(planFor(doc), { scene, name, overlay });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.dispose());
+    expect(await result.ready).toEqual([]);
+    return result.material;
+  }
+  const wireUi = (doc: MaterialDocument, source: string, sourcePin: string, target: string, targetPin: string) => {
+    doc.edges = doc.edges.filter((edge) => !(edge.targetNodeId === target && edge.targetPinId === targetPin));
+    doc.edges.push({ id: `${source}-${sourcePin}-${target}-${targetPin}`, sourceNodeId: source, sourcePinId: sourcePin, targetNodeId: target, targetPinId: targetPin });
+  };
+
+  it.each([["translucent", Constants.ALPHA_COMBINE], ["additive", Constants.ALPHA_ADD]] as const)(
+    "draws a %s one blended from both sides, unlit and unfogged, times its component's tint",
+    async (blendMode, alphaMode) => {
+      const scene = host();
+      scene.fogMode = Scene.FOGMODE_LINEAR;
+      const material = await compileUi(uiDocument((doc) => { doc.blendMode = blendMode; }), false, scene);
+      expect(material.metadata.materialDomain).toBe("ui");
+      expect({ alphaMode: material.alphaMode, transparency: material.transparencyMode, culling: material.backFaceCulling, prePass: material.needDepthPrePass })
+        .toEqual({ alphaMode, transparency: Material.MATERIAL_ALPHABLEND, culling: false, prePass: false });
+      const blocks = material.attachedBlocks;
+      expect(blocks.some((block) => block instanceof HapticLightingBlock || block instanceof SceneFogBlock || block instanceof ImageProcessingBlock)).toBe(false);
+      expect(material.compiledShaders).not.toContain("CalcFogFactor(");
+      // Colour and Opacity each times the style's, on the fragment output.
+      const style = blocks.find((block): block is OverlayStyleBlock => block instanceof OverlayStyleBlock)!;
+      const output = blocks.find((block): block is FragmentOutputBlock => block instanceof FragmentOutputBlock)!;
+      const styledBy = (point: NodeMaterialConnectionPoint) => {
+        const multiply = point.connectedPoint?.ownerBlock;
+        return multiply instanceof MultiplyBlock ? multiply.right.connectedPoint : null;
+      };
+      expect([styledBy(output.rgb), styledBy(output.a)]).toEqual([style.rgb, style.alpha]);
+    },
+  );
+
+  it("compiles the same with or without the library's overlay option", async () => {
+    const doc = uiDocument((doc) => {
+      doc.nodes.push({ id: "panel", type: "ui.roundedRectangle", position: { x: 0, y: 0 }, properties: {} });
+      wireUi(doc, "panel", "fill", "output", "opacity");
+    });
+    const [plain, overlay] = [await compileUi(doc, false), await compileUi(doc, true)];
+    expect(overlay.compiledShaders).toBe(plain.compiledShaders);
+    expect([overlay.alphaMode, overlay.transparencyMode, overlay.backFaceCulling, isDrawBatchMaterial(overlay)])
+      .toEqual([plain.alphaMode, plain.transparencyMode, plain.backFaceCulling, isDrawBatchMaterial(plain)]);
+  });
+
+  it("shows a picked Color as a Scene Layer's unlit surface does, and leaves it linear for a Scene Linear display stage", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    const picked = [0.5, 0.25, 0.75];
+    const ui = await compileUi(uiDocument((doc) => { doc.nodes.find((node) => node.id === "color")!.properties.value = picked; }), true, scene);
+    const surfaceDoc = createDefaultMaterialDocument("Overlay surface");
+    surfaceDoc.shadingModel = "unlit";
+    surfaceDoc.nodes.find((node) => node.id === "baseColor")!.properties.value = picked;
+    const surface = await compileUi(surfaceDoc, true, scene, "surface");
+    const encodings = async (material: Material) => {
+      const mesh = MeshBuilder.CreatePlane(`${material.name}-plane`, {}, scene);
+      mesh.material = material;
+      // A new frame: readiness is cached per render id.
+      scene.incrementRenderId();
+      await material.forceCompilationAsync(mesh);
+      const subMesh = mesh.subMeshes![0]!;
+      expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+      const defines = subMesh.effect!.defines;
+      mesh.dispose();
+      return (defines.match(/^#define (IMAGEPROCESSING|CONVERTTOGAMMA|CONVERTTOLINEAR)\d*$/gm) ?? []).map((define) => define.replace(/\d+$/, ""));
+    };
+    // Both write the colour's linear value (the Color node's sRGB pick, decoded) and encode it once with the same
+    // conversion: the screen shows the pick.
+    const literal = /vec3\((0\.\d+), (0\.\d+), (0\.\d+)\)/;
+    const linear = ui.compiledShaders.split("// Fragment shader")[1]!.match(literal)![0];
+    expect(linear).not.toBe("vec3(0.5, 0.25, 0.75)");
+    expect(surface.compiledShaders).toContain(linear);
+    expect(await encodings(ui)).toEqual(["#define CONVERTTOGAMMA"]);
+    expect(await encodings(ui)).toEqual(await encodings(surface));
+    // The editor's Scene Layer tab and the Material preview may have a Scene Linear display stage, which encodes once.
+    scene.imageProcessingConfiguration.applyByPostProcess = true;
+    expect(await encodings(ui)).toEqual([]);
+  });
+
+  it("batches one that reads its element and the screen, and keeps one with Custom GLSL out", async () => {
+    const elementAndScreen = uiDocument((doc) => {
+      doc.nodes.push(
+        { id: "element", type: "input.ui", position: { x: 0, y: 0 }, properties: {} },
+        { id: "sum", type: "math.add", position: { x: 0, y: 0 }, properties: {} },
+        { id: "total", type: "math.add", position: { x: 0, y: 0 }, properties: {} },
+        { id: "panel", type: "ui.roundedRectangle", position: { x: 0, y: 0 }, properties: {} },
+      );
+      wireUi(doc, "element", "screenSize", "sum", "a");
+      wireUi(doc, "element", "screenPosition", "sum", "b");
+      wireUi(doc, "sum", "out", "total", "a");
+      wireUi(doc, "element", "screenUv", "total", "b");
+      wireUi(doc, "total", "out", "output", "color");
+      wireUi(doc, "panel", "fill", "output", "opacity");
+    });
+    for (const overlay of [false, true]) {
+      const material = await compileUi(elementAndScreen, overlay);
+      // The screen size is bound (the render target's, the same for every member); the element's size is derived.
+      expect(material.compiledShaders).toMatch(/uniform vec2 \w*screenSize\w*;/);
+      expect(material.compiledShaders).toContain("dFdx(");
+      expect({ bounded: isBoundedMaterial(material), batches: isDrawBatchMaterial(material), text: isDrawBatchTextMaterial(material) })
+        .toEqual({ bounded: true, batches: true, text: false });
+    }
+    const custom = await compileUi(uiDocument((doc) => {
+      doc.nodes.push({ id: "glsl", type: "custom.glsl", position: { x: 0, y: 0 }, properties: newCustomGlslProperties() });
+      wireUi(doc, "color", "out", "glsl", "a");
+      wireUi(doc, "glsl", "out", "output", "color");
+    }), true);
+    expect([isBoundedMaterial(custom), isDrawBatchMaterial(custom)]).toEqual([false, false]);
+  });
 });
