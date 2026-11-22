@@ -383,7 +383,7 @@ export function createSnapshots(rt: RuntimeComposition, options: RuntimeDriverOp
     reportLog: (message, severity, category) => rt.reportLog(message, severity, category),
     reportError: (error) => { rt.reportError(error); },
     emit: (command) => rt.emit(command),
-  }, nowMs);
+  }, nowMs, { verify: options.verifySnapshotPublishes });
 }
 
 export function createTickPipeline(rt: RuntimeComposition, options: RuntimeDriverOptions): TickPipeline {

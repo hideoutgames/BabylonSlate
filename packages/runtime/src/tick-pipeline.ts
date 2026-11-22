@@ -216,6 +216,7 @@ export class TickPipeline {
         physicsMs: phaseMs[PHYSICS_PHASE]!,
         phaseMs,
         publishMs: this.snapshots.takeMeanPublishMs(),
+        ...(this.snapshots.verification ? { snapshotMismatches: this.snapshots.verification.mismatches } : {}),
         liveActors: this.host.liveActors(),
         ...this.objectLifetimeStats(),
         snapshotCapacity: this.snapshots.capacity,
