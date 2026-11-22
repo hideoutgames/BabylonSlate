@@ -27,10 +27,12 @@ import {
   createAppSettingsStore,
   createDerivedStorage,
   createStorage,
+  getHostPlatform,
   isTestModeEnabled,
   ENGINE_SETTINGS_CHANGED_EVENT,
   type EngineSettings,
 } from "@haptic/vfs";
+import { automaticBlobSweepAllowed, scheduleAutomaticBlobSweep } from "../lib/automatic-blob-sweep";
 import type { ProjectStorage } from "@haptic/core";
 import {
   DocumentService,
@@ -42,6 +44,7 @@ import { createPlayContentService, GRAPH_SIGNATURE_KINDS } from "../services/pla
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
 import { ProjectService } from "../services/project-service";
 import { DocumentTransitionGate } from "../services/document-transition-gate";
+import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 import {
   SourceControlService,
 } from "../services/source-control-service";
@@ -67,6 +70,7 @@ import type {
   DocumentContextValue,
   EditorShellState,
   ProjectState,
+  RecoveryNotice,
   RegistryState,
   SaveState,
   AppRoute,
@@ -189,6 +193,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [projectDocument, setProjectDocument] = useRefState(projectDocumentRef);
   const projectSaveState = useRef(new ProjectSaveState());
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  /**
+   * `recoveryAvailable` for code outside render: while the recovery choice is
+   * open, Save All refuses, Auto-Save waits and background Texture encodes
+   * pause, so no project document is written before Recover or Discard.
+   */
+  const recoveryPendingRef = useRef(false);
+  const resumeAfterRecoveryRef = useRef<() => void>(() => {});
+  const setRecoveryPending = useCallback((available: boolean) => {
+    const was = recoveryPendingRef.current;
+    recoveryPendingRef.current = available;
+    setRecoveryAvailable(available);
+    setEncodeQueuePauseReason("recovery", available);
+    if (was && !available) resumeAfterRecoveryRef.current();
+  }, []);
+  useEffect(() => () => setEncodeQueuePauseReason("recovery", false), []);
+  const [recoveryNotice, setRecoveryNotice] = useState<RecoveryNotice | null>(null);
   /** Re-renders the provider after service state its slices read changed (edits, tabs, saves). */
   const [, setContextTick] = useState(0);
   /** Registry-adjacent changes outside the registry itself; part of `registryEpoch`. */
@@ -319,11 +339,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   // that reads, clears or abandons the journal flushes first. One buffer for
   // the provider's lifetime keeps each project's writes in order. Its flush
   // on hide is attached further down, where its effect has always run.
+  /** Re-renders when a project's journaling pauses or resumes; `journalPaused` reads the buffer. */
+  const [, setJournalPauseTick] = useState(0);
   const [journalBuffer] = useState(
     () =>
       new JournalBuffer(async (guid, lines) =>
         appendJournalLines(await ensureDerived(), guid, lines),
-      ),
+      { onPausedChange: () => setJournalPauseTick((tick) => tick + 1) }),
   );
   // Effects after the history-reopen subscription, before source control's.
   const {
@@ -469,6 +491,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     cancelDebouncedSave,
     enqueueProjectWrite,
     scheduleDebouncedSave,
+    resumeAfterRecovery,
     saveAll,
     saveProjectNow,
     actions: saveActions,
@@ -485,7 +508,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setLastCompiledSignature,
     sourceControlRef,
     bump,
+    recoveryPendingRef,
   });
+  resumeAfterRecoveryRef.current = resumeAfterRecovery;
 
   // The edit pipeline (apply*, Undo / Redo, Simulation apply, journal append
   // and recovery replay, prefab sync). Every input is stable, so it is built
@@ -504,9 +529,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         onHistoryCleared: noteUndoHistoryCleared,
         registryTick: () => registryTickRef.current,
         isProjectDirty: () => projectSaveState.current.isDirty(projectDocumentRef.current),
-        onRecoveryResolved: () => setRecoveryAvailable(false),
+        onRecoveryResolved: () => setRecoveryPending(false),
       }),
-    [bump, documentService, ensureDerived, journalBuffer, noteUndoHistoryCleared, projectService, scheduleDebouncedSave],
+    [bump, documentService, ensureDerived, journalBuffer, noteUndoHistoryCleared, projectService, scheduleDebouncedSave, setRecoveryPending],
   );
 
   // Its layout effect follows the external-change hook's.
@@ -570,7 +595,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     projectSaveState,
     setProjectDocument,
     setRoute,
-    setRecoveryAvailable,
+    setRecoveryAvailable: setRecoveryPending,
+    setRecoveryNotice,
     setDocumentOpenError,
     setPublishNotice,
     sceneDocumentLoad,
@@ -1016,6 +1042,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const assetRegistry = projectService.registry;
   const extensionService = projectService.extensions;
   const projectGuid = projectService.guid;
+  // Clean Unused Project Storage on its own, once the editor shows an opened project, where this editor is its only writer.
+  useEffect(() => {
+    if (route !== "editor" || !projectGuid) return;
+    const webLocks = typeof navigator !== "undefined" && "locks" in navigator && navigator.locks !== undefined;
+    if (!automaticBlobSweepAllowed(getHostPlatform(), projectService.storagePort.getCurrentFolder(), webLocks)) return;
+    return scheduleAutomaticBlobSweep(projectService);
+  }, [projectGuid, projectService, route]);
   const pluginDescriptors = projectService.plugins;
   const pluginDiagnostics = projectService.pluginGraphDiagnostics;
   const showPluginContent = documentService.getState().showPluginContent === true;
@@ -1036,9 +1069,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [assetRegistry, registryEpoch, encodingTextures, projectGuid, extensionService, pluginDescriptors, pluginDiagnostics, showPluginContent, searchIndex],
   );
   const projectDirty = projectSaveState.current.isDirty(projectDocument);
+  const journalPaused = projectGuid !== null && journalBuffer.isPaused(projectGuid);
   const saveState = useMemo<SaveState>(
-    () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable }),
-    [stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable],
+    () => ({ dirtyDocuments: stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable, journalPaused }),
+    [stableDirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable, journalPaused],
   );
   const graphsNeedCompile = compileSignatureIsStale(
     currentGraphSignature,
@@ -1053,6 +1087,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       listedProjects,
       needsReconnect,
       recoveryAvailable,
+      recoveryNotice,
       saveFailed,
       templates,
       homepageReady,
@@ -1062,7 +1097,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       publishNotice,
       thumbnailsEnabled,
     }),
-    [listedProjects, needsReconnect, recoveryAvailable, saveFailed, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, publishNotice, thumbnailsEnabled],
+    [listedProjects, needsReconnect, recoveryAvailable, recoveryNotice, saveFailed, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, publishNotice, thumbnailsEnabled],
   );
 
   return (

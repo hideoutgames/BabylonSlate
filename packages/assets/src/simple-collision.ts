@@ -1,7 +1,7 @@
 import type { CollisionTriangleMesh } from "@haptic/core";
 import { newAssetGuid } from "./guid";
 import { convexHull3d, type HullVec3 } from "./convex-hull";
-import { extractGltfPositions } from "./glb-geometry";
+import { extractGltfPositions, type GltfTriangles } from "./glb-geometry";
 
 export type ModelSimpleColliderKind =
   | "box"
@@ -267,6 +267,26 @@ export function cookGeneratedCollisionFromGltf(
   const points = extractGltfPositions(bytes, options?.importScale ?? 1).map(
     ({ x, y, z }) => ({ x: -x, y, z }),
   );
+  return generateSimpleCollisionFromPoints(points, {
+    id: options?.id,
+    name: options?.name ?? SIMPLE_COLLIDER_KIND_LABELS.generated,
+  });
+}
+
+/**
+ * {@link cookGeneratedCollisionFromGltf} from rest-pose triangles already read
+ * with `readGltfTriangles` (Import Scale baked), so an importer that also
+ * bakes an occluder reads the model's geometry once.
+ */
+export function cookGeneratedCollisionFromTriangles(
+  triangles: GltfTriangles | null,
+  options?: { id?: string; name?: string },
+): ModelSimpleCollider {
+  const positions = triangles?.positions ?? [];
+  const points: HullVec3[] = [];
+  for (let index = 0; index + 2 < positions.length; index += 3) {
+    points.push({ x: -positions[index]!, y: positions[index + 1]!, z: positions[index + 2]! });
+  }
   return generateSimpleCollisionFromPoints(points, {
     id: options?.id,
     name: options?.name ?? SIMPLE_COLLIDER_KIND_LABELS.generated,

@@ -70,6 +70,7 @@ import {
 } from "./graph-types";
 import type { PinTypeNames } from "./pin-default-preview";
 import { GraphEditorProvider, type GraphPreviewedNode } from "./graph-editor-context";
+import { GraphNodeBodyContext, GraphNodeStateStore, stablePinDisplayTypes } from "./graph-node-state";
 import {
   canonicalGraphSignature,
   createEdgeId,
@@ -143,7 +144,7 @@ import { formatGraphNodes, formatPinOffsetKey } from "./graph-format";
 import type { GraphFormatLayout } from "./format-layout";
 import { freeNodePosition } from "./graph-placement";
 import { placeConversion } from "./graph-conversion-placement";
-import { findProximityConnections, type ProximityPin } from "./graph-proximity";
+import { findProximityConnections, pinBox, pinBoxWithinReach, type PinBox, type ProximityPin } from "./graph-proximity";
 import {
   GRAPH_VIRTUALIZE_OVERSCAN_PX,
   estimateGraphNodeSize,
@@ -151,6 +152,8 @@ import {
   graphNodesBounds,
   graphPinRowCenterY,
   selectVisibleGraphElements,
+  cullStillHolds,
+  type GraphCullHold,
 } from "./graph-virtualize";
 import {
   attachGraphPaneMarquee,
@@ -827,18 +830,19 @@ function proximityPinsOf(
 // drag, so its pins are worked out once instead of on every drag tick.
 const stationaryPins = new WeakMap<
   CanvasNode,
-  { bounds: InternalNode["internals"]["handleBounds"]; pins: ProximityPin[] }
+  { bounds: InternalNode["internals"]["handleBounds"]; pins: ProximityPin[]; box: PinBox | null }
 >();
 
 function stationaryProximityPins(
   node: CanvasNode,
   bounds: InternalNode["internals"]["handleBounds"],
-): ProximityPin[] {
+): { pins: ProximityPin[]; box: PinBox | null } {
   const cached = stationaryPins.get(node);
-  if (cached && cached.bounds === bounds) return cached.pins;
+  if (cached && cached.bounds === bounds) return cached;
   const pins = proximityPinsOf(node, bounds, node.position);
-  stationaryPins.set(node, { bounds, pins });
-  return pins;
+  const entry = { bounds, pins, box: pinBox(pins) };
+  stationaryPins.set(node, entry);
+  return entry;
 }
 
 type GraphClip = { nodes: CanvasNode[]; edges: Edge[] };
@@ -853,8 +857,23 @@ type VisibleGraphInputs = {
   x: number;
   y: number;
   zoom: number;
+  /** How far the transform may pan from `x`, `y` before the culled set can change. */
+  hold: GraphCullHold | undefined;
   result: VisibleGraph;
 };
+
+/**
+ * A host callback that only gestures and menus call: the latest one the host passed, through a
+ * function whose identity changes only when the host starts or stops passing one.
+ */
+function useStableHostCallback<A extends unknown[], R>(callback: ((...args: A) => R) | undefined): ((...args: A) => R) | undefined {
+  const ref = useRef(callback);
+  useLayoutEffect(() => {
+    ref.current = callback;
+  });
+  const present = callback !== undefined;
+  return useMemo(() => (present ? (...args: A) => ref.current!(...args) : undefined), [present]);
+}
 
 /** The same mounted nodes and edges, element for element. */
 function sameVisibleGraph(left: VisibleGraph, right: VisibleGraph): boolean {
@@ -1028,7 +1047,7 @@ function FocusedNodeSync({
 
 function GraphEditorCanvas({
   initialGraph,
-  onChange,
+  onChange: hostOnChange,
   commitPositionsOnDragEnd = false,
   onSelectionChange,
   onEmptyCanvasClick,
@@ -1037,9 +1056,9 @@ function GraphEditorCanvas({
   focusedNodeId,
   focusRequest,
   diagnostics,
-  onNavigateRequest,
-  onNodeDoubleClick,
-  onEdgeDoubleClick,
+  onNavigateRequest: hostOnNavigateRequest,
+  onNodeDoubleClick: hostOnNodeDoubleClick,
+  onEdgeDoubleClick: hostOnEdgeDoubleClick,
   renderNodeBody,
   onEdgeSelectionChange,
   paletteNodes,
@@ -1059,7 +1078,7 @@ function GraphEditorCanvas({
   nodesDraggable: nodesDraggableProp,
   toolbarExtra,
   selectedAttachmentId = null,
-  onAttachmentSelect,
+  onAttachmentSelect: hostOnAttachmentSelect,
   hiddenToolbarActions = NO_HIDDEN_TOOLBAR_ACTIONS,
   formatLayout,
   nodeDragHandle,
@@ -1076,11 +1095,11 @@ function GraphEditorCanvas({
   connectionMode,
   deleteKeyCode,
   nodesFocusable = true,
-  contextMenuItemsForNode,
-  contextMenuItemsForPin,
+  contextMenuItemsForNode: hostContextMenuItemsForNode,
+  contextMenuItemsForPin: hostContextMenuItemsForPin,
   previewedNode = null,
-  contextMenuItemsForAttachment,
-  onAttachmentDoubleClick,
+  contextMenuItemsForAttachment: hostContextMenuItemsForAttachment,
+  onAttachmentDoubleClick: hostOnAttachmentDoubleClick,
   pinCompatibility,
   pinConversion,
   addNodeHistoryScope,
@@ -1091,11 +1110,26 @@ function GraphEditorCanvas({
   onPaletteNodeAdded,
   reroute,
   renamingNodeId = null,
-  onNodeRenameCommit,
-  onNodeRenameCancel,
+  onNodeRenameCommit: hostOnNodeRenameCommit,
+  onNodeRenameCancel: hostOnNodeRenameCancel,
   renamingNodeValue,
   onNodeTitleDoubleClick,
 }: GraphEditorProps) {
+  // Called when a gesture or menu runs, never while rendering: kept current through refs, so a host
+  // that passes new callbacks with every edit does not hand every node and pin a new context.
+  const onNavigateRequest = useStableHostCallback(hostOnNavigateRequest);
+  // Every edit calls it, and the canvas's own edit callbacks (a pin default, a formula) reach it
+  // through `emitChange`: a host that rebuilds it per edit must not rebuild them.
+  const onChange = useStableHostCallback(hostOnChange);
+  const onAttachmentSelect = useStableHostCallback(hostOnAttachmentSelect);
+  const contextMenuItemsForNode = useStableHostCallback(hostContextMenuItemsForNode);
+  const contextMenuItemsForPin = useStableHostCallback(hostContextMenuItemsForPin);
+  const contextMenuItemsForAttachment = useStableHostCallback(hostContextMenuItemsForAttachment);
+  const onAttachmentDoubleClick = useStableHostCallback(hostOnAttachmentDoubleClick);
+  const onNodeRenameCommit = useStableHostCallback(hostOnNodeRenameCommit);
+  const onNodeRenameCancel = useStableHostCallback(hostOnNodeRenameCancel);
+  const onEdgeDoubleClick = useStableHostCallback(hostOnEdgeDoubleClick);
+  const onNodeDoubleClick = useStableHostCallback(hostOnNodeDoubleClick);
   const inheritedReadOnly = useEditorReadOnly();
   const readOnly = readOnlyProp || inheritedReadOnly;
   const knownTypes = useMemo(
@@ -1269,19 +1303,16 @@ function GraphEditorCanvas({
       ),
     [errorDiagnostics],
   );
-  const nodeErrorCount = useCallback(
-    (nodeId: string) => nodeErrorCounts.get(nodeId) ?? 0,
-    [nodeErrorCounts],
-  );
-  const pinHasError = useCallback(
-    (nodeId: string, pinId: string) =>
-      pinErrorKeys.has(`${nodeId}\u0000${pinId}`),
-    [pinErrorKeys],
-  );
-
   const lastEmittedRef = useRef<GraphDocument | null>(null);
-  // Signature of `lastEmittedRef.current`, so an emit hashes only its new graph.
-  const lastEmittedSignatureRef = useRef<{ graph: GraphDocument; signature: string } | null>(null);
+  // Signatures by graph object: an emitted graph and the host graph that replaced it are each
+  // hashed once, by the emit that compares against them and by the refresh that reconciles them.
+  // Both are handed over and never changed in place.
+  const [signatures] = useState(() => new WeakMap<GraphDocument, string>());
+  const signatureOf = useCallback((graph: GraphDocument) => {
+    let signature = signatures.get(graph);
+    if (signature === undefined) signatures.set(graph, (signature = canonicalGraphSignature(graph)));
+    return signature;
+  }, [signatures]);
   const dragTransactionRef = useRef<string | null>(null);
 
   const emitChange = useCallback(
@@ -1303,20 +1334,11 @@ function GraphEditorCanvas({
         { members: membersRef.current, components: componentsRef.current },
       );
       const last = lastEmittedRef.current;
-      if (last) {
-        const signature = canonicalGraphSignature(graph);
-        let previous = lastEmittedSignatureRef.current;
-        if (previous?.graph !== last) {
-          previous = { graph: last, signature: canonicalGraphSignature(last) };
-          lastEmittedSignatureRef.current = previous;
-        }
-        if (signature === previous.signature) return;
-        lastEmittedSignatureRef.current = { graph, signature };
-      }
+      if (last && signatureOf(graph) === signatureOf(last)) return;
       lastEmittedRef.current = graph;
       onChange?.(graph, meta);
     },
-    [onChange],
+    [onChange, signatureOf],
   );
 
   useEffect(() => {
@@ -1325,6 +1347,7 @@ function GraphEditorCanvas({
       localEdges: graphStateRef.current.edges,
       incoming: initialGraph,
       lastEmitted: lastEmittedRef.current,
+      signatureOf,
     });
     if (!next) return;
     // Host refreshes can arrive during a drag. Discard the old suggestions,
@@ -1369,7 +1392,7 @@ function GraphEditorCanvas({
         })),
       ),
     );
-  }, [initialGraph, knownTypes, nodeDragHandle]);
+  }, [initialGraph, knownTypes, nodeDragHandle, signatureOf]);
 
   // Re-apply a changed drag handle selector while rendering.
   const [appliedDragHandle, setAppliedDragHandle] = useState(nodeDragHandle);
@@ -1884,22 +1907,28 @@ function GraphEditorCanvas({
       const moving = new Map(dragged.map((node) => [node.id, node]));
       const pins: ProximityPin[] = [];
       const store = storeApi.getState();
-      for (const node of graphStateRef.current.nodes) {
-        if (isDisabledNode(node)) continue;
-        const internal = store.nodeLookup.get(node.id);
+      const maxDistance = interactions.assistantDistance / store.transform[2];
+      const enabledNodes = graphStateRef.current.nodes.filter((node) => !isDisabledNode(node));
+      for (const node of enabledNodes) {
+        const draggedNode = moving.get(node.id);
+        const internal = draggedNode && store.nodeLookup.get(node.id);
         if (!internal) continue;
-        const bounds = internal.internals.handleBounds;
-        const dragged = moving.get(node.id);
-        const nodePins = dragged
-          ? proximityPinsOf(node, bounds, dragged.position)
-          : stationaryProximityPins(node, bounds);
-        for (const pin of nodePins) pins.push(pin);
+        for (const pin of proximityPinsOf(node, internal.internals.handleBounds, draggedNode.position)) pins.push(pin);
+      }
+      const reach = pinBox(pins);
+      for (const node of enabledNodes) {
+        if (moving.has(node.id)) continue;
+        const internal = store.nodeLookup.get(node.id);
+        if (!internal || !reach) continue;
+        const stationary = stationaryProximityPins(node, internal.internals.handleBounds);
+        if (!pinBoxWithinReach(stationary.box, reach, maxDistance)) continue;
+        for (const pin of stationary.pins) pins.push(pin);
       }
       const connections = findProximityConnections({
         pins,
         edges: graphStateRef.current.edges,
         movingNodeIds: new Set(moving.keys()),
-        maxDistance: interactions.assistantDistance / store.transform[2],
+        maxDistance,
         resolveConnection: (connection) =>
           finalizeOrientedConnection(
             connection,
@@ -3948,10 +3977,12 @@ function GraphEditorCanvas({
     };
   }, [endConnectSession, storeApi]);
 
+  // Stable: what a render shows reads `usePinDisplayType` (one pin's type); the wire being drawn
+  // reads the latest types here.
   const pinDisplayType = useCallback(
     (nodeId: string, pinId: string) =>
-      pinDisplayTypes.get(pinTypeKey(nodeId, pinId)),
-    [pinDisplayTypes],
+      pinDisplayTypesRef.current.get(pinTypeKey(nodeId, pinId)),
+    [],
   );
 
   const styledEdges = useMemo(
@@ -3998,15 +4029,12 @@ function GraphEditorCanvas({
       last.nodes === nodes &&
       last.edges === styledEdges &&
       last.keepIds === keepIds &&
-      last.width === hostSize.width &&
-      last.height === hostSize.height &&
-      last.x === x &&
-      last.y === y &&
-      last.zoom === zoom
+      cullStillHolds(last, { x, y, zoom, width: hostSize.width, height: hostSize.height }, last.hold)
     ) {
+      // No node can have crossed the culling box's edge since the last cull: the same set.
       return last.result;
     }
-    const result = selectVisibleGraphElements(
+    const { hold, ...result } = selectVisibleGraphElements(
       nodes,
       styledEdges,
       { x, y, zoom, width: hostSize.width, height: hostSize.height },
@@ -4022,6 +4050,7 @@ function GraphEditorCanvas({
       x,
       y,
       zoom,
+      hold,
       result,
     };
     return result;
@@ -4080,6 +4109,26 @@ function GraphEditorCanvas({
     emitChange(next, current.edges);
   }, [emitChange]);
 
+  // Seeded with the first render's state, then kept current after each commit (below).
+  const [nodeState] = useState(() => new GraphNodeStateStore({
+    pendingPin, nodeErrorCounts, pinErrorKeys, renamingNodeId, renamingNodeValue, previewedNode,
+    pinDisplayTypes, connectedInputs,
+  }));
+  useLayoutEffect(() => {
+    const current = nodeState.get();
+    nodeState.set({
+      pendingPin, nodeErrorCounts, pinErrorKeys, renamingNodeId, renamingNodeValue, previewedNode,
+      pinDisplayTypes: stablePinDisplayTypes(current.pinDisplayTypes, pinDisplayTypes),
+      connectedInputs,
+    });
+  });
+
+  // React Flow hands its node handlers to every node's wrapper: a new one each render would render every node again.
+  const handleNodeDoubleClick = useCallback((_event: unknown, node: CanvasNode) => {
+    // A double-click that just split a wire lands on the new knot, which opens nothing.
+    if (!isRerouteNodeData(node.data)) onNodeDoubleClick?.(node.id);
+  }, [onNodeDoubleClick]);
+
   // A Math Expression formula typed on the node: the formula, its pins and the wires that follow a
   // renamed variable (or go with a removed one) are one change, so one undo step.
   const onFormulaCommit = useCallback((nodeId: string, formula: string) => {
@@ -4093,14 +4142,11 @@ function GraphEditorCanvas({
 
   const contextValue = useMemo(
     () => ({
-      pendingPin,
+      nodeState,
       onPinTap,
       onPinDefaultChange: pinDefaultsDisabled ? undefined : onPinDefaultChange,
       onFormulaCommit: readOnly ? undefined : onFormulaCommit,
       renderPinDefaultEditor,
-      connectedInputs,
-      nodeErrorCount,
-      pinHasError,
       pinDisplayType,
       pinTypeNames,
       connectEndMode,
@@ -4112,7 +4158,6 @@ function GraphEditorCanvas({
       contextMenuItemsForNode,
       contextMenuItemsForAttachment,
       onEdgeDoubleClick,
-      renderNodeBody,
       nodeMenu,
       connectionRefusal,
       pinConversionLabel: pinConversion ? pinConversionLabel : undefined,
@@ -4121,11 +4166,8 @@ function GraphEditorCanvas({
       runTrace,
       breakpoints,
       describeNode,
-      previewedNode,
-      renamingNodeId,
       onNodeRenameCommit,
       onNodeRenameCancel,
-      renamingNodeValue,
       titleDoubleClick: hasTitleRename ? titleDoubleClick : undefined,
       connectionLineKind:
         defaultEdgeOptions.type === "animTransition" ||
@@ -4134,7 +4176,7 @@ function GraphEditorCanvas({
           : ("default" as const),
     }),
     [
-      nodeErrorCount,
+      nodeState,
       onNavigateRequest,
       onPinTap,
       onPinDefaultChange,
@@ -4142,11 +4184,8 @@ function GraphEditorCanvas({
       readOnly,
       pinDefaultsDisabled,
       renderPinDefaultEditor,
-      connectedInputs,
-      pendingPin,
       pinDisplayType,
       pinTypeNames,
-      pinHasError,
       connectEndMode,
       pinCompatibility,
       selectedAttachmentId,
@@ -4155,7 +4194,6 @@ function GraphEditorCanvas({
       contextMenuItemsForNode,
       contextMenuItemsForAttachment,
       onEdgeDoubleClick,
-      renderNodeBody,
       nodeMenu,
       connectionRefusal,
       pinConversion,
@@ -4166,11 +4204,8 @@ function GraphEditorCanvas({
       runTrace,
       breakpoints,
       describeNode,
-      previewedNode,
-      renamingNodeId,
       onNodeRenameCommit,
       onNodeRenameCancel,
-      renamingNodeValue,
       hasTitleRename,
       titleDoubleClick,
       defaultEdgeOptions.type,
@@ -4179,6 +4214,7 @@ function GraphEditorCanvas({
 
   return (
     <GraphEditorProvider value={contextValue}>
+    <GraphNodeBodyContext.Provider value={renderNodeBody}>
       <div
         ref={wrapperRef}
         className="relative h-full w-full touch-manipulation"
@@ -4316,10 +4352,7 @@ function GraphEditorCanvas({
           onConnect={handleConnect}
           onConnectStart={handleConnectStart}
           onConnectEnd={handleConnectEnd}
-          onNodeDoubleClick={(_, node) => {
-            // A double-click that just split a wire lands on the new knot, which opens nothing.
-            if (!isRerouteNodeData(node.data)) onNodeDoubleClick?.(node.id);
-          }}
+          onNodeDoubleClick={handleNodeDoubleClick}
           onEdgeClick={handleEdgeClick}
           onEdgeDoubleClick={handleEdgeDoubleClick}
           isValidConnection={readOnly ? () => false : isValidConnection}
@@ -4466,6 +4499,7 @@ function GraphEditorCanvas({
         />
         )}
       </div>
+    </GraphNodeBodyContext.Provider>
     </GraphEditorProvider>
   );
 }

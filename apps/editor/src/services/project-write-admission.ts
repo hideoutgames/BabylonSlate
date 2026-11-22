@@ -19,11 +19,55 @@ export interface ProjectWriteLease {
  */
 export class ProjectWriteAdmission {
   private active = 0;
+  private epoch = 0;
   private readonly locks = new Map<symbol, { reason: string; ready: (acquired: boolean) => void }>();
   private readonly listeners = new Set<() => void>();
   private publishedState = "open";
 
   get blocked(): boolean { return this.locks.size > 0; }
+  /**
+   * Advances on every admitted owner operation and every write through a
+   * guarded storage (`guardProjectStorage`), never on reads: equal values
+   * before and after some work mean nothing wrote project files meanwhile,
+   * except through `withExclusiveWriter`'s own storage.
+   */
+  get writeEpoch(): number { return this.epoch; }
+
+  /** Counts a write made through a guarded storage. */
+  noteWrite(): void { this.epoch++; }
+
+  /**
+   * The yielding hold a background owner (Clean Unused Project Storage) has
+   * while it runs one small unit of work; null otherwise. Unlike `lock`, it
+   * never refuses anyone: an admission (`run`) or a guarded write arriving
+   * meanwhile waits for the unit to end (a few milliseconds), then goes on.
+   */
+  private yielding: Promise<void> | null = null;
+
+  /**
+   * Runs `unit` under a yielding hold, only when writes are idle (no lock
+   * held, no admitted operation running, no other hold) and `stillValid()`
+   * (checked in the same tick the hold starts); otherwise resolves false
+   * without running it. While it runs, admissions and guarded writes wait
+   * for it rather than fail, so a save is never refused because of it; the
+   * owner checks `writeEpoch` before its next unit and stops when anything
+   * wrote meanwhile.
+   */
+  async runYieldingUnit(stillValid: () => boolean, unit: () => Promise<void>): Promise<boolean> {
+    if (this.blocked || this.active > 0 || this.yielding || !stillValid()) return false;
+    let release!: () => void;
+    this.yielding = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      await unit();
+    } finally {
+      this.yielding = null;
+      release();
+    }
+    return true;
+  }
+
+  /** The running yielding unit's end, or null: writes wait for it before they start. */
+  get yieldingUnit(): Promise<void> | null { return this.yielding; }
   get locked(): boolean { return this.blocked && this.active === 0; }
   get reason(): string | null { return this.locks.values().next().value?.reason ?? null; }
 
@@ -60,6 +104,9 @@ export class ProjectWriteAdmission {
   run<T>(operation: () => T | PromiseLike<T>): Promise<T> {
     try { this.assertAdmission(); }
     catch (error) { return Promise.reject(error); }
+    // A background unit yields: this operation waits for it, then is admitted (or refused by a lock taken meanwhile).
+    const yielding = this.yielding;
+    if (yielding) return yielding.then(() => this.run(operation));
     return this.continue(operation);
   }
 
@@ -76,6 +123,7 @@ export class ProjectWriteAdmission {
   retain(): () => void {
     this.assertStorageWritable();
     this.active++;
+    this.epoch++;
     let finished = false;
     return () => {
       if (finished) return;
@@ -140,10 +188,17 @@ export function guardProjectStorage(
       if (cached?.original === value) return cached.method;
       const method = STORAGE_WRITES.has(key)
         ? (...args: unknown[]) => {
-          if (!internal) return admission.run(() => Reflect.apply(value, target, args));
-          try {
+          if (!internal) return admission.run(() => { admission.noteWrite(); return Reflect.apply(value, target, args); });
+          const write = () => {
             admission.assertStorageWritable();
-            return Reflect.apply(value, target, args);
+            admission.noteWrite();
+            return Reflect.apply(value, target, args) as unknown;
+          };
+          // A background unit yields: the write starts once it ends, never failing because of it.
+          const yielding = admission.yieldingUnit;
+          if (yielding) return yielding.then(write);
+          try {
+            return write();
           } catch (error) { return Promise.reject(error); }
         }
         : value.bind(target);
@@ -170,7 +225,15 @@ export async function withExclusiveWriter<T>(
 ): Promise<T> {
   if (admission.blocked) throw new Error(admission.reason!);
   signal?.throwIfAborted();
-  const lease = admission.lock(reason);
+  return exclusively(admission.lock(reason), storage, work, signal);
+}
+
+async function exclusively<T>(
+  lease: ProjectWriteLease,
+  storage: ProjectStorage,
+  work: (storage: ProjectStorage) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
   try {
     let stopWaiting = noop;
     const aborted = new Promise<never>((_resolve, reject) => {

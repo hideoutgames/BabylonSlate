@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
-import { importModel } from "@haptic/assets";
-import { convertStlImportBatch, convertStlToGlb } from "./convert-stl-to-glb";
+import { ImportLimitError, importModel, STL_MAX_TRIANGLES } from "@haptic/assets";
+import { assertStlWithinLimits, convertStlImportBatch, convertStlToGlb } from "./convert-stl-to-glb";
 import { isGltfModelBytes } from "./model-mesh";
 
 const TRIANGLE_STL = `solid tri
@@ -31,6 +31,38 @@ function glbPositionCount(glb: Uint8Array): number {
   const position = json.meshes[0].primitives[0].attributes.POSITION;
   return json.accessors[position].count;
 }
+
+describe("assertStlWithinLimits", () => {
+  /** A binary STL header declaring `triangles` triangles, followed by `body` bytes of triangle data. */
+  function declaring(triangles: number, body: number): Uint8Array {
+    const bytes = new Uint8Array(84 + body);
+    new DataView(bytes.buffer).setUint32(80, triangles, true);
+    return bytes;
+  }
+
+  it("refuses a binary STL whose triangle count its bytes cannot hold, before the loader allocates for it", () => {
+    // 50,000,000 triangles would be 1.8 GB of positions and normals; the file holds one.
+    expect(() => assertStlWithinLimits(declaring(50_000_000, 50))).toThrow(ImportLimitError);
+    expect(() => assertStlWithinLimits(declaring(1_000_000, 50))).toThrow(/declares 1,000,000 triangles.*damaged or not an STL/);
+  });
+
+  it("names the triangle cap for a count above it", () => {
+    expect(() => assertStlWithinLimits(declaring(STL_MAX_TRIANGLES + 1, 50))).toThrow(/triangle count is 5,592,406; the import limit is 5,592,405/);
+  });
+
+  it("accepts ASCII STL, and binary STL whose bytes hold every triangle", () => {
+    expect(() => assertStlWithinLimits(new TextEncoder().encode(TRIANGLE_STL))).not.toThrow();
+    expect(() => assertStlWithinLimits(binaryTriangle())).not.toThrow();
+    // A binary file that starts with `solid` is binary when its size matches its count, as the loader reads it.
+    const solidBinary = binaryTriangle();
+    solidBinary.set(new TextEncoder().encode("solid"));
+    expect(() => assertStlWithinLimits(solidBinary)).not.toThrow();
+  });
+
+  it("fails conversion of a lying STL without the loader allocating", async () => {
+    await expect(convertStlToGlb(declaring(4_000_000_000, 50))).rejects.toThrow(ImportLimitError);
+  });
+});
 
 describe("convertStlToGlb", () => {
   const engines: NullEngine[] = [];

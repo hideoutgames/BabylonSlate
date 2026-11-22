@@ -38,6 +38,7 @@ async function remote<T>(path: string, call: () => Promise<T>): Promise<T> {
  * The main process backs this with `NodeStorageAdapter`.
  */
 export class ElectronStorageAdapter implements ProjectStorage {
+  readonly speculativeRangeReads = true;
   private readonly reads = new StorageReadCounter();
   getReadMetrics() { return this.reads.snapshot(); }
 
@@ -140,6 +141,11 @@ export class ElectronStorageAdapter implements ProjectStorage {
     return remote(path, () => bridge.readdir(path));
   }
 
+  async listStagedWrites(path: string): Promise<DirEntry[]> {
+    const bridge = this.requireBridge();
+    return remote(path, () => bridge.listStagedWrites(path));
+  }
+
   async mkdir(path: string, recursive = true): Promise<void> {
     await this.requireBridge().mkdir(path, recursive);
   }
@@ -180,6 +186,8 @@ function libraryProjectBridge(folder: LibraryFolder, library: ElectronLibraryBri
     writeBinary: (path, data) => library.writeBinary(folder, path, data),
     exists: (path) => library.exists(folder, path),
     readdir: (path) => library.readdir(folder, path),
+    // Libraries hold no blob folder a sweep reclaims.
+    listStagedWrites: async () => [],
     mkdir: (path, recursive) => library.mkdir(folder, path, recursive),
     remove: (path) => library.remove(folder, path),
     stat: (path) => library.stat(folder, path),

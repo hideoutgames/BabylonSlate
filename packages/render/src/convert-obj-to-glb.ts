@@ -5,7 +5,12 @@ import { FilesInputStore } from "@babylonjs/core/Misc/filesInputStore";
 import { Scene } from "@babylonjs/core/scene";
 import { OBJFileLoader } from "@babylonjs/loaders/OBJ/objFileLoader";
 import { GLTF2Export } from "@babylonjs/serializers/glTF/2.0";
-import { groupObjImportSidecars } from "@haptic/assets";
+import {
+  formatImportBytes,
+  groupObjImportSidecars,
+  importLimitError,
+  MESH_CONVERSION_MAX_SOURCE_BYTES,
+} from "@haptic/assets";
 
 interface ConvertObjToGlbOptions {
   engine?: AbstractEngine;
@@ -72,10 +77,45 @@ export async function exportConvertedSceneToGlb(
   return await blobToBytes(glbFile);
 }
 
+/**
+ * The OBJ loader reads MTL and texture files from Babylon's global
+ * `FilesInputStore`, keyed by bare file name, so two conversions in flight at
+ * once would read, replace and delete each other's files. Conversions run one
+ * at a time on this chain.
+ */
+let objConversionQueue: Promise<unknown> = Promise.resolve();
+
+/** Refuses an OBJ or STL too large to convert on the main thread, before it is read. */
+export function assertMeshConversionSourceSize(format: string, byteLength: number): void {
+  if (byteLength > MESH_CONVERSION_MAX_SOURCE_BYTES) {
+    throw importLimitError(
+      `The ${format} file's size`,
+      formatImportBytes(byteLength),
+      formatImportBytes(MESH_CONVERSION_MAX_SOURCE_BYTES),
+      "Export it as GLB, or split it into smaller files.",
+    );
+  }
+}
+
 /** Load Wavefront OBJ (optional MTL/maps) and export a GLB for Model import. */
-export async function convertObjToGlb(
+export function convertObjToGlb(
   objBytes: Uint8Array,
   options: ConvertObjToGlbOptions = {},
+): Promise<Uint8Array> {
+  try {
+    assertMeshConversionSourceSize("OBJ", objBytes.byteLength);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  const run = objConversionQueue.then(() => convertObjToGlbNow(objBytes, options));
+  // The next conversion waits for this one to settle, whether it succeeds or fails.
+  objConversionQueue = run.catch(() => undefined);
+  return run;
+}
+
+async function convertObjToGlbNow(
+  objBytes: Uint8Array,
+  options: ConvertObjToGlbOptions,
 ): Promise<Uint8Array> {
   const engine = options.engine ?? createHeadlessEngine();
   const ownsEngine = !options.engine;

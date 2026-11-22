@@ -1,4 +1,5 @@
 import { Gzip, gzipSync } from "fflate";
+import { isValidAppId } from "@haptic/core/app-identity";
 import { appIconPng, LINUX_ICON_SIZES } from "./app-icon";
 import {
   desktopGameNames, gameAppFiles, isSampleApp, runtimeExecutable,
@@ -8,11 +9,13 @@ import { readZipEntries, readZipEntryData, type ZipEntry } from "./zip-merge";
 
 /**
  * A Debian package of a Linux game: the same folder as the Linux ZIP,
- * installed at `/opt/<command>/`, with a `/usr/bin/<command>` link and a menu
- * entry. dpkg installs `chrome-sandbox` owned by root with the setuid bit, so
- * Chromium's sandbox works on systems that refuse unprivileged user
- * namespaces (Ubuntu 23.10 and later), which a ZIP unpacked by a player can
- * never set up.
+ * installed at `/opt/<package>/`, with a `/usr/bin/<package>` link and a menu
+ * entry, where the package name is the game's App ID in lowercase, so two
+ * games with the same title never share files. `chrome-sandbox` is not
+ * setuid: Chromium sandboxes the game with unprivileged user namespaces.
+ * Ubuntu 23.10 and later refuse those to programs AppArmor does not allow, so
+ * the package carries an AppArmor profile granting the game `userns`, which
+ * `postinst` installs and loads where the system's AppArmor can read it.
  */
 
 /** `ustar` with GNU long names, which dpkg reads; paths start with `./`. */
@@ -28,7 +31,53 @@ const encoder = new TextEncoder();
 const BLOCK = 512;
 /** 1980-01-01, as the ZIPs store it; packages are reproducible. */
 const MTIME = 315532800;
-const SETUID_SANDBOX_MODE = 0o4755;
+/** Not setuid: Chromium's user-namespace sandbox needs no root helper. */
+const SANDBOX_MODE = 0o755;
+
+/**
+ * The libraries Electron's Linux `electron` executable links (its ELF
+ * `NEEDED` entries, from the release `build-game-shells.mjs` pins), by the
+ * Debian and Ubuntu packages that ship them. Each library renamed in the
+ * 64-bit `time_t` transition (Ubuntu 24.04, Debian 13) is listed with its
+ * `t64` name as an alternative. Recheck when the Electron pin moves.
+ */
+export const DEBIAN_RUNTIME_DEPENDS: readonly string[] = [
+  "libasound2 | libasound2t64",
+  "libatk-bridge2.0-0 | libatk-bridge2.0-0t64",
+  "libatk1.0-0 | libatk1.0-0t64",
+  "libatspi2.0-0 | libatspi2.0-0t64",
+  "libc6",
+  "libcairo2",
+  "libcups2 | libcups2t64",
+  "libdbus-1-3",
+  "libexpat1",
+  "libgbm1",
+  "libgcc-s1",
+  "libglib2.0-0 | libglib2.0-0t64",
+  "libgtk-3-0 | libgtk-3-0t64",
+  "libnspr4",
+  "libnss3",
+  "libpango-1.0-0",
+  "libudev1",
+  "libx11-6",
+  "libxcb1",
+  "libxcomposite1",
+  "libxdamage1",
+  "libxext6",
+  "libxfixes3",
+  "libxkbcommon0",
+  "libxrandr2",
+];
+
+/**
+ * The control file's maintainer. Haptic has no publisher or contact setting,
+ * so the address is a placeholder in the reserved `.invalid` domain, which
+ * Debian's `Name <email>` form accepts and no mail can ever reach.
+ */
+export function debianMaintainer(title: string, packageName: string): string {
+  const name = title.replace(/[<>,\r\n]/g, " ").replace(/\s+/g, " ").trim() || "Game";
+  return `${name} <${packageName}@haptic-game.invalid>`;
+}
 
 function octal(value: number, length: number): string {
   return value.toString(8).padStart(length - 1, "0") + "\0";
@@ -116,9 +165,33 @@ export function debianVersion(version: string): string {
   return /^[0-9][A-Za-z0-9.+~-]*$/.test(trimmed) && !trimmed.endsWith("-") ? trimmed : "0";
 }
 
-/** Debian package name: the game's command, at least two characters. */
-export function debianPackageName(command: string): string {
-  return command.length >= 2 ? command : `${command}-game`;
+/**
+ * Debian package name: the App ID in lowercase (`com.studio.space-game` stays
+ * unique where titles repeat). A valid App ID is letters and digits in
+ * dot-separated segments that start with a letter, so its lowercase form is
+ * always a valid Debian name: lowercase letters, digits and dots, starting
+ * with a letter, at least three characters.
+ */
+export function debianPackageName(appId: string): string {
+  if (!isValidAppId(appId)) throw new Error(`App ID ${appId} is not valid. Set it in Project Settings > Export.`);
+  return appId.toLowerCase();
+}
+
+/** The AppArmor profile that lets the game's executable create user namespaces for Chromium's sandbox. */
+function appArmorProfile(packageName: string, executablePath: string): string {
+  return [
+    `# Lets ${packageName} create user namespaces, which Chromium's sandbox needs, where AppArmor restricts them.`,
+    "abi <abi/4.0>,",
+    "include <tunables/global>",
+    "",
+    `profile ${packageName} ${executablePath} flags=(unconfined) {`,
+    "  userns,",
+    "",
+    "  # Site-specific additions and overrides. See local/README for details.",
+    `  include if exists <local/${packageName}>`,
+    "}",
+    "",
+  ].join("\n");
 }
 
 /** A `.desktop` value with the characters its format escapes. */
@@ -134,8 +207,11 @@ export function packageLinuxDeb(input: DesktopGamePackageInput): { fileName: str
   if (input.target !== "linux-x64") throw new Error("Debian packages hold Linux games only.");
   const names = desktopGameNames(input.name, input.target);
   const command = names.executable;
-  const packageName = debianPackageName(command);
+  const packageName = debianPackageName(input.appId);
   const root = `./opt/${packageName}`;
+  const installedExecutable = `/opt/${packageName}/${command}`;
+  const profileSource = `/opt/${packageName}/resources/apparmor-profile`;
+  const profileTarget = `/etc/apparmor.d/${packageName}`;
   const runtime = readZipEntries(input.runtime);
   const executable = runtimeExecutable(input.target, runtime);
   const title = input.name.trim() || "Game";
@@ -145,14 +221,15 @@ export function packageLinuxDeb(input: DesktopGamePackageInput): { fileName: str
   for (const entry of runtime) {
     if (isSampleApp(entry.name) || entry.name.endsWith("/")) continue;
     const name = entry.name === executable ? command : entry.name;
-    // The release records Unix modes; the sandbox helper must also be setuid root.
+    // The release records Unix modes; the sandbox helper is an ordinary executable, never setuid.
     const unixMode = entry.madeBy >> 8 === 3 ? (entry.externalAttributes >>> 16) & 0o777 : 0o644;
-    const mode = name === "chrome-sandbox" ? SETUID_SANDBOX_MODE : unixMode || 0o644;
+    const mode = name === "chrome-sandbox" ? SANDBOX_MODE : unixMode || 0o644;
     files.push({ path: `${root}/${name}`, type: "file", mode, source: entry });
   }
   for (const [path, data] of gameAppFiles(input, { ...names, desktopName: `${packageName}.desktop` })) {
     files.push({ path: `${root}/${path}`, type: "file", mode: 0o644, data });
   }
+  files.push({ path: `.${profileSource}`, type: "file", mode: 0o644, data: encoder.encode(appArmorProfile(packageName, installedExecutable)) });
   const icon = input.icon;
   if (icon) {
     for (const size of LINUX_ICON_SIZES) {
@@ -163,7 +240,7 @@ export function packageLinuxDeb(input: DesktopGamePackageInput): { fileName: str
     "[Desktop Entry]",
     "Type=Application",
     `Name=${desktopValue(title)}`,
-    `Exec=/opt/${packageName}/${command} %U`,
+    `Exec=${installedExecutable} %U`,
     ...(icon ? [`Icon=${packageName}`] : []),
     // Electron's X11 window class is the product name; this ties the window to the entry.
     `StartupWMClass=${desktopValue(title)}`,
@@ -172,7 +249,7 @@ export function packageLinuxDeb(input: DesktopGamePackageInput): { fileName: str
     "",
   ].join("\n");
   files.push({ path: `./usr/share/applications/${packageName}.desktop`, type: "file", mode: 0o644, data: encoder.encode(desktopEntry) });
-  const link: TarEntry = { path: `./usr/bin/${command}`, type: "symlink", mode: 0o777, target: `/opt/${packageName}/${command}` };
+  const link: TarEntry = { path: `./usr/bin/${packageName}`, type: "symlink", mode: 0o777, target: installedExecutable };
 
   // data.tar.gz is written as it is read: one runtime file inflated at a time.
   const gzipped: Uint8Array[] = [];
@@ -194,20 +271,51 @@ export function packageLinuxDeb(input: DesktopGamePackageInput): { fileName: str
     `Package: ${packageName}`,
     `Version: ${debianVersion(input.version)}`,
     "Architecture: amd64",
-    `Maintainer: ${title.replace(/[\r\n]/g, " ")}`,
+    `Maintainer: ${debianMaintainer(title, packageName)}`,
     `Installed-Size: ${Math.ceil(installedBytes / 1024)}`,
+    `Depends: ${DEBIAN_RUNTIME_DEPENDS.join(", ")}`,
+    // The game host opens web links in the system browser with xdg-open.
+    "Recommends: xdg-utils",
     "Section: games",
     "Priority: optional",
     `Description: ${title.replace(/[\r\n]/g, " ")}`,
     " A game made with Haptic.",
     "",
   ].join("\n");
-  // dpkg keeps the archive's setuid bit; the script repeats it in case a policy stripped it.
-  const postinst = `#!/bin/sh\nset -e\nchmod 4755 '/opt/${packageName}/chrome-sandbox' || true\n`;
+  // The profile names `abi <abi/4.0>`, which AppArmor before 4 (Debian 12) cannot read; there unprivileged user
+  // namespaces are not restricted and nothing is installed. A failure to load never fails the installation.
+  const postinst = [
+    "#!/bin/sh",
+    "set -e",
+    `PROFILE_SOURCE='${profileSource}'`,
+    `PROFILE_TARGET='${profileTarget}'`,
+    "if [ -d /etc/apparmor.d ] && command -v apparmor_parser >/dev/null 2>&1; then",
+    "  if apparmor_parser --skip-kernel-load --debug \"$PROFILE_SOURCE\" >/dev/null 2>&1; then",
+    "    cp -f \"$PROFILE_SOURCE\" \"$PROFILE_TARGET\"",
+    "    if ! { [ -x /usr/bin/ischroot ] && /usr/bin/ischroot; }; then",
+    "      apparmor_parser --replace --write-cache --skip-read-cache \"$PROFILE_TARGET\" >/dev/null 2>&1 || true",
+    "    fi",
+    "  fi",
+    "fi",
+    "",
+  ].join("\n");
+  const postrm = [
+    "#!/bin/sh",
+    "set -e",
+    `PROFILE_TARGET='${profileTarget}'`,
+    "if [ \"$1\" = remove ] || [ \"$1\" = purge ]; then",
+    "  if [ -f \"$PROFILE_TARGET\" ]; then",
+    "    if command -v apparmor_parser >/dev/null 2>&1; then apparmor_parser --remove \"$PROFILE_TARGET\" >/dev/null 2>&1 || true; fi",
+    "    rm -f \"$PROFILE_TARGET\"",
+    "  fi",
+    "fi",
+    "",
+  ].join("\n");
   const controlTar = gzipSync(concat([
     ...tarBlocks({ path: "./", type: "directory", mode: 0o755 }),
     ...tarBlocks({ path: "./control", type: "file", mode: 0o644, data: encoder.encode(control) }),
     ...tarBlocks({ path: "./postinst", type: "file", mode: 0o755, data: encoder.encode(postinst) }),
+    ...tarBlocks({ path: "./postrm", type: "file", mode: 0o755, data: encoder.encode(postrm) }),
     tarEnd(),
   ]), { level: 9, mtime: 0 });
 

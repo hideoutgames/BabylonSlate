@@ -17,6 +17,7 @@ import {
   attachJournalFlushOnHide,
   JOURNAL_FLUSH_DELAY_MS,
   JournalBuffer,
+  MAX_UNWRITTEN_JOURNAL_LINES,
 } from "./journal-buffer";
 
 const guid = "proj-1";
@@ -129,6 +130,65 @@ describe("JournalBuffer", () => {
     expect(await buffer.clearAfterFlush(guid, () => truncateJournal(storage, guid))).toBe(true);
     await buffer.flush(guid);
     expect(await readJournalLines(storage, guid)).toEqual([]);
+  });
+
+  it("retries only the records a rolling write did not store, so none is journaled twice", async () => {
+    const storage = await derivedStorage();
+    const writeText = storage.writeText.bind(storage);
+    let segments = 0;
+    // The first segment of the flush lands, the second fails once.
+    vi.spyOn(storage, "writeText").mockImplementation(async (path, text) => {
+      if (path.endsWith(".jsonl") && ++segments === 2) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      return writeText(path, text);
+    });
+    const buffer = new JournalBuffer((project, lines) => appendJournalLines(storage, project, lines), { onError: () => {} });
+    // ~1 KiB records of distinct documents (never folded), enough for two 64 KiB segments.
+    const records = Array.from({ length: 100 }, (_, index) => ({
+      ...record(new SetAssetDocumentCommand({ pad: "" }, { pad: "x".repeat(900) })),
+      docId: `water:assets/Lake${index}.water.hasset`,
+    }));
+    for (const line of records) buffer.append(guid, line);
+    await buffer.flush(guid);
+    expect(segments).toBe(2);
+    await buffer.flush(guid);
+    expect(await readJournalLines(storage, guid)).toEqual(records.map(serializeJournalLine));
+  });
+
+  it("pauses journaling after storage stays full, ignoring edits until resumed, and reports both", async () => {
+    let calls = 0;
+    const onPausedChange = vi.fn();
+    const buffer = new JournalBuffer(async () => {
+      calls += 1;
+      throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    }, { onError: () => {}, onPausedChange });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: attempt }, { opacity: attempt + 1 })));
+      await buffer.flush(guid);
+    }
+    expect(onPausedChange.mock.calls).toEqual([[guid, true]]);
+    expect(buffer.isPaused(guid)).toBe(true);
+    buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: 0 }, { opacity: 1 })));
+    await buffer.flush(guid);
+    // Nothing is held or written while paused.
+    expect(calls).toBe(3);
+    buffer.resume(guid);
+    expect(onPausedChange.mock.calls).toEqual([[guid, true], [guid, false]]);
+    buffer.append(guid, record(new SetAssetDocumentCommand({ opacity: 0 }, { opacity: 1 })));
+    await buffer.flush(guid);
+    expect(calls).toBe(4);
+  });
+
+  it("pauses journaling instead of holding more than its cap of failed records", async () => {
+    const onPausedChange = vi.fn();
+    const write = vi.fn(async () => { throw new Error("storage unavailable"); });
+    const buffer = new JournalBuffer(write, { onError: () => {}, onPausedChange });
+    for (let index = 0; index <= MAX_UNWRITTEN_JOURNAL_LINES; index++) {
+      buffer.append(guid, { ...record(new SetAssetDocumentCommand({ opacity: 1 }, { opacity: 0.5 })), docId: `water:assets/L${index}.water.hasset` });
+    }
+    await buffer.flush(guid);
+    expect(onPausedChange).toHaveBeenCalledWith(guid, true);
+    await buffer.flush(guid);
+    expect(write).toHaveBeenCalledOnce();
   });
 
   it("rejects a required recovery write so a file operation can stop before mutating", async () => {

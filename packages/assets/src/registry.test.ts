@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { encodeAssetDocument, decodeAssetDocument } from "./asset-document";
 import { encodeHasset, readHassetHeader } from "./hasset";
+import { SPECULATIVE_CATALOG_READ_BYTES } from "./payload-loader";
 import { createVfsBlobStore } from "./blob-store";
 import { projectContentRoot, type ContentRoot } from "./content-root";
 import { encodeGlbJsonBin } from "./importers/glb-parse";
@@ -146,7 +147,14 @@ describe("AssetRegistry", () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("SaveDuringScan");
     const path = "assets/Wood.hasset";
-    const document = (name: string) => encodeAssetDocument({ guid: "wood", type: "Material", name, version: 1, payload: {} });
+    // A header longer than the scan's first read, so the rest is a second read.
+    const document = (name: string) => encodeHasset({
+      header: {
+        guid: "wood", type: "Material", name, engineVersion: "0.0.0", version: 1, mode: "thin", dependencies: [],
+        requiredDependencies: [], dependencyMetadataVersion: 1, payload: { note: "n".repeat(SPECULATIVE_CATALOG_READ_BYTES) },
+      },
+      chunks: [],
+    });
     await storage.writeBinary(path, await document("Before"));
     const saved = await document("After saving");
     const read = storage.readBinaryRange.bind(storage);

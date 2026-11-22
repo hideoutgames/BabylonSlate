@@ -94,6 +94,7 @@ contextBridge.exposeInMainWorld("haptic", {
       ipcRenderer.invoke("project:writeBinary", path, data),
     exists: (path: string) => ipcRenderer.invoke("project:exists", path),
     readdir: (path: string) => ipcRenderer.invoke("project:readdir", path),
+    listStagedWrites: (path: string) => ipcRenderer.invoke("project:listStagedWrites", path),
     mkdir: (path: string, recursive?: boolean) =>
       ipcRenderer.invoke("project:mkdir", path, recursive),
     remove: (path: string) => ipcRenderer.invoke("project:remove", path),

@@ -82,6 +82,8 @@ export interface ElectronProjectBridge {
   writeBinary(path: string, data: ArrayBuffer): Promise<void>;
   exists(path: string): Promise<boolean>;
   readdir(path: string): Promise<DirEntry[]>;
+  /** Staged write files directly in `path` (`NodeStorageAdapter.listStagedWrites`). */
+  listStagedWrites(path: string): Promise<DirEntry[]>;
   mkdir(path: string, recursive?: boolean): Promise<void>;
   remove(path: string): Promise<void>;
   stat(path: string): Promise<FileStat>;

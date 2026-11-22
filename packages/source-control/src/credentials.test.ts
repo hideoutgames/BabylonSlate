@@ -138,6 +138,14 @@ describe("authorizedHttp", () => {
     ]);
   });
 
+  it("encodes a Basic credential beyond Latin-1 as UTF-8", async () => {
+    const { requests, http } = recorder();
+    const credential = { ...tokenCredential("https://gitea.example.com", "tök€n", "token"), username: "jürgen" };
+    await authorizedHttp(fixedCredential(credential), http, "basic")({ method: "GET", url: "https://gitea.example.com/org/repo.git/info/refs", headers: {} });
+    // "jürgen:tök€n" as UTF-8 bytes, base64-encoded independently.
+    expect(requests[0]!.headers.Authorization).toBe("Basic asO8cmdlbjp0w7Zr4oKsbg==");
+  });
+
   it("reports a credential the host refused with a 401 that renewal could not answer, and only then", async () => {
     const refused: string[] = [];
     let status = 401;

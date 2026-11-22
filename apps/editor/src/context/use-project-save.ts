@@ -21,6 +21,7 @@ import {
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import { saveAllSceneWriter } from "../lib/locked-writes";
 import { refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
+import { storageFullError } from "../lib/storage-full";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -59,6 +60,13 @@ export interface ProjectSaveDeps {
   sourceControlRef: RefObject<SourceControlService>;
   /** Re-derives the document context value. */
   bump: () => void;
+  /**
+   * True while the recovery choice is open: nothing may write project
+   * documents, since a save would move the saved base the recovered edits
+   * replay onto. Save All refuses (`recovery-pending`) and Auto-Save waits
+   * for `resumeAfterRecovery`.
+   */
+  recoveryPendingRef: RefObject<boolean>;
 }
 
 /**
@@ -79,6 +87,7 @@ export function useProjectSave({
   setLastCompiledSignature,
   sourceControlRef,
   bump,
+  recoveryPendingRef,
 }: ProjectSaveDeps) {
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Drops the pending auto-save; the next edit or resume starts a new interval. */
@@ -90,6 +99,8 @@ export function useProjectSave({
   const autoSavePausedRef = useRef(false);
   /** An auto-save came due while a game covered the editor. */
   const autoSaveDeferredRef = useRef(false);
+  /** An auto-save came due while the recovery choice was open. */
+  const recoveryDeferredRef = useRef(false);
   const projectWriteQueue = useRef<Promise<void>>(Promise.resolve());
   const enqueueProjectWrite = useCallback(<T,>(operation: () => Promise<T>): Promise<T> => {
     const pending = projectWriteQueue.current.then(operation);
@@ -111,6 +122,14 @@ export function useProjectSave({
     // Keep the immutable authored document as the only save source. A session
     // defers new saves; an already admitted Save All retains its complete lane.
     // Refuse before queueing so a deferred save never waits behind that lane.
+    const refusePendingRecovery = () => {
+      if (!recoveryPendingRef.current) return false;
+      const dirty = documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current));
+      recordSaveAllTrace({ ok: false, reason: "recovery-pending", dirtyBefore: dirty, dirtyAfter: dirty });
+      return true;
+    };
+    // Before anything else, and again in the queue: a keyboard shortcut or background path behind the recovery choice writes nothing.
+    if (refusePendingRecovery()) return Promise.resolve("recovery-pending");
     const refuseLocked = () => {
       if (!projectService.authoringWriteBlockedReason) return false;
       const dirty = documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current));
@@ -121,6 +140,7 @@ export function useProjectSave({
     // Each await below resumes only after any editor viewport frame drawn
     // meanwhile, so the viewports hold their frames until this save settles.
     return enqueueProjectWrite(() => withEditorViewportFramesHeld(async (): Promise<SaveAllOutcome> => {
+    if (refusePendingRecovery()) return "recovery-pending";
     if (refuseLocked()) return "authoring-locked";
     return projectService.withBaselineSave(async (admitted): Promise<SaveAllOutcome> => {
       const progress = beginSaveAllProgress();
@@ -151,6 +171,8 @@ export function useProjectSave({
         return lockChecks.get(path)!;
       };
       const writer = saveAllSceneWriter(admitted, lockedByOther);
+      /** Documents this save wrote and marked clean so far. */
+      let settled = 0;
       try {
         progress.phase("audio-reverb");
         await flushAudioReverbForSave(undefined, writer);
@@ -190,6 +212,15 @@ export function useProjectSave({
                 | Record<string, unknown>,
             );
           }
+          // Settled as soon as its file is written, so a later document's failure
+          // never leaves this one dirty with journal records that a crash would
+          // replay onto what was just saved. Edits made since the save began keep
+          // it dirty, and their records stay.
+          documentService.markAllClean([doc]);
+          settled += 1;
+          if (guid && documentService.getDocument(doc.id)?.dirty === false) {
+            journalBuffer.append(guid, journalDiscardLine(doc.id, new Date().toISOString()));
+          }
         }
         progress.phase("compile");
         if (document.settings.compileOnSave) {
@@ -198,15 +229,6 @@ export function useProjectSave({
         const layouts = documentService.buildLayouts();
         progress.phase("project");
         await writer.saveProject(document, layouts);
-        documentService.markAllClean(saved);
-        if (guid && documentService.getDirtyDocuments().length > 0) {
-          // The journal is cleared only once nothing is unsaved: until then it
-          // must not replay what this save wrote onto the saved files.
-          const at = new Date().toISOString();
-          for (const doc of saved) {
-            if (documentService.getDocument(doc.id)?.dirty === false) journalBuffer.append(guid, journalDiscardLine(doc.id, at));
-          }
-        }
         progress.phase("mtime");
         await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
         if (guid) {
@@ -215,11 +237,14 @@ export function useProjectSave({
           // The journal holds document edits only; Project Settings changed
           // during the save are not in it and must not keep saved edits there.
           // Records sealed for a pending recovery stay.
-          await journalBuffer.clearAfterFlush(guid, () =>
+          const cleared = await journalBuffer.clearAfterFlush(guid, () =>
             truncateJournal(derived, guid, () =>
               projectService.guid === guid && documentService.getDirtyDocuments().length === 0,
             ),
           );
+          // Paused journaling restarts from the saved files: the journal holds no live record now, and no edit
+          // is unsaved in this tick (one dropped while paused since the clear would leave its document dirty).
+          if (cleared && projectService.guid === guid && documentService.getDirtyDocuments().length === 0) journalBuffer.resume(guid);
         }
         progress.phase("callbacks");
         if (savedScene) {
@@ -268,6 +293,13 @@ export function useProjectSave({
         });
         return blocked.length === 0 ? "saved" : "locked";
       } catch (error) {
+        if (settled > 0) {
+          // What was saved is the editor's own write, not an external change; the journal keeps the rest until it saves.
+          await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot).catch(() => undefined);
+          flushSync(() => {
+            bump();
+          });
+        }
         recordSaveAllTrace({
           ok: false,
           reason: "error",
@@ -275,7 +307,7 @@ export function useProjectSave({
           dirtyAfter: documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current)),
           error: error instanceof Error ? error.message : String(error),
         });
-        throw error;
+        throw storageFullError(error) ?? error;
       } finally {
         progress.finish();
       }
@@ -294,6 +326,7 @@ export function useProjectSave({
     projectService,
     projectDocumentRef,
     projectSaveState,
+    recoveryPendingRef,
     setLastCompiledSignature,
     sourceControlRef,
   ]);
@@ -327,6 +360,11 @@ export function useProjectSave({
         autoSaveDeferredRef.current = true;
         return;
       }
+      // The recovery choice is open: the save waits for Recover or Discard, then a fresh interval.
+      if (recoveryPendingRef.current) {
+        recoveryDeferredRef.current = true;
+        return;
+      }
       const guid = projectService.guid;
       setAutoSaveStatus({ state: "saving" });
       void saveProject().then(
@@ -346,7 +384,19 @@ export function useProjectSave({
         },
       );
     }, interval);
-  }, [cancelDebouncedSave, projectService, saveProject, projectDocumentRef]);
+  }, [cancelDebouncedSave, projectService, saveProject, projectDocumentRef, recoveryPendingRef]);
+
+  /** After Recover or Discard: an auto-save the choice held, or unsaved work, starts a fresh interval. */
+  const resumeAfterRecovery = useCallback(() => {
+    const deferred = recoveryDeferredRef.current;
+    recoveryDeferredRef.current = false;
+    if (
+      projectService.guid &&
+      (deferred || documentService.getDirtyDocuments().length > 0 || projectSaveState.current.isDirty(projectDocumentRef.current))
+    ) {
+      scheduleDebouncedSave();
+    }
+  }, [documentService, projectService, scheduleDebouncedSave, projectDocumentRef, projectSaveState]);
 
   const setAutoSavePaused = useCallback((paused: boolean) => {
     if (autoSavePausedRef.current === paused) return;
@@ -412,6 +462,7 @@ export function useProjectSave({
     cancelDebouncedSave,
     enqueueProjectWrite,
     scheduleDebouncedSave,
+    resumeAfterRecovery,
     saveAll,
     saveProjectNow,
     actions,

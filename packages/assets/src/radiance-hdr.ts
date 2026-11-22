@@ -1,3 +1,5 @@
+import { formatImportCount, HDR_MAX_DECODED_PIXELS, importLimitError } from "./import-limits";
+
 /** Linear RGB pixels, rows top to bottom as stored in a `-Y H +X W` file. */
 export interface RadianceImage {
   width: number;
@@ -13,6 +15,11 @@ export interface RadianceHeader {
 
 const MAX_HEADER_BYTES = 64 * 1024;
 const MAX_EDGE = 0x7fff;
+/** A run-length run covers at most 127 pixels in two bytes. */
+const MAX_RUN = 127;
+/** Main-thread time {@link decodeRadianceHdrAsync} works before it yields. */
+const YIELD_INTERVAL_MS = 32;
+const headerDecoder = new TextDecoder();
 
 /** Radiance files start with `#?` and a program name such as `RADIANCE` or `RGBE`. */
 function isRadianceHdr(bytes: Uint8Array): boolean {
@@ -26,7 +33,7 @@ export function readRadianceHeader(bytes: Uint8Array): RadianceHeader {
   const line = (): string => {
     const end = bytes.subarray(offset, Math.min(bytes.length, MAX_HEADER_BYTES)).indexOf(0x0a);
     if (end < 0) throw new Error("HDR header is truncated or larger than 64 KiB.");
-    const text = String.fromCharCode(...bytes.subarray(offset, offset + end)).replace(/\r$/, "");
+    const text = headerDecoder.decode(bytes.subarray(offset, offset + end)).replace(/\r$/, "");
     offset += end + 1;
     return text;
   };
@@ -47,17 +54,45 @@ export function readRadianceHeader(bytes: Uint8Array): RadianceHeader {
 }
 
 /**
- * Decode RGBE pixels (flat or new-style run-length scanlines) to linear RGB,
- * box-averaging `downsample`×`downsample` blocks so a large panorama never
- * needs a full-resolution float copy. EXPOSURE lines are ignored, as Babylon's
- * own HDR loader does.
+ * The smallest box-downsample factor, at least `minimum`, that decodes a
+ * `width` × `height` panorama to at most {@link HDR_MAX_DECODED_PIXELS}
+ * pixels. Both edges count, so a tall panorama is reduced as a wide one is.
  */
-export function decodeRadianceHdr(bytes: Uint8Array, downsample = 1): RadianceImage {
+export function radianceDownsampleFactor(width: number, height: number, minimum = 1): number {
+  let factor = Math.max(minimum, Math.ceil(Math.sqrt((width * height) / HDR_MAX_DECODED_PIXELS)));
+  while (Math.ceil(width / factor) * Math.ceil(height / factor) > HDR_MAX_DECODED_PIXELS) factor += 1;
+  return factor;
+}
+
+/** The fewest bytes a scanline of `width` pixels can take: flat RGBE, or four planes of 127-pixel runs. */
+function minimumScanlineBytes(width: number): number {
+  const flat = width * 4;
+  return width >= 8 ? Math.min(flat, 4 + 4 * 2 * Math.ceil(width / MAX_RUN)) : flat;
+}
+
+/**
+ * Decodes one scanline per step, so {@link decodeRadianceHdr} runs it through
+ * and {@link decodeRadianceHdrAsync} can yield between steps. Everything that
+ * sizes an allocation is checked first: the factor keeps the output within
+ * {@link HDR_MAX_DECODED_PIXELS}, and the pixel data must be long enough for
+ * every scanline at its most compact.
+ */
+function* radianceScanlines(bytes: Uint8Array, downsample: number): Generator<void, RadianceImage> {
   if (!Number.isInteger(downsample) || downsample < 1)
     throw new Error("HDR downsample factor must be a positive integer.");
   const { width, height, dataOffset } = readRadianceHeader(bytes);
   const outWidth = Math.ceil(width / downsample);
   const outHeight = Math.ceil(height / downsample);
+  if (outWidth * outHeight > HDR_MAX_DECODED_PIXELS) {
+    throw importLimitError(
+      "The decoded size of the HDR panorama",
+      `${formatImportCount(outWidth * outHeight)} pixels`,
+      `${formatImportCount(HDR_MAX_DECODED_PIXELS)} pixels`,
+      "Decode it with a larger downsample factor.",
+    );
+  }
+  const truncated = () => new Error("HDR pixel data is truncated.");
+  if (bytes.length - dataOffset < height * minimumScanlineBytes(width)) throw truncated();
   const rgb = new Float32Array(outWidth * outHeight * 3);
   // Planar R, G, B, E for one scanline, the layout run-length files store.
   const scanline = new Uint8Array(width * 4);
@@ -67,7 +102,6 @@ export function decodeRadianceHdr(bytes: Uint8Array, downsample = 1): RadianceIm
   const scale = new Float32Array(256);
   for (let exponent = 1; exponent < 256; exponent++) scale[exponent] = 2 ** (exponent - 136);
   let offset = dataOffset;
-  const truncated = () => new Error("HDR pixel data is truncated.");
   for (let y = 0; y < height; y++) {
     if (offset + 4 > bytes.length) throw truncated();
     const runLength = width >= 8 &&
@@ -114,6 +148,7 @@ export function decodeRadianceHdr(bytes: Uint8Array, downsample = 1): RadianceIm
       rgb[target + 1] = rgb[target + 1]! + scanline[width + x]! * factor;
       rgb[target + 2] = rgb[target + 2]! + scanline[2 * width + x]! * factor;
     }
+    yield;
   }
   if (downsample > 1) {
     // Edge blocks of a size that is not a multiple of the factor hold fewer pixels.
@@ -129,4 +164,39 @@ export function decodeRadianceHdr(bytes: Uint8Array, downsample = 1): RadianceIm
     }
   }
   return { width: outWidth, height: outHeight, rgb };
+}
+
+/**
+ * Decode RGBE pixels (flat or new-style run-length scanlines) to linear RGB,
+ * box-averaging `downsample`×`downsample` blocks so a large panorama never
+ * needs a full-resolution float copy. EXPOSURE lines are ignored, as Babylon's
+ * own HDR loader does. A factor that would decode more than
+ * {@link HDR_MAX_DECODED_PIXELS} pixels throws; pick it with
+ * {@link radianceDownsampleFactor}.
+ */
+export function decodeRadianceHdr(bytes: Uint8Array, downsample = 1): RadianceImage {
+  const scanlines = radianceScanlines(bytes, downsample);
+  for (;;) {
+    const step = scanlines.next();
+    if (step.done) return step.value;
+  }
+}
+
+/** {@link decodeRadianceHdr} that yields to the event loop every 32 ms, checking `signal` each time. */
+export async function decodeRadianceHdrAsync(
+  bytes: Uint8Array,
+  downsample: number,
+  signal?: AbortSignal,
+): Promise<RadianceImage> {
+  const scanlines = radianceScanlines(bytes, downsample);
+  let lastYield = performance.now();
+  for (;;) {
+    const step = scanlines.next();
+    if (step.done) return step.value;
+    if (performance.now() - lastYield > YIELD_INTERVAL_MS) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      signal?.throwIfAborted();
+      lastYield = performance.now();
+    }
+  }
 }

@@ -20,13 +20,14 @@ import { NodeBreakpointTab } from "./graph-nodes";
 import { useNodeMenu } from "./use-node-menu";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { NodeRenameField, useNodeTitleGestures, useRenameValue } from "./node-title";
+import { useNodeRename } from "./graph-node-state";
 
 /** A state or alias card's kind icon and title, or its inline rename field while the host renames it. */
 function AnimCardTitle({ nodeId, kind, title }: { nodeId: string; kind: "state" | "state-alias"; title: string }) {
-  const { renamingNodeId, onNodeRenameCommit, onNodeRenameCancel } = useGraphEditorContext();
+  const { onNodeRenameCommit, onNodeRenameCancel } = useGraphEditorContext();
   const gestures = useNodeTitleGestures(nodeId);
-  const value = useRenameValue(title);
-  const renaming = renamingNodeId === nodeId;
+  const value = useRenameValue(nodeId, title);
+  const renaming = useNodeRename(nodeId).renaming;
   return (
     <div className="anim-state-node-title" data-node-title="" {...(renaming ? undefined : gestures)}>
       <NodeKindIcon kind={kind} className="size-4" />

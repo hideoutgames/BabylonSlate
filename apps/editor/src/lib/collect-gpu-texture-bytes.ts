@@ -14,7 +14,11 @@ export type GpuTextureAsset = {
 };
 
 export async function collectGpuTextureBytes(options: {
-  assets: readonly GpuTextureAsset[];
+  /**
+   * The assets to resolve guids against: a list, or a lookup (the registry's `getByGuid`), which
+   * spares a caller that collects a few textures per job (a thumbnail) a copy of the whole registry.
+   */
+  assets: readonly GpuTextureAsset[] | ((guid: string) => GpuTextureAsset | undefined);
   guids: readonly string[];
   /** Gameplay graphs may select textures that no Material samples at startup. */
   graphs?: readonly SerializedGraph[];
@@ -26,15 +30,19 @@ export async function collectGpuTextureBytes(options: {
   ) => Promise<Uint8Array>;
   onMissingKtx2?: (guid: string) => void;
 }): Promise<Map<string, Uint8Array>> {
-  const byGuid = new Map(
-    options.assets.map((asset) => [asset.header.guid, asset] as const),
-  );
+  const { assets } = options;
+  let lookup: (guid: string) => GpuTextureAsset | undefined;
+  if (typeof assets === "function") lookup = assets;
+  else {
+    const byGuid = new Map(assets.map((asset) => [asset.header.guid, asset] as const));
+    lookup = (guid) => byGuid.get(guid);
+  }
   const bytes = new Map<string, Uint8Array>();
   const textures = [...new Set([
     ...options.guids,
     ...(options.graphs ?? []).flatMap(materialParameterTextureGuidsFromGraph),
   ])].flatMap((guid) => {
-    const asset = guid ? byGuid.get(guid) : undefined;
+    const asset = guid ? lookup(guid) : undefined;
     return asset && asset.header.type === "Texture" ? [{ guid, asset }] : [];
   });
   // Reads overlap; a source downsample decodes a whole image, so those run one at a time.

@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/desktop-package.worker.ts"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./native-desktop": "./src/native-desktop.ts",
@@ -12,6 +14,7 @@
     "./app-icon": "./src/app-icon.ts",
     "./native-android": "./src/native-android.ts",
     "./native-ios": "./src/native-ios.ts",
+    "./desktop-package-client": "./src/desktop-package-client.ts",
     "./zip-merge": "./src/zip-merge.ts",
     "./test-support/*": "./src/test-support/*.ts"
   },

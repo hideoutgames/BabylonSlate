@@ -152,6 +152,22 @@ describe("GitLfsLockProvider", () => {
     expect(isErr(looping) && looping.error.kind).toBe("http");
   });
 
+  it("fails a verify that keeps paging with new cursors after 200 pages", async () => {
+    let requests = 0;
+    const provider = new GitLfsLockProvider({
+      repositoryUrl: "https://github.com/org/repo",
+      branch: () => "main",
+      credential: fixedCredential(github("token")),
+      http: async () => {
+        requests += 1;
+        return jsonResponse(200, { ours: [], theirs: [], next_cursor: `page-${requests + 1}` });
+      },
+    });
+    const result = await provider.verify();
+    expect(isErr(result) && result.error.kind).toBe("http");
+    expect(requests).toBe(200);
+  });
+
   it("POSTs verify and marks ours versus theirs", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "git@github.com:org/repo.git",

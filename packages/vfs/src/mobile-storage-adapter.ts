@@ -122,6 +122,7 @@ export class MobileStorageAdapter implements ProjectStorage {
 
   getReadMetrics() { return this.port().getReadMetrics?.() ?? { operations: 0, fullReads: 0, rangeReads: 0, requestedBytes: 0, actualBytesRead: 0 }; }
   get hasStrongSourceRevisions() { return this.port().hasStrongSourceRevisions === true; }
+  get speculativeRangeReads() { return this.port().speculativeRangeReads === true; }
 
   async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions) {
     await this.init();
@@ -146,6 +147,13 @@ export class MobileStorageAdapter implements ProjectStorage {
   async readdir(path: string): Promise<DirEntry[]> {
     await this.init();
     return this.port().readdir(path);
+  }
+
+  /** The bound tier's staged write files; none where that tier cannot list them. */
+  async listStagedWrites(path: string): Promise<DirEntry[]> {
+    await this.init();
+    const port = this.port();
+    return port.listStagedWrites ? port.listStagedWrites(path) : [];
   }
 
   async mkdir(path: string, recursive?: boolean): Promise<void> {

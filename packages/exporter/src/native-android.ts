@@ -1,6 +1,6 @@
 import { isValidAppId } from "@haptic/core/app-identity";
 import { appIconPng, type AppIconImages } from "./app-icon";
-import { desktopGameNames } from "./native-desktop";
+import { assertGameFilePath, desktopGameNames } from "./native-desktop";
 
 /**
  * Android game packages: what Haptic writes into its Android project template
@@ -123,9 +123,7 @@ export function androidProjectFiles(input: AndroidProjectInput): [string, Uint8A
     files.push(["app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml", encoder.encode(ADAPTIVE_ICON)]);
   }
   for (const [path, data] of [...input.game].sort(([a], [b]) => a.localeCompare(b))) {
-    if (path.startsWith("/") || path.includes("\\") || path.split("/").some((part) => part === "" || part === "." || part === "..")) {
-      throw new Error(`Invalid game file path: ${path}`);
-    }
+    assertGameFilePath(path);
     files.push([`app/src/main/assets/game/${path}`, data]);
   }
   return files;

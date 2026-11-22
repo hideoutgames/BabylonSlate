@@ -185,9 +185,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const extensionContextRef = useRef<{ path: string | null; scene: SerializedScene | null; selected: readonly string[] }>({ path: null, scene: null, selected: [] });
   const viewportExtensionItems = useExtensionMenuItems("viewport", useCallback(() => {
     const { path, scene: current, selected } = extensionContextRef.current;
+    const selectedIds = new Set(selected);
     return {
       scene: path,
-      actors: (current?.actors ?? []).filter((actor) => selected.includes(actor.id))
+      actors: (current?.actors ?? []).filter((actor) => selectedIds.has(actor.id))
         .map((actor) => ({ id: actor.id, name: actor.name, classId: actor.classId })),
     };
   }, []));
@@ -278,8 +279,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       onError: (error) => engineCommandBus.dispatch({ type: "log", message: `Scene brush could not apply: ${String(error)}` }),
     });
   }, [engineEpoch, sceneMode, sceneTools.landscapeTool, sceneTools.foliageTool, documentId, activeDocumentId, playing, preparing, applySceneChange]);
+  // Each render tests every actor against the selection: a set, not a scan of the id list per actor.
+  const selectedActorIdSet = useMemo(() => new Set(selectedActorIds), [selectedActorIds]);
   const audioLibrary = useEditorAudioDebug(Boolean(scene?.actors.some((actor) =>
-    selectedActorIds.includes(actor.id) &&
+    selectedActorIdSet.has(actor.id) &&
     actor.components.some((component) => component.classId === "AudioComponent"),
   )));
   const requestedRenderSettingsKey = sceneViewportRenderSettingsKey(
@@ -383,13 +386,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   const dropDisabled = !sceneReady || dropReady?.scene !== scene ||
     dropReady?.handle !== engineRef.current || playing || preparing || !scene?.actors.some(
-    (actor) => !actor.locked && selectedActorIds.includes(actor.id),
+    (actor) => !actor.locked && selectedActorIdSet.has(actor.id),
   );
   const dropSelection = () => {
     const current = sceneRef.current;
     if (dropDisabled || !current) return;
     const actorIds = current.actors
-      .filter((actor) => !actor.locked && selectedActorIds.includes(actor.id))
+      .filter((actor) => !actor.locked && selectedActorIdSet.has(actor.id))
       .map((actor) => actor.id);
     const transforms = requestEditorDrop(dropViewportId, actorIds, dropDistance);
     if (transforms.length === 0) return;

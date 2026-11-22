@@ -43,15 +43,21 @@ function saveStateLabel(unsaved: number, projectDirty: boolean, unrecovered: boo
   return unrecovered ? "Unrecovered Edits" : "All Changes Saved";
 }
 
+/** Crash recovery stopped recording edits; a Save All that leaves nothing unsaved restarts it. */
+const JOURNAL_PAUSED_LABEL = "Crash Recovery Paused — Use Save All";
+const JOURNAL_PAUSED_DETAIL = "Storage is full, so edits are no longer recorded for crash recovery. Free some space and choose Save All.";
+
 /** The save state, or null when everything is saved (Integrated mode then shows a small Saved). */
 function saveProblemLabel(
   autoSave: ReturnType<typeof useSaveState>["autoSaveStatus"],
   unsaved: number,
   projectDirty: boolean,
   unrecovered: boolean,
+  journalPaused: boolean,
 ): string | null {
   if (autoSave?.state === "saving") return "Auto-Saving…";
   if (autoSave?.state === "error") return "Auto-Save Failed — Use Save All";
+  if (journalPaused) return JOURNAL_PAUSED_LABEL;
   if (unsaved > 0 || projectDirty || unrecovered) return saveStateLabel(unsaved, projectDirty, unrecovered);
   return null;
 }
@@ -181,7 +187,7 @@ function SourceControlStatus({ snapshot }: { snapshot: SyncSnapshot }) {
 }
 
 export function EditorStatusBar() {
-  const { dirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable } = useSaveState();
+  const { dirtyDocuments, projectDirty, autoSaveStatus, recoveryAvailable, journalPaused } = useSaveState();
   const { errorCount } = useValidation();
   const sync = useIntegratedSyncState();
   const phone = usePhoneLayout();
@@ -195,14 +201,14 @@ export function EditorStatusBar() {
     </span>
   ) : null;
   if (sync.active) {
-    const problem = saveProblemLabel(autoSaveStatus, dirtyDocuments.length, projectDirty, recoveryAvailable);
+    const problem = saveProblemLabel(autoSaveStatus, dirtyDocuments.length, projectDirty, recoveryAvailable, journalPaused);
     return (
       <footer className="editor-statusbar" data-testid="editor-status-bar" data-source-control="integrated">
         <SourceControlStatus snapshot={sync} />
         <p className="editor-status-summary">
           {errors}
           {problem ? (
-            <span role="status" title={autoSaveStatus?.message}>{problem}</span>
+            <span role="status" title={problem === JOURNAL_PAUSED_LABEL ? JOURNAL_PAUSED_DETAIL : autoSaveStatus?.message}>{problem}</span>
           ) : (
             <span role="status" className="editor-status-saved" title={autoSaveStatus?.state === "saved" ? "All Changes Auto-Saved" : "All Changes Saved"}>
               <CheckIcon aria-hidden="true" />
@@ -217,11 +223,13 @@ export function EditorStatusBar() {
   return (
     <footer className="editor-statusbar" data-testid="editor-status-bar">
       <p className="editor-status-summary">
-        <span role="status" title={autoSaveStatus?.message}>
+        <span role="status" title={journalPaused && autoSaveStatus?.state !== "saving" && autoSaveStatus?.state !== "error" ? JOURNAL_PAUSED_DETAIL : autoSaveStatus?.message}>
           {autoSaveStatus?.state === "saving"
             ? "Auto-Saving…"
             : autoSaveStatus?.state === "error"
               ? "Auto-Save Failed — Use Save All"
+              : journalPaused
+                ? JOURNAL_PAUSED_LABEL
               : autoSaveStatus?.state === "saved" && !dirty
                 ? "All Changes Auto-Saved"
                 : saveStateLabel(dirtyDocuments.length, projectDirty, recoveryAvailable)}

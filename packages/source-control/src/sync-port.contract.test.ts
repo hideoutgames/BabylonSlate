@@ -381,8 +381,9 @@ describe.each([
     expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A-theirs");
     expect(text(await storage.readBinary("assets/c.hasset"))).toBe("C-mine");
     expect(text(await port.readFile("assets/d.hasset", head))).toBe("D-mine");
-    expect(text(await port.readFile("assets/c.hasset", head))).toBe("C");
-    expect(await port.status()).toEqual({ branch: "main", head, changes: [{ path: "assets/c.hasset", kind: "modified" }] });
+    // The branch never committed c: the merge takes the teammate's deletion, and the kept edit stays uncommitted against it.
+    expect(await port.readFile("assets/c.hasset", head)).toBeNull();
+    expect(await port.status()).toEqual({ branch: "main", head, changes: [{ path: "assets/c.hasset", kind: "added" }] });
     expect(await port.push()).toEqual({ head, uploaded: 0 });
     expect(await port.fetch()).toMatchObject({ ahead: 0, behind: 0, remote: head });
   });

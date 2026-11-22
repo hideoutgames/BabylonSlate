@@ -111,20 +111,56 @@ export function graphNodesBounds(
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-function nodeIntersectsWorld(
-  node: GraphVirtualizeNode,
-  minX: number,
-  minY: number,
-  maxX: number,
-  maxY: number,
-): boolean {
-  const { width, height } = graphNodeSize(node);
-  return (
-    node.position.x + width >= minX &&
-    node.position.x <= maxX &&
-    node.position.y + height >= minY &&
-    node.position.y <= maxY
-  );
+/**
+ * How far the culling box may move in world space, along each axis, before any
+ * node's test against it can change: an open interval per axis. Inside it, the
+ * same viewport size and zoom over the same nodes, wires and kept ids mounts
+ * exactly what the last cull mounted.
+ */
+export type GraphCullHold = { minDx: number; maxDx: number; minDy: number; maxDy: number };
+
+/**
+ * One axis of a node against the culling box moved by d along it: the node's
+ * `low`..`high` overlaps `boxLow + d`..`boxHigh + d` while `high >= boxLow + d`
+ * (d <= `reachesLow`) and `low <= boxHigh + d` (d >= `reachesHigh`).
+ */
+function axisReach(low: number, high: number, boxLow: number, boxHigh: number) {
+  const reachesLow = high - boxLow;
+  const reachesHigh = low - boxHigh;
+  return { reachesLow, reachesHigh, overlaps: reachesLow >= 0 && reachesHigh <= 0 };
+}
+
+/** Narrows `range` to the moves that keep an overlapping axis overlapping. */
+function keepOverlap(range: [number, number], axis: ReturnType<typeof axisReach>): void {
+  range[0] = Math.max(range[0], axis.reachesHigh);
+  range[1] = Math.min(range[1], axis.reachesLow);
+}
+
+/** Narrows `range` to the moves that keep a separated axis separated. */
+function keepApart(range: [number, number], axis: ReturnType<typeof axisReach>): void {
+  if (axis.reachesLow < 0) range[0] = Math.max(range[0], axis.reachesLow);
+  else range[1] = Math.min(range[1], axis.reachesHigh);
+}
+
+/** How far a separated axis can move before it overlaps. */
+function apartBy(axis: ReturnType<typeof axisReach>): number {
+  return axis.reachesLow < 0 ? -axis.reachesLow : axis.reachesHigh;
+}
+
+/**
+ * Narrows the hold so the node's mounted state survives the move: a mounted
+ * node keeps both axes overlapping; an unmounted one keeps one separated axis
+ * separated (the farther one, when both are), which is enough to stay out.
+ */
+function narrowHold(holdX: [number, number], holdY: [number, number], x: ReturnType<typeof axisReach>, y: ReturnType<typeof axisReach>): void {
+  if (x.overlaps && y.overlaps) {
+    keepOverlap(holdX, x);
+    keepOverlap(holdY, y);
+  } else if (!x.overlaps && (y.overlaps || apartBy(x) >= apartBy(y))) {
+    keepApart(holdX, x);
+  } else {
+    keepApart(holdY, y);
+  }
 }
 
 /**
@@ -132,7 +168,8 @@ function nodeIntersectsWorld(
  * them. `keepIds` (focus / search / selection) and both ends of a selected
  * edge stay mounted even when off-screen so `fitView`, Copy / Delete, and
  * the next selection change still resolve them. A 0×0 viewport (jsdom /
- * first paint) returns the full lists.
+ * first paint) returns the full lists. `hold` says how far a pan may move
+ * the viewport before the result can change (`cullStillHolds`).
  */
 export function selectVisibleGraphElements<
   N extends GraphVirtualizeNode,
@@ -143,7 +180,7 @@ export function selectVisibleGraphElements<
   viewport: GraphVirtualizeViewport,
   overscan = GRAPH_VIRTUALIZE_OVERSCAN_PX,
   keepIds: readonly string[] = [],
-): { nodes: N[]; edges: E[] } {
+): { nodes: N[]; edges: E[]; hold?: GraphCullHold } {
   if (viewport.width <= 0 || viewport.height <= 0 || viewport.zoom <= 0) {
     return { nodes: [...nodes], edges: [...edges] };
   }
@@ -158,10 +195,14 @@ export function selectVisibleGraphElements<
     nearIds.add(edge.source);
     nearIds.add(edge.target);
   }
+  const holdX: [number, number] = [-Infinity, Infinity];
+  const holdY: [number, number] = [-Infinity, Infinity];
   for (const node of nodes) {
-    if (nodeIntersectsWorld(node, minX, minY, maxX, maxY)) {
-      nearIds.add(node.id);
-    }
+    const { width, height } = graphNodeSize(node);
+    const x = axisReach(node.position.x, node.position.x + width, minX, maxX);
+    const y = axisReach(node.position.y, node.position.y + height, minY, maxY);
+    narrowHold(holdX, holdY, x, y);
+    if (x.overlaps && y.overlaps) nearIds.add(node.id);
   }
   const mountedIds = new Set(nearIds);
   for (const edge of edges) {
@@ -173,5 +214,30 @@ export function selectVisibleGraphElements<
     edges: edges.filter(
       (edge) => mountedIds.has(edge.source) && mountedIds.has(edge.target),
     ),
+    hold: { minDx: holdX[0], maxDx: holdX[1], minDy: holdY[0], maxDy: holdY[1] },
   };
+}
+
+/** Margin, in world units, that keeps float rounding of the box from deciding a node on its edge. */
+const HOLD_EPSILON = 1e-6;
+
+/**
+ * Whether culling the same nodes, wires and kept ids at `next` mounts exactly
+ * what the cull at `previous` (whose `hold` it returned) mounted: the size and
+ * zoom are unchanged and the pan stays strictly inside the hold, so the
+ * rescan can be skipped.
+ */
+export function cullStillHolds(
+  previous: GraphVirtualizeViewport,
+  next: GraphVirtualizeViewport,
+  hold: GraphCullHold | undefined,
+): boolean {
+  if (!hold || next.zoom !== previous.zoom || next.width !== previous.width || next.height !== previous.height) return false;
+  // The box's world origin is -viewport / zoom, so a pan moves it by the opposite of the viewport's change.
+  const dx = (previous.x - next.x) / next.zoom;
+  const dy = (previous.y - next.y) / next.zoom;
+  return (
+    dx > hold.minDx + HOLD_EPSILON && dx < hold.maxDx - HOLD_EPSILON &&
+    dy > hold.minDy + HOLD_EPSILON && dy < hold.maxDy - HOLD_EPSILON
+  );
 }

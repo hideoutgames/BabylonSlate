@@ -3,6 +3,8 @@ import { MemoryStorageAdapter } from "@haptic/vfs";
 import {
   appendJournalLines,
   discardSealedJournal,
+  JournalAppendError,
+  journalLinesCommitted,
   journalSegmentsPath,
   readJournalLines,
   readSealedJournalLines,
@@ -115,6 +117,31 @@ describe("derived-data journal", () => {
     ]);
     expect(await readJournalLines(storage, "proj-1")).toEqual(["next edit"]);
   });
+  it("names the lines a rolling append stored before a later segment failed, so retrying the rest stores each line once", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("derived-root");
+    const lines = Array.from({ length: 100 }, (_, index) => record(index));
+    const writeText = storage.writeText.bind(storage);
+    let segments = 0;
+    // The first segment lands; the second fails, as on a full disk.
+    vi.spyOn(storage, "writeText").mockImplementation(async (path, text) => {
+      if (path.endsWith(".jsonl") && ++segments === 2) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      return writeText(path, text);
+    });
+    const error = await appendJournalLines(storage, "proj-1", lines).then(() => null, (reason: unknown) => reason);
+    expect(error).toBeInstanceOf(JournalAppendError);
+    const committed = journalLinesCommitted(error);
+    // Each ~1 KiB record: a 64 KiB segment holds 63 of them.
+    expect(committed).toBe(63);
+    expect(await readJournalLines(storage, "proj-1")).toEqual(lines.slice(0, committed));
+
+    vi.mocked(storage.writeText).mockImplementation(writeText);
+    await appendJournalLines(storage, "proj-1", lines.slice(committed));
+    expect(await readJournalLines(storage, "proj-1")).toEqual(lines);
+    // A failure before anything is stored stores nothing and names nothing.
+    expect(journalLinesCommitted(new Error("storage unavailable"))).toBe(0);
+  });
+
   it("appends journal lines and reads them back in order", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("derived-root");

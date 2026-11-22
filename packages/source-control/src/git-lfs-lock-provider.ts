@@ -19,6 +19,9 @@ import { LFS_JSON } from "./types";
 /** A host without the Git LFS locking API answers its lock endpoints with one of these. */
 const NO_LOCKING_STATUSES = new Set([404, 501]);
 
+/** At most this many pages of one lock verify, as the host API caps its longest listing (`MAX_TREE_PAGES`). */
+export const MAX_LOCK_PAGES = 200;
+
 /** GitHub and GitLab always have the locking API, so there a 404 means the token cannot see the repository. */
 const HOSTS_WITH_LOCKING = new Set<CredentialKind>(["github", "gitlab", "gitlab-token"]);
 
@@ -84,7 +87,9 @@ export class GitLfsLockProvider implements LockProvider {
     // Every page of one listing names the same branch.
     const ref = refOf(options.branch || this.branch());
     let cursor: string | undefined;
-    for (;;) {
+    for (let page = 1; ; page += 1) {
+      // A host that keeps answering new cursors must not hold a refresh forever; a partial list would drop locks, so it fails.
+      if (page > MAX_LOCK_PAGES) return err({ kind: "http", message: `Lock verify listed more than ${MAX_LOCK_PAGES} pages` });
       const body: Record<string, unknown> = { ref };
       if (cursor) body.cursor = cursor;
       const response = await this.request({

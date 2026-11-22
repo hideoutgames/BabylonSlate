@@ -31,7 +31,7 @@ import { PreparationTimedOut } from "./scene-render-coordinator";
 import { createHeldThreadBound, createHeldThreadBudget, SCENE_CAPTURE_CEILING_MS, type HeldThreadBudget } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
-import { encodeRgbaPng } from "./png-encode";
+import { encodeRgbaPngCompressed } from "./png-encode";
 import { thumbnailMiss, type ThumbnailCaptureResult } from "./thumbnail-capture";
 
 type ThumbnailAssets = {
@@ -321,7 +321,7 @@ export async function captureAssetThumbnailPng(
     const pixels = readback instanceof ArrayBuffer ? new Uint8Array(readback)
       : new Uint8Array(readback.buffer, readback.byteOffset, readback.byteLength);
     if (pixels.byteLength < size * size * 4) return thumbnailMiss(shouldContinue());
-    return { outcome: "captured", png: encodeRgbaPng(size, size, new Uint8Array(flipReadPixelsRgba(pixels.subarray(0, size * size * 4), size, size))) };
+    return { outcome: "captured", png: await encodeRgbaPngCompressed(size, size, new Uint8Array(flipReadPixelsRgba(pixels.subarray(0, size * size * 4), size, size))) };
   } catch (error) {
     // A wait that reached the ceiling rejects without saying why (ranOut tells it
     // by the clock), unlike the frame graph's own preparation bound.

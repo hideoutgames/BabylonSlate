@@ -262,7 +262,7 @@ export function ModelThumbnailCaptureHost() {
           asset,
           registry: assetRegistry,
           readAssetChunk: readChunk,
-          collectTextureBytes: (guids) => collectGpuTextureBytes({ assets: assetRegistry.list(), guids, readChunk }),
+          collectTextureBytes: (guids) => collectGpuTextureBytes({ assets: (guid) => assetRegistry.getByGuid(guid), guids, readChunk }),
           shouldContinue,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
         });
@@ -301,7 +301,7 @@ export function ModelThumbnailCaptureHost() {
       const sources = await prepareThumbnailMaterialSources({
         registry: assetRegistry,
         readAssetChunk: readChunk,
-        collectTextureBytes: (guids) => collectGpuTextureBytes({ assets: assetRegistry.list(), guids, readChunk }),
+        collectTextureBytes: (guids) => collectGpuTextureBytes({ assets: (guid) => assetRegistry.getByGuid(guid), guids, readChunk }),
         shouldContinue,
       }, modelMaterialGuids(modelPayload));
       if (!sources || !shouldContinue()) return "none";

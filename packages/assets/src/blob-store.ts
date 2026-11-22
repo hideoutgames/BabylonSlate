@@ -2,6 +2,34 @@ import type { ProjectStorage, StorageReadOptions } from "@haptic/core";
 import { BLOBS_DIR } from "./hproject";
 import { sha256Hex } from "./bytes";
 
+/**
+ * When this process last asked for each blob (`writeBlob`, by hash), whether
+ * it wrote it or found it stored. A write that finds the blob stored leaves
+ * its mtime old, and its asset is written after: `sweepOrphanedBlobs` keeps
+ * any blob asked for within its grace window (or since the sweep started),
+ * so it never removes one an asset is about to name. Entries older than the
+ * longest grace window are dropped as new ones arrive.
+ */
+const blobRequests = new Map<string, number>();
+const BLOB_REQUEST_MEMORY_MS = 10 * 60_000;
+
+/** Whether this process asked for the blob (`writeBlob`) at or after `since` (ms since the epoch). */
+export function blobRequestedSince(sha256: string, since: number): boolean {
+  const at = blobRequests.get(sha256);
+  return at !== undefined && at >= since;
+}
+
+function noteBlobRequest(sha256: string): void {
+  const now = Date.now();
+  blobRequests.delete(sha256);
+  blobRequests.set(sha256, now);
+  // Oldest first (re-inserted on each request): stop at the first one still remembered.
+  for (const [hash, at] of blobRequests) {
+    if (now - at < BLOB_REQUEST_MEMORY_MS) break;
+    blobRequests.delete(hash);
+  }
+}
+
 export interface BlobStore {
   writeBlob(sha256: string, data: Uint8Array): Promise<void>;
   readBlob(sha256: string, options?: StorageReadOptions): Promise<Uint8Array>;
@@ -30,6 +58,7 @@ export function createVfsBlobStore(
 
   return {
     async writeBlob(sha256, data) {
+      noteBlobRequest(sha256);
       await storage.mkdir(blobDir, true);
       if (await storage.exists(pathFor(sha256))) {
         const stat = await storage.stat(pathFor(sha256));

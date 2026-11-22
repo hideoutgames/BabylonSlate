@@ -1,4 +1,4 @@
-import { decodeRadianceHdr, readRadianceHeader, type RadianceImage } from "./radiance-hdr";
+import { decodeRadianceHdrAsync, radianceDownsampleFactor, readRadianceHeader, type RadianceImage } from "./radiance-hdr";
 
 /**
  * Import-time conversion of an equirectangular Radiance HDR into the
@@ -398,11 +398,13 @@ export async function convertRadianceHdrToEnvironmentDds(
 ): Promise<Uint8Array<ArrayBuffer>> {
   const { signal, onProgress } = options;
   signal?.throwIfAborted();
-  const { width } = readRadianceHeader(bytes);
+  const { width, height } = readRadianceHeader(bytes);
   const size = hdrEnvironmentFaceSize(width, options.faceSize);
   onProgress?.(0);
-  // Keep about two panorama pixels per face texel; finer detail is filtered away.
-  const panorama = decodeRadianceHdr(bytes, Math.max(1, Math.floor(width / (8 * size))));
+  // Keep about two panorama pixels per face texel; finer detail is filtered away. Height counts too, so a tall
+  // panorama never decodes to more than the decoded-pixel cap.
+  const downsample = radianceDownsampleFactor(width, height, Math.max(1, Math.floor(width / (8 * size))));
+  const panorama = await decodeRadianceHdrAsync(bytes, downsample, signal);
   onProgress?.(DECODED_PROGRESS);
   await nextTask();
   signal?.throwIfAborted();

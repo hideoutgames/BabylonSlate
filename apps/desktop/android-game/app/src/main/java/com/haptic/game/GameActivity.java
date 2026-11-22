@@ -34,12 +34,22 @@ import java.util.Map;
  * packed in the APK's assets/game folder. The game is served from
  * https://appassets.androidplatform.net/game/ (a host reserved for app
  * content, never fetched from the network) with the cross-origin isolation
- * headers the editor and desktop games use. Links to other sites open in the
- * browser; the page cannot navigate away. Back reaches the game as Escape.
+ * headers and Content Security Policy desktop games use. Links the player
+ * follows to other sites open in the browser; the page and its frames cannot
+ * navigate away. Back reaches the game as Escape. The game's own network
+ * requests (any HTTPS or secure WebSocket host) go to the network as the
+ * policy allows.
  */
 public final class GameActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
     private static final String ROOT = "/game/";
+    /**
+     * Exported desktop games' policy (playerContentSecurityPolicy("'none'") in
+     * apps/desktop/src/content-security-policy.ts): the game's own scripts, any
+     * HTTPS or secure WebSocket host for its network requests, no remote scripts
+     * or frames. content-security-policy.test.ts fails when this copy differs.
+     */
+    private static final String CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self' data: blob: https: wss:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'";
 
     private WebView webView;
     /** An OnBackInvokedCallback on Android 13 and later; Object so older Androids never load the class. */
@@ -142,6 +152,7 @@ public final class GameActivity extends Activity {
         if (!"https".equals(url.getScheme()) || !HOST.equals(url.getHost())) return null;
         String path = url.getPath();
         Map<String, String> headers = new HashMap<>();
+        headers.put("Content-Security-Policy", CONTENT_SECURITY_POLICY);
         headers.put("Cross-Origin-Opener-Policy", "same-origin");
         headers.put("Cross-Origin-Embedder-Policy", "require-corp");
         headers.put("Cross-Origin-Resource-Policy", "same-origin");
@@ -186,6 +197,7 @@ public final class GameActivity extends Activity {
     }
 
     private final class GameClient extends WebViewClient {
+        /** Requests to other hosts go to the network (null): the policy, not this client, decides what the page may fetch. */
         @Override
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
             return serve(request.getUrl());
@@ -195,7 +207,9 @@ public final class GameActivity extends Activity {
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri url = request.getUrl();
             if ("https".equals(url.getScheme()) && HOST.equals(url.getHost())) return false;
-            if ("https".equals(url.getScheme()) || "http".equals(url.getScheme())) {
+            // Only a link the player follows in the page opens the browser; a frame navigating elsewhere is refused
+            // without leaving the game, as is any scheme other than HTTP(S).
+            if (request.isForMainFrame() && ("https".equals(url.getScheme()) || "http".equals(url.getScheme()))) {
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE));
                 } catch (ActivityNotFoundException ignored) {

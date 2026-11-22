@@ -170,19 +170,20 @@ export function useGameExport(
         name: projectDocument.metadata.name,
         version: projectDocument.metadata.version,
         gameId: options.projectGuid ?? "game",
+        appId: resolvedAppIdentity(projectDocument.settings.appIdentity, projectDocument.metadata.name).appId,
         ...(result.value.appIcon ? { icon: result.value.appIcon } : {}),
       };
+      // Packaging writes hundreds of megabytes, so it runs on a worker and the editor stays responsive.
+      const { packageDesktopGameInBackground } = await import("@haptic/exporter/desktop-package-client");
       if (target.desktopTarget === "linux-x64" && (packageOptions.linuxFormat ?? "deb") === "deb") {
-        const { packageLinuxDeb } = await import("@haptic/exporter/native-deb");
-        const packaged = packageLinuxDeb(input);
+        setStage("Writing the Linux package.");
+        const packaged = await packageDesktopGameInBackground({ kind: "linux-deb", input });
         delivered("Linux package", await saveExportFile(packaged.bytes, packaged.fileName, "application/vnd.debian.binary-package"));
         return;
       }
-      if (target.desktopTarget === "windows-x64" && input.icon) setStage("Adding the App Icon to the Windows executable.");
-      // Windows writes the App Icon into the executable; elsewhere the window shows the export's icon.png.
-      const packaged = target.desktopTarget === "windows-x64"
-        ? (await import("@haptic/exporter/native-windows")).packageWindowsGame(input)
-        : (await import("@haptic/exporter/native-desktop")).packageDesktopGame(input);
+      // Windows writes the game's details, and its App Icon, into the executable; elsewhere the window shows the export's icon.png.
+      setStage(target.desktopTarget === "windows-x64" ? "Writing the game's details into the Windows executable." : `Writing the ${target.label} game.`);
+      const packaged = await packageDesktopGameInBackground({ kind: target.desktopTarget === "windows-x64" ? "windows-zip" : "linux-zip", input });
       delivered(`${target.label} game`, await saveZipArchive(packaged.bytes, packaged.fileName));
     } catch (cause) {
       console.error("[editor] Packaging failed", cause);

@@ -265,8 +265,16 @@ export async function packageAndroidGame(options: {
       const jarsigner = join(toolchain.javaHome, "bin", program(host.platform, "jarsigner"));
       await run(jarsigner, ["-keystore", keystore, "-storepass:env", STORE_PASSWORD, "-keypass:env", KEY_PASSWORD,
         "-signedjar", signed, join(project, "app", "build", "outputs", "bundle", "release", "app-release.aab"), alias], { env: signingEnv });
-      const { stdout } = await run(jarsigner, ["-verify", signed]);
-      if (!stdout.includes("jar verified")) throw new Error("The App Bundle's signature did not verify.");
+      // -strict fails on severe warnings. A release key is self-signed, which -strict refuses against Java's
+      // certificate authorities, so the signing keystore is the trust anchor: the bundle must be signed by `alias`
+      // in it, every entry signed, with no weak algorithm or bad key usage.
+      let verified: string;
+      try {
+        verified = (await run(jarsigner, ["-verify", "-strict", "-keystore", keystore, "-storepass:env", STORE_PASSWORD, signed, alias], { env: signingEnv })).stdout;
+      } catch (error) {
+        throw new Error("The App Bundle's signature did not verify.", { cause: error });
+      }
+      if (!verified.includes("jar verified")) throw new Error("The App Bundle's signature did not verify.");
     }
     return { fileName: androidGameFileName(request.name, request.format), bytes: new Uint8Array(await readFile(signed)), debugSigned };
   } finally {

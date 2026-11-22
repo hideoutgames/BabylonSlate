@@ -3,7 +3,7 @@ import { createFakeWebLocks } from "@haptic/vfs/test-support/fake-web-locks";
 import { createMemoryOpfsRoot, opfsProjectFolder } from "@haptic/vfs/test-support/memory-opfs";
 import { createEmptyProject, isProjectOpenElsewhere, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@haptic/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter, pickImportFiles } from "@haptic/vfs";
-import { encodeAssetDocument } from "@haptic/assets";
+import { encodeAssetDocument, SPECULATIVE_CATALOG_READ_BYTES } from "@haptic/assets";
 import { encodeHasset, decodeHasset } from "@haptic/assets/hasset";
 import { convertHdrEnvironmentOffMainThread } from "@haptic/assets/import-worker-client";
 import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
@@ -257,7 +257,7 @@ describe("ProjectService lifecycle", () => {
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
     await service.registry!.reindexPath("assets/test.hasset");
-    textureEncodeQueue(service).enqueue({ assetGuid: "encode-drain", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    textureEncodeQueue(service).enqueue({ assetGuid: "encode-drain", loadSource: () => Promise.resolve(new Uint8Array([1])), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     const lease = service.lockAuthoringWrites("Read-only baseline");
     let ready = false;
@@ -295,7 +295,7 @@ describe("ProjectService lifecycle", () => {
       return write(path, bytes);
     });
     const release = vi.spyOn(storage, "releaseFolder");
-    textureEncodeQueue(service).enqueue({ assetGuid: "encode-close", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    textureEncodeQueue(service).enqueue({ assetGuid: "encode-close", loadSource: () => Promise.resolve(new Uint8Array([1])), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     finishEncode({ ktx2: new Uint8Array([9, 8, 7]), wallMs: 1 });
     await started;
@@ -321,7 +321,7 @@ describe("ProjectService lifecycle", () => {
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
     await service.registry!.reindexPath("assets/test.hasset");
-    textureEncodeQueue(service).enqueue({ assetGuid: "encode-late", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    textureEncodeQueue(service).enqueue({ assetGuid: "encode-late", loadSource: () => Promise.resolve(new Uint8Array([1])), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     await vi.waitFor(() => expect(service.textureEncodingGuids.has("encode-late")).toBe(true));
     const release = storage.releaseFolder.bind(storage);
@@ -493,12 +493,18 @@ describe("ProjectService lifecycle", () => {
       type: "Scene", name: "Unused", guid: "unused-scene", version: 1,
       payload: { name: "Unused", actors: [], notes: "x".repeat(256 * 1024) },
     }, { extraChunks: [{ id: "unused-source", kind: "source", mime: "application/octet-stream", data: new Uint8Array(1024 * 1024) }] }));
-    const before = storage.getReadMetrics().actualBytesRead;
     const fullReads = vi.spyOn(storage, "readBinary");
+    const rangeReads = vi.spyOn(storage, "readBinaryRange");
     await service.loadCurrentProject();
     expect(service.registry!.getByGuid("unused-scene")?.header.name).toBe("Unused");
     expect(fullReads.mock.calls.filter(([path]) => path.endsWith(".hasset") || path.includes(".blobs/"))).toEqual([]);
-    expect(storage.getReadMetrics().actualBytesRead - before).toBeLessThan(64 * 1024);
+    expect(rangeReads.mock.calls.filter(([path]) => path.includes(".blobs/"))).toEqual([]);
+    // Its catalog read at most: never the 256 KiB Scene body behind the header.
+    const sceneBytes = rangeReads.mock.calls
+      .filter(([path]) => path === "assets/unused.scene.hasset")
+      .reduce((sum, [, , length]) => sum + length, 0);
+    expect(sceneBytes).toBeGreaterThan(0);
+    expect(sceneBytes).toBeLessThanOrEqual(SPECULATIVE_CATALOG_READ_BYTES);
     expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
     service.dispose();
   });
@@ -1169,7 +1175,7 @@ describe("texture encode diagnostics", () => {
 
     textureEncodeQueue(service).enqueue({
       assetGuid: "tex-guid-1",
-      source: new Uint8Array([1, 2, 3]),
+      loadSource: () => Promise.resolve(new Uint8Array([1, 2, 3])),
       mime: "image/png",
       settings: {
         format: "uastc",

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProjectStorage } from "@haptic/core";
 import * as git from "isomorphic-git";
@@ -171,7 +171,9 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect(server.git(dir, "rev-parse", "HEAD^1", "HEAD^2").trim().split("\n")).toEqual([local, remote]);
     expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A-theirs");
     expect(text(await storage.readBinary("assets/c.hasset"))).toBe("C-mine");
-    expect(server.git(dir, "show", "HEAD:assets/c.hasset")).toBe("C");
+    // This branch never committed c, so the merge records the teammate's version and the kept edit stays uncommitted against it,
+    // as a fast-forward leaves it.
+    expect(server.git(dir, "show", "HEAD:assets/c.hasset")).toBe("C-theirs");
     expect(server.git(dir, "show", "HEAD:assets/d.hasset")).toBe("D-mine");
     expect(server.git(dir, "show", "HEAD:assets/e.hasset")).toBe("E");
     expect((await repository.status()).changes).toEqual([{ path: "assets/c.hasset", kind: "modified" }]);
@@ -190,6 +192,135 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect(await repository.pull({ author: AUTHOR, choices: { "assets/a.hasset": "mine" } })).toEqual({ kind: "fast-forward", head: remote, changedPaths: [] });
     expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A-mine");
     expect((await repository.status()).changes).toEqual([{ path: "assets/a.hasset", kind: "modified" }]);
+  });
+
+  it("keeps this branch's committed version of a file kept as mine in a merge", async () => {
+    server.seed({ "assets/a.hasset": "A", "assets/b.hasset": "B" });
+    const storage = await server.storage();
+    const repository = await clone(storage);
+    const teammate = server.teammate();
+    teammate.write({ "assets/a.hasset": "A-theirs", "assets/b.hasset": "B-theirs" });
+    teammate.commitAndPush("Teammate");
+    await storage.writeBinary("assets/a.hasset", encode("A-mine"));
+    await repository.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
+
+    expect(await repository.pull({ author: AUTHOR, choices: { "assets/a.hasset": "mine" } })).toMatchObject({ kind: "merged", changedPaths: ["assets/b.hasset"] });
+    expect(server.git(folder(storage), "show", "HEAD:assets/a.hasset")).toBe("A-mine");
+    expect(server.git(folder(storage), "show", "HEAD:assets/b.hasset")).toBe("B-theirs");
+    expect((await repository.status()).changes).toEqual([]);
+  });
+
+  describe("files another Git app staged", () => {
+    /** A clone with a, b and c committed, then staged by the system `git` as `stage` says, b changed and saved in the working tree. */
+    async function staged(stage: (dir: string) => void) {
+      server.seed({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/c.hasset": "C" });
+      const storage = await server.storage();
+      const repository = await clone(storage);
+      const dir = folder(storage);
+      stage(dir);
+      await storage.writeBinary("assets/b.hasset", encode("B2"));
+      return { storage, repository, dir };
+    }
+
+    it.each([
+      ["added", (dir: string) => { writeFileSync(join(dir, "assets/n.hasset"), "N"); server.git(dir, "add", "assets/n.hasset"); }, { path: "assets/n.hasset", kind: "added" }],
+      ["modified", (dir: string) => { writeFileSync(join(dir, "assets/a.hasset"), "A-staged"); server.git(dir, "add", "assets/a.hasset"); }, { path: "assets/a.hasset", kind: "modified" }],
+      ["deleted", (dir: string) => { server.git(dir, "rm", "--quiet", "assets/c.hasset"); }, { path: "assets/c.hasset", kind: "deleted" }],
+    ] as const)("shows a file %s and staged elsewhere, and never commits it unless chosen, keeping its working file", async (_name, stage, change) => {
+      const { storage, repository, dir } = await staged(stage);
+      expect((await repository.status()).changes).toContainEqual(change);
+      await repository.commit({ paths: ["assets/b.hasset"], message: "Only b", author: AUTHOR });
+      expect(server.git(dir, "show", "--name-only", "--format=", "HEAD").trim()).toBe("assets/b.hasset");
+      // Its index entry is back at HEAD, so no later commit or merge takes it; its working file is as the other app left it.
+      expect(server.git(dir, "diff", "--cached", "--name-only").trim()).toBe("");
+      expect((await repository.status()).changes).toEqual([change]);
+      expect(await storage.exists(change.path)).toBe(change.kind !== "deleted");
+    });
+
+    it("refuses a commit, changing nothing, while a version staged elsewhere exists nowhere else, and marks it", async () => {
+      const { storage, repository, dir } = await staged((folderPath) => {
+        writeFileSync(join(folderPath, "assets/a.hasset"), "A-staged");
+        server.git(folderPath, "add", "assets/a.hasset");
+        writeFileSync(join(folderPath, "assets/a.hasset"), "A-working");
+      });
+      const head = server.git(dir, "rev-parse", "HEAD").trim();
+      expect((await repository.status()).changes).toContainEqual({ path: "assets/a.hasset", kind: "modified", staged: true });
+      const error = await rejection(repository.commit({ paths: ["assets/b.hasset"], message: "Only b", author: AUTHOR }));
+      expect([error.kind, error.code, error.paths]).toEqual(["conflict", "staged-elsewhere", ["assets/a.hasset"]]);
+      // It says what happened and what to do next.
+      expect(error.message).toBe(
+        "Another Git app staged changes to assets/a.hasset that differ from both the last commit and the files on disk, and setting them aside would lose them. "
+        + "Nothing was committed. Unstage or commit them in that app, or include them in this commit to commit the files as they are now.",
+      );
+      expect(server.git(dir, "rev-parse", "HEAD").trim()).toBe(head);
+      expect(server.git(dir, "show", ":assets/a.hasset")).toBe("A-staged");
+      expect(server.git(dir, "show", ":assets/b.hasset")).toBe("B");
+      expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A-working");
+      // Chosen, it commits the working file.
+      await repository.commit({ paths: ["assets/a.hasset", "assets/b.hasset"], message: "Both", author: AUTHOR });
+      expect(server.git(dir, "show", "HEAD:assets/a.hasset")).toBe("A-working");
+    });
+
+    it("leaves what another app staged out of a merge commit", async () => {
+      const { storage, repository, dir } = await staged((folderPath) => {
+        writeFileSync(join(folderPath, "assets/a.hasset"), "A-staged");
+        server.git(folderPath, "add", "assets/a.hasset");
+      });
+      await repository.commit({ paths: ["assets/b.hasset"], message: "Mine", author: AUTHOR });
+      // The commit put a's entry back; the other app stages it again before the pull.
+      server.git(dir, "add", "assets/a.hasset");
+      const teammate = server.teammate();
+      teammate.write({ "assets/e.hasset": "E" });
+      teammate.commitAndPush("Teammate");
+      expect(await repository.pull({ author: AUTHOR })).toMatchObject({ kind: "merged" });
+      expect(server.git(dir, "show", "HEAD:assets/a.hasset")).toBe("A");
+      expect(server.git(dir, "show", "HEAD:assets/e.hasset")).toBe("E");
+      expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A-staged");
+    });
+  });
+
+  it("puts the working files and index back when a pull fails part way, and pulls once the failure is gone", async () => {
+    server.seed({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/c.hasset": "C" });
+    const base = await server.storage();
+    let failOn: string | null = null;
+    const storage = new Proxy(base, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver) as unknown;
+        if (property === "writeBinary") {
+          return async (path: string, bytes: Uint8Array) => {
+            if (path === failOn) throw new Error("No space left on device");
+            return (value as ProjectStorage["writeBinary"]).call(target, path, bytes);
+          };
+        }
+        return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+      },
+    }) as ProjectStorage;
+    const repository = await clone(storage);
+    const dir = folder(storage);
+    const teammate = server.teammate();
+    teammate.write({ "assets/a.hasset": "A-theirs", "assets/b.hasset": "B-theirs", "assets/e.hasset": "E" });
+    teammate.remove("assets/c.hasset");
+    const remote = teammate.commitAndPush("Teammate");
+    // An uncommitted edit the pull is told to replace.
+    await storage.writeBinary("assets/a.hasset", encode("A-mine"));
+    const head = server.git(dir, "rev-parse", "HEAD").trim();
+    const index = server.git(dir, "ls-files", "--stage");
+
+    failOn = "assets/e.hasset";
+    await expect(repository.pull({ author: AUTHOR, choices: { "assets/a.hasset": "theirs" } })).rejects.toThrow();
+    expect(server.git(dir, "rev-parse", "HEAD").trim()).toBe(head);
+    expect(server.git(dir, "ls-files", "--stage")).toBe(index);
+    expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A-mine");
+    expect(text(await storage.readBinary("assets/b.hasset"))).toBe("B");
+    expect(text(await storage.readBinary("assets/c.hasset"))).toBe("C");
+    expect(await storage.exists("assets/e.hasset")).toBe(false);
+    expect((await repository.status()).changes).toEqual([{ path: "assets/a.hasset", kind: "modified" }]);
+
+    failOn = null;
+    expect(await repository.pull({ author: AUTHOR, choices: { "assets/a.hasset": "theirs" } })).toMatchObject({ kind: "fast-forward", head: remote });
+    expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A-theirs");
+    expect(await storage.exists("assets/c.hasset")).toBe(false);
+    expect((await repository.status()).changes).toEqual([]);
   });
 
   it("reads each commit once when a fetch counts and lists the incoming ones", async () => {
@@ -353,6 +484,29 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     repository.releaseCaches();
     await repository.status();
     expect(packReads()).toBeGreaterThan(0);
+    // Under the cap a fetch keeps them too.
+    await repository.fetch();
+    reads.length = 0;
+    await repository.status();
+    expect(packReads()).toBe(0);
+  });
+
+  it("releases its packs after a fetch once they pass the cap, never after a status", async () => {
+    server.seed({ "assets/a.hasset": "A" });
+    server.seed({ "assets/b.hasset": "B" });
+    const { storage, reads } = countingStorage(await server.storage());
+    const repository = await cloneRepository({
+      storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main", now: () => NOW, packCacheBytes: 1,
+    });
+    const packReads = () => reads.filter((path) => path.startsWith(".git/objects/pack/")).length;
+    await repository.status();
+    reads.length = 0;
+    await repository.status();
+    expect(packReads()).toBe(0);
+    await repository.fetch();
+    reads.length = 0;
+    await repository.status();
+    expect(packReads()).toBeGreaterThan(0);
   });
 
   it("empties the LFS scratch folder a killed app left when it opens", async () => {
@@ -363,6 +517,27 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     await storage.writeBinary(`.git/lfs/tmp/${"c".repeat(64)}`, blobBytes(1, 4096));
     await openRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, now: () => NOW });
     expect(existsSync(join(folder(storage), ".git/lfs/tmp"))).toBe(false);
+  });
+
+  it("reclaims downloads a killed app staged beside the blobs, never one young enough to be in flight", async () => {
+    server.seed({ ".gitattributes": RULE, "assets/a.hasset": "A" });
+    const storage = await server.storage();
+    const repository = await clone(storage);
+    const blobs = join(folder(storage), "assets/.blobs");
+    mkdirSync(blobs, { recursive: true });
+    const killed = ".haptic-0f8fad5b-d9cb-469f-a165-70867728950e.tmp";
+    const running = ".haptic-7c9e6679-7425-40de-944b-e07fc1f90ae7.tmp";
+    writeFileSync(join(blobs, killed), "partial");
+    writeFileSync(join(blobs, running), "streaming");
+    // The killed one was last written an hour ago; the running one moments ago.
+    const hourAgo = new Date(Date.now() - 3_600_000);
+    utimesSync(join(blobs, killed), hourAgo, hourAgo);
+
+    // Remove Unused Files offers it with the rest...
+    expect(await repository.removableLfsObjects({ references: () => [] })).toEqual([`assets/.blobs/${killed}`]);
+    // ...and opening the copy removes it.
+    await openRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL });
+    expect(readdirSync(blobs).sort()).toEqual([running]);
   });
 
   it("types refused credentials, missing repositories and unreachable hosts", async () => {

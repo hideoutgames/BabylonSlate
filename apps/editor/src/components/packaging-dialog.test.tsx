@@ -4,6 +4,7 @@ import { ok } from "@haptic/core";
 import { encodeIcns } from "@haptic/exporter/app-icon";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { appIconImages } from "@haptic/exporter/test-support/app-icon-images";
+import { electronExe } from "@haptic/exporter/test-support/windows-executable";
 import { defaultEngineSettings } from "@haptic/vfs";
 import { MemoryAppSettingsStore } from "@haptic/vfs/test-support/memory-app-settings";
 import { AppSettingsProvider } from "../context/app-settings-context";
@@ -199,7 +200,8 @@ it("opens the export settings that decide what a package includes", async () => 
 
 it("packages a Windows game from the build's player and saves it named after the project", async () => {
   shells.manifest = SHELLS;
-  const runtime = zipSync({ "electron.exe": strToU8("exe"), "resources/default_app.asar": strToU8("sample") });
+  // A real (empty) executable: its version details are rewritten whether or not the game has an App Icon.
+  const runtime = zipSync({ "electron.exe": electronExe(), "resources/default_app.asar": strToU8("sample") });
   shells.loadDesktopShell.mockResolvedValue({ runtime, host: strToU8("host();") });
   exportGameArtifact.mockResolvedValue(ok({ files: new Map([["index.html", strToU8("<html>")]]) }));
   let saved: Blob | null = null;

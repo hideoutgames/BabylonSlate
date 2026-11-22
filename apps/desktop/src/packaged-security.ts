@@ -357,7 +357,7 @@ function projectPath(value: unknown, allowRoot = true): void {
  * library counterpart, so a library can never be pointed at another folder.
  */
 export const LIBRARY_FILE_OPERATIONS = [
-  "readBinary", "readBinaryRange", "writeBinary", "exists", "readdir", "mkdir", "remove", "stat",
+  "readBinary", "readBinaryRange", "writeBinary", "exists", "readdir", "listStagedWrites", "mkdir", "remove", "stat",
 ] as const;
 
 /** Matches `NativeHttpImageType` in `@haptic/vfs`; Clerk accepts exactly these profile picture types. */
@@ -395,7 +395,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "account-secrets:get": 1, "account-secrets:set": 2, "account-secrets:delete": 1,
     "lfs:fetch": 1, "files:transfer": 2, "files:cancel": 1, "auth:open-browser": 2, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
     "project:list": 0, "project:delete": 1, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
-    "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
+    "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:listStagedWrites": 1, "project:mkdir": 2,
     "project:remove": 1, "project:stat": 1, "file:save": 2, "game-shell:runtime": 2, "game-shell:mac-identities": 0, "game-shell:package-mac": 1,
     "game-shell:android-settings": 1, "game-shell:package-android": 1, "game-shell:ios-toolchain": 0, "game-shell:package-ios": 1,
   };
