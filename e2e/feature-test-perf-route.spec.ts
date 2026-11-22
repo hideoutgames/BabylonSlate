@@ -258,7 +258,8 @@ async function glCallsPerFrame(page: Page, ms: number) {
     const restore: Array<() => void> = [];
     for (const name of Object.getOwnPropertyNames(proto)) {
       const counted = (names as readonly string[]).includes(name) ? name : /^uniform(\d|Matrix)/.test(name) ? "uniforms" : null;
-      const original = proto[name];
+      // Methods only: reading an accessor (`canvas`, `drawingBufferWidth`) off the prototype throws.
+      const original = counted ? Object.getOwnPropertyDescriptor(proto, name)?.value : undefined;
       if (!counted || typeof original !== "function") continue;
       counts[counted] ??= 0;
       proto[name] = function (this: unknown, ...args: unknown[]) {
