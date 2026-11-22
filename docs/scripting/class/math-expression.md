@@ -20,7 +20,7 @@ Computes a formula of numbers and vectors that you type on the node. Its names b
 - An unconnected input shows a value field on the node, as on other nodes.
 - One Math Expression node runs faster than the same formula built from separate math nodes: it computes the whole formula at once, and an output nothing is connected to costs nothing. The results are exactly those of the separate nodes.
 - While you play, the debugger shows the node's input and output values, not the steps inside the formula.
-- A formula with an error keeps the pins it last had, so its wires are not lost while you fix it. The error, with its line and column, shows on the node, in the **Inspector** and in **Compiler Results**.
+- A formula with an error keeps the pins it last had, so its wires are not lost while you fix it. The error, with its line and column, shows on the node and in the **Inspector**. Once the node is wired into something that runs, it also shows in **Compiler Results**.
 
 ## Formulas
 
