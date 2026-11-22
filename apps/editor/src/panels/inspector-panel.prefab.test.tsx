@@ -320,13 +320,13 @@ describe("Inspector prefab component details", () => {
     renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
     const interval = () => screen.getByTestId("property-tickInterval") as HTMLInputElement;
     // Quiet disables Event Tick, so the inherited interval shows but cannot change.
-    await waitFor(() => expect(interval().value).toBe("0.500"));
+    await waitFor(() => expect(interval().value).toBe("0.5 s"));
     expect(interval().disabled).toBe(true);
     cleanup();
     classState.parentClass = "Actor";
     renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
     expect(interval().disabled).toBe(false);
-    expect(interval().value).toBe("0.000");
+    expect(interval().value).toBe("0 s");
     fireEvent.change(interval(), { target: { value: "0.25" } });
     fireEvent.blur(interval());
     expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults).toEqual({ tickInterval: 0.25 });
