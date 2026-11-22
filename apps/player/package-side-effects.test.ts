@@ -90,3 +90,24 @@ describe("runtime package sideEffects", () => {
     else expect(Array.isArray(declared) ? [...declared].sort() : declared).toEqual(expected);
   });
 });
+
+/**
+ * Babylon's engine extensions (`babylon-registrations.ts`) reach an Engine only through a module that imports them:
+ * `create-engine.ts`, or a module a caller uses on an Engine it constructs itself. Under `sideEffects`, importing one
+ * module of `@haptic/render` evaluates only that module's imports, so each module that builds a FrameGraph or calls
+ * the multiple-render-target extension imports the registrations itself.
+ */
+describe("render engine registrations", () => {
+  const renderSrc = path.join(repoRoot, "packages/render/src");
+  const usesEngineExtensions = /new FrameGraph\(|\.buildTextureLayout\(|\.bindAttachments\(|\.createMultipleRenderTarget\(/;
+  const users = sourceFiles(renderSrc).filter((file) => !file.includes(`${path.sep}test-support${path.sep}`) &&
+    !file.endsWith("-fixtures.ts") && usesEngineExtensions.test(readFileSync(file, "utf8")));
+
+  it("finds the modules that need them", () => {
+    expect(users.map((file) => path.basename(file))).toContain("framegraph-forward-scene.ts");
+  });
+
+  it.each(users.map((file) => [path.basename(file), file]))("%s imports babylon-registrations", (_name, file) => {
+    expect(loadEffects(file).bareImports).toContain("./babylon-registrations");
+  });
+});

@@ -1,3 +1,5 @@
+// Its FrameGraph work needs Babylon's engine extensions on any Engine, including one a caller made without createEngine.
+import "./babylon-registrations";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { rewriteRenderList } from "./observed-render-list";
 import { activeRenderFrameCapture } from "./render-frame-report";
