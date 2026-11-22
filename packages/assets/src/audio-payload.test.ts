@@ -685,7 +685,7 @@ describe("audio asset containers", () => {
   });
 
   it("imports audio as version 1 with a named source clip and source chunk", async () => {
-    const results = await importAudio(new Uint8Array([4, 5, 6]), {
+    const results = await importAudio(Uint8Array.from([0x52, 0x49, 0x46, 0x46, 4, 0, 0, 0, 0x57, 0x41, 0x56, 0x45]), {
       fileName: "jump.wav",
       existingGuids: new Set(),
     });

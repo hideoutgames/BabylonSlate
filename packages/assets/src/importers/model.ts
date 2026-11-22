@@ -14,6 +14,7 @@ import { nextCopyName } from "../unique-names";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 import { importedGltfMaterial } from "./gltf-material";
+import { assertImageSizeWithinLimits } from "./image";
 import {
   ingestGltfForImport,
   parseGlbForBrowse,
@@ -119,6 +120,7 @@ function importFromBrowse(
     // Recorded like an image import's, so Downsample, encode padding and
     // overlay sizes use the source size rather than the encoded one.
     const size = chunks.length > 0 ? sniffSourceImageSize(image.bytes) : null;
+    assertImageSizeWithinLimits(size, `the model's image ${image.name}`);
     // A nearest-filtered image (a pixel-art palette) keeps its exact texels: no compression, mipmaps or LOD.
     const usage = image.nearest ? "pixelArt" : "albedo";
     results.push({
