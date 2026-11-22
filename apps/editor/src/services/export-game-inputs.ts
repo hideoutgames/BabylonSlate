@@ -9,6 +9,7 @@ import {
 import {
   AUDIO_DEFAULT_SOURCE_CHUNK,
   AUDIO_REVERB_CHUNK_ID,
+  collectLandscapeChunksForPlay,
   currentAreaEmissionChunk,
   decodeAreaEmission,
   collectPackedAudioClipBlobs,
@@ -21,6 +22,7 @@ import {
   FONT_MSDF_CHUNK_ID,
   FONT_MSDF_PNG_CHUNK_ID,
   isKtx2BlockAligned,
+  landscapeChunkIdsInHeader,
   normalizeAudioPayload,
   normalizeModelPayload,
   normalizeSkeletonPayload,
@@ -135,6 +137,8 @@ export type LoadedExportDocuments = {
   navmeshByGuid: (guid: string) => Uint8Array | null;
   /** Throws for a Scene the reverb bake could not read or save, so its chunk may be stale. */
   audioReverbByGuid: (guid: string) => Uint8Array | null;
+  /** Raw binary `BSLD` landscape chunks owned by a Scene. */
+  landscapeChunksByGuid: (guid: string) => ReadonlyArray<{ chunkId: string; bytes: Uint8Array }>;
 };
 
 /** Audio clip chunks: the clip importer allocates only `source` and `source:N`. */
@@ -151,7 +155,7 @@ function fontSourceChunkId(header: HassetHeader): string | undefined {
 /** Chunks packed with a type's document, or null for a type that packs its document alone. */
 function exportChunkSelection(type: string): ExportChunkSelection | null {
   switch (type) {
-    case "Scene": return SCENE_EXPORT_CHUNK_IDS;
+    case "Scene": return (header) => [...SCENE_EXPORT_CHUNK_IDS, ...landscapeChunkIdsInHeader(header.chunks)];
     case "Audio": return (header) => header.chunks.map((chunk) => chunk.id).filter(isAudioClipChunkId);
     case "Model": return ["source"];
     case "Font": return (header) => [fontSourceChunkId(header), ...FONT_SIDECAR_CHUNK_IDS].filter((id) => id !== undefined);
@@ -300,6 +304,7 @@ export async function loadExportDocuments(
   const navmeshes = new Map<string, Uint8Array>();
   const audioReverbs = new Map<string, Uint8Array>();
   const audioReverbErrors = new Map<string, unknown>();
+  const landscapes = new Map<string, Array<{ chunkId: string; bytes: Uint8Array }>>();
   // Each Skeleton read once, for the Models on it.
   const socketsBySkeleton = new Map<string, Promise<SkeletonSocket[] | undefined>>();
   const skeletonSockets = (skeletonGuid: string | null) => {
@@ -354,14 +359,22 @@ export async function loadExportDocuments(
         if (asset.header.type === "Texture") areaEmissionErrors.set(asset.header.guid, error);
       }
     }
+    if (asset.header.type === "Scene" && document) {
+      const collected = collectLandscapeChunksForPlay(document as SerializedScene, snapshot?.chunks);
+      document = collected.payload;
+      if (collected.chunks.size > 0) {
+        landscapes.set(
+          asset.header.guid,
+          [...collected.chunks.entries()].map(([chunkId, chunkBytes]) => ({ chunkId, bytes: chunkBytes })),
+        );
+      }
+      scenes.set(asset.header.guid, collected.payload);
+    }
     if (asset.header.type === "Texture") {
       // Texture settings live in the header read with its chunks.
       payloads.set(asset.header.guid, (snapshot?.header ?? asset.header).payload);
     } else if (document && typeof document === "object") {
       payloads.set(asset.header.guid, document);
-    }
-    if (asset.header.type === "Scene" && document) {
-      scenes.set(asset.header.guid, document as SerializedScene);
     }
     if (asset.header.type === "Class" && document) {
       graphs.set(asset.header.guid, document as SerializedGraph);
@@ -437,5 +450,6 @@ export async function loadExportDocuments(
       if (audioReverbErrors.has(guid)) throw audioReverbErrors.get(guid);
       return audioReverbs.get(guid) ?? null;
     },
+    landscapeChunksByGuid: (guid) => landscapes.get(guid) ?? [],
   };
 }

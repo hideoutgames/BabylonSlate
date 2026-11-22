@@ -416,7 +416,7 @@ describe("Water rendering", () => {
     new FreeCamera("camera", new Vector3(0, 4, 0), scene);
     try {
       // A 40 m landscape floor centred on the origin, 4 m under the water.
-      createLandscapeMesh(scene, "land", { width: 40, depth: 40, subdivisions: 4, heights: Array.from({ length: 25 }, () => -4) });
+      createLandscapeMesh(scene, "land", { width: 40, depth: 40, subdivisions: 4, heights: new Float32Array(25).fill(-4) });
       setSceneWaterTime(scene, 1.5);
       setQuality(scene, "high");
       const water = createDefaultWaterDefinition(), body = normalizeWaterBody({}, "global");
@@ -878,7 +878,7 @@ describe("Water rendering", () => {
     let clock = 1000;
     vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
-      createLandscapeMesh(scene, "land", { width: 40, depth: 40, subdivisions: 4, heights: Array.from({ length: 25 }, () => -4) });
+      createLandscapeMesh(scene, "land", { width: 40, depth: 40, subdivisions: 4, heights: new Float32Array(25).fill(-4) });
       MeshBuilder.CreateBox("post", { width: 1, height: 4, depth: 1 }, scene);
       const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10 }), undefined, builtInWaterMaterial(scene));
       const plugin = nodesOf(lake);

@@ -98,7 +98,7 @@ describe("physics tick composition work", () => {
       spawn(`decoration-${index}`, { x: index }),
     );
     const landscape = spawn("landscape", { x: -40, y: -2 }, [
-      ["LandscapeComponent", { width: 20, depth: 20, subdivisions: 4, heights: Array.from({ length: 25 }, () => 3) }],
+      ["LandscapeComponent", { width: 20, depth: 20, subdivisions: 4, heights: new Float32Array(25).fill(3) }],
     ]);
     const decorationReads = countTransformReads(decorations);
     const landscapeReads = countTransformReads([landscape]);

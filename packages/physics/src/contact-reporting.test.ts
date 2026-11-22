@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { HavokPhysicsBackend } from "./havok-backend";
 import { createPhysicsBackend, type PhysicsBackend, type PhysicsContactEvent } from "./index";
 
 const identity = { x: 0, y: 0, z: 0, w: 1 };
@@ -109,6 +110,62 @@ describe("Havok contact reporting", () => {
         for (const event of backend.pollContacts()) seen.push(event.kind);
       }
       expect(seen).toEqual(["overlapBegin", "overlapEnd"]);
+    } finally { backend.dispose(); }
+  });
+
+  // The drain reads Havok's native event structs at fixed offsets for @babylonjs/havok 1.3.14; a version that moves a
+  // field must fail here rather than report wrong actors or points.
+  it("decodes native collision and trigger events into their bodies, contact point and normal, also after the WASM heap grows", async () => {
+    const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+    try {
+      spawn(backend, "ground", "static", { x: 0, y: -0.5, z: 0 }, { kind: "box", halfExtents: { x: 5, y: 0.5, z: 5 } });
+      spawn(backend, "zone", "static", { x: 1.5, y: 0, z: -2 }, { kind: "box", halfExtents: { x: 1, y: 1, z: 1 } }, { isTrigger: true });
+      spawn(backend, "ball", "dynamic", { x: 1.5, y: 0.24, z: -2 }, { kind: "sphere", radius: 0.25 });
+      const pressAndPoll = () => {
+        backend.setBodyLinearVelocity("ball", { x: 0, y: -1, z: 0 });
+        backend.step(1 / 60);
+        return backend.pollContacts();
+      };
+      const expectHit = (events: PhysicsContactEvent[]) => {
+        const hit = events.find((event) => event.kind === "hit");
+        expect(hit).toMatchObject({ actorAId: "actor-ball", actorBId: "actor-ground", colliderAId: "ball-collider", colliderBId: "ground-collider" });
+        expect(hit!.location!.x).toBeCloseTo(1.5, 3);
+        expect(hit!.location!.z).toBeCloseTo(-2, 3);
+        expect(Math.abs(hit!.location!.y)).toBeLessThan(0.02);
+        // From the ball (A) into the ground (B).
+        expect(hit!.normal!.x).toBeCloseTo(0, 4);
+        expect(hit!.normal!.y).toBeCloseTo(-1, 4);
+        expect(hit!.normal!.z).toBeCloseTo(0, 4);
+      };
+      const first = pressAndPoll();
+      expectHit(first);
+      expect(first.filter((event) => event.kind !== "hit")).toEqual([
+        { kind: "overlapBegin", actorAId: "actor-ball", actorBId: "actor-zone", colliderAId: "ball-collider", colliderBId: "zone-collider" },
+      ]);
+      const heap = backend.havok.HEAPU8.buffer;
+      const grown = backend.havok._malloc(heap.byteLength);
+      try {
+        expect(backend.havok.HEAPU8.buffer).not.toBe(heap);
+        expectHit(pressAndPoll());
+      } finally {
+        backend.havok._free(grown);
+      }
+    } finally { backend.dispose(); }
+  });
+
+  it("reports a step's hits before its overlaps", async () => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+    try {
+      spawn(backend, "ground", "static", { x: 0, y: -0.5, z: 0 }, { kind: "box", halfExtents: { x: 5, y: 0.5, z: 5 } });
+      spawn(backend, "zone", "static", { x: 0, y: 0.5, z: 0 }, { kind: "box", halfExtents: { x: 2, y: 2, z: 2 } }, { isTrigger: true });
+      spawn(backend, "box", "dynamic", { x: 0, y: 0.5, z: 0 }, { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } });
+      backend.setBodyLinearVelocity("box", { y: -1 });
+      backend.step(1 / 60);
+      // The order Babylon's HavokPlugin reported a step's events in.
+      expect(backend.pollContacts().map((event) => `${event.kind}:${event.actorAId}/${event.actorBId}`)).toEqual([
+        "hit:actor-box/actor-ground",
+        "overlapBegin:actor-box/actor-zone",
+      ]);
     } finally { backend.dispose(); }
   });
 });

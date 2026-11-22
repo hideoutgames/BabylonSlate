@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { HavokPhysicsWithBindings } from "@babylonjs/havok";
 import { HavokPhysicsBackend } from "./havok-backend";
 import type { ColliderDesc, PhysicsTransform } from "./types";
 
@@ -23,11 +22,12 @@ describe("Havok native collider lifetime", () => {
     try {
       body(backend);
       backend.createCollider(box());
-      const nativeBody = backend.scene.getTransformNodeByName("body")!.physicsBody;
+      const nativeBody = backend.getNativeBodyId("body");
+      expect(nativeBody).not.toBeNull();
       expect(trace(backend).hit).toBe(true);
       backend.destroyCollider("collider");
       expect(trace(backend).hit).toBe(false);
-      expect(backend.scene.getTransformNodeByName("body")!.physicsBody).toBe(nativeBody);
+      expect(backend.getNativeBodyId("body")).toBe(nativeBody);
       backend.createCollider(box());
       expect(trace(backend).hit).toBe(true);
     } finally { backend.dispose(); }
@@ -35,18 +35,14 @@ describe("Havok native collider lifetime", () => {
 
   it("retires native first shapes and compound containers with their body", async () => {
     const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
-    // Babylon's native shape registry changes in initShape/disposeShape, independently
-    // of the backend's collider records; it detects unreleased native wrappers.
-    const shapes = (backend.plugin as unknown as { _shapes: Map<bigint, unknown> })._shapes;
-    const havok = (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp;
+    const havok = backend.havok;
     try {
-      const baseline = shapes.size;
       const nativeBaseline = havok.HP_GetStatistics()[1][1];
       body(backend);
       backend.createCollider(box("a", -2));
       backend.createCollider(box("b", 2));
+      expect(havok.HP_GetStatistics()[1][1]).toBe(nativeBaseline + 3);
       backend.destroyBody("body");
-      expect(shapes.size).toBe(baseline);
       expect(havok.HP_GetStatistics()[1][1]).toBe(nativeBaseline);
     } finally { backend.dispose(); }
   });
@@ -54,10 +50,10 @@ describe("Havok native collider lifetime", () => {
   it("reclaims convex query helpers after repeated casts", async () => {
     const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
     try {
-      const baseline = [backend.scene.meshes.length, backend.scene.geometries.length];
+      const baseline = backend.havok.HP_GetStatistics()[1][1];
       const points = [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 2, z: 0 }, { x: 0, y: 0, z: 3 }];
       for (let i = 0; i < 8; i++) backend.shapeSweep({ kind: "convex", points }, pose(-5), pose(5));
-      expect([backend.scene.meshes.length, backend.scene.geometries.length]).toEqual(baseline);
+      expect(backend.havok.HP_GetStatistics()[1][1]).toBe(baseline);
     } finally { backend.dispose(); }
   });
 });

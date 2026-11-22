@@ -25,9 +25,15 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
-import { isMaterialAssetType } from "../lib/content-browser-helpers";
+import {
+  isMaterialAssetType,
+  materialDomainsFromAssets,
+  materialPickerEntries,
+  materialSlotRowState,
+  materialSlotTakes,
+} from "../lib/material-asset-filters";
 import { materialClosureRevision } from "../lib/material-closure-revision";
-import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
+import { MATERIAL_DOCUMENT_KINDS, useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 
 /** Open tabs whose unsaved content a Custom Material's library load reads. */
@@ -93,12 +99,20 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
   /** `field` names the per-field merge key: one scrub or color drag is one undo step. */
   const commit = (next: WaterDefinition, field?: string) => { void applyAssetDocumentChange(documentId, normalizeWaterDefinition(next) as unknown as Record<string, unknown>, field ? `water:${field}` : undefined); };
   // Surface Materials change with the registry, not with edits of this Water.
-  const assets = useMemo(() => {
+  // An open Material tab's unsaved domain wins over its saved header.
+  const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
+  const domains = useMemo(() => {
     void registryEpoch;
-    return (assetRegistry?.list() ?? []).filter((asset) => isMaterialAssetType(asset.header.type) && (!asset.header.payload?.domain || asset.header.payload.domain === "surface"));
-  }, [assetRegistry, registryEpoch]);
-  const pickerAssets = useMemo(() => assets.map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path })), [assets]);
-  const selected = assets.find((asset) => asset.header.guid === water.materialGuid);
+    return materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
+  }, [assetRegistry, materialDocuments, registryEpoch]);
+  const domainOf = (guid: string) => domains[guid];
+  const pickerAssets = useMemo(() => {
+    void registryEpoch;
+    return materialPickerEntries(assetRegistry?.list() ?? [], materialDocuments, "surface");
+  }, [assetRegistry, materialDocuments, registryEpoch]);
+  const selected = water.materialGuid
+    ? (assetRegistry?.list() ?? []).find((asset) => asset.header.guid === water.materialGuid && isMaterialAssetType(asset.header.type))
+    : undefined;
   const numberRow = ([key, min, max]: NumberControl): PropertyRow => {
     const description = descriptions[key];
     return {
@@ -113,7 +127,7 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
     { id: "water-objectReflections", kind: "boolean", label: "Object Reflections", value: water.objectReflections, defaultValue: defaults.objectReflections, description: "Render only: also reflect scene objects (screen-space or planar, per the Water Reflections quality setting). Off reflects only the sky. Visible in scene viewports and Play, not in this preview.", onChange: (objectReflections) => commit({ ...water, objectReflections }) },
     ...waveControls.map(numberRow),
     ...surfaceControls.map(numberRow),
-    { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material that replaces the built-in shading. Buoyancy keeps working; add a Water Waves node to displace the surface with the full waves. Edit As Material starts one from the built-in look.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
+    { id: "water-material", kind: "asset", label: "Custom Material", value: water.materialGuid, placeholder: "Built-In Water", description: "Optional Surface Material that replaces the built-in shading. Buoyancy keeps working; add a Water Waves node to displace the surface with the full waves. Edit As Material starts one from the built-in look.", ...(selected ? assetRowIdentity({ name: selected.header.name, type: selected.header.type }) : {}), assetTypes: ["Material", "MaterialInstance"], ...materialSlotRowState("surface", water.materialGuid, domainOf), onPick: () => setPicking(true), onChange: (materialGuid) => commit({ ...water, materialGuid }) },
   ];
   // Built-in water's look as an editable Material, made the Custom Material and opened for editing.
   const editAsMaterial = () => {
@@ -130,7 +144,7 @@ export function WaterDetailsPanel(_props: IDockviewPanelProps) {
       <div><Button size="sm" variant="outline" className="pointer-coarse:min-h-11" disabled={deriving === "busy"} onClick={editAsMaterial} data-testid="water-edit-as-material">Edit As Material</Button></div>
       {deriving && deriving !== "busy" ? <Alert variant="destructive"><AlertTitle>Could Not Create Material</AlertTitle><AlertDescription>{deriving}</AlertDescription></Alert> : null}
     </div> : null}</div>
-    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={pickerAssets} createTypes={["Material"]} createOptions={{ waterMaterial: true }} onPick={(materialGuid) => { commit({ ...water, materialGuid }); setPicking(false); }} />
+    <AssetPicker open={picking} onOpenChange={setPicking} allowedTypes={["Material", "MaterialInstance"]} assets={pickerAssets} createTypes={["Material"]} createOptions={{ waterMaterial: true }} onPick={(materialGuid) => { if (materialSlotTakes("surface", materialGuid, domainOf)) commit({ ...water, materialGuid }); setPicking(false); }} />
   </PanelFrame>;
 }
 

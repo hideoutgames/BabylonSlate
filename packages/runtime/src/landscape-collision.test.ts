@@ -8,7 +8,7 @@ function worldWithLandscape() {
   const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
   const actor = world.createActor({ classId: "Actor", guid: "terrain", transform: identityTransform() });
   const component = world.createComponent({ classId: "LandscapeComponent", guid: "landscape",
-    variables: { width: 4, depth: 4, subdivisions: 4, heights: Array(25).fill(0) } });
+    variables: { width: 4, depth: 4, subdivisions: 4, heights: new Float32Array(25) } });
   actor.attachComponent(component);
   world.spawnActorNow(actor);
   return { world, actor, component };
@@ -29,7 +29,7 @@ it("creates opt-in Havok terrain that follows sculpting and transforms, reuses g
     actor.setVariable("parentId", parent.guid);
     actor.transform.position.x = 1;
     component.transform.position.x = 1;
-    const heights = Array(25).fill(0); heights[12] = 2;
+    const heights = new Float32Array(25); heights[12] = 2;
     component.setVariable("heights", heights);
     update();
     expect(trace().hit).toBe(false);
@@ -41,7 +41,7 @@ it("creates opt-in Havok terrain that follows sculpting and transforms, reuses g
 
     publish.mockClear();
     component.setVariable("materialGuid", "different-material");
-    component.setVariable("weights", Array(100).fill(0.25));
+    component.setVariable("weights", new Uint8Array(100).fill(64));
     update();
     expect(trace().location!.y).toBeCloseTo(4, 3);
     expect(publish).not.toHaveBeenCalled();
@@ -67,7 +67,7 @@ it("creates opt-in Havok terrain that follows sculpting and transforms, reuses g
 it.each([false, true])("a falling Havok body lands only when Landscape Collisions is enabled (%s)", async (enabled) => {
   const { world, component } = worldWithLandscape();
   component.setVariable("collisionsEnabled", enabled);
-  component.setVariable("heights", Array(25).fill(2));
+  component.setVariable("heights", new Float32Array(25).fill(2));
   const ball = world.createActor({ classId: "Actor", guid: "ball", transform: {
     ...identityTransform(), position: { x: 0.2, y: 6, z: 0.2 },
   } });

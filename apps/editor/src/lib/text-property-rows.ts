@@ -205,11 +205,9 @@ export function text2DPropertyRows(
       onChange: coerceRendererOnFontChange,
     },
     {
-      ...assetRow(actorId, component, "materialGuid", "Text Material", ["Material", "MaterialInstance"], update, context, "Pick Text Material"),
+      ...assetRow(actorId, component, "materialGuid", "Text Material", ["Material", "MaterialInstance"], update, context, "Pick Text Material", "None", "text"),
       kind: "asset",
       description: "A Text-domain Material multiplies the glyph and rich-text colors while preserving letter coverage.",
-      assetTypes: ["Material", "MaterialInstance"],
-      onPick: () => context.onPickAsset({ componentId: component.id, property: "materialGuid", allowedTypes: ["Material", "MaterialInstance"], materialDomain: "text", title: "Pick Text Material" }),
     } as Extract<PropertyRow, { kind: "asset" }>,
     {
       kind: "enum",

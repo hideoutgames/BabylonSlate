@@ -50,6 +50,7 @@ export function runtimeOptionsFromLoadControl(
   | "gameInstanceClass"
   | "sceneLibrary"
   | "sceneNavmeshBytes"
+  | "sceneLandscapeBytes"
   | "sceneGuidByKey"
   | "sceneLayerLibrary"
   | "includeDebugCommands"
@@ -142,6 +143,7 @@ export function runtimeOptionsFromLoadControl(
     gameInstanceClass: msg.gameInstanceClass,
     sceneLibrary: record(sceneLibrary),
     ...(msg.sceneNavmeshBytes ? { sceneNavmeshBytes: msg.sceneNavmeshBytes } : {}),
+    ...(msg.sceneLandscapeBytes ? { sceneLandscapeBytes: msg.sceneLandscapeBytes } : {}),
     sceneGuidByKey: record(sceneGuidByKey),
     sceneLayerLibrary: record(sceneLayerLibrary),
     includeDebugCommands: msg.includeDebugCommands,

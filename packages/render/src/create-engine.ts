@@ -1,6 +1,7 @@
 import "./babylon-registrations";
 import { RenderingContextLostError } from "./context-lost-error";
 import { setSceneInstancing } from "./instance-pool";
+import { findWorldSpriteBatcher, setSceneWorldSpriteBatching } from "./world-sprite-batcher";
 import { ejectPooledLeaf } from "./pooled-visuals";
 import { allowSceneOcclusionCulling, sceneOcclusionBuffer, setSceneOcclusionFrozen } from "./view-occlusion";
 import { applyGamepadRumble } from "./gamepad-rumble";
@@ -35,7 +36,7 @@ import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isFoliageDistanceOnlySceneEdit } from "./foliage-mesh";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
-import { setSceneWorldDebug, worldDebugFingerprint } from "./world-debug";
+import { setSceneWorldDebug, worldDebugFingerprint, worldDebugOff } from "./world-debug";
 import { shadowDebugFingerprint } from "./shadow-debug";
 import { discardsSamples, setDiscardSamples } from "./sample-discard";
 import { RuntimeScalability } from "./runtime-scalability";
@@ -222,7 +223,7 @@ import {
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { nearestTexturesEnabled, observeNearestTextures, setNearestTextures } from "./nearest-textures";
 import { FontRegistry } from "./font-registry";
-import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
+import { applyAnimStateToScene, ejectAllPlaySprites, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { AnimVisibilityGate } from "./anim-visibility";
 import { shareFootPlacementBounds } from "./anim-foot-placement";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
@@ -1164,6 +1165,21 @@ function initializeEngine(
   // unseen When Visible actor's waits until a camera can see it.
   const animVisibility = new AnimVisibilityGate(scene, binding, (command) => applyAnimStateToScene(animHostReportingMissing, command));
   scene.onBeforeRenderObservable.add(() => animVisibility.flush());
+  // Play world sprites batch into persistent thin-instanced quads, flushed after animVisibility and LayerImageAtlas.
+  // Simulation Edit's transform tools pick and outline meshes, which a batch's sprites are not, and
+  // `worlddebug spritebatching off` sizes what batching saves: both eject every sprite to a quad of its own (the
+  // picture unchanged) and batch none built while they last.
+  let spriteBatching = false;
+  const syncWorldSpriteBatching = () => {
+    const batch = !!options.playMode && !worldDebugOff(scene, "spritebatching") &&
+      !(runtimeTransformTools && runtimeTransformToolsEnabled && simulationEditMode);
+    if (batch === spriteBatching) return;
+    spriteBatching = batch;
+    if (!batch) ejectAllPlaySprites(binding);
+    setSceneWorldSpriteBatching(scene, batch);
+    scheduler.invalidate("asset");
+  };
+  syncWorldSpriteBatching();
   // Many actors place their feet each frame: they share one snapshot of the meshes' world bounds, dropped before each
   // render (after the flush above).
   shareFootPlacementBounds(scene);
@@ -2241,6 +2257,7 @@ function initializeEngine(
     const previousCamera = scene.activeCamera;
     // The snapshot's spawns, rebuilt visuals and despawns publish their outlines once, not once each.
     outlineHost.batch(() => applySnapshotToScene(scene, binding, sampled));
+    findWorldSpriteBatcher(scene)?.flush();
     playViz?.refresh();
     rebuildIfActiveCameraChanged(previousCamera);
     publishPositions(sampled);
@@ -3466,7 +3483,10 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "setWaterDebug" && setSceneWaterDebug(scene, command.part, command.enabled)) scheduler.invalidate("asset");
-      if (command.type === "setWorldDebug" && setSceneWorldDebug(scene, command.part, command.enabled)) scheduler.invalidate("asset");
+      if (command.type === "setWorldDebug" && setSceneWorldDebug(scene, command.part, command.enabled)) {
+        syncWorldSpriteBatching();
+        scheduler.invalidate("asset");
+      }
       if (command.type === "setShadowDebug" && findSceneShadowController(scene)?.setDebug(command.part, command.enabled)) scheduler.invalidate("asset");
       if (command.type === "tilemapAnimationTime") {
         binding.tilemapAnimationTimeMs = command.elapsedMs;
@@ -3518,6 +3538,7 @@ function initializeEngine(
       resetJoysticks();
       playFreeCamInput?.reset();
       simulationEditMode = enabled;
+      syncWorldSpriteBatching();
       runtimeTransformTools?.setEnabled(enabled && runtimeTransformToolsEnabled);
       const previous = scene.activeCamera;
       playFreeCam.setEnabled(enabled);
@@ -3644,11 +3665,13 @@ function initializeEngine(
         setEnabled: (enabled) => {
           if (runtimeTransformTools !== owner) return;
           runtimeTransformToolsEnabled = enabled;
+          syncWorldSpriteBatching();
           owner.setEnabled(enabled && simulationEditMode);
         },
         dispose: () => {
           if (runtimeTransformTools !== owner) return;
           owner.dispose(); runtimeTransformTools = null; runtimeTransformToolsEnabled = false;
+          syncWorldSpriteBatching();
         },
       };
     },
@@ -3892,6 +3915,7 @@ function initializeEngine(
         if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
         freezeLibraryMaterials();
         outlineHost.refreshSettings();
+        if (!owner) findWorldSpriteBatcher(scene)?.flush();
         if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
         else await worldRenderer.prepare(scope.assert);
       } finally {

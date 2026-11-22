@@ -1,12 +1,14 @@
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { CommandMessage } from "@haptic/bridge";
 import type { SpriteAnimationPayload, SpritePayload } from "@haptic/assets";
 import { flipSpriteAnimationFrame, spriteAnimationFrameAt } from "@haptic/assets";
-import { setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
-import { applySpriteVisibility } from "./mesh-assets";
+import { createSpriteQuad, setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
+import { applyAlbedoTexture, applySpriteVisibility, type MeshAssetContext } from "./mesh-assets";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import type { AnimLayerMaskRef } from "@haptic/core";
 import { applyPose, poseRigFor, type PoseAdditive, type PoseClip, type PoseLayering } from "./anim-pose";
+import { batchedSpriteOf, ejectBatchedSprite } from "./world-sprite-batcher";
 
 /**
  * Bind a Sprite Animation asset frame (texture, region, size, pivot) onto the sprite quad; a sheet cell shows its
@@ -18,20 +20,35 @@ export function applySpriteAnimationAssetFrame(
   normalisedTime: number,
   options?: {
     applyTexture?: (mesh: Mesh, textureGuid: string | null | undefined) => void;
+    assets?: MeshAssetContext;
     pixelsPerUnit?: number;
     flipX?: boolean;
     flipY?: boolean;
+    layer?: "primary" | "secondary";
   },
 ): void {
   const authored = spriteAnimationFrameAt(payload, normalisedTime);
   if (!authored) return;
   const frame = flipSpriteAnimationFrame(authored, options?.flipX, options?.flipY);
-  options?.applyTexture?.(mesh, frame.textureGuid || null);
-  setSpriteQuadUvs(mesh, frame.uv);
   const ppu =
     options?.pixelsPerUnit && options.pixelsPerUnit > 0
       ? options.pixelsPerUnit
       : 100;
+  const batched = batchedSpriteOf(mesh);
+  if (batched) {
+    batched.updateFrame(options?.layer ?? "primary", {
+      textureGuid: frame.textureGuid || null,
+      assets: options?.assets,
+      uv: frame.uv ?? null,
+      width: (frame.width ?? 100) / ppu,
+      height: (frame.height ?? 100) / ppu,
+      pivotX: frame.pivot.x,
+      pivotY: frame.pivot.y,
+    });
+    return;
+  }
+  options?.applyTexture?.(mesh, frame.textureGuid || null);
+  setSpriteQuadUvs(mesh, frame.uv);
   // The frame's pivot sits on the actor origin, where the box2d collider is centred.
   setSpriteQuadSize(mesh, (frame.width ?? 100) / ppu, (frame.height ?? 100) / ppu, frame.pivot);
 }
@@ -44,6 +61,8 @@ interface SpriteAnimSlot {
   mesh: Mesh;
   payload: SpritePayload;
   overlayMesh?: Mesh;
+  ensureOverlayMesh?: () => Mesh;
+  assets?: MeshAssetContext;
   spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
   applyTexture?: (mesh: Mesh, textureGuid: string | null | undefined) => void;
 }
@@ -62,7 +81,71 @@ export function resolvePlaySpriteSlot(
     mesh,
     payload,
     overlayMesh: binding.spriteOverlays?.get(slotId),
+    ensureOverlayMesh: () => {
+      if (!binding.spriteOverlays) binding.spriteOverlays = new Map();
+      let overlay = binding.spriteOverlays.get(slotId);
+      if (!overlay || overlay.isDisposed()) {
+        overlay = createSpriteQuad(
+          mesh.getScene(),
+          `${mesh.name}-blend`,
+          payload,
+          payload.pixelsPerUnit ?? binding.pixelsPerUnit,
+        );
+        overlay.parent = mesh;
+        overlay.visibility = 0;
+        // Babylon does not inherit `isVisible`: a hidden actor's overlay starts hidden (`setPlayVisualVisibility`).
+        overlay.isVisible = mesh.isVisible;
+        overlay.alphaIndex = mesh.alphaIndex;
+        overlay.renderingGroupId = mesh.renderingGroupId;
+        overlay.metadata = { ...(mesh.metadata ?? {}) };
+        applyAlbedoTexture(overlay, mesh.getScene(), payload.textureGuid, binding, {
+          shadingMode: binding.meshSorting.get(slotId)?.shadingMode ?? "2d",
+        });
+        binding.spriteOverlays.set(slotId, overlay);
+      }
+      return overlay;
+    },
+    assets: binding,
   };
+}
+
+/**
+ * Promotes a batched Play sprite to a standalone quad (`ejectBatchedSprite`). The slot's own visual also gets its
+ * crossfade overlay now, showing the overlay layer it drew batched, as an unbatched sprite has one from when it is
+ * built: so it is in the visual's mesh list an outline or a selection takes next. True when `mesh` was batched.
+ */
+export function ejectPlaySprite(binding: SnapshotSceneBinding, slotId: number, mesh: AbstractMesh): boolean {
+  const batched = batchedSpriteOf(mesh);
+  if (!batched) return false;
+  const overlay = batched.secondary;
+  const frame = overlay.active && overlay.visibility > 0
+    ? {
+      uv: overlay.u0 === 0 && overlay.v0 === 0 && overlay.u1 === 1 && overlay.v1 === 1
+        ? null : { u0: overlay.u0, v0: overlay.v0, u1: overlay.u1, v1: overlay.v1 },
+      width: overlay.width, height: overlay.height, pivot: { x: overlay.pivotX, y: overlay.pivotY },
+      textureGuid: overlay.textureGuid, visibility: overlay.visibility,
+    }
+    : null;
+  if (!ejectBatchedSprite(mesh)) return false;
+  if (binding.meshes.get(slotId) !== mesh) return true;
+  const quad = resolvePlaySpriteSlot(binding, binding.spritePayloads, slotId)?.ensureOverlayMesh?.();
+  if (quad && frame) {
+    applyAlbedoTexture(quad, quad.getScene(), frame.textureGuid, binding, {
+      shadingMode: binding.meshSorting.get(slotId)?.shadingMode ?? "2d",
+    });
+    setSpriteQuadUvs(quad, frame.uv);
+    setSpriteQuadSize(quad, frame.width, frame.height, frame.pivot);
+    applySpriteVisibility(quad, frame.visibility);
+  }
+  return true;
+}
+
+/** Ejects every batched sprite of the binding's slots (`ejectPlaySprite`). */
+export function ejectAllPlaySprites(binding: SnapshotSceneBinding): void {
+  for (const [slotId, root] of binding.meshes) {
+    ejectPlaySprite(binding, slotId, root);
+    for (const mesh of root.getChildMeshes()) ejectPlaySprite(binding, slotId, mesh);
+  }
 }
 
 export interface MissingAnimClip {
@@ -222,6 +305,7 @@ function applySpriteLayer(
   slot: SpriteAnimSlot,
   mesh: Mesh,
   layer: AnimClipLayer,
+  targetLayer?: "primary" | "secondary",
 ): boolean {
   const animation = layer.clipAssetGuid
     ? slot.spriteAnimations?.get(layer.clipAssetGuid)
@@ -229,9 +313,11 @@ function applySpriteLayer(
   if (!animation) return false;
   applySpriteAnimationAssetFrame(mesh, animation, layer.normalisedTime, {
     applyTexture: slot.applyTexture,
+    assets: slot.assets,
     pixelsPerUnit: slot.payload.pixelsPerUnit,
     flipX: layer.flipX,
     flipY: layer.flipY,
+    layer: targetLayer,
   });
   return true;
 }
@@ -243,7 +329,8 @@ function applySpriteLayers(
   secondary: AnimClipLayer | undefined,
 ): void {
   const slot = scene.getSpriteSlot?.(slotId);
-  if (!slot || !applySpriteLayer(slot, slot.mesh, primary)) {
+  const batched = slot ? batchedSpriteOf(slot.mesh) : undefined;
+  if (!slot || !applySpriteLayer(slot, slot.mesh, primary, "primary")) {
     scene.onMissingClip?.({
       slotId,
       clipName: primary.clipName,
@@ -252,11 +339,20 @@ function applySpriteLayers(
     });
     return;
   }
+  if (batched) {
+    batched.setLayerVisibility("primary", primary.weight);
+    const secondaryWeight = secondary && secondary.weight > 0 && applySpriteLayer(slot, slot.mesh, secondary, "secondary")
+      ? secondary.weight
+      : 0;
+    batched.setLayerVisibility("secondary", secondaryWeight);
+    return;
+  }
   applySpriteVisibility(slot.mesh, primary.weight);
-  if (slot.overlayMesh) {
+  const overlay = slot.overlayMesh ?? (secondary && secondary.weight > 0 ? slot.ensureOverlayMesh?.() : undefined);
+  if (overlay) {
     applySpriteVisibility(
-      slot.overlayMesh,
-      secondary && applySpriteLayer(slot, slot.overlayMesh, secondary) ? secondary.weight : 0,
+      overlay,
+      secondary && applySpriteLayer(slot, overlay, secondary) ? secondary.weight : 0,
     );
   }
 }

@@ -71,6 +71,7 @@ export { nearestTexturesEnabled, observeNearestTextures, setNearestTextures } fr
 export * from "./flip-read-pixels";
 export * from "./font-registry";
 export * from "./sprite-quad";
+export type { WorldSpriteBatchStats } from "./world-sprite-batcher";
 export * from "./overlay-texture-quad";
 export * from "./overlay-panel-mesh";
 export * from "./tilemap-mesh";
@@ -200,4 +201,5 @@ export {
 } from "./decal-pass";
 export { createDecalGuide } from "./decal-guide";
 export { updateFoliageDistances, attachFoliageLodSet } from "./foliage-mesh";
+export { updateLandscapeLods, LANDSCAPE_LOD_DISTANCES } from "./landscape-mesh";
 

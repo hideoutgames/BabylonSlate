@@ -100,8 +100,8 @@ export default defineConfig({
         "**/bake-worker.ts",
         // Audio reverb bake worker; occupancy/probe bake is covered in audio-reverb.test.ts.
         "**/audio-reverb-worker.ts",
-        // Physics wasm backends: HavokPlugin path is asserted in havok-v2.test.ts;
-        // coverage of the Babylon/Havok wasm surface is environment-dependent.
+        // Physics wasm backends: direct Havok WASM path is asserted in havok-v2.test.ts;
+        // coverage of the native Havok/Rapier wasm surface is environment-dependent.
         "**/havok-backend.ts",
         "**/havok-records.ts",
         "**/havok-queries.ts",

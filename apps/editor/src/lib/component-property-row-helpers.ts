@@ -1,6 +1,8 @@
 import { componentCastsShadows, defaultCastShadows, parseSkyboxFaces, parseSurfaceShadingMode, type CollisionPreset, type CustomEasingCurveRef, type SerializedComponent, type SkyboxFaceKey } from "@haptic/core";
 import type { ModelMaterialSlot } from "@haptic/assets";
 import { assetRowIdentity, type ClassPickerEntry, type PropertyRow } from "@haptic/editor-kit";
+import type { MaterialDomain } from "@haptic/shader-graph";
+import { materialSlotRowState, type MaterialDomainLookup } from "./material-asset-filters";
 
 // Shared rows for the per-family Details builders (*-property-rows.ts) that
 // componentPropertyRows dispatches to by class id. Builders are function
@@ -12,8 +14,8 @@ export type AssetPickRequest = {
   property: string;
   allowedTypes: string[];
   title?: string;
-  /** Offer only Materials of this domain, and create new ones in it. */
-  materialDomain?: "text" | "landscape" | "decal" | "postProcess";
+  /** The Material domain the slot draws: offer only Materials of it, create new ones in it, refuse any other. */
+  materialDomain?: MaterialDomain;
 };
 
 export type ComponentPropertyContext = {
@@ -23,6 +25,8 @@ export type ComponentPropertyContext = {
   collisionPresets?: readonly CollisionPreset[];
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType?: (guid: string | null | undefined) => string | undefined;
+  /** A Material's or Material Instance's domain (an Instance's root's); Material rows refuse and flag other domains. */
+  materialDomain?: MaterialDomainLookup;
   /** An asset's header payload, for rows that compare assets (a 3D Animation Graph's Skeleton with the Model's). */
   assetPayload?: (guid: string) => Record<string, unknown> | undefined;
   modelMaterialSlots?: (guid: string) => readonly ModelMaterialSlot[];
@@ -97,6 +101,7 @@ export function assetRow(
     visual: identity.visual,
     placeholder,
     assetTypes: allowedTypes,
+    ...materialSlotRowState(materialDomain, value, context.materialDomain),
     onPick: () =>
       context.onPickAsset({
         componentId: component.id,

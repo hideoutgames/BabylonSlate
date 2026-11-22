@@ -293,6 +293,7 @@ export type PlaySessionOptions = {
   /** Baked Scene navmesh bytes; Play imports and never generates. */
   navmeshBytes?: Uint8Array | null;
   sceneNavmeshBytes?: ReadonlyMap<string, Uint8Array>;
+  sceneLandscapeBytes?: ReadonlyMap<string, Uint8Array>;
   audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
   infiniteLoopDetection?: boolean;
   /** Simulation: pause the first time each node reports an error (Engine Settings, Pause On Errors). */

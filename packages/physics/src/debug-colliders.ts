@@ -49,16 +49,49 @@ function polylinePoints(
   });
 }
 
-type PointShape = Extract<ColliderShape, { kind: "convex" | "mesh" }>;
+type PointShape = Extract<ColliderShape, { kind: "convex" | "mesh" | "heightfield" }>;
 type PointGeometry = { points: Vec3[]; indices?: number[] };
 
 /**
- * Pose-independent points of convex and mesh shapes, per shape object. Backends
+ * Pose-independent points of convex, mesh, and heightfield shapes, per shape object. Backends
  * own prepared shapes (frozen, never edited in place) and replace them to change
  * geometry, so a shape object identifies one geometry revision. Listings from the
  * same shape share these arrays: treat them as read-only.
  */
 const pointGeometryByShape = new WeakMap<PointShape, PointGeometry>();
+
+function heightFieldPointGeometry(shape: Extract<ColliderShape, { kind: "heightfield" }>): PointGeometry {
+  const { numXSamples, numZSamples, width, depth, heights } = shape;
+  const points: Vec3[] = new Array(numXSamples * numZSamples);
+  const dx = width / (numXSamples - 1);
+  const dz = depth / (numZSamples - 1);
+  const x0 = -width * 0.5;
+  const z0 = -depth * 0.5;
+  let vi = 0;
+  for (let iz = 0; iz < numZSamples; iz++) {
+    const z = z0 + iz * dz;
+    for (let ix = 0; ix < numXSamples; ix++) {
+      points[vi] = { x: x0 + ix * dx, y: heights[vi]!, z };
+      vi++;
+    }
+  }
+  const cellCount = (numXSamples - 1) * (numZSamples - 1);
+  const indices: number[] = new Array(cellCount * 6);
+  let ii = 0;
+  for (let iz = 0; iz < numZSamples - 1; iz++) {
+    for (let ix = 0; ix < numXSamples - 1; ix++) {
+      const a = iz * numXSamples + ix;
+      const b = a + numXSamples;
+      indices[ii++] = a;
+      indices[ii++] = a + 1;
+      indices[ii++] = b;
+      indices[ii++] = a + 1;
+      indices[ii++] = b + 1;
+      indices[ii++] = b;
+    }
+  }
+  return { points, indices };
+}
 
 function pointGeometry(shape: PointShape): PointGeometry {
   const reusable = Object.isFrozen(shape);
@@ -66,14 +99,16 @@ function pointGeometry(shape: PointShape): PointGeometry {
   if (cached) return cached;
   const geometry: PointGeometry = shape.kind === "convex"
     ? { points: shape.points.map((point) => ({ ...point })) }
-    : {
-        points: Array.from({ length: shape.positions.length / 3 }, (_, i) => ({
-          x: shape.positions[i * 3]!,
-          y: shape.positions[i * 3 + 1]!,
-          z: shape.positions[i * 3 + 2]!,
-        })),
-        indices: Array.from(shape.indices),
-      };
+    : shape.kind === "heightfield"
+      ? heightFieldPointGeometry(shape)
+      : {
+          points: Array.from({ length: shape.positions.length / 3 }, (_, i) => ({
+            x: shape.positions[i * 3]!,
+            y: shape.positions[i * 3 + 1]!,
+            z: shape.positions[i * 3 + 2]!,
+          })),
+          indices: Array.from(shape.indices),
+        };
   if (reusable) pointGeometryByShape.set(shape, geometry);
   return geometry;
 }
@@ -172,6 +207,18 @@ function describeCollider(
       };
     case "mesh": {
       if (shape.positions.length < 9 || shape.indices.length < 3) return null;
+      const geometry = pointGeometry(shape);
+      return {
+        id: desc.id,
+        shape: "mesh",
+        position,
+        rotation,
+        points: geometry.points,
+        indices: geometry.indices,
+      };
+    }
+    case "heightfield": {
+      if (shape.numXSamples < 2 || shape.numZSamples < 2) return null;
       const geometry = pointGeometry(shape);
       return {
         id: desc.id,

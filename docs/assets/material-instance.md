@@ -24,7 +24,7 @@ Double-tap a Material Instance to open it.
 ## Notes
 
 - Parameter types are Float, Vector2, Vector3, Vector4, colour and texture. They come from [Float Parameter](../scripting/material/float-parameter.md), [Vector2 Parameter](../scripting/material/vector2-parameter.md), [Vector3 Parameter](../scripting/material/vector3-parameter.md), [Vector4 Parameter](../scripting/material/vector4-parameter.md), [Color Parameter](../scripting/material/color-parameter.md) and [Texture Parameter](../scripting/material/texture-parameter.md) nodes in the parent Material.
-- Every Material picker also lists Material Instances of the matching domain.
+- An instance has its root Material's domain (through any parent instances), so it goes wherever the root Material goes, and every Material picker lists it there ([where each domain goes](material.md#where-each-domain-goes)).
 - Change a parameter on one mesh from a script with [Set Material Float Parameter](../scripting/class/set-material-float-parameter.md), or swap a mesh to another instance with [Set Material Instance](../scripting/class/set-material-instance.md).
 
 ## Related

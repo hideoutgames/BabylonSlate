@@ -52,6 +52,16 @@ export type ConstraintDesc = ConstraintBase & (
   | { kind: "distance"; /** Exact anchor separation in metres; 3D only. */ distance: number }
 );
 
+export type HeightFieldColliderShape = {
+  kind: "heightfield";
+  numXSamples: number;
+  numZSamples: number;
+  width: number;
+  depth: number;
+  /** Z-major heights (`heights[iz * numXSamples + ix]`). */
+  heights: Float32Array;
+};
+
 export type ColliderShape3D =
   | { kind: "box"; halfExtents: Vec3 }
   | { kind: "sphere"; radius: number }
@@ -59,7 +69,8 @@ export type ColliderShape3D =
   | { kind: "cylinder"; radius: number; height: number }
   | { kind: "convex"; points: readonly Vec3[] }
   /** Flat xyz `positions` plus triangle-list `indices` (see `CollisionTriangleMesh`). */
-  | { kind: "mesh"; positions: Float32Array; indices: Uint16Array | Uint32Array };
+  | { kind: "mesh"; positions: Float32Array; indices: Uint16Array | Uint32Array }
+  | HeightFieldColliderShape;
 
 export type ColliderShape2D =
   | { kind: "box2d"; halfExtents: { x: number; y: number } }
