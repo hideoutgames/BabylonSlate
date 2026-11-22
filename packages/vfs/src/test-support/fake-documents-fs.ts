@@ -83,6 +83,17 @@ export function createFakeDocumentsFs(): FakeDocumentsFs {
     async deleteFile({ path }) {
       if (!tree.delete(normalize(path))) throw missing();
     },
+    async rename({ from, to }) {
+      const source = normalize(from);
+      const target = normalize(to);
+      const node = tree.get(source);
+      if (!node) throw missing();
+      if (tree.get(target)?.kind === "dir") throw new Error("Cannot overwrite a directory");
+      // Both platforms replace an existing file.
+      tree.set(target, node);
+      tree.delete(source);
+      revisions.set(target, String(++revision));
+    },
     async rmdir({ path }) {
       const p = normalize(path);
       for (const key of [...tree.keys()]) {

@@ -11,7 +11,7 @@ import { Directory, Filesystem } from "@capacitor/filesystem";
 import { getHostPlatform, type HostPlatform } from "./platform";
 import { projectFolderName, projectRelativePath } from "./project-path";
 import { isAppOwnedFolder } from "./library-folders";
-import { isStagedWrite } from "./staged-write";
+import { isStagedWrite, stagedWriteName } from "./staged-write";
 
 const PROJECTS_ROOT = "BabylonSlate/projects";
 
@@ -58,6 +58,13 @@ export interface DocumentsFilesystemApi {
   deleteFile(options: {
     path: string;
     directory?: Directory;
+  }): Promise<void>;
+  /** Replaces an existing file at `to` (iOS removes it first, Android renames over it). */
+  rename(options: {
+    from: string;
+    to: string;
+    directory?: Directory;
+    toDirectory?: Directory;
   }): Promise<void>;
   rmdir(options: {
     path: string;
@@ -204,13 +211,42 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async writeText(path: string, data: string): Promise<void> {
-    await this.fs.writeFile({
-      path: this.abs(path),
-      data,
-      directory: this.directory,
-      encoding: "utf8",
-      recursive: true,
-    });
+    await this.writeStaged(path, data, "utf8");
+  }
+
+  /**
+   * Writes the bytes to a staged sibling (`.haptic-<uuid>.tmp`, which
+   * listings leave out), then renames it over the target, so a killed app or
+   * a full disk leaves the target whole (its old bytes, or absent) rather
+   * than truncated. A failed write or rename removes the staged file. Only
+   * when the rename refuses an existing target (no host this runs on does)
+   * is the target written in place, as before staging.
+   */
+  private async writeStaged(path: string, data: string, encoding?: "utf8"): Promise<void> {
+    const target = this.abs(path);
+    const staged = `${target.slice(0, target.lastIndexOf("/"))}/${stagedWriteName()}`;
+    const directory = this.directory;
+    try {
+      await this.fs.writeFile({ path: staged, data, directory, ...(encoding ? { encoding } : {}), recursive: true });
+      try {
+        await this.fs.rename({ from: staged, to: target, directory, toDirectory: directory });
+      } catch (error) {
+        if (!(await this.isFile(target))) throw error;
+        await this.fs.writeFile({ path: target, data, directory, ...(encoding ? { encoding } : {}), recursive: true });
+        await this.fs.deleteFile({ path: staged, directory }).catch(() => undefined);
+      }
+    } catch (error) {
+      await this.fs.deleteFile({ path: staged, directory }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async isFile(full: string): Promise<boolean> {
+    try {
+      return (await this.fs.stat({ path: full, directory: this.directory })).type !== "directory";
+    } catch {
+      return false;
+    }
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
@@ -247,12 +283,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
-    await this.fs.writeFile({
-      path: this.abs(path),
-      data: encodeBase64(data),
-      directory: this.directory,
-      recursive: true,
-    });
+    await this.writeStaged(path, encodeBase64(data));
   }
 
   async exists(path: string): Promise<boolean> {
