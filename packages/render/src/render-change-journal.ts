@@ -1,3 +1,6 @@
+import { BoundingBox } from "@babylonjs/core/Culling/boundingBox";
+import type { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo";
+import { BoundingSphere } from "@babylonjs/core/Culling/boundingSphere";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Geometry } from "@babylonjs/core/Meshes/geometry";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
@@ -33,17 +36,32 @@ export const RenderChange = {
    * alpha or LOD levels (`renderingGroupId`, `layerMask`, `hasVertexAlpha`, `addLODLevel`, `removeLODLevel`).
    */
   Dispatch: 128,
+  /**
+   * Its bounding info was replaced (`setBoundingInfo`, `buildBoundingInfo`), or the world values of the bounding info a
+   * reader follows for it (`followBounds`) were written (`BoundingBox._update`, `BoundingSphere._update`, which every
+   * `update`, `reConstruct`, `centerOn`, `scale` and `encapsulate` runs). Recorded only for readers that name it: the
+   * default set of kinds leaves it out.
+   */
+  Bounds: 256,
+  /**
+   * What Babylon's `isReady()` reads of it changed: its ready flag (`_setReady`), its source's (an instance reads it),
+   * or the source it draws through (`addInstance`, which an instance pool's re-key also runs), whose `visibility` it
+   * reads too. Recorded only for readers that name it.
+   */
+  Ready: 512,
 } as const;
 
 /** Entries kept for the slowest reader; one further behind starts over (`drain` returns false). */
 const MAX_ENTRIES = 1 << 16;
+/** Entries every reader has read are dropped once there are at least this many and they are half the log. */
+const TRIM_ENTRIES = 1024;
 
 type JournalScene = Scene & { _hapticRenderChanges?: Journal };
 /** What the hooks read of a node or geometry beyond its public API (Babylon 9.29 internals). */
 type Internals = {
   _scene?: JournalScene;
   _children?: Node[] | null;
-  _nodeDataStorage: { _isVisible: boolean };
+  _nodeDataStorage: { _isVisible: boolean; _isReady: boolean };
   _meshes: AbstractMesh[];
   instances?: AbstractMesh[];
 };
@@ -88,7 +106,8 @@ class Journal {
       return;
     }
     if (this.nodes.length >= MAX_ENTRIES) {
-      for (const reader of this.readers) reader.overflowed = true;
+      // Only the readers that have not read every entry lose any.
+      for (const reader of this.readers) if (reader.cursor < this.end) reader.overflowed = true;
       this.clear();
     }
     this.last.set(node, this.end);
@@ -118,6 +137,23 @@ class Journal {
     }
     this.frontier = highest;
     if (lowest >= this.end) this.clear();
+    // Readers that drain at different points of a frame, with changes noted in between, may never all be caught up at
+    // once: what they have all read goes once it is most of the log.
+    else if (lowest - this.base >= TRIM_ENTRIES && (lowest - this.base) * 2 >= this.nodes.length) this.trim(lowest - this.base);
+  }
+
+  /** Drops the first `count` entries, which every reader has read. */
+  private trim(count: number): void {
+    const { nodes, kinds, last, base } = this;
+    for (let index = 0; index < count; index++) {
+      const node = nodes[index]!;
+      if (last.get(node) === base + index) last.delete(node);
+    }
+    nodes.copyWithin(0, count);
+    kinds.copyWithin(0, count);
+    nodes.length -= count;
+    kinds.length -= count;
+    this.base = base + count;
   }
 }
 
@@ -173,15 +209,15 @@ class Reader implements RenderChangeReader {
   }
 }
 
-/** Every kind of change. */
-const ALL_KINDS = RenderChange.Transform | RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material |
+/** Every kind of change but `Bounds` and `Ready`, which a reader names when it follows them. */
+const DEFAULT_KINDS = RenderChange.Transform | RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material |
   RenderChange.Geometry | RenderChange.Other | RenderChange.Style | RenderChange.Dispatch;
 
 /**
- * Opens a reader of `scene`'s changes of `kinds` (`RenderChange` bits; all by default). The Scene records a kind only
- * while some reader reads it: without one each hooked Babylon write costs a field read.
+ * Opens a reader of `scene`'s changes of `kinds` (`RenderChange` bits; all but `Bounds` and `Ready` by default). The Scene records
+ * a kind only while some reader reads it: without one each hooked Babylon write costs a field read.
  */
-export function openRenderChangeReader(scene: Scene, kinds: number = ALL_KINDS): RenderChangeReader {
+export function openRenderChangeReader(scene: Scene, kinds: number = DEFAULT_KINDS): RenderChangeReader {
   install();
   const target = scene as JournalScene;
   let journal = target._hapticRenderChanges;
@@ -204,6 +240,80 @@ export function openRenderChangeReader(scene: Scene, kinds: number = ALL_KINDS):
 /** Records a change of Haptic-owned state that no Babylon write reaches (`RenderChange.Other` unless `kinds` says). */
 export function noteRenderChange(node: Node, kinds: number = RenderChange.Other): void {
   journalOf(node)?.note(node, kinds);
+}
+
+/**
+ * The meshes whose bounding box or sphere a reader follows (`followBounds`): a write of its world values notes them
+ * (`RenderChange.Bounds`). Weak both ways: a bounding info another holder keeps alive keeps no disposed mesh with it.
+ */
+const boundsOwners = new WeakMap<object, WeakRef<AbstractMesh> | WeakRef<AbstractMesh>[]>();
+/** Whether any bounds are followed: until then a bounds write costs one branch. */
+let followingBounds = false;
+
+/**
+ * Has every later write of `info`'s world values note `mesh` (`RenderChange.Bounds`) in its Scene's journal, while a
+ * reader reads that kind. `info` is the bounding info `mesh.getBoundingInfo()` returned; one several meshes share notes
+ * each of them. A replaced bounding info is noted by itself (`setBoundingInfo`, `buildBoundingInfo`), and the reader then
+ * follows the new one.
+ */
+export function followBounds(mesh: AbstractMesh, info: BoundingInfo): void {
+  install();
+  followingBounds = true;
+  own(info.boundingBox, mesh);
+  own(info.boundingSphere, mesh);
+}
+
+function own(target: object, mesh: AbstractMesh): void {
+  const owners = boundsOwners.get(target);
+  if (!owners) {
+    boundsOwners.set(target, new WeakRef(mesh));
+    return;
+  }
+  if (!Array.isArray(owners)) {
+    const owner = owners.deref();
+    if (owner === mesh) return;
+    boundsOwners.set(target, owner ? [owners, new WeakRef(mesh)] : new WeakRef(mesh));
+    return;
+  }
+  let live = 0;
+  for (const owner of owners) {
+    const held = owner.deref();
+    if (held === mesh) return;
+    if (held) owners[live++] = owner;
+  }
+  owners.length = live;
+  owners.push(new WeakRef(mesh));
+}
+
+let readingBounds = false;
+
+/**
+ * `mesh.getBoundingInfo()` for a reader that follows its bounds, noting nothing for Babylon's lazy update it may run:
+ * that update follows a world matrix computed since the last read, which the journal named (`Transform`), so every
+ * reader of the mesh's bounds reads them again anyway.
+ */
+export function readBounds(mesh: AbstractMesh): BoundingInfo {
+  readingBounds = true;
+  try {
+    return mesh.getBoundingInfo();
+  } finally {
+    readingBounds = false;
+  }
+}
+
+/** Notes the meshes that follow `target` (a bounding box or sphere whose world values were just written). */
+function noteBoundsWrite(target: object): void {
+  const owners = boundsOwners.get(target);
+  if (!owners) return;
+  if (!Array.isArray(owners)) {
+    const mesh = owners.deref();
+    if (mesh) journalOf(mesh)?.note(mesh, RenderChange.Bounds);
+    return;
+  }
+  for (const owner of owners) {
+    const mesh = owner.deref();
+    if (mesh) journalOf(mesh)?.note(mesh, RenderChange.Bounds);
+  }
 }
 
 let verifying = false;
@@ -384,15 +494,73 @@ function hook(): void {
       },
     });
   }
+  // The level a master gains or loses changes too: a level is blocked (`isBlocked`) while it has a master.
   type LodMethods = Record<"addLODLevel" | "removeLODLevel", (this: Mesh, ...args: unknown[]) => Mesh>;
   const lodPrototype = Mesh.prototype as unknown as LodMethods;
-  for (const name of ["addLODLevel", "removeLODLevel"] as const) {
+  for (const [name, levelAt] of [["addLODLevel", 1], ["removeLODLevel", 0]] as const) {
     const original = lodPrototype[name];
     lodPrototype[name] = function (this: Mesh, ...args: unknown[]) {
       const result = original.apply(this, args);
       const journal = journalOf(this);
       if (journal) noteMesh(journal, this, RenderChange.Dispatch);
+      const level = args[levelAt];
+      if (journal && level instanceof Mesh) journal.note(level, RenderChange.Dispatch);
       return result;
+    };
+  }
+
+  // The only writer of a node's ready flag after construction; an instance reads its source's.
+  const readyPrototype = Node.prototype as unknown as { _setReady: (this: Node, state: boolean) => void };
+  const setReady = readyPrototype._setReady;
+  if (typeof setReady !== "function") throw new Error("Babylon 9.29 Node._setReady not found");
+  readyPrototype._setReady = function (this: Node, state: boolean) {
+    const storage = internals(this)._nodeDataStorage, was = storage._isReady;
+    setReady.call(this, state);
+    const journal = journalOf(this);
+    if (!journal || was === storage._isReady) return;
+    if (this instanceof AbstractMesh) noteMesh(journal, this, RenderChange.Ready);
+    else journal.note(this, RenderChange.Ready);
+  };
+  // An instance taking a source (its construction, an instance pool's re-key) reads that source's ready flag and visibility.
+  const instancePrototype = Mesh.prototype as unknown as { addInstance: (this: Mesh, instance: InstancedMesh) => unknown };
+  const addInstance = instancePrototype.addInstance;
+  if (typeof addInstance !== "function") throw new Error("Babylon 9.29 Mesh.addInstance not found");
+  instancePrototype.addInstance = function (this: Mesh, instance: InstancedMesh) {
+    const result = addInstance.call(this, instance);
+    journalOf(instance)?.note(instance, RenderChange.Ready);
+    return result;
+  };
+  // A replaced scaling vector (an in-place write changes the world matrix it is computed into).
+  const scaling = accessor(TransformNode.prototype, "scaling");
+  Object.defineProperty(TransformNode.prototype, "scaling", {
+    ...scaling,
+    set(this: TransformNode, value: unknown) {
+      const was: unknown = scaling.get!.call(this);
+      scaling.set!.call(this, value);
+      if (was !== scaling.get!.call(this)) journalOf(this)?.note(this, RenderChange.Transform);
+    },
+  });
+
+  // A mesh's bounding info replaced: the new one's world values are what its culls read from now on.
+  type BoundsMethods = Record<"setBoundingInfo" | "buildBoundingInfo", (this: AbstractMesh, ...args: unknown[]) => unknown>;
+  const boundsPrototype = AbstractMesh.prototype as unknown as BoundsMethods;
+  for (const name of ["setBoundingInfo", "buildBoundingInfo"] as const) {
+    const original = boundsPrototype[name];
+    if (typeof original !== "function") throw new Error(`Babylon 9.29 AbstractMesh.${name} not found`);
+    boundsPrototype[name] = function (this: AbstractMesh, ...args: unknown[]) {
+      const result = original.apply(this, args);
+      journalOf(this)?.note(this, RenderChange.Bounds);
+      return result;
+    };
+  }
+  // Every write of a bounding box's or sphere's world values: `BoundingInfo.update`, `reConstruct` (the constructor,
+  // `centerOn`, `encapsulate`) and `scale` all end in these.
+  for (const prototype of [BoundingBox.prototype, BoundingSphere.prototype] as unknown as Array<{ _update: (this: object, world: unknown) => void }>) {
+    const update = prototype._update;
+    if (typeof update !== "function") throw new Error("Babylon 9.29 bounding _update not found");
+    prototype._update = function (this: object, world: unknown) {
+      update.call(this, world);
+      if (followingBounds && !readingBounds) noteBoundsWrite(this);
     };
   }
 
