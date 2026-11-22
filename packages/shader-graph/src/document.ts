@@ -1,4 +1,4 @@
-import { normalizeGraphPinEdges } from "@haptic/core";
+import { normalizeGraphNodes, normalizeGraphPinEdges } from "@haptic/core";
 import type { MaterialDomain } from "./catalog";
 import {
   materialNodeDefinition,
@@ -114,11 +114,6 @@ function asNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function asPosition(value: unknown): { x: number; y: number } {
-  const record = asRecord(value);
-  return { x: asNumber(record.x, 0), y: asNumber(record.y, 0) };
-}
-
 function asValueType(value: unknown): MaterialValueType {
   return value === "vec2" ||
     value === "vec3" ||
@@ -148,20 +143,7 @@ function normalizeNodeProperties(
 }
 
 function normalizeNodes(value: unknown): MaterialGraphNode[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry, index) => {
-    const record = asRecord(entry);
-    const type = asString(record.type, "");
-    if (!type) return [];
-    return [
-      {
-        id: asString(record.id, `node-${index}`),
-        type,
-        position: asPosition(record.position),
-        properties: normalizeNodeProperties(type, asRecord(record.properties)),
-      },
-    ];
-  });
+  return normalizeGraphNodes(value, normalizeNodeProperties);
 }
 
 export function normalizeMaterialPreviewSettings(value: unknown): MaterialPreviewSettings {

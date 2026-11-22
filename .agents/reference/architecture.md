@@ -8,7 +8,7 @@ Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsy
 
 | Package | Owns |
 | --- | --- |
-| [core](../../packages/core/src/) | GUIDs, `Result`, math, seeded RNG, zod schemas, document and asset kinds, engine component catalog, `engineCommandBus`, the `ProjectStorage` port, `formatValue`, Print HUD registry |
+| [core](../../packages/core/src/) | GUIDs, `Result`, math, seeded RNG, zod schemas, document and asset kinds, engine component catalog, `engineCommandBus`, the `ProjectStorage` port, `formatValue`, Print HUD registry, the node graph core Material and Particle graphs share (`node-graph-core.ts`) |
 | [vfs](../../packages/vfs/src/) | Storage adapters (OPFS, Capacitor, Electron IPC, Node, memory), `createStorage()`, `getHostPlatform()`, app settings, secret store, native HTTP, Save Game storage |
 | [assets](../../packages/assets/src/) | `.hasset` codec (`@haptic/assets/hasset`, editor-only: zod), project folder/zip backends, content-root-aware header-only registry, search index, importers, texture encode queue and import worker |
 | [edit](../../packages/edit/src/) | Per-document undo stacks, reversible commands with merge keys, crash-recovery journal and replay |
