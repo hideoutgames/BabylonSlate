@@ -238,7 +238,9 @@ describe("formatFeatureTestCheckReport", () => {
           benchmark: [
             sample("baseline 1", 38),
             sample("water reflections sky", 30, { settings: { ...settings, "water.reflections": "sky" } }),
-            sample("water detail low", 36, { settings: { ...settings, "water.shadingDetail": "low", "water.reflections": "sky" } }),
+            sample("water detail low", 36, {
+              settings: { ...settings, "water.shadingDetail": "low", "water.reflections": "sky" }, switched: { ms: 37_400, firstDraws: 74, stalls: 6, programs: 74 },
+            }),
             sample("water detail medium", 16.7, { cpuMs: 10, unsettled: { firstDraws: 3, compiling: 1, settleMs: 90_000 } }),
             sample("baseline 2", 42, { settings: { ...settings, "post.enabled": "false" } }),
           ], logs: [] },
@@ -252,7 +254,8 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines.filter((line) => line.startsWith("  Legend: ")).length).toBe(1);
     // Mean frame time against the baselines around the step; vsync shares; GPU-bound well past the CPU cost.
     expect(row("water reflections sky")).toMatch(/^ {4}water reflections sky 33 {3}30\.0ms {2}38ms {3}10\/80\/5\/5 {7}- {13}-10\.0ms -25%\* {5}14\.2ms {2}gpu {3}575 \(544-605\) water\.reflections=sky$/);
-    expect(row("water detail low")).toContain("water.shadingDetail=low · UNEXPECTED: water.reflections=sky");
+    // What its commands compiled before the window, apart from the window's own frames.
+    expect(row("water detail low")).toContain("switch: 74 first drawn (6 long), programs +74, 37.4 s · water.shadingDetail=low · UNEXPECTED: water.reflections=sky");
     expect(row("water detail medium")).toContain("vsync");
     expect(row("water detail medium")).toContain("COMPILING: 3 first drawn, 1 compiling · no setting changed");
     expect(row("baseline 2")).toContain("+4.0ms +11%*");

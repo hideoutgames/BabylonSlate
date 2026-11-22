@@ -36,7 +36,7 @@ import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isFoliageDistanceOnlySceneEdit } from "./foliage-mesh";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
-import { setSceneWorldDebug, worldDebugFingerprint, worldDebugOff } from "./world-debug";
+import { setSceneWorldDebug, startEngineWithMaterialRecords, worldDebugFingerprint, worldDebugOff } from "./world-debug";
 import { recompileEngineDefaultMaterial } from "./default-material";
 import { recompileBuiltInWaterMaterial } from "./water-template";
 import { shadowDebugFingerprint } from "./shadow-debug";
@@ -81,6 +81,7 @@ import { spawnsLights2D, type SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
 import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from "./preserve-drawing-buffer-setting";
+import { materialRecordsStartupSetting, setMaterialRecordsStartupSetting } from "./material-records-setting";
 import { nativePreparationForEngine, prepareTogether } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { Camera } from "@babylonjs/core/Cameras/camera";
@@ -406,6 +407,16 @@ function projectEngineOptions(largeWorldRendering: boolean): EngineOptions {
   };
 }
 
+/**
+ * A new project Engine: `projectEngineOptions`, and the stored debug settings that apply from its creation on (the
+ * Material record from the start, `materialRecordsStartupSetting`), before any Scene of it compiles.
+ */
+function newProjectEngine(canvas: HTMLCanvasElement, largeWorldRendering: boolean): Engine {
+  const engine = new Engine(canvas, false, projectEngineOptions(largeWorldRendering));
+  startEngineWithMaterialRecords(engine, materialRecordsStartupSetting());
+  return engine;
+}
+
 /** Frames with no layer still presenting share this set instead of building one. */
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
 /** A frame whose Scene Layers have drawn nothing yet. */
@@ -459,7 +470,7 @@ function initializeEngine(
     ? document.createElement("canvas") : canvas;
   const engine =
     options.sharedEngine ??
-    new Engine(constructorCanvas, false, projectEngineOptions(options.renderSettings?.largeWorldRendering === true));
+    newProjectEngine(constructorCanvas, options.renderSettings?.largeWorldRendering === true);
   if (ownsEngine) {
     engine.inputElement = canvas;
     onRollback(() => engine.dispose());
@@ -3541,6 +3552,7 @@ function initializeEngine(
       }
       if (command.type === "setPostProcessingDebug") setPostProcessingEnabled(command.enabled);
       if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
+      if (command.type === "setMaterialRecordsStartupDebug") setMaterialRecordsStartupSetting(command.enabled);
       if (command.type === "setFramesInFlightDebug") engineFrameBackpressure(engine).setMode(command.mode);
       if (command.type === "setDiscardSamplesDebug" && setDiscardSamples(engine, command.enabled)) scheduler.invalidate("asset");
       if (command.type === "resetRenderingDebug") {
@@ -4290,7 +4302,7 @@ export function createAppEngine(
     dracoBasePath: options.dracoBasePath,
     meshoptBasePath: options.meshoptBasePath,
   });
-  const engine = new Engine(canvas, false, projectEngineOptions(largeWorldRendering));
+  const engine = newProjectEngine(canvas, largeWorldRendering);
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     caps: engine.getCaps(),
     renderer: (

@@ -86,6 +86,12 @@ import {
  *      baseline, then each variant followed by its restore and the baseline again, A B A C A),
  *      HAPTIC_PERF_HOLD_MS (default 3000: each held view's measured window; it reports its animation frames' rate,
  *      `averageFps`, beside `drawnFps`, and the view's attempted, drawn and held frames, `view`),
+ *      HAPTIC_PERF_MATERIAL_RECORDS=1 (stores `materialrecords on` before the editor boots, so the project Engine and every
+ *      Scene of it compile graph Materials reading the Material record from the start: the load, its warm-up and the
+ *      windows; each Play fails unless its `world.debug` says so, and without it unless it does not),
+ *      HAPTIC_PERF_RECORDS_PAUSED=1 (after each Play's windows and its programs census, with the game paused: the canvas
+ *      before and after `worlddebug materialrecords` switches, each after a paused redraw once the switch's compiles are
+ *      done, then again after the game ran a second and paused again: `play.recordsPaused`),
  *      HAPTIC_PERF_MEMORY=1 (with HAPTIC_PERF_OUT: a memory timeline beside the report, `<out>.memory.json`: what the page
  *      asked WebGL to allocate every 250 ms (`gl-memory-ledger.ts`), each allocation or release of 4 MiB or more, the
  *      live objects at the phase marks, and the phase marks in epoch milliseconds; the editor settles again after the
@@ -102,6 +108,9 @@ import {
  * Each Play also reports the WebGL programs linked from its click to its close (`programs`), keyed by their
  * shader sources: how many, how many while it loaded, how many distinct sources, and how many of those the
  * page had linked before that Play started (a repeat Play that keeps its programs links almost none of them).
+ * After the windows (and after each held view's), a second of WebGL2 calls per drawn frame by name (`glCalls`:
+ * `useProgram`, `bindBufferBase`, `bindBufferRange`, texture, vertex array and framebuffer binds, buffer writes, draws
+ * and every `uniform*` call together), counted outside the timed windows.
  */
 const ENABLED = process.env.HAPTIC_PERF_FEATURE_TEST === "1";
 const number = (name: string, fallback: number, min = 0) => {
@@ -161,6 +170,8 @@ type ProfileViewName = keyof typeof FEATURE_TEST_PROFILE_VIEWS;
 const VIEWS = (process.env.HAPTIC_PERF_VIEWS ?? "").split(",").map((view) => view.trim())
   .filter((view): view is ProfileViewName => view in FEATURE_TEST_PROFILE_VIEWS);
 const GPU_PASSES = process.env.HAPTIC_PERF_GPU_PASSES === "1";
+const MATERIAL_RECORDS = process.env.HAPTIC_PERF_MATERIAL_RECORDS === "1";
+const RECORDS_PAUSED = process.env.HAPTIC_PERF_RECORDS_PAUSED === "1";
 const HOLD_MS = number("HAPTIC_PERF_HOLD_MS", 3_000, 1_000);
 type Variant = {
   label: string; commands?: string[]; restore?: string[]; hooks?: Record<string, boolean>; restoreHooks?: Record<string, boolean>;
@@ -216,6 +227,53 @@ async function callHooks(page: Page, hooks: Record<string, boolean> | undefined)
     const host = (globalThis as unknown as { __hapticPlayTest: Record<string, (value: boolean) => void> }).__hapticPlayTest;
     for (const [name, value] of entries) host[name]!(value);
   }, Object.entries(hooks));
+}
+
+/** `materialrecords on` stored before the editor boots (`material-records-setting.ts`), so the project Engine starts with it. */
+async function startWithMaterialRecords(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("haptic:debug:materialRecords", "on");
+    } catch {
+      /* No storage: the Play check below fails the route. */
+    }
+  });
+}
+
+/** WebGL2 calls counted by name over a window (`glCallsPerFrame`): the Material record's binds and what they replace. */
+const COUNTED_GL_CALLS = [
+  "useProgram", "bindBufferBase", "bindBufferRange", "bindTexture", "bindVertexArray", "bindFramebuffer", "bufferSubData",
+  "drawElements", "drawArrays", "drawElementsInstanced", "drawArraysInstanced",
+] as const;
+
+/**
+ * The view's WebGL2 calls per drawn frame over `ms`, by name (`COUNTED_GL_CALLS`, and every `uniform*` call together as
+ * `uniforms`), counted by wrappers installed for the window alone, outside the timed windows.
+ */
+async function glCallsPerFrame(page: Page, ms: number) {
+  return page.evaluate(async ([names, duration]) => {
+    const proto = globalThis.WebGL2RenderingContext?.prototype as unknown as Record<string, unknown> | undefined;
+    if (!proto) return null;
+    const counts: Record<string, number> = { uniforms: 0 };
+    const restore: Array<() => void> = [];
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      const counted = (names as readonly string[]).includes(name) ? name : /^uniform(\d|Matrix)/.test(name) ? "uniforms" : null;
+      const original = proto[name];
+      if (!counted || typeof original !== "function") continue;
+      counts[counted] ??= 0;
+      proto[name] = function (this: unknown, ...args: unknown[]) {
+        counts[counted]! += 1;
+        return (original as (...values: unknown[]) => unknown).apply(this, args);
+      };
+      restore.push(() => { proto[name] = original; });
+    }
+    const host = (globalThis as unknown as { __hapticPlayTest?: { rendering(): { presentation?: { drawn: number } } | null } }).__hapticPlayTest;
+    const before = host?.rendering()?.presentation?.drawn ?? 0;
+    await new Promise((resolve) => setTimeout(resolve, duration));
+    const frames = (host?.rendering()?.presentation?.drawn ?? 0) - before;
+    for (const undo of restore) undo();
+    return { frames, perFrame: Object.fromEntries(Object.entries(counts).map(([name, count]) => [name, frames > 0 ? Math.round((count / frames) * 10) / 10 : null])) };
+  }, [COUNTED_GL_CALLS, ms] as const);
 }
 
 /** Install long-task observation before the editor boots. */
@@ -464,6 +522,12 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
     .toBeGreaterThan(30);
   const playBootMs = Date.now() - started;
   await mark(page, "play: ticking", true);
+  // The Material record as the route asked: from the Engine's start, or not at all.
+  const worldDebug = await page.evaluate(() => {
+    const settings = (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.settings as Record<string, string> | undefined;
+    return settings?.["world.debug"] ?? null;
+  });
+  expect((worldDebug ?? "").split(",").includes("materialrecords on"), `world.debug ${worldDebug}`).toBe(MATERIAL_RECORDS);
   // The share of the boot spent compiling what Play may spawn, before the first frame.
   const spawnableWarm = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.spawnableWarm() ?? null);
   if (VERIFY_SCOPED) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyScopedReadinessProbes(true));
@@ -511,14 +575,17 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
     () => (globalThis as unknown as PlayHost).__hapticPlayTest?.liveObjectCounts() ?? null,
   );
   const programs = await programLinks(page, linksSince, loadedAt, await pageNow(page));
+  // The tour's GL calls per frame, after its windows (held views count their own).
+  const glCalls = views ? null : await glCallsPerFrame(page, 1_000);
+  const recordsPaused = RECORDS_PAUSED ? await recordsSwitchedPaused(page) : null;
   await mark(page, "play: stop click", true);
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
   await mark(page, "play: closed", true);
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
   return {
-    playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects,
-    ...(parity ? { layerParity: parity } : {}), ...(mirror ? { mirrorParity: mirror } : {}),
+    playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects, worldDebug, glCalls,
+    ...(parity ? { layerParity: parity } : {}), ...(mirror ? { mirrorParity: mirror } : {}), ...(recordsPaused ? { recordsPaused } : {}),
   };
 }
 
@@ -534,6 +601,56 @@ async function pausedRedraw(page: Page): Promise<void> {
   const request = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.requestPausedRedraw());
   if (!request?.accepted) throw new Error(`paused redraw refused: ${request?.reason ?? "no session"}`);
   await expect.poll(() => playDrawnFrames(page), { timeout: 10_000, intervals: [50] }).toBeGreaterThan(before);
+}
+
+/** Programs linked so far on the page (`recordProgramLinks`). */
+const linkedPrograms = (page: Page) =>
+  page.evaluate(() => (globalThis as unknown as { __ftProgramLinks?: unknown[] }).__ftProgramLinks?.length ?? 0);
+
+/**
+ * With the game paused, `worlddebug materialrecords` switched to the other state: the canvas after a paused redraw
+ * before the switch, after one once the switch's programs stopped linking for 3 s (at most 120 s), and after the game
+ * ran a second and paused again, each against the first; then switched back and resumed. Undrawn meshes after the paused
+ * switch show as differing pixels that the running frames clear.
+ */
+async function recordsSwitchedPaused(page: Page) {
+  const canvas = page.getByTestId("play-canvas");
+  await runConsoleCommand(page, "pause");
+  await page.waitForTimeout(1500);
+  await pausedRedraw(page);
+  const before = (await canvas.screenshot()).toString("base64");
+  const target = MATERIAL_RECORDS ? "off" : "on";
+  const linksBefore = await linkedPrograms(page);
+  const switchedAt = Date.now();
+  await runConsoleCommand(page, `worlddebug materialrecords ${target}`);
+  let last = -1, quietSince = Date.now();
+  while (Date.now() - switchedAt < 120_000) {
+    await page.waitForTimeout(500);
+    const links = await linkedPrograms(page);
+    if (links !== last) { last = links; quietSince = Date.now(); }
+    else if (Date.now() - quietSince >= 3_000) break;
+  }
+  const settledMs = Date.now() - switchedAt;
+  const drawnUnasked = await drawnWhilePaused(page, 1000);
+  await pausedRedraw(page);
+  const paused = (await canvas.screenshot()).toString("base64");
+  await pausedRedraw(page);
+  const pausedAgain = (await canvas.screenshot()).toString("base64");
+  await runConsoleCommand(page, "resume");
+  await page.waitForTimeout(1000);
+  await runConsoleCommand(page, "pause");
+  await page.waitForTimeout(1500);
+  await pausedRedraw(page);
+  const ran = (await canvas.screenshot()).toString("base64");
+  const result = {
+    switchedTo: target, settledMs, linked: (await linkedPrograms(page)) - linksBefore, drawnUnasked,
+    pausedVsBefore: await comparePixels(page, before, paused),
+    pausedAgainVsBefore: await comparePixels(page, before, pausedAgain),
+    ranVsBefore: await comparePixels(page, before, ran),
+  };
+  await runConsoleCommand(page, `worlddebug materialrecords ${MATERIAL_RECORDS ? "on" : "off"}`);
+  await runConsoleCommand(page, "resume");
+  return result;
 }
 
 /** Frames the paused view drew by itself over `ms`: 0 shows it holds its picture until asked. */
@@ -724,7 +841,10 @@ async function measureHeld(page: Page) {
   const burst = GPU_PASSES ? await probeRun(page, "burst") : null;
   // The session's first draws so far (cumulative): consecutive steps' difference is what a step's commands first drew.
   const firstDraws = await page.evaluate(() => ((globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.firstDraws ?? null) as unknown);
+  // Counted after the timed window and probes: the wrappers cost the frame.
+  const glCalls = await glCallsPerFrame(page, 1_000);
   return {
+    glCalls,
     averageFps: window.averageFps, drawnFps: window.drawnFps, view: window.view, frameCpu: window.frameCpu.medianMs, frameDraws: window.frameDraws, drawsPerPass: window.drawsPerPass,
     cpuMsPerPass: window.cpuMsPerPass,
     width: window.rendering.width, height: window.rendering.height, settings: window.rendering.settings, signature, shadows,
@@ -875,6 +995,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   });
   await recordLongTasks(page);
   await recordProgramLinks(page);
+  if (MATERIAL_RECORDS) await startWithMaterialRecords(page);
   if (MEMORY) await installGlMemoryLedger(page, 250);
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
@@ -950,7 +1071,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     adapter,
     env: {
       SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, LARGE_WORLD, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED, VERIFY_DRAW_LISTS,
-      DEVICE: DEVICE?.[0] ?? null, VIEWS, GPU_PASSES, VARIANTS,
+      DEVICE: DEVICE?.[0] ?? null, VIEWS, GPU_PASSES, VARIANTS, MATERIAL_RECORDS, RECORDS_PAUSED,
     },
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },
     scenes,

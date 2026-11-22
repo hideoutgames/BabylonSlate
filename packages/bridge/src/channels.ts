@@ -1298,6 +1298,11 @@ export type CommandMessage =
   | { type: "setFramesInFlightDebug"; mode: "off" | 2 | 3 }
   /** Debug: store whether the next project Engine keeps its drawing buffer (the `preservebuffer` console command). */
   | { type: "setPreserveDrawingBufferDebug"; enabled: boolean }
+  /**
+   * Debug: store whether the next project Engine starts with graph Materials reading the Material record (the
+   * `materialrecords` console command).
+   */
+  | { type: "setMaterialRecordsStartupDebug"; enabled: boolean }
   | { type: "setFreeCam"; enabled: boolean }
   | { type: "setShowFps"; enabled: boolean }
   | { type: "setStat"; name: string; enabled: boolean }

@@ -130,6 +130,11 @@ export interface FeatureTestBreakdownStep {
   samplersOff?: boolean;
   /** Profile: windows the step is measured in, each between two baselines (`PROFILE_STEP_REPEATS` when absent). */
   repeats?: number;
+  /**
+   * Profile: the step compiles the Scene's Materials again (the Material record switch), which takes longer than a
+   * variant: its settle may last up to `profileCompileMs` instead of `profileSettleBoundMs`.
+   */
+  recompiles?: boolean;
 }
 
 const POST_FIELDS = [
@@ -278,6 +283,8 @@ export interface FeatureTestProfileState {
   captures: boolean;
   /** Whether Play composites its Scene Layers (`scenelayers`). */
   layers: boolean;
+  /** Whether graph Materials read the Material record (`worlddebug materialrecords`, or `materialrecords on` from the start). */
+  materialRecords: boolean;
 }
 
 /** The session's state from a baseline's settings fingerprint; a missing field reads as Play's default. */
@@ -286,6 +293,7 @@ export function profileState(settings: Readonly<Record<string, string>> | undefi
     postProcessing: settings?.["post.enabled"] !== "false",
     captures: settings?.captures !== "suspended",
     layers: settings?.layers !== "hidden",
+    materialRecords: (settings?.["world.debug"] ?? "").split(",").includes("materialrecords on"),
   };
 }
 
@@ -389,16 +397,23 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
   };
   // The Check's own samplers off for one window: whether they cause long frames (the iPhone's at any load).
   const samplersOff: FeatureTestBreakdownStep = { label: "samplers off", commands: [], samplersOff: true, repeats: 1 };
+  // Graph Materials reading their parameters and literals from the Material record, so Materials of one shape share a
+  // program: what it costs the frame (CPU, the record's buffer binds) once compiled. Last in its view, as its compile
+  // adds programs on top of the steps'; skipped where the session already has it.
+  const records: FeatureTestBreakdownStep = {
+    label: "material records on", commands: ["worlddebug materialrecords on"],
+    restore: [`worlddebug materialrecords ${state.materialRecords ? "on" : "off"}`], fields: ["world.debug"], overlaps: true, recompiles: true,
+  };
   return {
     views: [
       {
         name: "light", enter: [possessProfileView("light")], steps: [
-          samplersOff, worldHidden, shadowPassesOff, sunPassesOff, localPassesOff, halfTiles, geometryOff, once,
+          samplersOff, worldHidden, shadowPassesOff, sunPassesOff, localPassesOff, halfTiles, geometryOff, once, records,
         ],
       },
       {
         name: "heavy", enter: [possessProfileView("heavy")], steps: [
-          worldHidden, shadowPassesOff, geometryOff, geometryRepeat, geometryRepeatScissored, once,
+          worldHidden, shadowPassesOff, geometryOff, geometryRepeat, geometryRepeatScissored, once, records,
         ],
       },
       {
@@ -426,7 +441,7 @@ export function featureTestProfileSequence(state: FeatureTestProfileState): Feat
 
 /** The Profile step a sample measured, by its label (`heavy shadows off`); undefined for baselines and warm-up windows. */
 export function profileStep(label: string): FeatureTestBreakdownSequenceStep | undefined {
-  const step = featureTestProfileSequence({ postProcessing: true, captures: true, layers: true }).find((entry) => entry.label === label);
+  const step = featureTestProfileSequence({ postProcessing: true, captures: true, layers: true, materialRecords: false }).find((entry) => entry.label === label);
   return step?.baseline ? undefined : step;
 }
 
@@ -1051,6 +1066,12 @@ export interface FeatureTestBenchmarkSample {
   skipped?: string;
   /** Shaders first drawn and Effects compiling during the sample (both should be 0), and how long settling took. */
   unsettled?: { firstDraws: number; compiling: number; settleMs: number };
+  /**
+   * What the row's commands cost before its window, from the commands to the end of its settle: the Effects first drawn,
+   * the frames that held one and ran long (`FirstDrawStats.stalls`), the programs the Engine gained, and how long it took.
+   * Absent where the view reports no first draws.
+   */
+  switched?: { ms: number; firstDraws: number; stalls: number; programs: number | null };
   /** Each pass's median draw calls per frame while sampled (`RenderDiagnostics.drawPasses`); absent where unattributed. */
   drawPasses?: Partial<Record<DrawPass, number>>;
   /** Each pass's median main-thread ms per frame while sampled (`RenderDiagnostics.drawPassMs`); absent where untimed. */
@@ -2066,6 +2087,27 @@ async function settleView(
   return { quiet: quiet === true, ms: deps.now() - started };
 }
 
+/** Where a row's commands began: the check's clock, the view's first draws and the Engine's programs; null without first draws. */
+type SwitchPoint = { at: number; firstDraws: number; stalls: number; programs: number | null };
+
+function switchPoint(play: PlayProbe, deps: FeatureTestCheckDeps): SwitchPoint | null {
+  const rendering = play.snapshot().rendering;
+  if (!rendering?.firstDraws) return null;
+  return { at: deps.now(), firstDraws: rendering.firstDraws.draws, stalls: rendering.firstDraws.stalls, programs: rendering.programs?.programs ?? null };
+}
+
+/** What a row's commands first drew and compiled since `from` (`FeatureTestBenchmarkSample.switched`). */
+function switchedSince(play: PlayProbe, deps: FeatureTestCheckDeps, from: SwitchPoint): NonNullable<FeatureTestBenchmarkSample["switched"]> {
+  const rendering = play.snapshot().rendering;
+  const programs = rendering?.programs?.programs;
+  return {
+    ms: deps.now() - from.at,
+    firstDraws: (rendering?.firstDraws?.draws ?? from.firstDraws) - from.firstDraws,
+    stalls: (rendering?.firstDraws?.stalls ?? from.stalls) - from.stalls,
+    programs: programs !== undefined && from.programs !== null ? programs - from.programs : null,
+  };
+}
+
 /** A Profile's base: the session's own quality tier, so no commands; `quality reset` alone returns to it. */
 const PROFILE_BASE: FeatureTestBreakdownBase = { label: "the session's quality", commands: [] };
 
@@ -2164,13 +2206,13 @@ async function benchmarkProfiles(
     : `The view did not draw steadily within ${seconds(limits.profileCompileMs)}; the remaining profiles were skipped.`;
   // A Profile bounds the wait for quiet shaders more tightly: a tablet's steady scene may never go quiet for long.
   const settleBoundMs = profileMode ? limits.profileSettleBoundMs : limits.profileCompileMs;
-  const settle = async () => {
-    const settled = await settleView(play, deps, signal, profileMode ? limits.profileStepSettleMs : limits.profileSettleMs, settleBoundMs);
+  const settle = async (boundMs = settleBoundMs) => {
+    const settled = await settleView(play, deps, signal, profileMode ? limits.profileStepSettleMs : limits.profileSettleMs, boundMs);
     await markMemory(`settled: ${settled.quiet ? "quiet" : "still compiling"} after ${seconds(settled.ms)}`);
     return settled;
   };
-  const unsettledNote = (what: string) =>
-    `Shaders were still first drawn or compiling after ${seconds(settleBoundMs)}; this ${what}'s frames include them.`;
+  const unsettledNote = (what: string, boundMs = settleBoundMs) =>
+    `Shaders were still first drawn or compiling after ${seconds(boundMs)}; this ${what}'s frames include them.`;
   // GPU-busy time per frame from fences, which display pacing does not quantise; restarted per sample.
   let gpuBusy = false;
   /**
@@ -2345,6 +2387,7 @@ async function benchmarkProfiles(
       deps.onProgress?.(`${sceneName}: ${interleaved ? "measuring" : "benchmarking"} ${step.label}`);
       const failed: string[] = [];
       if (step.restore) pendingRestore.push(...step.restore);
+      const switchedFrom = interleaved ? switchPoint(play, deps) : null;
       await runAll(step.commands, failed);
       // A view that does not draw again (shaders, render targets or a lost graphics context) ends this scene's
       // sweep: more changes on top would only pile up work and memory.
@@ -2368,9 +2411,15 @@ async function benchmarkProfiles(
       if (drew.note) failed.push(drew.note);
       // The view draws again, but the variants a step asked for may still be first drawing or compiling: sampling
       // them would measure their compiles, not the step.
-      const settled = steady ? await settle() : { quiet: true, ms: 0 };
-      if (!settled.quiet) failed.push(unsettledNote("step"));
+      // A step that compiles the Scene's Materials again, and the baseline its restore compiles them back for, settle for
+      // as long as a view may hold for its compiles.
+      const recompiles = step.recompiles || (step.baseline && steps[index - 1]?.recompiles);
+      const settleBound = profileMode && recompiles ? Math.max(settleBoundMs, limits.profileCompileMs) : settleBoundMs;
+      const settled = steady ? await settle(settleBound) : { quiet: true, ms: 0 };
+      if (!settled.quiet) failed.push(unsettledNote("step", settleBound));
+      const switched = switchedFrom ? switchedSince(play, deps, switchedFrom) : null;
       const sample = await measure(step.label, failed, mode === "profile" ? limits.profileStepSampleMs : limits.playSampleMs, settled, true, step.samplersOff === true);
+      if (switched) sample.switched = switched;
       if (interleaved) {
         sample.baseline = step.baseline === true;
         if (step.view) sample.view = step.view;
