@@ -29,4 +29,5 @@ Plays a Particle System once at a place in the world, without an actor class of 
 - **Effect** carries one [Particle](../../components/particle.md) component. Use [Get Component](get-component.md) on it to call **Stop**, **Emit Burst** or the parameter functions.
 - A looping Particle System with **Auto Destroy** plays until its Particle component's **Stop** is called; it then finishes its particles and is removed.
 - Up to 256 spawned effects play at once. Beyond that the oldest one stops and is removed, and a warning is logged once.
+- A **System** that has not loaded yet (a Soft reference) loads first: **Effect** is returned at once and starts playing once the system has loaded. A warning names it the first time; if it fails to load, the effect is removed and an error is logged. See [Soft and Hard assets](../variables.md#soft-and-hard-assets).
 - If **System** is not a Particle System, nothing is spawned, **Effect** is empty and a warning is logged.

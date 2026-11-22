@@ -19,7 +19,8 @@ interface OutputHostDeps {
 
 /** Script output: logs (errors also become diagnostics), failed asserts, prints, debug draws and the cursor. */
 export function createOutputHostBindings(deps: OutputHostDeps): Pick<ScriptHostServices,
-  "log" | "assertFailed" | "print" | "drawDebug" | "setCursorVisible" | "reportDestroyedAccess"> {
+  "log" | "assertFailed" | "print" | "drawDebug" | "setCursorVisible" | "reportDestroyedAccess" | "locateScriptNode" |
+  "reportScriptDiagnostic"> {
   /** Destroyed accesses already reported this session, by asset, node and member. */
   const reportedDestroyedAccesses = new Set<string>();
   /**
@@ -27,10 +28,10 @@ export function createOutputHostBindings(deps: OutputHostDeps): Pick<ScriptHostS
    * stack.
    */
   const reportError = (code: string, category: string, message: string,
-    location?: Pick<AnchorEntry, "assetGuid" | "graphId" | "nodeId" | "bodyLine">) => {
+    location?: Pick<AnchorEntry, "assetGuid" | "graphId" | "nodeId" | "bodyLine">, severity: "error" | "warning" = "error") => {
     deps.emit({
       type: "log",
-      severity: "error",
+      severity,
       category,
       message,
       frameId: deps.frameId(),
@@ -40,7 +41,7 @@ export function createOutputHostBindings(deps: OutputHostDeps): Pick<ScriptHostS
     const diag: RuntimeDiagnostic = {
       code,
       message,
-      severity: "error",
+      severity,
       assetGuid: anchor?.assetGuid,
       graphId: anchor?.graphId,
       nodeId: anchor?.nodeId,
@@ -60,7 +61,7 @@ export function createOutputHostBindings(deps: OutputHostDeps): Pick<ScriptHostS
       bodyLine: diag.bodyLine,
       stack: diag.stack,
       frameId: deps.frameId(),
-      severity: "error",
+      severity,
     });
   };
   return {
@@ -88,6 +89,12 @@ export function createOutputHostBindings(deps: OutputHostDeps): Pick<ScriptHostS
       if (reportedDestroyedAccesses.has(key)) return;
       reportedDestroyedAccesses.add(key);
       reportError(DESTROYED_ACCESS_DIAGNOSTIC_CODE, "Script", destroyedAccessMessage(access), location ?? undefined);
+    },
+    locateScriptNode: () => mapStackToAnchor(new Error().stack ?? "", deps.anchors),
+    reportScriptDiagnostic: ({ severity, code, category, message, location }) => {
+      if (deps.stopped()) return;
+      // Located where the script ran (`locateScriptNode`): a load that settles later has no script frame on its stack.
+      reportError(code, category, message, location ?? undefined, severity);
     },
     print: (message, key, duration, color) => {
       deps.recordPrint({ message, key });

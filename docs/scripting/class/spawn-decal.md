@@ -32,5 +32,6 @@ Projects a pooled runtime decal of a Decal Material onto opaque world surfaces a
 - Decals of one Material draw together, whatever their Tint and Opacity.
 - **Lifetime** and **Fade Out Duration** count game time: they stop while the game is paused and are scaled by [time dilation](get-time-dilation.md).
 - Spawned decals stay until they expire, the pool recycles them, or the scene changes.
+- A **Material** that has not loaded yet (a Soft reference) loads first, and the decal spawns once it has, with its full **Lifetime**. A warning names the Material the first time. If the calling object is destroyed first, or the Material fails to load or is not in the game, no decal is spawned. See [Soft and Hard assets](../variables.md#soft-and-hard-assets).
 - If **Material** is empty, nothing is spawned. A Material of another domain draws nothing.
 - For decals placed in the scene editor, use the [Decal](../../components/decal.md) component.
