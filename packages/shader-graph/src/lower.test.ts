@@ -84,7 +84,7 @@ describe("material lowering", () => {
     expect(plan.plan.domain).toBe("ui");
     expect(Object.keys(plan.plan.outputs).sort()).toEqual(["color", "opacity"]);
     expect(plan.plan.outputs.color).toEqual({ kind: "operation", operationId: "color", pinId: "out" });
-    expect(plan.plan.outputs.opacity).toEqual({ kind: "constant", type: "float", value: [1] });
+    expect(plan.plan.outputs.opacity).toEqual({ kind: "constant", type: "float", value: [1], hoisted: true });
   });
 
   it("omits the unwired element pins of the User Interface nodes and keeps their vector defaults", () => {
@@ -215,16 +215,19 @@ describe("material lowering", () => {
     const result = lowerMaterialDocument(createDefaultMaterialDocument());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    // A Material Output literal is hoisted, unless a flag leaves it out of the code (a zero World Position Offset).
     expect(result.plan.outputs.roughness).toEqual({
       kind: "constant",
       type: "float",
       value: [0.5],
+      hoisted: true,
     });
     expect(result.plan.outputs.worldPositionOffset).toEqual({
       kind: "constant",
       type: "vec3",
       value: [0, 0, 0],
     });
+    expect(result.plan.outputFlags.identityWorldPositionOffset).toBe(true);
   });
 
   it.each([true, false])("preserves narrowing through nested function boundaries (wired=%s)", (wired) => {
@@ -290,6 +293,7 @@ describe("material lowering", () => {
       kind: "constant",
       type: "float",
       value: [0.8],
+      hoisted: true,
     });
   });
 
@@ -358,9 +362,9 @@ describe("material lowering", () => {
       expect(values.programHash).toBe(base.programHash);
       expect(values.valueHash).not.toBe(base.valueHash);
     }
-    // A literal is code, and so is the shape.
+    // A literal on the Material Output is a bound value too; the shape is code.
     const literal = textured({ literal: 0.25 });
-    expect([literal.programHash === base.programHash, literal.valueHash]).toEqual([false, base.valueHash]);
+    expect([literal.programHash, literal.valueHash === base.valueHash]).toEqual([base.programHash, false]);
     expect(plan(surfaceWithMultiply()).programHash).not.toBe(plan(createDefaultMaterialDocument()).programHash);
   });
 
@@ -395,8 +399,8 @@ describe("material lowering", () => {
     };
     const base = graph([1, 0.5, 0.25], 0.5);
     const op = (id: string) => base.operations.find((operation) => operation.id === id)!;
-    // Shade meets Time: hoisted. Glow feeds the Material Output directly: kept.
-    expect(base.hoistedConstants).toEqual(["shade"]);
+    // Shade meets Time, and Glow feeds the Material Output: both hoisted.
+    expect(base.hoistedConstants).toEqual(["shade", "glow"]);
     // sin(Angle) reads only a literal: kept. The Select's When True meets Time: hoisted; its Condition decides structure: kept.
     expect(op("sin").inputs.value).not.toHaveProperty("hoisted");
     expect(op("pick").inputs.whenTrue).toMatchObject({ kind: "constant", hoisted: true });
@@ -407,6 +411,43 @@ describe("material lowering", () => {
     // A kept literal is code.
     expect(graph([1, 0.5, 0.25], 0.75).programHash).not.toBe(base.programHash);
     expect(graph([1, 0.5, 0.25], 0.5, 0).programHash).not.toBe(base.programHash);
+  });
+
+  it("names the compiler's choices from Material Output literals as flags, so only literals that agree on them share a program", () => {
+    const plan = (defaults: Record<string, number[]>) => {
+      const doc = createDefaultMaterialDocument();
+      const output = doc.nodes.find((node) => node.id === "output")!;
+      for (const [pin, value] of Object.entries(defaults)) output.properties[`default:${pin}`] = value;
+      const lowered = lowerMaterialDocument(doc);
+      if (!lowered.ok) throw new Error(lowered.diagnostics.map((row) => row.code).join(", "));
+      return lowered.plan;
+    };
+    const base = plan({ emissive: [0, 0, 0], environmentInfluence: [1], specular: [0.5], worldPositionOffset: [0, 0, 0] });
+    expect(base.outputFlags).toEqual({
+      emissiveZero: true, environmentInfluenceOne: true, environmentInfluenceZero: false, specularDefault: true, identityWorldPositionOffset: true,
+    });
+    // A literal each flag leaves out of the code is not hoisted (nothing reads it).
+    expect(["emissive", "environmentInfluence", "specular", "worldPositionOffset"].map((pin) => base.outputs[pin])).toEqual([
+      { kind: "constant", type: "vec3", value: [0, 0, 0] }, { kind: "constant", type: "float", value: [1] },
+      { kind: "constant", type: "float", value: [0.5] }, { kind: "constant", type: "vec3", value: [0, 0, 0] },
+    ]);
+    // Each choice flips the program; values past it are bound and share it.
+    const cases: Array<[Record<string, number[]>, Record<string, number[]>, keyof typeof base.outputFlags]> = [
+      [{ emissive: [0.2, 0, 0] }, { emissive: [0, 0.9, 0.4] }, "emissiveZero"],
+      [{ environmentInfluence: [0.7] }, { environmentInfluence: [0.3] }, "environmentInfluenceOne"],
+      [{ specular: [0.3] }, { specular: [0.8] }, "specularDefault"],
+      [{ worldPositionOffset: [0, 0.1, 0] }, { worldPositionOffset: [0.5, 0, 0] }, "identityWorldPositionOffset"],
+    ];
+    for (const [first, second, flag] of cases) {
+      const [a, b] = [plan(first), plan(second)];
+      expect([a.outputFlags[flag], b.outputFlags[flag]], flag).toEqual([false, false]);
+      expect(a.programHash, flag).not.toBe(base.programHash);
+      expect([b.programHash, b.valueHash === a.valueHash], flag).toEqual([a.programHash, false]);
+    }
+    // Environment Influence 0 compiles the environment out: a program of its own.
+    const unlitByEnvironment = plan({ environmentInfluence: [0] });
+    expect(unlitByEnvironment.outputFlags.environmentInfluenceZero).toBe(true);
+    expect(unlitByEnvironment.programHash).not.toBe(plan({ environmentInfluence: [0.3] }).programHash);
   });
 
   it("hoists no literal of a Particle or Post Process plan, whose programs have no record", () => {
@@ -1039,8 +1080,8 @@ describe("Named Reroute lowering", () => {
     doc.edges = [wire("e-u-metallic", "u", "out", "output", "metallic"), wire("e-v-color", "v", "out", "output", "baseColor")];
 
     const plan = lowered(doc);
-    expect(plan.outputs.metallic).toEqual({ kind: "constant", type: "float", value: [0] });
-    expect(plan.outputs.baseColor).toEqual({ kind: "constant", type: "vec3", value: [0, 0, 0] });
+    expect(plan.outputs.metallic).toEqual({ kind: "constant", type: "float", value: [0], hoisted: true });
+    expect(plan.outputs.baseColor).toEqual({ kind: "constant", type: "vec3", value: [0, 0, 0], hoisted: true });
     expect(plan.operations).toEqual([]);
   });
 });

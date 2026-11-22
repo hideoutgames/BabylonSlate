@@ -28,7 +28,8 @@ const RECORD_PARAMETERS: ReadonlySet<string> = new Set(["param.float", "param.ve
 /**
  * A plan's record layout, in plan order (so the layout is the program's): one slot per parameter read as a value (Per
  * Instance parameters are attributes) and per hoisted literal (`MaterialBuildPlan.hoistedConstants` and constant
- * operands marked `hoisted`), each operation's own slot first, then its inputs' by pin id. Null when the plan reads
+ * operands marked `hoisted`), each operation's own slot first, then its inputs' by pin id, then the Material Output's
+ * hoisted literals by pin id. Null when the plan reads
  * none, or more than `MATERIAL_RECORD_MAX_SLOTS`: its parameters then stay plain uniforms and its literals code.
  */
 export function planMaterialRecord(
@@ -44,6 +45,11 @@ export function planMaterialRecord(
       const operand = operation.inputs[pinId]!;
       if (operand.kind === "constant" && operand.hoisted && !operandSlot.has(operand)) operandSlot.set(operand, slots++);
     }
+  }
+  // Then the Material Output's hoisted literals, by pin id.
+  for (const pinId of Object.keys(plan.outputs).sort()) {
+    const operand = plan.outputs[pinId];
+    if (operand?.kind === "constant" && operand.hoisted && !operandSlot.has(operand)) operandSlot.set(operand, slots++);
   }
   return slots === 0 || slots > MATERIAL_RECORD_MAX_SLOTS ? null : { slots, slotOf, operandSlot };
 }

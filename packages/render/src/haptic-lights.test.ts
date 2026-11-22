@@ -315,7 +315,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
     bound.length = 0;
     material.bindForSubMesh(second.computeWorldMatrix(true), second, second.subMeshes[0]!);
-    expect(bound.filter((name) => name.startsWith("Haptic")).sort()).toEqual(["HapticClusters", "HapticLights"]);
+    expect(bound.filter((name) => name.startsWith("Haptic") && name !== "HapticMaterial").sort()).toEqual(["HapticClusters", "HapticLights"]);
   });
 
   it("reads the atlas plainly on WebGL2 through a sampler object without compare on its own unit, which a texture bound there next does without", async () => {

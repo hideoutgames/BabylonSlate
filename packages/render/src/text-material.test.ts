@@ -38,7 +38,7 @@ describe("Text Materials", () => {
     expect(lowered.ok).toBe(true);
     if (!lowered.ok) return;
     expect(lowered.plan.domain).toBe("text");
-    expect(lowered.plan.outputs.color).toEqual({ kind: "constant", type: "vec4", value: [1, 1, 1, 1] });
+    expect(lowered.plan.outputs.color).toEqual({ kind: "constant", type: "vec4", value: [1, 1, 1, 1], hoisted: true });
   });
 
   it("draws each label's own glyphs when two labels share a frozen Text Material", async () => {

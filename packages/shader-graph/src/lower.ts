@@ -103,6 +103,11 @@ export interface MaterialBuildPlan {
    * their constant operands that are hoisted carry `hoisted`.
    */
   hoistedConstants: string[];
+  /**
+   * The compile-time choices the compiler makes from Material Output literals (`materialOutputFlags`), part of
+   * `programHash`: the literals themselves are hoisted, so Materials whose flags agree share a program.
+   */
+  outputFlags: MaterialOutputFlags;
   /** Scene buffers a post-process plan samples. Surface plans are all false. */
   bufferRequirements: MaterialBufferRequirements;
   /** Stable content hash. Node positions and names are deliberately excluded. */
@@ -119,6 +124,56 @@ export interface MaterialBuildPlan {
    * its Global Parameter selections and its bounds padding. Two plans that differ only here share one program.
    */
   valueHash: string;
+}
+
+/**
+ * Every choice the compiler makes from a literal's value on the Material Output. Each is true exactly where the code
+ * it compiles leaves something out (or, for `environmentInfluenceZero`, compiles the environment out), so a flag flips
+ * the program exactly when the compiled code differs; the literal behind a false flag is hoisted and bound.
+ */
+export interface MaterialOutputFlags {
+  /** Emissive is a literal of zeros: no emission is added (Surface, Landscape, Decal). */
+  emissiveZero: boolean;
+  /** Environment Influence is the literal 1: the light block reads no influence. */
+  environmentInfluenceOne: boolean;
+  /** Environment Influence is 0, as a literal or a Float Constant node: the light block compiles no environment light. */
+  environmentInfluenceZero: boolean;
+  /** Specular is the literal 0.5, the light block's own default: it reads no specular. */
+  specularDefault: boolean;
+  /** World Position Offset is absent or a literal of zeros: the stock vertex stage, no offset added. */
+  identityWorldPositionOffset: boolean;
+}
+
+/** `MaterialOutputFlags` of a plan's terminal operands. */
+function materialOutputFlags(
+  outputs: Record<string, MaterialOperand | null>, operations: readonly MaterialOperation[],
+): MaterialOutputFlags {
+  const literal = (pin: string, test: (value: readonly number[]) => boolean) => {
+    const operand = outputs[pin];
+    return operand?.kind === "constant" && test(operand.value);
+  };
+  const environment = outputs.environmentInfluence;
+  const floatConstant = environment?.kind === "operation" && !environment.conversions?.length
+    ? operations.find((operation) => operation.id === environment.operationId && operation.nodeType === "const.float")
+    : undefined;
+  const constantValue = floatConstant?.properties.value;
+  const environmentScalar = environment?.kind === "constant"
+    ? (environment.value.length === 1 ? environment.value[0] : undefined)
+    : Array.isArray(constantValue) && constantValue.length === 1 ? constantValue[0] : undefined;
+  const offset = outputs.worldPositionOffset ?? null;
+  return {
+    emissiveZero: literal("emissive", (value) => value.every((component) => component === 0)),
+    environmentInfluenceOne: literal("environmentInfluence", (value) => value[0] === 1),
+    environmentInfluenceZero: environmentScalar === 0,
+    specularDefault: literal("specular", (value) => value[0] === 0.5),
+    identityWorldPositionOffset: !offset || (offset.kind === "constant" && offset.value.every((component) => component === 0)),
+  };
+}
+
+/** The Material Output literals a true flag leaves out of the code: nothing reads them, so none is hoisted. */
+function elidedByFlag(pin: string, flags: MaterialOutputFlags): boolean {
+  return (pin === "emissive" && flags.emissiveZero) || (pin === "environmentInfluence" && flags.environmentInfluenceOne) ||
+    (pin === "specular" && flags.specularDefault) || (pin === "worldPositionOffset" && flags.identityWorldPositionOffset);
 }
 
 export interface MaterialBufferRequirements {
@@ -286,7 +341,11 @@ function hashPlanParts(
     if (binding) value.push(`binding:${binding.textureGuid}:${binding.filter ?? "linear"}`);
     if (value.length) values.push(`${index}|${value.join(",")}`);
   });
-  for (const key of Object.keys(outputs).sort()) program.push(`out:${key}=${operand(outputs[key])}`);
+  for (const key of Object.keys(outputs).sort()) {
+    program.push(`out:${key}=${operand(outputs[key])}`);
+    const output = outputs[key];
+    if (output?.kind === "constant" && output.hoisted) values.push(`out:${key}=${output.value.join("/")}`);
+  }
   return { programHash: fnv1a(program.join("\n")), valueHash: fnv1a(values.join("\n")) };
 }
 
@@ -603,7 +662,8 @@ function lowerWithinBudget(
   }
 
   const cost = costOf(operations);
-  const hoistedConstants = hoistMaterialLiterals(doc.domain, operations, outputs, cost.customBlocks);
+  const outputFlags = materialOutputFlags(outputs, operations);
+  const hoistedConstants = hoistMaterialLiterals(doc.domain, operations, outputs, cost.customBlocks, outputFlags);
   const header = [
     doc.domain,
     doc.shadingModel,
@@ -635,15 +695,17 @@ function lowerWithinBudget(
       bufferRequirements: bufferRequirementsOf(operations),
       hash: hashPlan(operations, outputs, header),
       hoistedConstants,
+      outputFlags,
       ...hashPlanParts(operations, outputs, textures, hoistedConstants, [
         doc.domain, doc.shadingModel, doc.blendMode, doc.twoSided ? "two-sided" : "one-sided", doc.defaultNormals, String(doc.alphaCutoff),
+        JSON.stringify(outputFlags),
       ].join("|"), String(doc.boundsPadding ?? 0)),
     },
   };
 }
 
 /** Domains whose programs read a Material record (Material-mode programs): only they hoist literals. */
-const RECORD_DOMAINS: ReadonlySet<MaterialDomain> = new Set(["surface", "landscape", "text", "decal"]);
+const RECORD_DOMAINS: ReadonlySet<MaterialDomain> = new Set(["surface", "landscape", "text", "decal", "ui"]);
 
 /** Inputs whose constant value decides a program's structure (`material-block-registry.ts`), by node type. */
 const STRUCTURAL_INPUTS: Readonly<Record<string, readonly string[]>> = { "logic.select": ["condition"] };
@@ -651,13 +713,14 @@ const STRUCTURAL_INPUTS: Readonly<Record<string, readonly string[]>> = { "logic.
 /**
  * Hoist the literals that meet a runtime value into the Material's record, so Materials that differ only in them share
  * one program; returns the hoisted `const.*` operations and marks hoisted constant operands. A literal is hoisted when
- * the operation it feeds also reads a value that is not a literal (an operation other than a `const.*` node). It stays
- * in the code when:
+ * the operation it feeds also reads a value that is not a literal (an operation other than a `const.*` node), and every
+ * literal on the Material Output is (the shading meets it with the lights, the fog and the mesh); the compile-time
+ * choices the compiler made from those values are `MaterialOutputFlags`. It stays in the code when:
  * - every input of what it feeds is a literal (a constant-only subtree: the driver folds it, and folding need not agree
  *   with evaluating it at run time);
  * - it decides structure (`STRUCTURAL_INPUTS`: a Select's condition picks one conditional or one per component);
- * - a `const.*` node feeds a Material Output channel directly (the compiler decides from those values: an emissive of
- *   zero, an Environment Influence of 1 or 0, the default Specular, a World Position Offset of zero);
+ * - a Material Output literal that a true `MaterialOutputFlags` flag leaves out of the code (an emissive of zeros, an
+ *   Environment Influence of 1, the default Specular, a World Position Offset of zeros): nothing reads it;
  * - the plan is not a Material-mode program's (Particle, Post Process) or holds Custom GLSL, which never shares.
  */
 function hoistMaterialLiterals(
@@ -665,13 +728,18 @@ function hoistMaterialLiterals(
   operations: readonly MaterialOperation[],
   outputs: Record<string, MaterialOperand | null>,
   customBlocks: number,
+  flags: MaterialOutputFlags,
 ): string[] {
   if (!RECORD_DOMAINS.has(domain) || customBlocks > 0) return [];
   const constants = new Map(operations.filter((operation) => operation.nodeType.startsWith("const.")).map((operation) => [operation.id, operation]));
   const literal = (operand: MaterialOperand) => operand.kind === "constant" || constants.has(operand.operationId);
   const kept = new Set<string>();
-  for (const operand of Object.values(outputs)) if (operand?.kind === "operation" && constants.has(operand.operationId)) kept.add(operand.operationId);
   const hoisted = new Set<string>();
+  for (const [pin, operand] of Object.entries(outputs)) {
+    if (!operand || elidedByFlag(pin, flags)) continue;
+    if (operand.kind === "constant") operand.hoisted = true;
+    else if (constants.has(operand.operationId)) hoisted.add(operand.operationId);
+  }
   for (const operation of operations) {
     const structural = STRUCTURAL_INPUTS[operation.nodeType] ?? [];
     const inputs = Object.entries(operation.inputs);

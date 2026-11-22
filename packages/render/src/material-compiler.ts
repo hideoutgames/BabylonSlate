@@ -364,14 +364,17 @@ function operationBlockName(id: string): string {
  * target's, which every member of a batch draws into. A block that binds and is not listed keeps its Material out of
  * batches.
  */
-const BATCH_BINDINGS: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> = [
+// Read at first use, not at module evaluation: the lighting block reaches this module back through the water and
+// unlit modules, so at evaluation one of these classes may not be defined yet.
+let batchBindings: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> | undefined;
+const BATCH_BINDINGS = (): ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> => batchBindings ??= [
   BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
   ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock, ScreenSizeBlock,
   MaterialRecordReadBlock,
 ];
 
 function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
-  return block.bind === NodeMaterialBlock.prototype.bind || BATCH_BINDINGS.some((known) => block instanceof known);
+  return block.bind === NodeMaterialBlock.prototype.bind || BATCH_BINDINGS().some((known) => block instanceof known);
 }
 
 /**
@@ -390,7 +393,7 @@ export function compileMaterialPlan(
   const auxiliary = options.surfaceVariant !== undefined;
   const shadowDepth = options.surfaceVariant === "shadowDepth";
   const cacheableShadowShape = !auxiliary && (plan.domain === "surface" || plan.domain === "landscape") && plan.blendMode === "opaque" &&
-    plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
+    plan.cost.customBlocks === 0 && plan.outputFlags.identityWorldPositionOffset;
   const material = new NodeMaterial(options.name, scene, {
     shaderLanguage: ShaderLanguage.GLSL,
   });
@@ -775,7 +778,7 @@ export function compileMaterialPlan(
     const vertexIds = collectWorldPositionOffsetOperationIds(plan);
     if (!realizeOperations(vertexIds)) return fail();
     const offsetOperand = plan.outputs.worldPositionOffset ?? null;
-    if (!isIdentityWorldPositionOffset(offsetOperand) && offsetOperand) {
+    if (!plan.outputFlags.identityWorldPositionOffset && offsetOperand) {
       const offset = pointForOperand(
         offsetOperand,
         `${MATERIAL_BLOCK_PREFIX}_worldPositionOffset`,
@@ -1131,7 +1134,7 @@ export function compileMaterialPlan(
   // The stock vertex stage keeps a surface's, a text's or a User Interface Material's vertices on its mesh: no custom
   // blocks, and no World Position Offset (which is also how a graph's water waves move them).
   const bounded = (plan.domain === "surface" || plan.domain === "text" || plan.domain === "ui") && plan.cost.customBlocks === 0 &&
-    isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
+    plan.outputFlags.identityWorldPositionOffset;
   if (bounded) markBoundedMaterial(material);
   // A Scene Layer Material with the stock vertex stage draws every mesh the same but for its world matrix, its overlay
   // style and Receive Shadows, so its draws may batch, provided nothing else it binds can depend on the mesh. A text's
@@ -1318,7 +1321,7 @@ export function compileMaterialPlan(
     const variantRegistration = registration = registerAuthoredVariants(material, acquireVariant);
     if (plan.domain === "surface" && !options.water) waterVariantFactories.set(material, () => acquireVariant("water"));
     // Static opaque surfaces retain Babylon's cheap native/cached path. Water never casts, so a water variant needs none.
-    if (!options.water && (!isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null) || plan.blendMode === "masked"))
+    if (!options.water && (!plan.outputFlags.identityWorldPositionOffset || plan.blendMode === "masked"))
       ensureAuthoredShadowDepthWrapper(material);
     material.onDisposeObservable.addOnce(() => {
       waterVariantFactories.delete(material);
@@ -1561,18 +1564,6 @@ function nodeMaterialBuildInProgress(material: NodeMaterial): boolean {
   return (material as unknown as { _buildIsInProgress?: boolean })._buildIsInProgress === true;
 }
 
-/**
- * The value `operand` always holds when it is one: a literal, or a Float Constant node's value with no conversion on
- * the way (not a Parameter, which a Material Instance can change). Null otherwise.
- */
-function constantScalar(plan: MaterialBuildPlan, operand: MaterialOperand | null | undefined): number | null {
-  if (!operand) return null;
-  if (operand.kind === "constant") return operand.value.length === 1 ? operand.value[0]! : null;
-  if (operand.conversions?.length) return null;
-  const operation = plan.operations.find((entry) => entry.id === operand.operationId);
-  const value = operation?.nodeType === "const.float" ? operation.properties.value : null;
-  return Array.isArray(value) && value.length === 1 && typeof value[0] === "number" ? value[0] : null;
-}
 
 /** Blend modes that draw over the scene by their opacity (the coverage passes read it as translucent ones do). */
 function blendsOverScene(mode: MaterialBuildPlan["blendMode"]): boolean {
@@ -1709,13 +1700,6 @@ function collectWorldPositionOffsetOperationIds(
   return ids;
 }
 
-function isIdentityWorldPositionOffset(
-  operand: MaterialOperand | null,
-): boolean {
-  if (!operand) return true;
-  if (operand.kind !== "constant") return false;
-  return operand.value.every((component) => component === 0);
-}
 
 /**
  * Add an authored world-space vec3 to the plumbed world position, then keep w.
@@ -1875,12 +1859,9 @@ function attachSurfaceShading(
 
   const baseColor = outputPoint("baseColor", `${MATERIAL_BLOCK_PREFIX}_baseColor`, true);
   const emissionOperand = plan.outputs.emissive;
-  const hasEmission =
-    emissionOperand &&
-    !(
-      emissionOperand.kind === "constant" &&
-      emissionOperand.value.every((value) => value === 0)
-    );
+  // The compile-time choices from Material Output literals are the plan's flags (`MaterialOutputFlags`): the literals
+  // themselves are hoisted into the record.
+  const hasEmission = emissionOperand && !plan.outputFlags.emissiveZero;
   const emissive = hasEmission
     ? outputPoint("emissive", `${MATERIAL_BLOCK_PREFIX}_emissive`, true)
     : null;
@@ -1975,12 +1956,12 @@ function attachSurfaceShading(
   const normal = outputPoint("normal", `${MATERIAL_BLOCK_PREFIX}_normalInput`, false);
   const opacity = outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false);
   const environmentOperand = plan.outputs.environmentInfluence;
-  const influence = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1)
+  const influence = environmentOperand && !plan.outputFlags.environmentInfluenceOne
     ? outputPoint("environmentInfluence", `${MATERIAL_BLOCK_PREFIX}_environmentInfluence`, false)
     : null;
   // A non-metal's reflectance, F0 = 0.08 x Specular; the blocks' own default is 0.5 (F0 0.04).
   const specularOperand = plan.outputs.specular;
-  const specular = specularOperand && !(specularOperand.kind === "constant" && specularOperand.value[0] === 0.5)
+  const specular = specularOperand && !plan.outputFlags.specularDefault
     ? outputPoint("specular", `${MATERIAL_BLOCK_PREFIX}_specular`, false)
     : null;
   specular?.connectTo(fragment.geometrySpecular);
@@ -1988,7 +1969,7 @@ function attachSurfaceShading(
   // The surface's direct and environment light (scaled by Environment Influence), from the light block.
   const lighting = new HapticLightingBlock(`${MATERIAL_BLOCK_PREFIX}_lighting`);
   // A constant Environment Influence of 0 (built-in water's) compiles the environment's light out.
-  lighting.noEnvironment = constantScalar(plan, environmentOperand) === 0;
+  lighting.noEnvironment = plan.outputFlags.environmentInfluenceZero;
   created.push(lighting);
   plumbing.worldPosition?.connectTo(lighting.worldPosition);
   plumbing.worldNormal4?.connectTo(lighting.worldNormal);
@@ -2092,7 +2073,7 @@ function attachDecalShading(
   const baseColor = multiply(outputPoint("baseColor", `${name}_baseColor`, true) ?? constant("vec3", [0.8, 0.8, 0.8], "baseColorDefault", true),
     projection.tint, "tintedBaseColor");
   const emissiveOperand = plan.outputs.emissive;
-  const emissive = emissiveOperand && !(emissiveOperand.kind === "constant" && emissiveOperand.value.every((value) => value === 0))
+  const emissive = emissiveOperand && !plan.outputFlags.emissiveZero
     ? outputPoint("emissive", `${name}_emissive`, true)
     : null;
 

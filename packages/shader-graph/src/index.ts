@@ -37,6 +37,7 @@ export {
   materialCompileKeyFromLowering,
   type MaterialBuildPlan,
   type MaterialBufferRequirements,
+  type MaterialOutputFlags,
   type MaterialCostFeatures,
   type MaterialLowerContext,
   type MaterialLowerResult,
