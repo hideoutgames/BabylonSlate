@@ -1,4 +1,4 @@
-import { findGraphCycle, type GlobalParameterCatalog } from "@haptic/core";
+import { findGraphCycle, findPin, type GlobalParameterCatalog } from "@haptic/core";
 import {
   materialNodeDefinition,
   nodeIsLegalInDomain,
@@ -7,7 +7,6 @@ import {
   type MaterialCapability,
   type MaterialDomain,
   type MaterialNodeDefinition,
-  type MaterialPinDefinition,
 } from "./catalog";
 
 function materialDomainLabel(domain: MaterialDomain): string {
@@ -86,13 +85,6 @@ const DEFAULT_CAPABILITIES: Required<MaterialCapabilities> = {
 
 function customGlslBody(node: MaterialGraphNode): string {
   return typeof node.properties.body === "string" ? node.properties.body : "";
-}
-
-function pinById(
-  pins: readonly MaterialPinDefinition[],
-  id: string,
-): MaterialPinDefinition | undefined {
-  return pins.find((pin) => pin.id === id);
 }
 
 interface GraphLike {
@@ -349,7 +341,7 @@ function validateGraph(
     const sourceDefinition = definitions.get(source.id);
     const targetDefinition = definitions.get(target.id);
     if (!sourceDefinition || !targetDefinition) continue;
-    if (!pinById(sourceDefinition.outputs, edge.sourcePinId)) {
+    if (!findPin(sourceDefinition.outputs, edge.sourcePinId)) {
       diagnostics.push({
         code: "material.unknownPin",
         message: `"${sourceDefinition.title}" has no output pin "${edge.sourcePinId}"`,
@@ -359,7 +351,7 @@ function validateGraph(
         pinId: edge.sourcePinId,
       });
     }
-    if (!pinById(targetDefinition.inputs, edge.targetPinId)) {
+    if (!findPin(targetDefinition.inputs, edge.targetPinId)) {
       diagnostics.push({
         code: "material.unknownPin",
         message: `"${targetDefinition.title}" has no input pin "${edge.targetPinId}"`,
@@ -426,8 +418,8 @@ function validateGraph(
       const sourceDefinition = definitions.get(source.id);
       const targetDefinition = definitions.get(target.id);
       if (!sourceDefinition || !targetDefinition) continue;
-      if (!pinById(sourceDefinition.outputs, edge.sourcePinId)) continue;
-      if (!pinById(targetDefinition.inputs, edge.targetPinId)) continue;
+      if (!findPin(sourceDefinition.outputs, edge.sourcePinId)) continue;
+      if (!findPin(targetDefinition.inputs, edge.targetPinId)) continue;
       const from: MaterialValueType | null = resolver.outputType(
         source.id,
         edge.sourcePinId,
