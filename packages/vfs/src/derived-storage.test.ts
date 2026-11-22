@@ -20,6 +20,9 @@ vi.mock("./capacitor-scoped-storage", async (original) => ({
 const { Filesystem } = await import("@capacitor/filesystem");
 const { createDerivedStorage } = await import("./derived-storage");
 const { createTemplateStorage } = await import("./template-storage");
+// `getHostPlatform` reads the Capacitor bridge global that the native shells inject; loading the real
+// `@capacitor/core` above installs a web one, so this replaces it.
+(globalThis as { Capacitor?: unknown }).Capacitor = { getPlatform: () => host.platform };
 
 describe("mobile derived data", () => {
   beforeEach(() => {
