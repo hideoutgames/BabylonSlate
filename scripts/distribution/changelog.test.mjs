@@ -31,7 +31,7 @@ test("the source changelog has notes for the declared version", () => {
 test("test and release metadata carry the required version's notes for either native platform", () => {
   for (const channel of ["test", "release"]) {
     for (const platforms of ["windows", "ipados"]) {
-      const request = { channel, platforms, platform: platforms, sourceSha: "a".repeat(40), runNumber: 20, runAttempt: 1 };
+      const request = { channel, platforms, platform: platforms, sourceSha: "a".repeat(40), runNumber: 20, runAttempt: 1, ...(platforms === "windows" ? { signed: false } : {}) };
       assert.throws(() => buildManifest({ version: "1.2.3" }, request), /Patch notes/);
       const manifest = buildManifest({ version: "1.2.3" }, { ...request, patchNotes: entry() });
       assert.deepEqual(manifest.patchNotes, entry());

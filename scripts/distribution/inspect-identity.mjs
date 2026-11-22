@@ -18,7 +18,7 @@ const manifest = buildManifest(declared, {
   runNumber: Number(process.env.GITHUB_RUN_NUMBER ?? 1),
   runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT ?? 1),
   platform,
-  ...(platform === "macos" ? { macosSigned: false } : {}),
+  signed: false,
   patchNotes,
   toolchains: { node: process.versions.node, pnpm: root.packageManager.split("@")[1], electron: desktop.devDependencies.electron },
 });

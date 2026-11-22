@@ -64,7 +64,7 @@ const signingEnvironment = ["APPLE_DEVELOPER_ID_P12_BASE64", "APPLE_DEVELOPER_ID
 let privateKeyDirectory;
 try {
   const config = { extends: join(desktop, "electron-builder.yml"), ...(manifest.channel === "test" ? { publish: null } : {}) };
-  if (platform === "macos" && manifest.macosSigned === true) {
+  if (platform === "macos" && manifest.signed === true) {
     const required = ["APPLE_DEVELOPER_ID_P12_BASE64", "APPLE_DEVELOPER_ID_PASSWORD", "ASC_PRIVATE_KEY_P8_BASE64", "ASC_KEY_ID", "ASC_ISSUER_ID", "APPLE_TEAM_ID"];
     for (const name of required) if (!process.env[name]) throw new Error(`Missing required macOS signing variable: ${name}`);
     privateKeyDirectory = await mkdtemp(join(tmpdir(), "babylonslate-notarization-"));

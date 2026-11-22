@@ -26,14 +26,19 @@ function harness(initial: string | null = null) {
 afterEach(() => vi.useRealTimers());
 
 it.each([
-  ["win32", { channel: "release", packageVersion: "1.2.3-release" }, {}, true],
-  ["linux", { channel: "release", packageVersion: "1.2.3-release" }, { APPIMAGE: "/tmp/BabylonSlate.AppImage" }, true],
-  ["linux", { channel: "release", packageVersion: "1.2.3-release" }, {}, false],
-  ["darwin", { channel: "release", packageVersion: "1.2.3-release", macosSigned: true }, {}, true],
-  ["darwin", { channel: "release", packageVersion: "1.2.3-release", macosSigned: false }, {}, false],
-  ["freebsd", { channel: "release", packageVersion: "1.2.3-release" }, {}, false],
-  ["win32", { channel: "test", packageVersion: "1.2.3-release" }, {}, false],
-  ["win32", { channel: "release", packageVersion: "other" }, {}, false],
+  ["win32", { channel: "release", packageVersion: "1.2.3-release", signed: true }, {}, true],
+  ["linux", { channel: "release", packageVersion: "1.2.3-release", signed: true }, { APPIMAGE: "/tmp/BabylonSlate.AppImage" }, true],
+  ["linux", { channel: "release", packageVersion: "1.2.3-release", signed: true }, {}, false],
+  ["darwin", { channel: "release", packageVersion: "1.2.3-release", signed: true }, {}, true],
+  // Unsigned packages never update automatically, on any platform.
+  ["darwin", { channel: "release", packageVersion: "1.2.3-release", signed: false }, {}, false],
+  ["win32", { channel: "release", packageVersion: "1.2.3-release", signed: false }, {}, false],
+  ["win32", { channel: "release", packageVersion: "1.2.3-release" }, {}, false],
+  ["linux", { channel: "release", packageVersion: "1.2.3-release", signed: false }, { APPIMAGE: "/tmp/BabylonSlate.AppImage" }, false],
+  ["win32", { channel: "release", packageVersion: "1.2.3-release", signed: "true" }, {}, false],
+  ["freebsd", { channel: "release", packageVersion: "1.2.3-release", signed: true }, {}, false],
+  ["win32", { channel: "test", packageVersion: "1.2.3-release", signed: true }, {}, false],
+  ["win32", { channel: "release", packageVersion: "other", signed: true }, {}, false],
 ] as const)("gates automatic updates for %s packages", (platform, manifest, env, expected) => {
   expect(updatesSupported(platform, manifest, "1.2.3-release", env)).toBe(expected);
 });

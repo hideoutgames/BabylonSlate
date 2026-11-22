@@ -21,16 +21,20 @@ export function automaticUpdatesEnabled(json: string | null): boolean {
   catch { return false; }
 }
 
+/**
+ * Automatic updates run only for a code-signed release package (the build
+ * manifest's `signed`, set by distribution) of this app's own version; on
+ * Linux only from an AppImage, which electron-updater replaces.
+ */
 export function updatesSupported(
   platform: NodeJS.Platform,
-  manifest: { channel?: unknown; packageVersion?: unknown; macosSigned?: unknown },
+  manifest: { channel?: unknown; packageVersion?: unknown; signed?: unknown },
   appVersion: string,
   env: NodeJS.ProcessEnv,
 ): boolean {
-  if (manifest.channel !== "release" || manifest.packageVersion !== appVersion) return false;
-  if (platform === "win32") return true;
+  if (manifest.channel !== "release" || manifest.packageVersion !== appVersion || manifest.signed !== true) return false;
+  if (platform === "win32" || platform === "darwin") return true;
   if (platform === "linux") return typeof env.APPIMAGE === "string" && env.APPIMAGE.length > 0;
-  if (platform === "darwin") return manifest.macosSigned === true;
   return false;
 }
 

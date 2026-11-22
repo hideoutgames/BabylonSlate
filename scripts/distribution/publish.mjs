@@ -37,20 +37,21 @@ export async function publishRelease({ identity, platformFiles, appleState }, ap
 
   const assets = new Map();
   const toolchains = {};
-  let macosSigned;
+  /** Whether each desktop package is code-signed; unsigned packages never update automatically. */
+  const signedPlatforms = {};
   for (const platform of requested) {
     const files = platformFiles.get(platform);
     validateArtifacts(platformArtifactNames(platform, identity.packageVersion), [...files.keys()]);
     verifyChecksums(platform, files);
     const manifest = JSON.parse(files.get("build-manifest.json").toString("utf8"));
-    const { toolchains: platformToolchains = {}, platform: manifestPlatform, macosSigned: signed, ...manifestIdentity } = manifest;
+    const { toolchains: platformToolchains = {}, platform: manifestPlatform, signed, ...manifestIdentity } = manifest;
     if (manifestPlatform !== platform) throw new Error(`${platform} manifest identity differs from the validated build`);
     if (JSON.stringify(stable(manifestIdentity)) !== JSON.stringify(stable(identity))) throw new Error(`${platform} manifest identity differs from the validated build`);
     for (const [key, value] of Object.entries(platformToolchains)) {
       if (toolchains[key] !== undefined && toolchains[key] !== value) throw new Error(`Conflicting toolchain version: ${key}`);
       toolchains[key] = value;
     }
-    if (platform === "macos") macosSigned = signed;
+    if (["windows", "macos", "linux"].includes(platform)) signedPlatforms[platform] = signed === true;
     if (identity.channel === "release" && ["windows", "macos", "linux"].includes(platform)) validateUpdateFeed(platform, identity.packageVersion, files);
     for (const name of artifactNames(platform, identity.packageVersion)) {
       if (assets.has(name)) throw new Error("Artifacts must exactly match the public allowlist");
@@ -62,7 +63,7 @@ export async function publishRelease({ identity, platformFiles, appleState }, ap
     ...identity,
     toolchains,
     platformsBuilt: requested,
-    ...(requested.includes("macos") ? { macosSigned: macosSigned === true } : {}),
+    ...(Object.keys(signedPlatforms).length ? { signed: signedPlatforms } : {}),
   };
   assets.set("build-manifest.json", Buffer.from(JSON.stringify(mergedManifest, null, 2) + "\n"));
   assets.set("SHA256SUMS.txt", Buffer.from([...assets]
@@ -77,14 +78,16 @@ export async function publishRelease({ identity, platformFiles, appleState }, ap
   // The marked notes block leads every body; the app reads release notes from it.
   const notes = `${patchNotesMarkdown(identity.patchNotes)}\n\n`;
   const descriptions = {
-    windows: "Unsigned x64 NSIS installer; Windows may warn about an unrecognized publisher",
-    macos: `arm64 and x64 DMG/ZIP; ${macosSigned === true ? "signed and notarized" : "unsigned: open via Privacy & Security → Open Anyway; automatic updates are disabled for unsigned macOS packages"}`,
-    linux: "x64 AppImage; mark executable",
+    windows: signedPlatforms.windows === true
+      ? "Signed x64 NSIS installer"
+      : "Unsigned x64 NSIS installer; Windows may warn about an unrecognized publisher; automatic updates are disabled for unsigned packages",
+    macos: `arm64 and x64 DMG/ZIP; ${signedPlatforms.macos === true ? "signed and notarized" : "unsigned: open via Privacy & Security → Open Anyway; automatic updates are disabled for unsigned packages"}`,
+    linux: `x64 AppImage; mark executable${signedPlatforms.linux === true ? "" : "; automatic updates are disabled for unsigned packages"}`,
     android: "universal APK signed with the Haptic release key; sideload requires allowing installs from this source",
   };
   const platformLines = GITHUB_RELEASE_PLATFORMS.map(platform => `${platform === "macos" ? "macOS" : platform[0].toUpperCase() + platform.slice(1)}: ${requested.includes(platform) ? descriptions[platform] : "Not requested"}.`);
   platformLines.push(`iPadOS: ${selected.includes("ipados") ? appleState ?? "unknown" : "Not requested"}. Upload is distinct from tester availability. No App Store submission.`);
-  const updateNote = identity.channel === "release" ? "Automatic updates are enabled by default on supported packages; disable them in Engine Settings." : "Test builds do not automatically update.";
+  const updateNote = identity.channel === "release" ? "Automatic updates are enabled by default on signed packages; disable them in Engine Settings." : "Test builds do not automatically update.";
   const body = `${notes}${identityNotes(identity)}\n\n${platformLines.join("\n")}\n\n${updateNote}\n`;
   if (!release) release = await api("/releases", { method: "POST", body: { tag_name: identity.tag, target_commitish: identity.sourceSha, name: identity.title, body, draft: true, prerelease: identity.prerelease, make_latest: "false" } });
   if (release.assets.some(asset => !assets.has(asset.name))) throw new Error("Draft contains unexpected assets; inspect it before recovery");

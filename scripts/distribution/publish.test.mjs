@@ -13,7 +13,7 @@ const identityFor = (patch = {}) => {
 };
 
 function packageFiles(platform, identity, toolchains = { node: "22.23.2", pnpm: "10.33.3" }, extra = {}) {
-  const manifest = { ...identity, toolchains, platform, ...(platform === "macos" ? { macosSigned: extra.macosSigned === true } : {}) };
+  const manifest = { ...identity, toolchains, platform, ...(["windows", "macos", "linux"].includes(platform) ? { signed: extra.signed === true } : {}) };
   const files = new Map(artifactNames(platform, identity.packageVersion).map(name => [name, Buffer.from(`${platform}:${name}`)]));
   if (identity.channel === "release" && ["windows", "macos", "linux"].includes(platform)) {
     const feedName = { windows: "latest.yml", macos: "latest-mac.yml", linux: "latest-linux.yml" }[platform];
@@ -102,11 +102,11 @@ test("checksum and manifest identity disagreements block all publication writes"
   await assert.rejects(publishRelease({ identity, platformFiles: new Map([["windows", wrongIdentity]]) }, fixture(identity).api), /manifest identity differs/);
 });
 
-test("multiple platforms merge toolchains, checksums and macOS signing state", async () => {
+test("multiple platforms merge toolchains, checksums and each desktop package's signing state", async () => {
   const identity = identityFor({ platforms: "desktop" });
   const platformFiles = new Map([
     ["windows", packageFiles("windows", identity, { node: "22.23.2", pnpm: "10.33.3", electron: "44.2.0" })],
-    ["macos", packageFiles("macos", identity, { node: "22.23.2", pnpm: "10.33.3", electron: "44.2.0" }, { macosSigned: true })],
+    ["macos", packageFiles("macos", identity, { node: "22.23.2", pnpm: "10.33.3", electron: "44.2.0" }, { signed: true })],
     ["linux", packageFiles("linux", identity, { node: "22.23.2", pnpm: "10.33.3", electron: "44.2.0" })],
   ]);
   const client = fixture(identity);
@@ -114,9 +114,10 @@ test("multiple platforms merge toolchains, checksums and macOS signing state", a
   const manifestUpload = client.requests.find(item => item.path.startsWith("https://uploads.github.com/") && new URL(item.path).searchParams.get("name") === "build-manifest.json");
   const merged = JSON.parse(manifestUpload.bytes);
   assert.deepEqual(merged.platformsBuilt, ["linux", "macos", "windows"]);
-  assert.equal(merged.macosSigned, true);
+  assert.deepEqual(merged.signed, { linux: false, macos: true, windows: false });
   assert.deepEqual(merged.toolchains, { node: "22.23.2", pnpm: "10.33.3", electron: "44.2.0" });
   assert.match(client.current().body, /signed and notarized/);
+  assert.match(client.current().body, /Unsigned x64 NSIS installer.*automatic updates are disabled/);
 });
 
 test("conflicting toolchain values fail before publication", async () => {
