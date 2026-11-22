@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { Button } from "@haptic/ui/components/button";
 import { AssetPicker } from "./asset-picker";
 import { AssetPickerControl } from "./asset-picker-control";
-import { AssetThumbnailProvider, type AssetThumbnailApi } from "./asset-thumbnail";
+import { AssetThumbnailProvider, useAssetThumbnailUrl, type AssetThumbnailApi } from "./asset-thumbnail";
+import { createThumbnailVersionStore } from "./thumbnail-versions";
 import { PickerIdentity, assetRowIdentity, selectedPickerIdentity } from "./picker-identity";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1]);
@@ -36,7 +37,7 @@ describe("closed picker thumbnails", () => {
 
   it("show the picked Texture's stored thumbnail in place of the type icon", async () => {
     const load = vi.fn(async () => PNG);
-    render(closedPicker({ load, versions: {} }, "tex-grass", { name: "Grass", type: "Texture" }));
+    render(closedPicker({ load, versions: createThumbnailVersionStore() }, "tex-grass", { name: "Grass", type: "Texture" }));
     const image = await waitFor(() => screen.getByTestId("picker-thumbnail").querySelector("img")!);
     expect(image.getAttribute("src")).toBe("blob:thumb-1");
     expect(load).toHaveBeenCalledWith("tex-grass");
@@ -46,22 +47,47 @@ describe("closed picker thumbnails", () => {
 
   it("reload a rewritten thumbnail and release the old image", async () => {
     const load = vi.fn(async () => PNG);
-    const { rerender } = render(closedPicker({ load, versions: { "tex-grass": 1 } }, "tex-grass", { name: "Grass", type: "Texture" }));
+    const versions = createThumbnailVersionStore();
+    render(closedPicker({ load, versions }, "tex-grass", { name: "Grass", type: "Texture" }));
     await waitFor(() => expect(screen.getByTestId("picker-thumbnail").querySelector("img")!.getAttribute("src")).toBe("blob:thumb-1"));
-    rerender(closedPicker({ load, versions: { "tex-grass": 2 } }, "tex-grass", { name: "Grass", type: "Texture" }));
+    act(() => versions.bump(["tex-grass"]));
     await waitFor(() => expect(screen.getByTestId("picker-thumbnail").querySelector("img")!.getAttribute("src")).toBe("blob:thumb-2"));
     expect(revoked).toEqual(["blob:thumb-1"]);
   });
 
+  it("render only the reader of the asset whose thumbnail was rewritten", async () => {
+    const load = vi.fn<(guid: string) => Promise<Uint8Array>>(async () => PNG);
+    const versions = createThumbnailVersionStore();
+    const renders = { grass: 0, rock: 0 };
+    function Reader({ guid, name }: { guid: string; name: keyof typeof renders }) {
+      renders[name] += 1;
+      const url = useAssetThumbnailUrl(guid);
+      return <span data-testid={`reader-${name}`}>{url}</span>;
+    }
+    render(
+      <AssetThumbnailProvider value={{ load, versions }}>
+        <Reader guid="tex-grass" name="grass" />
+        <Reader guid="tex-rock" name="rock" />
+      </AssetThumbnailProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("reader-rock").textContent).not.toBe(""));
+    const rockRenders = renders.rock;
+    for (let write = 0; write < 10; write++) act(() => versions.bump(["tex-grass"]));
+    // Each rewrite reads the grass thumbnail again; the rock reader neither reads nor renders.
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2 + 10));
+    expect(load.mock.calls.filter(([guid]) => guid === "tex-rock")).toHaveLength(1);
+    expect(renders.rock).toBe(rockRenders);
+  });
+
   it("show a Model's thumbnail on the muted background, and a Texture's over the checkerboard", async () => {
     const load = vi.fn(async () => PNG);
-    const { unmount } = render(closedPicker({ load, versions: {} }, "model-hero", { name: "Hero", type: "Model" }));
+    const { unmount } = render(closedPicker({ load, versions: createThumbnailVersionStore() }, "model-hero", { name: "Hero", type: "Model" }));
     const model = await waitFor(() => screen.getByTestId("picker-thumbnail"));
     expect(load).toHaveBeenCalledWith("model-hero");
     expect(model.className).toContain("bg-muted");
     expect(model.style.backgroundImage).toBe("");
     unmount();
-    render(closedPicker({ load, versions: {} }, "tex-grass", { name: "Grass", type: "Texture" }));
+    render(closedPicker({ load, versions: createThumbnailVersionStore() }, "tex-grass", { name: "Grass", type: "Texture" }));
     const texture = await waitFor(() => screen.getByTestId("picker-thumbnail"));
     expect(texture.className).not.toContain("bg-muted");
     expect(texture.style.backgroundImage).toContain("conic-gradient");
@@ -69,15 +95,15 @@ describe("closed picker thumbnails", () => {
 
   it("keep the type icon for types without thumbnails, an asset without a stored one, and rows outside a closed picker", async () => {
     const load = vi.fn(async (guid: string) => (guid === "tex-none" ? null : PNG));
-    const { unmount } = render(closedPicker({ load, versions: {} }, "song", { name: "Song", type: "Audio" }));
+    const { unmount } = render(closedPicker({ load, versions: createThumbnailVersionStore() }, "song", { name: "Song", type: "Audio" }));
     expect(load).not.toHaveBeenCalled();
     unmount();
-    render(closedPicker({ load, versions: {} }, "tex-none", { name: "Blank", type: "Texture" }));
+    render(closedPicker({ load, versions: createThumbnailVersionStore() }, "tex-none", { name: "Blank", type: "Texture" }));
     await waitFor(() => expect(load).toHaveBeenCalledWith("tex-none"));
     expect(screen.queryByTestId("picker-thumbnail")).toBeNull();
     cleanup();
     render(
-      <AssetThumbnailProvider value={{ load, versions: {} }}>
+      <AssetThumbnailProvider value={{ load, versions: createThumbnailVersionStore() }}>
         <PickerIdentity label="Grass" description="Texture" visual={{ assetType: "Texture" }} />
       </AssetThumbnailProvider>,
     );
@@ -88,7 +114,7 @@ describe("closed picker thumbnails", () => {
   it("show thumbnails in the Pick Asset list and the type icon for other rows", async () => {
     const load = vi.fn(async (guid: string) => (guid === "tex-grass" || guid === "model-hero" ? PNG : null));
     render(
-      <AssetThumbnailProvider value={{ load, versions: {} }}>
+      <AssetThumbnailProvider value={{ load, versions: createThumbnailVersionStore() }}>
         <AssetPicker
           open
           onOpenChange={() => {}}

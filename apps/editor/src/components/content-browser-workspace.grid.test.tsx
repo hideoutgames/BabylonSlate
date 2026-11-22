@@ -14,7 +14,7 @@ import type { IndexedAsset } from "@haptic/assets";
 import { AssetRegistry, createDefaultPluginSettings, createExtensionSettings, normalizeExtensionContributions, projectContentRoot } from "@haptic/assets";
 import { extensionAssetTypes } from "../lib/extension-asset-types";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { TREE_ROW_HEIGHT } from "@haptic/editor-kit";
+import { createThumbnailVersionStore, TREE_ROW_HEIGHT, type ThumbnailVersionStore } from "@haptic/editor-kit";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { KeybindProvider } from "../context/keybind-context";
 import { subscribeModelThumbnailJobs, type ModelThumbnailJob } from "../lib/model-thumbnail-queue";
@@ -55,7 +55,8 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
     tabOrder: [] as string[],
     loadAssetThumbnail,
     thumbnailsEnabled: true,
-    thumbnailVersions: {} as Record<string, number>,
+    // Set below: hoisted code runs before the imports it would need.
+    thumbnailVersions: null as unknown as ThumbnailVersionStore,
     pluginDescriptors: [] as unknown[],
     showPluginContent: false,
     sourceControl: {
@@ -75,6 +76,7 @@ const { docs, loadAssetThumbnail, layout } = vi.hoisted(() => {
   };
   return { docs, loadAssetThumbnail, layout: { phone: false } };
 });
+docs.thumbnailVersions = createThumbnailVersionStore();
 
 vi.mock("../shell/use-platform-layout", () => ({
   usePhoneLayout: () => layout.phone,
@@ -211,7 +213,7 @@ afterEach(async () => {
   await Promise.resolve();
   loadAssetThumbnail.mockClear();
   docs.thumbnailsEnabled = true;
-  docs.thumbnailVersions = {};
+  docs.thumbnailVersions = createThumbnailVersionStore();
   docs.encodingTextures = new Set();
   layout.phone = false;
   docs.openDocument.mockClear();
@@ -1520,15 +1522,13 @@ describe("ContentBrowserWorkspace grid window", () => {
 
   it("reads thumbnails once for changes that arrive together instead of once per change", async () => {
     installRegistry([texture(0)]);
-    const { rerender } = render(<ContentBrowserWorkspace />);
+    render(<ContentBrowserWorkspace />);
     await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledTimes(1));
     loadAssetThumbnail.mockClear();
 
     // Two captures land back to back, as a scroll changes the mounted tiles row after row.
-    docs.thumbnailVersions = { "tex-0": 1 };
-    rerender(<ContentBrowserWorkspace />);
-    docs.thumbnailVersions = { "tex-0": 2 };
-    rerender(<ContentBrowserWorkspace />);
+    act(() => docs.thumbnailVersions.bump(["tex-0"]));
+    act(() => docs.thumbnailVersions.bump(["tex-0"]));
 
     await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledWith("tex-0"));
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -1585,12 +1585,11 @@ describe("ContentBrowserWorkspace grid window", () => {
     createUrl.mockImplementation(() => `blob:thumbnail-${++sequence}`);
     loadAssetThumbnail.mockImplementation(async () => available ? new Uint8Array([137, 80, 78, 71]) : null);
     try {
-      const { rerender } = render(<ContentBrowserWorkspace />);
+      render(<ContentBrowserWorkspace />);
       await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledWith(animation.header.guid));
       expect(screen.getByTestId(`content-item-${model.path}`).querySelector("img")).toBeNull();
       available = true;
-      docs.thumbnailVersions = { [model.header.guid]: 1, [animation.header.guid]: 1 };
-      rerender(<ContentBrowserWorkspace />);
+      act(() => docs.thumbnailVersions.bump([model.header.guid, animation.header.guid]));
       await waitFor(() => expect(screen.getByTestId(`content-item-${animation.path}`).querySelector("img")).not.toBeNull());
       const oldUrl = screen.getByTestId(`content-item-${model.path}`).querySelector("img")!.getAttribute("src");
       let srcWhenRevoked: string | null | undefined;
@@ -1599,8 +1598,7 @@ describe("ContentBrowserWorkspace grid window", () => {
           srcWhenRevoked = screen.getByTestId(`content-item-${model.path}`).querySelector("img")?.getAttribute("src");
         }
       });
-      docs.thumbnailVersions = { ...docs.thumbnailVersions, [model.header.guid]: 2 };
-      rerender(<ContentBrowserWorkspace />);
+      act(() => docs.thumbnailVersions.bump([model.header.guid]));
       await waitFor(() => {
         const image = screen.getByTestId(`content-item-${model.path}`).querySelector("img");
         expect(image).not.toBeNull();
@@ -1629,7 +1627,7 @@ describe("ContentBrowserWorkspace grid window", () => {
     const revokeUrl = vi.spyOn(URL, "revokeObjectURL");
     const imageFor = (path: string) => screen.getByTestId(`content-item-${path}`).querySelector("img");
     try {
-      const { rerender } = render(<ContentBrowserWorkspace />);
+      render(<ContentBrowserWorkspace />);
       await waitFor(() => expect(imageFor(unchanged.path)).not.toBeNull());
       const modelImage = imageFor(model.path)!;
       const modelUrl = modelImage.getAttribute("src");
@@ -1642,8 +1640,7 @@ describe("ContentBrowserWorkspace grid window", () => {
       loadAssetThumbnail.mockImplementation((guid) => guid === model.header.guid
         ? replacement : Promise.resolve(new Uint8Array([1, 2, 3])));
       loadAssetThumbnail.mockClear();
-      docs.thumbnailVersions = { [model.header.guid]: 1 };
-      rerender(<ContentBrowserWorkspace />);
+      act(() => docs.thumbnailVersions.bump([model.header.guid]));
       await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledWith(model.header.guid));
       expect(imageFor(model.path)).toBe(modelImage);
       expect(modelImage.getAttribute("src")).toBe(modelUrl);
@@ -1652,8 +1649,7 @@ describe("ContentBrowserWorkspace grid window", () => {
       expect(revokeUrl).not.toHaveBeenCalled();
 
       // Another completion supersedes the pending refresh without blanking any tile.
-      docs.thumbnailVersions = { ...docs.thumbnailVersions, [animation.header.guid]: 1 };
-      rerender(<ContentBrowserWorkspace />);
+      act(() => docs.thumbnailVersions.bump([animation.header.guid]));
       expect(imageFor(model.path)).toBe(modelImage);
       expect(modelImage.getAttribute("src")).toBe(modelUrl);
       expect(imageFor(unchanged.path)).toBe(textureImage);
@@ -1686,10 +1682,9 @@ describe("ContentBrowserWorkspace grid window", () => {
     const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:current");
     const revokeUrl = vi.spyOn(URL, "revokeObjectURL");
     try {
-      const { rerender } = render(<ContentBrowserWorkspace />);
+      render(<ContentBrowserWorkspace />);
       await waitFor(() => expect(loadAssetThumbnail).toHaveBeenCalledWith(model.header.guid));
-      docs.thumbnailVersions = { [model.header.guid]: 1 };
-      rerender(<ContentBrowserWorkspace />);
+      act(() => docs.thumbnailVersions.bump([model.header.guid]));
       await waitFor(() => {
         expect(screen.getByTestId(`content-item-${model.path}`).querySelector("img")?.getAttribute("src")).toBe("blob:current");
       });

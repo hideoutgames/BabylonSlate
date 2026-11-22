@@ -10,10 +10,16 @@ import { replaceActor, replaceComponent } from "./scene-actor";
 export class SetActorPropertiesCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setActorProperties";
   readonly mergeKey: string;
-  #byteSize?: number;
-  /** Retained snapshot cost, measured on first read and memoised. */
+  #fromBytes?: number;
+  #toBytes?: number;
+  /**
+   * Retained snapshot cost. Each side is measured on first read and memoised,
+   * and inverting or coalescing carries the measured sides.
+   */
   get byteSize(): number {
-    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+    this.#fromBytes ??= this.from === undefined ? 0 : snapshotBytes(this.from);
+    this.#toBytes ??= this.to === undefined ? 0 : snapshotBytes(this.to);
+    return this.#fromBytes + this.#toBytes;
   }
   readonly actorId: string;
   readonly from: Record<string, unknown> | undefined;
@@ -37,15 +43,18 @@ export class SetActorPropertiesCommand implements EditCommand<SerializedScene> {
 
   invert(): SetActorPropertiesCommand {
     const inverse = new SetActorPropertiesCommand(this.actorId, this.to, this.from);
-    // Swapping `from` and `to` keeps the measured size.
-    inverse.#byteSize = this.#byteSize;
+    inverse.#fromBytes = this.#toBytes;
+    inverse.#toBytes = this.#fromBytes;
     return inverse;
   }
 
   /** A gesture keeps only its first `from` and its latest `to`. */
   coalesce(next: EditCommand<SerializedScene>): SetActorPropertiesCommand | undefined {
     if (!(next instanceof SetActorPropertiesCommand) || next.actorId !== this.actorId) return undefined;
-    return new SetActorPropertiesCommand(this.actorId, this.from, next.to);
+    const merged = new SetActorPropertiesCommand(this.actorId, this.from, next.to);
+    merged.#fromBytes = this.#fromBytes;
+    merged.#toBytes = next.#toBytes;
+    return merged;
   }
 }
 

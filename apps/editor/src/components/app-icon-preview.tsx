@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useThumbnailVersion } from "@haptic/editor-kit";
 import { cn } from "@haptic/ui/lib/utils";
 import { useDocumentActions, useRegistryState, useThumbnailVersions } from "../context/document-context";
 import { appIconTextureProblem, readAppIconSource, renderAppIconPreview } from "../lib/app-icon";
@@ -19,8 +20,7 @@ export function useAppIconPreviewUrl(guid: string | null | undefined): string | 
     readRef.current = readAssetChunk;
   }, [readAssetChunk]);
   const asset = guid ? assetRegistry?.getByGuid(guid) : undefined;
-  const versions = useThumbnailVersions();
-  const version = guid ? (versions[guid] ?? 0) : 0;
+  const version = useThumbnailVersion(useThumbnailVersions(), guid);
   const usable = Boolean(guid && asset && !appIconTextureProblem(asset));
   const [shown, setShown] = useState<{ asset: object; version: number; url: string } | null>(null);
   useEffect(() => {

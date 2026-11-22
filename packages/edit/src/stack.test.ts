@@ -9,11 +9,11 @@ interface TestDoc {
 
 class IncrementCommand implements EditCommand<TestDoc> {
   readonly type = "test.increment";
-  readonly byteSize?: number;
+  readonly byteSize: number;
 
   constructor(
     readonly amount = 1,
-    byteSize?: number,
+    byteSize = 0,
   ) {
     this.byteSize = byteSize;
   }
@@ -35,7 +35,7 @@ class MergeableCommand implements EditCommand<TestDoc> {
     readonly from: number,
     readonly target: number,
     mergeKey = "merge",
-    readonly byteSize?: number,
+    readonly byteSize = 0,
   ) {
     this.mergeKey = mergeKey;
   }
@@ -89,7 +89,7 @@ describe("DocumentEditStack", () => {
     expect(stack.redo({ value: 3 })?.doc).toEqual({ value: 7 });
   });
 
-  it.each([undefined, -1, NaN, Infinity, 1.5])("refuses unaccounted bytes %s without changing history", (bytes) => {
+  it.each([-1, NaN, Infinity, 1.5])("refuses unaccounted bytes %s without changing history", (bytes) => {
     const stack = new DocumentEditStack<TestDoc>({ maxEntries: 10, maxBytes: 100 });
     const doc = stack.apply({ value: 0 }, new IncrementCommand(1, 10)).doc;
     expect(stack.applyWithHistoryAdmission(doc, new IncrementCommand(3, bytes))).toMatchObject({
@@ -122,6 +122,7 @@ describe("DocumentEditStack", () => {
     // An Add whose id already exists: its inverse would remove state it never created.
     const noop: EditCommand<TestDoc> = {
       type: "test.noop",
+      byteSize: 0,
       apply: (current) => current,
       invert: () => new IncrementCommand(-5),
     };
@@ -136,6 +137,7 @@ describe("DocumentEditStack", () => {
     doc = stack.undo(doc)!.doc;
     const unmeasurable: EditCommand<TestDoc> = {
       type: "test.unmeasurable",
+      byteSize: 0,
       apply: () => ({ value: 9 }),
       invert: () => { throw new Error("Cannot read properties of undefined (reading 'from')"); },
     };
