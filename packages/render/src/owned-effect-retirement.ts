@@ -5,7 +5,10 @@ import type { Observer } from "@babylonjs/core/Misc/observable";
 export interface OwnedEffectRetirement {
   /** Bounded cleanup result. Rejection does not establish safe resource release. */
   completion: Promise<void>;
-  /** Actual CPU/native-reference release, possibly after a reported deadline. */
+  /**
+   * Settles once the retirement holds nothing more: on release, or when it gives up waiting (a compile that does not
+   * settle in 15 seconds, a lost context, a reference Babylon keeps), after `completion` reports the uncertainty.
+   */
   released: Promise<void>;
   isReleased(): boolean;
 }
@@ -73,9 +76,23 @@ export function retireOwnedEffect(
     if (destroyed) engine!.onDisposeObservable.remove(destroyed);
     if (lost) engine!.onContextLostObservable.remove(lost);
   };
-  const uncertain = (reason: string) => rejectCompletion(new Error(
-    `Post-process cleanup is uncertain: ${reason}`,
-  ));
+  const uncertain = (reason: string) => {
+    rejectCompletion(new Error(`Post-process cleanup is uncertain: ${reason}`));
+    // Waiting on would keep the owner's resources (passes, render targets, retired Scenes) and the Engine reachable from
+    // observers that may never fire. Release them now, as Babylon's draw wrapper does after the same 15 s.
+    if (!attempted) {
+      attempted = true;
+      try {
+        disposeResources();
+        disposedResources = true;
+      } catch {
+        // The completion already reports the cleanup as uncertain.
+      }
+    }
+    releasedResources = disposedResources;
+    detach();
+    resolveReleased();
+  };
   const finish = () => {
     if (attempted) return;
     attempted = true;
