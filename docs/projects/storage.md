@@ -50,7 +50,7 @@ Haptic checks that the folder holds the same project before it reconnects. Picki
 Large asset data, such as Texture pixels and Model meshes, is stored in its own files beside the assets. When you change or delete an asset, data no asset uses any more stays behind until Haptic cleans it up:
 
 - On iPad, Android and the web, Haptic cleans it up on its own shortly after a project opens.
-- On desktop, and for a folder you chose yourself, choose **Project Settings > General > Clean Unused Project Storage**. Close the project in other windows and apps first. Saving is unavailable while it runs, and it says what it removed.
+- On desktop, and for a folder you chose yourself, choose **Project Settings > General > Clean Unused Project Storage**. Close the project in other windows and apps first. You can keep working and saving while it runs, and it says what it removed.
 
 Haptic removes nothing that any asset uses, nothing changed in the last minute, and nothing while an asset can't be read. With Source Control on, or in a Git folder, Git keeps this data: use **Remove Unused Files** in the Source Control tab instead ([Source Control](source-control.md#remove-unused-files)).
 

@@ -10,8 +10,8 @@ const BLOB_NAME = /^[0-9a-f]{64}$/;
 /** Files modified less than this long ago are never swept: a write may be about to name them. */
 export const BLOB_SWEEP_GRACE_MS = 60_000;
 
-/** Removals between two `canRemove` checks (and yields to the event loop). */
-const SWEEP_BATCH = 32;
+/** Removals in one admitted unit: a write arriving meanwhile waits for at most this many. */
+const SWEEP_BATCH = 4;
 
 /** Every blob some asset in the project names, or why that cannot be known. */
 export type ReferencedBlobs =

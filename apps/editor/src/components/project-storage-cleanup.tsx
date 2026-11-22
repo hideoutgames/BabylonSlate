@@ -64,7 +64,7 @@ export function ProjectStorageCleanup({ sourceControlOn }: { sourceControlOn: bo
           <AlertDialogHeader>
             <AlertDialogTitle>Clean Unused Project Storage?</AlertDialogTitle>
             <AlertDialogDescription>
-              Haptic removes stored asset data that no asset in this project uses. Close this project in other windows and apps first: Haptic can't see what they haven't saved. Saving is unavailable until it finishes.
+              Haptic removes stored asset data that no asset in this project uses. Close this project in other windows and apps first: Haptic can't see what they haven't saved. You can keep working and saving meanwhile.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

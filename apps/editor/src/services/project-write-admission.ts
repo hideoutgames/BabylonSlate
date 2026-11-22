@@ -37,15 +37,37 @@ export class ProjectWriteAdmission {
   noteWrite(): void { this.epoch++; }
 
   /**
-   * Locks project writes at once, or returns null without locking: while
-   * another lock holds them or any admitted operation is still running. So
-   * a background owner never makes saves wait or fail behind a drain; it
-   * tries again later.
+   * The yielding hold a background owner (Clean Unused Project Storage) has
+   * while it runs one small unit of work; null otherwise. Unlike `lock`, it
+   * never refuses anyone: an admission (`run`) or a guarded write arriving
+   * meanwhile waits for the unit to end (a few milliseconds), then goes on.
    */
-  tryLockIdle(reason: string): ProjectWriteLease | null {
-    if (this.blocked || this.active > 0) return null;
-    return this.lock(reason);
+  private yielding: Promise<void> | null = null;
+
+  /**
+   * Runs `unit` under a yielding hold, only when writes are idle (no lock
+   * held, no admitted operation running, no other hold) and `stillValid()`
+   * (checked in the same tick the hold starts); otherwise resolves false
+   * without running it. While it runs, admissions and guarded writes wait
+   * for it rather than fail, so a save is never refused because of it; the
+   * owner checks `writeEpoch` before its next unit and stops when anything
+   * wrote meanwhile.
+   */
+  async runYieldingUnit(stillValid: () => boolean, unit: () => Promise<void>): Promise<boolean> {
+    if (this.blocked || this.active > 0 || this.yielding || !stillValid()) return false;
+    let release!: () => void;
+    this.yielding = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      await unit();
+    } finally {
+      this.yielding = null;
+      release();
+    }
+    return true;
   }
+
+  /** The running yielding unit's end, or null: writes wait for it before they start. */
+  get yieldingUnit(): Promise<void> | null { return this.yielding; }
   get locked(): boolean { return this.blocked && this.active === 0; }
   get reason(): string | null { return this.locks.values().next().value?.reason ?? null; }
 
@@ -82,6 +104,9 @@ export class ProjectWriteAdmission {
   run<T>(operation: () => T | PromiseLike<T>): Promise<T> {
     try { this.assertAdmission(); }
     catch (error) { return Promise.reject(error); }
+    // A background unit yields: this operation waits for it, then is admitted (or refused by a lock taken meanwhile).
+    const yielding = this.yielding;
+    if (yielding) return yielding.then(() => this.run(operation));
     return this.continue(operation);
   }
 
@@ -164,10 +189,16 @@ export function guardProjectStorage(
       const method = STORAGE_WRITES.has(key)
         ? (...args: unknown[]) => {
           if (!internal) return admission.run(() => { admission.noteWrite(); return Reflect.apply(value, target, args); });
-          try {
+          const write = () => {
             admission.assertStorageWritable();
             admission.noteWrite();
-            return Reflect.apply(value, target, args);
+            return Reflect.apply(value, target, args) as unknown;
+          };
+          // A background unit yields: the write starts once it ends, never failing because of it.
+          const yielding = admission.yieldingUnit;
+          if (yielding) return yielding.then(write);
+          try {
+            return write();
           } catch (error) { return Promise.reject(error); }
         }
         : value.bind(target);
@@ -195,23 +226,6 @@ export async function withExclusiveWriter<T>(
   if (admission.blocked) throw new Error(admission.reason!);
   signal?.throwIfAborted();
   return exclusively(admission.lock(reason), storage, work, signal);
-}
-
-/**
- * `withExclusiveWriter` for background work: runs `work` only if project
- * writes can be locked at once (no lock held, no admitted operation running),
- * else resolves `{ ran: false }` without waiting, so no save is refused for
- * long behind it.
- */
-export async function withIdleExclusiveWriter<T>(
-  admission: ProjectWriteAdmission,
-  storage: ProjectStorage,
-  reason: string,
-  work: (storage: ProjectStorage) => Promise<T>,
-): Promise<{ ran: true; value: T } | { ran: false }> {
-  const lease = admission.tryLockIdle(reason);
-  if (!lease) return { ran: false };
-  return { ran: true, value: await exclusively(lease, storage, work) };
 }
 
 async function exclusively<T>(

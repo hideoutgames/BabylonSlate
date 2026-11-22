@@ -5,7 +5,7 @@ import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs"
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
-import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withExclusiveWriter, withIdleExclusiveWriter, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
+import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withExclusiveWriter, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
 import { guardProjectAssetRegistry } from "./project-authoring-ports";
 import { isExtensionPackagePath, isAssetSourceRevisionChanged, mountExtensionContentRoots, resolveExtensionFieldValues, type AssetDocument, type ExtensionDescriptor } from "@haptic/assets";
 import type {
@@ -186,6 +186,10 @@ export type { PluginImportResult } from "./project-plugins";
  * asset header could not be read: nothing removed), `linked` (a symbolic
  * link may alias a blob folder: nothing removed), `no-project`.
  */
+/** The manual Clean Unused Project Storage reads the referenced set again at most this many times when writes interrupt it. */
+const MANUAL_SWEEP_PASSES = 8;
+const MANUAL_SWEEP_RETRY_MS = 250;
+
 export type BlobReclaimResult =
   | { status: "reclaimed"; files: number; bytes: number; stopped: boolean }
   | { status: "source-control" }
@@ -399,18 +403,19 @@ export class ProjectService {
    * blob retention there, and Remove Unused Files serves it.
    *
    * Safety: the referenced set is every header on disk (`collectReferencedBlobs`);
-   * an unreadable header or a linked folder removes nothing. Removal runs
-   * under the write-admission lock, and only while no project write happened
-   * since the set was read (`ProjectWriteAdmission.writeEpoch`): a save,
-   * import, encode or move landing at any point stops the sweep before its
-   * next batch, and the next run reads the set again. A blob written or asked
+   * an unreadable header or a linked folder removes nothing. Files go a few
+   * at a time, each unit under a yielding hold (`runYieldingUnit`) taken
+   * only while no write is admitted and no project write happened since the
+   * set was read (`writeEpoch`). A save, auto-save, import or encode arriving
+   * during a unit waits for it (milliseconds) and is never refused; the
+   * write then stops the sweep before its next unit. A blob written or asked
    * for (`writeBlob`) within the grace window stays, which covers an asset
    * written after its blobs.
    *
-   * `automatic` (after a project opens) reads the set without the lock and
-   * takes it only per batch and only when no write is admitted, so no save
-   * waits on it; otherwise the whole run holds it as the only writer, as
-   * Remove Unused Files does (other writes are refused meanwhile).
+   * `automatic` (after a project opens) stops there and leaves the rest to a
+   * later run. The manual run (Project Settings) reads the set again and
+   * goes on, up to `MANUAL_SWEEP_PASSES` passes, waiting briefly while
+   * writes are busy.
    */
   async reclaimUnusedBlobs(options: { automatic?: boolean; signal?: AbortSignal; minAgeMs?: number; now?: () => number } = {}): Promise<BlobReclaimResult> {
     if (!this.projectGuid) return { status: "no-project" };
@@ -420,33 +425,36 @@ export class ProjectService {
       ...(options.now ? { now: options.now } : {}),
       ...(options.signal ? { signal: options.signal } : {}),
     };
-    const sweep = async (reader: ProjectStorage, admit: (removeBatch: (writer: ProjectStorage) => Promise<void>) => Promise<boolean>): Promise<BlobReclaimResult> => {
+    const pass = async (): Promise<BlobReclaimResult> => {
+      const epoch = this.writeAdmission.writeEpoch;
       // Cheap first look: nothing old enough that the index leaves unnamed means nothing to read further.
       const indexed = new Set((this.assetRegistry?.list() ?? []).flatMap((entry) =>
         entry.header.chunks.flatMap((chunk) => ("blob" in chunk.locator ? [chunk.locator.blob] : []))));
-      if ((await orphanedBlobCandidates(reader, indexed, sweepOptions)).length === 0) return { status: "reclaimed", files: 0, bytes: 0, stopped: false };
-      const referenced = await collectReferencedBlobs(reader, options.signal);
+      if ((await orphanedBlobCandidates(this.storage, indexed, sweepOptions)).length === 0) return { status: "reclaimed", files: 0, bytes: 0, stopped: false };
+      const referenced = await collectReferencedBlobs(this.storage, options.signal);
       if (!referenced.complete) return referenced.reason === "linked" ? { status: "linked" } : { status: "incomplete", unreadable: referenced.paths };
-      const result = await sweepOrphanedBlobs(reader, referenced.blobs, { ...sweepOptions, admit });
+      const result = await sweepOrphanedBlobs(this.storage, referenced.blobs, {
+        ...sweepOptions,
+        // A write since the set was read may name a candidate: no further unit runs.
+        admit: (removeUnit) => this.writeAdmission.runYieldingUnit(
+          () => this.writeAdmission.writeEpoch === epoch,
+          () => removeUnit(this.unguardedStorage),
+        ),
+      });
       return { status: "reclaimed", files: result.removed.length, bytes: result.bytes, stopped: result.stopped };
     };
-    const reason = "Haptic is cleaning unused project storage. Try again in a moment.";
-    if (!options.automatic) {
-      return this.withExclusiveWrites(reason, (writer) => sweep(writer, async (removeBatch) => {
-        await removeBatch(writer);
-        return true;
-      }), options.signal);
+    if (options.automatic) return pass();
+    let files = 0;
+    let bytes = 0;
+    for (let attempt = 1; ; attempt++) {
+      const result = await pass();
+      if (result.status !== "reclaimed") return files > 0 ? { status: "reclaimed", files, bytes, stopped: true } : result;
+      files += result.files;
+      bytes += result.bytes;
+      if (!result.stopped || attempt >= MANUAL_SWEEP_PASSES) return { status: "reclaimed", files, bytes, stopped: result.stopped };
+      await new Promise((resolve) => setTimeout(resolve, MANUAL_SWEEP_RETRY_MS));
+      options.signal?.throwIfAborted();
     }
-    const epoch = this.writeAdmission.writeEpoch;
-    return sweep(this.storage, async (removeBatch) => {
-      const done = await withIdleExclusiveWriter(this.writeAdmission, this.unguardedStorage, reason, async (writer) => {
-        // A write since the set was read may name a candidate: stop, and leave the rest to the next run.
-        if (this.writeAdmission.writeEpoch !== epoch) return false;
-        await removeBatch(writer);
-        return true;
-      });
-      return done.ran && done.value;
-    });
   }
 
   /** Source Control is on in `project.json`, or the folder is a Git working copy; unreadable settings count as on. */

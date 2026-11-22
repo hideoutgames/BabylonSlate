@@ -2622,10 +2622,16 @@ describe("Clean Unused Project Storage", () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("Blobs.hproject");
     await installMinimalProject(storage);
-    const hooks = { onStagedListing: async () => {} };
+    const hooks = { onStagedListing: async () => {}, onRemove: async (path: string): Promise<void> => void path };
     const watched = new Proxy(storage, {
       get(target, key) {
         const value = Reflect.get(target, key, target) as unknown;
+        if (key === "remove") {
+          return async (path: string) => {
+            await hooks.onRemove(path);
+            return target.remove(path);
+          };
+        }
         if (key === "listStagedWrites") {
           return async (path: string) => {
             await hooks.onStagedListing();
@@ -2636,7 +2642,7 @@ describe("Clean Unused Project Storage", () => {
       },
     });
     const service = new ProjectService(watched);
-    await service.loadCurrentProject();
+    const loaded = await service.loadCurrentProject();
     const used = await sha256Hex(large(1));
     const bytes = await encodeHasset({
       header: {
@@ -2654,7 +2660,7 @@ describe("Clean Unused Project Storage", () => {
     const orphan = await sha256Hex(large(2));
     await storage.writeBinary(`assets/.blobs/${orphan}`, large(2));
     const blobs = async () => (await storage.readdir("assets/.blobs")).map((entry) => entry.name).sort();
-    return { storage, service, hooks, used, orphan, blobs };
+    return { storage, service, hooks, used, orphan, blobs, loaded };
   }
 
   it("removes a blob no asset names once it is past the grace window, and keeps the ones assets use", async () => {
@@ -2695,6 +2701,44 @@ describe("Clean Unused Project Storage", () => {
     hooks.onStagedListing = async () => {};
     expect(await service.reclaimUnusedBlobs({ now: later, automatic: true })).toMatchObject({ status: "reclaimed", files: 1, stopped: false });
     expect(await blobs()).toEqual([used]);
+  });
+
+  it.each([
+    ["an automatic run", true],
+    ["the manual run", false],
+  ])("lets an auto-save and a Save All made while %s removes files wait and succeed, deleting nothing on the set read before them", async (_run, automatic) => {
+    const { storage, service, hooks, used, blobs, loaded } = await withBlobs();
+    for (let seed = 3; seed < 13; seed++) await storage.writeBinary(`assets/.blobs/${await sha256Hex(large(seed))}`, large(seed));
+    const removed: string[] = [];
+    let saves: Promise<unknown> | null = null;
+    let settledDuringUnit = false;
+    let removedAtSave = 0;
+    hooks.onRemove = async (path) => {
+      if (removed.length === 0) {
+        // Mid-unit: Auto-Save and Save All both go through the project's write admission, as `runSaveAll` does.
+        const autoSave = service.saveProject(loaded.document, loaded.layouts);
+        const saveAll = service.withBaselineSave((writer) => writer.saveProject(loaded.document, loaded.layouts));
+        saves = Promise.all([autoSave, saveAll]);
+        void saves.then(() => { settledDuringUnit = true; }, () => { settledDuringUnit = true; });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        // They wait for the unit rather than fail.
+        expect(settledDuringUnit).toBe(false);
+        removedAtSave = 1;
+      }
+      removed.push(path);
+    };
+    const result = await service.reclaimUnusedBlobs({ now: later, automatic });
+    await expect(saves).resolves.toBeDefined();
+    expect(removedAtSave).toBe(1);
+    if (automatic) {
+      // The unit that was running finishes (4 files); nothing more is removed on the set read before the saves.
+      expect(result).toEqual({ status: "reclaimed", files: 4, bytes: 4 * 70 * 1024, stopped: true });
+      expect(await blobs()).toHaveLength(1 + 11 - 4);
+    } else {
+      // The manual run reads the set again after the saves, then removes the rest.
+      expect(result).toEqual({ status: "reclaimed", files: 11, bytes: 11 * 70 * 1024, stopped: false });
+      expect(await blobs()).toEqual([used]);
+    }
   });
 
   it("removes nothing and waits for no one while project writes are held", async () => {
