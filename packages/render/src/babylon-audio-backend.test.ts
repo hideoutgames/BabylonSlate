@@ -19,7 +19,7 @@ const audio = vi.hoisted(() => {
     createEngine: vi.fn(async () => engine),
     createBus: vi.fn(async () => ({ dispose: vi.fn() })),
     createBuffer: vi.fn(async (source: ArrayBuffer) => ({ length: source.byteLength, channelCount: 1 })),
-    createSound: vi.fn(async () => sound()),
+    createSound: vi.fn<(...args: unknown[]) => Promise<ReturnType<typeof sound>>>(async () => sound()),
     createStreamingSound: vi.fn<(...args: unknown[]) => Promise<ReturnType<typeof sound>>>(async () => sound()),
   };
 });
@@ -106,6 +106,31 @@ describe("Babylon audio backend lifecycle", () => {
     backend.setVoiceMuffle(request.voiceId, 0);
     expect(sound.volume).toBeCloseTo(0.6);
     expect(send.gain.value).toBe(0);
+    backend.dispose();
+  });
+
+  it("leaves distance falloff to the service's gain, so the panner only pans", async () => {
+    const backend = new BabylonAudioPlaybackBackend();
+    const spatial = {
+      enabled: true, innerRadius: 2, maxRadius: 20, distanceModel: "inverse" as const, rolloff: 3,
+      spatialisation: "hrtf" as const, cone: null,
+    };
+    expect(backend.setVoiceAttenuation(request.voiceId, 0.5)).toBe(false);
+    await backend.play({ ...request, gain: 0.8, attenuation: 0.25, spatial });
+    const sound = await (audio.createSound.mock.results[0]!.value as Promise<ReturnType<typeof audio.sound>>);
+    // With rolloff 0 every Web Audio distance model is 1 at any distance; Max Radius and the curve are the service's.
+    expect(audio.createSound.mock.calls[0]![2]).toEqual(expect.objectContaining({
+      volume: 0.2, spatialEnabled: true, spatialRolloffFactor: 0, spatialPanningModel: "HRTF",
+    }));
+    expect(audio.createSound.mock.calls[0]![2]).not.toHaveProperty("spatialMaxDistance");
+    expect(backend.setVoiceAttenuation(request.voiceId, 0)).toBe(true);
+    expect(sound.volume).toBe(0);
+    backend.setVoiceAttenuation(request.voiceId, 0.5);
+    backend.setVoiceMuffle(request.voiceId, 0.5);
+    // Gain × distance gain × the muffle's dry share.
+    expect(sound.volume).toBeCloseTo(0.2);
+    backend.setVoiceGain(request.voiceId, 0.4);
+    expect(sound.volume).toBeCloseTo(0.1);
     backend.dispose();
   });
 

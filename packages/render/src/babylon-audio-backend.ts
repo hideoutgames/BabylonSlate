@@ -105,8 +105,8 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   /** Blob URLs created directly by this backend (when callers omit sourceUrl); revoked on stop/dispose. */
   private readonly ownedStreamUrls = new Map<string, string>();
   private readonly muffleSends = new Map<string, GainNode>();
-  /** Requested gain and applied muffle per live voice; both set its volume. */
-  private readonly voiceLevels = new Map<string, { gain: number; muffle: number }>();
+  /** Requested gain, distance gain and applied muffle per live voice; all three set its volume. */
+  private readonly voiceLevels = new Map<string, { gain: number; attenuation: number; muffle: number }>();
   private muffleFilter: BiquadFilterNode | null = null;
   private paused = false;
   /** Voices a game pause holds; they stay paused when the whole backend resumes. */
@@ -159,15 +159,16 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     const engine = await this.ensureEngine();
     if (!isCurrent()) return;
     const spatial = request.spatial;
+    const attenuation = request.attenuation ?? 1;
     const commonOptions = {
-      volume: request.gain,
+      volume: request.gain * attenuation,
       loop: request.loop,
       maxInstances: 1,
       spatialEnabled: spatial?.enabled === true,
-      spatialMinDistance: spatial?.innerRadius,
-      spatialMaxDistance: spatial?.maxRadius,
-      spatialDistanceModel: spatial?.distanceModel,
-      spatialRolloffFactor: spatial?.rolloff,
+      // The panner only pans: with rolloff 0 every distance model is 1, and the service applies
+      // `computeAttenuationGain` (silent at Max Radius) through `setVoiceAttenuation`.
+      spatialDistanceModel: "linear" as DistanceModelType,
+      spatialRolloffFactor: 0,
       spatialPanningModel: (
         spatial?.spatialisation === "hrtf" ? "HRTF" : "equalpower"
       ) as PanningModelType,
@@ -220,7 +221,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       this.voices.set(request.voiceId, sound);
       this.streamedElements.set(request.voiceId, element);
       if (ownedUrl) this.ownedStreamUrls.set(request.voiceId, ownedUrl);
-      this.voiceLevels.set(request.voiceId, { gain: request.gain, muffle: 0 });
+      this.voiceLevels.set(request.voiceId, { gain: request.gain, attenuation, muffle: 0 });
       sound.onEndedObservable.addOnce(() => {
         this.onVoiceEnded?.(request.voiceId);
       });
@@ -256,7 +257,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     }
     this.pendingVoices.delete(request.voiceId);
     this.voices.set(request.voiceId, sound);
-    this.voiceLevels.set(request.voiceId, { gain: request.gain, muffle: 0 });
+    this.voiceLevels.set(request.voiceId, { gain: request.gain, attenuation, muffle: 0 });
     sound.onEndedObservable.addOnce(() => {
       this.onVoiceEnded?.(request.voiceId);
     });
@@ -300,6 +301,14 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     if (!level) return;
     level.gain = gain;
     this.applyVoiceLevel(voiceId);
+  }
+
+  setVoiceAttenuation(voiceId: string, gain: number): boolean {
+    const level = this.voiceLevels.get(voiceId);
+    if (!level) return false;
+    level.attenuation = Number.isFinite(gain) ? Math.min(1, Math.max(0, gain)) : 1;
+    this.applyVoiceLevel(voiceId);
+    return true;
   }
 
   setVoicePose(voiceId: string, pose: AudioPose): boolean {
@@ -389,12 +398,15 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
    * The send taps the voice after its volume and AudioV2's dry route stays
    * connected, so muffling lowers the dry level (the high band) by the factor
    * while the lowpass send brings the low band back to the requested gain.
+   * The distance gain scales the voice before every route (dry, muffle send and
+   * reverb bus), as the panner's distance model did. AudioV2 ramps each volume
+   * write over its parameter ramp (10 ms), so per-snapshot changes do not click.
    */
   private applyVoiceLevel(voiceId: string): void {
     const sound = this.voices.get(voiceId);
     const level = this.voiceLevels.get(voiceId);
     if (!sound || !level) return;
-    sound.volume = level.gain * (1 - level.muffle);
+    sound.volume = level.gain * level.attenuation * (1 - level.muffle);
     const send = this.muffleSends.get(voiceId);
     if (send) send.gain.value = level.muffle / (1 - level.muffle);
   }

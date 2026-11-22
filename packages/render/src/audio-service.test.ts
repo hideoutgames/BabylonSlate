@@ -738,6 +738,60 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("applies the Sound Attenuation curve as each spatial voice's distance gain, silent from Max Radius on", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    const curve = (distanceModel: SoundAttenuationPayload["distanceModel"]): SoundAttenuationPayload => ({
+      innerRadius: 2, maxRadius: 20, distanceModel, rolloff: 1, spatialisation: "equalPower", cone: null, doppler: null,
+    });
+    service.setLibrary(library({
+      audio: {
+        lin: { ...createDefaultAudioPayload(), volume: 0.5, soundAttenuationGuid: "lin" },
+        inv: { ...createDefaultAudioPayload(), soundAttenuationGuid: "inv" },
+        exp: { ...createDefaultAudioPayload(), soundAttenuationGuid: "exp" },
+        bed: createDefaultAudioPayload(),
+      },
+      attenuations: { lin: curve("linear"), inv: curve("inverse"), exp: curve("exponential") },
+    }));
+    for (const guid of ["lin", "inv", "exp", "bed"]) service.setSourceBytes(guid, new Uint8Array([1]));
+    await service.unlockAsync();
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    for (const [guid, slotId] of [["lin", 1], ["inv", 2], ["exp", 3]] as const) {
+      service.noteActorSlot(guid, slotId);
+      service.handleCommand({ type: "playSound", assetGuid: guid, volume: 1, frameId: 1, voiceId: guid, emitterActorGuid: guid });
+    }
+    service.handleCommand({ type: "playSound", assetGuid: "bed", volume: 1, frameId: 1, voiceId: "bed" });
+    // A located voice starts at the gain of its place: past Max Radius, silent from its first sample.
+    service.handleCommand({ type: "playSound", assetGuid: "inv", volume: 1, frameId: 1, voiceId: "far", location: { x: 0, y: 0, z: 25 } });
+    await service.flush();
+    expect(backend.plays.find((play) => play.voiceId === "far")?.attenuation).toBe(0);
+    expect(backend.plays.find((play) => play.voiceId === "bed")?.attenuation).toBeUndefined();
+
+    const heardAt = (distance: number) => {
+      service.syncSnapshot([1, 2, 3].map((slotId) => ({ slotId, position: { x: distance, y: 0, z: 0 } })));
+      return ["lin", "inv", "exp"].map((voiceId) => backend.attenuations.get(voiceId));
+    };
+    // Hand-derived from the curve: t = (d - 2) / 18; inverse (1/(1+t) - 1/2) / (1/2); exponential (e^-t - e^-1) / (1 - e^-1).
+    const near = (values: number[]) => values.map((value) => expect.closeTo(value, 6));
+    expect(heardAt(1)).toEqual([1, 1, 1]);
+    expect(heardAt(2)).toEqual([1, 1, 1]);
+    expect(heardAt(11)).toEqual(near([0.5, 0.333333, 0.377541]));
+    expect(heardAt(19.9)).toEqual(near([0.005556, 0.002786, 0.003242]));
+    expect(heardAt(20)).toEqual([0, 0, 0]);
+    expect(heardAt(30)).toEqual([0, 0, 0]);
+    // The listener moving between snapshots changes the gain too; the voice's own gain path is left alone.
+    service.syncListener({ x: 21, y: 0, z: 0 });
+    expect(heardAt(30)).toEqual(near([0.611111, 0.44, 0.490302]));
+    expect(backend.gains.size).toBe(0);
+    expect(backend.attenuations.has("bed")).toBe(false);
+    service.setShowAudioDebug(true);
+    expect(service.stats().debugVoices?.map((voice) => [voice.attenuation, voice.insideRadius])).toEqual([
+      [expect.closeTo(0.611111, 6), true], [expect.closeTo(0.44, 6), true], [expect.closeTo(0.490302, 6), true],
+      [null, null], [0, false],
+    ]);
+    service.dispose();
+  });
+
   it("forwards snapshot emitter orientation so cones aim with the actor", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const service = new AudioService({ backend });
@@ -1971,7 +2025,7 @@ describe("AudioService spatial refresh per applied snapshot", () => {
 });
 
 /**
- * Records every pose, muffle, rate, listener and reverb write, counting those whose arguments equal the previous
+ * Records every pose, muffle, distance gain, rate, listener and reverb write, counting those whose arguments equal the previous
  * call's for the same target. While `landing` is false it takes nothing, as a backend without the voice or engine.
  */
 class RepeatCountingBackend extends FakeAudioPlaybackBackend {
@@ -1995,6 +2049,11 @@ class RepeatCountingBackend extends FakeAudioPlaybackBackend {
   override setVoiceMuffle(voiceId: string, factor: number): boolean {
     this.record(`muffle:${voiceId}`, factor);
     return this.landing && super.setVoiceMuffle(voiceId, factor);
+  }
+
+  override setVoiceAttenuation(voiceId: string, gain: number): boolean {
+    this.record(`attenuation:${voiceId}`, gain);
+    return this.landing && super.setVoiceAttenuation(voiceId, gain);
   }
 
   override setVoicePlaybackRate(voiceId: string, rate: number): boolean {
@@ -2093,6 +2152,7 @@ describe("AudioService writes of unchanged values", () => {
     listener: { ...backend.listener },
     pose: { ...backend.poses.get("v1") },
     muffles: [backend.muffles.get("v1"), backend.muffles.get("bed")],
+    attenuation: backend.attenuations.get("v1"),
     reverb: [backend.wet, backend.decay, backend.damping],
   });
 
@@ -2198,6 +2258,8 @@ describe("AudioService writes of unchanged values", () => {
       listener: { x: 5, y: 1, z: 1 },
       pose: { x: 1, y: 1, z: 1 },
       muffles: [1, 0],
+      // Linear 1..50 at distance 4: 1 - 3/49.
+      attenuation: expect.closeTo(46 / 49, 10),
       reverb: [backend.wet, backend.decay, backend.damping],
     });
     expect(backend.wet).toBeGreaterThan(0.2);
