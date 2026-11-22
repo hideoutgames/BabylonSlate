@@ -14,6 +14,7 @@ import {
 } from "@haptic/physics";
 import type { Actor, ActorComponent, World, WorldChangeObserver } from "@haptic/object-model";
 import {
+  PhysicsChainComposer,
   PhysicsCompositionScratch,
   hasParticipantComponent,
   sameDescriptor,
@@ -94,8 +95,28 @@ export class PhysicsWorldSync {
   private readonly dirtyProperties = new Set<Actor>();
   private readonly destroyedActors = new Set<Actor>();
   private readonly walkVisited = new Set<Actor>();
+  /**
+   * Actors whose descendants this sync cycle already marked in `dirtyTransforms` (a later write to them or any
+   * actor under them adds no walk). Structure changes mark the descendants they add, so the set never has to
+   * follow the hierarchy; it empties with the dirty sets.
+   */
+  private readonly walkedTransformRoots = new Set<Actor>();
+  /** Reused by every descendant walk; no walk runs inside another. */
+  private readonly walkStack: Actor[] = [];
   private readonly dirtyAffected = new Set<Actor>();
   private readonly orderedAffected: Actor[] = [];
+  /** Affected actors that take part in physics, validated and composed before any native change (`syncDirty`). */
+  private readonly validationTargets: Actor[] = [];
+  /** Body owners a dirty pass found without a body source, retired after the pass reconciles the rest. */
+  private readonly retireGuids: string[] = [];
+  /** One actor for a single-chain composition inside a pass. */
+  private readonly singleActor: Actor[] = [];
+  /**
+   * Dynamic bodies whose actor or an ancestor changed since the last step, by actor guid: readback reads them even
+   * when they did not move, so a resting body keeps its world pose while its parent chain moves (a script, Timeline
+   * or teleport moving a body-less or static parent). Emptied by each step.
+   */
+  private readonly forcedReadback = new Set<string>();
   /** Tracked DynamicRuntimeMeshComponents with collision enabled, for external `collisionRevision` polling. */
   private readonly dynamicMeshRevisions = new Map<ActorComponent, { actor: Actor; revision: number | undefined }>();
   private lastEligibilityRevision = Number.NaN;
@@ -111,6 +132,8 @@ export class PhysicsWorldSync {
   private readonly targetScratch: PhysicsTransform = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } };
   /** Reused by every pre-step composition; readback recomposes into its own. */
   private readonly composition = new PhysicsCompositionScratch();
+  /** Reused by every dirty pass's chain composition; its poses are copied into `composition`. */
+  private readonly chains: PhysicsChainComposer;
   private actors: readonly Actor[] = [];
   /** The live world whose `findActor` answers call-time parent lookups. */
   private world: World | null = null;
@@ -149,12 +172,15 @@ export class PhysicsWorldSync {
         this.observedLayerId !== undefined &&
         actor.sceneLayerId !== this.observedLayerId &&
         this.bodyOwnerByActor.get(actor.guid) !== actor &&
-        !this.hosting.isHosted(actor.guid)
+        !this.hosting.isHosted(actor.guid) &&
+        // A chain ancestor from another layer still releases its composed pose.
+        !this.worldTransforms.has(actor.guid)
       ) return;
       this.destroyedActors.add(actor);
       this.dirtyStructure.delete(actor);
       this.dirtyTransforms.delete(actor);
       this.dirtyProperties.delete(actor);
+      this.walkedTransformRoots.delete(actor);
       this.markDescendantsDirty(actor.guid, this.dirtyStructure);
     },
     onActorParentChanged: (actor, previousParentGuid) => {
@@ -173,14 +199,11 @@ export class PhysicsWorldSync {
     },
     onActorTransformChanged: (actor, source) => {
       if (this.observedLayerId !== undefined && actor.sceneLayerId !== this.observedLayerId) return;
-      if (source === "script") {
-        this.dirtyTransforms.add(actor);
-        this.markDescendantsDirty(actor.guid, this.dirtyTransforms);
-      } else {
-        // Physics readback already updated this actor's own body and cached world pose;
-        // only descendants (e.g. static children under a moving body) need recomposing.
-        this.markDescendantsDirty(actor.guid, this.dirtyTransforms);
-      }
+      // Physics readback already updated this actor's own body and cached world pose; only descendants
+      // (e.g. static children under a moving body) need recomposing. An actor that takes no part in physics
+      // (a camera, a prop without collision) is never queued: a participant it gains later marks structure.
+      if (source === "script" && !this.dirtyTransforms.has(actor) && this.participates(actor)) this.dirtyTransforms.add(actor);
+      this.markTransformDescendantsDirty(actor);
     },
     onActorVariableChanged: (actor, name) => {
       if (name === "parentId" || name === "name") return;
@@ -203,7 +226,8 @@ export class PhysicsWorldSync {
       } else if (kind === "meta") {
         this.dirtyStructure.add(actor);
       } else if (kind === "transform") {
-        this.dirtyTransforms.add(actor);
+        // A component pose moves only the actor's own colliders, never a descendant actor.
+        this.dirtyProperties.add(actor);
       } else {
         this.dirtyProperties.add(actor);
         if (
@@ -302,6 +326,7 @@ export class PhysicsWorldSync {
       backend,
       simulatedBodies: this.simulatedBodyByActor,
       dynamicBodyActors: this.dynamicBodyActors,
+      forcedReadback: this.forcedReadback,
       bodyOwners: this.bodyOwnerByActor,
       eligible: this.actorFilter,
       findLiveActor: this.findLiveActor,
@@ -319,6 +344,7 @@ export class PhysicsWorldSync {
       collisionOff: this.collisionOff,
     });
     this.constraints = new PhysicsConstraintSync(backend, options?.deferUnsupportedConstraints);
+    this.chains = new PhysicsChainComposer(this.findLiveActor, backend.kind);
   }
 
   getBackend(): PhysicsBackend {
@@ -452,8 +478,13 @@ export class PhysicsWorldSync {
     this.dirtyProperties.clear();
     this.destroyedActors.clear();
     this.walkVisited.clear();
+    this.walkedTransformRoots.clear();
+    this.walkStack.length = 0;
+    this.forcedReadback.clear();
     this.dirtyAffected.clear();
     this.orderedAffected.length = 0;
+    this.validationTargets.length = 0;
+    this.retireGuids.length = 0;
     this.dynamicMeshRevisions.clear();
     this.lastEligibility.clear();
     this.lastEligibilityRevision = Number.NaN;
@@ -521,13 +552,20 @@ export class PhysicsWorldSync {
       live.clear();
       sources.clear();
     }
+    // Whatever moved since the last step is unknown here: the next readback reads every dynamic body.
+    for (const actorId of this.dynamicBodyActors) this.forcedReadback.add(actorId);
     if (this.eligibilityRevision) this.lastEligibilityRevision = this.eligibilityRevision();
     if (this.contactReportingRevision) this.lastContactReportingRevision = this.contactReportingRevision();
+    this.clearDirty();
+    this.needsFullSync = false;
+  }
+
+  private clearDirty(): void {
     this.dirtyStructure.clear();
     this.dirtyTransforms.clear();
     this.dirtyProperties.clear();
     this.destroyedActors.clear();
-    this.needsFullSync = false;
+    this.walkedTransformRoots.clear();
   }
 
   private syncDirty(world: World): void {
@@ -609,25 +647,9 @@ export class PhysicsWorldSync {
     if (reconciledGuids.size) reconciledGuids.clear();
 
     try {
-      const consider = (actor: Actor): void => {
-        if (actor.destroyed || world.findActor(actor.guid) !== actor) return;
-        const tracked =
-          this.bodyOwnerByActor.get(actor.guid) === actor ||
-          this.hosting.isHosted(actor.guid) ||
-          this.hosting.hostedChildren(actor.guid) !== undefined;
-        if (
-          !tracked &&
-          ((this.observedLayerId !== undefined && actor.sceneLayerId !== this.observedLayerId) ||
-            !hasParticipantComponent(actor, this.backend.kind))
-        ) {
-          return;
-        }
-        affected.add(actor);
-      };
-
-      for (const actor of this.dirtyStructure) consider(actor);
-      for (const actor of this.dirtyTransforms) consider(actor);
-      for (const actor of this.dirtyProperties) consider(actor);
+      this.dirtyStructure.forEach(this.considerDirty);
+      this.dirtyTransforms.forEach(this.considerDirty);
+      this.dirtyProperties.forEach(this.considerDirty);
 
       for (const destroyed of this.destroyedActors) {
         const prevHost = this.hosting.hostOf(destroyed.guid);
@@ -662,25 +684,22 @@ export class PhysicsWorldSync {
 
       // Pre-mutation validation & composition boundary: parent cycles and oblique shear
       // throw here before any native body, collider, or hosting state is mutated.
-      const validationTargets: Actor[] = [];
+      const validationTargets = this.validationTargets;
+      validationTargets.length = 0;
       for (const actor of affected) {
         if (!actor.destroyed && this.actorFilter(actor) && hasParticipantComponent(actor, this.backend.kind)) {
           validationTargets.push(actor);
         }
       }
-      const updatedTransforms =
-        validationTargets.length > 0
-          ? physicsChainTransforms(validationTargets, this.findLiveActor, this.backend.kind)
-          : undefined;
-      if (updatedTransforms) {
-        for (const [guid, transform] of updatedTransforms) {
-          const slot = this.composition.pose(guid);
-          copyTransformInto(transform, slot);
-          this.worldTransforms.set(guid, slot);
-        }
+      if (validationTargets.length > 0) {
+        const composed = this.chains.compose(validationTargets);
+        validationTargets.length = 0;
+        composed.forEach(this.storePassPose);
       }
       for (const destroyed of this.destroyedActors) {
-        if (!world.findActor(destroyed.guid)) this.worldTransforms.delete(destroyed.guid);
+        if (world.findActor(destroyed.guid)) continue;
+        this.worldTransforms.delete(destroyed.guid);
+        this.composition.release(destroyed.guid);
       }
 
       ordered.length = 0;
@@ -716,30 +735,15 @@ export class PhysicsWorldSync {
         if (prevHost !== nextHost) {
           this.hosting.move(actor, prevHost, nextHost);
           this.invalidateChannels();
-          for (const host of [prevHost, nextHost]) {
-            if (host && !host.destroyed && world.findActor(host.guid) === host && !affected.has(host)) {
-              affected.add(host);
-              ordered.push(host);
-              if (!this.worldTransforms.has(host.guid)) {
-                for (const [g, t] of this.liveTransforms(host)) {
-                  const slot = this.composition.pose(g);
-                  copyTransformInto(t, slot);
-                  this.worldTransforms.set(g, slot);
-                }
-              }
-              const hEligible = this.actorFilter(host);
-              if (this.hasCustomFilter && !this.eligibilityRevision) this.lastEligibility.set(host, hEligible);
-              this.trackDynamicMeshActor(host);
-              const hSource = !hEligible || this.suppressedActors.has(host) ? false : this.classifier.classify(host);
-              if (hSource !== false) sources.set(host, hSource);
-            }
-          }
+          this.admitHost(prevHost, world);
+          this.admitHost(nextHost, world);
         }
       }
 
       if (ordered.length > initialCount) ordered.sort(compareSpawnIndex);
 
-      const retireGuids: string[] = [];
+      const retireGuids = this.retireGuids;
+      retireGuids.length = 0;
       for (let i = 0; i < ordered.length; i++) {
         const actor = ordered[i]!;
         const source = sources.get(actor);
@@ -750,12 +754,16 @@ export class PhysicsWorldSync {
         reconciledGuids.add(actor.guid);
         this.reconcileActor(actor, source, this.passWorldTransform);
         if (this.bodyByActor.has(actor.guid)) this.refreshContactReporting(actor);
+        // A dynamic body's own or inherited pose may have changed: readback writes it back even while it rests.
+        if (this.dynamicBodyActors.has(actor.guid) && this.bodyOwnerByActor.get(actor.guid) === actor)
+          this.forcedReadback.add(actor.guid);
       }
 
       for (let i = 0; i < retireGuids.length; i++) {
         const guid = retireGuids[i]!;
         if (!reconciledGuids.has(guid)) this.retireActor(guid);
       }
+      retireGuids.length = 0;
       for (const destroyed of this.destroyedActors) {
         if (this.bodyOwnerByActor.get(destroyed.guid) === destroyed) this.retireActor(destroyed.guid);
         if (this.hasCustomFilter && !this.eligibilityRevision) this.lastEligibility.delete(destroyed);
@@ -783,12 +791,60 @@ export class PhysicsWorldSync {
       sources.clear();
       affected.clear();
       ordered.length = 0;
+      this.validationTargets.length = 0;
+      this.retireGuids.length = 0;
     }
 
-    this.dirtyStructure.clear();
-    this.dirtyTransforms.clear();
-    this.dirtyProperties.clear();
-    this.destroyedActors.clear();
+    this.clearDirty();
+  }
+
+  /**
+   * Queue an actor a dirty pass found: live in the bound World and either tracked (a body owner, hosted, or a
+   * host) or a participant of this world. Made once and handed to `forEach`.
+   */
+  private readonly considerDirty = (actor: Actor): void => {
+    if (actor.destroyed || this.world?.findActor(actor.guid) !== actor || !this.participates(actor)) return;
+    this.dirtyAffected.add(actor);
+  };
+
+  /** Whether `actor` owns, hosts or is hosted by a body here, or owns a live physics component of this world. */
+  private participates(actor: Actor): boolean {
+    return (
+      this.bodyOwnerByActor.get(actor.guid) === actor ||
+      this.hosting.isHosted(actor.guid) ||
+      this.hosting.hostedChildren(actor.guid) !== undefined ||
+      ((this.observedLayerId === undefined || actor.sceneLayerId === this.observedLayerId) &&
+        hasParticipantComponent(actor, this.backend.kind))
+    );
+  }
+
+  /** Keep one composed chain pose as this pass's world pose, in the reused slot for its guid. */
+  private readonly storePassPose = (transform: Transform, guid: string): void => {
+    const slot = this.composition.pose(guid);
+    copyTransformInto(transform, slot);
+    this.worldTransforms.set(guid, slot);
+  };
+
+  /** A dirty pass adds a host whose hosted shapes changed, with its composed chain and classified source. */
+  private admitHost(host: Actor | null | undefined, world: World): void {
+    const affected = this.dirtyAffected;
+    if (!host || host.destroyed || world.findActor(host.guid) !== host || affected.has(host)) return;
+    affected.add(host);
+    this.orderedAffected.push(host);
+    if (!this.worldTransforms.has(host.guid)) {
+      const single = this.singleActor;
+      single[0] = host;
+      try {
+        this.chains.compose(single).forEach(this.storePassPose);
+      } finally {
+        single.length = 0;
+      }
+    }
+    const eligible = this.actorFilter(host);
+    if (this.hasCustomFilter && !this.eligibilityRevision) this.lastEligibility.set(host, eligible);
+    this.trackDynamicMeshActor(host);
+    const source = !eligible || this.suppressedActors.has(host) ? false : this.classifier.classify(host);
+    if (source !== false) this.passSources.set(host, source);
   }
 
   /**
@@ -929,10 +985,7 @@ export class PhysicsWorldSync {
       this.unsubscribeWorld = world.addChangeObserver(this.worldObserver);
       this.invalidateChannels();
       this.needsFullSync = true;
-      this.dirtyStructure.clear();
-      this.dirtyTransforms.clear();
-      this.dirtyProperties.clear();
-      this.destroyedActors.clear();
+      this.clearDirty();
       this.dynamicMeshRevisions.clear();
       this.lastEligibility.clear();
       this.lastEligibilityRevision = Number.NaN;
@@ -953,7 +1006,8 @@ export class PhysicsWorldSync {
     if (!direct || direct.size === 0) return;
     const visited = this.walkVisited;
     visited.clear();
-    const stack: Actor[] = [];
+    const stack = this.walkStack;
+    stack.length = 0;
     for (const child of direct) {
       if (!child.destroyed && !visited.has(child)) {
         visited.add(child);
@@ -973,6 +1027,39 @@ export class PhysicsWorldSync {
       }
     }
     visited.clear();
+  }
+
+  /**
+   * Queue the physics participants under `root` in `dirtyTransforms`, once per sync cycle for any actor whose
+   * subtree a walk already covered (`walkedTransformRoots`; a parent cycle ends there too). An already walked
+   * actor met again is queued itself but not descended into.
+   */
+  private markTransformDescendantsDirty(root: Actor): void {
+    const walked = this.walkedTransformRoots;
+    const world = this.world;
+    if (!world || walked.has(root)) return;
+    walked.add(root);
+    const direct = world.getChildren(root.guid);
+    if (!direct || direct.size === 0) return;
+    const stack = this.walkStack;
+    stack.length = 0;
+    for (const child of direct) this.visitTransformChild(child, stack);
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (this.participates(current)) this.dirtyTransforms.add(current);
+      const next = world.getChildren(current.guid);
+      if (next) for (const child of next) this.visitTransformChild(child, stack);
+    }
+  }
+
+  private visitTransformChild(child: Actor, stack: Actor[]): void {
+    if (child.destroyed) return;
+    if (!this.walkedTransformRoots.has(child)) {
+      this.walkedTransformRoots.add(child);
+      stack.push(child);
+    } else if (this.participates(child)) {
+      this.dirtyTransforms.add(child);
+    }
   }
 
   private trackDynamicMeshActor(actor: Actor): void {
@@ -1154,6 +1241,7 @@ export class PhysicsWorldSync {
     this.bodyByActor.delete(actorId);
     this.simulatedBodyByActor.delete(actorId);
     this.dynamicBodyActors.delete(actorId);
+    this.forcedReadback.delete(actorId);
     this.kinematicBodyActors.delete(actorId);
     const owner = this.bodyOwnerByActor.get(actorId);
     this.bodyOwnerByActor.delete(actorId);
@@ -1175,7 +1263,10 @@ export class PhysicsWorldSync {
   step(dt: number, world: World, time = world.clock.tickIndex * dt, gravity = 9.81, beforeStep?: () => unknown): void {
     this.syncFromWorld(world);
     const recompose = beforeStep !== undefined && beforeStep() !== false;
-    if (this.skipEmptySteps && this.bodyByActor.size === 0 && this.characterByActor.size === 0) return;
+    if (this.skipEmptySteps && this.bodyByActor.size === 0 && this.characterByActor.size === 0) {
+      if (this.forcedReadback.size) this.forcedReadback.clear();
+      return;
+    }
     if (this.backend.kind === "3d") {
       this.water.update(this.actors, time);
       const floating = this.water.hasBodies ? this.buoyantActors(world) : undefined;
@@ -1193,7 +1284,11 @@ export class PhysicsWorldSync {
       }
     }
     this.backend.step(dt);
-    this.readback.readBack(recompose);
+    try {
+      this.readback.readBack(recompose);
+    } finally {
+      if (this.forcedReadback.size) this.forcedReadback.clear();
+    }
   }
 
   /** The World's actors owning a Water Buoyancy component, as a set rebuilt only when that owner list changes. */

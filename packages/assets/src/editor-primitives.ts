@@ -19,7 +19,9 @@ import {
 import { encodeHasset } from "./hasset";
 import type { ProjectTreeFile } from "./hproject";
 import { encodeGlbJsonBin } from "./importers/glb-parse";
-import { normalizeModelPayload } from "./model-payload";
+import { modelHeaderSummary, normalizeModelPayload } from "./model-payload";
+import { DOCUMENT_CHUNK_ID } from "./document-chunk";
+import { stableStringify } from "./bytes";
 import { bakeGltfOccluder } from "./occluder-bake";
 import { createDefaultPluginSettings, encodePluginSettingsDocument } from "./plugin-settings";
 import {
@@ -160,11 +162,14 @@ async function encodePrimitiveModel(entry: EditorPrimitive): Promise<Uint8Array>
       mode: "thin",
       name: entry.name,
       parentClass: null,
-      payload,
+      payload: modelHeaderSummary(payload),
       type: "Model",
       version: 1,
     },
-    chunks: [{ id: "source", kind: "geometry", mime: "model/gltf-binary", data: glb }],
+    chunks: [
+      { id: DOCUMENT_CHUNK_ID, kind: "document", mime: "application/json", data: new TextEncoder().encode(stableStringify(payload)) },
+      { id: "source", kind: "geometry", mime: "model/gltf-binary", data: glb },
+    ],
   });
 }
 

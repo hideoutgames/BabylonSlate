@@ -57,6 +57,7 @@ export {
   bakeColliderLocal,
   assertColliderLocalPose,
   colliderLocalPose,
+  foldHeightFieldMirror,
   scaleColliderShape,
   rotateQuatVec,
   multiplyQuat,

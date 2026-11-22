@@ -201,17 +201,14 @@ it("keeps Play controls stable across document edits while Play saves the newest
   expect(dialog.textContent).toContain("Hero Class");
 });
 
-it.each([
-  ["locked", false],
-  ["migrations", true],
-] as const)("stops Play when its save ends %s, waiting for Migrate On Save only for migrations", async (outcome, awaiting) => {
+it("stops Play when its save leaves a document someone else has locked unsaved", async () => {
   const scene = {
     id: "scene:assets/Main.scene.hasset",
     ref: { kind: "scene", path: "assets/Main.scene.hasset", label: "Main" },
     content: createDefaultScene(),
     dirty: true,
   };
-  const saveAll = vi.fn(async (): Promise<SaveAllOutcome> => outcome);
+  const saveAll = vi.fn(async (): Promise<SaveAllOutcome> => "locked");
   host.documents = {
     ...host.noProject,
     openDocuments: [scene],
@@ -238,7 +235,6 @@ it.each([
   // Save Failed names Play when someone else's lock kept a document unsaved.
   expect(saveAll).toHaveBeenCalledWith("play");
   await waitFor(() => expect(screen.queryByTestId("play-prepare-dialog")).toBeNull());
-  expect(controls.playAwaitingMigration).toBe(awaiting);
   expect([controls.playing, controls.preparing]).toEqual([false, false]);
 });
 

@@ -314,7 +314,7 @@ class WaterSceneCopyTask extends FrameGraphTask {
         effect.setMatrix("inverseProjection", this.inverseProjection);
         effect.setFloat2("depthRange", 2, -1);
         effect.setFloat("reverseDepth", engine.useReverseDepthBuffer ? 1 : 0);
-        // Scene Linear colour is already linear; Legacy Display and CEL are exact sRGB.
+        // Scene Linear colour is already linear; Display Space and CEL are exact sRGB.
         effect.setFloat("decodeSrgb", graph.scene.imageProcessingConfiguration.applyByPostProcess ? 0 : 1);
         context.bindTextureHandle(effect, "sceneColor", this.sourceColor);
         context.bindTextureHandle(effect, "sceneDepth", this.sourceDepth);

@@ -38,6 +38,7 @@ import {
   stripAssetFileSuffix,
   type EncodableChunk,
   type HassetHeader,
+  modelHeaderSummary,
   normalizeBlendSpacePayload,
   normalizeSpriteBlendSpacePayload,
 } from "@haptic/assets";
@@ -72,6 +73,8 @@ export function headerMetaForSave(
     const input = normalizeInputAssetPayload(type, content);
     return { valueType: input.valueType };
   }
+  // Collision hulls stay in the document chunk; the header carries the rest and their count.
+  if (type === "Model") return modelHeaderSummary(content);
   const materialMeta = materialHeaderMeta(
     type,
     content as Record<string, unknown>,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scaleColliderShape } from "./collider-bake";
+import { colliderLocalPose, scaleColliderShape } from "./collider-bake";
 import { prepareColliderShape } from "./collider-validation";
 import { HavokPhysicsBackend } from "./havok-backend";
 import { SoftwarePhysicsBackend } from "./software-backend";
@@ -218,13 +218,74 @@ describe("HeightFieldColliderShape (Havok & Software)", () => {
     expect(stretchedXZ.depth).toBe(24);
     expect(stretchedXZ.heights).toBe(heights);
 
-    // Negative X and positive Y scale flips columns and scales heights.
-    const flippedX = scaleColliderShape(base, { x: -1, y: 2, z: 1 }) as HeightFieldColliderShape;
-    expect(Array.from(flippedX.heights)).toEqual([4, 2, 8, 6]);
+    // Negative X and Z (a half turn) reverse both axes and scale heights.
+    const turned = scaleColliderShape(base, { x: -1, y: 2, z: -1 }) as HeightFieldColliderShape;
+    expect(Array.from(turned.heights)).toEqual([8, 6, 4, 2]);
 
-    // Negative Z flips rows.
-    const flippedZ = scaleColliderShape(base, { x: 1, y: 1, z: -1 }) as HeightFieldColliderShape;
-    expect(Array.from(flippedZ.heights)).toEqual([3, 4, 1, 2]);
+    // One mirrored axis would flip the cells' diagonal: the pose must fold it first.
+    expect(() => scaleColliderShape(base, { x: -1, y: 1, z: 1 })).toThrow("foldHeightFieldMirror");
+    expect(() => scaleColliderShape(base, { x: 1, y: 1, z: -1 })).toThrow("foldHeightFieldMirror");
+  });
+
+  describe.each([
+    { title: "mirrored on X", actorScale: { x: -1, y: 1, z: 1 } },
+    { title: "mirrored on Z", actorScale: { x: 1, y: 1, z: -1 } },
+    { title: "mirrored on X and Z", actorScale: { x: -1.5, y: 2, z: -1 } },
+    { title: "mirrored on X and upside down", actorScale: { x: -1, y: -1, z: 1 } },
+  ])("a terrain $title", ({ actorScale }) => {
+    // 3 x 3 samples over 20 x 12, asymmetric so a flipped diagonal, axis or height shows.
+    const source: HeightFieldColliderShape = {
+      kind: "heightfield", numXSamples: 3, numZSamples: 3, width: 20, depth: 12,
+      heights: new Float32Array([1, 2, 5, 3, 6, 4, 7, 8, 2]),
+    };
+    /** The drawn surface's world height over (x, z): the landscape mesh splits each cell along local (1,0)–(0,1). */
+    const drawnHeight = (x: number, z: number) => {
+      const fx = (x / actorScale.x + 10) / 10;
+      const fz = (z / actorScale.z + 6) / 6;
+      const ix = Math.min(1, Math.floor(fx));
+      const iz = Math.min(1, Math.floor(fz));
+      const u = fx - ix;
+      const v = fz - iz;
+      const at = (dx: number, dz: number) => source.heights[(iz + dz) * 3 + ix + dx]!;
+      const local = u + v <= 1
+        ? at(0, 0) + u * (at(1, 0) - at(0, 0)) + v * (at(0, 1) - at(0, 0))
+        : at(1, 1) + (1 - u) * (at(0, 1) - at(1, 1)) + (1 - v) * (at(1, 0) - at(1, 1));
+      return local * actorScale.y;
+    };
+    // Points across each cell, both sides of either diagonal.
+    const probes = [-7.5, -2.5, 2.5, 7.5].flatMap((x) => [-4.5, -1.5, 1.5, 4.5].map((z) => ({ x: x * Math.abs(actorScale.x), z: z * Math.abs(actorScale.z) })));
+    /** The terrain's static body, its collider posed and scaled as runtime physics bakes an actor's scale. */
+    const build = (backend: HavokPhysicsBackend | SoftwarePhysicsBackend) => {
+      const attachment = colliderLocalPose("heightfield", { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } }, actorScale);
+      backend.createBody({
+        id: "terrain", actorId: "terrain", motionType: "static", mass: 0, linearDamping: 0, angularDamping: 0, gravityScale: 0,
+        transform: pose(0, 0, 0),
+      });
+      const shape = prepareColliderShape(scaleColliderShape(source, attachment.scale)) as HeightFieldColliderShape;
+      backend.createCollider({ ...createHeightFieldCollider("terrain", shape), rotation: attachment.rotation, translation: attachment.translation });
+    };
+    const probe = (backend: HavokPhysicsBackend | SoftwarePhysicsBackend) => probes.map(({ x, z }) => {
+      // From the side the surface faces, so an upside-down terrain is traced from below.
+      const up = actorScale.y < 0 ? -1 : 1;
+      const hit = backend.lineTrace({ x, y: 40 * up, z }, { x, y: -40 * up, z });
+      return { x, z, y: hit.location?.y ?? null, expected: drawnHeight(x, z) };
+    });
+
+    it("collides with Havok on the triangles it draws", async () => {
+      const backend = await HavokPhysicsBackend.create({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+      try {
+        build(backend);
+        for (const { y, expected } of probe(backend)) expect(y).toBeCloseTo(expected, 3);
+      } finally { backend.dispose(); }
+    });
+
+    it("traces the software backend on the triangles it draws", () => {
+      const backend = new SoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+      try {
+        build(backend);
+        for (const { y, expected } of probe(backend)) expect(y).toBeCloseTo(expected, 3);
+      } finally { backend.dispose(); }
+    });
   });
 
   it("rejects invalid heightfields during validation", () => {

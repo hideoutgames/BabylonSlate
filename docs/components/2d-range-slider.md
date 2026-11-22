@@ -18,7 +18,7 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Ran
 | Orientation | Horizontal or Vertical. A vertical slider rises upward. Default Horizontal. |
 | Opacity | Fades the whole control, from 0 to 1. Default 1. |
 | Tint | Colour and alpha multiplied into every part. Default white. |
-| Background, Track, Fill and Thumb Material | Replace the default look of the body, the rail, the part between the handles and the handles. A Material or Material Instance. |
+| Background, Track, Fill and Thumb Material | Replace the default look of the body, the rail, the part between the handles and the handles. A [User Interface](../graphics/materials.md#user-interface-materials) Material or an Instance of one. Materials of other domains are not listed, and are not drawn if a script sets one. |
 | Background, Track, Fill and Thumb Texture | The same, using a Texture. A Material wins when both are set. |
 | Focus Enabled, Initial Focus, Focus Up, Focus Down, Focus Left, Focus Right | Keyboard and gamepad focus. See [Scene Layers](../scenes/scene-layers.md). |
 

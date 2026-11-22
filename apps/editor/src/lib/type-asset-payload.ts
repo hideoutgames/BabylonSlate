@@ -37,10 +37,12 @@ export function asStructureAsset(
     kind: "structure",
     guid: typeof payload.guid === "string" ? payload.guid : "",
     name: typeof payload.name === "string" ? payload.name : "Structure",
-    fields: fields.map((raw) => {
+    // A field without its stable identity is malformed and not read.
+    fields: fields.flatMap((raw) => {
       const row = asRecord(raw);
-      return {
-        ...(typeof row.id === "string" && row.id.trim() ? { id: row.id.trim() } : {}),
+      if (typeof row.id !== "string" || !row.id.trim()) return [];
+      return [{
+        id: row.id.trim(),
         name: typeof row.name === "string" ? row.name : "Field",
         typeId: typeof row.typeId === "string" ? row.typeId : "float",
         ...(typeof row.typeClassId === "string" && row.typeClassId.trim()
@@ -60,7 +62,7 @@ export function asStructureAsset(
           : {}),
         ...hardLoadingProperty(row),
         ...(normalizeValueUnit(row.unit) ? { unit: normalizeValueUnit(row.unit) } : {}),
-      };
+      }];
     }),
   };
 }

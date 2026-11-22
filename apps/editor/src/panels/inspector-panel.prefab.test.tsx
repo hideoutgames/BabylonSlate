@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@haptic/core";
 import { createMeshComponent } from "@haptic/core";
+import { AssetCreateProvider } from "@haptic/editor-kit";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
@@ -57,6 +58,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             transform: { position: [2, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
           },
           { id: "prefab-movement", classId: "MovementComponent", properties: {} },
+          { id: "prefab-badge", classId: "2DMaterialComponent", properties: { materialGuid: null, hitTest: "ignore" } },
         ],
       },
       layout: null,
@@ -86,6 +88,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
         path: "assets/Quiet.class.hasset",
         header: { type: "Class", name: "Quiet", parentClass: "Actor", guid: "quiet-1" },
       },
+      { path: "assets/Badge.material.hasset", header: { type: "Material", name: "Badge", parentClass: null, guid: "ui-badge", payload: { domain: "ui" } } },
+      { path: "assets/Rock.material.hasset", header: { type: "Material", name: "Rock", parentClass: null, guid: "mat-rock", payload: { domain: "surface" } } },
     ];
     return { list: assets, getByPath: (path: string) => assets().find((asset) => asset.path === path) };
   })(),
@@ -118,8 +122,9 @@ function renderInspector(options?: {
   selectedComponentId?: string | null;
   selectedComponentIds?: string[];
   selectedMemberId?: string | null;
+  createAsset?: (request: { type: string }) => Promise<string>;
 }) {
-  return render(
+  const inspector = (
     <PrefabEditingProvider
       initialSelectedId={options && "selectedComponentId" in options ? options.selectedComponentId : PREFAB_ROOT_ID}
       initialSelectedIds={options?.selectedComponentIds}
@@ -129,8 +134,12 @@ function renderInspector(options?: {
       >
         <InspectorPanel {...({} as IDockviewPanelProps)} />
       </GraphEditingProvider>
-    </PrefabEditingProvider>,
+    </PrefabEditingProvider>
   );
+  const createAsset = options?.createAsset;
+  return render(createAsset
+    ? <AssetCreateProvider value={{ canCreate: (type) => type === "Material" || type === "MaterialInstance", typeLabel: (type) => type, createAsset }}>{inspector}</AssetCreateProvider>
+    : inspector);
 }
 
 afterEach(() => {
@@ -147,6 +156,17 @@ describe("Inspector prefab component details", () => {
     expect(
       screen.getByTestId("property-prefab-root-prefab-mesh-meshKind"),
     ).toBeTruthy();
+  });
+
+  it("lists only User Interface Materials for a 2D Material and creates one in that domain", async () => {
+    const createAsset = vi.fn(async () => "ui-new");
+    renderInspector({ selectedComponentId: "prefab-badge", createAsset });
+    fireEvent.click(screen.getByTestId("property-prefab-root-prefab-badge-materialGuid"));
+    expect(await screen.findByTestId("search-item-ui-badge")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-mat-rock")).toBeNull();
+    expect(screen.queryByTestId("search-item-__create__MaterialInstance")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-__create__Material"));
+    await waitFor(() => expect(createAsset).toHaveBeenCalledWith({ type: "Material", materialDomain: "ui" }));
   });
 
   it("shows Position Rotation and Scale for the selected prefab component", () => {

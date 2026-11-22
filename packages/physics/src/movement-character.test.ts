@@ -280,3 +280,39 @@ it("Havok stays grounded when standing still pressed against a wall and snaps do
     backend.dispose();
   }
 });
+
+it.each([
+  // Babylon's PhysicsCharacterController, which the Havok backend used before, left the 1 kg crate at x 6.50 with the
+  // character at 5.55, and the 10 kg crate at 6.32 with the character at 5.35.
+  { mass: 1, crate: 6.5, character: 5.55 },
+  { mass: 10, crate: 6.32, character: 5.35 },
+])("Havok character pushes a $mass kg crate it walks into and follows it", async ({ mass, crate, character }) => {
+  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+  try {
+    body(backend, "floor", { x: 0, y: -0.5, z: 0 });
+    backend.createCollider({ id: "floor:shape", bodyId: "floor", shape: { kind: "box", halfExtents: { x: 20, y: 0.5, z: 20 } },
+      friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+    backend.createBody({ id: "crate", actorId: "crate", motionType: "dynamic", mass, linearDamping: 0, angularDamping: 0,
+      gravityScale: 1, transform: { position: { x: 2, y: 0.5, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+    backend.createCollider({ id: "crate:shape", bodyId: "crate", shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+      friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+    body(backend, "player", { x: 0, y: 0.91, z: 0 }, true);
+    capsule(backend, "player");
+    backend.createCharacterController({ id: "motor", bodyId: "player", offset: 0.01, radius: 0.4, height: 1.8 });
+    const dt = 1 / 60;
+    let result;
+    // Walk at 3 m/s for two seconds.
+    for (let i = 0; i < 120; i++) {
+      result = backend.moveCharacter("motor", { x: 3 * dt, y: -0.01, z: 0 }, dt)!;
+      backend.step(dt);
+    }
+    const pushed = backend.getBodyTransform("crate")!.position;
+    expect(Math.abs(pushed.x - crate)).toBeLessThan(0.4);
+    expect(Math.abs(result!.position.x - character)).toBeLessThan(0.4);
+    // The character stays behind the crate: a capsule radius and half a crate away.
+    expect(pushed.x - result!.position.x).toBeGreaterThan(0.89);
+    expect(Math.abs(pushed.z)).toBeLessThan(0.05);
+  } finally {
+    backend.dispose();
+  }
+});

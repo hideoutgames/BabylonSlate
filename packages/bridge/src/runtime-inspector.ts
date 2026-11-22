@@ -44,7 +44,7 @@ export type RuntimeInspectorPayload =
   | { kind: "mutation"; target: RuntimeObjectIdentity; sequence: number; effectiveValue: RuntimeInspectorValue };
 export type RuntimeInspectorResult = {
   sessionGeneration: number; requestId: number; success: boolean; reason?: string;
-  tickIndex: number; frameId: number; commandRevision: number; structuralRevision: number;
+  tickIndex: number; frameId: number; commandRevision: number; identityRevision: number;
   /** True when a value/page exceeds a transport bound; never means a partial write. */
   truncated?: boolean; payload?: RuntimeInspectorPayload;
 };

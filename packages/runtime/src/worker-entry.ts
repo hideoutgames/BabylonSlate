@@ -291,7 +291,7 @@ function handleControl(msg: ControlMessage): void {
       const rt = runtime;
       if (!rt) {
         onCommand({ type: "runtimeInspectorResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
-          success: false, reason: "Runtime is unavailable.", tickIndex: 0, frameId: 0, commandRevision: 0, structuralRevision: 0 });
+          success: false, reason: "Runtime is unavailable.", tickIndex: 0, frameId: 0, commandRevision: 0, identityRevision: 0 });
         return;
       }
       void rt.requestRuntimeInspector(msg).then(result => {

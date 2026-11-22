@@ -131,23 +131,23 @@ describe("Content Browser Create actions", () => {
     expect((result.payload as { emitterGuids: string[] }).emitterGuids).toEqual(guids.slice(0, PARTICLE_SYSTEM_MAX_EMITTERS));
   });
 
-  it("starts a Data Definition from a Structure's fields, giving fields without an id a free one", () => {
+  it("starts a Data Definition from a Structure's fields, keeping their identities", () => {
     const definition = dataDefinitionFromStructure({
       kind: "structure",
       guid: "weapon",
       name: "Weapon",
       fields: [
-        { name: "Damage", typeId: "float" },
+        { id: "Damage", name: "Damage", typeId: "float" },
         { id: "field-1", name: "Name", typeId: "string" },
-        { name: "Tags", typeId: "string", container: "array" },
+        { id: "Tags", name: "Tags", typeId: "string", container: "array" },
       ],
     });
     expect(definition).toEqual({
       kind: "dataDefinition",
       fields: [
-        { id: "field-2", name: "Damage", typeId: "float" },
+        { id: "Damage", name: "Damage", typeId: "float" },
         { id: "field-1", name: "Name", typeId: "string" },
-        { id: "field-3", name: "Tags", typeId: "string", container: "array" },
+        { id: "Tags", name: "Tags", typeId: "string", container: "array" },
       ],
     });
   });

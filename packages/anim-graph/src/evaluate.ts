@@ -75,18 +75,18 @@ import {
   poseSyncGroup,
   primaryPosePlayer,
   poseClipEvents,
+  poseClipRootMotion,
   type BlendSpaceNodeAxis,
   type BlendSpaceNodeSample,
   type PoseGraphIndex,
 } from "./pose-graph";
 import {
   animRootMotionDelta,
-  parseAnimClipRootMotion,
   sumAnimRootMotion,
   type AnimClipRootMotion,
   type AnimRootMotionDelta,
 } from "./root-motion";
-import { advanceAnimSlots, slotClock, type AnimSlotPlayback, type AnimSlotState } from "./slots";
+import { advanceAnimSlots, slotClock, type AnimSlotEvent, type AnimSlotPlayback, type AnimSlotState } from "./slots";
 import {
   animClipEventSpan,
   animClipSweep,
@@ -692,8 +692,14 @@ function rootMotionBoneOf(value: unknown): { rootMotionBone?: string } {
 }
 
 /** A Foot Placement's change at `alpha`. Null when it names no foot. */
+const footPlacementSettings = new WeakMap<GraphNode, ReturnType<typeof normalizeAnimFootPlacement>>();
+
 function footPlacementModifier(node: GraphNode, alpha: number): AnimBoneModifier | null {
-  const settings = normalizeAnimFootPlacement(node.data);
+  let settings = footPlacementSettings.get(node);
+  if (!settings) {
+    settings = normalizeAnimFootPlacement(node.data);
+    footPlacementSettings.set(node, settings);
+  }
   const first = settings.feet[0];
   if (!first || !(alpha > 0)) return null;
   return { kind: "footPlacement", bone: first, alpha: Math.min(1, alpha), ...settings };
@@ -834,7 +840,7 @@ function visitPoseGraph(
           weight,
           source: key,
         });
-        addRootMotion(motion, parseAnimClipRootMotion(node.data.rootMotion), sweep, weight, masks, additive);
+        addRootMotion(motion, poseClipRootMotion(node), sweep, weight, masks, additive);
       }
       return;
     }
@@ -1440,7 +1446,8 @@ export function evaluateAnimGraph(
   }
   const result: AnimEvalState = { ...state, players: ctx.players, selectors: ctx.selectors, layers };
   if (Object.keys(slotTick.slots).length > 0) result.slots = slotTick.slots;
-  if (slotTick.events.length > 0) result.slotEvents = slotTick.events;
+  // A non-empty list is the tick's own; only the shared empty one is frozen.
+  if (slotTick.events.length > 0) result.slotEvents = slotTick.events as AnimSlotEvent[];
   if (ctx.layerBlends.length > 0) result.layerBlends = ctx.layerBlends;
   if (modifiers.length > 0) result.boneModifiers = modifiers;
   if (Object.keys(ctx.lookAtTargets).length > 0) result.lookAtTargets = ctx.lookAtTargets;

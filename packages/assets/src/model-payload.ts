@@ -1,6 +1,6 @@
 import type { ModelOccluder } from "./occluder-bake";
 import { normalizeSkeletonSockets, type SkeletonSocket } from "./skeleton-payload";
-import { concatBytes, readU32LE, writeU32LE } from "./bytes";
+import { concatBytes } from "./bytes";
 import {
   normalizeModelSimpleColliders,
   type ModelSimpleCollider,
@@ -118,6 +118,24 @@ export function modelMaterialGuids(payload: unknown): string[] {
   return [...guids].sort();
 }
 
+/**
+ * The Model's `.hasset` header payload: every field but its Simple Collision
+ * shapes (convex hulls hold many points), which stay in the document chunk;
+ * `simpleColliderCount` says how many there are. Readers that need the shapes
+ * load the document.
+ */
+export function modelHeaderSummary(payload: unknown): Record<string, unknown> {
+  const { simpleColliders, ...rest } = normalizeModelPayload(payload);
+  return { ...rest, simpleColliderCount: simpleColliders.length };
+}
+
+/** Simple Collision shapes a Model header summary counts, or the shapes of a full payload. */
+export function modelSimpleColliderCount(payload: unknown): number {
+  const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  if (typeof record.simpleColliderCount === "number") return record.simpleColliderCount;
+  return normalizeModelPayload(payload).simpleColliders.length;
+}
+
 /** Skeleton + slot Material guids on a Model header. */
 export function modelAssetGuids(payload: unknown): string[] {
   const model = normalizeModelPayload(payload);
@@ -126,7 +144,14 @@ export function modelAssetGuids(payload: unknown): string[] {
   return [...guids].sort();
 }
 
-const PACKED_MODEL_MAGIC = new Uint8Array([0x42, 0x53, 0x4d, 0x4f]); // BSMO
+/**
+ * Packed Model envelope: magic `HPMO`, `u16 version`, `u16 flags` (none
+ * defined, must be 0), `u32 jsonLength`, the payload JSON, then the GLB to the
+ * end. All integers little-endian.
+ */
+const PACKED_MODEL_MAGIC = new Uint8Array([0x48, 0x50, 0x4d, 0x4f]); // HPMO
+const PACKED_MODEL_VERSION = 1;
+const PACKED_MODEL_PREFIX_BYTES = 12;
 const packedEncoder = new TextEncoder();
 const packedDecoder = new TextDecoder();
 
@@ -136,50 +161,46 @@ export function encodePackedModelAsset(
   source: Uint8Array,
 ): Uint8Array {
   const json = packedEncoder.encode(JSON.stringify(normalizeModelPayload(payload)));
-  return concatBytes([
-    PACKED_MODEL_MAGIC,
-    writeU32LE(json.byteLength),
-    json,
-    source,
-  ]);
+  const prefix = new Uint8Array(PACKED_MODEL_PREFIX_BYTES);
+  const view = new DataView(prefix.buffer);
+  prefix.set(PACKED_MODEL_MAGIC, 0);
+  view.setUint16(4, PACKED_MODEL_VERSION, true);
+  view.setUint16(6, 0, true);
+  view.setUint32(8, json.byteLength, true);
+  return concatBytes([prefix, json, source]);
 }
 
-function packedModelJsonRange(
-  bytes: Uint8Array,
-): { jsonStart: number; jsonEnd: number } | null {
-  if (bytes.byteLength < 8) return null;
+/** End of the JSON, null for bytes that are not an envelope (raw GLB); throws for a malformed envelope. */
+function packedModelJsonEnd(bytes: Uint8Array): number | null {
+  if (bytes.byteLength < PACKED_MODEL_MAGIC.length) return null;
   for (let i = 0; i < PACKED_MODEL_MAGIC.length; i++) {
     if (bytes[i] !== PACKED_MODEL_MAGIC[i]) return null;
   }
-  const jsonLen = readU32LE(bytes, 4);
-  const jsonStart = 8;
-  const jsonEnd = jsonStart + jsonLen;
-  if (jsonLen < 0 || jsonEnd > bytes.byteLength) return null;
-  return { jsonStart, jsonEnd };
+  if (bytes.byteLength < PACKED_MODEL_PREFIX_BYTES) throw new Error("Invalid HPMO model envelope: truncated header");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const version = view.getUint16(4, true);
+  if (version !== PACKED_MODEL_VERSION) throw new Error(`Unsupported HPMO model envelope version: ${version}`);
+  if (view.getUint16(6, true) !== 0) throw new Error("Invalid HPMO model envelope: unknown flags");
+  const jsonEnd = PACKED_MODEL_PREFIX_BYTES + view.getUint32(8, true);
+  if (jsonEnd > bytes.byteLength) throw new Error("Invalid HPMO model envelope: truncated payload");
+  return jsonEnd;
 }
 
-/** JSON payload from a BSMO envelope without copying GLB bytes. */
+/** JSON payload from an HPMO envelope without copying GLB bytes; null for a raw GLB. */
 export function peekPackedModelPayload(bytes: Uint8Array): ModelPayload | null {
-  const range = packedModelJsonRange(bytes);
-  if (!range) return null;
-  try {
-    return normalizeModelPayload(
-      JSON.parse(packedDecoder.decode(bytes.subarray(range.jsonStart, range.jsonEnd))),
-    );
-  } catch {
-    return null;
-  }
+  const jsonEnd = packedModelJsonEnd(bytes);
+  if (jsonEnd === null) return null;
+  return normalizeModelPayload(JSON.parse(packedDecoder.decode(bytes.subarray(PACKED_MODEL_PREFIX_BYTES, jsonEnd))));
 }
 
-/** Unwrap a packed Model envelope; raw GLB returns null. */
+/** Unwrap a packed Model envelope; raw GLB returns null. Throws for a malformed envelope. */
 export function decodePackedModelAsset(
   bytes: Uint8Array,
 ): { payload: ModelPayload; source: Uint8Array } | null {
-  const payload = peekPackedModelPayload(bytes);
-  if (!payload) return null;
-  const range = packedModelJsonRange(bytes);
-  if (!range) return null;
-  return { payload, source: bytes.subarray(range.jsonEnd) };
+  const jsonEnd = packedModelJsonEnd(bytes);
+  if (jsonEnd === null) return null;
+  const payload = normalizeModelPayload(JSON.parse(packedDecoder.decode(bytes.subarray(PACKED_MODEL_PREFIX_BYTES, jsonEnd))));
+  return { payload, source: bytes.subarray(jsonEnd) };
 }
 
 function normalizeModelOccluder(value: unknown): ModelOccluder | null {

@@ -1,7 +1,7 @@
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
-import { type Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { Matrix } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
@@ -12,15 +12,14 @@ import type { MeshAssetContext } from "./mesh-assets";
 import type { ResourceLease } from "./resource-cache";
 
 /**
- * Zero-dependency leaf holding the per-root `BatchedSpriteHandle` registry and bounds helper so lower-level
- * render modules (`sorting.ts`, `snapshot-visibility.ts`, `anim-visibility.ts`, `play-handle-inspection.ts`,
- * `scene-stream-admission.ts`) can read or update batched sprite handles without creating an ESM import cycle
- * through `world-sprite-batcher.ts` → `unlit-material.ts` → `material-compiler.ts`.
+ * Zero-dependency leaf holding the per-root `BatchedSpriteHandle` registry, the bounds helper and the cutout draw
+ * identity so lower-level render modules (`sorting.ts`, `snapshot-visibility.ts`, `anim-visibility.ts`,
+ * `play-handle-inspection.ts`, `scene-stream-admission.ts`) can read or update batched sprite handles without creating
+ * an ESM import cycle through `world-sprite-batcher.ts` → `unlit-material.ts` → `material-compiler.ts`.
  */
 
 export interface SpriteBatchRef {
   readonly mesh: Mesh;
-  dirty: boolean;
 }
 
 export interface SpriteLayerState<TBatch extends SpriteBatchRef = SpriteBatchRef> {
@@ -43,13 +42,13 @@ export interface SpriteLayerState<TBatch extends SpriteBatchRef = SpriteBatchRef
   identity?: string;
   failed?: string;
   preparation?: Promise<void>;
-  /** Batch key and batch currently holding this layer, for fast-path dirty updates. */
-  batchKey: string | null;
+  /** The batch drawing this layer and its instance there; null and -1 while it draws nowhere. */
   batch: TBatch | null;
-  /** Cached texel grid for `texture` (without atlas cell). */
+  slot: number;
+  /** Texel grid for `texture` (without atlas cell). */
   texelX: number;
   texelY: number;
-  /** Resolved sampled texture (atlas page or own texture) and cell at last key resolution. */
+  /** Resolved sampled texture (atlas page or own texture) and cell at the last placement. */
   sampledTexture: BaseTexture | null;
   cell: LayerImageCell | null;
 }
@@ -60,22 +59,20 @@ export interface BatchedSpriteHandle<TBatch extends SpriteBatchRef = SpriteBatch
   readonly primary: SpriteLayerState<TBatch>;
   readonly secondary: SpriteLayerState<TBatch>;
   shadingMode: SurfaceShadingMode;
-  alwaysBlend: boolean;
   renderingGroupId: number;
   alphaIndex: number;
   sortingGroupId: string;
-  castShadows: boolean;
   receiveShadows: boolean;
   /** Logical visibility from `setPlayVisualVisibility` (the empty `root` mesh stays `isVisible = false`). */
   visible: boolean;
   assets: MeshAssetContext | undefined;
-  /** Last observed `root.getWorldMatrix().updateFlag` and mirrored state. */
+  /** Last observed `root.getWorldMatrix().updateFlag`, enabled and mirrored state. */
   lastWorldUpdateFlag: number;
   lastEnabled: boolean;
   mirrored: boolean;
-  /** World matrix cached at last sync for fast instance packing. */
+  /** World matrix cached at last sync for instance packing. */
   worldMatrix: Matrix;
-  /** True when any frame, sorting, visibility or texture property changed since last flush. */
+  /** True when the transform must be read again at the next flush. */
   dirty: boolean;
   disposed: boolean;
   /** Set frame properties (texture, UVs, size, pivot) for the primary or crossfade overlay layer. */
@@ -93,12 +90,11 @@ export interface BatchedSpriteHandle<TBatch extends SpriteBatchRef = SpriteBatch
   ): void;
   /** Set per-layer visibility weight (e.g. Sprite Animation crossfade weights); 0 hides the overlay layer. */
   setLayerVisibility(layer: "primary" | "secondary", visibility: number): void;
-  /** Update actor/component sorting and shadow participation. */
+  /** Update actor/component sorting, shadow reception and shading. */
   setSorting(options: {
     renderingGroupId?: number;
     alphaIndex?: number;
     sortingGroupId?: string;
-    castShadows?: boolean;
     receiveShadows?: boolean;
     shadingMode?: SurfaceShadingMode;
   }): void;
@@ -111,8 +107,6 @@ export interface BatchedSpriteHandle<TBatch extends SpriteBatchRef = SpriteBatch
 }
 
 const rootHandles = new WeakMap<AbstractMesh, BatchedSpriteHandle>();
-const scratchMin = new Vector3();
-const scratchMax = new Vector3();
 
 export function registerBatchedSpriteHandle(root: AbstractMesh, handle: BatchedSpriteHandle): void {
   rootHandles.set(root, handle);
@@ -132,46 +126,104 @@ export function batchedSpriteOf(mesh: AbstractMesh | null | undefined): BatchedS
   return handle && !handle.disposed ? handle : undefined;
 }
 
-export function accumulateSpriteCorner(
-  lx: number,
-  ly: number,
-  m: ArrayLike<number>,
-  min: Vector3,
-  max: Vector3,
-): void {
+/** A world-space box: `[minX, minY, minZ, maxX, maxY, maxZ]`. */
+export type SpriteBounds = Float64Array;
+
+export function createSpriteBounds(): SpriteBounds {
+  return new Float64Array(6);
+}
+
+export function resetSpriteBounds(bounds: SpriteBounds): void {
+  bounds[0] = bounds[1] = bounds[2] = Number.POSITIVE_INFINITY;
+  bounds[3] = bounds[4] = bounds[5] = Number.NEGATIVE_INFINITY;
+}
+
+export function accumulateSpriteCorner(lx: number, ly: number, m: ArrayLike<number>, bounds: SpriteBounds): void {
   const wx = lx * m[0]! + ly * m[4]! + m[12]!;
   const wy = lx * m[1]! + ly * m[5]! + m[13]!;
   const wz = lx * m[2]! + ly * m[6]! + m[14]!;
-  if (wx < min.x) min.x = wx;
-  if (wy < min.y) min.y = wy;
-  if (wz < min.z) min.z = wz;
-  if (wx > max.x) max.x = wx;
-  if (wy > max.y) max.y = wy;
-  if (wz > max.z) max.z = wz;
+  if (wx < bounds[0]!) bounds[0] = wx;
+  if (wy < bounds[1]!) bounds[1] = wy;
+  if (wz < bounds[2]!) bounds[2] = wz;
+  if (wx > bounds[3]!) bounds[3] = wx;
+  if (wy > bounds[4]!) bounds[4] = wy;
+  if (wz > bounds[5]!) bounds[5] = wz;
 }
 
-/** World-space AABB for a batched sprite root (used by `AnimVisibilityGate` for `When Visible` culling). */
-export function worldSpriteBounds(
-  root: AbstractMesh,
-): { minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number } | null {
+/** Grows `bounds` by the four corners of a `width` × `height` quad pivoted at `(pivotX, pivotY)` under `m`. */
+export function accumulateSpriteQuad(
+  width: number,
+  height: number,
+  pivotX: number,
+  pivotY: number,
+  m: ArrayLike<number>,
+  bounds: SpriteBounds,
+): void {
+  const left = -pivotX * width;
+  const right = left + width;
+  const top = pivotY * height;
+  const bottom = top - height;
+  accumulateSpriteCorner(left, bottom, m, bounds);
+  accumulateSpriteCorner(right, bottom, m, bounds);
+  accumulateSpriteCorner(right, top, m, bounds);
+  accumulateSpriteCorner(left, top, m, bounds);
+}
+
+/**
+ * Writes the world-space AABB of a batched sprite root's primary frame into `out` (for `AnimVisibilityGate` `When
+ * Visible` culling); false, leaving `out` alone, when `root` is no batched sprite or draws an empty frame.
+ */
+export function worldSpriteBounds(root: AbstractMesh, out: SpriteBounds): boolean {
   const handle = rootHandles.get(root);
-  if (!handle || handle.disposed) return null;
+  if (!handle || handle.disposed) return false;
   const layer = handle.primary;
-  if (layer.width <= 0 || layer.height <= 0) return null;
-  const world = root.computeWorldMatrix();
-  const m = world.asArray();
-  scratchMin.set(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
-  scratchMax.set(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY);
-  const left = -layer.pivotX * layer.width;
-  const right = left + layer.width;
-  const top = layer.pivotY * layer.height;
-  const bottom = top - layer.height;
-  accumulateSpriteCorner(left, bottom, m, scratchMin, scratchMax);
-  accumulateSpriteCorner(right, bottom, m, scratchMin, scratchMax);
-  accumulateSpriteCorner(right, top, m, scratchMin, scratchMax);
-  accumulateSpriteCorner(left, top, m, scratchMin, scratchMax);
-  return {
-    minX: scratchMin.x, minY: scratchMin.y, minZ: scratchMin.z,
-    maxX: scratchMax.x, maxY: scratchMax.y, maxZ: scratchMax.z,
-  };
+  if (layer.width <= 0 || layer.height <= 0) return false;
+  resetSpriteBounds(out);
+  accumulateSpriteQuad(layer.width, layer.height, layer.pivotX, layer.pivotY, root.computeWorldMatrix().asArray(), out);
+  return true;
+}
+
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * The cutout draw order inside one rendering group and `alphaIndex` (`compareAlphaTestDraws`): sorting group, then
+ * the tilemap layer's sort key and ordinal, then name, then unique id.
+ */
+export function compareDrawIdentity(
+  aGroup: string, aLayerKey: number, aOrdinal: number, aName: string, aId: number,
+  bGroup: string, bLayerKey: number, bOrdinal: number, bName: string, bId: number,
+): number {
+  return compareText(aGroup, bGroup) || aLayerKey - bLayerKey || aOrdinal - bOrdinal || compareText(aName, bName) || aId - bId;
+}
+
+interface DrawIdentityMetadata {
+  sortingGroupId?: string;
+  sortingLayerKey?: number;
+  tilemapLayer?: { ordinal?: number };
+  /** A world sprite batch's stand-in name and id: those of the first sprite it draws. */
+  sortingName?: string;
+  sortingUniqueId?: number;
+}
+
+/** `compareDrawIdentity` of two meshes' metadata (a world sprite batch sorts as the first sprite it draws). */
+export function compareMeshDrawIdentity(left: AbstractMesh, right: AbstractMesh): number {
+  const a = left.metadata as DrawIdentityMetadata | null | undefined;
+  const b = right.metadata as DrawIdentityMetadata | null | undefined;
+  return compareDrawIdentity(
+    a?.sortingGroupId ?? left.name, a?.sortingLayerKey ?? 0, a?.tilemapLayer?.ordinal ?? 0, a?.sortingName ?? left.name, a?.sortingUniqueId ?? left.uniqueId,
+    b?.sortingGroupId ?? right.name, b?.sortingLayerKey ?? 0, b?.tilemapLayer?.ordinal ?? 0, b?.sortingName ?? right.name, b?.sortingUniqueId ?? right.uniqueId,
+  );
+}
+
+const sortingRevisions = new WeakMap<Scene, number>();
+
+/** Changes whenever sorting is applied to a mesh of `scene` (`applyComponentSorting`): its cutout draw order may have. */
+export function sceneSortingRevision(scene: Scene): number {
+  return sortingRevisions.get(scene) ?? 0;
+}
+
+export function markSceneSortingChanged(scene: Scene): void {
+  sortingRevisions.set(scene, sceneSortingRevision(scene) + 1);
 }

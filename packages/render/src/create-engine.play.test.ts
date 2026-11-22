@@ -1,4 +1,6 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
+import { isBatchedSpriteRoot } from "./sprite-batch-handle";
+import { isSpriteQuad } from "./sprite-quad";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -4146,6 +4148,45 @@ describe("Play createEngine view", () => {
     expect(overlay?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
+  it("draws batched world sprites as quads of their own while Simulation Edit's tools or worlddebug spritebatching off want meshes", () => {
+    const engine = sharedEngine();
+    engine.getCaps().instancedArrays = true;
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const sprite = (slotId: number) => {
+      handle.applyCommand({ type: "spawn", slotId, actorGuid: `hero-${slotId}`, classId: "Actor" });
+      handle.applyCommand({ type: "assignMesh", slotId, meshAssetGuid: null, meshKind: "sprite", castShadows: false });
+      return handle.scene.getMeshByName(`actor-${slotId}`)!;
+    };
+    const first = sprite(1);
+    expect(isBatchedSpriteRoot(first)).toBe(true);
+    expect(first.isPickable).toBe(false);
+
+    handle.applyCommand({ type: "setWorldDebug", part: "spritebatching", enabled: false });
+    expect(isBatchedSpriteRoot(first)).toBe(false);
+    expect(isSpriteQuad(first)).toBe(true);
+    expect(first.isPickable).toBe(true);
+    expect(handle.renderDiagnostics().settings?.["world.debug"]).toBe("spritebatching");
+    expect(isBatchedSpriteRoot(sprite(2))).toBe(false);
+
+    handle.applyCommand({ type: "setWorldDebug", part: "spritebatching", enabled: true });
+    const third = sprite(3);
+    expect(isBatchedSpriteRoot(third)).toBe(true);
+    expect(handle.renderDiagnostics().worldSprites).not.toBeNull();
+
+    // The transform tools pick and outline meshes: in Simulation Edit every sprite draws as one.
+    const tools = handle.attachRuntimeTransformTools({ onPick: () => {}, onTransform: async () => {} });
+    tools.setEnabled(true);
+    expect(isBatchedSpriteRoot(third)).toBe(true);
+    handle.setSimulationEditMode(true);
+    expect(isBatchedSpriteRoot(third)).toBe(false);
+    expect(third.isPickable).toBe(true);
+    expect(isBatchedSpriteRoot(sprite(4))).toBe(false);
+    handle.setSimulationEditMode(false);
+    expect(isBatchedSpriteRoot(sprite(5))).toBe(true);
+    tools.dispose();
+  });
+
   it("plants sprite assignMesh on the world after a world spawn", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
@@ -4303,12 +4344,12 @@ describe("Play createEngine view", () => {
     expect(handle.postProcessPassCount()).toBe(1);
   });
 
-  it("keeps overlay 2DMaterial assignMaterial as an overlay unlit compile", () => {
+  it("keeps overlay 2DMaterial assignMaterial as an overlay unlit compile of a User Interface Material", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
       sharedEngine: sharedEngine(),
       playMode: true,
-      materialDocuments: new Map([["mat-1", createDefaultMaterialDocument()]]),
+      materialDocuments: new Map([["mat-1", createDefaultMaterialDocument("Material", "ui")]]),
     });
     handles.push(handle);
     handle.applyCommand({

@@ -19,8 +19,8 @@ describe("Definition and tree payloads", () => {
 
   it("preserves definition defaults, constraints, stable fields and nested collection metadata", () => {
     const definition = createDataDefinitionAsset([{ id: "values", name: "Values", typeId: "struct", typeClassId: "stats", container: "map",
-      keyTypeId: "struct", keyTypeClassId: "key", keyFields: [{ name: "Icon", typeId: "asset", typeClassId: "Texture" }],
-      fields: [{ name: "Tags", typeId: "tag", container: "array" }], defaultValue: [], category: "Combat", description: "Per Item", required: true,
+      keyTypeId: "struct", keyTypeClassId: "key", keyFields: [{ id: "Icon", name: "Icon", typeId: "asset", typeClassId: "Texture" }],
+      fields: [{ id: "Tags", name: "Tags", typeId: "tag", container: "array" }], defaultValue: [], category: "Combat", description: "Per Item", required: true,
     }]);
     const opened = normalizeDataDefinitionAsset(definition);
     expect(opened).toEqual(definition);

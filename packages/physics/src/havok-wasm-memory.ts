@@ -100,7 +100,7 @@ export function readBodyBufferTransform(
  * Extract a unit quaternion from the upper-left 3x3 rotation block of a column-major 4x4 float matrix at `m`.
  * Matches `Quaternion.FromRotationMatrixToRef` followed by normalization.
  */
-export function setRotationFromMatrix(
+function setRotationFromMatrix(
   out: Quat,
   data: Float32Array,
   m: number,

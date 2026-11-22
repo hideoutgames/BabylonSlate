@@ -14,7 +14,7 @@ vi.mock("../context/document-context", () => ({
 vi.mock("../context/scene-editing-context", () => ({ useOptionalSceneEditing: () => ({ viewportMode: "3d" }) }));
 const target: RuntimeObjectIdentity = { sceneInstanceId: "root", actorGuid: "actor", actorToken: 1 };
 const reply = (payload: RuntimeInspectorResult["payload"], commandRevision = 0): RuntimeInspectorResult => ({
-  sessionGeneration: 1, requestId: 1, success: true, tickIndex: 1, frameId: 1, structuralRevision: 1, commandRevision, payload,
+  sessionGeneration: 1, requestId: 1, success: true, tickIndex: 1, frameId: 1, identityRevision: 1, commandRevision, payload,
 });
 afterEach(() => vi.useRealTimers());
 

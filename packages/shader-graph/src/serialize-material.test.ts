@@ -52,7 +52,7 @@ describe("material graph serialization", () => {
       ]);
     });
   it("offers every node but the output node in Add Node, which each Material already has one of", () => {
-    for (const domain of ["surface", "landscape", "postProcess", "particle", "text"] as const) {
+    for (const domain of ["surface", "landscape", "postProcess", "particle", "text", "ui"] as const) {
       const ids = materialAddNodePalette(domain).map((node) => node.id);
       expect(ids.filter((id) => id.startsWith("output."))).toEqual([]);
       // Named Reroutes are listed per graph by namedReroutePaletteNodes.
@@ -193,6 +193,20 @@ describe("material graph serialization", () => {
     expect(palette.some((entry) => entry.id === "input.worldPosition")).toBe(
       false,
     );
+  });
+
+  it("lists the User Interface nodes on the User Interface palette with their typed pins", () => {
+    const palette = materialPaletteNodes("ui");
+    const ids = palette.map((entry) => entry.id);
+    expect(ids).toEqual(expect.arrayContaining(["output.ui", "input.ui", "ui.roundedRectangle", "ui.ellipse", "ui.linearProgress", "ui.radialProgress"]));
+    expect(ids).not.toContain("output.surface");
+    expect(ids).not.toContain("input.worldPosition");
+    expect(materialAddNodePalette("ui").map((entry) => entry.id)).not.toContain("output.ui");
+    expect(materialPaletteNodes("surface").map((entry) => entry.id)).not.toContain("ui.roundedRectangle");
+    expect(pinsForMaterialNode("ui.roundedRectangle").map((pin) => [pin.direction, pin.id, pin.type.kind])).toEqual([
+      ["in", "position", "vec2"], ["in", "size", "vec2"], ["in", "radius", "vec4"], ["in", "border", "float"],
+      ["out", "fill", "float"], ["out", "borderMask", "float"], ["out", "distance", "float"],
+    ]);
   });
 
   it("lets a Float widen into a vector pin on the canvas", () => {

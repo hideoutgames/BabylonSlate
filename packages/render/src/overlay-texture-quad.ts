@@ -6,6 +6,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { sniffImageSize, sniffKtx2Size } from "@haptic/assets";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
+import { setUserInterfaceFallback } from "./user-interface-material";
 
 export const OVERLAY_TEXTURE_DEFAULT_WORLD_SIZE = { width: 1, height: 1 };
 
@@ -86,6 +87,20 @@ export function applyOverlayUnlitMaterial(
   const binding: UnlitBinding = { texture: null, color, alpha, cutoff: 0, blend: false, textureAlpha: false, twoSided: false };
   const fallback: OverlayUnlitFallback = { binding, apply: (target = mesh) => setUnlitMaterial(target, OVERLAY_UNLIT, binding) };
   fallback.apply();
+  return fallback;
+}
+
+/**
+ * `applyOverlayUnlitMaterial` for the surface of a 2D component that takes a User Interface Material: its look when it
+ * draws none, which `restoreUserInterfaceFallback` brings back.
+ */
+export function applyUserInterfaceFallback(
+  mesh: AbstractMesh,
+  color?: readonly [number, number, number],
+  alpha?: number,
+): OverlayUnlitFallback {
+  const fallback = applyOverlayUnlitMaterial(mesh, color, alpha);
+  setUserInterfaceFallback(mesh, () => fallback.apply());
   return fallback;
 }
 

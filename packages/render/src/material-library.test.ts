@@ -26,6 +26,8 @@ import { invalidateShadowReceiverHandoffs } from "./shadow-receiver-handoff";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { acquireMaterialTexture, materialTextureSampling, ResourceCache, type ResourceLease } from "./resource-cache";
 import { setTestTextureBudget } from "./test-support/resource-cache-budget";
+import { applyUserInterfaceFallback } from "./overlay-texture-quad";
+import { isUnlitMaterial } from "./unlit-material";
 import { nodeBlockName } from "./test-support/material-node-blocks";
 
 // The real lowering, observed: the shared plan cache must call it once per distinct content.
@@ -626,6 +628,25 @@ describe("material library", () => {
     expect(compile).toHaveBeenCalledWith(mesh);
     expect(boundWhileCompiling).toBe(first.material);
     expect(mesh.material).toBe(next.material);
+  });
+
+  it("gives a 2D component its fallback look when its Material is edited out of the User Interface domain", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", createDefaultMaterialDocument("Widget", "ui"));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    const component = MeshBuilder.CreatePlane("2d-material", {}, scene);
+    applyUserInterfaceFallback(component);
+    component.material = first.material;
+    const other = MeshBuilder.CreatePlane("other", {}, scene);
+    other.material = first.material;
+    const next = library.acquire(scene, "material", createDefaultMaterialDocument("Widget"));
+    if (!next.ok) throw new Error("Expected the replacement material");
+    expect(await next.ready).toEqual([]);
+    expect(isUnlitMaterial(component.material)).toBe(true);
+    expect(other.material).toBe(next.material);
   });
 
   it("retains the displayed material while dependencies are marked dirty", async () => {

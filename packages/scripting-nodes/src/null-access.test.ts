@@ -61,6 +61,7 @@ function run(registry: NodeRegistry, subject: Subject, wiring: { wired: false } 
   const self = { who: "self" };
   const calls: unknown[][] = [];
   const logged: string[] = [];
+  const destroyed: unknown[][] = [];
   const printed: unknown[] = [];
   const spy = (...args: unknown[]) => {
     calls.push(args);
@@ -70,6 +71,7 @@ function run(registry: NodeRegistry, subject: Subject, wiring: { wired: false } 
     self,
     getActorOfClass: () => (wiring.wired ? wiring.value : null),
     nullAccess: (message: string) => logged.push(message),
+    destroyedAccess: (location: unknown, target: unknown) => destroyed.push([location, target]),
     formatValue: (value: unknown) => value,
     print: (value: unknown) => printed.push(value),
     invokeFunction: spy,
@@ -81,6 +83,7 @@ function run(registry: NodeRegistry, subject: Subject, wiring: { wired: false } 
   return {
     calls,
     logged,
+    destroyed,
     printed,
     self,
     missing: diagnostics.filter((entry) => entry.code === "pin.missing_input" && entry.nodeId === "subject" && entry.pinId === subject.pin),
@@ -88,13 +91,13 @@ function run(registry: NodeRegistry, subject: Subject, wiring: { wired: false } 
 }
 
 /** Member calls and Get Component Ref: bound to the graph's own class (`implicitSelf`) or another's. */
-function members(implicitSelf: boolean): Array<Subject & { title: string }> {
+function members(implicitSelf: boolean): Array<Subject & { title: string; member: string }> {
   const common = { implicitSelf, classId: "Hero" };
   return [
-    { title: "Call Jump", typeId: "functions.call", properties: { ...common, functionName: "Jump", pins: [], title: "Call Jump" }, pin: "target", method: "invokeFunction", pure: false },
-    { title: "Call Alert", typeId: "flow.event.call", properties: { ...common, name: "Alert", pins: [], title: "Call Alert" }, pin: "target", method: "invokeCustomEvent", pure: false },
-    { title: "Call Interface Hit", typeId: "interface.call", properties: { ...common, interfaceGuid: "iface", method: "Hit", pins: [], title: "Call Interface Hit" }, pin: "target", method: "callInterface", pure: false },
-    { title: "Get Component Ref", typeId: "component.getNamed", properties: { ...common, componentClassId: "MeshComponent", title: "Get Component Ref" }, pin: "actor", method: "getComponent", pure: true },
+    { title: "Call Jump", member: "Jump", typeId: "functions.call", properties: { ...common, functionName: "Jump", pins: [], title: "Call Jump" }, pin: "target", method: "invokeFunction", pure: false },
+    { title: "Call Alert", member: "Alert", typeId: "flow.event.call", properties: { ...common, name: "Alert", pins: [], title: "Call Alert" }, pin: "target", method: "invokeCustomEvent", pure: false },
+    { title: "Call Interface Hit", member: "Hit", typeId: "interface.call", properties: { ...common, interfaceGuid: "iface", method: "Hit", pins: [], title: "Call Interface Hit" }, pin: "target", method: "callInterface", pure: false },
+    { title: "Get Component Ref", member: "Get Component Ref", typeId: "component.getNamed", properties: { ...common, componentClassId: "MeshComponent", title: "Get Component Ref" }, pin: "actor", method: "getComponent", pure: true },
   ];
 }
 
@@ -158,10 +161,12 @@ describe("members of another class", () => {
     expect(result.logged).toEqual([`Hero: ${subject.title} (Target) tried to access null.`]);
   });
 
-  it.each(members(false))("$typeId does nothing and logs when the wired Target was destroyed", (subject) => {
-    const result = run(registry, subject, { wired: true, value: { who: "gone", destroyed: true } });
+  it.each(members(false))("$typeId does nothing and reports a destroyed access at its node when the wired Target was destroyed", (subject) => {
+    const gone = { who: "gone", destroyed: true };
+    const result = run(registry, subject, { wired: true, value: gone });
     expect(result.calls).toEqual([]);
-    expect(result.logged).toEqual([`Hero: ${subject.title} (Target) tried to access a destroyed object.`]);
+    expect(result.logged).toEqual([]);
+    expect(result.destroyed).toEqual([[{ assetGuid: "a", graphId: "g", nodeId: "subject", kind: "call", member: subject.member }, gone]]);
   });
 
   it.each(members(false))("$typeId calls the wired object", (subject) => {

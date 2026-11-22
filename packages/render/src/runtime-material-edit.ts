@@ -6,8 +6,9 @@ import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { prewarmMaterial } from "./material-compiler";
 import { applyMaterialBounds } from "./material-bounds";
 import { everyInstanceParameter } from "./instance-parameters";
-import { applyMaterialToActorMeshes, componentIdForPlayMesh, meshForPlayComponent, wantsOverlayUnlitMaterial,
+import { applyMaterialToActorMeshes, componentIdForPlayMesh, meshForPlayComponent, takesUserInterfaceMaterial, wantsOverlayUnlitMaterial,
   type SnapshotSceneBinding } from "./snapshot-apply";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 
 export type RuntimeMaterialPreparationRequest = RuntimeMaterialEditPreparation;
 export type RuntimeMaterialCommitCommand = Extract<CommandMessage, { type: "assignMaterial" | "setMaterialParameter" }> & { preparedEditToken?: string };
@@ -63,7 +64,9 @@ export class RuntimeMaterialEditOwner {
         stage.shared = !!shared && everyInstanceParameter(shared, values.keys());
         const material = stage.shared ? shared
           : binding.resolveMaterial?.(request.materialGuid, { scene: component.getScene(), unlit: stage.unlit, instanceKey: stage.key, parameters: values });
-        if (!material) throw new Error("The requested material is unavailable for this visual.");
+        // A 2D component draws only a User Interface Material (`applyMaterialToActorMeshes`).
+        if (!material || (takesUserInterfaceMaterial(binding, request.slotId) && !acceptsUserInterfaceMaterial(material)))
+          throw new Error("The requested material is unavailable for this visual.");
         stage.material = material as NodeMaterial;
         const diagnostics = await ownedMaterialPreparation(material);
         if (diagnostics?.length) throw new Error(diagnostics.map(entry => entry.message).join("; "));

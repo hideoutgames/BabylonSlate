@@ -43,7 +43,7 @@ Storage port, platform adapters, app-owned libraries, Engine Settings storage, s
 
 ## App-owned libraries and derived data
 
-- `LIBRARY_FOLDERS` ([`library-folders.ts`](../../../packages/vfs/src/library-folders.ts)) is exactly `__slate_templates__`, `__slate_engine_plugins__`, `__slate_engine_extensions__`; renderer and Electron main share it. Electron binds each to `userData/libraries/<folder>` over `library:*` IPC (file operations only: no picker, open, list or release channels) and refuses any other scope.
+- `LIBRARY_FOLDERS` ([`library-folders.ts`](../../../packages/vfs/src/library-folders.ts)) is exactly `__haptic_templates__`, `__haptic_engine_plugins__`, `__haptic_engine_extensions__`; renderer and Electron main share it. Electron binds each to `userData/libraries/<folder>` over `library:*` IPC (file operations only: no picker, open, list or release channels) and refuses any other scope.
 - Derived data: `createDerivedStorage` root `__haptic_derived__` (OPFS library bind on web/Electron, beside projects on mobile). It is a regenerable cache.
 - Templates: each directory with `project.json` or `.zip` in the template library is a card; only the chosen template is decoded. No user-chosen templates folder.
 

@@ -105,6 +105,23 @@ describe("compileGraph instrumentInfiniteLoops", () => {
     expect(logAt).toBeGreaterThan(checkAt);
   });
 
+  it("passes the same module-scope location to every guard of a node, allocating none per check", () => {
+    const compiled = compileGraph(logGraph(), {
+      assetGuid: "a",
+      registry: registry(),
+      instrumentInfiniteLoops: true,
+    });
+    const name = /export function (\w+)\(/.exec(compiled.source)![1]!;
+    const entry = new Function(`${compiled.source.replace(/export function /g, "function ")}\nreturn ${name};`)() as (ctx: unknown) => void;
+    const locations: unknown[] = [];
+    const ctx = { log: () => {}, checkInfiniteLoop: (location: unknown) => locations.push(location) };
+    entry(ctx);
+    entry(ctx);
+    expect(locations).toHaveLength(2);
+    expect(locations[0]).toEqual({ assetGuid: "a", graphId: "g", nodeId: "log" });
+    expect(locations[1]).toBe(locations[0]);
+  });
+
   it("rewrites hoisted ExecuteJavaScript loop bodies when instrumenting", () => {
     const graph: LogicGraph = {
       id: "g",

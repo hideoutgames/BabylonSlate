@@ -10,6 +10,7 @@ import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { applyAssignMaterial, createSnapshotSceneBinding } from "./snapshot-apply";
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest } from "./runtime-material-edit";
 import { drainFinalAuthoringResources, waitForFinalAuthoringPreparation } from "./final-authoring-drain";
+import { applyUserInterfaceFallback } from "./overlay-texture-quad";
 import { MATERIAL_BLOCK_PREFIX } from "./material-compiler";
 import type { HapticLightingBlock } from "./haptic-lighting-block";
 
@@ -96,6 +97,33 @@ it("rejects a final resource fence when gameplay assigned an unavailable materia
   await expect(drainFinalAuthoringResources(f.scene, f.binding, f.library,
     { signal: new AbortController().signal, assertCurrent: () => {} })).rejects.toThrow("no complete native owner");
   expect(f.mesh.material).toBe(previous);
+});
+
+it("keeps a 2D Material's look for a Surface Material, through a live edit and the final resource fence", async () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const library = new MaterialLibrary();
+  disposers.push(() => { library.dispose(); scene.dispose(); engine.dispose(); });
+  const binding = createSnapshotSceneBinding();
+  const surface = createDefaultMaterialDocument();
+  binding.resolveMaterial = (guid, options) => guid === "material" ? library.resolve(scene, guid, surface, options) : null;
+  const mesh = MeshBuilder.CreatePlane("actor-1", {}, scene);
+  applyUserInterfaceFallback(mesh);
+  const look = mesh.material;
+  binding.meshes.set(1, mesh);
+  binding.meshKinds.set(1, "2dmaterial");
+  binding.primaryComponentIds.set(1, "body");
+  binding.meshSorting.set(1, { actorGuid: "actor", sortingLayer: "Default", orderInLayer: 0 });
+  applyAssignMaterial(scene, binding, { type: "assignMaterial", slotId: 1, componentId: "body", materialAssetGuid: "material" });
+  expect(mesh.material).toBe(look);
+  // The Surface Material is not this visual's to draw, so the fence does not wait for the plane to show it.
+  await expect(drainFinalAuthoringResources(scene, binding, library,
+    { signal: new AbortController().signal, assertCurrent: () => {} })).resolves.toBeUndefined();
+  const edits = new RuntimeMaterialEditOwner(binding, library);
+  disposers.push(() => edits.dispose());
+  await expect(edits.prepare({ sessionGeneration: 1, requestId: 1, editToken: "session-1:1", slotId: 1, actorGuid: "actor",
+    componentId: "body", materialGuid: "material" })).rejects.toThrow("unavailable");
+  expect(mesh.material).toBe(look);
 });
 
 it("rejects missing material and stale gameplay ownership without disturbing the last valid owner", async () => {

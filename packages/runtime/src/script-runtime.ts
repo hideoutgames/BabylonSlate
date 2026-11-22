@@ -80,6 +80,8 @@ type GameLifecycleHooks = {
 export class ScriptRuntime {
   private readonly classGuids = new Map<string, string>();
   private readonly scriptSources = new Map<string, CompiledScript>();
+  /** `liveObjects` refills this list on each call instead of allocating one. */
+  private readonly liveObjectScratch: EngineObject[] = [];
   private scriptSourceWork: Promise<void> = Promise.resolve();
   private readonly gameInstanceClass: string;
   private gameInstanceBound = false;
@@ -176,19 +178,33 @@ export class ScriptRuntime {
     return work;
   }
 
-  /** Owned objects alive now, in a fixed order: the collector's roots. */
-  liveObjects(): EngineObject[] {
-    return this.liveScriptOwners();
+  /**
+   * Owned objects alive now, in a fixed order: the collector's roots. The list is
+   * reused by the next call, so a caller reads it at once and keeps nothing.
+   */
+  liveObjects(): readonly EngineObject[] {
+    return this.fillLiveScriptOwners(this.liveObjectScratch);
   }
 
-  /** Every live object that can own script handlers. */
+  /** Every live object that can own script handlers, in a fresh list. */
   private liveScriptOwners(): EngineObject[] {
+    return this.fillLiveScriptOwners([]);
+  }
+
+  private fillLiveScriptOwners(out: EngineObject[]): EngineObject[] {
+    out.length = 0;
     const world = this.host.world();
     const actors = world.getActors();
-    const owners: Array<EngineObject | null> = [world.gameInstance, world.currentScene, ...actors, ...actors.flatMap((actor) => actor.components),
-      ...world.getSceneLayers(), ...world.getGameSubsystems(), ...world.getSceneSubsystems(),
-      ...this.host.streams().scenes()];
-    return owners.filter((owner): owner is EngineObject => !!owner && !owner.destroyed);
+    const add = (owner: EngineObject | null | undefined) => { if (owner && !owner.destroyed) out.push(owner); };
+    add(world.gameInstance);
+    add(world.currentScene);
+    for (const actor of actors) add(actor);
+    for (const actor of actors) for (const component of actor.components) add(component);
+    for (const layer of world.getSceneLayers()) add(layer);
+    for (const subsystem of world.getGameSubsystems()) add(subsystem);
+    for (const subsystem of world.getSceneSubsystems()) add(subsystem);
+    for (const scene of this.host.streams().scenes()) add(scene);
+    return out;
   }
 
   /** Stop: unregister the script classes (children first) and forget their sources. */
@@ -196,6 +212,7 @@ export class ScriptRuntime {
     this.releaseRichTextDecorators();
     this.unregisterScriptClasses();
     this.scriptSources.clear();
+    this.liveObjectScratch.length = 0;
   }
 
   /**

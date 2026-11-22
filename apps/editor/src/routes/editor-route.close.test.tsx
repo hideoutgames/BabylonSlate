@@ -28,8 +28,6 @@ const state = vi.hoisted(() => ({
   forceCloseProject: vi.fn(async () => true),
   saveAll: vi.fn(async (): Promise<SaveAllOutcome> => "saved"),
   setAutoSavePaused: vi.fn(),
-  approveMigrationsAndSave: vi.fn(async (): Promise<SaveAllOutcome> => "saved"),
-  migrationPromptRequest: 0,
   play: {} as Record<string, unknown>,
   closeDocument: vi.fn((id: string) => {
     state.documents = state.documents.filter((doc) => doc.id !== id);
@@ -49,8 +47,6 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   closeProject: state.closeProject,
   releaseSessionsForProjectClose: state.releaseSessionsForProjectClose,
   forceCloseProject: state.forceCloseProject,
-  migrationPending: [],
-  migrationPromptRequest: state.migrationPromptRequest,
   pendingExclusiveScene: state.pendingExclusiveScene,
   externalChangePrompt: null,
   cancelExclusiveSceneOpen: state.cancelExclusiveSceneOpen,
@@ -58,7 +54,6 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   confirmExclusiveSceneOpen: state.confirmExclusiveSceneOpen,
   saveAll: state.saveAll,
   setAutoSavePaused: state.setAutoSavePaused,
-  approveMigrationsAndSave: state.approveMigrationsAndSave,
   closeDocument: state.closeDocument,
 })));
 
@@ -171,8 +166,6 @@ beforeEach(() => {
     },
   ];
   state.saveAll.mockReset().mockResolvedValue("saved");
-  state.approveMigrationsAndSave.mockReset().mockResolvedValue("saved");
-  state.migrationPromptRequest = 0;
   state.play = {};
   state.closeDocument.mockReset();
   state.setAutoSavePaused.mockClear();
@@ -194,7 +187,7 @@ describe("document tab close requests", () => {
     state.projectDirty = true;
     state.saveAll.mockImplementation(async () => {
       if (saved) state.projectDirty = false;
-      return saved ? "saved" : "migrations";
+      return saved ? "saved" : "locked";
     });
     render(<EditorRoute />);
     const unload = new Event("beforeunload", { cancelable: true });
@@ -281,7 +274,7 @@ describe("document tab close requests", () => {
     async (saved) => {
       state.saveAll.mockImplementation(async () => {
         if (saved) state.documents.forEach((doc) => { doc.dirty = false; });
-        return saved ? "saved" : "migrations";
+        return saved ? "saved" : "locked";
       });
       render(<EditorRoute />);
       requestBulkClose();
@@ -472,7 +465,7 @@ describe("project close requests", () => {
   it("leaves the close prompt open when Save All leaves documents someone else has locked unsaved", async () => {
     state.projectDirty = true;
     state.saveAll.mockResolvedValue("locked");
-    const view = render(<EditorRoute />);
+    render(<EditorRoute />);
     fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
     await screen.findByTestId("dirty-close-dialog");
     fireEvent.click(screen.getByTestId("dirty-save"));
@@ -480,35 +473,7 @@ describe("project close requests", () => {
     await waitFor(() => expect(screen.getByTestId("dirty-save")).toHaveProperty("disabled", false));
     expect(state.closeProject).toHaveBeenCalledOnce();
     expect(screen.getByTestId("dirty-close-dialog")).toBeTruthy();
-    // Not a migration refusal: a later Migrate On Save does not take the close up again.
-    state.migrationPromptRequest += 1;
-    view.rerender(<EditorRoute />);
-    fireEvent.click(await screen.findByTestId("migrate-approve"));
-    await waitFor(() => expect(state.approveMigrationsAndSave).toHaveBeenCalledOnce());
-    expect(state.saveAll).toHaveBeenCalledOnce();
     expect(state.forceCloseProject).not.toHaveBeenCalled();
-  });
-
-  it("continues the close once Migrate On Save approves the Save All that migrations refused", async () => {
-    state.projectDirty = true;
-    state.saveAll.mockImplementation(async () => {
-      if (state.projectDirty) {
-        state.migrationPromptRequest += 1;
-        return "migrations";
-      }
-      return "saved";
-    });
-    state.approveMigrationsAndSave.mockImplementation(async () => {
-      state.projectDirty = false;
-      return "saved";
-    });
-    render(<EditorRoute />);
-    fireEvent.click(screen.getByRole("button", { name: "Close Project" }));
-    await screen.findByTestId("dirty-close-dialog");
-    fireEvent.click(screen.getByTestId("dirty-save"));
-    fireEvent.click(await screen.findByTestId("migrate-approve"));
-    await waitFor(() => expect(state.closeProject).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
   });
 });
 
@@ -526,38 +491,5 @@ describe("exclusive Scene open", () => {
     rerender(<EditorRoute />);
     await waitFor(() => expect(screen.queryByTestId("dirty-close-dialog")).toBeNull());
     expect(state.setAutoSavePaused).toHaveBeenLastCalledWith(false);
-  });
-});
-
-describe("schema migration prompt", () => {
-  it("opens when pending migrations refuse a Save All", () => {
-    const { rerender } = render(<EditorRoute />);
-    expect(screen.queryByTestId("migrate-on-save-dialog")).toBeNull();
-    state.migrationPromptRequest = 1;
-    rerender(<EditorRoute />);
-    expect(screen.getByTestId("migrate-on-save-dialog")).toBeTruthy();
-  });
-
-  it("stays closed for a refusal made before the editor opened, such as in a closed project", () => {
-    state.migrationPromptRequest = 1;
-    const { rerender } = render(<EditorRoute />);
-    expect(screen.queryByTestId("migrate-on-save-dialog")).toBeNull();
-    state.migrationPromptRequest = 2;
-    rerender(<EditorRoute />);
-    expect(screen.getByTestId("migrate-on-save-dialog")).toBeTruthy();
-  });
-
-  it.each(["saved", "locked", "migrations"] as const)("resumes a waiting Play only when Migrate On Save saved everything (%s)", async (outcome) => {
-    const resume = vi.fn(async () => {});
-    const cancel = vi.fn();
-    state.play = { playAwaitingMigration: true, resumePlayAfterMigration: resume, cancelPlayMigration: cancel };
-    state.approveMigrationsAndSave.mockResolvedValue(outcome);
-    render(<EditorRoute />);
-    fireEvent.click(await screen.findByTestId("migrate-approve"));
-    const saved = outcome === "saved";
-    await waitFor(() => expect(saved ? resume : cancel).toHaveBeenCalledOnce());
-    expect(saved ? cancel : resume).not.toHaveBeenCalled();
-    // A lock refusal names Play in Save Failed.
-    expect(state.approveMigrationsAndSave).toHaveBeenCalledWith("play");
   });
 });

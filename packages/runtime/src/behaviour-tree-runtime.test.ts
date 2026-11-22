@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CommandMessage } from "@haptic/bridge";
 import { createActor, createDefaultSceneSettings, quaternionToEulerDegrees, type SerializedScene } from "@haptic/core";
-import { evaluateBehaviourTree, type BehaviourTreeDocument, type BlackboardDocument } from "@haptic/behaviour-tree";
+import { stepBehaviourTree, type BehaviourTreeDocument, type BlackboardDocument } from "@haptic/behaviour-tree";
 import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 
 vi.mock("@haptic/behaviour-tree", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@haptic/behaviour-tree")>();
-  return { ...actual, evaluateBehaviourTree: vi.fn(actual.evaluateBehaviourTree) };
+  return { ...actual, stepBehaviourTree: vi.fn(actual.stepBehaviourTree) };
 });
 
 type BtNode = BehaviourTreeDocument["nodes"][number];
@@ -194,7 +194,7 @@ describe("BehaviourTreeRuntime", () => {
       behaviourTrees: { "tree-1": { name: "Hold", rootId: "hold", blackboardGuid: null, nodes: [hold] } },
       onCommand: (command) => commands.push(command),
     });
-    const evaluate = vi.mocked(evaluateBehaviourTree);
+    const evaluate = vi.mocked(stepBehaviourTree);
     try {
       await runtime.loadScripts([{ assetGuid: "hold", classId: "BTTask_Hold", anchors: [],
         source: `export function onBtTick(ctx) {}

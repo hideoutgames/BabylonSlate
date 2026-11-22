@@ -136,7 +136,7 @@ it("leaves screen effects out of a High Quality capture's plan and keeps what on
   expect(encode).toMatchObject({
     toneMappingEnabled: false, exposure: 1, contrast: 1, whiteBalanceEnabled: false, vignetteEnabled: false, colorGradingEnabled: false,
   });
-  // Legacy Display has no display stage left; a plan of screen effects alone becomes none.
+  // Display Space has no display stage left; a plan of screen effects alone becomes none.
   const legacy = planSceneEffects(effects({ bloom, vignette }), "pbr")!;
   expect(legacy).toMatchObject({ sceneLinear: false, bloom: { enabled: true }, imageProcessing: { vignette } });
   expect(planWithoutScreenEffects(legacy)).toBeNull();
@@ -145,7 +145,7 @@ it("leaves screen effects out of a High Quality capture's plan and keeps what on
   expect(planWithoutScreenEffects(null)).toBeNull();
 });
 
-it("plans bloom and FXAA independently in Legacy Display", () => {
+it("plans bloom and FXAA independently in Display Space", () => {
   const plan = planSceneEffects(
     effects({
       bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 },
@@ -194,7 +194,7 @@ it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-pr
 });
 
 describe("stages left out where they write their input unchanged", () => {
-  const linear = { mode: "sceneLinear" } as const, display = { mode: "legacyDisplay" } as const;
+  const linear = { mode: "sceneLinear" } as const, display = { mode: "displaySpace" } as const;
   const bloom = (weight: number) => ({ ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true, weight });
   const reflections = (strength: number) => ({ ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true, strength });
   const occlusion = (strength: number) => ({ ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, strength });
@@ -205,16 +205,16 @@ describe("stages left out where they write their input unchanged", () => {
   };
   it.each([
     ["bloom at weight 0, in Scene Linear", { colorPipeline: linear, bloom: bloom(0) }, {}, false, { bloom: false, reflections: false }],
-    ["bloom at weight 0 beside FXAA, in Legacy Display", { colorPipeline: display, bloom: bloom(0) }, { fxaa: true }, false,
+    ["bloom at weight 0 beside FXAA, in Display Space", { colorPipeline: display, bloom: bloom(0) }, { fxaa: true }, false,
       { bloom: false, reflections: false }],
     // Alone it is the chain: without it the view would draw straight to its output.
-    ["bloom at weight 0 alone, in Legacy Display", { colorPipeline: display, bloom: bloom(0) }, {}, false, { bloom: true, reflections: false }],
+    ["bloom at weight 0 alone, in Display Space", { colorPipeline: display, bloom: bloom(0) }, {}, false, { bloom: true, reflections: false }],
     ["bloom at weight 0.15", { colorPipeline: linear, bloom: bloom(0.15) }, {}, false, { bloom: true, reflections: false }],
     ["reflections at strength 0, in Scene Linear", { colorPipeline: linear, reflections: reflections(0) }, {}, false,
       { bloom: false, reflections: false }],
     ["reflections at strength 0.5", { colorPipeline: linear, reflections: reflections(0.5) }, {}, false, { bloom: false, reflections: true }],
     // The combine's gamma round trip is not exact.
-    ["reflections at strength 0, in Legacy Display", { colorPipeline: display, reflections: reflections(0) }, {}, false,
+    ["reflections at strength 0, in Display Space", { colorPipeline: display, reflections: reflections(0) }, {}, false,
       { bloom: false, reflections: true }],
     // An authored stack's output can be smaller than the render size, which the combine resamples.
     ["reflections at strength 0 after an authored stack", { colorPipeline: linear, reflections: reflections(0) }, {}, true,

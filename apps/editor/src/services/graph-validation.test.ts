@@ -2465,8 +2465,8 @@ describe("scriptPaletteNodes", () => {
         "struct-stats": {
           name: "Stats",
           fields: [
-            { name: "Health", typeId: "int" },
-            { name: "Label", typeId: "string" },
+            { id: "Health", name: "Health", typeId: "int" },
+            { id: "Label", name: "Label", typeId: "string" },
           ],
         },
       },
@@ -2520,8 +2520,8 @@ describe("scriptPaletteNodes", () => {
         "struct-stats": {
           name: "Stats",
           fields: [
-            { name: "Health", typeId: "int" },
-            { name: "Armor", typeId: "float" },
+            { id: "Health", name: "Health", typeId: "int" },
+            { id: "Armor", name: "Armor", typeId: "float" },
           ],
         },
       },
@@ -2738,8 +2738,8 @@ describe("scriptPaletteNodes", () => {
           "struct-stats": {
             name: "Stats",
             fields: [
-              { name: "Health", typeId: "int" },
-              { name: "Label", typeId: "string" },
+              { id: "Health", name: "Health", typeId: "int" },
+              { id: "Label", name: "Label", typeId: "string" },
             ],
           },
         },
@@ -2979,8 +2979,8 @@ describe("scriptPaletteNodes", () => {
           guid: "struct-stats",
           name: "Stats",
           fields: [
-            { name: "Health", typeId: "int" },
-            { name: "Label", typeId: "string" },
+            { id: "Health", name: "Health", typeId: "int" },
+            { id: "Label", name: "Label", typeId: "string" },
           ],
         },
       ],

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import { ensureTilesetTiles, normalizeTilesetPayload } from "./tileset-payload";
 import {
   addTilemapLayer,
@@ -18,6 +19,9 @@ import {
   setTile,
   setTiles,
   TilemapChunkIndex,
+  compactTilemapPayload,
+  decodeTilemapRuns,
+  encodeTilemapRuns,
   tilemapCellKey,
   tilemapTilesetGuids,
   boundedTilemapShift,
@@ -547,5 +551,29 @@ describe("unbounded tilemaps", () => {
     expect(centerTilemapPivot(unbounded([[0, 0, 1], [1, 0, 1]])).pivot).toEqual({ x: 1, y: 0.5 });
     const empty = unbounded([], { x: 4, y: 4 });
     expect(centerTilemapPivot(empty)).toBe(empty);
+  });
+});
+
+describe("run-length stored chunks", () => {
+  it("encodes and decodes count and gid pairs, cutting overlong runs and stopping at a malformed count", () => {
+    expect(encodeTilemapRuns([0, 0, 0, 5, 5, 7, 0])).toEqual([3, 0, 2, 5, 1, 7, 1, 0]);
+    expect(decodeTilemapRuns([3, 0, 2, 5, 1, 7, 1, 0], 7)).toEqual([0, 0, 0, 5, 5, 7, 0]);
+    expect(decodeTilemapRuns([2, 9, 9, 4], 4)).toEqual([9, 9, 4, 4]);
+    expect(decodeTilemapRuns([1, 3], 3)).toEqual([3, 0, 0]);
+    expect(decodeTilemapRuns([1, 3, -2, 4, 1, 5], 4)).toEqual([3, 0, 0, 0]);
+  });
+
+  it("saves a .hasset whose chunks hold runs, which normalize back to the same cells", async () => {
+    let map = createDefaultTilemapPayload();
+    map = setTile(map, "layer-1", 3, 4, 17);
+    map = setTile(map, "layer-1", 40, 1, 2);
+    const compact = compactTilemapPayload(map) as { layers: Array<{ chunks: Array<Record<string, unknown>> }> };
+    expect(compact.layers[0]!.chunks.every((chunk) => !("tiles" in chunk) && Array.isArray(chunk.runs))).toBe(true);
+    expect(normalizeTilemapPayload(compact)).toEqual(map);
+    // One painted cell per chunk: three pairs instead of 32 × 32 numbers.
+    const bytes = await encodeAssetDocument({ type: "Tilemap", name: "Map", guid: "map", version: 1, payload: map as unknown as Record<string, unknown> });
+    const stored = (await decodeAssetDocument(bytes)).payload as typeof compact;
+    expect(stored.layers[0]!.chunks.map((chunk) => chunk.runs)).toEqual([[131, 0, 1, 17, 892, 0], [40, 0, 1, 2, 983, 0]]);
+    expect(normalizeTilemapPayload(stored)).toEqual(map);
   });
 });

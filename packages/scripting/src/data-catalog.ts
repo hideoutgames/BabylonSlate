@@ -20,12 +20,11 @@ export function dataTypeSchemas(entries: readonly DataAssetCatalogEntry[]): Type
         const field = record(raw);
         if (!field || typeof field.name !== "string" || !field.name || typeof field.typeId !== "string") return [];
         if (field.container !== undefined && field.container !== "single" && field.container !== "array" && field.container !== "map") return [];
-        if (entry.type === "DataDefinition" && (typeof field.id !== "string" || !field.id)) return [];
+        if (typeof field.id !== "string" || !field.id) return [];
         if ((field.required !== undefined && typeof field.required !== "boolean") ||
           (field.min !== undefined && typeof field.min !== "number") || (field.max !== undefined && typeof field.max !== "number")) return [];
         return [{
-          name: field.name, typeId: field.typeId,
-          ...(typeof field.id === "string" ? { id: field.id } : {}),
+          id: field.id, name: field.name, typeId: field.typeId,
           ...(typeof field.typeClassId === "string" ? { typeClassId: field.typeClassId } : {}),
           ...(field.container ? { container: field.container as "single" | "array" | "map" } : {}),
           ...(typeof field.keyTypeId === "string" ? { keyTypeId: field.keyTypeId } : {}),

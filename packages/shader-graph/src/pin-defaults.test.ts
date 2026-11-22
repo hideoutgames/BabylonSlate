@@ -53,6 +53,22 @@ describe("material pin defaults", () => {
     expect(byId.normal).toBeUndefined();
   });
 
+  it("lists the Vector4 and Vector2 defaults of the User Interface nodes and no element pins", () => {
+    const doc = createDefaultMaterialDocument("Panel", "ui");
+    doc.nodes.push(
+      { id: "box", type: "ui.roundedRectangle", position: { x: 0, y: 0 }, properties: {} },
+      { id: "bar", type: "ui.linearProgress", position: { x: 0, y: 0 }, properties: {} },
+    );
+    expect(listUnconnectedMaterialPinDefaults(doc, "box").map((row) => [row.pinId, row.type, row.value])).toEqual([
+      ["radius", "vec4", [8, 8, 8, 8]],
+      ["border", "float", [0]],
+    ]);
+    expect(listUnconnectedMaterialPinDefaults(doc, "bar").map((row) => [row.pinId, row.type, row.value])).toEqual([
+      ["progress", "float", [0.5]],
+      ["direction", "vec2", [1, 0]],
+    ]);
+  });
+
   it("widens a short authored vector the same way for Details and the shader", () => {
     const doc = createDefaultMaterialDocument();
     const output = doc.nodes.find((node) => node.id === "output")!;

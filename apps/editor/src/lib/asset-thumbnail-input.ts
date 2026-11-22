@@ -6,7 +6,7 @@ import {
   type IndexedAsset,
   type ModelPayload,
 } from "@haptic/assets";
-import type { SerializedComponent, SerializedScene } from "@haptic/core";
+import { componentSurface, type SerializedComponent, type SerializedScene } from "@haptic/core";
 import { engineParentOf } from "@haptic/editor-kit";
 import type { AssetThumbnailRequest } from "@haptic/render";
 import {
@@ -56,6 +56,16 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+/**
+ * How a Class thumbnail draws its Prefab: a SceneLayerActor Class (any depth) as its Scene Layer shows it, whatever
+ * its components; any other actor Class in 2D when it draws a 2D surface and no 3D one, else from the angled pose.
+ */
+function classThumbnailView(sceneLayerActor: boolean, components: readonly SerializedComponent[]): "2d" | "3d" {
+  if (sceneLayerActor) return "2d";
+  const surfaces = new Set(components.map((component) => componentSurface(component.classId)));
+  return surfaces.has("2d") && !surfaces.has("3d") ? "2d" : "3d";
 }
 
 type ThumbnailSourceOptions = Omit<AssetThumbnailInputOptions, "asset" | "pixelsPerUnit">;
@@ -152,6 +162,7 @@ export async function prepareAssetThumbnailInput(
   if (!current()) return null;
 
   let prefab: SerializedScene | undefined;
+  let view: "2d" | "3d" = "3d";
   if (classAsset(asset)) {
     const byClass = new Map<string, IndexedAsset>();
     for (const entry of registry.list()) {
@@ -198,9 +209,9 @@ export async function prepareAssetThumbnailInput(
         ? []
         : prefabComponentsFromGraph(null, overlay ? "2d" : "3d");
     const components = mergePrefabComponents(ancestors, local);
-    const spriteOnly = components.some((component) => component.classId === "SpriteComponent") &&
-      !components.some((component) => ["MeshComponent", "Text3DComponent", "LandscapeComponent", "FoliageComponent", "CableComponent"].includes(component.classId));
-    prefab = previewSceneFor(components, spriteOnly ? "2d" : "3d");
+    view = classThumbnailView(overlay, components);
+    // A 2D view realises in a 2D world, as the Prefab editor realises a SceneLayerActor Class.
+    prefab = previewSceneFor(components, view);
   } else if (asset.header.type !== "Material") {
     return null;
   }
@@ -263,6 +274,6 @@ export async function prepareAssetThumbnailInput(
     ...(options.pixelsPerUnit ? { pixelsPerUnit: options.pixelsPerUnit } : {}),
   };
   return prefab
-    ? { kind: "ActorPrefab", prefab, materials, functions, assets }
+    ? { kind: "ActorPrefab", prefab, view, materials, functions, assets }
     : { kind: "Material", materialGuid: asset.header.guid, materials, functions, assets };
 }

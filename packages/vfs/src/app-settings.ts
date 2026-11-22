@@ -5,6 +5,7 @@ import {
   DEFAULT_TRACES_KEPT,
   MAX_TRACES_KEPT,
   normalizeProjectAppearance,
+  storedProjectAppearance,
 } from "@haptic/core";
 
 /** Each undo step retains a document snapshot; keep the history bounded. */
@@ -197,7 +198,11 @@ export const engineSettingsSchema = z.object({
         lastOpenedAt: z.string(),
         createdAt: z.string().optional(),
         bookmark: z.string().nullable().optional(),
-        appearance: z.unknown().transform(normalizeProjectAppearance).optional(),
+        // A recent's picture lives in derived storage (`recent-covers/`), never in settings.
+        appearance: z.unknown().transform((value) => {
+          const appearance = normalizeProjectAppearance(value);
+          return appearance ? storedProjectAppearance(appearance) : undefined;
+        }).optional(),
         /** Cached `settings.sourceControl.enabled` so Homepage need not open the folder. */
         sourceControl: z.boolean().optional().catch(undefined),
       }),

@@ -3,6 +3,7 @@ import { createActor, createDefaultSceneSettings } from "@haptic/core";
 import type { ActorComponent } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
+import { variablesAtRelease } from "./testing/released-variables";
 
 const counter: CompiledScript = {
   assetGuid: "counter", classId: "Counter", parentClassId: "ActorComponent", anchors: [],
@@ -40,13 +41,15 @@ it("runs authored ActorComponent scripts on independent component instances and 
     expect(b!.getVariable("count")).toBe(4);
     a!.setVariable("count", 20);
     expect(b!.getVariable("count")).toBe(4);
+    const [releasedA, releasedB] = [variablesAtRelease(a!), variablesAtRelease(b!)];
     runtime.getWorld().destroyActor(actor.guid);
     runtime.tick();
     expect(a!.destroyed).toBe(true);
-    expect(a!.getVariable("ends")).toBe(1);
-    expect(b!.getVariable("ends")).toBe(1);
+    expect(releasedA.get("ends")).toBe(1);
+    expect(releasedB.get("ends")).toBe(1);
+    // Stopping runs no further End on a component already destroyed, and its state stays released.
     runtime.stop();
-    expect(a!.getVariable("ends")).toBe(1);
+    expect(a!.getVariable("ends")).toBeUndefined();
   } finally {
     runtime.stop();
   }

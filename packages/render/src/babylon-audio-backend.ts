@@ -143,10 +143,19 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   async play(request: AudioPlayRequest): Promise<void> {
-    this.stop(request.voiceId);
+    // A voice paused before it starts (`setVoicePaused`) keeps its hold: it starts paused.
+    this.releaseVoice(request.voiceId);
     const pending = Symbol();
     this.pendingVoices.set(request.voiceId, pending);
-    const isCurrent = () => !this.disposed && this.pendingVoices.get(request.voiceId) === pending;
+    try {
+      await this.startVoice(request, () => !this.disposed && this.pendingVoices.get(request.voiceId) === pending);
+    } finally {
+      // Started, superseded or failed (a rejected decode or sound creation): the request is no longer pending.
+      if (this.pendingVoices.get(request.voiceId) === pending) this.pendingVoices.delete(request.voiceId);
+    }
+  }
+
+  private async startVoice(request: AudioPlayRequest, isCurrent: () => boolean): Promise<void> {
     const engine = await this.ensureEngine();
     if (!isCurrent()) return;
     const spatial = request.spatial;
@@ -256,6 +265,13 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   stop(voiceId: string): void {
+    // A stopped voice played again starts unpaused.
+    this.pausedVoices.delete(voiceId);
+    this.releaseVoice(voiceId);
+  }
+
+  /** Stops and releases a voice, keeping whether the game holds it paused. */
+  private releaseVoice(voiceId: string): void {
     this.pendingVoices.delete(voiceId);
     this.disposeMuffleSend(voiceId);
     this.voiceLevels.delete(voiceId);
@@ -415,6 +431,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     if (this.disposed) return;
     this.disposed = true;
     this.pendingVoices.clear();
+    this.pausedVoices.clear();
     for (const voiceId of [...this.voices.keys()]) {
       try {
         this.stop(voiceId);
