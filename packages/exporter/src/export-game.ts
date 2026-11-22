@@ -1,6 +1,6 @@
 import { SAFE_ZIP_MTIME } from "./zip-time";
 import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, normalizeSceneLayerPostProcessStack, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
-import { collectAssetDependencyMetadata, complexCollisionModelGuids, cookComplexCollisionMesh, sceneLayerPostProcessAssetGuids, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, type AssetDependencyClass } from "@haptic/assets";
+import { collectAssetDependencyMetadata, complexCollisionModelGuids, cookComplexCollision, sceneLayerPostProcessAssetGuids, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
   DEFAULT_FILE_COUNT_FAIL,
@@ -41,22 +41,25 @@ function parseDocument(asset: ExportAssetBytes): unknown {
 /**
  * Complex Collision sidecars (`HPCC`) for the Models this export's Scenes, Scene Layers and Classes simulate with Use
  * Complex Collision, cooked here exactly as the player cooked them at runtime, so a game never parses a GLB for its
- * collision. Each is a soft dependency of its Model: the player loads it only for a closure that needs it.
+ * collision. Each is a soft dependency of its Model: the player loads it only for a closure that needs it. A Model
+ * whose geometry cannot be cooked (Draco or meshopt compression) ships none and gets a warning: it has no collision.
  */
-function complexCollisionSidecars(assets: readonly ExportAssetBytes[]): ExportAssetBytes[] {
+function complexCollisionSidecars(assets: readonly ExportAssetBytes[]): { sidecars: ExportAssetBytes[]; warnings: string[] } {
   const documents = assets.flatMap((asset) => asset.type === "Scene" || asset.type === "SceneLayer" || asset.type === "Class" || asset.type === "CompiledScript"
     ? [parseDocument(asset)] : []);
   const needed = complexCollisionModelGuids(documents);
   const sidecars: ExportAssetBytes[] = [];
+  const warnings: string[] = [];
   for (const model of assets) {
     if (model.type !== "Model" || !needed.has(model.guid)) continue;
     const packed = decodePackedModelAsset(model.bytes);
-    const mesh = packed ? cookComplexCollisionMesh(packed.source, packed.payload) : null;
+    const { mesh, problem } = packed ? cookComplexCollision(packed.source, packed.payload) : { mesh: null, problem: null };
+    if (problem) warnings.push(`Model ${model.name ?? model.guid} uses Use Complex Collision, but ${problem}. It has no collision in the game.`);
     if (!mesh) continue;
     sidecars.push({ guid: complexCollisionExportGuid(model.guid), ownerGuid: model.guid, type: COMPLEX_COLLISION_EXPORT_TYPE,
       sceneGuid: model.sceneGuid, encoding: "bytes", bytes: encodeComplexCollisionMesh(mesh), requiredDependencies: [] });
   }
-  return sidecars;
+  return { sidecars, warnings };
 }
 
 /**
@@ -373,7 +376,8 @@ export async function exportGame(
     sourceAssets.push({ guid: `script:${script.assetGuid}:${encodeURIComponent(script.classId)}`, ownerGuid: script.assetGuid, type: "CompiledScript", classId: script.classId,
       sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify(script)), requiredDependencies: [] });
   }
-  sourceAssets.push(...complexCollisionSidecars(sourceAssets));
+  const complexCollision = complexCollisionSidecars(sourceAssets);
+  sourceAssets.push(...complexCollision.sidecars);
 
   // Project-level assets Play reads from its first frame: the LUT and the Scene Layer post-processing passes.
   const projectAssetGuids = new Set([...renderEffectsAssetGuids(options.renderSettings?.effects),
@@ -445,7 +449,7 @@ export async function exportGame(
   if (fileCount > failAt) {
     return err(countError(fileCount, failAt));
   }
-  const warnings: string[] = [];
+  const warnings: string[] = [...complexCollision.warnings];
   if (fileCount > warnAt) {
     warnings.push(countWarning(fileCount, warnAt));
   }
