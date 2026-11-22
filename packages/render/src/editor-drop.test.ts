@@ -14,6 +14,7 @@ import {
 import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { calculateEditorDropTransforms } from "./editor-drop";
+import { collisionSurfaces, surfaceHit } from "./editor-drop-collisions";
 import type { MeshAssetContext } from "./mesh-assets";
 import type { ColliderShape, Vec3 } from "@haptic/physics";
 import {
@@ -75,6 +76,41 @@ describe("editor Drop", () => {
     expect(drop(["selected"])[0]?.position).toEqual([0, 3.75, 0]); // Built-in box is 1.5 units tall.
     sceneData.actors[1]!.components[0]!.properties.heights = new Float32Array(25).fill(4);
     expect(drop(["selected"])[0]?.position).toEqual([0, 5.75, 0]);
+  });
+
+  it.each([
+    { title: "on X", scale: [-1, 1, 1] as [number, number, number] },
+    { title: "on Z", scale: [1, 1, -2] as [number, number, number] },
+    { title: "on X and Z", scale: [-1, 1, -1] as [number, number, number] },
+  ])("drops onto a Landscape mirrored $title where its drawn triangles are", ({ scale }) => {
+    // 4 x 4 cells over 8 x 8, uneven so the diagonal each cell is split along changes the height between samples.
+    const heights = Float32Array.from({ length: 25 }, (_, i) => ((i * 7) % 11) / 2);
+    const properties = { ...parseLandscapeProperties({ width: 8, depth: 8, subdivisions: 4, heights }), collisionsEnabled: true };
+    const scene: SerializedScene = { ...createDefaultScene(), actors: [createActor("landscape", "Landscape", {
+      transform: { ...identitySerializedTransform(), scale }, components: [{ id: "terrain", classId: "LandscapeComponent", properties }],
+    })] };
+    const surfaces = collisionSurfaces(scene);
+    /** The drawn surface's height over world (x, z): the mesh splits each local cell along (1,0)–(0,1). */
+    const drawn = (x: number, z: number) => {
+      const fx = (x / scale[0] + 4) / 2;
+      const fz = (z / scale[2] + 4) / 2;
+      const ix = Math.min(3, Math.floor(fx));
+      const iz = Math.min(3, Math.floor(fz));
+      const u = fx - ix;
+      const v = fz - iz;
+      const at = (dx: number, dz: number) => heights[(iz + dz) * 5 + ix + dx]!;
+      return u + v <= 1
+        ? at(0, 0) + u * (at(1, 0) - at(0, 0)) + v * (at(0, 1) - at(0, 0))
+        : at(1, 1) + (1 - u) * (at(0, 1) - at(1, 1)) + (1 - v) * (at(1, 0) - at(1, 1));
+    };
+    for (const lx of [-3.3, -1.7, 0.6, 2.4]) {
+      for (const lz of [-3.4, -0.7, 1.3, 3.6]) {
+        const x = lx * Math.abs(scale[0]);
+        const z = lz * Math.abs(scale[2]);
+        const t = surfaceHit(surfaces[0]!, new Vector3(x, 20, z));
+        expect(20 - t!).toBeCloseTo(drawn(x, z), 5);
+      }
+    }
   });
 
   it("uses a configurable strict limit, including distances above the default", () => {

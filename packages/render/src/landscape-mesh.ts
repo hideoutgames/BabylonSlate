@@ -2,12 +2,13 @@ import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { PickingInfo } from "@babylonjs/core/Collisions/pickingInfo";
 import type { Ray } from "@babylonjs/core/Culling/ray";
 import { Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
-import { parseLandscapeProperties, type LandscapeProperties } from "@haptic/core";
+import { parseLandscapeProperties, type LandscapeProperties, type LandscapeRegion } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
 import { RENDERING_GROUP } from "./sorting";
 import { applyMaterialBounds } from "./material-bounds";
@@ -21,6 +22,10 @@ const LOD_HYSTERESIS = 0.05;
 const CAMERA_MOVE_THRESHOLD_SQ = 0.25; // 0.5 m
 const LOD_STRIDES = [1, 2, 4, 8] as const;
 const INV_255 = 1 / 255;
+/** Skirt depth beyond twice the largest edge error, in cells: covers rasterization gaps at T-junctions. */
+const SKIRT_MARGIN_CELLS = 0.5;
+/** Skirt edges (`ChunkIndexLayout` bits): only edges shared with another chunk get a skirt. */
+const NORTH = 1, SOUTH = 2, WEST = 4, EAST = 8;
 
 type ChunkLodRange = { indexStart: number; indexCount: number };
 type ChunkIndexLayout = {
@@ -30,10 +35,13 @@ type ChunkIndexLayout = {
 
 type Chunk = {
   mesh: Mesh;
+  root: Mesh;
   x: number;
   z: number;
   width: number;
   depth: number;
+  /** Edges with a skirt (`NORTH | SOUTH | WEST | EAST`). */
+  skirts: number;
   positions: Float32Array;
   normals: Float32Array;
   uvs: Float32Array;
@@ -60,7 +68,10 @@ const chunkOf = new WeakMap<Mesh, Chunk>();
 const sceneRoots = new WeakMap<Scene, Mesh[]>();
 /** Per-scene chunk LOD controller state, attached once on `scene.onBeforeRenderObservable`. */
 const lodStateByScene = new WeakMap<Scene, LandscapeLodState>();
-/** Cached static concatenated `[LOD0 | LOD1 | LOD2 | LOD3]` index buffers keyed by `${width}x${depth}`. */
+/**
+ * Concatenated `[LOD0 | LOD1 | LOD2 | LOD3]` index arrays keyed by `${width}x${depth}:${skirts}`, built once per chunk
+ * shape on the CPU. Each chunk's geometry still uploads its own GPU copy (Babylon's `Geometry` owns its index buffer).
+ */
 const indexLayoutCache = new Map<string, ChunkIndexLayout>();
 const NO_ROOTS: readonly Mesh[] = [];
 
@@ -72,14 +83,13 @@ function sampleSteps(length: number, stride: number): number[] {
 }
 
 /**
- * Builds (and caches) one static concatenated index buffer containing `[LOD0 | LOD1 | LOD2 | LOD3]`
- * for a `(w, d)` cell chunk.
- * - LOD0 (stride 1): full surface quads, no skirts, starting at index 0.
- * - LOD1..LOD3 (strides 2, 4, 8): coarser surface quads + 4 outward-facing perimeter skirt strips
- *   so cracks between neighboring chunks at different LODs are completely hidden.
+ * Builds (and caches) one static concatenated index array containing `[LOD0 | LOD1 | LOD2 | LOD3]` for a `(w, d)` cell
+ * chunk. Each LOD is its surface quads, LOD0's first so a face id below `2 * w * d` is a LOD0 cell's, then a downward
+ * skirt strip on each edge in `skirts`: edges shared with a neighbouring chunk, which may draw another LOD there. The
+ * outer border of the landscape has no skirt, so none hangs visibly below it.
  */
-function getChunkIndexLayout(w: number, d: number): ChunkIndexLayout {
-  const key = `${w}x${d}`;
+function getChunkIndexLayout(w: number, d: number, skirts: number): ChunkIndexLayout {
+  const key = `${w}x${d}:${skirts}`;
   const cached = indexLayoutCache.get(key);
   if (cached) return cached;
 
@@ -118,48 +128,38 @@ function getChunkIndexLayout(w: number, d: number): ChunkIndexLayout {
       }
     }
 
-    // Perimeter downward skirt strips on coarser LODs (LOD1..LOD3) with outward-facing LH winding.
-    if (lodIdx > 0) {
-      // North edge (z = 0, outward normal -Z)
+    // Downward skirt strips with outward-facing LH winding.
+    if (skirts & NORTH) {
+      // z = 0, outward normal -Z
       for (let xi = 0; xi < xs.length - 1; xi++) {
         const x0 = xs[xi]!;
         const x1 = xs[xi + 1]!;
-        const t0 = x0;
-        const t1 = x1;
-        const s0 = northSkirtStart + x0;
-        const s1 = northSkirtStart + x1;
-        raw.push(t0, s0, t1, t1, s0, s1);
+        raw.push(x0, northSkirtStart + x0, x1, x1, northSkirtStart + x0, northSkirtStart + x1);
       }
-      // South edge (z = d, outward normal +Z)
+    }
+    if (skirts & SOUTH) {
+      // z = d, outward normal +Z
       const southRow = d * row;
       for (let xi = 0; xi < xs.length - 1; xi++) {
         const x0 = xs[xi]!;
         const x1 = xs[xi + 1]!;
-        const t0 = southRow + x0;
-        const t1 = southRow + x1;
-        const s0 = southSkirtStart + x0;
-        const s1 = southSkirtStart + x1;
-        raw.push(t0, t1, s0, t1, s1, s0);
+        raw.push(southRow + x0, southRow + x1, southSkirtStart + x0, southRow + x1, southSkirtStart + x1, southSkirtStart + x0);
       }
-      // West edge (x = 0, outward normal -X)
+    }
+    if (skirts & WEST) {
+      // x = 0, outward normal -X
       for (let zi = 0; zi < zs.length - 1; zi++) {
         const z0 = zs[zi]!;
         const z1 = zs[zi + 1]!;
-        const t0 = z0 * row;
-        const t1 = z1 * row;
-        const s0 = westSkirtStart + z0;
-        const s1 = westSkirtStart + z1;
-        raw.push(t0, t1, s0, t1, s1, s0);
+        raw.push(z0 * row, z1 * row, westSkirtStart + z0, z1 * row, westSkirtStart + z1, westSkirtStart + z0);
       }
-      // East edge (x = w, outward normal +X)
+    }
+    if (skirts & EAST) {
+      // x = w, outward normal +X
       for (let zi = 0; zi < zs.length - 1; zi++) {
         const z0 = zs[zi]!;
         const z1 = zs[zi + 1]!;
-        const t0 = z0 * row + w;
-        const t1 = z1 * row + w;
-        const s0 = eastSkirtStart + z0;
-        const s1 = eastSkirtStart + z1;
-        raw.push(t0, s0, t1, t1, s0, s1);
+        raw.push(z0 * row + w, eastSkirtStart + z0, z1 * row + w, z1 * row + w, eastSkirtStart + z0, eastSkirtStart + z1);
       }
     }
 
@@ -175,8 +175,41 @@ function getChunkIndexLayout(w: number, d: number): ChunkIndexLayout {
 }
 
 /**
- * Writes interior heightfield vertices plus 4 perimeter downward skirt strips directly
- * into the chunk's pre-allocated `Float32Array` buffers (zero per-vertex allocations).
+ * The largest vertical distance, over a chunk's skirted edges and its coarser LODs, between an edge drawn at that LOD
+ * (a straight line between its samples) and the full-resolution edge. A neighbour shares the edge's samples, so two
+ * chunks meeting there at any LODs are at most twice this apart: the higher one's skirt must reach that far down.
+ */
+function maxSkirtedEdgeError(data: LandscapeProperties, chunk: Chunk): number {
+  const side = data.subdivisions + 1;
+  const heights = data.heights;
+  let worst = 0;
+  const edge = (start: number, step: number, length: number) => {
+    for (let lod = 1; lod < chunk.layout.lods.length; lod++) {
+      const steps = sampleSteps(length, LOD_STRIDES[lod]!);
+      for (let i = 0; i < steps.length - 1; i++) {
+        const s0 = steps[i]!;
+        const s1 = steps[i + 1]!;
+        const h0 = heights[start + s0 * step]!;
+        const h1 = heights[start + s1 * step]!;
+        for (let s = s0 + 1; s < s1; s++) {
+          const error = Math.abs(heights[start + s * step]! - (h0 + (h1 - h0) * (s - s0) / (s1 - s0)));
+          if (error > worst) worst = error;
+        }
+      }
+    }
+  };
+  const origin = chunk.z * side + chunk.x;
+  if (chunk.skirts & NORTH) edge(origin, 1, chunk.width);
+  if (chunk.skirts & SOUTH) edge(origin + chunk.depth * side, 1, chunk.width);
+  if (chunk.skirts & WEST) edge(origin, side, chunk.depth);
+  if (chunk.skirts & EAST) edge(origin + chunk.width, side, chunk.depth);
+  return worst;
+}
+
+/**
+ * Writes interior heightfield vertices plus 4 perimeter downward skirt rows directly into the chunk's pre-allocated
+ * `Float32Array` buffers (zero per-vertex allocations). The skirt depth follows the chunk's edge error, so it covers
+ * the gap to a neighbour at any LOD; it is the same at every LOD, so a LOD switch never rewrites vertices.
  */
 function fillChunkBuffers(data: LandscapeProperties, chunk: Chunk): void {
   const { width: w, depth: d, positions, normals, uvs, colors } = chunk;
@@ -185,7 +218,7 @@ function fillChunkBuffers(data: LandscapeProperties, chunk: Chunk): void {
   const dz = data.depth / data.subdivisions;
   const halfW = data.width * 0.5;
   const halfD = data.depth * 0.5;
-  const skirtDepth = Math.max(dx, dz) * 1.5;
+  const skirtDepth = chunk.skirts ? 2 * maxSkirtedEdgeError(data, chunk) + Math.max(dx, dz) * SKIRT_MARGIN_CELLS : 0;
   const heights = data.heights;
   const weights = data.weights;
 
@@ -336,7 +369,6 @@ function ensureLodController(scene: Scene): LandscapeLodState {
 export function updateLandscapeLods(
   scene: Scene,
   camera: Camera | null = scene.activeCamera,
-  force = false,
 ): void {
   const state = lodStateByScene.get(scene);
   if (!state || state.chunks.size === 0 || !camera) return;
@@ -348,7 +380,6 @@ export function updateLandscapeLods(
   const dy = cam.y - state.lastCamY;
   const dz = cam.z - state.lastCamZ;
   if (
-    !force &&
     !state.dirty &&
     scale === state.lastScale &&
     autoLod === state.lastAutoLod &&
@@ -429,14 +460,18 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
       const w = Math.min(CHUNK_CELLS, data.subdivisions - x);
       const d = Math.min(CHUNK_CELLS, data.subdivisions - z);
       const vertexCount = (w + 1) * (d + 1) + 2 * (w + 1) + 2 * (d + 1);
-      const layout = getChunkIndexLayout(w, d);
+      const skirts = (z > 0 ? NORTH : 0) | (z + d < data.subdivisions ? SOUTH : 0) |
+        (x > 0 ? WEST : 0) | (x + w < data.subdivisions ? EAST : 0);
+      const layout = getChunkIndexLayout(w, d, skirts);
       const mesh = new Mesh(`${name}:landscape:${x}:${z}`, scene);
       const chunk: Chunk = {
         mesh,
+        root,
         x,
         z,
         width: w,
         depth: d,
+        skirts,
         positions: new Float32Array(vertexCount * 3),
         normals: new Float32Array(vertexCount * 3),
         uvs: new Float32Array(vertexCount * 2),
@@ -455,6 +490,11 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
       applyChunkLod(chunk, 0);
       chunkGeometries.set(mesh, mesh.geometry);
       chunkOf.set(mesh, chunk);
+      // Every pick (scene picks, brushes, foliage, placement, foot placement) meets the full-resolution surface, never
+      // the active coarse LOD or a skirt.
+      mesh.intersects = (ray, fastCheck, trianglePredicate, onlyBoundingInfo, worldToUse, skipBoundingInfo) => onlyBoundingInfo
+        ? Mesh.prototype.intersects.call(mesh, ray, fastCheck, trianglePredicate, true, worldToUse, skipBoundingInfo)
+        : intersectLandscapeChunk(mesh, ray, worldToUse ?? mesh.getWorldMatrix(), skipBoundingInfo)!;
       mesh.parent = root;
       mesh.renderingGroupId = RENDERING_GROUP.world;
       mesh.hasVertexAlpha = false;
@@ -474,65 +514,100 @@ export function landscapeMeshData(root: Mesh): LandscapeProperties | null {
   return landscapes.get(root)?.data ?? null;
 }
 
-/** A trace crossing more cells than this tests the whole chunk instead. */
-const MAX_TRACE_CELLS = 64;
-/** What `intersectLandscapeChunk` reads of a chunk's geometry beyond its public API (Babylon 9.29 internals, as its picking reads them). */
-type PointsArray = { _generatePointsArray(): boolean; readonly _positions: Vector3[] | null };
+const corner0 = new Vector3();
+const corner1 = new Vector3();
+const corner2 = new Vector3();
+const corner3 = new Vector3();
 
 /**
- * A ray's nearest hit on a landscape chunk, testing only the LOD0 cells the ray's segment crosses
- * (and their neighbours) rather than every face. Always tests LOD0 (`indexStart = 0`, no skirts)
- * regardless of the chunk's active render LOD, so picking and brush sculpting always hit exact
- * full-resolution terrain.
+ * A local-space ray's nearest hit on a landscape chunk's full-resolution (LOD0) surface, whatever LOD it draws and
+ * never on a skirt: an exact heightfield trace that tests only the cells under the ray's segment. Faces are numbered
+ * as LOD0's, the first range of the chunk's indices, so `PickingInfo.getNormal` reads the drawn vertices. Undefined
+ * for a mesh that is not a landscape chunk. Every chunk's `intersects` calls this.
  */
-export function intersectLandscapeChunk(mesh: Mesh, ray: Ray, world: Matrix): PickingInfo | undefined {
-  const chunk = chunkOf.get(mesh);
-  const root = chunk ? (mesh.metadata as { landscapeRoot?: Mesh } | null)?.landscapeRoot : undefined;
-  const data = root ? landscapes.get(root)?.data : undefined;
-  const subMesh = mesh.subMeshes?.length === 1 ? mesh.subMeshes[0] : undefined;
-  const fillMode = subMesh?.getMaterial()?.fillMode;
-  if (!chunk || !data || !subMesh || !hasRevisionTrackedLandscapeGeometry(mesh) || (fillMode !== 0 && fillMode !== 1 && fillMode !== 2)) return undefined;
+export function intersectLandscapeChunk(mesh: AbstractMesh, ray: Ray, world: Matrix, skipBoundingInfo = false): PickingInfo | undefined {
+  const chunk = chunkOf.get(mesh as Mesh);
+  const data = chunk ? landscapes.get(chunk.root)?.data : undefined;
+  if (!chunk || !data) return undefined;
   const info = new PickingInfo();
   // Its bounds first, as `AbstractMesh.intersects` tests them.
   const bounds = mesh.getBoundingInfo();
-  if (!ray.intersectsSphere(bounds.boundingSphere, 0) || !ray.intersectsBox(bounds.boundingBox, 0)) return info;
-  const points = mesh as unknown as PointsArray;
-  const indices = mesh.getIndices();
-  if (!points._generatePointsArray() || !points._positions || !indices) return undefined;
+  if (!skipBoundingInfo && (!ray.intersectsSphere(bounds.boundingSphere, 0) || !ray.intersectsBox(bounds.boundingBox, 0))) return info;
   const dx = data.width / data.subdivisions;
   const dz = data.depth / data.subdivisions;
-  const endX = ray.origin.x + ray.direction.x * ray.length;
-  const endZ = ray.origin.z + ray.direction.z * ray.length;
-  const cell = (value: number, half: number, size: number) => Math.floor((value + half) / size);
-  // Grid cells, padded by one so a hit on a cell's edge meets the face Babylon would test first.
-  const x0 = Math.max(chunk.x, cell(Math.min(ray.origin.x, endX), data.width / 2, dx) - 1);
-  const x1 = Math.min(chunk.x + chunk.width - 1, cell(Math.max(ray.origin.x, endX), data.width / 2, dx) + 1);
-  const z0 = Math.max(chunk.z, cell(Math.min(ray.origin.z, endZ), data.depth / 2, dz) - 1);
-  const z1 = Math.min(chunk.z + chunk.depth - 1, cell(Math.max(ray.origin.z, endZ), data.depth / 2, dz) + 1);
-  if (!Number.isFinite(x0 + x1 + z0 + z1)) return undefined;
-  if (x1 >= x0 && z1 >= z0 && (x1 - x0 + 1) * (z1 - z0 + 1) > MAX_TRACE_CELLS) return undefined;
-  const positions = points._positions;
-  let nearest: { bu: number | null; bv: number | null; distance: number; faceId: number } | null = null;
-  // Always read LOD0 faces (`indexStart = 0`, zero skirt triangles) regardless of active render LOD.
+  const halfW = data.width / 2;
+  const halfD = data.depth / 2;
+  const { origin, direction } = ray;
+  const length = ray.length;
+  // The part of the segment over the chunk's cells, by slabs in X and Z.
+  let t0 = 0;
+  let t1 = length;
+  const slab = (o: number, dir: number, min: number, max: number) => {
+    if (Math.abs(dir) < 1e-12) {
+      if (o < min || o > max) t1 = -1;
+      return;
+    }
+    const a = (min - o) / dir;
+    const b = (max - o) / dir;
+    t0 = Math.max(t0, Math.min(a, b));
+    t1 = Math.min(t1, Math.max(a, b));
+  };
+  // Padded a little, so a trace along the chunk's edge (within rounding of it) reaches the triangle test that decides.
+  const padX = dx * 1e-3;
+  const padZ = dz * 1e-3;
+  slab(origin.x, direction.x, chunk.x * dx - halfW - padX, (chunk.x + chunk.width) * dx - halfW + padX);
+  slab(origin.z, direction.z, chunk.z * dz - halfD - padZ, (chunk.z + chunk.depth) * dz - halfD + padZ);
+  if (!(t0 <= t1) || !Number.isFinite(t0 + t1)) return info;
+  const side = data.subdivisions + 1;
+  const heights = data.heights;
+  const lastX = chunk.x + chunk.width - 1;
+  const lastZ = chunk.z + chunk.depth - 1;
+  const cellX = (t: number) => Math.floor((origin.x + direction.x * t + halfW) / dx);
+  const cellZ = (t: number) => Math.floor((origin.z + direction.z * t + halfD) / dz);
+  // Rows of cells the segment crosses, and in each row the cells between its X at the row's edges, padded by one so
+  // a hit on a shared cell edge meets both cells.
+  const rowA = cellZ(t0);
+  const rowB = cellZ(t1);
+  const z0 = Math.max(chunk.z, Math.min(rowA, rowB) - 1);
+  const z1 = Math.min(lastZ, Math.max(rowA, rowB) + 1);
+  let nearest: { bu: number; bv: number; distance: number; faceId: number } | null = null;
+  // The drawn vertex exactly as the chunk's Float32 position buffer holds it, so a trace through a vertex or along an
+  // edge meets the triangles the GPU draws.
+  const vertex = (gx: number, gz: number, out: Vector3) =>
+    out.set(Math.fround(gx * dx - halfW), heights[gz * side + gx]!, Math.fround(gz * dz - halfD));
   for (let z = z0; z <= z1; z++) {
+    let ta = t0;
+    let tb = t1;
+    if (Math.abs(direction.z) >= 1e-12) {
+      const a = ((z - 1) * dz - halfD - origin.z) / direction.z;
+      const b = ((z + 2) * dz - halfD - origin.z) / direction.z;
+      ta = Math.max(t0, Math.min(a, b));
+      tb = Math.min(t1, Math.max(a, b));
+      if (ta > tb) continue;
+    }
+    const colA = cellX(ta);
+    const colB = cellX(tb);
+    const x0 = Math.max(chunk.x, Math.min(colA, colB) - 1);
+    const x1 = Math.min(lastX, Math.max(colA, colB) + 1);
     for (let x = x0; x <= x1; x++) {
+      vertex(x, z, corner0);
+      vertex(x + 1, z, corner1);
+      vertex(x, z + 1, corner2);
+      vertex(x + 1, z + 1, corner3);
       const first = 2 * ((z - chunk.z) * chunk.width + (x - chunk.x));
-      for (let face = first; face < first + 2; face++) {
-        const at = face * 3;
-        const p0 = positions[indices[at]!];
-        const p1 = positions[indices[at + 1]!];
-        const p2 = positions[indices[at + 2]!];
-        if (!p0 || !p1 || !p2) continue;
-        const hit = ray.intersectsTriangle(p0, p1, p2);
+      // As the drawn LOD0 quad: (a, a1, b) and (a1, b1, b).
+      const hits = [ray.intersectsTriangle(corner0, corner1, corner2), ray.intersectsTriangle(corner1, corner3, corner2)];
+      for (let k = 0; k < 2; k++) {
+        const hit = hits[k];
         if (!hit || hit.distance < 0 || (nearest && !(hit.distance < nearest.distance))) continue;
-        nearest = { bu: hit.bu, bv: hit.bv, distance: hit.distance, faceId: face };
+        nearest = { bu: hit.bu ?? 0, bv: hit.bv ?? 0, distance: hit.distance, faceId: first + k };
       }
     }
   }
   if (!nearest) return info;
   // As `AbstractMesh.intersects` answers a hit.
-  const worldOrigin = Vector3.TransformCoordinates(ray.origin, world);
-  const pickedPoint = Vector3.TransformNormal(ray.direction.scale(nearest.distance), world).addInPlace(worldOrigin);
+  const worldOrigin = Vector3.TransformCoordinates(origin, world);
+  const pickedPoint = Vector3.TransformNormal(direction.scale(nearest.distance), world).addInPlace(worldOrigin);
   info.hit = true;
   info.distance = Vector3.Distance(worldOrigin, pickedPoint);
   info.pickedPoint = pickedPoint;
@@ -541,13 +616,17 @@ export function intersectLandscapeChunk(mesh: Mesh, ray: Ray, world: Matrix): Pi
   info.bv = nearest.bv || 0;
   info.subMeshFaceId = nearest.faceId;
   info.faceId = nearest.faceId;
-  info.subMeshId = subMesh._id;
+  info.subMeshId = mesh.subMeshes?.[0]?._id ?? 0;
   return info;
 }
 
 export interface UpdateLandscapeMeshOptions {
-  /** Force vertex upload even when `properties` mutates the same typed arrays in place (e.g. live sculpt session). */
-  forceDirty?: boolean;
+  /**
+   * The samples a live sculpt session changed in the typed arrays it shares with the mesh (`takeDirtyRegion`): only
+   * chunks within one sample of them (whose normals read them) re-upload. Without it, chunks are compared with the
+   * previous field.
+   */
+  dirtyRegion?: LandscapeRegion | null;
 }
 
 /**
@@ -567,12 +646,15 @@ export function updateLandscapeMesh(
   const data = parseLandscapeProperties(properties);
   const previous = state.data;
   const side = data.subdivisions + 1;
-  const forceDirty = options?.forceDirty === true;
+  const region = options?.dirtyRegion;
   const preserveMaterial = assets === undefined && data.materialGuid === previous.materialGuid;
   let anyDirty = false;
   for (const chunk of state.chunks) {
-    let dirty = forceDirty || data.width !== previous.width || data.depth !== previous.depth;
-    if (!dirty && (data.heights !== previous.heights || data.weights !== previous.weights)) {
+    let dirty = data.width !== previous.width || data.depth !== previous.depth;
+    if (!dirty && region) {
+      dirty = chunk.x <= region.x1 + 1 && chunk.x + chunk.width >= region.x0 - 1 &&
+        chunk.z <= region.z1 + 1 && chunk.z + chunk.depth >= region.z0 - 1;
+    } else if (!dirty && (data.heights !== previous.heights || data.weights !== previous.weights)) {
       for (let z = Math.max(0, chunk.z - 1); !dirty && z <= Math.min(data.subdivisions, chunk.z + chunk.depth + 1); z++) {
         for (let x = Math.max(0, chunk.x - 1); x <= Math.min(data.subdivisions, chunk.x + chunk.width + 1); x++) {
           const i = z * side + x;

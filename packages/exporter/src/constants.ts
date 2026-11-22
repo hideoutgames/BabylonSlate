@@ -64,14 +64,6 @@ export function landscapeSidecarKeyFromExport(guid: string): string | null {
     : null;
 }
 
-/** Returns the owning scene/asset guid for a `Landscape` export sidecar guid, or null. */
-export function ownerGuidFromLandscapeExport(guid: string): string | null {
-  const key = landscapeSidecarKeyFromExport(guid);
-  if (!key) return null;
-  const colon = key.indexOf(":");
-  return colon > 0 ? key.slice(0, colon) : null;
-}
-
 export function fontFacetypeExportGuid(fontGuid: string): string {
   return `${FONT_FACETYPE_EXPORT_GUID_PREFIX}${fontGuid}`;
 }

@@ -15,7 +15,7 @@ import type { MovementWorldSync } from "./movement";
 import type { RenderTargetPayload, RenderTargetTexturePayload } from "@haptic/core";
 import type { WaterDefinition } from "@haptic/core";
 import type { ScalabilitySession, ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, ScalabilityAcknowledgement } from "@haptic/core";
-import { parseLandscapeProperties, type CollisionTriangleMesh } from "@haptic/core";
+import { decodeLandscapeField, parseLandscapeProperties, type CollisionTriangleMesh } from "@haptic/core";
 import { inputMappingsFromAssets } from "@haptic/input";
 import type {
   CommandMessage,
@@ -101,6 +101,7 @@ import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { RuntimeConsole } from "./runtime-console";
 import type { ActorRealization, ScriptedActorSpawn } from "./actor-realization";
+import { actorLabel } from "./actor-world-transform";
 import type { OverlaySafeAreaInsets } from "@haptic/core";
 import { refreshStaleTilemaps, type ModelPayload, type SpriteAnimationPayload, type SpritePayload, type TilemapPayload, type TilesetPayload } from "@haptic/assets";
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@haptic/navigation";
@@ -974,8 +975,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     }
   }
 
-  hydrateActorLandscapes(actor: Actor | null, sceneGuid?: string): Actor | null {
-    if (!actor) return null;
+  hydrateActorLandscapes(actor: Actor, sceneGuid: string | null): void {
     for (const component of actor.components) {
       if (component.classId !== "LandscapeComponent") continue;
       if (
@@ -984,22 +984,16 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       ) {
         continue;
       }
+      // A chunk belongs to the Scene document the actor was created from: duplicated Scenes share chunk ids.
       const chunkId = component.getVariable("chunkId");
-      let binaryBytes: Uint8Array | undefined;
-      if (typeof chunkId === "string" && chunkId.length > 0) {
-        if (sceneGuid) binaryBytes = this.sceneLandscapeBytes.get(`${sceneGuid}:${chunkId}`);
-        if (!binaryBytes) binaryBytes = this.sceneLandscapeBytes.get(chunkId);
-        if (!binaryBytes) {
-          const suffix = `:${chunkId}`;
-          for (const [key, bytes] of this.sceneLandscapeBytes) {
-            if (key.endsWith(suffix)) {
-              binaryBytes = bytes;
-              break;
-            }
-          }
-        }
+      const binaryBytes = typeof chunkId === "string" && chunkId.length > 0 && sceneGuid
+        ? this.sceneLandscapeBytes.get(`${sceneGuid}:${chunkId}`)
+        : undefined;
+      const variables = Object.fromEntries(component.variables);
+      if (!decodeLandscapeField(variables, binaryBytes)) {
+        this.reportLog(`${actorLabel(actor)}: its Landscape terrain data is missing or damaged, so it plays flat.`, "warning", "Landscape");
       }
-      const parsed = parseLandscapeProperties(Object.fromEntries(component.variables), binaryBytes);
+      const parsed = parseLandscapeProperties(variables, binaryBytes);
       component.setVariable("width", parsed.width);
       component.setVariable("depth", parsed.depth);
       component.setVariable("subdivisions", parsed.subdivisions);
@@ -1010,7 +1004,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       component.variables.delete("data");
       component.variables.delete("chunkId");
     }
-    return actor;
   }
 
   registerSceneContent(content: RuntimeSceneContent): void {
