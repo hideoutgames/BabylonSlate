@@ -1,8 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FOLDER_MARKER_NAME } from "@haptic/assets";
+import { PROJECT_FILE } from "@haptic/core";
 import type { SourceControlSyncService } from "../services/source-control-sync";
 import type { DiffState } from "../services/source-control-diff";
-import { integratedSync } from "../testing/integrated-sync";
+import { integratedProjectJson, integratedSync } from "../testing/integrated-sync";
 import { SourceControlActionsProvider, useSourceControlActions, useSourceControlDiffState, type SourceControlActions } from "../components/source-control-actions";
 import { HistoryPanelContents } from "./history-panel";
 import { HISTORY_PAGE } from "../services/source-control-history";
@@ -146,23 +148,30 @@ describe("History window", () => {
     expect(confirm.textContent).toContain(forest.id.slice(0, 7));
   });
 
-  it("keeps Project Settings and other files that are not assets out of This Asset and Revert", async () => {
-    await history();
-    expect(screen.getByTestId("history-title").textContent).toBe("Forest");
-    // The Changes window's Project Settings row opens its diff; History keeps the asset it showed.
-    act(() => seen.actions!.openDiff({ path: "project.json", name: "Project Settings", type: "Project" }));
-    expect(seen.actions!.historyPath).toBe(FOREST);
-    expect(screen.getByTestId("history-title").textContent).toBe("Forest");
-    act(() => seen.actions!.openHistory("project.json"));
-    expect(seen.actions!.historyPath).toBe(FOREST);
+  it("follows Project Settings in This Asset, with Compare and Revert, and keeps folder markers out", async () => {
+    const { service, storage } = await history();
+    await storage.writeText(PROJECT_FILE, integratedProjectJson({ autoSave: false }));
+    await service.commit({ rowIds: new Set([PROJECT_FILE]), message: "Turn Auto-Save off", push: false });
+    const settings = (await service.history({ limit: 1, path: PROJECT_FILE })).commits[0]!;
+    // The Changes window's Project Settings row opens its diff, and History follows project.json.
+    act(() => seen.actions!.openDiff({ path: PROJECT_FILE, name: "Project Settings", type: "Project" }));
+    expect(seen.actions!.historyPath).toBe(PROJECT_FILE);
+    expect(screen.getByTestId("history-title").textContent).toBe("Project Settings");
+    await waitFor(() => expect(rowIds()).toEqual([settings.id]));
 
-    // Reverting project.json would reload the whole project: only assets are reverted.
-    act(() => seen.actions!.requestRevert({ path: "project.json", name: "Project Settings", ref: { kind: "head" } }));
+    fireEvent.click(screen.getByTestId(`history-row-${settings.id}`));
+    fireEvent.click(await screen.findByTestId("history-compare"));
+    expect(seen.diff?.target).toMatchObject({ path: PROJECT_FILE, name: "Project Settings", base: { kind: "commit", id: settings.id }, compare: { kind: "working" } });
     await act(async () => {
-      await import("../components/source-control-revert-flow");
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      fireEvent.click(screen.getByTestId("history-revert"));
     });
-    expect(screen.queryByTestId("source-control-revert-confirm")).toBeNull();
+    const confirm = await screen.findByTestId("source-control-revert-confirm");
+    expect(confirm.textContent).toContain("Revert Project Settings?");
+    expect(confirm.textContent).toContain("then the project reloads");
+
+    // A folder marker has no history to follow.
+    act(() => seen.actions!.openHistory(`assets/Levels/${FOLDER_MARKER_NAME}`));
+    expect(seen.actions!.historyPath).toBe(PROJECT_FILE);
   });
 
   it("offers no This Asset before an asset was shown, when only a file that is not one was", async () => {
@@ -174,7 +183,7 @@ describe("History window", () => {
         <Probe />
       </SourceControlActionsProvider>,
     );
-    act(() => seen.actions!.openDiff({ path: "project.json", name: "Project Settings", type: "Project" }));
+    act(() => seen.actions!.openDiff({ path: `assets/Levels/${FOLDER_MARKER_NAME}`, name: "Levels", type: "Folder" }));
     act(() => seen.actions!.openHistory());
     expect(screen.getByTestId("history-title").textContent).toBe("All Assets");
     await waitFor(() => expect(rowIds().length).toBeGreaterThan(0));

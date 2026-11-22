@@ -13,7 +13,7 @@ import {
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
 import { Progress } from "@haptic/ui/components/progress";
-import { useDocumentActions, useIntegratedSync, useIntegratedSyncState, useProjectState } from "../context/document-context";
+import { useDocumentActions, useIntegratedSync, useIntegratedSyncState } from "../context/document-context";
 import { revertSettingsRefusal } from "../lib/project-settings-revert";
 import { refCommit, refLabel } from "../services/source-control-diff";
 import type { RevertRequest } from "./source-control-actions";
@@ -45,7 +45,6 @@ type Version = { present: boolean; refusal: string | null };
 export default function SourceControlRevertFlow({ request, onDone }: { request: RevertRequest; onDone: () => void }) {
   const sync = useIntegratedSync();
   const snapshot = useIntegratedSyncState();
-  const { projectDocument } = useProjectState();
   const { withProjectWrites, applyPulledChanges } = useDocumentActions();
   const project = request.path === PROJECT_FILE;
   const { step, setStep, done, hold, release, allowed, unsavedDialog } = useRewriteFlow<Step>({
@@ -54,7 +53,6 @@ export default function SourceControlRevertFlow({ request, onDone }: { request: 
     onDone,
   });
   const version = refLabel(request.ref, snapshot);
-  const repositoryUrl = projectDocument?.settings.sourceControl.repositoryUrl ?? "";
   // Whether the version holds the asset (null until known): reverting to one that does not deletes it, which
   // the confirmation must say. A failed read leaves it to the revert, which reads the same version and fails too.
   const [held, setHeld] = useState<Version | null>(null);
@@ -63,7 +61,7 @@ export default function SourceControlRevertFlow({ request, onDone }: { request: 
     const label = refLabel(request.ref, sync.getSnapshot());
     const found = (bytes: Uint8Array | null): Version => ({
       present: bytes !== null,
-      refusal: project ? revertSettingsRefusal(label, bytes, repositoryUrl) : null,
+      refusal: project ? revertSettingsRefusal(label, bytes, sync.repositoryUrl) : null,
     });
     if (!commit) {
       setHeld(found(null));
@@ -77,7 +75,7 @@ export default function SourceControlRevertFlow({ request, onDone }: { request: 
     return () => {
       current = false;
     };
-  }, [project, repositoryUrl, request.path, request.ref, sync]);
+  }, [project, request.path, request.ref, sync]);
   const present = held?.present ?? null;
   // A version Project Settings cannot be reverted to is refused before anything is saved or discarded.
   const refusal = step.kind === "confirm" || step.kind === "unsaved" ? held?.refusal ?? null : null;

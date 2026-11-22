@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SceneDiff } from "@haptic/assets/asset-diff";
+import type { PropertiesDiff, SceneDiff } from "@haptic/assets/asset-diff";
+import { PROJECT_FILE } from "@haptic/core";
 import { setEditorQuiet } from "../lib/editor-quiet";
 import { manyActors, sceneActor, sceneAsset } from "../testing/diff-assets";
-import { integratedSync } from "../testing/integrated-sync";
+import { integratedProjectJson, integratedSync } from "../testing/integrated-sync";
 import { DIFF_IDLE_MS, SourceControlDiffService, type DiffState } from "./source-control-diff";
 
 // The diff service and the revert over the real sync service and FakeSync, with real `.hasset`
@@ -191,6 +192,50 @@ describe("SourceControlDiffService", () => {
     expect(diff.getSnapshot()).toMatchObject({ target: null, phase: "idle" });
     detach();
   });
+
+  it("compares Project Settings as the editor reads them, opening on the first changed category; other plain files have no diff", async () => {
+    const { service, storage } = await integratedSync({ files: { [PROJECT_FILE]: integratedProjectJson({ autoSave: true }) } });
+    await storage.writeText(PROJECT_FILE, integratedProjectJson({ autoSave: false }, { updatedAt: "2026-06-06T00:00:00.000Z" }));
+    await service.refreshStatus();
+    const diff = new SourceControlDiffService(service);
+    const detach = diff.attach();
+    diff.watch();
+    diff.open({ path: PROJECT_FILE, name: "Project Settings", type: "Project" });
+    const state = await settled(diff);
+    expect(state.phase).toBe("ready");
+    expect(state.diff).toMatchObject({ status: "changed", type: "Project", header: [], chunks: [] });
+    const view = state.diff!.view as PropertiesDiff;
+    expect(view.groups.flatMap((group) => group.rows.filter((row) => row.changed).map((row) => [group.title, row.label, row.base, row.compare]))).toEqual([
+      ["General", "Auto-Save", "On", "Off"],
+    ]);
+    expect(state.selection).toBe("group:general");
+
+    // A version that cannot be read names itself.
+    await storage.writeText(PROJECT_FILE, "{ not json");
+    await service.refreshStatus();
+    await vi.waitFor(() => expect(diff.getSnapshot().phase).toBe("error"));
+    expect(diff.getSnapshot().error).toMatch(/^The Project Settings in Working Copy cannot be read: /);
+
+    // Folder markers and other plain files keep their error.
+    diff.open({ path: ".gitattributes", name: ".gitattributes", type: null });
+    expect((await settled(diff)).error).toBe(".gitattributes is not an asset, so it has no diff.");
+    detach();
+  });
+
+  it("shows Project Settings as added when the base version has no project.json", async () => {
+    const { service, storage } = await integratedSync();
+    await storage.writeText(PROJECT_FILE, integratedProjectJson());
+    await service.refreshStatus();
+    const diff = new SourceControlDiffService(service);
+    const detach = diff.attach();
+    diff.watch();
+    diff.open({ path: PROJECT_FILE, name: "Project Settings", type: "Project" });
+    const state = await settled(diff);
+    expect(state.diff?.status).toBe("added");
+    const general = (state.diff!.view as PropertiesDiff).groups.find((group) => group.id === "general")!;
+    expect(general.rows.find((row) => row.label === "Auto-Save")).toMatchObject({ base: null, compare: "On", changed: true });
+    detach();
+  });
 });
 
 describe("SourceControlSyncService.revert", () => {
@@ -229,5 +274,15 @@ describe("SourceControlSyncService.revert", () => {
     await service.revert("assets/New.scene.hasset", head);
     expect(await storage.exists("assets/New.scene.hasset")).toBe(false);
     expect(service.getSnapshot().rows.map((row) => row.id)).not.toContain("assets/New.scene.hasset");
+  });
+
+  it("never writes Project Settings the project could not reopen with this repository, nor removes project.json", async () => {
+    const { service, storage } = await integratedSync({ files: { [PROJECT_FILE]: integratedProjectJson({ sourceControl: { mode: "integrated", repositoryUrl: "https://github.com/team/other.git" } }) } });
+    const head = service.getSnapshot().head!;
+    const working = integratedProjectJson({ autoSave: false });
+    await storage.writeText(PROJECT_FILE, working);
+    await expect(service.revert(PROJECT_FILE, head)).rejects.toThrow("use another repository (https://github.com/team/other.git)");
+    await expect(service.revert(PROJECT_FILE, null)).rejects.toThrow("has no Project Settings to revert to");
+    expect(await storage.readText(PROJECT_FILE)).toBe(working);
   });
 });

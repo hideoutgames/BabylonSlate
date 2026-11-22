@@ -614,12 +614,19 @@ export class SourceControlSyncService {
    * Queued with the other operations, so it never meets a pull. The caller
    * holds the documents read-only and reloads the returned paths
    * (`applyPulledChanges`). Rejects with what failed; nothing is written then
-   * unless the blobs were.
+   * unless the blobs were. `project.json` is written only from a version the
+   * project can reopen in Integrated mode with this repository
+   * (`revertSettingsRefusal`), never removed.
    */
   async revert(path: string, commit: string | null): Promise<string[]> {
     const revision = this.revision;
     let written: string[] = [];
-    const ran = await this.run(null, "Could Not Revert", async ({ port, storage, signal }) => {
+    const ran = await this.run(null, "Could Not Revert", async ({ port, input, storage, signal }) => {
+      if (path === PROJECT_FILE) {
+        const { revertSettingsRefusal } = await import("../lib/project-settings-revert");
+        const refusal = revertSettingsRefusal(commit ? commit.slice(0, 7) : "That version", commit ? await port.readFile(PROJECT_FILE, commit) : null, input.settings.repositoryUrl);
+        if (refusal) throw new Error(refusal);
+      }
       const { restoreVersion } = await import("./source-control-restore");
       written = await restoreVersion({ port, storage, path, commit, signal });
     }, revision, { rethrow: true });
@@ -723,6 +730,11 @@ export class SourceControlSyncService {
   }
 
   /** The working copy's file (null when it has none), from the project folder only. */
+  /** The repository the open project's settings name; empty while none is configured. */
+  get repositoryUrl(): string {
+    return this.input?.settings.repositoryUrl ?? "";
+  }
+
   async readWorking(path: string): Promise<Uint8Array | null> {
     const storage = this.storage;
     if (!storage) throw new Error("The project's repository is not open.");
