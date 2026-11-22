@@ -21,6 +21,7 @@ Local verification policy and the full command list: [testing.md](testing.md).
 
 - Pushes to `main` deploy the editor to `https://hideoutgames.github.io/BabylonSlate/` and the docs site to `/BabylonSlate/docs/` (`.github/workflows/preview.yml`).
 - The Pages build is the production editor (`VITE_TEST_MODE=false`): it has no test-mode storage or test hooks and ignores `?test=1`. Test mode (no folder prompts, Create Project prefills TestProject) is for the dev server (`?test=1`) and Playwright builds.
+- The docs site writes `sitemap.xml` and each page's canonical, OpenGraph and Twitter tags with its Pages URL (`SITE_URL` in `apps/docs/.vitepress/config.ts`), whatever base a build uses. It has no `robots.txt`: crawlers read one only at the host root, which a project Pages site cannot serve.
 - Pages source must stay **GitHub Actions**. Switching it to "Deploy from a `/docs` folder" would replace the editor with Jekyll-rendered Markdown.
 - If the Preview workflow fails with a 404 deployment error, Pages is not enabled: Settings → Pages → Source: GitHub Actions, then re-run Preview.
 
