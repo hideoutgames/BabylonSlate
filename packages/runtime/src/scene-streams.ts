@@ -17,7 +17,7 @@ import {
   type World,
 } from "@haptic/object-model";
 import type { PhysicsWorldKind } from "@haptic/physics";
-import { composeParentChildTransform } from "./actor-world-transform";
+import { composeParentChildTransform, copyTransform } from "./actor-world-transform";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
@@ -395,7 +395,8 @@ export class SceneStreams implements RuntimeSubsystem {
     checkpoint();
     const cloned = yield* cloneSceneStreamingActorsSteps(document.actors, { instanceId: stream.scene.guid, parentActorId: stream.actor.guid });
     stream.idMap = cloned.idMap;
-    let origin = component.transform;
+    // The load-time pose: a copy, since the component's live transform changes in place.
+    let origin = copyTransform(component.transform);
     let parentId = component.parentId;
     const visited = new Set([component.guid]);
     while (parentId && !visited.has(parentId)) {

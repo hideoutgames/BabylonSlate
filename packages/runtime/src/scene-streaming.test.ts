@@ -318,6 +318,21 @@ describe("additive scene streaming", () => {
     } finally { runtime.stop(); }
   });
 
+  it("places later spawns at the instance's load-time origin after its component moves", async () => {
+    const { runtime, world, left } = await setup({ deferred: false, scripts: [logic("Crate")] });
+    try {
+      await runtime.loadSceneStream(left);
+      const member = world.getActors().find((actor) => actor.classId === "ChildActor")!;
+      const component = left.components.find((entry) => entry.classId === "SceneStreamingComponent")!;
+      component.transform = { position: { x: 40, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } };
+      const crate = runtime.spawnScriptedActor({ classId: "Crate", streamOwner: member,
+        transform: { position: { x: 1, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } } })!;
+      // The member was placed at the authored offset (3, 0, 0); a later spawn joins it there.
+      expect(member.transform.position.x).toBe(4);
+      expect(crate.transform.position.x).toBe(4);
+    } finally { runtime.stop(); }
+  });
+
   it("rejects invalid targets and incompatible physics before mutating the parent", async () => {
     const child = { ...createDefaultScene("2d"), actors: [] };
     const { runtime, world, left } = await setup({ child });
