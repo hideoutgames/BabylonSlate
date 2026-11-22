@@ -14,7 +14,7 @@ describe("DocumentsStorageAdapter", () => {
 
   beforeEach(() => {
     fs = createFakeDocumentsFs();
-    storage = new DocumentsStorageAdapter(fs);
+    storage = new DocumentsStorageAdapter({ fs });
   });
 
   it("does not recreate a deleted project when opening a recent handle", async () => {
@@ -46,7 +46,7 @@ describe("DocumentsStorageAdapter", () => {
     await storage.writeBinary("blob.bin", new Uint8Array([1, 2, 3]));
     await storage.releaseFolder();
 
-    const reopened = new DocumentsStorageAdapter(fs);
+    const reopened = new DocumentsStorageAdapter({ fs });
     await reopened.openKnownFolder({
       id: "documents:A.hproject",
       name: "A.hproject",
@@ -72,6 +72,29 @@ describe("DocumentsStorageAdapter", () => {
       );
     }
     expect(write).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["the staged write fails", "writeFile"],
+    ["the move into place fails", "rename"],
+  ] as const)("keeps the previous file and leaves no staged file when %s", async (_case, step) => {
+    await storage.openDocumentsProject("Game");
+    await storage.writeText("project.json", "saved");
+    await storage.writeBinary("asset.bin", new Uint8Array([1, 2]));
+    const failure = new Error("Device storage full");
+    const original = fs[step].bind(fs) as (options: never) => Promise<unknown>;
+    fs[step] = vi.fn(async (options: never) => {
+      // A partial staged file exists when the native write fails part-way.
+      if (step === "writeFile") await original(options);
+      throw failure;
+    }) as never;
+
+    await expect(storage.writeText("project.json", "half")).rejects.toBe(failure);
+    await expect(storage.writeBinary("asset.bin", new Uint8Array([9]))).rejects.toBe(failure);
+
+    expect(await storage.readText("project.json")).toBe("saved");
+    expect(await storage.readBinary("asset.bin")).toEqual(new Uint8Array([1, 2]));
+    expect([...fs.tree.keys()].filter((path) => path.endsWith(".tmp"))).toEqual([]);
   });
 
   it("round-trips a payload larger than one base64 encoding chunk", async () => {

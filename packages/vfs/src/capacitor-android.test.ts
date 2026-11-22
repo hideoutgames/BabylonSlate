@@ -157,7 +157,8 @@ describe("Capacitor 8 Android host", () => {
     )?.[1];
     expect(body).toBeDefined();
     const methods = [...body!.matchAll(/^\s{2}(\w+)(\?)?\(/gm)]
-      .filter((match) => match[2] !== "?" || ["beginReadScope", "endReadScope"].includes(match[1]!))
+      .filter((match) => match[2] !== "?" ||
+        ["beginReadScope", "endReadScope", "beginWrite", "appendWriteChunk", "commitWrite", "abortWrite"].includes(match[1]!))
       .map((match) => match[1])
       .sort();
     const java = readFileSync(

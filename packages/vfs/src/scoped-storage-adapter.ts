@@ -6,13 +6,16 @@ import type {
   ProjectFolderHandle,
   ProjectStorage,
   ProjectStorageReader,
+  StorageReadOptions,
 } from "@haptic/core";
+import { nativeBinaryBridge, type NativeBinaryBridge, type NativeBinaryRange, type NativeFileLocation } from "./native-binary-bridge";
 import { Preferences } from "@capacitor/preferences";
 import { projectRelativePath as scopedStoragePath } from "./project-path";
 import type {
   BabylonSlateScopedStoragePlugin,
   NativeDirEntry,
   NativeFileStat,
+  NativeRangeRead,
 } from "./capacitor-scoped-storage";
 import {
   BabylonSlateScopedStorage,
@@ -69,11 +72,19 @@ export class ScopedStorageAdapter implements ProjectStorage {
   private readonly plugin: BabylonSlateScopedStoragePlugin;
   private readScopeId: string | undefined;
   private readScopeClosed = false;
+  /** File bytes as raw bodies where the host has the binary transport; else the plugin's base64 calls. */
+  private readonly bridge: Promise<NativeBinaryBridge | null>;
 
   constructor(
     plugin: BabylonSlateScopedStoragePlugin = BabylonSlateScopedStorage,
+    bridge?: NativeBinaryBridge | null | Promise<NativeBinaryBridge | null>,
   ) {
     this.plugin = plugin;
+    this.bridge = bridge === undefined ? nativeBinaryBridge(plugin) : Promise.resolve(bridge);
+  }
+
+  private location(folder: FolderRef, path: string): NativeFileLocation {
+    return { folder: folder.id, path, ...(this.readScopeId ? { readScope: this.readScopeId } : {}) };
   }
 
   private async withScope<T>(
@@ -180,11 +191,14 @@ export class ScopedStorageAdapter implements ProjectStorage {
     return this.folder ? toHandle(this.folder) : null;
   }
 
+  /** Forgets the folder and ends the native session access to it (iOS holds one security-scoped access per folder). */
   async releaseFolder(): Promise<void> {
+    const folder = this.folder;
     this.folder = null;
     this.stale = false;
     await Preferences.remove({ key: FOLDER_PREF_KEY });
     await Preferences.remove({ key: STALE_PREF_KEY });
+    if (folder) await this.plugin.releaseFolder({ folder: folder.id });
   }
 
   async needsReconnect(): Promise<boolean> {
@@ -193,7 +207,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
 
   async reconnectFolder(validate?: (candidate: ProjectStorage) => Promise<void>): Promise<ProjectFolderHandle> {
     const { folder } = await this.plugin.pickFolder();
-    const candidate = new ScopedStorageAdapter(this.plugin);
+    const candidate = new ScopedStorageAdapter(this.plugin, this.bridge);
     candidate.folder = folder;
     await validate?.(candidate);
     this.folder = folder;
@@ -233,47 +247,52 @@ export class ScopedStorageAdapter implements ProjectStorage {
     );
   }
 
-  async readBinary(path: string): Promise<Uint8Array> {
+  async readBinary(path: string, options?: StorageReadOptions): Promise<Uint8Array> {
     path = scopedStoragePath(path, false);
     const folder = this.getFolder();
-    const { data } = await this.withScope(
-      () =>
-        this.plugin.readFile({
-          folder: folder.id,
-          ...(this.readScopeId ? { readScope: this.readScopeId } : {}),
-          path,
-          encoding: "base64",
-        }),
-      { path },
-    );
-    const bytes = decodeBase64(data);
+    const bridge = await this.bridge;
+    const bytes = await this.withScope(async () => bridge
+      ? bridge.read(this.location(folder, path), options)
+      : decodeBase64((await this.plugin.readFile({
+        folder: folder.id,
+        ...(this.readScopeId ? { readScope: this.readScopeId } : {}),
+        path,
+        encoding: "base64",
+      })).data), { path });
     this.reads.record("full", bytes.byteLength);
     return bytes;
   }
 
-  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions) {
     path = scopedStoragePath(path, false);
     validateStorageRange(offset, length);
     const folder = this.getFolder();
-    const result = await this.reads.range(length, () => this.withScope(() => this.plugin.readFileRange({
-      folder: folder.id, path, offset, length, expectedRevision,
-      ...(this.readScopeId ? { readScope: this.readScopeId } : {}),
-    }), { path }));
-    try { return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBase64(result.data) }, expectedRevision); }
-    catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
+    const bridge = await this.bridge;
+    const result = await this.reads.range(length, () => this.withScope<NativeBinaryRange | NativeRangeRead>(() => bridge
+      ? bridge.readRange(this.location(folder, path), offset, length, expectedRevision, options)
+      : this.plugin.readFileRange({
+        folder: folder.id, path, offset, length, expectedRevision,
+        ...(this.readScopeId ? { readScope: this.readScopeId } : {}),
+      }), { path }));
+    try {
+      const bytes = "bytes" in result ? result.bytes : decodeBase64(result.data);
+      return validateStorageRangeResult(path, offset, length, { ...result, bytes }, expectedRevision);
+    } catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
     path = scopedStoragePath(path, false);
     const folder = this.getFolder();
-    await this.withScope(() =>
-      this.plugin.writeFile({
+    const bridge = await this.bridge;
+    await this.withScope(async () => {
+      if (bridge && await bridge.write({ folder: folder.id, path }, data)) return;
+      await this.plugin.writeFile({
         folder: folder.id,
         path,
         data: encodeBase64(data),
         encoding: "base64",
-      }),
-    );
+      });
+    });
   }
 
   async exists(path: string): Promise<boolean> {
@@ -352,7 +371,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
     if (!folder.supportsReadScope || !this.plugin.beginReadScope || !this.plugin.endReadScope) return operation(this);
     const { readScope } = await this.withScope(() => this.plugin.beginReadScope!({ folder: folder.id }));
     // A distinct reader keeps simultaneous scans and ordinary I/O independent.
-    const reader = new ScopedStorageAdapter(this.plugin);
+    const reader = new ScopedStorageAdapter(this.plugin, this.bridge);
     reader.folder = folder;
     reader.reads = this.reads;
     reader.readScopeId = readScope;
