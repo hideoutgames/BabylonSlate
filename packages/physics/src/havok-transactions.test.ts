@@ -342,38 +342,14 @@ describe("Havok attachment transactions", () => {
 });
 
 describe("Havok explicit native motion", () => {
-  it("defers contact-callback mutations until stepping completes and cancels queued work on disposal", async () => {
+  it("refuses steps and queries once disposed", async () => {
     const backend = await create();
     body(backend);
     backend.createCollider(box());
-    body(backend, "moving", "dynamic", pose(0.5));
-    backend.createCollider({ ...box("moving-shape"), bodyId: "moving" });
-    let requested = false;
-    backend.onStepCollision = () => {
-      if (requested) return;
-      requested = true;
-      backend.teleportBody("moving", pose(8), { velocity: "reset" });
-      expect(() => trace(backend, 8)).toThrow("native callbacks");
-    };
-    try {
-      backend.step(1 / 60);
-      expect(requested).toBe(true);
-      expect(trace(backend, 8).actorId).toBe("moving");
-      backend.onStepCollision = undefined;
-      backend.teleportBody("moving", pose(0.5));
-      let disposedInStep = false;
-      backend.onStepCollision = () => {
-        if (disposedInStep) return;
-        disposedInStep = true;
-        backend.dispose();
-        backend.teleportBody("moving", pose(20));
-      };
-      backend.step(1 / 60);
-      expect(backend.isDisposed).toBe(true);
-      expect(() => backend.step(1 / 60)).toThrow("disposed");
-    } finally {
-      backend.dispose();
-    }
+    backend.dispose();
+    expect(backend.isDisposed).toBe(true);
+    expect(() => backend.step(1 / 60)).toThrow("disposed");
+    expect(() => trace(backend, 0)).toThrow("disposed");
   });
 
   it("retains controller-owned resources only while their native users are alive", async () => {
@@ -636,12 +612,8 @@ describe("Havok explicit native motion", () => {
     }
   });
 
-  it("applies kinematic targets through reused native vectors, copies a target queued while stepping, and rejects a bad one", async () => {
+  it("applies kinematic targets through reused native vectors and rejects a bad one", async () => {
     const backend = await create();
-    body(backend);
-    backend.createCollider(box());
-    body(backend, "moving", "dynamic", pose(0.5));
-    backend.createCollider({ ...box("moving-shape"), bodyId: "moving" });
     body(backend, "lift", "kinematic", pose(0, 0, 20));
     backend.createCollider({ ...box("lift-shape"), bodyId: "lift" });
     body(backend, "platform", "kinematic", pose(0, 0, 40));
@@ -657,20 +629,9 @@ describe("Havok explicit native motion", () => {
       expect(setTarget.mock.calls[1]![1]).toBe(setTarget.mock.calls[0]![1]);
       expect(setTarget.mock.calls[1]![1][0]).toBe(setTarget.mock.calls[0]![1][0]);
       expect(setTarget.mock.calls[1]![1][1]).toBe(setTarget.mock.calls[0]![1][1]);
-      // A contact callback runs while stepping: its target waits for the step and keeps the values it was given.
-      const queued = pose(2, 0, 20);
-      backend.onStepCollision = () => {
-        if (queued.position.x !== 2) return;
-        backend.setBodyTargetTransform("lift", queued);
-        queued.position.x = 3;
-      };
       backend.step(1 / 60);
-      backend.onStepCollision = undefined;
-      expect(queued.position.x).toBe(3);
       expect(backend.getBodyTransform("lift")!.position.x).toBeCloseTo(1);
       expect(backend.getBodyTransform("platform")!.position).toMatchObject({ x: expect.closeTo(1.5), z: expect.closeTo(40) });
-      backend.step(1 / 60);
-      expect(backend.getBodyTransform("lift")!.position.x).toBeCloseTo(2);
       expect(() => backend.setBodyTargetTransform("lift", pose(Number.NaN))).toThrow("finite position");
       expect(() => backend.setBodyTargetTransform("lift", { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 0 } }))
         .toThrow("nonzero quaternion");

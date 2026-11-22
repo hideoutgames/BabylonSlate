@@ -80,7 +80,7 @@ Configured in `vitest.workspace.ts`; each project is a thin `vitest.projects.*.t
 
 The `node` and `babylon` projects have no DOM, so they keep Vitest's CSS stub: every stylesheet import there, `?raw` and `?inline` included, is an empty string (`scripts/vitest-projects.test.mjs`). A stylesheet audit reads the file with `readFileSync` (as `apps/editor/src/lib/editor-themes.test.ts` does), never through an import, which would pass on empty input.
 
-Physics tests use Havok through `NullEngine`; Havok cases share the initialized WASM module and create independent worlds.
+Physics tests drive the real Havok WASM (the package binary, loaded under Node) and Rapier directly, with no Babylon engine; Havok cases share the initialized WASM module and create independent worlds.
 
 Every `NullEngine` in the `babylon` project draws lit surfaces on the light block, the one lighting path: its setup file (`packages/render/src/test-support/light-block-engine.ts`) reports uniform buffers and stubs the texture array, depth texture and scissor the block's resources need. Editor tests that run the renderer headlessly import it (`@haptic/render/light-block-engine`). A second setup file (`packages/render/src/test-support/node-dom-polyfills.ts`) gives Node the `PointerEvent` and `FileReader` globals that every shipped host has and Babylon's simulated pointers and OBJ/MTL file reads need; production code carries no such polyfill.
 

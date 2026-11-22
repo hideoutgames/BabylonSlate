@@ -11,7 +11,6 @@ export {
   landscapeSidecarKey,
   landscapeExportGuid,
   landscapeSidecarKeyFromExport,
-  ownerGuidFromLandscapeExport,
   FONT_FACETYPE_EXPORT_TYPE,
   AREA_EMISSION_EXPORT_TYPE,
   areaEmissionExportGuid,

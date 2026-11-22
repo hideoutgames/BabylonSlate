@@ -113,11 +113,11 @@ export interface HavokQueryHost {
   readonly havok: HavokPhysicsWithBindings;
   readonly worldId: HP_WorldId;
   readonly bodies: ReadonlyMap<string, BodyRecord>;
-  readonly bodyIdByHpId: ReadonlyMap<bigint, string>;
+  readonly bodyIdByHpId: ReadonlyMap<number, string>;
   readonly collidersByOwner: ReadonlyMap<string, ReadonlySet<ColliderRecord>>;
   readonly triggerColliders: ReadonlySet<ColliderRecord>;
   isDisposed(): boolean;
-  flushMutations(): void;
+  assertUsable(): void;
 }
 
 /**
@@ -166,7 +166,7 @@ export class HavokQueries {
   }
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
-    this.host.flushMutations();
+    this.host.assertUsable();
     if (this.host.isDisposed()) return miss();
     const havok = this.host.havok;
     const worldId = this.host.worldId;
@@ -209,7 +209,7 @@ export class HavokQueries {
     for (;;) {
       const result = find();
       if ((!options?.onlyTriggers && !this.peelingIgnores) || !result.hasHit) return result;
-      const bodyId = this.host.bodyIdByHpId.get(result.bodyHpId);
+      const bodyId = this.host.bodyIdByHpId.get(Number(result.bodyHpId));
       const peeled = this.peelHit(options, bodyId ? this.host.bodies.get(bodyId) : undefined, result.shapeHpId);
       if (peeled === "keep") return result;
       if (peeled === "stop") return null;
@@ -308,7 +308,7 @@ export class HavokQueries {
   }
 
   sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
-    this.host.flushMutations();
+    this.host.assertUsable();
     const found = new Map<BodyRecord, Set<string>>();
     if (!this.host.isDisposed() && [center.x, center.y, center.z, radius].every(Number.isFinite) && radius >= 0) {
       const havok = this.host.havok;
@@ -337,7 +337,7 @@ export class HavokQueries {
               havok.HP_QueryCollector_GetPointProximityResult(this.collector, 0),
               "point proximity result",
             );
-            const bodyId = this.host.bodyIdByHpId.get(cp[0][0]);
+            const bodyId = this.host.bodyIdByHpId.get(Number(cp[0][0]));
             const record = bodyId ? this.host.bodies.get(bodyId) : undefined;
             if (!record) break;
             const hitShapeId = cp[1][0];
@@ -385,7 +385,7 @@ export class HavokQueries {
     end: PhysicsTransform,
     options?: LineTraceOptions,
   ): HitResult {
-    this.host.flushMutations();
+    this.host.assertUsable();
     if (this.host.isDisposed()) return miss();
     const sweep = linearSweepPoses(start, end);
     if (!sweep || !isShape3D(shape)) return miss();
@@ -505,7 +505,7 @@ export class HavokQueries {
   }
 
   createSphereSweep(radius: number): SphereSweepQuery {
-    this.host.flushMutations();
+    this.host.assertUsable();
     if (this.host.isDisposed()) throw new Error("Cannot create a sphere sweep on a disposed physics backend");
     if (!Number.isFinite(radius) || radius <= 0) throw new Error("Sphere sweep radius must be finite and positive");
     const havok = this.host.havok;
@@ -548,7 +548,7 @@ export class HavokQueries {
     const query: SphereSweepQuery = {
       sweep: (sx, sy, sz, ex, ey, ez) => {
         if (disposed || this.host.isDisposed()) return clear();
-        this.host.flushMutations();
+        this.host.assertUsable();
         if (
           disposed ||
           this.host.isDisposed() ||
@@ -627,7 +627,7 @@ export class HavokQueries {
   }
 
   private castHitOwner(bodyHpId: bigint, shapeHpId: bigint): { bodyId: string | null; actorId: string | null } {
-    const bodyId = this.host.bodyIdByHpId.get(bodyHpId) ?? null;
+    const bodyId = this.host.bodyIdByHpId.get(Number(bodyHpId)) ?? null;
     const record = bodyId ? this.host.bodies.get(bodyId) : undefined;
     if (!bodyId || !record) return { bodyId, actorId: null };
     return { bodyId, actorId: shapeOwner(record, shapeHpId) };

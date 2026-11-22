@@ -12,6 +12,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { installAssetBytes } from "@haptic/assets";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import { isShadowDistanceCulled } from "./shadow-caster-list";
+import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 
 class Canvas extends EventTarget {
   captures = new Set<number>();
@@ -26,12 +27,13 @@ class Canvas extends EventTarget {
 const dispose: Array<() => void> = [];
 afterEach(() => { while (dispose.length) dispose.pop()!(); vi.unstubAllGlobals(); });
 
-function fixture(mode: "landscape" | "foliage" = "landscape", options: { transform?: SerializedTransform; strength?: number; heights?: Float32Array } = {}) {
+function fixture(mode: "landscape" | "foliage" = "landscape", options: { transform?: SerializedTransform; strength?: number; heights?: Float32Array; subdivisions?: number } = {}) {
   const { scene, engine } = createTestEngine();
   const camera = new ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 4, 35, Vector3.Zero(), scene);
   scene.activeCamera = camera;
   const sync = new EditorSceneSync(scene);
-  const initialProps = serializeLandscapeProperties(parseLandscapeProperties({ width: 32, depth: 32, subdivisions: 32, heights: options.heights }));
+  const size = options.subdivisions ?? 32;
+  const initialProps = serializeLandscapeProperties(parseLandscapeProperties({ width: size, depth: size, subdivisions: size, heights: options.heights }));
   const initial: SerializedScene = { ...createDefaultScene(), actors: [createActor("land", "Land", { ...(options.transform ? { transform: options.transform } : {}), components: [{ id: "surface", classId: "LandscapeComponent", properties: { ...initialProps } }] })] };
   sync.apply(initial); scene.render();
   const canvas = new Canvas(); const windowTarget = new EventTarget(); vi.stubGlobal("window", windowTarget);
@@ -87,6 +89,27 @@ it("updates chunks directly during drag without full scene sync or base64 encodi
   expect(f.committed).toHaveLength(1);
   expect(apply).toHaveBeenCalledTimes(1);
   expect(parseLandscapeProperties(f.committed[0]!.actors[0]!.components[0]!.properties).heights[16 * 33 + 16]).toBeCloseTo(shownCenter!, 5);
+});
+
+it("re-uploads only the chunks within a sample of a drag's dabs, once per pointer event", () => {
+  // 4 x 4 chunks of 32 one-metre cells; chunk edges at local -64, -32, 0, 32 and 64.
+  const f = fixture("landscape", { subdivisions: 128 });
+  const chunks = f.sync.meshForComponent("land", "surface")!.getChildMeshes() as Mesh[];
+  expect(chunks).toHaveLength(16);
+  for (const chunk of chunks) watchGeometry(chunk.geometry!);
+  const revisions = () => chunks.map((chunk) => geometryRevision(chunk.geometry!)!.revision);
+  // Radius 4 dabs from (-16, -16) to (-14, -16) change samples 44..54 x 44..52, inside the chunk over 32..64.
+  f.pointer("pointerdown", -16, -16);
+  f.pointer("pointermove", -14, -16);
+  const changed = chunks.filter((_, index) => revisions()[index]! > 0);
+  expect(changed.map((chunk) => chunk.name.split(":").slice(-2).join(":"))).toEqual(["32:32"]);
+  const once = revisions();
+  // A dab reaching within one sample of a chunk edge also re-uploads the neighbour whose edge normals read it.
+  f.pointer("pointermove", -29, -16);
+  expect(chunks.filter((_, index) => revisions()[index]! > once[index]!).map((chunk) => chunk.name.split(":").slice(-2).join(":")).sort())
+    .toEqual(["0:32", "32:32"]);
+  f.pointer("pointerup", -29, -16);
+  for (const chunk of chunks) unwatchGeometry(chunk.geometry!);
 });
 
 it("shows a footprint ring of the brush radius that follows the surface under the pointer", () => {

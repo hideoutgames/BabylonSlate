@@ -79,6 +79,7 @@ import {
   extractLandscapeChunks,
   hydrateLandscapeChunksToEditor,
   landscapeChunkIdsInHeader,
+  unreadableLandscapes,
   exportProjectZip,
   type ClassAssetReplacement,
   isAssetDocumentPath,
@@ -223,6 +224,8 @@ export class ProjectService {
   private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
+  /** `<path>\n<componentId>` of each unreadable Landscape already reported. */
+  private readonly reportedUnreadableLandscapes = new Set<string>();
   /** Change counter shared by every project registry, so remounts never rewind it. */
   private readonly registryClock = new RegistryGenerationClock();
   private readonly files: AssetFileAccess = {
@@ -1548,7 +1551,7 @@ export class ProjectService {
       } finally {
         if (!options.scope) scope.dispose();
       }
-      if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
+      if (decoded.type === "Scene") {
         const landscapeIds = landscapeChunkIdsInHeader(indexed.header.chunks);
         if (landscapeIds.length > 0) {
           const withChunks = await this.readAssetDocumentWithChunksAttempt(path, landscapeIds, options.signal);
@@ -1557,7 +1560,7 @@ export class ProjectService {
       }
     } else {
       decoded = await readUnindexedAssetDocument(this.files, path, options.signal);
-      if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
+      if (decoded.type === "Scene") {
         const header = readAssetDocumentHeader(await this.storageForPath(path).readBinary(path));
         const landscapeIds = landscapeChunkIdsInHeader(header.chunks);
         if (landscapeIds.length > 0) {
@@ -1566,7 +1569,24 @@ export class ProjectService {
         }
       }
     }
+    if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
+      this.reportUnreadableLandscapes(path, decoded.payload);
+    }
     return decoded;
+  }
+
+  /**
+   * Tells the user, once per Landscape and file, about terrain the document names but its file cannot supply. The
+   * Landscape shows and plays flat; a save keeps the stored data untouched until the Landscape is sculpted again.
+   */
+  private reportUnreadableLandscapes(path: string, payload: unknown): void {
+    for (const { actorName, componentId } of unreadableLandscapes(payload)) {
+      const key = `${path}\n${componentId}`;
+      if (this.reportedUnreadableLandscapes.has(key)) continue;
+      this.reportedUnreadableLandscapes.add(key);
+      const owner = actorName ? `the Landscape on "${actorName}"` : "a Landscape";
+      this.pushDiagnostic(`${path}: the terrain data of ${owner} is missing or damaged, so it shows and plays flat. Saving keeps the stored data; sculpting the Landscape replaces it.`);
+    }
   }
 
   /** Writes a `.hasset` document in its asset's write queue. */
@@ -2191,7 +2211,11 @@ function prepareLandscapeChunksForSave(
   chunks: ChunkInput[];
   keepStoredChunk: (chunkId: string) => boolean;
 } {
-  if (type !== "Scene" && type !== "Prefab" && type !== "Class") {
+  // Prefab and Class terrain stays inline: placing one copies its components into the Scene, which saves its own chunk.
+  if (type === "Prefab" || type === "Class") {
+    return { payload: content, chunks: [], keepStoredChunk: (chunkId) => !isLandscapeChunkId(chunkId) };
+  }
+  if (type !== "Scene") {
     return { payload: content, chunks: [], keepStoredChunk: () => true };
   }
   const { payload, chunks } = extractLandscapeChunks(content);
