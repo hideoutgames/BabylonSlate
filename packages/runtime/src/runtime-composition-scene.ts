@@ -165,7 +165,6 @@ export function createActorRealization(rt: RuntimeComposition): ActorRealization
     textAppear: () => rt.textAppear,
     subsystems: () => rt.subsystems,
     cancelInvalidTweens: () => rt.tweens.cancelInvalid(),
-    frameActors: () => rt.navFrameActors,
     reportLog: (message, severity, category) => rt.reportLog(message, severity, category),
     emit: (command) => rt.emit(command),
   });

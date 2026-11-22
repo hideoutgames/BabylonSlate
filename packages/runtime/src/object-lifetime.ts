@@ -46,6 +46,8 @@ export class RuntimeObjectLifetime implements RuntimeSubsystem {
   private seenDestroyCount = 0;
   private last: ObjectLifetimeStats | null = null;
   private readonly scalarCache = new Map<string, ReadonlySet<string>>();
+  /** The class registry revision `scalarCache` was built at: hot reload re-declares variables. */
+  private scalarRevision = -1;
 
   private readonly deps: ObjectLifetimeDeps;
 
@@ -84,9 +86,14 @@ export class RuntimeObjectLifetime implements RuntimeSubsystem {
 
   /** Variables a class declares with types that can never hold an object, which a pass skips. */
   private scalarVariables(classId: string): ReadonlySet<string> {
+    const registry = this.deps.world().classRegistry;
+    if (registry.revision !== this.scalarRevision) {
+      this.scalarCache.clear();
+      this.scalarRevision = registry.revision;
+    }
     let names = this.scalarCache.get(classId);
     if (!names) {
-      const declared = this.deps.world().classRegistry.inheritedVariables(classId);
+      const declared = registry.inheritedVariables(classId);
       names = new Set(declared.filter((variable) => !canHoldReference(variable)).map((variable) => variable.name));
       this.scalarCache.set(classId, names);
     }

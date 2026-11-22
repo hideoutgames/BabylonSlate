@@ -104,16 +104,27 @@ describe("bounded runtime Inspector", () => {
     try {
       const world = runtime.getWorld(); const old = world.findActor("hero")!;
       const before = await request({ kind: "identities" });
-      expect((await request({ kind: "identities", knownRevision: before.structuralRevision })).payload).toMatchObject({ kind: "identities", unchanged: true, rows: [] });
+      expect((await request({ kind: "identities", knownRevision: before.identityRevision })).payload).toMatchObject({ kind: "identities", unchanged: true, rows: [] });
       world.destroyActor("hero"); runtime.tick();
       world.spawnActorNow(world.createActor({ guid: "hero", classId: "Hero" }));
       expect(old.destroyed).toBe(true);
       expect((await request(mutation(actor, 1, 20))).success).toBe(false);
       expect((await request({ kind: "selection", target: component })).success).toBe(false);
-      const tree = await request({ kind: "identities", knownRevision: before.structuralRevision });
-      expect(tree.structuralRevision).toBeGreaterThan(before.structuralRevision);
+      const tree = await request({ kind: "identities", knownRevision: before.identityRevision });
+      expect(tree.identityRevision).toBeGreaterThan(before.identityRevision);
       expect(tree.payload).toMatchObject({ kind: "identities", rows: [expect.objectContaining({ identity: expect.objectContaining({ actorGuid: "hero" }) })] });
       if (tree.payload?.kind === "identities") expect(tree.payload.rows[0]!.identity.actorToken).not.toBe(actor.actorToken);
+    } finally { runtime.stop(); }
+  });
+
+  it("lists an actor again under its new name after a rename", async () => {
+    const { runtime, request } = await fixture();
+    try {
+      const before = await request({ kind: "identities" });
+      runtime.getWorld().findActor("hero")!.setVariable("name", "Renamed Hero");
+      const after = await request({ kind: "identities", knownRevision: before.identityRevision });
+      expect(after.payload).toMatchObject({ kind: "identities", unchanged: false,
+        rows: expect.arrayContaining([expect.objectContaining({ kind: "actor", name: "Renamed Hero" })]) });
     } finally { runtime.stop(); }
   });
 

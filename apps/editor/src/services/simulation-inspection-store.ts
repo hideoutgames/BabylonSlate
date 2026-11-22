@@ -34,7 +34,7 @@ export class SimulationInspectionStore {
   private selectionGeneration = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private reading = false;
-  private structuralRevision: number | undefined;
+  private identityRevision: number | undefined;
   private commandRevision = -1;
   private cursor: RuntimeIdentityCursor | undefined;
   private loadNext = false;
@@ -51,7 +51,7 @@ export class SimulationInspectionStore {
   attach(transport: RuntimeInspectionTransport): () => void {
     const generation = ++this.generation;
     this.transport = transport;
-    this.structuralRevision = undefined;
+    this.identityRevision = undefined;
     this.commandRevision = -1;
     this.cursor = undefined;
     this.reading = false;
@@ -153,7 +153,7 @@ export class SimulationInspectionStore {
     try {
       const extending = this.loadNext && !!this.cursor;
       this.loadNext = false;
-      const result = await transport(extending ? { kind: "identities", cursor: this.cursor } : { kind: "identities", knownRevision: this.structuralRevision });
+      const result = await transport(extending ? { kind: "identities", cursor: this.cursor } : { kind: "identities", knownRevision: this.identityRevision });
       if (generation !== this.generation || !this.hasConsumers()) return;
       if (!result.success) patch.identityError = result.reason ?? "Runtime identities are unavailable.";
       else if (result.payload?.kind === "identities") {
@@ -174,7 +174,7 @@ export class SimulationInspectionStore {
           patch.identitiesLimited = limited || (rows.length >= MAX_IDENTITIES && !!payload.nextCursor);
           this.cursor = payload.nextCursor;
           patch.moreIdentities = !!this.cursor;
-          this.structuralRevision = result.structuralRevision;
+          this.identityRevision = result.identityRevision;
           // The cursor advanced with these rows: publish them now so a
           // superseded or failed selection read cannot drop them.
           this.publish(patch);

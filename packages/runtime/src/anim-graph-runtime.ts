@@ -18,6 +18,7 @@ import {
   type AnimEvalState,
   type AnimFiredEvent,
   type AnimGraphDocument,
+  type AnimGraphInputs,
   type AnimRootMotionDelta,
   type AnimTransition,
 } from "@haptic/anim-graph";
@@ -35,6 +36,7 @@ import { TickWait } from "./tick-wait";
 type SpriteClip = SpriteClipState;
 /** Stops on the State Machine's state or transition when it has a breakpoint. */
 type StateMachineHit = (id: string, event: "entered" | "taken") => void;
+type EvaluationCallbacks = Pick<AnimGraphInputs, "decideTransition" | "poseData"> & { guid: string; actor: Actor };
 
 interface AnimGraphRuntimeHost {
   world(): World;
@@ -92,6 +94,9 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   private readonly clipCatalog = new Map<string, AnimClipCatalogEntry>();
   /** The graph guid a component's evaluation and queued jump belong to. */
   private readonly graphByComponent = new Map<string, string>();
+  /** The document and variables revision each component's graph variables were last filled at. */
+  private readonly seededVariables = new WeakMap<ActorComponent, { document: AnimGraphDocument; revision: number }>();
+  private readonly callbacksByComponent = new WeakMap<ActorComponent, EvaluationCallbacks>();
   /** The AnimationGraphComponent the editor's graph debugger follows, and where its State Machine reports. */
   private debugComponent: EngineObject | null = null;
   private debugSink: ScriptDebugTrace | null = null;
@@ -328,10 +333,16 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     else this.slotRequestsByComponent.set(componentGuid, [request]);
   }
 
+  /**
+   * Fills the graph's variables the component lacks. Only a variable write can remove one, so while the component's
+   * variables revision and document are what the last seeding saw, there is nothing to fill.
+   */
   private seedVariables(
     component: ActorComponent,
     document: AnimGraphDocument,
   ): void {
+    const seeded = this.seededVariables.get(component);
+    if (seeded?.document === document && seeded.revision === component.variablesRevision) return;
     for (const variable of document.variables) {
       if (component.getVariable(variable.name) !== undefined) continue;
       // Each component owns its copy: an object default must not be shared with the document or other components.
@@ -342,6 +353,32 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
           : defaultAnimVariableValue(variable.typeId, variable.typeClassId),
       );
     }
+    this.seededVariables.set(component, { document, revision: component.variablesRevision });
+  }
+
+  /** The script callbacks a component's evaluation calls, made once per component and graph. */
+  private evaluationCallbacks(component: ActorComponent, actor: Actor, guid: string): EvaluationCallbacks {
+    const cached = this.callbacksByComponent.get(component);
+    if (cached?.guid === guid && cached.actor === actor) return cached;
+    const callbacks: EvaluationCallbacks = {
+      guid,
+      actor,
+      decideTransition: (transition, facts) =>
+        this.host.scripts().invokeAnimRule(
+          animRuleScriptClassId(guid, transition.id),
+          actor,
+          { variableStore: component, animFacts: facts },
+        ),
+      // Each state graph's wired data inputs, with its state's facts.
+      poseData: (graphKey, facts) =>
+        this.host.scripts().invokeAnimPose(
+          animPoseScriptClassId(guid, graphKey),
+          actor,
+          { variableStore: component, ...(facts ? { animFacts: facts } : {}) },
+        ),
+    };
+    this.callbacksByComponent.set(component, callbacks);
+    return callbacks;
   }
 
   /** One tick; `dtSeconds` is the tick's captured step, fixed for the whole tick. */
@@ -505,25 +542,15 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       const slotRequests = this.slotRequestsByComponent.get(evalKey);
       this.slotRequestsByComponent.delete(evalKey);
       let taken: AnimTransition | null = null;
+      const callbacks = this.evaluationCallbacks(component, actor, guid);
       const next = evaluateAnimGraph(
         document,
         previous,
         dtSeconds,
         {
-          decideTransition: (transition, facts) =>
-            this.host.scripts().invokeAnimRule(
-              animRuleScriptClassId(guid, transition.id),
-              actor,
-              { variableStore: component, animFacts: facts },
-            ),
+          decideTransition: callbacks.decideTransition,
           transitionTaken: hit ? (transition) => { taken = transition; } : undefined,
-          // Each state graph's wired data inputs, with its state's facts.
-          poseData: (graphKey, facts) =>
-            this.host.scripts().invokeAnimPose(
-              animPoseScriptClassId(guid, graphKey),
-              actor,
-              { variableStore: component, ...(facts ? { animFacts: facts } : {}) },
-            ),
+          poseData: callbacks.poseData,
           slotRequests,
         },
       );

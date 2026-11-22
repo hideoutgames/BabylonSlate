@@ -6,6 +6,7 @@ import { sceneAssetClassId } from "@haptic/object-model";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";
 import type { AcquireRuntimeScene } from "./scene-source";
+import { variablesAtRelease } from "./testing/released-variables";
 
 function marker(id: string, x = 0, target = "child") {
   return createActor(id, id, { classId: "SceneStreamingActor",
@@ -436,6 +437,7 @@ describe("additive scene streaming", () => {
       await runtime.loadSceneStream(right);
       const leaves = world.getActors().filter((actor) => actor.classId === "LeafActor");
       const sibling = world.getActors().find((actor) => actor.classId === "SiblingActor")!;
+      const releasedLeaves = leaves.map((leaf) => variablesAtRelease(leaf));
       runtime.tick();
       hold = true;
       const outerUnload = runtime.unloadSceneStream(left);
@@ -452,7 +454,7 @@ describe("additive scene streaming", () => {
       hold = false;
       releases.splice(0).forEach((release) => release());
       await Promise.all([outerUnload, nestedUnload]);
-      expect(leaves.every((actor) => actor.destroyed && actor.getVariable("destroyedCount") === 1)).toBe(true);
+      expect(leaves.every((actor, index) => actor.destroyed && releasedLeaves[index]!.get("destroyedCount") === 1)).toBe(true);
       expect(nested.destroyed).toBe(true);
       expect(runtime.getSceneState(left)).toBe("Unloaded");
       expect(runtime.getSceneState(right)).toBe("Loaded");

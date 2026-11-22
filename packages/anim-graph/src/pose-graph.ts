@@ -209,9 +209,28 @@ export interface PoseClipData {
   loop: boolean;
 }
 
-/** A player's clip events, as resolution copied them onto the node. */
-export function poseClipEvents(node: SerializedGraphNode): AnimClipEvent[] {
-  return parseAnimClipEvents(node.data.events);
+const clipEvents = new WeakMap<SerializedGraphNode, readonly AnimClipEvent[]>();
+
+/** A player's clip events, as resolution copied them onto the node; parsed once per node object (never mutated). */
+export function poseClipEvents(node: SerializedGraphNode): readonly AnimClipEvent[] {
+  let events = clipEvents.get(node);
+  if (!events) {
+    events = parseAnimClipEvents(node.data.events);
+    clipEvents.set(node, events);
+  }
+  return events;
+}
+
+const clipRootMotion = new WeakMap<SerializedGraphNode, AnimClipRootMotion | null>();
+
+/** A player's clip root motion, as resolution copied it onto the node; parsed once per node object. */
+export function poseClipRootMotion(node: SerializedGraphNode): AnimClipRootMotion | undefined {
+  let motion = clipRootMotion.get(node);
+  if (motion === undefined) {
+    motion = parseAnimClipRootMotion(node.data.rootMotion) ?? null;
+    clipRootMotion.set(node, motion);
+  }
+  return motion ?? undefined;
 }
 
 export function poseClipData(node: SerializedGraphNode): PoseClipData {
@@ -231,7 +250,18 @@ export function poseClipData(node: SerializedGraphNode): PoseClipData {
  * The player a state's facts follow (its time, length and loop): reached from the output through the first pose
  * input of each node on the way. Null when that path ends without one.
  */
+const primaryPlayers = new WeakMap<SerializedGraph, SerializedGraphNode | null>();
+
 export function primaryPosePlayer(graph: SerializedGraph): SerializedGraphNode | null {
+  let player = primaryPlayers.get(graph);
+  if (player === undefined) {
+    player = findPrimaryPosePlayer(graph);
+    primaryPlayers.set(graph, player);
+  }
+  return player;
+}
+
+function findPrimaryPosePlayer(graph: SerializedGraph): SerializedGraphNode | null {
   const index = poseGraphIndex(graph);
   let node = index.output;
   const seen = new Set<string>();
