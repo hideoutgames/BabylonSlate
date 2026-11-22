@@ -34,6 +34,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
+import type { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload } from "@haptic/assets";
 import {
@@ -55,6 +56,7 @@ import { ParticleService } from "./particle-service";
 import { createParticleReadinessTexture } from "./particle-system-factory";
 import {
   allowSceneScreenShadows,
+  excludeSceneSpatialEffects,
   sceneRenderingSettings,
   setSceneEffectsEnabled,
   setSceneFsrOutputDebug,
@@ -198,34 +200,60 @@ it("draws a multisampled world view into its own scene targets, copies them to t
   graph.dispose();
 });
 
-it.each(["displaySpace", "sceneLinear"] as const)(
-  "merges bloom over the multisampled %s scene colour into a single-sample target of its type",
-  async (mode) => {
+it.each([
+  ["displaySpace", "output"], ["sceneLinear", "output"], ["displaySpace", "upscaled"], ["sceneLinear", "upscaled"],
+] as const)(
+  "merges bloom over the multisampled %s scene colour in one single-sample Display Color pass into the %s, with no merge target",
+  async (mode, into) => {
     const { engine, scene, camera } = host();
     engine.getCaps().maxMSAASamples = 4;
     allowSceneScreenShadows(scene, () => false);
     sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing: "msaa4" });
-    // No spatial stage before bloom: it reads the objects' own scene colour.
+    // No spatial stage before bloom: it reads the objects' own scene colour. FSR upscaling follows the pass with a stage
+    // of its own, so the pass then writes a target of its own.
     updateSceneRenderingSettings(scene, {
       mode: "pbr",
       effects: {
         ...DEFAULT_RENDER_EFFECTS,
         colorPipeline: { mode },
         bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 },
+        upscaling: { ...DEFAULT_RENDER_EFFECTS.upscaling, enabled: into === "upscaled", renderScale: 0.5 },
       },
     });
     const graph = new ForwardSceneFrameGraph(scene);
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
     const frame = captureRenderFrame(engine, () => graph.render(camera));
     expect(frame.value).toEqual({ path: "frameGraph" });
+    const { textureManager, tasks } = (graph as unknown as { graph: FrameGraph }).graph;
     const resource = (handle: number | undefined) => frame.report.resources.find((entry) => entry.handle === handle);
     const objects = frame.report.tasks.find((task) => task.name === "Forward objects")!;
-    const sceneColor = resource(objects.passes[0]?.colorTargets?.[0]);
-    const bloom = frame.report.tasks.find((task) => task.name === "Scene Effects Bloom")!;
-    const merge = resource(bloom.passes.find((pass) => pass.name.endsWith("Merge"))?.colorTargets?.[0]);
+    const sceneColorHandle = objects.passes[0]!.colorTargets![0]!;
+    const sceneColor = resource(sceneColorHandle);
     const type = mode === "sceneLinear" ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     expect(sceneColor).toMatchObject({ samples: 4, types: [type] });
-    expect(merge).toMatchObject({ samples: 1, types: [type], width: sceneColor!.width, height: sceneColor!.height });
+    // Bloom draws its downscale and blurs only, into targets at its scale.
+    const bloom = frame.report.tasks.find((task) => task.name === "Scene Effects Bloom")!;
+    expect(bloom.passes.map((pass) => pass.name)).toEqual(
+      ["Scene Effects Bloom Downscale", "Scene Effects Bloom Blur X", "Scene Effects Bloom Blur Y"]);
+    for (const pass of bloom.passes)
+      expect(resource(pass.colorTargets![0])).toMatchObject({ samples: 1, width: sceneColor!.width! / 2, height: sceneColor!.height! / 2 });
+    // The merge is the first stage of the one full-size pass after bloom, which reads the multisampled scene colour.
+    const name = mode === "sceneLinear" ? "Scene Effects Display Color" : "Scene Effects Bloom Merge";
+    const display = tasks.find((task) => task.name === name) as FrameGraphPostProcessTask;
+    expect(textureManager.getTextureFromHandle(display.sourceTexture!)).toBe(textureManager.getTextureFromHandle(sceneColorHandle));
+    const written = frame.report.tasks.find((task) => task.name === name)!.passes;
+    expect(written).toHaveLength(1);
+    expect(textureManager.isBackbufferColor(display.outputTexture)).toBe(into === "output");
+    if (into === "upscaled")
+      expect(resource(written[0]!.colorTargets![0])).toMatchObject({ samples: 1, types: [type], width: sceneColor!.width, height: sceneColor!.height });
+    // The chain's targets: no full-size one holds the merged colour between bloom and the rest of the pass, and the pass
+    // has a target of its own only when a stage follows it.
+    const names = [...textureManager._textures.values()].filter((entry) => entry && !entry.refHandle).map((entry) => entry!.name);
+    expect(names.filter((entry) => entry.startsWith("Scene Effects")).sort()).toEqual([
+      "Scene Effects Scene Color", "Scene Effects Scene Z",
+      "Scene Effects Bloom Downscale", "Scene Effects Bloom Blur X", "Scene Effects Bloom Blur Y",
+      ...into === "upscaled" ? [name, "Scene Effects FSR Upscale"] : [],
+    ].sort());
     graph.dispose();
   },
 );
@@ -1531,7 +1559,7 @@ it("draws a new 3D project's output in its Display Color stage", async () => {
   graph.dispose();
 });
 
-it("keeps the output copy after a chain that ends in Bloom", async () => {
+it("draws a Display Space chain of bloom alone into the output from its merge, with no output copy", async () => {
   const { scene, camera } = host();
   setTierFxaa(scene, false);
   updateSceneRenderingSettings(scene, {
@@ -1544,10 +1572,12 @@ it("keeps the output copy after a chain that ends in Bloom", async () => {
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   const names = graph.taskNames();
-  // Bloom is a composite task, not a single post process that can take the output as its target.
-  expect(names.indexOf("Scene post-process output")).toBeGreaterThan(names.indexOf("Scene Effects Bloom"));
-  expect(names.at(-1)).toBe("Scene post-process output");
+  // Bloom's merge is a single post process: it takes the output as its target.
+  expect(names.slice(names.indexOf("Scene Effects Bloom"))).toEqual(["Scene Effects Bloom", "Scene Effects Bloom Merge"]);
+  expect(names).not.toContain("Scene post-process output");
+  expect(names).not.toContain("Scene Effects Display Color");
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.postProcessPassCount()).toBe(2);
   graph.dispose();
 });
 
@@ -2331,6 +2361,36 @@ it("idles Screen-Space Shadows and the geometry pass for an orthographic camera,
   expect(frame()).toEqual({ skipped: [], reads: true });
   graph.dispose();
 });
+
+// A Scene Layer's editor view (`excludeSceneSpatialEffects`) has no world for the spatial effects: it builds none of
+// their passes whatever the project enables, through later settings updates too, and keeps its screen effects.
+it("builds no spatial geometry, effect or Screen-Space Shadows pass for a Scene without spatial effects", async () => {
+  const spatialTasks = (names: string[]) => names.filter((name) => SPATIAL_TASK_PREFIXES.some((prefix) => name.startsWith(prefix)));
+  const effects = {
+    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+    reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+    volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true },
+    bloom: { ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true },
+  };
+  const { scene, camera, graph, frame } = await screenShadowsHost(true, effects);
+  expect(spatialTasks(graph.taskNames())).toEqual(expect.arrayContaining(
+    ["Spatial Geometry", "Screen shadows", "Scene Ambient Occlusion", "Scene Reflections", "Scene Effects Compose"]));
+  expect(frame().reads).toBe(true);
+  excludeSceneSpatialEffects(scene);
+  await graph.prepare(camera);
+  expect(spatialTasks(graph.taskNames())).toEqual([]);
+  expect(graph.taskNames()).toContain("Scene Effects Bloom");
+  expect(frame()).toEqual({ skipped: [], reads: false });
+  // A later project or quality update plans them out again.
+  updateSceneRenderingSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects } }, undefined, { screenShadows: "high" });
+  await graph.prepare(camera);
+  expect(spatialTasks(graph.taskNames())).toEqual([]);
+  expect(sceneRenderingSettings(scene).effectsPlan).toMatchObject(
+    { ambientOcclusion: null, reflections: null, volumetricLighting: null, screenShadows: null });
+  graph.dispose();
+});
+const SPATIAL_TASK_PREFIXES = ["Spatial Geometry", "Screen shadows", "Scene Ambient Occlusion", "Scene Reflections", "Scene Volumetric Lighting",
+  "Scene Effects Compose", MERGED_MARCHES_NAME];
 
 it("keeps the geometry pass for ambient occlusion while Screen-Space Shadows idle", async () => {
   const { graph, frame } = await screenShadowsHost(false, { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });

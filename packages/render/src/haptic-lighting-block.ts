@@ -33,7 +33,7 @@ import {
   HAPTIC_LIGHTING_FUNCTIONS_GLSL,
   hapticLightingGlsl,
 } from "./haptic-lighting-shader";
-import { sceneRenderingSettings } from "./render-settings";
+import { sceneReadsScreenShadows, sceneRenderingSettings } from "./render-settings";
 import { screenShadowsForPass, screenShadowsPlaceholder } from "./screen-shadows";
 import { spatialEffectsUnsupported } from "./spatial-effects";
 import { isWaterSurfaceMesh } from "./water-surface-block";
@@ -98,7 +98,7 @@ function celMode(scene: Scene): boolean {
 }
 
 /**
- * Whether `material` can read Screen-Space Shadows on `mesh` (`HAPTIC_SCREEN_SHADOWS`): in a world view's PBR Scene whose
+ * Whether `material` can read Screen-Space Shadows on `mesh` (`HAPTIC_SCREEN_SHADOWS`): in a world view's PBR Scene with spatial effects whose
  * device draws the spatial geometry pass, for an opaque or masked lit surface (the compiler's transparency mode) that is
  * not water: a blended or water surface is not what the depth holds. Not whether the plan carries them now: a pass
  * without them binds the placeholder with the read off (`bindReceiver`), so a quality tier or a setting that turns them
@@ -106,7 +106,7 @@ function celMode(scene: Scene): boolean {
  */
 function screenShadows(scene: Scene, material: NodeMaterial, mesh: AbstractMesh, unlit: boolean): boolean {
   const state = sceneRenderingSettings(scene);
-  return state.mode === "pbr" && state.screenShadowsSupported?.() === true && !spatialEffectsUnsupported(scene) &&
+  return state.mode === "pbr" && sceneReadsScreenShadows(scene) && !spatialEffectsUnsupported(scene) &&
     !unlit && material.transparencyMode !== Material.MATERIAL_ALPHABLEND &&
     material.transparencyMode !== Material.MATERIAL_ALPHATESTANDBLEND && !isWaterSurfaceMesh(mesh);
 }

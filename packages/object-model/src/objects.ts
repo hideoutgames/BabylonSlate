@@ -368,6 +368,15 @@ export class Actor extends EngineObject {
   tickEnabled = true;
   /** Keeps the actor and its components ticking while the game is paused (`World.gamePaused`). */
   tickOnPause = false;
+  /** The resolved Actor Defaults Tick Interval in seconds; `tickStride` is what the tick hook reads. */
+  tickInterval = 0;
+  /**
+   * Fixed steps between Event Ticks, from `tickInterval`: above 1, the tick hook runs Event Tick only on
+   * steps where `(tickIndex + spawnOrder) % tickStride === 0`. Input events and components ignore it.
+   */
+  tickStride = 1;
+  /** Simulation seconds the tick hook covered since the last Event Tick; used only while `tickStride` > 1. */
+  eventTickElapsed = 0;
   private _sceneLayerId: Guid | null = null;
   readonly suppressedComponentSourceIds: readonly string[];
 

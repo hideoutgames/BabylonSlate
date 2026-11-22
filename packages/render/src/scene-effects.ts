@@ -142,10 +142,10 @@ export function planWithoutScreenEffects(plan: SceneEffectsPlan | null): SceneEf
  * neither draw nor hold targets. A weight or strength is part of `sceneEffectsKey`, so a change rebuilds the graph and
  * the view's readiness holds it as for any graph change. Every proof holds for finite colour: a non-finite pixel within
  * a stage's reach turns `blur · 0` into NaN, which the skipped stage no longer writes.
- * - Bloom at weight 0, in either pipeline: the merge writes `base + blur · 0` = `base` into a target of the source's
- *   type, size and sample count (or the single-sample one of the scene colour's type that the next stage would resolve
- *   to). Kept when it is the chain's only stage: the plan would turn null and the view would draw straight to its
- *   output.
+ * - Bloom at weight 0, in either pipeline: the Display Color pass's merge computes `base + blur · 0` = `base` and holds
+ *   it as a target of the source's type stores it, which leaves a value read from such a target as it is; the rest of
+ *   the pass then reads what it reads without bloom. Kept when it is the chain's only stage: the plan would turn null
+ *   and the view would draw straight to its output.
  * - Real-Time Reflections at strength 0, in Scene Linear only: the compose's reflection multiplier is
  *   `clamp(pow(F · 0, 1))` = 0, so its term writes `color · 1 + ssr · 0` into a half-float target, as the half-float
  *   source holds it. In Display Space a compose of reflections alone converts to linear and back (`pow` 2.2), which is

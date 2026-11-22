@@ -8,6 +8,7 @@
     "./src/babylon-registrations.ts",
     "./src/color-encoding-block.ts",
     "./src/decal-projection-block.ts",
+    "./src/display-color-task.ts",
     "./src/draw-batch-world-block.ts",
     "./src/environment-base-radiance.ts",
     "./src/environment-sample-block.ts",

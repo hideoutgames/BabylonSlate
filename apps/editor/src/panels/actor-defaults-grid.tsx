@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PropertyGrid, walkAncestry, type PropertyRow } from "@haptic/editor-kit";
 import {
   ACTOR_TAGS_PROPERTY,
+  MAX_ACTOR_TICK_INTERVAL_SECONDS,
+  normalizeActorTickInterval,
   normalizeTagContainer,
   resolveActorDefaults,
   resolveActorTags,
@@ -151,6 +153,8 @@ export function ActorDefaultsGrid({
     onChange: (value: boolean) => writeFlag(key, value),
   });
   const eventTick = defaults.eventTick ?? "inherit";
+  const eventTickEnabled = eventTick === "inherit" ? inherited.eventTick : eventTick === "enabled";
+  const ownTickInterval = normalizeActorTickInterval(defaults.tickInterval);
 
   return (
     <PropertyGrid
@@ -193,6 +197,26 @@ export function ActorDefaultsGrid({
             const next = { ...defaults };
             if (value === "inherit") delete next.eventTick;
             else next.eventTick = value as ActorEventTickMode;
+            onChange(next);
+          },
+        },
+        {
+          id: "tickInterval",
+          kind: "number",
+          label: "Tick Interval",
+          unit: "s",
+          value: ownTickInterval ?? inherited.tickInterval,
+          defaultValue: inherited.tickInterval,
+          min: 0,
+          max: MAX_ACTOR_TICK_INTERVAL_SECONDS,
+          precision: 3,
+          disabled: !eventTickEnabled,
+          description: "Time between this actor's Event Ticks (0 is every tick); input events still run every tick.",
+          onChange: (value: number) => {
+            const next = { ...defaults };
+            const interval = normalizeActorTickInterval(value);
+            if (interval === undefined || interval === inherited.tickInterval) delete next.tickInterval;
+            else next.tickInterval = interval;
             onChange(next);
           },
         },
