@@ -1,140 +1,191 @@
 import { describe, expect, it } from "vitest";
-import { BackbufferDepthTracker, type TrackedContext } from "./backbuffer-depth-tracker";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { BackbufferDepthTracker } from "./backbuffer-depth-tracker";
 
-const COLOR = 0x4000, DEPTH = 0x100, STENCIL = 0x400;
-const DEPTH_TEST = 0x0b71, STENCIL_TEST = 0x0b90, SCISSOR_TEST = 0x0c11;
-const FRAMEBUFFER = 0x8d40, DRAW_FRAMEBUFFER = 0x8ca9;
-
-/** A context standing in for WebGL: the clears that reached it, in order, as their masks. */
-function context() {
-  const reached: number[] = [];
-  const noop = () => {};
-  const gl: TrackedContext = {
-    bindFramebuffer: noop, enable: noop, disable: noop, depthMask: noop, stencilMask: noop, stencilMaskSeparate: noop,
-    clearDepth: noop, clearStencil: noop, clear: (mask) => { reached.push(mask); }, drawArrays: noop, drawElements: noop,
-    blitFramebuffer: noop, invalidateFramebuffer: noop,
-    getParameter: (name) => (name === 0x0b72 ? true : name === 0x0b98 || name === 0x8ca5 ? 0xff : name === 0x0b73 ? 1 : name === 0x0b91 ? 0 : null),
-    isEnabled: () => false,
+/**
+ * An Engine as the tracker reads it: Babylon's state caches, the draw counter and the bound framebuffer, with a `clear`
+ * that records what reached it (`c` colour, `d` depth, `s` stencil) and draws that count.
+ */
+function engine() {
+  const reached: string[] = [];
+  const stencilGlobal = { enabled: false };
+  const fake = {
+    _currentFramebuffer: null as unknown,
+    _drawCalls: { current: 0 },
+    frameId: 0,
+    width: 640,
+    getRenderWidth() { return fake.width; },
+    getRenderHeight() { return 360; },
+    useReverseDepthBuffer: false,
+    depthCullingState: { depthTest: true, depthMask: true },
+    stencilState: { stencilMask: 0xff },
+    stencilStateComposer: { useStencilGlobalOnly: false, stencilMaterial: null as { enabled: boolean } | null, stencilGlobal },
+    clear(color: unknown, backBuffer: boolean, depth: boolean, stencil = false) {
+      reached.push(`${color && backBuffer ? "c" : ""}${depth ? "d" : ""}${stencil ? "s" : ""}`);
+    },
+    enableScissor() {},
+    disableScissor() {},
+    drawElementsType: (() => { fake._drawCalls.current += 1; }) as (fillMode: number, start: number, count: number, instances?: number) => void,
+    drawArraysType: (() => { fake._drawCalls.current += 1; }) as (fillMode: number, start: number, count: number, instances?: number) => void,
   };
-  const tracker = new BackbufferDepthTracker(gl);
-  /** A clear as Babylon issues it: its values, then the clear. */
-  const clear = (mask: number, depth = 1, stencil = 0) => { gl.clearDepth(depth); gl.clearStencil(stencil); gl.clear(mask); };
-  /** A layer's depth-stencil clear, with clears left out where exact. */
-  const layerClear = () => {
-    tracker.eliding = true;
-    try { clear(DEPTH | STENCIL); } finally { tracker.eliding = false; }
-  };
-  return { gl, tracker, reached, clear, layerClear };
+  const original = { drawElements: fake.drawElementsType, drawArrays: fake.drawArraysType };
+  const tracker = new BackbufferDepthTracker(fake as unknown as AbstractEngine);
+  const babylon = fake as unknown as AbstractEngine;
+  const draw = () => babylon.drawElementsType(0, 0, 3);
+  /** A layer's depth-stencil clear inside a layer pass. */
+  const layerClear = () => babylon.clear(null as never, false, true, true);
+  const worldClear = () => babylon.clear({} as never, true, true, true);
+  return { fake, babylon, tracker, reached, draw, layerClear, worldClear, original, stencilGlobal };
 }
 
 describe("the backbuffer depth tracker", () => {
-  it("leaves out a layer's depth-stencil clear only while the backbuffer holds what that clear writes", () => {
-    const { tracker, reached, clear, layerClear } = context();
-    // Nothing known yet: the clear runs, and leaves the buffers cleared.
+  it("leaves out a layer pass's depth-stencil clear only while the backbuffer holds what that clear writes", () => {
+    const { tracker, reached, layerClear } = engine();
+    // Nothing known yet: the clear runs.
+    tracker.beginLayerPass();
     layerClear();
-    expect(reached).toEqual([DEPTH | STENCIL]);
     layerClear();
-    expect(reached).toEqual([DEPTH | STENCIL]);
-    expect(tracker.elided).toBe(1);
-    // A clear to other values is not the one they hold.
-    tracker.eliding = true;
-    clear(DEPTH | STENCIL, 0.5);
-    tracker.eliding = false;
-    expect(reached).toEqual([DEPTH | STENCIL, DEPTH | STENCIL]);
+    tracker.endLayerPass();
+    expect(reached).toEqual(["ds", ""]);
+    expect({ depthClears: tracker.depthClears, elided: tracker.elided }).toEqual({ depthClears: 1, elided: 1 });
     // Outside a layer pass every clear runs.
-    clear(DEPTH | STENCIL, 0.5);
-    expect(reached).toHaveLength(3);
+    layerClear();
+    layerClear();
+    expect(reached).toEqual(["ds", "", "ds", "ds"]);
   });
 
-  it("keeps the colour of a world clear that also cleared depth and stencil, and leaves out the first layer's", () => {
-    const { tracker, reached, clear, layerClear } = context();
-    clear(COLOR | DEPTH | STENCIL);
+  it("keeps the world clear's colour, and leaves the first layer's clear out after the world's merged clear and its one draw", () => {
+    const { tracker, reached, draw, layerClear, worldClear } = engine();
+    worldClear();
+    tracker.noteFoldedClear();
+    draw();
+    tracker.beginLayerPass();
     layerClear();
-    expect(reached).toEqual([COLOR | DEPTH | STENCIL]);
-    // A colour clear in a layer pass keeps its colour when its depth and stencil are left out.
-    tracker.eliding = true;
-    clear(COLOR | DEPTH | STENCIL);
-    tracker.eliding = false;
-    expect(reached).toEqual([COLOR | DEPTH | STENCIL, COLOR]);
-    expect({ clears: tracker.clears, depthClears: tracker.depthClears, elided: tracker.elided }).toEqual({ clears: 2, depthClears: 1, elided: 2 });
+    tracker.endLayerPass();
+    expect(reached).toEqual(["cds", ""]);
+    // A second draw before the layers is not the output pass's: the clear runs.
+    worldClear();
+    tracker.noteFoldedClear();
+    draw();
+    draw();
+    tracker.beginLayerPass();
+    layerClear();
+    tracker.endLayerPass();
+    expect(reached.slice(2)).toEqual(["cds", "ds"]);
+    // A loading frame's clear allows no draw at all.
+    worldClear();
+    draw();
+    tracker.beginLayerPass();
+    layerClear();
+    tracker.endLayerPass();
+    expect(reached.slice(4)).toEqual(["cds", "ds"]);
   });
 
-  it("clears again after a draw that writes depth or tests stencil, but not after one that only reads depth", () => {
-    const { gl, reached, clear, layerClear } = context();
-    clear(DEPTH | STENCIL);
-    gl.enable(DEPTH_TEST);
-    gl.depthMask(false);
-    gl.drawElements();
+  it("forgets a world clear at another Engine frame or another backbuffer size", () => {
+    const { fake, tracker, reached, layerClear, worldClear } = engine();
+    for (const change of [() => { fake.frameId += 1; }, () => { fake.width += 16; }]) {
+      worldClear();
+      change();
+      tracker.beginLayerPass();
+      layerClear();
+      tracker.endLayerPass();
+    }
+    expect(reached).toEqual(["cds", "ds", "cds", "ds"]);
+  });
+
+  it("clears again after a layer draw that writes depth or may write stencil, not after one that only reads depth", () => {
+    const { fake, tracker, reached, draw, layerClear, stencilGlobal } = engine();
+    tracker.beginLayerPass();
     layerClear();
-    // A depth test without depth writes leaves the depth as it was.
-    expect(reached).toHaveLength(1);
-    gl.depthMask(true);
-    gl.drawElements();
+    fake.depthCullingState.depthMask = false;
+    draw();
     layerClear();
-    expect(reached).toHaveLength(2);
-    gl.disable(DEPTH_TEST);
-    gl.drawArrays();
+    expect(reached).toEqual(["ds", ""]);
+    fake.depthCullingState.depthMask = true;
+    draw();
     layerClear();
+    expect(reached).toEqual(["ds", "", "ds"]);
     // Without the depth test a draw writes no depth.
-    expect(reached).toHaveLength(2);
-    gl.enable(STENCIL_TEST);
-    gl.drawArrays();
+    fake.depthCullingState.depthTest = false;
+    draw();
     layerClear();
-    expect(reached).toHaveLength(3);
+    expect(reached).toHaveLength(4);
+    expect(reached[3]).toBe("");
+    stencilGlobal.enabled = true;
+    draw();
+    layerClear();
+    expect(reached[4]).toBe("ds");
+    stencilGlobal.enabled = false;
+    fake.stencilStateComposer.stencilMaterial = { enabled: true };
+    draw();
+    layerClear();
+    expect(reached[5]).toBe("ds");
+    tracker.endLayerPass();
   });
 
-  it("knows the buffers cleared only after a clear of both that reached every pixel and bit", () => {
+  it("counts the buffers cleared only after a clear of both that reached every pixel and bit", () => {
     for (const partial of [
-      (gl: TrackedContext) => gl.enable(SCISSOR_TEST),
-      (gl: TrackedContext) => gl.depthMask(false),
-      (gl: TrackedContext) => gl.stencilMask(0x0f),
-      (gl: TrackedContext) => gl.stencilMaskSeparate(0x0405, 0x7f),
+      (setup: ReturnType<typeof engine>) => setup.babylon.enableScissor(0, 0, 1, 1),
+      (setup: ReturnType<typeof engine>) => { setup.fake.depthCullingState.depthMask = false; },
+      (setup: ReturnType<typeof engine>) => { setup.fake.stencilState.stencilMask = 0x0f; },
     ]) {
-      const { gl, reached, clear, layerClear } = context();
-      partial(gl);
-      clear(DEPTH | STENCIL);
-      layerClear();
-      expect(reached).toHaveLength(2);
+      const setup = engine();
+      partial(setup);
+      setup.tracker.beginLayerPass();
+      setup.layerClear();
+      setup.layerClear();
+      setup.tracker.endLayerPass();
+      expect(setup.reached).toEqual(["ds", "ds"]);
     }
-    // Depth alone leaves the stencil unknown.
-    const { reached, clear, layerClear } = context();
-    clear(DEPTH);
-    layerClear();
-    expect(reached).toHaveLength(2);
+    // The scissor off again: whole.
+    const setup = engine();
+    setup.babylon.enableScissor(0, 0, 1, 1);
+    setup.babylon.disableScissor();
+    setup.tracker.beginLayerPass();
+    setup.layerClear();
+    setup.layerClear();
+    // Depth alone leaves the stencil unknown; a clear to another stencil value is not the one held.
+    setup.babylon.clear(null as never, false, true, false);
+    setup.babylon.clear(null as never, false, true, true, 1);
+    setup.tracker.endLayerPass();
+    expect(setup.reached).toEqual(["ds", "", "", "ds"]);
   });
 
-  it("follows only the default framebuffer, and forgets it at a depth blit, an invalidate or a new frame", () => {
-    const { gl, tracker, reached, clear, layerClear } = context();
-    clear(DEPTH | STENCIL);
-    // Another target's draws and clears change nothing of the backbuffer's.
-    gl.bindFramebuffer(FRAMEBUFFER, {});
-    gl.enable(DEPTH_TEST);
-    gl.drawElements();
-    clear(DEPTH | STENCIL, 0.25);
-    gl.bindFramebuffer(FRAMEBUFFER, null);
+  it("follows only the default framebuffer, and forgets at the end of each layer pass", () => {
+    const { fake, tracker, reached, draw, layerClear } = engine();
+    tracker.beginLayerPass();
     layerClear();
-    expect(reached).toEqual([DEPTH | STENCIL, DEPTH | STENCIL]);
-    // A target's clear in a layer pass always runs.
-    gl.bindFramebuffer(DRAW_FRAMEBUFFER, {});
+    // Another target's draws and clears change nothing of the backbuffer's, and its clears always run.
+    fake._currentFramebuffer = {};
+    draw();
     layerClear();
-    gl.bindFramebuffer(DRAW_FRAMEBUFFER, null);
-    expect(reached).toHaveLength(3);
-    for (const forget of [
-      () => gl.blitFramebuffer!(0, 0, 1, 1, 0, 0, 1, 1, DEPTH),
-      () => gl.invalidateFramebuffer!(FRAMEBUFFER, [0x1801]),
-      () => tracker.forget(),
-    ]) {
-      const before = reached.length;
-      clear(DEPTH | STENCIL);
-      forget();
-      layerClear();
-      expect(reached.length - before).toBe(2);
-    }
-    // A colour blit leaves depth and stencil as they were.
-    clear(DEPTH | STENCIL);
-    gl.blitFramebuffer!(0, 0, 1, 1, 0, 0, 1, 1, COLOR);
-    const before = reached.length;
+    fake._currentFramebuffer = null;
     layerClear();
-    expect(reached.length).toBe(before);
+    expect(reached).toEqual(["ds", "ds", ""]);
+    tracker.endLayerPass();
+    tracker.beginLayerPass();
+    layerClear();
+    tracker.endLayerPass();
+    expect(reached[3]).toBe("ds");
+  });
+
+  it("leaves the Engine's draw functions its own outside a layer pass, and puts the same fixed-arity wrappers on in each", () => {
+    const { babylon, tracker, original } = engine();
+    expect(babylon.drawElementsType).toBe(original.drawElements);
+    expect(babylon.drawArraysType).toBe(original.drawArrays);
+    tracker.beginLayerPass();
+    const wrappers = [babylon.drawElementsType, babylon.drawArraysType];
+    // Made once, with the draws' own arity: no arguments array per call.
+    expect(wrappers.map((wrapper) => wrapper.length)).toEqual([4, 4]);
+    tracker.endLayerPass();
+    expect(babylon.drawElementsType).toBe(original.drawElements);
+    expect(babylon.drawArraysType).toBe(original.drawArrays);
+    tracker.beginLayerPass();
+    expect([babylon.drawElementsType, babylon.drawArraysType]).toEqual(wrappers);
+    expect(babylon.drawElementsType).toBe(wrappers[0]);
+    tracker.endLayerPass();
+    // Ending twice changes nothing.
+    tracker.endLayerPass();
+    expect(babylon.drawElementsType).toBe(original.drawElements);
   });
 });

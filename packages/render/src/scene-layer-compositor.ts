@@ -226,8 +226,9 @@ export class SceneLayerCompositor {
     this.screen = options.screen ?? (() => null);
     this.onLayerView = options.onLayerView;
     this.slotRoot = options.slotRoot ?? (() => null);
-    installLayerFrameCounters(this.engine);
+    // First: the layer counters, wrapped around it, count the clears Babylon asks for.
     this.backbuffer = backbufferDepthTracker(this.engine);
+    installLayerFrameCounters(this.engine);
   }
 
   create(command: SceneLayerCreateCommand): SceneLayerView {
@@ -338,8 +339,8 @@ export class SceneLayerCompositor {
    * same, with fewer clears. Off, every layer clears as `depthClears` says.
    */
   skipClears = true;
-  /** `engine`'s backbuffer depth tracker; null without a WebGL context. */
-  private readonly backbuffer: BackbufferDepthTracker | null;
+  /** `engine`'s backbuffer depth tracker. */
+  private readonly backbuffer: BackbufferDepthTracker;
   /** The backbuffer's clear counts as this frame's layer work started (`LayerFrameStats.backbuffer`). */
   private backbufferStart: { clears: number; depthClears: number; elided: number } | null = null;
 
@@ -659,13 +660,13 @@ export class SceneLayerCompositor {
 
   /** Whether layers drawn straight over the world leave out a depth-stencil clear the backbuffer already holds. */
   private skipsClears(): boolean {
-    return this.skipClears && this.depthClears && !this.stack && !!this.backbuffer;
+    return this.skipClears && this.depthClears && !this.stack;
   }
 
   /** The backbuffer's clear counts as this frame's layer work starts: before the world, else at the layer pass. */
   private startBackbufferCount(): void {
     const tracker = this.backbuffer;
-    this.backbufferStart = tracker ? { clears: tracker.clears, depthClears: tracker.depthClears, elided: tracker.elided } : null;
+    this.backbufferStart = { clears: tracker.clears, depthClears: tracker.depthClears, elided: tracker.elided };
   }
 
   render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {
@@ -687,19 +688,20 @@ export class SceneLayerCompositor {
         if (this.byId.size === 0) this.releaseHeld();
         if (this.stack) this.renderThroughStack(this.stack, presentingLayers, draw);
         else {
-          if (tracker) tracker.eliding = this.skipsClears();
+          // Its draws are followed only while it runs and leaves clears out: the world frame's own draws are untouched.
+          if (this.skipsClears()) tracker.beginLayerPass();
           this.renderDirect(presentingLayers, draw);
         }
       });
     } finally {
-      if (tracker) tracker.eliding = false;
+      tracker.endLayerPass();
       setBackbufferDepthStencilFold(this.engine, false);
     }
     const from = this.backbufferStart;
     this.backbufferStart = null;
-    stats.backbuffer.clears = tracker && from ? tracker.clears - from.clears : 0;
-    stats.backbuffer.depthClears = tracker && from ? tracker.depthClears - from.depthClears : 0;
-    stats.backbuffer.elided = tracker && from ? tracker.elided - from.elided : 0;
+    stats.backbuffer.clears = from ? tracker.clears - from.clears : 0;
+    stats.backbuffer.depthClears = from ? tracker.depthClears - from.depthClears : 0;
+    stats.backbuffer.elided = from ? tracker.elided - from.elided : 0;
     stats.ms = performance.now() - start;
   }
 

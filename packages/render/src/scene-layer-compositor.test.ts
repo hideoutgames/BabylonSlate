@@ -1310,6 +1310,25 @@ describe("SceneLayerCompositor", () => {
       await compositor.dispose();
     });
 
+    it("follows the Engine's draws only during its layer pass, a pass that throws included", async () => {
+      const engine = webGlBinding();
+      const draw = engine.drawElementsType;
+      const compositor = new SceneLayerCompositor({ engine });
+      await layersOver(engine, compositor, ["hud"]);
+      const during: unknown[] = [];
+      const render = vi.spyOn(SceneRenderCoordinator.prototype, "render").mockImplementation(() => {
+        during.push(engine.drawElementsType);
+        throw new Error("layer failed");
+      });
+      expect(() => frame(engine, compositor)).toThrow("layer failed");
+      render.mockRestore();
+      expect(during[0]).not.toBe(draw);
+      // The world frame's draws are the Engine's own.
+      expect(engine.drawElementsType).toBe(draw);
+      engine.endFrame();
+      await compositor.dispose();
+    });
+
     it("skips no clear while the shared stack has a pass or the clears are off", async () => {
       const engine = webGlBinding();
       const { depthClears } = webGlCalls(engine);

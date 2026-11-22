@@ -1,6 +1,6 @@
 import { Constants } from "@babylonjs/core/Engines/constants";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
-import { foldsBackbufferDepthStencil } from "./backbuffer-depth-tracker";
+import { foldsBackbufferDepthStencil, noteFoldedBackbufferClear } from "./backbuffer-depth-tracker";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
@@ -52,6 +52,7 @@ export const fullTargetClear = {
       engine.setDepthWrite(true);
       context.clear(CLEAR_COLOR, true, true, true);
       engine.setDepthWrite(depthWrites);
+      noteFoldedBackbufferClear(engine);
       return;
     }
     context.clear(CLEAR_COLOR, true, false, false);
