@@ -4,7 +4,7 @@ import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
 import { projectTypeSchemas, requireSaveGameDefinition } from "../lib/save-game-catalog";
 import { createSaveGameStorage, editorBuildPlatform, isTestModeEnabled } from "@haptic/vfs";
-import { acquirePlayAssetSources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
+import { acquirePlayStartupSources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import {
   useCallback,
   useContext,
@@ -887,18 +887,40 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           compile: (required, storedDocuments) => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: true, storedDocuments }),
         };
         playSourceHostRef.current = sourceHost;
+        // The extension libraries and the Save Game configuration need none of the content, so they prepare beside it.
+        // Linked from the files as they are now, so edits made in another editor play too, for this
+        // editor's platform; extension assets open in tabs play with their unsaved values.
+        const openExtensionAssets = new Map(getOpenDocuments().flatMap((doc) =>
+          doc.ref.kind === "extension-asset" && doc.content && typeof doc.content === "object"
+            ? [[doc.ref.path, doc.content as Record<string, unknown>] as const] : []));
+        const libraries = extensionService.gameLibraries(
+          { platform: editorBuildPlatform(), editor: true },
+          projectDocument.settings.extensionOverrides, projectDocument.settings.extensionSettings,
+          (path) => openExtensionAssets.get(path));
+        const prepareSaveGame = () => prepareSaveGameConfiguration({
+          storage: simulating ? simulationRef.current?.storage : undefined,
+          projectId: playRequestInputsRef.current.projectGuid,
+          settings: projectDocument.settings.saveGame,
+          loadDefinition: loadSaveGameDefinition,
+        });
+        // Wipe On Play resets the preview saves: that waits until the content has prepared, so a Play that fails or is
+        // stopped before then keeps them.
+        const saveGame = projectDocument.settings.saveGame?.wipeOnPlay ? null : prepareSaveGame();
+        // Awaited below, after the content: a failure there comes first, and these are then moot.
+        void libraries.catch(() => undefined);
+        void saveGame?.catch(() => undefined);
         const projectAssets = requiredProjectAssets(assetRegistry, projectDocument);
-        if (projectAssets.length) {
-          const persistent = await acquirePlayAssetSources(sourceHost, projectAssets,
-            { consumer: "Play Project Systems", signal: sourceSignal });
-          if (!sessionOwner.isCurrent(ticket) || playSourceHostRef.current !== sourceHost) { persistent.release(); throw new DOMException("Session changed during asset preparation", "AbortError"); }
+        const { prepared, persistent } = await acquirePlayStartupSources(sourceHost, effectiveGuid, projectAssets,
+          { consumer: `Play ${describePlayAssetForMessage(assetRegistry, effectiveGuid)}`, signal: sourceSignal });
+        if (!sessionOwner.isCurrent(ticket) || playSourceHostRef.current !== sourceHost) {
+          persistent?.release();
+          prepared.release();
+          throw new DOMException("Session changed during Play preparation", "AbortError");
+        }
+        if (persistent) {
           playSourceSetsRef.current.add(persistent);
           setSessionSources(persistent.sources);
         }
-        const prepared = await acquirePlayAssetSources(sourceHost,
-          [effectiveGuid, ...projectAssets],
-          { consumer: `Play ${describePlayAssetForMessage(assetRegistry, effectiveGuid)}`, signal: sourceSignal, allowCompileErrors: true });
-        if (!sessionOwner.isCurrent(ticket) || playSourceHostRef.current !== sourceHost) { prepared.release(); throw new DOMException("Session changed during Play preparation", "AbortError"); }
         playSourceSetsRef.current.add(prepared);
         initialPlaySourceRef.current = prepared;
         const { game } = prepared;
@@ -909,15 +931,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setSessionPlayScene(resolvedScene);
         const nextScripts = game.scripts;
         const nextDiagnostics: Diagnostic[] = [...prepared.diagnostics];
-        // Linked from the files as they are now, so edits made in another editor play too, for this
-        // editor's platform; extension assets open in tabs play with their unsaved values.
-        const openExtensionAssets = new Map(getOpenDocuments().flatMap((doc) =>
-          doc.ref.kind === "extension-asset" && doc.content && typeof doc.content === "object"
-            ? [[doc.ref.path, doc.content as Record<string, unknown>] as const] : []));
-        setExtensionLibraries(await current(extensionService.gameLibraries(
-          { platform: editorBuildPlatform(), editor: true },
-          projectDocument.settings.extensionOverrides, projectDocument.settings.extensionSettings,
-          (path) => openExtensionAssets.get(path))));
+        setExtensionLibraries(await current(libraries));
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
         playContentActions.setPrepared(preparedPlayContent(prepared, {
@@ -934,12 +948,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           }
           throw new Error(`${describePlayAssetForMessage(assetRegistry, assetGuid)} (${chunkId}) is not prepared for an active consumer.`);
         });
-        setPlaySaveGame(await current(prepareSaveGameConfiguration({
-          storage: simulating ? simulationRef.current?.storage : undefined,
-          projectId: playRequestInputsRef.current.projectGuid,
-          settings: projectDocument?.settings.saveGame,
-          loadDefinition: loadSaveGameDefinition,
-        })));
+        setPlaySaveGame(await current(saveGame ?? prepareSaveGame()));
         setPrepareState(null);
 
         if (!inject && projectHasBlockingErrors(nextDiagnostics)) {

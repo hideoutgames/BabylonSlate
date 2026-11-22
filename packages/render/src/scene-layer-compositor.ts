@@ -671,7 +671,7 @@ export class SceneLayerCompositor {
       draw(record.layerId, () => {
         record.scene.autoClear = false;
         record.scene.autoClearDepthAndStencil = this.depthClears;
-        const result = this.renderLayer(record);
+        const result = this.renderLayer(record, this.validates(presentingLayers, record.layerId));
         if (!result.rendered) {
           this.drawHeld();
           return false;
@@ -703,7 +703,7 @@ export class SceneLayerCompositor {
       draw(record.layerId, () => {
         record.scene.autoClear = !cleared;
         record.scene.autoClearDepthAndStencil = !cleared || this.depthClears;
-        const result = this.renderLayer(record);
+        const result = this.renderLayer(record, this.validates(presentingLayers, record.layerId));
         if (!result.rendered) {
           failed = true;
           return false;
@@ -720,9 +720,11 @@ export class SceneLayerCompositor {
     stack.scene.autoClear = true;
     stack.scene.autoClearDepthAndStencil = true;
     const capture = activeRenderFrameCapture(this.engine);
+    // Only the release of the ended stack's last composite reads whether the passes' frame is ready to present.
+    const validate = this.validates();
     const result = capture
-      ? capture.stage(stack.scene, { name: "SceneLayer post-processing", kind: "composition" }, () => stack.renderer.render())
-      : stack.renderer.render();
+      ? capture.stage(stack.scene, { name: "SceneLayer post-processing", kind: "composition" }, () => stack.renderer.render(validate))
+      : stack.renderer.render(validate);
     if (!stack.blitReady) stack.blitReady = isSceneFrameReady(stack.blitScene);
     if (!result.rendered || !stack.blitReady) {
       this.drawStackHeld(stack);
@@ -733,15 +735,27 @@ export class SceneLayerCompositor {
     if (result.readyForPresentation) this.releaseHeld();
   }
 
-  private renderLayer(record: LayerRecord): ReturnType<SceneRenderCoordinator["render"]> {
+  /**
+   * Whether a layer's (or, with no layer, the passes') frame validates its presentation: a second strict readiness
+   * round after the draw, which only `readyForPresentation` reports. It is read while the layer presents for the first
+   * time (`presentingLayers`, its loading owner), while the ended stack's last composite waits for every layer to present
+   * without it (`held`), and in a captured frame report, which reports each stage as validated. A steady frame skips it,
+   * as the world view's steady frames do: its draw is the same either way.
+   */
+  private validates(presentingLayers?: ReadonlySet<string>, layerId?: string): boolean {
+    return (layerId !== undefined && presentingLayers?.has(layerId) === true) || this.held !== null ||
+      activeRenderFrameCapture(this.engine) !== undefined;
+  }
+
+  private renderLayer(record: LayerRecord, validate: boolean): ReturnType<SceneRenderCoordinator["render"]> {
     // Its panels frame themselves with the camera as bound for this frame, before the layer's cull reads the masks.
     record.panels?.beforeRender(record.camera, this.outputWidth, this.outputHeight, this.postProcessingEnabled());
     this.frameStats.scenes += 1;
     const frameCapture = activeRenderFrameCapture(this.engine);
     return frameCapture
       ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },
-        () => record.renderer.render())
-      : record.renderer.render();
+        () => record.renderer.render(validate))
+      : record.renderer.render(validate);
   }
 
   isReady(layerId?: string): boolean {

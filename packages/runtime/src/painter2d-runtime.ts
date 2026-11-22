@@ -33,7 +33,6 @@ export class Painter2DRuntime {
     if (component.classId !== "2DPainterComponent" || component.destroyed || !component.owner?.sceneLayerId || component.owner.destroyed) return false;
     if (!this.states.has(component)) this.payload(component);
     this.drawn.add(component);
-    const properties = parsePainter2DProperties({ ...Object.fromEntries(component.variables), commands: [] });
     const state = this.states.get(component)!;
     if (name === "painterClear") {
       if (state.commands.length) touch(state);
@@ -68,6 +67,8 @@ export class Painter2DRuntime {
       if (state.path.length >= PAINTER_MAX_PATH_SEGMENTS) return false;
       state.path.push(segment); return true;
     }
+    // Only a drawing call reads the component's style: path building (a vertex at a time) never parses it.
+    const properties = parsePainter2DProperties({ ...Object.fromEntries(component.variables), commands: [] });
     let path: PainterPathSegment[];
     let fill = properties.fill, stroke = properties.stroke;
     if (["painterFillPath", "painterStrokePath", "painterPushMask", "painterCutOutPath"].includes(name)) {

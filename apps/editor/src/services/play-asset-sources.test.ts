@@ -16,8 +16,12 @@ import {
   projectContentRoot,
   type ChunkInput,
 } from "@haptic/assets";
+<<<<<<< HEAD
 import { encodeHasset } from "@haptic/assets/hasset";
 import { acquirePlayAssetSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
+=======
+import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
+>>>>>>> hideout/fervent-carson-jrkgm5
 import type { OpenDocument } from "./document-service";
 import { PlayRequiredAssetError } from "./play-asset-problems";
 
@@ -370,6 +374,85 @@ describe("Play source ownership", () => {
     const cold = await acquirePlayAssetSources(host, ["scene-a"], { consumer: "Cold again", signal: new AbortController().signal });
     expect(compile).toHaveBeenCalledTimes(2);
     cold.release(); loading.dispose();
+  });
+
+  describe("Play's startup sources", () => {
+    async function startupFixture(diagnostics: Array<{ path: string; message: string }> = []) {
+      const storage = new MemoryStorageAdapter();
+      await storage.pickProjectFolder();
+      await storage.mkdir("assets");
+      for (const id of ["scene", "script", "system"]) await storage.writeBinary(`assets/${id}.hasset`, await encodeHasset({
+        header: {
+          guid: id, name: id, type: id === "scene" ? "Scene" : "Class", version: id === "scene" ? SCENE_SCHEMA_VERSION : 1, engineVersion: "0.0.0", mode: "thin",
+          dependencies: id === "scene" ? ["script"] : [], requiredDependencies: id === "scene" ? ["script"] : [], dependencyMetadataVersion: 1, requiredVariableNames: [],
+          payload: id === "scene" ? { actors: [] } : { nodes: [], edges: [], members: [] },
+        }, chunks: [],
+      }));
+      const registry = new AssetRegistry(storage);
+      await registry.mountRoot(projectContentRoot());
+      const loading = createRegistryAssetLoadingService(registry, { projectId: "startup" });
+      // A compile of every Class of the closure, as Play's compile makes one; diagnostics name their asset by path.
+      const compile = vi.fn(async (required: ReadonlySet<string>) => ({
+        bundles: ["script", "system"].filter((guid) => required.has(guid))
+          .map((guid) => ({ assetGuid: guid, classId: guid, source: `${guid}();`, anchors: [], entryPoints: [] })),
+        diagnostics: diagnostics.filter(({ path }) => required.has(path.slice("assets/".length, -".hasset".length)))
+          .map(({ path, message }) => ({ severity: "error" as const, code: "graph.invalid", message, assetGuid: path, graphId: path })),
+      }));
+      const host = { registry, project: createEmptyProject("Startup"), createScope: (owner: string) => loading.createScope(owner), compile };
+      return { loading, host, compile, storage };
+    }
+    const options = { consumer: "Play Scene", signal: new AbortController().signal };
+
+    it("compiles the project systems' scripts once, for the Scene's set and the session's own", async () => {
+      const { loading, host, compile } = await startupFixture();
+      const { prepared, persistent } = await acquirePlayStartupSources(host, "scene", ["system"], options);
+      expect(compile).toHaveBeenCalledOnce();
+      expect([...compile.mock.calls[0]![0]].sort()).toEqual(["scene", "script", "system"]);
+      expect(prepared.game.scripts.map((script) => script.classId).sort()).toEqual(["script", "system"]);
+      expect(persistent?.required).toEqual(new Set(["system"]));
+      expect(persistent?.game.scripts.map((script) => script.classId)).toEqual(["system"]);
+      // Leaving the startup Scene releases its set; the session keeps its project systems' scripts.
+      prepared.release();
+      loading.trim({ force: true });
+      expect(persistent?.game.scripts.map((script) => script.source)).toEqual(["system();"]);
+      persistent?.release();
+      loading.dispose();
+    });
+
+    it("fails the startup on a project system's compile error, and plays a Scene's with its diagnostics", async () => {
+      const failing = await startupFixture([{ path: "assets/system.hasset", message: "System is broken" }]);
+      await expect(acquirePlayStartupSources(failing.host, "scene", ["system"], options))
+        .rejects.toThrow("Asset preparation for Play Project Systems failed: System is broken");
+      failing.loading.trim({ force: true });
+      expect(failing.loading.snapshot().entries).toEqual([]);
+      failing.loading.dispose();
+      const scene = await startupFixture([{ path: "assets/script.hasset", message: "Script is broken" }]);
+      const { prepared, persistent } = await acquirePlayStartupSources(scene.host, "scene", ["system"], options);
+      expect(prepared.diagnostics.map((entry) => entry.message)).toEqual(["Script is broken"]);
+      expect(persistent?.diagnostics).toEqual([]);
+      expect(scene.compile).toHaveBeenCalledOnce();
+      prepared.release(); persistent?.release();
+      scene.loading.dispose();
+    });
+
+    it("compiles the session's set itself when a project system was saved after the Scene's set read it", async () => {
+      const { loading, host, compile, storage } = await startupFixture();
+      // Saved outside the registry while the Scene's set compiles: the session's set reads it at its new revision.
+      compile.mockImplementationOnce(async (required: ReadonlySet<string>) => {
+        await storage.writeBinary("assets/system.hasset", await encodeHasset({ header: {
+          guid: "system", name: "system", type: "Class", version: 1, engineVersion: "0.0.0", mode: "thin", dependencies: [], requiredDependencies: [],
+          dependencyMetadataVersion: 1, requiredVariableNames: [], payload: { nodes: [], edges: [], members: [], saved: true },
+        }, chunks: [] }));
+        return { bundles: [...required].filter((guid) => guid !== "scene")
+          .map((guid) => ({ assetGuid: guid, classId: guid, source: `${guid}(stale);`, anchors: [], entryPoints: [] })), diagnostics: [] };
+      });
+      const { prepared, persistent } = await acquirePlayStartupSources(host, "scene", ["system"], options);
+      expect(compile).toHaveBeenCalledTimes(2);
+      expect([...compile.mock.calls[1]![0]]).toEqual(["system"]);
+      expect(persistent?.game.scripts.map((script) => script.source)).toEqual(["system();"]);
+      prepared.release(); persistent?.release();
+      loading.dispose();
+    });
   });
 
   it("keeps compiled scripts across header changes outside the compile catalog and Scene edits that leave its script alone", async () => {

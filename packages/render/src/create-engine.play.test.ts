@@ -71,6 +71,7 @@ import { AREA_EMISSION_EDGE, decodeAreaEmission, encodeAreaEmission, createDefau
 import { createDefaultParticleGraphDocument } from "@haptic/particle-graph";
 import { encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
 import { nativePreparationForEngine } from "./native-preparation";
+import { SnapshotSampler } from "./snapshot-sync";
 import { acquireMaterialTexture, ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { encodeRgbaPng } from "./png-encode";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
@@ -3168,6 +3169,25 @@ describe("Play createEngine view", () => {
     expect(handle.lastActorPositions()[0]?.x).toBe(8);
   });
 
+  it("decodes no actor rows for snapshots that are superseded before a frame or a read samples them", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    const renderLoop = runRenderLoop.mock.calls[0]![0]!;
+    const sample = vi.spyOn(SnapshotSampler.prototype, "sample");
+    try {
+      // Several snapshots land between two frames (a slow frame, a sim catching up): only the last is ever drawn.
+      handle.pushSnapshot(actorSnapshot(1, 3));
+      handle.pushSnapshot(actorSnapshot(2, 5));
+      handle.pushSnapshot(actorSnapshot(3, 8));
+      expect(sample).not.toHaveBeenCalled();
+      renderLoop();
+      expect(handle.lastActorPositions()[0]?.x).toBe(8);
+    } finally {
+      sample.mockRestore();
+    }
+  });
+
   it("applies component motion against the same snapshot without recreating the actor visual", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
@@ -5743,6 +5763,13 @@ describe("Play createEngine view", () => {
     // Scene does not name (a spawned one) may move.
     expect([isStatic(4), isStatic(5), isStatic(6)]).toEqual([true, false, false]);
     expect(findSceneReflectionProbes(handle.scene)).toBeUndefined();
+    // Later frames: a still frame answers alike, and an actor spawned since is placed by its slot in the next frame.
+    handle.scene.incrementRenderId();
+    expect([isStatic(4), isStatic(5), isStatic(6)]).toEqual([true, false, false]);
+    handle.applyCommand({ type: "spawn", slotId: 7, actorGuid: "wall", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 7, actorGuid: "wall", meshAssetGuid: null, meshKind: "box" });
+    handle.scene.incrementRenderId();
+    expect([isStatic(4), isStatic(7)]).toEqual([true, true]);
   });
 
   it("forgets a despawned actor's reflection probes before another actor reuses its slot", () => {

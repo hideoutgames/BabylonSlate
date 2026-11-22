@@ -459,6 +459,34 @@ export function watchShadowDraws(scene: Scene, drawn: () => void): void {
   drawWatchers.set(scene, drawn);
 }
 
+/** Per Scene, an open `coalesceShadowDraws` scope: how deeply nested, and whether a map drew inside it. */
+const coalescing = new WeakMap<Scene, { depth: number; drawn: boolean }>();
+
+/**
+ * Runs `draw`, which draws atlas maps one after another with nothing in between that samples their views, and tells
+ * the Scene's watcher once at its end (if a map drew) rather than after each map: the block it writes then holds what
+ * every map was drawn with, as it would after the last map's notice.
+ */
+export function coalesceShadowDraws<T>(scene: Scene, draw: () => T): T {
+  let scope = coalescing.get(scene);
+  if (!scope) coalescing.set(scene, (scope = { depth: 0, drawn: false }));
+  scope.depth++;
+  try {
+    return draw();
+  } finally {
+    if (--scope.depth === 0 && scope.drawn) {
+      scope.drawn = false;
+      drawWatchers.get(scene)?.();
+    }
+  }
+}
+
+function noteShadowDrawn(scene: Scene): void {
+  const scope = coalescing.get(scene);
+  if (scope && scope.depth > 0) scope.drawn = true;
+  else drawWatchers.get(scene)?.();
+}
+
 /** An atlas map's tiles and the view each was last drawn with, which its shadow is sampled by. */
 export interface AtlasShadow {
   readonly tiles: readonly ShadowAtlasTile[];
@@ -594,7 +622,7 @@ function drawIntoTiles(
       cleared = false;
       partial = false;
     }
-    drawWatchers.get(scene)?.();
+    noteShadowDrawn(scene);
   });
 }
 

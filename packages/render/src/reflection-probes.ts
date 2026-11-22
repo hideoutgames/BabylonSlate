@@ -250,7 +250,15 @@ export class ReflectionProbes {
     }
     const view = best?.target?.view ?? null;
     if (cached && cached.view !== view) this.invalidateMesh(mesh);
-    this.assignments.set(mesh, { x: center.x, y: center.y, z: center.z, generation: this.generation, view });
+    // A moving mesh asks every frame: its record is rewritten in place (only this method reads it).
+    if (!cached) this.assignments.set(mesh, { x: center.x, y: center.y, z: center.z, generation: this.generation, view });
+    else {
+      cached.x = center.x;
+      cached.y = center.y;
+      cached.z = center.z;
+      cached.generation = this.generation;
+      cached.view = view;
+    }
     return view;
   }
 
