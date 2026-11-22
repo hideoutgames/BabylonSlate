@@ -15,7 +15,8 @@ import {
   type CubeFaces,
   type HdrEnvironmentConverter,
 } from "./hdr-environment";
-import { decodeRadianceHdr } from "./radiance-hdr";
+import { ImportLimitError } from "./import-limits";
+import { decodeRadianceHdr, radianceDownsampleFactor } from "./radiance-hdr";
 import { AssetRegistry } from "./registry";
 
 type Rgb = readonly [number, number, number];
@@ -74,6 +75,31 @@ describe("Radiance HDR decoding", () => {
     expect(() => decodeRadianceHdr(build("P6\n"))).toThrow(/signature/);
     const source = buildRadianceHdrFixture({ width: 8, height: 2, color: () => [1, 1, 1], runLength: true });
     expect(() => decodeRadianceHdr(source.subarray(0, source.length - 1))).toThrow(/truncated/);
+  });
+
+  describe("a tall panorama declared in a small file", () => {
+    // `-Y 32767 +X 2048` at full size is 805 MB of floats; this file holds 100 KB of pixel data.
+    const header = new TextEncoder().encode("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 32767 +X 2048\n");
+    const bytes = new Uint8Array(header.length + 100 * 1024);
+    bytes.set(header);
+
+    it("downsamples by height as well as width to stay within the decoded-pixel cap", () => {
+      // ceil(2048 / 2) × ceil(32767 / 2) = 1,024 × 16,384 = 16,777,216 pixels, the cap exactly.
+      expect(radianceDownsampleFactor(2048, 32767)).toBe(2);
+      expect(radianceDownsampleFactor(4096, 2048)).toBe(1);
+      expect(radianceDownsampleFactor(4096, 2048, 4)).toBe(4);
+      expect(radianceDownsampleFactor(32767, 32767)).toBe(8);
+    });
+
+    it("refuses a factor that would decode past the cap, and data too short for its scanlines, before allocating", () => {
+      expect(() => decodeRadianceHdr(bytes, 1)).toThrow(ImportLimitError);
+      expect(() => decodeRadianceHdr(bytes, 1)).toThrow(/67,106,816 pixels; the import limit is 16,777,216 pixels/);
+      expect(() => decodeRadianceHdr(bytes, 2)).toThrow(/truncated/);
+    });
+
+    it("fails conversion at once rather than decoding at full height", async () => {
+      await expect(convertRadianceHdrToEnvironmentDds(bytes, { faceSize: 512 })).rejects.toThrow(/truncated/);
+    });
   });
 });
 
