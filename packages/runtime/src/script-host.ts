@@ -447,14 +447,13 @@ export class ScriptHost {
       onTick: (self, ctx: TickContext) => {
         // Input first, as the tick's Event Tick may act on it.
         for (const loaded of this.inputScriptsFor(classId)) {
-          this.dispatchEvent(loaded, INPUT_EVENT, self, ctx.dt, ctx.tickIndex, {});
+          // No arguments: the context reads the shared frozen empty record.
+          this.dispatchEvent(loaded, INPUT_EVENT, self, ctx.dt, ctx.tickIndex);
           if (self.destroyed) return;
         }
         const loaded = this.lifecycleScriptsFor(classId, "onTick");
         if (!loaded) return;
-        this.dispatchEvent(
-          loaded, "onTick", self, ctx.dt, ctx.tickIndex, {},
-        );
+        this.dispatchEvent(loaded, "onTick", self, ctx.dt, ctx.tickIndex);
       },
       onDestroyed: (self) => {
         const loaded = this.lifecycleScriptsFor(classId, "onDestroyed");

@@ -48,6 +48,8 @@ export type CodegenState = {
   readonly index: GraphIndex;
   readonly options: CompileOptions;
   readonly hoisted: HoistChunk[];
+  /** Module-scope location constant per node a loop guard names, so a guard allocates nothing. */
+  readonly loopLocations: Map<string, string>;
   readonly body: BodyLine[];
   readonly loopStack: LoopFrame[];
   nextLabel: number;
@@ -113,6 +115,7 @@ export function createCodegenState(
     index,
     options,
     hoisted: [],
+    loopLocations: new Map(),
     body: [],
     loopStack: [],
     nextLabel: 0,
@@ -202,9 +205,15 @@ export function traceProbe(call: string): string {
 }
 
 export function loopCheck(s: CodegenState, nodeId: string): string {
-  return `ctx.checkInfiniteLoop(${JSON.stringify({
-    assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId,
-  })});`;
+  let name = s.loopLocations.get(nodeId);
+  if (name === undefined) {
+    name = `__loop_${s.loopLocations.size}`;
+    s.loopLocations.set(nodeId, name);
+    s.hoisted.push({ nodeId, source: `const ${name} = Object.freeze(${JSON.stringify({
+      assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId,
+    })});` });
+  }
+  return `ctx.checkInfiniteLoop(${name});`;
 }
 
 /** Starts a statement epoch on a line of its own. */

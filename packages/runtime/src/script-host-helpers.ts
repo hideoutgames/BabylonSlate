@@ -55,28 +55,32 @@ export function transformTarget(target: unknown): Actor | null {
 
 type ScriptNumbers<T extends string> = Partial<Record<T, unknown>> | null | undefined;
 
-/** Coerced finite components, a missing one taking its fallback; null when any is not finite. */
-function finiteRecord<T extends string>(value: ScriptNumbers<T>, fallbacks: Record<T, number>): Record<T, number> | null {
-  if (!value || typeof value !== "object") return null;
-  const result = {} as Record<T, number>;
-  for (const key of Object.keys(fallbacks) as T[]) {
-    const component = Number(value[key] ?? fallbacks[key]);
-    if (!Number.isFinite(component)) return null;
-    result[key] = component;
-  }
-  return result;
-}
+// Each component is coerced with `Number`, a missing (null or undefined) one taking its fallback; the
+// result is null when any is not finite.
 
 export function finiteVector(value: ScriptNumbers<"x" | "y" | "z">, fallback: number): Vec3 | null {
-  return finiteRecord(value, { x: fallback, y: fallback, z: fallback });
+  if (!value || typeof value !== "object") return null;
+  const x = Number(value.x ?? fallback);
+  const y = Number(value.y ?? fallback);
+  const z = Number(value.z ?? fallback);
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? { x, y, z } : null;
 }
 
 export function finiteRotator(value: ScriptNumbers<"pitch" | "yaw" | "roll">): { pitch: number; yaw: number; roll: number } | null {
-  return finiteRecord(value, { pitch: 0, yaw: 0, roll: 0 });
+  if (!value || typeof value !== "object") return null;
+  const pitch = Number(value.pitch ?? 0);
+  const yaw = Number(value.yaw ?? 0);
+  const roll = Number(value.roll ?? 0);
+  return Number.isFinite(pitch) && Number.isFinite(yaw) && Number.isFinite(roll) ? { pitch, yaw, roll } : null;
 }
 
 export function finiteQuat(value: ScriptNumbers<"x" | "y" | "z" | "w">): { x: number; y: number; z: number; w: number } | null {
-  return finiteRecord(value, { x: 0, y: 0, z: 0, w: 1 });
+  if (!value || typeof value !== "object") return null;
+  const x = Number(value.x ?? 0);
+  const y = Number(value.y ?? 0);
+  const z = Number(value.z ?? 0);
+  const w = Number(value.w ?? 1);
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && Number.isFinite(w) ? { x, y, z, w } : null;
 }
 
 export function asScriptVec3(
