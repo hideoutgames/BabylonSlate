@@ -4360,8 +4360,9 @@ describe("Play createEngine view", () => {
     });
     handle.scene.onBeforeRenderObservable.notifyObservers(handle.scene);
     await handle.prewarmSceneMaterials();
-    expect(handle.renderTaskNames()).toContain("Scene Effects Bloom");
-    expect(handle.postProcessPassCount()).toBe(1);
+    // Display Space bloom alone: its blurs, then its merge as a pass of its own.
+    expect(handle.renderTaskNames()).toEqual(expect.arrayContaining(["Scene Effects Bloom", "Scene Effects Bloom Merge"]));
+    expect(handle.postProcessPassCount()).toBe(2);
   });
 
   it("keeps overlay 2DMaterial assignMaterial as an overlay unlit compile of a User Interface Material", () => {
