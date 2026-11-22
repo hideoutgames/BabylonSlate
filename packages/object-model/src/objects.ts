@@ -258,6 +258,11 @@ export class EngineObject {
   private readonly hooks: LifecycleHooks;
   private _destroyed = false;
   private _stateReleased = false;
+  /**
+   * The collection cycle that last reached this object (`ObjectCollector`), or 0. Cycle numbers are unique
+   * across collectors, so a stale value never reads as reached.
+   */
+  collectorMark = 0;
 
   /**
    * Destruction finished and `releaseState` dropped the object's state. Unlike `destroyed`, which its own
