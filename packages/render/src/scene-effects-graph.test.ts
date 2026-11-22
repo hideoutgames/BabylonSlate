@@ -259,6 +259,34 @@ it.each([
   chain.disposeTasks();
 });
 
+const halfFloatOutput = (graph: FrameGraph) => graph.textureManager.createRenderTargetTexture("Half-float output", {
+  size: { width: 64, height: 32 }, sizeIsPercentage: false,
+  options: { createMipMaps: false, types: [Constants.TEXTURETYPE_HALF_FLOAT], formats: [Constants.TEXTUREFORMAT_RGBA], samples: 1, useSRGBBuffers: [false] },
+});
+
+// Where a stroke lands, the pass rounds its result as the target it writes stored it before the blend read it: by the
+// target's type, never the source's.
+it.each([
+  ["the RGBA8 output, over a half-float source", LINEAR, {}, "OUTLINE_UNORM8"],
+  ["a half-float output, over an RGBA8 source", VIGNETTE, { output: "half" }, "OUTLINE_HALF_FLOAT"],
+  ["its own RGBA8 intermediate before FXAA", VIGNETTE, { fxaa: true }, "OUTLINE_UNORM8"],
+  ["its own half-float intermediate before FXAA", LINEAR, { fxaa: true }, "OUTLINE_HALF_FLOAT"],
+] as const)("composites the stroke as written into %s", async (_, settings, extra, stored) => {
+  const { scene, graph, build, fragments } = host();
+  const { outlines } = outlined(scene, graph);
+  const { chain } = build(settings, {
+    outlines, fxaa: "fxaa" in extra,
+    ...("output" in extra ? { outputTarget: halfFloatOutput(graph) } : {}),
+  });
+  await graph.buildAsync();
+  const display = chain.tasks.find((task) => task instanceof FrameGraphDisplayColorTask) as FrameGraphDisplayColorTask;
+  const textures = graph.textureManager;
+  expect(textures.getTextureCreationOptions(display.outputTexture).options.types?.[0]).toBe(
+    stored === "OUTLINE_UNORM8" ? Constants.TEXTURETYPE_UNSIGNED_BYTE : Constants.TEXTURETYPE_HALF_FLOAT);
+  expect(fragments(DISPLAY_COLOR_SHADER)[0]!.defines.match(/OUTLINE_(UNORM8|HALF_FLOAT)/g)).toEqual([stored]);
+  chain.disposeTasks();
+});
+
 it("binds at most ten samplers in the fused pass, none of them its own target", async () => {
   const { scene, graph, requests } = host();
   // The worst case: bloom, a LUT and every outline group, with the strict group's depth.

@@ -1403,7 +1403,9 @@ describe("selection outline changes", () => {
     renderer.dispose();
   });
 
-  it("switches the Display Color pass between its programs with and without the stroke as a selection comes and goes, linking each once", async () => {
+  it.each(["the view", "an effects key change", "a lost context"] as const)(
+    "switches the Display Color pass between its programs with and without the stroke as a selection comes and goes, linking each once, until %s lets them go",
+    async (ending) => {
     const { engine, scene, renderer, outlines } = outlinedScene(false);
     updateSceneRenderingSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, vignette: { enabled: true, weight: 2, color: [0, 0, 0] } } });
     const programs: Effect[] = [];
@@ -1443,10 +1445,47 @@ describe("selection outline changes", () => {
     expect(renderer.diagnostics().graphBuilds).toBe(graphBuilds + 3);
     expect(new Set(programs)).toEqual(new Set([plain, fused]));
     expect([plain!.isDisposed, fused.isDisposed]).toEqual([false, false]);
-    // The view lets both go with it.
-    renderer.dispose();
-    await Promise.resolve();
-    expect(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)).not.toContain(plain);
+    const cached = () => Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects);
+    const vignette = (weight: number) => updateSceneRenderingSettings(scene, {
+      mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, vignette: { enabled: true, weight, color: [0, 0, 0] } },
+    });
+    const keptUnder = async (weight: number) => {
+      vignette(weight);
+      await settle();
+      outlines.setSelection([]);
+      await settle();
+      return programs.at(-1)!;
+    };
+    switch (ending) {
+      case "the view": {
+        // Only the kept program holds the plain one now: the view lets it go with it.
+        renderer.dispose();
+        expect(plain!.isDisposed).toBe(true);
+        expect(cached()).not.toContain(plain);
+        break;
+      }
+      case "an effects key change": {
+        // Other settings: other programs. The ones kept for the earlier key go as the graph for the new one is built.
+        const other = await keptUnder(3);
+        expect(other).not.toBe(plain);
+        expect([plain!.isDisposed, fused.isDisposed]).toEqual([true, true]);
+        expect(cached()).not.toContain(plain);
+        expect(cached()).not.toContain(fused);
+        renderer.dispose();
+        break;
+      }
+      case "a lost context": {
+        // Deselected: the fused program is kept, held by nothing else. A lost context lets it go, as the Engine's other
+        // kept Effects go, rather than have a restore link it again.
+        outlines.setSelection([]);
+        await settle();
+        expect(fused.isDisposed).toBe(false);
+        engine.onContextLostObservable.notifyObservers(engine);
+        expect(fused.isDisposed).toBe(true);
+        renderer.dispose();
+        break;
+      }
+    }
   });
 
   it("probes the scene again when a selection gives an instance source its identity stream", async () => {

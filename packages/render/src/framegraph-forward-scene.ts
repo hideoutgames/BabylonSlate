@@ -37,6 +37,7 @@ import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Observable, Observer } from "@babylonjs/core/Misc/observable";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
@@ -463,9 +464,11 @@ export class ForwardSceneFrameGraph {
    * The Display Color program of the last released graph whose pass composited the outline stroke, and of the last
    * whose pass did not, under one effects key, one reference each. The stroke is a define of that pass, so a view whose
    * outlines come and go (an editor selection) switches between two programs; kept, each links once instead of at every
-   * toggle once the graph that drew it is gone. Dropped when the effects key changes and with the view.
+   * toggle once the graph that drew it is gone. Dropped when the effects key changes, with the view and, as the Engine's
+   * other kept Effects are (`effect-bridge.ts`), with a lost context: a WebGL2 restore relinks every Effect left in the
+   * Engine's cache, and the rebuilt graph links again only what it draws.
    */
-  private displayColorPrograms: { key: string; effects: Map<boolean, Effect> } | undefined;
+  private displayColorPrograms: { key: string; effects: Map<boolean, Effect>; lost: Observer<AbstractEngine> } | undefined;
   private postProcessOwner: ScenePostProcessOwner | undefined;
   private postProcessGraph: ScenePostProcessGraph | undefined;
   private effectsGraph: SceneEffectsGraph | undefined;
@@ -1510,7 +1513,10 @@ export class ForwardSceneFrameGraph {
   /** Keeps `effect`, the Display Color program of a released graph (`displayColorPrograms`). */
   private keepDisplayColorProgram(key: string, outline: boolean, effect: Effect): void {
     if (this.displayColorPrograms?.key !== key) this.releaseDisplayColorPrograms();
-    const programs = this.displayColorPrograms ??= { key, effects: new Map() };
+    const engine = this.scene.getEngine();
+    const programs = this.displayColorPrograms ??= {
+      key, effects: new Map(), lost: engine.onContextLostObservable.add(() => this.releaseDisplayColorPrograms()),
+    };
     const kept = programs.effects.get(outline);
     if (kept === effect) return;
     effect._refCount += 1;
@@ -1519,8 +1525,11 @@ export class ForwardSceneFrameGraph {
   }
 
   private releaseDisplayColorPrograms(): void {
-    for (const effect of this.displayColorPrograms?.effects.values() ?? []) if (!effect.isDisposed) effect.dispose();
+    const programs = this.displayColorPrograms;
+    if (!programs) return;
     this.displayColorPrograms = undefined;
+    this.scene.getEngine().onContextLostObservable.remove(programs.lost);
+    for (const effect of programs.effects.values()) if (!effect.isDisposed) effect.dispose();
   }
 
   private unavailable(camera: Camera): string | undefined {
