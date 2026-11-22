@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { macGameNames } from "../../../packages/exporter/src/native-desktop";
+import { macGameNames } from "@haptic/exporter/native-desktop";
 import { helperBundleId, macSigningIdentities, packageMacGame, type MacGamePackageRequest, type RunCommand } from "./mac-game-package";
 
 const MACH_O = Buffer.from([0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0]);

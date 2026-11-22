@@ -1,4 +1,12 @@
-import { PARTICLE_CPU_CAPACITY_BUDGET, findGraphCycle, globalParameterNodeWarning, type GlobalParameterCatalog } from "@haptic/core";
+import {
+  PARTICLE_CPU_CAPACITY_BUDGET,
+  findGraphCycle,
+  findPin,
+  globalParameterNodeWarning,
+  indexIncomingPinEdges,
+  type GlobalParameterCatalog,
+  type IncomingPinEdges,
+} from "@haptic/core";
 import { PARTICLE_GLOBAL_PARAMETER_NODE_TYPE } from "./global-parameter";
 import {
   PARTICLE_PARAMETER_NODE_TYPE,
@@ -6,7 +14,6 @@ import {
   PARTICLE_UNSUPPORTED_V1_TYPES,
   particleNodeDefinitionFor,
   type ParticleNodeDefinition,
-  type ParticlePinDefinition,
 } from "./catalog";
 import type {
   ParticleGraphDocument,
@@ -59,19 +66,8 @@ interface GraphLike {
   edges: readonly ParticleGraphEdge[];
 }
 
-/** The edge into an input pin; `undefined` when the pin is unwired. */
-export type ParticleIncomingEdges = (nodeId: string, pinId: string) => ParticleGraphEdge | undefined;
-
-/** First edge into each input pin, so duplicate wires resolve as `edges.find` did. */
-export function indexParticleIncomingEdges(graph: GraphLike): ParticleIncomingEdges {
-  const byNode = new Map<string, Map<string, ParticleGraphEdge>>();
-  for (const edge of graph.edges) {
-    let pins = byNode.get(edge.targetNodeId);
-    if (!pins) byNode.set(edge.targetNodeId, (pins = new Map()));
-    if (!pins.has(edge.targetPinId)) pins.set(edge.targetPinId, edge);
-  }
-  return (nodeId, pinId) => byNode.get(nodeId)?.get(pinId);
-}
+/** The edge into an input pin (the first of a pin wired twice); `undefined` when the pin is unwired. */
+type ParticleIncomingEdges = IncomingPinEdges<ParticleGraphEdge>;
 
 /**
  * Node ids on the Particle spine, Create → … → Emitter Output (the update
@@ -105,13 +101,6 @@ const MOTION_UPDATES = new Set(["update.position", "update.basicPosition"]);
 const NO_PARTICLE_CONTEXT_UPDATES = new Set(["update.alignAngle", "force.attractor", "sprite.setup"]);
 /** Update nodes that change the cell a Sprite Sheet on the spine set up. */
 const SPRITE_CELL_UPDATES = new Set(["update.basicSprite", "update.spriteCell"]);
-
-function pinById(
-  pins: readonly ParticlePinDefinition[],
-  id: string,
-): ParticlePinDefinition | undefined {
-  return pins.find((pin) => pin.id === id);
-}
 
 /**
  * The first ancestor (including `startNodeId`) that must not feed a value
@@ -255,7 +244,7 @@ function validateGraph(graph: GraphLike, incoming: ParticleIncomingEdges): {
     }
     const sourceDefinition = definitions.get(source.id);
     const targetDefinition = definitions.get(target.id);
-    if (sourceDefinition && !pinById(sourceDefinition.outputs, edge.sourcePinId)) {
+    if (sourceDefinition && !findPin(sourceDefinition.outputs, edge.sourcePinId)) {
       diagnostics.push({
         code: "particle.unknownPin",
         message: `"${sourceDefinition.title}" has no output pin "${edge.sourcePinId}"`,
@@ -265,7 +254,7 @@ function validateGraph(graph: GraphLike, incoming: ParticleIncomingEdges): {
         pinId: edge.sourcePinId,
       });
     }
-    if (targetDefinition && !pinById(targetDefinition.inputs, edge.targetPinId)) {
+    if (targetDefinition && !findPin(targetDefinition.inputs, edge.targetPinId)) {
       diagnostics.push({
         code: "particle.unknownPin",
         message: `"${targetDefinition.title}" has no input pin "${edge.targetPinId}"`,
@@ -304,7 +293,7 @@ function validateGraph(graph: GraphLike, incoming: ParticleIncomingEdges): {
       nodeId: cycle[0],
     });
   } else {
-    resolver = createParticleTypeResolver(graph);
+    resolver = createParticleTypeResolver(graph, incoming);
     for (const nodeId of resolver.conflicts()) {
       diagnostics.push({
         code: "particle.genericConflict",
@@ -317,8 +306,8 @@ function validateGraph(graph: GraphLike, incoming: ParticleIncomingEdges): {
       const sourceDefinition = definitions.get(edge.sourceNodeId);
       const targetDefinition = definitions.get(edge.targetNodeId);
       if (!sourceDefinition || !targetDefinition) continue;
-      const targetPin = pinById(targetDefinition.inputs, edge.targetPinId);
-      if (!targetPin || !pinById(sourceDefinition.outputs, edge.sourcePinId)) continue;
+      const targetPin = findPin(targetDefinition.inputs, edge.targetPinId);
+      if (!targetPin || !findPin(sourceDefinition.outputs, edge.sourcePinId)) continue;
       const from = resolver.outputType(edge.sourceNodeId, edge.sourcePinId);
       const to = resolver.inputType(edge.targetNodeId, edge.targetPinId);
       if (!from) continue;
@@ -384,7 +373,7 @@ function validateSpine(
   const usedParticleOutputs = new Set<string>();
   for (const edge of graph.edges) {
     const definition = definitions.get(edge.sourceNodeId);
-    const pin = definition ? pinById(definition.outputs, edge.sourcePinId) : undefined;
+    const pin = definition ? findPin(definition.outputs, edge.sourcePinId) : undefined;
     if (pin?.type.kind !== "particle") continue;
     const key = `${edge.sourceNodeId}:${edge.sourcePinId}`;
     if (usedParticleOutputs.has(key)) {
@@ -583,7 +572,7 @@ export function checkParticleGraphDocument(
 ): { diagnostics: ParticleGraphDiagnostic[]; resolver: ParticleTypeResolver | null } {
   // Wires through Reroutes are checked as the direct wires they stand for; a dangling knot is no error.
   const doc = collapseParticleReroutes(authored);
-  const incoming = indexParticleIncomingEdges(doc);
+  const incoming = indexIncomingPinEdges(doc.edges);
   const { diagnostics, definitions, resolver } = validateGraph(doc, incoming);
   diagnostics.push(...validateSpine(doc, definitions, incoming));
   diagnostics.push(...validateSpawns(doc, context));

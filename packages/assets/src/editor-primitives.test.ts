@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { decodeAssetDocument } from "./asset-document";
-import { buildEditorPrimitivesFiles, EDITOR_PRIMITIVES_PLUGIN_GUID } from "./editor-primitives";
+import { buildEditorPrimitivesFiles, EDITOR_PRIMITIVES_PLUGIN_GUID } from "./test-support/editor-primitives";
 import type { ProjectTreeFile } from "./hproject";
 import { extractGltfCollisionMesh } from "./glb-geometry";
 import { decodeHassetChunk, readHassetHeader } from "./hasset";

@@ -31,7 +31,7 @@ it("binds distinct tints through a shared frozen native material without changin
     // A shipped Engine has uniform buffers, so the tint is written to the material's buffer for each mesh's draw.
     const write = vi.spyOn(material["_uniformBuffer"], "updateFloat4");
     material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
-    expect(write).toHaveBeenCalledWith("slateOverlayTint", ...(mesh === first ? [1, 0.5, 0.25, 0.2] : [0.25, 1, 0.5, 0.8]));
+    expect(write).toHaveBeenCalledWith("hapticOverlayTint", ...(mesh === first ? [1, 0.5, 0.25, 0.2] : [0.25, 1, 0.5, 0.8]));
     write.mockRestore();
   }
   expect(material.emissiveColor.asArray()).toEqual([0.8, 0.4, 0.2]);

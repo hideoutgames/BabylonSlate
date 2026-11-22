@@ -8,7 +8,7 @@ import { build, type Plugin } from "vite";
 import { selectPlayerRuntimeFiles } from "@haptic/exporter";
 import { RECAST_WASM_FILE, recastHostedWasmVitePlugin } from "./vite-recast-wasm";
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 /** Recast's entry, as `@haptic/navigation` imports it. */
 const RECAST_CORE = createRequire(join(REPO_ROOT, "packages/navigation/package.json")).resolve("@recast-navigation/core");
 const RECAST_WASM_DIST = dirname(createRequire(RECAST_CORE).resolve("@recast-navigation/wasm"));
@@ -79,7 +79,7 @@ const wasmFiles = (files: Output[]) => files.filter((file) => file.fileName.ends
 const embedsWasm = (script: { code: string }) => script.code.includes("AGFzbQ");
 
 type Handler = (this: { error: (message: string) => never; emitFile: () => string }, code: string, id: string) => { code: string } | undefined;
-const handler = (recastHostedWasmVitePlugin().transform as { handler: Handler }).handler;
+const handler = (recastHostedWasmVitePlugin().transform as unknown as { handler: Handler }).handler;
 const context = { error: (message: string): never => { throw new Error(message); }, emitFile: () => "ref" };
 
 describe("recastHostedWasmVitePlugin", () => {

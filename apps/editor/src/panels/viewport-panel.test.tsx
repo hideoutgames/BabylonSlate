@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
 import { syncEditorPlayState } from "@haptic/render";

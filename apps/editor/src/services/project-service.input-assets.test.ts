@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
+import { installMinimalProject } from "@haptic/assets/test-support/minimal-project";
 import { ProjectService } from "./project-service";
 
 describe("default input assets", () => {

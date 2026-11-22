@@ -21,7 +21,7 @@ const foamDrift = { x: 0, z: 0 };
 
 /**
  * Registers `offset` (local X, Z; read live) as the translation of `mesh`'s uploaded rest positions: Global Water
- * recentres by moving this instead of re-uploading its grid. It is per mesh, not per material, and `slateWaterGridOffset`
+ * recentres by moving this instead of re-uploading its grid. It is per mesh, not per material, and `hapticWaterGridOffset`
  * carries it to the Water Waves node's vertex shader (`WaterVertexWaves.bind`).
  */
 export function setWaterGridOffsetSource(mesh: AbstractMesh, offset: Float64Array): void {
@@ -47,7 +47,7 @@ export interface WaterUniformSink {
   setTexture(name: string, texture: BaseTexture | null): unknown;
 }
 
-/** Floats of the spectrum's vertex uniforms (`slateWaterFft` and every cascade's vec4) written by `waterSpectrumUniforms`. */
+/** Floats of the spectrum's vertex uniforms (`hapticWaterFft` and every cascade's vec4) written by `waterSpectrumUniforms`. */
 const SPECTRUM_UNIFORM_FLOATS = (1 + WATER_FFT_CASCADES_MAX) * 4;
 
 /**
@@ -83,8 +83,8 @@ function waterSpectrumUniforms(scene: Scene, water: WaterDefinition, scale: numb
 function bindWaterVertexUniforms(
   sink: WaterUniformSink, scene: Scene, grid: ArrayLike<number>, bankFade: number, spectrum: Float32Array, band: WaterFftResult | null,
 ): void {
-  sink.setFloat4("slateWaterGridOffset", grid[0]!, grid[1]!, grid[2]!, 0);
-  sink.setFloat4("slateWaterSwellInfo", bankFade, 0, 0, 0);
+  sink.setFloat4("hapticWaterGridOffset", grid[0]!, grid[1]!, grid[2]!, 0);
+  sink.setFloat4("hapticWaterSwellInfo", bankFade, 0, 0, 0);
   for (let i = 0; i < 1 + WATER_FFT_CASCADES_MAX; i++) {
     sink.setFloat4(FFT_UNIFORMS[i]!, spectrum[i * 4]!, spectrum[i * 4 + 1]!, spectrum[i * 4 + 2]!, spectrum[i * 4 + 3]!);
   }
@@ -107,7 +107,7 @@ export class WaterVertexWaves {
     this.water = water;
     this.body = body;
   }
-  /** The spectrum's cascades this surface's material compiles (`SLATE_WATER_FFT`): the device-effective FFT Cascades. */
+  /** The spectrum's cascades this surface's material compiles (`HAPTIC_WATER_FFT`): the device-effective FFT Cascades. */
   cascades(scene: Scene): number {
     return Math.max(1, sceneWaterQualityDeviceClamp(scene).quality.fftCascades);
   }

@@ -18,13 +18,13 @@ import {
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
-import { sceneInstancePool, setSceneInstancing } from "../../../../packages/render/src/instance-pool";
-import { createPooledPrimitiveVisual } from "../../../../packages/render/src/pooled-primitive-visual";
-import { setActorMeshMaterial } from "../../../../packages/render/src/pooled-visuals";
-import { applyWorldVisualGroup } from "../../../../packages/render/src/sorting";
-import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { allowSceneOcclusionCulling } from "../../../../packages/render/src/view-occlusion";
+import { readEngineDrawCalls } from "@haptic/render/editor-proofs";
+import { sceneInstancePool, setSceneInstancing } from "@haptic/render/editor-proofs";
+import { createPooledPrimitiveVisual } from "@haptic/render/editor-proofs";
+import { setActorMeshMaterial } from "@haptic/render/editor-proofs";
+import { applyWorldVisualGroup } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
+import { allowSceneOcclusionCulling } from "@haptic/render/editor-proofs";
 
 const WIDTH = 192;
 const HEIGHT = 108;

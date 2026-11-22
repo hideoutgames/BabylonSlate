@@ -23,12 +23,12 @@ import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core
 import { applyAuthoredLightProperties, compileMaterialPlan, createPrimitiveMesh, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { encodeGlbJsonBin } from "../../../../packages/assets/src/importers/glb-parse";
-import { cullSceneByWhatShows } from "../../../../packages/render/src/cull-accuracy";
-import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
-import { loadModelContainer } from "../../../../packages/render/src/model-container";
-import { followsPose, setScenePoseBounds } from "../../../../packages/render/src/pose-bounds";
-import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
+import { encodeGlbJsonBin } from "@haptic/assets";
+import { cullSceneByWhatShows } from "@haptic/render/editor-proofs";
+import { readEngineDrawCalls } from "@haptic/render/editor-proofs";
+import { loadModelContainer } from "@haptic/render/editor-proofs";
+import { followsPose, setScenePoseBounds } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
 
 const WIDTH = 240;
 const HEIGHT = 160;

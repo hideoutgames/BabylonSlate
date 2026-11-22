@@ -7,7 +7,7 @@ import { build, type Plugin } from "vite";
 import { selectPlayerRuntimeFiles } from "@haptic/exporter";
 import { RAPIER_WASM_FILE, rapierHostedWasmVitePlugin } from "./vite-rapier-wasm";
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const RAPIER_DIST = dirname(createRequire(join(REPO_ROOT, "packages/physics/package.json")).resolve("@dimforge/rapier2d-deterministic-compat"));
 const RAPIER_GLUE = join(RAPIER_DIST, "rapier.mjs");
 /** The package also ships its wasm as a file: the bytes its glue embeds as base64. */
@@ -96,7 +96,7 @@ describe("rapierHostedWasmVitePlugin", () => {
 
   it("fails the build when the Rapier glue no longer embeds one base64 wasm", () => {
     const plugin = rapierHostedWasmVitePlugin();
-    const transform = plugin.transform as {
+    const transform = plugin.transform as unknown as {
       handler: (this: { error: (message: string) => never; emitFile: () => string }, code: string, id: string) => unknown;
     };
     const context = { error: (message: string): never => { throw new Error(message); }, emitFile: () => "ref" };

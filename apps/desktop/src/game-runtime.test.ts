@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
-import { readZipEntries } from "../../../packages/exporter/src/zip-merge";
+import { readZipEntries } from "@haptic/exporter/zip-merge";
 import { isRuntimeFileName, ownRuntimeZip } from "./game-runtime";
 
 let dir = "";

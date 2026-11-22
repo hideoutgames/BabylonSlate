@@ -4,8 +4,8 @@ import { useState } from "react";
 import { holdDelayMs, useContextMenu } from "@haptic/editor-kit";
 import { defaultEngineSettings } from "@haptic/vfs";
 import type { ViewportZoomDrive } from "@haptic/render";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
-import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
+import { MemoryAppSettingsStore } from "@haptic/vfs/test-support/memory-app-settings";
 import { AppSettingsProvider, useAppSettings } from "../context/app-settings-context";
 import { ViewportZoomControls } from "./viewport-zoom-controls";
 

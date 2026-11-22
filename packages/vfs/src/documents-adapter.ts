@@ -1,4 +1,4 @@
-import { BabylonSlateScopedStorage, decodeBase64, encodeBase64, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
+import { BabylonSlateScopedStorage, decodeBase64, encodeBase64, type BabylonSlateScopedStoragePlugin, type NativeRangeOptions, type NativeRangeRead } from "./capacitor-scoped-storage";
 import { rethrowNativeStorageRangeError, rethrowStorageReadFailure, StorageReadCounter, utf8ByteLength, validateStorageRange, validateStorageRangeResult } from "./storage-range";
 import { StorageNotFoundError } from "@haptic/core";
 import type {
@@ -6,17 +6,38 @@ import type {
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
+  StorageReadOptions,
 } from "@haptic/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { getHostPlatform, type HostPlatform } from "./platform";
 import { projectFolderName, projectRelativePath } from "./project-path";
 import { isAppOwnedFolder } from "./library-folders";
-import { isStagedWrite } from "./staged-write";
+import { isStagedWrite, stagedWriteName } from "./staged-write";
+import { nativeBinaryBridge, type NativeBinaryBridge, type NativeBinaryBridgePlugin, type NativeBinaryRange } from "./native-binary-bridge";
 
-const PROJECTS_ROOT = "BabylonSlate/projects";
+/** Where projects live in app storage; the native plugin accepts app-storage paths under this root only. */
+export const PROJECTS_ROOT = "BabylonSlate/projects";
 
-/** Files-visible Documents on iPad; app-private Data on Android, whose public Documents needs a picker. */
-function mobileDocumentsDirectory(platform: HostPlatform = getHostPlatform()): Directory {
+/**
+ * Where app-private data (derived data) lives in Capacitor `Directory.Library`.
+ * iOS: `Library/Application Support/Haptic`, hidden from the Files app, never
+ * purged, and excluded from backup by the storage plugin at launch. Android:
+ * `filesDir/Haptic`, excluded from cloud backup by the backup rules. The
+ * native plugin mirrors both roots.
+ */
+export function libraryRoot(platform: HostPlatform = getHostPlatform()): string {
+  return platform === "ios" ? "Application Support/Haptic" : "Haptic";
+}
+
+/**
+ * `documents`: projects and libraries (Files-visible Documents on iPad;
+ * app-private Data on Android, whose public Documents needs a picker).
+ * `library`: app-private data the user never browses.
+ */
+export type DocumentsStorageLocation = "documents" | "library";
+
+function capacitorDirectory(location: DocumentsStorageLocation, platform: HostPlatform): Directory {
+  if (location === "library") return Directory.Library;
   return platform === "android" ? Directory.Data : Directory.Documents;
 }
 
@@ -24,8 +45,13 @@ function hasFilesystemCode(error: unknown, code: string): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
+/** Capacitor Filesystem and the native plugin each name a missing file their own way. */
+function isMissing(error: unknown): boolean {
+  return hasFilesystemCode(error, "OS-PLUG-FILE-0008") || hasFilesystemCode(error, "NOT_FOUND");
+}
+
 function rethrowFilesystemError(error: unknown, path: string): never {
-  if (hasFilesystemCode(error, "OS-PLUG-FILE-0008")) {
+  if (isMissing(error)) {
     throw new StorageNotFoundError(path, { cause: error });
   }
   throw error;
@@ -55,6 +81,13 @@ export interface DocumentsFilesystemApi {
     encoding?: "utf8";
     recursive?: boolean;
   }): Promise<unknown>;
+  /** Moves a staged write over its file. */
+  rename(options: {
+    from: string;
+    to: string;
+    directory?: Directory;
+    toDirectory?: Directory;
+  }): Promise<void>;
   deleteFile(options: {
     path: string;
     directory?: Directory;
@@ -70,9 +103,29 @@ export interface DocumentsFilesystemApi {
   }): Promise<{ type: string; size: number; mtime: number }>;
 }
 
+type DocumentsNativePlugin = Pick<BabylonSlateScopedStoragePlugin, "readDocumentsRange"> & Partial<NativeBinaryBridgePlugin>;
+
+export interface DocumentsStorageOptions {
+  /** Capacitor Filesystem unless injected (tests). */
+  fs?: DocumentsFilesystemApi;
+  location?: DocumentsStorageLocation;
+  platform?: HostPlatform;
+  /**
+   * Native bounded reads and the binary transport. The app's storage plugin
+   * unless a filesystem was injected, so tests never reach Capacitor.
+   */
+  plugin?: DocumentsNativePlugin;
+  /** The binary transport; by default the plugin's, when it has one. */
+  bridge?: NativeBinaryBridge | null;
+}
+
+const textEncoder = new TextEncoder();
+
 /**
  * Durable mobile default tier via Capacitor Filesystem: iPad Documents or
- * Android app-private Data. No picker — projects live under BabylonSlate/projects/.
+ * Android app-private Data under BabylonSlate/projects/, or app-private
+ * Library data. No picker. Bytes cross the binary transport where the host
+ * has one, else the plugin calls; every write replaces its file atomically.
  */
 export class DocumentsStorageAdapter implements ProjectStorage {
   private readonly reads = new StorageReadCounter();
@@ -80,16 +133,22 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   private folder: ProjectFolderHandle | null = null;
   private readonly fs: DocumentsFilesystemApi;
   private readonly directory: Directory;
-  /** Ranges go to the native storage plugin unless a filesystem was injected. */
-  private readonly nativeRanges: boolean;
+  private readonly root: string;
+  private readonly plugin: DocumentsNativePlugin | undefined;
+  private readonly bridge: Promise<NativeBinaryBridge | null>;
 
-  constructor(
-    fs?: DocumentsFilesystemApi,
-    directory: Directory = mobileDocumentsDirectory(),
-  ) {
-    this.fs = fs ?? (Filesystem as unknown as DocumentsFilesystemApi);
-    this.nativeRanges = fs === undefined;
-    this.directory = directory;
+  constructor(options: DocumentsStorageOptions = {}) {
+    const platform = options.platform ?? getHostPlatform();
+    const location = options.location ?? "documents";
+    this.fs = options.fs ?? (Filesystem as unknown as DocumentsFilesystemApi);
+    // Decided at construction, never by probing the Capacitor plugin: its proxy
+    // answers every property name, so `readFileRange` looks present and rejects.
+    this.plugin = options.plugin ?? (options.fs ? undefined : BabylonSlateScopedStorage);
+    this.bridge = options.bridge !== undefined
+      ? Promise.resolve(options.bridge)
+      : this.plugin ? nativeBinaryBridge(this.plugin) : Promise.resolve(null);
+    this.directory = capacitorDirectory(location, platform);
+    this.root = location === "library" ? libraryRoot(platform) : PROJECTS_ROOT;
   }
 
   async pickProjectFolder(): Promise<ProjectFolderHandle> {
@@ -100,7 +159,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
 
   async openDocumentsProject(name: string): Promise<ProjectFolderHandle> {
     name = projectFolderName(name);
-    const root = `${PROJECTS_ROOT}/${name}`;
+    const root = `${this.root}/${name}`;
     await this.ensureDirectory(root);
     this.folder = { id: `documents:${name}`, name, tier: "documents" };
     return this.folder;
@@ -114,16 +173,16 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     }
     if (!handle.id.startsWith("documents:")) throw new Error("Invalid Documents project id");
     const name = projectFolderName(handle.id.slice("documents:".length));
-    const info = await this.fs.stat({ path: `${PROJECTS_ROOT}/${name}`, directory: this.directory });
+    const info = await this.fs.stat({ path: `${this.root}/${name}`, directory: this.directory });
     if (info.type !== "directory") throw new Error("Project folder is not a directory.");
     this.folder = { id: `documents:${name}`, name, tier: "documents" };
     return this.folder;
   }
 
   async listProjects(): Promise<ProjectFolderHandle[]> {
-      await this.ensureDirectory(PROJECTS_ROOT);
+      await this.ensureDirectory(this.root);
       const { files } = await this.fs.readdir({
-        path: PROJECTS_ROOT,
+        path: this.root,
         directory: this.directory,
       });
       return files
@@ -155,7 +214,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     }
     const name = projectFolderName(handle.id.slice("documents:".length));
     if (isAppOwnedFolder(name)) throw new Error(`${name} is not a project`);
-    const path = `${PROJECTS_ROOT}/${name}`;
+    const path = `${this.root}/${name}`;
     try {
       const info = await this.fs.stat({ path, directory: this.directory });
       if (info.type !== "directory") throw new Error("Project folder is not a directory.");
@@ -184,7 +243,7 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   private abs(path: string, allowRoot = false): string {
     const folder = this.assertFolder();
     const cleaned = projectRelativePath(path, allowRoot);
-    const base = `${PROJECTS_ROOT}/${folder.name}`;
+    const base = `${this.root}/${folder.name}`;
     return cleaned ? `${base}/${cleaned}` : base;
   }
 
@@ -204,23 +263,19 @@ export class DocumentsStorageAdapter implements ProjectStorage {
   }
 
   async writeText(path: string, data: string): Promise<void> {
-    await this.fs.writeFile({
-      path: this.abs(path),
-      data,
-      directory: this.directory,
-      encoding: "utf8",
-      recursive: true,
-    });
+    const full = this.abs(path);
+    const bridge = await this.bridge;
+    if (bridge && await bridge.write({ directory: this.directory, path: full }, textEncoder.encode(data))) return;
+    await this.stagedWrite(full, { data, encoding: "utf8" });
   }
 
-  async readBinary(path: string): Promise<Uint8Array> {
+  async readBinary(path: string, options?: StorageReadOptions): Promise<Uint8Array> {
     const full = this.abs(path);
+    const bridge = await this.bridge;
     try {
-      const { data } = await this.fs.readFile({
-        path: full,
-        directory: this.directory,
-      });
-      const bytes = decodeBase64(data);
+      const bytes = bridge
+        ? await bridge.read({ directory: this.directory, path: full }, options)
+        : decodeBase64((await this.fs.readFile({ path: full, directory: this.directory })).data);
       this.reads.record("full", bytes.byteLength);
       return bytes;
     } catch (error) {
@@ -228,31 +283,52 @@ export class DocumentsStorageAdapter implements ProjectStorage {
     }
   }
 
-  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
+  async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions) {
     validateStorageRange(offset, length);
-    const options = { path: this.abs(path), directory: this.directory, offset, length, expectedRevision };
-    // Capacitor Filesystem.readFile loads the whole file. Native positioned I/O
-    // is provided by our existing storage plugin instead of disguising that read.
-    // Decided at construction, never by probing the Capacitor plugin: its proxy
-    // answers every property name, so `readFileRange` looks present and rejects.
-    const result = await this.reads.range(length, async () => {
+    const full = this.abs(path);
+    const bridge = await this.bridge;
+    // Capacitor Filesystem.readFile loads the whole file, so bounded reads
+    // are always native positioned I/O, never a disguised full read.
+    const result = await this.reads.range(length, async (): Promise<NativeRangeRead | NativeBinaryRange> => {
       try {
-        if (this.nativeRanges) return await BabylonSlateScopedStorage.readDocumentsRange(options);
-        if (this.fs.readFileRange) return await this.fs.readFileRange(options);
+        if (bridge) return await bridge.readRange({ directory: this.directory, path: full }, offset, length, expectedRevision, options);
+        const request = { path: full, directory: this.directory, offset, length, expectedRevision };
+        if (this.plugin) return await this.plugin.readDocumentsRange(request);
+        if (this.fs.readFileRange) return await this.fs.readFileRange(request);
         throw new Error("Documents filesystem does not support bounded reads");
-      } catch (error) { rethrowNativeStorageRangeError(error, path); }
+      } catch (error) {
+        if (isMissing(error)) rethrowFilesystemError(error, path);
+        rethrowNativeStorageRangeError(error, path);
+      }
     });
-    try { return validateStorageRangeResult(path, offset, length, { ...result, bytes: decodeBase64(result.data) }, expectedRevision); }
-    catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
+    try {
+      const bytes = "bytes" in result ? result.bytes : decodeBase64(result.data);
+      return validateStorageRangeResult(path, offset, length, { ...result, bytes }, expectedRevision);
+    } catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
-    await this.fs.writeFile({
-      path: this.abs(path),
-      data: encodeBase64(data),
-      directory: this.directory,
-      recursive: true,
-    });
+    const full = this.abs(path);
+    const bridge = await this.bridge;
+    if (bridge && await bridge.write({ directory: this.directory, path: full }, data)) return;
+    await this.stagedWrite(full, { data: encodeBase64(data) });
+  }
+
+  /**
+   * Without the binary transport: the bytes go to a staged `.haptic-<uuid>.tmp`
+   * beside the file, then move over it, so a failed or interrupted write never
+   * leaves the file truncated. A failure removes the staged file.
+   */
+  private async stagedWrite(full: string, content: { data: string; encoding?: "utf8" }): Promise<void> {
+    const slash = full.lastIndexOf("/");
+    const staged = `${full.slice(0, slash)}/${stagedWriteName()}`;
+    try {
+      await this.fs.writeFile({ path: staged, ...content, directory: this.directory, recursive: true });
+      await this.fs.rename({ from: staged, to: full, directory: this.directory, toDirectory: this.directory });
+    } catch (error) {
+      await this.fs.deleteFile({ path: staged, directory: this.directory }).catch(() => {});
+      throw error;
+    }
   }
 
   async exists(path: string): Promise<boolean> {

@@ -20,7 +20,7 @@ const bundle = join(work, "package-ios.cjs");
 await build({
   absWorkingDir: desktop,
   stdin: {
-    contents: 'export { writeIosProject, findXcode } from "./src/ios-game-package"; export { encodeOpaquePng } from "../../packages/exporter/src/app-icon"; export { buildSettingArguments } from "../../packages/exporter/src/native-ios";',
+    contents: 'export { writeIosProject, findXcode } from "./src/ios-game-package"; export { encodeOpaquePng } from "@haptic/exporter/app-icon"; export { buildSettingArguments } from "@haptic/exporter/native-ios";',
     resolveDir: desktop,
     loader: "ts",
   },

@@ -33,7 +33,7 @@ export function HomepageClerkProvider({
             backgroundColor: "#0a0907",
             color: "#f6f5f4",
           },
-          modalContent: "slate-clerk-overlay",
+          modalContent: "haptic-clerk-overlay",
           rootBox: "homepage-theme homepage-clerk",
           cardBox: "homepage-clerk-card",
         },

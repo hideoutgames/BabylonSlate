@@ -5,7 +5,6 @@ export const LIGHT_2D_CLASS_ID = "Light2DComponent";
 
 /** A Point light falls off over its radius, optionally within a cone; a Global light lights everything evenly. */
 export type Light2DKind = "point" | "global";
-export const LIGHT_2D_KINDS: readonly Light2DKind[] = ["point", "global"];
 
 /** Authored data only. The view composes the light's world position and direction. */
 export type Light2DProperties = {

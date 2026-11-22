@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CommandMessage, SimulationCaptureRequest, SimulationQuiesceRequest } from "@haptic/bridge";
 import { createDefaultScene } from "@haptic/core";
-import { simulationCaptureChunks } from "../../../../packages/runtime/src/simulation-capture-transport";
+import { simulationCaptureChunks } from "@haptic/runtime/simulation-capture-transport";
 import { SimulationCaptureClient } from "./simulation-capture-client";
 
 const identity = { generation: 5, sceneAssetGuid: "scene", sceneInstanceId: "instance", sceneLoadId: 1, tickIndex: 80, commandRevision: 24 };
