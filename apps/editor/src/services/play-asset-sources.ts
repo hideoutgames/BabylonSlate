@@ -243,6 +243,8 @@ function verifiedLocator(host: PlayAssetSourceHost, guid: string): AssetSourceLo
 const CATALOG_READS = 8;
 /** Assets whose documents or chunks are requested at once: the one being processed plus the five after it. */
 const READ_AHEAD = 6;
+/** Collision cooks and emission decodes of one acquisition in flight at once. */
+const DERIVED_SOURCES = 4;
 
 /**
  * A closure document's encoded size for cache accounting, without serializing a stored one: its stored
@@ -350,10 +352,44 @@ export async function acquirePlayAssetSources(
   roots: readonly string[],
   options: PlayAssetSourceOptions,
 ) {
+  return acquireWithRetries(host, roots, options);
+}
+
+/**
+ * Play's startup sources: the startup Scene's set (the Scene and the project systems, `prepared`, released when the
+ * session leaves that Scene) and the project systems' own set (`persistent`, held for the whole session; null without
+ * project systems). One compile serves both: the persistent set holds the scripts the Scene's set compiled for the
+ * project systems' Classes, the very scripts the session boots with, whenever it read every one of its assets at the
+ * revision the Scene's set read and the compile's project-wide inputs are unchanged; otherwise it compiles its own.
+ * A compile error in a project system fails the startup, as the persistent set allows none.
+ */
+export async function acquirePlayStartupSources(
+  host: PlayAssetSourceHost,
+  sceneGuid: string,
+  projectAssets: readonly string[],
+  options: { consumer: string; signal: AbortSignal },
+) {
+  const prepared = await acquireWithRetries(host, [sceneGuid, ...projectAssets], { ...options, allowCompileErrors: true });
+  if (!projectAssets.length) return { prepared, persistent: null };
+  try {
+    const persistent = await acquireWithRetries(host, projectAssets, { consumer: "Play Project Systems", signal: options.signal }, prepared);
+    return { prepared, persistent };
+  } catch (error) {
+    prepared.release();
+    throw error;
+  }
+}
+
+async function acquireWithRetries(
+  host: PlayAssetSourceHost,
+  roots: readonly string[],
+  options: PlayAssetSourceOptions,
+  scriptsFrom?: PreparedPlaySources,
+) {
   for (let attempt = 1; ; attempt++) {
     options.signal.throwIfAborted();
     // A retry follows a source change: it reads every catalog from storage again, trusting no earlier check.
-    try { return await acquirePlayAssetSourcesAttempt(host, roots, options, attempt === 1); }
+    try { return await acquirePlayAssetSourcesAttempt(host, roots, options, attempt === 1, scriptsFrom); }
     catch (error) {
       options.signal.throwIfAborted();
       if (!isAssetSourceRevisionChanged(error)) throw error;
@@ -362,12 +398,41 @@ export async function acquirePlayAssetSources(
   }
 }
 
+type CompiledScripts = { bundles: ScriptBundleEntry[]; diagnostics: Diagnostic[] };
+
+/** An acquisition's compiled scripts and what they were compiled from, for an acquisition of part of its closure to reuse (`reusableScripts`). */
+type CompiledScriptsSource = {
+  host: PlayAssetSourceHost;
+  compiled: CompiledScripts;
+  /** The compile's inputs beyond the closure: the project-wide catalog, settings, tracing and extension nodes. */
+  context: string;
+  /** Each closure asset at the revision the acquisition read it. */
+  revisions: ReadonlyMap<string, string>;
+  released: () => boolean;
+};
+const compiledScriptsSources = new WeakMap<object, CompiledScriptsSource>();
+
+/**
+ * The compile entry an acquisition of `required` can take from `from` instead of compiling: `from` is live, of the same
+ * host, read every asset of `required` at the revision this acquisition read it, and compiled with the same project-wide
+ * inputs. Its scripts for `required`'s owners are those a compile of `required` makes from the same documents (a Class
+ * compiles from its own graph and what its closure names, which `required` holds).
+ */
+function reusableScripts(from: PreparedPlaySources | undefined, host: PlayAssetSourceHost,
+  required: ReadonlySet<string>, revisions: ReadonlyMap<string, string>, context: string): CompiledScriptsSource | null {
+  const source = from && compiledScriptsSources.get(from);
+  if (!source || source.host !== host || source.released() || source.context !== context) return null;
+  for (const guid of required) if (source.revisions.get(guid) !== revisions.get(guid)) return null;
+  return source;
+}
+
 /** A shared preparation contract for initial Play, streamed Scenes and explicit preloads. */
 async function acquirePlayAssetSourcesAttempt(
   host: PlayAssetSourceHost,
   roots: readonly string[],
   options: PlayAssetSourceOptions,
   trust: boolean,
+  scriptsFrom?: PreparedPlaySources,
 ) {
   const referrers = new Map<string, string>();
   const catalogRevisions = await currentRequiredPlayAssets(host, roots, options.signal, undefined, trust, referrers);
@@ -411,6 +476,8 @@ async function acquirePlayAssetSourcesAttempt(
     },
   }, { signal, priority: options.priority, dependencies: "none", refresh: false });
   let released = false;
+  /** What this acquisition's scripts came from, for a later acquisition of part of its closure (`reusableScripts`). */
+  let compiledSource: CompiledScriptsSource | undefined;
   // While documents and source chunks are read, a loader failure is a required asset Play cannot read.
   let readingSources = true;
   const release = () => {
@@ -486,6 +553,76 @@ async function acquirePlayAssetSourcesAttempt(
         }
       }
     }
+    const compileScripts = async (): Promise<CompiledScripts> => {
+      const inputs = order.map((guid) => [guid, catalogRevisions.get(guid)!] as const);
+      const compileInputs = inputs.filter(([guid]) => COMPILE_INPUT_TYPES.has(host.registry.getByGuid(guid)!.header.type))
+        .sort(([a], [b]) => a.localeCompare(b));
+      // A Scene's SceneScript and a Scene Layer's SceneLayerScript compile too; their
+      // scripts, not the whole Scene revisions, key the compile.
+      const embeddedScripts = inputs
+        .filter(([guid]) => EMBEDDED_SCRIPT_OWNER_TYPES.has(host.registry.getByGuid(guid)!.header.type))
+        .flatMap(([guid]) => {
+          const key = embeddedScriptKey(guid, documents.get(guid)!.document.payload);
+          return key ? [[guid, key] as const] : [];
+        })
+        .sort(([a], [b]) => a.localeCompare(b));
+      const compileRoot = compileInputs.find(([guid]) => SCRIPT_ASSET_TYPES.has(host.registry.getByGuid(guid)!.header.type))?.[0] ??
+        embeddedScripts[0]?.[0] ?? roots[0] ?? required.values().next().value;
+      if (!compileRoot) return { bundles: [], diagnostics: [] };
+      // What the compile reads: the closure's compile inputs and embedded scripts, and the project-wide catalog
+      // (which carries the working documents among its assets). Scene edits outside scripts keep the entry.
+      const context = `${playCompileCatalogKey(host)}:${JSON.stringify([
+        project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount,
+        host.traceExecution === true, extensionNodesFingerprint()])}`;
+      const reuse = reusableScripts(scriptsFrom, host, required, catalogRevisions, context);
+      let value: CompiledScripts;
+      if (reuse) {
+        // The owners' scripts of what the earlier acquisition compiled; its diagnostics name their owner by path.
+        const byPath = new Map(host.registry.list().map(asset => [asset.path, asset.header.guid]));
+        const owned = (guid: string) => required.has(guid) || required.has(byPath.get(guid) ?? "");
+        value = {
+          bundles: reuse.compiled.bundles.filter((script) => required.has(script.assetGuid)),
+          diagnostics: reuse.compiled.diagnostics.filter((entry) => owned(entry.assetGuid)),
+        };
+      } else {
+        const compileInputBytes = compileInputs.reduce((total, [guid]) => total + documentByteEstimate(host, guid, documents.get(guid)!.document.payload) * 2, 0);
+        value = await scope.acquire<CompiledScripts>(compileRoot, {
+          key: `play-scripts:v2:${JSON.stringify([compileInputs, embeddedScripts])}:${context}`,
+          estimate: { sourceBytes: 0, decodedBytes: Math.max(4096, compileInputBytes * 8), temporaryBytes: Math.max(4096, compileInputBytes * 4) },
+          load: async (_asset, signal) => {
+            signal.throwIfAborted();
+            // The stored documents read above: the compile does not read its closed Classes and Scenes again.
+            const stored = new Map([...documents].filter(([guid]) => !host.documentOverrides?.has(guid))
+              .map(([guid, value]) => [guid, { type: value.document.type, version: value.document.version, payload: value.document.payload }]));
+            const result = await host.compile(required, stored);
+            signal.throwIfAborted();
+            // Prepared content validates every input against storage before publication.
+            for (const [guid, revision] of compileInputs) {
+              if (host.registry.getByGuid(guid)?.locator?.revision !== revision) throw new SourceRevisionChangedError(`Class compilation input ${describePlayAssetForMessage(host.registry, guid)} changed; retry`);
+            }
+            const byPath = new Map(host.registry.list().map(asset => [asset.path, asset]));
+            const bundles = result.bundles.map(script => {
+              const owner = host.registry.getByGuid(script.assetGuid) ?? byPath.get(script.assetGuid);
+              if (!owner) throw new Error(`Compiled Class ${script.classId} has no catalog asset for ${script.assetGuid}`);
+              return {
+                ...script,
+                assetGuid: owner.header.guid,
+              };
+            });
+            const value = { bundles, diagnostics: [...result.diagnostics] };
+            return {
+              value, sourceBytes: 0, decodedBytes: JSON.stringify(value).length * 2,
+              dispose: compiledScriptsDisposer(value),
+            };
+          },
+        }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false });
+      }
+      compiledSource = { host, context, revisions: catalogRevisions, compiled: value, released: () => released };
+      return value;
+    };
+    // The compile reads only the documents read above, so it starts now and runs while the source chunks are read.
+    const compiling = compileScripts();
+    void compiling.catch(() => undefined);
     game.manifest.assets = [...required].map((guid) => { const { header } = host.registry.getByGuid(guid)!; return {
       guid, type: header.type, name: header.name, encoding: "json" as const,
       width: Number(header.payload.width), height: Number(header.payload.height),
@@ -510,6 +647,16 @@ async function acquirePlayAssetSourcesAttempt(
     let sourceBytes = 0;
     let documentBytes = 0;
     const revisions: Array<[string, string]> = [];
+    // Complex Collision cooking and rectangular-light emission decoding run beside the reads, a few at a time
+    // (`DERIVED_SOURCES`, which bounds their temporary memory), instead of holding the pass for each in turn.
+    const derive = createLimiter(DERIVED_SOURCES);
+    const collisions: Array<[string, Promise<CollisionTriangleMesh | null>]> = [];
+    const areaEmissions: Array<[string, Promise<Awaited<ReturnType<typeof decodeAreaEmission>>>]> = [];
+    // Awaited after the pass; one that fails while the pass fails first is moot.
+    const later = <T,>(entries: Array<[string, Promise<T>]>, guid: string, pending: Promise<T>) => {
+      pending.catch(() => undefined);
+      entries.push([guid, pending]);
+    };
     // Source chunks of the next few assets are requested while the current one is applied
     // (the loader caps how many read at once). Their results are consumed in `order`, so the
     // game containers fill in the same sequence and the first failure is the one a serial pass reports.
@@ -568,10 +715,7 @@ async function acquirePlayAssetSourcesAttempt(
         const model = normalizeModelPayload(payload);
         game.modelPayloads.set(guid, model);
         // Only Models a Scene/Class in this closure simulates with Complex Collision are cooked up front.
-        if (source && complexCollisionGuids.has(guid)) {
-          const mesh = await cookModelCollision(guid, source, model, options.signal);
-          if (mesh) complexMeshes.set(guid, mesh);
-        }
+        if (source && complexCollisionGuids.has(guid)) later(collisions, guid, derive(() => cookModelCollision(guid, source, model, options.signal)));
       } else if (type === "Audio") {
         const audio = normalizeAudioPayload(payload);
         game.audioPayloads.set(guid, audio);
@@ -592,12 +736,11 @@ async function acquirePlayAssetSourcesAttempt(
       if (type === "Texture" && emissions.has(guid)) {
         const entry = currentAreaEmissionChunk(asset.header)!;
         const bytes = value.chunks.get(entry.id)!;
-        const decoded = await scope.acquire(guid, {
+        later(areaEmissions, guid, derive(() => scope.acquire(guid, {
           key: `area-emission:${entry.sha256}`,
           estimate: { sourceBytes: 0, decodedBytes: bytes.byteLength, temporaryBytes: bytes.byteLength },
           load: async () => ({ value: await decodeAreaEmission(bytes), sourceBytes: 0, decodedBytes: bytes.byteLength }),
-        }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false });
-        game.areaEmissions.set(guid, decoded);
+        }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false })));
       }
       const navmesh = value.chunks.get("navmesh");
       if (navmesh) game.navmeshBytes.set(guid, navmesh);
@@ -605,6 +748,12 @@ async function acquirePlayAssetSourcesAttempt(
       if (reverb) game.audioReverbBytes.set(guid, reverb);
       options.onProgress?.({ completed: ++completed, total: required.size });
     }
+    // In required order, so the containers fill as a serial pass fills them and the first failure is that order's.
+    for (const [guid, cooking] of collisions) {
+      const mesh = await cooking;
+      if (mesh) complexMeshes.set(guid, mesh);
+    }
+    for (const [guid, decoding] of areaEmissions) game.areaEmissions.set(guid, await decoding);
     // Each Model carries its Skeleton's sockets, which the renderer resolves attachments to.
     for (const [guid, model] of game.modelPayloads) {
       const skeleton = model.skeletonGuid ? game.decodedPayloads?.get(model.skeletonGuid) : undefined;
@@ -612,62 +761,12 @@ async function acquirePlayAssetSourcesAttempt(
     }
     readingSources = false;
     const root = roots[0] ?? required.values().next().value;
-    const compileInputs = revisions.filter(([guid]) => COMPILE_INPUT_TYPES.has(host.registry.getByGuid(guid)!.header.type))
-      .sort(([a], [b]) => a.localeCompare(b));
-    // A Scene's SceneScript and a Scene Layer's SceneLayerScript compile too; their
-    // scripts, not the whole Scene revisions, key the compile.
-    // The script with what its Get <Actor>, Get <Component> and Get <Timeline Clip> nodes are checked against.
-    const embeddedScripts = revisions
-      .filter(([guid]) => EMBEDDED_SCRIPT_OWNER_TYPES.has(host.registry.getByGuid(guid)!.header.type))
-      .flatMap(([guid]) => {
-        const payload = documents.get(guid)!.document.payload as EmbeddedScriptOwner;
-        const scene = payload as Partial<Pick<SerializedScene, "actors" | "timelineClips">>;
-        return payload.script ? [[guid, payload.script, ownedActorsOfScene({ actors: Array.isArray(scene.actors) ? scene.actors : [] }),
-          ownedTimelineClipsOfScene(guid, { timelineClips: Array.isArray(scene.timelineClips) ? scene.timelineClips : [] })] as const] : [];
-      })
-      .sort(([a], [b]) => a.localeCompare(b));
-    const compileRoot = compileInputs.find(([guid]) => SCRIPT_ASSET_TYPES.has(host.registry.getByGuid(guid)!.header.type))?.[0] ??
-      embeddedScripts[0]?.[0] ?? root;
-    const compileInputBytes = compileInputs.reduce((total, [guid]) => total + documentByteEstimate(host, guid, documents.get(guid)!.document.payload) * 2, 0);
     // Working documents of the closure: their identity, since their payload replaces the stored revision.
     const workingInputs = [...required].flatMap((guid) => {
       const override = host.documentOverrides?.get(guid);
       return override ? [[guid, override.cacheKey]] : [];
     }).sort(([a], [b]) => a.localeCompare(b));
-    // What the compile reads: the closure's compile inputs and embedded scripts, and the project-wide catalog
-    // (which carries the working documents among its assets). Scene edits outside scripts keep the entry.
-    const compiled = compileRoot ? await scope.acquire(compileRoot, {
-      key: `play-scripts:v2:${JSON.stringify([compileInputs, embeddedScripts])}:${playCompileCatalogKey(host)}:${JSON.stringify([
-        project.settings.tags, project.settings.infiniteLoopDetection, project.settings.loopCount,
-        host.traceExecution === true, extensionNodesFingerprint()])}`,
-      estimate: { sourceBytes: 0, decodedBytes: Math.max(4096, compileInputBytes * 8), temporaryBytes: Math.max(4096, compileInputBytes * 4) },
-      load: async (_asset, signal) => {
-        signal.throwIfAborted();
-        // The stored documents read above: the compile does not read its closed Classes and Scenes again.
-        const stored = new Map([...documents].filter(([guid]) => !host.documentOverrides?.has(guid))
-          .map(([guid, value]) => [guid, { type: value.document.type, version: value.document.version, payload: value.document.payload }]));
-        const result = await host.compile(required, stored);
-        signal.throwIfAborted();
-        // Prepared content validates every input against storage before publication.
-        for (const [guid, revision] of compileInputs) {
-          if (host.registry.getByGuid(guid)?.locator?.revision !== revision) throw new SourceRevisionChangedError(`Class compilation input ${describePlayAssetForMessage(host.registry, guid)} changed; retry`);
-        }
-        const byPath = new Map(host.registry.list().map(asset => [asset.path, asset]));
-        const bundles = result.bundles.map(script => {
-          const owner = host.registry.getByGuid(script.assetGuid) ?? byPath.get(script.assetGuid);
-          if (!owner) throw new Error(`Compiled Class ${script.classId} has no catalog asset for ${script.assetGuid}`);
-          return {
-            ...script,
-            assetGuid: owner.header.guid,
-          };
-        });
-        const value = { bundles, diagnostics: [...result.diagnostics] };
-        return {
-          value, sourceBytes: 0, decodedBytes: JSON.stringify(value).length * 2,
-          dispose: compiledScriptsDisposer(value),
-        };
-      },
-    }, { signal: options.signal, priority: options.priority, dependencies: "none", refresh: false }) : { bundles: [], diagnostics: [] };
+    const compiled = await compiling;
     const failure = compiled.diagnostics.find((entry) => entry.severity === "error");
     if (failure && !options.allowCompileErrors) throw new Error(failure.message);
     game.scripts = compiled.bundles;
@@ -736,7 +835,9 @@ async function acquirePlayAssetSourcesAttempt(
       if (!source) return null;
       return cookModelCollision(guid, source, game.modelPayloads.get(guid) ?? normalizeModelPayload({}), options.signal);
     };
-    return { game, content, sources, controls, required, audioChunks, diagnostics: compiled.diagnostics, release, cookComplexCollision };
+    const result = { game, content, sources, controls, required, audioChunks, diagnostics: compiled.diagnostics, release, cookComplexCollision };
+    if (compiledSource) compiledScriptsSources.set(result, compiledSource);
+    return result;
   } catch (error) {
     release();
     // A required asset whose document or source data could not be loaded is reported like one the walk could not
@@ -781,6 +882,26 @@ const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "Inpu
 const COMPILE_CATALOG_TYPES = new Set([...COMPILE_INPUT_TYPES, "Material", "MaterialInstance", "Timeline", "TimelineClip2D", "TimelineClip3D"]);
 
 type EmbeddedScriptOwner = { script?: unknown; actors?: unknown; timelineClips?: unknown };
+
+/** `embeddedScriptKey` per document payload object, which no one changes: an edit makes a new payload, a save a new revision. */
+const embeddedScriptKeys = new WeakMap<object, { guid: string; key: string }>();
+
+/**
+ * What of a Scene's or Scene Layer's payload its compile reads, as a key: its script with what its Get <Actor>, Get
+ * <Component> and Get <Timeline Clip> nodes are checked against; empty without a script. Serialized once per payload
+ * object (`playDocumentOverrides` keys an open document's identity the same way), so a Play or Scene switch that reads
+ * the same documents does not serialize their script graphs again.
+ */
+function embeddedScriptKey(guid: string, payload: Record<string, unknown>): string {
+  const memo = embeddedScriptKeys.get(payload);
+  if (memo?.guid === guid) return memo.key;
+  const owner = payload as EmbeddedScriptOwner;
+  const scene = payload as Partial<Pick<SerializedScene, "actors" | "timelineClips">>;
+  const key = owner.script ? JSON.stringify([owner.script, ownedActorsOfScene({ actors: Array.isArray(scene.actors) ? scene.actors : [] }),
+    ownedTimelineClipsOfScene(guid, { timelineClips: Array.isArray(scene.timelineClips) ? scene.timelineClips : [] })]) : "";
+  embeddedScriptKeys.set(payload, { guid, key });
+  return key;
+}
 
 const compileCatalogKeys = new WeakMap<PlayAssetSourceHost, { generation: number; key: string }>();
 
