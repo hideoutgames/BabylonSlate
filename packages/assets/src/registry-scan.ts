@@ -28,6 +28,7 @@ export async function walkRoot(host: RegistryHost, root: ContentRoot, dir: strin
   // so a header is not read long before it is indexed (a `reindexPath` in between would
   // otherwise be overwritten by the older header).
   const slots: Array<{ run: string[]; index: number }> = [];
+  const sizes = new Map<string, number | null | undefined>();
   let run: string[] = [];
   for (const entry of entries) {
     const path = `${dir}/${entry.name}`;
@@ -35,10 +36,11 @@ export async function walkRoot(host: RegistryHost, root: ContentRoot, dir: strin
       if (!(entry.name === BLOBS_DIR_NAME || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX))) run = [];
     } else if (entry.name !== FOLDER_MARKER_NAME && path.endsWith(".hasset")) {
       run.push(path);
+      sizes.set(path, entry.size);
       slots.push({ run, index: run.length - 1 });
     }
   }
-  const readCatalog = createReadAhead(SCAN_CATALOG_READS, (path: string) => readScannedCatalog(storage, path));
+  const readCatalog = createReadAhead(SCAN_CATALOG_READS, (path: string) => readScannedCatalog(storage, path, sizes.get(path)));
   let nextSlot = 0;
   try {
     for (const entry of entries) {
@@ -76,9 +78,10 @@ export async function walkRoot(host: RegistryHost, root: ContentRoot, dir: strin
 }
 
 /** A save can land between a scan's bounded header reads; read that file again. */
-async function readScannedCatalog(storage: ProjectStorageReader, path: string) {
+async function readScannedCatalog(storage: ProjectStorageReader, path: string, sizeHint: number | null | undefined) {
   for (let attempt = 1; ; attempt++) {
-    try { return await readAssetCatalog(storage, path); }
+    // The listing's size is a hint for the first attempt only: a retry follows a change.
+    try { return await readAssetCatalog(storage, path, {}, attempt === 1 ? sizeHint : undefined); }
     catch (error) {
       if (!(error instanceof SourceRevisionChangedError) || attempt === 3) throw error;
     }

@@ -4,7 +4,7 @@ import { encodeAssetDocument } from "./asset-document";
 import { encodeHasset, MAX_HASSET_HEADER_BYTES } from "./hasset";
 import { createVfsBlobStore } from "./blob-store";
 import { projectContentRoot } from "./content-root";
-import { AccountedPayloadLoader, readAssetCatalog } from "./payload-loader";
+import { AccountedPayloadLoader, readAssetCatalog, SPECULATIVE_CATALOG_READ_BYTES } from "./payload-loader";
 import { AssetRegistry } from "./registry";
 import type { StorageReadOptions } from "@haptic/core";
 
@@ -162,7 +162,8 @@ describe("bounded catalog and payload loading", () => {
     await Promise.resolve();
     expect(registry.list()).toHaveLength(3);
     expect(fullReads).not.toHaveBeenCalled();
-    expect(bytesRead).toBeLessThan(4096);
+    // At most one speculative read per file: never the payloads themselves.
+    expect(bytesRead).toBeLessThanOrEqual(3 * SPECULATIVE_CATALOG_READ_BYTES);
     expect(registry.accountedPayloadBytes).toBe(0);
     const before = bytesRead;
     const loaded = await registry.readChunk("asset", "source");
@@ -263,6 +264,72 @@ describe("bounded catalog and payload loading", () => {
     expect(snapshot.recentRequests).toHaveLength(128);
     expect(snapshot.recentRequests[0]!.id).toBe(3);
     expect(snapshot.recentRequests.at(-1)!.id).toBe(130);
+  });
+
+  it.each([
+    ["a header that fits the speculative read, before a large payload", 64, 1024 * 1024, [[0, SPECULATIVE_CATALOG_READ_BYTES]]],
+    ["a whole file smaller than the speculative read", 64, 16, "whole"],
+    ["a header longer than the speculative read", 12_000, 16, "split"],
+  ] as const)("reads the same catalog in fewer range reads with a size hint: %s", async (_name, metaLength, payloadLength, expected) => {
+    const storage = await fixture();
+    const path = "assets/hinted.hasset";
+    const file = await encodeHasset({
+      header: { ...header, payload: { note: "n".repeat(metaLength) } },
+      chunks: [chunk("source", new Uint8Array(payloadLength).fill(7))],
+    });
+    await storage.writeBinary(path, file);
+    const exact = await readAssetCatalog(storage, path);
+    const reads = vi.spyOn(storage, "readBinaryRange");
+
+    expect(await readAssetCatalog(storage, path, {}, file.byteLength)).toEqual(exact);
+    const ranges = reads.mock.calls.map(([, offset, length]) => [offset, length]);
+    if (expected === "whole") expect(ranges).toEqual([[0, file.byteLength]]);
+    else if (expected === "split") expect(ranges).toEqual([[0, SPECULATIVE_CATALOG_READ_BYTES], [SPECULATIVE_CATALOG_READ_BYTES, exact.locator.payloadOffset - SPECULATIVE_CATALOG_READ_BYTES]]);
+    else expect(ranges).toEqual(expected);
+  });
+
+  it("indexes each listed asset of a scan with one range read", async () => {
+    const storage = await fixture();
+    await storage.mkdir("assets/nested", true);
+    for (const [path, guid] of [["assets/a.hasset", "a"], ["assets/nested/b.hasset", "b"], ["assets/nested/c.hasset", "c"]] as const) {
+      await storage.writeBinary(path, await encodeHasset({ header: { ...header, guid }, chunks: [chunk("source", new Uint8Array(64 * 1024))] }));
+    }
+    const reads = vi.spyOn(storage, "readBinaryRange");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(registry.list().map((asset) => asset.header.guid).sort()).toEqual(["a", "b", "c"]);
+    expect(reads.mock.calls.map(([path, offset, length]) => `${path} ${offset}+${length}`).sort()).toEqual([
+      `assets/a.hasset 0+${SPECULATIVE_CATALOG_READ_BYTES}`,
+      `assets/nested/b.hasset 0+${SPECULATIVE_CATALOG_READ_BYTES}`,
+      `assets/nested/c.hasset 0+${SPECULATIVE_CATALOG_READ_BYTES}`,
+    ]);
+  });
+
+  it("reads the same catalog when the size hint no longer matches the file", async () => {
+    const storage = await fixture();
+    const path = "assets/stale.hasset";
+    const file = await encodeHasset({ header, chunks: [chunk("source", new Uint8Array([1, 2, 3]))] });
+    await storage.writeBinary(path, file);
+    const exact = await readAssetCatalog(storage, path);
+    // Shrunk since it was listed: the oversized read fails and is made again as the exact reads.
+    expect(await readAssetCatalog(storage, path, {}, file.byteLength + 100)).toEqual(exact);
+    // Grown since it was listed: the hinted read is short of the header, and the rest is read after it.
+    expect(await readAssetCatalog(storage, path, {}, 20)).toEqual(exact);
+    await expect(readAssetCatalog(storage, "assets/missing.hasset", {}, 4096)).rejects.toThrow("File not found");
+  });
+
+  it("rejects a revision change between a speculative read and the rest of its header", async () => {
+    const storage = await fixture();
+    const path = "assets/changing-long.hasset";
+    const original = await encodeHasset({ header: { ...header, payload: { note: "n".repeat(12_000) } }, chunks: [] });
+    await storage.writeBinary(path, original);
+    const read = storage.readBinaryRange.bind(storage);
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (...args) => {
+      const result = await read(...args);
+      if (args[1] === 0) await storage.writeBinary(path, original);
+      return result;
+    });
+    await expect(readAssetCatalog(storage, path, {}, original.byteLength)).rejects.toThrow(/chang|revision/i);
   });
 
   it("rejects a revision change between reading a prefix and its header", async () => {

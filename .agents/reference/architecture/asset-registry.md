@@ -11,7 +11,7 @@ Header-indexed asset catalog across content roots: file operations, dependency m
 
 ## Invariants
 
-1. **Bounded header indexing.** Scans read the 12-byte prefix, validate the header length (≤ 16 MiB), then exactly that header via `readBinaryRange`. Payloads stay unread. Up to `SCAN_CATALOG_READS` = 8 header reads in flight, consumed in directory order (first-file-wins guid resolution is unchanged).
+1. **Bounded header indexing.** Catalog reads take the 12-byte prefix, validate the header length (≤ 16 MiB), then exactly that header via `readBinaryRange`. On storage with `speculativeRangeReads`, a scan passes each file's listed size as a hint, so its first read asks for up to `SPECULATIVE_CATALOG_READ_BYTES` (8 KiB, never past the listed end: range reads are exact) and usually holds the whole header (one read per file instead of two; on the Capacitor bridge a round trip costs more than 8 KiB of base64); a longer header reads only the rest, and a stale size falls back to the exact reads. Payloads stay unread beyond that bound. Up to `SCAN_CATALOG_READS` = 8 header reads in flight, consumed in directory order (first-file-wins guid resolution is unchanged).
 2. **Content roots from day one.** Every path op takes a root id or resolves guid → root. Guids are unique across project and plugins.
 3. **Payloads on demand** through `AssetLoadingService`; storage I/O, source bytes, decoded CPU data and GPU resources are accounted separately.
 4. **File create/delete/move are outside undo**; in-document edits belong to [command-layer](command-layer.md).

@@ -56,6 +56,7 @@ class MountedProjectStorage implements ProjectStorage {
 
   getReadMetrics() { return this.reads.snapshot(); }
   get hasStrongSourceRevisions() { return this.mounts.every(mount => mount.storage.hasStrongSourceRevisions === true); }
+  get speculativeRangeReads() { return this.mounts.every(mount => mount.storage.speculativeRangeReads === true); }
   getCurrentFolder() { return this.active ? this.handle : null; }
   async releaseFolder() { this.active = false; }
   async listProjects() { return [this.handle]; }

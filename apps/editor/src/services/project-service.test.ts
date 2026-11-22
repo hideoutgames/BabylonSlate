@@ -3,7 +3,7 @@ import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fa
 import { createMemoryOpfsRoot, opfsProjectFolder } from "../../../../packages/vfs/src/test-support/memory-opfs";
 import { createEmptyProject, isProjectOpenElsewhere, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@haptic/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter, pickImportFiles } from "@haptic/vfs";
-import { encodeAssetDocument, encodeHasset, decodeHasset } from "@haptic/assets";
+import { encodeAssetDocument, encodeHasset, decodeHasset, SPECULATIVE_CATALOG_READ_BYTES } from "@haptic/assets";
 import { convertHdrEnvironmentOffMainThread } from "@haptic/assets/import-worker-client";
 import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
@@ -492,12 +492,18 @@ describe("ProjectService lifecycle", () => {
       type: "Scene", name: "Unused", guid: "unused-scene", version: 1,
       payload: { name: "Unused", actors: [], notes: "x".repeat(256 * 1024) },
     }, { extraChunks: [{ id: "unused-source", kind: "source", mime: "application/octet-stream", data: new Uint8Array(1024 * 1024) }] }));
-    const before = storage.getReadMetrics().actualBytesRead;
     const fullReads = vi.spyOn(storage, "readBinary");
+    const rangeReads = vi.spyOn(storage, "readBinaryRange");
     await service.loadCurrentProject();
     expect(service.registry!.getByGuid("unused-scene")?.header.name).toBe("Unused");
     expect(fullReads.mock.calls.filter(([path]) => path.endsWith(".hasset") || path.includes(".blobs/"))).toEqual([]);
-    expect(storage.getReadMetrics().actualBytesRead - before).toBeLessThan(64 * 1024);
+    expect(rangeReads.mock.calls.filter(([path]) => path.includes(".blobs/"))).toEqual([]);
+    // Its catalog read at most: never the 256 KiB Scene body behind the header.
+    const sceneBytes = rangeReads.mock.calls
+      .filter(([path]) => path === "assets/unused.scene.hasset")
+      .reduce((sum, [, , length]) => sum + length, 0);
+    expect(sceneBytes).toBeGreaterThan(0);
+    expect(sceneBytes).toBeLessThanOrEqual(SPECULATIVE_CATALOG_READ_BYTES);
     expect(service.assetLoadingService.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, entries: [] });
     service.dispose();
   });

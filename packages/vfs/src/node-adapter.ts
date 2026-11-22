@@ -38,6 +38,7 @@ interface NodeRoot {
  * Node filesystem adapter for the Electron main process, CI and tooling.
  */
 export class NodeStorageAdapter implements ProjectStorage {
+  readonly speculativeRangeReads = true;
   private readonly reads = new StorageReadCounter();
   getReadMetrics() { return this.reads.snapshot(); }
 

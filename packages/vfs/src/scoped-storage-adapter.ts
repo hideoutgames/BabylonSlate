@@ -62,6 +62,7 @@ function toFileStat(stat: NativeFileStat): FileStat {
  * @see .agents/reference/architecture/vfs.md
  */
 export class ScopedStorageAdapter implements ProjectStorage {
+  readonly speculativeRangeReads = true;
   private reads = new StorageReadCounter();
   getReadMetrics() { return this.reads.snapshot(); }
   private folder: FolderRef | null = null;

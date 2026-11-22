@@ -1,4 +1,4 @@
-import type { ProjectStorage, ProjectStorageReader, StorageReadOptions } from "@haptic/core";
+import type { ProjectStorage, ProjectStorageReader, StorageRangeRead, StorageReadOptions } from "@haptic/core";
 import { SourceRevisionChangedError } from "@haptic/core";
 import {
   HASSET_PREFIX_BYTES,
@@ -26,19 +26,62 @@ export interface AssetCatalogRead {
   locator: AssetSourceLocator;
 }
 
-/** Read only the bounded prefix and JSON header; never allocate an inline payload. */
-export async function readAssetCatalog(storage: ProjectStorageReader, path: string, options: StorageReadOptions = {}): Promise<AssetCatalogRead> {
+/**
+ * Bytes a catalog read with a size hint asks for at once: the prefix, the
+ * header and (for a header that fits) the start of the payload, in one range
+ * read instead of two. Typical headers are about a kilobyte; on the Capacitor
+ * bridge, which base64-encodes every read, 8 KiB is about 11 KB of transfer,
+ * cheaper than a second bridge round trip.
+ */
+export const SPECULATIVE_CATALOG_READ_BYTES = 8192;
+
+/**
+ * Read only the bounded prefix and JSON header; never allocate an inline payload.
+ * With `sizeHint` (the file size a directory listing reported) on storage
+ * with `speculativeRangeReads`, the first read
+ * asks for up to `SPECULATIVE_CATALOG_READ_BYTES` (never past the hinted end,
+ * since a range read never reads past the end of a file), and a second read
+ * fetches only what of the header that did not cover. A hint the file no
+ * longer matches is harmless: a shorter file fails that read, which is then
+ * made again as two reads without one.
+ */
+export async function readAssetCatalog(
+  storage: ProjectStorageReader,
+  path: string,
+  options: StorageReadOptions = {},
+  sizeHint?: number | null,
+): Promise<AssetCatalogRead> {
   options.signal?.throwIfAborted();
-  const prefix = await storage.readBinaryRange(path, 0, HASSET_PREFIX_BYTES, undefined, options);
+  const speculative = storage.speculativeRangeReads === true && typeof sizeHint === "number" && Number.isSafeInteger(sizeHint)
+    ? Math.min(sizeHint, SPECULATIVE_CATALOG_READ_BYTES)
+    : 0;
+  let prefix: StorageRangeRead | undefined;
+  if (speculative > HASSET_PREFIX_BYTES) {
+    try {
+      prefix = await storage.readBinaryRange(path, 0, speculative, undefined, options);
+    } catch (error) {
+      // Not every bridge keeps the range error's class, so any failure is
+      // retried as the exact reads below, which fail as they always have.
+      options.signal?.throwIfAborted();
+      if (error instanceof SourceRevisionChangedError) throw error;
+    }
+  }
+  prefix ??= await storage.readBinaryRange(path, 0, HASSET_PREFIX_BYTES, undefined, options);
   options.signal?.throwIfAborted();
   const headerLength = readHassetHeaderLength(prefix.bytes);
   const payloadOffset = HASSET_PREFIX_BYTES + headerLength;
   if (payloadOffset > prefix.totalSize) throw new Error(`Truncated .hasset header: ${path}`);
-  const body = await storage.readBinaryRange(path, HASSET_PREFIX_BYTES, headerLength, prefix.revision, options);
-  options.signal?.throwIfAborted();
-  if (body.totalSize !== prefix.totalSize || body.revision !== prefix.revision) throw new SourceRevisionChangedError(`Asset changed while reading its header: ${path}`);
-  if (body.bytes.byteLength !== headerLength) throw new Error(`Truncated .hasset header: ${path}`);
-  const headerBytes = concatBytes([prefix.bytes, body.bytes]);
+  let headerBytes: Uint8Array;
+  if (payloadOffset <= prefix.bytes.byteLength) {
+    headerBytes = prefix.bytes.subarray(0, payloadOffset);
+  } else {
+    const have = prefix.bytes.byteLength;
+    const body = await storage.readBinaryRange(path, have, payloadOffset - have, prefix.revision, options);
+    options.signal?.throwIfAborted();
+    if (body.totalSize !== prefix.totalSize || body.revision !== prefix.revision) throw new SourceRevisionChangedError(`Asset changed while reading its header: ${path}`);
+    if (body.bytes.byteLength !== payloadOffset - have) throw new Error(`Truncated .hasset header: ${path}`);
+    headerBytes = concatBytes([prefix.bytes, body.bytes]);
+  }
   const header = readHassetHeader(headerBytes);
   const locator = {
     path,
