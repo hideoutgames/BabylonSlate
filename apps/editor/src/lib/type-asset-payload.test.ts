@@ -47,13 +47,13 @@ describe("asEnumAsset", () => {
 describe("asStructureAsset", () => {
   it("keeps typed collection metadata for Structure defaults and data editors", () => {
     expect(asStructureAsset({ fields: [
-      { name: "Materials", typeId: "asset", typeClassId: "Material", container: "map", keyTypeId: " enum ", keyTypeClassId: " tiers " },
-      { name: "Tags", typeId: "tag", container: "array" },
-      { name: "Invalid", container: "set", keyTypeId: 2, keyTypeClassId: " " },
+      { id: "materials", name: "Materials", typeId: "asset", typeClassId: "Material", container: "map", keyTypeId: " enum ", keyTypeClassId: " tiers " },
+      { id: "tags", name: "Tags", typeId: "tag", container: "array" },
+      { id: "invalid", name: "Invalid", container: "set", keyTypeId: 2, keyTypeClassId: " " },
     ] }).fields).toEqual([
-      { name: "Materials", typeId: "asset", typeClassId: "Material", container: "map", keyTypeId: "enum", keyTypeClassId: "tiers" },
-      { name: "Tags", typeId: "tag", container: "array" },
-      { name: "Invalid", typeId: "float" },
+      { id: "materials", name: "Materials", typeId: "asset", typeClassId: "Material", container: "map", keyTypeId: "enum", keyTypeClassId: "tiers" },
+      { id: "tags", name: "Tags", typeId: "tag", container: "array" },
+      { id: "invalid", name: "Invalid", typeId: "float" },
     ]);
   });
 
@@ -89,9 +89,10 @@ describe("asStructureAsset", () => {
         name: "Stats",
         fields: [
           { id: "health-field", name: "Health", typeId: "int", defaultValue: 100 },
-          { name: "Mana" },
+          { id: "mana-field", name: "Mana" },
           null,
-          { name: "Team", typeId: "enum", typeClassId: " enum-team " },
+          { name: "No Identity" },
+          { id: "team-field", name: "Team", typeId: "enum", typeClassId: " enum-team " },
         ],
       }),
     ).toEqual({
@@ -100,9 +101,8 @@ describe("asStructureAsset", () => {
       name: "Stats",
       fields: [
         { id: "health-field", name: "Health", typeId: "int", defaultValue: 100 },
-        { name: "Mana", typeId: "float" },
-        { name: "Field", typeId: "float" },
-        { name: "Team", typeId: "enum", typeClassId: "enum-team" },
+        { id: "mana-field", name: "Mana", typeId: "float" },
+        { id: "team-field", name: "Team", typeId: "enum", typeClassId: "enum-team" },
       ],
     });
   });
