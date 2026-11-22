@@ -29,6 +29,7 @@ import { allowSceneScreenShadows, sceneRenderingSettings, updateSceneRenderingSe
 import { hasFogVolumes, selectFogVolumes, upsertFogVolumes } from "./fog-volumes";
 import { markSceneReadinessDirty } from "./scene-perf";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
 import { backbufferColorTextureHandle, type FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
@@ -42,6 +43,7 @@ import { SharedOutlineOwner } from "./shared-outline";
 import { createGizmoHost } from "./gizmo-host";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import { DISPLAY_COLOR_SHADER } from "./display-color-task";
 import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
 import { registerFirstDrawPasses, withFirstDrawRound } from "./variant-first-draws";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
@@ -1224,17 +1226,18 @@ it("composes a multisampled WebGL2 view's outlines onto the backbuffer after its
   view.dispose();
 });
 
-// The outlines blend in place onto the image before antialiasing. With no FXAA or FSR after them that image is the
-// view's output itself: drawn there by the chain's last own stage, or by the objects without a chain.
+// The outlines land on the image before antialiasing. A chain's Display Color pass composites their stroke itself, after
+// their masks; without one they blend in place onto that image. With no FXAA or FSR after them that image is the view's
+// output itself: drawn there by the chain's last own stage, or by the objects without a chain.
 it.each([
   ["no effects", "off", {}, ["Forward objects", "Shared outlines"]],
-  ["Display Color", "off", { vignette: { enabled: true, weight: 2, color: [0, 0, 0] } }, ["Scene Effects Display Color", "Shared outlines"]],
+  ["Display Color", "off", { vignette: { enabled: true, weight: 2, color: [0, 0, 0] } }, ["Shared outlines", "Scene Effects Display Color"]],
   ["Display Color over a multisampled scene", "msaa4", { vignette: { enabled: true, weight: 2, color: [0, 0, 0] } },
-    ["Scene Effects Display Color", "Shared outlines"]],
+    ["Shared outlines", "Scene Effects Display Color"]],
   ["bloom alone", "off", { bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 } },
-    ["Scene Effects Bloom", "Scene Effects Bloom Merge", "Shared outlines"]],
+    ["Scene Effects Bloom", "Shared outlines", "Scene Effects Bloom Merge"]],
   ["Display Color and FXAA", "fxaa", { colorPipeline: { mode: "sceneLinear" } },
-    ["Scene Effects Display Color", "Shared outlines", "Scene Effects FXAA"]],
+    ["Shared outlines", "Scene Effects Display Color", "Scene Effects FXAA"]],
 ] as Array<[string, AntiAliasingMode, Partial<RenderEffectsSettings>, string[]]>)(
   "places the outlines of a view with %s (%s) on its output unless antialiasing follows them, with no output copy",
   async (_, antiAliasing, effects, tail) => {
@@ -1254,13 +1257,20 @@ it.each([
     expect(tasks.slice(-tail.length)).toEqual(tail);
     expect(tasks).not.toContain("Scene post-process output");
     expect(tasks).not.toContain("Multisample output");
-    const graph = (renderer as unknown as { graph: { graph: FrameGraph; outlineTask: { targetTexture: FrameGraphTextureHandle } } }).graph;
+    const graph = (renderer as unknown as { graph: {
+      graph: FrameGraph; outlineTask: { targetTexture: FrameGraphTextureHandle; externalCompose: boolean; passes: { name: string }[] };
+    } }).graph;
     const textures = graph.graph.textureManager;
-    // Before FXAA the outlines compose onto the display image FXAA reads; otherwise onto the output.
+    // The pass after the outlines' masks composites their stroke: every case but the one without a chain.
+    const fused = tail.at(-1) !== "Shared outlines";
+    const composite = fused ? graph.graph.tasks.find((task) => task.name === tail[tail.indexOf("Shared outlines") + 1]) as FrameGraphPostProcessTask : undefined;
+    expect(graph.outlineTask.externalCompose).toBe(fused);
+    // The image the stroke lands on: before FXAA the display image FXAA reads; otherwise the output.
     const fxaa = tail.at(-1) === "Scene Effects FXAA";
-    expect(textures.isBackbufferColor(graph.outlineTask.targetTexture)).toBe(!fxaa);
-    // The compose and the strict mask.
-    expect(renderer.sharedOutlineDiagnostics().drawingPassCount).toBe(2);
+    expect(textures.isBackbufferColor(composite?.outputTexture ?? graph.outlineTask.targetTexture)).toBe(!fxaa);
+    // The strict mask, and the outlines' own composition only without a Display Color pass.
+    expect(graph.outlineTask.passes.some((pass) => pass.name === "Shared outlines Compose")).toBe(!fused);
+    expect(renderer.sharedOutlineDiagnostics().drawingPassCount).toBe(fused ? 1 : 2);
     detach();
     renderer.dispose();
     view.dispose();
@@ -1391,6 +1401,52 @@ describe("selection outline changes", () => {
     expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
     expect(renderer.diagnostics().graphBuilds).toBe(graphBuilds + 1);
     renderer.dispose();
+  });
+
+  it("switches the Display Color pass between its programs with and without the stroke as a selection comes and goes, linking each once", async () => {
+    const { engine, scene, renderer, outlines } = outlinedScene(false);
+    updateSceneRenderingSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, vignette: { enabled: true, weight: 2, color: [0, 0, 0] } } });
+    const programs: Effect[] = [];
+    const createEffect = engine.createEffect.bind(engine);
+    vi.spyOn(engine, "createEffect").mockImplementation((...args: Parameters<typeof engine.createEffect>) => {
+      const effect = createEffect(...args);
+      if ((args[0] as { fragment?: string }).fragment === DISPLAY_COLOR_SHADER) programs.push(effect);
+      return effect;
+    });
+    const settle = async () => {
+      if (!renderer.render().rendered) await renderer.prepare();
+      expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
+    };
+    await settle();
+    const names = () => renderer.taskNames().filter((name) => name === "Shared outlines" || name === "Scene Effects Display Color");
+    expect(names()).toEqual(["Scene Effects Display Color"]);
+    const [plain] = programs;
+    const { graphBuilds } = renderer.diagnostics();
+    // A selection: its masks, then the pass that composites the stroke, compiled with the outline stage.
+    outlines.setSelection(["a"]);
+    await settle();
+    expect(names()).toEqual(["Shared outlines", "Scene Effects Display Color"]);
+    expect(renderer.diagnostics().graphBuilds).toBe(graphBuilds + 1);
+    const fused = programs.at(-1)!;
+    expect(fused.defines).toContain("#define OUTLINE\n");
+    expect(plain!.defines).not.toContain("OUTLINE");
+    // Membership alone: no rebuild, no program.
+    outlines.setSelection(["b"]);
+    await settle();
+    expect(renderer.diagnostics().graphBuilds).toBe(graphBuilds + 1);
+    // Cleared and selected again: each switch rebuilds the graph and finds its program linked already.
+    outlines.setSelection([]);
+    await settle();
+    expect(names()).toEqual(["Scene Effects Display Color"]);
+    outlines.setSelection(["c"]);
+    await settle();
+    expect(renderer.diagnostics().graphBuilds).toBe(graphBuilds + 3);
+    expect(new Set(programs)).toEqual(new Set([plain, fused]));
+    expect([plain!.isDisposed, fused.isDisposed]).toEqual([false, false]);
+    // The view lets both go with it.
+    renderer.dispose();
+    await Promise.resolve();
+    expect(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects)).not.toContain(plain);
   });
 
   it("probes the scene again when a selection gives an instance source its identity stream", async () => {
