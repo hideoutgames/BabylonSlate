@@ -1,6 +1,9 @@
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Scene } from "@babylonjs/core/scene";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { ThinEngine } from "@babylonjs/core/Engines/thinEngine";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { glyphCellIdentity, type BitmapGlyphCell } from "./text2d-bitmap";
 import { noteLayerUpload } from "./layer-frame-stats";
 
@@ -44,17 +47,20 @@ class Page implements GlyphAtlasPage {
   readonly pixels: Uint8Array;
   readonly texture: RawTexture;
   readonly entries = new Set<Entry>();
-  /** Pixels written since the last upload. */
-  dirty = false;
+  /** The rows written since the last upload, [dirtyFrom, dirtyTo); empty when dirtyTo <= dirtyFrom. */
+  private dirtyFrom = 0;
+  private dirtyTo = 0;
   private readonly free: Slot[] = [];
   private x = 1;
   private y = 1;
   private rowHeight = 0;
+  private readonly scene: Scene;
 
   constructor(id: number, width: number, height: number, scene: Scene, nearest: boolean) {
     this.id = id;
     this.width = width;
     this.height = height;
+    this.scene = scene;
     this.pixels = new Uint8Array(width * height * 4);
     this.texture = RawTexture.CreateRGBATexture(
       this.pixels, width, height, scene, false, true,
@@ -100,7 +106,7 @@ class Page implements GlyphAtlasPage {
       const source = row * cell.width * 4;
       pixels.set(cell.pixels.subarray(source, source + cell.width * 4), ((slot.y + row) * width + slot.x) * 4);
     }
-    this.dirty = true;
+    this.markDirty(slot.y, slot.y + slot.height);
     const entry: Entry = {
       identity, slot, page: this, references: 0,
       glyph: {
@@ -117,16 +123,52 @@ class Page implements GlyphAtlasPage {
     return entry;
   }
 
-  /** Gives a cell no text holds back to the page. Its pixels stay until the slot is written again. */
+  /**
+   * Gives a cell no text holds back to the page. Its pixels stay until the slot is written again, unless it was the
+   * page's last cell: an empty page clears what its shelves covered and starts them again from its origin, so the
+   * gaps between new cells are as transparent as on a new page.
+   */
   remove(entry: Entry): void {
     this.entries.delete(entry);
-    this.free.push(entry.slot);
+    if (this.entries.size > 0) {
+      this.free.push(entry.slot);
+      return;
+    }
+    this.free.length = 0;
+    const used = Math.min(this.height, this.y + this.rowHeight + 1);
+    this.pixels.fill(0, 0, used * this.width * 4);
+    this.markDirty(0, used);
+    this.x = 1;
+    this.y = 1;
+    this.rowHeight = 0;
   }
 
+  private markDirty(from: number, to: number): void {
+    if (this.dirtyTo <= this.dirtyFrom) {
+      this.dirtyFrom = from;
+      this.dirtyTo = to;
+      return;
+    }
+    this.dirtyFrom = Math.min(this.dirtyFrom, from);
+    this.dirtyTo = Math.max(this.dirtyTo, to);
+  }
+
+  /**
+   * Uploads the rows written since the last upload as one full-width band: a band of a page's rows is contiguous in
+   * `pixels`, so it goes up as a view, without copying or a row length. The texture was created from `pixels` (which
+   * the Engine keeps for a lost context), so the rows outside the band already hold the same values. The page is
+   * stored top row first and uploaded flipped (`invertY`), so the band's rows land `height - dirtyTo` from the
+   * texture's first row, as a whole-page upload would put them.
+   */
   upload(): void {
-    if (!this.dirty) return;
-    this.dirty = false;
-    this.texture.update(this.pixels);
+    const from = this.dirtyFrom, to = this.dirtyTo;
+    if (to <= from) return;
+    this.dirtyFrom = this.dirtyTo = 0;
+    const engine = this.scene.getEngine() as AbstractEngine & Partial<Pick<ThinEngine, "updateTextureData">>;
+    const internal = this.texture.getInternalTexture();
+    // A NullEngine has no GL context to update a region of; its whole-texture update keeps only the data.
+    if (!internal || !engine.updateTextureData || engine instanceof NullEngine) this.texture.update(this.pixels);
+    else engine.updateTextureData(internal, this.pixels.subarray(from * this.width * 4, to * this.width * 4), 0, this.height - to, this.width, to - from);
     noteLayerUpload();
   }
 }

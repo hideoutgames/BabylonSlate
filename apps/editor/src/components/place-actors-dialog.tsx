@@ -10,6 +10,7 @@ import {
   useCatalogFilter,
   type CatalogCategory,
   type CatalogCategoryGroup,
+  type ThumbnailVersions,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Separator } from "@haptic/ui/components/separator";
@@ -243,7 +244,7 @@ export function PlaceActorsDialog({
   /** Viewport point the popup opens from; centered without one. */
   anchor?: { x: number; y: number } | null;
   loadThumbnail?: LoadThumbnail;
-  thumbnailVersions?: Readonly<Record<string, number>>;
+  thumbnailVersions?: ThumbnailVersions;
 }) {
   // Search, category, filters, sort and scroll reopen as the user left them
   // for the rest of the project session (memory only), however the popup

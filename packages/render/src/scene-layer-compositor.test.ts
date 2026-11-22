@@ -435,6 +435,12 @@ describe("SceneLayerCompositor", () => {
       // One draw per layer, each over the colour beneath, as layers without passes always drew.
       expect((render.mock.contexts as SceneRenderCoordinator[]).map(sceneOf)).toEqual([hud.scene, menu.scene]);
       expect([hud.scene.autoClear, menu.scene.autoClear]).toEqual([false, false]);
+      // A steady frame draws without validating its presentation (a second strict round after each draw); a layer
+      // that presents for the first time, which its loading owner waits on, validates.
+      expect(render.mock.calls).toEqual([[false], [false]]);
+      render.mockClear();
+      compositor.render(new Set(["menu"]));
+      expect(render.mock.calls).toEqual([[false], [true]]);
       expect(compositor.ownedScenes()).toEqual(expect.arrayContaining([hud.scene, menu.scene]));
       expect(compositor.ownedScenes()).toHaveLength(2);
     });
@@ -463,6 +469,7 @@ describe("SceneLayerCompositor", () => {
       compositor.render();
       // Layers in draw order, then the passes once; only the first layer clears the shared target.
       expect((render.mock.contexts as SceneRenderCoordinator[]).map(sceneOf)).toEqual([after.scene, third.scene, before.scene, passes]);
+      expect(render.mock.calls).toEqual([[false], [false], [false], [false]]);
       expect([after.scene.autoClear, third.scene.autoClear, before.scene.autoClear]).toEqual([true, false, false]);
       compositor.remove("third");
       create(compositor, "fourth", 4);
@@ -615,7 +622,8 @@ describe("SceneLayerCompositor", () => {
       await compositor.prepare("overlay", () => {});
       await vi.waitFor(() => { expect(compositor.isReady("overlay")).toBe(true); });
       let acknowledged = false;
-      compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
+      // The layer's first presentation, which its loading owner acknowledges.
+      compositor.render(new Set(["overlay"]), (_id, draw) => { acknowledged = draw(); });
       expect(acknowledged).toBe(true);
       const blit = engine.scenes.find((scene) => scene.getMeshByName("sceneLayerBlitPlane"))!;
       const plane = blit.getMeshByName("sceneLayerBlitPlane")!;
@@ -637,6 +645,7 @@ describe("SceneLayerCompositor", () => {
       expect(blit.isDisposed).toBe(false);
       await compositor.prepare("overlay", () => {});
       await vi.waitFor(() => { expect(compositor.isReady("overlay")).toBe(true); });
+      // A steady frame: while the last composite stands in, it validates, and releases the composite once it presents.
       compositor.render(new Set(), (_id, draw) => { acknowledged = draw(); });
       expect(acknowledged).toBe(true);
       await vi.waitFor(() => { expect(blit.isDisposed).toBe(true); });

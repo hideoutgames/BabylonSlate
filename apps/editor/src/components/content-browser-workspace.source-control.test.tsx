@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { projectContentRoot, type IndexedAsset } from "@haptic/assets";
 import { SOURCE_CONTROL_ID } from "@haptic/core";
+import { createThumbnailVersionStore } from "@haptic/editor-kit";
 import { FakeLockProvider } from "@haptic/source-control";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { SourceControlActionsProvider } from "./source-control-actions";
@@ -86,7 +87,7 @@ function installProject() {
     registryEpoch: 1,
     encodingTextures: new Set<string>(),
     thumbnailsEnabled: false,
-    thumbnailVersions: {},
+    thumbnailVersions: createThumbnailVersionStore(),
     pluginDescriptors: [],
     showPluginContent: false,
     activeDocumentId: "content-browser",

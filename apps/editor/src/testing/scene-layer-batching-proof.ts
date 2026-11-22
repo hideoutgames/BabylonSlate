@@ -92,6 +92,7 @@ export async function runSceneLayerBatchingProof(images: "filtered" | "nearest" 
   const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   engine.setSize(WIDTH, HEIGHT);
   const compositor = new SceneLayerCompositor({ engine });
+  const PRESENTING: ReadonlySet<string> = new Set(["hud"]);
   try {
     // A 32 × 18 unit Custom canvas fitted to the output, as the proof's layout expects.
     const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null,
@@ -140,9 +141,10 @@ export async function runSceneLayerBatchingProof(images: "filtered" | "nearest" 
         engine.beginFrame();
         engine.clear(BACKGROUND, true, true, true);
         const before = drawCalls();
+        // The layer presents in every frame here, so each frame validates its presentation and reports whether it is ready.
         let presented = false;
         try {
-          compositor.render(new Set(), (_id, render) => { presented = render(); });
+          compositor.render(PRESENTING, (_id, render) => { presented = render(); });
         } finally {
           engine.endFrame();
         }

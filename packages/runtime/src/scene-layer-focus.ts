@@ -346,6 +346,16 @@ export class SceneLayerFocusNavigation {
     const defaults = this.settings.navigationInputGuid && this.settings.activateInputGuid
       ? null
       : this.defaults.resolve(events, dt);
+    const navigate = this.settings.navigationInputGuid
+      ? input.inputs[this.settings.navigationInputGuid]
+      : defaults?.inputs.focusNavigate;
+    const activate = this.settings.activateInputGuid
+      ? input.inputs[this.settings.activateInputGuid]
+      : defaults?.inputs.focusActivate;
+    // A tick without focus input only revalidates the focus; where that needs the focused target alone, it reads no other.
+    const idle = this.direction === null && !navigate?.held && !navigate?.started && !navigate?.released &&
+      !activate?.started && !activate?.released;
+    if (idle && this.revalidateFocusedAlone()) return;
     const candidates = this.refreshed();
     const layer = candidates[0]?.actor.sceneLayerId ?? null;
     if (layer !== this.initialLayer) {
@@ -353,9 +363,6 @@ export class SceneLayerFocusNavigation {
       const initial = candidates.find((entry) => entry.properties.focusInitial);
       if (initial) this.transition(initial);
     }
-    const navigate = this.settings.navigationInputGuid
-      ? input.inputs[this.settings.navigationInputGuid]
-      : defaults?.inputs.focusNavigate;
     const direction = directionOf(navigate?.held ? navigate.value : undefined);
     const pulse = !navigate?.held && navigate?.started ? directionOf(navigate.activeValue) : null;
     if (pulse) this.move(pulse);
@@ -370,9 +377,6 @@ export class SceneLayerFocusNavigation {
         this.repeatRemaining = this.settings.repeatInterval;
       }
     }
-    const activate = this.settings.activateInputGuid
-      ? input.inputs[this.settings.activateInputGuid]
-      : defaults?.inputs.focusActivate;
     // A release and repress between ticks ends the previous press first.
     // Keep a final held press pending; a completed tap still ends this tick.
     const releaseBeforeStart = activate?.started && activate.released && (activate.held || this.pressed !== null);
@@ -385,6 +389,42 @@ export class SceneLayerFocusNavigation {
     }
     if (activate?.released && (!releaseBeforeStart || !activate.held)) this.releaseActivation();
   }
+
+  /**
+   * An idle tick's `refreshed()` when its answer is known from the focused target alone, which it then refreshes; false
+   * (nothing done) otherwise. That holds while the focus targets and their first `focused` values are those of the
+   * world's structure (`targets` current, `unset` empty: `candidates` would write nothing), the focused target's layer
+   * is the topmost live layer and the one navigation last started in (`initialLayer`), and the target is still a
+   * candidate: the walk would stop at that layer with it among its candidates, so the focus and the owning layer stay as
+   * they are. Any other case (the focus lost, a layer above it, no focus) takes the full walk.
+   */
+  private revalidateFocusedAlone(): boolean {
+    const focused = this.focused;
+    const targets = this.targets;
+    if (!focused || !targets || targets.revision !== this.world.structuralRevision || targets.unset.length > 0) return false;
+    const layerId = focused.actor.sceneLayerId;
+    if (!layerId || layerId !== this.initialLayer) return false;
+    // The last live layer in the walk's order (zOrder, then guid).
+    let top: { guid: string; zOrder: number } | null = null;
+    for (const layer of this.world.getSceneLayers()) {
+      if (layer.destroyed) continue;
+      if (!Number.isFinite(layer.zOrder)) return false;
+      if (!top || layer.zOrder > top.zOrder || (layer.zOrder === top.zOrder && layer.guid.localeCompare(top.guid) > 0)) top = layer;
+    }
+    if (top?.guid !== layerId) return false;
+    const entry = targets.byLayer.get(layerId)?.find((candidate) => candidate.actor === focused.actor);
+    if (!entry) return false;
+    const found = this.focusedScratch;
+    this.collect(entry, found);
+    const current = found.find((candidate) => candidate.component === focused.component);
+    found.length = 0;
+    if (!current) return false;
+    this.focused = current;
+    return true;
+  }
+
+  /** The focused actor's candidates, collected by an idle tick (`revalidateFocusedAlone`). */
+  private readonly focusedScratch: Candidate[] = [];
 
   private releaseActivation(): void {
     this.refresh();

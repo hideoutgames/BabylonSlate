@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { commandToJournalPayload, serializeJournalLine } from "../journal";
 import { replayJournalLines } from "../journal-replay";
 import { snapshotBytes } from "../snapshot-bytes";
@@ -111,6 +111,38 @@ describe("PatchTilemapDocumentCommand", () => {
     expect(JSON.stringify(current)).toBe(JSON.stringify(map));
     current = stack.redo(current)!.doc;
     expect(JSON.stringify(current)).toBe(JSON.stringify(third));
+  });
+
+  it("measures each chunk a stroke touches once, not the whole folded stroke per sample", () => {
+    const map = denseMap();
+    const stack = new DocumentEditStack<Record<string, unknown>>({ maxEntries: 10, maxBytes: 100_000_000 });
+    const chunkBytes = snapshotBytes(map.layers[0]!.chunks[0]!.tiles);
+    const stringify = JSON.stringify;
+    let serialized = 0;
+    let current = map;
+    let applied = doc(map);
+    const spy = vi.spyOn(JSON, "stringify").mockImplementation((...args: Parameters<typeof JSON.stringify>) => {
+      const text = stringify(...args);
+      serialized += text?.length ?? 0;
+      return text;
+    });
+    const samples = 60;
+    try {
+      // Each sample of the stroke paints one cell of a chunk it has not touched before.
+      for (let sample = 0; sample < samples; sample++) {
+        const next = withCell(current, 0, sample, 0, 40);
+        applied = stack.apply(applied, patch(current, next, "tilemap-stroke")).doc;
+        current = next;
+      }
+    } finally {
+      spy.mockRestore();
+    }
+    expect(stack.undoDepth).toBe(1);
+    expect(stack.undoBytes).toBeGreaterThan(2 * samples * chunkBytes);
+    // Both sides of each chunk once, with room for keys; re-measuring the folded stroke per sample would be about 30 times this.
+    expect(serialized).toBeLessThan(3 * samples * chunkBytes);
+    applied = stack.undo(applied)!.doc;
+    expect(JSON.stringify(applied)).toBe(JSON.stringify(map));
   });
 
   it("adds and removes layers and chunks, reorders them and changes fields, in both directions", () => {

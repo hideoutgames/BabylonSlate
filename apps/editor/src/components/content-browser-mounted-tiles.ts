@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { isThumbnailableAssetType } from "@haptic/assets";
+import { useThumbnailVersionsKey } from "@haptic/editor-kit";
 import type { useDocumentActions, useThumbnailVersions } from "../context/document-context";
 import { classDocumentShowsPrefab } from "../lib/content-browser-helpers";
 import {
@@ -118,6 +119,8 @@ export function useContentBrowserMountedTiles(deps: ContentBrowserMountedTilesDe
   );
 
   const loadedThumbnailVersionsRef = useRef<Readonly<Record<string, number>>>({});
+  // Only a rewrite of a mounted tile's thumbnail renders the browser; others leave it still.
+  const mountedVersionsKey = useThumbnailVersionsKey(thumbnailVersions, mountedTextureGuids, thumbnailsEnabled);
 
   const thumbnailSyncStartedRef = useRef(false);
   // URLs a commit stopped showing, tagged with that commit's URL map. A URL is
@@ -136,13 +139,15 @@ export function useContentBrowserMountedTiles(deps: ContentBrowserMountedTilesDe
   useEffect(() => {
     if (!thumbnailsEnabled) return;
     let cancelled = false;
+    void mountedVersionsKey;
+    const versions = Object.fromEntries(mountedTextureGuids.map((guid) => [guid, thumbnailVersions.version(guid)]));
     const sync = () => {
       if (!hidden) thumbnailSyncStartedRef.current = true;
       void syncContentBrowserThumbnailUrls({
         mountedTextureGuids,
         urls: thumbnailUrlsRef.current,
         refreshGuids: new Set(mountedTextureGuids.filter((guid) =>
-          thumbnailVersions[guid] !== loadedThumbnailVersionsRef.current[guid],
+          versions[guid] !== loadedThumbnailVersionsRef.current[guid],
         )),
         hidden,
         load: loadAssetThumbnail,
@@ -157,12 +162,10 @@ export function useContentBrowserMountedTiles(deps: ContentBrowserMountedTilesDe
         commit: (next, { loaded, done }) => {
           // A cancelled sync leaves later guids unloaded, so only a finished
           // one may claim every version; batches record just what they read.
-          loadedThumbnailVersionsRef.current = done
-            ? thumbnailVersions
-            : {
-                ...loadedThumbnailVersionsRef.current,
-                ...Object.fromEntries(loaded.map((guid) => [guid, thumbnailVersions[guid]])),
-              };
+          loadedThumbnailVersionsRef.current = {
+            ...loadedThumbnailVersionsRef.current,
+            ...(done ? versions : Object.fromEntries(loaded.map((guid) => [guid, versions[guid]]))),
+          };
           thumbnailUrlsRef.current = next;
           lastThumbnailCommitRef.current = next;
           setThumbnailUrls(next);
@@ -183,7 +186,7 @@ export function useContentBrowserMountedTiles(deps: ContentBrowserMountedTilesDe
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [hidden, loadAssetThumbnail, mountedTextureGuids, thumbnailVersions, thumbnailsEnabled]);
+  }, [hidden, loadAssetThumbnail, mountedTextureGuids, mountedVersionsKey, thumbnailVersions, thumbnailsEnabled]);
 
   useEffect(() => {
     // The queue is only ever mutated in place, so this is the list the sync fills.

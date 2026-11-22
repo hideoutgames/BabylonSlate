@@ -41,6 +41,25 @@ describe("2D Painter retained drawing", () => {
     expect(commands).toHaveLength(4);
   });
 
+  it("reads the painter's style only for a drawing call, never for each vertex of a path", () => {
+    // The break: every path call (a script's line-by-line loop) copying and parsing the component's variables.
+    const runtime = new Painter2DRuntime();
+    const { component } = painter("lines");
+    runtime.payload(component);
+    let reads = 0;
+    const variables = component.variables;
+    const iterate = variables[Symbol.iterator].bind(variables);
+    variables[Symbol.iterator] = () => { reads++; return iterate(); };
+    runtime.execute(component, "painterBeginPath", {});
+    runtime.execute(component, "painterMoveTo", { point: [0, 0] });
+    for (let x = 1; x <= 100; x++) runtime.execute(component, "painterLineTo", { point: [x, x % 2] });
+    expect(reads).toBe(0);
+    component.setVariable("strokeWidth", 3);
+    expect(runtime.execute(component, "painterStrokePath", {})).toBe(true);
+    expect(reads).toBe(1);
+    expect(runtime.payload(component).commands).toMatchObject([{ kind: "draw", stroke: true, style: { strokeWidth: 3 } }]);
+  });
+
   it("clears only ticking frame painters and rejects invalid paths without changing drawing", () => {
     const runtime = new Painter2DRuntime();
     const a = painter("frame", true), b = painter("retained"), sleeping = painter("sleeping", true);

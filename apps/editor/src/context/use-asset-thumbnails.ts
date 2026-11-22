@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { ProjectDocument, ProjectStorage } from "@haptic/core";
 import { readThumbnail, ThumbnailDecodeLru, writeThumbnail } from "@haptic/assets";
+import { createThumbnailVersionStore } from "@haptic/editor-kit";
 import {
   createAssetThumbnailRevisionIndex,
   type AssetThumbnailWriteIdentity,
@@ -31,8 +32,9 @@ export interface AssetThumbnailDeps {
 /**
  * Asset thumbnails: the decoded thumbnail cache, the saved revision each
  * asset's thumbnail was read for (a new revision bumps its version), and the
- * Thumbnails engine setting. Every callback keeps its identity for the
- * provider's lifetime.
+ * Thumbnails engine setting. Every callback, and the version store, keeps its
+ * identity for the provider's lifetime: a rewritten thumbnail renders only the
+ * views subscribed to that asset, never the provider.
  */
 export function useAssetThumbnails({
   projectService,
@@ -47,7 +49,9 @@ export function useAssetThumbnails({
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES));
   const requestedThumbnailRevisionsRef = useRef(new Map<string, string>());
   const thumbnailsEnabledRef = useRef(true);
-  const [thumbnailVersions, setThumbnailVersions] = useState<Record<string, number>>({});
+  const [thumbnailVersions] = useState(createThumbnailVersionStore);
+  /** The revision index a write builds its cache key with, kept while the registry and Pixels Per Unit stay the same. */
+  const writeIndexRef = useRef<{ registry: unknown; generation: number; pixelsPerUnit: number | undefined; index: ReturnType<typeof createAssetThumbnailRevisionIndex> } | null>(null);
   const previousThumbnailIndexRef = useRef<ReturnType<typeof createAssetThumbnailRevisionIndex> | null>(null);
   const thumbnailRevisionIndex = useMemo(
     () => {
@@ -76,20 +80,17 @@ export function useAssetThumbnails({
       else requestedThumbnailRevisionsRef.current.set(guid, next);
       changed.push(guid);
     }
-    if (changed.length) setThumbnailVersions((versions) => {
-      const next = { ...versions };
-      for (const guid of changed) next[guid] = (next[guid] ?? 0) + 1;
-      return next;
-    });
-  }, [thumbnailRevisionIndex]);
+    if (changed.length) thumbnailVersions.bump(changed);
+  }, [thumbnailRevisionIndex, thumbnailVersions]);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
 
   /** Project open: the previous project's decoded and requested thumbnails go. */
   const resetThumbnails = useCallback(() => {
     thumbnailLruRef.current = new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES);
     requestedThumbnailRevisionsRef.current.clear();
-    setThumbnailVersions({});
-  }, []);
+    writeIndexRef.current = null;
+    thumbnailVersions.reset();
+  }, [thumbnailVersions]);
 
   /** The Thumbnails engine setting, read when the provider mounts. */
   const applyThumbnailsEnabled = useCallback((enabled: boolean) => {
@@ -137,7 +138,16 @@ export function useAssetThumbnails({
       if (!guid || (expected && expected.projectGuid !== guid)) return;
       const lru = thumbnailLruRef.current;
       const derived = await ensureDerived();
-      const revisionIndex = createAssetThumbnailRevisionIndex(projectService.registry?.list() ?? [], projectDocumentRef.current?.settings.twoD.pixelsPerUnit);
+      // A batch of captures (a new project's every asset) builds the index once per registry change, not once per asset.
+      const registry = projectService.registry;
+      const generation = registry?.generation ?? 0;
+      const pixelsPerUnit = projectDocumentRef.current?.settings.twoD.pixelsPerUnit;
+      let cached = writeIndexRef.current;
+      if (!cached || cached.registry !== registry || cached.generation !== generation || cached.pixelsPerUnit !== pixelsPerUnit) {
+        cached = { registry, generation, pixelsPerUnit, index: createAssetThumbnailRevisionIndex(registry?.list() ?? [], pixelsPerUnit) };
+        writeIndexRef.current = cached;
+      }
+      const revisionIndex = cached.index;
       const revision = revisionIndex.revision(assetGuid);
       const key = revision !== null ? await revisionIndex.cacheKey(assetGuid) : assetGuid;
       if (!key || projectService.guid !== guid || thumbnailLruRef.current !== lru ||
@@ -145,12 +155,9 @@ export function useAssetThumbnails({
       await writeThumbnail(derived, guid, key, bytes);
       if (projectService.guid !== guid || thumbnailLruRef.current !== lru) return;
       lru.delete(key);
-      setThumbnailVersions((versions) => ({
-        ...versions,
-        [assetGuid]: (versions[assetGuid] ?? 0) + 1,
-      }));
+      thumbnailVersions.bump([assetGuid]);
     },
-    [ensureDerived, projectService, projectDocumentRef],
+    [ensureDerived, projectService, projectDocumentRef, thumbnailVersions],
   );
 
   const actions = useMemo(

@@ -1543,6 +1543,25 @@ function nodeMaterialBuildInProgress(material: NodeMaterial): boolean {
   return (material as unknown as { _buildIsInProgress?: boolean })._buildIsInProgress === true;
 }
 
+interface PlanIndex {
+  operations: ReadonlyMap<string, MaterialOperation>;
+  /** The first binding of each operation, as `textures.find` answered. */
+  textures: ReadonlyMap<string, MaterialBuildPlan["textures"][number]>;
+}
+/** Plans are shared and never changed, so each is indexed once for every compile of it. */
+const planIndices = new WeakMap<MaterialBuildPlan, PlanIndex>();
+
+function planIndex(plan: MaterialBuildPlan): PlanIndex {
+  let index = planIndices.get(plan);
+  if (index) return index;
+  const operations = new Map<string, MaterialOperation>();
+  for (const operation of plan.operations) if (!operations.has(operation.id)) operations.set(operation.id, operation);
+  const textures = new Map<string, MaterialBuildPlan["textures"][number]>();
+  for (const binding of plan.textures) if (!textures.has(binding.operationId)) textures.set(binding.operationId, binding);
+  planIndices.set(plan, (index = { operations, textures }));
+  return index;
+}
+
 /**
  * The value `operand` always holds when it is one: a literal, or a Float Constant node's value with no conversion on
  * the way (not a Parameter, which a Material Instance can change). Null otherwise.
@@ -1551,7 +1570,7 @@ function constantScalar(plan: MaterialBuildPlan, operand: MaterialOperand | null
   if (!operand) return null;
   if (operand.kind === "constant") return operand.value.length === 1 ? operand.value[0]! : null;
   if (operand.conversions?.length) return null;
-  const operation = plan.operations.find((entry) => entry.id === operand.operationId);
+  const operation = planIndex(plan).operations.get(operand.operationId);
   const value = operation?.nodeType === "const.float" ? operation.properties.value : null;
   return Array.isArray(value) && value.length === 1 && typeof value[0] === "number" ? value[0] : null;
 }
@@ -1643,9 +1662,8 @@ function bindTexture(
   const operand = operation.inputs.texture;
   const producerId =
     operand?.kind === "operation" ? operand.operationId : undefined;
-  const binding =
-    plan.textures.find((entry) => entry.operationId === producerId) ??
-    plan.textures.find((entry) => entry.operationId === operation.id);
+  const { textures } = planIndex(plan);
+  const binding = (producerId === undefined ? undefined : textures.get(producerId)) ?? textures.get(operation.id);
   if (!binding) return true;
   const texture = options.resolveTexture?.(binding.textureGuid, binding.filter) ?? null;
   if (!texture || isDisposedGpuTexture(texture)) {
@@ -1692,13 +1710,12 @@ function collectWorldPositionOffsetOperationIds(
   plan: MaterialBuildPlan,
 ): Set<string> {
   const ids = new Set<string>();
+  const { operations } = planIndex(plan);
   const visit = (operand: MaterialOperand | null | undefined): void => {
     if (!operand || operand.kind !== "operation") return;
     if (ids.has(operand.operationId)) return;
     ids.add(operand.operationId);
-    const operation = plan.operations.find(
-      (entry) => entry.id === operand.operationId,
-    );
+    const operation = operations.get(operand.operationId);
     if (!operation) return;
     for (const input of Object.values(operation.inputs)) {
       visit(input);
