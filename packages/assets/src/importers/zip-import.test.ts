@@ -9,6 +9,7 @@ import {
   isZipArchive,
   zipImportFolderName,
   type ExpandImportZipOptions,
+  ZIP_IMPORT_MAX_EXPANDED_BYTES,
 } from "./zip-import";
 
 const text = (value: string) => new TextEncoder().encode(value);
@@ -25,7 +26,7 @@ function expand(bytes: Uint8Array, options: Partial<ExpandImportZipOptions> = {}
 function patchCentralEntry(
   archive: Uint8Array,
   name: string,
-  patch: { flags?: number; method?: number; size?: number },
+  patch: { flags?: number; method?: number; size?: number; crc?: number },
 ): Uint8Array {
   const bytes = archive.slice();
   const view = new DataView(bytes.buffer);
@@ -38,6 +39,7 @@ function patchCentralEntry(
     if (patch.flags !== undefined) view.setUint16(offset + 8, patch.flags, true);
     if (patch.method !== undefined) view.setUint16(offset + 10, patch.method, true);
     if (patch.size !== undefined) view.setUint32(offset + 24, patch.size, true);
+    if (patch.crc !== undefined) view.setUint32(offset + 16, patch.crc, true);
     return bytes;
   }
   throw new Error(`No central record for ${name}`);
@@ -149,6 +151,28 @@ describe("expandImportZip", () => {
     const result = await expand(archive);
     expect(names(result)).toEqual(["ok.png"]);
     expect(result.skipped).toEqual([{ path: "bomb.png", reason: "damaged" }]);
+  });
+
+  it("allocates nothing from a size the archive declares: a tiny entry claiming 512 MiB is skipped as damaged", async () => {
+    // Within the expanded-size limit, so only the entry's own data can show the claim is false.
+    const archive = patchCentralEntry(zip({ "claim.png": new Uint8Array(64), "ok.png": new Uint8Array([1]) }), "claim.png", { size: ZIP_IMPORT_MAX_EXPANDED_BYTES - 1 });
+    const before = process.memoryUsage().arrayBuffers;
+    const result = await expand(archive);
+    expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(64 * 1024 * 1024);
+    expect(names(result)).toEqual(["ok.png"]);
+    expect(result.skipped).toEqual([{ path: "claim.png", reason: "damaged" }]);
+  });
+
+  it("skips an entry whose bytes do not match its recorded CRC-32, deflated or stored", async () => {
+    const data = Uint8Array.from({ length: 5000 }, (_, index) => index % 11);
+    const deflated = patchCentralEntry(zip({ "bad.png": data, "good.png": data }), "bad.png", { crc: 0x12345678 });
+    const result = await expand(deflated);
+    expect(names(result)).toEqual(["good.png"]);
+    expect(result.files[0]!.bytes).toEqual(data);
+    expect(result.skipped).toEqual([{ path: "bad.png", reason: "damaged" }]);
+
+    const stored = patchCentralEntry(zipSync({ "bad.png": data }, { level: 0 }), "bad.png", { crc: 0 });
+    expect((await expand(stored)).skipped).toEqual([{ path: "bad.png", reason: "damaged" }]);
   });
 
   it("refuses a ZIP with more entries than the limit, folders included", async () => {

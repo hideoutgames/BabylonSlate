@@ -1,4 +1,5 @@
 import { Inflate } from "fflate";
+import { crc32 } from "../crc32";
 import { contentEntryNameError } from "../registry-paths";
 import type { ImportFileBytes } from "./obj-import-batch";
 import { extensionOf } from "./util";
@@ -68,6 +69,8 @@ interface CentralEntry {
   name: string;
   flags: number;
   method: number;
+  /** CRC-32 of the entry's uncompressed bytes. */
+  crc: number;
   compressedSize: number;
   size: number;
   localOffset: number;
@@ -122,7 +125,10 @@ function decodeEntryName(raw: Uint8Array, flags: number): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(raw);
   } catch {
-    return String.fromCharCode(...raw);
+    // Byte for byte as Latin-1; a name can be 64 KiB, too long to spread into one call.
+    let name = "";
+    for (let index = 0; index < raw.length; index++) name += String.fromCharCode(raw[index]!);
+    return name;
   }
 }
 
@@ -159,6 +165,7 @@ function readCentralDirectory(zip: ZipReader, maxEntries: number): CentralEntry[
     if (zip.u32(offset) !== CENTRAL_HEADER) throw new ZipFormatError();
     const flags = zip.u16(offset + 8);
     const method = zip.u16(offset + 10);
+    const crc = zip.u32(offset + 16);
     let compressedSize = zip.u32(offset + 20);
     let size = zip.u32(offset + 24);
     const nameLength = zip.u16(offset + 28);
@@ -180,7 +187,7 @@ function readCentralDirectory(zip: ZipReader, maxEntries: number): CentralEntry[
       }
       field = fieldEnd;
     }
-    entries.push({ name, flags, method, compressedSize, size, localOffset });
+    entries.push({ name, flags, method, crc, compressedSize, size, localOffset });
     offset = extraEnd + commentLength;
   }
   return entries;
@@ -233,26 +240,42 @@ function timeSlicer(signal: AbortSignal | undefined, onYield: () => void): () =>
   };
 }
 
+/** Bytes the archive's files may still inflate to, across every entry. */
+interface ExpansionBudget {
+  remaining: number;
+}
+
+/**
+ * One entry's bytes, inflated a slice at a time. Nothing is allocated from
+ * the sizes the archive declares: inflated pieces are kept until the entry
+ * ends, and only an entry that inflated to exactly its recorded size, within
+ * what `budget` has left, with its recorded CRC-32, is joined into one buffer.
+ */
 async function expandEntry(
   data: Uint8Array,
   entry: CentralEntry,
+  budget: ExpansionBudget,
   slice: () => Promise<void>,
   onBytes: (count: number) => void,
 ): Promise<Uint8Array> {
   if (entry.method === 0) {
-    if (data.byteLength !== entry.size) throw new DamagedEntryError();
+    if (data.byteLength !== entry.size || data.byteLength > budget.remaining) throw new DamagedEntryError();
     await slice();
+    if (crc32(data) !== entry.crc) throw new DamagedEntryError();
+    budget.remaining -= data.byteLength;
     onBytes(data.byteLength);
     return data.slice();
   }
-  const out = new Uint8Array(entry.size);
+  const pieces: Uint8Array[] = [];
   let written = 0;
+  let crc = 0;
   let ended = data.byteLength === 0 && entry.size === 0;
-  // The declared size bounds memory: an entry that inflates past it is damaged or hostile.
+  // The recorded size and the budget bound memory: an entry that inflates past either is damaged or hostile.
   const inflate = new Inflate((chunk, final) => {
-    if (written + chunk.byteLength > out.byteLength) throw new DamagedEntryError();
-    out.set(chunk, written);
     written += chunk.byteLength;
+    if (written > entry.size || written > budget.remaining) throw new DamagedEntryError();
+    crc = crc32(chunk, crc);
+    pieces.push(chunk);
     if (final) ended = true;
   });
   for (let start = 0; start < data.byteLength; start += INFLATE_SLICE_BYTES) {
@@ -265,7 +288,15 @@ async function expandEntry(
     }
     onBytes(end - start);
   }
-  if (!ended || written !== out.byteLength) throw new DamagedEntryError();
+  if (!ended || written !== entry.size || crc !== entry.crc) throw new DamagedEntryError();
+  budget.remaining -= written;
+  if (pieces.length === 1 && pieces[0]!.byteLength === pieces[0]!.buffer.byteLength) return pieces[0]!;
+  const out = new Uint8Array(written);
+  let offset = 0;
+  for (const piece of pieces) {
+    out.set(piece, offset);
+    offset += piece.byteLength;
+  }
   return out;
 }
 
@@ -330,11 +361,12 @@ export async function expandImportZip(
   const report = () => onProgress?.(totalBytes > 0 ? Math.min(1, doneBytes / totalBytes) : 1);
   const slice = timeSlicer(signal, report);
   const files: ImportFileBytes[] = [];
+  const budget: ExpansionBudget = { remaining: maxExpandedBytes };
   for (const { entry, segments } of extract) {
     await slice();
     try {
       const data = entryData(zip, entry);
-      const expanded = await expandEntry(data, entry, slice, (count) => { doneBytes += count; });
+      const expanded = await expandEntry(data, entry, budget, slice, (count) => { doneBytes += count; });
       files.push({ name: (stripWrapper ? segments.slice(1) : segments).join("/"), bytes: expanded });
     } catch (error) {
       signal?.throwIfAborted();
