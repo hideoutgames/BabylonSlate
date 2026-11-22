@@ -324,6 +324,27 @@ describe.each([
     expect(handle.ring.drain()).toEqual([{ kind: "gamepad", tick: 7, gamepadIndex: 0, axes: [0.3001, 0], buttons: [0, 1] }]);
   });
 
+  it("still delivers a pad's last change when the queue overflows before the host drains it", () => {
+    const canvas = document.createElement("canvas");
+    canvas.setPointerCapture = () => {};
+    document.body.append(canvas);
+    const handle = attach(canvas, { ring: new InputRingBuffer(1) });
+    handles.push(handle);
+    const pad = { index: 0, axes: [0.9], buttons: [{ value: 1 }] };
+    Object.assign(navigator, { getGamepads: () => [pad] });
+    const resolver = new InputResolver({ actions: [], axes: [{ name: "Stick", bindings: [{ device: "gamepadAxis", code: "0:0" }] }] });
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).axes.Stick).toBe(0.9);
+    // The stick returns to rest (the button stays held), then a burst of key presses overflows the queue.
+    pad.axes[0] = 0;
+    handle.pollGamepads();
+    for (const code of ["KeyA", "KeyB", "KeyC", "KeyD", "KeyE"]) canvas.dispatchEvent(key("keydown", code));
+    resolver.resolve(handle.ring.drain());
+    // An idle poll sends nothing new; the game must already read the stick at rest.
+    handle.pollGamepads();
+    expect(resolver.resolve(handle.ring.drain()).axes.Stick).toBe(0);
+  });
+
   it("reports chorded mouse buttons that change during one pointer contact", () => {
     const { canvas, handle } = fixture();
     const resolver = new InputResolver({ actions: [

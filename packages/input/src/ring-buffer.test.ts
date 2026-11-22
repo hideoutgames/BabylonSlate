@@ -140,6 +140,27 @@ describe("input ring buffer overflow", () => {
     ]);
   });
 
+  it("never drops a pad's newest sample from an overflowing queue, dropping the oldest press instead", () => {
+    const key = (code: string): RawInputEvent => ({ kind: "key", tick: 1, code, phase: "down" });
+    const ring = new InputRingBuffer(1);
+    // The stick is back to rest while a button stays held: not a release, and the pad's newest state.
+    ring.push(pad(0, 1));
+    for (const code of ["KeyA", "KeyB", "KeyC", "KeyD"]) ring.push(key(code));
+    expect(ring.drain()).toEqual([pad(0, 1), key("KeyB"), key("KeyC"), key("KeyD")]);
+  });
+
+  it("lets a pad's new sample replace its older one in a queue of releases, rather than dropping it", () => {
+    const up = (code: string): RawInputEvent => ({ kind: "key", tick: 1, code, phase: "up" });
+    const ring = new InputRingBuffer(1);
+    ring.push(pad(0.9, 1));
+    for (const code of ["KeyA", "KeyB", "KeyC"]) ring.push(up(code));
+    ring.push(pad(0.3, 1));
+    expect(ring.drain()).toEqual([up("KeyA"), up("KeyB"), up("KeyC"), pad(0.3, 1)]);
+    for (const code of ["KeyA", "KeyB", "KeyC", "KeyD"]) ring.push(up(code));
+    ring.push(pad(0.3, 1));
+    expect(ring.drain()).toEqual([up("KeyA"), up("KeyB"), up("KeyC"), up("KeyD"), pad(0.3, 1)]);
+  });
+
   it("keeps every release in a full queue of releases, dropping only a repeated one", () => {
     const ring = new InputRingBuffer(1);
     for (const code of ["KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyA"]) ring.push({ kind: "key", tick: 1, code, phase: "up" });
