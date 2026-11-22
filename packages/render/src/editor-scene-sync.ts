@@ -11,6 +11,7 @@ import { isPoolMember } from "./instance-pool";
 import { withNetMaterialChanges } from "./material-change-batch";
 import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
+import { samePose } from "./scene-transform-edit";
 import type {
   SerializedActor,
   SerializedComponent,
@@ -430,12 +431,11 @@ export class EditorSceneSync {
     if (resolveOverlayLayout(sceneData.actors, layoutOptions).actors !== sceneData.actors) return false;
     const actorIndex = new SceneActorIndex(sceneData.actors);
     const assets = this.meshAssetsForScene(sceneData);
-    const pose = (actor: SerializedActor) => JSON.stringify([actor.transform, actor.components.map((component) => component.transform)]);
     const moved: Array<{ actor: SerializedActor; mesh: Mesh }> = [];
     for (let index = 0; index < sceneData.actors.length; index++) {
       const actor = sceneData.actors[index]!;
       const before = previous.actors[index]!;
-      if (actor === before || isSceneLayerAnchorActor(actor) || pose(actor) === pose(before)) continue;
+      if (actor === before || isSceneLayerAnchorActor(actor) || samePose(actor, before)) continue;
       const mesh = this.meshes.get(actor.id);
       if (!mesh || mesh.isDisposed() || actorVisualFingerprint(actor, assets, actorIndex) !== this.meshKinds.get(actor.id)) return false;
       moved.push({ actor, mesh });
