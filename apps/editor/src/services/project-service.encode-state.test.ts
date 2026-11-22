@@ -1,8 +1,6 @@
 import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
 import { describe, expect, it, vi } from "vitest";
 import {
-  decodeHasset,
-  encodeHasset,
   readAssetDocumentHeader,
   sniffImageSize,
   textureEncodeChunkId,
@@ -10,6 +8,7 @@ import {
   type EncodeFn,
   type TextureEncodeSettings,
 } from "@haptic/assets";
+import { decodeHasset, encodeHasset } from "@haptic/assets/hasset";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 import { textureEncodeQueue } from "../testing/texture-encode-queue";

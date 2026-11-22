@@ -25,7 +25,8 @@ import {
 } from "@haptic/runtime";
 import {
   attachLifecyclePause,
-  createEngine,
+  createGameEngine,
+  installModelSources,
   createSceneLoadReadiness,
   createSceneStreamingReadiness,
   navDebugBlockersFromActors,
@@ -37,7 +38,6 @@ import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import { pixelatedExtend, playFramebufferSize, type SerializedScene } from "@haptic/core";
 import { gameSourceSubset, packedBootControls, packedContentFromGame, packedSourceControls, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest, type PackedGameContent } from "@haptic/exporter";
 import { createPlayerWorkerHost, playerHavokWasmUrl, type PlayerWorkerHost } from "./worker-host";
-import { createPlayerSourceInstalls } from "./source-installs";
 import { playerDecoderPaths } from "./decoder-paths";
 import { manifestConsoleCommands } from "./console-catalog";
 import {
@@ -222,8 +222,6 @@ function initializePlayer(
   const fontFallbacks = new Map(manifest.assets.filter(entry => entry.type === "Font").map(entry => [entry.guid, entry.requiredDependencies?.filter(id => fontIds.has(id)) ?? []]));
   const fontPixelSizes = new Map(manifest.assets.flatMap(entry => entry.type === "Font" && (entry.pixelSize ?? 0) > 0 ? [[entry.guid, entry.pixelSize!] as const] : []));
   const fontCss = packedFontCssStacks(game.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks, fontPixelSizes);
-  const installs = createPlayerSourceInstalls(game);
-  own(() => installs.dispose());
 
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
@@ -251,7 +249,7 @@ function initializePlayer(
   let compileHoldChanged: (held: boolean) => void = () => {};
   /** The game asked for device motion, perhaps before input capture was attached. */
   let deviceMotionRequested = false;
-  const handle: EngineHandle = createEngine(canvas, {
+  const handle: EngineHandle = createGameEngine(canvas, {
     sharedEngine: options.sharedEngine,
     playMode: true,
     onCompileHold: (held) => compileHoldChanged(held),
@@ -281,19 +279,18 @@ function initializePlayer(
         return () => { releaseRender?.(); source.release(); if (!halted) { refreshSourceContent(); publishAssetStates(); } };
       } catch (error) { releaseRender?.(); source.release(); throw error; }
     } : undefined,
-    textureBytes: installs.textures(game.textureBytes),
+    textureBytes: game.textureBytes,
     areaEmissions: game.areaEmissions,
     texturePixelSizes: content.texturePixelSizes,
     fontFacetypeBytes: game.fontFacetypeBytes,
     fontMsdfJson: game.fontMsdfJson,
-    fontMsdfPng: installs.msdfAtlases(game.fontMsdfPng),
+    fontMsdfPng: game.fontMsdfPng,
     fontFaceEntries: [...game.fontBytes].map(([guid, bytes]) => ({ guid, family: game.fontFamilies.get(guid) ?? guid, bytes: bytes.slice().buffer })),
     fontCssStack: fontCss.fontCssStack,
     fontCssStackByGuid: fontCss.fontCssStackByGuid,
     fontPixelSize: fontCss.fontPixelSize,
     fontPixelSizeByGuid: fontCss.fontPixelSizeByGuid,
-    modelBytes: game.modelBytes,
-    modelSources: installs.models(game.modelBytes),
+    modelSources: game.modelBytes,
     modelPayloads: game.modelPayloads,
     modelClipAnimationGuids: content.modelClipAnimationGuids,
     retargetAnimationLoads: content.retargetAnimationLoads,
@@ -830,14 +827,14 @@ function initializePlayer(
     const fonts = packedFontCssStacks(sources.fontFamilies, manifest.globalFallback, manifest.defaultFontGuid, fontFallbacks, fontPixelSizes);
     return {
       assets: {
-        textureBytes: installs.textures(sources.textureBytes), areaEmissions: sources.areaEmissions,
-        modelBytes: sources.modelBytes, modelSources: installs.models(sources.modelBytes), modelPayloads: sources.modelPayloads,
+        textureBytes: sources.textureBytes, areaEmissions: sources.areaEmissions,
+        modelSources: installModelSources({ modelBytes: sources.modelBytes }), modelPayloads: sources.modelPayloads,
         modelClipAnimationGuids: prepared.modelClipAnimationGuids, retargetAnimationLoads: prepared.retargetAnimationLoads,
         spritePayloads: prepared.spritePayloads, spriteAnimations: prepared.spriteAnimationPayloads,
         tilemaps: prepared.tilemapPayloads, tilesets: prepared.tilesetPayloads, waters: prepared.waterPayloads,
         renderTargets: prepared.renderTargets, renderTargetTextures: prepared.renderTargetTextures,
         texturePixelSizes: prepared.texturePixelSizes, pixelsPerUnit: prepared.pixelsPerUnit,
-        fontFacetypeBytes: sources.fontFacetypeBytes, fontMsdfJson: sources.fontMsdfJson, fontMsdfPng: installs.msdfAtlases(sources.fontMsdfPng),
+        fontFacetypeBytes: sources.fontFacetypeBytes, fontMsdfJson: sources.fontMsdfJson, fontMsdfPng: sources.fontMsdfPng,
         fontCssStack: fonts.fontCssStack, fontCssStackByGuid: fonts.fontCssStackByGuid,
         fontPixelSize: fonts.fontPixelSize, fontPixelSizeByGuid: fonts.fontPixelSizeByGuid,
       },
@@ -965,22 +962,23 @@ function initializePlayer(
   };
   // Runtime fallback for a Complex Collision Model the content scan missed. The
   // answer is asynchronous, so it never re-enters the requesting physics tick.
-  const answerComplexCollision = (guid: string) => queueMicrotask(() => {
+  const answerComplexCollision = (guid: string) => queueMicrotask(() => void (async () => {
     if (halted) return;
     let mesh: import("@haptic/core").CollisionTriangleMesh | null = null;
     try {
       const source = game.modelBytes.get(guid);
-      mesh = game.cookComplexCollision ? game.cookComplexCollision(guid)
-        : source ? cookComplexCollisionMesh(source, game.modelPayloads.get(guid)) : null;
+      mesh = game.cookComplexCollision ? await game.cookComplexCollision(guid)
+        : source ? cookComplexCollisionMesh(source instanceof Blob ? new Uint8Array(await source.arrayBuffer()) : source, game.modelPayloads.get(guid)) : null;
     } catch (error) {
       options.onConsoleEvent?.({ type: "log", severity: "warning", message: `Complex Collision for ${guid}: ${error instanceof Error ? error.message : String(error)}` });
     }
+    if (halted) return;
     const control: import("@haptic/bridge").ControlMessage = mesh
       ? { type: "loadComplexCollision", meshes: [{ guid, positions: mesh.positions, indices: mesh.indices }] }
       : { type: "loadComplexCollision", meshes: [], unavailable: [guid] };
     if (worker) worker.postControl(control);
     else if (runtime) void applyRuntimeSourceControl(runtime, control).catch(error => runtime?.reportError(error));
-  });
+  })());
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     if (diagnosticListeners) for (const listener of diagnosticListeners) listener(command);
     if (command.type === "sessionBoundaryResult") { boundaryClient?.receive(command as SessionBoundaryResult & { type: string }); return; }
@@ -1173,7 +1171,7 @@ function initializePlayer(
   if (halted) return playerHandle();
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
-    // The engine's canvas listeners, added by createEngine above, settle UI ownership first.
+    // The engine's canvas listeners, added by createGameEngine above, settle UI ownership first.
     ownsPointer: (pointerId) => handle.ownsGamePointer(pointerId),
   });
   if (deviceMotionRequested) input.enableMotion();

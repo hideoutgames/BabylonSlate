@@ -46,7 +46,6 @@ export {
 export { navMeshDebugPrimitives } from "./debug-primitives";
 export {
   createNavigationBackend,
-  generateNavMesh,
   initNavigation,
   navigationLoaded,
   withNavigation,

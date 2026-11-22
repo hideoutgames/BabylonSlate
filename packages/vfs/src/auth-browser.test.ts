@@ -7,6 +7,8 @@ vi.mock("@capacitor/core", () => ({
   Capacitor: { getPlatform: () => getPlatform() },
   registerPlugin: () => ({ open: nativeOpen }),
 }));
+// `getHostPlatform` reads the Capacitor bridge global that the native shells inject.
+(globalThis as { Capacitor?: unknown }).Capacitor = { getPlatform: () => getPlatform() };
 
 const { createAuthBrowser } = await import("./auth-browser");
 

@@ -470,7 +470,9 @@ describe("exportGame", () => {
     for (const [index, entry] of result.value.manifest.assets.entries()) {
       expect(entry.byteLength).toBe(sizes[index]);
       expect(entry.revision).toBe(createHash("sha256").update(assets[index]!.bytes).digest("hex"));
-      // Byte-exact, without an element-by-element deep equality over each large array.
+      // An empty payload gets no file; others are byte-exact, without an element-by-element deep equality over each
+      // large array.
+      if (sizes[index] === 0) { expect(entry.path).toBeUndefined(); continue; }
       const file = result.value.files.get(entry.path!);
       expect(file && Buffer.compare(file, assets[index]!.bytes)).toBe(0);
     }

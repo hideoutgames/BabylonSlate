@@ -11,12 +11,12 @@ import {
 } from "@haptic/core";
 import {
   createNavigationBackend,
-  generateNavMesh,
   initNavigation,
   mergeNavBakeMeshes,
   recastWalkableQuadFromXy,
   solidBlockerMesh,
 } from "@haptic/navigation";
+import { generateNavMesh } from "@haptic/navigation/bake";
 import { followBehaviourTree } from "./behaviour-tree-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 

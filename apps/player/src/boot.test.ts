@@ -105,7 +105,7 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration, with
     unlockAudio: async () => {},
     scheduler: { invalidate: vi.fn(), acquireObstruction: vi.fn(() => () => {}), stats: () => ({ renderedFps: 0 }) },
   };
-  vi.spyOn(rendering, "createEngine").mockReturnValue(handle as unknown as rendering.EngineHandle);
+  vi.spyOn(rendering, "createGameEngine").mockReturnValue(handle as unknown as rendering.EngineHandle);
   let input: inputs.InputCaptureHandle | undefined;
   vi.spyOn(inputs, "attachInputCapture").mockImplementation((...args) => (input = attachInputCapture(...args)));
   const fireEndFrame = () => { for (const callback of [...endFrame]) callback(); };
@@ -235,7 +235,7 @@ describe("player startup and Stop ownership", () => {
     const commands: Array<{ type: string } & Record<string, unknown>> = [];
     const session = startPlayer({ game, canvas, previewDiagnostics: true, onConsoleEvent: (command) => commands.push(command) });
     sessions.push(session);
-    vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onCompileHold!(true);
+    vi.mocked(rendering.createGameEngine).mock.calls.at(-1)![1]!.onCompileHold!(true);
     expect(TestWorker.instances[0]!.messages.some(entry => entry.channel === "control" && entry.payload.type === "sessionBoundary")).toBe(true);
     session.stop();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -259,8 +259,8 @@ describe("player startup and Stop ownership", () => {
     } });
     acknowledge([]);
     await Promise.resolve();
-    await vi.waitFor(() => expect(rendering.createEngine).toHaveBeenCalled());
-    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onCompileHold!;
+    await vi.waitFor(() => expect(rendering.createGameEngine).toHaveBeenCalled());
+    const hold = vi.mocked(rendering.createGameEngine).mock.calls.at(-1)![1]!.onCompileHold!;
     hold(true);
     expect(boundary().action).toEqual({ kind: "pause", reason: "rendering", paused: true });
     acknowledge(["rendering"]);
@@ -279,9 +279,9 @@ describe("player startup and Stop ownership", () => {
     sessions.push(session);
     const worker = TestWorker.instances[0]!;
     await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
-    expect(rendering.createEngine).toHaveBeenCalled();
+    expect(rendering.createGameEngine).toHaveBeenCalled();
     const pauses = () => worker.messages.flatMap(entry => entry.channel === "control" && entry.payload.type === "setPaused" ? [entry.payload] : []);
-    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onCompileHold!;
+    const hold = vi.mocked(rendering.createGameEngine).mock.calls.at(-1)![1]!.onCompileHold!;
     hold(true);
     expect(pauses().at(-1)).toEqual({ type: "setPaused", paused: true, reason: "rendering" });
     hold(false);
@@ -636,7 +636,7 @@ describe("player startup and Stop ownership", () => {
     await vi.waitFor(() => expect(publishedState(worker, "jump")).toBe("unloaded"));
     const request = { slotId: 1, consumer: "test", signal: new AbortController().signal };
     const load = () => path === "audio"
-      ? vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.prepareAudioAsset!("jump", request)
+      ? vi.mocked(rendering.createGameEngine).mock.calls.at(-1)![1]!.prepareAudioAsset!("jump", request)
       : handle.setCommandSourceLoader.mock.calls[0]![0]!(["jump"], request);
     const release = await load();
     expect(publishedState(worker, "jump")).toBe("ready");
@@ -684,7 +684,7 @@ describe("player startup and Stop ownership", () => {
     });
     sessions.push(startPlayer({ game, canvas }));
     const water = createDefaultWaterDefinition();
-    expect(rendering.createEngine).toHaveBeenCalledWith(canvas, expect.objectContaining({ waterPayloads: new Map([["water", water]]) }));
+    expect(rendering.createGameEngine).toHaveBeenCalledWith(canvas, expect.objectContaining({ waterPayloads: new Map([["water", water]]) }));
     if (fallbackMode) expect(registered).toHaveBeenCalledWith(new Map([["water", water]]));
     else {
       const controls = TestWorker.instances[0]!.messages.filter((message) => message.channel === "control").map((message) => message.payload);
@@ -697,7 +697,7 @@ describe("player startup and Stop ownership", () => {
     const onStopped = vi.fn();
     const session = await startPlayerWithEngine({ game, canvas, onStopped });
     sessions.push(session);
-    expect(rendering.createEngine).toHaveBeenCalledWith(
+    expect(rendering.createGameEngine).toHaveBeenCalledWith(
       canvas,
       expect.objectContaining({ renderSettings: game.manifest.render }),
     );
