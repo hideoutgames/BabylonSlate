@@ -103,12 +103,30 @@ export function gameAppFiles(
     ["resources/app/main.cjs", input.host],
   ];
   for (const [path, data] of [...input.game].sort(([a], [b]) => a.localeCompare(b))) {
-    if (path.startsWith("/") || path.split("/").some((part) => part === ".." || part === "")) {
-      throw new Error(`Invalid game file path: ${path}`);
-    }
+    assertGameFilePath(path);
     files.push([`resources/game/${path}`, data]);
   }
   return files;
+}
+
+/**
+ * Refuses a game file path that could land outside the package's game folder
+ * on any platform that unpacks it: absolute, with a backslash (a separator on
+ * Windows), a colon (a drive or an NTFS stream), a NUL or other control
+ * character, or an empty, `.` or `..` segment. Every native package checks
+ * its game files with this before writing them.
+ */
+export function assertGameFilePath(path: string): void {
+  if (
+    path.startsWith("/") ||
+    path.includes("\\") ||
+    path.includes(":") ||
+    [...path].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) ||
+    path.split("/").some((part) => part === "" || part === "." || part === "..")
+  ) {
+    // Escaped as JSON would, so a control character shows in the message.
+    throw new Error(`Invalid game file path: ${JSON.stringify(path).slice(1, -1)}`);
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { strFromU8, strToU8, unzipSync, zipSync, type ZipOptions } from "fflate";
-import { desktopGameNames, packageDesktopGame, type DesktopGamePackageInput } from "./native-desktop";
+import { assertGameFilePath, desktopGameNames, packageDesktopGame, type DesktopGamePackageInput } from "./native-desktop";
 import { readZipEntries } from "./zip-merge";
 
 const EXECUTABLE_MODE = 0o100755;
@@ -85,5 +85,16 @@ describe("Desktop game packages", () => {
   it("refuse a runtime without its executable and a game path that leaves the game folder", () => {
     expect(() => packageDesktopGame(input({ target: "windows-x64" }))).toThrow("The Windows player is damaged: electron.exe is missing.");
     expect(() => packageDesktopGame(input({ game: new Map([["../escape.js", strToU8("x")]]) }))).toThrow("Invalid game file path: ../escape.js");
+  });
+
+  it("refuse every game path another platform could unpack outside the game folder", () => {
+    for (const path of ["..\\evil.js", "a\\b.js", "a:b.js", "C:/evil.js", ".", "./index.html", "a/./b.js", "", "a//b.js", "a/", "/abs.js", "a\u0000b.js", "a\nb.js"]) {
+      expect(() => assertGameFilePath(path), JSON.stringify(path)).toThrow("Invalid game file path");
+      expect(() => packageDesktopGame(input({ game: new Map([[path, strToU8("x")]]) })), JSON.stringify(path)).toThrow("Invalid game file path");
+    }
+    expect(() => assertGameFilePath("a\u0000b.js")).toThrow("Invalid game file path: a\\u0000b.js");
+    for (const path of ["index.html", "assets/data-0.bin", "scripts/a b.js", "fonts/Ünïcode.woff2", "..hidden/x.js", "a..b.js"]) {
+      expect(() => assertGameFilePath(path), path).not.toThrow();
+    }
   });
 });
