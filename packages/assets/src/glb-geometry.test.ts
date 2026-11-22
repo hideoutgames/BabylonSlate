@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessorValues, buildBoxGlbFixture, extractGltfCollisionMesh, extractGltfPositions } from "./glb-geometry";
+import { accessorValues, buildBoxGlbFixture, extractGltfCollisionMesh, extractGltfPositions, GltfGeometryUnreadableError } from "./glb-geometry";
 import { GLTF_MAX_NODE_DEPTH, ImportLimitError } from "./import-limits";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "./importers/glb-parse";
 import { importModel } from "./importers/model";
@@ -65,8 +65,16 @@ describe("accessorValues", () => {
     expect(() => positionsOf(oneVertexGlb({}, { byteOffset: 0.5 }))).toThrow(/byteOffset must be a whole number/);
   });
 
-  it("reads nothing for an accessor with no buffer view", () => {
-    expect(positionsOf(oneVertexGlb({ bufferView: undefined, count: 1e6 }))).toEqual([]);
+  it("caps a view-less accessor's count before allocating its zeros", () => {
+    expect(positionsOf(oneVertexGlb({ bufferView: undefined, count: 2 }))).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(() => positionsOf(oneVertexGlb({ bufferView: undefined, count: 1e9 }))).toThrow(ImportLimitError);
+  });
+
+  it("caps a sparse accessor's count and checks its views like any other", () => {
+    const sparse = (count: number, indices: Record<string, unknown> = { bufferView: 0, componentType: 5125 }) =>
+      oneVertexGlb({ bufferView: undefined, count: 1, sparse: { count, indices, values: { bufferView: 0 } } });
+    expect(() => positionsOf(sparse(1e9))).toThrow(ImportLimitError);
+    expect(() => positionsOf(sparse(1, { bufferView: 0, componentType: 5125, byteOffset: 0.5 }))).toThrow(GltfGeometryUnreadableError);
   });
 });
 
