@@ -67,6 +67,16 @@ describe("convertFbxImportBatch", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("sends the worker only the images an FBX can use as textures, keeping every other file for import", async () => {
+    const images = ["albedo.png", "rough.JPG", "Textures/normal.jpeg", "detail.tga", "mask.webp"].map((name) => file(name));
+    const others = ["jump.wav", "sky.hdr", "other.glb", "prop.obj", "prop.mtl", "notes.json", "font.ttf"].map((name) => file(name));
+    const result = await convertFbxImportBatch([file("hero.fbx"), ...others, ...images]);
+
+    const sidecars = FakeWorker.instances[0]!.posted[0]!.message.sidecars as Array<{ name: string }>;
+    expect(sidecars.map((sidecar) => sidecar.name)).toEqual(images.map((image) => image.name));
+    expect(result.files.map((entry) => entry.name)).toEqual(["hero.glb", ...others, ...images].map((entry) => typeof entry === "string" ? entry : entry.name));
+  });
+
   it("starts no worker for a batch without FBX files", async () => {
     const result = await convertFbxImportBatch([file("model.glb"), file("albedo.png")]);
     expect(FakeWorker.instances).toHaveLength(0);

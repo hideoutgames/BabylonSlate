@@ -13,6 +13,7 @@
  * (`view-occlusion.ts`).
  */
 
+import type { CollisionTriangleMesh } from "@haptic/core";
 import { extractGltfCollisionMesh } from "./glb-geometry";
 
 export interface ModelOccluderBox {
@@ -31,7 +32,11 @@ export interface ModelOccluder extends ModelOccluderBox {
  * baked, x mirrored into Babylon's left-handed space); null when it has none.
  */
 export function bakeGltfOccluder(bytes: Uint8Array, importScale: number): ModelOccluder | null {
-  const mesh = extractGltfCollisionMesh(bytes, importScale);
+  return bakeOccluderFromMesh(extractGltfCollisionMesh(bytes, importScale));
+}
+
+/** {@link bakeGltfOccluder} from triangles already read with `extractGltfCollisionMesh` or `packGltfTriangles`. */
+export function bakeOccluderFromMesh(mesh: CollisionTriangleMesh | null): ModelOccluder | null {
   if (!mesh) return null;
   const positions = Float64Array.from(mesh.positions);
   for (let index = 0; index < positions.length; index += 3) positions[index] = -positions[index]!;

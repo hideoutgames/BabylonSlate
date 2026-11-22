@@ -1,16 +1,10 @@
 import { newAssetGuid } from "../guid";
 import type { ImportOptions, ImportResult } from "./types";
-import { baseName, extensionOf } from "./util";
+import { baseName } from "./util";
 import {
   AUDIO_AUTO_STREAM_MIN_BYTES,
   AUDIO_DEFAULT_SOURCE_CHUNK,
 } from "../audio-payload";
-
-const MIME_BY_EXTENSION: Record<string, string> = {
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  ogg: "audio/ogg",
-};
 
 export function mimeForAudioBytes(bytes: Uint8Array): string {
   if (
@@ -53,15 +47,34 @@ export function mimeForAudioBytes(bytes: Uint8Array): string {
   return "application/octet-stream";
 }
 
+/** Leading zero bytes an MP3 may carry before its first frame (some encoders pad the start). */
+const MP3_MAX_LEADING_PADDING = 64 * 1024;
+
+/** An MPEG audio frame header: 11 sync bits, then a layer other than the reserved 00. */
+function isMpegFrameStart(bytes: Uint8Array, at: number): boolean {
+  return at + 1 < bytes.length && bytes[at] === 0xff && (bytes[at + 1]! & 0xe0) === 0xe0 && (bytes[at + 1]! & 0x06) !== 0;
+}
+
+/** An MP3 whose first frame follows zero padding, which {@link mimeForAudioBytes} does not look past. */
+function isPaddedMp3(bytes: Uint8Array): boolean {
+  let at = 0;
+  const end = Math.min(bytes.length, MP3_MAX_LEADING_PADDING);
+  while (at < end && bytes[at] === 0) at += 1;
+  return at > 0 && isMpegFrameStart(bytes, at);
+}
+
 export async function importAudio(
   bytes: Uint8Array,
   options: ImportOptions,
 ): Promise<ImportResult[]> {
-  // The bytes decide, as for an added clip; the extension only names bytes no sniff knows.
+  // The bytes decide, as for an added clip; bytes that are none of the formats Audio plays are refused.
   const sniffed = mimeForAudioBytes(bytes);
   const mime = sniffed !== "application/octet-stream"
     ? sniffed
-    : MIME_BY_EXTENSION[extensionOf(options.fileName)] ?? sniffed;
+    : isPaddedMp3(bytes) ? "audio/mpeg" : null;
+  if (!mime) {
+    throw new Error("The file is not MP3, WAV or Ogg audio: its contents do not start with an audio signature.");
+  }
 
   return [
     {

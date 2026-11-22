@@ -49,7 +49,9 @@ describe("iOS project files", () => {
     expect(() => iosBuildSettings(build({ appId: "com.my-studio.game" }))).toThrow("App ID com.my-studio.game is not valid.");
     expect(() => iosBuildSettings(build({ buildNumber: 0 }))).toThrow("Build Number 0 is not valid.");
     expect(() => iosBuildSettings(build({ teamId: "" }))).toThrow("Enter your Apple Team ID in Engine Settings > Packaging.");
-    expect(() => iosBuildSettings(build({ name: "Cost $(HOME)" }))).toThrow("The Display Name cannot contain $( or line breaks on iOS.");
+    expect(() => iosBuildSettings(build({ name: "Cost $(HOME)" }))).toThrow("The Display Name cannot contain $( or ${ or line breaks on iOS.");
+    expect(() => iosBuildSettings(build({ name: "${PRODUCT_NAME}" }))).toThrow("The Display Name cannot contain $( or ${ or line breaks on iOS.");
+    expect(iosBuildSettings(build({ name: "Space {deluxe}" })).INFOPLIST_KEY_CFBundleDisplayName).toBe("Space {deluxe}");
     expect([isValidTeamId("ABCDE12345"), isValidTeamId("abcde12345"), isValidTeamId("ABCDE1234")]).toEqual([true, false, false]);
   });
 

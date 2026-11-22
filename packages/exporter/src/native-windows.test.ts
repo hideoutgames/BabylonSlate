@@ -32,6 +32,7 @@ function input(overrides: Partial<DesktopGamePackageInput> = {}): DesktopGamePac
     name: "Space Game",
     version: "1.2.0-beta.3",
     gameId: "project-guid",
+    appId: "com.example.spacegame",
     ...overrides,
   };
 }
@@ -62,15 +63,22 @@ describe("Windows game packages", () => {
     expect([info.fixedInfo.fileVersionMS, info.fixedInfo.fileVersionLS, info.fixedInfo.productVersionMS]).toEqual([0x10002, 0, 0x10002]);
   });
 
-  it("copy the executable unchanged without an App Icon, as every other runtime file", () => {
+  it("brand the executable's details without an App Icon, keeping the runtime's icon and copying every other runtime file", () => {
     const source = input().runtime;
     const { bytes } = packageWindowsGame(input({ runtime: source }));
     const original = new Map(readZipEntries(source).map((entry) => [entry.name, entry]));
     const entries = new Map(readZipEntries(bytes).map((entry) => [entry.name, entry]));
-    for (const [packaged, from] of [["Space Game/Space Game.exe", "electron.exe"], ["Space Game/resources.pak", "resources.pak"]] as const) {
-      expect(entries.get(packaged)).toMatchObject({ compressedSize: original.get(from)!.compressedSize, crc: original.get(from)!.crc });
-    }
-    expect(resourcesOf(unzipSync(bytes)["Space Game/Space Game.exe"]!).info.getStringValues(EN_US).ProductName).toBe("Electron");
+    expect(entries.get("Space Game/resources.pak")).toMatchObject({
+      compressedSize: original.get("resources.pak")!.compressedSize, crc: original.get("resources.pak")!.crc,
+    });
+    const { group, info } = resourcesOf(unzipSync(bytes)["Space Game/Space Game.exe"]!);
+    expect(info.getStringValues(EN_US)).toEqual({
+      FileDescription: "Space Game", ProductName: "Space Game", ProductVersion: "1.2.0-beta.3", FileVersion: "1.2.0.0",
+      InternalName: "Space Game.exe", OriginalFilename: "Space Game.exe", SquirrelAwareVersion: "1",
+    });
+    expect(info.fixedInfo.fileVersionMS).toBe(0x10002);
+    // Electron's one 16 px icon stays.
+    expect(group.icons.map((icon) => icon.width)).toEqual([16]);
   });
 
   it("refuse a runtime without one icon group, and Linux targets", () => {

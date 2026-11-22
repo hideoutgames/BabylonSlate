@@ -8,6 +8,9 @@ export interface ModelBatchConversionOptions {
   onFile?: (name: string) => void;
 }
 
+/** Image files an FBX can name as a texture, the only files the converter reads besides the FBX. */
+const FBX_TEXTURE_FILE = /\.(png|jpe?g|webp|gif|bmp|tga|tiff?|dds|ktx2?)$/i;
+
 type FbxConversion = { bytes: Uint8Array; consumedSidecars: string[] };
 type FbxWorkerReply = {
   bytes?: Uint8Array;
@@ -89,9 +92,8 @@ export async function convertFbxImportBatch(
   errors: string[];
   consumedSidecars: string[];
 }> {
-  const sidecars = files.filter(
-    (file) => !/\.(fbx|glb|gltf|obj)$/i.test(file.name),
-  );
+  // Only images can be an FBX's external files (its textures); sounds, panoramas and other models stay here.
+  const sidecars = files.filter((file) => FBX_TEXTURE_FILE.test(file.name));
   const converted: ModelImportFile[] = [];
   const errors: string[] = [];
   const consumedSidecars = new Set<string>();

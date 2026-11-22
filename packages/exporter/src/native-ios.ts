@@ -1,5 +1,5 @@
 import { isValidAppId } from "@haptic/core/app-identity";
-import { desktopGameNames } from "./native-desktop";
+import { assertGameFilePath, desktopGameNames } from "./native-desktop";
 
 /**
  * iOS game packages: what Haptic writes into its Xcode project template
@@ -58,9 +58,7 @@ export function iosProjectFiles(input: IosProjectInput): [string, Uint8Array][] 
     files.push([`${APP_FOLDER}/Assets.xcassets/AppIcon.appiconset/AppIcon.png`, input.icon]);
   }
   for (const [path, data] of [...input.game].sort(([a], [b]) => a.localeCompare(b))) {
-    if (path.startsWith("/") || path.includes("\\") || path.split("/").some((part) => part === "" || part === "." || part === "..")) {
-      throw new Error(`Invalid game file path: ${path}`);
-    }
+    assertGameFilePath(path);
     files.push([`${APP_FOLDER}/game/${path}`, data]);
   }
   return files;
@@ -69,7 +67,7 @@ export function iosProjectFiles(input: IosProjectInput): [string, Uint8Array][] 
 /**
  * Build settings for xcodebuild's command line (each passed as `NAME=value`),
  * checked first: the App Store takes versions of up to three numbers, and a
- * build setting value expands `$(…)`, so the name may not contain it.
+ * build setting value expands `$(…)` and `${…}`, so the name may contain neither.
  */
 export function iosBuildSettings(input: IosBuildInput): Record<string, string> {
   if (!isValidAppId(input.appId)) throw new Error(`App ID ${input.appId} is not valid. Set it in Project Settings > Export.`);
@@ -82,7 +80,9 @@ export function iosBuildSettings(input: IosBuildInput): Record<string, string> {
   }
   if (!isValidTeamId(input.teamId)) throw new Error("Enter your Apple Team ID in Engine Settings > Packaging.");
   const name = input.name.trim() || "Game";
-  if (name.includes("$(") || /[\r\n]/.test(name)) throw new Error("The Display Name cannot contain $( or line breaks on iOS. Change it in Project Settings > Export.");
+  if (name.includes("$(") || name.includes("${") || /[\r\n]/.test(name)) {
+    throw new Error("The Display Name cannot contain $( or ${ or line breaks on iOS. Change it in Project Settings > Export.");
+  }
   return {
     PRODUCT_BUNDLE_IDENTIFIER: input.appId,
     MARKETING_VERSION: version,
