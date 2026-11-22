@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { useExecuteJavaScriptReview } from "./execute-javascript-import-dialog";
 import type { ExecuteJavaScriptAsset } from "@haptic/core";
 import {
   describeSkippedZipEntries,
@@ -220,19 +221,14 @@ export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) 
     setImportedFileCount(0);
   }, []);
   const importInputRef = useRef<HTMLInputElement>(null);
-  /** The Execute JavaScript a batch would bring in, shown while the user decides; the answer resolves the batch's wait. */
-  const [executeJavaScriptReview, setExecuteJavaScriptReview] = useState<ExecuteJavaScriptAsset[] | null>(null);
-  const executeJavaScriptAnswerRef = useRef<((confirmed: boolean) => void) | null>(null);
-  const reviewExecuteJavaScript = useCallback((assets: ExecuteJavaScriptAsset[]) => new Promise<boolean>((resolve) => {
-    executeJavaScriptAnswerRef.current = resolve;
-    setExecuteJavaScriptReview(assets);
-  }), []);
-  const answerExecuteJavaScriptReview = useCallback((confirmed: boolean) => {
-    const answer = executeJavaScriptAnswerRef.current;
-    executeJavaScriptAnswerRef.current = null;
-    setExecuteJavaScriptReview(null);
-    answer?.(confirmed);
-  }, []);
+  /** The Execute JavaScript a batch would bring in, shown while the user decides; unmounting answers Cancel. */
+  const {
+    assets: executeJavaScriptReview,
+    review: reviewExecuteJavaScript,
+    answer: answerExecuteJavaScriptReview,
+  } = useExecuteJavaScriptReview();
+  /** One import at a time: one started while another runs (its dialog open included) is refused, writing nothing. */
+  const importRunningRef = useRef(false);
 
   /**
    * Imports files behind the cancelable Importing dialog. Cancel stops the
@@ -253,138 +249,143 @@ export function useContentBrowserImportFlow(deps: ContentBrowserImportFlowDeps) 
       files: Array<{ name: string; bytes: Uint8Array }>,
       controller: AbortController = new AbortController(),
     ) => {
-      if (!assetRegistry || !files.length || selectedRoot.readOnly) return;
-      const { signal } = controller;
-      const errors: string[] = [];
-      const createdGuids: string[] = [];
-      let importedCount = 0;
-      const incoming = filterHpluginFiles(files);
-      if (incoming.length === 0) return;
-      importAbortRef.current = controller;
-      const createdModels: Array<{
-        guid: string;
-        path: string;
-        payload: Record<string, unknown>;
-        type: "Model" | "Animation";
-      }> = [];
-      const groups: ImportGroup[] = [
-        { folder: "", files: incoming.filter((file) => !isZipFileName(file.name)), imported: 0 },
-      ];
-      /** The files (by their bytes) whose Execute JavaScript the user confirmed; every other file imports none. */
-      let confirmedFiles = new Set<Uint8Array>();
-      await runWithContentBrowserImportBusy(
-        setBusy,
-        () => setImportProgress(null),
-        async () => {
-          try {
-            const zips = await expandZipImports(incoming.filter((file) => isZipFileName(file.name)), {
-              signal,
-              errors,
-              onPhase: (patch) => updateImportProgress(signal, patch),
-            });
-            updateImportProgress(signal, { phase: "Checking Files", completed: 0, total: 1, fraction: null });
-            const disclosed = await executeJavaScriptInBatch([
-              ...groups[0]!.files.map((file) => ({ file, path: file.name })),
-              ...zips.flatMap(({ zip, files }) => files.map((file) => ({ file, path: `${zip.name}/${file.name}` }))),
-            ], signal);
-            if (disclosed.assets.length > 0) {
-              setImportProgress(null);
-              if (!await reviewExecuteJavaScript(disclosed.assets)) controller.abort();
-              signal.throwIfAborted();
-            }
-            confirmedFiles = disclosed.files;
-            await addZipImportGroups(zips, {
-              assetRegistry,
-              selectedRoot,
-              existingFolderPaths,
-              signal,
-              groups,
-              errors,
-            });
-            const queue: Array<{ group: ImportGroup; file: ImportFileBytes; path: string }> = [];
-            for (const group of groups) {
-              if (group.files.length === 0) continue;
-              const prefix = group.folder ? `${group.folder}/` : "";
-              const prepared = await prepareImportBatch(group.files, {
-                signal,
-                onFile: (name) => updateImportProgress(signal, { phase: `Converting ${prefix}${name}`, completed: 0, total: 1, fraction: null }),
-              }, play?.ensureSharedEngine() ?? undefined);
-              errors.push(...prepared.errors.map((error) => `${prefix}${error}`));
-              queue.push(...prepared.files.map((file) => ({ group, file, path: `${prefix}${file.name}` })));
-            }
-            const { modelImportDefaultScale, hdrImportFaceSize } = queue.length > 0
-              ? await createAppSettingsStore().load()
-              : { modelImportDefaultScale: undefined, hdrImportFaceSize: undefined };
-            for (let index = 0; index < queue.length; index += 1) {
-              signal.throwIfAborted();
-              const { group, file, path } = queue[index]!;
-              updateImportProgress(signal, { phase: path, completed: index, total: queue.length, fraction: null });
-              const slash = path.lastIndexOf("/");
-              try {
-                const created = await assetRegistry.importFile(
-                  selectedRoot.rootId,
-                  joinFolder(selectedRoot.relative, path.slice(0, Math.max(0, slash))),
-                  path.slice(slash + 1),
-                  file.bytes,
-                  {
-                    modelImportScale: modelImportDefaultScale,
-                    hdrFaceSize: hdrImportFaceSize,
-                    nearestTextures,
-                    sidecars: file.sidecars,
-                    allowExecuteJavaScript: confirmedFiles.has(file.bytes),
-                    signal,
-                    onProgress: (fraction) => updateImportProgress(signal, { fraction }),
-                  },
-                );
-                importedCount += 1;
-                group.imported += created.length;
-                for (const asset of created) {
-                  createdGuids.push(asset.header.guid);
-                  if (asset.header.type !== "Model" && asset.header.type !== "Animation") continue;
-                  createdModels.push({
-                    guid: asset.header.guid,
-                    path: asset.path,
-                    payload: asset.header.payload ?? {},
-                    type: asset.header.type,
-                  });
-                }
-              } catch (err) {
-                if (signal.aborted) throw err;
-                errors.push(`${path}: ${errorMessage(err)}`);
-              }
-              updateImportProgress(signal, { completed: index + 1, fraction: null });
-            }
-          } catch (err) {
-            if (!signal.aborted) errors.push(errorMessage(err));
-          }
-          if (signal.aborted) {
-            for (const guid of createdGuids.reverse()) {
-              try {
-                await assetRegistry.deleteAsset(guid);
-              } catch {
-                // Left for the user to delete; the rest of the cancel still applies.
-              }
-            }
-          }
-          // A ZIP's folder goes on Cancel, or when none of its files imported.
-          for (const group of groups) {
-            if (!group.folder || (!signal.aborted && group.imported > 0)) continue;
+      if (!assetRegistry || !files.length || selectedRoot.readOnly || importRunningRef.current) return;
+      importRunningRef.current = true;
+      try {
+        const { signal } = controller;
+        const errors: string[] = [];
+        const createdGuids: string[] = [];
+        let importedCount = 0;
+        const incoming = filterHpluginFiles(files);
+        if (incoming.length === 0) return;
+        importAbortRef.current = controller;
+        const createdModels: Array<{
+          guid: string;
+          path: string;
+          payload: Record<string, unknown>;
+          type: "Model" | "Animation";
+        }> = [];
+        const groups: ImportGroup[] = [
+          { folder: "", files: incoming.filter((file) => !isZipFileName(file.name)), imported: 0 },
+        ];
+        /** The files (by their bytes) whose Execute JavaScript the user confirmed; every other file imports none. */
+        let confirmedFiles = new Set<Uint8Array>();
+        await runWithContentBrowserImportBusy(
+          setBusy,
+          () => setImportProgress(null),
+          async () => {
             try {
-              await assetRegistry.deleteFolder(selectedRoot.rootId, joinFolder(selectedRoot.relative, group.folder));
-            } catch {
-              // Left for the user to delete, as an asset a cancel could not remove is.
+              const zips = await expandZipImports(incoming.filter((file) => isZipFileName(file.name)), {
+                signal,
+                errors,
+                onPhase: (patch) => updateImportProgress(signal, patch),
+              });
+              updateImportProgress(signal, { phase: "Checking Files", completed: 0, total: 1, fraction: null });
+              const disclosed = await executeJavaScriptInBatch([
+                ...groups[0]!.files.map((file) => ({ file, path: file.name })),
+                ...zips.flatMap(({ zip, files }) => files.map((file) => ({ file, path: `${zip.name}/${file.name}` }))),
+              ], signal);
+              if (disclosed.assets.length > 0) {
+                setImportProgress(null);
+                if (!await reviewExecuteJavaScript(disclosed.assets)) controller.abort();
+                signal.throwIfAborted();
+              }
+              confirmedFiles = disclosed.files;
+              await addZipImportGroups(zips, {
+                assetRegistry,
+                selectedRoot,
+                existingFolderPaths,
+                signal,
+                groups,
+                errors,
+              });
+              const queue: Array<{ group: ImportGroup; file: ImportFileBytes; path: string }> = [];
+              for (const group of groups) {
+                if (group.files.length === 0) continue;
+                const prefix = group.folder ? `${group.folder}/` : "";
+                const prepared = await prepareImportBatch(group.files, {
+                  signal,
+                  onFile: (name) => updateImportProgress(signal, { phase: `Converting ${prefix}${name}`, completed: 0, total: 1, fraction: null }),
+                }, play?.ensureSharedEngine() ?? undefined);
+                errors.push(...prepared.errors.map((error) => `${prefix}${error}`));
+                queue.push(...prepared.files.map((file) => ({ group, file, path: `${prefix}${file.name}` })));
+              }
+              const { modelImportDefaultScale, hdrImportFaceSize } = queue.length > 0
+                ? await createAppSettingsStore().load()
+                : { modelImportDefaultScale: undefined, hdrImportFaceSize: undefined };
+              for (let index = 0; index < queue.length; index += 1) {
+                signal.throwIfAborted();
+                const { group, file, path } = queue[index]!;
+                updateImportProgress(signal, { phase: path, completed: index, total: queue.length, fraction: null });
+                const slash = path.lastIndexOf("/");
+                try {
+                  const created = await assetRegistry.importFile(
+                    selectedRoot.rootId,
+                    joinFolder(selectedRoot.relative, path.slice(0, Math.max(0, slash))),
+                    path.slice(slash + 1),
+                    file.bytes,
+                    {
+                      modelImportScale: modelImportDefaultScale,
+                      hdrFaceSize: hdrImportFaceSize,
+                      nearestTextures,
+                      sidecars: file.sidecars,
+                      allowExecuteJavaScript: confirmedFiles.has(file.bytes),
+                      signal,
+                      onProgress: (fraction) => updateImportProgress(signal, { fraction }),
+                    },
+                  );
+                  importedCount += 1;
+                  group.imported += created.length;
+                  for (const asset of created) {
+                    createdGuids.push(asset.header.guid);
+                    if (asset.header.type !== "Model" && asset.header.type !== "Animation") continue;
+                    createdModels.push({
+                      guid: asset.header.guid,
+                      path: asset.path,
+                      payload: asset.header.payload ?? {},
+                      type: asset.header.type,
+                    });
+                  }
+                } catch (err) {
+                  if (signal.aborted) throw err;
+                  errors.push(`${path}: ${errorMessage(err)}`);
+                }
+                updateImportProgress(signal, { completed: index + 1, fraction: null });
+              }
+            } catch (err) {
+              if (!signal.aborted) errors.push(errorMessage(err));
             }
-          }
-          await refreshAssetRegistry();
-        },
-      );
-      if (importAbortRef.current === controller) importAbortRef.current = null;
-      if (signal.aborted) return;
-      if (errors.length) {
-        setImportErrors(errors);
-        setImportedFileCount(importedCount);
+            if (signal.aborted) {
+              for (const guid of createdGuids.reverse()) {
+                try {
+                  await assetRegistry.deleteAsset(guid);
+                } catch {
+                  // Left for the user to delete; the rest of the cancel still applies.
+                }
+              }
+            }
+            // A ZIP's folder goes on Cancel, or when none of its files imported.
+            for (const group of groups) {
+              if (!group.folder || (!signal.aborted && group.imported > 0)) continue;
+              try {
+                await assetRegistry.deleteFolder(selectedRoot.rootId, joinFolder(selectedRoot.relative, group.folder));
+              } catch {
+                // Left for the user to delete, as an asset a cancel could not remove is.
+              }
+            }
+            await refreshAssetRegistry();
+          },
+        );
+        if (importAbortRef.current === controller) importAbortRef.current = null;
+        if (signal.aborted) return;
+        if (errors.length) {
+          setImportErrors(errors);
+          setImportedFileCount(importedCount);
+        }
+        enqueueModelThumbnailJobs(createdModels);
+      } finally {
+        importRunningRef.current = false;
       }
-      enqueueModelThumbnailJobs(createdModels);
     },
     [assetRegistry, existingFolderPaths, nearestTextures, play, refreshAssetRegistry, reviewExecuteJavaScript, selectedRoot, setBusy, setImportErrors, updateImportProgress],
   );

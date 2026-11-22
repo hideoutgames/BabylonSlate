@@ -63,7 +63,7 @@ const resolved = async () => {};
 const unsubscribe = () => noop;
 
 function inertExtensionService(): DocumentsValue["extensionService"] {
-  const snapshot: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted: [], untrustedExecuteJavaScript: [] };
+  const snapshot: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted: [], untrustedExecuteJavaScript: [], executeJavaScriptRefusals: 0 };
   const service: { [K in keyof DocumentsValue["extensionService"]]: DocumentsValue["extensionService"][K] } = {
     subscribe: unsubscribe,
     getSnapshot: () => snapshot,
@@ -74,6 +74,9 @@ function inertExtensionService(): DocumentsValue["extensionService"] {
     createdHere: () => false,
     forgetCreatedProject: noop,
     assertExecuteJavaScriptAllowed: noop,
+    setTrustSource: noop,
+    revokeTrust: noop,
+    clearRevocation: noop,
     refresh: resolved,
     close: resolved,
     create: unavailable("extensionService.create"),

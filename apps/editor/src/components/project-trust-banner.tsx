@@ -26,7 +26,8 @@ export function ProjectTrustBanner() {
     ...(utilities.length > 0 ? ["Editor Utilities"] : []),
     ...(snapshot.untrustedExecuteJavaScript.length > 0 ? [`Execute JavaScript (${snapshot.untrustedExecuteJavaScript.join(", ")})`] : []),
   ];
-  const dismissKey = JSON.stringify([projectGuid, held]);
+  // Not Now hides the prompt only for what it showed: a later refusal shows it again.
+  const dismissKey = JSON.stringify([projectGuid, held, snapshot.executeJavaScriptRefusals]);
   if (!ready || trusted || held.length === 0 || dismissed === dismissKey) return null;
   return (
     <Alert className="shrink-0 rounded-none border-x-0 border-t-0" data-testid="project-trust-banner">

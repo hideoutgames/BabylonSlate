@@ -312,7 +312,10 @@ describe("collectAndExportGame", () => {
     it("packages Execute JavaScript the project's trust allows", async () => {
       const result = await exportHero({ previewBuild: false, assertExecuteJavaScriptAllowed: () => {} });
       if (!isOk(result)) throw new Error(result.error);
-      expect(compiledScripts(result.value).find((script) => script.classId === "Hero")?.executeJavaScriptNodes).toEqual(["js"]);
+      const hero = compiledScripts(result.value).find((script) => script.classId === "Hero");
+      expect(hero?.source).toContain("ctx.log('hi');");
+      // The gate's metadata stays in the editor.
+      expect(hero).not.toHaveProperty("executeJavaScriptNodes");
     });
   });
 

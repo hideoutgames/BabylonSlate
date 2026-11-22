@@ -1,3 +1,4 @@
+import { generatedCommentText } from "@haptic/core";
 import type { GraphNode, LogicGraph } from "./ir";
 import { findPin } from "./ir";
 import { isPureNode, type HoistBodyAnchor } from "./node-registry";
@@ -203,6 +204,18 @@ export function emitBody(
   const line = { text, anchor };
   s.body.push(line);
   return line;
+}
+
+/**
+ * Emit a `/* … *\/` comment line. Node ids and types are asset text, so the comment goes through
+ * `generatedCommentText`: nothing in it can end the comment and become code.
+ */
+export function emitComment(
+  s: CodegenState,
+  text: string,
+  anchor?: Omit<CompileAnchor, "line">,
+): BodyLine {
+  return emitBody(s, `  /* ${generatedCommentText(text)} */`, anchor);
 }
 
 /**

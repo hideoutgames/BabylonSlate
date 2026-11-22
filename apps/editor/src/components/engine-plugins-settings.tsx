@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { ExecuteJavaScriptAsset } from "@haptic/core";
 import { resolvePluginEnabled } from "@haptic/assets";
 import {
   useDocumentActions,
@@ -12,11 +13,14 @@ import {
 import { savePluginArchive } from "../lib/plugin-download";
 import { inboundRefsFromOtherRoots, pluginRootId } from "../lib/plugin-ui";
 import { EngineLibrarySettings, type EngineLibraryProject } from "./engine-library-settings";
+import { ExecuteJavaScriptImportDialog, useExecuteJavaScriptReview } from "./execute-javascript-import-dialog";
 
 const pluginGuidOf = (entry: EnginePluginEntry) => entry.pluginGuid;
 
 /** The open project's side of an Engine Plugin: its copy (a project copy or the bundled fallback) and enable override. */
-function usePluginProject(): EngineLibraryProject<EnginePluginEntry> | undefined {
+function usePluginProject(
+  confirmExecuteJavaScript: (assets: ExecuteJavaScriptAsset[]) => Promise<boolean>,
+): EngineLibraryProject<EnginePluginEntry> | undefined {
   const { projectDocument, projectName } = useProjectState();
   const { updateProjectSettings, applyPluginOverrides, importPlugin } = useDocumentActions();
   const { pluginDescriptors, assetRegistry } = useRegistryState();
@@ -44,8 +48,15 @@ function usePluginProject(): EngineLibraryProject<EnginePluginEntry> | undefined
         let target = guid;
         if (!find(guid)) {
           if (!enabled) return;
-          // This computer's Engine Plugins library: bundled plugins and ones exported from a project here, never foreign files.
-          const result = await importPlugin(await archive(), undefined, { allowExecuteJavaScript: true });
+          // Only content bundled with Haptic copies in unasked. Whether an entry is bundled comes from where the library
+          // reads it (the app's own catalog), never from the archive; any other entry discloses its Execute JavaScript.
+          const bundled = (await (await ensureEnginePluginLibrary()).list()).some((entry) => entry.pluginGuid === guid && entry.bundled);
+          const bytes = await archive();
+          let result = await importPlugin(bytes, undefined, { allowExecuteJavaScript: bundled });
+          if (result.status === "executeJavaScript") {
+            if (!await confirmExecuteJavaScript(result.assets)) return false;
+            result = await importPlugin(bytes, undefined, { allowExecuteJavaScript: true });
+          }
           if (result.status !== "imported") {
             const existing = result.status === "conflict" ? result.incoming.settings.displayName : guid;
             throw new Error(`${name} already has a plugin named ${existing}. Import this one in Project Settings > Plugins to replace it.`);
@@ -58,18 +69,22 @@ function usePluginProject(): EngineLibraryProject<EnginePluginEntry> | undefined
         updateProjectSettings({ pluginOverrides: next });
       },
     };
-  }, [applyPluginOverrides, assetRegistry, importPlugin, pluginDescriptors, projectDocument, projectName, updateProjectSettings]);
+  }, [applyPluginOverrides, assetRegistry, confirmExecuteJavaScript, importPlugin, pluginDescriptors, projectDocument, projectName, updateProjectSettings]);
 }
 
 export function EnginePluginsSettings() {
-  const project = usePluginProject();
+  const { assets, review, answer } = useExecuteJavaScriptReview();
+  const project = usePluginProject(review);
   return (
-    <EngineLibrarySettings
-      kind="Plugin"
-      ensureLibrary={ensureEnginePluginLibrary}
-      guidOf={pluginGuidOf}
-      save={savePluginArchive}
-      project={project}
-    />
+    <>
+      <EngineLibrarySettings
+        kind="Plugin"
+        ensureLibrary={ensureEnginePluginLibrary}
+        guidOf={pluginGuidOf}
+        save={savePluginArchive}
+        project={project}
+      />
+      <ExecuteJavaScriptImportDialog assets={assets} onConfirm={() => answer(true)} onCancel={() => answer(false)} />
+    </>
   );
 }

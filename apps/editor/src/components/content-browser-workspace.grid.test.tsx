@@ -1173,6 +1173,37 @@ describe("ContentBrowserWorkspace grid window", () => {
       expect(createFolder).not.toHaveBeenCalled();
     });
 
+    it("cancels a waiting import when the Content Browser goes away, writing nothing", async () => {
+      const { importFile, createFolder } = installImport();
+      const refresh = docs.refreshAssetRegistry as ReturnType<typeof vi.fn>;
+      refresh.mockClear();
+      const { unmount } = render(<ContentBrowserWorkspace />);
+      const hero = await classFile("Hero", "ctx.log('hero');");
+      fireEvent.change(screen.getByTestId("content-browser-import-input"), {
+        target: { files: [hero.file, zipFile("Pack.zip", { "lamp.png": new Uint8Array([1]) })] },
+      });
+      await screen.findByTestId("execute-javascript-import-dialog");
+      unmount();
+      // The import ran to its end as a cancel: its cleanup refreshed the registry.
+      await waitFor(() => expect(refresh).toHaveBeenCalled());
+      expect(importFile).not.toHaveBeenCalled();
+      expect(createFolder).not.toHaveBeenCalled();
+    });
+
+    it("refuses a second import while the first waits on the dialog, without mixing them", async () => {
+      const { importFile } = installImport();
+      render(<ContentBrowserWorkspace />);
+      const hero = await classFile("Hero", "ctx.log('hero');");
+      fireEvent.change(screen.getByTestId("content-browser-import-input"), { target: { files: [hero.file] } });
+      const dialog = await screen.findByTestId("execute-javascript-import-dialog");
+      fireEvent.change(screen.getByTestId("content-browser-import-input"), { target: { files: [png()] } });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+      expect(screen.getAllByTestId("execute-javascript-import-dialog")).toHaveLength(1);
+      fireEvent.click(within(dialog).getByTestId("execute-javascript-import-cancel"));
+      await waitFor(() => expect(screen.getByTestId("content-browser-import").hasAttribute("disabled")).toBe(false));
+      expect(importFile).not.toHaveBeenCalled();
+    });
+
     it("asks nothing for files without Execute JavaScript", async () => {
       const { importFile } = installImport();
       render(<ContentBrowserWorkspace />);

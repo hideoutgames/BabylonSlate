@@ -99,6 +99,12 @@ async function pluginAssetFindings(
  * code cannot be checked is not installed.
  */
 export async function executeJavaScriptInPlugin(incoming: InspectedHplugin): Promise<ExecuteJavaScriptAsset[]> {
+  return executeJavaScriptInPluginFiles(incoming.files);
+}
+
+/** {@link executeJavaScriptInPlugin} over a plugin's files as they are stored (an archive's, or a library generation's). */
+export async function executeJavaScriptInPluginFiles(files: InspectedHplugin["files"]): Promise<ExecuteJavaScriptAsset[]> {
+  const incoming = { files };
   const blobs = archiveBlobs(incoming.files);
   const readBlob = async (sha256: string) => {
     const blob = blobs.get(sha256);

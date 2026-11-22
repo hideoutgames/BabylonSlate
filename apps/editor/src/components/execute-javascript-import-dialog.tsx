@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExecuteJavaScriptAsset } from "@haptic/core";
 import { CodeIcon } from "lucide-react";
 import {
@@ -62,4 +63,35 @@ export function ExecuteJavaScriptImportDialog({ assets, onConfirm, onCancel }: E
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+/**
+ * The question an import waits on: `review(assets)` shows the dialog and resolves true for Import, false
+ * for Cancel. A newer question cancels the one still open, and the host unmounting (its panel closed,
+ * the project closed) answers Cancel, so a waiting import always settles and writes nothing.
+ */
+export function useExecuteJavaScriptReview(): {
+  assets: ExecuteJavaScriptAsset[] | null;
+  review: (assets: ExecuteJavaScriptAsset[]) => Promise<boolean>;
+  answer: (confirmed: boolean) => void;
+} {
+  const [assets, setAssets] = useState<ExecuteJavaScriptAsset[] | null>(null);
+  const answerRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const answer = useCallback((confirmed: boolean) => {
+    const resolve = answerRef.current;
+    answerRef.current = null;
+    setAssets(null);
+    resolve?.(confirmed);
+  }, []);
+  const review = useCallback((next: ExecuteJavaScriptAsset[]) => new Promise<boolean>((resolve) => {
+    answerRef.current?.(false);
+    answerRef.current = resolve;
+    setAssets(next);
+  }), []);
+  useEffect(() => () => {
+    const resolve = answerRef.current;
+    answerRef.current = null;
+    resolve?.(false);
+  }, []);
+  return { assets, review, answer };
 }

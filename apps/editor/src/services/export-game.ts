@@ -642,6 +642,12 @@ export async function collectAndExportGame(
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
+  // The editor's gate metadata stays in the editor: nothing in a game reads it. Copies, so a cached compile keeps it.
+  const packedScripts = scripts.map((script) => {
+    const { executeJavaScriptNodes, ...packed } = script;
+    void executeJavaScriptNodes;
+    return packed;
+  });
 
   params.onPhase?.("Writing Pack");
   let saveGame: SaveGameConfiguration | undefined;
@@ -687,7 +693,7 @@ export async function collectAndExportGame(
     inputAssets,
     focusNavigation: params.focusNavigation,
     sceneLayerPostProcessStack: params.sceneLayerPostProcessStack,
-    scripts,
+    scripts: packedScripts,
     ...(params.extensionLibraries?.length ? { extensionLibraries: params.extensionLibraries } : {}),
     assets: exportAssets,
     playerFiles: params.playerFiles,

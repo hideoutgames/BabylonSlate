@@ -25,11 +25,17 @@ export function useProjectTrust(): {
   const trusted = stored || (key !== null && extensionService!.createdHere(key));
   const setTrusted = useCallback(async (next: boolean) => {
     if (key === null) return;
-    if (!next) extensionService?.forgetCreatedProject();
+    if (!next) {
+      // Before the settings write: a Play started meanwhile already finds the project untrusted.
+      extensionService?.forgetCreatedProject();
+      extensionService?.revokeTrust();
+    }
     await updateSettings((current) => {
       const others = current.trustedProjects.filter((value) => value !== key);
       current.trustedProjects = next ? [...others, key].slice(-MAX_TRUSTED_PROJECTS) : others;
     });
+    // A grant counts once the settings record it; a failed write leaves any revocation standing.
+    if (next) extensionService?.clearRevocation();
   }, [extensionService, key, updateSettings]);
   return { ready: hydrated && key !== null, trusted, persisted: stored, setTrusted };
 }

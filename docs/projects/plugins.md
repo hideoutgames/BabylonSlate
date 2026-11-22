@@ -54,7 +54,7 @@ See [Plugin Settings](../assets/plugin-settings.md) for the asset itself.
 - **Export > Export To File** saves a `.hplugin` file. See [Saving exported files](index.md#saving-exported-files).
 - **Import Plugin** adds a `.hplugin` file to the project. If the same plugin and version is already installed, choose **Keep** or **Replace**. A different version updates the installed plugin.
 - When the plugin's assets contain [Execute JavaScript](../scripting/javascript.md) code, **Import Execute JavaScript?** lists them before anything is installed. **Cancel** leaves the project as it was. A plugin whose assets cannot be read, such as one missing a file its assets store their content in, is not installed.
-- Plugins from **Engine Plugins** are copied in without asking: they come with Haptic or you exported them from a project on this device.
+- Plugins that come with Haptic are copied in from **Engine Plugins** without asking. Any other Engine Plugin whose assets contain Execute JavaScript asks first when you enable it in a project, and new projects leave it out until you enable it there.
 - **Export > Export To Engine Plugins** adds the plugin to your Engine Plugins on this device.
 
 ## Engine Plugins

@@ -51,6 +51,8 @@ export interface ExtensionSnapshot {
   untrusted: string[];
   /** Assets whose Execute JavaScript Play, Preview Build or packaging refused because the project is not trusted. */
   untrustedExecuteJavaScript: string[];
+  /** Refusals so far, so the trust prompt can show again for each one. */
+  executeJavaScriptRefusals: number;
 }
 
 /**
@@ -90,7 +92,7 @@ export class EditorExtensionService {
   private overrides: ExtensionOverrides = {};
   private settingValues: ExtensionSettingValues = {};
   private listeners = new Set<() => void>();
-  private state: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted: [], untrustedExecuteJavaScript: [] };
+  private state: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted: [], untrustedExecuteJavaScript: [], executeJavaScriptRefusals: 0 };
   private fingerprint = "";
   /**
    * Workspace Trust for the open project: until it is trusted on this
@@ -99,6 +101,14 @@ export class EditorExtensionService {
    * computer's library by its user) always may.
    */
   private trusted = false;
+  /**
+   * Execute JavaScript's gate reads trust at the moment it checks: from this source (this computer's
+   * Engine Settings as they are now, set by `EditorExtensionsRuntime`), not from the last refresh,
+   * so a grant counts at once and a refresh queued earlier cannot carry stale trust past a revoke.
+   */
+  private trustSource: (() => boolean) | null = null;
+  /** Set the moment trust is taken back, before the settings write and refresh that apply it. */
+  private revoked = false;
   /** The trust key of a project this editor created in this session, which needs no prompt. */
   private createdTrustKey: string | null = null;
   /** Extensions active in the current host, which the fingerprint describes. */
@@ -236,6 +246,23 @@ export class EditorExtensionService {
     this.createdTrustKey = null;
   }
 
+  /** The source Execute JavaScript's gate reads trust from; null falls back to the last refresh's. */
+  setTrustSource(source: (() => boolean) | null): void {
+    this.trustSource = source;
+  }
+  /** Takes trust back for Execute JavaScript at once: nothing passes the gate until `clearRevocation`. */
+  revokeTrust(): void {
+    this.revoked = true;
+  }
+  /** A grant the settings now record: the gate reads the source again. */
+  clearRevocation(): void {
+    this.revoked = false;
+  }
+  private trustedNow(): boolean {
+    if (this.revoked) return false;
+    return this.trustSource ? this.trustSource() : this.trusted;
+  }
+
   /**
    * Workspace Trust for Execute JavaScript: Play, Simulate, Preview Build and packaging call this with
    * the assets whose compiled scripts carry an Execute JavaScript body, right before those scripts would
@@ -243,9 +270,9 @@ export class EditorExtensionService {
    * snapshot so the trust prompt can name them. Trusting the project (the next `refresh`) lifts it.
    */
   assertExecuteJavaScriptAllowed(names: readonly string[]): void {
-    if (names.length === 0 || this.trusted) return;
+    if (names.length === 0 || this.trustedNow()) return;
     const held = [...new Set([...this.state.untrustedExecuteJavaScript, ...names])].sort((a, b) => a.localeCompare(b));
-    if (held.join("\n") !== this.state.untrustedExecuteJavaScript.join("\n")) this.publish({ untrustedExecuteJavaScript: held });
+    this.publish({ untrustedExecuteJavaScript: held, executeJavaScriptRefusals: this.state.executeJavaScriptRefusals + 1 });
     throw new Error(untrustedExecuteJavaScriptMessage([...new Set(names)]));
   }
 
@@ -326,6 +353,9 @@ export class EditorExtensionService {
   }
 
   close(): Promise<void> {
+    // At once, not when the queue reaches it: a closed project's trust never passes another check.
+    this.trusted = false;
+    this.revoked = false;
     return this.serialize(async () => {
       await this.resetHost();
       this.fingerprint = "";

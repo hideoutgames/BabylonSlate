@@ -1,6 +1,8 @@
 import {
   discoverEnginePlugins,
   encodePluginSettingsDocument,
+  executeJavaScriptInPluginFiles,
+  readProjectTree,
   exportPluginZip,
   inspectHplugin,
   uniquePluginFolderName,
@@ -159,9 +161,32 @@ export class EnginePluginLibrary {
     return this.serialize(async () => (await this.readState()).entries);
   }
 
-  /** A captured library is immutable; later edits cannot change an open project. */
-  createStorageSnapshot(): Promise<ProjectStorage> {
-    return this.serialize(async () => this.captureStorage(await this.readState()));
+  /**
+   * A captured library is immutable; later edits cannot change an open project.
+   *
+   * New projects copy the snapshot without asking and start trusted, so `forNewProject` leaves out
+   * every entry not bundled with Haptic whose assets hold Execute JavaScript, or cannot be read to
+   * tell: such an entry reaches a project only through Engine Plugins, which discloses it. Whether an
+   * entry is bundled is where the library reads it from (the app's catalog), never anything in it.
+   */
+  createStorageSnapshot(options: { forNewProject?: boolean } = {}): Promise<ProjectStorage> {
+    return this.serialize(async () => {
+      const state = await this.readState();
+      if (!options.forNewProject) return this.captureStorage(state);
+      const withheld = new Set<string>();
+      for (const entry of state.entries) {
+        if (entry.bundled) continue;
+        const record = state.records.find((candidate) => candidate.settings.pluginGuid === entry.pluginGuid);
+        if (!record) continue;
+        try {
+          const files = await readProjectTree(this.libraryStorage, record.generationPath);
+          if ((await executeJavaScriptInPluginFiles(files)).length > 0) withheld.add(entry.pluginGuid);
+        } catch {
+          withheld.add(entry.pluginGuid);
+        }
+      }
+      return this.captureStorage({ ...state, entries: state.entries.filter((entry) => !withheld.has(entry.pluginGuid)) });
+    });
   }
 
   export(guid: string): Promise<Uint8Array> {

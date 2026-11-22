@@ -13,6 +13,7 @@ import {
   emitEpoch,
   loopCheck,
   traceProbe,
+  emitComment,
   type CodegenState,
   type ExecPath,
   type ExecScope,
@@ -102,7 +103,7 @@ export function emitExecChain(
     }
     const def = s.options.registry.get(node.typeId);
     if (!def) {
-      emitBody(s, `  // missing node type ${node.typeId}`, {
+      emitComment(s, `missing node type ${node.typeId}`, {
         column: 1,
         assetGuid: s.options.assetGuid,
         graphId: s.graph.id,
@@ -166,7 +167,7 @@ export function emitExecChain(
       );
       const defaultTargets = execSuccessorEdges(s.index, node.id, "default");
       if (wiredCases.length === 0 && defaultTargets.length === 0) {
-        emitBody(s, `  /* enum.switch ${node.id}: no exec outs */`, anchor);
+        emitComment(s, `enum.switch ${node.id}: no exec outs`, anchor);
         break;
       }
       emitSwitchCases(

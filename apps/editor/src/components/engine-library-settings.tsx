@@ -59,8 +59,11 @@ export interface EngineLibraryProject<Entry> {
   isEnabled(guid: string): boolean;
   /** Sentences the prompt adds about the project side, such as a copy to make or references a disable breaks. */
   notes(entry: Entry, enabled: boolean): string[];
-  /** Enables or disables it in the project; `archive` gives the package to copy in when the project has none. */
-  setEnabled(guid: string, enabled: boolean, archive: () => Promise<Uint8Array>): Promise<void>;
+  /**
+   * Enables or disables it in the project; `archive` gives the package to copy in when the project has none.
+   * Resolves false when the person declined the copy (its Execute JavaScript), so nothing else changes.
+   */
+  setEnabled(guid: string, enabled: boolean, archive: () => Promise<Uint8Array>): Promise<boolean | void>;
 }
 
 type EnableScope = "engine" | "project" | "both";
@@ -146,7 +149,7 @@ export function EngineLibrarySettings<Entry extends EngineLibrarySettingsEntry>(
     const guid = guidOf(entry);
     setScopeOpen(false);
     void run(async (library) => {
-      if (scope !== "engine") await project.setEnabled(guid, enabled, () => library.export(guid));
+      if (scope !== "engine" && await project.setEnabled(guid, enabled, () => library.export(guid)) === false) return;
       if (scope !== "project") await library.setEnabledByDefault(guid, enabled);
     });
   };
