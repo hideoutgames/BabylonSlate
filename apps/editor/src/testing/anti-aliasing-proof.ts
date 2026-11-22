@@ -19,8 +19,8 @@ import {
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
-import { allowSceneScreenShadows, sceneMultisampleCount } from "../../../../packages/render/src/render-settings";
-import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
+import { allowSceneScreenShadows, sceneMultisampleCount } from "@haptic/render/render-settings";
+import { setUnlitMaterial } from "@haptic/render/editor-proofs";
 
 const WIDTH = 96;
 const HEIGHT = 64;

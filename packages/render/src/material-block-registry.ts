@@ -2,7 +2,7 @@ import { GameTimeInputBlock } from "./game-time-input-block";
 import { QualityTextureBlock } from "./texture-quality";
 import { EnvironmentSampleBlock } from "./environment-sample-block";
 import { LogicalSceneTextureBlock } from "./logical-scene-texture-block";
-import { SlateVoronoiNoiseBlock } from "./voronoi-noise-block";
+import { HapticVoronoiNoiseBlock } from "./voronoi-noise-block";
 import { WaterSurfaceBlock } from "./water-surface-block";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import type { WaterWavesBlock } from "./water-waves-block";
@@ -149,7 +149,7 @@ interface BlockAdapterContext {
 
 type BlockAdapter = (context: BlockAdapterContext) => BlockRealization;
 
-function babylonTypeFor(
+export function babylonTypeFor(
   type: MaterialValueType,
 ): NodeMaterialBlockConnectionPointTypes {
   switch (type) {
@@ -168,7 +168,7 @@ function babylonTypeFor(
 }
 
 /** Build the Babylon value object a constant InputBlock expects. */
-function babylonValueFor(
+export function babylonValueFor(
   type: MaterialValueType,
   components: readonly number[],
   asColor: boolean,
@@ -650,7 +650,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     return noiseCoordinates(name, block, block.seed, operation.inputs.coordinates === undefined, {}, { out: block.output });
   },
   "noise.voronoi": ({ name }) => {
-    const block = new SlateVoronoiNoiseBlock(name);
+    const block = new HapticVoronoiNoiseBlock(name);
     return single(block, { uv: block.seed, offset: block.offset, density: block.density }, { out: block.output, cells: block.cells });
   },
   "noise.worley": ({ name, operation }) => {

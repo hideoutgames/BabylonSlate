@@ -13,7 +13,7 @@ export type NavBakeWorkerHost = {
 export function createNavBakeWorker(): NavBakeWorkerHost {
   const worker = new Worker(
     new URL(
-      "../../../../packages/navigation/src/bake-worker.ts",
+      "@haptic/navigation/bake-worker",
       import.meta.url,
     ),
     { type: "module" },

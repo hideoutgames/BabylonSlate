@@ -18,10 +18,10 @@ import { declareWaterAttributes, isBlendingWaterSurface, isWaterSurfaceMesh, WAT
 import { WATER_DEBUG_NO_WAVES_DEFINE, waterDebugOff } from "./water-debug";
 
 /** Varyings of the rest point and world normal the fragment stage samples the spectrum at. */
-const WATER_NODE_REST_VARYING = "vSlateWaterRest";
-const WATER_NODE_NORMAL_VARYING = "vSlateWaterRestNormal";
+const WATER_NODE_REST_VARYING = "vHapticWaterRest";
+const WATER_NODE_NORMAL_VARYING = "vHapticWaterRestNormal";
 
-/** Declares a 2D-array sampler once per stage, under `SLATE_WATER_GPU_WAVES` (high precision: GLSL ES has no default). */
+/** Declares a 2D-array sampler once per stage, under `HAPTIC_WATER_GPU_WAVES` (high precision: GLSL ES has no default). */
 function declareArraySampler(state: NodeMaterialBuildState, name: string): void {
   if (state.samplers.includes(name)) return;
   state.samplers.push(name);
@@ -128,8 +128,8 @@ export class WaterWavesBlock extends NodeMaterialBlock {
   }
   /** Attributes, uniforms and the spectrum's sampler of the vertex stage (the displacement and the fragment's varying). */
   private declareVertexInputs(state: NodeMaterialBuildState): void {
-    declareWaterAttributes(state, WATER_SURFACE_DEFINE, [["slateWaterData", 4], ["slateWaterBaseNormal", 3]]);
-    declareWaterAttributes(state, WATER_BLEND_ATTRIBUTE_CONDITION, [["slateWaterBlend", 4]]);
+    declareWaterAttributes(state, WATER_SURFACE_DEFINE, [["hapticWaterData", 4], ["hapticWaterBaseNormal", 3]]);
+    declareWaterAttributes(state, WATER_BLEND_ATTRIBUTE_CONDITION, [["hapticWaterBlend", 4]]);
     for (const name of [...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
     declareArraySampler(state, WATER_FFT_SAMPLER);
     state._emitFunction("swFftTapLod", waterWaveNodeSources().vertexHelpers, "");

@@ -51,7 +51,7 @@ export function particleSimBackend(engine: AbstractEngine, requested = true): Pa
 export function createParticleReadinessTexture(scene: Scene): RawTexture {
   const texture = createParticleReadinessPlaceholder(scene, () => RawTexture.CreateRGBATexture(
     new Uint8Array([255, 255, 255, 255]), 1, 1, scene, false, false, Constants.TEXTURE_NEAREST_SAMPLINGMODE));
-  texture.name = "slate:particleReadiness";
+  texture.name = "haptic:particleReadiness";
   return texture;
 }
 

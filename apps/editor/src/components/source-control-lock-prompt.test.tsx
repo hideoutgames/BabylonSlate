@@ -4,7 +4,7 @@ import { FakeLockProvider } from "@haptic/source-control";
 import { SourceControlService } from "../services/source-control-service";
 import type { OpenDocument } from "../services/document-service";
 import { MANUAL_SOURCE_CONTROL, signedInHosts } from "../testing/source-control-hosts";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 import { SourceControlLockPrompt } from "./source-control-lock-prompt";
 
 const state = vi.hoisted(() => ({

@@ -50,30 +50,31 @@ import type { FrameGraphRenderTarget } from "@babylonjs/core/FrameGraph/frameGra
 import { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
 import type { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { Constants } from "@babylonjs/core/Engines/constants";
-import { retainAreaLightLookup } from "../../../../packages/render/src/area-light-resources";
-import { OwnedRectAreaLight } from "../../../../packages/render/src/area-rect-light";
-import { LogicalGeometryTask } from "../../../../packages/render/src/framegraph-logical-buffers";
-import { ManagedShadowObjectRendererTask } from "../../../../packages/render/src/framegraph-managed-shadows";
-import { pendingDriverEffects } from "../../../../packages/render/src/driver-compile";
-import { fullTargetClear } from "../../../../packages/render/src/full-target-clear";
-import { drawGeometryDepthSeed } from "../../../../packages/render/src/geometry-depth-seed";
-import { setMeshInstanceParameters } from "../../../../packages/render/src/instance-parameters";
-import { setSceneOutputScale } from "../../../../packages/render/src/scene-output-scale";
-import { GlSignatureRecorder, installGlSignature } from "../../../../packages/render/src/gpu-frame-probe";
-import { HapticLightingBlock } from "../../../../packages/render/src/haptic-lighting-block";
-import { createMirrorSurfaceMesh, mirrorDiagnostics } from "../../../../packages/render/src/mirrors";
-import { allowSceneScreenShadows } from "../../../../packages/render/src/render-settings";
-import { setSceneRenderSettings } from "../../../../packages/render/src/scene-render-mode";
-import { shadowAtlasDrawCounts } from "../../../../packages/render/src/shadow-atlas";
-import { findSceneShadowController, SceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import { retainAreaLightLookup } from "@haptic/render/editor-proofs";
+import { OwnedRectAreaLight } from "@haptic/render/editor-proofs";
+import { LogicalGeometryTask } from "@haptic/render/editor-proofs";
+import { ManagedShadowObjectRendererTask } from "@haptic/render/editor-proofs";
+import { pendingDriverEffects } from "@haptic/render/editor-proofs";
+import { fullTargetClear } from "@haptic/render/editor-proofs";
+import { drawGeometryDepthSeed } from "@haptic/render/editor-proofs";
+import { setMeshInstanceParameters } from "@haptic/render/editor-proofs";
+import { setSceneOutputScale } from "@haptic/render/editor-proofs";
+import { setSceneWorldDebug } from "@haptic/render/editor-proofs";
+import { GlSignatureRecorder, installGlSignature } from "@haptic/render/editor-proofs";
+import { HapticLightingBlock } from "@haptic/render/editor-proofs";
+import { createMirrorSurfaceMesh, mirrorDiagnostics } from "@haptic/render/editor-proofs";
+import { allowSceneScreenShadows } from "@haptic/render/render-settings";
+import { setSceneRenderSettings } from "@haptic/render/editor-proofs";
+import { shadowAtlasDrawCounts } from "@haptic/render/editor-proofs";
+import { findSceneShadowController, SceneShadowController } from "@haptic/render/editor-proofs";
 import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
-import { AtlasCascadedShadowGenerator } from "../../../../packages/render/src/shadow-atlas";
-import { ShadowMapRefresh } from "../../../../packages/render/src/shadow-map-refresh";
-import { hasOwnerNotifiedGeometry } from "../../../../packages/render/src/geometry-revision";
-import { createSpriteQuad, setSpriteQuadSize } from "../../../../packages/render/src/sprite-quad";
-import { createTilemapMeshes } from "../../../../packages/render/src/tilemap-mesh";
+import { AtlasCascadedShadowGenerator } from "@haptic/render/editor-proofs";
+import { ShadowMapRefresh } from "@haptic/render/editor-proofs";
+import { hasOwnerNotifiedGeometry } from "@haptic/render/editor-proofs";
+import { createSpriteQuad, setSpriteQuadSize } from "@haptic/render/editor-proofs";
+import { createTilemapMeshes } from "@haptic/render/editor-proofs";
 
 /**
  * The shadow maps' savings as before them, from the current; returns the restore. Every cascade of a sun's atlas map
@@ -280,7 +281,14 @@ function measureFrame(engine: AbstractEngine, frame: () => unknown): MainPassExa
   return { calls, passes: stats?.structures[0]?.passes ?? [], passCount: stats?.passes ?? 0, invalidates: stats?.invalidates ?? 0 };
 }
 
-export async function runMainPassExactnessProof(options: { reference: boolean; largeWorld?: boolean; chain?: boolean }) {
+/**
+ * `materialRecords` compiles the scene's Materials reading the Material record (`worlddebug materialrecords on`);
+ * `parameters` gives each Material a Color and a Float parameter, each times a literal, so the record holds parameters
+ * and hoisted literals as well as the Material Output's.
+ */
+export async function runMainPassExactnessProof(options: {
+  reference: boolean; largeWorld?: boolean; chain?: boolean; materialRecords?: boolean; parameters?: boolean;
+}) {
   const block = HapticLightingBlock.prototype as unknown as { _buildBlock(state: NodeMaterialBuildState): unknown };
   const build = block._buildBlock;
   const controller = SceneShadowController.prototype as unknown as { applyViewRefresh(generator: ShadowGenerator): void };
@@ -327,6 +335,7 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
     });
     // The world at half the backbuffer: the chain ends at the view's size and its output copy fills the backbuffer.
     if (options.chain) setSceneOutputScale(scene, 0.5);
+    if (options.materialRecords) setSceneWorldDebug(scene, "materialrecords", true);
     const camera = new FreeCamera("Main Camera", new Vector3(0, 3.2, -7), scene);
     camera.setTarget(new Vector3(0, 0.6, 1.5));
     camera.minZ = 0.1;
@@ -335,10 +344,33 @@ export async function runMainPassExactnessProof(options: { reference: boolean; l
 
     const material = async (name: string, color: number[], metallic: number, roughness: number, opacity = 1): Promise<Material> => {
       const doc = createDefaultMaterialDocument(name);
-      doc.nodes.find((node) => node.id === "baseColor")!.properties.value = color;
       const output = doc.nodes.find((node) => node.id === "output")!.properties;
       output[materialPinDefaultPropertyKey("metallic")] = [metallic];
-      output[materialPinDefaultPropertyKey("roughness")] = [roughness];
+      if (options.parameters) {
+        // Tint × a Color literal into Base Color, Rough × a Float literal into Roughness.
+        const tint = doc.nodes.find((node) => node.id === "baseColor")!;
+        tint.type = "param.color";
+        tint.properties = { name: "Tint", value: [...color, 1] };
+        doc.nodes.push(
+          { id: "shade", type: "const.vec3", position: { x: 0, y: 0 }, properties: { value: [0.93, 0.97, 0.91] } },
+          { id: "shaded", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+          { id: "rough", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Rough", value: [roughness] } },
+          { id: "scale", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [0.97] } },
+          { id: "scaled", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+        );
+        doc.edges = doc.edges.filter((edge) => edge.sourceNodeId !== "baseColor");
+        doc.edges.push(
+          { id: "tint-shade", sourceNodeId: "baseColor", sourcePinId: "rgb", targetNodeId: "shaded", targetPinId: "a" },
+          { id: "shade-shaded", sourceNodeId: "shade", sourcePinId: "out", targetNodeId: "shaded", targetPinId: "b" },
+          { id: "shaded-output", sourceNodeId: "shaded", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
+          { id: "rough-scaled", sourceNodeId: "rough", sourcePinId: "out", targetNodeId: "scaled", targetPinId: "a" },
+          { id: "scale-scaled", sourceNodeId: "scale", sourcePinId: "out", targetNodeId: "scaled", targetPinId: "b" },
+          { id: "scaled-output", sourceNodeId: "scaled", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" },
+        );
+      } else {
+        doc.nodes.find((node) => node.id === "baseColor")!.properties.value = color;
+        output[materialPinDefaultPropertyKey("roughness")] = [roughness];
+      }
       if (opacity < 1) {
         doc.blendMode = "translucent";
         output[materialPinDefaultPropertyKey("opacity")] = [opacity];

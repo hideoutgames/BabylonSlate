@@ -86,41 +86,41 @@ export function meshWaterNodeSurface(mesh: AbstractMesh | null | undefined): Wat
 }
 
 /** The pass drawn has the view's scene copy (Water Scene Color, Water Depth Fade and the reflection march sample it). */
-const WATER_NODE_COPY_DEFINE = "SLATE_WATER_NODE_COPY";
+const WATER_NODE_COPY_DEFINE = "HAPTIC_WATER_NODE_COPY";
 /** Water Reflection marches the copy for scene objects; its value is the march's step count. */
-const WATER_NODE_SSR_DEFINE = "SLATE_WATER_SSR_STEPS";
+const WATER_NODE_SSR_DEFINE = "HAPTIC_WATER_SSR_STEPS";
 /** Water Reflection samples an environment or skybox cube (`waterSkyCube`); otherwise it reflects the analytic sky. */
-const WATER_NODE_ENV_DEFINE = "SLATE_WATER_NODE_ENV";
+const WATER_NODE_ENV_DEFINE = "HAPTIC_WATER_NODE_ENV";
 /** Water Reflection reads the view's planar mirror (Planar quality, a flat body, Object Reflections on). */
-const WATER_NODE_PLANAR_DEFINE = "SLATE_WATER_NODE_PLANAR";
-const WATER_NODE_SCENE_SAMPLER = "slateWaterSceneSampler";
-const PLANAR_SAMPLER = "slateWaterNodePlanarSampler";
+const WATER_NODE_PLANAR_DEFINE = "HAPTIC_WATER_NODE_PLANAR";
+const WATER_NODE_SCENE_SAMPLER = "hapticWaterSceneSampler";
+const PLANAR_SAMPLER = "hapticWaterNodePlanarSampler";
 /** (1 for this body's mirror, 1 for a display-encoded mirror, `PLANAR_REACH`, 0) and the mirror's view-projection. */
-const PLANAR_UNIFORM = "slateWaterNodePlanar";
-const PLANAR_MATRIX = "slateWaterNodePlanarMatrix";
-const WATER_NODE_ENV_SAMPLER = "slateWaterNodeEnvSampler";
-const FIELD_SAMPLER = "slateWaterFieldSampler";
-const CONTACT_SAMPLER = "slateWaterContactSampler";
-const FIELD_UNIFORMS = ["slateWaterFieldBounds", "slateWaterFieldInfo", "slateWaterFieldStep", "slateWaterContactBounds", "slateWaterContactInfo"] as const;
+const PLANAR_UNIFORM = "hapticWaterNodePlanar";
+const PLANAR_MATRIX = "hapticWaterNodePlanarMatrix";
+const WATER_NODE_ENV_SAMPLER = "hapticWaterNodeEnvSampler";
+const FIELD_SAMPLER = "hapticWaterFieldSampler";
+const CONTACT_SAMPLER = "hapticWaterContactSampler";
+const FIELD_UNIFORMS = ["hapticWaterFieldBounds", "hapticWaterFieldInfo", "hapticWaterFieldStep", "hapticWaterContactBounds", "hapticWaterContactInfo"] as const;
 /** (floating origin xyz, 0): the nodes' positions are relative to it, the fields are not. */
-const ORIGIN_UNIFORM = "slateWaterNodeOrigin";
+const ORIGIN_UNIFORM = "hapticWaterNodeOrigin";
 /** (Foam Width, Contact Foam Width, contact and shore foam strength, Depth Color Distance). */
-const FOAM_UNIFORM = "slateWaterNodeFoamTerms";
+const FOAM_UNIFORM = "hapticWaterNodeFoamTerms";
 /** Water Depth Fade's per-channel absorption and path cap (`waterAbsorption`). */
-const ABSORB_UNIFORM = "slateWaterNodeAbsorb";
+const ABSORB_UNIFORM = "hapticWaterNodeAbsorb";
 const absorbScratch = new Float64Array(4);
 /** (Refraction, Roughness, Reflection Strength, 1 for an orthographic view). */
-const LOOK_UNIFORM = "slateWaterNodeLook";
+const LOOK_UNIFORM = "hapticWaterNodeLook";
 /** (1 / output width, 1 / output height, projection [0][0], projection [1][1]). */
-const SCREEN_UNIFORM = "slateWaterNodeScreen";
+const SCREEN_UNIFORM = "hapticWaterNodeScreen";
 /** The march's own screen terms (`marchSource`): (1 / width, 1 / height, Refraction, march distance). */
-const MARCH_UNIFORM = "slateWaterScreen";
-const SKY_UNIFORMS = ["slateWaterNodeSky", "slateWaterNodeHorizon", "slateWaterNodeSun", "slateWaterNodeSunColor", "slateWaterNodeSunShape"] as const;
+const MARCH_UNIFORM = "hapticWaterScreen";
+const SKY_UNIFORMS = ["hapticWaterNodeSky", "hapticWaterNodeHorizon", "hapticWaterNodeSun", "hapticWaterNodeSunColor", "hapticWaterNodeSunShape"] as const;
 /** The water's haze (`waterHazeConstants`). */
-const HAZE_UNIFORM = "slateWaterNodeHaze";
+const HAZE_UNIFORM = "hapticWaterNodeHaze";
 /** (max LOD, RGBD, gamma space, level × scene environment intensity) and (1, ±1 y, ±1 z, LOD offset). */
-const ENV_UNIFORMS = ["slateWaterNodeEnv", "slateWaterNodeEnvFlip"] as const;
-const ENV_MATRIX = "slateWaterNodeEnvMatrix";
+const ENV_UNIFORMS = ["hapticWaterNodeEnv", "hapticWaterNodeEnvFlip"] as const;
+const ENV_MATRIX = "hapticWaterNodeEnvMatrix";
 /** Longest reflected ray the march follows (world units), shortened to the view's far plane; as built-in water. */
 const MARCH_DISTANCE = 500;
 /** Refraction: screen offset per unit of view-space tilt, per metre of water behind the surface, as built-in water bends it. */
@@ -143,20 +143,20 @@ function declareSampler(state: NodeMaterialBuildState, name: string, kind: "2d" 
 }
 
 /**
- * The water mesh's data for the fragment (`vSlateWaterNodeData`: mesh spacing or CPU wave height, bank distance, body
- * depth, CPU clock) and its flow (`vSlateWaterNodeFlow`), written into the vertex program from the fragment build.
+ * The water mesh's data for the fragment (`vHapticWaterNodeData`: mesh spacing or CPU wave height, bank distance, body
+ * depth, CPU clock) and its flow (`vHapticWaterNodeFlow`), written into the vertex program from the fragment build.
  */
 function emitSurfaceVaryings(state: NodeMaterialBuildState): void {
   const vertex = state._vertexState;
-  declareWaterAttributes(vertex, WATER_SURFACE_DEFINE, [["slateWaterData", 4], ["slateWaterFlow", 3]]);
-  if (vertex._emitVaryingFromString("vSlateWaterNodeData", Types.Vector4, WATER_SURFACE_DEFINE)) {
-    vertex.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\nvSlateWaterNodeData = slateWaterData;\n#endif\n`;
+  declareWaterAttributes(vertex, WATER_SURFACE_DEFINE, [["hapticWaterData", 4], ["hapticWaterFlow", 3]]);
+  if (vertex._emitVaryingFromString("vHapticWaterNodeData", Types.Vector4, WATER_SURFACE_DEFINE)) {
+    vertex.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\nvHapticWaterNodeData = hapticWaterData;\n#endif\n`;
   }
-  if (vertex._emitVaryingFromString("vSlateWaterNodeFlow", Types.Vector3, WATER_SURFACE_DEFINE)) {
-    vertex.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\nvSlateWaterNodeFlow = slateWaterFlow;\n#endif\n`;
+  if (vertex._emitVaryingFromString("vHapticWaterNodeFlow", Types.Vector3, WATER_SURFACE_DEFINE)) {
+    vertex.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\nvHapticWaterNodeFlow = hapticWaterFlow;\n#endif\n`;
   }
-  state._emitVaryingFromString("vSlateWaterNodeData", Types.Vector4, WATER_SURFACE_DEFINE);
-  state._emitVaryingFromString("vSlateWaterNodeFlow", Types.Vector3, WATER_SURFACE_DEFINE);
+  state._emitVaryingFromString("vHapticWaterNodeData", Types.Vector4, WATER_SURFACE_DEFINE);
+  state._emitVaryingFromString("vHapticWaterNodeFlow", Types.Vector3, WATER_SURFACE_DEFINE);
 }
 
 /**
@@ -167,7 +167,7 @@ function surfaceLocals(position: string): string {
   return bind(`
 vec4 swnData = vec4(0.0, 10000.0, 1.0, 0.0);
 vec3 swnFlow = vec3(0.0);
-`) + `#ifdef ${WATER_SURFACE_DEFINE}\nswnData = vSlateWaterNodeData;\nswnFlow = vSlateWaterNodeFlow;\n#endif\n`
+`) + `#ifdef ${WATER_SURFACE_DEFINE}\nswnData = vHapticWaterNodeData;\nswnFlow = vHapticWaterNodeFlow;\n#endif\n`
     + bind(`vec3 swnPos = ${position}.xyz + U.${ORIGIN_UNIFORM}.xyz;\n`);
 }
 
@@ -186,26 +186,26 @@ vec4 swnContactTap(vec2 uv) { return textureLod(${CONTACT_SAMPLER}, uv, 0.0); }
 `;
   const code = `
 vec4 swnFieldAt(vec2 xz) {
-  vec2 uv = (xz - U.slateWaterFieldBounds.xy) * U.slateWaterFieldBounds.zw;
+  vec2 uv = (xz - U.hapticWaterFieldBounds.xy) * U.hapticWaterFieldBounds.zw;
   vec4 tap = swnFieldTap(uv);
-  vec2 edge = min(uv, vec2(1.0) - uv) / max(U.slateWaterFieldStep.xy * 3.0, vec2(0.000001));
-  float on = U.slateWaterFieldInfo.x * clamp(min(edge.x, edge.y), 0.0, 1.0);
-  float span = U.slateWaterFieldStep.z;
-  float coarse = mix(U.slateWaterFieldInfo.z, U.slateWaterFieldInfo.w, tap.g);
-  float fine = U.slateWaterFieldInfo.y + tap.b * span;
-  float top = U.slateWaterFieldInfo.y + span;
+  vec2 edge = min(uv, vec2(1.0) - uv) / max(U.hapticWaterFieldStep.xy * 3.0, vec2(0.000001));
+  float on = U.hapticWaterFieldInfo.x * clamp(min(edge.x, edge.y), 0.0, 1.0);
+  float span = U.hapticWaterFieldStep.z;
+  float coarse = mix(U.hapticWaterFieldInfo.z, U.hapticWaterFieldInfo.w, tap.g);
+  float fine = U.hapticWaterFieldInfo.y + tap.b * span;
+  float top = U.hapticWaterFieldInfo.y + span;
   float depth = mix(fine, coarse, smoothstep(top - 0.8, top - 0.2, fine));
   return vec4(on, depth, mix(${f(SHORE[0])}, ${f(SHORE[1])}, tap.r), tap.a * on);
 }
 float swnContactAt(vec2 xz, float height) {
-  vec2 uv = (xz - U.slateWaterContactBounds.xy) * U.slateWaterContactBounds.zw;
-  float on = U.slateWaterContactInfo.x * step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+  vec2 uv = (xz - U.hapticWaterContactBounds.xy) * U.hapticWaterContactBounds.zw;
+  float on = U.hapticWaterContactInfo.x * step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
   // Off the field (most of an open sea) the tap goes unused: skip it.
   vec4 tap = vec4(0.5);
   if (on > 0.0) { tap = swnContactTap(uv); }
-  float layer = (clamp(height / max(0.001, U.slateWaterContactInfo.z), -1.0, 1.0) * 0.5 + 0.5) * 3.0;
+  float layer = (clamp(height / max(0.001, U.hapticWaterContactInfo.z), -1.0, 1.0) * 0.5 + 0.5) * 3.0;
   vec4 weights = max(vec4(0.0), vec4(1.0) - abs(vec4(0.0, 1.0, 2.0, 3.0) - vec4(layer)));
-  return mix(1.0, dot(tap, weights) * 2.0 - 1.0, on) * U.slateWaterContactInfo.y;
+  return mix(1.0, dot(tap, weights) * 2.0 - 1.0, on) * U.hapticWaterContactInfo.y;
 }
 `;
   state._emitFunction("swnFieldAt", `#ifdef ${WATER_SURFACE_DEFINE}\n${taps}${bind(code)}#endif\n`, "");
@@ -265,7 +265,7 @@ ${behind}
 
 /**
  * This pixel's terrain tap (`swnField`) and what meets the water there, as built-in water derives it: the shoreline
- * under the waves from four terrain taps (`shorelineSource`, where the asset has waves: `slateWaterFieldStep.w`, above
+ * under the waves from four terrain taps (`shorelineSource`, where the asset has waves: `hapticWaterFieldStep.w`, above
  * Low Water Shading Detail), and
  * from it (`waterEdgeSource`) `swnDepth`, the water below this pixel's surface at `height` (the body's shelving bank,
  * the terrain where it is known), and the edge and open-water fades.
@@ -275,8 +275,8 @@ function edgeSource(height: string): string {
 vec4 swnField = swnFieldAt(swnPos.xz);
 float swnShore = swnField.z;
 float swnTerrainDepth = swnField.y + ${height};${shorelineSource({
-    tap: "swnFieldTap", uv: "((swnPos.xz - U.slateWaterFieldBounds.xy) * U.slateWaterFieldBounds.zw)",
-    cond: `U.slateWaterFieldStep.w > 0.0 && swnField.w > ${f(WATER_FIELD_TERRAIN_ALPHA)}`, depth: "swnTerrainDepth", shore: "swnShore" })}${waterEdgeSource({
+    tap: "swnFieldTap", uv: "((swnPos.xz - U.hapticWaterFieldBounds.xy) * U.hapticWaterFieldBounds.zw)",
+    cond: `U.hapticWaterFieldStep.w > 0.0 && swnField.w > ${f(WATER_FIELD_TERRAIN_ALPHA)}`, depth: "swnTerrainDepth", shore: "swnShore" })}${waterEdgeSource({
     known: "swnField.w", on: "swnField.x", shore: "swnShore", terrainDepth: "swnTerrainDepth", slope: "swShoreSlope", bank: "swnData.y", body: "swnData.z" })}
 float swnDepth = swDepth;
 `;
@@ -315,24 +315,24 @@ function bindSurface(effect: Effect, scene: Scene, mesh: AbstractMesh | undefine
   effect.setTexture(FIELD_SAMPLER, field?.texture ?? placeholderField(scene));
   if (field) {
     const bounds = field.bounds, depth = field.depthRange, texel = field.texelSize;
-    effect.setFloat4("slateWaterFieldBounds", bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!);
-    effect.setFloat4("slateWaterFieldInfo", 1, field.fineDepthMin, depth[0]!, depth[1]!);
+    effect.setFloat4("hapticWaterFieldBounds", bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!);
+    effect.setFloat4("hapticWaterFieldInfo", 1, field.fineDepthMin, depth[0]!, depth[1]!);
     // w: the asset has waves, which move the shoreline (`shorelineSource`).
-    effect.setFloat4("slateWaterFieldStep", texel[0], texel[1], field.fineDepthSpan, (w?.waveHeight ?? 0) > 0 ? 1 : 0);
+    effect.setFloat4("hapticWaterFieldStep", texel[0], texel[1], field.fineDepthSpan, (w?.waveHeight ?? 0) > 0 ? 1 : 0);
   } else {
-    effect.setFloat4("slateWaterFieldBounds", 0, 0, 1, 1);
-    effect.setFloat4("slateWaterFieldInfo", 0, 0, 0, 1);
-    effect.setFloat4("slateWaterFieldStep", 1, 1, 1, 0);
+    effect.setFloat4("hapticWaterFieldBounds", 0, 0, 1, 1);
+    effect.setFloat4("hapticWaterFieldInfo", 0, 0, 0, 1);
+    effect.setFloat4("hapticWaterFieldStep", 1, 1, 1, 0);
   }
   const contacts = surface?.contacts?.texture ? surface.contacts : null;
   effect.setTexture(CONTACT_SAMPLER, contacts?.texture ?? placeholderField(scene));
   if (contacts) {
     const bounds = contacts.bounds;
-    effect.setFloat4("slateWaterContactBounds", bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!);
-    effect.setFloat4("slateWaterContactInfo", 1, contacts.range, contacts.amplitude, 0);
+    effect.setFloat4("hapticWaterContactBounds", bounds[0]!, bounds[1]!, bounds[2]!, bounds[3]!);
+    effect.setFloat4("hapticWaterContactInfo", 1, contacts.range, contacts.amplitude, 0);
   } else {
-    effect.setFloat4("slateWaterContactBounds", 0, 0, 1, 1);
-    effect.setFloat4("slateWaterContactInfo", 0, w ? contactRange(w) : 8, 1, 0);
+    effect.setFloat4("hapticWaterContactBounds", 0, 0, 1, 1);
+    effect.setFloat4("hapticWaterContactInfo", 0, w ? contactRange(w) : 8, 1, 0);
   }
 }
 
@@ -382,21 +382,21 @@ function waterSkyCube(scene: Scene): BaseTexture | null {
 /** Uniforms of the analytic sky and of the cube `texture` (when there is one). Allocation-free. */
 function bindSky(effect: Effect, scene: Scene, texture: BaseTexture | null): void {
   const light = sceneWaterNodeLighting(scene);
-  effect.setFloat4("slateWaterNodeSky", light.sky[0]!, light.sky[1]!, light.sky[2]!, 0);
-  effect.setFloat4("slateWaterNodeHorizon", light.horizon[0]!, light.horizon[1]!, light.horizon[2]!, 0);
-  effect.setFloat4("slateWaterNodeSun", light.sun[0]!, light.sun[1]!, light.sun[2]!, light.sun[3]!);
-  effect.setFloat4("slateWaterNodeSunColor", light.sunColor[0]!, light.sunColor[1]!, light.sunColor[2]!, 0);
-  effect.setFloat4("slateWaterNodeSunShape", light.sunShape[0]!, light.sunShape[1]!, light.sunShape[2]!, light.sunShape[3]!);
+  effect.setFloat4("hapticWaterNodeSky", light.sky[0]!, light.sky[1]!, light.sky[2]!, 0);
+  effect.setFloat4("hapticWaterNodeHorizon", light.horizon[0]!, light.horizon[1]!, light.horizon[2]!, 0);
+  effect.setFloat4("hapticWaterNodeSun", light.sun[0]!, light.sun[1]!, light.sun[2]!, light.sun[3]!);
+  effect.setFloat4("hapticWaterNodeSunColor", light.sunColor[0]!, light.sunColor[1]!, light.sunColor[2]!, 0);
+  effect.setFloat4("hapticWaterNodeSunShape", light.sunShape[0]!, light.sunShape[1]!, light.sunShape[2]!, light.sunShape[3]!);
   effect.setFloat4(HAZE_UNIFORM, light.haze[0]!, light.haze[1]!, light.haze[2]!, light.haze[3]!);
   bindSceneFog(effect, scene);
   effect.setTexture(WATER_NODE_ENV_SAMPLER, texture ?? EMPTY_TEXTURE);
   if (!texture) return;
   const size = texture.getSize().width, lods = Math.max(0, Math.log2(Math.max(size, 1)));
-  effect.setFloat4("slateWaterNodeEnv", lods * texture.lodGenerationScale, texture.isRGBD ? 1 : 0, texture.gammaSpace ? 1 : 0, texture.level * scene.environmentIntensity);
+  effect.setFloat4("hapticWaterNodeEnv", lods * texture.lodGenerationScale, texture.isRGBD ? 1 : 0, texture.gammaSpace ? 1 : 0, texture.level * scene.environmentIntensity);
   // Babylon's cube lookups: an inverted cubic map flips Y; Z flips with `invertZ`, and again for a right-handed skybox.
   const skybox = texture.coordinatesMode === Texture.SKYBOX_MODE;
   const flipZ = skybox && scene.useRightHandedSystem ? !texture.invertZ : texture.invertZ;
-  effect.setFloat4("slateWaterNodeEnvFlip", 1, texture.coordinatesMode === Texture.INVCUBIC_MODE ? -1 : 1, flipZ ? -1 : 1, texture.lodGenerationOffset);
+  effect.setFloat4("hapticWaterNodeEnvFlip", 1, texture.coordinatesMode === Texture.INVCUBIC_MODE ? -1 : 1, flipZ ? -1 : 1, texture.lodGenerationOffset);
   effect.setMatrix(ENV_MATRIX, texture.getReflectionTextureMatrix());
 }
 
@@ -808,21 +808,21 @@ swnR = normalize(swnR);
 vec3 swnH = normalize(swnV + swnR);
 float swnSkyH = 1.0 - clamp(swnR.y, 0.0, 1.0);
 swnSkyH = swnSkyH * swnSkyH * swnSkyH;
-vec3 swnSky = mix(U.slateWaterNodeSky.rgb, U.slateWaterNodeHorizon.rgb, swnSkyH);
-vec4 swnSun = U.slateWaterNodeSun;
-float swnAz = clamp(dot(swnR.xz / max(length(swnR.xz), 0.0001), U.slateWaterNodeSunShape.xy), 0.0, 1.0);
+vec3 swnSky = mix(U.hapticWaterNodeSky.rgb, U.hapticWaterNodeHorizon.rgb, swnSkyH);
+vec4 swnSun = U.hapticWaterNodeSun;
+float swnAz = clamp(dot(swnR.xz / max(length(swnR.xz), 0.0001), U.hapticWaterNodeSunShape.xy), 0.0, 1.0);
 float swnAura = max(dot(swnR, swnSun.xyz), 0.0);
 swnAura = swnAura * swnAura;
 swnAura = swnAura * swnAura;
 swnAura = swnAura * swnAura;
-swnSky += U.slateWaterNodeSunColor.rgb * swnSun.w * (U.slateWaterNodeSunColor.rgb * (swnSkyH * U.slateWaterNodeSunShape.z * (0.25 + 0.35 * swnAz * swnAz)) + vec3(swnAura * 0.05));
-swnSky = mix(swnSky, mix(U.slateWaterNodeSky.rgb, U.slateWaterNodeHorizon.rgb, 0.55), smoothstep(0.05, 0.35, sqrt(swnShadeVar)) * 0.5);
+swnSky += U.hapticWaterNodeSunColor.rgb * swnSun.w * (U.hapticWaterNodeSunColor.rgb * (swnSkyH * U.hapticWaterNodeSunShape.z * (0.25 + 0.35 * swnAz * swnAz)) + vec3(swnAura * 0.05));
+swnSky = mix(swnSky, mix(U.hapticWaterNodeSky.rgb, U.hapticWaterNodeHorizon.rgb, 0.55), smoothstep(0.05, 0.35, sqrt(swnShadeVar)) * 0.5);
 `) + `#ifdef ${WATER_NODE_ENV_DEFINE}\n` + bind(`
-vec3 swnDir = (U.${ENV_MATRIX} * vec4(swnR, 0.0)).xyz * U.slateWaterNodeEnvFlip.xyz;
-vec4 swnEnv = swnEnvTap(swnDir, swnShade * U.slateWaterNodeEnv.x + U.slateWaterNodeEnvFlip.w);
+vec3 swnDir = (U.${ENV_MATRIX} * vec4(swnR, 0.0)).xyz * U.hapticWaterNodeEnvFlip.xyz;
+vec4 swnEnv = swnEnvTap(swnDir, swnShade * U.hapticWaterNodeEnv.x + U.hapticWaterNodeEnvFlip.w);
 vec3 swnGamma = pow(max(swnEnv.rgb, vec3(0.0)), vec3(2.2));
-vec3 swnLinear = mix(swnEnv.rgb, swnGamma, U.slateWaterNodeEnv.z);
-swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y) * U.slateWaterNodeEnv.w;
+vec3 swnLinear = mix(swnEnv.rgb, swnGamma, U.hapticWaterNodeEnv.z);
+swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.hapticWaterNodeEnv.y) * U.hapticWaterNodeEnv.w;
 `) + `#endif\n${bind("swnSky = swnSky * swnKeep;")}`
       + this.objectReflection(position, eye)
       + (this.color.hasEndpoints ? `${color} = swnSky * ${LOOK_UNIFORM}.z;\n` : "")
@@ -839,7 +839,7 @@ swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y)
    */
   private objectReflection(position: string, eye: string): string {
     const march = `defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0`;
-    const lookup = planarLookupSource(`${position}.xyz`, eye, "swnObjR", "swnObject", "U.slateWaterContactInfo.y", `U.${PLANAR_UNIFORM}`, `U.${PLANAR_MATRIX}`, "swnObj");
+    const lookup = planarLookupSource(`${position}.xyz`, eye, "swnObjR", "swnObject", "U.hapticWaterContactInfo.y", `U.${PLANAR_UNIFORM}`, `U.${PLANAR_MATRIX}`, "swnObj");
     // Seen from below the ray is not lifted: objects are looked up above the horizon, as built-in water looks them up.
     // The fades that do not need the hit come first: where they leave nothing, the march does not run. Below High Water
     // Shading Detail they include the Fresnel, which weighs the reflection where the Material mixes it by its Fresnel
@@ -867,12 +867,12 @@ swnSky = mix(swnSky, swnObj.rgb, swnObj.a);
 }
 RegisterClass("BABYLON.WaterReflectionBlock", WaterReflectionBlock);
 
-/** Water Colors' uniforms, apart from every other water uniform (the Water Waves node's foam terms are `slateWaterNodeFoam`). */
-const WATER_NODE_COLOR_UNIFORMS = ["slateWaterNodeShallowColor", "slateWaterNodeDeepColor", "slateWaterNodeFoamColor"] as const;
+/** Water Colors' uniforms, apart from every other water uniform (the Water Waves node's foam terms are `hapticWaterNodeFoam`). */
+const WATER_NODE_COLOR_UNIFORMS = ["hapticWaterNodeShallowColor", "hapticWaterNodeDeepColor", "hapticWaterNodeFoamColor"] as const;
 const COLOR_UNIFORMS = WATER_NODE_COLOR_UNIFORMS;
-/** Partner k's colours (`WaterNodeSurface.partners`), in `COLOR_UNIFORMS` order: `slateWaterNodeShallowColor${k}` and so on. */
+/** Partner k's colours (`WaterNodeSurface.partners`), in `COLOR_UNIFORMS` order: `hapticWaterNodeShallowColor${k}` and so on. */
 const PARTNER_COLOR_UNIFORMS = Array.from({ length: WATER_BLEND_COLOR_PARTNERS }, (_, k) => COLOR_UNIFORMS.map((name) => `${name}${k}`));
-const BLEND_SHARES_VARYING = "vSlateWaterNodeShares";
+const BLEND_SHARES_VARYING = "vHapticWaterNodeShares";
 const COLOR_FIELDS = ["shallowColor", "deepColor", "foamColor"] as const;
 /** The Realistic defaults a material preview shows. */
 const PREVIEW_WATER = createDefaultWaterDefinition();
@@ -900,7 +900,7 @@ export class WaterColorsBlock extends WaterNodeBlock {
   get sceneLight() { return this._outputs[4]!; }
   override getClassName(): string { return "WaterColorsBlock"; }
   override prepareDefines(defines: NodeMaterialDefines, _material: NodeMaterial, mesh?: AbstractMesh): void {
-    defines.setValue(WATER_NODE_BLEND_DEFINE, isWaterSurfaceMesh(mesh) && mesh!.isVerticesDataPresent("slateWaterBlendColors"), true);
+    defines.setValue(WATER_NODE_BLEND_DEFINE, isWaterSurfaceMesh(mesh) && mesh!.isVerticesDataPresent("hapticWaterBlendColors"), true);
   }
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
     const surface = meshWaterNodeSurface(mesh), w = surface?.water ?? PREVIEW_WATER, exact = material.getScene().getEngine().useExactSrgbConversions;
@@ -920,12 +920,12 @@ export class WaterColorsBlock extends WaterNodeBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     for (const name of [...COLOR_UNIFORMS, ...PARTNER_COLOR_UNIFORMS.flat()]) state._emitUniformFromString(name, Types.Vector4);
-    // The partners' shares: partner 0's in slateWaterBlend's w, partners 1 and 2's in slateWaterBlendColors.
+    // The partners' shares: partner 0's in hapticWaterBlend's w, partners 1 and 2's in hapticWaterBlendColors.
     const vertex = state._vertexState;
-    declareWaterAttributes(vertex, WATER_BLEND_ATTRIBUTE_CONDITION, [["slateWaterBlend", 4]]);
-    declareWaterAttributes(vertex, WATER_NODE_BLEND_DEFINE, [["slateWaterBlendColors", 2]]);
+    declareWaterAttributes(vertex, WATER_BLEND_ATTRIBUTE_CONDITION, [["hapticWaterBlend", 4]]);
+    declareWaterAttributes(vertex, WATER_NODE_BLEND_DEFINE, [["hapticWaterBlendColors", 2]]);
     if (vertex._emitVaryingFromString(BLEND_SHARES_VARYING, Types.Vector3, WATER_NODE_BLEND_DEFINE)) {
-      vertex.compilationString += `#ifdef ${WATER_NODE_BLEND_DEFINE}\n${BLEND_SHARES_VARYING} = vec3(slateWaterBlend.w, slateWaterBlendColors);\n#endif\n`;
+      vertex.compilationString += `#ifdef ${WATER_NODE_BLEND_DEFINE}\n${BLEND_SHARES_VARYING} = vec3(hapticWaterBlend.w, hapticWaterBlendColors);\n#endif\n`;
     }
     state._emitVaryingFromString(BLEND_SHARES_VARYING, Types.Vector3, WATER_NODE_BLEND_DEFINE);
     const shares = BLEND_SHARES_VARYING;
@@ -946,8 +946,8 @@ export class WaterColorsBlock extends WaterNodeBlock {
 }
 RegisterClass("BABYLON.WaterColorsBlock", WaterColorsBlock);
 
-/** A blending surface's ownership margin in metres (`slateWaterBlend.z`), for the cut. */
-const CUT_MARGIN_VARYING = "vSlateWaterNodeMargin";
+/** A blending surface's ownership margin in metres (`hapticWaterBlend.z`), for the cut. */
+const CUT_MARGIN_VARYING = "vHapticWaterNodeMargin";
 const cutRemovals = new WeakMap<AbstractMesh, { frame: number; render: number; selected: WaterRemovalCandidate[]; gaps: Float64Array }>();
 /** The removal volumes `mesh` cuts this render (`selectWaterRemovals`), chosen at its first draw of the render. */
 function meshRemovals(scene: Scene, mesh: AbstractMesh): readonly WaterRemovalCandidate[] {
@@ -1027,10 +1027,10 @@ export class WaterCutBlock extends WaterNodeBlock {
     state._emitFunction("swOwnership", `#ifdef ${WATER_OWNERSHIP_DEFINE}\n${bind(ownershipSource())}#endif\n`, "");
     // The ownership margin, and on the GPU path (only a graph with Water Waves has one) the blend cull, once the vertex
     // program has written its clip position.
-    declareWaterAttributes(vertex, WATER_BLEND_ATTRIBUTE_CONDITION, [["slateWaterBlend", 4]]);
+    declareWaterAttributes(vertex, WATER_BLEND_ATTRIBUTE_CONDITION, [["hapticWaterBlend", 4]]);
     const gpu = this.waveHeight.isConnected;
     if (vertex._emitVaryingFromString(CUT_MARGIN_VARYING, Types.Float, WATER_BLEND_DEFINE)) {
-      vertex.compilationString += `#ifdef ${WATER_BLEND_DEFINE}\n${CUT_MARGIN_VARYING} = slateWaterBlend.z;\n#endif\n`;
+      vertex.compilationString += `#ifdef ${WATER_BLEND_DEFINE}\n${CUT_MARGIN_VARYING} = hapticWaterBlend.z;\n#endif\n`;
       if (gpu) vertex._injectAtEnd += waterBlendCullSource();
     }
     state._emitVaryingFromString(CUT_MARGIN_VARYING, Types.Float, WATER_BLEND_DEFINE);

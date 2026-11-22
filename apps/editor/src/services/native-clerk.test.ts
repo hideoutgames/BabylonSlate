@@ -3,7 +3,7 @@ import {
   type NativeHttpRequest,
   type NativeHttpResponse,
 } from "@haptic/vfs";
-import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
+import { MemorySecretStore } from "@haptic/vfs/test-support/memory-secret-store";
 import { createNativeClerkClient, NativeClerkClient } from "./native-clerk";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -15,7 +15,7 @@ const session = {
   user: {
     id: "user_one",
     first_name: "Sam",
-    last_name: "Slate",
+    last_name: "Haptic",
     primary_email_address_id: "email_one",
     email_addresses: [{ id: "email_one", email_address: "sam@example.com" }],
   },
@@ -59,7 +59,7 @@ function transport(replies: NativeHttpResponse[]) {
 describe("NativeClerkClient", () => {
   it("restores Electron accounts through the dedicated encrypted credential bridge", async () => {
     const accountSecrets = new MemorySecretStore();
-    await accountSecrets.set(`slate-clerk-client:${key}`, "desktop-client");
+    await accountSecrets.set(`haptic-clerk-client:${key}`, "desktop-client");
     const legacyRead = vi.fn();
     const http = vi.fn<(request: NativeHttpRequest) => Promise<NativeHttpResponse>>(
       async () => response(client, "desktop-rotated"),
@@ -80,7 +80,7 @@ describe("NativeClerkClient", () => {
     expect(http.mock.calls[0]?.[0]).toMatchObject({
       headers: { Authorization: "desktop-client" },
     });
-    expect(await accountSecrets.get(`slate-clerk-client:${key}`)).toBe(
+    expect(await accountSecrets.get(`haptic-clerk-client:${key}`)).toBe(
       "desktop-rotated",
     );
     expect(legacyRead).not.toHaveBeenCalled();
@@ -108,9 +108,9 @@ describe("NativeClerkClient", () => {
       id: "sess_one",
       userId: "user_one",
       email: "sam@example.com",
-      name: "Sam Slate",
+      name: "Sam Haptic",
       firstName: "Sam",
-      lastName: "Slate",
+      lastName: "Haptic",
     });
     expect(
       await new NativeClerkClient(key, http, secrets).restore(),
@@ -303,9 +303,9 @@ describe("NativeClerkClient account management", () => {
     id: "sess_one",
     userId: "user_one",
     email: "sam@example.com",
-    name: "Sam Slate",
+    name: "Sam Haptic",
     firstName: "Sam",
-    lastName: "Slate",
+    lastName: "Haptic",
     deleteSelfEnabled: true,
   };
   const failure = (status: number, code: string): NativeHttpResponse => ({
@@ -314,7 +314,7 @@ describe("NativeClerkClient account management", () => {
   });
   async function signedIn(replies: NativeHttpResponse[]) {
     const secrets = new MemorySecretStore();
-    await secrets.set(`slate-clerk-client:${key}`, "client-a");
+    await secrets.set(`haptic-clerk-client:${key}`, "client-a");
     const { http, requests } = transport(replies);
     return { auth: new NativeClerkClient(key, http, secrets), requests, secrets };
   }
@@ -409,7 +409,7 @@ describe("NativeClerkClient account management", () => {
     await auth.deleteAccount(current);
     expect(path(requests[0])).toBe("/v1/me?_is_native=1&_method=DELETE&_clerk_session_id=sess_one");
     expect(requests[0]).toMatchObject({ method: "POST", headers: { Authorization: "client-a" } });
-    expect(await secrets.get(`slate-clerk-client:${key}`)).toBeNull();
+    expect(await secrets.get(`haptic-clerk-client:${key}`)).toBeNull();
     expect(await auth.restore()).toEqual({ status: "signed-out" });
     expect(requests).toHaveLength(1);
   });
@@ -424,7 +424,7 @@ describe("NativeClerkClient account management", () => {
       code: "session_reverification_required",
       message: "For your security, sign out and sign in again, then try once more.",
     });
-    expect(await secrets.get(`slate-clerk-client:${key}`)).toBe("client-a");
+    expect(await secrets.get(`haptic-clerk-client:${key}`)).toBe("client-a");
   });
 
   it("reverifies the session with an emailed first-factor code, as Clerk's own reverification does", async () => {
@@ -475,7 +475,7 @@ describe("NativeClerkClient account management", () => {
       failure(500, "internal_error"),
       failure(422, "form_param_nil"),
     ]);
-    const edit = { firstName: "", lastName: "Slate" };
+    const edit = { firstName: "", lastName: "Haptic" };
     await expect(auth.updateName(current, edit)).rejects.toMatchObject({ message: "Enter the missing name and try again." });
     await expect(auth.setProfileImage(current, new File(["x"], "a.png", { type: "image/png" }))).rejects.toMatchObject({
       message: "That picture type is not supported. Choose a JPG, PNG, GIF or WEBP image.",
@@ -494,7 +494,7 @@ describe("NativeClerkClient account management", () => {
     await expect(auth.updateName(current, { firstName: "A", lastName: "B" })).rejects.toMatchObject({
       code: "session_unavailable",
     });
-    expect(await secrets.get(`slate-clerk-client:${key}`)).toBeNull();
+    expect(await secrets.get(`haptic-clerk-client:${key}`)).toBeNull();
   });
 });
 
@@ -553,7 +553,7 @@ describe("NativeClerkClient social sign-in", () => {
     expect(reload.pathname).toBe("/v1/client/sign_ins/sia_oauth");
     expect(reload.searchParams.get("rotating_token_nonce")).toBe("nonce-1");
     expect(requests[2]?.headers.Authorization).toBe("client-b");
-    expect(await secrets.get(`slate-clerk-client:${key}`)).toBe("client-d");
+    expect(await secrets.get(`haptic-clerk-client:${key}`)).toBe("client-d");
   });
 
   it("turns a first-time provider account into a sign-up by transfer", async () => {
@@ -606,7 +606,7 @@ describe("NativeClerkClient social sign-in", () => {
 });
 
 describe("NativeClerkClient sign-in in progress", () => {
-  const tokenKey = `slate-clerk-client:${key}`;
+  const tokenKey = `haptic-clerk-client:${key}`;
   const pendingClient = (signInValue: unknown) => ({
     object: "client",
     sessions: [],
@@ -787,15 +787,15 @@ describe("NativeClerkClient sign-in in progress", () => {
 });
 
 describe("NativeClerkClient offline sessions", () => {
-  const tokenKey = `slate-clerk-client:${key}`;
-  const userKey = `slate-clerk-user:${key}`;
+  const tokenKey = `haptic-clerk-client:${key}`;
+  const userKey = `haptic-clerk-user:${key}`;
   const verified = {
     id: "sess_one",
     userId: "user_one",
     email: "sam@example.com",
-    name: "Sam Slate",
+    name: "Sam Haptic",
     firstName: "Sam",
-    lastName: "Slate",
+    lastName: "Haptic",
   };
 
   /** A device that signed in earlier: a stored token and the user cached by an online check. */

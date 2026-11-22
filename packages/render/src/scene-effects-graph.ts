@@ -13,6 +13,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import { disposeKeepingLinkingEffects } from "./owned-effect-retirement";
 import { FrameGraphBloomBlurTask } from "./bloom-blur-task";
 import { FrameGraphDisplayColorTask } from "./display-color-task";
+import type { FrameGraphSharedOutlineTask } from "./shared-outline-task";
 import {
   sceneEffectsImageProcessingConfiguration,
   type SceneEffectsPlan,
@@ -33,15 +34,15 @@ export interface SceneEffectsGraphOptions {
    * renderer draws this chain's own scene color instead. */
   authoredOutputTexture?: FrameGraphTextureHandle;
   /**
-   * Caller-owned display-space composition, after tone mapping and before FXAA. It blends in place onto `source`, the
-   * image the stage before it wrote, and returns that image as its `outputTexture`. With no FXAA or FSR after it, the
-   * stage before it writes the view's output when it can (`rendersToOutput`), so the composition blends onto the output.
-   * The caller retires the injected task with the enclosing graph.
+   * The view's shared outlines, drawn over the display image after image processing and before FXAA. Called once, with
+   * whether the task's composition is external (`FrameGraphSharedOutlineTask.externalCompose`); the caller creates the
+   * task in that mode with its camera set, and owns it: it disposes it with the enclosing graph. The chain sets its
+   * `targetTexture`. One rule: when the chain has a Display Color pass, the stage right before the outlines, that pass
+   * composites the stroke as its last stage and the task draws only the masks, before it (one full-screen pass fewer).
+   * Otherwise the task blends in place onto the image the stage before it wrote; with no FXAA or FSR after it, that
+   * stage writes the view's output when it can (`rendersToOutput`), so the outlines blend onto the output.
    */
-  beforeAntialiasing?: (source: FrameGraphTextureHandle) => {
-    task: FrameGraphTask;
-    outputTexture: FrameGraphTextureHandle;
-  };
+  outlines?: (externalCompose: boolean) => FrameGraphSharedOutlineTask;
   /** Internal render size: the output size scaled by `plan.upscale`. */
   width: number;
   height: number;
@@ -56,16 +57,17 @@ export interface SceneEffectsGraphOptions {
    */
   geometryOverSceneDepth?: { authoredDepthTexture?: FrameGraphTextureHandle };
   /** The view's output colour. When the chain's last own stage is one of its post processes at the output size,
-   * followed by nothing or only the in-place composition, that stage renders straight into it (`rendersToOutput`), so
-   * the caller needs no output copy. */
+   * followed by nothing or only the outlines' in-place composition, that stage renders straight into it
+   * (`rendersToOutput`), so the caller needs no output copy. */
   outputTarget?: FrameGraphTextureHandle;
 }
 
 /**
  * Settings-driven Display Color stage and display-space effects as FrameGraph
  * tasks: [authored stack output | own scene color] → spatial effects → bloom's
- * blurs → Display Color (bloom's merge, then image processing, in one pass) →
- * the caller's composition → FXAA → FSR 1 upscale and sharpen → the view's output,
+ * blurs → [outline masks] → Display Color (bloom's merge, then image processing,
+ * then the outline stroke, in one pass) → [the outlines' own composition, without
+ * a Display Color pass] → FXAA → FSR 1 upscale and sharpen → the view's output,
  * written by the last own stage itself when it can, else by the caller's single
  * output copy. Every stage before the upscale runs at the internal render size.
  * Tasks own their internal targets through graph disposal; this object owns the
@@ -82,11 +84,13 @@ export class SceneEffectsGraph {
   readonly outputTexture: FrameGraphTextureHandle;
   /** An own stage renders into `outputTarget` (`outputWriter`): a full-screen copy fewer per frame. */
   readonly rendersToOutput: boolean = false;
-  /** The stage that writes the view's output when `rendersToOutput`; the caller's composition may blend onto it after. */
+  /** The stage that writes the view's output when `rendersToOutput`; the outlines' own composition may blend onto it after. */
   readonly outputWriter: FrameGraphPostProcessTask | undefined;
   readonly tasks: FrameGraphTask[] = [];
   readonly spatial?: SpatialEffectsGraph;
   private displayColor: FrameGraphDisplayColorTask | undefined;
+  /** The outline task, when the chain draws the view's outlines; composed by the Display Color pass where there is one. */
+  readonly outlines: FrameGraphSharedOutlineTask | undefined;
   private readonly externalTasks = new Set<FrameGraphTask>();
   private tasksDisposed = false;
   private disposed: Promise<void> | null = null;
@@ -167,13 +171,21 @@ export class SceneEffectsGraph {
         bloom.sourceTexture = source;
         this.tasks.push(bloom);
       }
-      if (plan.bloom || plan.imageProcessing) {
+      // The Display Color pass, where there is one, is the stage right before the outlines: it composites their stroke.
+      const display = plan.bloom || plan.imageProcessing;
+      if (display && options.outlines) {
+        // The masks draw before the pass that reads them.
+        this.outlines = options.outlines(true);
+        this.tasks.push(this.outlines);
+        this.externalTasks.add(this.outlines);
+      }
+      if (display) {
         // Bloom's merge and image processing in one full-size pass, which compiles once: no merge target between them.
         // Its target takes the source's type, single-sample over the multisampled scene colour. A dedicated image
         // processing configuration is required: the pass sets applyByPostProcess on it and resets it when disposed, so
         // the Scene's shared one must never be handed over. Without image processing (a Display Space plan's bloom) the
         // pass is bloom's merge alone.
-        const display = new FrameGraphDisplayColorTask(
+        const stage = new FrameGraphDisplayColorTask(
           plan.imageProcessing ? "Scene Effects Display Color" : "Scene Effects Bloom Merge",
           graph,
           {
@@ -182,13 +194,15 @@ export class SceneEffectsGraph {
               configuration: sceneEffectsImageProcessingConfiguration(options.effects, plan.imageProcessing),
               fromLinearSpace: plan.imageProcessing.sceneLinear,
             } : null,
+            outline: this.outlines !== undefined,
           },
         );
-        display.sourceTexture = source;
-        display.bloomTexture = bloom?.outputTexture;
-        this.displayColor = display;
-        this.tasks.push(display);
-        source = display.outputTexture;
+        stage.sourceTexture = source;
+        stage.bloomTexture = bloom?.outputTexture;
+        stage.outlines = this.outlines;
+        this.displayColor = stage;
+        this.tasks.push(stage);
+        source = stage.outputTexture;
       }
       const outputWidth = options.outputWidth ?? options.width;
       const outputHeight = options.outputHeight ?? options.height;
@@ -210,14 +224,16 @@ export class SceneEffectsGraph {
         return stage;
       };
       let writer: FrameGraphPostProcessTask | undefined;
-      if (options.beforeAntialiasing) {
-        // The composition only blends onto the image before it and samples none of it (the outline compose reads its
-        // masks, styles and mask depth), so with nothing after it that image may be the output itself.
+      if (options.outlines && !this.outlines) {
+        // The composition only blends onto the image before it and samples none of it (it reads its masks, styles and
+        // mask depth), so with nothing after it that image may be the output itself.
         if (!plan.fxaa && !fsr) writer = intoOutput();
-        const composition = options.beforeAntialiasing(source);
-        this.tasks.push(composition.task);
-        this.externalTasks.add(composition.task);
-        source = composition.outputTexture;
+        const outlines = options.outlines(false);
+        outlines.targetTexture = source;
+        this.outlines = outlines;
+        this.tasks.push(outlines);
+        this.externalTasks.add(outlines);
+        source = outlines.outputTexture;
       }
       if (plan.fxaa) {
         const fxaa = new FrameGraphFXAATask("Scene Effects FXAA", graph);
@@ -249,9 +265,12 @@ export class SceneEffectsGraph {
         this.tasks.push(sharpen);
         source = sharpen.outputTexture;
       }
-      // Otherwise the last stage writes the output itself when it can. The spatial effects, a caller's composition over
-      // a stage that could not, and a chain drawn at a scale of the output without FSR keep the copy.
+      // Otherwise the last stage writes the output itself when it can. The spatial effects, the outlines' own composition
+      // over a stage that could not, and a chain drawn at a scale of the output without FSR keep the copy.
       writer ??= intoOutput();
+      // The masks are drawn at the size of the pass that composites their stroke: the target it was given (the
+      // output) or else its own, which takes its source's size.
+      if (this.outlines?.externalCompose) this.outlines.targetTexture = this.displayColor!.targetTexture ?? this.displayColor!.sourceTexture!;
       this.outputWriter = writer;
       this.rendersToOutput = writer !== undefined;
       this.outputTexture = source;
@@ -259,6 +278,16 @@ export class SceneEffectsGraph {
       this.disposeTasks();
       throw error;
     }
+  }
+
+  /** The Display Color pass's current Effect; null without that pass. */
+  get displayColorEffect(): Effect | null {
+    return this.displayColor?.drawWrapper.effect ?? null;
+  }
+
+  /** The Display Color pass's compile failure, once one of its Effects fails (its outline stage's included). */
+  get compileFailure(): string | undefined {
+    return this.displayColor?.postProcess.compileFailure.message;
   }
 
   /** FrameGraph.clear() resets tasks without disposing them; callers do so. */

@@ -8,7 +8,7 @@ import {
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { sniffKtx2Size } from "../packages/assets/src/ktx2-info";
 import { createDefaultMigrationRegistry } from "../packages/assets/src/migration";
-import { createNodeBasisEncodeFn } from "../packages/assets/src/node-basis-encode";
+import { createNodeBasisEncodeFn } from "../packages/assets/src/test-support/node-basis-encode";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,

@@ -105,7 +105,7 @@ export function isWaterContactMesh(mesh: AbstractMesh): boolean {
   // Infinite-distance meshes (sky domes) follow the camera: their geometry crossing the surface is no waterline.
   if (isEditorHelperMesh(mesh) || mesh.infiniteDistance) return false;
   const meta = mesh.metadata as Record<string, unknown> | null;
-  if (meta && (meta.slateWater || meta.slateWaterRemoval || meta.landscapeRoot || meta.slateLandscape || meta.skybox)) return false;
+  if (meta && (meta.hapticWater || meta.hapticWaterRemoval || meta.landscapeRoot || meta.hapticLandscape || meta.skybox)) return false;
   // Unindexed geometry (e.g. flat-shaded glTF primitives) draws its vertices as consecutive triangles.
   const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
   return mesh.getTotalIndices() > 0 || (source.isUnIndexed && mesh.getTotalVertices() >= 3);

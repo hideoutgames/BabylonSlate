@@ -167,7 +167,7 @@ describe("Material inputs", () => {
     wire(doc, "origin", "position", "output", "emissive");
     const result = await compile(doc, { floatingOrigin });
     expect(result.material.getBlockByName(nodeBlockName(doc, "origin"))?.getClassName()).toBe("TransformBlock");
-    const origin = result.material.getBlockByName("slateFloatingOrigin") as InputBlock;
+    const origin = result.material.getBlockByName("hapticFloatingOrigin") as InputBlock;
     expect(origin.output.endpoints.map((endpoint) => endpoint.ownerBlock.name)).toEqual([`${nodeBlockName(doc, "origin")}_absolute`]);
   });
 

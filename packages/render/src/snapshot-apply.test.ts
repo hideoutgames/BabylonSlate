@@ -409,7 +409,7 @@ describe("createPlayMesh", () => {
         rotation: [0, 0, 0, 1], scale: [1, 1, 1], water: normalizeWaterBody({ width: 4, length: 4, resolution: 8 }) }],
     });
     const surface = binding.meshes.get(3)!.getChildMeshes()[0]!;
-    expect(surface.isVerticesDataPresent("slateWaterData")).toBe(true);
+    expect(surface.isVerticesDataPresent("hapticWaterData")).toBe(true);
     expect(surface.renderingGroupId).toBe(box.renderingGroupId);
   });
 

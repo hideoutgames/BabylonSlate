@@ -83,7 +83,8 @@ describe("materialNodePreviewDocument", () => {
     expect(lowered.ok).toBe(true);
     if (!lowered.ok) return;
     expect(lowered.plan.outputs.color).toEqual({ kind: "operation", operationId: "__previewCombine", pinId: "xyz" });
-    expect(lowered.plan.outputs.opacity).toEqual({ kind: "constant", type: "float", value: [1] });
+    // (A Material Output literal is also marked hoisted, for programs that read the Material record.)
+    expect(lowered.plan.outputs.opacity).toMatchObject({ kind: "constant", type: "float", value: [1] });
   });
 
   it("is null for a missing node, an unknown output and a Texture output", () => {

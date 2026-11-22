@@ -16,11 +16,11 @@ import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core
 import { compileMaterialPlan, createPrimitiveMesh, RENDERING_GROUP, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { instanceParameterOf, prepareInstanceParameters } from "../../../../packages/render/src/instance-parameters";
-import { sceneInstancePool, setSceneInstancing } from "../../../../packages/render/src/instance-pool";
-import { createPooledPrimitiveVisual } from "../../../../packages/render/src/pooled-primitive-visual";
-import { pooledLeafOf, setActorMeshMaterial } from "../../../../packages/render/src/pooled-visuals";
-import { applyWorldVisualGroup } from "../../../../packages/render/src/sorting";
+import { instanceParameterOf, prepareInstanceParameters } from "@haptic/render/editor-proofs";
+import { sceneInstancePool, setSceneInstancing } from "@haptic/render/editor-proofs";
+import { createPooledPrimitiveVisual } from "@haptic/render/editor-proofs";
+import { pooledLeafOf, setActorMeshMaterial } from "@haptic/render/editor-proofs";
+import { applyWorldVisualGroup } from "@haptic/render/editor-proofs";
 
 const WIDTH = 160;
 const HEIGHT = 90;

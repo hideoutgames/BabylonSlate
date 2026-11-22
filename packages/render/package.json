@@ -24,6 +24,7 @@
     "./src/material-block-registry.ts",
     "./src/material-compiler.ts",
     "./src/material-plugin-registration.ts",
+    "./src/material-record.ts",
     "./src/mirror-reflection-block.ts",
     "./src/model-lod.worker.ts",
     "./src/multiply-blend-block.ts",
@@ -32,6 +33,7 @@
     "./src/scene-fog-block.ts",
     "./src/shadow-retained-casters.ts",
     "./src/shadow-vertex-clamp.ts",
+    "./src/shared-outline-stroke.ts",
     "./src/sprite-batch-block.ts",
     "./src/test-support/light-block-engine.ts",
     "./src/test-support/node-dom-polyfills.ts",
@@ -73,7 +75,10 @@
     "./spawnable-lights": "./src/spawnable-lights.ts",
     "./lifecycle-pause": "./src/lifecycle-pause.ts",
     "./gl-error-trace": "./src/gl-error-trace.ts",
-    "./preserve-drawing-buffer-setting": "./src/preserve-drawing-buffer-setting.ts"
+    "./preserve-drawing-buffer-setting": "./src/preserve-drawing-buffer-setting.ts",
+    "./default-billboard-files": "./src/default-billboard/files.ts",
+    "./babylon-registrations": "./src/babylon-registrations.ts",
+    "./editor-proofs": "./src/test-support/editor-proofs.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -94,7 +99,10 @@
     "earcut": "^3.2.3"
   },
   "devDependencies": {
+    "@haptic/runtime": "workspace:*",
     "@haptic/test-kit": "workspace:*",
-    "typescript": "~6.0.3"
+    "fast-check": "^4.3.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
   }
 }

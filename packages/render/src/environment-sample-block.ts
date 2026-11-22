@@ -93,11 +93,11 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     this.scene = state.sharedData.nodeMaterial.getScene();
-    this.sampler = state._getFreeVariableName("slateEnvironmentSampler");
-    this.available = state._getFreeDefineName("SLATE_ENVIRONMENT");
-    this.matrix = state._getFreeVariableName("slateEnvironmentMatrix");
-    this.parameters = state._getFreeVariableName("slateEnvironmentParameters");
-    this.prefilter = state._getFreeVariableName("slateEnvironmentPrefilter");
+    this.sampler = state._getFreeVariableName("hapticSampledEnvironmentSampler");
+    this.available = state._getFreeDefineName("HAPTIC_SAMPLED_ENVIRONMENT");
+    this.matrix = state._getFreeVariableName("hapticSampledEnvironmentMatrix");
+    this.parameters = state._getFreeVariableName("hapticSampledEnvironmentParameters");
+    this.prefilter = state._getFreeVariableName("hapticSampledEnvironmentPrefilter");
     state.sharedData.blocksWithDefines.push(this);
     state.sharedData.blockingBlocks.push(this);
     // NodeMaterial's fullscreen onApply calls this list. Scene view changes
@@ -126,10 +126,10 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
     );
     const params = this.parameters;
     const prefilter = this.prefilter;
-    const direction = state._getFreeVariableName("slateEnvironmentDirection");
-    const sampled = state._getFreeVariableName("slateEnvironmentSample");
-    const roughness = state._getFreeVariableName("slateEnvironmentRoughness");
-    const lod = state._getFreeVariableName("slateEnvironmentLod");
+    const direction = state._getFreeVariableName("hapticSampledEnvironmentDirection");
+    const sampled = state._getFreeVariableName("hapticSampledEnvironmentSample");
+    const roughness = state._getFreeVariableName("hapticSampledEnvironmentRoughness");
+    const lod = state._getFreeVariableName("hapticSampledEnvironmentLod");
     const sample = `textureCubeLodEXT(${this.sampler},${direction},${lod})`;
     state.compilationString += `${state._declareOutput(this.color)} = vec3(0.0);\n#ifdef ${this.available}\n`;
     const vec3 = "vec3";

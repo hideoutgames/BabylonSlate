@@ -42,13 +42,13 @@ import {
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import type { AreaEmissionPixels } from "@haptic/assets";
-import { setRectLightEmission } from "../../../../packages/render/src/area-emission-array";
-import { retainAreaLightLookup } from "../../../../packages/render/src/area-light-resources";
-import { OwnedRectAreaLight } from "../../../../packages/render/src/area-rect-light";
-import { retainFilteredEnvironment } from "../../../../packages/render/src/environment-prefilter";
-import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
-import { isAtlasShadow } from "../../../../packages/render/src/shadow-atlas";
+import { setRectLightEmission } from "@haptic/render/editor-proofs";
+import { retainAreaLightLookup } from "@haptic/render/editor-proofs";
+import { OwnedRectAreaLight } from "@haptic/render/editor-proofs";
+import { retainFilteredEnvironment } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
+import { setAuthoredLightEnabled } from "@haptic/render/editor-proofs";
+import { isAtlasShadow } from "@haptic/render/editor-proofs";
 
 type Surface = { name: string; baseColor: readonly number[]; metallic: number; specular: number; roughness: number; environmentInfluence: number };
 const SURFACES: Surface[] = [

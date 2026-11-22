@@ -437,8 +437,8 @@ class LatticeOwner {
   }
   bindBuffer(buffer: UniformBuffer): void {
     this.matrices(); this.resource!.plugin.bindForSubMesh(buffer);
-    buffer.updateMatrix("slateWorldToLattice", this.fromWorld);
-    buffer.updateMatrix("slateLatticeToWorld", this.toWorld);
+    buffer.updateMatrix("hapticWorldToLattice", this.fromWorld);
+    buffer.updateMatrix("hapticLatticeToWorld", this.toWorld);
   }
   bindEffect(effect: Effect): void {
     this.resource!.bridge.bindToEffect(effect, "Lattice");

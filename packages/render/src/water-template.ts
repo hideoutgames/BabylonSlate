@@ -1,10 +1,20 @@
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { Scene } from "@babylonjs/core/scene";
 import { createWaterMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { compileMaterialPlan } from "./material-compiler";
+import { compileMaterialPlan, type CompiledMaterial } from "./material-compiler";
+import { replaceSceneMaterial } from "./material-library";
 import { markBuiltInWaterMaterial } from "./water-mesh";
 
-const templates = new WeakMap<Scene, NodeMaterial>();
+const templates = new WeakMap<Scene, CompiledMaterial>();
+
+function compileBuiltInWater(scene: Scene): CompiledMaterial {
+  const lowered = lowerMaterialDocument(createWaterMaterialDocument("Water"));
+  if (!lowered.ok) throw new Error("The built-in water Material did not lower.");
+  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "Built-in Water" });
+  if (!compiled.ok) throw new Error("The built-in water Material did not compile.");
+  markBuiltInWaterMaterial(compiled.material);
+  return compiled;
+}
 
 /**
  * The graph Material built-in water draws with, on the light block. It is the water starter
@@ -13,15 +23,34 @@ const templates = new WeakMap<Scene, NodeMaterial>();
  * `WaterNodeSurface`, and its variants through its own draw wrappers. Disposed with the Scene.
  */
 export function builtInWaterMaterial(scene: Scene): NodeMaterial {
-  let material = templates.get(scene);
-  if (material) return material;
-  const lowered = lowerMaterialDocument(createWaterMaterialDocument("Water"));
-  if (!lowered.ok) throw new Error("The built-in water Material did not lower.");
-  const compiled = compileMaterialPlan(lowered.plan, { scene, name: "Built-in Water" });
-  if (!compiled.ok) throw new Error("The built-in water Material did not compile.");
-  material = compiled.material;
-  markBuiltInWaterMaterial(material);
-  templates.set(scene, material);
-  scene.onDisposeObservable.addOnce(() => compiled.dispose());
-  return material;
+  const existing = templates.get(scene);
+  if (existing) return existing.material;
+  const compiled = compileBuiltInWater(scene);
+  templates.set(scene, compiled);
+  scene.onDisposeObservable.addOnce(() => templates.get(scene)?.dispose());
+  return compiled.material;
 }
+
+/**
+ * Compiles `scene`'s built-in water Material again after a change to how the Scene compiles Materials (`worlddebug
+ * materialrecords`): once the new build is ready its water meshes move to it (each draws its water variant, built on
+ * its first draw) and the old one is disposed.
+ */
+export function recompileBuiltInWaterMaterial(scene: Scene): Promise<void> {
+  // One at a time, so the last switch decides the build that stays.
+  const run = (recompiles.get(scene) ?? Promise.resolve()).then(async () => {
+    const previous = templates.get(scene);
+    if (!previous || scene.isDisposed) return;
+    const next = compileBuiltInWater(scene);
+    if (!await replaceSceneMaterial(scene, previous.material, next.material, () => false)) {
+      next.dispose();
+      return;
+    }
+    templates.set(scene, next);
+    previous.dispose();
+  });
+  recompiles.set(scene, run);
+  return run;
+}
+
+const recompiles = new WeakMap<Scene, Promise<void>>();

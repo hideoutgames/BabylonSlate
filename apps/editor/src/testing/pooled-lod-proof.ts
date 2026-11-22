@@ -16,13 +16,13 @@ import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core
 import { compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { encodeUvSphereGlb } from "../../../../packages/render/src/glb-test-fixtures";
-import { setSceneInstancing } from "../../../../packages/render/src/instance-pool";
-import { loadModelContainer } from "../../../../packages/render/src/model-container";
-import { attachModelLods, generateModelLods } from "../../../../packages/render/src/model-lod";
-import { poolModelLeaves } from "../../../../packages/render/src/pooled-model-leaves";
-import { setDrawnMaterial } from "../../../../packages/render/src/pooled-visuals";
-import { RENDERING_GROUP } from "../../../../packages/render/src/sorting";
+import { encodeUvSphereGlb } from "@haptic/render/glb-test-fixtures";
+import { setSceneInstancing } from "@haptic/render/editor-proofs";
+import { loadModelContainer } from "@haptic/render/editor-proofs";
+import { attachModelLods, generateModelLods } from "@haptic/render/editor-proofs";
+import { poolModelLeaves } from "@haptic/render/editor-proofs";
+import { setDrawnMaterial } from "@haptic/render/editor-proofs";
+import { RENDERING_GROUP } from "@haptic/render/editor-proofs";
 
 const WIDTH = 160;
 const HEIGHT = 90;

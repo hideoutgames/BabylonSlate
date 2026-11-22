@@ -8,7 +8,7 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { afterEach, describe, expect, it } from "vitest";
 import { isPlayEngineCommandType, readSnapshotHeader, snapshotFloatCount, SNAPSHOT_FLAG_VISIBLE, type ActorSlot } from "@haptic/bridge";
 import { readActorSlot } from "@haptic/bridge/read-actor-slot";
-import { createInProcessRuntime } from "@haptic/test-kit";
+import { createInProcessRuntime } from "@haptic/runtime";
 import { identityTransform } from "@haptic/core";
 import { normalizeModelPayload } from "@haptic/assets";
 import { createTestEngine } from "./test-support/test-engine";

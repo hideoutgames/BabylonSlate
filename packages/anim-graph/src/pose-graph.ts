@@ -14,7 +14,6 @@ type SerializedGraphNode = SerializedGraph["nodes"][number];
 export const ANIM_POSE_OUTPUT_TYPE = "anim.pose.output";
 export const ANIM_POSE_SEQUENCE_PLAYER_TYPE = "anim.pose.sequencePlayer";
 export const ANIM_POSE_SEQUENCE_EVALUATOR_TYPE = "anim.pose.sequenceEvaluator";
-export const ANIM_POSE_REST_TYPE = "anim.pose.restPose";
 export const ANIM_POSE_BLEND_TYPE = "anim.pose.blend";
 export const ANIM_POSE_BLEND_BY_BOOL_TYPE = "anim.pose.blendByBool";
 export const ANIM_POSE_BLEND_BY_INT_TYPE = "anim.pose.blendByInt";

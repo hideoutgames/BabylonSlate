@@ -68,7 +68,7 @@ function scene(): { scene: Scene; camera: FreeCamera } {
  * interpolated per-vertex margin plus the cut's 1.5 cm). Triangles are bucketed by 2 m cells for the lookups.
  */
 function keeper(mesh: Mesh): (x: number, z: number) => { kept: boolean; margin: number } {
-  const pos = mesh.getVerticesData(VertexBuffer.PositionKind)!, data = mesh.getVerticesData("slateWaterData")!, blend = mesh.getVerticesData("slateWaterBlend");
+  const pos = mesh.getVerticesData(VertexBuffer.PositionKind)!, data = mesh.getVerticesData("hapticWaterData")!, blend = mesh.getVerticesData("hapticWaterBlend");
   const idx = mesh.getIndices()!, world = mesh.computeWorldMatrix(true), offset = waterGridOffset(mesh);
   const points: Array<[number, number, number, number]> = [];
   for (let v = 0; v < pos.length / 3; v++) {

@@ -19,7 +19,9 @@ import {
   engineDefaultMaterialDocument,
   installEngineDefaultMaterial,
   isEngineDefaultMaterial,
+  recompileEngineDefaultMaterial,
 } from "./default-material";
+import { setSceneWorldDebug } from "./world-debug";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { createPrimitiveMesh } from "./scene-loader";
 import { applySceneEnvironment } from "./scene-illumination";
@@ -171,6 +173,40 @@ describe("engine default material", () => {
     expect(material.isFrozen).toBe(true);
     applySceneEnvironment(scene, createDefaultScene("3d"));
     expect(emission()).toBe(0);
+  });
+
+  it("compiles again when the Material record is switched, keeping its emission and moving its meshes once ready", async () => {
+    const scene = rawScene();
+    new HemisphericLight("fill", Vector3.Up(), scene);
+    const previous = installEngineDefaultMaterial(scene) as NodeMaterial;
+    applySceneEnvironment(scene, createDefaultScene("2d"));
+    // A mesh that holds the default itself, and one that draws it as the Scene's default.
+    const held = createPrimitiveMesh(scene, "held", "box");
+    held.material = previous;
+    const implicit = createPrimitiveMesh(scene, "implicit", "box");
+    implicit.material = null;
+    const emissionBlock = nodeBlockName(engineDefaultMaterialDocument(), "emission");
+    const emission = (material: NodeMaterial) => (material.attachedBlocks.find((block) => block.name === emissionBlock) as { value?: unknown } | undefined)?.value;
+
+    setSceneWorldDebug(scene, "materialrecords", true);
+    const switching = recompileEngineDefaultMaterial(scene);
+    // Until the new build is ready, the old one draws.
+    expect(scene.defaultMaterial).toBe(previous);
+    await switching;
+    const recorded = scene.defaultMaterial as NodeMaterial;
+    expect(recorded).not.toBe(previous);
+    expect([isEngineDefaultMaterial(recorded), isEngineDefaultMaterial(previous), scene.materials.includes(previous)]).toEqual([true, false, false]);
+    expect([held.material, implicit.material]).toEqual([recorded, null]);
+    expect(recorded.compiledShaders).toContain("uniform HapticMaterial");
+    expect(emission(recorded)).toBe(1);
+    expect(scene.materials.filter(isEngineDefaultMaterial)).toEqual([recorded]);
+
+    setSceneWorldDebug(scene, "materialrecords", false);
+    await recompileEngineDefaultMaterial(scene);
+    const plain = scene.defaultMaterial as NodeMaterial;
+    expect(plain).not.toBe(recorded);
+    expect(plain.compiledShaders).not.toContain("HapticMaterial");
+    expect([held.material, emission(plain)]).toEqual([plain, 1]);
   });
 
   it("installs as scene.defaultMaterial and reuses the same instance", () => {

@@ -11,7 +11,8 @@ import {
   normalizeRenderingQuality,
   normalizeFocusNavigationSettings,
 } from "@haptic/core";
-import { exportGame, zipExport, unzipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
+import { exportGame, zipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
+import { unzipExport } from "./test-support/unzip-export";
 import { GAME_MANIFEST_FILE } from "./constants";
 import { COMPLEX_COLLISION_EXPORT_TYPE } from "./complex-collision";
 import { appIconImages } from "./test-support/app-icon-images";

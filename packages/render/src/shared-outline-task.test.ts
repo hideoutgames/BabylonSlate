@@ -10,6 +10,9 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { managedRenderReservations } from "./managed-render-resources";
 import { SharedOutlineOwner } from "./shared-outline";
 import { FrameGraphSharedOutlineTask } from "./shared-outline-task";
+import { SHARED_OUTLINE_COMPOSE_SHADER } from "./shared-outline-shaders";
+import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { removeOutlineContribution, setOutlineContribution } from "./test-support/shared-outline-contributions";
 
 const disposers: Array<() => void> = [];
@@ -21,9 +24,9 @@ afterEach(() => {
 /**
  * A 16 × 8 graph holding only a shared outline task, outlining one box with an Outline component; `sceneDepth`: a scene
  * depth texture of that size for it to read; `others`: the through and selection groups also outline a box each as
- * the task is built.
+ * the task is built; `externalCompose`: another pass composites the stroke.
  */
-async function outlineGraph(sceneDepth?: { width: number; height: number }, others = false) {
+async function outlineGraph(sceneDepth?: { width: number; height: number }, others = false, externalCompose = false) {
   const engine = adaptNullEngineFrameGraph(new NullEngine());
   Object.assign(engine.getCaps(), { maxDrawBuffers: 4, drawBuffersExtension: true, textureFloatRender: true, textureHalfFloatRender: true, blendFloat: true });
   const scene = new Scene(engine);
@@ -41,7 +44,7 @@ async function outlineGraph(sceneDepth?: { width: number; height: number }, othe
     setOutlineContribution(view, "selection", { kind: "selection", color: [1, 1, 0], width: 2,
       targets: [{ key: "selected", meshes: [MeshBuilder.CreateBox("selected", {}, scene)] }] });
   }
-  const task = new FrameGraphSharedOutlineTask("Outlines", graph, view);
+  const task = new FrameGraphSharedOutlineTask("Outlines", graph, view, { externalCompose });
   task.camera = camera;
   task.targetTexture = graph.textureManager.createRenderTargetTexture("scene color", {
     size: { width: 16, height: 8 }, sizeIsPercentage: false,
@@ -191,3 +194,51 @@ it("waits for the depth copy's program only where the strict mask is seeded", as
   expect(own.task.isReady()).toBe(true);
 });
 
+
+it("composed externally, records only the masks and binds the stroke for the composing pass, idle where no stroke can show", async () => {
+  const createEffect = vi.spyOn(NullEngine.prototype, "createEffect");
+  const { scene, task } = await outlineGraph({ width: 16, height: 8 }, false, true);
+  // The strict group's clear, depth copy and mask: no composition pass and no composition program.
+  expect(task.passes.map((pass) => pass.name)).toEqual(["Outlines strict Clear", "Outlines strict Depth Seed", "Outlines strict Mask"]);
+  expect(createEffect.mock.calls.map(([path]) => (path as { fragment?: string }).fragment)).not.toContain(SHARED_OUTLINE_COMPOSE_SHADER);
+  expect([task.drawingPassCount, task.renderRecordCount]).toEqual([2, 3]);
+  expect(task.isReady()).toBe(true);
+  // What the composing pass declares and samples: the mask and the strict depth.
+  expect(task.strokeTextures).toHaveLength(2);
+  const sampling: number[] = [];
+  const bound: string[] = [];
+  const context = {
+    setTextureSamplingMode: (_: unknown, mode: number) => sampling.push(mode),
+    bindTextureHandle: (_: unknown, name: string) => bound.push(name),
+  } as unknown as FrameGraphRenderContext;
+  task.setStrokeSampling(context);
+  expect(sampling).toEqual([Constants.TEXTURE_NEAREST_SAMPLINGMODE, Constants.TEXTURE_NEAREST_SAMPLINGMODE]);
+  const groups: number[][] = [];
+  const textures: string[] = [];
+  const effect = {
+    setFloat: () => {}, setFloat2: () => {}, setMatrix: () => {},
+    setFloat3: (name: string, ...values: number[]) => { if (name === "activeGroups") groups.push(values); },
+    setTexture: (name: string) => textures.push(name),
+  } as unknown as Effect;
+  const member = scene.getMeshByName("member")!;
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(task.strokesShow).toBe(true);
+  task.bindStroke(context, effect);
+  // The strict group reads its own mask and depth; the groups without targets read their style tables, never a target.
+  expect(groups.at(-1)).toEqual([1, 0, 0]);
+  expect(bound).toEqual(["strictMask", "strictDepth"]);
+  expect(textures).toEqual(["strictStyle", "throughMask", "throughStyle", "selectionMask", "selectionStyle"]);
+  // Far beside the view: the masks are not drawn, and the pass reads none of them (every group inactive).
+  member.position.x = 100; member.computeWorldMatrix(true);
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(task.strokesShow).toBe(false);
+  expect(task.passes.every((pass) => pass.disabled)).toBe(true);
+  task.bindStroke(context, effect);
+  expect(groups.at(-1)).toEqual([0, 0, 0]);
+  // Back in view, with no rebuild and no new program.
+  member.position.x = 0; member.computeWorldMatrix(true);
+  task.onBeforeTaskExecute.notifyObservers(task);
+  task.bindStroke(context, effect);
+  expect(groups.at(-1)).toEqual([1, 0, 0]);
+  expect(createEffect.mock.calls.map(([path]) => (path as { fragment?: string }).fragment)).not.toContain(SHARED_OUTLINE_COMPOSE_SHADER);
+});

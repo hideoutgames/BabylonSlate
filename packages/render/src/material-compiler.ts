@@ -51,6 +51,8 @@ import { attachInstanceParameters, createInstanceParameterBlock, indexLetters, i
 import { materialGlslDiagnostic, shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
+  babylonTypeFor,
+  babylonValueFor,
   createConstantBlock,
   type BlockRealization,
   type MaterialPlumbing,
@@ -87,6 +89,8 @@ import { markBoundedMaterial, markDrawBatchMaterial } from "./draw-batch-world-b
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
 import { createDecalPlumbing } from "./decal-projection-block";
+import { materialRecordsOn } from "./world-debug";
+import { MATERIAL_RECORD_BLOCK, MaterialRecord, MaterialRecordReadBlock, planMaterialRecord, type MaterialRecordValue } from "./material-record";
 import { LayerMultiplyBlock, MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
 import { followLayerMultiplyAlphaMode } from "./layer-composite";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
@@ -350,7 +354,7 @@ export function materialOperationBlockName(index: number): string {
  * reserved double underscore, including when an adapter appends a suffix. */
 function operationBlockName(id: string): string {
   const name = id.replace(/[^A-Za-z0-9_]/g, "_").replace(/[0-9]/g, "").replace(/_+/g, "_").replace(/^_|_$/g, "");
-  return !name || name.startsWith("gl_") ? `slate_${name || "node"}` : name;
+  return !name || name.startsWith("gl_") ? `haptic_${name || "node"}` : name;
 }
 
 /**
@@ -371,7 +375,7 @@ function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
   batchBindings ??= [
     BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
     ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
-    ScreenSizeBlock, LayerMultiplyBlock,
+    ScreenSizeBlock, LayerMultiplyBlock, MaterialRecordReadBlock,
   ];
   return block.bind === NodeMaterialBlock.prototype.bind || batchBindings.some((known) => block instanceof known);
 }
@@ -392,7 +396,7 @@ export function compileMaterialPlan(
   const auxiliary = options.surfaceVariant !== undefined;
   const shadowDepth = options.surfaceVariant === "shadowDepth";
   const cacheableShadowShape = !auxiliary && (plan.domain === "surface" || plan.domain === "landscape") && plan.blendMode === "opaque" &&
-    plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
+    plan.cost.customBlocks === 0 && plan.outputFlags.identityWorldPositionOffset;
   const material = new NodeMaterial(options.name, scene, {
     shaderLanguage: ShaderLanguage.GLSL,
   });
@@ -436,7 +440,7 @@ export function compileMaterialPlan(
   const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview,
     logicalSceneBuffers: plan.domain === "postProcess" && options.logicalSceneBuffers };
   if (plan.operations.some((operation) => ["input.worldPosition", "input.cameraPosition", "input.objectPosition", "texture.triplanar", "landscape.uv", "landscape.height"].includes(operation.nodeType))) {
-    const origin = new InputBlock("slateFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
+    const origin = new InputBlock("hapticFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
     origin.valueCallback = () => scene.floatingOriginOffset;
     plumbing.worldOrigin = origin.output;
     created.push(origin);
@@ -447,6 +451,21 @@ export function compileMaterialPlan(
   // the same shader text and share a program (`shareCompiledProgram`).
   const blockNames = new Map(plan.operations.map((operation, index) => [operation.id, materialOperationBlockName(index)]));
   const blockNameOf = (operation: MaterialOperation): string => blockNames.get(operation.id)!;
+  // A root-level parameter marked Per Instance reads each mesh's value from an instanced attribute. A decal's box
+  // carries only the decal's own instance rows, so in the Decal domain it stays a uniform.
+  const isPerInstance = (operation: MaterialOperation) =>
+    operation.source.callPath.length === 0 && plan.domain !== "decal" && isPerInstanceParameter(operation.nodeType, operation.properties);
+  // With `worlddebug materialrecords on`, a Material-mode program reads its parameters and hoisted literals from the
+  // Material's record (`material-record.ts`); Particle and Post Process programs, and a plan too large for a record,
+  // keep plain uniforms. Off (the default), every Material compiles its parameters as uniforms and literals as code.
+  const recordPlan = material.mode === NodeMaterialModes.Material && materialRecordsOn(scene) ? planMaterialRecord(plan, isPerInstance) : null;
+  const record = recordPlan ? new MaterialRecord(scene.getEngine(), recordPlan.slots) : null;
+  if (record) material.onDisposeObservable.addOnce(() => record.dispose());
+  /** A block reading `slot` of the record, which holds `value` (a parameter's default or a hoisted literal). */
+  const recordRead = (name: string, type: MaterialValueType, value: readonly number[], asColor: boolean, slot: number) =>
+    new MaterialRecordReadBlock(operationBlockName(name),
+      asColor ? (type === "vec3" ? NodeMaterialBlockConnectionPointTypes.Color3 : NodeMaterialBlockConnectionPointTypes.Color4) : babylonTypeFor(type),
+      slot, record!, babylonValueFor(type, value, asColor) as MaterialRecordValue, asColor, scene.getEngine().useExactSrgbConversions);
 
   const fail = (): CompileMaterialResult => {
     for (const block of created) block.dispose();
@@ -517,8 +536,9 @@ export function compileMaterialPlan(
     value: readonly number[],
     name: string,
     asColor: boolean,
+    slot?: number,
   ): NodeMaterialConnectionPoint => {
-    const block = createConstantBlock(name, type, value, asColor);
+    const block = record && slot !== undefined ? recordRead(name, type, value, asColor, slot) : createConstantBlock(name, type, value, asColor);
     created.push(block);
     return block.output;
   };
@@ -530,7 +550,7 @@ export function compileMaterialPlan(
     asColor: boolean,
   ): NodeMaterialConnectionPoint | null => {
     if (operand.kind === "constant") {
-      return constantPoint(operand.type, operand.value, name, asColor);
+      return constantPoint(operand.type, operand.value, name, asColor, recordPlan?.operandSlot.get(operand));
     }
     const producer = realized.get(operand.operationId);
     if (!producer) return null;
@@ -612,14 +632,16 @@ export function compileMaterialPlan(
         pin && pin.type.kind !== "generic"
           ? (pin.type.kind as MaterialValueType)
           : "float";
-      // A root-level parameter marked Per Instance reads each mesh's value from an instanced attribute. A decal's box
-      // carries only the decal's own instance rows, so in the Decal domain it stays a uniform.
-      const perInstance = operation.source.callPath.length === 0 && plan.domain !== "decal" && isPerInstanceParameter(operation.nodeType, operation.properties);
+      const perInstance = isPerInstance(operation);
       const kind = operation.nodeType === "param.color" ? "color" : "float";
+      const slot = recordPlan?.slotOf.get(operation.id);
       const block = perInstance
         ? createInstanceParameterBlock(instanceParameterAttribute(instanceParameters.length, kind), kind)
-        // A parameter stays a uniform, which `setParameter` rewrites; a constant node is written into the shader.
-        : createConstantBlock(blockNameOf(operation), type, value, asColor, operation.nodeType.startsWith("param."));
+        // A parameter reads the Material's record, or a uniform, which `setParameter` rewrites; a constant node is
+        // written into the shader.
+        : record && slot !== undefined
+          ? recordRead(blockNameOf(operation), type, value, asColor, slot)
+          : createConstantBlock(blockNameOf(operation), type, value, asColor, operation.nodeType.startsWith("param."));
       if (perInstance) instanceParameters.push({
         name: String(operation.properties.name ?? "").trim(), attribute: block.name, kind,
         value: kind === "color" ? { kind, value: [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1] } : { kind, value: value[0] ?? 0 },
@@ -764,7 +786,7 @@ export function compileMaterialPlan(
     const vertexIds = collectWorldPositionOffsetOperationIds(plan);
     if (!realizeOperations(vertexIds)) return fail();
     const offsetOperand = plan.outputs.worldPositionOffset ?? null;
-    if (!isIdentityWorldPositionOffset(offsetOperand) && offsetOperand) {
+    if (!plan.outputFlags.identityWorldPositionOffset && offsetOperand) {
       const offset = pointForOperand(
         offsetOperand,
         `${MATERIAL_BLOCK_PREFIX}_worldPositionOffset`,
@@ -1141,7 +1163,7 @@ export function compileMaterialPlan(
   // The stock vertex stage keeps a surface's, a text's or a User Interface Material's vertices on its mesh: no custom
   // blocks, and no World Position Offset (which is also how a graph's water waves move them).
   const bounded = (plan.domain === "surface" || plan.domain === "text" || plan.domain === "ui") && plan.cost.customBlocks === 0 &&
-    isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
+    plan.outputFlags.identityWorldPositionOffset;
   if (bounded) markBoundedMaterial(material);
   // A Scene Layer Material with the stock vertex stage draws every mesh the same but for its world matrix, its overlay
   // style and Receive Shadows, so its draws may batch, provided nothing else it binds can depend on the mesh. A text's
@@ -1151,7 +1173,7 @@ export function compileMaterialPlan(
     markDrawBatchMaterial(material, plan.domain === "text");
   // The light block rebinds only its receiver terms.
   const lightingBlocks = created.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
-  if (perMeshBlocks.length > 0 || lightingBlocks.length > 0) {
+  if (perMeshBlocks.length > 0 || lightingBlocks.length > 0 || record) {
     material.onBindObservable.add((mesh) => {
       // A pool member Babylon draws on its own (`_actAsRegularMesh`, its handedness apart from its source's) binds as
       // itself: an instance carries no bones, morphs or per-mesh text, so it rebinds as a rigid mesh does.
@@ -1160,6 +1182,8 @@ export function compileMaterialPlan(
       if (effect) {
         for (const block of perMeshBlocks) block.bind(effect, material, mesh as Mesh);
         for (const block of lightingBlocks) block.bindReceiver(effect, mesh as Mesh);
+        // The Material's record too: one binding point serves every program's record.
+        if (record && effect.getUniformBuffersNames().includes(MATERIAL_RECORD_BLOCK)) record.bind(effect);
       }
     });
   }
@@ -1326,7 +1350,7 @@ export function compileMaterialPlan(
     const variantRegistration = registration = registerAuthoredVariants(material, acquireVariant);
     if (plan.domain === "surface" && !options.water) waterVariantFactories.set(material, () => acquireVariant("water"));
     // Static opaque surfaces retain Babylon's cheap native/cached path. Water never casts, so a water variant needs none.
-    if (!options.water && (!isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null) || plan.blendMode === "masked"))
+    if (!options.water && (!plan.outputFlags.identityWorldPositionOffset || plan.blendMode === "masked"))
       ensureAuthoredShadowDepthWrapper(material);
     material.onDisposeObservable.addOnce(() => {
       waterVariantFactories.delete(material);
@@ -1588,18 +1612,6 @@ function planIndex(plan: MaterialBuildPlan): PlanIndex {
   return index;
 }
 
-/**
- * The value `operand` always holds when it is one: a literal, or a Float Constant node's value with no conversion on
- * the way (not a Parameter, which a Material Instance can change). Null otherwise.
- */
-function constantScalar(plan: MaterialBuildPlan, operand: MaterialOperand | null | undefined): number | null {
-  if (!operand) return null;
-  if (operand.kind === "constant") return operand.value.length === 1 ? operand.value[0]! : null;
-  if (operand.conversions?.length) return null;
-  const operation = planIndex(plan).operations.get(operand.operationId);
-  const value = operation?.nodeType === "const.float" ? operation.properties.value : null;
-  return Array.isArray(value) && value.length === 1 && typeof value[0] === "number" ? value[0] : null;
-}
 
 /** Blend modes that draw over the scene by their opacity (the coverage passes read it as translucent ones do). */
 function blendsOverScene(mode: MaterialBuildPlan["blendMode"]): boolean {
@@ -1751,13 +1763,6 @@ function collectWorldPositionOffsetOperationIds(
   return ids;
 }
 
-function isIdentityWorldPositionOffset(
-  operand: MaterialOperand | null,
-): boolean {
-  if (!operand) return true;
-  if (operand.kind !== "constant") return false;
-  return operand.value.every((component) => component === 0);
-}
 
 /**
  * Add an authored world-space vec3 to the plumbed world position, then keep w.
@@ -1917,12 +1922,9 @@ function attachSurfaceShading(
 
   const baseColor = outputPoint("baseColor", `${MATERIAL_BLOCK_PREFIX}_baseColor`, true);
   const emissionOperand = plan.outputs.emissive;
-  const hasEmission =
-    emissionOperand &&
-    !(
-      emissionOperand.kind === "constant" &&
-      emissionOperand.value.every((value) => value === 0)
-    );
+  // The compile-time choices from Material Output literals are the plan's flags (`MaterialOutputFlags`): the literals
+  // themselves are hoisted into the record.
+  const hasEmission = emissionOperand && !plan.outputFlags.emissiveZero;
   const emissive = hasEmission
     ? outputPoint("emissive", `${MATERIAL_BLOCK_PREFIX}_emissive`, true)
     : null;
@@ -2034,12 +2036,12 @@ function attachSurfaceShading(
   const normal = outputPoint("normal", `${MATERIAL_BLOCK_PREFIX}_normalInput`, false);
   const opacity = outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false);
   const environmentOperand = plan.outputs.environmentInfluence;
-  const influence = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1)
+  const influence = environmentOperand && !plan.outputFlags.environmentInfluenceOne
     ? outputPoint("environmentInfluence", `${MATERIAL_BLOCK_PREFIX}_environmentInfluence`, false)
     : null;
   // A non-metal's reflectance, F0 = 0.08 x Specular; the blocks' own default is 0.5 (F0 0.04).
   const specularOperand = plan.outputs.specular;
-  const specular = specularOperand && !(specularOperand.kind === "constant" && specularOperand.value[0] === 0.5)
+  const specular = specularOperand && !plan.outputFlags.specularDefault
     ? outputPoint("specular", `${MATERIAL_BLOCK_PREFIX}_specular`, false)
     : null;
   specular?.connectTo(fragment.geometrySpecular);
@@ -2047,7 +2049,7 @@ function attachSurfaceShading(
   // The surface's direct and environment light (scaled by Environment Influence), from the light block.
   const lighting = new HapticLightingBlock(`${MATERIAL_BLOCK_PREFIX}_lighting`);
   // A constant Environment Influence of 0 (built-in water's) compiles the environment's light out.
-  lighting.noEnvironment = constantScalar(plan, environmentOperand) === 0;
+  lighting.noEnvironment = plan.outputFlags.environmentInfluenceZero;
   created.push(lighting);
   plumbing.worldPosition?.connectTo(lighting.worldPosition);
   plumbing.worldNormal4?.connectTo(lighting.worldNormal);
@@ -2151,7 +2153,7 @@ function attachDecalShading(
   const baseColor = multiply(outputPoint("baseColor", `${name}_baseColor`, true) ?? constant("vec3", [0.8, 0.8, 0.8], "baseColorDefault", true),
     projection.tint, "tintedBaseColor");
   const emissiveOperand = plan.outputs.emissive;
-  const emissive = emissiveOperand && !(emissiveOperand.kind === "constant" && emissiveOperand.value.every((value) => value === 0))
+  const emissive = emissiveOperand && !plan.outputFlags.emissiveZero
     ? outputPoint("emissive", `${name}_emissive`, true)
     : null;
 

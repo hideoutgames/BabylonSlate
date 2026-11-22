@@ -38,7 +38,7 @@ export function registerCacheableShadowMaterial(material: NodeMaterial): void {
   });
 }
 
-// Installed Babylon 9.29's native plugins, Slate's mip bias, foliage fade and Standard fog change
+// Installed Babylon 9.29's native plugins, Haptic's mip bias, foliage fade and Standard fog change
 // surface shading, not vertices. Alpha coverage is rejected separately below.
 // Exact constructors reject derived/custom plugins even when they use a native name.
 const nativePlugins = new Set<unknown>([

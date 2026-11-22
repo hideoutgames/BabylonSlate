@@ -93,7 +93,7 @@ export function HomepageMobileAccountFrame({
       className="homepage-theme homepage-mobile-auth safe-frame-top"
       data-testid="homepage-mobile-auth"
     >
-      <style data-slate-home-styles>{homepageStyles}</style>
+      <style data-haptic-home-styles>{homepageStyles}</style>
       <header className="homepage-mobile-auth-hero">
         <MobileAccountWordmark />
       </header>

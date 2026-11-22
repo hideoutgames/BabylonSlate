@@ -28,7 +28,7 @@ describe("mobile project binding", () => {
     let finishRead!: (value: { value: string }) => void;
     vi.mocked(Preferences.get).mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
     const fs = createFakeDocumentsFs();
-    const storage = new MobileStorageAdapter(new DocumentsStorageAdapter(fs));
+    const storage = new MobileStorageAdapter(new DocumentsStorageAdapter({ fs }));
     const initializing = storage.init();
     const opening = storage.openDocumentsProject("New Game");
     await Promise.resolve();
@@ -43,14 +43,14 @@ describe("mobile project binding", () => {
   it("restores expired folder access for reconnect without an explicit init call", async () => {
     prefs.set("haptic:scoped-folder", JSON.stringify({ id: "external-old", name: "Old Game" }));
     prefs.set("haptic:scoped-stale", "1");
-    const storage = new MobileStorageAdapter(new DocumentsStorageAdapter(createFakeDocumentsFs()));
+    const storage = new MobileStorageAdapter(new DocumentsStorageAdapter({ fs: createFakeDocumentsFs() }));
     expect(await storage.needsReconnect()).toBe(true);
     expect((await storage.listProjects()).map((folder) => folder.id)).toContain("external-old");
     await expect(storage.writeText("project.json", "overwrite")).rejects.toThrow(/reconnect/i);
   });
 
   it("offers reconnect when opening a recent external folder fails from Documents", async () => {
-    const storage = new MobileStorageAdapter(new DocumentsStorageAdapter(createFakeDocumentsFs()));
+    const storage = new MobileStorageAdapter(new DocumentsStorageAdapter({ fs: createFakeDocumentsFs() }));
     await storage.openDocumentsProject("Local");
     vi.mocked(BabylonSlateScopedStorage.openFolder).mockRejectedValue({ code: "ACCESS_REVOKED" });
     await expect(storage.openKnownFolder({ id: "revoked", name: "Cloud", tier: "external" })).rejects.toEqual({ code: "ACCESS_REVOKED" });
@@ -60,7 +60,7 @@ describe("mobile project binding", () => {
   it("deletes a Documents project and never a chosen folder", async () => {
     prefs.set("haptic:scoped-folder", JSON.stringify({ id: "external-old", name: "Old Game" }));
     const fs = createFakeDocumentsFs();
-    const storage = new MobileStorageAdapter(new DocumentsStorageAdapter(fs));
+    const storage = new MobileStorageAdapter(new DocumentsStorageAdapter({ fs }));
     await storage.openDocumentsProject("Local");
     await storage.writeText("project.json", "local");
     await expect(storage.deleteProject({ id: "external-old", name: "Old Game", tier: "external" })).rejects.toThrow(/chosen folder/);

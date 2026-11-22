@@ -155,7 +155,7 @@ function fakeEditor(
 const scene = (name: string) => ({ name, path: `assets/${name}.scene.hasset` });
 
 /** The `worlddebug` parts off by default, as `worldDebugFingerprint` lists them when switched (`<part> on`). */
-const WORLD_DEFAULT_OFF: ReadonlySet<string> = new Set(["mergedmarches", "pairedblurs"]);
+const WORLD_DEFAULT_OFF: ReadonlySet<string> = new Set(["mergedmarches", "materialrecords", "pairedblurs"]);
 
 const REMOVE_ONE: FeatureTestBreakdownInfo = { method: "remove-one", tier: "medium", ab: false, warmMinutes: null, passes: [], notes: [] };
 
