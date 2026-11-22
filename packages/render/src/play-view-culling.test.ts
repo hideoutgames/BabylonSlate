@@ -93,3 +93,40 @@ it("culls a skinned mesh by bounds that follow its skeleton, where they can", ()
   expect(instance.getBoundingInfo().boundingBox.maximumWorld.x).toBeCloseTo(6, 2);
   expect(morphed.getBoundingInfo().boundingBox.maximumWorld.x).toBe(1);
 });
+
+it("settles every mesh added since the last cull, even one that leaves the list's length and last mesh as they were, and walks nothing on a steady frame", () => {
+  const engine = new NullEngine();
+  engines.push(engine);
+  const scene = new Scene(engine);
+  scene.performancePriority = ScenePerformancePriority.Intermediate;
+  installPlayViewCulling(scene);
+  const first = MeshBuilder.CreateBox("first", {}, scene);
+  const middle = MeshBuilder.CreateBox("middle", {}, scene);
+  const last = MeshBuilder.CreateBox("last", {}, scene);
+  settlePlayViewCulling(scene);
+  expect([first, middle, last].map((mesh) => mesh.alwaysSelectAsActiveMesh)).toEqual([false, false, false]);
+  // Between two culls: a mesh spawns, the last mesh is moved to the end again, and another mesh despawns.
+  const spawned = MeshBuilder.CreateBox("spawned", {}, scene);
+  scene.removeMesh(last);
+  scene.addMesh(last);
+  scene.removeMesh(middle);
+  expect([scene.meshes.length, scene.meshes.at(-1)]).toEqual([3, last]);
+  settlePlayViewCulling(scene);
+  expect(spawned.alwaysSelectAsActiveMesh).toBe(false);
+
+  // A steady frame (nothing added or removed) never iterates the Scene's meshes.
+  let walks = 0;
+  const list = scene.meshes;
+  scene.meshes = new Proxy(list, {
+    get(target, key, receiver) {
+      if (key === Symbol.iterator) walks++;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  settlePlayViewCulling(scene);
+  settlePlayViewCulling(scene);
+  expect(walks).toBe(0);
+  const late = MeshBuilder.CreateBox("late", {}, scene);
+  settlePlayViewCulling(scene);
+  expect([walks, late.alwaysSelectAsActiveMesh]).toEqual([1, false]);
+});
