@@ -144,7 +144,7 @@ import {
   withSavedTextureEncodeState,
 } from "./project-document-meta";
 import { ProjectTextureEncoding, type TextureEncodingOptions } from "./project-texture-encoding";
-import { ProjectPlugins, type PluginImportResult } from "./project-plugins";
+import { ProjectPlugins, type PluginImportOptions, type PluginImportResult } from "./project-plugins";
 import { resetAreaEmissionPreparations } from "../lib/area-emission-preparation";
 import {
   assertEmptyProjectFolder,
@@ -177,7 +177,7 @@ export interface ProjectLoadResult {
   layouts: ProjectLayouts;
 }
 
-export type { PluginImportResult } from "./project-plugins";
+export type { PluginImportOptions, PluginImportResult } from "./project-plugins";
 
 /**
  * What Clean Unused Project Storage did: `reclaimed` (`stopped` when a write
@@ -1170,8 +1170,9 @@ export class ProjectService {
   async importPlugin(
     bytes: Uint8Array,
     decision?: "keep" | "replace",
+    options?: PluginImportOptions,
   ): Promise<PluginImportResult> {
-    return this.projectPlugins.import(bytes, decision);
+    return this.projectPlugins.import(bytes, decision, options);
   }
 
   private storageForPath(path: string): ProjectStorage {

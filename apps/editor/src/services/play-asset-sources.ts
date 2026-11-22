@@ -40,6 +40,7 @@ import {
 import { ownedActorsOfScene, ownedTimelineClipsOfScene } from "../lib/owned-actor-gets";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import type { OpenDocument } from "./document-service";
+import { executeJavaScriptAssetNames, untrustedExecuteJavaScriptMessage } from "./execute-javascript-trust";
 import { extensionNodesFingerprint } from "./extension-nodes";
 
 export interface PlayDocumentOverride {
@@ -119,6 +120,21 @@ export interface PlayAssetSourceHost {
    * foreground rescan). A retry trusts none. Omitted, every walk reads every catalog from storage.
    */
   verifiedRevisions?: Map<string, string>;
+  /**
+   * Workspace Trust for Execute JavaScript (`EditorExtensionService.assertExecuteJavaScriptAllowed`):
+   * called with the assets whose compiled scripts carry an Execute JavaScript body before any
+   * acquisition (the startup set and every later slot) publishes them; it throws to refuse. Omitted,
+   * every such script is refused, so a host cannot run one without deciding.
+   */
+  assertExecuteJavaScriptAllowed?: (assetNames: readonly string[]) => void;
+}
+
+/** Refuses an acquisition's scripts that carry Execute JavaScript unless the host's Workspace Trust allows them. */
+function checkExecuteJavaScriptTrust(host: PlayAssetSourceHost, scripts: readonly ScriptBundleEntry[]): void {
+  const names = executeJavaScriptAssetNames(scripts, (guid) => host.registry.getByGuid(guid)?.header.name);
+  if (names.length === 0) return;
+  if (!host.assertExecuteJavaScriptAllowed) throw new Error(untrustedExecuteJavaScriptMessage(names));
+  host.assertExecuteJavaScriptAllowed(names);
 }
 
 /** A document as storage holds it: its asset type, schema version and payload. */
@@ -780,6 +796,8 @@ async function acquirePlayAssetSourcesAttempt(
       return override ? [[guid, override.cacheKey]] : [];
     }).sort(([a], [b]) => a.localeCompare(b));
     const compiled = await compiling;
+    // Before anything of the acquisition reaches the runtime: Play, Simulate and every slot pass here.
+    checkExecuteJavaScriptTrust(host, compiled.bundles);
     const failure = compiled.diagnostics.find((entry) => entry.severity === "error");
     if (failure && !options.allowCompileErrors) throw new Error(failure.message);
     game.scripts = compiled.bundles;
@@ -884,9 +902,9 @@ function playText2DFontStacks(host: PlayAssetSourceHost, preparedFamilies: Reado
   };
 }
 
-const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph3D", "AnimationGraph2D"]);
+export const SCRIPT_ASSET_TYPES: ReadonlySet<string> = new Set(["Class", "AnimationGraph3D", "AnimationGraph2D"]);
 /** Assets that may embed a script (SceneScript, SceneLayerScript). */
-const EMBEDDED_SCRIPT_OWNER_TYPES = new Set(["Scene", "SceneLayer"]);
+export const EMBEDDED_SCRIPT_OWNER_TYPES: ReadonlySet<string> = new Set(["Scene", "SceneLayer"]);
 const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "InputAxis", "DataDefinition", "DataTree", "Enum", "Structure", "ScriptInterface"]);
 /**
  * Assets the Play compile reads project-wide, beyond its closure: class lineage and palette, the typed

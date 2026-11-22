@@ -885,6 +885,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           // each a null check per node while nothing is set or followed. Preview Build and exports compile neither.
           traceExecution: true,
           compile: (required, storedDocuments) => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: true, storedDocuments }),
+          // Workspace Trust, read at each acquisition: Play, Simulate and every Scene, Class or preload slot of the session.
+          assertExecuteJavaScriptAllowed: (names) => extensionService.assertExecuteJavaScriptAllowed(names),
         };
         playSourceHostRef.current = sourceHost;
         // The extension libraries and the Save Game configuration need none of the content, so they prepare beside it.
