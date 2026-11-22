@@ -48,6 +48,7 @@ import {
 import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { settlePlayViewCulling } from "./play-view-culling";
 import { ViewOcclusion, type ViewOcclusionDiagnostics } from "./view-occlusion";
+import { RetainedFrustumCull } from "./retained-frustum-cull";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessState } from "./scene-perf";
@@ -300,6 +301,21 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
   /** A Scene Layer's retained draw list (`layer-draw-list.ts`): a frame drawn from it culls no mesh. */
   drawList: LayerDrawList | null = null;
+  /** The view's frustum cull over retained bounds (`retained-frustum-cull.ts`), which runs Babylon's pass where it cannot. */
+  retained: RetainedFrustumCull | null = null;
+
+  /** Babylon's frustum pass, run through the view's retained cull when it has one. */
+  override record(): void {
+    super.record();
+    const pass = this.passes[0] as unknown as { _executeFunc?: (context: never) => void; setExecuteFunc(func: (context: never) => void): void };
+    const stock = pass?._executeFunc;
+    if (this.passes.length !== 1 || typeof stock !== "function")
+      throw new Error("Unsupported Babylon cull task layout: one object list pass with an execute function expected.");
+    pass.setExecuteFunc((context: never) => {
+      if (this.retained) this.retained.execute(this, () => stock(context));
+      else stock(context);
+    });
+  }
 
   /** The whole cull is the `cull` pass: Babylon's frustum cull, the hidden-mesh and occlusion filters, the world list. */
   override _execute(): void {
@@ -316,6 +332,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     const scene = this.camera.getScene();
     // `worlddebug world off`: the view's passes draw no world mesh (clears, effects over nothing, layers and presentation stay).
     if (worldDebugOff(scene, "world")) {
+      // Nothing is culled meanwhile: the retained cull stops following the Scene, and reads it in full when it resumes.
+      this.retained?.release();
       this.outputObjectList.meshes = NO_WORLD_MESHES;
       this.outputObjectList.particleSystems = null;
       this.world.length = 0;
@@ -361,7 +379,9 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   private occlude(): void {
     const occlusion = this.occlusion, meshes = this.outputObjectList.meshes;
     if (!occlusion || !meshes) return;
-    this.outputObjectList.meshes = occlusion.view.filter(meshes, this.camera, occlusion.colourPass()) as AbstractMesh[];
+    // The retained cull's list comes with the world boxes it holds of its meshes, so the filter need not ask them.
+    const bounds = meshes === this.retained?.output ? this.retained.outputBounds() : undefined;
+    this.outputObjectList.meshes = occlusion.view.filter(meshes, this.camera, occlusion.colourPass(), bounds) as AbstractMesh[];
   }
 
   private publishWorld(): void {
@@ -390,6 +410,11 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     if (output === this.objectList.meshes) {
       // The object passes observe the list they drew last frame, which this one is while a reveal lasts.
       this.outputObjectList.meshes = rewriteRenderList(this.shown, output, isShown);
+      return;
+    }
+    // The retained cull's list keeps the boxes of the meshes it keeps beside them.
+    if (output === this.retained?.output) {
+      this.retained.keepOutput(isShown);
       return;
     }
     let kept = 0;
@@ -450,6 +475,7 @@ export class ForwardSceneFrameGraph {
       ...(lightClusters ? { lightClusters } : {}),
       ...(this.outlineView ? { outlineCull: this.outlineView.cullDiagnostics() } : {}),
       ...(leanPreparation ? { leanPreparation } : {}),
+      ...(this.frustumCull ? { frustumCull: { ...this.frustumCull.work } } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
@@ -500,6 +526,8 @@ export class ForwardSceneFrameGraph {
   private cull: CameraOutputCullTask | undefined;
   /** A world view's occlusion culling; kept across graph rebuilds. */
   private readonly occlusion: ViewOcclusion | undefined;
+  /** The frustum cull over retained bounds of a view culling a list of the Scene's own; kept across graph rebuilds. */
+  private readonly frustumCull: RetainedFrustumCull | undefined;
   private readonly seedsFromSceneDepth: boolean;
   /** `ForwardSceneFrameGraphOptions.scopedStrictProbes`. */
   private readonly scopedStrictProbes: boolean;
@@ -626,6 +654,7 @@ export class ForwardSceneFrameGraph {
     this.scene = scene;
     this.auxiliary = options.auxiliary;
     this.occlusion = options.occlusion && !options.auxiliary ? new ViewOcclusion() : undefined;
+    this.frustumCull = options.auxiliary ? undefined : new RetainedFrustumCull(scene);
     this.seedsFromSceneDepth = options.seedsFromSceneDepth === true && !options.auxiliary;
     this.scopedStrictProbes = options.scopedStrictProbes === true && !options.auxiliary;
     this.leanPreparation = options.leanPreparation === true && !options.auxiliary;
@@ -1496,6 +1525,7 @@ export class ForwardSceneFrameGraph {
     for (const detach of this.readinessDetach) detach();
     this.readinessDetach.length = 0;
     this.drawableChanges.dispose();
+    this.frustumCull?.dispose();
     this.polledUndrawn.clear();
     for (const [mesh, observer] of this.meshMaterialObservers)
       mesh.onMaterialChangedObservable.remove(observer);
@@ -1936,6 +1966,8 @@ export class ForwardSceneFrameGraph {
         // takes it over.
         this.cull.drawList = this.auxiliary ? null : attachLayerDrawList(scene, this.graph, this.objects.objectRenderer, () => this.cull?.camera,
           !this.water && !this.decalSplit && !this.effectsGraph && !occlusion && !this.outlineTask && !this.postProcessGraph?.geometryTasks.length);
+        // A view whose frames skip the cull (a Scene Layer's, drawn from its retained draw list) keeps no retained one.
+        this.cull.retained = this.cull.drawList ? null : this.frustumCull ?? null;
         this.observeDrawPasses();
         if (this.leanPreparation) {
           // The water split's opaque pass draws through the objects' renderer; its transparent pass keeps Babylon's.
