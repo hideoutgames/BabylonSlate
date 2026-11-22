@@ -24,6 +24,7 @@ import {
 import { encodeHasset } from "@haptic/assets/hasset";
 import { meshoptBoxGlb } from "@haptic/assets/test-support/meshopt-gltf";
 import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, playRootMotionTracks, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
+import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import type { OpenDocument } from "./document-service";
 import { PlayRequiredAssetError } from "./play-asset-problems";
@@ -916,7 +917,7 @@ describe("Play source ownership", () => {
     const content = mergePreparedPlaySources([startup, room, clip])!.controls.find((control) => control.type === "loadSceneContent");
 
     // The source union the runtime then takes holds the clip with its track, in the Model's units (import scale 2).
-    expect(content?.type === "loadSceneContent" ? content.animClipCatalog?.find((entry) => entry.guid === "throw")?.rootMotion : null).toEqual(
+    expect(content?.type === "loadSceneContent" ? (content.animClipCatalog as readonly AnimClipCatalogEntry[] | undefined)?.find((entry) => entry.guid === "throw")?.rootMotion : null).toEqual(
       { bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 1], z: [0, -2], yaw: [0, 0] } });
     // The renderer binds the Model's Throw group to the Animation a slot names.
     expect(clip.sources.assets?.modelClipAnimationGuids?.get("model")?.get("Throw")).toBe("throw");
