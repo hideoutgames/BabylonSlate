@@ -1,17 +1,16 @@
 import { checkStorageRevision, rethrowStorageReadFailure, StorageReadCounter, validateStorageRange } from "./storage-range";
-import { isStorageNotFound, ProjectOpenElsewhereError, SourceRevisionChangedError, StorageNotFoundError } from "@haptic/core";
+import { ProjectOpenElsewhereError, SourceRevisionChangedError, StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
   FileStat,
   ProjectFolderHandle,
   ProjectStorage,
 } from "@haptic/core";
+import { createOpfsFileOps, navigatorOpfsRoot, OpfsFailure, splitOpfsPath, type OpfsFileOps, type OpfsRangeRead } from "./opfs-file-ops";
+import { opfsWorkerSupported, sharedOpfsWorkerOps } from "./opfs-worker-client";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "./test-mode";
 
 const META_KEY = "haptic:opfs-meta";
-/** Reads of a file whose snapshot a concurrent write replaced, before giving up. */
-const OPFS_READ_ATTEMPTS = 4;
-const STALE_SNAPSHOT_ERRORS = new Set(["NotReadableError", "NotFoundError"]);
 /**
  * Write counters per `${projectId}/${path}`. Values come from one sequence and
  * are never reused, so a removed path's entry can be dropped: a rewrite cannot
@@ -39,22 +38,30 @@ function forgetRemovedRevisions(removed: Map<string, number>): void {
 const lifecycleQueues = new Map<string, Promise<void>>();
 const directoryNames = new Map<string, Promise<string>>();
 
-function domErrorName(error: unknown): string {
-  return String((error as { name?: unknown } | null)?.name ?? "");
-}
-
 /**
- * Map an OPFS lookup failure. NotFoundError means the entry is absent; while
- * descending directories, TypeMismatchError means a file occupies a directory
- * name (POSIX ENOTDIR), so the path cannot exist either. Every other failure
- * (InvalidStateError, NotAllowedError, TypeError…) keeps its own error.
+ * The storage port's error for a file-operation failure, the same whether the
+ * operation ran here or in the storage worker (whose errors arrive as their
+ * name and message).
  */
-function lookupError(error: unknown, path: string, action: string, directory: boolean): Error {
-  const name = domErrorName(error);
-  if (name === "NotFoundError" || (directory && name === "TypeMismatchError")) {
-    return new StorageNotFoundError(path, { cause: error });
+function storageError(failure: OpfsFailure, folder: ProjectFolderHandle): unknown {
+  const cause = failure.reason();
+  const options = cause === undefined ? undefined : { cause };
+  switch (failure.kind) {
+    case "not-found":
+      return failure.project
+        ? new StorageNotFoundError(folder.name, { cause, message: `Project folder not found: ${folder.name}` })
+        : new StorageNotFoundError(failure.path, options);
+    case "failed":
+      return new Error(failure.project ? `Could not open project ${folder.name}: ${failure.message}` : failure.message, options);
+    case "revision-changed":
+      return Object.assign(new SourceRevisionChangedError(failure.message), options);
+    case "range":
+      return new RangeError(failure.message);
+    case "interrupted":
+      return new Error(failure.message);
+    case "error":
+      return cause;
   }
-  return new Error(`Could not ${action} ${path}: ${String(error)}`, { cause: error });
 }
 
 /** Serialize binding and deletion across adapters and, with Web Locks, browser tabs. */
@@ -139,32 +146,32 @@ export interface OpfsStorageOptions {
    * list or becoming the project a new adapter restores.
    */
   library?: boolean;
+  /**
+   * File operations to use instead of the realm's storage worker (or, where
+   * there is none, this adapter's own main-thread operations); tests drive the
+   * worker client through it.
+   */
+  files?: OpfsFileOps;
 }
 
-/** Durable browser storage. Hosts without OPFS must report the failure to the caller. */
+/**
+ * Durable browser storage. Hosts without OPFS must report the failure to the caller.
+ * File operations run in the storage worker where there is one; metadata, locks,
+ * write counters and read metrics stay here.
+ */
 export class OpfsStorageAdapter implements ProjectStorage {
   private readonly reads = new StorageReadCounter();
-  private readonly rangeHandles = new Map<string, FileSystemFileHandle>();
   getReadMetrics() { return this.reads.snapshot(); }
 
   private folder: ProjectFolderHandle | null = null;
-  private root: FileSystemDirectoryHandle | null = null;
   private readonly library: boolean;
+  private readonly files: OpfsFileOps;
   /** Held while a project is bound; libraries are shared app data and take none. */
   private session: ProjectSession | null = null;
 
   constructor(options: OpfsStorageOptions = {}) {
     this.library = options.library === true;
-  }
-
-  private async getOpfsRoot(): Promise<FileSystemDirectoryHandle> {
-    if (this.root) return this.root;
-    if (typeof navigator === "undefined" || !navigator.storage?.getDirectory) {
-      throw new Error("Persistent project storage is unavailable in this browser.");
-    }
-    // A denied or transient storage request must never turn saves into volatile memory.
-    this.root = await navigator.storage.getDirectory();
-    return this.root;
+    this.files = options.files ?? (opfsWorkerSupported() ? sharedOpfsWorkerOps() : createOpfsFileOps(navigatorOpfsRoot()));
   }
 
   private async remember(handle: ProjectFolderHandle): Promise<ProjectFolderHandle> {
@@ -178,12 +185,18 @@ export class OpfsStorageAdapter implements ProjectStorage {
     return handle;
   }
 
+  /** Binding creates the project folder; later file operations never recreate it. */
+  private async ensureProjectDir(handle: ProjectFolderHandle): Promise<void> {
+    const dirName = await directoryName(handle.id);
+    try { await this.files.ensureProjectDir(dirName); }
+    catch (error) { throw error instanceof OpfsFailure ? storageError(error, handle) : error; }
+  }
+
   private async bind(name: string): Promise<ProjectFolderHandle> {
     const handle: ProjectFolderHandle = { id: `opfs:${name}`, name, tier: "opfs" };
     return withProjectLifecycle(handle.id, async () => {
-      const opfs = await this.getOpfsRoot();
       if (this.library) {
-        await opfs.getDirectoryHandle(await directoryName(handle.id), { create: true });
+        await this.ensureProjectDir(handle);
         this.folder = handle;
         return handle;
       }
@@ -192,7 +205,7 @@ export class OpfsStorageAdapter implements ProjectStorage {
       const session = previous?.id === handle.id ? previous : await claimSession(handle.id);
       if (!session) throw new ProjectOpenElsewhereError();
       try {
-        await opfs.getDirectoryHandle(await directoryName(handle.id), { create: true });
+        await this.ensureProjectDir(handle);
         await this.remember(handle);
       } catch (error) {
         if (session !== previous) await session.release();
@@ -278,14 +291,11 @@ export class OpfsStorageAdapter implements ProjectStorage {
     if (!session) throw new ProjectOpenElsewhereError();
     let spent = !owned;
     try {
-      for (const cached of [...this.rangeHandles.keys()]) {
-        if (cached.startsWith(`${handle.id}/`)) this.rangeHandles.delete(cached);
-      }
       const revisions = writeRevisionsUnder(handle.id);
-      const opfs = await this.getOpfsRoot();
-      try { await opfs.removeEntry(await directoryName(handle.id), { recursive: true }); }
+      try { await this.files.removeProjectDir(await directoryName(handle.id)); }
       catch (error) {
-        if (!(error instanceof DOMException && error.name === "NotFoundError")) throw error;
+        if (!(error instanceof OpfsFailure)) throw error;
+        if (error.kind !== "not-found") throw storageError(error, handle);
       }
       forgetRemovedRevisions(revisions);
       // Another adapter may have registered or selected a project during disk I/O.
@@ -314,173 +324,78 @@ export class OpfsStorageAdapter implements ProjectStorage {
     return folder;
   }
 
-  private split(path: string): string[] {
-    const parts = path
-      .replace(/^\.\/+/, "")
-      .replace(/^\/+/, "")
-      .split("/")
-      .filter((s) => s.length > 0 && s !== ".");
-    if (parts.includes("..")) throw new Error(`Path escapes project root: ${path}`);
-    return parts;
+  /** The write counter key of `path`; an invalid path fails here, before any file operation. */
+  private revisionKey(folder: ProjectFolderHandle, path: string): string {
+    return `${folder.id}/${splitOpfsPath(path).join("/")}`;
   }
 
-  /**
-   * Binding creates the project folder. Later file operations never recreate
-   * it, so a save racing a deletion fails instead of resurrecting the project.
-   */
-  private async projectDir(): Promise<FileSystemDirectoryHandle> {
+  /** Run a file operation on the bound project, mapping its failure to the storage port's error. */
+  private async run<T>(path: string, work: (dirName: string) => Promise<T>): Promise<T> {
     const folder = this.assertFolder();
-    const opfs = await this.getOpfsRoot();
-    try {
-      return await opfs.getDirectoryHandle(await directoryName(folder.id));
-    } catch (error) {
-      if (domErrorName(error) === "NotFoundError") {
-        throw new StorageNotFoundError(folder.name, { cause: error, message: `Project folder not found: ${folder.name}` });
-      }
-      throw new Error(`Could not open project ${folder.name}: ${String(error)}`, { cause: error });
-    }
-  }
-
-  private async resolveHandle(
-    path: string,
-    create: boolean,
-    action = "open",
-  ): Promise<{ parent: FileSystemDirectoryHandle; name: string }> {
-    const dir = await this.projectDir();
-    const parts = this.split(path);
-    if (parts.length === 0) {
-      throw new Error(`Invalid path: ${path}`);
-    }
-    if (create) {
-      let parent = dir;
-      for (let i = 0; i < parts.length - 1; i++) {
-        parent = await parent.getDirectoryHandle(parts[i]!, { create });
-      }
-      return { parent, name: parts[parts.length - 1]! };
-    }
-    return { parent: await this.descend(dir, parts.slice(0, -1), path, action), name: parts[parts.length - 1]! };
-  }
-
-  /** Open existing directories, reporting a missing segment as StorageNotFoundError. */
-  private async descend(
-    dir: FileSystemDirectoryHandle,
-    parts: string[],
-    path: string,
-    action: string,
-  ): Promise<FileSystemDirectoryHandle> {
-    try {
-      for (const part of parts) dir = await dir.getDirectoryHandle(part);
-      return dir;
-    } catch (error) {
-      throw lookupError(error, path, action, true);
-    }
+    splitOpfsPath(path);
+    const dirName = await directoryName(folder.id);
+    try { return await work(dirName); }
+    catch (error) { throw error instanceof OpfsFailure ? storageError(error, folder) : error; }
   }
 
   async readBinary(path: string): Promise<Uint8Array> {
-    this.assertFolder();
-    for (let attempt = 1; ; attempt++) {
-      const { parent, name } = await this.resolveHandle(path, false, "read");
-      let file: File;
-      try {
-        file = await (await parent.getFileHandle(name)).getFile();
-      } catch (error) {
-        // A directory at the path (TypeMismatchError) is not a missing file.
-        throw lookupError(error, path, "read", false);
-      }
-      try {
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        this.reads.record("full", bytes.byteLength);
-        return bytes;
-      } catch (error) {
-        // `getFile()` is a snapshot: a write that closes before it is read
-        // (Chromium swaps the new contents in) fails the read with
-        // NotReadableError or NotFoundError. Read the committed file again.
-        const name = String((error as { name?: unknown } | null)?.name ?? "");
-        if (attempt < OPFS_READ_ATTEMPTS && STALE_SNAPSHOT_ERRORS.has(name)) continue;
-        throw new Error(`Could not read ${path}: ${String(error)}`, { cause: error });
-      }
-    }
+    const bytes = await this.run(path, (dirName) => this.files.readBinary(dirName, path));
+    this.reads.record("full", bytes.byteLength);
+    return bytes;
   }
 
   /**
-   * Bounded catalog reads repeat for every revision check. Each OPFS call is a
-   * separate task, which a busy render loop can delay by a frame, so reuse the
-   * file handle and fall back to a fresh lookup when it no longer resolves.
+   * The write counter is part of the revision and lives here, so the read
+   * takes its current value and the counter is checked again afterwards: a
+   * write staged or committed during the read changes the revision.
    */
-  private async rangeFile(key: string, path: string): Promise<{ handle: FileSystemFileHandle; file: File }> {
-    const cached = this.rangeHandles.get(key);
-    if (cached) {
-      try { return { handle: cached, file: await cached.getFile() }; }
-      catch { this.rangeHandles.delete(key); }
-    }
-    const { parent, name } = await this.resolveHandle(path, false, "read");
-    let handle: FileSystemFileHandle;
-    let file: File;
-    try {
-      handle = await parent.getFileHandle(name);
-      file = await handle.getFile();
-    } catch (error) { throw lookupError(error, path, "read", false); }
-    this.rangeHandles.set(key, handle);
-    return { handle, file };
-  }
-
   async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string) {
     validateStorageRange(offset, length);
-    const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
-    const { handle, file } = await this.rangeFile(key, path);
-    const revisionOf = (value: File) => `${value.lastModified}:${value.size}:${writeRevisions.get(key) ?? 0}`;
-    const revision = revisionOf(file);
-    checkStorageRevision(path, revision, expectedRevision);
-    validateStorageRange(offset, length, file.size);
-    // Reading the Blob slice is essential: slicing an ArrayBuffer already read
-    // from the complete File would eagerly retain every inline asset payload.
-    let bytes: Uint8Array;
-    try { bytes = new Uint8Array(await file.slice(offset, offset + length).arrayBuffer()); }
-    catch (error) {
-      this.reads.record("range", length, 0);
-      if (STALE_SNAPSHOT_ERRORS.has(String((error as { name?: unknown } | null)?.name ?? ""))) {
-        let current: File | undefined;
-        try { current = await handle.getFile(); }
-        catch { /* A missing/unreadable file alone does not prove a changed revision. */ }
-        if (current && revisionOf(current) !== revision) {
-          throw Object.assign(new SourceRevisionChangedError(`Source revision changed: ${path}`), { cause: error });
-        }
-      }
-      throw error;
-    }
-    this.reads.record("range", length, bytes.byteLength);
+    const folder = this.assertFolder();
+    const key = this.revisionKey(folder, path);
+    const counter = writeRevisions.get(key) ?? 0;
+    let result: OpfsRangeRead;
     try {
-      if (bytes.byteLength !== length) throw new Error(`Unexpected end of file: ${path}`);
-      checkStorageRevision(path, revisionOf(await handle.getFile()), revision);
-      return { bytes, totalSize: file.size, revision, actualBytesRead: bytes.byteLength };
-    } catch (error) { rethrowStorageReadFailure(error, bytes.byteLength); }
+      result = await this.files.readRange(await directoryName(folder.id), path, offset, length, counter, expectedRevision);
+    } catch (error) {
+      if (!(error instanceof OpfsFailure)) throw error;
+      if (error.read !== undefined) this.reads.record("range", length, error.read);
+      if (error.kind === "range") validateStorageRange(offset, length, error.totalSize);
+      const failure = error.recheck && (writeRevisions.get(key) ?? 0) !== counter
+        ? Object.assign(new SourceRevisionChangedError(`Source revision changed: ${path}`), { cause: error.reason() })
+        : storageError(error, folder);
+      if (error.actualBytesRead !== undefined) rethrowStorageReadFailure(failure, error.actualBytesRead);
+      throw failure;
+    }
+    this.reads.record("range", length, result.actualBytesRead);
+    try {
+      checkStorageRevision(path, String(writeRevisions.get(key) ?? 0), String(counter));
+      return result;
+    } catch (error) { rethrowStorageReadFailure(error, result.actualBytesRead); }
   }
 
   async writeBinary(path: string, data: Uint8Array): Promise<void> {
-    const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
-    const { parent, name } = await this.resolveHandle(path, true);
-    const writable = await (
-      await parent.getFileHandle(name, { create: true })
-    ).createWritable();
-    // Ranges read while the write is staged see a changed revision.
-    const before = writeRevisions.get(key);
-    const staged = ++writeSequence;
-    writeRevisions.set(key, staged);
-    try {
-      // Storage bytes are never SharedArrayBuffer-backed; DOM BufferSource
-      // requires an ArrayBuffer-backed view.
-      await writable.write(data as Uint8Array<ArrayBuffer>);
-      await writable.close();
-    } catch (error) {
-      await writable.abort().catch(() => {});
-      // The committed bytes are unchanged, so readers holding their revision stay valid.
-      if (writeRevisions.get(key) === staged) {
-        if (before === undefined) writeRevisions.delete(key);
-        else writeRevisions.set(key, before);
+    const key = this.revisionKey(this.assertFolder(), path);
+    await this.run(path, async (dirName) => {
+      // Ranges read while the write is staged see a changed revision.
+      const before = writeRevisions.get(key);
+      const staged = ++writeSequence;
+      writeRevisions.set(key, staged);
+      try {
+        await this.files.writeBinary(dirName, path, data);
+      } catch (error) {
+        if (error instanceof OpfsFailure && error.kind === "interrupted") {
+          // The bytes may have changed, so no revision read before or during the write may match them.
+          writeRevisions.set(key, ++writeSequence);
+        } else if (writeRevisions.get(key) === staged) {
+          // The committed bytes are unchanged, so readers holding their revision stay valid.
+          if (before === undefined) writeRevisions.delete(key);
+          else writeRevisions.set(key, before);
+        }
+        throw error;
       }
-      throw error;
-    }
-    writeRevisions.set(key, ++writeSequence);
+      writeRevisions.set(key, ++writeSequence);
+    });
   }
 
   async readText(path: string): Promise<string> {
@@ -492,97 +407,26 @@ export class OpfsStorageAdapter implements ProjectStorage {
   }
 
   async exists(path: string): Promise<boolean> {
-    this.assertFolder();
-    try {
-      await this.stat(path);
-      return true;
-    } catch (error) {
-      if (isStorageNotFound(error)) return false;
-      throw error;
-    }
+    return this.run(path, (dirName) => this.files.exists(dirName, path));
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
-    const root = await this.projectDir();
-    const parts = this.split(path === "." ? "" : path);
-    const dir = await this.descend(root, parts, path, "list");
-    const out: DirEntry[] = [];
-    // The DOM lib in use does not declare the directory async iterator.
-    const dirHandle = dir as FileSystemDirectoryHandle & {
-      entries?: () => AsyncIterableIterator<[string, FileSystemHandle]>;
-    };
-    // An empty listing would let callers treat a full folder as empty.
-    if (!dirHandle.entries) throw new Error(`Could not list ${path}: directory iteration is unavailable`);
-    for await (const [name, handle] of dirHandle.entries()) {
-      if (handle.kind === "directory") {
-        out.push({ name, isDir: true, size: null, mtime: null });
-      } else {
-        // Chromium lists a write's `<name>.crswap` swap file until the writable closes.
-        if (name.endsWith(".crswap")) continue;
-        let file: File;
-        try {
-          file = await (handle as FileSystemFileHandle).getFile();
-        } catch (error) {
-          // Removed (or its swap renamed away) after it was listed.
-          if (error instanceof DOMException && error.name === "NotFoundError") continue;
-          throw error;
-        }
-        out.push({
-          name,
-          isDir: false,
-          size: file.size,
-          mtime: file.lastModified,
-        });
-      }
-    }
-    return out;
+    return this.run(path, (dirName) => this.files.readdir(dirName, path));
   }
 
   async mkdir(path: string, recursive = true): Promise<void> {
-    const root = await this.projectDir();
-    const parts = this.split(path);
-    let dir = root;
-    for (const [index, seg] of parts.entries()) {
-      dir = await dir.getDirectoryHandle(seg, { create: recursive || index === parts.length - 1 });
-    }
+    await this.run(path, (dirName) => this.files.mkdir(dirName, path, recursive));
   }
 
   async remove(path: string): Promise<void> {
-    const key = `${this.assertFolder().id}/${this.split(path).join("/")}`;
-    for (const cached of [...this.rangeHandles.keys()]) {
-      if (cached === key || cached.startsWith(`${key}/`)) this.rangeHandles.delete(cached);
-    }
+    const key = this.revisionKey(this.assertFolder(), path);
     const revisions = writeRevisionsUnder(key);
-    const { parent, name } = await this.resolveHandle(path, false, "remove");
-    try {
-      await parent.removeEntry(name, { recursive: true });
-    } catch (error) {
-      throw lookupError(error, path, "remove", false);
-    }
+    await this.run(path, (dirName) => this.files.remove(dirName, path));
     forgetRemovedRevisions(revisions);
   }
 
   async stat(path: string): Promise<FileStat> {
-    const root = await this.projectDir();
-    const parts = this.split(path);
-    if (parts.length === 0) {
-      return { isDir: true, size: null, mtime: null };
-    }
-    const dir = await this.descend(root, parts.slice(0, -1), path, "stat");
-    const name = parts[parts.length - 1]!;
-    try {
-      const file = await (await dir.getFileHandle(name)).getFile();
-      return { isDir: false, size: file.size, mtime: file.lastModified };
-    } catch (error) {
-      // getFileHandle reports an existing directory as TypeMismatchError.
-      if (domErrorName(error) !== "TypeMismatchError") throw lookupError(error, path, "stat", false);
-    }
-    try {
-      await dir.getDirectoryHandle(name);
-      return { isDir: true, size: null, mtime: null };
-    } catch (error) {
-      throw lookupError(error, path, "stat", false);
-    }
+    return this.run(path, (dirName) => this.files.stat(dirName, path));
   }
 }
 

@@ -38,7 +38,9 @@ Select a Landscape in **Landscape Outliner**, then use **Landscape Settings**.
 - World scenes only.
 - Locked actors cannot be sculpted or edited.
 - A Landscape Material reads the four paint weights with the [Landscape Paint Layers](../scripting/material/landscape-paint-layers.md) node.
-- Distant landscape chunks automatically step down mesh detail (distance LODs) while sculpting and 3D heightfield collisions stay at full resolution.
+- Distant landscape chunks automatically step down mesh detail (distance LODs) while sculpting, picking, placing and 3D heightfield collisions stay at full resolution.
+- A Landscape in a Prefab or Class keeps its terrain in that asset, and every placed or spawned copy has it, with collision when **Landscape Collisions** is on.
+- If a landscape's saved terrain data is missing or damaged, the landscape shows and plays flat and the **Output Log** says which one. Saving the scene keeps the stored data; sculpting the landscape replaces it.
 
 ## Related
 

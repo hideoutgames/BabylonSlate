@@ -369,7 +369,7 @@ export async function loadExportDocuments(
     }
     if (asset.header.type === "Scene" && document) {
       const landscape = collectLandscapeChunksForPlay(document as SerializedScene, snapshot?.chunks);
-      const foliage = collectFoliageChunksForPlay(landscape.payload, snapshot?.chunks, asset.header.guid);
+      const foliage = collectFoliageChunksForPlay(landscape.payload, snapshot?.chunks);
       document = foliage.payload;
       const collected = [...landscape.chunks, ...foliage.chunks];
       if (collected.length > 0) {

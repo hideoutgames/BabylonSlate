@@ -8,7 +8,7 @@ import {
   type SerializedComponent,
 } from "@haptic/core";
 import type { ChunkInput } from "./hasset";
-import { mapPayloadComponents } from "./landscape-chunks";
+import { mapPayloadComponents, sceneComponentChunkKey } from "./landscape-chunks";
 
 export const FOLIAGE_CHUNK_KIND = "foliage";
 export const FOLIAGE_CHUNK_MIME = "application/octet-stream";
@@ -25,12 +25,9 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/**
- * A Scene component's chunk id: `foliage:<actorId>/<componentId>`. Component ids are only unique within their actor
- * (every instance of one Prefab carries the Prefab's component ids), so the actor names the chunk too.
- */
+/** A Scene component's chunk id: `foliage:<actorId>/<componentId>` (`sceneComponentChunkKey`). */
 export function sceneFoliageChunkId(component: SerializedComponent, actor: SerializedActor | undefined): string {
-  return foliageChunkId(actor ? `${actor.id}/${component.id}` : component.id);
+  return foliageChunkId(sceneComponentChunkKey(component, actor));
 }
 
 /** Raw `HPFG` bytes of base64 `data` when they decode and match the component's batch list, else null. */
@@ -61,12 +58,11 @@ function hasData(properties: Record<string, unknown>): boolean {
 /**
  * Moves every Scene `FoliageComponent`'s base64 `data` into a raw binary `HPFG` `.hasset` chunk named by `chunkId`
  * (`sceneFoliageChunkId`), so the stored JSON holds no instance. A component with nothing painted emits no chunk. Data
- * that does not decode or does not match the component's batches is kept inline, never dropped, and listed in
- * `unreadable` (component ids) for the caller to report.
+ * that does not decode or does not match the component's batches is kept inline, never dropped
+ * (`unreadableComponentChunks` names it).
  */
-export function extractFoliageChunks<T>(payload: T): { payload: T; chunks: ChunkInput[]; unreadable: string[] } {
+export function extractFoliageChunks<T>(payload: T): { payload: T; chunks: ChunkInput[] } {
   const chunks: ChunkInput[] = [];
-  const unreadable: string[] = [];
   const nextPayload = mapPayloadComponents(payload, (component, actor) => {
     if (component.classId !== "FoliageComponent") return component;
     const props = component.properties;
@@ -78,28 +74,24 @@ export function extractFoliageChunks<T>(payload: T): { payload: T; chunks: Chunk
       return { ...component, properties: nextProps };
     }
     const bytes = validDataBytes(props);
-    if (!bytes) {
-      unreadable.push(component.id);
-      return component;
-    }
+    if (!bytes) return component;
     const chunkId = sceneFoliageChunkId(component, actor);
     chunks.push({ id: chunkId, kind: FOLIAGE_CHUNK_KIND, mime: FOLIAGE_CHUNK_MIME, data: bytes });
     const nextProps: Record<string, unknown> = { ...props, chunkId };
     delete nextProps.data;
     return { ...component, properties: nextProps };
   });
-  return { payload: nextPayload, chunks, unreadable };
+  return { payload: nextPayload, chunks };
 }
 
 /**
  * Restores `foliage:*` chunks into base64 `data` for editor documents (undo, journal, copy and paste). A component
  * whose chunk is missing, malformed or does not match its batches keeps its `chunkId`, so a later save carries the
- * stored chunk unchanged; `onUnreadable` names it.
+ * stored chunk unchanged (`unreadableComponentChunks` names it).
  */
 export function hydrateFoliageChunksToEditor<T>(
   payload: T,
   chunks: ReadonlyMap<string, Uint8Array>,
-  onUnreadable?: (componentId: string, chunkId: string) => void,
 ): T {
   return mapPayloadComponents(payload, (component) => {
     if (component.classId !== "FoliageComponent") return component;
@@ -108,10 +100,7 @@ export function hydrateFoliageChunksToEditor<T>(
     const chunkId = typeof props.chunkId === "string" && isFoliageChunkId(props.chunkId) ? props.chunkId : null;
     if (!chunkId) return component;
     const bytes = chunks.get(chunkId);
-    if (!validChunk(bytes, props)) {
-      onUnreadable?.(component.id, chunkId);
-      return component;
-    }
+    if (!validChunk(bytes, props)) return component;
     const nextProps: Record<string, unknown> = { ...props, data: bytesToBase64(bytes) };
     delete nextProps.chunkId;
     return { ...component, properties: nextProps };
@@ -121,13 +110,12 @@ export function hydrateFoliageChunksToEditor<T>(
 /**
  * Prepares a Scene payload and its raw `HPFG` chunks for Play or export, so no base64 reaches the runtime: unsaved
  * editor `data` is decoded once into a chunk named by `chunkId`, and a stored `chunkId` reuses its bytes from
- * `storedChunks`. Each such component names `ownerGuid` as its `chunkOwner`, so the runtime finds its chunk at
- * `<ownerGuid>:<chunkId>` exactly. Prefab and Class documents keep their instances inline (`data`) and pass through.
+ * `storedChunks`. The runtime decodes them under the Scene the actor came from. Prefab and Class documents keep their
+ * instances inline (`data`) and pass through.
  */
 export function collectFoliageChunksForPlay<T>(
   payload: T,
-  storedChunks: ReadonlyMap<string, Uint8Array> | undefined,
-  ownerGuid: string,
+  storedChunks?: ReadonlyMap<string, Uint8Array>,
 ): { payload: T; chunks: Map<string, Uint8Array> } {
   const chunks = new Map<string, Uint8Array>();
   const nextPayload = mapPayloadComponents(payload, (component, actor) => {
@@ -139,15 +127,14 @@ export function collectFoliageChunksForPlay<T>(
       if (!bytes) return component;
       const chunkId = sceneFoliageChunkId(component, actor);
       chunks.set(chunkId, bytes);
-      const nextProps: Record<string, unknown> = { ...props, chunkId, chunkOwner: ownerGuid };
+      const nextProps: Record<string, unknown> = { ...props, chunkId };
       delete nextProps.data;
       return { ...component, properties: nextProps };
     }
     const chunkId = typeof props.chunkId === "string" && isFoliageChunkId(props.chunkId) ? props.chunkId : null;
     const bytes = chunkId ? storedChunks?.get(chunkId) : undefined;
-    if (!chunkId || !validChunk(bytes, props)) return component;
-    chunks.set(chunkId, bytes);
-    return { ...component, properties: { ...props, chunkOwner: ownerGuid } };
+    if (chunkId && validChunk(bytes, props)) chunks.set(chunkId, bytes);
+    return component;
   });
   return { payload: nextPayload, chunks };
 }

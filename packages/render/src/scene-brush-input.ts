@@ -239,7 +239,7 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
       sculpt.frame = undefined;
       if (!sculpt.session) continue;
       const root = handle.editor?.sync.meshForComponent(sculpt.actorId, sculpt.componentId);
-      if (root) updateLandscapeMesh(root, sculpt.session.liveProperties(), undefined, { forceDirty: true });
+      if (root) updateLandscapeMesh(root, sculpt.session.liveProperties(), undefined, { dirtyRegion: sculpt.session.takeDirtyRegion() });
     }
     handle.scheduler.invalidate("manual");
   };

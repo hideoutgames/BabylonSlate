@@ -47,6 +47,8 @@ interface ActorRealizationHost {
   textAppear(): Pick<Text2DAppearRuntime, "remove">;
   subsystems(): Pick<RuntimeSubsystems, "retireActor">;
   cancelInvalidTweens(): void;
+  /** Decodes the actor's Landscape terrain once, before anything reads it. */
+  hydrateComponentChunks(actor: Actor): void;
   reportLog(message: string, severity: LogSeverity, category: string): void;
   emit(command: CommandMessage): void;
 }
@@ -245,6 +247,7 @@ export class ActorRealization {
 
   realize(actor: Actor, checkpoint: () => void = () => {}): void {
     checkpoint();
+    this.host.hydrateComponentChunks(actor);
     this.host.boundaries().trackRealized(actor);
     const world = this.host.world();
     if (world.classRegistry.isA(actor.classId, "RenderTargetCapture") && !captureComponent(actor) && !actor.sceneLayerId) {

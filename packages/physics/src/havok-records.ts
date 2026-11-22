@@ -87,7 +87,7 @@ export function releaseHavokShape(
 }
 
 /** Read a native shape's `[membershipMask, collideMask]` filter tuple. */
-export function getShapeFilterInfo(
+function getShapeFilterInfo(
   havok: HavokPhysicsWithBindings,
   shape: HP_ShapeId,
 ): [number, number] {

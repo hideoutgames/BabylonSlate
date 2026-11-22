@@ -98,7 +98,7 @@ describe("Foliage binary .hasset persistence and export sidecars", () => {
     const exported = exportInputs.componentChunksByGuid(sceneGuid);
     expect(exported.map((chunk) => [chunk.chunkId, decodeFoliageChunk(chunk.bytes)[0]![0]])).toEqual([["foliage:first/trees", 1], ["foliage:second/trees", 2]]);
     const scene = JSON.parse(new TextDecoder().decode(exportInputs.bytesByGuid(sceneGuid)!)) as SerializedScene;
-    expect(scene.actors.map((actor) => actor.components[0]!.properties.chunkOwner)).toEqual([sceneGuid, sceneGuid]);
+    expect(scene.actors.map((actor) => actor.components[0]!.properties.chunkId)).toEqual(["foliage:first/trees", "foliage:second/trees"]);
     void storage;
   });
 
@@ -127,7 +127,7 @@ describe("Foliage binary .hasset persistence and export sidecars", () => {
     const stop = service.onDiagnostic((line) => lines.push(line));
     const loaded = (await service.loadDocument("scene", MAIN_SCENE_FILE)) as SerializedScene;
     stop();
-    expect(lines.some((line) => line.includes("Foliage component trees could not read its instances"))).toBe(true);
+    expect(lines.some((line) => line.includes("the instance data of the Foliage on \"Trees\" is missing or damaged"))).toBe(true);
     expect(parseFoliageProperties(loaded.actors[0]!.components[0]!.properties)).toMatchObject({ batches: [], unreadable: true });
     await service.saveDocument("scene", MAIN_SCENE_FILE, { ...loaded, name: "Renamed" });
     const after = await storage.readBinary(MAIN_SCENE_FILE);

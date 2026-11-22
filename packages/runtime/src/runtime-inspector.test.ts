@@ -297,6 +297,33 @@ describe("bounded runtime Inspector", () => {
     } finally { runtime.stop(); }
   });
 
+  it("rolls back a transform edit that physics rejects, reports its error, and keeps ticking", async () => {
+    const { runtime, commands, request, actor } = await fixture();
+    try {
+      const world = runtime.getWorld(); const hero = world.findActor("hero")!;
+      // An oblique static child: a nonuniform scale on its parent would shear it, which physics rejects.
+      const rider = world.createActor({ classId: "Actor", guid: "rider", transform: { position: { x: 0, y: 2, z: 0 },
+        rotation: { x: 0, y: 0, z: Math.sin(Math.PI / 8), w: Math.cos(Math.PI / 8) }, scale: { x: 1, y: 1, z: 1 } } });
+      rider.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static" } }));
+      rider.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: {
+        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } }));
+      world.spawnActorNow(rider); rider.setVariable("parentId", hero.guid);
+      runtime.getPhysicsSync()!.syncFromWorld(world);
+      runtime.pause();
+
+      const transform = identitySerializedTransform(); transform.position = [3, 0, 0]; transform.scale = [2, 1, 1];
+      const result = await request({ kind: "setTransform", target: actor, sequence: 1, transform });
+      expect(result).toMatchObject({ success: false, reason: "Collider transform contains unsupported shear" });
+      expect(hero.transform).toEqual({ position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } });
+      expect(runtime.getPhysicsSync()!.getBackend().getBodyTransform("body:rider")!.position).toEqual({ x: 0, y: 2, z: 0 });
+
+      runtime.resume();
+      runtime.tick(); runtime.tick();
+      expect(world.clock.tickIndex).toBe(2);
+      expect(commands.filter(command => command.type === "diagnostic")).toEqual([]);
+    } finally { runtime.stop(); }
+  });
+
   it("teleports a paused physics body through its owner and preserves velocity", async () => {
     const { runtime, request, actor } = await fixture();
     try {
