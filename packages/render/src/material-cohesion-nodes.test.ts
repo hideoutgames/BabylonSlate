@@ -10,6 +10,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument, type MaterialDomain } from "@haptic/shader-graph";
 import { GameTimeInputBlock } from "./game-time-input-block";
 import { compileMaterialPlan } from "./material-compiler";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 const dispose: Array<() => void> = [];
 afterEach(() => { while (dispose.length) dispose.pop()!(); vi.restoreAllMocks(); });
@@ -55,7 +56,7 @@ describe("Material logic nodes", () => {
     wire(doc, "compare", "out", "output", "emissive");
     const result = await compile(doc);
     for (const axis of ["x", "y", "z"]) {
-      const block = result.material.getBlockByName(`compare_${axis}`) as ConditionalBlock;
+      const block = result.material.getBlockByName(`${nodeBlockName(doc, "compare")}_${axis}`) as ConditionalBlock;
       expect(block.condition).toBe(condition);
       expect((block.true.connectedPoint!.ownerBlock as InputBlock).value).toBe(1);
       expect((block.false.connectedPoint!.ownerBlock as InputBlock).value).toBe(0);
@@ -67,7 +68,7 @@ describe("Material logic nodes", () => {
     node(doc, "mask", type, { "default:a": [1], "default:b": [0] });
     wire(doc, "mask", "out", "output", "roughness");
     const result = await compile(doc);
-    const test = result.material.getBlockByName("mask") as ConditionalBlock;
+    const test = result.material.getBlockByName(nodeBlockName(doc, "mask")) as ConditionalBlock;
     expect(test.condition).toBe(ConditionalBlockConditions.GreaterThan);
     expect((test.b.connectedPoint!.ownerBlock as InputBlock).value).toBe(0.5);
     expect(fragment(result.material.compiledShaders)).toContain(combine);
@@ -78,7 +79,7 @@ describe("Material logic nodes", () => {
     node(doc, "not", "logic.not", { "default:value": [1] });
     wire(doc, "not", "out", "output", "roughness");
     const result = await compile(doc);
-    const test = result.material.getBlockByName("not") as ConditionalBlock;
+    const test = result.material.getBlockByName(nodeBlockName(doc, "not")) as ConditionalBlock;
     expect((test.true.connectedPoint!.ownerBlock as InputBlock).value).toBe(0);
     expect((test.false.connectedPoint!.ownerBlock as InputBlock).value).toBe(1);
   });
@@ -165,9 +166,9 @@ describe("Material inputs", () => {
     node(doc, "origin", "input.objectPosition");
     wire(doc, "origin", "position", "output", "emissive");
     const result = await compile(doc, { floatingOrigin });
-    expect(result.material.getBlockByName("origin")?.getClassName()).toBe("TransformBlock");
+    expect(result.material.getBlockByName(nodeBlockName(doc, "origin"))?.getClassName()).toBe("TransformBlock");
     const origin = result.material.getBlockByName("slateFloatingOrigin") as InputBlock;
-    expect(origin.output.endpoints.map((endpoint) => endpoint.ownerBlock.name)).toEqual(["origin_absolute"]);
+    expect(origin.output.endpoints.map((endpoint) => endpoint.ownerBlock.name)).toEqual([`${nodeBlockName(doc, "origin")}_absolute`]);
   });
 
   it("gives World Normal at unit length", async () => {
@@ -175,7 +176,7 @@ describe("Material inputs", () => {
     node(doc, "facing", "input.worldNormal");
     wire(doc, "facing", "normal", "output", "emissive");
     const result = await compile(doc);
-    expect(result.material.getBlockByName("facing")).toBeInstanceOf(NormalizeBlock);
+    expect(result.material.getBlockByName(nodeBlockName(doc, "facing"))).toBeInstanceOf(NormalizeBlock);
   });
 
   it.each([["input.vertexColor", "surface"], ["input.particleColor", "particle"]] as const)("splits %s into RGB and A", async (type, domain) => {
@@ -207,7 +208,7 @@ describe("Material vector, color and shading nodes", () => {
     wire(doc, "value", "out", "swizzle", "value");
     wire(doc, "swizzle", "out", "output", "emissive");
     const result = await compile(doc);
-    const merge = result.material.getBlockByName("swizzle_merge");
+    const merge = result.material.getBlockByName(`${nodeBlockName(doc, "swizzle")}_merge`);
     expect(["x", "y", "z"].map((axis) => merge?.getInputByName(axis)?.connectedPoint?.name)).toEqual(["z", "x", "x"]);
   });
 
@@ -227,7 +228,7 @@ describe("Material vector, color and shading nodes", () => {
     node(doc, "luminance", "color.luminance", { "default:color": [1, 0.5, 0.25] });
     wire(doc, "luminance", "out", "output", "roughness");
     const result = await compile(doc);
-    const weights = result.material.getBlockByName("luminance")!.inputs[1]!.connectedPoint!.ownerBlock as InputBlock;
+    const weights = result.material.getBlockByName(nodeBlockName(doc, "luminance"))!.inputs[1]!.connectedPoint!.ownerBlock as InputBlock;
     expect(weights.value.asArray()).toEqual([0.3, 0.59, 0.11]);
   });
 
@@ -238,7 +239,7 @@ describe("Material vector, color and shading nodes", () => {
     wire(doc, "image", "out", "triplanar", "texture");
     wire(doc, "triplanar", "rgb", "output", "emissive");
     const result = await compile(doc, { texture: true });
-    const block = result.material.getBlockByName("triplanar") as TriPlanarBlock;
+    const block = result.material.getBlockByName(nodeBlockName(doc, "triplanar")) as TriPlanarBlock;
     expect(block).toBeInstanceOf(TriPlanarBlock);
     expect(block.source.connectedPoint!.ownerBlock).toBeInstanceOf(ImageSourceBlock);
     expect(block.texture).toBe(result.texture);

@@ -91,11 +91,14 @@ type Programs = NonNullable<FeatureTestBenchmarkSample["programs"]>;
 
 /**
  * The Engine's programs: each one cost a compile, and one never drawn cost it for nothing so far. `by first pass` says
- * which of a view's passes the drawn ones belong to.
+ * which of a view's passes the drawn ones belong to. Then the Material compiler's builds against the distinct programs
+ * they share, the builds that adopted another's program and the rebuilds that compiled their own program again.
  */
 function programsText(programs: Programs): string {
   const passes = firstDrawPasses(programs.passes);
-  return `${programs.programs} on the Engine · ${programs.neverDrawn} never drawn · ${programs.shaders} shaders, at most ${programs.mostVariants} programs of one${passes ? ` · by first pass: ${passes}` : ""}`;
+  const materials = programs.materials;
+  return `${programs.programs} on the Engine · ${programs.neverDrawn} never drawn · ${programs.shaders} shaders, at most ${programs.mostVariants} programs of one${passes ? ` · by first pass: ${passes}` : ""}` +
+    ` · Material builds ${materials.builds} on ${materials.programs} programs (${materials.adopted} adopted one, ${materials.sameShaderRebuilds} rebuilt unchanged)`;
 }
 
 /**
@@ -261,7 +264,7 @@ function longFrame(frame: LongFrame): string {
 function firstDrawLines(first: FirstDraws, when: string): string[] {
   const passes = firstDrawPasses(first.passes);
   return [
-    `  First draws ${when}: ${first.draws} (${first.loadCompiled} compiled by the load) in ${first.frames} frame${first.frames === 1 ? "" : "s"} · ${first.stalls} over 100 ms · worst ${first.worstFrameMs.toFixed(0)} ms · most ${first.mostInFrame} in a frame${passes ? ` · by pass: ${passes}` : ""}`,
+    `  First draws ${when}: ${first.draws} (${first.loadCompiled} compiled by the load, of ${first.loadPrograms} it compiled) in ${first.frames} frame${first.frames === 1 ? "" : "s"} · ${first.stalls} over 100 ms · worst ${first.worstFrameMs.toFixed(0)} ms · most ${first.mostInFrame} in a frame${passes ? ` · by pass: ${passes}` : ""}`,
     `  Long frames ${when}: ${first.longFrames} over 100 ms${first.longest.length ? ` · longest ${first.longest.slice(0, MAX_LONG_FRAMES).map(longFrame).join(", ")}` : ""}`,
   ];
 }

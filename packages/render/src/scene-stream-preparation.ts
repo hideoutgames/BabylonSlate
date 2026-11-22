@@ -8,6 +8,7 @@ import { ownedVisualTexturePreparation } from "./mesh-assets";
 import { createStallDeadline, prewarmMeshMaterials, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { isBuiltInWaterMesh } from "./water-mesh";
+import { batchedSpriteOf, findWorldSpriteBatcher } from "./world-sprite-batcher";
 
 /** Prepare an additive actor batch; parent and sibling resources are not load dependencies. */
 export async function prepareSceneStream(
@@ -69,6 +70,7 @@ export async function prepareSceneStream(
     });
     await waitAssets(roots.map(({ slot, root }) => ({ slot, load: ownedVisualTexturePreparation(root) })), "textures");
     checkAssignments();
+    findWorldSpriteBatcher(scene)?.flush();
     const meshSlots = new Map<AbstractMesh, number>();
     const materials = new Set<Material>();
     const addMaterial = (material: Material) => {
@@ -81,6 +83,14 @@ export async function prepareSceneStream(
       for (const mesh of [root, ...root.getChildMeshes()]) {
         meshSlots.set(mesh, slot);
         if (mesh.getTotalVertices() > 0) addMaterial(mesh.material ?? scene.defaultMaterial);
+        const batched = batchedSpriteOf(mesh);
+        if (batched) {
+          for (const batchMesh of [batched.primary.batch?.mesh, batched.secondary.batch?.mesh]) {
+            if (!batchMesh || batchMesh.isDisposed()) continue;
+            meshSlots.set(batchMesh, slot);
+            addMaterial(batchMesh.material ?? scene.defaultMaterial);
+          }
+        }
       }
     }
     let previous = "";

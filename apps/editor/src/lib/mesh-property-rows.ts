@@ -12,6 +12,7 @@ import {
   type ComponentPropertyUpdate,
 } from "./component-property-row-helpers";
 import { MODEL_MATERIALS_PICKER_VALUE } from "./mesh-material-properties";
+import { materialSlotRowState } from "./material-asset-filters";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 
@@ -75,9 +76,13 @@ export function meshPropertyRows(
     update,
     context,
     "Pick Material",
+    "None",
+    "surface",
   );
   if (assetGuid && materialRow.kind === "asset") {
     materialRow.defaultValue = MODEL_MATERIALS_PICKER_VALUE;
+    // The Model's own Materials paste as they pick.
+    Object.assign(materialRow, materialSlotRowState("surface", materialRow.value, context.materialDomain, [MODEL_MATERIALS_PICKER_VALUE]));
     if (
       !guidValue(component.properties.materialGuid) &&
       component.properties.materialSource !== "override"
@@ -158,7 +163,7 @@ export function dynamicRuntimeMeshPropertyRows(
   context: ComponentPropertyContext,
 ): PropertyRow[] {
   return [
-    assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Mesh Material"),
+    assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Mesh Material", "None", "surface"),
     {
       kind: "boolean", id: rowId(actorId, component.id, "enableCollision"), label: "Enable Collision",
       value: component.properties.enableCollision === true, defaultValue: false,
@@ -184,6 +189,6 @@ export function cableComponentPropertyRows(
 ): PropertyRow[] {
   return [
     ...cablePropertyRows(actorId, component, update, context),
-    assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Cable Material"),
+    assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Cable Material", "None", "surface"),
   ];
 }

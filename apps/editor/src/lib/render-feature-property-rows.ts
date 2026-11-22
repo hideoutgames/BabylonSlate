@@ -196,7 +196,7 @@ export function mirrorPropertyRows(
     { kind: "color", id: rowId(actorId, component.id, "tint"), label: "Tint", value: properties.tint,
       description: "Multiplies the reflection on the built-in surface. A Material override decides its own look.",
       onChange: (next) => update("tint", next) },
-    { ...assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Mirror Material", "Built-In Surface"),
+    { ...assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Mirror Material", "Built-In Surface", "surface"),
       description: "Use a Mirror Reflection node to read the reflection." },
   ];
 }

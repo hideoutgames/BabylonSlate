@@ -37,7 +37,6 @@ test("tests, like production code, may take only types from the Babylon package 
   // Each package whose tests load Babylon, and one production file for comparison.
   for (const filePath of [
     "packages/render/src/example.test.ts",
-    "packages/physics/src/example.test.ts",
     "apps/player/src/example.test.ts",
     "apps/editor/src/example.test.tsx",
     "packages/render/src/example.ts",
@@ -50,6 +49,33 @@ test("tests, like production code, may take only types from the Babylon package 
     assert.deepEqual(
       rootImports.map((message) => message.line),
       [1],
+      `${filePath}: ${JSON.stringify(result.messages)}`,
+    );
+  }
+});
+
+test("packages/physics may import @babylonjs/havok only and rejects @babylonjs/core", async () => {
+  const source = [
+    'import type { HavokPhysicsWithBindings } from "@babylonjs/havok";',
+    'import { Scene } from "@babylonjs/core";',
+    'import type { Mesh } from "@babylonjs/core";',
+    'import { NullEngine } from "@babylonjs/core/Engines/nullEngine";',
+    "export type H = HavokPhysicsWithBindings;",
+    "export const scene: Scene = new Scene(new NullEngine());",
+    "export type Visual = Mesh;",
+    "",
+  ].join("\n");
+  for (const filePath of [
+    "packages/physics/src/example.ts",
+    "packages/physics/src/example.test.ts",
+  ]) {
+    const [result] = await eslint.lintText(source, { filePath });
+    const restricted = result.messages.filter(
+      (message) => message.ruleId === "no-restricted-imports",
+    );
+    assert.deepEqual(
+      restricted.map((message) => message.line),
+      [2, 3, 4],
       `${filePath}: ${JSON.stringify(result.messages)}`,
     );
   }

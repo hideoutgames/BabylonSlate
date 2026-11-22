@@ -99,7 +99,7 @@ function fakeEditor(
               }))(presentation(now, commands)),
               cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
               // One shader first drawn per command run so far.
-              firstDraws: { draws: commands.length, loadCompiled: 0, frames: commands.length, stalls: 0, mostInFrame: 1, worstFrameMs: 20, longFrames: 0, longest: [] },
+              firstDraws: { draws: commands.length, loadCompiled: 0, loadPrograms: 0, frames: commands.length, stalls: 0, mostInFrame: 1, worstFrameMs: 20, longFrames: 0, longest: [] },
             } as unknown as RenderDiagnostics)
             : null,
         }),
@@ -944,7 +944,8 @@ describe("draw sampling", () => {
             const rendering = {
               cpuMs: 4, gpuMs: null, ...snapshot.rendering,
               drawPasses: { objects: 124, outlines: 101, layers: 98 },
-              programs: { programs: 200 + reads, neverDrawn: 80, passes: { objects: 60 }, shaders: 90, mostVariants: 4, splitBy: [] as { define: string; with: string[]; shaders: number }[] },
+              programs: { programs: 200 + reads, neverDrawn: 80, passes: { objects: 60 }, shaders: 90, mostVariants: 4, splitBy: [] as { define: string; with: string[]; shaders: number }[],
+                materials: { builds: 0, programs: 0, adopted: 0, sameShaderRebuilds: 0 } },
             } as NonNullable<typeof snapshot.rendering>;
             return { ...snapshot, rendering };
           },

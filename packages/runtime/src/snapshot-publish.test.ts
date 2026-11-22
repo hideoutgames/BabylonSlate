@@ -150,23 +150,41 @@ describe("snapshot publishing", () => {
     });
   });
 
-  it("composes the world once per catch-up burst and once per bare tick", async () => {
+  it("composes only dirty actors once per catch-up burst and once per bare tick", async () => {
     const { runtime, slots } = await launch(scene([
       createActor("still", "Still"),
       createActor("mover", "Mover", { classId: "Mover" }),
     ]));
     try {
-      const reads = countWholeWorldReads(runtime.getWorld().findActor("still")!);
+      const stillReads = countWholeWorldReads(runtime.getWorld().findActor("still")!);
+      const writesBefore = runtime.snapshotSerial;
       burst(runtime);
       expect(runtime.getWorld().clock.tickIndex).toBe(4);
-      expect(reads()).toBe(1);
+      // Untouched actors are never recomposed on incremental publishes; the burst writes once.
+      expect(stillReads()).toBe(0);
+      expect(runtime.snapshotSerial - writesBefore).toBe(1);
       expect(slotPose(published(runtime), slots.get("mover"))?.position.x).toBe(4);
 
       runtime.tick();
       runtime.tick();
-      expect(reads()).toBe(3);
+      expect(stillReads()).toBe(0);
+      expect(runtime.snapshotSerial - writesBefore).toBe(3);
+      expect(slotPose(published(runtime), slots.get("mover"))?.position.x).toBe(6);
     } finally {
       runtime.stop();
+    }
+  });
+
+  it("stops observing the World when the session ends", async () => {
+    const dispose = vi.spyOn(SnapshotPublisher.prototype, "dispose");
+    const { runtime } = await launch(scene([createActor("still", "Still")]));
+    try {
+      expect(dispose).not.toHaveBeenCalled();
+      runtime.stop();
+      expect(dispose).toHaveBeenCalledOnce();
+    } finally {
+      runtime.stop();
+      dispose.mockRestore();
     }
   });
 
@@ -192,8 +210,8 @@ describe("snapshot publishing", () => {
         parented.runtime.tick();
         root.runtime.tick();
       }
-      // Only the published frame composes every actor; the crowd no longer does.
-      expect(reads()).toBe(30);
+      // Neither the crowd nor incremental snapshot publishing recomposes an untouched root actor.
+      expect(reads()).toBe(0);
 
       const expected = slotPose(published(root.runtime), root.slots.get("agent"))!;
       const frame = published(parented.runtime);
@@ -428,7 +446,7 @@ describe("snapshot removal pass", () => {
       slots.allocate(created);
       return created;
     };
-    return { world, snapshots, despawns, actor };
+    return { world, slots, snapshots, despawns, actor };
   }
 
   it("checks no slot while neither the World structure nor the slot table changed", () => {
@@ -450,6 +468,36 @@ describe("snapshot removal pass", () => {
     lookups.mockClear();
     snapshots.publish();
     expect(lookups).not.toHaveBeenCalled();
+  });
+
+  it("walks a moved actor's subtree once per publish, not once per coordinate write", () => {
+    const { world, slots, snapshots, actor } = publisher();
+    const root = world.spawnActorNow(actor("root"));
+    const middle = actor("middle");
+    middle.setVariable("parentId", root.guid);
+    world.spawnActorNow(middle);
+    const leaf = actor("leaf");
+    leaf.setVariable("parentId", middle.guid);
+    world.spawnActorNow(leaf);
+    snapshots.publish();
+
+    const children = vi.spyOn(world, "getChildren");
+    root.transform.position.x = 1;
+    const firstWalk = children.mock.calls.length;
+    expect(firstWalk).toBeGreaterThan(0);
+    root.transform.position.y = 2;
+    root.transform.position.z = 3;
+    middle.transform.position.x = 1;
+    expect(children).toHaveBeenCalledTimes(firstWalk);
+
+    snapshots.publish();
+    const buf = new Float32Array(snapshotFloatCount(snapshots.capacity));
+    expect(snapshots.copy(buf)).toBe(true);
+    const poses = Array.from({ length: readSnapshotHeader(buf).actorCount }, (_, index) => readActorSlot(buf, index));
+    expect(poses.find((entry) => entry.slotId === slots.recordedSlot(leaf))?.position).toEqual({ x: 2, y: 2, z: 3 });
+    // The next publish cycle walks again.
+    root.transform.position.x = 5;
+    expect(children.mock.calls.length).toBeGreaterThan(firstWalk);
   });
 
   it("reports the mean publish time since it was last read, and the last publish's when none happened since", () => {
@@ -476,5 +524,90 @@ describe("snapshot removal pass", () => {
     expect(world.structuralRevision).toBe(structure);
     snapshots.publish();
     expect(despawns).toEqual(["queued"]);
+  });
+
+  it("propagates incremental transform, descendant, visibility, and floating-origin updates across both seq-lock buffers", () => {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+    let cam: Actor | null = null;
+    const slots = new RenderSlots({ releaseSlot: () => {} } as unknown as RuntimeSubsystems, {
+      ensureCapacity: (required) => snapshots.ensureCapacity(required),
+      findActor: (guid) => world.findActor(guid),
+    });
+    let frameCounter = 0;
+    const snapshots: SnapshotPublisher = new SnapshotPublisher(8, world, slots, {
+      stopped: () => false,
+      frameId: () => ++frameCounter,
+      lastScriptMs: () => 0,
+      lastPhysicsMs: () => 0,
+      canPublish: () => true,
+      cameraActor: () => cam,
+      layerCameraCentre: () => null,
+      applyOverlayLayouts: () => {},
+      retireDetachedStreams: () => {},
+      removedActors: () => {},
+      recorder: () => null,
+      profilePublish: () => {},
+      reportLog: () => {},
+      reportError: (error) => { throw error; },
+      emit: () => {},
+    }, () => 0);
+
+    const spawn = (guid: string, x: number, parentId?: string) => {
+      const a = world.createActor({
+        classId: "Actor",
+        guid,
+        variables: parentId ? { parentId } : {},
+        transform: { position: { x, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } },
+      });
+      const slotId = slots.allocate(a);
+      world.spawnActorNow(a);
+      return { actor: a, slotId };
+    };
+
+    const readAll = () => {
+      const buf = new Float32Array(snapshotFloatCount(snapshots.capacity));
+      expect(snapshots.copy(buf)).toBe(true);
+      const header = readSnapshotHeader(buf);
+      const poses = Array.from({ length: header.actorCount }, (_, i) => readActorSlot(buf, i));
+      return { header, poses };
+    };
+
+    const s1 = spawn("static", 5);
+    const parent = spawn("parent", 1);
+    const child = spawn("child", 2, "parent");
+    cam = s1.actor;
+
+    // Seed both double buffers.
+    snapshots.publish();
+    snapshots.publish();
+
+    // Steady frame: untouched static actor transform is never read again.
+    const staticReads = countWholeWorldReads(s1.actor);
+    parent.actor.transform.position.x = 10;
+    child.actor.setVariable("visible", false);
+
+    // Frame A updates buffer 0; Frame B updates buffer 1 with the same pose and visibility.
+    for (let frame = 0; frame < 3; frame++) {
+      snapshots.publish();
+      const snap = readAll();
+      expect(slotPose(snap, s1.slotId)?.position.x).toBe(5);
+      expect(slotPose(snap, parent.slotId)?.position.x).toBe(10);
+      expect(slotPose(snap, child.slotId)?.position.x).toBe(12);
+      expect(slotPose(snap, child.slotId)?.flags).toBe(0);
+    }
+    expect(staticReads()).toBe(0);
+
+    // Floating-origin shift rewrites all rows relative to the new origin across both buffers
+    // so readActorSlot reconstructs exact world coordinates (not offset by +2048).
+    s1.actor.transform.position.x = 2050;
+    for (let frame = 0; frame < 2; frame++) {
+      snapshots.publish();
+      const snap = readAll();
+      expect(snap.header.origin?.x).toBe(2048);
+      expect(slotPose(snap, s1.slotId)?.position.x).toBeCloseTo(2050, 4);
+      expect(slotPose(snap, parent.slotId)?.position.x).toBeCloseTo(10, 4);
+      expect(slotPose(snap, child.slotId)?.position.x).toBeCloseTo(12, 4);
+    }
+    snapshots.dispose();
   });
 });

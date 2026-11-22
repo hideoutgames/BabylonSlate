@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { HavokPhysicsWithBindings } from "@babylonjs/havok";
 import { createPhysicsBackend } from "./create-backend";
 import { HavokPhysicsBackend } from "./havok-backend";
 import type { ColliderDesc, LineTraceOptions } from "./types";
@@ -86,7 +85,7 @@ describe("Line Trace actor exclusions", () => {
       ignored.forEach((id, index) => staticBox(id, 10 + index * 2, 4));
       staticBox("target", 0, 4);
       backend.step(1 / 60);
-      const havok = (backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings })._hknp;
+      const havok = backend.havok;
       const setFilterInfo = vi.spyOn(havok, "HP_Shape_SetFilterInfo");
       expect(backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: 0, z: 0 }, { ignoreActorIds: ignored }).actorId)
         .toBe("target");
@@ -120,8 +119,8 @@ describe("Havok ignored-actor query cost", () => {
           friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
       }
       backend.step(1 / 60);
-      const proximity = vi.spyOn(backend.plugin, "shapeProximity");
-      const cast = vi.spyOn(backend.plugin, "shapeCast");
+      const proximity = vi.spyOn(backend.havok, "HP_World_ShapeProximityWithCollector");
+      const cast = vi.spyOn(backend.havok, "HP_World_ShapeCastWithCollector");
       const pose = (y: number) => ({ position: { x: 0, y, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } });
       const hit = backend.shapeSweep({ kind: "box", halfExtents: { x: 0.25, y: 0.25, z: 0.25 } }, pose(0), pose(-5), { ignoreActorIds: ["self"] });
       expect(hit.actorId).toBe("floor");

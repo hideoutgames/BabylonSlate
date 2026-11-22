@@ -3808,7 +3808,7 @@ describe("validateSerializedGraph material domains", () => {
         materialDomains: { bloom: "surface" },
       },
     );
-    expect(diags.some((d) => d.code === "scene-layer.postProcessDomain")).toBe(
+    expect(diags.some((d) => d.code === "material.pinDomain")).toBe(
       true,
     );
   });
@@ -3846,7 +3846,7 @@ describe("validateSerializedGraph material domains", () => {
       },
     );
     expect(
-      diags.filter((d) => d.code === "scene-layer.postProcessDomain"),
+      diags.filter((d) => d.code === "material.pinDomain"),
     ).toEqual([]);
   });
 });

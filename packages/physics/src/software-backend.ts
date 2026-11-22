@@ -4,6 +4,7 @@ import { colliderWorldPosition, listDebugCollidersFromRecords } from "./debug-co
 import { ownIgnoredActors, queryAdmitsShape, queryIgnoresActor } from "./query-filter";
 import { colliderPairResponse } from "./collision-response";
 import { isIdentityQuat, rotateQuatVec, multiplyQuat } from "./collider-bake";
+import { inverseTransformPoint } from "./contact-shape";
 import type {
   CharacterControllerDesc,
   CharacterMovementResult,
@@ -12,6 +13,7 @@ import type {
   ColliderDesc,
   ColliderChanges,
   ColliderShape,
+  HeightFieldColliderShape,
   HitResult,
   LineTraceOptions,
   OverlapResult,
@@ -154,6 +156,38 @@ function aabbForShape(
         pts,
       );
     }
+    case "heightfield": {
+      let minY = Infinity;
+      let maxY = -Infinity;
+      const heights = shape.heights;
+      for (let i = 0; i < heights.length; i++) {
+        const y = heights[i]!;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      if (!Number.isFinite(minY)) {
+        return { min: { ...position }, max: { ...position } };
+      }
+      const hx = shape.width * 0.5;
+      const hz = shape.depth * 0.5;
+      if (!oriented) {
+        return {
+          min: vec(position.x - hx, position.y + minY, position.z - hz),
+          max: vec(position.x + hx, position.y + maxY, position.z + hz),
+        };
+      }
+      const corners: Vec3[] = [
+        { x: -hx, y: minY, z: -hz },
+        { x: -hx, y: minY, z: hz },
+        { x: -hx, y: maxY, z: -hz },
+        { x: -hx, y: maxY, z: hz },
+        { x: hx, y: minY, z: -hz },
+        { x: hx, y: minY, z: hz },
+        { x: hx, y: maxY, z: -hz },
+        { x: hx, y: maxY, z: hz },
+      ];
+      return aabbFromLocalPoints(position, rotation, corners);
+    }
     case "polygon":
     case "chain": {
       const pts = shape.points.map((p) => ({ x: p.x, y: p.y, z: 0 }));
@@ -247,6 +281,163 @@ function rayAabb(start: Vec3, dir: Vec3, min: Vec3, max: Vec3): { time: number; 
     if (tMin > tMax) return null;
   }
   return { time: tMin, normal };
+}
+
+function rayTriangle(
+  ox: number, oy: number, oz: number,
+  dx: number, dy: number, dz: number,
+  ax: number, ay: number, az: number,
+  bx: number, by: number, bz: number,
+  cx: number, cy: number, cz: number,
+  maxT: number,
+): { time: number; normal: Vec3 } | null {
+  const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+  const e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+  const px = dy * e2z - dz * e2y;
+  const py = dz * e2x - dx * e2z;
+  const pz = dx * e2y - dy * e2x;
+  const det = e1x * px + e1y * py + e1z * pz;
+  if (Math.abs(det) < 1e-12) return null;
+  const invDet = 1 / det;
+  const tx = ox - ax, ty = oy - ay, tz = oz - az;
+  const u = (tx * px + ty * py + tz * pz) * invDet;
+  if (u < -1e-6 || u > 1 + 1e-6) return null;
+  const qx = ty * e1z - tz * e1y;
+  const qy = tz * e1x - tx * e1z;
+  const qz = tx * e1y - ty * e1x;
+  const v = (dx * qx + dy * qy + dz * qz) * invDet;
+  if (v < -1e-6 || u + v > 1 + 1e-6) return null;
+  const t = (e2x * qx + e2y * qy + e2z * qz) * invDet;
+  if (t < 0 || t > maxT) return null;
+  let nx = e1y * e2z - e1z * e2y;
+  let ny = e1z * e2x - e1x * e2z;
+  let nz = e1x * e2y - e1y * e2x;
+  const len = Math.hypot(nx, ny, nz);
+  if (len < 1e-12) return null;
+  nx /= len; ny /= len; nz /= len;
+  // Ensure the normal faces toward the incoming ray.
+  if (nx * dx + ny * dy + nz * dz > 0) {
+    nx = -nx; ny = -ny; nz = -nz;
+  }
+  return { time: t, normal: { x: nx, y: ny, z: nz } };
+}
+
+function rayHeightField(
+  shape: HeightFieldColliderShape,
+  start: Vec3,
+  end: Vec3,
+  position: Vec3,
+  rotation?: { x: number; y: number; z: number; w: number },
+): { time: number; normal: Vec3 } | null {
+  const localStart = inverseTransformPoint({ x: 0, y: 0, z: 0 }, start.x, start.y, start.z, position, rotation);
+  const localEnd = inverseTransformPoint({ x: 0, y: 0, z: 0 }, end.x, end.y, end.z, position, rotation);
+  const rdx = localEnd.x - localStart.x;
+  const rdy = localEnd.y - localStart.y;
+  const rdz = localEnd.z - localStart.z;
+
+  const { numXSamples, numZSamples, width, depth, heights } = shape;
+  const cellsX = numXSamples - 1;
+  const cellsZ = numZSamples - 1;
+  const hx = width * 0.5;
+  const hz = depth * 0.5;
+  const stepX = width / cellsX;
+  const stepZ = depth / cellsZ;
+
+  // Clip ray segment [0, 1] against X/Z footprint [-hx, hx] x [-hz, hz].
+  let tMin = 0;
+  let tMax = 1;
+  if (Math.abs(rdx) < 1e-12) {
+    if (localStart.x < -hx || localStart.x > hx) return null;
+  } else {
+    let t1 = (-hx - localStart.x) / rdx;
+    let t2 = (hx - localStart.x) / rdx;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return null;
+  }
+  if (Math.abs(rdz) < 1e-12) {
+    if (localStart.z < -hz || localStart.z > hz) return null;
+  } else {
+    let t1 = (-hz - localStart.z) / rdz;
+    let t2 = (hz - localStart.z) / rdz;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return null;
+  }
+
+  // 2D Amanatides-Woo DDA across grid cells along the clipped X/Z segment.
+  const entryX = localStart.x + rdx * tMin;
+  const entryZ = localStart.z + rdz * tMin;
+  let ix = Math.min(cellsX - 1, Math.max(0, Math.floor((entryX + hx) / stepX)));
+  let iz = Math.min(cellsZ - 1, Math.max(0, Math.floor((entryZ + hz) / stepZ)));
+
+  const exitX = localStart.x + rdx * tMax;
+  const exitZ = localStart.z + rdz * tMax;
+  const endIx = Math.min(cellsX - 1, Math.max(0, Math.floor((exitX + hx) / stepX)));
+  const endIz = Math.min(cellsZ - 1, Math.max(0, Math.floor((exitZ + hz) / stepZ)));
+
+  const dirIx = rdx > 0 ? 1 : rdx < 0 ? -1 : 0;
+  const dirIz = rdz > 0 ? 1 : rdz < 0 ? -1 : 0;
+  const tDeltaX = dirIx !== 0 ? Math.abs(stepX / rdx) : Infinity;
+  const tDeltaZ = dirIz !== 0 ? Math.abs(stepZ / rdz) : Infinity;
+  let tNextX = dirIx > 0
+    ? (-hx + (ix + 1) * stepX - localStart.x) / rdx
+    : dirIx < 0
+      ? (-hx + ix * stepX - localStart.x) / rdx
+      : Infinity;
+  let tNextZ = dirIz > 0
+    ? (-hz + (iz + 1) * stepZ - localStart.z) / rdz
+    : dirIz < 0
+      ? (-hz + iz * stepZ - localStart.z) / rdz
+      : Infinity;
+
+  let best: { time: number; normal: Vec3 } | null = null;
+  const maxSteps = cellsX + cellsZ + 4;
+  for (let step = 0; step < maxSteps; step++) {
+    const x0 = -hx + ix * stepX;
+    const x1 = x0 + stepX;
+    const z0 = -hz + iz * stepZ;
+    const z1 = z0 + stepZ;
+    const a = iz * numXSamples + ix;
+    const b = a + numXSamples;
+    const h00 = heights[a]!;
+    const h10 = heights[a + 1]!;
+    const h01 = heights[b]!;
+    const h11 = heights[b + 1]!;
+    const limitT = best ? best.time : 1;
+
+    // Matches landscape-mesh.ts & Havok (1,0)-(0,1) diagonal split: (a, a+1, b) & (a+1, b+1, b).
+    const hit1 = rayTriangle(
+      localStart.x, localStart.y, localStart.z, rdx, rdy, rdz,
+      x0, h00, z0, x1, h10, z0, x0, h01, z1, limitT,
+    );
+    if (hit1) best = hit1;
+    const hit2 = rayTriangle(
+      localStart.x, localStart.y, localStart.z, rdx, rdy, rdz,
+      x1, h10, z0, x1, h11, z1, x0, h01, z1, best ? best.time : 1,
+    );
+    if (hit2) best = hit2;
+
+    if (ix === endIx && iz === endIz) break;
+    const nextT = Math.min(tNextX, tNextZ);
+    if (best && best.time <= nextT + 1e-9) break;
+    if (tNextX < tNextZ) {
+      ix += dirIx;
+      tNextX += tDeltaX;
+    } else {
+      iz += dirIz;
+      tNextZ += tDeltaZ;
+    }
+    if (ix < 0 || ix >= cellsX || iz < 0 || iz >= cellsZ) break;
+  }
+
+  if (!best) return null;
+  const worldNormal = rotation && !isIdentityQuat(rotation)
+    ? rotateQuatVec(rotation, best.normal)
+    : best.normal;
+  return { time: best.time, normal: worldNormal };
 }
 
 function miss(): HitResult {
@@ -693,8 +884,16 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       const actorId = collider.desc.actorId ?? body.desc.actorId;
       if (queryIgnoresActor(ignored, options, actorId) || !queryAdmitsShape(collider.desc.isTrigger, options)) continue;
       const box = aabbForCollider(collider.desc, body.transform);
-      const intersection = rayAabb(start, dir, box.min, box.max);
+      let intersection = rayAabb(start, dir, box.min, box.max);
       if (!intersection) continue;
+      if (collider.desc.shape.kind === "heightfield") {
+        const position = colliderWorldPosition(collider.desc, body.transform);
+        const rotation = collider.desc.rotation
+          ? multiplyQuat(body.transform.rotation, collider.desc.rotation)
+          : body.transform.rotation;
+        intersection = rayHeightField(collider.desc.shape, start, end, position, rotation);
+        if (!intersection) continue;
+      }
       const t = intersection.time;
       if (t < 0 || t > 1 || t >= bestT) continue;
       bestT = t;
@@ -956,7 +1155,8 @@ function isShape3D(shape: ColliderShape): boolean {
     shape.kind === "capsule" ||
     shape.kind === "cylinder" ||
     shape.kind === "convex" ||
-    shape.kind === "mesh"
+    shape.kind === "mesh" ||
+    shape.kind === "heightfield"
   );
 }
 

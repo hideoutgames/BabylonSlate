@@ -1,4 +1,6 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
+import { isBatchedSpriteRoot } from "./sprite-batch-handle";
+import { isSpriteQuad } from "./sprite-quad";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -103,6 +105,7 @@ import { sceneDrawBatcher } from "./draw-batching";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { emptyDrawPasses, withDrawPass } from "./draw-passes";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
@@ -3906,7 +3909,7 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     const draw = () => renderViews(engine);
     const values = (scene: Scene) => scene.materials.filter((material): material is NodeMaterial => material instanceof NodeMaterial && material.name === "material:gain")
-      .map((material) => (material.getBlockByName("gain") as InputBlock).value);
+      .map((material) => (material.getBlockByName(nodeBlockName(document, "gain")) as InputBlock).value);
     const worldOwner = { kind: "scene" as const, sceneAssetGuid: "world", sceneLoadId: 1 };
     const write = (owner: Extract<import("@haptic/bridge").CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"], entryId: string, value: number) =>
       handle.applyCommand({ type: "setPostProcessMaterialParameter", owner, entryId, materialAssetGuid: "gain", parameterName: "Gain", parameter: { kind: "float", value } });
@@ -4145,6 +4148,45 @@ describe("Play createEngine view", () => {
     expect(overlay?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
+  it("draws batched world sprites as quads of their own while Simulation Edit's tools or worlddebug spritebatching off want meshes", () => {
+    const engine = sharedEngine();
+    engine.getCaps().instancedArrays = true;
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const sprite = (slotId: number) => {
+      handle.applyCommand({ type: "spawn", slotId, actorGuid: `hero-${slotId}`, classId: "Actor" });
+      handle.applyCommand({ type: "assignMesh", slotId, meshAssetGuid: null, meshKind: "sprite", castShadows: false });
+      return handle.scene.getMeshByName(`actor-${slotId}`)!;
+    };
+    const first = sprite(1);
+    expect(isBatchedSpriteRoot(first)).toBe(true);
+    expect(first.isPickable).toBe(false);
+
+    handle.applyCommand({ type: "setWorldDebug", part: "spritebatching", enabled: false });
+    expect(isBatchedSpriteRoot(first)).toBe(false);
+    expect(isSpriteQuad(first)).toBe(true);
+    expect(first.isPickable).toBe(true);
+    expect(handle.renderDiagnostics().settings?.["world.debug"]).toBe("spritebatching");
+    expect(isBatchedSpriteRoot(sprite(2))).toBe(false);
+
+    handle.applyCommand({ type: "setWorldDebug", part: "spritebatching", enabled: true });
+    const third = sprite(3);
+    expect(isBatchedSpriteRoot(third)).toBe(true);
+    expect(handle.renderDiagnostics().worldSprites).not.toBeNull();
+
+    // The transform tools pick and outline meshes: in Simulation Edit every sprite draws as one.
+    const tools = handle.attachRuntimeTransformTools({ onPick: () => {}, onTransform: async () => {} });
+    tools.setEnabled(true);
+    expect(isBatchedSpriteRoot(third)).toBe(true);
+    handle.setSimulationEditMode(true);
+    expect(isBatchedSpriteRoot(third)).toBe(false);
+    expect(third.isPickable).toBe(true);
+    expect(isBatchedSpriteRoot(sprite(4))).toBe(false);
+    handle.setSimulationEditMode(false);
+    expect(isBatchedSpriteRoot(sprite(5))).toBe(true);
+    tools.dispose();
+  });
+
   it("plants sprite assignMesh on the world after a world spawn", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

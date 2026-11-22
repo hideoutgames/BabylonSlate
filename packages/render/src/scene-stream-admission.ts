@@ -5,6 +5,7 @@ import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
 import type { Scene } from "@babylonjs/core/scene";
 import { isInstancePoolSource } from "./instance-pool";
+import { batchedSpriteOf } from "./sprite-batch-handle";
 import type { CommandMessage } from "@haptic/bridge";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { particleDrawOrderRevision } from "./sorting";
@@ -53,11 +54,19 @@ export function admittedSceneMeshes(scene: Scene): AbstractMesh[] | undefined {
     return cached.meshes;
   for (const mesh of scope.baseline) if (mesh.isDisposed()) scope.baseline.delete(mesh);
   const meshes = new Set(scope.baseline);
+  const admitBatchedSprite = (mesh: AbstractMesh) => {
+    const batched = batchedSpriteOf(mesh);
+    if (!batched) return;
+    if (batched.primary.batch?.mesh && !batched.primary.batch.mesh.isDisposed()) meshes.add(batched.primary.batch.mesh);
+    if (batched.secondary.batch?.mesh && !batched.secondary.batch.mesh.isDisposed()) meshes.add(batched.secondary.batch.mesh);
+  };
   for (const [slot, root] of scope.binding.meshes) {
     if (scope.slots.has(slot) || root.isDisposed() || root.getScene() !== scene) continue;
     meshes.add(root);
+    admitBatchedSprite(root);
     for (const child of root.getChildMeshes()) {
       meshes.add(child);
+      admitBatchedSprite(child);
       // A pool member draws in its group source's batch, which stands outside every slot.
       if (child instanceof InstancedMesh && isInstancePoolSource(child.sourceMesh)) meshes.add(child.sourceMesh);
     }

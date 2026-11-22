@@ -23,7 +23,7 @@ description: "Babylon.js engine work in Haptic: packages/render and engine code 
 - **Create shadows only through `SceneShadowController`** (`shadow-controller.ts`). An unmanaged shadow generator makes graph preparation reject.
 - **Models are GLB.** `gltf-loader.ts` is the only place the glTF 2.0 loader and its extensions are registered, and model assets load through `loadModelContainer` in `model-container.ts`, without the file's materials (`skipMaterials`): every mesh draws a Material asset or the engine default. OBJ, FBX and STL convert to GLB at import.
 - **No Babylon GUI.** Editor chrome is React, in-game UI is SceneLayers, and the removed game HUD / UserInterface system stays removed.
-- **Babylon stays out of the game worker**, except physics on its private NullEngine ([architecture.md](../../reference/architecture.md#threading-and-data-flow)). Graph execution emits commands and never touches Babylon.
+- **Babylon stays out of the game worker** ([architecture.md](../../reference/architecture.md#threading-and-data-flow)). Physics talks directly to `@babylonjs/havok` WASM, and graph execution emits commands without touching `@babylonjs/core`.
 - **Coordinates**: Babylon is left-handed and Y-up, and its APIs take radians; `scene.useRightHandedSystem` stays false (`editor-camera.ts`). Scene documents store rotation as a quaternion `[x, y, z, w]`, and the UI shows Euler degrees ([scene-editing.md](../../reference/architecture/scene-editing.md)).
 - **No generated artwork.** Runtime primitives and debug geometry are product features, but textures, models and icons are never generated ([no-ai-artwork.md](../../rules/no-ai-artwork.md)).
 
