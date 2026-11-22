@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import v8 from "node:v8";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
@@ -11,14 +12,19 @@ import {
   buildBoxGlbFixture,
   createDefaultMigrationRegistry,
   createRegistryAssetLoadingService,
+  extractAnimationRootMotion,
   FONT_FACETYPE_CHUNK_ID,
   MATERIAL_PAYLOAD_VERSION,
+  normalizeAnimationPayload,
   projectContentRoot,
+  readAssetCatalog,
+  type AnimationRootMotion,
   type ChunkInput,
 } from "@haptic/assets";
 import { encodeHasset } from "@haptic/assets/hasset";
 import { meshoptBoxGlb } from "@haptic/assets/test-support/meshopt-gltf";
-import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
+import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, playRootMotionTracks, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
+import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import type { OpenDocument } from "./document-service";
 import { PlayRequiredAssetError } from "./play-asset-problems";
 
@@ -785,6 +791,73 @@ describe("Play source ownership", () => {
     expect(second.content.audioReverbByScene.size).toBe(0);
     expect(loading.snapshot()).toMatchObject({ sourceBytes: 0, decodedBytes: 0, temporaryBytes: 0, entries: [] });
     expect(emptyPlaySourceControls()).toContainEqual({ type: "loadModels", models: [], complexMeshes: [] });
+    loading.dispose();
+  });
+
+  it("reads each root motion Animation's document once, in the closure or not, and gives Play its track scaled by its Model's import scale", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    await storage.writeBinary("assets/model.hasset", await encodeHasset({
+      header: {
+        guid: "model", name: "model", type: "Model", version: currentFormat("Model"), engineVersion: "0.0.0", mode: "thin",
+        payload: { importScale: 2 }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [],
+      },
+      chunks: [{ id: "source", kind: "model", mime: "model/gltf-binary", data: buildBoxGlbFixture() }],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    // Death_A's hips as the editor samples them, and hand-made tracks. `slide` and `wave` are outside the Play closure,
+    // as an Animation only a slot plays is; `wave` has no root motion.
+    const fall = extractAnimationRootMotion(new Uint8Array(readFileSync(new URL(
+      "../../../../engine-content/kaykit-assets/Adventurers/Rig_Medium_General.glb", import.meta.url))), "Death_A", "hips")!;
+    const motions = new Map<string, AnimationRootMotion | undefined>([
+      ["fall", fall],
+      ["dodge", { bone: "pelvis", track: { durationMs: 100, stepMs: 50, x: [0, 0.5, 1], z: [0, 0.25, 0.5], yaw: [0, 10, 20] } }],
+      ["turn", { bone: "root", track: { durationMs: 50, stepMs: 50, x: [0, -1], z: [0, 3], yaw: [0, 90] } }],
+      ["slide", { bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 0.5], z: [0, -1], yaw: [0, 0] } }],
+      ["wave", undefined],
+    ]);
+    for (const [guid, rootMotion] of motions) {
+      await registry.createAsset("project", `${guid}.hasset`, {
+        type: "Animation", name: guid, guid, version: currentFormat("Animation"), dependencies: ["model"], chunks: [],
+        payload: { ...normalizeAnimationPayload({ clipName: guid, modelGuid: "model", durationMs: 100, ...(rootMotion ? { rootMotion } : {}) }) },
+      });
+    }
+    // Each Animation's document chunk read, by its position in the file.
+    const documentReads = new Map<string, number>();
+    const documentAt = new Map(await Promise.all([...motions.keys()].map(async (guid) => {
+      const { header, locator } = await readAssetCatalog(storage, `assets/${guid}.hasset`);
+      const entry = header.chunks.find((chunk) => chunk.id === "document")!;
+      return [`${locator.path}@${locator.payloadOffset + (entry.locator as { inline: { offset: number } }).inline.offset}`, guid] as const;
+    })));
+    const read = storage.readBinaryRange.bind(storage);
+    vi.spyOn(storage, "readBinaryRange").mockImplementation((path, offset, ...rest) => {
+      const guid = documentAt.get(`${path}@${offset}`);
+      if (guid) documentReads.set(guid, (documentReads.get(guid) ?? 0) + 1);
+      return read(path, offset, ...rest);
+    });
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "root-motion" });
+    const host = {
+      registry, project: createEmptyProject("Root Motion"), createScope: (owner: string) => loading.createScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }),
+    };
+    const signal = new AbortController().signal;
+    const prepared = await acquirePlayAssetSources(host, ["model", "fall", "dodge", "turn"], { consumer: "Play", signal });
+    const catalog = new Map(playAnimClipCatalog(registry.list(), await playRootMotionTracks(host, prepared.content.animClipCatalog, signal))
+      .map((entry) => [entry.guid, entry.rootMotion]));
+
+    expect(Object.fromEntries(documentReads)).toEqual({ fall: 1, dodge: 1, turn: 1, slide: 1 });
+    const doubled = ({ bone, track }: AnimationRootMotion) => ({
+      bone, track: { ...track, x: track.x.map((value) => value * 2), z: track.z.map((value) => value * 2) },
+    });
+    expect(catalog.get("dodge")).toEqual({ bone: "pelvis", track: { durationMs: 100, stepMs: 50, x: [0, 1, 2], z: [0, 0.5, 1], yaw: [0, 10, 20] } });
+    expect(catalog.get("turn")).toEqual({ bone: "root", track: { durationMs: 50, stepMs: 50, x: [0, -2], z: [0, 6], yaw: [0, 90] } });
+    expect(catalog.get("fall")).toEqual(doubled(fall));
+    expect(catalog.get("slide")).toEqual({ bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 1], z: [0, -2], yaw: [0, 0] } });
+    expect(catalog.has("wave")).toBe(true);
+    expect(catalog.get("wave")).toBeUndefined();
+    prepared.release();
     loading.dispose();
   });
 

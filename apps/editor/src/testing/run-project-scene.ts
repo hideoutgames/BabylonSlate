@@ -2,10 +2,11 @@ import { buildParticleParameterCatalog } from "@haptic/assets";
 import type { CommandMessage } from "@haptic/bridge";
 import { createSessionSaveStorage, type ProjectDocument, type SaveGameStorage } from "@haptic/core";
 import { applyRuntimeSourceControl, createPlayBootCoordinator, createRuntimeFromLoad, type RuntimeDriver } from "@haptic/runtime";
+import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import { playRegistryViews } from "../lib/play-registry-views";
 import { playAssetCatalog } from "../services/asset-catalog";
 import { DocumentService } from "../services/document-service";
-import { acquirePlayAssetSources, mergePreparedPlaySources, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
+import { acquirePlayAssetSources, mergePreparedPlaySources, playRootMotionTracks, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import { createPlayContentService } from "../services/play-content-service";
 import { playLoadControl, playPhysicsFromSceneSettings } from "../services/play-physics";
 import type { ProjectService } from "../services/project-service";
@@ -105,7 +106,7 @@ export async function runProjectScene(options: {
       texturePixelSizes: Object.fromEntries(content.texturePixelSizes ?? []),
       audioAssetGuids: views.audioAssetGuids,
       particleParameterCatalog: buildParticleParameterCatalog(content.particleLibrary),
-      animClipCatalog: views.animClipCatalog,
+      animClipCatalog: playAnimClipCatalog(registry.list(), await playRootMotionTracks(host, content.animClipCatalog, lifetime.signal)),
     });
     load.havokWasmUrl = undefined;
     load.sceneCatalog = views.sceneCatalog;
