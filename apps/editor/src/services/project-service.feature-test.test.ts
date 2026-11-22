@@ -237,6 +237,48 @@ describe("FeatureTest starter", () => {
     expect(overridden.map((scene) => scene.name)).toContain("FT_Lights");
   });
 
+  it("shows Multiply on a direct Scene Layer over an earlier visual of it, as Text, and on a post-processed layer", async () => {
+    const assets = reopened.registry!.list();
+    const multiply = new Map<string, MaterialDocument["domain"]>();
+    for (const asset of assets.filter((entry) => entry.header.type === "Material")) {
+      const material = normalizeMaterialDocument(await reopened.loadDocument("material", asset.path));
+      if (material.blendMode === "multiply") multiply.set(asset.header.guid, material.domain);
+    }
+    const documents = await sceneDocuments();
+    // A layer is post-processed where its Scene's script registers Scene Layer post-processing (the Project Setting's
+    // pass is authored off); every other spawned layer draws straight over the world.
+    const postProcessed = new Map<string, boolean>();
+    for (const scene of documents) {
+      if (!("viewportMode" in scene)) continue;
+      const registers = (scene.script?.nodes ?? []).some((node) => node.type === "scene-layer.registerPostProcess" &&
+        typeof node.data?.["default:material"] === "string");
+      for (const entry of scene.settings.sceneLayers) postProcessed.set(entry.assetGuid, registers);
+    }
+    const layerGuids = new Map(assets.filter((entry) => entry.header.type === "SceneLayer").map((entry) => [entry.header.name, entry.header.guid]));
+    const shown = { direct: new Set<string>(), targeted: new Set<string>(), overEarlier: false };
+    for (const layer of documents) {
+      const targeted = postProcessed.get(layerGuids.get(layer.name) ?? "");
+      if ("viewportMode" in layer || targeted === undefined) continue;
+      // Root actors' rectangles (position and XY scale) and depth: a larger z draws first.
+      const visuals = layer.actors.filter((actor) => !actor.parentId).flatMap((actor) => actor.components
+        .filter((component) => component.classId === "2DMaterialComponent" || component.classId === "2DTextComponent")
+        .map((component) => ({
+          domain: multiply.get(String(component.properties.materialGuid)) ?? null,
+          x: actor.transform.position[0], y: actor.transform.position[1], z: actor.transform.position[2],
+          w: actor.transform.scale[0], h: actor.transform.scale[1],
+        })));
+      for (const visual of visuals) {
+        if (!visual.domain) continue;
+        (targeted ? shown.targeted : shown.direct).add(visual.domain);
+        const overlaps = visuals.some((other) => !other.domain && other.z > visual.z &&
+          Math.abs(other.x - visual.x) * 2 < other.w + visual.w && Math.abs(other.y - visual.y) * 2 < other.h + visual.h);
+        if (!targeted && visual.domain === "ui" && overlaps) shown.overEarlier = true;
+      }
+    }
+    expect({ direct: [...shown.direct].sort(), targeted: [...shown.targeted].sort(), overEarlier: shown.overEarlier })
+      .toEqual({ direct: ["text", "ui"], targeted: ["text", "ui"], overEarlier: true });
+  });
+
   it("opens every scene without rewriting its Class and Prefab instances", async () => {
     const documents = new DocumentService();
     const editing = new DocumentEditingService({

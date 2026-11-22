@@ -55,7 +55,7 @@ With no node selected, the **Inspector** shows these settings. Some apply to onl
 | --- | --- |
 | Domain | **Surface** (meshes and models), **Landscape**, **Post Process** (full-screen passes), **Particle**, **Text** (2D text in Scene Layers), **Decal** (projected by a [Decal](../components/decal.md) or [Spawn Decal](../scripting/class/spawn-decal.md)) or **User Interface** (2D Materials, 2D Panels, 2D Joysticks and 2D controls in Scene Layers). Changing it removes nodes the new domain does not support; between Surface and Decal the output node keeps the wires both outputs have. |
 | Shading Model | **PBR** (lit) or **Unlit**. Surface, Landscape and Decal. |
-| Blend Mode | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (Surface, Landscape and Decal): Multiply darkens what is behind by the colour, scaled by Opacity. A Multiply Material on a Scene Layer draws as Translucent. User Interface offers only **Translucent** and **Additive**. Not shown for Particle, Post Process or Text: particle emitters set their own blending, and a post-process pass replaces the picture. |
+| Blend Mode | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (Surface, Landscape and Decal); User Interface and Text offer **Translucent**, **Additive** and **Multiply**. Multiply darkens what is behind by the colour, scaled by Opacity; on Scene Layers see [Multiply on Scene Layers](#multiply-on-scene-layers). Not shown for Particle or Post Process: particle emitters set their own blending, and a post-process pass replaces the picture. |
 | Alpha Cutoff | Masked only. Pixels with lower opacity are cut out. Under [MSAA](../graphics/post-processing.md#anti-aliasing) the cut-out edges are smoothed (not on decals). |
 | Two Sided | Draws back faces too. Surface and Landscape. |
 | Default Normals | **Model Normals** or **Flat Normals**, used when the Normal input is unconnected. Surface and Landscape. |
@@ -66,6 +66,15 @@ Each domain has its own output node: [Material Output](../scripting/material/mat
 Text and User Interface Materials are always unlit and two-sided, so a User Interface Material shows only **Domain** and **Blend Mode**.
 
 A Decal Material previews projected onto a floor and a ball. In its graph, [UV](../scripting/material/uv.md) gives the decal's projected coordinates and World Position and World Normal the surface under it. A Per Instance parameter is an ordinary parameter in a Decal Material: each decal's own Tint and Opacity are its per-decal values.
+
+## Multiply on Scene Layers
+
+A User Interface Material (on a **2D Material**, a material **2D Panel** and the other 2D components that take one), a Text Material, or a Surface Material on a mesh in a layer, set to **Multiply**, works on a [Scene Layer](../scenes/scene-layers.md) too.
+
+- **Without Scene Layer post-processing**: everything already drawn beneath the visual, the world, lower layers and the layer's own earlier visuals, is multiplied by its colour times the component's **Tint**, scaled by Opacity and the Tint's alpha. White, or Opacity 0, leaves it unchanged. For text the colour is the Text Output's colour where the glyphs are.
+- **With [Scene Layer post-processing](../scenes/scene-layers.md#scene-layer-post-processing) on**: Multiply only darkens. The colour is replaced by its brightness, a grey, and everything drawn beneath it, the layers below and what shows through them, is darkened by that grey before the passes run. A grey Material looks the same either way; a coloured one loses its hue here.
+
+The editor's Scene Layer view draws the layer over a neutral mid grey, so a Multiply visual shows what it does there; in the game the world is beneath it.
 
 ## Where each domain goes
 

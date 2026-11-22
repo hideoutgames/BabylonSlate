@@ -286,6 +286,30 @@ describe("DocumentProvider actions and route", () => {
     expect(documents().assetRegistry?.getByGuid(asset.header.guid)?.path).toBe("assets/Champion.class.hasset");
   });
 
+  it("offers no recovery after renaming a Class a saved, open Scene uses, and keeps it for one with unsaved edits", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry!;
+    const asset = await act(() => createProjectAsset({ registry, rootId: "project", folderRelative: "", type: "Class", name: "Hero" }));
+    act(() => actions.noteAssetsCreated());
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    const original = openScene(MAIN_SCENE_ID);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, { ...original, actors: [...original.actors, createActor("hero", "Hero", { classId: "Hero" })] }));
+    expect(await act(() => actions.saveAll())).toBe("saved");
+    await act(() => actions.renameAsset(asset.header.guid, "Champion"));
+    // The rename rewrote the saved Scene on disk, so nothing is unsaved and nothing is left to recover.
+    expect(documents().dirtyDocuments).toEqual([]);
+    const guid = documents().projectGuid!;
+    const derived = await createDerivedStorage();
+    // Read at once, before the journal's batch timer: a reload right after the rename finds the same.
+    expect(resolveJournalLines(await readJournalLines(derived, guid))).toEqual([]);
+
+    // With an edit made before the rename, the Scene stays recoverable.
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    await act(() => actions.renameAsset(asset.header.guid, "Hero"));
+    await act(() => new Promise((resolve) => setTimeout(resolve, JOURNAL_FLUSH_DELAY_MS * 2)));
+    expect(resolveJournalLines(await readJournalLines(derived, guid)).map((line) => line.docId)).toContain(MAIN_SCENE_ID);
+  });
+
   it("queues thumbnails for a saved Tileset and the Tilemaps that draw it, keyed by their saved revisions", async () => {
     const actions = await openProject();
     const registry = documents().assetRegistry!;
