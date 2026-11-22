@@ -1,4 +1,4 @@
-import { EXECUTE_JAVASCRIPT_NODE_TYPE, executeJavaScriptBodyText } from "@haptic/core";
+import { EXECUTE_JAVASCRIPT_NODE_TYPE, executeJavaScriptBodyText, hasExecuteJavaScriptBody } from "@haptic/core";
 import {
   pin,
   type NodeDefinition,
@@ -227,6 +227,9 @@ export const debugNodes: NodeDefinition[] = [
     title: "Execute JavaScript",
     category: "debug",
     latent: false,
+    // Only a body ships code: an empty node compiles to nothing that needs trust.
+    trustGate: "executeJavaScript",
+    trustGateWhen: (properties) => hasExecuteJavaScriptBody(properties.body),
     pins: (properties) => {
       const inputs = readPinRows(properties, "inputs");
       const outputs = readPinRows(properties, "outputs");

@@ -60,7 +60,7 @@ import {
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 import { embeddedScriptHost } from "../lib/embedded-script";
-import { executeJavaScriptAssetNames, untrustedExecuteJavaScriptMessage } from "./execute-javascript-trust";
+import { trustGateFindings, untrustedNodesMessage, type TrustGateFinding } from "./trust-gate";
 
 /** The pack entry type the player loads as compiled script code (`packages/exporter` `export-game.ts`, `apps/player` `artifact.ts`). */
 const COMPILED_SCRIPT_EXPORT_TYPE = "CompiledScript";
@@ -172,11 +172,11 @@ export type CollectExportGameParams = {
   previewBuild?: boolean;
   onPhase?: (phase: "Compiling" | "Writing Pack") => void;
   /**
-   * Workspace Trust for Execute JavaScript (`EditorExtensionService.assertExecuteJavaScriptAllowed`):
-   * called with the assets whose compiled scripts carry an Execute JavaScript body, before anything is
-   * packed; it throws to refuse. Omitted, the export refuses every such script.
+   * Workspace Trust for trust-gated nodes (`EditorExtensionService.assertTrustGatedNodesAllowed`):
+   * called with what the compiled scripts carry (Execute JavaScript, Open URL, Extension nodes) before
+   * anything is packed; it throws to refuse. Omitted, the export refuses every such script.
    */
-  assertExecuteJavaScriptAllowed?: (assetNames: readonly string[]) => void;
+  assertTrustGatedNodesAllowed?: (findings: readonly TrustGateFinding[]) => void;
   /** Project Settings App Icon, rendered at every package size. */
   appIcon?: import("@haptic/exporter").AppIconImages;
 };
@@ -641,19 +641,19 @@ export async function collectAndExportGame(
     }
   }
   // A package (and Preview Build) carries what this check allows; the exported player has no gate of its own.
-  const executeJavaScriptAssets = executeJavaScriptAssetNames(scripts, (guid) => params.assets.find((asset) => asset.guid === guid)?.name);
-  if (executeJavaScriptAssets.length > 0) {
+  const trustGated = trustGateFindings(scripts, (guid) => params.assets.find((asset) => asset.guid === guid)?.name);
+  if (trustGated.length > 0) {
     try {
-      if (!params.assertExecuteJavaScriptAllowed) throw new Error(untrustedExecuteJavaScriptMessage(executeJavaScriptAssets));
-      params.assertExecuteJavaScriptAllowed(executeJavaScriptAssets);
+      if (!params.assertTrustGatedNodesAllowed) throw new Error(untrustedNodesMessage(trustGated));
+      params.assertTrustGatedNodesAllowed(trustGated);
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
   // The editor's gate metadata stays in the editor: nothing in a game reads it. Copies, so a cached compile keeps it.
   const packedScripts = scripts.map((script) => {
-    const { executeJavaScriptNodes, ...packed } = script;
-    void executeJavaScriptNodes;
+    const { trustGatedNodes, ...packed } = script;
+    void trustGatedNodes;
     return packed;
   });
 

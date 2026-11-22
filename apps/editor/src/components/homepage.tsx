@@ -93,6 +93,7 @@ import { HomepageDiscordBadge } from "./homepage-discord-badge";
 import { HomepageUpdateBadge } from "./homepage-update-badge";
 import { ReleaseNews } from "./release-news";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
+import { ExecuteJavaScriptImportDialog, useExecuteJavaScriptReview } from "./execute-javascript-import-dialog";
 import { HomepageDeleteProjectsDialog } from "./homepage-delete-projects-dialog";
 import { HomepageGallery } from "./homepage-gallery";
 import { HomepageProjectCard } from "./homepage-project-card";
@@ -205,6 +206,10 @@ export function Homepage({
       cancelled = true;
     };
   }, [dataReady, projects.length, transition.ready]);
+  // A New Project's Engine Plugins with Execute JavaScript: asked while the launcher card shows, so above it.
+  const executeJavaScript = useExecuteJavaScriptReview();
+  // A built-in starter is created from scratch and starts trusted; a template project does not.
+  const [newProjectTrusted, setNewProjectTrusted] = useState(false);
   const launch = async (
     action: () => Promise<void>,
     label = "Haptic",
@@ -908,6 +913,11 @@ export function Homepage({
                     blackBars,
                     pixelArt,
                     onPhase: transition.setPhase,
+                    reviewExecuteJavaScript: (plugins) => {
+                      setNewProjectTrusted(isBuiltInStarterKind(templateId));
+                      return executeJavaScript.review(plugins.flatMap((plugin) =>
+                        plugin.assets.map((asset) => ({ ...asset, plugin: plugin.displayName }))));
+                    },
                     ...(newRepository ? { repository: newRepository } : {}),
                     ...(hostPlatform === "web"
                       ? {}
@@ -934,6 +944,14 @@ export function Homepage({
             editTarget ? "Updating Project" : "Creating Project",
           );
         }}
+      />
+      <ExecuteJavaScriptImportDialog
+        purpose="newProject"
+        newProjectTrusted={newProjectTrusted}
+        className="homepage-theme z-[1001]"
+        assets={executeJavaScript.assets}
+        onConfirm={() => executeJavaScript.answer(true)}
+        onCancel={() => executeJavaScript.answer(false)}
       />
       <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
         <AlertDialogContent

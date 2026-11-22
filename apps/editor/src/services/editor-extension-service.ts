@@ -12,7 +12,7 @@ import { EditorExtensionHost, type EditorExtensionServices, type EditorExtension
 import { extensionAssetTypeDiagnostics, extensionAssetTypes, type ExtensionAssetTypeDescriptor } from "../lib/extension-asset-types";
 import { linkExtensionModules } from "../lib/extension-modules";
 import { resolvedExtensionSettings, type ExtensionSettingValues } from "../lib/extension-settings-ui";
-import { untrustedExecuteJavaScriptMessage } from "./execute-javascript-trust";
+import { compareTrustGateFindings, trustGateFindingKey, untrustedNodesMessage, type TrustGateFinding } from "./trust-gate";
 
 /** Code file edits applied by one Save. */
 export interface ExtensionFileChanges {
@@ -49,10 +49,13 @@ export interface ExtensionSnapshot {
   trusted: boolean;
   /** Display names of enabled Project Extensions held back because the project is not trusted. */
   untrusted: string[];
-  /** Assets whose Execute JavaScript Play, Preview Build or packaging refused because the project is not trusted. */
-  untrustedExecuteJavaScript: string[];
+  /**
+   * Trust-gated nodes (Execute JavaScript, Open URL, Extension nodes) that Play, Preview Build or packaging
+   * refused because the project is not trusted, by node display name, each with its assets in name order.
+   */
+  untrustedNodes: TrustGateFinding[];
   /** Refusals so far, so the trust prompt can show again for each one. */
-  executeJavaScriptRefusals: number;
+  trustRefusals: number;
 }
 
 /**
@@ -92,7 +95,7 @@ export class EditorExtensionService {
   private overrides: ExtensionOverrides = {};
   private settingValues: ExtensionSettingValues = {};
   private listeners = new Set<() => void>();
-  private state: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted: [], untrustedExecuteJavaScript: [], executeJavaScriptRefusals: 0 };
+  private state: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted: [], untrustedNodes: [], trustRefusals: 0 };
   private fingerprint = "";
   /**
    * Workspace Trust for the open project: until it is trusted on this
@@ -102,7 +105,7 @@ export class EditorExtensionService {
    */
   private trusted = false;
   /**
-   * Execute JavaScript's gate reads trust at the moment it checks: from this source (this computer's
+   * The trust-gated nodes' gate reads trust at the moment it checks: from this source (this computer's
    * Engine Settings as they are now, set by `EditorExtensionsRuntime`), not from the last refresh,
    * so a grant counts at once and a refresh queued earlier cannot carry stale trust past a revoke.
    */
@@ -246,11 +249,11 @@ export class EditorExtensionService {
     this.createdTrustKey = null;
   }
 
-  /** The source Execute JavaScript's gate reads trust from; null falls back to the last refresh's. */
+  /** The source the trust-gated nodes' gate reads trust from; null falls back to the last refresh's. */
   setTrustSource(source: (() => boolean) | null): void {
     this.trustSource = source;
   }
-  /** Takes trust back for Execute JavaScript at once: nothing passes the gate until `clearRevocation`. */
+  /** Takes trust back for trust-gated nodes at once: nothing passes the gate until `clearRevocation`. */
   revokeTrust(): void {
     this.revoked = true;
   }
@@ -264,16 +267,22 @@ export class EditorExtensionService {
   }
 
   /**
-   * Workspace Trust for Execute JavaScript: Play, Simulate, Preview Build and packaging call this with
-   * the assets whose compiled scripts carry an Execute JavaScript body, right before those scripts would
-   * run or ship. Untrusted, it throws `untrustedExecuteJavaScriptMessage` and lists the assets in the
+   * Workspace Trust for trust-gated nodes: Play, Simulate, Preview Build and packaging call this with
+   * what their compiled scripts carry (Execute JavaScript, Open URL, Extension nodes), right before those
+   * scripts would run or ship. Untrusted, it throws `untrustedNodesMessage` and adds the findings to the
    * snapshot so the trust prompt can name them. Trusting the project (the next `refresh`) lifts it.
    */
-  assertExecuteJavaScriptAllowed(names: readonly string[]): void {
-    if (names.length === 0 || this.trustedNow()) return;
-    const held = [...new Set([...this.state.untrustedExecuteJavaScript, ...names])].sort((a, b) => a.localeCompare(b));
-    this.publish({ untrustedExecuteJavaScript: held, executeJavaScriptRefusals: this.state.executeJavaScriptRefusals + 1 });
-    throw new Error(untrustedExecuteJavaScriptMessage([...new Set(names)]));
+  assertTrustGatedNodesAllowed(findings: readonly TrustGateFinding[]): void {
+    if (findings.length === 0 || this.trustedNow()) return;
+    const held = new Map(this.state.untrustedNodes.map((finding) => [trustGateFindingKey(finding), finding]));
+    for (const finding of findings) {
+      const key = trustGateFindingKey(finding);
+      held.set(key, { ...finding, assets: [...new Set([...held.get(key)?.assets ?? [], ...finding.assets])] });
+    }
+    const untrustedNodes = [...held.values()].sort(compareTrustGateFindings)
+      .map((finding) => ({ ...finding, assets: [...finding.assets].sort((a, b) => a.localeCompare(b)) }));
+    this.publish({ untrustedNodes, trustRefusals: this.state.trustRefusals + 1 });
+    throw new Error(untrustedNodesMessage(findings));
   }
 
   /**
@@ -336,7 +345,7 @@ export class EditorExtensionService {
       }
       this.packageDiagnostics = diagnostics;
       this.publishAssetTypes(graph.order);
-      this.state = { ...this.state, trusted, untrusted, ...(trusted ? { untrustedExecuteJavaScript: [] } : {}) };
+      this.state = { ...this.state, trusted, untrusted, ...(trusted ? { untrustedNodes: [] } : {}) };
       this.publishHostState(entries);
     } catch (cause) {
       await this.resetHost();
@@ -346,7 +355,7 @@ export class EditorExtensionService {
       await this.syncContentRoots([]).catch(() => undefined);
       this.packageDiagnostics = [String(cause)];
       this.publishAssetTypes([]);
-      this.state = { ...this.state, trusted, untrusted: [], ...(trusted ? { untrustedExecuteJavaScript: [] } : {}) };
+      this.state = { ...this.state, trusted, untrusted: [], ...(trusted ? { untrustedNodes: [] } : {}) };
       this.publishHostState([]);
       throw cause;
     }
@@ -360,7 +369,7 @@ export class EditorExtensionService {
       await this.resetHost();
       this.fingerprint = "";
       this.trusted = false;
-      this.state = { ...this.state, trusted: false, untrusted: [], untrustedExecuteJavaScript: [] };
+      this.state = { ...this.state, trusted: false, untrusted: [], untrustedNodes: [] };
       this.overrides = {};
       this.cleanupDiagnostics = [];
       this.packageDiagnostics = [];

@@ -1,4 +1,4 @@
-import { classIdForAssetPath, consoleCommandMetadataFromGraph, fnv1a } from "@haptic/core";
+import { classIdForAssetPath, consoleCommandMetadataFromGraph, fnv1a, type TrustGatedNode } from "@haptic/core";
 import { stripAssetFileSuffix } from "@haptic/assets";
 import {
   displayNodeTitle,
@@ -281,13 +281,13 @@ export function compileGraphDocument(
     command: consoleCommandFromGraph(logic, classId),
     ...metadata,
     ...(components ? { components } : {}),
-    ...executeJavaScriptField(compiledPieces.flatMap((piece) => piece.executeJavaScriptNodes)),
+    ...trustGatedField(compiledPieces.flatMap((piece) => piece.trustGatedNodes)),
   };
 }
 
-/** The bundle's `executeJavaScriptNodes`, left out when the module carries none. */
-function executeJavaScriptField(nodeIds: readonly string[]): Pick<ScriptBundleEntry, "executeJavaScriptNodes"> {
-  return nodeIds.length > 0 ? { executeJavaScriptNodes: [...new Set(nodeIds)] } : {};
+/** The bundle's `trustGatedNodes`, one per node id, left out when the module carries none. */
+function trustGatedField(nodes: readonly TrustGatedNode[]): Pick<ScriptBundleEntry, "trustGatedNodes"> {
+  return nodes.length > 0 ? { trustGatedNodes: [...new Map(nodes.map((node) => [node.nodeId, node])).values()] } : {};
 }
 
 /**
@@ -963,7 +963,7 @@ function compileAnimGraphDocument(
         title: "Transition Rule",
       })),
       parentClassId: "Object",
-      ...executeJavaScriptField(compiled.executeJavaScriptNodes),
+      ...trustGatedField(compiled.trustGatedNodes),
     });
   }
   // Each pose graph's wired data inputs (Play Rate, Alpha, Active) compile into one module; its pose wires do not,
@@ -991,7 +991,7 @@ function compileAnimGraphDocument(
         title: "Pose Data",
       })),
       parentClassId: "Object",
-      ...executeJavaScriptField(compiled.executeJavaScriptNodes),
+      ...trustGatedField(compiled.trustGatedNodes),
     });
   }
   return scripts;

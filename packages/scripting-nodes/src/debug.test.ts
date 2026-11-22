@@ -260,7 +260,7 @@ describe("Execute JavaScript", () => {
       ["an unrooted node, which compiles to nothing", "ctx.log('hi');", false, []],
     ])("%s", (_label, body, wired, expected) => {
       const compiled = compileGraph(graphWith(body, wired), { assetGuid: "a", registry });
-      expect(compiled.executeJavaScriptNodes).toEqual(expected);
+      expect(compiled.trustGatedNodes).toEqual(expected.map((nodeId) => ({ nodeId, kind: "executeJavaScript", title: "Execute JavaScript" })));
       expect(compiled.source.includes("--- user body ---")).toBe(wired);
     });
 
@@ -269,7 +269,7 @@ describe("Execute JavaScript", () => {
       graph.nodes[1]!.properties.developmentOnly = true;
       const compiled = compileGraph(graph, { assetGuid: "a", registry, stripDevelopmentOnly: true });
       expect(compiled.source).not.toContain("--- user body ---");
-      expect(compiled.executeJavaScriptNodes).toEqual([]);
+      expect(compiled.trustGatedNodes).toEqual([]);
     });
   });
 });

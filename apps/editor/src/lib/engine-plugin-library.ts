@@ -10,7 +10,7 @@ import {
   type PluginSettingsPayload,
   type PluginDescriptor,
 } from "@haptic/assets";
-import { newGuid, type ProjectStorage } from "@haptic/core";
+import { newGuid, type ExecuteJavaScriptAsset, type ProjectStorage } from "@haptic/core";
 import {
   createMountedProjectStorage,
   type ProjectStorageMount,
@@ -39,6 +39,16 @@ export interface EnginePluginEntry extends PluginDescriptor {
   bundled: boolean;
   enabledByDefault: boolean;
 }
+
+/** A library plugin, not bundled with Haptic, whose assets hold Execute JavaScript. */
+export interface NewProjectExecuteJavaScriptPlugin {
+  pluginGuid: string;
+  displayName: string;
+  assets: ExecuteJavaScriptAsset[];
+}
+
+/** Asks once whether a new project includes these plugins; true includes them all, false leaves them all out. */
+export type NewProjectExecuteJavaScriptReview = (plugins: readonly NewProjectExecuteJavaScriptPlugin[]) => Promise<boolean>;
 
 export type EnginePluginImportResult =
   | { status: "imported"; entry: EnginePluginEntry }
@@ -164,29 +174,47 @@ export class EnginePluginLibrary {
   /**
    * A captured library is immutable; later edits cannot change an open project.
    *
-   * New projects copy the snapshot without asking and start trusted, so `forNewProject` leaves out
-   * every entry not bundled with Haptic whose assets hold Execute JavaScript, or cannot be read to
-   * tell: such an entry reaches a project only through Engine Plugins, which discloses it. Whether an
-   * entry is bundled is where the library reads it from (the app's catalog), never anything in it.
+   * A new project copies the snapshot and starts trusted, so `forNewProject` discloses every entry not
+   * bundled with Haptic whose assets hold Execute JavaScript: `reviewExecuteJavaScript` is asked once
+   * with all of them and includes them only when it resolves true. Without it (no UI to ask with),
+   * or when it resolves false, they are left out, and the project is created without them. An entry
+   * that cannot be read to tell is always left out. Whether an entry is bundled is where the library
+   * reads it from (the app's catalog), never anything in it. The question waits outside the library's
+   * queue; the snapshot is captured from the state it scanned, as generations never change.
    */
-  createStorageSnapshot(options: { forNewProject?: boolean } = {}): Promise<ProjectStorage> {
-    return this.serialize(async () => {
+  async createStorageSnapshot(options: {
+    forNewProject?: boolean;
+    reviewExecuteJavaScript?: NewProjectExecuteJavaScriptReview;
+  } = {}): Promise<ProjectStorage> {
+    if (!options.forNewProject) return this.serialize(async () => this.captureStorage(await this.readState()));
+    const { state, scripted, unreadable } = await this.serialize(async () => {
       const state = await this.readState();
-      if (!options.forNewProject) return this.captureStorage(state);
-      const withheld = new Set<string>();
+      const scripted: NewProjectExecuteJavaScriptPlugin[] = [];
+      const unreadable = new Set<string>();
       for (const entry of state.entries) {
         if (entry.bundled) continue;
         const record = state.records.find((candidate) => candidate.settings.pluginGuid === entry.pluginGuid);
         if (!record) continue;
         try {
           const files = await readProjectTree(this.libraryStorage, record.generationPath);
-          if ((await executeJavaScriptInPluginFiles(files)).length > 0) withheld.add(entry.pluginGuid);
+          const assets = await executeJavaScriptInPluginFiles(files);
+          if (assets.length === 0) continue;
+          // Named by where the plugin's files will sit, not by the library's storage generation.
+          const prefix = `${record.generationPath}/`;
+          scripted.push({ pluginGuid: entry.pluginGuid, displayName: entry.settings.displayName, assets: assets.map((asset) => ({
+            ...asset, ...(asset.path ? { path: `${entry.folderName}/${asset.path.startsWith(prefix) ? asset.path.slice(prefix.length) : asset.path}` } : {}),
+          })) });
         } catch {
-          withheld.add(entry.pluginGuid);
+          unreadable.add(entry.pluginGuid);
         }
       }
-      return this.captureStorage({ ...state, entries: state.entries.filter((entry) => !withheld.has(entry.pluginGuid)) });
+      return { state, scripted, unreadable };
     });
+    const include = scripted.length > 0 && options.reviewExecuteJavaScript
+      ? await options.reviewExecuteJavaScript(scripted)
+      : false;
+    const withheld = new Set([...unreadable, ...(include ? [] : scripted.map((plugin) => plugin.pluginGuid))]);
+    return this.serialize(() => this.captureStorage({ ...state, entries: state.entries.filter((entry) => !withheld.has(entry.pluginGuid)) }));
   }
 
   export(guid: string): Promise<Uint8Array> {

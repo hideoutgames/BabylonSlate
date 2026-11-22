@@ -1,7 +1,7 @@
 import type { ScalabilityTransaction, ScalabilityAcknowledgement, RenderProjectSettings, ScenePostProcessEntry, MaterialParameterCatalog, MaterialParameterValue, LayerCameraState, ShadowDebugPart, WaterDebugPart, WorldDebugPart } from "@haptic/core";
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { ActorDefaults, CollisionTriangleMesh, GameInstanceDefaults, SerializedComponent, SerializedScene, SerializedSceneLayer } from "@haptic/core";
+import type { ActorDefaults, CollisionTriangleMesh, GameInstanceDefaults, SerializedComponent, SerializedScene, SerializedSceneLayer, TrustGatedNode } from "@haptic/core";
 
 /** Rest-pose Complex Collision triangles for one Model; typed arrays clone as one memcpy. */
 export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
@@ -158,11 +158,11 @@ export type ScriptBundleEntry = {
   /** Present when the graph is a DebugCommand OnCommandRun handler. */
   command?: ScriptConsoleCommand;
   /**
-   * Execute JavaScript nodes whose code `source` carries, as the compiler reported them (omitted for
-   * none). The editor refuses to run or package such a script in a project this computer does not
-   * trust; the runtime ignores it.
+   * Trust-gated nodes (Execute JavaScript, Open URL, Extension nodes) whose code `source` carries, as
+   * the compiler reported them (omitted for none). The editor refuses to run or package such a script
+   * in a project this computer does not trust; the runtime ignores it, and exports leave it out.
    */
-  executeJavaScriptNodes?: string[];
+  trustGatedNodes?: TrustGatedNode[];
   /** Class registry parent; omitted scripts default to Actor at load. */
   parentClassId?: string;
   /** ScriptInterface asset guids this class implements. */
