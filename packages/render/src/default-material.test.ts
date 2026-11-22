@@ -195,7 +195,7 @@ describe("engine default material", () => {
     await switching;
     const recorded = scene.defaultMaterial as NodeMaterial;
     expect(recorded).not.toBe(previous);
-    expect([isEngineDefaultMaterial(recorded), isEngineDefaultMaterial(previous), previous.isDisposed()]).toEqual([true, false, true]);
+    expect([isEngineDefaultMaterial(recorded), isEngineDefaultMaterial(previous), scene.materials.includes(previous)]).toEqual([true, false, false]);
     expect([held.material, implicit.material]).toEqual([recorded, null]);
     expect(recorded.compiledShaders).toContain("uniform HapticMaterial");
     expect(emission(recorded)).toBe(1);
