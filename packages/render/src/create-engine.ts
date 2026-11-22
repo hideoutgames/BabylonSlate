@@ -110,7 +110,7 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
 import { applyMaterialTextureAnisotropy, excludeSceneSpatialEffects, excludeSceneWorldPostEffects, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, setSceneFsrOutputDebug, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
-import { cookComplexCollisionMesh, environmentTextureContainer } from "@haptic/assets";
+import { cookComplexCollisionMesh, environmentTextureContainer, gltfGeometryDecodersReady } from "@haptic/assets";
 import {
   isPublishedSnapshot,
   readSnapshotHeader,
@@ -1161,7 +1161,8 @@ function initializeEngine(
         },
         acquireModelGeometry: (guid) => {
           const source = binding.modelSources?.get(guid);
-          return source ? source.arrayBuffer().then((buffer) => cookComplexCollisionMesh(new Uint8Array(buffer), binding.modelPayloads?.get(guid))) : null;
+          return source ? Promise.all([source.arrayBuffer(), gltfGeometryDecodersReady()])
+            .then(([buffer]) => cookComplexCollisionMesh(new Uint8Array(buffer), binding.modelPayloads?.get(guid))) : null;
         },
         onDiagnostic: options.onParticleDiagnostic,
         onPlaybackEnded: options.onParticlePlaybackEnded,

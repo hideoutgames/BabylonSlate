@@ -1,6 +1,6 @@
 import { SAFE_ZIP_MTIME } from "./zip-time";
 import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, normalizeSceneLayerPostProcessStack, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
-import { collectAssetDependencyMetadata, complexCollisionModelGuids, cookComplexCollision, sceneLayerPostProcessAssetGuids, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, type AssetDependencyClass } from "@haptic/assets";
+import { collectAssetDependencyMetadata, complexCollisionModelGuids, cookComplexCollision, gltfGeometryDecodersReady, sceneLayerPostProcessAssetGuids, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync } from "fflate";
 import {
   DEFAULT_FILE_COUNT_FAIL,
@@ -59,7 +59,7 @@ function documentParser(): ParseDocument {
  * Complex Collision sidecars (`HPCC`) for the Models this export's Scenes, Scene Layers and Classes simulate with Use
  * Complex Collision, cooked here exactly as the player cooked them at runtime, so a game never parses a GLB for its
  * collision. Each is a soft dependency of its Model: the player loads it only for a closure that needs it. A Model
- * whose geometry cannot be cooked (Draco or meshopt compression) ships none and gets a warning: it has no collision.
+ * whose geometry cannot be cooked (Draco compression, malformed data) ships none and gets a warning: it has no collision.
  */
 function complexCollisionSidecars(assets: readonly ExportAssetBytes[], parse: ParseDocument): { sidecars: ExportAssetBytes[]; warnings: string[] } {
   const documents = assets.flatMap((asset) => asset.type === "Scene" || asset.type === "SceneLayer" || asset.type === "Class" || asset.type === "CompiledScript"
@@ -389,6 +389,8 @@ export async function exportGame(
     sourceAssets.push({ guid: `script:${script.assetGuid}:${encodeURIComponent(script.classId)}`, ownerGuid: script.assetGuid, type: "CompiledScript", classId: script.classId,
       sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify(script)), requiredDependencies: [] });
   }
+  // The cook decodes meshopt geometry synchronously once the decoder has loaded.
+  await gltfGeometryDecodersReady();
   const complexCollision = complexCollisionSidecars(sourceAssets, parse);
   sourceAssets.push(...complexCollision.sidecars);
 

@@ -17,7 +17,8 @@
     "./asset-diff-client": "./src/asset-diff-client.ts",
     "./import-worker-client": "./src/import-worker-client.ts",
     "./test-support/*": "./src/test-support/*.ts",
-    "./audio-reverb-worker": "./src/audio-reverb-worker.ts"
+    "./audio-reverb-worker": "./src/audio-reverb-worker.ts",
+    "./gltf-geometry-decoders": "./src/gltf-geometry-decoders.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -30,6 +31,7 @@
     "@haptic/particle-graph": "workspace:*",
     "@haptic/shader-graph": "workspace:*",
     "fflate": "^0.8.3",
+    "meshoptimizer": "1.1.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {

@@ -562,7 +562,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       const frameId = this.host.frameId();
       const diag: RuntimeDiagnostic = {
         code: "physics.complex_collision_unavailable",
-        message: `Model ${guid} uses Use Complex Collision, but its collision mesh could not be cooked: its source is not loaded, it has no triangles, or its geometry is Draco- or meshopt-compressed. The Mesh has no collider; preload the Model, import it without mesh compression, or use Use Simple Collision.`,
+        message: `Model ${guid} uses Use Complex Collision, but its collision mesh could not be cooked: its source is not loaded, it has no triangles, or its geometry is Draco-compressed or malformed. The Mesh has no collider; preload the Model, import it without Draco compression, or use Use Simple Collision.`,
         severity: "warning",
         assetGuid: guid,
         frameId,

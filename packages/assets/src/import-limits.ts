@@ -17,6 +17,8 @@ export const HDR_MAX_DECODED_PIXELS = 16 * 1024 * 1024;
 export const GLTF_MAX_PRIMITIVE_VERTICES = 16_777_216;
 /** Indices in one glTF primitive: three per vertex the vertex cap allows. */
 export const GLTF_MAX_PRIMITIVE_INDICES = 3 * GLTF_MAX_PRIMITIVE_VERTICES;
+/** Bytes the meshopt-compressed (`EXT_meshopt_compression`) buffer views one read of a glTF file decodes, together. */
+export const GLTF_MAX_MESHOPT_DECODED_BYTES = 1024 * 1024 * 1024;
 /** Depth of a glTF node hierarchy (a root is depth 1); long bone chains such as ropes and tails stay well inside it. */
 export const GLTF_MAX_NODE_DEPTH = 256;
 /** Nesting of objects inside one glTF material, which real exporters keep to a handful of levels. */

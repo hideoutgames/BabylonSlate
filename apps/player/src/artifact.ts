@@ -34,6 +34,7 @@ import {
   AssetLoadingService,
   complexCollisionModelGuids,
   cookComplexCollisionMesh,
+  gltfGeometryDecodersReady,
   installAssetBytes,
   installTextureSource,
   sha256Hex,
@@ -435,7 +436,9 @@ export async function loadGameFromFiles(
     const cooked = complexMeshes.get(guid);
     if (cooked) return cooked;
     const source = modelBytes.get(guid);
-    return source ? cookComplexCollisionMesh(new Uint8Array(await source.arrayBuffer()), modelPayloads.get(guid)) : null;
+    if (!source) return null;
+    const [buffer] = await Promise.all([source.arrayBuffer(), gltfGeometryDecodersReady()]);
+    return cookComplexCollisionMesh(new Uint8Array(buffer), modelPayloads.get(guid));
   };
   game.onSourcesChanged = listener => { sourceListeners.add(listener); return () => { sourceListeners.delete(listener); }; };
   game.getReadMetrics = () => ({ ...readMetrics });
@@ -444,7 +447,9 @@ export async function loadGameFromFiles(
       key: "export-complex-collision",
       estimate: { sourceBytes: 0, decodedBytes: model.source.size, temporaryBytes: model.source.size * 4 },
       load: async () => {
-        const mesh = cookComplexCollisionMesh(new Uint8Array(await model.source.arrayBuffer()), model.payload);
+        // Only a Model the export did not bake cooks here; the decoder loads with the first such cook.
+        const [buffer] = await Promise.all([model.source.arrayBuffer(), gltfGeometryDecodersReady()]);
+        const mesh = cookComplexCollisionMesh(new Uint8Array(buffer), model.payload);
         const decodedBytes = mesh ? collisionTriangleMeshBytes(mesh) : 0;
         return {
           value: { decodedBytes, publish: () => { if (mesh) complexMeshes.set(id, mesh); } },
