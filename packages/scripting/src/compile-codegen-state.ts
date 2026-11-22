@@ -204,12 +204,19 @@ export function traceProbe(call: string): string {
   return `  if (__dbg !== null) ${call};`;
 }
 
+/** `id` as identifier text, one-to-one: every character outside [A-Za-z0-9] becomes `$<hex>$`. */
+function identifierSafe(id: string): string {
+  return id.replace(/[^A-Za-z0-9]/g, (char) => `$${char.charCodeAt(0).toString(16)}$`);
+}
+
 export function loopCheck(s: CodegenState, nodeId: string): string {
   let name = s.loopLocations.get(nodeId);
   if (name === undefined) {
-    name = `__loop_${s.loopLocations.size}`;
+    // Unique per graph and node: one module joins the graphs of an asset. `var` lets the same graph's
+    // identical declaration repeat.
+    name = `__loop_${identifierSafe(s.graph.id)}_${identifierSafe(nodeId)}`;
     s.loopLocations.set(nodeId, name);
-    s.hoisted.push({ nodeId, source: `const ${name} = Object.freeze(${JSON.stringify({
+    s.hoisted.push({ nodeId, source: `var ${name} = Object.freeze(${JSON.stringify({
       assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId,
     })});` });
   }
