@@ -193,6 +193,28 @@ describe("loadGameFromFiles", () => {
     if (!corrupted.ok) throw new Error(corrupted.error);
     await expect(loadGameFromFiles(corrupted.value.files)).rejects.toThrow(/corrupt/i);
   });
+  it("loads a Class from its compiled script alone, with no file for the Class itself", async () => {
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [{ assetGuid: "hero", classId: "Hero", source: "return {};", anchors: [], entryPoints: [] }],
+      assets: [
+        { guid: "scene", type: "Scene", sceneGuid: "scene", requiredDependencies: ["hero"], bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+        { guid: "hero", type: "Class", sceneGuid: "scene", requiredDependencies: [], bytes: encoder.encode(JSON.stringify({ nodes: [{ id: "tick" }] })) },
+      ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const reads: string[] = [];
+    const game = await loadGameFromHttp("https://game.example/", async input => {
+      const path = new URL(String(input)).pathname.slice(1);
+      reads.push(path);
+      return new Response(body(exported.value.files.get(path)));
+    });
+    try {
+      expect(game.scripts.map((script) => script.classId)).toEqual(["Hero"]);
+      expect(game.payloads.get("hero")?.byteLength).toBe(0);
+      const classEntry = exported.value.manifest.assets.find((entry) => entry.guid === "hero")!;
+      expect(classEntry.path).toBeUndefined();
+      expect(reads).toHaveLength(exported.value.manifest.assets.filter((entry) => entry.path).length + 1);
+    } finally { game.dispose?.(); }
+  });
   it("boots the packed startup scene guid, not a path", async () => {
     const scene = {
       ...createDefaultScene(),

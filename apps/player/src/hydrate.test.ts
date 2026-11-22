@@ -26,6 +26,8 @@ import {
   normalizeAudioPayload,
 } from "@haptic/assets";
 import {
+  COMPLEX_COLLISION_EXPORT_TYPE,
+  decodeComplexCollisionMesh,
   exportGame as buildExport,
   type ExportGameOptions,
   navmeshExportGuid,
@@ -310,7 +312,7 @@ describe("packedContentFromGame", () => {
     expect(controls.some((entry) => entry.type === "loadBehaviourTrees")).toBe(true);
   });
 
-  it("cooks typed triangle meshes only for Models used with Use Complex Collision", async () => {
+  it("ships pre-baked triangle meshes only for Models used with Use Complex Collision", async () => {
     const { buildBoxGlbFixture, encodePackedModelAsset } = await import(
       "@haptic/assets"
     );
@@ -344,10 +346,21 @@ describe("packedContentFromGame", () => {
     });
     expect(packed.ok).toBe(true);
     if (!packed.ok) return;
+    // Baked at export into a sidecar equal to the runtime cook; the simple-collision Model gets none.
+    const { cookComplexCollisionMesh, decodePackedModelAsset } = await import("@haptic/assets");
+    const sidecars = packed.value.manifest.assets.filter((entry) => entry.type === COMPLEX_COLLISION_EXPORT_TYPE);
+    expect(sidecars.map((entry) => entry.ownerGuid)).toEqual(["rock-model"]);
+    const model = decodePackedModelAsset(packedModel)!;
+    const runtimeCook = cookComplexCollisionMesh(model.source, model.payload)!;
+    const baked = decodeComplexCollisionMesh(packed.value.files.get(sidecars[0]!.path!)!);
+    expect(baked.positions).toEqual(runtimeCook.positions);
+    expect(baked.indices).toEqual(runtimeCook.indices);
+    expect(baked.indices.constructor).toBe(runtimeCook.indices.constructor);
     const game = await loadGameFromFiles(packed.value.files);
     const content = packedContentFromGame(game);
     expect(content.modelPayloads.get("hero-model")?.importScale).toBe(2);
     expect([...content.complexMeshes.keys()]).toEqual(["rock-model"]);
+    expect(content.complexMeshes.get("rock-model")?.positions).toEqual(runtimeCook.positions);
     const loadModels = packedPlayControls(content).find((entry) => entry.type === "loadModels");
     expect(loadModels?.type === "loadModels" ? loadModels.complexMeshes : undefined).toEqual([{
       guid: "rock-model", positions: expect.any(Float32Array), indices: expect.any(Uint16Array),

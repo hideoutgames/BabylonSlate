@@ -20,6 +20,10 @@ import {
   fontFacetypeExportGuid,
   fontMsdfExportGuid,
   fontMsdfAtlasExportGuid,
+  COMPLEX_COLLISION_EXPORT_TYPE,
+  complexCollisionExportGuid,
+  decodeComplexCollisionMesh,
+  modelGuidFromComplexCollisionExport,
   type GameAssetIndexEntry,
   type GameManifest,
 } from "@haptic/exporter";
@@ -203,7 +207,9 @@ export async function loadGameFromFiles(
     let bytes: Uint8Array;
     let accounted = false;
     const inMemory = entry.path ? files.get(entry.path) : undefined;
-    if (inMemory) bytes = inMemory;
+    // A catalog-only entry (a Class, whose compiled scripts are its sidecars; a Font without a source file) has no file.
+    if (!entry.path && entry.byteLength === 0) bytes = new Uint8Array(0);
+    else if (inMemory) bytes = inMemory;
     else if (entry.path && options.readFile) bytes = await options.readFile(entry.path, signal);
     else if (entry.path && fetchAsset && options.baseUrl) {
       const response = await fetchAsset(new URL(entry.path, options.baseUrl).href, { signal });
@@ -281,6 +287,14 @@ export async function loadGameFromFiles(
     } else if (entry.type === NAVMESH_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromNavmeshExport(entry.guid)); install = () => { navmeshBytes.set(guid, bytes); }; }
     else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromAudioReverbExport(entry.guid)); install = () => { audioReverbBytes.set(guid, bytes); }; }
     else if (entry.type === LANDSCAPE_EXPORT_TYPE || entry.type === FOLIAGE_EXPORT_TYPE) { const key = sidecarOwner(componentChunkKeyFromExport(entry.guid)); install = () => { componentChunks.set(key, bytes); }; }
+    else if (entry.type === COMPLEX_COLLISION_EXPORT_TYPE) {
+      const guid = sidecarOwner(modelGuidFromComplexCollisionExport(entry.guid));
+      // The mesh's arrays are views of these bytes: the mesh is their owner.
+      const mesh = decodeComplexCollisionMesh(bytes);
+      decodedBytes = 0;
+      retained = new Uint8Array(0);
+      install = () => { complexMeshes.set(guid, mesh); };
+    }
     // Every acquisition of a loaded asset publishes these same objects, and nothing edits them in place:
     // boot's `loadedSourcesChanged` and `packedContentFromGame`'s per-payload documents rely on that identity.
     return { decodedBytes, document, model, retained, publish: () => { payloads.set(entry.guid, retained); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } } as PreparedAsset & { retained: Uint8Array };
@@ -303,6 +317,7 @@ export async function loadGameFromFiles(
     if (entry.type === NAVMESH_EXPORT_TYPE) navmeshBytes.delete(owner);
     if (entry.type === AUDIO_REVERB_EXPORT_TYPE) audioReverbBytes.delete(owner);
     if (entry.type === LANDSCAPE_EXPORT_TYPE || entry.type === FOLIAGE_EXPORT_TYPE) componentChunks.delete(owner);
+    if (entry.type === COMPLEX_COLLISION_EXPORT_TYPE) complexMeshes.delete(owner);
     if (entry.type === FONT_FACETYPE_EXPORT_TYPE) fontFacetypeBytes.delete(owner);
     if (entry.type === FONT_MSDF_EXPORT_TYPE) fontMsdfJson.delete(owner);
     if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) fontMsdfPng.delete(owner);
@@ -467,7 +482,10 @@ export async function loadGameFromFiles(
     const needsCollision = complexCollisionModelGuids([...prepared.map(asset => asset.document), ...scripts]);
     const collisions = documentIds.flatMap((id, index) => {
       const model = prepared[index]!.model;
-      return model && needsCollision.has(id) ? [acquireCollision(scope, id, model, signal, priority)] : [];
+      if (!model || !needsCollision.has(id)) return [];
+      const baked = complexCollisionExportGuid(id);
+      if (entries.has(baked)) { closure.add(baked); return [acquire(baked)]; }
+      return [acquireCollision(scope, id, model, signal, priority)];
     });
     const total = prepared.length + extraMetadata.length + variants.size + collisions.length;
     let completed = prepared.length;
