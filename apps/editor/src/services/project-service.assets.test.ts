@@ -1494,7 +1494,7 @@ describe("project documents as .hasset", () => {
     // As import writes it: no root motion yet.
     const created = await registry.createAsset("project", "Death_A.hasset", {
       type: "Animation", name: "Death_A", guid: "death", version: 1, dependencies: [], chunks: [],
-      payload: normalizeAnimationPayload({ clipName: "Death_A", modelGuid: "rig", durationMs: 1200, clipDurationMs: 1200 }),
+      payload: { ...normalizeAnimationPayload({ clipName: "Death_A", modelGuid: "rig", durationMs: 1200, clipDurationMs: 1200 }) },
     });
     // 37 samples of a 1.2 s fall back along Z.
     const samples = Array.from({ length: 37 }, (_, index) => index);

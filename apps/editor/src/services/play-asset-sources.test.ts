@@ -817,7 +817,7 @@ describe("Play source ownership", () => {
     for (const [guid, rootMotion] of tracks) {
       await registry.createAsset("project", `${guid}.hasset`, {
         type: "Animation", name: guid, guid, version: currentFormat("Animation"), dependencies: ["model"], chunks: [],
-        payload: normalizeAnimationPayload({ clipName: guid, modelGuid: "model", durationMs: rootMotion.track.durationMs, rootMotion }),
+        payload: { ...normalizeAnimationPayload({ clipName: guid, modelGuid: "model", durationMs: rootMotion.track.durationMs, rootMotion }) },
       });
     }
     // Each Animation's document chunk read, by its position in the file.

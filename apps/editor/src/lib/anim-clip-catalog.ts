@@ -1,4 +1,4 @@
-import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
+import type { AnimClipCatalogEntry, AnimClipRootMotion } from "@haptic/anim-graph";
 import {
   animationClipEvents,
   animationRootMotionBone,
@@ -112,5 +112,28 @@ export function animClipCatalogFromAssets(
           }
         : {}),
     };
+  });
+}
+
+/**
+ * A Play session's clip catalog: every clip the headers list (a script may play any Animation on a slot, not only those
+ * its Play closure holds), with each Animation's root motion from `prepared`, the catalog Play preparation built from
+ * the documents it read (track included, scaled by the source Model's import scale as export scales it). An Animation
+ * outside the closure plays without root motion: its track is in a document Play did not read.
+ */
+export function playAnimClipCatalog(
+  assets: ReadonlyArray<CatalogAsset>,
+  prepared: readonly AnimClipCatalogEntry[],
+): AnimClipCatalogEntry[] {
+  const tracks = new Map<string, AnimClipRootMotion>();
+  for (const entry of prepared) if (entry.type === "Animation" && entry.rootMotion?.track) tracks.set(entry.guid, entry.rootMotion);
+  return animClipCatalogFromAssets(assets).map((entry) => {
+    if (entry.type !== "Animation") return entry;
+    const rootMotion = tracks.get(entry.guid);
+    if (rootMotion) return { ...entry, rootMotion };
+    if (!entry.rootMotion) return entry;
+    const { rootMotion: _bone, ...rest } = entry;
+    void _bone;
+    return rest;
   });
 }

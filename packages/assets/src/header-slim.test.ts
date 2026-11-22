@@ -57,7 +57,7 @@ describe("slim .hasset headers", () => {
       },
     });
     const animation = await registry.createAsset("project", "Walk_Long.hasset", {
-      type: "Animation", name: "Walk_Long", guid: "walk-long", version: 1, dependencies: ["model", "rig"], payload, chunks: [],
+      type: "Animation", name: "Walk_Long", guid: "walk-long", version: 1, dependencies: ["model", "rig"], payload: { ...payload }, chunks: [],
     });
 
     expect(animation.header.payload).toEqual({

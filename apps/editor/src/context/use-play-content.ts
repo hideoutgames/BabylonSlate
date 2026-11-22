@@ -29,6 +29,7 @@ import type {
   PlayBehaviourTreeEntry,
   PlayBlackboardEntry,
 } from "../lib/play-content";
+import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import { playAssetCatalog } from "../services/asset-catalog";
 import type { PreparedPlaySources } from "../services/play-asset-sources";
 
@@ -40,10 +41,7 @@ export interface PlayContent {
   scenes: Array<{ guid: string; scene: SerializedScene }>;
   sceneLayers: Array<{ guid: string; layer: SerializedSceneLayer }>;
   animGraphs: PlayAnimGraphEntry[];
-  /**
-   * The prepared Animations, Sprite Animations and Blend Spaces, read from their documents (an Animation's root motion
-   * with its track), as an exported game has them.
-   */
+  /** Every clip in the project, with the root motion tracks of the prepared Animations (`playAnimClipCatalog`). */
   animClipCatalog: AnimClipCatalogEntry[];
   behaviourTrees: PlayBehaviourTreeEntry[];
   blackboards: PlayBlackboardEntry[];
@@ -180,7 +178,7 @@ export function preparedPlayContent(
     globalParameterCatalog: content.globalParameterCatalog,
     assetCatalog: playAssetCatalog(catalog),
     animGraphs: content.animGraphs,
-    animClipCatalog: content.animClipCatalog,
+    animClipCatalog: playAnimClipCatalog(catalog.registry.list(), content.animClipCatalog),
     behaviourTrees: content.behaviourTrees,
     blackboards: content.blackboards,
     spritePayloads: content.spritePayloads,

@@ -2,6 +2,7 @@ import { buildParticleParameterCatalog } from "@haptic/assets";
 import type { CommandMessage } from "@haptic/bridge";
 import { createSessionSaveStorage, type ProjectDocument, type SaveGameStorage } from "@haptic/core";
 import { applyRuntimeSourceControl, createPlayBootCoordinator, createRuntimeFromLoad, type RuntimeDriver } from "@haptic/runtime";
+import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import { playRegistryViews } from "../lib/play-registry-views";
 import { playAssetCatalog } from "../services/asset-catalog";
 import { DocumentService } from "../services/document-service";
@@ -105,8 +106,7 @@ export async function runProjectScene(options: {
       texturePixelSizes: Object.fromEntries(content.texturePixelSizes ?? []),
       audioAssetGuids: views.audioAssetGuids,
       particleParameterCatalog: buildParticleParameterCatalog(content.particleLibrary),
-      // As editor Play: the prepared documents' clips, with root motion tracks.
-      animClipCatalog: content.animClipCatalog,
+      animClipCatalog: playAnimClipCatalog(registry.list(), content.animClipCatalog),
     });
     load.havokWasmUrl = undefined;
     load.sceneCatalog = views.sceneCatalog;

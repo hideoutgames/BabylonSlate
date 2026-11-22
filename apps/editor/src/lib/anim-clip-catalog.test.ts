@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { animClipCatalogFromAssets } from "./anim-clip-catalog";
+import { animClipCatalogFromAssets, playAnimClipCatalog } from "./anim-clip-catalog";
 
 describe("animClipCatalogFromAssets", () => {
   it("reads the Animation clipName from payload and lists Models by name only", () => {
@@ -196,6 +196,24 @@ describe("animClipCatalogFromAssets", () => {
     ]);
     expect(moving!.rootMotion).toEqual({ bone: "hips" });
     expect(inPlace).not.toHaveProperty("rootMotion");
+  });
+
+  it("gives Play every clip the headers list, with root motion tracks only from the prepared documents", () => {
+    const track = { durationMs: 100, stepMs: 50, x: [0, 0, 0], z: [0, 1, 2], yaw: [0, 0, 0] };
+    const catalog = playAnimClipCatalog(
+      [
+        { header: { guid: "fall", type: "Animation", name: "Death_A", payload: { clipName: "Death_A", rootMotionBone: "hips" } } },
+        // Played by a slot only, outside the prepared closure.
+        { header: { guid: "dodge", type: "Animation", name: "Dodge", payload: { clipName: "Dodge", rootMotionBone: "hips" } } },
+        { header: { guid: "throw", type: "Animation", name: "Throw", payload: { clipName: "Throw" } } },
+      ],
+      [{ guid: "fall", type: "Animation", name: "Death_A", clipName: "Death_A", rootMotion: { bone: "hips", track } }],
+    );
+    expect(catalog.map((entry) => [entry.guid, entry.rootMotion])).toEqual([
+      ["fall", { bone: "hips", track }],
+      ["dodge", undefined],
+      ["throw", undefined],
+    ]);
   });
 
   it("lists a Blend Space with its Skeleton, axes and samples", () => {
