@@ -7,22 +7,11 @@ import {
   type SerializedActor,
   type SerializedComponent,
 } from "@haptic/core";
+import { bytesToBase64 } from "./chunk-base64";
 import type { ChunkInput } from "./hasset";
 
 export const LANDSCAPE_CHUNK_KIND = "landscape";
 export const LANDSCAPE_CHUNK_MIME = "application/octet-stream";
-
-function bytesToBase64(bytes: Uint8Array): string {
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
-  }
-  let binary = "";
-  const step = 0x8000;
-  for (let i = 0; i < bytes.length; i += step) {
-    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + step, bytes.length)));
-  }
-  return btoa(binary);
-}
 
 /** `actor` is the owning actor, or undefined for a Prefab or Class root component. */
 export type ComponentTransformer = (component: SerializedComponent, actor?: SerializedActor) => SerializedComponent;

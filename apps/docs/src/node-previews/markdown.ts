@@ -9,7 +9,7 @@ type Token = {
 
 type CoreState = {
   tokens: Token[];
-  env: { relativePath?: string; frontmatter?: Record<string, unknown> };
+  env: { relativePath?: string; frontmatter?: Record<string, unknown>; hapticSearchIndex?: boolean };
   Token: new (type: string, tag: string, nesting: -1 | 0 | 1) => Token;
 };
 
@@ -29,7 +29,8 @@ function inlineAfter(tokens: Token[], index: number): Token | undefined {
 
 /**
  * Node reference pages name their catalog node in `node:` frontmatter. This
- * draws Class and Material nodes as the editor does, under the page summary,
+ * draws the node as the editor does, under the page summary (not in the search
+ * index, which renders with `env.hapticSearchIndex`),
  * and puts the graph's pin glyph before each type in the Inputs and Outputs
  * tables of every node page. A
  * `node:` that is not in the catalog, or a table row that is not one of the
@@ -45,7 +46,8 @@ export function installNodePreviews(md: MarkdownIt, previews: NodePreviews): voi
     if (!preview) throw new Error(`${page}: node "${String(node)}" is not a ${graph ?? "graph"} catalog node`);
 
     const { tokens } = state;
-    if (preview.html) {
+    // The search index leaves the drawn node out: its text repeats the title and the pin tables.
+    if (preview.html && state.env.hapticSearchIndex !== true) {
       const titleEnd = tokens.findIndex((token) => token.type === "heading_close" && token.tag === "h1");
       const summaryEnd = tokens.findIndex((token, i) => i > titleEnd && token.type === "paragraph_close");
       const html = new state.Token("html_block", "", 0);

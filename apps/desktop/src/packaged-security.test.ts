@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   allowsEditorPermission, allowsGamePermission, externalOpenUrl, gameExternalUrl, gameFile, insidePreviewFrame, isBillingFrameUrl, isEditorIpcSender,
   isGameUrl, knownProjectFolder, MAX_MAILTO_LENGTH, previewFile, rendererFile, isEditorSender, isPreviewFrameUrl, MAX_IPC_BYTES, validateIpcArguments,
@@ -127,6 +129,25 @@ describe("packaged renderer boundary", () => {
     // Source Control device sign-in opens exactly these two pages.
     expect(externalOpenUrl("https://github.com/login/device")).toBe("https://github.com/login/device");
     expect(externalOpenUrl("https://gitlab.com/oauth/device")).toBe("https://gitlab.com/oauth/device");
+    // The Homepage's Discord invite, exactly.
+    expect(externalOpenUrl("https://discord.gg/7uPR4JK5q3")).toBe("https://discord.gg/7uPR4JK5q3");
+    for (const url of ["https://discord.gg/other", "https://discord.gg/7uPR4JK5q3x", "https://discord.gg/", "https://evil.discord.gg/7uPR4JK5q3", "http://discord.gg/7uPR4JK5q3"]) {
+      expect(externalOpenUrl(url)).toBeNull();
+    }
+    // Third-Party Notices' source links: each bundled package's page, not the rest of its host.
+    expect(externalOpenUrl("https://github.com/BabylonJS/Babylon.js")).toBe("https://github.com/BabylonJS/Babylon.js");
+    for (const url of ["https://github.com/BabylonJS/Babylon.js/issues", "https://github.com/BabylonJS", "https://github.com/evil/repo", "https://code.haverbeke.berlin/evil"]) {
+      expect(externalOpenUrl(url)).toBeNull();
+    }
+    // Settings > Documentation opens the docs site, and only it, on GitHub Pages.
+    expect(externalOpenUrl("https://hideoutgames.github.io/BabylonSlate/docs/")).toBe("https://hideoutgames.github.io/BabylonSlate/docs/");
+    expect(externalOpenUrl("https://hideoutgames.github.io/BabylonSlate/docs/scripting/class/branch#inputs"))
+      .toBe("https://hideoutgames.github.io/BabylonSlate/docs/scripting/class/branch#inputs");
+    for (const url of [
+      "https://hideoutgames.github.io/BabylonSlate/", "https://hideoutgames.github.io/BabylonSlate/docs", "https://hideoutgames.github.io/BabylonSlate/docs/../player/",
+      "https://hideoutgames.github.io/BabylonSlate/docsx/", "https://hideoutgames.github.io/other/docs/", "https://evil.github.io/BabylonSlate/docs/",
+      "https://hideoutgames.github.io.evil.example/BabylonSlate/docs/", "http://hideoutgames.github.io/BabylonSlate/docs/", "https://user@hideoutgames.github.io/BabylonSlate/docs/",
+    ]) expect(externalOpenUrl(url)).toBeNull();
     for (const url of [
       "https://github.com/", "https://github.com/login", "https://github.com/login/device/select_account", "https://github.com/login/device?next=/evil",
       "https://github.com/evil/repo", "https://gist.github.com/login/device", "https://github.com.evil.example/login/device", "http://github.com/login/device",
@@ -138,6 +159,24 @@ describe("packaged renderer boundary", () => {
       "http://haptic.no/", "http://example.com/", "javascript:alert(1)", "  JaVaScRiPt:alert(1)", "data:text/html,x", "vbscript:msgbox", "file:///etc/passwd",
       "app://babylonslate/index.html", "ftp://example.com/file", "ms-msdt:/id", "about:blank", "//example.com/", "/relative", "not a url", "",
     ]) expect(externalOpenUrl(url)).toBeNull();
+  });
+  it("admits every external page the editor offers on desktop", () => {
+    // Source-read: the editor's link constants, so a changed link cannot silently stop opening.
+    const editor = fileURLToPath(new URL("../../editor/src/", import.meta.url));
+    const offered = [
+      ["components/homepage-discord-badge.tsx", "HAPTIC_DISCORD_URL"],
+      ["components/homepage-plans.ts", "HAPTIC_PRICING_URL"],
+      ["lib/documentation.ts", "HAPTIC_DOCS_URL"],
+    ].map(([file, name]) => {
+      const match = new RegExp(`export const ${name} = "([^"]+)"`).exec(readFileSync(join(editor, file), "utf8"));
+      expect(match, `${name} in ${file}`).not.toBeNull();
+      return match![1]!;
+    });
+    // The notices the editor shows, read as a file: an app does not import another app.
+    const { packages } = JSON.parse(readFileSync(join(editor, "lib/third-party-notices.json"), "utf8")) as { packages: { source: string }[] };
+    const sources = packages.map(({ source }) => source).filter((source) => source.startsWith("https://"));
+    expect(sources.length).toBeGreaterThan(100);
+    for (const url of [...offered, ...sources]) expect(externalOpenUrl(url), url).toBe(new URL(url).href);
   });
   it("refuses mailto links with control characters, written or encoded, or past the length limit", () => {
     const longest = `mailto:a@example.com?body=${"x".repeat(MAX_MAILTO_LENGTH - "mailto:a@example.com?body=".length)}`;

@@ -21,7 +21,7 @@ describe("DocumentsStorageAdapter", () => {
   it("does not recreate a deleted project when opening a recent handle", async () => {
     const missing = { id: "documents:Deleted", name: "Deleted", tier: "documents" as const };
     await expect(storage.openKnownFolder(missing)).rejects.toBeDefined();
-    expect(fs.tree.has("BabylonSlate/projects/Deleted")).toBe(false);
+    expect(fs.tree.has("Projects/Deleted")).toBe(false);
     expect(storage.getCurrentFolder()).toBeNull();
   });
 
@@ -99,7 +99,7 @@ describe("DocumentsStorageAdapter", () => {
   });
 
   describe("a project.json replacement a killed app left half done", () => {
-    const ROOT = "BabylonSlate/projects/Killed.hproject";
+    const ROOT = "Projects/Killed.hproject";
     const STAGED = ".haptic-0f8fad5b-d9cb-469f-a165-70867728950e.tmp";
     const MARKER = ".haptic-7c9e6679-7425-40de-944b-e07fc1f90ae7.tmp";
     const text = (value: string) => new TextEncoder().encode(value);
@@ -134,7 +134,7 @@ describe("DocumentsStorageAdapter", () => {
       await storage.writeText("project.json", "saved");
       // The staged bytes, then the marker naming them.
       expect(write).toHaveBeenCalledTimes(2);
-      expect([...fs.tree.keys()].filter((key) => key.startsWith("BabylonSlate/projects/Clean.hproject/"))).toEqual(["BabylonSlate/projects/Clean.hproject/project.json"]);
+      expect([...fs.tree.keys()].filter((key) => key.startsWith("Projects/Clean.hproject/"))).toEqual(["Projects/Clean.hproject/project.json"]);
     });
 
     it("writes no marker through the binary transport, whose native commit is one rename with no gap", async () => {
@@ -274,12 +274,12 @@ describe("DocumentsStorageAdapter", () => {
       { id: "documents:Keep", name: "Keep", tier: "external" as const },
       { id: "external:Keep", name: "Keep", tier: "documents" as const },
     ]) await expect(storage.deleteProject(handle), handle.id).rejects.toThrow();
-    expect(fs.tree.has("BabylonSlate/projects/Keep/project.json")).toBe(true);
-    expect(fs.tree.has("BabylonSlate/projects/__haptic_derived__/thumb.bin")).toBe(true);
-    for (const folder of LIBRARY_FOLDERS) expect(fs.tree.has(`BabylonSlate/projects/${folder}`), folder).toBe(true);
+    expect(fs.tree.has("Projects/Keep/project.json")).toBe(true);
+    expect(fs.tree.has("Projects/__haptic_derived__/thumb.bin")).toBe(true);
+    for (const folder of LIBRARY_FOLDERS) expect(fs.tree.has(`Projects/${folder}`), folder).toBe(true);
 
     await storage.deleteProject({ id: "documents:Keep", name: "Keep", tier: "documents" });
-    expect(fs.tree.has("BabylonSlate/projects/Keep")).toBe(false);
+    expect(fs.tree.has("Projects/Keep")).toBe(false);
     expect(storage.getCurrentFolder()).toBeNull();
   });
 });

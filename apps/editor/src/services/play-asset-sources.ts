@@ -180,7 +180,8 @@ async function currentRequiredPlayAssets(host: PlayAssetSourceHost, roots: reado
   };
   const prefetch = (guids: readonly string[]) => {
     // The stack pops from the end, so the last name is read first.
-    for (let index = guids.length - 1; index >= 0; index--) if (!resolved(guids[index]!)) startRead(guids[index]!);
+    // A started read is kept in `reads` with its failure already handled; the walk awaits it when it gets there.
+    for (let index = guids.length - 1; index >= 0; index--) if (!resolved(guids[index]!)) void startRead(guids[index]!);
   };
   try {
     prefetch(pending);

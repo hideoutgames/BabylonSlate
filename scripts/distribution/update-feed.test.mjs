@@ -16,7 +16,7 @@ function feed(platform, version, names) {
 
 test("Windows feed identifies and hashes the installer", () => {
   const version = "1.2.3-release";
-  const files = feed("windows", version, [`BabylonSlate-${version}-x64.exe`]);
+  const files = feed("windows", version, [`Haptic-${version}-x64.exe`]);
   assert.doesNotThrow(() => validateUpdateFeed("windows", version, files));
   const metadata = JSON.parse(files.get("latest.yml"));
   delete metadata.path;
@@ -27,21 +27,21 @@ test("Windows feed identifies and hashes the installer", () => {
 test("macOS feed validates both update zips and listed DMGs", () => {
   const version = "1.2.3-release";
   const files = feed("macos", version, [
-    `BabylonSlate-${version}-arm64.zip`, `BabylonSlate-${version}-x64.zip`,
-    `BabylonSlate-${version}-arm64.dmg`, `BabylonSlate-${version}-x64.dmg`,
+    `Haptic-${version}-arm64.zip`, `Haptic-${version}-x64.zip`,
+    `Haptic-${version}-arm64.dmg`, `Haptic-${version}-x64.dmg`,
   ]);
   assert.doesNotThrow(() => validateUpdateFeed("macos", version, files));
 });
 
 test("Linux feed identifies and hashes the AppImage", () => {
   const version = "1.2.3-release";
-  const files = feed("linux", version, [`BabylonSlate-${version}-x64.AppImage`]);
+  const files = feed("linux", version, [`Haptic-${version}-x64.AppImage`]);
   assert.doesNotThrow(() => validateUpdateFeed("linux", version, files));
 });
 
 test("feed mismatches are rejected", () => {
   const version = "1.2.3-release";
-  const files = feed("windows", version, [`BabylonSlate-${version}-x64.exe`]);
+  const files = feed("windows", version, [`Haptic-${version}-x64.exe`]);
   const metadata = JSON.parse(files.get("latest.yml"));
   metadata.files[0].size -= 1;
   files.set("latest.yml", Buffer.from(JSON.stringify(metadata)));

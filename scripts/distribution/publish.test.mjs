@@ -18,10 +18,10 @@ function packageFiles(platform, identity, toolchains = { node: "22.23.2", pnpm: 
   if (identity.channel === "release" && ["windows", "macos", "linux"].includes(platform)) {
     const feedName = { windows: "latest.yml", macos: "latest-mac.yml", linux: "latest-linux.yml" }[platform];
     const required = platform === "windows"
-      ? [`BabylonSlate-${identity.packageVersion}-x64.exe`]
+      ? [`Haptic-${identity.packageVersion}-x64.exe`]
       : platform === "macos"
-        ? ["arm64", "x64"].map(arch => `BabylonSlate-${identity.packageVersion}-${arch}.zip`)
-        : [`BabylonSlate-${identity.packageVersion}-x64.AppImage`];
+        ? ["arm64", "x64"].map(arch => `Haptic-${identity.packageVersion}-${arch}.zip`)
+        : [`Haptic-${identity.packageVersion}-x64.AppImage`];
     const entries = required.map(name => ({ url: name, sha512: sha512(files.get(name)), size: files.get(name).length }));
     files.set(feedName, Buffer.from(JSON.stringify({ version: identity.packageVersion, files: entries, path: entries[0].url, sha512: entries[0].sha512 })));
   }
@@ -90,7 +90,7 @@ test("every requested package is required before publication", async () => {
 test("checksum and manifest identity disagreements block all publication writes", async () => {
   const identity = identityFor();
   const corrupt = packageFiles("windows", identity);
-  corrupt.set(`BabylonSlate-${identity.packageVersion}-x64.exe`, Buffer.from("changed"));
+  corrupt.set(`Haptic-${identity.packageVersion}-x64.exe`, Buffer.from("changed"));
   const checksumClient = fixture(identity);
   await assert.rejects(publishRelease({ identity, platformFiles: new Map([["windows", corrupt]]) }, checksumClient.api), /checksum/i);
   assert.equal(checksumClient.requests.filter(item => item.method).length, 0);

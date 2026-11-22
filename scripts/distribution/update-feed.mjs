@@ -9,10 +9,10 @@ export function validateUpdateFeed(platform, version, files) {
   const metadata = parse(files.get(feedName).toString("utf8"));
   const entries = metadata?.files;
   const required = platform === "windows"
-    ? [`BabylonSlate-${version}-x64.exe`]
+    ? [`Haptic-${version}-x64.exe`]
     : platform === "macos"
-      ? ["arm64", "x64"].map(arch => `BabylonSlate-${version}-${arch}.zip`)
-      : [`BabylonSlate-${version}-x64.AppImage`];
+      ? ["arm64", "x64"].map(arch => `Haptic-${version}-${arch}.zip`)
+      : [`Haptic-${version}-x64.AppImage`];
   const validEntry = entry => {
     const bytes = files.get(entry?.url);
     return bytes && entry.sha512 === createHash("sha512").update(bytes).digest("base64") && entry.size === bytes.length;
