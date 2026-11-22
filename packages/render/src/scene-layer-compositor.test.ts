@@ -1262,14 +1262,16 @@ describe("SceneLayerCompositor", () => {
         bind(framebuffer);
       };
       const glOf = () => (engine as unknown as { _gl: Record<string, (...args: unknown[]) => void> })._gl;
-      engine.clear = (color, backBuffer, depth, stencil = false, stencilClearValue = 0) => {
+      const clear = (color: unknown, backBuffer: boolean, depth: boolean, stencil = false, stencilClearValue = 0) => {
         engine.applyStates();
         glOf().clearDepth!(1);
         glOf().clearStencil!(stencilClearValue);
         glOf().clear!((color && backBuffer ? 0x4000 : 0) | (depth ? 0x100 : 0) | (stencil ? 0x400 : 0));
       };
+      engine.clear = clear;
+      // As a WebGL Engine's: through the Engine's own clear (so the layer counters see it once).
       engine.clearAttachments = (color, _attachments, clearColor, clearDepth, clearStencil, stencilClearValue) =>
-        engine.clear(color, clearColor, clearDepth, clearStencil, stencilClearValue);
+        (engine.clear as typeof clear)(color, clearColor, clearDepth, clearStencil, stencilClearValue);
       let draws = 0;
       engine.drawElementsType = () => { engine.applyStates(); draws += 1; glOf().drawElements!(); };
       // The Engine's next state changes all reach the context, as on a fresh WebGL Engine.

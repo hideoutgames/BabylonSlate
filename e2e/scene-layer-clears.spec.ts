@@ -55,9 +55,10 @@ const layerWork = (page: Page) => page.evaluate(() => (globalThis as unknown as 
 /**
  * Scene Layers leave out the depth-stencil clears the backbuffer already holds (the world output pass's clear takes the
  * first layer's): `layerdebug skipclears on` and `off` must draw the same bytes. Three plain layers of 2D quads, two
- * layers of turned 3D boxes overlapping each other on screen (the back layer's boxes behind the front layer's in depth,
- * so a depth clear left out wrongly hides them), a layer with a Post Processing Panel, then the shared Scene Layer stack
- * with a pass.
+ * layers of turned 3D boxes overlapping each other on screen (the back layer's boxes behind the front layer's in depth),
+ * a layer with a Post Processing Panel, then the shared Scene Layer stack with a pass. These layers' draws all blend, and
+ * a blended draw writes no depth, so every layer clear here is left out; that a draw writing depth or stencil makes the
+ * next clear run is `backbuffer-depth-tracker.test.ts`'s and `scene-layer-compositor.test.ts`'s.
  */
 test("leaving out the Scene Layers' already-cleared depth-stencil clears changes no pixel", async ({ page }, testInfo) => {
   test.setTimeout(300_000);
@@ -189,12 +190,7 @@ test("leaving out the Scene Layers' already-cleared depth-stencil clears changes
   const { skippedWork, everyWork } = plain;
   expect(skippedWork!.backbuffer.clears).toBe(everyWork!.backbuffer.clears - skippedWork!.backbuffer.elided);
   expect(skippedWork!.backbuffer.depthClears).toBe(everyWork!.backbuffer.depthClears - skippedWork!.backbuffer.elided + 1);
-  // The scene is sensitive to depth: with no layer depth clears at all the back boxes disappear behind the front ones.
-  await command("layerdebug clears off");
-  const unclear = await settled(page, plain.skipped);
-  await command("layerdebug clears on");
-  expect(unclear).not.toBe(plain.skipped);
-  expect(await settled(page)).toBe(plain.skipped);
+  await canvas.screenshot({ path: testInfo.outputPath("scene-layer-clears-plain.png") });
 
   const step = async (text: string) => {
     await closeConsole();
