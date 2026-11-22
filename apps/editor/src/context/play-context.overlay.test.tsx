@@ -86,7 +86,7 @@ vi.mock("../services/play-asset-sources", async (importOriginal) => ({
   acquirePlayStartupSources: async () => ({
     prepared: {
       game: { scenes: new Map([[host.scene.header.guid, createDefaultScene()]]), scripts: [], decodedPayloads: new Map() },
-      content: {},
+      content: { animClipCatalog: [] },
       sources: {},
       diagnostics: [],
       required: [],
