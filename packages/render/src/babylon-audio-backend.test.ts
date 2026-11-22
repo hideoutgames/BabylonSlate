@@ -9,17 +9,21 @@ const audio = vi.hoisted(() => {
     createBiquadFilter = vi.fn(() => ({ type: "", frequency: { value: 0 }, connect: vi.fn(), disconnect: vi.fn() }));
   }
   const context = new Context();
+  const spatialProperty = () => ({
+    position: { set: vi.fn() }, rotationQuaternion: { set: vi.fn() }, update: vi.fn(),
+  });
   const engine = { _audioContext: context, mainOut: { _inNode: { connect: vi.fn() } },
-    unlockAsync: vi.fn(async () => {}), dispose: vi.fn() };
+    unlockAsync: vi.fn(async () => {}), dispose: vi.fn(), listener: spatialProperty() };
   const sound = () => ({
     play: vi.fn(), stop: vi.fn(), dispose: vi.fn(), pause: vi.fn(), resume: vi.fn(),
     volume: 1, _outNode: { connect: vi.fn() }, onEndedObservable: { addOnce: vi.fn() },
+    spatial: spatialProperty(),
   });
   return { Context, context, engine, sound,
     createEngine: vi.fn(async () => engine),
     createBus: vi.fn(async () => ({ dispose: vi.fn() })),
     createBuffer: vi.fn(async (source: ArrayBuffer) => ({ length: source.byteLength, channelCount: 1 })),
-    createSound: vi.fn(async () => sound()),
+    createSound: vi.fn<(...args: unknown[]) => Promise<ReturnType<typeof sound>>>(async () => sound()),
     createStreamingSound: vi.fn<(...args: unknown[]) => Promise<ReturnType<typeof sound>>>(async () => sound()),
   };
 });
@@ -106,6 +110,62 @@ describe("Babylon audio backend lifecycle", () => {
     backend.setVoiceMuffle(request.voiceId, 0);
     expect(sound.volume).toBeCloseTo(0.6);
     expect(send.gain.value).toBe(0);
+    backend.dispose();
+  });
+
+  it("leaves distance falloff to the service's gain, so the panner only pans", async () => {
+    const backend = new BabylonAudioPlaybackBackend();
+    const spatial = {
+      enabled: true, innerRadius: 2, maxRadius: 20, distanceModel: "inverse" as const, rolloff: 3,
+      spatialisation: "hrtf" as const, cone: null,
+    };
+    expect(backend.setVoiceAttenuation(request.voiceId, 0.5)).toBe(false);
+    await backend.play({ ...request, gain: 0.8, attenuation: 0.25, spatial });
+    const sound = await (audio.createSound.mock.results[0]!.value as Promise<ReturnType<typeof audio.sound>>);
+    // With rolloff 0 every Web Audio distance model is 1 at any distance; Max Radius and the curve are the service's.
+    expect(audio.createSound.mock.calls[0]![2]).toEqual(expect.objectContaining({
+      volume: 0.2, spatialEnabled: true, spatialRolloffFactor: 0, spatialPanningModel: "HRTF",
+    }));
+    expect(audio.createSound.mock.calls[0]![2]).not.toHaveProperty("spatialMaxDistance");
+    expect(backend.setVoiceAttenuation(request.voiceId, 0)).toBe(true);
+    expect(sound.volume).toBe(0);
+    backend.setVoiceAttenuation(request.voiceId, 0.5);
+    backend.setVoiceMuffle(request.voiceId, 0.5);
+    // Gain × distance gain × the muffle's dry share.
+    expect(sound.volume).toBeCloseTo(0.2);
+    backend.setVoiceGain(request.voiceId, 0.4);
+    expect(sound.volume).toBeCloseTo(0.1);
+    backend.dispose();
+  });
+
+  it("runs no per-voice update loop: each pose write pushes itself, and non-spatial voices get no panner", async () => {
+    const backend = new BabylonAudioPlaybackBackend();
+    const spatial = {
+      enabled: true, innerRadius: 2, maxRadius: 20, distanceModel: "linear" as const, rolloff: 1,
+      spatialisation: "equalPower" as const, cone: null,
+    };
+    await backend.play({ ...request, voiceId: "emitter", spatial });
+    await backend.play({ ...request, voiceId: "music" });
+    expect(audio.createEngine).toHaveBeenCalledWith(expect.objectContaining({ listenerAutoUpdate: false }));
+    const [emitterOptions, musicOptions] = audio.createSound.mock.calls.map((call) => call[2] as Record<string, unknown>);
+    expect(emitterOptions).toEqual(expect.objectContaining({ spatialEnabled: true, spatialAutoUpdate: false }));
+    // Any spatial option would give the music a panner (and an update loop).
+    expect(Object.keys(musicOptions!).filter((key) => key.startsWith("spatial"))).toEqual([]);
+
+    const [emitter, music] = await Promise.all(audio.createSound.mock.results.map((result) => result.value)) as ReturnType<typeof audio.sound>[];
+    expect(backend.setVoicePose("emitter", { x: 1, y: 2, z: 3, qx: 0, qy: 1, qz: 0, qw: 0 })).toBe(true);
+    expect(emitter!.spatial.position.set).toHaveBeenCalledWith(1, 2, 3);
+    expect(emitter!.spatial.rotationQuaternion.set).toHaveBeenCalledWith(0, 1, 0, 0);
+    expect(emitter!.spatial.update).toHaveBeenCalledOnce();
+    expect(emitter!.spatial.update.mock.invocationCallOrder[0]).toBeGreaterThan(
+      emitter!.spatial.rotationQuaternion.set.mock.invocationCallOrder[0]!,
+    );
+    expect(backend.setVoicePose("music", { x: 1, y: 2, z: 3 })).toBe(false);
+    expect(music!.spatial.position.set).not.toHaveBeenCalled();
+
+    expect(backend.setListenerPose({ x: 4, y: 5, z: 6 })).toBe(true);
+    expect(audio.engine.listener.position.set).toHaveBeenCalledWith(4, 5, 6);
+    expect(audio.engine.listener.update).toHaveBeenCalledOnce();
     backend.dispose();
   });
 

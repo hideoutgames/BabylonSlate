@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  createActor,
+  createDefaultScene,
   createDefaultSceneLayer,
   DEFAULT_RENDER_EFFECTS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -12,6 +14,7 @@ import {
 import { exportGame, zipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
 import { unzipExport } from "./test-support/unzip-export";
 import { GAME_MANIFEST_FILE } from "./constants";
+import { COMPLEX_COLLISION_EXPORT_TYPE } from "./complex-collision";
 import { appIconImages } from "./test-support/app-icon-images";
 
 function stubPlayer(): Map<string, Uint8Array> {
@@ -579,6 +582,45 @@ describe("exportGame", () => {
     expect(result.error).toBe("Export file count 4 exceeds the limit of 3.");
   });
 
+  it("warns about and ships no Complex Collision for a Model whose geometry is Draco-compressed", async () => {
+    const { buildBoxGlbFixture, encodeGlbJsonBin, encodePackedModelAsset } = await import("@haptic/assets");
+    const payload = { importScale: 1, materialSlots: [], skeletonGuid: null, simpleColliders: [] };
+    const draco = "KHR_draco_mesh_compression";
+    const dracoGlb = encodeGlbJsonBin({
+      asset: { version: "2.0" }, extensionsUsed: [draco], extensionsRequired: [draco],
+      buffers: [{ byteLength: 40 }], bufferViews: [{ buffer: 0, byteLength: 40 }],
+      accessors: [{ componentType: 5126, count: 3, type: "VEC3" }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, extensions: { [draco]: { bufferView: 0, attributes: { POSITION: 0 } } } }] }],
+      nodes: [{ mesh: 0 }], scenes: [{ nodes: [0] }], scene: 0,
+    }, new Uint8Array(40).fill(0xab));
+    const scene = createDefaultScene();
+    for (const guid of ["rock-model", "statue-model"]) {
+      scene.actors.push(createActor(guid, guid, { components: [{
+        id: "mesh", classId: "MeshComponent", properties: { assetGuid: guid, collisionMode: "complex" },
+      }] }));
+    }
+    const result = await exportGame({
+      platform: "web",
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        { guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: new TextEncoder().encode(JSON.stringify(scene)) },
+        { guid: "rock-model", type: "Model", sceneGuid: "scene-1", name: "Rock", bytes: encodePackedModelAsset(payload, buildBoxGlbFixture(1)) },
+        { guid: "statue-model", type: "Model", sceneGuid: "scene-1", name: "Statue", bytes: encodePackedModelAsset(payload, dracoGlb) },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.manifest.assets.filter((entry) => entry.type === COMPLEX_COLLISION_EXPORT_TYPE).map((entry) => entry.ownerGuid))
+      .toEqual(["rock-model"]);
+    expect(result.value.warnings).toEqual([
+      expect.stringMatching(/^Model Statue uses Use Complex Collision, but its geometry is Draco-compressed .*It has no collision in the game\.$/),
+    ]);
+  });
+
   it("warns when the file count crosses the warn threshold", async () => {
     const result = await exportGame({
       platform: "web",
@@ -798,6 +840,30 @@ describe("exportGame", () => {
     expect(result.value.files.has("assets/HavokPhysics_es.js")).toBe(true);
     expect(result.value.manifest.assets.filter((asset) => asset.type === "SceneLayer").map((asset) => asset.guid))
       .toEqual(["hud", "pause-menu"]);
+  });
+
+  it("parses each Scene and Scene Layer document once per export, and keeps Rapier for an unreadable layer", async () => {
+    const layer = sceneLayerAsset("hud", false);
+    const scene = { guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: new TextEncoder().encode(JSON.stringify({ name: "Level", actors: [] })) };
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      const result = await exportGame({
+        platform: "web", bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+        physicsWorld: "3d", scripts: [], assets: [scene, layer], playerFiles: physicsPlayerFiles(),
+      });
+      if (!result.ok) throw new Error(result.error);
+      // Layer physics, the Complex Collision scan, dependency metadata and editor-only field stripping read one parse.
+      const parsesOf = (bytes: Uint8Array) => parse.mock.calls.filter(([text]) => text === new TextDecoder().decode(bytes)).length;
+      expect(parsesOf(layer.bytes)).toBe(1);
+      expect(parsesOf(scene.bytes)).toBe(1);
+      expect(result.value.files.has("assets/rapier.es.js")).toBe(false);
+    } finally { parse.mockRestore(); }
+    const unreadable = await exportGame({
+      platform: "web", bundleDebugger: false, startupSceneGuid: "scene-1", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      physicsWorld: "3d", scripts: [], assets: [scene, { ...layer, bytes: new TextEncoder().encode("{") }], playerFiles: physicsPlayerFiles(),
+    });
+    if (!unreadable.ok) throw new Error(unreadable.error);
+    expect(unreadable.value.files.has("assets/rapier.es.js")).toBe(true);
   });
 
   it("inlines every link to a stylesheet verbatim and keeps an unlinked stylesheet", async () => {
