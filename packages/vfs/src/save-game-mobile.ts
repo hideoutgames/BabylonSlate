@@ -1,3 +1,4 @@
+// #if WITH_MOBILE
 import type { SaveGameStorage } from "@haptic/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { getHostPlatform } from "./platform";
@@ -81,3 +82,4 @@ export class MobileSaveGameStorage implements SaveGameStorage {
     return withSaveGameWebLock(key, operation);
   }
 }
+// #endif

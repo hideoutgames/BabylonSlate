@@ -1,6 +1,6 @@
 import { SAFE_ZIP_MTIME } from "./zip-time";
 import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, normalizeSceneLayerPostProcessStack, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
-import { collectAssetDependencyMetadata, sceneLayerPostProcessAssetGuids, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
+import { collectAssetDependencyMetadata, complexCollisionModelGuids, cookComplexCollisionMesh, sceneLayerPostProcessAssetGuids, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
   DEFAULT_FILE_COUNT_FAIL,
@@ -9,6 +9,8 @@ import {
 } from "./constants";
 import { APP_ICON_FILE, APP_ICON_FILE_SIZE, appIconPng, brandPlayerIndexHtml } from "./app-icon";
 import { selectPlayerRuntimeFiles } from "./player-files";
+import { exportAssetForm, stripEditorOnlyFields } from "./export-asset-forms";
+import { COMPLEX_COLLISION_EXPORT_TYPE, complexCollisionExportGuid, encodeComplexCollisionMesh } from "./complex-collision";
 import type {
   ExportArtifact,
   ExportAssetBytes,
@@ -20,32 +22,6 @@ import type {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-const JSON_TYPES = new Set<string>([
-  "InputAction", "InputAxis",
-  "Scene",
-  "Class",
-  "AnimationGraph3D",
-  "AnimationGraph2D",
-  "BehaviourTree",
-  "Blackboard",
-  "Material",
-  "MaterialFunction",
-  "MaterialInstance",
-  "RenderTarget",
-  "RenderTargetTexture",
-  "Sprite",
-  "SpriteAnimation",
-  "Tilemap",
-  "Tileset",
-  // Basic emitters, Particle Graphs and Particle Systems.
-  ...PARTICLE_ASSET_TYPES,
-  "Animation",
-  "Skeleton",
-  "SceneLayer", "AudioMixer", "AudioChannel", "SoundAttenuation", "CameraShake", "Water",
-  "DataDefinition", "DataTree", "Structure", "Enum", "SaveGame", "FloatCurve", "VectorCurve", "ColorCurve",
-  "GlobalParameterCollection",
-]);
-
 function countWarning(count: number, warn: number): string {
   return `Export file count ${count} exceeds the warning threshold of ${warn}.`;
 }
@@ -55,7 +31,51 @@ function countError(count: number, fail: number): string {
 }
 
 function encodingFor(asset: ExportAssetBytes): "json" | "bytes" {
-  return asset.encoding ?? (JSON_TYPES.has(asset.type) ? "json" : "bytes");
+  return asset.encoding ?? (exportAssetForm(asset.type) === "json" ? "json" : "bytes");
+}
+
+function parseDocument(asset: ExportAssetBytes): unknown {
+  try { return JSON.parse(decoder.decode(asset.bytes)); } catch { return undefined; }
+}
+
+/**
+ * Complex Collision sidecars (`HPCC`) for the Models this export's Scenes, Scene Layers and Classes simulate with Use
+ * Complex Collision, cooked here exactly as the player cooked them at runtime, so a game never parses a GLB for its
+ * collision. Each is a soft dependency of its Model: the player loads it only for a closure that needs it.
+ */
+function complexCollisionSidecars(assets: readonly ExportAssetBytes[]): ExportAssetBytes[] {
+  const documents = assets.flatMap((asset) => asset.type === "Scene" || asset.type === "SceneLayer" || asset.type === "Class" || asset.type === "CompiledScript"
+    ? [parseDocument(asset)] : []);
+  const needed = complexCollisionModelGuids(documents);
+  const sidecars: ExportAssetBytes[] = [];
+  for (const model of assets) {
+    if (model.type !== "Model" || !needed.has(model.guid)) continue;
+    const packed = decodePackedModelAsset(model.bytes);
+    const mesh = packed ? cookComplexCollisionMesh(packed.source, packed.payload) : null;
+    if (!mesh) continue;
+    sidecars.push({ guid: complexCollisionExportGuid(model.guid), ownerGuid: model.guid, type: COMPLEX_COLLISION_EXPORT_TYPE,
+      sceneGuid: model.sceneGuid, encoding: "bytes", bytes: encodeComplexCollisionMesh(mesh), requiredDependencies: [] });
+  }
+  return sidecars;
+}
+
+/**
+ * The assets as a game ships them (`EXPORT_ASSET_FORMS`): `omit` types and every edge to them are dropped, `catalog`
+ * types keep their entry with no payload, and JSON documents lose their editor-only fields.
+ */
+function shipAssets(assets: readonly ExportAssetBytes[]): ExportAssetBytes[] {
+  const omitted = new Set(assets.flatMap((asset) => exportAssetForm(asset.type) === "omit" ? [asset.guid] : []));
+  const kept = (refs: readonly string[] | undefined) => refs?.filter((ref) => !omitted.has(ref));
+  return assets.flatMap((asset) => {
+    if (omitted.has(asset.guid)) return [];
+    const edges = { dependencies: kept(asset.dependencies), requiredDependencies: kept(asset.requiredDependencies) };
+    const form = exportAssetForm(asset.type);
+    if (form === "catalog") return [{ ...asset, ...edges, encoding: "bytes" as const, bytes: new Uint8Array(0) }];
+    if (form !== "json" || encodingFor(asset) !== "json") return [{ ...asset, ...edges }];
+    const document = parseDocument(asset);
+    const stripped = stripEditorOnlyFields(asset.type, document);
+    return [{ ...asset, ...edges, bytes: stripped === document ? asset.bytes : encoder.encode(JSON.stringify(stripped)) }];
+  });
 }
 
 /** Compile class id of a Class: the compiled script's id, else its storage file stem. */
@@ -66,7 +86,7 @@ function classIdOf(asset: ExportAssetBytes): string | undefined {
 
 function indexEntry(
   asset: ExportAssetBytes,
-  extra: { path: string },
+  extra: { path: string | undefined },
 ): GameAssetIndexEntry {
   return {
     guid: asset.guid,
@@ -85,7 +105,7 @@ function indexEntry(
       ? { width: asset.width, height: asset.height }
       : {}),
     ...(typeof asset.pixelSize === "number" && asset.pixelSize > 0 ? { pixelSize: asset.pixelSize } : {}),
-    ...extra,
+    ...(extra.path ? { path: extra.path } : {}),
   };
 }
 
@@ -209,8 +229,9 @@ async function writeAssetFiles(
     const streamRevisions = prepared[indexInExport]!.streamRevisions;
     // Asset IDs include namespaced sidecars (for example area-emission:guid).
     // Keep IDs in the manifest and use portable, collision-free file names.
-    const path = `assets/data-${indexInExport}.bin`;
-    files.set(path, entryBytes);
+    // An entry with no payload (a catalog-only type, a Font without a source file) gets no file.
+    const path = entryBytes.byteLength > 0 ? `assets/data-${indexInExport}.bin` : undefined;
+    if (path) files.set(path, entryBytes);
     index.push({ ...indexEntry(asset, { path }), byteLength: entryBytes.byteLength, revision: await hashes[indexInExport]!,
       dependencies: [...(asset.dependencies ?? [])], requiredDependencies: [...(asset.requiredDependencies ?? [])],
       ...(asset.startupRequired ? { startupRequired: true } : {}),
@@ -267,14 +288,17 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
     }).requiredVariableNames;
   }
   const sidecars = new Map<string, string[]>();
+  const requiredSidecars = new Map<string, string[]>();
   for (const asset of assets) {
     const separator = asset.guid.indexOf(":");
     if (separator < 0) continue;
     const owner = asset.ownerGuid ?? asset.guid.slice(separator + 1);
     if (!byId.has(owner)) continue;
-    const list = sidecars.get(owner) ?? [];
-    list.push(asset.guid);
-    sidecars.set(owner, list);
+    for (const map of asset.type === COMPLEX_COLLISION_EXPORT_TYPE ? [sidecars] : [sidecars, requiredSidecars]) {
+      const list = map.get(owner) ?? [];
+      list.push(asset.guid);
+      map.set(owner, list);
+    }
   }
   // The first Class naming a ref by guid or class id, as a front-to-back search would find it.
   const classByRef = new Map<string, AssetDependencyClass>();
@@ -306,7 +330,7 @@ function dependencyCatalog(assets: readonly ExportAssetBytes[]): ExportAssetByte
     });
     const consoleCommand = asset.consoleCommand ?? (asset.type === "Class" ? consoleCommandMetadataFromGraph(document(asset)) : undefined);
     return { ...asset, consoleCommand, dependencies: unique([...(dependencies ?? []), ...resolveClasses(classReferences), ...(sidecars.get(asset.guid) ?? [])]),
-      requiredDependencies: unique([...(required ?? []), ...resolveClasses(requiredClassReferences), ...(asset.type === "Font" ? [] : sidecars.get(asset.guid) ?? [])]) };
+      requiredDependencies: unique([...(required ?? []), ...resolveClasses(requiredClassReferences), ...(asset.type === "Font" ? [] : requiredSidecars.get(asset.guid) ?? [])]) };
   });
 }
 
@@ -349,6 +373,7 @@ export async function exportGame(
     sourceAssets.push({ guid: `script:${script.assetGuid}:${encodeURIComponent(script.classId)}`, ownerGuid: script.assetGuid, type: "CompiledScript", classId: script.classId,
       sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify(script)), requiredDependencies: [] });
   }
+  sourceAssets.push(...complexCollisionSidecars(sourceAssets));
 
   // Project-level assets Play reads from its first frame: the LUT and the Scene Layer post-processing passes.
   const projectAssetGuids = new Set([...renderEffectsAssetGuids(options.renderSettings?.effects),
@@ -359,7 +384,7 @@ export async function exportGame(
   }));
   // Every asset is its own immutable file. A ZIP is only the delivery
   // container; static hosts serve the files independently.
-  const index = await writeAssetFiles(files, prepared);
+  const index = await writeAssetFiles(files, shipAssets(prepared));
 
   inlineCssIntoIndex(files);
 

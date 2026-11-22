@@ -1,4 +1,4 @@
-import { encodeHasset } from "@haptic/assets";
+import { encodeHasset } from "@haptic/assets/hasset";
 
 /** An actor as a Scene document stores it. */
 export function sceneActor(id: string, name: string, extra: Record<string, unknown> = {}) {

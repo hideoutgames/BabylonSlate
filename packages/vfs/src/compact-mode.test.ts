@@ -5,6 +5,8 @@ const getPlatform = vi.fn(() => "web");
 vi.mock("@capacitor/core", () => ({
   Capacitor: { getPlatform: () => getPlatform() },
 }));
+// `getHostPlatform` reads the Capacitor bridge global that the native shells inject.
+(globalThis as { Capacitor?: unknown }).Capacitor = { getPlatform: () => getPlatform() };
 
 const { defaultCompactMode, resolveCompactMode } = await import("./compact-mode");
 const { engineSettingsSchema } = await import("./app-settings");

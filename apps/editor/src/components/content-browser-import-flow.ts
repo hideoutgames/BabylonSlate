@@ -12,7 +12,8 @@ import {
   type ExpandedImportZip,
   type ImportFileBytes,
 } from "@haptic/assets";
-import { convertObjImportBatch, convertStlImportBatch } from "@haptic/render";
+import { convertObjImportBatch } from "@haptic/render/convert-obj-to-glb";
+import { convertStlImportBatch } from "@haptic/render/convert-stl-to-glb";
 import { convertFbxImportBatch } from "@haptic/render/fbx-import";
 import { createAppSettingsStore, isMobilePlatform, pickImportFiles } from "@haptic/vfs";
 import type { useDocumentActions } from "../context/document-context";

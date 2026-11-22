@@ -15,10 +15,10 @@ import {
 } from "@haptic/assets";
 import type { BehaviourTreeDocument } from "@haptic/behaviour-tree";
 import {
-  generateNavMesh,
   initNavigation,
   recastWalkableQuadFromXy,
 } from "@haptic/navigation";
+import { generateNavMesh } from "@haptic/navigation/bake";
 import {
   BOOL,
   compileGraph,

@@ -6,9 +6,17 @@ import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createInProcessRuntime } from "@haptic/runtime";
 import type { CommandMessage, ScriptBundleEntry } from "@haptic/bridge";
 import {
-  AssetFormatVersionError, AssetRegistry, buildBoxGlbFixture, createDefaultMigrationRegistry, createRegistryAssetLoadingService, encodeHasset,
-  FONT_FACETYPE_CHUNK_ID, MATERIAL_PAYLOAD_VERSION, projectContentRoot, type ChunkInput,
+  AssetFormatVersionError,
+  AssetRegistry,
+  buildBoxGlbFixture,
+  createDefaultMigrationRegistry,
+  createRegistryAssetLoadingService,
+  FONT_FACETYPE_CHUNK_ID,
+  MATERIAL_PAYLOAD_VERSION,
+  projectContentRoot,
+  type ChunkInput,
 } from "@haptic/assets";
+import { encodeHasset } from "@haptic/assets/hasset";
 import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
 import type { OpenDocument } from "./document-service";
 import { PlayRequiredAssetError } from "./play-asset-problems";

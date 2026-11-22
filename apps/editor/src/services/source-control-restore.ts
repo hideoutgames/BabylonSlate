@@ -1,4 +1,4 @@
-import { readHassetHeader } from "@haptic/assets";
+import { readHassetHeader } from "@haptic/assets/hasset";
 import type { ProjectStorage } from "@haptic/core";
 import type { LfsFile, SyncPort } from "@haptic/source-control";
 import { assetBlobFolder } from "../lib/source-control-changes";

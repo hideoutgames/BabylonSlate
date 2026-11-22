@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultScene, quatRotateVector, type SerializedGraph } from "@haptic/core";
-import { AssetRegistry, collectAssetDependencyMetadata, createRegistryAssetLoadingService, encodeHasset, extractGltfPositions, type ImportResult, type IndexedAsset, type RegistryLoadedAsset } from "@haptic/assets";
+import { AssetRegistry, collectAssetDependencyMetadata, createRegistryAssetLoadingService, extractGltfPositions, type ImportResult, type IndexedAsset, type RegistryLoadedAsset } from "@haptic/assets";
+import { encodeHasset } from "@haptic/assets/hasset";
 import { createImportedMaterialDocument } from "@haptic/shader-graph";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import {

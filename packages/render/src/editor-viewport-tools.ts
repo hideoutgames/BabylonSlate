@@ -77,7 +77,7 @@ import { EditorDebugOverlay } from "./editor-debug-overlay";
 import type { CreateEngineOptions, EditorTools } from "./create-engine-types";
 
 /** What the editor viewport tools read from the Engine handle being built. */
-interface EditorViewportToolsContext {
+export interface EditorViewportToolsContext {
   canvas: HTMLCanvasElement;
   scene: Scene;
   options: CreateEngineOptions;

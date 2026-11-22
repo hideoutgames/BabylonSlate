@@ -10,7 +10,7 @@ import {
   writeSnapshotHeader,
 } from "@haptic/bridge";
 import { createDefaultScene } from "@haptic/core";
-import { createEngine } from "./create-engine";
+import { createEngine } from "./editor-engine";
 import { describeEngineTexture } from "./resource-cache";
 import { discardParkedShadowAtlas, parkedShadowAtlasTextures } from "./shadow-atlas";
 
