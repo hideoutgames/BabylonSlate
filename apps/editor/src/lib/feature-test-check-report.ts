@@ -91,11 +91,14 @@ type Programs = NonNullable<FeatureTestBenchmarkSample["programs"]>;
 
 /**
  * The Engine's programs: each one cost a compile, and one never drawn cost it for nothing so far. `by first pass` says
- * which of a view's passes the drawn ones belong to.
+ * which of a view's passes the drawn ones belong to. Then the Material compiler's builds against the distinct programs
+ * they share, the builds that adopted another's program and the rebuilds that compiled their own program again.
  */
 function programsText(programs: Programs): string {
   const passes = firstDrawPasses(programs.passes);
-  return `${programs.programs} on the Engine · ${programs.neverDrawn} never drawn · ${programs.shaders} shaders, at most ${programs.mostVariants} programs of one${passes ? ` · by first pass: ${passes}` : ""}`;
+  const materials = programs.materials;
+  return `${programs.programs} on the Engine · ${programs.neverDrawn} never drawn · ${programs.shaders} shaders, at most ${programs.mostVariants} programs of one${passes ? ` · by first pass: ${passes}` : ""}` +
+    ` · Material builds ${materials.builds} on ${materials.programs} programs (${materials.adopted} adopted one, ${materials.sameShaderRebuilds} rebuilt unchanged)`;
 }
 
 /**
@@ -169,6 +172,21 @@ function layerBatchesText(stats: LayerBatches): string {
   const alone = (Object.keys(ALONE_LABELS) as OverlayAloneReason[]).map((reason) => [stats.alone[reason], ALONE_LABELS[reason]] as const)
     .filter(([n]) => n > 0).sort((a, b) => b[0] - a[0]).map(([n, label]) => `${n} ${label}`).join(", ");
   return `${count(stats.visuals, "visual")} in ${count(stats.draws, "draw")} · ${stats.batched} in ${count(stats.batches, "batch")}${alone ? ` · alone: ${alone}` : ""}`;
+}
+
+type LayerFrame = NonNullable<RenderDiagnostics["layerFrame"]>;
+/**
+ * A frame's Scene Layer work: the layer Scenes rendered and the layer pass's time, split into its batched passes and
+ * the per-Scene work around them; the clears, framebuffer changes and uploads in that pass after the world; and the
+ * work done before the world.
+ */
+function layerFrameText(stats: LayerFrame): string {
+  const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : noun.endsWith("h") ? "es" : "s"}`;
+  const before = stats.beforeWorld;
+  return `${count(stats.scenes, "scene")} in ${stats.ms.toFixed(2)} ms (${stats.batchMs.toFixed(2)} in batched passes, ` +
+    `${Math.max(0, stats.ms - stats.batchMs).toFixed(2)} per-Scene work) · ${count(stats.clears, "clear")} (${stats.depthClears} of depth) · ` +
+    `${count(stats.targetSwitches, "target switch")} · ${count(stats.uploads, "upload")} · ` +
+    `before the world: ${before.ms.toFixed(2)} ms, ${count(before.uploads, "upload")}, ${count(before.targetSwitches, "target switch")}`;
 }
 
 type RetainedShadows = NonNullable<RenderDiagnostics["shadowRetained"]>;
@@ -245,7 +263,7 @@ function longFrame(frame: LongFrame): string {
 function firstDrawLines(first: FirstDraws, when: string): string[] {
   const passes = firstDrawPasses(first.passes);
   return [
-    `  First draws ${when}: ${first.draws} (${first.loadCompiled} compiled by the load) in ${first.frames} frame${first.frames === 1 ? "" : "s"} · ${first.stalls} over 100 ms · worst ${first.worstFrameMs.toFixed(0)} ms · most ${first.mostInFrame} in a frame${passes ? ` · by pass: ${passes}` : ""}`,
+    `  First draws ${when}: ${first.draws} (${first.loadCompiled} compiled by the load, of ${first.loadPrograms} it compiled) in ${first.frames} frame${first.frames === 1 ? "" : "s"} · ${first.stalls} over 100 ms · worst ${first.worstFrameMs.toFixed(0)} ms · most ${first.mostInFrame} in a frame${passes ? ` · by pass: ${passes}` : ""}`,
     `  Long frames ${when}: ${first.longFrames} over 100 ms${first.longest.length ? ` · longest ${first.longest.slice(0, MAX_LONG_FRAMES).map(longFrame).join(", ")}` : ""}`,
   ];
 }
@@ -383,6 +401,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       const passMs = cpuPassText(counters?.drawPassMs ?? r?.drawPassMs);
       if (passMs) lines.push(`  CPU per pass: ${passMs}`);
       if (r?.layerBatches?.visuals) lines.push(`  Scene Layers: ${layerBatchesText(r.layerBatches)}`);
+      if (r?.layerFrame?.scenes) lines.push(`  Scene Layer work: ${layerFrameText(r.layerFrame)}`);
       if (r?.shadowRetained?.casters) lines.push(`  Shadow casters: ${retainedShadowsText(r.shadowRetained)}`);
       const withoutDraws = cpuWithoutDrawsText(counters);
       if (withoutDraws) lines.push(`  CPU without draws: ${withoutDraws}`);
