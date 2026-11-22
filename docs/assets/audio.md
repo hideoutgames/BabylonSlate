@@ -24,7 +24,7 @@ Double-tap the asset to open it. The window has **Preview**, **Inspector** and *
 | Pitch | A fixed pitch from 0.25 to 4. Shown when Randomize Pitch is off. Default 1. |
 | Pitch Min, Pitch Max | The random range, from 0.25 to 4. Shown when Randomize Pitch is on. |
 | Audio Channel | The [Audio Channel](audio-channel.md) the sound plays through. None by default. |
-| Sound Attenuation | A [Sound Attenuation](sound-attenuation.md) asset that makes the sound 3D. None plays it at full volume everywhere. |
+| Sound Attenuation | A [Sound Attenuation](sound-attenuation.md) asset that makes the sound 3D and sets how it falls off with distance. None plays it at full volume everywhere. |
 
 ## Related
 

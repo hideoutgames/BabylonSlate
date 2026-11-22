@@ -3,18 +3,20 @@ import {
   normalizeAudioMixerPayload,
   normalizeAudioPayload,
   normalizeSoundAttenuationPayload,
+  soundAttenuationLibraryEntry,
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
-  type SoundAttenuationPayload,
+  type SoundAttenuationLibraryEntry,
 } from "@haptic/assets";
+import { CURVE_ASSET_TYPES } from "@haptic/core";
 
 export type PlayAudioLibrary = {
   mixerGuid: string | null;
   mixers: Map<string, AudioMixerPayload>;
   channels: Map<string, AudioChannelPayload>;
   audio: Map<string, AudioPayload>;
-  attenuations: Map<string, SoundAttenuationPayload>;
+  attenuations: Map<string, SoundAttenuationLibraryEntry>;
 };
 
 export type PlayAudioSourceLoader = (request: {
@@ -34,12 +36,28 @@ export function emptyPlayAudioLibrary(
   };
 }
 
-/** Build a Play audio library from registry/open-document payloads. */
+/** The Float Curves the Custom falloffs of these attenuation payloads name. */
+export function attenuationCurveGuids(payloads: Iterable<unknown>): Set<string> {
+  const guids = new Set<string>();
+  for (const payload of payloads) {
+    const attenuation = normalizeSoundAttenuationPayload(payload);
+    if (attenuation.falloff === "custom" && attenuation.falloffCurveGuid) guids.add(attenuation.falloffCurveGuid);
+  }
+  return guids;
+}
+
+/**
+ * Build a Play audio library from registry/open-document payloads. Float Curve assets among them resolve the Custom
+ * falloff of the attenuations that name them.
+ */
 export function playAudioLibraryFromAssets(options: {
   mixerGuid: string | null;
   assets: ReadonlyArray<{ guid: string; type: string; payload: unknown }>;
 }): PlayAudioLibrary {
   const library = emptyPlayAudioLibrary(options.mixerGuid);
+  const floatCurves = new Map(options.assets
+    .filter((asset) => asset.type === CURVE_ASSET_TYPES.float)
+    .map((asset) => [asset.guid, asset.payload] as const));
   for (const asset of options.assets) {
     if (asset.type === "Audio") {
       library.audio.set(asset.guid, normalizeAudioPayload(asset.payload));
@@ -53,7 +71,7 @@ export function playAudioLibraryFromAssets(options: {
     } else if (asset.type === "SoundAttenuation") {
       library.attenuations.set(
         asset.guid,
-        normalizeSoundAttenuationPayload(asset.payload),
+        soundAttenuationLibraryEntry(asset.payload, (guid) => floatCurves.get(guid)),
       );
     }
   }

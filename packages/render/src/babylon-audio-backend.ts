@@ -10,6 +10,7 @@ import {
   type StaticSoundBuffer,
   type StreamingSound,
 } from "@babylonjs/core/AudioV2";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import {
   AUDIO_MUFFLE_LOWPASS_HZ,
   AUDIO_SHARED_REVERB_BUSES,
@@ -19,6 +20,7 @@ import type {
   AudioPlaybackBackend,
   AudioPlayRequest,
   AudioPose,
+  AudioSpatialPlayOptions,
 } from "./audio-playback-backend";
 import {
   connectParametricReverb,
@@ -67,6 +69,10 @@ function revokeObjectUrlSafely(url: string): void {
  * send restores the low band by `muffle / (1 - muffle)`, which must stay finite.
  */
 const MAX_VOICE_MUFFLE = 0.9;
+
+function hasRotation(pose: AudioPose): pose is AudioPose & { qx: number; qy: number; qz: number; qw: number } {
+  return pose.qx !== undefined && pose.qy !== undefined && pose.qz !== undefined && pose.qw !== undefined;
+}
 
 function degreesToRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
@@ -173,6 +179,15 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
           spatialDistanceModel: "linear" as DistanceModelType,
           spatialRolloffFactor: 0,
           spatialPanningModel: (spatial.spatialisation === "hrtf" ? "HRTF" : "equalpower") as PanningModelType,
+          // Placed before it plays, so its first sample is not panned from the origin.
+          ...(request.pose
+            ? {
+                spatialPosition: new Vector3(request.pose.x, request.pose.y, request.pose.z),
+                ...(hasRotation(request.pose)
+                  ? { spatialRotationQuaternion: new Quaternion(request.pose.qx, request.pose.qy, request.pose.qz, request.pose.qw) }
+                  : {}),
+              }
+            : {}),
           ...(spatial.cone
             ? {
                 spatialConeInnerAngle: degreesToRadians(spatial.cone.innerAngle),
@@ -317,8 +332,22 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   setVoiceAttenuation(voiceId: string, gain: number): boolean {
     const level = this.voiceLevels.get(voiceId);
     if (!level) return false;
-    level.attenuation = Number.isFinite(gain) ? Math.min(1, Math.max(0, gain)) : 1;
+    // A gain that is not a number is silence, never full volume.
+    level.attenuation = Number.isFinite(gain) ? Math.min(1, Math.max(0, gain)) : 0;
     this.applyVoiceLevel(voiceId);
+    return true;
+  }
+
+  setVoiceSpatial(voiceId: string, options: AudioSpatialPlayOptions): boolean {
+    const sound = this.voices.get(voiceId);
+    if (!sound || !this.spatialVoices.has(voiceId)) return false;
+    const spatial = sound.spatial;
+    spatial.panningModel = options.spatialisation === "hrtf" ? "HRTF" : "equalpower";
+    // No cone is a full circle at both angles, which never lowers the volume.
+    spatial.coneInnerAngle = options.cone ? degreesToRadians(options.cone.innerAngle) : 2 * Math.PI;
+    spatial.coneOuterAngle = options.cone ? degreesToRadians(options.cone.outerAngle) : 2 * Math.PI;
+    spatial.coneOuterVolume = options.cone ? options.cone.outerGain : 0;
+    spatial.update();
     return true;
   }
 
@@ -328,14 +357,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     if (!sound || !this.spatialVoices.has(voiceId)) return false;
     const spatial = sound.spatial;
     spatial.position.set(pose.x, pose.y, pose.z);
-    if (
-      pose.qx !== undefined &&
-      pose.qy !== undefined &&
-      pose.qz !== undefined &&
-      pose.qw !== undefined
-    ) {
-      spatial.rotationQuaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
-    }
+    if (hasRotation(pose)) spatial.rotationQuaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
     // In-place writes reach the panner only through `update()` (auto-update is off).
     spatial.update();
     return true;

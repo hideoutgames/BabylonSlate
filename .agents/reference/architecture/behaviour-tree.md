@@ -43,6 +43,7 @@ Behaviour Tree and Blackboard documents, the deterministic evaluator, runtime ta
 - Move To / Move To Blackboard Key drive the navigation crowd; abort calls `stopNavAgent`.
 - Rotate To Face writes yaw only and teleports the physics body like script transform writes.
 - Play Animation emits `animState` (`stateId: "bt.playAnimation"`) and suppresses the Animation Graph for that slot while owned; abort or slot release ends ownership.
+- A built-in node's `asset` fields (`propertyFieldsForClassId`: Play Animation's `clipAssetGuid`, Play Sound's `audioAssetGuid`) are required dependencies of the tree (`collectAssetDependencyMetadata`), so they ship and load with it: the task reads its clip from the session's clip catalog the moment it runs.
 - Play Sound uses the shared `playSound` path with stable `voiceId` `bt:${actor.guid}:${node.id}` and omits `loop` (the Audio asset decides). The tree owns its voices; abort and actor removal stop them.
 - Trace frames record stack, blackboard, results, node memory, `playAnimationOwned` and `playSoundVoiceIds` ([debugger.md](debugger.md#trace-recorder)).
 

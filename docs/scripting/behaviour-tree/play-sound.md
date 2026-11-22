@@ -18,3 +18,4 @@ Plays an Audio asset from the actor and succeeds.
 - The task succeeds as soon as playback starts, without waiting for the sound to finish.
 - It fails if no Audio asset is chosen or the asset is missing.
 - The Audio asset's own Loop setting applies.
+- The Audio asset loads with the tree.

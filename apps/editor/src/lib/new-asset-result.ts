@@ -9,6 +9,7 @@ import {
   createDefaultRenderTargetCaptureProperties,
   createDefaultCameraShakePayload,
   createDefaultCurveAssetPayload,
+  normalizeCurveAssetPayload,
   createDefaultGlobalParameterCollection,
   GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE,
   createDefaultTimelineAsset,
@@ -93,6 +94,8 @@ export function buildNewAssetResult(options: {
   materialDomain?: MaterialDomain;
   /** A new Surface Material starts as the starter Water Material (built-in water's look, wired from the water nodes). */
   waterMaterial?: boolean;
+  /** A new Float, Vector or Color Curve starts as this curve instead of the default rise. */
+  curve?: unknown;
   defaultDefinitionGuid?: string | null;
   dataDefinition?: DataDefinitionAsset;
   dataTree?: DataTreeAsset;
@@ -389,7 +392,10 @@ export function buildNewAssetResult(options: {
 
   if (type === "FloatCurve" || type === "VectorCurve" || type === "ColorCurve") {
     const kind = curveKindForAssetType(type) ?? "float";
-    return documentAsset(type, name, guid, createDefaultCurveAssetPayload(kind) as unknown as Record<string, unknown>);
+    const payload = options.curve === undefined
+      ? createDefaultCurveAssetPayload(kind)
+      : normalizeCurveAssetPayload(kind, { curve: options.curve });
+    return documentAsset(type, name, guid, payload as unknown as Record<string, unknown>);
   }
 
   if (type === "CameraShake") {

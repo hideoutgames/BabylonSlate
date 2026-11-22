@@ -198,6 +198,7 @@ import {
   applyAttachToBone,
   applySetMaterialParameter,
   applyAssignMesh,
+  rebuildSlotForLoadedClip,
   applyPainter2DCommand,
   applyUIControl2DCommand,
   applyText2DAppearCommand,
@@ -1187,6 +1188,9 @@ function initializeEngine(
   const animHostReportingMissing = sceneAnimHostFromBinding(binding, animHostOptions((info) => {
     const clips = binding.slotPoseClips?.get(info.slotId);
     if (info.clipKind === "animation" && (!clips || clips.length === 0)) return;
+    // A clip loaded since the slot's Model was built (Play Slot Animation loads one on demand) binds once it is
+    // built again; until then the slot keeps its pose and the clip is not missing.
+    if (info.clipKind === "animation" && rebuildSlotForLoadedClip(binding, info.slotId, info.clipAssetGuid)) return;
     warnMissingClip(info);
   }));
   // Each slot's latest animation state is posed before the next snapshot is applied and before each render, and an
@@ -2388,7 +2392,9 @@ function initializeEngine(
     if (audioService) {
       const camera = simulationEditMode ? resolvePlayGameCamera(scene, binding) : scene.activeCamera;
       let listener: AudioPose | null = null;
-      if (camera && !gameTimePaused) {
+      // Paused game time holds the listener still, but a session that starts paused still needs its first pose:
+      // until one arrives, spatial voices are silent.
+      if (camera && (!gameTimePaused || !audioService.hasListener())) {
         // The Layer Camera hears from its centre on the XY plane, where 2D content lies, not from its depth.
         const pos = camera === worldLayerCamera?.camera
           ? { x: camera.position.x, y: camera.position.y, z: 0 }

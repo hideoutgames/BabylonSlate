@@ -22,8 +22,9 @@ function library(options?: {
     {
       innerRadius: number;
       maxRadius: number;
-      distanceModel: "linear";
-      rolloff: number;
+      falloff: "linear";
+      falloffCurveGuid: null;
+      customCurve: null;
       spatialisation: "equalPower";
       cone: null;
       doppler: null;

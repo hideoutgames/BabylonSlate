@@ -5,7 +5,7 @@ Sound Attenuation makes a sound come from a place in the world, getting quieter 
 ## Make a sound 3D
 
 1. In the **Content Browser**, choose **New Asset > Audio > Sound Attenuation** and open it.
-2. Set **Inner Radius** and **Max Radius**. The plot at the top shows how volume falls with distance.
+2. Set **Inner Radius**, **Max Radius** and **Falloff**. The plot at the top shows how volume falls with distance.
 3. Open an Audio asset and set **Routing > Sound Attenuation** to the new asset.
 
 Every sound that uses this Audio asset is now spatial. One Sound Attenuation asset can serve many sounds.
@@ -17,6 +17,7 @@ Every sound that uses this Audio asset is now spatial. One Sound Attenuation ass
 - [Play Sound](../scripting/class/play-sound.md) plays at the actor running the graph.
 - [Play Sound At Location](../scripting/class/play-sound-at-location.md) plays at a fixed point and stays there.
 - Select an actor with an Audio component to see its range in the viewport: a green sphere for **Inner Radius** and a yellow sphere for **Max Radius**.
+- Until Play has a camera to hear from, spatial sounds are silent. A sound that starts before then begins silent and takes its volume from the first camera position, never from the middle of the world.
 
 Previewing in the Audio asset editor is never spatial.
 
@@ -26,8 +27,7 @@ Previewing in the Audio asset editor is never spatial.
 | --- | --- |
 | Inner Radius | Within this distance the sound plays at full volume. Default 10. |
 | Max Radius | Beyond this distance the sound is silent. Default 250. |
-| Distance Model | How volume falls between the two radii: **Linear** (default), **Inverse** or **Exponential**. Every model reaches silence at **Max Radius**, as the plot shows. |
-| Rolloff | How steeply volume falls with the Inverse and Exponential models. Default 1. |
+| Falloff | How volume falls between the two radii: **Natural** (default), **Linear**, **Inverse**, **Exponential**, or **Custom** to follow a [Float Curve](../assets/curve.md) you pick as **Falloff Curve**. See [Falloff](../assets/sound-attenuation.md#falloff). |
 | Spatialisation | **Equal Power** (default) pans between left and right. **HRTF** models how sound reaches each ear, which works best on headphones. |
 | Cone | Makes the sound directional, aimed by the actor's rotation. |
 | Inner Angle, Outer Angle | Cone only. Full volume inside the inner angle, fading to **Outer Gain** at the outer angle, in degrees. Defaults 90 and 120. |
@@ -39,6 +39,7 @@ Previewing in the Audio asset editor is never spatial.
 
 - Distances are in world units, and actor scale does not change them.
 - A spatial sound with no actor to play from plays without position, and a warning is logged.
+- Sounds already playing take up an edited Sound Attenuation or Falloff Curve when Play next loads content, such as a Scene; an edit made while playing does not change them at once.
 - A looping sound beyond **Max Radius** keeps playing silently and still counts toward **Max Concurrent Voices**; it is among the first to stop when the limit is reached. See [Audio budget](index.md#audio-budget).
 - To muffle sounds behind walls, enable **Muffle Through Walls** on their channel. See [Mixing](mixing.md).
 
