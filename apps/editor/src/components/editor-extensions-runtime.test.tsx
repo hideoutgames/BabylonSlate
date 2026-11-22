@@ -31,6 +31,8 @@ const harness = vi.hoisted(() => {
       projectTrustKey: (guid: string) => JSON.stringify(["opfs:Extensions", guid]),
       createdHere: () => state.createdHere,
       forgetCreatedProject: () => { state.createdHere = false; },
+      revokeTrust: () => {},
+      clearRevocation: () => {},
       setTrustSource: (source: (() => boolean) | null) => { state.trustSource = source; },
     },
     getOpenDocuments: () => state.open,

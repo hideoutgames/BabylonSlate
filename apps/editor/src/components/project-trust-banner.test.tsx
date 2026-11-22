@@ -34,6 +34,8 @@ vi.mock("../context/document-context", async () =>
       projectTrustKey: (guid: string) => JSON.stringify(["opfs:Game", guid]),
       createdHere: () => false,
       forgetCreatedProject: () => {},
+      revokeTrust: () => {},
+      clearRevocation: () => {},
     },
   })),
 );
