@@ -3,7 +3,7 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
-import { createEngine } from "./create-engine";
+import { createEngine } from "./editor-engine";
 import type { EngineHandle } from "./create-engine-types";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { encodeRgbaPng } from "./png-encode";

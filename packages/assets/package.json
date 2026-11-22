@@ -3,8 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": [
+    "./src/area-emission-worker.ts",
+    "./src/asset-diff-worker.ts",
+    "./src/audio-reverb-worker.ts",
+    "./src/import-worker.ts"
+  ],
   "exports": {
     ".": "./src/index.ts",
+    "./hasset": "./src/hasset.ts",
     "./area-emission-client": "./src/area-emission-client.ts",
     "./asset-diff": "./src/asset-diff.ts",
     "./asset-diff-client": "./src/asset-diff-client.ts",
@@ -20,7 +27,6 @@
     "@haptic/object-model": "workspace:*",
     "@haptic/particle-graph": "workspace:*",
     "@haptic/shader-graph": "workspace:*",
-    "@noble/hashes": "2.4.0",
     "fflate": "^0.8.3",
     "zod": "^4.0.0"
   },

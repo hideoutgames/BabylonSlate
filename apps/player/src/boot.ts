@@ -25,7 +25,7 @@ import {
 } from "@haptic/runtime";
 import {
   attachLifecyclePause,
-  createEngine,
+  createGameEngine,
   createSceneLoadReadiness,
   createSceneStreamingReadiness,
   navDebugBlockersFromActors,
@@ -251,7 +251,7 @@ function initializePlayer(
   let compileHoldChanged: (held: boolean) => void = () => {};
   /** The game asked for device motion, perhaps before input capture was attached. */
   let deviceMotionRequested = false;
-  const handle: EngineHandle = createEngine(canvas, {
+  const handle: EngineHandle = createGameEngine(canvas, {
     sharedEngine: options.sharedEngine,
     playMode: true,
     onCompileHold: (held) => compileHoldChanged(held),
@@ -1173,7 +1173,7 @@ function initializePlayer(
   if (halted) return playerHandle();
   input = attachInputCapture(canvas, {
     skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
-    // The engine's canvas listeners, added by createEngine above, settle UI ownership first.
+    // The engine's canvas listeners, added by createGameEngine above, settle UI ownership first.
     ownsPointer: (pointerId) => handle.ownsGamePointer(pointerId),
   });
   if (deviceMotionRequested) input.enableMotion();

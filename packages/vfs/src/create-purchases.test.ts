@@ -7,6 +7,8 @@ const webConfigure = vi.fn();
 vi.mock("@capacitor/core", () => ({
   Capacitor: { getPlatform: () => getPlatform() },
 }));
+// `getHostPlatform` reads the Capacitor bridge global that the native shells inject.
+(globalThis as { Capacitor?: unknown }).Capacitor = { getPlatform: () => getPlatform() };
 vi.mock("@revenuecat/purchases-capacitor", () => ({
   Purchases: { configure: capacitorConfigure },
 }));

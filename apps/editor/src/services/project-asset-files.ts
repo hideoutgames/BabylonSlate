@@ -3,7 +3,6 @@ import type { AssetDocument } from "@haptic/assets";
 import {
   AccountedPayloadLoader,
   carryStoredChunks,
-  decodeHasset,
   DOCUMENT_CHUNK_ID,
   extraChunksFromDecoded,
   readAssetCatalog,
@@ -17,6 +16,7 @@ import {
   type BlobStore,
   type EncodableChunk,
 } from "@haptic/assets";
+import { decodeHasset } from "@haptic/assets/hasset";
 
 /**
  * Where a project path's file and blobs live: the registry root that indexes

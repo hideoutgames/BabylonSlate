@@ -1,4 +1,3 @@
-import { registerPlugin } from "@capacitor/core";
 import { isMobilePlatform } from "./platform";
 
 /**
@@ -28,17 +27,6 @@ type ElectronMemoryBridge = {
   stats(): Promise<Partial<Record<"rendererProcessBytes" | "gpuProcessBytes" | "mainProcessBytes" | "allProcessesBytes", number | null>>>;
 };
 
-interface BabylonSlateMemoryPlugin {
-  stats(): Promise<{
-    appFootprintBytes?: number | null;
-    appAvailableBytes?: number | null;
-    systemAvailableBytes?: number | null;
-  }>;
-}
-
-const BabylonSlateMemory = registerPlugin<BabylonSlateMemoryPlugin>(
-  "BabylonSlateMemory",
-);
 
 let latest: { stats: HostMemoryStats; at: number } | null = null;
 
@@ -63,7 +51,8 @@ export async function getHostMemoryStats(): Promise<HostMemoryStats | null> {
   // First-party iOS and Android shells expose host-process counters.
   if (isMobilePlatform()) {
     try {
-      const native = await BabylonSlateMemory.stats();
+      // A platform module: web and desktop games leave it, and Capacitor with it, out.
+      const native = await (await import("./device-memory-mobile")).nativeMemoryStats();
       if (typeof native.appFootprintBytes === "number") {
         stats.appFootprintBytes = native.appFootprintBytes;
       }

@@ -2,7 +2,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, expect, it, vi } from "vitest";
 import { DockviewReact, type DockviewApi, type DockviewReadyEvent } from "dockview-react";
 import { createDefaultScene, createEmptyProject, engineCommandBus } from "@haptic/core";
-import { AssetRegistry, createDefaultMigrationRegistry, createRegistryAssetLoadingService, encodeHasset, projectContentRoot } from "@haptic/assets";
+import { AssetRegistry, createDefaultMigrationRegistry, createRegistryAssetLoadingService, projectContentRoot } from "@haptic/assets";
+import { encodeHasset } from "@haptic/assets/hasset";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { OutputLogPanel } from "../panels/output-log-panel";
 import { enterPhoneDockLayout } from "../shell/phone-dock-layout";

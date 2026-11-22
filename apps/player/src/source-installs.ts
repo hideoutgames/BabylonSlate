@@ -6,7 +6,7 @@ type InstallCache = Map<string, { revision: string; blob: Blob }>;
 /**
  * The boot's installed render sources. Installing copies an asset's bytes into an immutable Blob,
  * so each Texture, Model source and MSDF atlas installs once per boot: keyed by guid and its catalog
- * revision (never by array identity), and reused by `createEngine` and every `acquireSceneSources`.
+ * revision (never by array identity), and reused by `createGameEngine` and every `acquireSceneSources`.
  * A Texture's or atlas's catalog revision is the SHA-256 the artifact verified for its bytes, so they
  * are not hashed again. Installs of sources the game no longer holds are forgotten as soon as the game
  * releases them (`onSourcesChanged`), and before each install; `dispose` ends that subscription.

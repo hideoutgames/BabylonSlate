@@ -57,7 +57,7 @@ import { instanceParameterOf } from "./instance-parameters";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { rectLightEmission } from "./area-emission-array";
-import { createEngine } from "./create-engine";
+import { createEngine } from "./editor-engine";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { isForwardLightExcluded, setAuthoredLightEnabled } from "./light-policy";

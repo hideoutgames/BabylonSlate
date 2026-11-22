@@ -37,7 +37,7 @@
    "version": "9.29.0",
    "license": "Apache-2.0",
    "source": "https://github.com/BabylonJS/Babylon.js",
-   "inGames": true,
+   "inGames": false,
    "text": 3
   },
   {
@@ -329,20 +329,12 @@
    "text": 17
   },
   {
-   "name": "@noble/hashes",
-   "version": "2.4.0",
-   "license": "MIT",
-   "source": "https://github.com/paulmillr/noble-hashes",
-   "inGames": true,
-   "text": 18
-  },
-  {
    "name": "@phosphor-icons/react",
    "version": "2.1.10",
    "license": "MIT",
    "source": "https://github.com/phosphor-icons/react",
    "inGames": false,
-   "text": 19
+   "text": 18
   },
   {
    "name": "@recast-navigation/core",
@@ -350,15 +342,15 @@
    "license": "MIT",
    "source": "https://github.com/isaac-mason/recast-navigation-js",
    "inGames": true,
-   "text": 20
+   "text": 19
   },
   {
    "name": "@recast-navigation/generators",
    "version": "0.43.1",
    "license": "MIT",
    "source": "https://github.com/isaac-mason/recast-navigation-js",
-   "inGames": true,
-   "text": 20
+   "inGames": false,
+   "text": 19
   },
   {
    "name": "@recast-navigation/wasm",
@@ -366,7 +358,7 @@
    "license": "MIT",
    "source": "https://github.com/isaac-mason/recast-navigation-js",
    "inGames": true,
-   "text": 20
+   "text": 19
   },
   {
    "name": "@revenuecat/purchases-capacitor",
@@ -374,7 +366,7 @@
    "license": "MIT",
    "source": "https://github.com/RevenueCat/purchases-capacitor",
    "inGames": false,
-   "text": 21
+   "text": 20
   },
   {
    "name": "@revenuecat/purchases-js",
@@ -382,7 +374,7 @@
    "license": "MIT",
    "source": "https://github.com/RevenueCat/purchases-js",
    "inGames": false,
-   "text": 22
+   "text": 21
   },
   {
    "name": "@revenuecat/purchases-typescript-internal-esm",
@@ -390,7 +382,7 @@
    "license": "MIT",
    "source": "https://github.com/RevenueCat/purchases-hybrid-common",
    "inGames": false,
-   "text": 23
+   "text": 22
   },
   {
    "name": "@tabler/icons",
@@ -398,7 +390,7 @@
    "license": "MIT",
    "source": "https://github.com/tabler/tabler-icons",
    "inGames": false,
-   "text": 24
+   "text": 23
   },
   {
    "name": "@tabler/icons-react",
@@ -406,7 +398,7 @@
    "license": "MIT",
    "source": "https://github.com/tabler/tabler-icons",
    "inGames": false,
-   "text": 24
+   "text": 23
   },
   {
    "name": "@tanstack/query-core",
@@ -414,7 +406,7 @@
    "license": "MIT",
    "source": "https://github.com/TanStack/query",
    "inGames": false,
-   "text": 25
+   "text": 24
   },
   {
    "name": "@xyflow/react",
@@ -422,7 +414,7 @@
    "license": "MIT",
    "source": "https://github.com/xyflow/xyflow",
    "inGames": false,
-   "text": 26
+   "text": 25
   },
   {
    "name": "@xyflow/system",
@@ -430,7 +422,7 @@
    "license": "MIT",
    "source": "https://github.com/xyflow/xyflow",
    "inGames": false,
-   "text": 26
+   "text": 25
   },
   {
    "name": "abort-controller",
@@ -438,7 +430,7 @@
    "license": "MIT",
    "source": "https://github.com/mysticatea/abort-controller",
    "inGames": false,
-   "text": 27
+   "text": 26
   },
   {
    "name": "Ark Pixel Font",
@@ -446,7 +438,7 @@
    "license": "OFL-1.1",
    "source": "https://github.com/TakWolf/ark-pixel-font",
    "inGames": true,
-   "text": 28
+   "text": 27
   },
   {
    "name": "async-lock",
@@ -454,7 +446,7 @@
    "license": "MIT",
    "source": "https://github.com/rogierschouten/async-lock",
    "inGames": false,
-   "text": 29
+   "text": 28
   },
   {
    "name": "available-typed-arrays",
@@ -462,7 +454,7 @@
    "license": "MIT",
    "source": "https://github.com/inspect-js/available-typed-arrays",
    "inGames": false,
-   "text": 30
+   "text": 29
   },
   {
    "name": "Babylon.js area light data",
@@ -470,7 +462,7 @@
    "license": "CC-BY-4.0",
    "source": "https://github.com/BabylonJS/Assets/tree/master/core/areaLights",
    "inGames": true,
-   "text": 31
+   "text": 30
   },
   {
    "name": "Babylon.js KTX2 Decoder",
@@ -478,7 +470,7 @@
    "license": "Apache-2.0 AND MIT AND BSD-3-Clause",
    "source": "https://github.com/BabylonJS/Babylon.js",
    "inGames": true,
-   "text": 32
+   "text": 31
   },
   {
    "name": "base64-js",
@@ -486,7 +478,7 @@
    "license": "MIT",
    "source": "https://github.com/beatgammit/base64-js",
    "inGames": false,
-   "text": 33
+   "text": 32
   },
   {
    "name": "Basis Universal encoder",
@@ -494,7 +486,7 @@
    "license": "Apache-2.0",
    "source": "https://github.com/BinomialLLC/basis_universal",
    "inGames": false,
-   "text": 34
+   "text": 33
   },
   {
    "name": "buffer",
@@ -502,7 +494,7 @@
    "license": "MIT",
    "source": "https://github.com/feross/buffer",
    "inGames": false,
-   "text": 35
+   "text": 34
   },
   {
    "name": "call-bind",
@@ -510,7 +502,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/call-bind",
    "inGames": false,
-   "text": 36
+   "text": 35
   },
   {
    "name": "call-bind-apply-helpers",
@@ -518,7 +510,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/call-bind-apply-helpers",
    "inGames": false,
-   "text": 37
+   "text": 36
   },
   {
    "name": "call-bound",
@@ -526,7 +518,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/call-bound",
    "inGames": false,
-   "text": 37
+   "text": 36
   },
   {
    "name": "class-variance-authority",
@@ -534,7 +526,7 @@
    "license": "Apache-2.0",
    "source": "https://github.com/joe-bell/cva",
    "inGames": false,
-   "text": 38
+   "text": 37
   },
   {
    "name": "classcat",
@@ -542,7 +534,7 @@
    "license": "MIT",
    "source": "https://github.com/jorgebucaran/classcat",
    "inGames": false,
-   "text": 39
+   "text": 38
   },
   {
    "name": "clean-git-ref",
@@ -550,7 +542,7 @@
    "license": "Apache-2.0",
    "source": "https://github.com/TheSavior/clean-git-ref",
    "inGames": false,
-   "text": 40
+   "text": 39
   },
   {
    "name": "clsx",
@@ -558,7 +550,7 @@
    "license": "MIT",
    "source": "https://github.com/lukeed/clsx",
    "inGames": false,
-   "text": 41
+   "text": 40
   },
   {
    "name": "coi-serviceworker",
@@ -566,7 +558,7 @@
    "license": "MIT",
    "source": "https://github.com/gzuidhof/coi-serviceworker",
    "inGames": true,
-   "text": 42
+   "text": 41
   },
   {
    "name": "crc-32",
@@ -574,7 +566,7 @@
    "license": "Apache-2.0",
    "source": "https://github.com/SheetJS/js-crc32",
    "inGames": false,
-   "text": 43
+   "text": 42
   },
   {
    "name": "crelt",
@@ -582,7 +574,7 @@
    "license": "MIT",
    "source": "https://code.haverbeke.berlin/marijn/crelt",
    "inGames": false,
-   "text": 44
+   "text": 43
   },
   {
    "name": "d3-color",
@@ -590,7 +582,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-color",
    "inGames": false,
-   "text": 45
+   "text": 44
   },
   {
    "name": "d3-dispatch",
@@ -598,7 +590,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-dispatch",
    "inGames": false,
-   "text": 46
+   "text": 45
   },
   {
    "name": "d3-drag",
@@ -606,7 +598,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-drag",
    "inGames": false,
-   "text": 46
+   "text": 45
   },
   {
    "name": "d3-ease",
@@ -614,7 +606,7 @@
    "license": "BSD-3-Clause",
    "source": "https://github.com/d3/d3-ease",
    "inGames": false,
-   "text": 47
+   "text": 46
   },
   {
    "name": "d3-hierarchy",
@@ -622,7 +614,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-hierarchy",
    "inGames": false,
-   "text": 46
+   "text": 45
   },
   {
    "name": "d3-interpolate",
@@ -630,7 +622,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-interpolate",
    "inGames": false,
-   "text": 46
+   "text": 45
   },
   {
    "name": "d3-selection",
@@ -638,7 +630,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-selection",
    "inGames": false,
-   "text": 46
+   "text": 45
   },
   {
    "name": "d3-timer",
@@ -646,7 +638,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-timer",
    "inGames": false,
-   "text": 46
+   "text": 45
   },
   {
    "name": "d3-transition",
@@ -654,7 +646,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-transition",
    "inGames": false,
-   "text": 46
+   "text": 45
   },
   {
    "name": "d3-zoom",
@@ -662,7 +654,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-zoom",
    "inGames": false,
-   "text": 46
+   "text": 45
   },
   {
    "name": "decompress-response",
@@ -670,7 +662,7 @@
    "license": "MIT",
    "source": "https://github.com/sindresorhus/decompress-response",
    "inGames": false,
-   "text": 48
+   "text": 47
   },
   {
    "name": "define-data-property",
@@ -678,7 +670,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/define-data-property",
    "inGames": false,
-   "text": 49
+   "text": 48
   },
   {
    "name": "dequal",
@@ -686,7 +678,7 @@
    "license": "MIT",
    "source": "https://github.com/lukeed/dequal",
    "inGames": false,
-   "text": 50
+   "text": 49
   },
   {
    "name": "diff3",
@@ -694,7 +686,7 @@
    "license": "MIT",
    "source": "https://github.com/axosoft/diff3",
    "inGames": false,
-   "text": 51
+   "text": 50
   },
   {
    "name": "dockview",
@@ -702,7 +694,7 @@
    "license": "MIT",
    "source": "https://github.com/dockview/dockview",
    "inGames": false,
-   "text": 52
+   "text": 51
   },
   {
    "name": "dockview-core",
@@ -710,7 +702,7 @@
    "license": "MIT",
    "source": "https://github.com/dockview/dockview",
    "inGames": false,
-   "text": 52
+   "text": 51
   },
   {
    "name": "dockview-react",
@@ -718,7 +710,7 @@
    "license": "MIT",
    "source": "https://github.com/dockview/dockview",
    "inGames": false,
-   "text": 52
+   "text": 51
   },
   {
    "name": "Draco glTF decoder",
@@ -726,7 +718,7 @@
    "license": "Apache-2.0",
    "source": "https://github.com/google/draco",
    "inGames": true,
-   "text": 53
+   "text": 52
   },
   {
    "name": "dunder-proto",
@@ -734,7 +726,7 @@
    "license": "MIT",
    "source": "https://github.com/es-shims/dunder-proto",
    "inGames": false,
-   "text": 54
+   "text": 53
   },
   {
    "name": "earcut",
@@ -742,7 +734,7 @@
    "license": "ISC",
    "source": "https://github.com/mapbox/earcut",
    "inGames": true,
-   "text": 55
+   "text": 54
   },
   {
    "name": "es-define-property",
@@ -750,7 +742,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/es-define-property",
    "inGames": false,
-   "text": 37
+   "text": 36
   },
   {
    "name": "es-errors",
@@ -758,7 +750,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/es-errors",
    "inGames": false,
-   "text": 37
+   "text": 36
   },
   {
    "name": "es-object-atoms",
@@ -766,7 +758,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/es-object-atoms",
    "inGames": false,
-   "text": 37
+   "text": 36
   },
   {
    "name": "event-target-shim",
@@ -774,7 +766,7 @@
    "license": "MIT",
    "source": "https://github.com/mysticatea/event-target-shim",
    "inGames": false,
-   "text": 56
+   "text": 55
   },
   {
    "name": "events",
@@ -782,7 +774,7 @@
    "license": "MIT",
    "source": "https://github.com/Gozala/events",
    "inGames": false,
-   "text": 57
+   "text": 56
   },
   {
    "name": "fflate",
@@ -790,7 +782,7 @@
    "license": "MIT",
    "source": "https://github.com/101arrowz/fflate",
    "inGames": false,
-   "text": 58
+   "text": 57
   },
   {
    "name": "for-each",
@@ -798,7 +790,7 @@
    "license": "MIT",
    "source": "https://github.com/Raynos/for-each",
    "inGames": false,
-   "text": 59
+   "text": 58
   },
   {
    "name": "function-bind",
@@ -806,7 +798,7 @@
    "license": "MIT",
    "source": "https://github.com/Raynos/function-bind",
    "inGames": false,
-   "text": 60
+   "text": 59
   },
   {
    "name": "get-intrinsic",
@@ -814,7 +806,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/get-intrinsic",
    "inGames": false,
-   "text": 36
+   "text": 35
   },
   {
    "name": "get-proto",
@@ -822,7 +814,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/get-proto",
    "inGames": false,
-   "text": 61
+   "text": 60
   },
   {
    "name": "glob-to-regexp",
@@ -830,7 +822,7 @@
    "license": "BSD-2-Clause",
    "source": "https://github.com/fitzgen/glob-to-regexp",
    "inGames": false,
-   "text": 62
+   "text": 61
   },
   {
    "name": "gopd",
@@ -838,7 +830,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/gopd",
    "inGames": false,
-   "text": 63
+   "text": 62
   },
   {
    "name": "Gradle Wrapper",
@@ -846,7 +838,7 @@
    "license": "Apache-2.0",
    "source": "https://github.com/gradle/gradle",
    "inGames": false,
-   "text": 64
+   "text": 63
   },
   {
    "name": "has-property-descriptors",
@@ -854,7 +846,7 @@
    "license": "MIT",
    "source": "https://github.com/inspect-js/has-property-descriptors",
    "inGames": false,
-   "text": 65
+   "text": 64
   },
   {
    "name": "has-symbols",
@@ -862,7 +854,7 @@
    "license": "MIT",
    "source": "https://github.com/inspect-js/has-symbols",
    "inGames": false,
-   "text": 66
+   "text": 65
   },
   {
    "name": "has-tostringtag",
@@ -870,7 +862,7 @@
    "license": "MIT",
    "source": "https://github.com/inspect-js/has-tostringtag",
    "inGames": false,
-   "text": 67
+   "text": 66
   },
   {
    "name": "hasown",
@@ -878,7 +870,7 @@
    "license": "MIT",
    "source": "https://github.com/inspect-js/hasOwn",
    "inGames": false,
-   "text": 68
+   "text": 67
   },
   {
    "name": "ieee754",
@@ -886,7 +878,7 @@
    "license": "BSD-3-Clause",
    "source": "https://github.com/feross/ieee754",
    "inGames": false,
-   "text": 69
+   "text": 68
   },
   {
    "name": "ignore",
@@ -894,7 +886,7 @@
    "license": "MIT",
    "source": "git@github.com:kaelzhang/node-ignore",
    "inGames": false,
-   "text": 70
+   "text": 69
   },
   {
    "name": "inherits",
@@ -902,7 +894,7 @@
    "license": "ISC",
    "source": "https://github.com/isaacs/inherits",
    "inGames": false,
-   "text": 71
+   "text": 70
   },
   {
    "name": "is-callable",
@@ -910,7 +902,7 @@
    "license": "MIT",
    "source": "https://github.com/inspect-js/is-callable",
    "inGames": false,
-   "text": 72
+   "text": 71
   },
   {
    "name": "is-typed-array",
@@ -918,7 +910,7 @@
    "license": "MIT",
    "source": "https://github.com/inspect-js/is-typed-array",
    "inGames": false,
-   "text": 72
+   "text": 71
   },
   {
    "name": "isarray",
@@ -926,7 +918,7 @@
    "license": "MIT",
    "source": "https://github.com/juliangruber/isarray",
    "inGames": false,
-   "text": 73
+   "text": 72
   },
   {
    "name": "isomorphic-git",
@@ -934,7 +926,7 @@
    "license": "MIT",
    "source": "https://github.com/isomorphic-git/isomorphic-git",
    "inGames": false,
-   "text": 74
+   "text": 73
   },
   {
    "name": "js-cookie",
@@ -942,7 +934,7 @@
    "license": "MIT",
    "source": "https://github.com/js-cookie/js-cookie",
    "inGames": false,
-   "text": 75
+   "text": 74
   },
   {
    "name": "js-tokens",
@@ -950,7 +942,7 @@
    "license": "MIT",
    "source": "https://github.com/lydell/js-tokens",
    "inGames": false,
-   "text": 76
+   "text": 75
   },
   {
    "name": "loose-envify",
@@ -958,7 +950,7 @@
    "license": "MIT",
    "source": "https://github.com/zertosh/loose-envify",
    "inGames": false,
-   "text": 77
+   "text": 76
   },
   {
    "name": "lucide-react",
@@ -966,7 +958,7 @@
    "license": "ISC",
    "source": "https://github.com/lucide-icons/lucide",
    "inGames": false,
-   "text": 78
+   "text": 77
   },
   {
    "name": "math-intrinsics",
@@ -974,7 +966,7 @@
    "license": "MIT",
    "source": "https://github.com/es-shims/math-intrinsics",
    "inGames": false,
-   "text": 54
+   "text": 53
   },
   {
    "name": "meshoptimizer",
@@ -982,7 +974,7 @@
    "license": "MIT",
    "source": "https://github.com/zeux/meshoptimizer",
    "inGames": true,
-   "text": 79
+   "text": 78
   },
   {
    "name": "meshoptimizer decoder",
@@ -990,7 +982,7 @@
    "license": "MIT",
    "source": "https://github.com/zeux/meshoptimizer",
    "inGames": true,
-   "text": 80
+   "text": 79
   },
   {
    "name": "mimic-response",
@@ -998,7 +990,7 @@
    "license": "MIT",
    "source": "https://github.com/sindresorhus/mimic-response",
    "inGames": false,
-   "text": 48
+   "text": 47
   },
   {
    "name": "minimist",
@@ -1006,7 +998,7 @@
    "license": "MIT",
    "source": "https://github.com/minimistjs/minimist",
    "inGames": false,
-   "text": 81
+   "text": 80
   },
   {
    "name": "minimisted",
@@ -1014,7 +1006,7 @@
    "license": "MIT",
    "source": "https://github.com/kt3k/minimisted",
    "inGames": false,
-   "text": 82
+   "text": 81
   },
   {
    "name": "object-assign",
@@ -1022,7 +1014,7 @@
    "license": "MIT",
    "source": "https://github.com/sindresorhus/object-assign",
    "inGames": false,
-   "text": 83
+   "text": 82
   },
   {
    "name": "once",
@@ -1030,7 +1022,7 @@
    "license": "ISC",
    "source": "https://github.com/isaacs/once",
    "inGames": false,
-   "text": 84
+   "text": 83
   },
   {
    "name": "pako",
@@ -1038,7 +1030,7 @@
    "license": "(MIT AND Zlib)",
    "source": "https://github.com/nodeca/pako",
    "inGames": false,
-   "text": 85
+   "text": 84
   },
   {
    "name": "pe-library",
@@ -1046,7 +1038,7 @@
    "license": "MIT",
    "source": "https://github.com/jet2jet/pe-library-js",
    "inGames": false,
-   "text": 86
+   "text": 85
   },
   {
    "name": "pify",
@@ -1054,7 +1046,7 @@
    "license": "MIT",
    "source": "https://github.com/sindresorhus/pify",
    "inGames": false,
-   "text": 87
+   "text": 86
   },
   {
    "name": "possible-typed-array-names",
@@ -1062,7 +1054,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/possible-typed-array-names",
    "inGames": false,
-   "text": 37
+   "text": 36
   },
   {
    "name": "process",
@@ -1070,7 +1062,7 @@
    "license": "MIT",
    "source": "https://github.com/shtylman/node-process",
    "inGames": false,
-   "text": 88
+   "text": 87
   },
   {
    "name": "prop-types",
@@ -1078,7 +1070,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/prop-types",
    "inGames": false,
-   "text": 89
+   "text": 88
   },
   {
    "name": "react",
@@ -1086,7 +1078,7 @@
    "license": "MIT",
    "source": "https://github.com/react/react",
    "inGames": false,
-   "text": 90
+   "text": 89
   },
   {
    "name": "react-bootstrap-icons",
@@ -1094,7 +1086,7 @@
    "license": "MIT",
    "source": "https://github.com/ismamz/react-bootstrap-icons",
    "inGames": false,
-   "text": 91
+   "text": 90
   },
   {
    "name": "react-dom",
@@ -1102,7 +1094,7 @@
    "license": "MIT",
    "source": "https://github.com/react/react",
    "inGames": false,
-   "text": 90
+   "text": 89
   },
   {
    "name": "react-is",
@@ -1110,7 +1102,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/react",
    "inGames": false,
-   "text": 92
+   "text": 91
   },
   {
    "name": "react-resizable-panels",
@@ -1118,7 +1110,7 @@
    "license": "MIT",
    "source": "https://github.com/bvaughn/react-resizable-panels",
    "inGames": false,
-   "text": 93
+   "text": 92
   },
   {
    "name": "readable-stream",
@@ -1126,7 +1118,7 @@
    "license": "MIT",
    "source": "https://github.com/nodejs/readable-stream",
    "inGames": false,
-   "text": 94
+   "text": 93
   },
   {
    "name": "resedit",
@@ -1134,7 +1126,7 @@
    "license": "MIT",
    "source": "https://github.com/jet2jet/resedit-js",
    "inGames": false,
-   "text": 86
+   "text": 85
   },
   {
    "name": "reselect",
@@ -1142,7 +1134,7 @@
    "license": "MIT",
    "source": "https://github.com/reduxjs/reselect",
    "inGames": false,
-   "text": 95
+   "text": 94
   },
   {
    "name": "safe-buffer",
@@ -1150,7 +1142,7 @@
    "license": "MIT",
    "source": "https://github.com/feross/safe-buffer",
    "inGames": false,
-   "text": 96
+   "text": 95
   },
   {
    "name": "scheduler",
@@ -1158,7 +1150,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/react",
    "inGames": false,
-   "text": 90
+   "text": 89
   },
   {
    "name": "set-function-length",
@@ -1166,7 +1158,7 @@
    "license": "MIT",
    "source": "https://github.com/ljharb/set-function-length",
    "inGames": false,
-   "text": 68
+   "text": 67
   },
   {
    "name": "sha.js",
@@ -1174,7 +1166,7 @@
    "license": "(MIT AND BSD-3-Clause)",
    "source": "https://github.com/crypto-browserify/sha.js",
    "inGames": false,
-   "text": 97
+   "text": 96
   },
   {
    "name": "shadcn/ui stylesheet",
@@ -1182,7 +1174,7 @@
    "license": "MIT",
    "source": "https://github.com/shadcn-ui/ui",
    "inGames": false,
-   "text": 98
+   "text": 97
   },
   {
    "name": "simple-concat",
@@ -1190,7 +1182,7 @@
    "license": "MIT",
    "source": "https://github.com/feross/simple-concat",
    "inGames": false,
-   "text": 99
+   "text": 98
   },
   {
    "name": "simple-get",
@@ -1198,7 +1190,7 @@
    "license": "MIT",
    "source": "https://github.com/feross/simple-get",
    "inGames": false,
-   "text": 99
+   "text": 98
   },
   {
    "name": "string_decoder",
@@ -1206,7 +1198,7 @@
    "license": "MIT",
    "source": "https://github.com/nodejs/string_decoder",
    "inGames": false,
-   "text": 94
+   "text": 93
   },
   {
    "name": "style-mod",
@@ -1214,7 +1206,7 @@
    "license": "MIT",
    "source": "https://github.com/marijnh/style-mod",
    "inGames": false,
-   "text": 100
+   "text": 99
   },
   {
    "name": "tailwind-merge",
@@ -1222,7 +1214,7 @@
    "license": "MIT",
    "source": "https://github.com/dcastil/tailwind-merge",
    "inGames": false,
-   "text": 101
+   "text": 100
   },
   {
    "name": "to-buffer",
@@ -1230,7 +1222,7 @@
    "license": "MIT",
    "source": "https://github.com/browserify/to-buffer",
    "inGames": false,
-   "text": 102
+   "text": 101
   },
   {
    "name": "tslib",
@@ -1238,7 +1230,7 @@
    "license": "0BSD",
    "source": "https://github.com/Microsoft/tslib",
    "inGames": false,
-   "text": 103
+   "text": 102
   },
   {
    "name": "tw-animate-css",
@@ -1246,7 +1238,7 @@
    "license": "MIT",
    "source": "https://github.com/Wombosvideo/tw-animate-css",
    "inGames": false,
-   "text": 104
+   "text": 103
   },
   {
    "name": "typed-array-buffer",
@@ -1254,7 +1246,7 @@
    "license": "MIT",
    "source": "https://github.com/inspect-js/typed-array-buffer",
    "inGames": false,
-   "text": 49
+   "text": 48
   },
   {
    "name": "use-sync-external-store",
@@ -1262,7 +1254,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/react",
    "inGames": false,
-   "text": 90
+   "text": 89
   },
   {
    "name": "w3c-keyname",
@@ -1270,7 +1262,7 @@
    "license": "MIT",
    "source": "https://github.com/marijnh/w3c-keyname",
    "inGames": false,
-   "text": 105
+   "text": 104
   },
   {
    "name": "which-typed-array",
@@ -1278,7 +1270,7 @@
    "license": "MIT",
    "source": "https://github.com/inspect-js/which-typed-array",
    "inGames": false,
-   "text": 72
+   "text": 71
   },
   {
    "name": "wrappy",
@@ -1286,15 +1278,15 @@
    "license": "ISC",
    "source": "https://github.com/npm/wrappy",
    "inGames": false,
-   "text": 84
+   "text": 83
   },
   {
    "name": "zod",
    "version": "4.4.3",
    "license": "MIT",
    "source": "https://github.com/colinhacks/zod",
-   "inGames": true,
-   "text": 106
+   "inGames": false,
+   "text": 105
   },
   {
    "name": "zustand",
@@ -1302,7 +1294,7 @@
    "license": "MIT",
    "source": "https://github.com/pmndrs/zustand",
    "inGames": false,
-   "text": 107
+   "text": 106
   }
  ],
  "texts": [
@@ -1324,7 +1316,6 @@
   "MIT License (MIT)\n\nCopyright (c) 2019 Jorge Luis Calleja A.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
   "MIT License\n\nCopyright (C) 2018 by Marijn Haverbeke <marijn@haverbeke.berlin> and others\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.",
   "MIT License\n\nCopyright (C) 2024 by Marijn Haverbeke <marijn@haverbeke.berlin>\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.",
-  "The MIT License (MIT)\n\nCopyright (c) 2022 Paul Miller (https://paulmillr.com)\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the “Software”), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.",
   "MIT License\n\nCopyright (c) 2020 Phosphor Icons\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
   "The MIT License\n\nCopyright © 2025 Isaac Mason\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.",
   "MIT License\n\nCopyright (c) 2023 RevenueCat, Inc.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",

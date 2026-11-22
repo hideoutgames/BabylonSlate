@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetBytesDigest, installedAssetIdentity } from "@haptic/assets";
+import { assetContentHash, installedAssetIdentity } from "@haptic/assets";
 import { fontMsdfAtlasExportGuid, type GameManifest } from "@haptic/exporter";
 import { createPlayerSourceInstalls } from "./source-installs";
 
@@ -32,7 +32,7 @@ describe("player source installs", () => {
     expect(installedAssetIdentity(startup.get("wall")!)).toBe("rev-wall");
     const model = installs.models(held.modelBytes).get("crate")!;
     expect(installs.models(held.modelBytes).get("crate")).toBe(model);
-    expect(installedAssetIdentity(model)).toBe(assetBytesDigest(new Uint8Array([3, 4])));
+    expect(installedAssetIdentity(model)).toBe(assetContentHash(new Uint8Array([3, 4])));
   });
 
   it("forgets a released source, so its next load installs again", () => {

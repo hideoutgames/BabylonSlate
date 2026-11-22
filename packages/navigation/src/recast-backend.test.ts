@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { importNavMesh } from "@recast-navigation/core";
+import { generateNavMesh } from "./bake";
 import {
   createNavigationBackend,
-  generateNavMesh,
 } from "./recast-backend";
 
 /** Flat ground on Recast XZ (Y up), 20×20. */
