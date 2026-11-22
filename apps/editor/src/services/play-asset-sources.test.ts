@@ -23,7 +23,7 @@ import {
 } from "@haptic/assets";
 import { encodeHasset } from "@haptic/assets/hasset";
 import { meshoptBoxGlb } from "@haptic/assets/test-support/meshopt-gltf";
-import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, playRootMotionTracks, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
+import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import type { OpenDocument } from "./document-service";
@@ -795,7 +795,7 @@ describe("Play source ownership", () => {
     loading.dispose();
   });
 
-  it("reads each root motion Animation's document once, in the closure or not, and gives Play its track scaled by its Model's import scale", async () => {
+  it("gives Play the closure's root motion tracks scaled by their Model's import scale, reading an Animation outside it only when loaded on demand", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();
     await storage.mkdir("assets");
@@ -845,19 +845,29 @@ describe("Play source ownership", () => {
     };
     const signal = new AbortController().signal;
     const prepared = await acquirePlayAssetSources(host, ["model", "fall", "dodge", "turn"], { consumer: "Play", signal });
-    const catalog = new Map(playAnimClipCatalog(registry.list(), await playRootMotionTracks(host, prepared.content.animClipCatalog, signal))
+    const catalog = new Map(playAnimClipCatalog(registry.list(), prepared.content.animClipCatalog)
       .map((entry) => [entry.guid, entry.rootMotion]));
 
-    expect(Object.fromEntries(documentReads)).toEqual({ fall: 1, dodge: 1, turn: 1, slide: 1 });
+    // Play start reads the closure's documents once each, and none outside it.
+    expect(Object.fromEntries(documentReads)).toEqual({ fall: 1, dodge: 1, turn: 1 });
     const doubled = ({ bone, track }: AnimationRootMotion) => ({
       bone, track: { ...track, x: track.x.map((value) => value * 2), z: track.z.map((value) => value * 2) },
     });
     expect(catalog.get("dodge")).toEqual({ bone: "pelvis", track: { durationMs: 100, stepMs: 50, x: [0, 1, 2], z: [0, 0.5, 1], yaw: [0, 10, 20] } });
     expect(catalog.get("turn")).toEqual({ bone: "root", track: { durationMs: 50, stepMs: 50, x: [0, -2], z: [0, 6], yaw: [0, 90] } });
     expect(catalog.get("fall")).toEqual(doubled(fall));
-    expect(catalog.get("slide")).toEqual({ bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 1], z: [0, -2], yaw: [0, 0] } });
+    // Outside the closure: listed, with no track until a slot loads it on demand.
+    expect(catalog.has("slide")).toBe(true);
+    expect(catalog.get("slide")).toBeUndefined();
     expect(catalog.has("wave")).toBe(true);
     expect(catalog.get("wave")).toBeUndefined();
+    // The on-demand load reads its document once and brings its scaled track.
+    const loaded = await acquirePlayAssetSources(host, ["slide"], { consumer: "Play Slot Animation", signal });
+    expect(loaded.content.animClipCatalog.find((entry) => entry.guid === "slide")?.rootMotion)
+      .toEqual({ bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 1], z: [0, -2], yaw: [0, 0] } });
+    // A clip never played (`wave`) is never read.
+    expect(Object.fromEntries(documentReads)).toEqual({ fall: 1, dodge: 1, turn: 1, slide: 1 });
+    loaded.release();
     prepared.release();
     loading.dispose();
   });
@@ -907,10 +917,11 @@ describe("Play source ownership", () => {
       compile: async () => ({ bundles: [], diagnostics: [] }),
     };
     const signal = new AbortController().signal;
-    // Play's startup: the Scene's closure (the Soft clip stays out) and the session catalog's root motion tracks.
+    // Play's startup: the Scene's closure (the Soft clip stays out) and the session catalog, which reads no document.
     const startup = await acquirePlayAssetSources(host, ["scene"], { consumer: "Play", signal });
     expect(startup.required.has("throw")).toBe(false);
-    await playRootMotionTracks(host, startup.content.animClipCatalog, signal);
+    playAnimClipCatalog(registry.list(), startup.content.animClipCatalog);
+    expect(documentReads.size).toBe(0);
     // A streamed Scene joins, then Play Slot Animation loads its clip on demand (the runtime's `prepareAssets`).
     const room = await acquirePlayAssetSources(host, ["room"], { consumer: "Stream", signal });
     const clip = await acquirePlayAssetSources(host, ["throw"], { consumer: "Play Slot Animation", signal });
@@ -922,8 +933,8 @@ describe("Play source ownership", () => {
     // The renderer binds the Model's Throw group to the Animation a slot names.
     expect(clip.sources.assets?.modelClipAnimationGuids?.get("model")?.get("Throw")).toBe("throw");
     expect(clip.game.modelBytes.has("model")).toBe(true);
-    // Once for the session catalog's track at Play start, once for the on-demand load.
-    expect(Object.fromEntries(documentReads)).toEqual({ throw: 2 });
+    // Once, by the on-demand load.
+    expect(Object.fromEntries(documentReads)).toEqual({ throw: 1 });
     for (const set of [startup, room, clip]) set.release();
     loading.dispose();
   });

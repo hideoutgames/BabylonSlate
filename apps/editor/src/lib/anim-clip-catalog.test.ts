@@ -198,16 +198,16 @@ describe("animClipCatalogFromAssets", () => {
     expect(inPlace).not.toHaveProperty("rootMotion");
   });
 
-  it("gives Play every clip the headers list, each Animation's root motion only with a track it was given", () => {
+  it("gives Play every clip the headers list, each Animation's root motion only with a track from the prepared closure", () => {
     const track = { durationMs: 100, stepMs: 50, x: [0, 0, 0], z: [0, 1, 2], yaw: [0, 0, 0] };
     const catalog = playAnimClipCatalog(
       [
         { header: { guid: "fall", type: "Animation", name: "Death_A", payload: { clipName: "Death_A", rootMotionBone: "hips" } } },
-        // Its track could not be read.
+        // Outside the closure: a slot loads it, with its track, before playing it.
         { header: { guid: "dodge", type: "Animation", name: "Dodge", payload: { clipName: "Dodge", rootMotionBone: "hips" } } },
         { header: { guid: "throw", type: "Animation", name: "Throw", payload: { clipName: "Throw" } } },
       ],
-      new Map([["fall", { bone: "hips", track }]]),
+      [{ guid: "fall", type: "Animation", name: "Death_A", clipName: "Death_A", dependencyGuids: [], rootMotion: { bone: "hips", track } }],
     );
     expect(catalog.map((entry) => [entry.guid, entry.rootMotion])).toEqual([
       ["fall", { bone: "hips", track }],
