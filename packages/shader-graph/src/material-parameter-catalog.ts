@@ -3,7 +3,8 @@ import type {
   MaterialParameterValue,
 } from "@haptic/core";
 import type { MaterialDocument, MaterialFunctionDocument } from "./document";
-import { lowerMaterialDocumentCached, type MaterialBuildPlan } from "./lower";
+import type { MaterialBuildPlan } from "./lower";
+import { lowerMaterialDocumentCached } from "./lower-cache";
 
 const NO_FUNCTIONS: ReadonlyMap<string, MaterialFunctionDocument> = new Map();
 
@@ -35,9 +36,8 @@ function functionsRecord(functions: ReadonlyMap<string, MaterialFunctionDocument
 }
 
 /**
- * Match compiled parameter bindings: only reachable root parameters are public. For Play and
- * packaged content, whose documents are never edited in place: each lowering is remembered per
- * document and functions (`lowerMaterialDocumentCached`).
+ * Match compiled parameter bindings: only reachable root parameters are public. Lowers through the
+ * realm's shared memo (`lowerMaterialDocumentCached`), so documents are replaced, never edited in place.
  */
 export function buildMaterialParameterCatalog(
   documents: ReadonlyMap<string, MaterialDocument>,
