@@ -140,6 +140,16 @@ async function materialVisual(
   );
 }
 
+/**
+ * Whether the live shader holds an input with exactly `value`. Compiled blocks are named by plan position, never by
+ * node id (Materials of one graph shape share a program), so a constant is found by its value.
+ */
+function holdsInput(snapshot: MaterialVisualSnapshot | null, value: readonly number[]): boolean {
+  return Object.values(snapshot?.materialInputs ?? {}).some(
+    (input) => input.length === value.length && input.every((component, index) => component === value[index]),
+  );
+}
+
 test.describe("P9 content systems", () => {
 
   test("Saving a Material refreshes existing Scene and Prefab mesh shaders", async ({
@@ -168,10 +178,10 @@ test.describe("P9 content systems", () => {
       }, scene),
     ).toBe(true);
     await expect
-      .poll(() => materialVisual(page, "scene", "material-actor"), {
+      .poll(async () => holdsInput(await materialVisual(page, "scene", "material-actor"), [0.8, 0.8, 0.8]), {
         timeout: 15_000,
       })
-      .toMatchObject({ materialInputs: { baseColor: [0.8, 0.8, 0.8] } });
+      .toBe(true);
     const beforeScene = await materialVisual(page, "scene", "material-actor");
     await openAssetFromBrowser(page, "assets/Mannequin.class.hasset");
     await expect(page.getByTestId("graph-panel")).toBeVisible({
@@ -199,10 +209,10 @@ test.describe("P9 content systems", () => {
     await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
     await expect(page.getByTestId("prefab-preview-canvas")).toBeVisible();
     await expect
-      .poll(() => materialVisual(page, "prefab", "refresh-prefab"), {
+      .poll(async () => holdsInput(await materialVisual(page, "prefab", "refresh-prefab"), [0.8, 0.8, 0.8]), {
         timeout: 15_000,
       })
-      .toMatchObject({ materialInputs: { baseColor: [0.8, 0.8, 0.8] } });
+      .toBe(true);
     const beforePrefab = await materialVisual(page, "prefab", "refresh-prefab");
     await saveAllIfEnabled(page);
     await openAssetFromBrowser(page, materialPath);
@@ -215,12 +225,13 @@ test.describe("P9 content systems", () => {
     await openMainScene(page);
     await expect
       .poll(
-        async () =>
-          (await materialVisual(page, "scene", "material-actor"))
-            ?.materialInputs?.baseColor,
+        async () => {
+          const visual = await materialVisual(page, "scene", "material-actor");
+          return holdsInput(visual, [1, 0, 0]) && !holdsInput(visual, [0.8, 0.8, 0.8]);
+        },
         { timeout: 15_000 },
       )
-      .toEqual([1, 0, 0]);
+      .toBe(true);
     const afterScene = await materialVisual(page, "scene", "material-actor");
     expect(afterScene?.meshUniqueId).toBe(beforeScene?.meshUniqueId);
     expect(afterScene?.materialUniqueId).not.toBe(
@@ -230,12 +241,13 @@ test.describe("P9 content systems", () => {
     await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
     await expect
       .poll(
-        async () =>
-          (await materialVisual(page, "prefab", "refresh-prefab"))
-            ?.materialInputs?.baseColor,
+        async () => {
+          const visual = await materialVisual(page, "prefab", "refresh-prefab");
+          return holdsInput(visual, [1, 0, 0]) && !holdsInput(visual, [0.8, 0.8, 0.8]);
+        },
         { timeout: 15_000 },
       )
-      .toEqual([1, 0, 0]);
+      .toBe(true);
     const afterPrefab = await materialVisual(page, "prefab", "refresh-prefab");
     expect(afterPrefab?.meshUniqueId).toBe(beforePrefab?.meshUniqueId);
     expect(afterPrefab?.materialUniqueId).not.toBe(
