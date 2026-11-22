@@ -29,9 +29,30 @@ Haptic skips these and lists them in **Import Partially Completed**:
 - Mac metadata (the `__MACOSX` folder) and hidden files whose names start with a dot, such as `.DS_Store`.
 - ZIPs inside the ZIP. Unzip them and import them on their own.
 - Encrypted files, and files compressed with anything other than standard ZIP compression.
+- Damaged files: ones that do not unzip to the size and checksum the ZIP records for them.
 - Files whose path inside the ZIP starts at the top of a drive or climbs out of the ZIP with `..`, or has a folder name the Content Browser cannot use.
 
 A ZIP can hold up to 10,000 files and folders, and the files Haptic imports from it can add up to 512 MB once unzipped. Split a larger pack into several ZIPs.
+
+## Limits
+
+Haptic checks each file before it reads it in full. A file over a limit, or one whose contents are not the format its name says, is not imported, and **Import Partially Completed** names the file, the limit and the size it found.
+
+| What | Limit |
+| --- | --- |
+| Image size (PNG, JPEG, WebP, GIF, and images inside a model) | 8,192 pixels on each side (8,192 × 8,192) |
+| Vertices in one part of a model's mesh | 16,777,216 |
+| Indices in one part of a model's mesh | 50,331,648 |
+| Depth of a model's node hierarchy | 256 levels |
+| Data embedded in a glTF's `data:` URIs | 256 MiB |
+| OBJ or STL file size | 256 MiB |
+| Triangles in a binary STL | 5,592,405 |
+| Assets nested inside one `.hasset` | 500, at most 8 levels deep and 256 MiB together |
+| ZIP | 10,000 files and folders, 512 MB unzipped |
+
+An HDR panorama has no size limit: Haptic reduces a very large one, wide or tall, to at most 16 megapixels while converting it, which keeps far more detail than the cube faces use.
+
+Images, sounds and fonts must be what their names say: a PNG, JPEG, WebP or GIF image, MP3, WAV or Ogg audio, or a TrueType, OpenType, WOFF or WOFF2 font. A file saved with the wrong extension, such as a JPEG named `.png`, still imports.
 
 ## Supported formats
 
