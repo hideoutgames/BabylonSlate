@@ -98,53 +98,113 @@ describe("DocumentsStorageAdapter", () => {
     expect([...fs.tree.keys()].filter((path) => path.endsWith(".tmp"))).toEqual([]);
   });
 
-  describe("a project.json replacement a killed app left half done", () => {
-    const ROOT = "Projects/Killed.hproject";
-    const STAGED = ".haptic-0f8fad5b-d9cb-469f-a165-70867728950e.tmp";
-    const MARKER = ".haptic-7c9e6679-7425-40de-944b-e07fc1f90ae7.tmp";
+  describe("a replace a killed app left half done", () => {
     const text = (value: string) => new TextEncoder().encode(value);
+    const decode = (bytes: Uint8Array | undefined) => (bytes ? new TextDecoder().decode(bytes) : null);
 
-    /** Without the binary transport: the state a kill leaves between Capacitor's iOS rename removing project.json and moving the staged file. */
-    async function killedMidRename(projectJson: string | null) {
-      await storage.openDocumentsProject("Killed.hproject");
-      await storage.writeText("project.json", "old");
-      fs.tree.set(`${ROOT}/${STAGED}`, { kind: "file", data: text("new") });
-      fs.tree.set(`${ROOT}/${MARKER}`, { kind: "file", data: text(JSON.stringify({ target: "project.json", staged: STAGED })) });
-      if (projectJson === null) fs.tree.delete(`${ROOT}/project.json`);
-      const reopened = new DocumentsStorageAdapter({ fs });
-      await reopened.openKnownFolder({ id: "documents:Killed.hproject", name: "Killed.hproject", tier: "documents" });
-      return reopened;
+    /**
+     * Without the binary transport, on Capacitor's iOS `rename` (which removes
+     * an existing destination, then moves the file: two steps), the app is
+     * killed just before the write's `kill`-th file step (writeFile, a
+     * destination removal, a move, deleteFile): that step and everything after
+     * never happen. The project is then opened again by a new launch.
+     */
+    async function killedWrite(path: string, kill: number | null) {
+      await storage.openDocumentsProject("Killed");
+      await storage.mkdir("assets", true);
+      await storage.writeText(path, "old");
+      let steps = 0;
+      const step = () => {
+        if (++steps >= (kill ?? Infinity)) throw new Error("The app was killed.");
+      };
+      const ios = {
+        ...fs,
+        writeFile: async (options: Parameters<typeof fs.writeFile>[0]) => { step(); return fs.writeFile(options); },
+        deleteFile: async (options: Parameters<typeof fs.deleteFile>[0]) => { step(); return fs.deleteFile(options); },
+        rename: async (options: Parameters<typeof fs.rename>[0]) => {
+          if (fs.tree.has(options.to)) {
+            step();
+            await fs.deleteFile({ path: options.to });
+          }
+          step();
+          return fs.rename(options);
+        },
+      } as FakeDocumentsFs;
+      const doomed = new DocumentsStorageAdapter({ fs: ios });
+      await doomed.openKnownFolder({ id: "documents:Killed", name: "Killed", tier: "documents" });
+      // What the killed launch's write reported never reaches anyone.
+      await doomed.writeText(path, "new").catch(() => {});
+      const relaunched = new DocumentsStorageAdapter({ fs });
+      await relaunched.openKnownFolder({ id: "documents:Killed", name: "Killed", tier: "documents" });
+      return relaunched;
     }
 
-    it("is finished on the next open from its marker: the complete staged file becomes project.json", async () => {
-      const reopened = await killedMidRename(null);
-      expect(await reopened.readText("project.json")).toBe("new");
-      expect([...fs.tree.keys()].filter((key) => key.startsWith(`${ROOT}/`))).toEqual([`${ROOT}/project.json`]);
+    // The replace's steps: the staged bytes are written (1), the file is set aside (2), the staged file moves in (3), the aside copy goes (4).
+    const steps = [
+      ["before its bytes are staged", 1, "old"],
+      ["before the file is set aside", 2, "old"],
+      ["after the file is set aside", 3, "old"],
+      ["after the new file moved in", 4, "new"],
+      ["after the aside copy went", null, "new"],
+    ] as const;
+
+    it.each(steps)("leaves an asset whole when killed %s", async (_step, kill, expected) => {
+      const relaunched = await killedWrite("assets/Rock.texture.hasset", kill);
+      // The listing a scan makes settles the folder before anything reads the file.
+      expect((await relaunched.readdir("assets")).map((entry) => entry.name)).toEqual(["Rock.texture.hasset"]);
+      expect(await relaunched.readText("assets/Rock.texture.hasset")).toBe(expected);
+      // Only a staged file a kill before the move left stays, hidden, for the leftover sweep.
+      expect([...fs.tree.keys()].filter((key) => key.startsWith("Projects/Killed/assets/.haptic-aside-"))).toEqual([]);
     });
 
-    it("leaves a project.json still there as it is and removes the leftovers", async () => {
-      const reopened = await killedMidRename("old");
-      expect(await reopened.readText("project.json")).toBe("old");
-      expect([...fs.tree.keys()].filter((key) => key.startsWith(`${ROOT}/`))).toEqual([`${ROOT}/project.json`]);
+    it.each(steps)("leaves project.json whole when killed %s, settled by the open alone", async (_step, kill, expected) => {
+      const relaunched = await killedWrite("project.json", kill);
+      expect(await relaunched.readText("project.json")).toBe(expected);
+      expect([...fs.tree.keys()].filter((key) => key.startsWith("Projects/Killed/.haptic-aside-"))).toEqual([]);
     });
 
-    it("leaves no marker behind a write that finishes", async () => {
-      await storage.openDocumentsProject("Clean.hproject");
-      const write = vi.spyOn(fs, "writeFile");
+    it("leaves a running write's aside copy to it, and hides staged and aside names", async () => {
+      await storage.openDocumentsProject("Busy");
+      await storage.writeText("a.txt", "old");
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const rename = fs.rename.bind(fs);
+      let renames = 0;
+      fs.rename = vi.fn(async (options: Parameters<typeof fs.rename>[0]) => {
+        await rename(options);
+        // Hold the write right after it set the old file aside.
+        if (++renames === 1) await held;
+      }) as typeof fs.rename;
+      const writing = storage.writeText("a.txt", "new");
+      await vi.waitFor(() => expect(renames).toBe(1));
+      // A listing meanwhile neither restores nor removes the copy the write still owns.
+      expect((await storage.readdir("")).map((entry) => entry.name)).toEqual([]);
+      expect([...fs.tree.keys()].some((key) => /\/\.haptic-aside-[0-9a-f]{8}-a\.txt\.tmp$/.test(key))).toBe(true);
+      release();
+      await writing;
+      expect(await storage.readText("a.txt")).toBe("new");
+      expect([...fs.tree.keys()].filter((key) => key.startsWith("Projects/Busy/"))).toEqual(["Projects/Busy/a.txt"]);
+    });
+
+    it("needs no aside for a new file, and leaves only the file behind a write that finishes", async () => {
+      await storage.openDocumentsProject("Clean");
+      await storage.writeText("project.json", "first");
       await storage.writeText("project.json", "saved");
-      // The staged bytes, then the marker naming them.
-      expect(write).toHaveBeenCalledTimes(2);
-      expect([...fs.tree.keys()].filter((key) => key.startsWith("Projects/Clean.hproject/"))).toEqual(["Projects/Clean.hproject/project.json"]);
+      expect(decode(fs.tree.get("Projects/Clean/project.json")?.data)).toBe("saved");
+      expect([...fs.tree.keys()].filter((key) => key.startsWith("Projects/Clean/"))).toEqual(["Projects/Clean/project.json"]);
+      expect(text("saved")).toEqual(await storage.readBinary("project.json"));
     });
 
-    it("writes no marker through the binary transport, whose native commit is one rename with no gap", async () => {
+    it("sets nothing aside through the binary transport, whose native commit is one rename with no gap", async () => {
       const bridgeWrite = vi.fn(async () => true);
       const bridged = new DocumentsStorageAdapter({ fs, bridge: { write: bridgeWrite } as unknown as NativeBinaryBridge });
-      await bridged.openDocumentsProject("Bridged.hproject");
+      await bridged.openDocumentsProject("Bridged");
+      const rename = vi.spyOn(fs, "rename");
       const write = vi.spyOn(fs, "writeFile");
       await bridged.writeText("project.json", "saved");
       expect(bridgeWrite).toHaveBeenCalledOnce();
       expect(write).not.toHaveBeenCalled();
+      expect(rename).not.toHaveBeenCalled();
     });
   });
 

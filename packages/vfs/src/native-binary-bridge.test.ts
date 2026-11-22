@@ -168,7 +168,9 @@ describe("binary storage transport", () => {
     expect(host.fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
     expect(fs.tree.get("Projects/Game/a.bin")?.data).toEqual(new Uint8Array([1, 2]));
     expect(fs.tree.get("Projects/Game/b.bin")?.data).toEqual(new Uint8Array([3]));
-    expect(rename).toHaveBeenCalledTimes(2);
+    // Each new file: its staged copy moved into place (nothing to set aside).
+    expect(rename.mock.calls.filter(([{ from }]) => /\/\.haptic-[0-9a-f-]{36}\.tmp$/.test(from)).map(([{ to }]) => to))
+      .toEqual(["Projects/Game/a.bin", "Projects/Game/b.bin"]);
   });
 
   it("splits Android writes into 1 MiB chunks and commits the last one with the total size", async () => {
