@@ -32,6 +32,7 @@
     "./src/scene-fog-block.ts",
     "./src/shadow-retained-casters.ts",
     "./src/shadow-vertex-clamp.ts",
+    "./src/shared-outline-stroke.ts",
     "./src/sprite-batch-block.ts",
     "./src/test-support/light-block-engine.ts",
     "./src/test-support/node-dom-polyfills.ts",
