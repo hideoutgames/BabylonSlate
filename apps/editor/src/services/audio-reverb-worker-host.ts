@@ -16,7 +16,7 @@ export type AudioReverbWorkerHost = {
 export function createAudioReverbWorker(): AudioReverbWorkerHost {
   const worker = new Worker(
     new URL(
-      "../../../../packages/assets/src/audio-reverb-worker.ts",
+      "@haptic/assets/audio-reverb-worker",
       import.meta.url,
     ),
     { type: "module" },

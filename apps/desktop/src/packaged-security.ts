@@ -3,8 +3,8 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { isLibraryFolder } from "@haptic/vfs/library-folders";
 import { isValidAppId } from "@haptic/core/app-identity";
 import { isRuntimeFileName, MAX_RUNTIME_FILES } from "./game-runtime";
-import { ANDROID_ICON_SIZES, MAX_ANDROID_VERSION_CODE } from "../../../packages/exporter/src/native-android";
-import { isValidTeamId } from "../../../packages/exporter/src/native-ios";
+import { ANDROID_ICON_SIZES, MAX_ANDROID_VERSION_CODE } from "@haptic/exporter/native-android";
+import { isValidTeamId } from "@haptic/exporter/native-ios";
 
 /** Largest payload one project IPC call may move through the main process. */
 export const MAX_IPC_BYTES = 512 * 1024 * 1024;
@@ -50,7 +50,6 @@ export function gameFile(rawUrl: string, root: string): string {
  * the editor's window, its preload bridge or its storage.
  */
 export const PREVIEW_HOST = "preview";
-export const PREVIEW_ORIGIN = `app://${PREVIEW_HOST}`;
 export const EDITOR_ORIGIN = "app://babylonslate";
 
 /** The bundled player's file for an `app://preview/player/` URL; nothing else of the renderer is served there. */

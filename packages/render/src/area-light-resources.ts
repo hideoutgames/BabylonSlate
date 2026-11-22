@@ -60,7 +60,7 @@ export function retainAreaLightLookup(scene: Scene): () => void {
         result.gammaSpace = false;
         return result;
       };
-      LTC1 = texture(0, "slate:areaLTC1"); LTC2 = texture(1, "slate:areaLTC2"); combined = texture(2, "slate:areaLTC");
+      LTC1 = texture(0, "haptic:areaLTC1"); LTC2 = texture(1, "haptic:areaLTC2"); combined = texture(2, "haptic:areaLTC");
       const table = AREA_LIGHT_LOOKUP_BYTES / 4;
       lease.commit([
         { handle: LTC1.getInternalTexture()!, bytes: table, category: "areaLight" },

@@ -3,7 +3,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createTestEngine } from "./test-support/test-engine";
-import { PREVIEW_OWNER_MESH, SlateMeshShapeBlock, meshGeometryRelativeTo } from "./particle-mesh-shape";
+import { PREVIEW_OWNER_MESH, HapticMeshShapeBlock, meshGeometryRelativeTo } from "./particle-mesh-shape";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()?.(); });
@@ -31,7 +31,7 @@ describe("Mesh Shape geometry", () => {
   });
 
   it("spawns on the drawn triangle at the drawn barycentric point, along its face normal, in its blended colour", () => {
-    const block = new SlateMeshShapeBlock("shape");
+    const block = new HapticMeshShapeBlock("shape");
     block.useMeshColor = true;
     // Two triangles; the second, (0,0,0) (2,0,0) (0,4,0), has red, half-transparent green and blue corners.
     block.source = { geometry: () => ({

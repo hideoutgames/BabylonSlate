@@ -6,6 +6,7 @@ import {
   PARTICLE_CAPACITY_MAX,
   PARTICLE_CAPACITY_MIN,
   PARTICLE_PREWARM_MAX_SECONDS,
+  normalizeGraphNodes,
   normalizeGraphPinEdges,
   type ParticleBillboardMode,
   type ParticleBlendMode,
@@ -358,21 +359,7 @@ export function particleSpriteSheetSettings(properties: Readonly<Record<string, 
 }
 
 function normalizeNodes(value: unknown): ParticleGraphNode[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry, index) => {
-    const record = asRecord(entry);
-    const type = asString(record.type, "");
-    if (!type) return [];
-    const position = asRecord(record.position);
-    return [
-      {
-        id: asString(record.id, `node-${index}`),
-        type,
-        position: { x: asFinite(position.x, 0), y: asFinite(position.y, 0) },
-        properties: normalizeParticleNodeProperties(type, asRecord(record.properties)),
-      },
-    ];
-  });
+  return normalizeGraphNodes(value, normalizeParticleNodeProperties);
 }
 
 /** A graph can never lack its Emitter Output. */

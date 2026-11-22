@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { extractAnimationRootMotion, normalizeAnimationRootMotion, rootMotionAt } from "./animation-root-motion";
+import { extractAnimationRootMotion, normalizeAnimationRootMotion } from "./animation-root-motion";
 
 const kaykit = (file: string) => new Uint8Array(readFileSync(new URL(`../../../engine-content/kaykit-assets/Adventurers/${file}`, import.meta.url)));
 
@@ -25,10 +25,8 @@ describe("root motion extraction", () => {
     expect(extractAnimationRootMotion(kaykit("Rig_Medium_MovementBasic.glb"), "Walking_A", "tail")).toBeNull();
   });
 
-  it("reads a track between samples and cleans a stored one", () => {
+  it("cleans a stored track", () => {
     const track = { durationMs: 100, stepMs: 50, x: [0, 1, 3], z: [0, 0, 0], yaw: [0, 10, 20] };
-    expect(rootMotionAt(track, 75)).toEqual({ x: 2, z: 0, yaw: 15 });
-    expect(rootMotionAt(track, 500)).toEqual({ x: 3, z: 0, yaw: 20 });
     expect(normalizeAnimationRootMotion({ bone: " hips ", track })).toEqual({ bone: "hips", track });
     expect(normalizeAnimationRootMotion({ bone: "", track })).toBeUndefined();
     expect(normalizeAnimationRootMotion({ bone: "hips", track: { ...track, durationMs: 0 } })).toBeUndefined();

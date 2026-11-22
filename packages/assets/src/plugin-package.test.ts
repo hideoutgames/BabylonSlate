@@ -30,7 +30,7 @@ import {
   STARTER_ACTOR_GUID,
   STARTER_CONTENT_PLUGIN_GUID,
   buildStarterContentFiles,
-} from "./starter-content";
+} from "./test-support/starter-content";
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url));
 const UPDATE = process.env.UPDATE_GOLDENS === "1";

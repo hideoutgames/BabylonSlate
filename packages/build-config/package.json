@@ -1,0 +1,22 @@
+{
+  "name": "@haptic/build-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node ../../scripts/run-tests.mjs unit packages/build-config"
+  },
+  "devDependencies": {
+    "@haptic/core": "workspace:*",
+    "@haptic/exporter": "workspace:*",
+    "@types/node": "^22.13.10",
+    "typescript": "~6.0.3",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.12"
+  }
+}

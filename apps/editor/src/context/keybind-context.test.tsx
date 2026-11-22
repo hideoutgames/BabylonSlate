@@ -6,7 +6,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@haptic/ui/co
 import { Dialog, DialogContent, DialogTitle } from "@haptic/ui/components/dialog";
 import { Sheet, SheetContent, SheetTitle } from "@haptic/ui/components/sheet";
 import { defaultEngineSettings } from "@haptic/vfs";
-import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
+import { MemoryAppSettingsStore } from "@haptic/vfs/test-support/memory-app-settings";
 import { AppSettingsProvider } from "./app-settings-context";
 import { KeybindProvider, useKeybindChord, useKeybindCommand } from "./keybind-context";
 import type { EditorCommandId } from "../lib/editor-keybinds";

@@ -180,17 +180,17 @@ uniform vec2 depthRange;
 uniform float reverseDepth;
 uniform float decodeSrgb;
 #include<helperFunctions>
-float slateNearer(float a, float b) { return reverseDepth > 0.5 ? max(a, b) : min(a, b); }
-float slateSky(float raw) { return reverseDepth > 0.5 ? step(raw, 0.0) : step(1.0, raw); }
+float hapticNearer(float a, float b) { return reverseDepth > 0.5 ? max(a, b) : min(a, b); }
+float hapticSky(float raw) { return reverseDepth > 0.5 ? step(raw, 0.0) : step(1.0, raw); }
 // Decode each tap before averaging: display colour must not be averaged in sRGB.
-vec3 slateSceneColor(vec2 uv) {
+vec3 hapticSceneColor(vec2 uv) {
   vec3 c = texture2D(sceneColor, uv).rgb;
   return decodeSrgb > 0.5 ? toLinearSpace(c) : c;
 }
 void main(void) {
-  // SLATE_COPY_TAPS² taps spread evenly over this texel's footprint: at integer ratios, the
+  // HAPTIC_COPY_TAPS² taps spread evenly over this texel's footprint: at integer ratios, the
   // centre of every source texel it covers, so even a one-texel occluder keeps its depth. At other
-  // ratios (SLATE_COPY_CENTRED_COLOR) colour is one filtered tap at the centre: the grid's taps would
+  // ratios (HAPTIC_COPY_CENTRED_COLOR) colour is one filtered tap at the centre: the grid's taps would
   // each blend neighbouring source texels and blur the copy.
   vec3 rgb = vec3(0.0);
   vec3 surface = vec3(0.0);
@@ -198,36 +198,36 @@ void main(void) {
   // Whether the colour read blends open sky in.
   float blendsSky = 0.0;
   float raw = reverseDepth > 0.5 ? 0.0 : 1.0;
-  for (int y = 0; y < SLATE_COPY_TAPS; y++) {
-    for (int x = 0; x < SLATE_COPY_TAPS; x++) {
-      vec2 uv = vUV + ((vec2(float(x), float(y)) + 0.5) / float(SLATE_COPY_TAPS) - 0.5) * copyTexel;
-      vec3 tap = slateSceneColor(uv);
+  for (int y = 0; y < HAPTIC_COPY_TAPS; y++) {
+    for (int x = 0; x < HAPTIC_COPY_TAPS; x++) {
+      vec2 uv = vUV + ((vec2(float(x), float(y)) + 0.5) / float(HAPTIC_COPY_TAPS) - 0.5) * copyTexel;
+      vec3 tap = hapticSceneColor(uv);
       float tapRaw = texture2D(sceneDepth, uv).r;
-#ifndef SLATE_COPY_CENTRED_COLOR
+#ifndef HAPTIC_COPY_CENTRED_COLOR
       rgb += tap;
 #endif
-      float open = slateSky(tapRaw);
+      float open = hapticSky(tapRaw);
       surface += tap * (1.0 - open);
       surfaceTaps += 1.0 - open;
-      raw = slateNearer(raw, tapRaw);
-#ifndef SLATE_COPY_CENTRED_COLOR
+      raw = hapticNearer(raw, tapRaw);
+#ifndef HAPTIC_COPY_CENTRED_COLOR
       blendsSky = max(blendsSky, open);
 #endif
     }
   }
-#ifdef SLATE_COPY_CENTRED_COLOR
-  rgb = slateSceneColor(vUV);
+#ifdef HAPTIC_COPY_CENTRED_COLOR
+  rgb = hapticSceneColor(vUV);
   // The filtered centre tap blends the four source texels around it, open sky among them even where every spread tap
   // found a surface.
   vec2 sourceTexel = 1.0 / vec2(textureSize(sceneDepth, 0));
   for (int corner = 0; corner < 4; corner++) {
     vec2 offset = vec2(float(corner - (corner / 2) * 2), float(corner / 2)) - 0.5;
-    blendsSky = max(blendsSky, slateSky(texture2D(sceneDepth, vUV + offset * sourceTexel).r));
+    blendsSky = max(blendsSky, hapticSky(texture2D(sceneDepth, vUV + offset * sourceTexel).r));
   }
 #else
-  rgb /= float(SLATE_COPY_TAPS * SLATE_COPY_TAPS);
+  rgb /= float(HAPTIC_COPY_TAPS * HAPTIC_COPY_TAPS);
 #endif
-  float sky = slateSky(raw);
+  float sky = hapticSky(raw);
   // A texel whose depth is a surface's takes its colour from that surface's taps alone: blended with the open sky
   // beside it, its colour is not what its depth lets water show through (water shows nothing of open sky), dark
   // dashes along a submerged edge.
@@ -281,7 +281,7 @@ class WaterSceneCopyTask extends FrameGraphTask {
       name, engine: graph.engine, useShaderStore: true, fragmentShader: WATER_SCENE_COPY_SHADER,
       uniformNames: ["copyTexel", "inverseProjection", "depthRange", "reverseDepth", "decodeSrgb"],
       samplerNames: ["sceneColor", "sceneDepth"],
-      defines: `#define SLATE_COPY_TAPS ${taps}${centred ? "\n#define SLATE_COPY_CENTRED_COLOR" : ""}`,
+      defines: `#define HAPTIC_COPY_TAPS ${taps}${centred ? "\n#define HAPTIC_COPY_CENTRED_COLOR" : ""}`,
       shaderLanguage: ShaderLanguage.GLSL,
     });
   }

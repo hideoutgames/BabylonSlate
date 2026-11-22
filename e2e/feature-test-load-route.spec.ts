@@ -304,7 +304,7 @@ async function installHooks(page: Page): Promise<void> {
       const linkProgram = proto.linkProgram as (program: object) => void;
       proto.linkProgram = function (this: unknown, program: object) {
         const parts = (attached.get(program) ?? []).map((shader) => sources.get(shader) ?? "");
-        remember(record("gl.link", join(parts.map(identity)), parts.some((part) => part.includes("vSlateWater"))));
+        remember(record("gl.link", join(parts.map(identity)), parts.some((part) => part.includes("vHapticWater"))));
         return linkProgram.call(this, program);
       };
     }

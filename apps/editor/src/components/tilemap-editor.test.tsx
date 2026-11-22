@@ -21,8 +21,8 @@ import {
 } from "@haptic/assets";
 import { AssetOpenProvider, setTouchUi } from "@haptic/editor-kit";
 import { defaultEngineSettings, type EngineSettings } from "@haptic/vfs";
-import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { MemoryAppSettingsStore } from "@haptic/vfs/test-support/memory-app-settings";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { KeybindProvider } from "../context/keybind-context";
 import { AppSettingsProvider } from "../context/app-settings-context";

@@ -2,7 +2,8 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { AssetRegistry, STARTER_CONTENT_PLUGIN_GUID, buildStarterContentFiles, discoverEnginePlugins } from "@haptic/assets";
+import { AssetRegistry, discoverEnginePlugins } from "@haptic/assets";
+import { STARTER_CONTENT_PLUGIN_GUID, buildStarterContentFiles } from "@haptic/assets/test-support/starter-content";
 import type { HttpStorageCatalog } from "@haptic/vfs";
 import { enginePluginsVitePlugin } from "../../vite-engine-plugins";
 

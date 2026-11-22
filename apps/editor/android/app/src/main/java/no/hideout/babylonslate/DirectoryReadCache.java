@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
-/** One read operation's directory listings, bounded by retained entry count. */
+/** One read scope's directory listings, bounded by retained entry count; parallel reads of a scope share it. */
 final class DirectoryReadCache<T> {
     static final class Directory<T> {
         final List<T> entries;
@@ -41,9 +41,9 @@ final class DirectoryReadCache<T> {
 
     DirectoryReadCache(int capacity) { this.capacity = capacity; }
 
-    Directory<T> get(String parent) { return directories.get(parent); }
+    synchronized Directory<T> get(String parent) { return directories.get(parent); }
 
-    void put(String parent, List<T> entries, Function<T, String> name) {
+    synchronized void put(String parent, List<T> entries, Function<T, String> name) {
         Directory<T> previous = directories.remove(parent);
         if (previous != null) retained -= previous.cost();
         int cost = Math.max(1, entries.size());
@@ -56,7 +56,7 @@ final class DirectoryReadCache<T> {
         retained += cost;
     }
 
-    void clear() {
+    synchronized void clear() {
         directories.clear();
         retained = 0;
     }

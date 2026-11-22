@@ -705,7 +705,7 @@ it.each(["WorldNormal", "DepthPass"] as const)("prepares a frozen authored %s va
         }
       } finally { engine.currentRenderPassId = main; }
       const wrapper = subMesh._getDrawWrapper(pass)!;
-      return { wrapper, lattice: String(wrapper.defines).includes("#define SLATE_LATTICE") };
+      return { wrapper, lattice: String(wrapper.defines).includes("#define HAPTIC_LATTICE") };
     };
     const first = await draw();
     expect(first.lattice).toBe(false);

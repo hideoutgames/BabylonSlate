@@ -116,8 +116,8 @@ it("keeps Fast on the lightweight capture pass: no forward view and no water sce
   }]);
   // A Fast colour capture's pass draws its scene colour target, which one pass then stores in the output.
   const capturePass = scene.objectRenderers.find((renderer) => renderer.name === "renderTarget:target:scene")!.renderPassId;
-  expect(compiled(lake, capturePass)).toMatch(/^#define SLATE_WATER_SURFACE$/m);
-  expect(compiled(lake, capturePass)).not.toContain("SLATE_WATER_NODE_COPY\n");
+  expect(compiled(lake, capturePass)).toMatch(/^#define HAPTIC_WATER_SURFACE$/m);
+  expect(compiled(lake, capturePass)).not.toContain("HAPTIC_WATER_NODE_COPY\n");
   expect(isMainWaterPass(scene, capturePass)).toBe(false);
   expect(output.getInternalTexture()).toBe(scene.textures.find((texture) => texture.name === "renderTarget:target")!.getInternalTexture());
   view.dispose();
@@ -144,7 +144,7 @@ it("renders Full Quality through the forward pipeline with its own scene copy, w
   const pass = capture!.waterSceneCopyPass!;
   expect(isMainWaterPass(scene, pass)).toBe(true);
   expect(waterSceneCopyForPass(scene, pass)!.invSize).toEqual([1 / 32, 1 / 16]);
-  expect(compiled(lake, pass)).toContain("#define SLATE_WATER_NODE_COPY\n");
+  expect(compiled(lake, pass)).toContain("#define HAPTIC_WATER_NODE_COPY\n");
   // The scene view keeps its own pass, camera and published output.
   const viewObjects = scene.objectRenderers.filter((renderer) => renderer.name === "Forward objects")
     .map((renderer) => renderer.renderPassId);

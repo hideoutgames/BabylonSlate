@@ -72,13 +72,13 @@ describe("compiled module loading", () => {
     const module = await loadCompiledModule({
       source: [
         "export function run() { return this; }",
-        "export function leak() { __slate_unbound_module_fixture = 1; }",
+        "export function leak() { __haptic_unbound_module_fixture = 1; }",
       ].join("\n"),
       entryPoints: entries("run", "leak"),
     }, "strict-fixture");
     const unbound = module.run!;
     expect(unbound()).toBeUndefined();
     expect(() => (module.leak as () => void)()).toThrow(ReferenceError);
-    expect("__slate_unbound_module_fixture" in globalThis).toBe(false);
+    expect("__haptic_unbound_module_fixture" in globalThis).toBe(false);
   });
 });

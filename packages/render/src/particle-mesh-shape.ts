@@ -90,7 +90,7 @@ const randomRange = (min: number, max: number) => (min === max ? min : min + Mat
  * up, and spawns at the emitter until then. Geometry is in the emitter's space, so it follows
  * the actor in World and Local Space alike.
  */
-export class SlateMeshShapeBlock extends NodeParticleBlock {
+export class HapticMeshShapeBlock extends NodeParticleBlock {
   source: ParticleMeshShapeSource = NO_GEOMETRY;
   useMeshNormals = true;
   useMeshColor = false;
@@ -104,7 +104,7 @@ export class SlateMeshShapeBlock extends NodeParticleBlock {
   }
 
   override getClassName(): string {
-    return "SlateMeshShapeBlock";
+    return "HapticMeshShapeBlock";
   }
 
   get particle(): NodeParticleConnectionPoint {
@@ -134,7 +134,7 @@ export class SlateMeshShapeBlock extends NodeParticleBlock {
       state.particleContext = particle;
       state.systemContext = system;
       const properties = (particle as ShapeParticle)._properties;
-      properties.slateMeshColor = false;
+      properties.hapticMeshColor = false;
       hasNormal = false;
       const geometry = this.source.geometry();
       if (!geometry || geometry.indices.length < 3) {
@@ -180,7 +180,7 @@ export class SlateMeshShapeBlock extends NodeParticleBlock {
             bu * colors[q0 + 2]! + bv * colors[q1 + 2]! + bw * colors[q2 + 2]!,
             bu * (colors[q0 + 3] ?? 1) + bv * (colors[q1 + 3] ?? 1) + bw * (colors[q2 + 3] ?? 1),
           );
-          properties.slateMeshColor = true;
+          properties.hapticMeshColor = true;
         }
       }
       if (system.isLocal) particle.position.copyFrom(point);
@@ -214,7 +214,7 @@ export class SlateMeshShapeBlock extends NodeParticleBlock {
       // A particle that took the mesh's colour keeps it; others get their authored colour.
       const color = system._colorCreation.process;
       system._colorCreation.process = (particle, owner) => {
-        if ((particle as ShapeParticle)._properties.slateMeshColor) return;
+        if ((particle as ShapeParticle)._properties.hapticMeshColor) return;
         color(particle, owner);
       };
     }

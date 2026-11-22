@@ -1,5 +1,5 @@
 /**
- * Noise data the Particle Graph Noise node samples on the CPU (`SlateNoiseBlock`): the built-in
+ * Noise data the Particle Graph Noise node samples on the CPU (`HapticNoiseBlock`): the built-in
  * noise, generated once from a fixed seed (procedural data, not shipped artwork), or a Texture
  * asset's pixels read back once. RGBA8, row-major; Babylon's `_fetchR` reads the red channel.
  */

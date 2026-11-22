@@ -208,7 +208,7 @@ test.describe("Editor density and IA", () => {
     await expect(openProject).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
-    await expect(page.locator("[data-slate-home-styles]")).toHaveCount(0);
+    await expect(page.locator("[data-haptic-home-styles]")).toHaveCount(0);
     await closeProjectViaSettings(page);
     await expect(listed).toContainText("Renamed Game");
     await expect(listed.locator(".homepage-project-cover")).toHaveAttribute(

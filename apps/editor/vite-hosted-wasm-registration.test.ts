@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { PluginOption, UserConfig, UserConfigExport } from "vite";
-import playerConfig from "../player/vite.config";
 import editorConfig from "./vite.config";
 
 /**
@@ -25,10 +24,8 @@ async function pluginNames(options: PluginOption[] | undefined): Promise<string[
   return names;
 }
 
-describe.each([
-  ["editor", editorConfig],
-  ["player", playerConfig],
-])("the %s build", (_app, config) => {
+describe("the editor build", () => {
+  const config = editorConfig;
   it("ships each hosted wasm once from its page bundles", async () => {
     expect(await pluginNames((await buildConfig(config)).plugins)).toEqual(expect.arrayContaining(HOSTED_WASM_PLUGINS));
   });

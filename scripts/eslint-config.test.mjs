@@ -80,3 +80,27 @@ test("packages/physics may import @babylonjs/havok only and rejects @babylonjs/c
     );
   }
 });
+
+test("workspaces import each other by package name, never by a relative path into another workspace", async () => {
+  const rejected = [
+    ["apps/editor/src/lib/example.test.ts", 'import { x } from "../../../../packages/vfs/src/test-support/memory-opfs";'],
+    ["apps/player/vite.config.ts", 'import { x } from "../editor/vite-helper";'],
+    ["apps/desktop/scripts/example.mjs", 'import { x } from "../../../packages/exporter/src/native-android.ts";'],
+    ["packages/build-config/src/example.ts", 'import { x } from "../../core/src/index";'],
+    ["packages/render/src/example.test.ts", 'import { x } from "../../assets/src/hasset";'],
+  ];
+  for (const [filePath, line] of rejected) {
+    const [result] = await eslint.lintText(`${line}\nexport { x };\n`, { filePath });
+    const restricted = result.messages.filter((message) => message.ruleId === "no-restricted-imports");
+    assert.equal(restricted.length, 1, `${filePath}: ${JSON.stringify(result.messages)}`);
+  }
+  const allowed = [
+    'import { x } from "@haptic/vfs/test-support/memory-opfs";',
+    'import { y } from "../lib/local";',
+    'import { z } from "../../../../scripts/distribution/contract.mjs";',
+    "export { x, y, z };",
+    "",
+  ].join("\n");
+  const [result] = await eslint.lintText(allowed, { filePath: "apps/editor/src/lib/example.test.ts" });
+  assert.deepEqual(result.messages.filter((message) => message.ruleId === "no-restricted-imports"), []);
+});

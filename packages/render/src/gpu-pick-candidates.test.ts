@@ -123,7 +123,7 @@ describe("pickCandidates", () => {
         setLatticeBinding(mesh, { active: true, revision: () => 0, widens: () => false, bindEffect: () => {}, bindBuffer: () => {} });
         cleanups.push(() => setLatticeBinding(mesh));
       }],
-      ["is water", (mesh) => { mesh.metadata = { slateWater: true }; }],
+      ["is water", (mesh) => { mesh.metadata = { hapticWater: true }; }],
       ["has thin instances", (mesh, { engine }) => {
         engine.getCaps().instancedArrays = true;
         mesh.thinInstanceAdd(Matrix.Translation(40, 0, 0));

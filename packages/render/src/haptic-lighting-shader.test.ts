@@ -40,10 +40,10 @@ it("takes derivatives only where control flow is uniform", () => {
     expect(lights.indexOf(prologue), header).toBeLessThan(lights.indexOf("for ("));
   }
   const cel = celFunctions();
-  const thresholds = ["float slateCelStep(", "float slateCelEdge("].map((header) => body(cel, header));
+  const thresholds = ["float hapticCelStep(", "float hapticCelEdge("].map((header) => body(cel, header));
   expect(thresholds.reduce((rest, threshold) => rest.replace(threshold, ""), cel).match(derivatives)).toBeNull();
   const lights = body(HAPTIC_LIGHTING_FUNCTIONS_GLSL, "vec3 hapticCelLighting(");
   const loops = lights.slice(lights.indexOf("for ("), lights.indexOf("// After the loop"));
   expect(loops.length).toBeGreaterThan(0);
-  for (const threshold of ["slateCelStep", "slateCelEdge", "slateCelBand"]) expect(calls(loops, threshold), threshold).toBe(0);
+  for (const threshold of ["hapticCelStep", "hapticCelEdge", "hapticCelBand"]) expect(calls(loops, threshold), threshold).toBe(0);
 });

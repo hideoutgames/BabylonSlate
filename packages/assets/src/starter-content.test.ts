@@ -14,7 +14,7 @@ import {
   STARTER_CONTENT_DISPLAY_NAME,
   STARTER_CONTENT_PLUGIN_GUID,
   buildStarterContentFiles,
-} from "./starter-content";
+} from "./test-support/starter-content";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const UPDATE = process.env.UPDATE_GOLDENS === "1";

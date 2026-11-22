@@ -39,7 +39,7 @@ export class LatticeDeformerBlock extends NodeMaterialBlock {
   override getClassName(): string { return "LatticeDeformerBlock"; }
   override _deserialize(data: unknown, scene: Scene, rootUrl: string): void { super._deserialize(data, scene, rootUrl); this.scene = scene; }
   override prepareDefines(defines: NodeMaterialDefines, _material: NodeMaterial, mesh?: AbstractMesh): void {
-    defines.setValue("SLATE_LATTICE", hasMeshLatticeDeformer(mesh), true);
+    defines.setValue("HAPTIC_LATTICE", hasMeshLatticeDeformer(mesh), true);
   }
   override bind(effect: Effect, _material: NodeMaterial, mesh?: Mesh): void { bindMeshLatticeDeformer(effect, mesh); }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -53,14 +53,14 @@ export class LatticeDeformerBlock extends NodeMaterialBlock {
       state.samplers.push(LATTICE_SAMPLER);
       state._samplerDeclaration += latticeShaderDeclarations();
     }
-    state._emitFunction("slateLattice", latticeShaderFunctions(scene), "");
+    state._emitFunction("hapticLattice", latticeShaderFunctions(scene), "");
     const position = this.position.associatedVariableName, normal = this.normal.associatedVariableName;
-    const result = state._getFreeVariableName("slateLatticeResult");
+    const result = state._getFreeVariableName("hapticLatticeResult");
     const outPosition = this.positionOut.associatedVariableName, outNormal = this.normalOut.associatedVariableName;
     state.compilationString += `${state._declareOutput(this.positionOut)} = ${position};\n${state._declareOutput(this.normalOut)} = ${normal};\n`;
     if (this.tangent.isConnected) state.compilationString += `${state._declareOutput(this.tangentOut)} = ${this.tangent.associatedVariableName};\n`;
-    state.compilationString += `#ifdef SLATE_LATTICE\nSlateLatticeResult ${result} = slateLattice(${position}.xyz);\n${outPosition} = vec4(${result}.position,${position}.w);\n${outNormal} = vec4(slateLatticeNormal(${result}.jacobian,${normal}.xyz),${normal}.w);\n`;
-    if (this.tangent.isConnected) state.compilationString += `${this.tangentOut.associatedVariableName} = vec4(slateLatticeTangent(${result}.jacobian,${this.tangent.associatedVariableName}.xyz,${outNormal}.xyz),${this.tangent.associatedVariableName}.w);\n`;
+    state.compilationString += `#ifdef HAPTIC_LATTICE\nHapticLatticeResult ${result} = hapticLattice(${position}.xyz);\n${outPosition} = vec4(${result}.position,${position}.w);\n${outNormal} = vec4(hapticLatticeNormal(${result}.jacobian,${normal}.xyz),${normal}.w);\n`;
+    if (this.tangent.isConnected) state.compilationString += `${this.tangentOut.associatedVariableName} = vec4(hapticLatticeTangent(${result}.jacobian,${this.tangent.associatedVariableName}.xyz,${outNormal}.xyz),${this.tangent.associatedVariableName}.w);\n`;
     state.compilationString += "#endif\n";
     return this;
   }

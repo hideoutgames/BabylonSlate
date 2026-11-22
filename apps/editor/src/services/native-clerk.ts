@@ -301,8 +301,8 @@ export class NativeClerkClient {
 
   constructor(publishableKey: string, http: NativeHttp, secrets: SecretStore) {
     this.origin = frontendOrigin(publishableKey);
-    this.tokenKey = `slate-clerk-client:${publishableKey}`;
-    this.userKey = `slate-clerk-user:${publishableKey}`;
+    this.tokenKey = `haptic-clerk-client:${publishableKey}`;
+    this.userKey = `haptic-clerk-user:${publishableKey}`;
     this.http = http;
     this.secrets = secrets;
   }

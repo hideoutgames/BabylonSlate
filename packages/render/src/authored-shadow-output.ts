@@ -78,7 +78,7 @@ export class AuthoredShadowFragmentOutput extends NodeMaterialBlock {
       const sample = this.nativeOpacityMap.associatedVariableName;
       alpha = state._getFreeVariableName("nativeShadowAlpha");
       state._injectAtEnd += `${state._declareLocalVar(alpha, Types.Float)} = ${sample}.a;\n`;
-      state._injectAtEnd += `#if SM_SOFTTRANSPARENTSHADOW == 1 && defined(SLATE_NATIVE_OPACITY_RGB)\n${alpha} = dot(${sample}.rgb, vec3(0.3, 0.59, 0.11));\n#endif\n`;
+      state._injectAtEnd += `#if SM_SOFTTRANSPARENTSHADOW == 1 && defined(HAPTIC_NATIVE_OPACITY_RGB)\n${alpha} = dot(${sample}.rgb, vec3(0.3, 0.59, 0.11));\n#endif\n`;
       if (this.nativeAlphaCutoff.isConnected)
         state._injectAtEnd += `if (${alpha} < ${this.nativeAlphaCutoff.associatedVariableName}) { discard; }\n`;
     }
