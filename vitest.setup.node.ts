@@ -9,7 +9,7 @@ import {
   resetSnapshotPublishVerification,
   snapshotPublishVerification,
   verifySnapshotPublishes,
-} from "../snapshot-verification";
+} from "./packages/runtime/src/snapshot-verification";
 
 verifySnapshotPublishes(true);
 
