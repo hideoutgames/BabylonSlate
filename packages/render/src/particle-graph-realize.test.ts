@@ -27,7 +27,7 @@ import {
 import { createTestEngine } from "./test-support/test-engine";
 import { PARTICLE_BLOCK_ADAPTERS, type ParticleBlockAdapter } from "./particle-graph-blocks";
 import { realizeParticleGraph, type RealizeParticleGraphResult } from "./particle-graph-realize";
-import { PARTICLE_MAX_EMITTED_STATEMENTS } from "./particle-update-compiler";
+import { compiledParticleUpdateSize, PARTICLE_MAX_EMITTED_STATEMENTS } from "./particle-update-compiler";
 import { GlobalParameterSession, type GlobalParameterValueSource } from "./global-parameter-values";
 import { animatedSpriteCell } from "./particle-sprite-sheet";
 
@@ -720,7 +720,7 @@ describe("Particle Graph update compilation", () => {
 
   it("replaces the processes of the update blocks it compiles and keeps Babylon's for the rest", () => {
     // The default graph: Apply Velocity (Babylon's, kept) then Update Color (compiled).
-    expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument())).result).system)).toEqual(["processPosition", ""]);
+    expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument())).result).system)).toEqual(["processPosition", "compiledParticleUpdate"]);
     expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument()), "world", undefined, undefined, false).result).system))
       .toEqual(["processPosition", "processColor"]);
   });
@@ -748,8 +748,8 @@ describe("Particle Graph update compilation", () => {
     const doc = diamond(10, node("age", "input.contextual.normalizedAge"));
     const compiled = built(realize(planOf(doc)).result).system;
     // A thousand reads by pulling; one evaluation per level here.
-    expect(sizeProcess(compiled).name).toBe("");
-    expect(sizeProcess(compiled).toString().split("\n").length).toBeLessThan(80);
+    expect(sizeProcess(compiled).name).toBe("compiledParticleUpdate");
+    expect(compiledParticleUpdateSize(sizeProcess(compiled))).toBeLessThan(80);
     const babylon = seededRun(built(realize(planOf(doc), "world", undefined, undefined, false).result).system, 150);
     expect(babylon.deaths).toBeGreaterThan(0);
     expect(seededRun(compiled, 150)).toEqual(babylon);
@@ -764,7 +764,7 @@ describe("Particle Graph update compilation", () => {
       const { system } = built(realize(planOf(doc)).result);
       expect(sizeProcess(system).name).toBe("processSize");
       expect(warn).toHaveBeenCalledOnce();
-      expect(String(warn.mock.calls[0]![0])).toContain(`${PARTICLE_MAX_EMITTED_STATEMENTS} statements`);
+      expect(String(warn.mock.calls[0]![0])).toContain(`${PARTICLE_MAX_EMITTED_STATEMENTS} instructions`);
       system.start(0);
       step(system, 20);
       expect(system.getActiveCount()).toBeGreaterThan(0);
