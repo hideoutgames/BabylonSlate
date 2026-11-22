@@ -835,7 +835,7 @@ describe("packedContentFromGame", () => {
     expect(content.audioReverbByScene.get("scene-2")).toEqual(new Uint8Array([7, 8]));
   });
 
-  it("hydrates packed binary BSLD landscape sidecars without base64", async () => {
+  it("hydrates packed binary HPLD landscape sidecars without base64", async () => {
     const { encodeLandscapeChunk, landscapeChunkId, parseLandscapeProperties } = await import("@haptic/core");
     const { LANDSCAPE_EXPORT_TYPE, landscapeExportGuid, landscapeSidecarKey } = await import("@haptic/exporter");
     const terrain = parseLandscapeProperties({

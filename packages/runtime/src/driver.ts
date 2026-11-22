@@ -399,7 +399,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly cameraShakeCatalog = new Map<string, CameraShakeCatalogEntry>();
   /** 2D and 3D Timeline Clip assets of the current sources, by guid, for Create. */
   readonly timelineClipCatalog = new Map<string, TimelineClipAssetCatalogEntry>();
-  /** Binary BSLD landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
+  /** Binary HPLD landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
   readonly sceneLandscapeBytes = new Map<string, Uint8Array>();
   readonly scriptHost: ScriptHost;
   readonly objectLifetime: RuntimeObjectLifetime;

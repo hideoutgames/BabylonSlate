@@ -58,15 +58,18 @@ function generationKey(storage: FaultStorage, name: "a" | "b") {
   return [...storage.files.keys()].find((key) => key.endsWith(`generation-${name}.save`))!;
 }
 
-/** Model an independently produced, checksummed future-version file. */
+/** Model an independently produced, checksummed save file: a `haptic-save <format> <sha256>` line, then the body. */
+async function saveFile(formatVersion: number, body: string): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
+  return `haptic-save ${formatVersion} ${Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("")}\n${body}`;
+}
+function saveBody(text: string): Record<string, unknown> {
+  return JSON.parse(text.slice(text.indexOf("\n") + 1));
+}
 async function editPayload(text: string, change: (payload: Record<string, unknown>) => void): Promise<string> {
-  const envelope = JSON.parse(text);
-  const payload = JSON.parse(envelope.payload);
+  const payload = saveBody(text);
   change(payload);
-  envelope.payload = JSON.stringify(payload);
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(envelope.payload));
-  envelope.checksum = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return JSON.stringify(envelope);
+  return saveFile(1, JSON.stringify(payload));
 }
 
 // The storage double is the sole mock boundary; every result passes real schema,
@@ -137,7 +140,7 @@ describe("SaveGameService recovery and lifecycle", () => {
     expect(await service.loadGame()).toMatchObject({ ok: false, error: { code: "missing" } });
     await service.saveGame();
     const key = generationKey(storage, "a");
-    storage.files.set(key, storage.files.get(key)!.replace("coins-id\\\":0", "coins-id\\\":999"));
+    storage.files.set(key, storage.files.get(key)!.replace("\"coins-id\":0", "\"coins-id\":999"));
     const damaged = storage.files.get(key);
     expect(await service.loadGame()).toMatchObject({ ok: false, error: { code: "corrupt" } });
     expect(await service.listSaves()).toMatchObject({ ok: true, value: [{ slot: "default", status: "corrupt" }] });
@@ -196,9 +199,7 @@ describe("SaveGameService recovery and lifecycle", () => {
     await service.saveGame();
     await service.saveGame();
     const key = generationKey(storage, "b");
-    const envelope = JSON.parse(storage.files.get(key)!);
-    envelope.formatVersion = 200;
-    storage.files.set(key, JSON.stringify(envelope));
+    storage.files.set(key, await saveFile(200, JSON.stringify(saveBody(storage.files.get(key)!))));
     expect(await service.loadGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
     expect(await service.saveGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
   });
@@ -419,21 +420,23 @@ describe("SaveGameService schema upgrades and portability", () => {
     expect(generateSaveGameTypes(structured)).toContain('"SpawnCount": Record<string, unknown>;');
   });
 
-  it("writes format version 2 and refuses a save written in format version 1", async () => {
+  it("writes the body once after a format 1 header and refuses another format or a damaged header", async () => {
     const storage = new FaultStorage();
     const service = make(storage);
     service.getSaveData().coins = 12;
     expect(await service.saveGame()).toMatchObject({ ok: true });
     const key = generationKey(storage, "a");
-    const written = JSON.parse(storage.files.get(key)!);
-    expect(written.formatVersion).toBe(2);
-    // A version 1 save: the same body, its envelope and payload both marked 1.
-    const older = await editPayload(storage.files.get(key)!, (payload) => { payload.formatVersion = 1; });
-    const envelope = JSON.parse(older);
-    envelope.formatVersion = 1;
-    storage.files.set(key, JSON.stringify(envelope));
-    const reloaded = make(storage);
-    expect(await reloaded.loadGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
+    const written = storage.files.get(key)!;
+    const body = JSON.stringify(saveBody(written));
+    // The body is plain JSON, not a JSON string inside another document.
+    expect(written).toBe(await saveFile(1, body));
+    expect(saveBody(written).fields).toMatchObject({ "coins-id": 12 });
+    storage.files.set(key, await saveFile(2, body));
+    expect(await make(storage).loadGame()).toMatchObject({ ok: false, error: { code: "incompatible" } });
+    storage.files.set(key, written.replace("haptic-save 1 ", "haptic-save one "));
+    expect(await make(storage).loadGame()).toMatchObject({ ok: false, error: { code: "corrupt" } });
+    storage.files.set(key, written);
+    expect(await make(storage).loadGame()).toMatchObject({ ok: true });
   });
 
   it("validates field types, array entries, reserved keys and independent defaults before persistence", async () => {

@@ -61,7 +61,7 @@ describe("hasset codec", () => {
         byteLength: body.byteLength, locator: { inline: { offset: 0, length: body.byteLength } },
       }],
       dependencies: [], dependencyMetadataVersion: 1, requiredDependencies: [],
-      engineVersion: "0.0.0", guid: "old-scene", mode: "thin", name: "Old", payload: {}, type: "Scene", version: 4,
+      engineVersion: "0.0.0", guid: "old-scene", mode: "thin", name: "Old", payload: {}, type: "Scene", version: 1,
     };
     expect((await decodeHasset(rawHasset(current, body))).chunks.get("document")).toEqual(body);
 

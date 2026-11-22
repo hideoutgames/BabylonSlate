@@ -16,7 +16,7 @@ import {
 } from "./landscape-chunks";
 
 describe("landscape binary .hasset chunks", () => {
-  it("extracts sculpted terrain into raw BSLD chunks and hydrates back to editor JSON", () => {
+  it("extracts sculpted terrain into raw HPLD chunks and hydrates back to editor JSON", () => {
     const heights = new Float32Array(25);
     heights[12] = 6.25;
     const weights = new Uint8Array(25 * 4);

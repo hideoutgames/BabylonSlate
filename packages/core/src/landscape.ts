@@ -1,4 +1,4 @@
-/** Binary `BSLD` chunk prefix inside Scene/Prefab/Class `.hasset` files. */
+/** Binary `HPLD` chunk prefix inside Scene/Prefab/Class `.hasset` files. */
 export const LANDSCAPE_CHUNK_PREFIX = "landscape:";
 
 /** Return the `.hasset` binary chunk id for a `LandscapeComponent`. */
@@ -29,7 +29,7 @@ export interface SerializedLandscapeProperties {
   width: number;
   depth: number;
   subdivisions: number;
-  /** Compact base64-encoded `BSLD` bytes in Editor JSON; omitted/null when flat or externalized to `chunkId`. */
+  /** Compact base64-encoded `HPLD` bytes in Editor JSON; omitted/null when flat or externalized to `chunkId`. */
   data?: string | null;
   /** `.hasset` binary chunk id (e.g. `"landscape:<componentId>"`) when externalized on disk or in exports. */
   chunkId?: string | null;
@@ -57,12 +57,12 @@ export interface LandscapeBrush {
   layer: number;
 }
 
-const BSLD_MAGIC_0 = 0x42; // 'B'
-const BSLD_MAGIC_1 = 0x53; // 'S'
-const BSLD_MAGIC_2 = 0x4c; // 'L'
-const BSLD_MAGIC_3 = 0x44; // 'D'
-const BSLD_FORMAT = 1;
-const BSLD_HEADER_BYTES = 16;
+const HPLD_MAGIC_0 = 0x48; // 'H'
+const HPLD_MAGIC_1 = 0x50; // 'P'
+const HPLD_MAGIC_2 = 0x4c; // 'L'
+const HPLD_MAGIC_3 = 0x44; // 'D'
+const HPLD_FORMAT = 1;
+const HPLD_HEADER_BYTES = 16;
 const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 
 type DecodedField = {
@@ -145,7 +145,7 @@ export function isFlatDefaultLandscape(
   return true;
 }
 
-/** Encode landscape heights (`Float32Array`) and paint weights (`Uint8Array`) into a compact `BSLD` binary chunk. */
+/** Encode landscape heights (`Float32Array`) and paint weights (`Uint8Array`) into a compact `HPLD` binary chunk. */
 export function encodeLandscapeChunk(
   data: Pick<LandscapeProperties, "subdivisions" | "heights" | "weights">,
 ): Uint8Array<ArrayBuffer> {
@@ -156,29 +156,29 @@ export function encodeLandscapeChunk(
   }
   const heightBytes = vertexCount * 4;
   const weightBytes = vertexCount * 4;
-  const buffer = new ArrayBuffer(BSLD_HEADER_BYTES + heightBytes + weightBytes);
+  const buffer = new ArrayBuffer(HPLD_HEADER_BYTES + heightBytes + weightBytes);
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
-  bytes[0] = BSLD_MAGIC_0;
-  bytes[1] = BSLD_MAGIC_1;
-  bytes[2] = BSLD_MAGIC_2;
-  bytes[3] = BSLD_MAGIC_3;
-  view.setUint32(4, BSLD_FORMAT, true);
+  bytes[0] = HPLD_MAGIC_0;
+  bytes[1] = HPLD_MAGIC_1;
+  bytes[2] = HPLD_MAGIC_2;
+  bytes[3] = HPLD_MAGIC_3;
+  view.setUint32(4, HPLD_FORMAT, true);
   view.setUint16(8, subdivisions, true);
   view.setUint16(10, 0, true);
   view.setUint32(12, 0, true);
 
   if (LITTLE_ENDIAN) {
-    const outHeights = new Float32Array(buffer, BSLD_HEADER_BYTES, vertexCount);
+    const outHeights = new Float32Array(buffer, HPLD_HEADER_BYTES, vertexCount);
     for (let i = 0; i < vertexCount; i++) {
       outHeights[i] = finite(data.heights[i], 0, -10000, 10000);
     }
   } else {
     for (let i = 0; i < vertexCount; i++) {
-      view.setFloat32(BSLD_HEADER_BYTES + i * 4, finite(data.heights[i], 0, -10000, 10000), true);
+      view.setFloat32(HPLD_HEADER_BYTES + i * 4, finite(data.heights[i], 0, -10000, 10000), true);
     }
   }
-  const outWeights = new Uint8Array(buffer, BSLD_HEADER_BYTES + heightBytes, weightBytes);
+  const outWeights = new Uint8Array(buffer, HPLD_HEADER_BYTES + heightBytes, weightBytes);
   for (let i = 0; i < vertexCount; i++) {
     const at = i * 4;
     const w0 = data.weights[at]!, w1 = data.weights[at + 1]!, w2 = data.weights[at + 2]!, w3 = data.weights[at + 3]!;
@@ -194,47 +194,47 @@ export function encodeLandscapeChunk(
   return bytes;
 }
 
-/** Decode a `BSLD` binary chunk into typed `Float32Array` heights and `Uint8Array` RGBA8 paint weights. */
+/** Decode a `HPLD` binary chunk into typed `Float32Array` heights and `Uint8Array` RGBA8 paint weights. */
 export function decodeLandscapeChunk(bytes: Uint8Array): DecodedField {
-  if (bytes.byteLength < BSLD_HEADER_BYTES) {
-    throw new Error("Invalid BSLD landscape chunk: truncated header");
+  if (bytes.byteLength < HPLD_HEADER_BYTES) {
+    throw new Error("Invalid HPLD landscape chunk: truncated header");
   }
   if (
-    bytes[0] !== BSLD_MAGIC_0 ||
-    bytes[1] !== BSLD_MAGIC_1 ||
-    bytes[2] !== BSLD_MAGIC_2 ||
-    bytes[3] !== BSLD_MAGIC_3
+    bytes[0] !== HPLD_MAGIC_0 ||
+    bytes[1] !== HPLD_MAGIC_1 ||
+    bytes[2] !== HPLD_MAGIC_2 ||
+    bytes[3] !== HPLD_MAGIC_3
   ) {
-    throw new Error("Invalid BSLD landscape chunk: bad magic");
+    throw new Error("Invalid HPLD landscape chunk: bad magic");
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const format = view.getUint32(4, true);
-  if (format !== BSLD_FORMAT) {
-    throw new Error(`Unsupported BSLD landscape chunk format: ${format}`);
+  if (format !== HPLD_FORMAT) {
+    throw new Error(`Unsupported HPLD landscape chunk format: ${format}`);
   }
   const subdivisions = view.getUint16(8, true);
   if (subdivisions < 4 || subdivisions > 256) {
-    throw new Error(`Invalid BSLD landscape subdivisions: ${subdivisions}`);
+    throw new Error(`Invalid HPLD landscape subdivisions: ${subdivisions}`);
   }
   const vertexCount = (subdivisions + 1) ** 2;
   const heightBytes = vertexCount * 4;
-  const expectedLength = BSLD_HEADER_BYTES + heightBytes + vertexCount * 4;
+  const expectedLength = HPLD_HEADER_BYTES + heightBytes + vertexCount * 4;
   if (bytes.byteLength !== expectedLength) {
     throw new Error(
-      `Invalid BSLD landscape chunk byte length: expected ${expectedLength}, got ${bytes.byteLength}`,
+      `Invalid HPLD landscape chunk byte length: expected ${expectedLength}, got ${bytes.byteLength}`,
     );
   }
   const heights = new Float32Array(vertexCount);
-  if (LITTLE_ENDIAN && (bytes.byteOffset + BSLD_HEADER_BYTES) % 4 === 0) {
-    const src = new Float32Array(bytes.buffer, bytes.byteOffset + BSLD_HEADER_BYTES, vertexCount);
+  if (LITTLE_ENDIAN && (bytes.byteOffset + HPLD_HEADER_BYTES) % 4 === 0) {
+    const src = new Float32Array(bytes.buffer, bytes.byteOffset + HPLD_HEADER_BYTES, vertexCount);
     for (let i = 0; i < vertexCount; i++) heights[i] = finite(src[i], 0, -10000, 10000);
   } else {
     for (let i = 0; i < vertexCount; i++) {
-      heights[i] = finite(view.getFloat32(BSLD_HEADER_BYTES + i * 4, true), 0, -10000, 10000);
+      heights[i] = finite(view.getFloat32(HPLD_HEADER_BYTES + i * 4, true), 0, -10000, 10000);
     }
   }
   const weights = new Uint8Array(vertexCount * 4);
-  const weightOffset = BSLD_HEADER_BYTES + heightBytes;
+  const weightOffset = HPLD_HEADER_BYTES + heightBytes;
   for (let i = 0; i < vertexCount; i++) {
     const at = i * 4;
     const w0 = bytes[weightOffset + at]!;
@@ -269,14 +269,14 @@ function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-/** Encode landscape field data as a compact base64 `BSLD` string for JSON-only editor undo/journal snapshots. */
+/** Encode landscape field data as a compact base64 `HPLD` string for JSON-only editor undo/journal snapshots. */
 export function encodeLandscapeBase64(
   data: Pick<LandscapeProperties, "subdivisions" | "heights" | "weights">,
 ): string {
   return bytesToBase64(encodeLandscapeChunk(data));
 }
 
-/** Decode a base64 `BSLD` string into raw binary `BSLD` bytes. */
+/** Decode a base64 `HPLD` string into raw binary `HPLD` bytes. */
 export function decodeLandscapeBase64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
   return base64ToBytes(encoded);
 }
@@ -308,7 +308,7 @@ function cachedDecodeBase64(encoded: string): DecodedField {
 
 /**
  * Parse a `LandscapeComponent` into in-memory typed arrays (`Float32Array` heights + `Uint8Array` RGBA8 weights).
- * Accepts already-parsed `LandscapeProperties` in O(1), raw binary `BSLD` bytes (Play/Player), or base64 `data`
+ * Accepts already-parsed `LandscapeProperties` in O(1), raw binary `HPLD` bytes (Play/Player), or base64 `data`
  * (Editor JSON, LRU-cached). Flat default terrains omit field data and allocate zeroed defaults cleanly.
  */
 export function parseLandscapeProperties(
@@ -580,7 +580,7 @@ export function sculptLandscape(
 /**
  * One drag's dabs applied in place to owned `Float32Array` heights and `Uint8Array` weights.
  * `liveProperties()` exposes the working buffers directly for zero-copy 60fps viewport preview updates;
- * `toSerializedProperties()` encodes `BSLD` once on pointer-up when committing the Undo/Redo snapshot.
+ * `toSerializedProperties()` encodes `HPLD` once on pointer-up when committing the Undo/Redo snapshot.
  */
 export class LandscapeSculptSession {
   private readonly terrain: LandscapeProperties;

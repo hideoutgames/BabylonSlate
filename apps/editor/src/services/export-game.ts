@@ -134,7 +134,7 @@ export type CollectExportGameParams = {
   fontMsdfPngByGuid?: (guid: string) => Uint8Array | null;
   /** Throws for a Scene whose reverb could not be baked or saved; a reached one fails the export. */
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
-  /** Raw binary `BSLD` landscape chunks owned by a Scene. */
+  /** Raw binary `HPLD` landscape chunks owned by a Scene. */
   landscapeChunksByGuid?: (guid: string) => ReadonlyArray<{ chunkId: string; bytes: Uint8Array }>;
   renderSettings: RenderProjectSettings;
   defaultFontGuid?: string | null;

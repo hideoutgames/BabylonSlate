@@ -18,8 +18,8 @@ import { createDefaultScene } from "./project";
 
 const brush: LandscapeBrush = { tool: "raise", radius: 1.5, strength: 2, falloff: 1, height: 4, layer: 2 };
 
-describe("landscape binary BSLD codec & authoring", () => {
-  it("encodes and decodes BSLD binary chunks losslessly and rejects malformed bytes", () => {
+describe("landscape binary HPLD codec & authoring", () => {
+  it("encodes and decodes HPLD binary chunks losslessly and rejects malformed bytes", () => {
     const data = parseLandscapeProperties({ width: 16, depth: 16, subdivisions: 8, collisionsEnabled: true });
     data.heights[0] = -3.25;
     data.heights[40] = 12.5;
@@ -28,7 +28,7 @@ describe("landscape binary BSLD codec & authoring", () => {
 
     const bytes = encodeLandscapeChunk(data);
     expect(bytes.byteLength).toBe(16 + 81 * 8);
-    expect(String.fromCharCode(bytes[0]!, bytes[1]!, bytes[2]!, bytes[3]!)).toBe("BSLD");
+    expect(String.fromCharCode(bytes[0]!, bytes[1]!, bytes[2]!, bytes[3]!)).toBe("HPLD");
 
     const decoded = decodeLandscapeChunk(bytes);
     expect(decoded.subdivisions).toBe(8);

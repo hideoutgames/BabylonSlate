@@ -30,7 +30,7 @@ export type GameSourceContent = {
   payloads: Map<string, Uint8Array>;
   navmeshBytes: Map<string, Uint8Array>;
   audioReverbBytes: Map<string, Uint8Array>;
-  /** Binary `BSLD` landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
+  /** Binary `HPLD` landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
   landscapeBytes?: Map<string, Uint8Array>;
 };
 

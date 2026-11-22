@@ -748,7 +748,7 @@ describe("audio asset containers", () => {
     });
   });
 
-  it("packs several clip blobs and still unwraps a legacy single-source envelope", () => {
+  it("packs several clip blobs and reads each back", () => {
     const payload = normalizeAudioPayload({
       clips: [
         { chunkId: "source", name: "a", weight: 1 },
@@ -763,28 +763,40 @@ describe("audio asset containers", () => {
       source: first,
       sources: [first, second],
     });
-    const legacyJson = new TextEncoder().encode(
-      JSON.stringify({
-        volume: 1,
-        audioChannelGuid: null,
-        soundAttenuationGuid: null,
-      }),
-    );
-    const legacy = new Uint8Array(8 + legacyJson.byteLength + 4);
-    legacy.set(new Uint8Array([0x42, 0x53, 0x41, 0x55]), 0);
-    legacy[4] = legacyJson.byteLength;
-    legacy.set(legacyJson, 8);
-    legacy.set([1, 2, 3, 4], 8 + legacyJson.byteLength);
-    expect(decodePackedAudioAsset(legacy)?.source).toEqual(
-      new Uint8Array([1, 2, 3, 4]),
-    );
-    expect(decodePackedAudioAsset(legacy)?.sources).toEqual([
-      new Uint8Array([1, 2, 3, 4]),
-    ]);
-    expect(decodePackedAudioAsset(legacy)?.payload.loop).toBe(false);
+    expect(extractPackedAudioClipBytes(packed, "source:2")).toEqual(second);
   });
 
-  it("packs asset loop into the BSAU JSON envelope", () => {
+  it("reads one clip whose bytes look like a clip table as that one clip", () => {
+    const payload = normalizeAudioPayload({});
+    // Count 2, then lengths and bytes that fill the rest exactly: a guessing reader would split it.
+    const clip = new Uint8Array([2, 0, 0, 0, 1, 0, 0, 0, 7, 1, 0, 0, 0, 8]);
+    const packed = encodePackedAudioAsset(payload, clip);
+    expect(decodePackedAudioAsset(packed)?.sources).toEqual([clip]);
+  });
+
+  it("keeps a metadata-only envelope with no clips", () => {
+    const payload = normalizeAudioPayload({ loop: true });
+    const packed = encodePackedAudioAsset(payload, []);
+    expect(decodePackedAudioAsset(packed)).toEqual({ payload, source: new Uint8Array(), sources: [] });
+  });
+
+  it("rejects a malformed or unsupported envelope instead of guessing", () => {
+    const packed = encodePackedAudioAsset(normalizeAudioPayload({}), new Uint8Array([1, 2, 3]));
+    const withWord = (offset: number, value: number) => {
+      const bytes = packed.slice();
+      new DataView(bytes.buffer).setUint16(offset, value, true);
+      return bytes;
+    };
+    expect(() => decodePackedAudioAsset(withWord(4, 2))).toThrow(/version: 2/);
+    expect(() => decodePackedAudioAsset(withWord(6, 1))).toThrow(/unknown flags/);
+    expect(() => decodePackedAudioAsset(packed.subarray(0, packed.byteLength - 1))).toThrow(/truncated clip/);
+    const trailing = new Uint8Array(packed.byteLength + 1);
+    trailing.set(packed);
+    expect(() => decodePackedAudioAsset(trailing)).toThrow(/trailing bytes/);
+    expect(() => decodePackedAudioAsset(packed.subarray(0, 10))).toThrow(/truncated header/);
+  });
+
+  it("packs asset loop into the HPAU JSON envelope", () => {
     const payload = normalizeAudioPayload({ loop: true });
     const packed = encodePackedAudioAsset(payload, new Uint8Array([1, 2]));
     expect(decodePackedAudioAsset(packed)?.payload.loop).toBe(true);

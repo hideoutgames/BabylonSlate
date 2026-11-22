@@ -23,7 +23,7 @@ export const AUDIO_REVERB_CHUNK_ID = "audioReverb";
 const AUDIO_OCCLUSION_WALLS_TO_SATURATE = 2;
 export const AUDIO_MUFFLE_LOWPASS_HZ = 700;
 
-const MAGIC = new TextEncoder().encode("BSAR");
+const MAGIC = new TextEncoder().encode("HPAR");
 /** The word after the magic; decode reads no field from a chunk with any other value. */
 const FORMAT = 1;
 const FLAG_DRY = 1;

@@ -237,7 +237,7 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     }
     handle.scheduler.invalidate("manual");
   };
-  /** Encodes each sculpted landscape into compact BSLD serialized properties once on pointer-up. */
+  /** Encodes each sculpted landscape into compact HPLD serialized properties once on pointer-up. */
   const settleSculpt = (current: Stroke) => {
     const sculpts = current.sculpts;
     if (!sculpts || !sculpts.some((sculpt) => sculpt.session?.hasChanges)) return;

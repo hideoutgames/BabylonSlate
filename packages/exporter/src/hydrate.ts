@@ -114,7 +114,7 @@ export type PackedGameContent = {
   navmeshByScene: Map<string, Uint8Array>;
   audioReverbBytes: Uint8Array | null;
   audioReverbByScene: Map<string, Uint8Array>;
-  /** Binary `BSLD` landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
+  /** Binary `HPLD` landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
   landscapeBytes: Map<string, Uint8Array>;
   materialDocuments: Map<string, MaterialDocument>;
   materialFunctions: Map<string, MaterialFunctionDocument>;

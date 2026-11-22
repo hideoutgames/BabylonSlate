@@ -512,7 +512,7 @@ describe("project documents as .hasset", () => {
       await storage.readBinary(MAIN_SCENE_FILE),
     );
     expect(header.type).toBe("Scene");
-    expect(header.version).toBe(4);
+    expect(header.version).toBe(1);
     expect(header.guid).toBeTruthy();
     expect(header.chunks[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
   });

@@ -52,7 +52,7 @@ export function landscapeSidecarKey(ownerGuid: string, chunkId: string): string 
   return `${ownerGuid}:${chunkId}`;
 }
 
-/** Manifest sidecar asset guid for a binary `BSLD` landscape chunk (`landscape:<ownerGuid>:<chunkId>`). */
+/** Manifest sidecar asset guid for a binary `HPLD` landscape chunk (`landscape:<ownerGuid>:<chunkId>`). */
 export function landscapeExportGuid(ownerGuid: string, chunkId: string): string {
   return `${LANDSCAPE_EXPORT_GUID_PREFIX}${landscapeSidecarKey(ownerGuid, chunkId)}`;
 }

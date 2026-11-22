@@ -10,7 +10,7 @@ import {
 import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
-it("transports authored terrain via raw BSLD chunks and a whole mixed foliage stroke as component parts for Play", async () => {
+it("transports authored terrain via raw HPLD chunks and a whole mixed foliage stroke as component parts for Play", async () => {
   const landscape = parseLandscapeProperties({ subdivisions: 4, heights: new Float32Array(25).fill(3), materialGuid: "terrain", collisionsEnabled: true });
   const chunkId = landscapeChunkId("terrain");
   const chunkBytes = encodeLandscapeChunk(landscape);
