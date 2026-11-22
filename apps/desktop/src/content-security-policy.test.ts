@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { editorContentSecurityPolicy, inlineScriptHashes, playerContentSecurityPolicy } from "./content-security-policy";
 
@@ -39,5 +41,17 @@ describe("desktop content security policies", () => {
     for (const plain of ["http:", "ws:", "*"]) {
       expect(playerContentSecurityPolicy("'none'").split(/[\s;]+/)).not.toContain(plain);
     }
+  });
+
+  // The iOS and Android game templates are compiled by Xcode and Gradle, so they hold their own copy of the exported
+  // game's policy; this source-read check is the contract that keeps each copy identical to it.
+  it.each([
+    ["the iOS game template", "../ios-game/HapticGame/HapticGameApp.swift", /static let contentSecurityPolicy = "([^"\\]*)"/],
+    ["the Android game template", "../android-game/app/src/main/java/com/haptic/game/GameActivity.java", /CONTENT_SECURITY_POLICY = "([^"\\]*)";/],
+  ])("gives %s the exported desktop game's policy", (_name, file, pattern) => {
+    const source = readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
+    const copies = [...source.matchAll(new RegExp(pattern, "g"))];
+    expect(copies).toHaveLength(1);
+    expect(copies[0]![1]).toBe(playerContentSecurityPolicy("'none'"));
   });
 });
