@@ -9,8 +9,12 @@ import {
 import {
   createPurchases,
   getHostPlatform,
+  ANNUAL_PACKAGE,
+  MONTHLY_PACKAGE,
   type EntitlementStatus,
   type PurchasesAccount,
+  type SubscriptionPackageId,
+  type SubscriptionPlan,
 } from "@haptic/vfs";
 import {
   unconfiguredBilling,
@@ -22,13 +26,17 @@ import {
 const PRO_ENTITLEMENT =
   import.meta.env.VITE_REVENUECAT_PRO_ENTITLEMENT?.trim() || "pro";
 
-/**
- * The RevenueCat package Subscribe buys: Haptic Pro is the only plan sold in
- * the app. Defaults to RevenueCat's monthly package; a missing package is an
- * error, never a silent fallback to another one.
- */
-function proPackage(): string {
-  return import.meta.env.VITE_REVENUECAT_PRO_PACKAGE?.trim() || "$rc_monthly";
+/** How the Subscription page names each plan's period. */
+const PLAN_PERIODS: Record<SubscriptionPackageId, string> = {
+  [MONTHLY_PACKAGE]: "Monthly",
+  [ANNUAL_PACKAGE]: "Annual",
+};
+
+/** Neither plan is in the current offering, so there is nothing to buy. */
+const NO_PLANS = `The subscription packages "${MONTHLY_PACKAGE}" and "${ANNUAL_PACKAGE}" are not available right now.`;
+
+function message(cause: unknown, fallback: string): string {
+  return cause instanceof Error ? cause.message : fallback;
 }
 
 /** The RevenueCat public key for this host's store. */
@@ -89,33 +97,57 @@ export function useSubscriptionBilling(
     [apiKey, appUserId],
   );
   const [entitlement, setEntitlement] = useState<EntitlementStatus | null>(null);
+  /** The offering's plans; null until they load (and while a failed load waits for a retry). */
+  const [plans, setPlans] = useState<SubscriptionPlan[] | null>(null);
+  const [chosen, setChosen] = useState<SubscriptionPackageId>(MONTHLY_PACKAGE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // A slower lookup for a previous account must not land after a newer one.
   const latestRequest = useRef(0);
+  const loading = useRef(false);
   const previousUser = useRef(appUserId);
 
   const refresh = useCallback(async () => {
     const request = ++latestRequest.current;
     if (!account) {
       setEntitlement(null);
+      setPlans(null);
       return;
     }
+    loading.current = true;
     try {
-      const status = await createPurchases().status(account, PRO_ENTITLEMENT);
-      if (request === latestRequest.current) setEntitlement(status);
+      const purchases = createPurchases();
+      const status = await purchases.status(account, PRO_ENTITLEMENT);
+      const offered = await purchases.plans(account);
+      if (request === latestRequest.current) {
+        setEntitlement(status);
+        setPlans(offered);
+      }
     } catch (cause) {
       if (request === latestRequest.current) throw cause;
+    } finally {
+      if (request === latestRequest.current) loading.current = false;
     }
   }, [account]);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setError(null);
-    setEntitlement(null);
-    refresh().catch((cause: unknown) =>
-      setError(cause instanceof Error ? cause.message : "Billing could not be loaded."),
-    );
+    refresh().catch((cause: unknown) => setError(message(cause, "Billing could not be loaded.")));
   }, [refresh]);
+
+  useEffect(() => {
+    setEntitlement(null);
+    setPlans(null);
+    setChosen(MONTHLY_PACKAGE);
+    load();
+  }, [load]);
+
+  // Stable, so showing the page retries once instead of on every render.
+  const failed = useRef(false);
+  failed.current = error !== null || plans === null;
+  const onShow = useCallback(() => {
+    if (!loading.current && failed.current) load();
+  }, [load]);
 
   // Signing out leaves RevenueCat bound to the previous customer until it logs out.
   useEffect(() => {
@@ -134,15 +166,28 @@ export function useSubscriptionBilling(
     setError(null);
     void action()
       .then(refresh)
-      .catch((cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : "The purchase did not go through."),
-      )
+      .catch((cause: unknown) => setError(message(cause, "The purchase did not go through.")))
       .finally(() => setBusy(false));
   };
   const restore = purchases.restore?.bind(purchases);
   const manageUrl = managementPage(entitlement?.managementUrl);
+  // Monthly unless the person chose otherwise or the offering lacks it.
+  const selected = plans?.find((plan) => plan.packageId === chosen) ?? plans?.[0];
+  const subscribed = entitlement?.active === true;
   return {
-    unavailableReason: error,
+    // Subscribers do not see Subscribe, so an offering without plans is no error for them.
+    unavailableReason: error ?? (!subscribed && plans?.length === 0 ? NO_PLANS : null),
+    plans: plans?.map((plan) => ({
+      id: plan.packageId,
+      period: PLAN_PERIODS[plan.packageId],
+      price: plan.priceString,
+    })),
+    selectedPlan: selected?.packageId,
+    onSelectPlan: (id) => {
+      if (id === MONTHLY_PACKAGE || id === ANNUAL_PACKAGE) setChosen(id);
+    },
+    // Showing the Subscription page retries a load that failed (offline at mount).
+    onShow,
     currentPlan: entitlement?.active ? "pro" : "free",
     status: entitlement?.active
       ? entitlement.willRenew
@@ -153,15 +198,17 @@ export function useSubscriptionBilling(
     renderSubscribe: (button) =>
       withClick(
         button,
-        () =>
+        () => {
+          if (!selected) return;
           run(() =>
             purchases.purchase(account, {
               entitlementId: PRO_ENTITLEMENT,
-              packageId: proPackage(),
+              packageId: selected.packageId,
               email,
             }),
-          ),
-        busy,
+          );
+        },
+        busy || !selected,
       ),
     renderManage: (button) =>
       withClick(

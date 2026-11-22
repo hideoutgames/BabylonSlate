@@ -1,5 +1,22 @@
 /** Internal helpers for the purchases adapters; not part of the package API. */
 
+import {
+  SUBSCRIPTION_PACKAGES,
+  type SubscriptionPlan,
+} from "./purchases-port";
+
+/** The offering's packages among the plans the app sells, in display order. */
+export function offeringPlans<T extends { identifier: string }>(
+  offering: { availablePackages: readonly T[] } | null | undefined,
+  describe: (pkg: T) => Pick<SubscriptionPlan, "priceString" | "billingPeriod">,
+): SubscriptionPlan[] {
+  if (!offering) return [];
+  return SUBSCRIPTION_PACKAGES.flatMap((packageId) => {
+    const pkg = offering.availablePackages.find((candidate) => candidate.identifier === packageId);
+    return pkg ? [{ packageId, ...describe(pkg) }] : [];
+  });
+}
+
 /** Picks the requested package of the current offering, never a fallback. */
 export function offeringPackage<T extends { identifier: string }>(
   offering: { availablePackages: readonly T[] } | null | undefined,

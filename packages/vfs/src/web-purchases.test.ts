@@ -57,7 +57,7 @@ let instance: ReturnType<typeof sdkInstance>;
 const monthly = { identifier: "$rc_monthly" };
 const annual = { identifier: "$rc_annual" };
 const options = { apiKey: "rcb_key", appUserId: "user_1" };
-const monthlyPro = { entitlementId: "pro", packageId: "$rc_monthly" };
+const monthlyPro = { entitlementId: "pro", packageId: "$rc_monthly" } as const;
 
 async function configured() {
   const purchases = new WebPurchases();
@@ -198,6 +198,64 @@ describe("Web purchases", () => {
       instance.getCustomerInfo.mockRejectedValue(new Error("offline"));
 
       await expect(purchases.status(options, "pro")).rejects.toThrow("offline");
+    });
+  });
+
+  describe("plans", () => {
+    // Web Billing's Package: product.price.formattedPrice and product.normalPeriodDuration.
+    const webPackage = (identifier: string, formattedPrice: string, normalPeriodDuration: string) => ({
+      identifier,
+      product: { price: { formattedPrice }, normalPeriodDuration },
+    });
+    const webMonthly = webPackage("$rc_monthly", "$9.99", "P1M");
+    const webAnnual = webPackage("$rc_annual", "$99.99", "P1Y");
+    const webLifetime = webPackage("$rc_lifetime", "$299.99", "P0D");
+
+    it.each([
+      {
+        name: "both plans, monthly first whatever the offering's order",
+        packages: [webAnnual, webLifetime, webMonthly],
+        expected: [
+          { packageId: "$rc_monthly", priceString: "$9.99", billingPeriod: "P1M" },
+          { packageId: "$rc_annual", priceString: "$99.99", billingPeriod: "P1Y" },
+        ],
+      },
+      {
+        name: "only the monthly plan",
+        packages: [webMonthly],
+        expected: [{ packageId: "$rc_monthly", priceString: "$9.99", billingPeriod: "P1M" }],
+      },
+      { name: "neither plan", packages: [webLifetime], expected: [] },
+    ])("lists $name with the store's price string and period", async ({ packages, expected }) => {
+      const purchases = await configured();
+      instance.getOfferings.mockResolvedValue({ current: { availablePackages: packages }, all: {} });
+
+      expect(await purchases.plans(options)).toEqual(expected);
+    });
+
+    it("lists no plans without a current offering", async () => {
+      const purchases = await configured();
+      instance.getOfferings.mockResolvedValue({ current: null, all: {} });
+
+      expect(await purchases.plans(options)).toEqual([]);
+    });
+
+    it("configures billing before listing plans when the first configure failed offline", async () => {
+      configure.mockImplementationOnce(() => {
+        throw new Error("offline");
+      });
+      const purchases = new WebPurchases();
+      await expect(purchases.plans(options)).rejects.toThrow("offline");
+      configure.mockImplementationOnce(({ appUserId }: { appUserId: string }) => {
+        instance = sdkInstance(appUserId);
+        instance.getOfferings.mockResolvedValue({ current: { availablePackages: [webAnnual] }, all: {} });
+        return instance;
+      });
+
+      expect(await purchases.plans(options)).toEqual([
+        { packageId: "$rc_annual", priceString: "$99.99", billingPeriod: "P1Y" },
+      ]);
+      expect(configure).toHaveBeenCalledTimes(2);
     });
   });
 

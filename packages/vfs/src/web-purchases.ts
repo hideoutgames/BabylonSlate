@@ -4,8 +4,9 @@ import {
   type PurchaseRequest,
   type PurchasesAccount,
   type PurchasesPort,
+  type SubscriptionPlan,
 } from "./purchases-port";
-import { SerialQueue, offeringPackage } from "./purchases-shared";
+import { SerialQueue, offeringPackage, offeringPlans } from "./purchases-shared";
 
 type WebSdk = typeof import("@revenuecat/purchases-js");
 type WebPurchasesInstance = ReturnType<WebSdk["Purchases"]["configure"]>;
@@ -55,6 +56,15 @@ export class WebPurchases implements PurchasesPort {
   status(account: PurchasesAccount, entitlementId: string): Promise<EntitlementStatus> {
     return this.withAccount(account, async ({ instance }) =>
       entitlementStatus(await instance.getCustomerInfo(), entitlementId),
+    );
+  }
+
+  plans(account: PurchasesAccount): Promise<SubscriptionPlan[]> {
+    return this.withAccount(account, async ({ instance }) =>
+      offeringPlans((await instance.getOfferings()).current, ({ product }) => ({
+        priceString: product.price.formattedPrice,
+        billingPeriod: product.normalPeriodDuration,
+      })),
     );
   }
 

@@ -52,7 +52,7 @@ function deferred() {
 const monthly = { identifier: "$rc_monthly" };
 const annual = { identifier: "$rc_annual" };
 const account = { apiKey: "appl_key", appUserId: "user_1" };
-const monthlyPro = { entitlementId: "pro", packageId: "$rc_monthly" };
+const monthlyPro = { entitlementId: "pro", packageId: "$rc_monthly" } as const;
 
 describe("Capacitor purchases", () => {
   beforeEach(() => {
@@ -235,6 +235,53 @@ describe("Capacitor purchases", () => {
       getCustomerInfo.mockRejectedValue(new Error("offline"));
 
       await expect(new CapacitorPurchases("app-store").status(account, "pro")).rejects.toThrow("offline");
+    });
+  });
+
+  describe("plans", () => {
+    // The plugin's PurchasesPackage: the store product carries the localized price and ISO 8601 period.
+    const storeMonthly = { identifier: "$rc_monthly", product: { priceString: "9,99 €", subscriptionPeriod: "P1M" } };
+    const storeAnnual = { identifier: "$rc_annual", product: { priceString: "99,99 €", subscriptionPeriod: "P1Y" } };
+    const storeWeekly = { identifier: "$rc_weekly", product: { priceString: "2,99 €", subscriptionPeriod: "P1W" } };
+
+    it.each([
+      {
+        name: "both plans, monthly first whatever the offering's order",
+        packages: [storeWeekly, storeAnnual, storeMonthly],
+        expected: [
+          { packageId: "$rc_monthly", priceString: "9,99 €", billingPeriod: "P1M" },
+          { packageId: "$rc_annual", priceString: "99,99 €", billingPeriod: "P1Y" },
+        ],
+      },
+      {
+        name: "only the annual plan",
+        packages: [storeAnnual],
+        expected: [{ packageId: "$rc_annual", priceString: "99,99 €", billingPeriod: "P1Y" }],
+      },
+      { name: "neither plan", packages: [storeWeekly], expected: [] },
+    ])("lists $name with the store's price string and period", async ({ packages, expected }) => {
+      getOfferings.mockResolvedValue({ current: { availablePackages: packages }, all: {} });
+
+      expect(await new CapacitorPurchases("app-store").plans(account)).toEqual(expected);
+    });
+
+    it("lists no plans without a current offering", async () => {
+      getOfferings.mockResolvedValue({ current: null, all: {} });
+
+      expect(await new CapacitorPurchases("app-store").plans(account)).toEqual([]);
+    });
+
+    it("configures billing before listing plans when the first configure failed offline", async () => {
+      configure.mockRejectedValueOnce(new Error("offline"));
+      getOfferings.mockResolvedValue({ current: { availablePackages: [storeMonthly] }, all: {} });
+      const purchases = new CapacitorPurchases("app-store");
+      await expect(purchases.plans(account)).rejects.toThrow("offline");
+
+      expect(await purchases.plans(account)).toEqual([
+        { packageId: "$rc_monthly", priceString: "9,99 €", billingPeriod: "P1M" },
+      ]);
+      expect(configure).toHaveBeenCalledTimes(2);
+      expect(getOfferings).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -6,8 +6,9 @@ import {
   type PurchasesAccount,
   type PurchasesPort,
   type PurchasesStore,
+  type SubscriptionPlan,
 } from "./purchases-port";
-import { SerialQueue, offeringPackage } from "./purchases-shared";
+import { SerialQueue, offeringPackage, offeringPlans } from "./purchases-shared";
 
 type CustomerInfo = Awaited<ReturnType<typeof Purchases.getCustomerInfo>>["customerInfo"];
 
@@ -64,6 +65,15 @@ export class CapacitorPurchases implements PurchasesPort {
       const { customerInfo } = await Purchases.getCustomerInfo();
       return entitlementStatus(customerInfo, entitlementId);
     });
+  }
+
+  plans(account: PurchasesAccount): Promise<SubscriptionPlan[]> {
+    return this.withAccount(account, async () =>
+      offeringPlans((await Purchases.getOfferings()).current, ({ product }) => ({
+        priceString: product.priceString,
+        billingPeriod: product.subscriptionPeriod,
+      })),
+    );
   }
 
   purchase(account: PurchasesAccount, { entitlementId, packageId }: PurchaseRequest): Promise<boolean> {

@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+  type RenderResult,
+} from "@testing-library/react";
 import { INACTIVE_ENTITLEMENT, type EntitlementStatus } from "@haptic/vfs";
+import { HomepageAccountCenter } from "../components/homepage-account-center";
 import { useSubscriptionBilling } from "./subscription-billing";
 
 /** The RevenueCat port is the external boundary; its adapters have their own tests. */
@@ -8,9 +19,42 @@ const port = vi.hoisted(() => ({
   store: "web" as const,
   ensureConfigured: vi.fn(),
   status: vi.fn(),
+  plans: vi.fn(),
   purchase: vi.fn(),
   logOut: vi.fn(),
 }));
+
+const monthlyPlan = { packageId: "$rc_monthly", priceString: "9,99 €", billingPeriod: "P1M" };
+const annualPlan = { packageId: "$rc_annual", priceString: "99,99 €", billingPeriod: "P1Y" };
+
+/** The real hook behind the real Account dialog of a signed-in account. */
+function SubscriptionPage() {
+  const billing = useSubscriptionBilling("user_ada", "ada@example.test");
+  return (
+    <HomepageAccountCenter
+      open
+      onOpenChange={() => {}}
+      account={{ name: "Ada Lovelace", status: "Signed In", email: "ada@example.test" }}
+      billing={billing}
+      busy={false}
+      onSignOut={() => {}}
+    />
+  );
+}
+
+async function showSubscription(view: RenderResult) {
+  const dialog = await view.findByRole("dialog", { name: "Account" });
+  fireEvent.click(
+    within(within(dialog).getByRole("navigation", { name: "Categories" })).getByRole("button", {
+      name: "Subscription",
+    }),
+  );
+  return dialog;
+}
+
+async function openSubscription() {
+  return showSubscription(render(<SubscriptionPage />));
+}
 
 vi.mock("@haptic/vfs", async (original) => ({
   ...(await original<typeof import("@haptic/vfs")>()),
@@ -38,6 +82,7 @@ function BillingButtons({ appUserId }: { appUserId?: string }) {
 beforeEach(() => {
   vi.stubEnv("VITE_REVENUECAT_WEB_API_KEY", "rcb_key");
   port.status.mockResolvedValue(INACTIVE_ENTITLEMENT);
+  port.plans.mockResolvedValue([monthlyPlan, annualPlan]);
   port.logOut.mockResolvedValue(undefined);
 });
 afterEach(() => {
@@ -47,34 +92,75 @@ afterEach(() => {
 });
 
 describe("useSubscriptionBilling", () => {
-  it("buys Haptic Pro's monthly package by its identifier for the signed-in account", async () => {
+  it("offers Monthly by default with the store's prices and buys the plan the person picks", async () => {
     port.purchase.mockResolvedValue(true);
-    render(<BillingButtons appUserId="user_ada" />);
-    await waitFor(() => expect(port.status).toHaveBeenCalled());
+    const dialog = await openSubscription();
+    const choice = await within(dialog).findByRole("group", { name: "Billing Period" });
+    const monthly = within(choice).getByRole("button", { name: "Monthly, 9,99 €" });
+    const annual = within(choice).getByRole("button", { name: "Annual, 99,99 €" });
+    expect(monthly.getAttribute("aria-pressed")).toBe("true");
+    expect(annual.getAttribute("aria-pressed")).toBe("false");
 
-    fireEvent.click(screen.getByRole("button", { name: "Subscribe" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Subscribe" }));
+    await waitFor(() => expect(port.purchase).toHaveBeenCalledTimes(1));
+    expect(port.purchase.mock.calls[0]).toEqual([
+      account,
+      { entitlementId: "pro", packageId: "$rc_monthly", email: "ada@example.test" },
+    ]);
 
-    await waitFor(() =>
-      expect(port.purchase).toHaveBeenCalledWith(account, {
-        entitlementId: "pro",
-        packageId: "$rc_monthly",
-        email: "ada@example.test",
-      }),
-    );
+    fireEvent.click(annual);
+    expect(annual.getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Subscribe" })).toHaveProperty("disabled", false));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Subscribe" }));
+    await waitFor(() => expect(port.purchase).toHaveBeenCalledTimes(2));
+    expect(port.purchase.mock.calls[1]?.[1]).toMatchObject({ packageId: "$rc_annual" });
   });
 
-  it("buys the package the build names and shows the error when the offering lacks it", async () => {
-    vi.stubEnv("VITE_REVENUECAT_PRO_PACKAGE", "$rc_annual");
-    port.purchase.mockRejectedValue(new Error('The subscription package "$rc_annual" is not available right now.'));
-    render(<BillingButtons appUserId="user_ada" />);
-    await waitFor(() => expect(port.status).toHaveBeenCalled());
+  it("shows a single plan as text without a choice and buys it", async () => {
+    port.plans.mockResolvedValue([annualPlan]);
+    port.purchase.mockResolvedValue(true);
+    const dialog = await openSubscription();
 
-    fireEvent.click(screen.getByRole("button", { name: "Subscribe" }));
+    expect((await within(dialog).findByTestId("billing-plan")).textContent).toBe("Annual99,99 €");
+    expect(within(dialog).queryByRole("group", { name: "Billing Period" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Subscribe" }));
+    await waitFor(() => expect(port.purchase.mock.calls[0]?.[1]).toMatchObject({ packageId: "$rc_annual" }));
+  });
 
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      'The subscription package "$rc_annual" is not available right now.',
+  it("names both packages and keeps Subscribe disabled when the offering has neither", async () => {
+    port.plans.mockResolvedValue([]);
+    const dialog = await openSubscription();
+
+    expect((await within(dialog).findByRole("alert")).textContent).toBe(
+      'The subscription packages "$rc_monthly" and "$rc_annual" are not available right now.',
     );
-    expect(port.purchase.mock.calls[0]?.[1]).toMatchObject({ packageId: "$rc_annual" });
+    expect(within(dialog).getByRole("button", { name: "Subscribe" })).toHaveProperty("disabled", true);
+    expect(within(dialog).queryByRole("group", { name: "Billing Period" })).toBeNull();
+  });
+
+  it("shows a subscriber no plan choice or Subscribe, and no error for an offering without plans", async () => {
+    port.status.mockResolvedValue(entitlement({ managementUrl: "https://pay.rev.cat/manage/abc" }));
+    port.plans.mockResolvedValue([]);
+    const dialog = await openSubscription();
+
+    await within(dialog).findByText("Active");
+    expect(within(dialog).queryByRole("button", { name: "Subscribe" })).toBeNull();
+    expect(within(dialog).queryByRole("group", { name: "Billing Period" })).toBeNull();
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "Manage Billing" })).toHaveProperty("disabled", false);
+  });
+
+  it("loads the plans again when the Subscription page shows after an offline launch", async () => {
+    port.status.mockRejectedValueOnce(new Error("Network error"));
+    const view = render(<SubscriptionPage />);
+    await waitFor(() => expect(port.status).toHaveBeenCalledTimes(1));
+    expect(port.plans).not.toHaveBeenCalled();
+
+    const dialog = await showSubscription(view);
+
+    expect(await within(dialog).findByRole("group", { name: "Billing Period" })).toBeTruthy();
+    expect(port.status).toHaveBeenCalledTimes(2);
+    expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 
   it("logs RevenueCat out and forgets the entitlement when the account signs out", async () => {
