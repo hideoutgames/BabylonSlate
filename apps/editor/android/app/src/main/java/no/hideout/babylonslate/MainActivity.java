@@ -13,5 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BabylonSlateFileExportPlugin.class);
         registerPlugin(BabylonSlateAuthSessionPlugin.class);
         super.onCreate(savedInstanceState);
+        // After the bridge exists: its constructor installs Capacitor's own WebView and service-worker clients.
+        BabylonSlateScopedStoragePlugin.installStorageRequests(bridge);
     }
 }

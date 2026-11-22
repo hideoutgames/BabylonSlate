@@ -11,6 +11,7 @@ import type {
 import { nativeBinaryBridge, type NativeBinaryBridge, type NativeBinaryRange, type NativeFileLocation } from "./native-binary-bridge";
 import { Preferences } from "@capacitor/preferences";
 import { projectRelativePath as scopedStoragePath } from "./project-path";
+import { isStagedWrite } from "./staged-write";
 import type {
   BabylonSlateScopedStoragePlugin,
   NativeDirEntry,
@@ -315,7 +316,8 @@ export class ScopedStorageAdapter implements ProjectStorage {
     const { entries } = await this.withScope(() =>
       this.plugin.readdir({ folder: folder.id, path, ...(this.readScopeId ? { readScope: this.readScopeId } : {}) }),
     );
-    return entries.map(toDirEntry);
+    // A staged replacement a killed app left behind is never part of the project.
+    return entries.filter((entry) => !isStagedWrite(entry.name)).map(toDirEntry);
   }
 
   async mkdir(path: string, recursive?: boolean): Promise<void> {

@@ -319,7 +319,7 @@ describe("ScopedStorageAdapter", () => {
     });
   });
 
-  it("lists entries from the plugin and maps isDir", async () => {
+  it("lists entries from the plugin, maps isDir and leaves out staged replacements", async () => {
     const plugin = createMockPlugin();
     prefs.set(
       "haptic:scoped-folder",
@@ -328,6 +328,7 @@ describe("ScopedStorageAdapter", () => {
     vi.mocked(plugin.readdir).mockResolvedValue({
       entries: [
         { name: "assets", isDir: true },
+        { name: ".haptic-0f8e2a4c-6b1d-4e3f-9a7b-2c5d8e1f4a6b.tmp", isDir: false, size: 3 },
         { name: "main.ts", isDir: false, size: 12, mtime: 1_700_000_000_000 },
       ],
     });
