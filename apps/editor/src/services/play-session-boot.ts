@@ -15,6 +15,7 @@ import {
   playLoadTilemapsControl,
 } from "../lib/play-content";
 import { editorThirdPartyNoticesUrl } from "../lib/public-engine-assets";
+import { snapshotVerificationRequested } from "../lib/snapshot-verification-setting";
 import type { GameWorkerHost } from "./game-worker-host";
 import { deviceEnvironment } from "@haptic/vfs";
 import { newSessionSeed } from "@haptic/core";
@@ -169,6 +170,7 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
   if (options.classAssetGuids) loadControl.classAssetGuids = options.classAssetGuids;
   if (options.consoleCommands) loadControl.consoleCommands = options.consoleCommands;
   if (options.extensionLibraries?.length) loadControl.extensionLibraries = [...options.extensionLibraries];
+  if (snapshotVerificationRequested()) loadControl.verifySnapshotPublishes = true;
   return { loadControl, scripts, animGraphs };
 }
 
