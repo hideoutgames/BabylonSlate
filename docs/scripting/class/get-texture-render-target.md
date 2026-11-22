@@ -20,4 +20,5 @@ Returns the Render Target that a Render Target Texture displays.
 
 ## Notes
 
+- The texture loads with the object that runs this node, so the answer is ready at once.
 - Returns none when the texture has no Render Target assigned.

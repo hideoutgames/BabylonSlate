@@ -18,7 +18,7 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { OwnedPostProcess } from "./owned-post-process";
 import { fragmentDiscards } from "./full-target-clear";
 import { LOGICAL_SCENE_SAMPLERS, type LogicalSceneBuffer } from "./logical-scene-texture-block";
-import type { PostProcessStackDiagnostic } from "./post-process-material";
+import { POST_PROCESS_MATERIAL_MISSING_CODE, postProcessMaterialMissingMessage, type PostProcessStackDiagnostic } from "./post-process-material";
 
 interface AuthoredPostProcessOptions {
   /** Caller-owned normalized view depth and encoded world normal, shared across entries. */
@@ -298,11 +298,8 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     generation: number,
   ): Promise<void> {
     if (!document || document.domain !== "postProcess") {
-      this.fail(
-        document
-          ? "Material is not a Post Process material"
-          : "Post-process material is missing",
-      );
+      if (document) this.fail("Material is not a Post Process material");
+      else this.fail(postProcessMaterialMissingMessage(this.options.materialGuid), { code: POST_PROCESS_MATERIAL_MISSING_CODE });
       return;
     }
     try {
@@ -361,7 +358,7 @@ export class AuthoredPostProcessTask extends FrameGraphTask {
     material.createEffectForPostProcess(this.postProcess);
   }
 
-  private fail(message: string, diagnostic?: MaterialDiagnostic): void {
+  private fail(message: string, diagnostic?: Pick<MaterialDiagnostic, "code" | "nodeId">): void {
     if (this.failed || this.disposed) return;
     this.failed = true;
     this.options.onDiagnostic?.({

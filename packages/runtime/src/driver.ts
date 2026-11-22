@@ -102,7 +102,7 @@ import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { RuntimeConsole } from "./runtime-console";
 import type { ActorRealization, ScriptedActorSpawn } from "./actor-realization";
 import { actorLabel } from "./actor-world-transform";
-import type { OverlaySafeAreaInsets } from "@haptic/core";
+import type { DrawnCameraView, OverlaySafeAreaInsets } from "@haptic/core";
 import { refreshStaleTilemaps, type ModelPayload, type SpriteAnimationPayload, type SpritePayload, type TilemapPayload, type TilesetPayload } from "@haptic/assets";
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@haptic/navigation";
 import { RuntimeSubsystems } from "./runtime-subsystems";
@@ -714,6 +714,10 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
 
   applySceneLayerFocusNavigate(reverse: boolean): void {
     this.overlay.focusNavigate(reverse);
+  }
+
+  applyGameView(view: DrawnCameraView): void {
+    this.camera.setDrawnView(view);
   }
 
   applySceneLayerView(layerId: string, view: { width: number; height: number; center: readonly [number, number] }): void {

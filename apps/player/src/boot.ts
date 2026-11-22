@@ -30,6 +30,7 @@ import {
   createSceneLoadReadiness,
   createSceneStreamingReadiness,
   navDebugBlockersFromActors,
+  postProcessDiagnosticMessage,
   type EngineHandle,
   type RenderShadingSettings,
   type SceneLoadProgress,
@@ -320,13 +321,14 @@ function initializePlayer(
     navBlockers: navDebugBlockersFromActors(scene.actors),
     ...playerDecoderPaths(),
     onPostProcessDiagnostic: (diagnostic) => {
+      const message = postProcessDiagnosticMessage(diagnostic, (guid) => manifest.assets.find((entry) => entry.guid === guid)?.name);
       options.onConsoleEvent?.({
         type: "log",
-        message: diagnostic.message,
+        message,
         severity: "warning",
       });
       recordDiagnostic({
-        message: diagnostic.message,
+        message,
         severity: "warning",
         assetGuid: diagnostic.materialGuid,
         nodeId: diagnostic.nodeId,
@@ -411,6 +413,10 @@ function initializePlayer(
       const control = { type: "sceneLayerView" as const, layerId, view: { width: view.width, height: view.height, center: [view.center[0], view.center[1]] as [number, number] } };
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerView(layerId, view);
+    },
+    onGameView: (view) => {
+      if (worker) worker.postControl({ type: "gameView", view });
+      else runtime?.applyGameView(view);
     },
     onSceneLayerResize: (size) => {
       const control = { type: "sceneLayerResize" as const, ...size };

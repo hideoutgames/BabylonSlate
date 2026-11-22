@@ -526,9 +526,17 @@ async function saveDynamicMesh(ctx: FeatureTestContext): Promise<PlacedClass> {
 /**
  * Spawns a pooled runtime decal of a Decal Material Instance at its own location on Begin Play via the Spawn Decal
  * node, beside a Decal component of its own on a plate of its own (a decal in a Prefab, which its Prefab Preview shows).
+ * Both Materials are Soft literals, so neither loads with the Class: the spawned decal appears, and the component's
+ * Set Variable switch to the Multiply stain applies, once its Material loads, while Get Variable reads the new value at once.
  */
 async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
   const decalMaterial = requireRef(ctx.assets.materials.decalLitInstance, "the decal Material Instance");
+  const stain = requireRef(ctx.assets.materials.decalMultiply, "the Multiply decal Material");
+  const decalMaterialVariable = (id: string, access: "get" | "set", x: number, y: number, extra: Record<string, unknown> = {}) =>
+    gNode(id, access === "get" ? "variables.get" : "variables.set", x, y, {
+      variableName: "Material", variableId: "engine:DecalComponent:var:materialGuid", scope: "member",
+      typeId: "asset", typeClassId: "Material", classId: "DecalComponent", propertyKey: "materialGuid", ...extra,
+    });
   const components = [
     // A plate of its own for its decal to land on, so the Prefab Preview (which has no floor) shows it.
     { ...meshComp("prefab-decal-plate", "box"), transform: tf([1.6, -0.02, 0], { scale: [1.4, 0.04, 1.4] }) },
@@ -550,10 +558,21 @@ async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
         "default:lifetime": 0,
         "default:fadeOutDuration": 0,
       }),
+      gNode("decal", "component.getNamed", 320, 300, { componentClassId: "DecalComponent", implicitSelf: true }),
+      decalMaterialVariable("set-decal-material", "set", 640, 0, { "default:value": stain }),
+      decalMaterialVariable("get-decal-material", "get", 640, 300),
+      gNode("check-decal-material", "debug.assertEqual", 960, 0, {
+        "default:expected": stain, "default:message": "Get Variable did not read back the Decal Material Set Variable wrote",
+      }),
     ],
     edges: [
       gWire("begin", "execOut", "spawn", "execIn"),
       gWire("self-loc", "location", "spawn", "location"),
+      gWire("spawn", "execOut", "set-decal-material", "execIn"),
+      gWire("set-decal-material", "execOut", "check-decal-material", "execIn"),
+      gWire("decal", "out", "set-decal-material", "target"),
+      gWire("decal", "out", "get-decal-material", "target"),
+      gWire("get-decal-material", "value", "check-decal-material", "actual"),
     ],
   });
   const ref = await ctx.saveClass({ folder: RENDER_FOLDER, name: "FT_RenderDecalSpawner", parentClass: "Actor", graph });

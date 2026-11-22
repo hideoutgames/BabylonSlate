@@ -14,6 +14,7 @@ import type { DebugInspectSnapshot } from "@haptic/object-model";
 import {
   createEngine,
   navDebugBlockersFromActors,
+  postProcessDiagnosticMessage,
 } from "@haptic/render";
 import { spawnableLightsFromScripts } from "@haptic/render/spawnable-lights";
 import { encodeInputEvents } from "@haptic/input";
@@ -310,7 +311,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     dracoBasePath: editorDracoPublicBase(),
     meshoptBasePath: editorMeshoptPublicBase(),
     onPostProcessDiagnostic: (diagnostic) => {
-      options.onLog?.(diagnostic.message, "warning");
+      options.onLog?.(postProcessDiagnosticMessage(diagnostic, (guid) => options.assetCatalog?.find((entry) => entry.guid === guid)?.name), "warning");
     },
     onAudioDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
@@ -361,6 +362,10 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       const control = { type: "sceneLayerView" as const, layerId, view: { width: view.width, height: view.height, center: [view.center[0], view.center[1]] as [number, number] } };
       if (worker) worker.postControl(control);
       else runtime?.applySceneLayerView(layerId, view);
+    },
+    onGameView: (view) => {
+      if (worker) worker.postControl({ type: "gameView", view });
+      else runtime?.applyGameView(view);
     },
     onSceneLayerResize: (size) => {
       const control = { type: "sceneLayerResize" as const, ...size };

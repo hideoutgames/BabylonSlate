@@ -16,6 +16,7 @@ function fixture(options: { physicsKind?: PhysicsWorldKind; canvas?: { width: nu
   const warnings: string[] = [];
   const traces: Array<{ start: unknown; end: unknown }> = [];
   const overlaps: unknown[] = [];
+  const cursor = { x: 0, y: 0, pressed: false };
   const physics = {
     kind: options.physicsKind ?? "3d",
     main: {
@@ -37,7 +38,7 @@ function fixture(options: { physicsKind?: PhysicsWorldKind; canvas?: { width: nu
     slot: (actor) => slots.actorSlot(actor),
     slotOwner: (slotId) => slots.owner(slotId),
     guidSlot: (guid) => slots.guidSlot(guid),
-    cursor: () => ({ x: 0, y: 0, pressed: false }),
+    cursor: () => cursor,
     touches: () => [],
     overlay: () => ({
       canvasSize: () => options.canvas ?? { width: 1, height: 1 },
@@ -70,7 +71,7 @@ function fixture(options: { physicsKind?: PhysicsWorldKind; canvas?: { width: nu
     world.flushPending();
   };
   const possessions = () => emitted.flatMap((command) => command.type === "possessCamera" ? [command.slotId] : []);
-  return { world, slots, scene, camera, spawn, author, remove, emitted, possessions, warnings, traces, overlaps };
+  return { world, slots, scene, camera, cursor, spawn, author, remove, emitted, possessions, warnings, traces, overlaps };
 }
 
 describe("RuntimeCamera possession", () => {
@@ -237,6 +238,90 @@ describe("RuntimeCamera possession", () => {
       expect(f.slots.actorSlot(successor)).toBe(slotId);
       expect(f.camera.cameraActor()).toBeNull();
     });
+  });
+});
+
+describe("RuntimeCamera cursor projection through a possessed camera", () => {
+  /** sin and cos of 18 degrees, the pitch of the Feature Test tour camera's arm. */
+  const SIN18 = 0.30901699437494745;
+  const COS18 = 0.9510565162951535;
+
+  /** A camera actor at (0, 5, 0) whose Camera component rides a 9 m Spring Arm pitched down 18 degrees. */
+  function armRig(canvas = { width: 200, height: 100 }) {
+    const f = fixture({ canvas });
+    const rig = f.world.createActor({ guid: "rig", classId: "Actor" });
+    rig.transform.position = { x: 0, y: 5, z: 0 };
+    rig.attachComponent(f.world.createComponent({
+      guid: "rig-arm", classId: "SpringArmComponent", variables: { armLength: 9 },
+      transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: Math.sin(Math.PI / 20), y: 0, z: 0, w: Math.cos(Math.PI / 20) }, scale: { x: 1, y: 1, z: 1 } },
+    }));
+    rig.attachComponent(f.world.createComponent({
+      guid: "rig-camera", classId: "CameraComponent", parentId: "rig-arm", variables: { fieldOfView: 60, nearClip: 0.1, farClip: 100 },
+    }));
+    f.world.spawnActorNow(rig);
+    f.slots.allocate(rig);
+    f.camera.possess(rig);
+    return f;
+  }
+
+  it("casts from the Camera component at the end of its Spring Arm, along the arm, as Play draws it", () => {
+    const f = armRig();
+    // The middle of a 200 x 100 view looks straight down the arm.
+    f.cursor.x = 100;
+    f.cursor.y = 50;
+    const result = f.camera.projectCursorToScene();
+    // The socket is 9 m behind the pivot along the arm: up 9 sin 18 and back 9 cos 18.
+    const eye = { x: 0, y: 5 + 9 * SIN18, z: -9 * COS18 };
+    const forward = { x: 0, y: -SIN18, z: COS18 };
+    expect(result.worldDirection.x).toBeCloseTo(forward.x, 9);
+    expect(result.worldDirection.y).toBeCloseTo(forward.y, 9);
+    expect(result.worldDirection.z).toBeCloseTo(forward.z, 9);
+    const [trace] = f.traces as Array<{ start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } }>;
+    expect(trace!.start.x).toBeCloseTo(eye.x + 0.1 * forward.x, 9);
+    expect(trace!.start.y).toBeCloseTo(eye.y + 0.1 * forward.y, 9);
+    expect(trace!.start.z).toBeCloseTo(eye.z + 0.1 * forward.z, 9);
+    expect(trace!.end.y).toBeCloseTo(eye.y + 100 * forward.y, 6);
+    expect(trace!.end.z).toBeCloseTo(eye.z + 100 * forward.z, 6);
+  });
+
+  /** A view Play drew: 3 m left of where the arm would put the lens (its lag), looking along +Z, framing 2:1. */
+  const drawn = (slotId: number) => ({
+    slotId, position: { x: -3, y: 2, z: -6 }, rotation: { x: 0, y: 0, z: 0, w: 1 },
+    projection: "perspective" as const, scaleX: 0.5, scaleY: 1, offsetX: 0, offsetY: 0, near: 0.5, far: 50,
+  });
+
+  it("casts through the view Play drew while it is the possessed camera's", () => {
+    const f = armRig();
+    f.camera.setDrawnView(drawn(f.slots.actorSlot(f.world.findActor("rig")!)!));
+    // Three quarters across and a quarter down a 200 x 100 view: ndc (0.5, 0.5), so x = 0.5 / 0.5 and y = 0.5 per metre ahead.
+    f.cursor.x = 150;
+    f.cursor.y = 25;
+    const result = f.camera.projectCursorToScene();
+    const length = Math.hypot(1, 0.5, 1);
+    expect(result.worldDirection.x).toBeCloseTo(1 / length, 9);
+    expect(result.worldDirection.y).toBeCloseTo(0.5 / length, 9);
+    expect(result.worldDirection.z).toBeCloseTo(1 / length, 9);
+    const [trace] = f.traces as Array<{ start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number } }>;
+    expect(trace).toEqual({
+      start: { x: expect.closeTo(-2.5, 9), y: expect.closeTo(2.25, 9), z: expect.closeTo(-5.5, 9) },
+      end: { x: expect.closeTo(47, 6), y: expect.closeTo(27, 6), z: expect.closeTo(44, 6) },
+    });
+  });
+
+  it("ignores a drawn view of another camera, and forgets one when its slot is released", () => {
+    const f = armRig();
+    const slotId = f.slots.actorSlot(f.world.findActor("rig")!)!;
+    f.cursor.x = 100;
+    f.cursor.y = 50;
+    // Drawn before this camera was possessed: the arm's own pose answers.
+    f.camera.setDrawnView(drawn(slotId + 1));
+    expect(f.camera.projectCursorToScene().worldDirection.y).toBeCloseTo(-SIN18, 9);
+    f.camera.setDrawnView(drawn(slotId));
+    expect(f.camera.projectCursorToScene().worldDirection).toEqual({ x: 0, y: 0, z: 1 });
+    // The slot's next owner is not drawn yet.
+    f.camera.releaseSlot(slotId);
+    f.camera.possess(f.world.findActor("rig"));
+    expect(f.camera.projectCursorToScene().worldDirection.y).toBeCloseTo(-SIN18, 9);
   });
 });
 

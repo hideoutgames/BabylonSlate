@@ -422,6 +422,8 @@ export type ControlMessage =
   | { type: "sceneLayerScroll"; layerId: string; actorId: string; componentId: string; deltaX: number; deltaY: number }
   /** A Desired Scene Layer's view after the compositor measured its content (`sceneLayerView`). */
   | { type: "sceneLayerView"; layerId: string; view: { width: number; height: number; center: [number, number] } }
+  /** The view the last Play world draw went through a possessed camera, when it changed (`DrawnCameraView`). */
+  | { type: "gameView"; view: import("@haptic/core").DrawnCameraView }
   | {
       type: "sceneLayerPointer";
       layerId: string;

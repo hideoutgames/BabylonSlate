@@ -5,6 +5,32 @@ import type { MaterialParameterValue } from "@haptic/bridge";
 import type { MaterialDocument } from "@haptic/shader-graph";
 import type { MaterialLibrary } from "./material-library";
 
+/** The diagnostic code of a post-process pass whose Material document the renderer does not have. */
+export const POST_PROCESS_MATERIAL_MISSING_CODE = "material.framegraph.missing";
+
+/**
+ * The message for `POST_PROCESS_MATERIAL_MISSING_CODE`: `material` names it (a host that knows the asset's name
+ * passes `"Name" (guid)`), and the hint gives the usual cause, a Soft reference nothing loaded.
+ */
+export function postProcessMaterialMissingMessage(material: string): string {
+  return `Post-process Material ${material} is missing: it was not loaded, or the game does not include it. ` +
+    "A Material a script sets from a Soft variable loads first; set the variable to Hard (Load With Owner), " +
+    "or load it with Load Asset (Async), to have it ready at once.";
+}
+
+/**
+ * A post-process diagnostic's message for the Output Log: a missing Material named by `nameOf` (the host's asset
+ * catalog) when it knows the asset, else the message as the renderer wrote it.
+ */
+export function postProcessDiagnosticMessage(
+  diagnostic: Pick<PostProcessStackDiagnostic, "code" | "message" | "materialGuid">,
+  nameOf: (guid: string) => string | undefined,
+): string {
+  if (diagnostic.code !== POST_PROCESS_MATERIAL_MISSING_CODE || !diagnostic.materialGuid) return diagnostic.message;
+  const name = nameOf(diagnostic.materialGuid)?.trim();
+  return name ? postProcessMaterialMissingMessage(`"${name}" (${diagnostic.materialGuid})`) : diagnostic.message;
+}
+
 /** One authored entry of a scene's ordered post-process chain. */
 export interface PostProcessStackEntry {
   id?: string;

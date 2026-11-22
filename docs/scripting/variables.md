@@ -21,7 +21,7 @@ Variables store values on each object of a class, such as health, a score or a t
 | Asset Type | Asset variables: the kind of asset, such as Audio or Material. |
 | Enum Type, Record Type | Enum and structure variables: the [Enum, Structure](structures-and-enums.md) or [Data Definition](data.md) to use. |
 | Unit | Integer, Float and Vector variables: shows a unit after the value in number fields, such as 90° for **Degrees** or 16 px for **Pixels**. The value itself is unchanged. The default value, array and map items, and the value input of Set nodes show it. |
-| Loading | Asset and Class variables: **Soft (Load On Demand)** loads on first use or through the load nodes; **Hard (Load With Owner)** loads with the object. |
+| Loading | Asset and Class variables: **Soft (Load On Demand)** loads on first use or through the load nodes; **Hard (Load With Owner)** loads with the object. See [Soft and Hard assets](#soft-and-hard-assets). |
 | Default | The starting value. Arrays use **Add Item** and maps use **Add Entry**. Object variables start empty. |
 
 Changing the type or container resets the default.
@@ -41,6 +41,20 @@ Changing the type or container resets the default.
 To read or write a variable on another object, drag from a pin that holds that object and pick the Get or Set entry. The node gets a **Target** pin.
 
 Use [Is Valid](class/is-valid.md) or **Validated Get** before using an Object or Actor variable that may be empty.
+
+## Soft and Hard assets
+
+An asset the object loads with it is ready the moment a script uses it. Assets placed on its components, and those in **Hard (Load With Owner)** variables, load with the object. A **Soft (Load On Demand)** variable, an asset picked on a node's pin, and an asset taken from a structure, array or map only name the asset; it is in the game, but it loads when something needs it.
+
+When a script gives a component an asset that has not loaded, such as a Material on a [Post Processing Panel](../components/post-processing-panel.md) or a Mesh, Sprite or Texture on any component:
+
+- The component keeps showing its current asset while the new one loads, then switches to it. A frame or more can pass.
+- Reading the variable back returns the asset you set at once, as for any other Set Variable.
+- If you set it again before the load finishes, the latest value wins.
+- If the actor is destroyed first, nothing changes. If the asset fails to load, or the game does not include it, the component keeps its current asset and an error names the asset.
+- The first time a node does this for an asset, a warning in the **Output Log** names the asset and the component. Set the variable to **Hard (Load With Owner)**, or load the asset first with [Load Asset (Async)](class/load-asset-async.md), to have it ready at once.
+
+[Spawn Decal](class/spawn-decal.md) and [Spawn Particles At Location](class/spawn-particles-at-location.md) wait the same way. A Save Game saves the asset the component shows.
 
 ## Arrays and maps
 

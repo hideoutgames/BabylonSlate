@@ -16,6 +16,7 @@ import type {
 } from "@haptic/core";
 import type { MaterialParameterValue } from "@haptic/bridge";
 import type { DestroyedAccess } from "./destroyed-access";
+import type { AnchorEntry } from "./stack-map";
 import type {
   Actor,
   ActorComponent,
@@ -52,6 +53,19 @@ import type { RuntimeDataApi } from "./data-catalog";
 import type { LogSeverity } from "./log-ring";
 import type { TweenRequest } from "./tween-runtime";
 import type { RegisteredPostProcess } from "./scene-post-process";
+
+
+/** A compiled script node, as diagnostics locate it. */
+export type ScriptNodeLocation = Pick<AnchorEntry, "assetGuid" | "graphId" | "nodeId" | "bodyLine">;
+
+/** A script diagnostic for the host to log and attach to `location` (none: the Output Log line alone). */
+export interface ScriptDiagnosticReport {
+  severity: "warning" | "error";
+  code: string;
+  category: string;
+  message: string;
+  location: ScriptNodeLocation | null;
+}
 
 export type AnimGraphControl = {
   getVariable(name: string): unknown;
@@ -205,6 +219,10 @@ export interface ScriptHostServices {
    * member. A host without it logs the message as an error.
    */
   reportDestroyedAccess?(access: DestroyedAccess): void;
+  /** The compiled node running now, mapped from the stack; null outside compiled script code. */
+  locateScriptNode?(): ScriptNodeLocation | null;
+  /** Logs a script warning or error and records it as a diagnostic at its node. Without it, the message is logged. */
+  reportScriptDiagnostic?(report: ScriptDiagnosticReport): void;
   /** A failed Assert node: an error for the node that ran it. Without it, the failure is an Error log. */
   assertFailed?(message: string): void;
   addComponent?(

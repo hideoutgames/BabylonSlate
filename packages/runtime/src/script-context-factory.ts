@@ -9,6 +9,7 @@ import {
   rotatorToQuat,
   SaveGameError,
   updateDeformerProperties,
+  type DynamicDecalSpawnRequest,
   type RenderTargetCaptureProperty,
   type RandomStream,
   type SaveGameMigrationData,
@@ -65,6 +66,8 @@ import {
 } from "./script-host-helpers";
 import type { ScriptHostServices } from "./script-host-services";
 import type { ScriptMaterialOwnership } from "./script-material-ownership";
+import type { ScriptAssetLoads } from "./script-asset-loads";
+import type { ParticleEffectRequest } from "./runtime-particle-effects";
 import { LatentCallAborted, RuntimeContinuationCancelled } from "./simulation-waits";
 import { isThenable, TickWait } from "./tick-wait";
 import { tweenOwnerAlive } from "./tween-runtime";
@@ -91,6 +94,7 @@ export interface ScriptContextHost extends ComponentFunctionHost {
   readonly rng: RandomStream;
   readonly dispatchers: DispatcherBindings;
   readonly materials: ScriptMaterialOwnership;
+  readonly assetLoads: ScriptAssetLoads;
   /** The prototype of every context. */
   readonly hostMembers: HostContextMembers;
   /** `ctx.debugTrace` of a context whose instance (variable store) is `store`. */
@@ -189,6 +193,59 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
   });
 
   // The handle's Id is the number in the voice id (`script:<Id>`); 0 when no host names voices.
+  /** Set Variable on an object, once any asset it needs is loaded: the property's own write path, then its refresh. */
+  const writeVariable = (object: EngineObject | null | undefined, name: string, value: unknown): void => {
+    if (object instanceof ActorComponent && object.classId === "DeformerComponent" &&
+      (DEFORMER_PROPERTY_KEYS as readonly string[]).includes(name)) {
+      if (!host.canInvokeOwner(object)) return;
+      const next = updateDeformerProperties(Object.fromEntries(DEFORMER_PROPERTY_KEYS.map((key) => [key, object.getVariable(key)])), name, value);
+      for (const key of DEFORMER_PROPERTY_KEYS) object.setVariable(key, next[key]);
+      host.applyComponentVariable(object, name, next[name as keyof typeof next]);
+      return;
+    }
+    if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent") {
+      if (host.canInvokeOwner(object) && setCaptureProperty(object, name as RenderTargetCaptureProperty, value, (id) => services.findActor?.(id))) {
+        host.applyComponentVariable(object, name, value);
+      }
+      return;
+    }
+    if (object instanceof LayerCamera && (name === "location" || name === "rotation" || name === "zoom")) {
+      const vector = value as { x?: unknown; y?: unknown } | null | undefined;
+      services.setLayerCamera?.(object, name === "location" ? { x: vector?.x, y: vector?.y } : { [name]: value });
+      return;
+    }
+    if (object instanceof Scene && String(name ?? "") === "gravity") {
+      const gravity = asScriptVec3(value);
+      if (!gravity) return;
+      object.setVariable("gravity", gravity);
+      services.setWorldGravity?.(gravity);
+      return;
+    }
+    if (object instanceof Actor && name === "parentId") {
+      writeParentId(services, object, value);
+      return;
+    }
+    if (object instanceof ActorComponent) {
+      host.writeComponentVariable(object, String(name ?? ""), value);
+      return;
+    }
+    object?.setVariable(name, value);
+  };
+  /**
+   * Spawn Particles: a Particle System its owner did not load starts loading, and the effect actor (returned at
+   * once) plays it once loaded; a failed load ends the effect.
+   */
+  const spawnParticles = (self: EngineObject | null, request: ParticleEffectRequest): Actor | null => {
+    const deferred = host.assetLoads.needsLoad(request.systemGuid);
+    const actor = services.spawnParticleEffect?.({ ...request, deferSystem: deferred }, self) ?? null;
+    const component = deferred ? actor?.components.find((entry) => entry.classId === "ParticleComponent") : undefined;
+    if (actor && component) {
+      const apply = () => host.writeComponentVariable(component, "particleSystemGuid", request.systemGuid);
+      if (!host.assetLoads.deferComponentWrite(component, "particleSystemGuid", request.systemGuid, self, apply,
+        () => services.destroyActor(actor))) apply();
+    }
+    return actor;
+  };
   const playScriptSound = (self: EngineObject | null, asset: unknown, volume: unknown, extra: { location?: { x: number; y: number; z: number }; pitch?: number }) => {
     const voiceId = services.scriptVoiceId?.();
     services.playSound?.(String(asset ?? ""), Number(volume ?? 1), {
@@ -391,6 +448,11 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
             if (object instanceof SceneLayer) return object.camera;
             if (object instanceof Actor) return services.getOwningSceneLayer?.(object)?.camera ?? null;
           }
+          // A Set Variable whose asset is still loading reads back as set; the component shows its earlier value.
+          if (object instanceof ActorComponent) {
+            const pending = host.assetLoads.pendingValue(object, name);
+            if (pending) return pending.value;
+          }
           return object?.getVariable(name);
         },
         setVariableOn(object, name, value) {
@@ -398,41 +460,10 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
             reportDestroyedTarget(services, host.classDisplayName, "set", name, object);
             return;
           }
-          if (object instanceof ActorComponent && object.classId === "DeformerComponent" &&
-            (DEFORMER_PROPERTY_KEYS as readonly string[]).includes(name)) {
-            if (!host.canInvokeOwner(object)) return;
-            const next = updateDeformerProperties(Object.fromEntries(DEFORMER_PROPERTY_KEYS.map((key) => [key, object.getVariable(key)])), name, value);
-            for (const key of DEFORMER_PROPERTY_KEYS) object.setVariable(key, next[key]);
-            host.applyComponentVariable(object, name, next[name as keyof typeof next]);
-            return;
-          }
-          if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent") {
-            if (host.canInvokeOwner(object) && setCaptureProperty(object, name as RenderTargetCaptureProperty, value, (id) => services.findActor?.(id))) {
-              host.applyComponentVariable(object, name, value);
-            }
-            return;
-          }
-          if (object instanceof LayerCamera && (name === "location" || name === "rotation" || name === "zoom")) {
-            const vector = value as { x?: unknown; y?: unknown } | null | undefined;
-            services.setLayerCamera?.(object, name === "location" ? { x: vector?.x, y: vector?.y } : { [name]: value });
-            return;
-          }
-          if (object instanceof Scene && String(name ?? "") === "gravity") {
-            const gravity = asScriptVec3(value);
-            if (!gravity) return;
-            object.setVariable("gravity", gravity);
-            services.setWorldGravity?.(gravity);
-            return;
-          }
-          if (object instanceof Actor && name === "parentId") {
-            writeParentId(services, object, value);
-            return;
-          }
-          if (object instanceof ActorComponent) {
-            host.writeComponentVariable(object, String(name ?? ""), value);
-            return;
-          }
-          object?.setVariable(name, value);
+          // An asset its owner did not load: the component keeps its value until the asset loads (`ScriptAssetLoads`).
+          if (object instanceof ActorComponent && host.assetLoads.deferComponentWrite(object, name, value, this.self,
+            () => writeVariable(object, name, value))) return;
+          writeVariable(object, name, value);
         },
         async setMeshMaterialAsync(component, materialGuid) {
           const { self } = this;
@@ -1001,14 +1032,15 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         spawnParticlesAtLocation(system, location, rotation, scale, autoDestroy = true) {
           const { self } = this;
-          return services.spawnParticleEffect?.({ systemGuid: String(system ?? ""), location, rotation, scale, autoDestroy: autoDestroy !== false }, self) ?? null;
+          return spawnParticles(self, { systemGuid: String(system ?? "").trim(), location, rotation, scale, autoDestroy: autoDestroy !== false });
         },
         spawnParticlesAttached(system, attachTo, bone, locationOffset, rotationOffset, autoDestroy = true) {
           const { self } = this;
-          return services.spawnParticleEffect?.({ systemGuid: String(system ?? ""), attachTo: attachTo ?? null, bone: String(bone ?? ""),
-            location: locationOffset, rotation: rotationOffset, autoDestroy: autoDestroy !== false }, self) ?? null;
+          return spawnParticles(self, { systemGuid: String(system ?? "").trim(), attachTo: attachTo ?? null, bone: String(bone ?? ""),
+            location: locationOffset, rotation: rotationOffset, autoDestroy: autoDestroy !== false });
         },
         spawnDecal(material, location, rotation, size, lifetime = 0, fadeOutDuration = 0, tint, opacity = 1) {
+          const { self } = this;
           const guid = typeof material === "string" ? material.trim() : "";
           if (!guid) return;
           const pos = finiteVector(location as never, 0) ?? { x: 0, y: 0, z: 0 };
@@ -1018,7 +1050,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const fade = Number(fadeOutDuration);
           const color = finiteVector(tint as never, 1) ?? { x: 1, y: 1, z: 1 };
           const alpha = Number(opacity);
-          services.spawnDecal?.({
+          const decal: DynamicDecalSpawnRequest = {
             materialGuid: guid,
             tint: [color.x, color.y, color.z].map((channel) => Math.min(1, Math.max(0, channel))) as [number, number, number],
             opacity: Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1,
@@ -1027,7 +1059,10 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
             size: [ext.x > 0 ? ext.x : 1, ext.y > 0 ? ext.y : 1, ext.z > 0 ? ext.z : 1],
             lifetime: Number.isFinite(life) && life > 0 ? life : 0,
             fadeOutDuration: Number.isFinite(fade) && fade > 0 ? fade : 0,
-          });
+          };
+          // A Material its owner did not load: the decal spawns, with its full Lifetime, once the Material loads.
+          host.assetLoads.whenLoaded(guid, { type: "Material", consumer: "Spawn Decal", onLoad: "the decal spawns when it is loaded" },
+            self, () => services.spawnDecal?.(decal));
         },
         async createSceneLayerAsync(assetGuid, zOrder) {
           const { self } = this;

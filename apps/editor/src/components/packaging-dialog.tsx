@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { DownloadIcon } from "lucide-react";
+import { DownloadIcon, TriangleAlertIcon } from "lucide-react";
 import { defaultExportPreset } from "@haptic/core";
 import { resolvedAppIdentity } from "@haptic/core";
 import { desktopGameNames, macGameNames } from "@haptic/exporter/native-desktop";
@@ -20,6 +20,7 @@ import { Progress } from "@haptic/ui/components/progress";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { cn } from "@haptic/ui/lib/utils";
 import { useAppSettings } from "../context/app-settings-context";
+import { usePlayDiagnosticsActions } from "../context/play-context";
 import { useProjectState, useRegistryState } from "../context/document-context";
 import { useAndroidPackaging } from "../lib/android-packaging";
 import { packagingTargets, type PackagingTarget } from "../lib/packaging-targets";
@@ -92,7 +93,8 @@ export function PackagingDialog({
   const targets = useMemo(() => packagingTargets(shells.desktop, { android: androidAvailable, ios: iosAvailable }),
     [shells.desktop, androidAvailable, iosAvailable]);
   const groups = useMemo(() => targetGroups(targets), [targets]);
-  const { busy, stage, error, notice, packageTarget } = useGameExport(projectDocument, { manifest: shells.manifest, projectGuid });
+  const { appendLog } = usePlayDiagnosticsActions();
+  const { busy, stage, error, notice, warnings, packageTarget } = useGameExport(projectDocument, { manifest: shells.manifest, projectGuid, log: appendLog });
   const [targetId, setTargetId] = useState<PackagingTarget["id"]>("web");
   const [linuxFormat, setLinuxFormat] = useState<LinuxPackageFormat>("deb");
   const [androidFormat, setAndroidFormat] = useState<AndroidPackageFormat>("apk");
@@ -395,6 +397,17 @@ export function PackagingDialog({
                   <Alert variant="destructive">
                     <AlertTitle>Packaging Failed</AlertTitle>
                     <AlertDescription data-testid="packaging-error">{error}</AlertDescription>
+                  </Alert>
+                ) : null}
+                {warnings.length > 0 ? (
+                  <Alert data-testid="packaging-warnings">
+                    <TriangleAlertIcon className="text-(--warning)" />
+                    <AlertTitle>{warnings.length} Packaging {warnings.length === 1 ? "Warning" : "Warnings"}</AlertTitle>
+                    <AlertDescription>
+                      <ul className="flex max-h-32 touch-pan-y flex-col gap-1 overflow-y-auto overscroll-y-contain text-xs">
+                        {warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+                      </ul>
+                    </AlertDescription>
                   </Alert>
                 ) : null}
                 {notice && !busy ? <p role="status" className="text-xs text-muted-foreground">{notice}</p> : null}

@@ -32,6 +32,7 @@ import { createHostMembers } from "./script-host-members";
 import { DispatcherBindings } from "./script-dispatchers";
 import type { ScriptHostServices } from "./script-host-services";
 import { ScriptMaterialOwnership } from "./script-material-ownership";
+import { ScriptAssetLoads } from "./script-asset-loads";
 import { unchangedComponentWrite } from "./runtime-property-writes";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
 import { isThenable } from "./tick-wait";
@@ -135,6 +136,8 @@ export class ScriptHost {
   private readonly hostMembers: HostContextMembers;
   /** Material replacement versions and the preloads they hold, per owner and scope. */
   private readonly materials: ScriptMaterialOwnership;
+  /** Script writes and spawns waiting for assets their owner did not load. */
+  private readonly assetLoads: ScriptAssetLoads;
   /** Event Dispatcher bindings of this session. */
   private readonly dispatchers = new DispatcherBindings();
   /** What `createScriptContextClass` reads from this host; built once in the constructor. */
@@ -149,11 +152,13 @@ export class ScriptHost {
     this.rng = new RandomStream(String(services.seed ?? 1));
     const canInvokeOwner = (owner: EngineObject) => this.canInvokeOwner(owner);
     this.materials = new ScriptMaterialOwnership({ services, canInvokeOwner });
+    this.assetLoads = new ScriptAssetLoads({ services, canInvokeOwner });
     // The context modules reach this host's private state only through these wrappers.
     const shared = {
       services,
       rng: this.rng,
       materials: this.materials,
+      assetLoads: this.assetLoads,
       dispatchers: this.dispatchers,
       canInvokeOwner,
       classDisplayName: (classId: string) => this.classDisplayName(classId),

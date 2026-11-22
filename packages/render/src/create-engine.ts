@@ -94,6 +94,7 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import { parseEasingCurve, setCustomEasingCurves, qualitySettingsFingerprint, qualityValuesKey, resolveRenderingQuality } from "@haptic/core";
 import { captureView, ViewBlend } from "./view-blend";
 import { CameraShakeView } from "./camera-shake-view";
+import { DrawnCameraViewReporter } from "./drawn-camera-view";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type FramePressureSample, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
@@ -1571,6 +1572,15 @@ function initializeEngine(
     const camera = scene.frameGraph?.findMainCamera() ?? scene.activeCamera;
     return camera && camera.name !== PLAY_FREE_CAM_NAME ? camera : null;
   }) : null;
+  // Added after the shake's, so it reads the camera as this draw shakes it.
+  const drawnViews = options.playMode && options.onGameView ? new DrawnCameraViewReporter(options.onGameView) : null;
+  const drawnViewObserver = drawnViews ? scene.onBeforeRenderObservable.add(() => {
+    const slotId = binding.possessedCameraSlotId;
+    const camera = scene.frameGraph?.findMainCamera() ?? scene.activeCamera;
+    // The Layer Camera's view is the game's own; the free camera takes no game input.
+    if (slotId === null || !camera || camera.name === PLAY_FREE_CAM_NAME) return;
+    drawnViews.update(camera, slotId);
+  }) : null;
 
   /** A running Possess Camera With Blend and the time of the last frame it advanced on. */
   let viewBlend: { blend: ViewBlend; lastFrame: number | null } | null = null;
@@ -2951,6 +2961,7 @@ function initializeEngine(
       else endTextureHandover();
       resetJoysticks();
       worldShake?.dispose();
+      scene.onBeforeRenderObservable.remove(drawnViewObserver);
       runtimeTransformTools?.dispose();
       runtimeTransformTools = null;
       disposed = true;
