@@ -22,6 +22,8 @@ import { layerDrawableMeshes } from "./layer-drawable-meshes";
 import { sceneShadowController } from "./shadow-controller";
 import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
+import { isTargetedLayerScene } from "./layer-composite";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import { sceneGlyphAtlas } from "./text2d-glyph-atlas";
 import { LayerImageAtlas } from "./layer-image-atlas";
 import { copyLayerFrameStats } from "./layer-frame-stats";
@@ -475,6 +477,54 @@ describe("SceneLayerCompositor", () => {
       create(compositor, "fourth", 4);
       expect(attached).toHaveLength(1);
       expect(sharedTargets(engine)).toEqual([target]);
+    });
+
+    it("marks every layer targeted while the passes run, through every change of the list or the switch, and blits premultiplied", () => {
+      const { engine } = world();
+      engine.getCaps().depthTextureExtension = true;
+      let enabled = true;
+      const compositor = new SceneLayerCompositor({ engine, postProcessingEnabled: () => enabled, attachLayerPostProcess: () => ({ dispose() {} }) });
+      const hud = create(compositor, "hud", 1);
+      expect(isTargetedLayerScene(hud.scene)).toBe(false);
+      compositor.setPostProcess([pass("grade")]);
+      const menu = create(compositor, "menu", 2);
+      expect([isTargetedLayerScene(hud.scene), isTargetedLayerScene(menu.scene)]).toEqual([true, true]);
+      // The passes' output over the world is premultiplied colour and coverage; the held composite redraws that Scene.
+      const blit = engine.scenes.find((scene) => !scene.isDisposed && scene.getMeshByName("sceneLayerBlitPlane"))!.getMeshByName("sceneLayerBlitPlane")!;
+      expect(blit.material!.alphaMode).toBe(Constants.ALPHA_PREMULTIPLIED);
+      compositor.setPostProcess([pass("grade", false)]);
+      expect([isTargetedLayerScene(hud.scene), isTargetedLayerScene(menu.scene)]).toEqual([false, false]);
+      compositor.setPostProcess([pass("grade")]);
+      expect(isTargetedLayerScene(hud.scene)).toBe(true);
+      enabled = false;
+      compositor.refreshPostProcess();
+      expect(isTargetedLayerScene(hud.scene)).toBe(false);
+      enabled = true;
+      compositor.refreshPostProcess();
+      expect(isTargetedLayerScene(hud.scene)).toBe(true);
+    });
+
+    it("blends the layers' ordinary blending premultiplied into the shared target, and nothing else", () => {
+      const { engine, compositor } = stackWorld();
+      const hud = create(compositor, "hud", 1);
+      const modes: string[] = [];
+      vi.spyOn(SceneRenderCoordinator.prototype, "render").mockImplementation(function (this: SceneRenderCoordinator) {
+        for (const mode of [Constants.ALPHA_COMBINE, Constants.ALPHA_ADD]) {
+          engine.setAlphaMode(mode);
+          modes.push(`${sceneOf(this) === hud.scene ? "hud" : "passes"}:${engine.getAlphaMode()}`);
+        }
+        return drawn;
+      });
+      compositor.render();
+      // Straight over the world: as before.
+      expect(modes).toEqual([`hud:${Constants.ALPHA_COMBINE}`, `hud:${Constants.ALPHA_ADD}`]);
+      modes.length = 0;
+      compositor.setPostProcess([pass("grade")]);
+      compositor.render();
+      expect(modes).toEqual([
+        `hud:${Constants.ALPHA_LAYER_ACCUMULATE}`, `hud:${Constants.ALPHA_ADD}`,
+        `passes:${Constants.ALPHA_COMBINE}`, `passes:${Constants.ALPHA_ADD}`,
+      ]);
     });
 
     it("replaces only the passes for a new pass list, and the target and every layer's renderer for a new size or no passes", async () => {

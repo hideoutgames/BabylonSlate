@@ -15,12 +15,12 @@ export type MaterialBlendMode =
   | "multiply";
 
 /**
- * The Blend Modes a domain offers. Text and User Interface draw on Scene Layers, whose post-processed layers composite
- * through a transparent target, so they blend only Translucent or Additive; Particle and Post Process have none (emitters own blending, a pass replaces
- * the image, and a Post Process Material always stores Opaque).
+ * The Blend Modes a domain offers. Text and User Interface always blend (Translucent, Additive or Multiply); Particle and
+ * Post Process have none (emitters own blending, a pass replaces the image, and a Post Process Material always stores
+ * Opaque).
  */
 export function materialBlendModesFor(domain: MaterialDomain): readonly MaterialBlendMode[] {
-  if (domain === "text" || domain === "ui") return ["translucent", "additive"];
+  if (domain === "text" || domain === "ui") return ["translucent", "additive", "multiply"];
   if (domain === "particle" || domain === "postProcess") return [];
   return ["opaque", "masked", "translucent", "additive", "multiply"];
 }
@@ -350,7 +350,7 @@ function defaultUserInterfaceGraph(): {
 
 /**
  * Text and User Interface Materials draw on 2D quads blended over what is behind them: always unlit,
- * two-sided and translucent or additive.
+ * two-sided and translucent, additive or multiply.
  */
 function isOverlayDomain(domain: MaterialDomain): boolean {
   return domain === "text" || domain === "ui";
@@ -535,7 +535,7 @@ export function normalizeMaterialDocument(
     shadingModel: isOverlayDomain(domain) || record.shadingModel === "unlit" ? "unlit" : "pbr",
     // A post-process pass replaces the image, so it has no Blend Mode: always Opaque.
     blendMode:
-      isOverlayDomain(domain) ? (record.blendMode === "additive" ? "additive" : "translucent") : domain === "postProcess" ? "opaque" : record.blendMode === "masked" ||
+      isOverlayDomain(domain) ? (record.blendMode === "additive" || record.blendMode === "multiply" ? record.blendMode : "translucent") : domain === "postProcess" ? "opaque" : record.blendMode === "masked" ||
       record.blendMode === "translucent" ||
       record.blendMode === "additive" ||
       record.blendMode === "multiply"
