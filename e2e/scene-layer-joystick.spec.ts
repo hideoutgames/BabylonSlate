@@ -28,8 +28,7 @@ for (const mode of ["Play"] as const) {
     const backgroundGuid = "00000000-0000-4000-8000-000000000052";
     const joystickGuid = "00000000-0000-4000-8000-000000000053";
     for (const [guid, name, color] of [[backgroundGuid, "Background", [1, 0, 0]], [joystickGuid, "Joystick", [0, 0, 1]]] as const) {
-      const material = createDefaultMaterialDocument(name);
-      material.shadingModel = "unlit";
+      const material = createDefaultMaterialDocument(name, "ui");
       material.nodes[0]!.properties.value = [...color];
       files.set(`assets/${name}.material.hasset`, await encodeAssetDocument({ guid, type: "Material", name,
         version: versions.currentVersion("Material"), payload: material as unknown as Record<string, unknown> }));

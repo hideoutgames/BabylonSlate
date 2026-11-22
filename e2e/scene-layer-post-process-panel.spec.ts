@@ -104,8 +104,7 @@ test("A Post Processing Panel without a Material draws as a plain parent; with o
   const files = await minimalProjectFiles();
   const versions = createDefaultMigrationRegistry();
   const material = async (guid: string, name: string, color: [number, number, number]) => {
-    const document = createDefaultMaterialDocument(name);
-    document.shadingModel = "unlit";
+    const document = createDefaultMaterialDocument(name, "ui");
     document.nodes[0]!.properties.value = color;
     files.set(`assets/${name}.material.hasset`, await encodeAssetDocument({
       guid, type: "Material", name, version: versions.currentVersion("Material"), payload: document as unknown as Record<string, unknown>,
