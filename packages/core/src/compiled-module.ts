@@ -63,17 +63,24 @@ export interface GameScriptsModule {
   scripts: Readonly<Record<string, readonly [firstLine: number, module: CompiledModuleFunction]>>;
   /** Each Extension library's modules, by library name then module path: `(exports, module, require, extensions)`. */
   extensions: Readonly<Record<string, Readonly<Record<string, (...args: unknown[]) => void>>>>;
+  /**
+   * Each Particle Graph update kernel factory by key (`particleUpdateKernelKey` in `@haptic/render`):
+   * `(refs, objects, state, system)` returning the per-particle update. The page imports the module for these.
+   */
+  particleKernels: Readonly<Record<string, (...args: never[]) => (particle: never) => void>>;
 }
 
 /**
- * The text of an exported game's scripts module: every compiled Logic Graph (`compiledModuleBody`) and every Extension
- * library module (its CommonJS code) as a function literal, so a game loads its code with one standard module import
+ * The text of an exported game's scripts module: every compiled Logic Graph (`compiledModuleBody`), every Extension
+ * library module (its CommonJS code) and every Particle Graph update kernel as a function literal, so a game loads its code with one standard module import
  * and never evaluates text. It is a leaf module (no imports), loaded by URL. Its own bindings are `$$haptic`-prefixed so
  * a script's free names still reach the global scope, as they do in Editor Play's `new Function` modules.
  */
 export function writeGameScriptsModule(
   scripts: readonly (CompiledModuleSource & { assetGuid: string; classId: string })[],
   libraries: readonly { libraryName: string; bundle: { modules: readonly { path: string; code: string }[] } }[],
+  /** Particle Graph update kernel sources by key, exactly as Editor Play evaluates them. */
+  particleKernels: Readonly<Record<string, string>> = {},
 ): string {
   const parts: string[] = [];
   let line = 1;
@@ -104,6 +111,9 @@ export function writeGameScriptsModule(
     emit("},");
   }
   emit("};");
-  emit("export { $$hapticUrl as url, $$hapticScripts as scripts, $$hapticExtensions as extensions };");
+  emit("const $$hapticParticleKernels = {");
+  for (const key of Object.keys(particleKernels).sort()) emit(`${JSON.stringify(key)}: ${particleKernels[key]},`);
+  emit("};");
+  emit("export { $$hapticUrl as url, $$hapticScripts as scripts, $$hapticExtensions as extensions, $$hapticParticleKernels as particleKernels };");
   return `${parts.join("\n")}\n`;
 }

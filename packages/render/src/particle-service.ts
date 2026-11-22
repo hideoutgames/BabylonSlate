@@ -1,4 +1,5 @@
 import { isSceneStreamSlotPending, registerSceneStreamParticle } from "./scene-stream-admission";
+import type { ParticleUpdateKernels } from "./particle-update-compiler";
 import type { GlobalParameterValueSource } from "./global-parameter-values";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
@@ -361,6 +362,7 @@ export class ParticleService {
   private readonly scene: Scene;
   private readonly gpuRequested: boolean;
   private readonly globalParameters: GlobalParameterValueSource | undefined;
+  private readonly updateKernels: ParticleUpdateKernels | undefined;
   private readonly statsScope: "global" | "local";
   private readonly acquireMaterial?: (guid: string, owner: ParticleMaterialOwner) => ResourceLease<NodeMaterial> | null;
   private readonly acquireTexture?: (guid: string) => ResourceLease<BaseTexture> | null;
@@ -402,6 +404,8 @@ export class ParticleService {
 
   constructor(options: {
     scene: Scene;
+    /** Where Particle Graph updates find their compiled kernels; without it they keep Babylon's evaluation. */
+    updateKernels?: ParticleUpdateKernels;
     gpuSupported?: boolean;
     /** A null lease skips the slot with `particle.missing_material`. */
     acquireMaterial?: (guid: string, owner: ParticleMaterialOwner) => ResourceLease<NodeMaterial> | null;
@@ -429,6 +433,7 @@ export class ParticleService {
   }) {
     this.scene = options.scene;
     this.globalParameters = options.globalParameters;
+    this.updateKernels = options.updateKernels;
     this.gpuRequested = options.gpuSupported ?? true;
     this.statsScope = options.statsScope ?? "global";
     this.acquireMaterial = options.acquireMaterial;
@@ -1355,7 +1360,8 @@ export class ParticleService {
       emitter: context.node, space: context.space, noise: (textureGuid) => this.noiseSource(entry, textureGuid),
       meshShape: (properties) => this.meshShapeSource(entry, context, properties),
       spawn: (properties) => this.spawnSink(entry, context, properties, depth, triggers),
-      ...(this.globalParameters ? { globalParameters: this.globalParameters } : {}) });
+      ...(this.globalParameters ? { globalParameters: this.globalParameters } : {}),
+      ...(this.updateKernels ? { updateKernels: this.updateKernels } : {}) });
     const closeTriggers = () => {
       for (const trigger of triggers) {
         trigger.closed = true;

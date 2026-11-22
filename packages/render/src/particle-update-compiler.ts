@@ -1,4 +1,5 @@
 import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { assetContentHash } from "@haptic/assets";
 import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { ParticleClampBlock } from "@babylonjs/core/Particles/Node/Blocks/particleClampBlock";
 import { ParticleGradientBlock } from "@babylonjs/core/Particles/Node/Blocks/particleGradientBlock";
@@ -32,36 +33,38 @@ import type { ThinParticleSystem } from "@babylonjs/core/Particles/thinParticleS
  * Babylon evaluates a Particle Graph by pulling: an update block's queue item reads its input port, which calls the
  * producing block's closure, which reads its own ports the same way, re-resolving on every read what a built graph
  * never changes (which port is connected, the port's type, the block's operation, a getter per port) and allocating a
- * vector or colour per operation. Here each queue item of a block below becomes one program: the reads its process
- * makes, compiled once into a flat instruction tape (`Int32Array` opcodes and register operands, `Float64Array`
- * constants) that one `switch` loop runs over preallocated registers (`Float64Array` scalars and vector components, an
- * array of objects for vectors, colours and Babylon's own reads). The reads are in the same order, with the same number
- * of reads of every producer (a Random or a contextual source that writes as it reads is read as often as before) and
- * the same arithmetic, operand by operand, in doubles, so a seeded run is bit-identical, its random sequence included
- * (`particle-graph-realize.test.ts`). No code is generated: nothing here needs `eval` or `new Function`, so games run
- * under a Content Security Policy without `unsafe-eval` and on JIT-less WebKit.
+ * vector or colour per operation. Here each queue item of a block below becomes one kernel: the reads its process makes,
+ * as straight-line JavaScript in the same order, with the same number of reads of every producer (a Random or a
+ * contextual source that writes as it reads is read as often as before) and the same arithmetic, operand by operand, so
+ * a seeded run is bit-identical, its random sequence included (`particle-graph-realize.test.ts`).
+ *
+ * One generator writes every kernel's source (`ProgramBuilder`: an instruction list, each instruction one statement,
+ * `kernelSource`). Where the source becomes a function is the host's (`ParticleUpdateKernels`): Editor Play evaluates
+ * it with `new Function` (`functionParticleUpdateKernels`, live recompilation); an exported game finds the identical
+ * source, written at export into its static scripts module, by its key (`staticParticleUpdateKernels`), so games
+ * evaluate no text. A block without a kernel keeps Babylon's process.
  *
  * - A pure producer (an Input that reads without writing, and Math, Clamp, Gradient, Lerp, NLerp and Trigonometry over
  *   pure producers) is evaluated once per call however many reads reach it: Babylon re-evaluates it per read, which a
  *   graph whose values fan out and meet again (a diamond) repeats exponentially. Its value is the same either way.
- * - A queue item whose program would hold more than `PARTICLE_MAX_EMITTED_STATEMENTS` instructions (impure reads still
+ * - A queue item whose kernel would hold more than `PARTICLE_MAX_EMITTED_STATEMENTS` statements (impure reads still
  *   expand per read) keeps Babylon's process, with a warning.
  * - Math truncates its result only when its output is an Int. Babylon truncates whenever the left input is an Int,
  *   which turns an Int times a vector into 0 and drops an Int times a Float's fraction.
- * - One interpreter (`run`) serves every program, so its call and property sites see the same few shapes whatever the
- *   graph; a program is data, not a closure per operation.
+ * - Generated code, not composed closures: closures made from one function literal share its inline caches, so a graph
+ *   of them calls through megamorphic sites V8 cannot inline, which costs most of what resolving the reads saves.
  * - Any other producer is read through Babylon's own `getConnectedValue`, and any other queue item keeps its process.
  * - What a read takes from a block (an Input's `value`, a Clamp's bounds, a Gradient stop's reference) is read on every
  *   call, so parameters written while the system runs apply as before.
  * - A vector or colour result goes into an object the read site owns, made once; Babylon makes a new one per read. Each
- *   is consumed (copied, or combined component by component) before the site runs again, and no program hands one to
+ *   is consumed (copied, or combined component by component) before the site runs again, and no kernel hands one to
  *   anything that could keep it.
  */
 
-/** Most instructions one compiled update program holds (`ParticleUpdateTooLarge`). */
+/** Most statements one kernel holds (`ParticleUpdateTooLarge`). */
 export const PARTICLE_MAX_EMITTED_STATEMENTS = 4096;
 
-/** A queue item's program would hold more than `PARTICLE_MAX_EMITTED_STATEMENTS` instructions. */
+/** A queue item's kernel would hold more than `PARTICLE_MAX_EMITTED_STATEMENTS` statements. */
 class ParticleUpdateTooLarge extends Error {}
 
 type State = NodeParticleBuildState;
@@ -71,9 +74,9 @@ type QueueItem = { process: Process; nextItem: QueueItem | null };
 const isScalar = (type: Types) => type === Types.Float || type === Types.Int;
 
 /*
- * Opcodes. An instruction is its opcode followed by its operands (`WIDTH` slots), all in one `Int32Array`. `f` names a scalar register
- * (`Float64Array`), `o` an object register (vectors, colours and whatever Babylon's own reads return), `k` a constant,
- * `r` an entry of the program's referenced blocks and ports. Jump targets are code offsets.
+ * The instructions the generator records, each written as one statement (`statement`). `f` names a scalar local, `o`
+ * an object local (vectors, colours and whatever Babylon's own reads return), `k` a constant and `r` an entry of the
+ * kernel's referenced blocks and ports (`R<n>`).
  */
 const K = 0; // f, k: f = k
 const BLOCK_VALUE = 1; // f, r: f = r.value
@@ -108,17 +111,12 @@ const SCALE_UNLESS_ZERO = 34; // o, length: if (length !== 0) o.scaleInPlace(1 /
 const MOVE = 35; // f, src
 const MOVE_O = 36; // o, src
 const ZERO_O = 37; // o: o = 0
-const JUMP_UNLESS_AT_MOST = 38; // a, b, target: if (!(a <= b)) jump
-const JUMP = 39; // target
 const WRITE_COLOR = 40, WRITE_DIRECTION = 41, WRITE_POSITION = 42, WRITE_SCALE = 43; // o: particle.<field>.copyFrom(o)
 const WRITE_SIZE = 44, WRITE_ANGLE = 45; // f: particle.<field> = f
 // Babylon's `ParticleTrigonometryBlock` functions: f, a.
 const COS = 46, SIN = 47, ABS = 48, EXP = 49, EXP2 = 50, ROUND = 51, FLOOR = 52, CEILING = 53, SQRT = 54, LOG = 55,
   TAN = 56, ARC_TAN = 57, ARC_COS = 58, ARC_SIN = 59, SIGN = 60, NEGATE = 61, ONE_MINUS = 62, RECIPROCAL = 63,
   TO_RADIANS = 64, TO_DEGREES = 65, FRACT = 66;
-
-/** Slots per instruction: its opcode and up to five operands (`SET4`), unused ones zero, so every instruction decodes alike. */
-const WIDTH = 6;
 
 // f, o: one opcode per component, each a named property read (a read keyed by the name would be megamorphic).
 const COMPONENT_Y = 67, COMPONENT_Z = 68, COMPONENT_R = 69, COMPONENT_G = 70, COMPONENT_B = 71, COMPONENT_A = 72;
@@ -154,33 +152,123 @@ const CONTEXTUAL = new Set<Contextual>([
   Contextual.InitialDirection, Contextual.ColorStep,
 ]);
 
-type ParticleSource = Particle & {
-  _properties: { directionScale: number; initialDirection: unknown };
-  colorStep: unknown;
+/** The contextual sources read straight off the particle or system, as `NodeParticleBuildState.getContextualValue` reads them. */
+const CONTEXT_EXPRESSIONS: Partial<Record<Contextual, string>> = {
+  [Contextual.Position]: "particle.position",
+  [Contextual.Direction]: "particle.direction",
+  [Contextual.DirectionScale]: "particle._properties.directionScale",
+  [Contextual.Color]: "particle.color",
+  [Contextual.InitialColor]: "particle.initialColor",
+  [Contextual.ColorDead]: "particle.colorDead",
+  [Contextual.Age]: "particle.age",
+  [Contextual.Lifetime]: "particle.lifeTime",
+  [Contextual.Angle]: "particle.angle",
+  [Contextual.Scale]: "particle.scale",
+  [Contextual.Size]: "particle.size",
+  [Contextual.AgeGradient]: "(particle.age / particle.lifeTime)",
+  [Contextual.SpriteCellEnd]: "system.endSpriteCellID",
+  [Contextual.SpriteCellIndex]: "particle.cellIndex",
+  [Contextual.SpriteCellStart]: "system.startSpriteCellID",
+  [Contextual.InitialDirection]: "particle._properties.initialDirection",
+  [Contextual.ColorStep]: "particle.colorStep",
 };
-type SystemSource = ThinParticleSystem & { _actualFrame: number; _scaledUpdateSpeed: number };
 
-function contextual(source: Contextual, particle: ParticleSource, system: SystemSource): unknown {
-  switch (source) {
-    case Contextual.Position: return particle.position;
-    case Contextual.Direction: return particle.direction;
-    case Contextual.DirectionScale: return particle._properties.directionScale;
-    case Contextual.Color: return particle.color;
-    case Contextual.InitialColor: return particle.initialColor;
-    case Contextual.ColorDead: return particle.colorDead;
-    case Contextual.Age: return particle.age;
-    case Contextual.Lifetime: return particle.lifeTime;
-    case Contextual.Angle: return particle.angle;
-    case Contextual.Scale: return particle.scale;
-    case Contextual.Size: return particle.size;
-    case Contextual.AgeGradient: return particle.age / particle.lifeTime;
-    case Contextual.SpriteCellEnd: return system.endSpriteCellID;
-    case Contextual.SpriteCellIndex: return particle.cellIndex;
-    case Contextual.SpriteCellStart: return system.startSpriteCellID;
-    case Contextual.InitialDirection: return particle._properties.initialDirection;
-    case Contextual.ColorStep: return particle.colorStep;
+/** A number as a JavaScript literal that reads back as the same double. */
+function literal(value: number): string {
+  if (Object.is(value, -0)) return "-0";
+  if (Number.isNaN(value)) return "NaN";
+  if (!Number.isFinite(value)) return value > 0 ? "Infinity" : "-Infinity";
+  return String(value);
+}
+
+/**
+ * One instruction as the JavaScript statement a kernel runs in its place: the same reads and the same arithmetic,
+ * operand by operand, in the same order (`run` is the reference). Jumps have none: `gradient` writes their branches.
+ */
+function statement(opcode: number, [a = 0, b = 0, c = 0, d = 0, e = 0]: readonly number[], constants: readonly number[]): string {
+  const f = (register: number) => `f${register}`, o = (register: number) => `o${register}`;
+  const unary = (expression: (v: string) => string) => `${f(a)} = ${expression(f(b))};`;
+  switch (opcode) {
+    case K: return `${f(a)} = ${literal(constants[b]!)};`;
+    case BLOCK_VALUE: return `${f(a)} = R${b}.value;`;
+    case BLOCK_VALUE_O: return `${o(a)} = R${b}.value;`;
+    case MINIMUM: return `${f(a)} = R${b}.minimum;`;
+    case MAXIMUM: return `${f(a)} = R${b}.maximum;`;
+    case REFERENCE: return `${f(a)} = R${b}.reference;`;
+    case CONNECTED: return `${f(a)} = R${b}.getConnectedValue(state);`;
+    case CONNECTED_O: return `${o(a)} = R${b}.getConnectedValue(state);`;
+    case SYSTEM_VALUE: return `${f(a)} = state.getSystemValue(${b});`;
+    case SYSTEM_VALUE_O: return `${o(a)} = state.getSystemValue(${b});`;
+    case CONTEXT_VALUE: return `${f(a)} = state.getContextualValue(${b});`;
+    case CONTEXT_VALUE_O: return `${o(a)} = state.getContextualValue(${b});`;
+    case CONTEXT: return `${f(a)} = ${CONTEXT_EXPRESSIONS[b as Contextual]};`;
+    case CONTEXT_O: return `${o(a)} = ${CONTEXT_EXPRESSIONS[b as Contextual]};`;
+    case TIME: return `${f(a)} = system._actualFrame;`;
+    case DELTA: return `${f(a)} = system._scaledUpdateSpeed;`;
+    case AGE: return `${f(a)} = particle.age;`;
+    case LIFETIME: return `${f(a)} = particle.lifeTime;`;
+    case AGE_GRADIENT: return `${f(a)} = particle.age / particle.lifeTime;`;
+    case SIZE: return `${f(a)} = particle.size;`;
+    case ANGLE: return `${f(a)} = particle.angle;`;
+    case COMPONENT_X: return `${f(a)} = ${o(b)}.x;`;
+    case COMPONENT_Y: return `${f(a)} = ${o(b)}.y;`;
+    case COMPONENT_Z: return `${f(a)} = ${o(b)}.z;`;
+    case COMPONENT_R: return `${f(a)} = ${o(b)}.r;`;
+    case COMPONENT_G: return `${f(a)} = ${o(b)}.g;`;
+    case COMPONENT_B: return `${f(a)} = ${o(b)}.b;`;
+    case COMPONENT_A: return `${f(a)} = ${o(b)}.a;`;
+    case ADD: return `${f(a)} = ${f(b)} + ${f(c)};`;
+    case SUBTRACT: return `${f(a)} = ${f(b)} - ${f(c)};`;
+    case MULTIPLY: return `${f(a)} = ${f(b)} * ${f(c)};`;
+    case DIVIDE: return `${f(a)} = ${f(b)} / ${f(c)};`;
+    case MIN: return `${f(a)} = Math.min(${f(b)}, ${f(c)});`;
+    case MAX: return `${f(a)} = Math.max(${f(b)}, ${f(c)});`;
+    case TRUNCATE: return `${f(a)} = ${f(b)} | 0;`;
+    case TRUNCATE_O: return `${f(a)} = ${o(b)} | 0;`;
+    case OR_ZERO: return `${f(a)} = ${f(b)} || 0;`;
+    case OR_ZERO_O: return `${o(a)} = ${o(b)} || 0;`;
+    case CLAMP: return `${f(a)} = Math.max(${f(c)}, Math.min(${f(b)}, ${f(d)}));`;
+    case MIX: return `${f(a)} = (1 - ${f(d)}) * ${f(b)} + ${f(d)} * ${f(c)};`;
+    case STOP_LERP: return `${f(a)} = ${f(b)} + (${f(c)} - ${f(b)}) * ${f(d)};`;
+    case STOP_SCALE: return `${f(a)} = Math.max(0, Math.min(1, (${f(b)} - ${f(c)}) / (${f(d)} - ${f(c)})));`;
+    case LENGTH4: return `${f(a)} = Math.sqrt(${o(b)}.r * ${o(b)}.r + ${o(b)}.g * ${o(b)}.g + ${o(b)}.b * ${o(b)}.b + ${o(b)}.a * ${o(b)}.a);`;
+    case SET2: return `${o(a)}.x = ${f(b)}; ${o(a)}.y = ${f(c)};`;
+    case SET3: return `${o(a)}.set(${f(b)}, ${f(c)}, ${f(d)});`;
+    case SET4: return `${o(a)}.r = ${f(b)}; ${o(a)}.g = ${f(c)}; ${o(a)}.b = ${f(d)}; ${o(a)}.a = ${f(e)};`;
+    case NORMALIZE: return `${o(a)}.normalize();`;
+    case SCALE_UNLESS_ZERO: return `if (${f(b)} !== 0) ${o(a)}.scaleInPlace(1 / ${f(b)});`;
+    case MOVE: return `${f(a)} = ${f(b)};`;
+    case MOVE_O: return `${o(a)} = ${o(b)};`;
+    case ZERO_O: return `${o(a)} = 0;`;
+    case WRITE_COLOR: return `particle.color.copyFrom(${o(a)});`;
+    case WRITE_DIRECTION: return `particle.direction.copyFrom(${o(a)});`;
+    case WRITE_POSITION: return `particle.position.copyFrom(${o(a)});`;
+    case WRITE_SCALE: return `particle.scale.copyFrom(${o(a)});`;
+    case WRITE_SIZE: return `particle.size = ${f(a)};`;
+    case WRITE_ANGLE: return `particle.angle = ${f(a)};`;
+    case COS: return unary((v) => `Math.cos(${v})`);
+    case SIN: return unary((v) => `Math.sin(${v})`);
+    case ABS: return unary((v) => `Math.abs(${v})`);
+    case EXP: return unary((v) => `Math.exp(${v})`);
+    case EXP2: return unary((v) => `Math.pow(2, ${v})`);
+    case ROUND: return unary((v) => `Math.round(${v})`);
+    case FLOOR: return unary((v) => `Math.floor(${v})`);
+    case CEILING: return unary((v) => `Math.ceil(${v})`);
+    case SQRT: return unary((v) => `Math.sqrt(${v})`);
+    case LOG: return unary((v) => `Math.log(${v})`);
+    case TAN: return unary((v) => `Math.tan(${v})`);
+    case ARC_TAN: return unary((v) => `Math.atan(${v})`);
+    case ARC_COS: return unary((v) => `Math.acos(${v})`);
+    case ARC_SIN: return unary((v) => `Math.asin(${v})`);
+    case SIGN: return unary((v) => `Math.sign(${v})`);
+    case NEGATE: return unary((v) => `-${v}`);
+    case ONE_MINUS: return unary((v) => `1 - ${v}`);
+    case RECIPROCAL: return unary((v) => `1 / ${v}`);
+    case TO_RADIANS: return unary((v) => `(${v} * Math.PI) / 180`);
+    case TO_DEGREES: return unary((v) => `(${v} * 180) / Math.PI`);
+    case FRACT: return unary((v) => `${v} >= 0 ? ${v} - Math.floor(${v}) : ${v} - Math.ceil(${v})`);
   }
-  return undefined;
+  throw new Error(`No kernel statement for opcode ${opcode}.`);
 }
 
 /** A value of the program: a scalar register (`f`) or an object register (`o`). */
@@ -194,21 +282,8 @@ const objectOf = (value: Value): number => {
   return value.o;
 };
 
-/** A compiled queue item: its code, constants, referenced blocks and ports, and preallocated registers. */
-type Program = {
-  /** The instructions, `WIDTH` slots each. */
-  readonly code: Int32Array;
-  readonly constants: Float64Array;
-  readonly refs: readonly unknown[];
-  readonly f: Float64Array;
-  readonly o: unknown[];
-  readonly state: State;
-  readonly system: ThinParticleSystem;
-};
-
-/** Builds one queue item's program: what each read of Babylon's process makes, in the same order. */
+/** Builds one queue item's kernel: what each read of Babylon's process makes, in the same order. */
 class ProgramBuilder {
-  private readonly code: number[] = [];
   private readonly constants: number[] = [];
   /** Ports and blocks the code reads every call (a value, bounds, a stop's reference). */
   readonly refs: unknown[] = [];
@@ -216,6 +291,8 @@ class ProgramBuilder {
   private readonly objects: unknown[] = [];
   private scalars = 0;
   private instructions = 0;
+  /** The kernel's statements, one per instruction (`statement`), and the branches `gradient` writes. */
+  private readonly lines: string[] = [];
   /** Reads emitted so far that may write as they read (Babylon's own, and writing contextual sources). */
   private impureReads = 0;
   /**
@@ -224,24 +301,16 @@ class ProgramBuilder {
    */
   private readonly scopes: Map<NodeParticleConnectionPoint, Value>[] = [new Map()];
 
-  /** Appends one instruction, refusing to grow past `PARTICLE_MAX_EMITTED_STATEMENTS`. */
-  op(opcode: number, ...operands: number[]): number {
+  /** Appends one instruction's statement, refusing to grow past `PARTICLE_MAX_EMITTED_STATEMENTS`. */
+  op(opcode: number, ...operands: number[]): void {
+    this.line(statement(opcode, operands, this.constants));
+  }
+
+  /** Appends one statement or branch line, refusing to grow past `PARTICLE_MAX_EMITTED_STATEMENTS`. */
+  line(text: string): void {
     if (this.instructions >= PARTICLE_MAX_EMITTED_STATEMENTS) throw new ParticleUpdateTooLarge();
     this.instructions += 1;
-    const at = this.code.length;
-    this.code.push(opcode, ...operands);
-    while (this.code.length < at + WIDTH) this.code.push(0);
-    return at;
-  }
-
-  /** The offset the next instruction takes. */
-  here(): number {
-    return this.code.length;
-  }
-
-  /** Points the jump operand at `at + offset` to `target`. */
-  patch(at: number, offset: number, target: number): void {
-    this.code[at + offset] = target;
+    this.lines.push(text);
   }
 
   openScope(): void {
@@ -449,12 +518,11 @@ class ProgramBuilder {
     // Babylon's walk down the entries: the first whose reference is at most the gradient, interpolated towards the
     // entry after it. Each entry's value is read only on the branch Babylon reads it.
     const out = components ? this.result(type) : null;
-    const exits: number[] = [];
     let opened = 0;
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i]!;
       const reference = scalarOf(this.scalarOp(REFERENCE, this.ref(entry)));
-      const test = this.op(JUMP_UNLESS_AT_MOST, reference, gradient, -1);
+      this.line(`if (f${reference} <= f${gradient}) {`);
       this.openScope();
       const current = this.read(entry.value);
       const following = entries[i + 1];
@@ -476,15 +544,13 @@ class ProgramBuilder {
         }
       }
       this.closeScope();
-      exits.push(this.op(JUMP, -1));
-      this.patch(test, 3, this.here());
+      this.line("} else {");
       this.openScope();
       opened += 1;
     }
     if ("f" in result) this.op(K, result.f, this.constant(0));
     else this.op(ZERO_O, result.o);
-    const end = this.here();
-    for (const exit of exits) this.patch(exit, 1, end);
+    this.line("}".repeat(opened));
     for (let i = 0; i < opened; i++) this.closeScope();
     return result;
   }
@@ -518,11 +584,34 @@ class ProgramBuilder {
     return { o: out };
   }
 
-  build(state: State, system: ThinParticleSystem): Program {
-    return {
-      code: Int32Array.from(this.code), constants: Float64Array.from(this.constants), refs: this.refs,
-      f: new Float64Array(this.scalars), o: [...this.objects], state, system,
-    };
+  /**
+   * The program as a kernel factory's source: `function (R, O, state, system)` returning the per-particle function. `R`
+   * are the referenced ports and blocks and `O` the object registers' starting values (the read sites' own results);
+   * every register is a local. Equal programs give equal sources, so the source is also the kernel's key.
+   */
+  kernelSource(): string {
+    const refs = this.refs.map((_, index) => `R${index} = R[${index}]`);
+    const objects = this.objects.flatMap((value, index) => (value === undefined ? [] : [`O${index} = O[${index}]`]));
+    const scalars = Array.from({ length: this.scalars }, (_, index) => `f${index}`);
+    const registers = this.objects.map((value, index) => (value === undefined ? `o${index}` : `o${index} = O${index}`));
+    return [
+      "function (R, O, state, system) {",
+      ...(refs.length ? [`const ${refs.join(", ")};`] : []),
+      ...(objects.length ? [`const ${objects.join(", ")};`] : []),
+      "return function compiledParticleUpdate(particle) {",
+      "state.particleContext = particle;",
+      "state.systemContext = system;",
+      ...(scalars.length ? [`let ${scalars.join(", ")};`] : []),
+      ...(registers.length ? [`let ${registers.join(", ")};`] : []),
+      ...this.lines,
+      "};",
+      "}",
+    ].join("\n");
+  }
+
+  /** The referenced ports and blocks (`R`) and the object locals' starting values (`O`) a kernel factory takes. */
+  bindings(): { refs: readonly unknown[]; objects: readonly unknown[] } {
+    return { refs: this.refs, objects: [...this.objects] };
   }
 
   get size(): number {
@@ -530,128 +619,64 @@ class ProgramBuilder {
   }
 }
 
-type Port = { value: unknown; getConnectedValue(state: State): unknown };
-type Block = { value: unknown; minimum: number; maximum: number; reference: number };
-type Vector = { x: number; y: number; z: number; r: number; g: number; b: number; a: number };
-type Writable = Vector & { set(x: number, y: number, z: number): void; normalize(): void; scaleInPlace(scale: number): void };
+/**
+ * A compiled update's kernel factory (`ProgramBuilder.kernelSource`): given the program's referenced ports and blocks,
+ * its object registers' starting values, the build state and the system, the per-particle update.
+ */
+export type ParticleUpdateKernel = (refs: readonly unknown[], objects: readonly unknown[], state: NodeParticleBuildState, system: ThinParticleSystem) => (particle: Particle) => void;
 
 /**
- * Runs `program` for `particle`: one loop over its code, every value in preallocated registers. It allocates nothing;
- * what Babylon's own reads return is theirs.
+ * Where compiled updates find their kernels, by the key of the kernel's source (`particleUpdateKernelKey`); `source`
+ * makes it on demand. Null keeps Babylon's process. Editor Play compiles the source
+ * (`functionParticleUpdateKernels`), an exported game looks the key up in its scripts module
+ * (`staticParticleUpdateKernels`), and export records every source (`recordingParticleUpdateKernels`).
  */
-function run(program: Program, particle: Particle): void {
-  const { code, constants, refs, f, o, state, system } = program;
-  state.particleContext = particle;
-  state.systemContext = system;
-  const length = code.length;
-  let pc = 0;
-  while (pc < length) {
-    const opcode = code[pc]!;
-    const a = code[pc + 1]!, b = code[pc + 2]!, c = code[pc + 3]!, d = code[pc + 4]!;
-    pc += WIDTH;
-    switch (opcode) {
-      case K: f[a] = constants[b]!; break;
-      case BLOCK_VALUE: f[a] = (refs[b] as Block).value as number; break;
-      case BLOCK_VALUE_O: o[a] = (refs[b] as Block).value; break;
-      case MINIMUM: f[a] = (refs[b] as Block).minimum; break;
-      case MAXIMUM: f[a] = (refs[b] as Block).maximum; break;
-      case REFERENCE: f[a] = (refs[b] as Block).reference; break;
-      case CONNECTED: f[a] = (refs[b] as Port).getConnectedValue(state) as number; break;
-      case CONNECTED_O: o[a] = (refs[b] as Port).getConnectedValue(state); break;
-      case SYSTEM_VALUE: f[a] = state.getSystemValue(b) as number; break;
-      case SYSTEM_VALUE_O: o[a] = state.getSystemValue(b); break;
-      case CONTEXT_VALUE: f[a] = state.getContextualValue(b) as number; break;
-      case CONTEXT_VALUE_O: o[a] = state.getContextualValue(b); break;
-      case CONTEXT: f[a] = contextual(b, particle as ParticleSource, system as SystemSource) as number; break;
-      case TIME: f[a] = (system as SystemSource)._actualFrame; break;
-      case DELTA: f[a] = (system as SystemSource)._scaledUpdateSpeed; break;
-      case AGE: f[a] = particle.age; break;
-      case LIFETIME: f[a] = particle.lifeTime; break;
-      case AGE_GRADIENT: f[a] = particle.age / particle.lifeTime; break;
-      case SIZE: f[a] = particle.size; break;
-      case ANGLE: f[a] = particle.angle; break;
-      case CONTEXT_O: o[a] = contextual(b, particle as ParticleSource, system as SystemSource); break;
-      case COMPONENT_X: f[a] = (o[b] as Vector).x; break;
-      case COMPONENT_Y: f[a] = (o[b] as Vector).y; break;
-      case COMPONENT_Z: f[a] = (o[b] as Vector).z; break;
-      case COMPONENT_R: f[a] = (o[b] as Vector).r; break;
-      case COMPONENT_G: f[a] = (o[b] as Vector).g; break;
-      case COMPONENT_B: f[a] = (o[b] as Vector).b; break;
-      case COMPONENT_A: f[a] = (o[b] as Vector).a; break;
-      case ADD: f[a] = f[b]! + f[c]!; break;
-      case SUBTRACT: f[a] = f[b]! - f[c]!; break;
-      case MULTIPLY: f[a] = f[b]! * f[c]!; break;
-      case DIVIDE: f[a] = f[b]! / f[c]!; break;
-      case MIN: f[a] = Math.min(f[b]!, f[c]!); break;
-      case MAX: f[a] = Math.max(f[b]!, f[c]!); break;
-      case TRUNCATE: f[a] = f[b]! | 0; break;
-      case TRUNCATE_O: f[a] = (o[b] as number) | 0; break;
-      case OR_ZERO: f[a] = f[b]! || 0; break;
-      case OR_ZERO_O: o[a] = o[b] || 0; break;
-      case CLAMP: f[a] = Math.max(f[c]!, Math.min(f[b]!, f[d]!)); break;
-      case MIX: f[a] = (1 - f[d]!) * f[b]! + f[d]! * f[c]!; break;
-      case STOP_LERP: f[a] = f[b]! + (f[c]! - f[b]!) * f[d]!; break;
-      case STOP_SCALE: f[a] = Math.max(0, Math.min(1, (f[b]! - f[c]!) / (f[d]! - f[c]!))); break;
-      case LENGTH4: {
-        const color = o[b] as Vector;
-        f[a] = Math.sqrt(color.r * color.r + color.g * color.g + color.b * color.b + color.a * color.a);
-        break;
-      }
-      case SET2: { const target = o[a] as Vector; target.x = f[b]!; target.y = f[c]!; break; }
-      case SET3: (o[a] as Writable).set(f[b]!, f[c]!, f[d]!); break;
-      case SET4: {
-        const target = o[a] as Vector;
-        target.r = f[b]!; target.g = f[c]!; target.b = f[d]!; target.a = f[code[pc - 1]!]!;
-        break;
-      }
-      case NORMALIZE: (o[a] as Writable).normalize(); break;
-      case SCALE_UNLESS_ZERO: if (f[b] !== 0) (o[a] as Writable).scaleInPlace(1 / f[b]!); break;
-      case MOVE: f[a] = f[b]!; break;
-      case MOVE_O: o[a] = o[b]; break;
-      case ZERO_O: o[a] = 0; break;
-      case JUMP_UNLESS_AT_MOST: if (!(f[a]! <= f[b]!)) pc = c; break;
-      case JUMP: pc = a; break;
-      case WRITE_COLOR: particle.color.copyFrom(o[a] as Color4); break;
-      case WRITE_DIRECTION: particle.direction.copyFrom(o[a] as Vector3); break;
-      case WRITE_POSITION: particle.position.copyFrom(o[a] as Vector3); break;
-      case WRITE_SCALE: particle.scale.copyFrom(o[a] as Vector2); break;
-      case WRITE_SIZE: particle.size = f[a]!; break;
-      case WRITE_ANGLE: particle.angle = f[a]!; break;
-      case COS: f[a] = Math.cos(f[b]!); break;
-      case SIN: f[a] = Math.sin(f[b]!); break;
-      case ABS: f[a] = Math.abs(f[b]!); break;
-      case EXP: f[a] = Math.exp(f[b]!); break;
-      case EXP2: f[a] = Math.pow(2, f[b]!); break;
-      case ROUND: f[a] = Math.round(f[b]!); break;
-      case FLOOR: f[a] = Math.floor(f[b]!); break;
-      case CEILING: f[a] = Math.ceil(f[b]!); break;
-      case SQRT: f[a] = Math.sqrt(f[b]!); break;
-      case LOG: f[a] = Math.log(f[b]!); break;
-      case TAN: f[a] = Math.tan(f[b]!); break;
-      case ARC_TAN: f[a] = Math.atan(f[b]!); break;
-      case ARC_COS: f[a] = Math.acos(f[b]!); break;
-      case ARC_SIN: f[a] = Math.asin(f[b]!); break;
-      case SIGN: f[a] = Math.sign(f[b]!); break;
-      case NEGATE: f[a] = -f[b]!; break;
-      case ONE_MINUS: f[a] = 1 - f[b]!; break;
-      case RECIPROCAL: f[a] = 1 / f[b]!; break;
-      case TO_RADIANS: f[a] = (f[b]! * Math.PI) / 180; break;
-      case TO_DEGREES: f[a] = (f[b]! * 180) / Math.PI; break;
-      case FRACT: { const v = f[b]!; f[a] = v >= 0 ? v - Math.floor(v) : v - Math.ceil(v); break; }
-    }
-  }
+export interface ParticleUpdateKernels {
+  kernel(key: string, source: () => string): ParticleUpdateKernel | null;
 }
 
-const programs = new WeakMap<Process, Program>();
+const kernelText = new TextEncoder();
 
-/** Instructions in the program a compiled process runs, or null for a process this module did not compile. */
+/** The key a kernel's source is found by: equal programs, equal keys. */
+export function particleUpdateKernelKey(source: string): string {
+  return `pk1:${assetContentHash(kernelText.encode(source))}`;
+}
+
+/**
+ * An exported game's kernels: written at export into its scripts module and found by key. A block the export did not
+ * see keeps Babylon's process, with one `[render]` warning per kernel.
+ */
+export function staticParticleUpdateKernels(kernels: Readonly<Record<string, ParticleUpdateKernel>>): ParticleUpdateKernels {
+  const missing = new Set<string>();
+  return {
+    kernel(key) {
+      if (Object.hasOwn(kernels, key)) return kernels[key]!;
+      if (!missing.has(key)) {
+        missing.add(key);
+        console.warn(`[render] Particle update ${key} has no kernel in this game's scripts module; it keeps Babylon's evaluation.`);
+      }
+      return null;
+    },
+  };
+}
+
+/** Records each kernel's source by key (for the export's scripts module); the recorded system keeps Babylon's processes. */
+export function recordingParticleUpdateKernels(sources: Map<string, string>): ParticleUpdateKernels {
+  return { kernel: (key, source) => { if (!sources.has(key)) sources.set(key, source()); return null; } };
+}
+
+const sizes = new WeakMap<Process, number>();
+
+/** Statements in the kernel a compiled process runs, or null for a process this module did not compile. */
 export function compiledParticleUpdateSize(process: unknown): number | null {
-  const program = programs.get(process as Process);
-  return program ? program.code.length / WIDTH : null;
+  return sizes.get(process as Process) ?? null;
 }
 
-/** The compiled process for the queue item `block` added, or null to keep Babylon's. */
-function compileProcess(block: NodeParticleBlock, state: State, system: ThinParticleSystem): Process | null {
+/**
+ * The compiled process for the queue item `block` added, or null to keep Babylon's: its kernel from `kernels`, or none
+ * (a block outside this module, past the cap, or with no kernel the host knows).
+ */
+function compileProcess(block: NodeParticleBlock, state: State, system: ThinParticleSystem, kernels: ParticleUpdateKernels | null): Process | null {
   const builder = new ProgramBuilder();
   if (block instanceof UpdateColorBlock) builder.op(WRITE_COLOR, objectOf(builder.read(block.color)));
   else if (block instanceof UpdateDirectionBlock) builder.op(WRITE_DIRECTION, objectOf(builder.read(block.direction)));
@@ -660,11 +685,12 @@ function compileProcess(block: NodeParticleBlock, state: State, system: ThinPart
   else if (block instanceof UpdateSizeBlock) builder.op(WRITE_SIZE, scalarOf(builder.read(block.size)));
   else if (block instanceof UpdateAngleBlock) builder.op(WRITE_ANGLE, scalarOf(builder.read(block.angle)));
   else return null;
-  const program = builder.build(state, system);
-  const process: Process = function compiledParticleUpdate(particle) {
-    run(program, particle);
-  };
-  programs.set(process, program);
+  const source = builder.kernelSource();
+  const kernel = kernels?.kernel(particleUpdateKernelKey(source), () => source) ?? null;
+  if (!kernel) return null;
+  const { refs, objects } = builder.bindings();
+  const process: Process = kernel(refs, objects, state, system);
+  sizes.set(process, builder.size);
   return process;
 }
 
@@ -690,18 +716,18 @@ export class ParticleUpdateQueueOwners {
    * `state` is the build state Babylon's processes were built with; the replacements set its particle and system
    * context as those do, for the producers still read through Babylon.
    */
-  compile(system: ThinParticleSystem, state: State): number {
+  compile(system: ThinParticleSystem, state: State, kernels: ParticleUpdateKernels | null = null): number {
     let compiled = 0;
     for (let item = (system as unknown as { _updateQueueStart: QueueItem | null })._updateQueueStart; item; item = item.nextItem) {
       const block = this.owners.get(item);
       let process: Process | null;
       try {
-        process = block ? compileProcess(block, state, system) : null;
+        process = block ? compileProcess(block, state, system, kernels) : null;
       } catch (error) {
         // A step this module cannot generate keeps Babylon's process; the graph still builds.
         process = null;
         if (block && error instanceof ParticleUpdateTooLarge) {
-          console.warn(`[render] Particle update "${block.name}" keeps Babylon's evaluation: its reads expand past ${PARTICLE_MAX_EMITTED_STATEMENTS} instructions.`);
+          console.warn(`[render] Particle update "${block.name}" keeps Babylon's evaluation: its reads expand past ${PARTICLE_MAX_EMITTED_STATEMENTS} statements.`);
         }
       }
       if (!process) continue;

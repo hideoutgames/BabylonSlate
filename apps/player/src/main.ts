@@ -3,7 +3,7 @@ import {
   getHostMemoryStats,
   type HostMemoryStats,
 } from "@haptic/vfs/device-memory";
-import { audioStats, installDirectViewReadSync, particleStats } from "@haptic/render";
+import { audioStats, installDirectViewReadSync, particleStats, staticParticleUpdateKernels, type ParticleUpdateKernel } from "@haptic/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { createDecoderPrefetch } from "./decoder-prefetch";
 import { preloadPlayerWorkerPhysics, prewarmPlayerWorker, type PlayerWorkerHost } from "./worker-host";
@@ -209,7 +209,11 @@ async function launchLoaded(
     if (errors.length) throw new AggregateError(errors, "Player page cleanup failed.");
   };
 
+  // The page runs Particle Graphs: their update kernels come from the scripts module, already loading beside the assets.
+  const scriptsModule = await game.scriptsModule;
+  startupAbort.signal.throwIfAborted();
   const session = await startPlayerWithEngine({
+    ...(scriptsModule ? { particleUpdateKernels: staticParticleUpdateKernels(scriptsModule.particleKernels as unknown as Record<string, ParticleUpdateKernel>) } : {}),
     signal: startupAbort.signal,
     canvas,
     game,

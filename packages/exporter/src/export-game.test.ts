@@ -197,6 +197,21 @@ describe("exportGame", () => {
     expect(JSON.parse(new TextDecoder().decode(without.value.files.get(GAME_MANIFEST_FILE)))).not.toHaveProperty("extensionLibraries");
   });
 
+  it("writes Particle Graph update kernels into the scripts module and counts them in game.json", async () => {
+    const options = { platform: "web" as const, bundleDebugger: false, startupSceneGuid: "scene-1",
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [], playerFiles: stubPlayer() };
+    const withKernels = await exportGame({ ...options, particleUpdateKernels: { "pk1:b": "function (R, O, state, system) { return null; }", "pk1:a": "function () {}" } });
+    if (!withKernels.ok) throw new Error(withKernels.error);
+    const shipped = parseGameManifest(new TextDecoder().decode(withKernels.value.files.get(GAME_MANIFEST_FILE)));
+    expect(shipped.scriptsModule!.particleKernels).toBe(2);
+    expect(new TextDecoder().decode(withKernels.value.files.get(shipped.scriptsModule!.path))).toContain(
+      `"pk1:a": function () {},\n"pk1:b": function (R, O, state, system) { return null; },`);
+    const without = await exportGame(options);
+    if (!without.ok) throw new Error(without.error);
+    // The page imports the module only for kernels, so a game without any leaves it to the worker.
+    expect(parseGameManifest(new TextDecoder().decode(without.value.files.get(GAME_MANIFEST_FILE))).scriptsModule!.particleKernels).toBe(0);
+  });
+
   it("retains project identity in release builds", async () => {
     const result = await exportGame({
       platform: "web",

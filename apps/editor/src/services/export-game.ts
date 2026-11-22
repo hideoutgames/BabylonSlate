@@ -1,4 +1,5 @@
 import type { SaveGameConfiguration } from "@haptic/core";
+import type { ParticleGraphDocument } from "@haptic/particle-graph";
 import { subsystemBaseClassIdOf } from "@haptic/object-model";
 import { dataTypeSchemas } from "@haptic/scripting";
 import type { DataAssetCatalogEntry } from "@haptic/core";
@@ -640,8 +641,17 @@ export async function collectAndExportGame(
       };
     } catch (error) { return { ok: false, error: `Save Game definition: ${error instanceof Error ? error.message : String(error)}` }; }
   }
+  // Every Particle Graph's update kernels, generated as Editor Play generates them, so the game runs the same code
+  // without evaluating text. Babylon loads only for an export that has a Particle Graph.
+  const particleGraphs = closure.value.guids.flatMap((guid) =>
+    params.assets.find((entry) => entry.guid === guid)?.type === "ParticleGraph" ? [params.payloadByGuid?.(guid)] : [])
+    .filter((document): document is ParticleGraphDocument => !!document && typeof document === "object");
+  const particleUpdateKernels = particleGraphs.length
+    ? Object.fromEntries((await import("@haptic/render/particle-kernel-export")).collectParticleUpdateKernels(particleGraphs))
+    : undefined;
   const packed = await exportGame({
     includePreviewDiagnostics: params.previewBuild === true,
+    ...(particleUpdateKernels ? { particleUpdateKernels } : {}),
     saveGame,
     project: params.project,
     bundleDebugger,

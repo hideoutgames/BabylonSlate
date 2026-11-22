@@ -390,9 +390,10 @@ export async function exportGame(
   inlineCssIntoIndex(files);
   // Every compiled script and Extension module as a function of one static module: games load code with a standard
   // module import and never evaluate text.
-  const scriptsModuleBytes = encoder.encode(writeGameScriptsModule(options.scripts, options.extensionLibraries ?? []));
+  const scriptsModuleBytes = encoder.encode(writeGameScriptsModule(options.scripts, options.extensionLibraries ?? [], options.particleUpdateKernels));
   files.set(GAME_SCRIPTS_MODULE_FILE, scriptsModuleBytes);
-  const scriptsModule = { path: GAME_SCRIPTS_MODULE_FILE, byteLength: scriptsModuleBytes.byteLength, revision: await sha256Hex(scriptsModuleBytes) };
+  const scriptsModule = { path: GAME_SCRIPTS_MODULE_FILE, byteLength: scriptsModuleBytes.byteLength, revision: await sha256Hex(scriptsModuleBytes),
+    particleKernels: Object.keys(options.particleUpdateKernels ?? {}).length };
 
   const manifest: GameManifest = {
     assetCatalogVersion: 1,
