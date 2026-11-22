@@ -92,6 +92,7 @@ interface SceneStreamsHost {
  */
 export class SceneStreams implements RuntimeSubsystem {
   private loadId = 0;
+  private _readinessRevision = 0;
   private readonly streams = new Map<string, SceneStream>();
   private readonly actorStream = new WeakMap<Actor, SceneStream>();
   private readonly streamScenes = new WeakMap<Scene, SceneStream>();
@@ -103,6 +104,11 @@ export class SceneStreams implements RuntimeSubsystem {
   constructor(admission: OwnerAdmission, host: SceneStreamsHost) {
     this.admission = admission;
     this.host = host;
+  }
+
+  /** Monotonic revision advancing whenever any stream's actor readiness can change. */
+  get readinessRevision(): number {
+    return this._readinessRevision;
   }
 
   /** Stop, phase 1: every stream is retired. */
@@ -167,6 +173,7 @@ export class SceneStreams implements RuntimeSubsystem {
     if (!stream) return;
     stream.actors.add(actor);
     this.actorStream.set(actor, stream);
+    this._readinessRevision++;
     actor.setVariable("parentId", stream.actor.guid);
     if (stream.origin) actor.transform = composeParentChildTransform(stream.origin, actor.transform);
   }
@@ -278,6 +285,7 @@ export class SceneStreams implements RuntimeSubsystem {
     if (this.host.stopped() || !stream || stream.loadId !== streamLoadId || stream.state !== "Loading" || !stream.notified || !this.actorReady(stream.actor)) return;
     try {
       stream.state = "Loaded";
+      this._readinessRevision++;
       this.host.syncPhysics();
       this.host.navigation().registerAgents();
       this.host.navigation().registerObstacles([...stream.actors], stream.navObstacles);
@@ -311,6 +319,7 @@ export class SceneStreams implements RuntimeSubsystem {
     if (!stream) return Promise.resolve();
     if (stream.unloadPromise) return this.withBlock(stream.unloadPromise, blocking);
     stream.state = "Unloading";
+    this._readinessRevision++;
     stream.progress = 0;
     stream.controller.abort(sceneRealizationCancelled());
     const controller = new AbortController();
@@ -446,6 +455,7 @@ export class SceneStreams implements RuntimeSubsystem {
       const nested = this.streams.get(child.guid);
       if (nested) {
         nested.state = "Unloading";
+        this._readinessRevision++;
         nested.progress = 0;
         nested.controller.abort(sceneRealizationCancelled());
         yield* this.removeActors(nested);
@@ -473,6 +483,7 @@ export class SceneStreams implements RuntimeSubsystem {
     this.host.releaseAssets(stream.scene.guid);
     const wasLoaded = stream.state === "Loaded";
     stream.state = "Unloading";
+    this._readinessRevision++;
     stream.progress = 0;
     stream.controller.abort(sceneRealizationCancelled());
     this.streams.delete(stream.actor.guid);

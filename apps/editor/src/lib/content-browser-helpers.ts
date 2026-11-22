@@ -108,8 +108,7 @@ export {
 export {
   isMaterialSamplerTextureAsset,
   isMaterialAssetType,
-  isPostProcessMaterialForPicker,
-  isParticleMaterialForPicker,
+  materialPickerEntries,
   materialDomainsFromAssets,
   filterInspectorPinPickerAssets,
 } from "./material-asset-filters";

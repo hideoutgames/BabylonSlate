@@ -1,7 +1,5 @@
-import { PhysicsEventType } from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin";
-import type { HavokPlugin } from "@babylonjs/core/Physics/v2/Plugins/havokPlugin";
-import type { PhysicsBody } from "@babylonjs/core/Physics/v2/physicsBody";
-import type { ColliderDesc, PhysicsContactEvent } from "./types";
+import type { HavokPhysicsWithBindings, HP_WorldId } from "@babylonjs/havok";
+import type { ColliderDesc, PhysicsContactEvent, Vec3 } from "./types";
 import {
   CONTACT_SHAPE_TIE_TOLERANCE,
   colliderSignedDistance,
@@ -9,6 +7,7 @@ import {
   localShapeBounds,
 } from "./contact-shape";
 import type { BodyRecord, ColliderRecord } from "./havok-records";
+import { checked, embindEnumValue } from "./havok-wasm-memory";
 
 /** Identifies a contact within one poll window: the first event of each kind per ordered actor pair wins. */
 function contactKey(kind: PhysicsContactEvent["kind"], actorAId: string, actorBId: string): string {
@@ -23,30 +22,41 @@ function contactDistance(collider: ColliderRecord, x: number, y: number, z: numb
 
 /** What the contact pipeline reads from the backend that owns the world; it never calls back. */
 export interface HavokContactHost {
-  readonly plugin: HavokPlugin;
+  readonly havok: HavokPhysicsWithBindings;
+  readonly worldId: HP_WorldId;
   readonly bodies: ReadonlyMap<string, BodyRecord>;
-  readonly bodyIdByPhysicsBody: ReadonlyMap<PhysicsBody, string>;
+  readonly bodyIdByHpId: ReadonlyMap<bigint, string>;
   readonly collidersByOwner: ReadonlyMap<string, ReadonlySet<ColliderRecord>>;
 }
 
 /**
- * The Havok backend's contact pipeline: plugin collision and trigger events become actor contact events queued until
- * `poll`, trigger pairs stay open across shape and teleport changes, and reporting changes wait for open overlaps.
+ * The Havok backend's direct contact pipeline: reads Havok 1.3.14's native collision and trigger event lists after
+ * each step, turns them into actor contact events queued until `poll`, keeps trigger pairs open across shape and
+ * teleport changes, and defers reporting changes while a body has open overlaps.
  */
 export class HavokContacts {
   private readonly host: HavokContactHost;
+  private readonly collideEventMask: number;
+  private readonly collisionStarted: number;
+  private readonly collisionContinued: number;
+  private readonly collisionFinished: number;
+  private readonly triggerExited: number;
   /** Contact reporting changes waiting for the body's open trigger overlaps to end (`requestReporting`). */
   private readonly pendingReporting = new Map<BodyRecord, boolean>();
-  private readonly removeCollisionObservers: Array<() => void> = [];
   private readonly resetTriggerActors = new Set<string>();
   private pendingContacts: PhysicsContactEvent[] = [];
   /** `contactKey` of each `pendingContacts` entry, index for index. */
   private pendingContactKeys: string[] = [];
   /** The distinct `pendingContactKeys`, so the first-event-wins check is one lookup instead of a scan. */
   private readonly pendingContactKeySet = new Set<string>();
-  /** The native bodies each pending hit came from; hits may name hosted actors. */
-  private readonly hitBodies = new WeakMap<PhysicsContactEvent, readonly [PhysicsBody, PhysicsBody]>();
+  /** The native body handles each pending hit came from; hits may name hosted actors. */
+  private readonly hitBodies = new WeakMap<PhysicsContactEvent, readonly [bigint, bigint]>();
   private readonly tmpContactPoint = { x: 0, y: 0, z: 0 };
+  private readonly tmpEventPoint: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly tmpEventNormal: Vec3 = { x: 0, y: 0, z: 0 };
+  /** Cached WASM heap views recreated only when `havok.HEAPU8.buffer` grows. */
+  private heapInt32: Int32Array | null = null;
+  private heapFloat32: Float32Array | null = null;
   private readonly activeTriggerPairs = new Map<
     string,
     {
@@ -63,7 +73,98 @@ export class HavokContacts {
 
   constructor(host: HavokContactHost) {
     this.host = host;
-    this.bindCollisionObservables();
+    const et = host.havok.EventType;
+    this.collisionStarted = embindEnumValue(et.COLLISION_STARTED);
+    this.collisionContinued = embindEnumValue(et.COLLISION_CONTINUED);
+    this.collisionFinished = embindEnumValue(et.COLLISION_FINISHED);
+    // Havok 1.3.14 WASM emits 8 (TRIGGER_ENTERED) / 16 (TRIGGER_EXITED) without exposing them on runtime `EventType`.
+    this.triggerExited = 16;
+    this.collideEventMask = this.collisionStarted | this.collisionContinued | this.collisionFinished;
+  }
+
+  /** Apply the body's current `reporting` flag to Havok's native event mask. */
+  applyEventMask(record: BodyRecord): void {
+    checked(
+      this.host.havok,
+      this.host.havok.HP_Body_SetEventMask(
+        record.hpBodyId,
+        record.reporting ? this.collideEventMask : 0,
+      ),
+      "body event mask",
+    );
+  }
+
+  private ensureHeapViews(): { int32: Int32Array; float32: Float32Array } {
+    const buffer = this.host.havok.HEAPU8.buffer;
+    if (this.heapInt32?.buffer !== buffer || !this.heapFloat32) {
+      this.heapInt32 = new Int32Array(buffer);
+      this.heapFloat32 = new Float32Array(buffer);
+    }
+    return { int32: this.heapInt32, float32: this.heapFloat32 };
+  }
+
+  /** Drain Havok's native collision and trigger event buffers generated by the latest `HP_World_Step`. */
+  drainNativeEvents(onCollision?: () => void): void {
+    const havok = this.host.havok;
+    const worldId = this.host.worldId;
+    const worldAddr = Number(worldId[0]);
+
+    // 1. Trigger events (memory layout matches Havok 1.3.14 TriggerEvent).
+    let triggerAddr = havok.HP_World_GetTriggerEvents(worldId)[1];
+    if (triggerAddr) {
+      const { int32 } = this.ensureHeapViews();
+      while (triggerAddr) {
+        const base = triggerAddr >> 2;
+        const eventType = int32[base]!;
+        const bodyA = BigInt(int32[base + 2]! >>> 0);
+        const bodyB = BigInt(int32[base + 6]! >>> 0);
+        this.recordNativeContact(
+          bodyA,
+          bodyB,
+          eventType,
+          true,
+          null,
+          null,
+          0,
+        );
+        triggerAddr = havok.HP_World_GetNextTriggerEvent(worldId, triggerAddr);
+      }
+    }
+
+    // 2. Collision events (memory layout matches Havok 1.3.14 CollisionEvent).
+    let collisionAddr = havok.HP_World_GetCollisionEvents(worldId)[1];
+    if (collisionAddr) {
+      const { int32, float32 } = this.ensureHeapViews();
+      const point = this.tmpEventPoint;
+      const normal = this.tmpEventNormal;
+      while (collisionAddr) {
+        const base = collisionAddr >> 2;
+        const eventType = int32[base]!;
+        const offA = base + 2;
+        const offB = base + 18;
+        const bodyA = BigInt(int32[offA]! >>> 0);
+        const bodyB = BigInt(int32[offB]! >>> 0);
+        if (eventType !== this.collisionFinished) {
+          const ax = float32[offA + 8]!, ay = float32[offA + 9]!, az = float32[offA + 10]!;
+          const nx = float32[offA + 11]!, ny = float32[offA + 12]!, nz = float32[offA + 13]!;
+          const bx = float32[offB + 8]!, by = float32[offB + 9]!, bz = float32[offB + 10]!;
+          const distance = (bx - ax) * nx + (by - ay) * ny + (bz - az) * nz;
+          point.x = ax; point.y = ay; point.z = az;
+          normal.x = nx; normal.y = ny; normal.z = nz;
+          this.recordNativeContact(
+            bodyA,
+            bodyB,
+            eventType,
+            false,
+            point,
+            normal,
+            distance,
+          );
+          onCollision?.();
+        }
+        collisionAddr = havok.HP_World_GetNextCollisionEvent(worldAddr, collisionAddr);
+      }
+    }
   }
 
   /** Contacts recorded since the previous poll. */
@@ -89,10 +190,9 @@ export class HavokContacts {
     this.pendingReporting.delete(record);
   }
 
-  /** Stops listening to the plugin; `clear` drops the queued state once the world's bodies are disposed. */
+  /** Releases contact pipeline resources; `clear` drops queued state once the world's bodies are disposed. */
   dispose(): void {
-    for (const remove of this.removeCollisionObservers) remove();
-    this.removeCollisionObservers.length = 0;
+    // No external observers to detach under direct WASM event draining.
   }
 
   /** Drops every pending contact, open overlap and reporting change. */
@@ -119,7 +219,7 @@ export class HavokContacts {
     }
     this.pendingReporting.delete(record);
     record.reporting = enabled;
-    record.body.setCollisionCallbackEnabled(enabled);
+    this.applyEventMask(record);
   }
 
   private inOpenOverlap(actorId: string): boolean {
@@ -127,58 +227,31 @@ export class HavokContacts {
     return false;
   }
 
-  private bindCollisionObservables(): void {
-    const plugin = this.host.plugin;
-    const collision = plugin.onCollisionObservable.add((event) => {
-      this.recordPluginContact(event, false);
-    });
-    const trigger = plugin.onTriggerCollisionObservable.add((event) => {
-      this.recordPluginContact(event, true);
-    });
-    this.removeCollisionObservers.push(
-      () => plugin.onCollisionObservable.remove(collision),
-      () => plugin.onTriggerCollisionObservable.remove(trigger),
-    );
-  }
-
-  private recordPluginContact(
-    raw: unknown,
-    fromTriggerObservable: boolean,
+  private recordNativeContact(
+    bodyAHpId: bigint,
+    bodyBHpId: bigint,
+    eventType: number,
+    isTriggerEvent: boolean,
+    point: Vec3 | null,
+    normal: Vec3 | null,
+    distance: number,
   ): void {
-    const event = raw as {
-      type?: string;
-      collider?: PhysicsBody;
-      collidedAgainst?: PhysicsBody;
-      point?: { x: number; y: number; z: number } | null;
-      normal?: { x: number; y: number; z: number } | null;
-      /** Separation from `point` (on the collider) to the other body's contact, along `normal`. */
-      distance?: number;
-    };
-    const actorAId = this.actorIdForPhysicsBody(event.collider);
-    const actorBId = this.actorIdForPhysicsBody(event.collidedAgainst);
+    const actorAId = this.actorIdForHpBody(bodyAHpId);
+    const actorBId = this.actorIdForHpBody(bodyBHpId);
     if (!actorAId || !actorBId || actorAId === actorBId) return;
-    const type = String(event.type ?? "");
     let kind: PhysicsContactEvent["kind"] | null = null;
-    const isTriggerEvent =
-      fromTriggerObservable ||
-      type === PhysicsEventType.TRIGGER_ENTERED ||
-      type === PhysicsEventType.TRIGGER_EXITED;
     if (isTriggerEvent) {
       // A hosted actor's trigger body would overlap its own shapes on the
       // host, and per-body events cannot tell those from the host's shapes.
       if (
-        this.hostsShapesOf(event.collidedAgainst, actorAId) ||
-        this.hostsShapesOf(event.collider, actorBId)
+        this.hostsShapesOf(bodyBHpId, actorAId) ||
+        this.hostsShapesOf(bodyAHpId, actorBId)
       )
         return;
-      kind =
-        type === PhysicsEventType.TRIGGER_EXITED
-          ? "overlapEnd"
-          : "overlapBegin";
+      kind = eventType === this.triggerExited ? "overlapEnd" : "overlapBegin";
     } else if (
-      type === PhysicsEventType.COLLISION_STARTED ||
-      type === PhysicsEventType.COLLISION_CONTINUED ||
-      type === ""
+      eventType === this.collisionStarted ||
+      eventType === this.collisionContinued
     ) {
       kind = "hit";
     }
@@ -187,17 +260,15 @@ export class HavokContacts {
     let b = actorBId;
     let colliderAId: string | undefined;
     let colliderBId: string | undefined;
-    if (kind === "hit" && event.point) {
+    if (kind === "hit" && point) {
       // Havok reports bodies rather than child shapes. On a compound hosting
       // other actors' shapes, each side's contact point picks the shape it touched.
-      const { point, normal } = event;
-      const separation = event.distance ?? 0;
-      const touchedA = this.touchedCollider(event.collider, point.x, point.y, point.z);
+      const touchedA = this.touchedCollider(bodyAHpId, point.x, point.y, point.z);
       const touchedB = this.touchedCollider(
-        event.collidedAgainst,
-        point.x + (normal?.x ?? 0) * separation,
-        point.y + (normal?.y ?? 0) * separation,
-        point.z + (normal?.z ?? 0) * separation,
+        bodyBHpId,
+        point.x + (normal?.x ?? 0) * distance,
+        point.y + (normal?.y ?? 0) * distance,
+        point.z + (normal?.z ?? 0) * distance,
       );
       if (touchedA) {
         a = touchedA.actorId ?? actorAId;
@@ -212,7 +283,6 @@ export class HavokContacts {
     // Other bodies name their actor's first collider. On a trigger actor route
     // overlap events to its trigger component, even after a blocking collider.
     const swapped = a > b;
-    // A hit is not paired, so a repeat of one already pending ends here, before the collider lookups.
     let key: string | undefined;
     if (kind === "hit") {
       key = swapped ? contactKey(kind, b, a) : contactKey(kind, a, b);
@@ -231,7 +301,6 @@ export class HavokContacts {
     if (kind === "overlapBegin" || kind === "overlapEnd") {
       // Havok reports each overlapping child-shape pair. Keep the actor overlap
       // alive until its final shape leaves, including events on later ticks.
-      // Length-prefixed, so no pair of IDs can produce another pair's key.
       const pairKey = `${a.length}:${a}${b}`;
       const pair = this.activeTriggerPairs.get(pairKey);
       if (kind === "overlapBegin") {
@@ -278,23 +347,22 @@ export class HavokContacts {
       kind,
       ...pair,
       location: {
-        x: event.point?.x ?? 0,
-        y: event.point?.y ?? 0,
-        z: event.point?.z ?? 0,
+        x: point?.x ?? 0,
+        y: point?.y ?? 0,
+        z: point?.z ?? 0,
       },
       normal: {
-        x: sign * (event.normal?.x ?? 0),
-        y: sign * (event.normal?.y ?? 1),
-        z: sign * (event.normal?.z ?? 0),
+        x: sign * (normal?.x ?? 0),
+        y: sign * (normal?.y ?? 1),
+        z: sign * (normal?.z ?? 0),
       },
     };
     this.enqueueContact(hit, key);
-    if (event.collider && event.collidedAgainst) this.hitBodies.set(hit, [event.collider, event.collidedAgainst]);
+    this.hitBodies.set(hit, [bodyAHpId, bodyBHpId]);
   }
 
   /** Ends an actor overlap with the colliders its begin event named. */
   private pushOverlapEnd(pair: { actorAId: string; actorBId: string; colliderAId?: string; colliderBId?: string }): void {
-    // Not deduplicated against pending events, but later events dedup against it.
     this.enqueueContact(
       {
         kind: "overlapEnd",
@@ -343,12 +411,12 @@ export class HavokContacts {
    * the lowest collider ID. Undefined for bodies without hosted shapes, which
    * keep the per-body attribution.
    */
-  private touchedCollider(body: PhysicsBody | undefined, x: number, y: number, z: number): ColliderDesc | undefined {
-    const bodyId = body ? this.host.bodyIdByPhysicsBody.get(body) : undefined;
+  private touchedCollider(bodyHpId: bigint, x: number, y: number, z: number): ColliderDesc | undefined {
+    const bodyId = this.host.bodyIdByHpId.get(bodyHpId);
     const record = bodyId ? this.host.bodies.get(bodyId) : undefined;
     if (!record?.hostsShapes) return undefined;
-    // Hosts are never static, so the node holds the post-step pose synced before callbacks.
-    const local = inverseTransformPoint(this.tmpContactPoint, x, y, z, record.node.position, record.node.rotationQuaternion);
+    // Hosts are never static, so `record.pose` holds the post-step pose synced before event draining.
+    const local = inverseTransformPoint(this.tmpContactPoint, x, y, z, record.pose.position, record.pose.rotation);
     let nearest = Infinity;
     for (const collider of record.colliders.values())
       if (!collider.desc.isTrigger) nearest = Math.min(nearest, contactDistance(collider, local.x, local.y, local.z));
@@ -366,8 +434,6 @@ export class HavokContacts {
     actorId: string,
     preferTrigger = false,
   ): string | undefined {
-    // The owner's colliders in `colliders` map order, which `seq` mirrors: the first one, or with `preferTrigger`
-    // the first trigger when it owns any.
     const owned = this.host.collidersByOwner.get(actorId);
     if (!owned) return undefined;
     let first: ColliderRecord | undefined;
@@ -380,9 +446,9 @@ export class HavokContacts {
     return (firstTrigger ?? first)?.desc.id;
   }
 
-  /** Whether `body`'s compound includes a child shape hosted for `actorId`. */
-  private hostsShapesOf(body: PhysicsBody | undefined, actorId: string): boolean {
-    const bodyId = body ? this.host.bodyIdByPhysicsBody.get(body) : undefined;
+  /** Whether `bodyHpId`'s compound includes a child shape hosted for `actorId`. */
+  private hostsShapesOf(bodyHpId: bigint, actorId: string): boolean {
+    const bodyId = this.host.bodyIdByHpId.get(bodyHpId);
     const record = bodyId ? this.host.bodies.get(bodyId) : undefined;
     if (!record) return false;
     for (const collider of record.colliders.values())
@@ -390,9 +456,8 @@ export class HavokContacts {
     return false;
   }
 
-  private actorIdForPhysicsBody(body: PhysicsBody | undefined): string | null {
-    if (!body) return null;
-    const bodyId = this.host.bodyIdByPhysicsBody.get(body);
+  private actorIdForHpBody(bodyHpId: bigint): string | null {
+    const bodyId = this.host.bodyIdByHpId.get(bodyHpId);
     if (!bodyId) return null;
     return this.host.bodies.get(bodyId)?.desc.actorId ?? null;
   }
@@ -419,7 +484,7 @@ export class HavokContacts {
   /** Whether a pending hit came from `record`'s body, including hits naming actors it hosts. */
   private pendingHitInvolves(event: PhysicsContactEvent, record: BodyRecord): boolean {
     const bodies = this.hitBodies.get(event);
-    if (bodies) return bodies[0] === record.body || bodies[1] === record.body;
+    if (bodies) return bodies[0] === record.hpBodyId[0] || bodies[1] === record.hpBodyId[0];
     return event.actorAId === record.desc.actorId || event.actorBId === record.desc.actorId;
   }
 

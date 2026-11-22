@@ -210,4 +210,22 @@ describe("unchanged layer detection", () => {
     expect(width()).toBe(6);
     expect(update()).toBeNull();
   });
+
+  it("uses transformRevision to skip pose checks on steady frames and allows round-trip transform writes without relayout", () => {
+    const f = settled();
+    expect(f.update()).toBeNull();
+
+    // Mutating and restoring the same position bumps transformRevision, falls back to value equality, and stays unchanged.
+    const originalX = f.actor.transform.position.x;
+    const revBefore = f.actor.transformRevision;
+    f.actor.transform.position.x = originalX + 5;
+    f.actor.transform.position.x = originalX;
+    expect(f.actor.transformRevision).toBeGreaterThan(revBefore);
+    expect(f.update()).toBeNull();
+
+    // Actually changing a component transform triggers a relayout.
+    f.child.transform.position.x += 1;
+    expect(f.update()).not.toBeNull();
+    expect(f.update()).toBeNull();
+  });
 });

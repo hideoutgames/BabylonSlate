@@ -126,7 +126,7 @@ export function pastedPropertyValue(row: PropertyRow, entry: PropertyClipboardEn
       if (value === null) return null;
       if (typeof value !== "string" || !entry.assetType) return undefined;
       const accepts = row.assetTypes ? row.assetTypes.includes(entry.assetType) : row.value !== null && assetTypeOf(row) === entry.assetType;
-      return accepts ? value : undefined;
+      return accepts && (row.acceptsAsset?.(value) ?? true) ? value : undefined;
     }
     case "range":
       return kind === "range" && isNumberArray(value, 2) ? value : undefined;

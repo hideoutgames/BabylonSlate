@@ -1,5 +1,6 @@
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { spriteWorldSize, type SpritePayload, type TileUv } from "@haptic/assets";
@@ -10,6 +11,33 @@ export function isSpriteQuad(mesh: unknown): boolean { return mesh instanceof Me
 
 /** The whole texture, corner by corner in the quad's vertex order (bottom-left first). */
 const FULL_TEXTURE_UVS = [0, 0, 1, 0, 1, 1, 0, 1];
+const SPRITE_QUAD_NORMALS = [0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1];
+const SPRITE_QUAD_INDICES = [0, 1, 2, 0, 2, 3];
+
+/**
+ * Populate an existing geometry-free Mesh (e.g. an ejected batched sprite root) with standard
+ * XY-plane sprite quad geometry, sized and UV-mapped to the current sprite frame.
+ */
+export function populateSpriteQuadGeometry(
+  mesh: Mesh,
+  width: number,
+  height: number,
+  pivot: { x: number; y: number },
+  uv?: TileUv | null,
+): void {
+  if (mesh.getTotalVertices() === 0) {
+    const data = new VertexData();
+    data.positions = [0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0];
+    data.normals = SPRITE_QUAD_NORMALS;
+    data.uvs = FULL_TEXTURE_UVS;
+    data.indices = SPRITE_QUAD_INDICES;
+    data.applyToMesh(mesh, true);
+  }
+  spriteQuads.add(mesh);
+  markOwnerNotifiedGeometry(mesh);
+  setSpriteQuadSize(mesh, width, height, pivot);
+  setSpriteQuadUvs(mesh, uv);
+}
 
 /**
  * XY-plane quad showing a whole texture (not BABYLON.Sprite). Sized from the

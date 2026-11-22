@@ -274,7 +274,10 @@ export function createPhysics(
     stopped: () => rt.stopped,
     lifecycleId: () => rt.lifecycleId,
     mainActorReady: (actor) => rt.streams.actorReady(actor),
+    mainEligibilityRevision: () => rt.streams.readinessRevision,
     overlayActorReady: (actor) => rt.admission.canTickActor(actor, true),
+    overlayEligibilityRevision: () =>
+      (rt.streams.readinessRevision + rt.layers.readinessRevision + rt.blocks.revision) * 2 + (rt.stopped ? 1 : 0),
     hasPhysicsSceneLayers: () => [...rt.sceneLayerLibrary.values()].some((layer) => layer.settings?.physicsEnabled === true),
     canTickActor: (actor) => rt.admission.canTickActor(actor),
     scripts: () => rt.scriptHost,

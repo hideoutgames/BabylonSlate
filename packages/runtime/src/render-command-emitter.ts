@@ -883,7 +883,7 @@ function playMeshPartOf(
     componentId: component.guid,
     ...(component.getVariable("visible") === false ? { hidden: true } : {}),
     ...(component.classId === "LandscapeComponent" ? { landscape: parseLandscapeProperties(Object.fromEntries(
-      ["width", "depth", "subdivisions", "heights", "weights", "materialGuid", "collisionsEnabled"].map((key) => [key, component.getVariable(key)]),
+      ["width", "depth", "subdivisions", "heights", "weights", "data", "materialGuid", "collisionsEnabled"].map((key) => [key, component.getVariable(key)]),
     )) } : {}),
     ...(component.classId === "FoliageComponent" ? { foliage: parseFoliageProperties({ groupId: component.getVariable("groupId"), batches: component.getVariable("batches") }) } : {}),
     castShadows: componentCastsShadows(component.classId, component.getVariable("castShadows")),

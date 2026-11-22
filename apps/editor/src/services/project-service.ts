@@ -43,6 +43,7 @@ import {
   type ProjectMetadata,
   type ProjectAppearance,
   type RenderProjectSettings,
+  isLandscapeChunkId,
 } from "@haptic/core";
 import type { ProjectFolderHandle, ProjectStorage, SourceControlProjectSettings } from "@haptic/core";
 import {
@@ -75,6 +76,9 @@ import {
   encodeAssetDocument,
   audioClipChunk,
   audioClipChunkToDrop,
+  extractLandscapeChunks,
+  hydrateLandscapeChunksToEditor,
+  landscapeChunkIdsInHeader,
   exportProjectZip,
   type ClassAssetReplacement,
   isAssetDocumentPath,
@@ -1544,7 +1548,24 @@ export class ProjectService {
       } finally {
         if (!options.scope) scope.dispose();
       }
-    } else decoded = await readUnindexedAssetDocument(this.files, path, options.signal);
+      if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
+        const landscapeIds = landscapeChunkIdsInHeader(indexed.header.chunks);
+        if (landscapeIds.length > 0) {
+          const withChunks = await this.readAssetDocumentWithChunksAttempt(path, landscapeIds, options.signal);
+          decoded = { ...decoded, payload: hydrateLandscapeChunksToEditor(decoded.payload, withChunks.chunks) };
+        }
+      }
+    } else {
+      decoded = await readUnindexedAssetDocument(this.files, path, options.signal);
+      if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
+        const header = readAssetDocumentHeader(await this.storageForPath(path).readBinary(path));
+        const landscapeIds = landscapeChunkIdsInHeader(header.chunks);
+        if (landscapeIds.length > 0) {
+          const withChunks = await this.readAssetDocumentWithChunksAttempt(path, landscapeIds, options.signal);
+          decoded = { ...decoded, payload: hydrateLandscapeChunksToEditor(decoded.payload, withChunks.chunks) };
+        }
+      }
+    }
     return decoded;
   }
 
@@ -1664,9 +1685,15 @@ export class ProjectService {
 
     const guid = await this.guidForAsset(path);
     const stored = existing?.catalog ?? null;
-    const extraChunks = type === "Scene"
+    const landscapeSave = prepareLandscapeChunksForSave(type, content as unknown as Record<string, unknown>);
+    const payloadToSave = landscapeSave.payload;
+    const baseChunks = type === "Scene"
       ? await this.sceneChunksForSave(path, content as SerializedScene, guid, stored)
       : await keptChunksFor(this.files, path, stored);
+    const extraChunks: EncodableChunk[] = [
+      ...baseChunks.filter((chunk) => landscapeSave.keepStoredChunk(chunk.id)),
+      ...landscapeSave.chunks,
+    ];
     const bytes = await encodeAssetDocument(
       {
         type,
@@ -1681,19 +1708,19 @@ export class ProjectService {
               : assetName(path),
         guid,
         version,
-        payload: content as unknown as Record<string, unknown>,
+        payload: payloadToSave,
       },
       {
         blobs,
         extraChunks,
         parentClass,
         headerPayload: storeInHeader
-          ? (content as unknown as Record<string, unknown>)
+          ? payloadToSave
           : undefined,
         headerMeta: headerMetaForSave(type, content),
         dependencyMetadata: assetHeaderDependencyMetadata(
           type,
-          content as unknown as Record<string, unknown>,
+          payloadToSave,
           this.assetRegistry?.list(),
           parentClass,
         ),
@@ -1833,14 +1860,21 @@ export class ProjectService {
     const stored = existing?.catalog ?? null;
     const type = existing?.type ?? "Scene";
     // The stored chunks are carried over, not read; the navmesh it replaces is not read at all.
-    const chunks = [...await this.sceneChunksForSave(path, payload, guid, stored, [NAVMESH_CHUNK_ID]), navmeshChunk(bytes)];
+    const landscapeSave = prepareLandscapeChunksForSave(type, payload);
+    const payloadToSave = landscapeSave.payload;
+    const baseChunks = await this.sceneChunksForSave(path, payload, guid, stored, [NAVMESH_CHUNK_ID]);
+    const chunks: EncodableChunk[] = [
+      ...baseChunks.filter((chunk) => landscapeSave.keepStoredChunk(chunk.id)),
+      ...landscapeSave.chunks,
+      navmeshChunk(bytes),
+    ];
     const encoded = await encodeAssetDocument(
       {
         type,
         name: assetName(path),
         guid,
         version: this.migrations.currentVersion(type),
-        payload,
+        payload: payloadToSave,
       },
       {
         blobs: this.blobsForPath(path),
@@ -1848,7 +1882,7 @@ export class ProjectService {
         parentClass: existing?.parentClass ?? null,
         // The header's index of the scene's Timeline Clips survives a bake.
         headerMeta: headerMetaForSave(type, payload),
-        dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list()),
+        dependencyMetadata: assetHeaderDependencyMetadata(type, payloadToSave, this.assetRegistry?.list()),
       },
     );
     await storeDocumentBytes(this.files, path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
@@ -2147,4 +2181,37 @@ function storedProjectUpdatedAt(text: string): string | null {
   } catch {
     return null;
   }
+}
+
+function prepareLandscapeChunksForSave(
+  type: string,
+  content: Record<string, unknown>,
+): {
+  payload: Record<string, unknown>;
+  chunks: ChunkInput[];
+  keepStoredChunk: (chunkId: string) => boolean;
+} {
+  if (type !== "Scene" && type !== "Prefab" && type !== "Class") {
+    return { payload: content, chunks: [], keepStoredChunk: () => true };
+  }
+  const { payload, chunks } = extractLandscapeChunks(content);
+  const referencedChunkIds = new Set<string>();
+  const visit = (components: unknown) => {
+    if (!Array.isArray(components)) return;
+    for (const component of components as Array<{ classId?: string; properties?: Record<string, unknown> }>) {
+      if (component?.classId !== "LandscapeComponent") continue;
+      const cid = component.properties?.chunkId;
+      if (typeof cid === "string" && isLandscapeChunkId(cid)) referencedChunkIds.add(cid);
+    }
+  };
+  const record = payload as { actors?: Array<{ components?: unknown }>; components?: unknown };
+  if (Array.isArray(record.actors)) for (const actor of record.actors) visit(actor.components);
+  visit(record.components);
+  const extractedIds = new Set(chunks.map((chunk) => chunk.id));
+  return {
+    payload,
+    chunks,
+    keepStoredChunk: (chunkId: string) =>
+      !isLandscapeChunkId(chunkId) || (referencedChunkIds.has(chunkId) && !extractedIds.has(chunkId)),
+  };
 }

@@ -314,5 +314,26 @@ export function scaleColliderShape(
       // Indices are immutable topology; scaled copies share them.
       return { kind: "mesh", positions, indices: shape.indices };
     }
+    case "heightfield": {
+      const { numXSamples, numZSamples } = shape;
+      const width = shape.width * sx;
+      const depth = shape.depth * sz;
+      const flipX = scale.x < 0;
+      const flipZ = scale.z < 0;
+      if (!flipX && !flipZ && scale.y === 1) {
+        return { kind: "heightfield", numXSamples, numZSamples, width, depth, heights: shape.heights };
+      }
+      const heights = new Float32Array(shape.heights.length);
+      for (let iz = 0; iz < numZSamples; iz++) {
+        const srcZ = flipZ ? numZSamples - 1 - iz : iz;
+        const dstRow = iz * numXSamples;
+        const srcRow = srcZ * numXSamples;
+        for (let ix = 0; ix < numXSamples; ix++) {
+          const srcX = flipX ? numXSamples - 1 - ix : ix;
+          heights[dstRow + ix] = shape.heights[srcRow + srcX]! * scale.y;
+        }
+      }
+      return { kind: "heightfield", numXSamples, numZSamples, width, depth, heights };
+    }
   }
 }

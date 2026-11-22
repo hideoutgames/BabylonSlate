@@ -2,7 +2,7 @@
 
 Vendored `@babylonjs/havok` `HavokPhysics.wasm` (never a CDN). Play posts this
 URL on the worker `load` control message so `HavokPhysics({ locateFile })` can
-feed `HavokPlugin` on the worker-local NullEngine Scene.
+instantiate the WASM module for the direct `HavokPhysicsBackend` in the game worker.
 
 | File | Role |
 | --- | --- |

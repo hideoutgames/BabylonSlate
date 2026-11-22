@@ -72,6 +72,7 @@ import { awaitsFirstDraw } from "./shadow-first-draw";
 import { sceneInstancePool } from "./instance-pool";
 import { drawingMesh } from "./instance-source";
 import { POOLED_LEAF_SUFFIX } from "./pooled-primitive-visual";
+import { batchedSpriteOf } from "./sprite-batch-handle";
 import { pooledLeafOf } from "./pooled-visuals";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
 import { FIRST_DRAWS_PER_FRAME } from "./variant-first-draws";
@@ -1740,7 +1741,11 @@ describe("a visual re-sent every tick", () => {
     const drawn = spawnDraws();
     const meshes = () => {
       const root = world.handle.scene.getMeshByName(`actor-${SLOT}`);
-      return root ? [root, ...root.getChildMeshes()] : [];
+      if (!root) return [];
+      const list = [root, ...root.getChildMeshes()];
+      const batch = batchedSpriteOf(root)?.primary.batch?.mesh;
+      if (batch) list.push(batch);
+      return list;
     };
     world.driver.arm();
     const rows: Row[] = [];

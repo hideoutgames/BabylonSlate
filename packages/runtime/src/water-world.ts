@@ -382,7 +382,7 @@ export class WaterWorld {
           bodies.push({ actorId: actor.guid, definition, body, transform });
         } else if (component.classId === "LandscapeComponent") {
           const heights = component.getVariable("heights");
-          const key = Array.isArray(heights) ? heights : component;
+          const key = heights instanceof Float32Array ? heights : component;
           const size = ["width", "depth", "subdivisions"].map((name) => String(component.getVariable(name))).join(":");
           let entry = this.terrain.get(key);
           if (entry?.size !== size) {

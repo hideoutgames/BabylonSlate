@@ -12,6 +12,7 @@ import { NodeMaterialSystemValues } from "@babylonjs/core/Materials/Node/Enums/n
 import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { drawBatchWorld } from "./draw-batch-world-block";
+import { SpriteBatchVertexBlock } from "./sprite-batch-block";
 function matrixInput(
   name: string,
   systemValue: NodeMaterialSystemValues,
@@ -32,6 +33,7 @@ export function createSurfacePlumbing(
   name: string,
   created: NodeMaterialBlock[],
   plumbing: MaterialPlumbing,
+  options?: { spriteBatch?: boolean },
 ): NodeMaterialBlock[] {
   const position = new InputBlock(
     `${name}_position`,
@@ -68,6 +70,16 @@ export function createSurfacePlumbing(
   position.output.connectTo(morph.position);
   normal.output.connectTo(morph.normal);
   uv.output.connectTo(morph.uv);
+  let localPosition = morph.positionOutput;
+  let localUv = morph.uvOutput;
+  if (options?.spriteBatch) {
+    const spriteBatch = new SpriteBatchVertexBlock(`${name}_spriteBatch`);
+    localPosition.connectTo(spriteBatch.position);
+    localUv.connectTo(spriteBatch.uv);
+    localPosition = spriteBatch.positionOutput;
+    localUv = spriteBatch.uvOutput;
+    created.push(spriteBatch);
+  }
   const viewProjection = matrixInput(
     `${name}_viewProjection`,
     NodeMaterialSystemValues.ViewProjection,
@@ -81,7 +93,7 @@ export function createSurfacePlumbing(
   cameraPosition.setAsSystemValue(NodeMaterialSystemValues.CameraPosition);
 
   const worldPosition = new TransformBlock(`${name}_worldPos`);
-  morph.positionOutput.connectTo(worldPosition.vector);
+  localPosition.connectTo(worldPosition.vector);
   bones.output.connectTo(worldPosition.transform);
 
   const clipPosition = new TransformBlock(`${name}_clipPos`);
@@ -121,7 +133,7 @@ export function createSurfacePlumbing(
 
   plumbing.worldPosition = worldPosition.output;
   plumbing.restWorldPosition = worldPosition.output;
-  plumbing.position = morph.positionOutput;
+  plumbing.position = localPosition;
   plumbing.localNormal = morph.normalOutput;
   plumbing.world = bones.output;
   plumbing.localTangent = morph.tangentOutput;
@@ -130,7 +142,7 @@ export function createSurfacePlumbing(
   plumbing.worldNormal4 = worldNormal.output;
   plumbing.cameraPosition = cameraPosition.output;
   plumbing.viewDirection = viewDirection.output;
-  plumbing.uv = morph.uvOutput;
+  plumbing.uv = localUv;
   plumbing.uv2 = morph.uv2Output;
   plumbing.view = view.output;
   plumbing.viewProjection = viewProjection.output;

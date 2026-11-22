@@ -22,6 +22,7 @@ import {
 } from "./snapshot-binding";
 import { updateComponentIllumination } from "./snapshot-illumination";
 import { forgetMaterialPreparation } from "./snapshot-materials";
+import { batchedSpriteOf } from "./sprite-batch-handle";
 
 /** Scratch math objects — never allocate per component pose. */
 const scratchPos = new Vector3();
@@ -140,6 +141,7 @@ function updateVisualComponentPoses(root: Mesh, poses: Iterable<ComponentPose>):
       mesh.setPreTransformMatrix(scratchComponentMatrix);
       mesh.unfreezeWorldMatrix();
       if (shouldFreezeStaticWorldMatrix(mesh)) mesh.freezeWorldMatrix();
+      batchedSpriteOf(mesh)?.markTransformDirty();
       continue;
     }
     const rig = armRigs.find(entry => entry.arm === mesh);
@@ -162,6 +164,7 @@ function updateVisualComponentPoses(root: Mesh, poses: Iterable<ComponentPose>):
     // Detach the retained chain before retiring obsolete ancestors.
     for (const obsolete of ancestors.splice(transforms.length)) obsolete.dispose(true);
     mesh.computeWorldMatrix(true);
+    batchedSpriteOf(mesh)?.markTransformDirty();
   }
   updateComponentIllumination(root);
 }

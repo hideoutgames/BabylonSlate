@@ -10,6 +10,7 @@ import { applyMaterialBounds } from "./material-bounds";
 import { restoreAlbedoMaterial } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
+import { ejectBatchedSprite } from "./world-sprite-batcher";
 import {
   componentIdForPlayMesh,
   isMesh,
@@ -270,6 +271,8 @@ export function applyMaterialToActorMeshes(
       componentId,
     );
     if (material) {
+      // A custom Material override promotes a batched sprite to a standalone quad mesh in place.
+      ejectBatchedSprite(target);
       // A Material no pool group can draw (World Position Offset pads its bounds) gives the visual a mesh of its own.
       const drawn = setDrawnMaterial(target, material);
       if (!target.isDisposed()) applyMaterialBounds(target);

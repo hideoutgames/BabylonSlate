@@ -20,6 +20,7 @@ import { ensureLatticeShadowAdapter, releaseLatticeShadowAdapter } from "./latti
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { hasStockVertexStage } from "./shadow-material-policy";
 import { drawsOnlyBlended } from "./shadow-mesh-policy";
+import { isWorldSpriteBatchMesh, markWorldSpriteBatchMesh } from "./sprite-batch-block";
 import { isUnlitMaterial, setUnlitMaterial, unlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
 
 const handles: Array<{ dispose: () => void }> = [];
@@ -143,6 +144,37 @@ describe("unlit Material", () => {
     expect(batch.subMeshes[0]!.effect).not.toBe(member.subMeshes[0]!.effect);
   });
 
+  it("transforms a world sprite batch's thin instances with per-instance size/pivot, UV rect, finish and texel grid", async () => {
+    const target = scene();
+    const member = MeshBuilder.CreatePlane("sprite-member", {}, target);
+    const batch = MeshBuilder.CreatePlane("sprite-batch", {}, target);
+    markWorldSpriteBatchMesh(batch);
+    expect({ member: isWorldSpriteBatchMesh(member), batch: isWorldSpriteBatchMesh(batch) }).toEqual({ member: false, batch: true });
+    const tex = texture(target);
+    const material = setUnlitMaterial(member, world, binding({ texture: tex }));
+    setUnlitMaterial(batch, world, binding({ texture: tex }));
+    await ready(material, member);
+    await ready(material, batch);
+    const vertex = material.compiledShaders.split("// Fragment shader")[0]!.replace(/\s+/g, " ");
+    const fragment = material.compiledShaders.split("// Fragment shader")[1]!.replace(/\s+/g, " ");
+    for (const attr of ["spriteSizePivot", "spriteUvRect", "spriteFinish", "spriteTexel"]) {
+      expect(vertex).toContain(`#ifdef HAPTIC_SPRITE_BATCH attribute vec4 ${attr}; #endif`);
+    }
+    for (const kind of ["spriteFinish", "spriteTexel"]) {
+      for (const stage of [vertex, fragment]) {
+        expect(stage).toContain(`#ifdef HAPTIC_SPRITE_BATCH flat varying vec4 v_${kind}; #endif`);
+      }
+    }
+    expect(batch.subMeshes[0]!.effect!.getAttributesNames()).toEqual(
+      expect.arrayContaining(["spriteSizePivot", "spriteUvRect", "spriteFinish", "spriteTexel"]),
+    );
+    const own = member.subMeshes[0]!.effect!.defines, batched = batch.subMeshes[0]!.effect!.defines;
+    expect(own).not.toContain("#define HAPTIC_SPRITE_BATCH");
+    expect(batched).toContain("#define HAPTIC_SPRITE_BATCH\n");
+    expect(batched.replace("#define HAPTIC_SPRITE_BATCH\n", "")).toBe(own);
+    expect(batch.subMeshes[0]!.effect).not.toBe(member.subMeshes[0]!.effect);
+  });
+
   it("finds the texel a nearest texture's UV falls in and samples its centre, on the mesh's grid or a batch's per vertex", async () => {
     const target = scene();
     const member = MeshBuilder.CreatePlane("member", {}, target);
@@ -162,8 +194,10 @@ describe("unlit Material", () => {
     const fragment = material.compiledShaders.split("// Fragment shader")[1]!.replace(/\s+/g, " ");
     expect(vertex).toContain("#ifdef HAPTIC_BATCH attribute vec4 batchTexel; #endif");
     for (const stage of [vertex, fragment]) expect(stage).toContain("#ifdef HAPTIC_BATCH flat varying vec4 v_batchTexel; #endif");
-    // The grid: the mesh's own, bound, or a batch member's, flat from its vertices.
-    const grid = fragment.match(/#ifdef HAPTIC_BATCH vec4 (\w+) = v_batchTexel; #else vec4 \1 = unlitTexel; #endif/)?.[1];
+    // The grid: the mesh's own, bound, or a batch member's, flat from its vertices or thin instances.
+    const grid = fragment.match(
+      /#ifdef HAPTIC_BATCH vec4 (\w+) = v_batchTexel; #elif defined\(HAPTIC_SPRITE_BATCH\) vec4 \1 = v_spriteTexel; #else vec4 \1 = unlitTexel; #endif/,
+    )?.[1];
     expect(grid).toBeDefined();
     // The size of the texture the draw samples is the sampler's own, never one a texture object records.
     const sampled = fragment.match(/vec2 (\w+) = vec2\(textureSize\(unlitTextureSampler, 0\)\);/)?.[1];
