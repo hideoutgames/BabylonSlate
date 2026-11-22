@@ -218,7 +218,7 @@ describe("Convert to Math Nodes", () => {
 describe("Math Expression node menu", () => {
   const items = (graph: SerializedGraph, nodeId: string, selection: string[]) =>
     mathExpressionMenuItems(hydrateSerializedGraphForEditor(graph, registry), nodeId, selection, () => {})
-      .map((item) => `${item.label}${"disabled" in item && item.disabled ? " (disabled)" : ""}`);
+      .map((item) => `${"label" in item ? item.label : item.id}${"disabled" in item && item.disabled ? " (disabled)" : ""}`);
 
   it("offers Convert to Math Expression only for a selection of expressible math nodes, and commits one change", () => {
     const { graph, selection } = scalarGraph();
