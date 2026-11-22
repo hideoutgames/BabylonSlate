@@ -17,7 +17,7 @@ import { waterHazeConstants } from "./water-shader-defines";
 import { smoothstep } from "./water-blend-ownership";
 
 /**
- * Per-channel absorption of `water` for `transmittanceSource` (`slateWaterAbsorb`) into `out` (r, g, b, and Opacity's
+ * Per-channel absorption of `water` for `transmittanceSource` (`hapticWaterAbsorb`) into `out` (r, g, b, and Opacity's
  * cap on the absorption path, where the slowest channel reaches 1 − Opacity), from Shallow Color in linear space:
  * channels it lacks absorb fastest (`absorbCoefficient`), normalized so the slowest channel absorbs over five Depth Color
  * Distances: clear shallows keep the bed's light in the colour the water keeps. A grey Shallow Color absorbs evenly.
@@ -89,18 +89,18 @@ export type WaterLighting = {
   sky: Float64Array;
   horizon: Float64Array;
   /**
-   * Uniform-only sun terms Realistic water would otherwise evaluate per fragment (`slateWaterSunShape`): the horizontal
+   * Uniform-only sun terms Realistic water would otherwise evaluate per fragment (`hapticWaterSunShape`): the horizontal
    * direction toward the sun (x, z), how much a low sun warms the analytic horizon, and the share of sunlight that
    * enters the water (most of a low sun's light reflects off at grazing incidence).
    */
   sunShape: Float64Array;
   /** Sunlight through thin crests, before the water's own colour: strongest for a sun some way up, none at sunset. */
   subsurfaceLift: number;
-  /** Glitter strength: how clearly the sun stands out against the sky light (slateWaterSky.w). */
+  /** Glitter strength: how clearly the sun stands out against the sky light (hapticWaterSky.w). */
   sunGlitter: number;
-  /** A sky light the sun does not outshine (overcast, storm; slateWaterHorizon.w): Realistic water's body greys. */
+  /** A sky light the sun does not outshine (overcast, storm; hapticWaterHorizon.w): Realistic water's body greys. */
   overcast: number;
-  /** `waterHazeConstants` of the active camera's far plane (`slateWaterHaze`). */
+  /** `waterHazeConstants` of the active camera's far plane (`hapticWaterHaze`). */
   haze: Float64Array;
 };
 

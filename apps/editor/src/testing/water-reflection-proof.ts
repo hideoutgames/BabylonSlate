@@ -15,7 +15,7 @@ import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShado
 import { compileMaterialPlan, createWaterMesh, setSceneRenderSettings, updateSceneWater } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { retainWaterPlanarReflections } from "../../../../packages/render/src/water-planar-reflection";
+import { retainWaterPlanarReflections } from "@haptic/render/editor-proofs";
 
 /** Unlit water that shows only what Water Reflection mirrors. */
 async function reflectionMaterial(scene: Scene): Promise<{ material: Material; dispose: () => void }> {

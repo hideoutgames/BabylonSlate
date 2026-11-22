@@ -24,7 +24,7 @@ const scripts = dirname(fileURLToPath(import.meta.url));
 
 async function fixture(t) {
   const root = await realpath(
-    await mkdtemp(join(tmpdir(), "slate shared artifacts ")),
+    await mkdtemp(join(tmpdir(), "haptic shared artifacts ")),
   );
   t.after(() => rm(root, { recursive: true, force: true }));
   const cache = join(root, "shared");

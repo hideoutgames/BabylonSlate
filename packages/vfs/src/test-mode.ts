@@ -1,21 +1,21 @@
 export const TEST_PROJECT_NAME = "TestProject";
 
-type SlateImportMetaEnv = {
+type HapticImportMetaEnv = {
   DEV?: boolean;
   VITE_TEST_MODE?: string;
   VITE_TEST_QUERY?: string;
 };
 
-function slateImportMetaEnv(): SlateImportMetaEnv | undefined {
+function hapticImportMetaEnv(): HapticImportMetaEnv | undefined {
   if (typeof import.meta === "undefined") {
     return undefined;
   }
 
-  return (import.meta as ImportMeta & { env?: SlateImportMetaEnv }).env;
+  return (import.meta as ImportMeta & { env?: HapticImportMetaEnv }).env;
 }
 
 function isViteTestModeEnabled(): boolean {
-  return slateImportMetaEnv()?.VITE_TEST_MODE === "true";
+  return hapticImportMetaEnv()?.VITE_TEST_MODE === "true";
 }
 
 // Query-string activation requires a bundle compiled for QA: the Vite dev
@@ -23,7 +23,7 @@ function isViteTestModeEnabled(): boolean {
 // supply it, and distribution builds hard-fail on both flags in the editor's
 // vite.config.ts.
 function isTestQueryAllowed(): boolean {
-  const env = slateImportMetaEnv();
+  const env = hapticImportMetaEnv();
   return env?.DEV === true || env?.VITE_TEST_QUERY === "true";
 }
 

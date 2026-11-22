@@ -2,14 +2,16 @@ import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
-import { copyEngineDefaultSkyboxFaces } from "../editor/vite-engine-skybox";
-import { havokHostedWasmVitePlugin } from "../editor/vite-havok-wasm";
-import { rapierHostedWasmVitePlugin } from "../editor/vite-rapier-wasm";
-import { recastHostedWasmVitePlugin } from "../editor/vite-recast-wasm";
+import {
+  copyEngineDefaultSkyboxFaces,
+  havokHostedWasmVitePlugin,
+  leaveOutUnusedBabylonModules,
+  rapierHostedWasmVitePlugin,
+  recastHostedWasmVitePlugin,
+} from "@haptic/build-config";
 import { bundledPackagesReport } from "./vite-bundled-packages";
 import { createPlatformModules, platformModuleGroup, platformModules } from "./vite-platform-modules";
 import { previewDiagnosticsEntry } from "./vite-preview-diagnostics";
-import { leaveOutUnusedBabylonModules } from "../editor/vite-unused-babylon-modules";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");

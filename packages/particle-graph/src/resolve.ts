@@ -1,3 +1,4 @@
+import { createPinTypeResolver, type IncomingPinEdges, type PinTypeResolver } from "@haptic/core";
 import {
   particleNodeDefinitionFor,
   type ParticleNodeDefinition,
@@ -16,127 +17,53 @@ export interface ParticleResolverGraph {
   edges: readonly ParticleGraphEdge[];
 }
 
-export interface ParticleTypeResolver {
-  definitionOf(nodeId: string): ParticleNodeDefinition | undefined;
-  outputType(nodeId: string, pinId: string): ParticleValueType | null;
-  inputType(nodeId: string, pinId: string): ParticleValueType | null;
+/** Pin types of one Particle graph, with the node and incoming-edge lookups validation and lowering reuse. */
+export interface ParticleTypeResolver
+  extends PinTypeResolver<ParticleGraphNode, ParticleGraphEdge, ParticleNodeDefinition, ParticleValueType> {
   /** Resolved generic group, `"conflict"` when inputs disagree, or undefined. */
   genericOf(nodeId: string): ParticleNumericType | "conflict" | undefined;
-  conflicts(): string[];
 }
+
+type ParticleGenericGroup = { accepts: readonly ParticleNumericType[]; fallback: ParticleNumericType };
 
 /** Types the node's generic group accepts, and its unwired type. */
-export function particleGenericGroup(
-  definition: ParticleNodeDefinition,
-): { accepts: readonly ParticleNumericType[]; fallback: ParticleNumericType } | null {
-  const pin = [...definition.inputs, ...definition.outputs].find(
-    (entry) => entry.type.kind === "generic",
-  );
-  if (!pin || pin.type.kind !== "generic") return null;
-  return {
-    accepts: pin.type.accepts ?? PARTICLE_NUMERIC_TYPES,
-    fallback: pin.type.fallback ?? "float",
-  };
+export function particleGenericGroup(definition: ParticleNodeDefinition): ParticleGenericGroup | null {
+  return genericGroupOf(definition.inputs) ?? genericGroupOf(definition.outputs);
 }
 
-function pinById(
-  pins: readonly ParticlePinDefinition[],
-  id: string,
-): ParticlePinDefinition | undefined {
-  return pins.find((pin) => pin.id === id);
+function genericGroupOf(pins: readonly ParticlePinDefinition[]): ParticleGenericGroup | null {
+  for (const pin of pins) {
+    if (pin.type.kind === "generic") {
+      return { accepts: pin.type.accepts ?? PARTICLE_NUMERIC_TYPES, fallback: pin.type.fallback ?? "float" };
+    }
+  }
+  return null;
 }
 
 /**
- * Lazy type resolution over one graph. A generic group resolves from the
- * non-Float types wired into it, so a chain of generic nodes carries a vector
- * width all the way down. Particle wires never take part in resolution; the
- * validator reports them on the edge.
+ * Lazy type resolution over one graph (`createPinTypeResolver`). A generic group resolves from the
+ * non-Float types wired into it, so a chain of generic nodes carries a vector width all the way down.
+ * Particle wires never take part in resolution; the validator reports them on the edge. A Reroute's
+ * wildcard pin has no type of its own: graphs are collapsed before they are resolved. `incoming`
+ * shares an index of `graph.edges` built already.
  */
 export function createParticleTypeResolver(
   graph: ParticleResolverGraph,
+  incoming?: IncomingPinEdges<ParticleGraphEdge>,
 ): ParticleTypeResolver {
-  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
-  const definitions = new Map<string, ParticleNodeDefinition | undefined>();
-  const generics = new Map<string, ParticleNumericType | "conflict">();
-  const inProgress = new Set<string>();
-  // First edge into each input pin, as `edges.find` answered; built when a generic node asks.
-  let incoming: Map<string, Map<string, (typeof graph.edges)[number]>> | undefined;
-  const incomingEdge = (nodeId: string, pinId: string) => {
-    if (!incoming) {
-      incoming = new Map();
-      for (const edge of graph.edges) {
-        let pins = incoming.get(edge.targetNodeId);
-        if (!pins) incoming.set(edge.targetNodeId, (pins = new Map()));
-        if (!pins.has(edge.targetPinId)) pins.set(edge.targetPinId, edge);
-      }
-    }
-    return incoming.get(nodeId)?.get(pinId);
-  };
-
-  const definitionOf = (nodeId: string): ParticleNodeDefinition | undefined => {
-    if (definitions.has(nodeId)) return definitions.get(nodeId);
-    const node = nodesById.get(nodeId);
-    const definition = node ? particleNodeDefinitionFor(node) : undefined;
-    definitions.set(nodeId, definition);
-    return definition;
-  };
-
-  const genericOf = (nodeId: string): ParticleNumericType | "conflict" | undefined => {
-    const cached = generics.get(nodeId);
-    if (cached !== undefined) return cached;
-    const definition = definitionOf(nodeId);
-    if (!definition) return undefined;
-    const group = particleGenericGroup(definition);
-    if (!group) return undefined;
-    // A cycle is reported separately; stop the recursion here.
-    if (inProgress.has(nodeId)) return "conflict";
-    inProgress.add(nodeId);
-    const connected: ParticleValueType[] = [];
-    for (const pin of definition.inputs) {
-      if (pin.type.kind !== "generic") continue;
-      const edge = incomingEdge(nodeId, pin.id);
-      if (!edge) continue;
-      const sourceType = outputType(edge.sourceNodeId, edge.sourcePinId);
-      if (sourceType && sourceType !== "particle") connected.push(sourceType);
-    }
-    inProgress.delete(nodeId);
-    const resolution = resolveParticleGenericType(connected, group.fallback);
-    const value = resolution.ok ? resolution.type : "conflict";
-    generics.set(nodeId, value);
-    return value;
-  };
-
-  function pinType(
-    nodeId: string,
-    pin: ParticlePinDefinition | undefined,
-  ): ParticleValueType | null {
-    // A Reroute has no type of its own; graphs are collapsed before they are resolved.
-    if (!pin || pin.type.kind === "wildcard") return null;
-    if (pin.type.kind !== "generic") return pin.type.kind;
-    const resolved = genericOf(nodeId);
-    return resolved && resolved !== "conflict" ? resolved : null;
-  }
-
-  function outputType(nodeId: string, pinId: string): ParticleValueType | null {
-    const definition = definitionOf(nodeId);
-    return definition ? pinType(nodeId, pinById(definition.outputs, pinId)) : null;
-  }
-
-  function inputType(nodeId: string, pinId: string): ParticleValueType | null {
-    const definition = definitionOf(nodeId);
-    return definition ? pinType(nodeId, pinById(definition.inputs, pinId)) : null;
-  }
-
-  return {
-    definitionOf,
-    outputType,
-    inputType,
-    genericOf,
-    conflicts: () => {
-      for (const node of graph.nodes) genericOf(node.id);
-      return [...generics.entries()]
-        .filter(([, value]) => value === "conflict")
-        .map(([nodeId]) => nodeId);
+  return createPinTypeResolver<
+    ParticleGraphNode, ParticleGraphEdge, ParticlePinDefinition, ParticleNodeDefinition, ParticleValueType, ParticleGenericGroup
+  >({
+    nodes: graph.nodes,
+    edges: graph.edges,
+    incoming,
+    definition: particleNodeDefinitionFor,
+    group: particleGenericGroup,
+    contributes: (type: ParticleValueType) => type !== "particle",
+    resolve: (connected: readonly ParticleValueType[], group: ParticleGenericGroup) => {
+      const resolution = resolveParticleGenericType(connected, group.fallback);
+      return resolution.ok ? resolution.type : "conflict";
     },
-  };
+    wildcard: null,
+  }) as ParticleTypeResolver;
 }

@@ -32,7 +32,7 @@ import {
   findAndroidToolchain, normalizeAndroidPackaging, packageAndroidGame,
   type AndroidGamePackageRequest, type AndroidPackagingSettings,
 } from "./android-game-package";
-import { ANDROID_SIGNING_SECRETS } from "../../../packages/exporter/src/native-android";
+import { ANDROID_SIGNING_SECRETS } from "@haptic/exporter/native-android";
 import { findXcode, packageIosGame, type IosGamePackageRequest } from "./ios-game-package";
 import {
   allowsEditorPermission,

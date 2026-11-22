@@ -5,7 +5,7 @@ import {
   loadTemplateFiles,
   writeProjectTree,
 } from "@haptic/assets";
-import { createEmptyProjectFiles } from "../../../../packages/assets/src/test-support/project-files";
+import { createEmptyProjectFiles } from "@haptic/assets/test-support/project-files";
 import { SCENE_SCHEMA_VERSION } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { takeProjectThumbnailRequest } from "../lib/model-thumbnail-queue";

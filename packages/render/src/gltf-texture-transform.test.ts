@@ -1,6 +1,7 @@
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { PBRMaterial, Texture } from "@babylonjs/core";
-import { buildMinimalGlbFixture, encodeGlbJsonBin, importModel, splitGlbJsonBin } from "@haptic/assets";
+import { encodeGlbJsonBin, importModel, splitGlbJsonBin } from "@haptic/assets";
+import { buildMinimalGlbFixture } from "@haptic/assets/test-support/glb-fixtures";
 import type { MaterialDocument } from "@haptic/shader-graph";
 import { describe, expect, it } from "vitest";
 import { createTestEngine } from "./test-support/test-engine";

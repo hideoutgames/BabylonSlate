@@ -85,7 +85,7 @@ describe("application route lifetime", () => {
     );
     const recover = await screen.findByRole("button", { name: "Recover" });
     await waitFor(
-      () => expect(document.querySelector(".slate-loading")).toBeNull(),
+      () => expect(document.querySelector(".haptic-loading")).toBeNull(),
       { timeout: 5000 },
     );
     fireEvent.click(recover);
@@ -114,7 +114,7 @@ describe("application route lifetime", () => {
     const view = render(ui());
     expect(await screen.findByTestId("create-project")).toBeTruthy();
     await waitFor(
-      () => expect(document.querySelector(".slate-loading")).toBeNull(),
+      () => expect(document.querySelector(".haptic-loading")).toBeNull(),
       { timeout: 5000 },
     );
     fireEvent.click(screen.getByTestId("homepage-account"));
@@ -127,7 +127,7 @@ describe("application route lifetime", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("homepage")).toBeNull();
       expect(screen.queryByRole("menu")).toBeNull();
-      expect(document.querySelector("[data-slate-home-styles]")).toBeNull();
+      expect(document.querySelector("[data-haptic-home-styles]")).toBeNull();
     });
     documentState.route = "home";
     view.rerender(ui());

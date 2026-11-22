@@ -12,7 +12,7 @@ import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { Scene } from "@babylonjs/core/scene";
-import { overlayVisualStyle } from "../../../../packages/render/src/overlay-visual-style";
+import { overlayVisualStyle } from "@haptic/render/editor-proofs";
 
 const MSDF_SHADER = "text2dMsdfReference";
 let msdfShadersRegistered = false;

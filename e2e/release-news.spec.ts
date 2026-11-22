@@ -8,7 +8,7 @@ const seenVersions = (page: Page) =>
 test("release news waits for an update, survives reload and the account menu reopens it offline", async ({ page }) => {
   // Exercise the real web launch, including Pages' QA storage configuration.
   await page.goto("/");
-  await expect(page.locator(".slate-loading")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.locator(".haptic-loading")).toHaveCount(0, { timeout: 30_000 });
   // Both views are titled with the build name; data-mode tells them apart.
   const news = page.locator('[data-testid="release-news"][data-mode="news"]');
   // A fresh install records its version instead of announcing it.
@@ -22,7 +22,7 @@ test("release news waits for an update, survives reload and the account menu reo
   });
   await page.reload();
   // News waits for the loading screen so it never opens behind it.
-  await expect(page.locator(".slate-loading")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.locator(".haptic-loading")).toHaveCount(0, { timeout: 30_000 });
   await expect(news).toBeVisible();
   await expect(page.getByRole("dialog", { name: `Development ${declared.version}` })).toBeVisible();
   const notes = changelog.releases.find(release => release.version === declared.version)!;
@@ -33,7 +33,7 @@ test("release news waits for an update, survives reload and the account menu reo
   await page.reload();
   await expect(page.getByTestId("homepage")).toBeVisible();
   // The homepage mounts before its loading transition finishes.
-  await expect(page.locator(".slate-loading")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.locator(".haptic-loading")).toHaveCount(0, { timeout: 30_000 });
   await expect(news).toHaveCount(0);
   // Notes are embedded in the build, so the Changelog needs no network.
   await page.context().setOffline(true);

@@ -27,16 +27,16 @@ import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRende
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 // The engine-wide registrations a shipped Engine loads before it exists (multiple render targets among them).
-import "../../../../packages/render/src/babylon-registrations";
-import { applyAnimStateToScene, sceneAnimHostFromBinding } from "../../../../packages/render/src/anim-apply";
-import { pendingDriverEffects } from "../../../../packages/render/src/driver-compile";
-import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
-import { ownedVisualTexturePreparation } from "../../../../packages/render/src/mesh-assets";
-import { encodeRgbaPng } from "../../../../packages/render/src/png-encode";
-import { ResourceCache } from "../../../../packages/render/src/resource-cache";
-import { setSceneRenderSettings } from "../../../../packages/render/src/scene-render-mode";
-import { applyAssignMesh, applySnapshotToScene, createSnapshotSceneBinding, disposeSnapshotBinding } from "../../../../packages/render/src/snapshot-apply";
-import { setSceneWorldSpriteBatching, worldSpriteBatchStats } from "../../../../packages/render/src/world-sprite-batcher";
+import "@haptic/render/babylon-registrations";
+import { applyAnimStateToScene, sceneAnimHostFromBinding } from "@haptic/render/editor-proofs";
+import { pendingDriverEffects } from "@haptic/render/editor-proofs";
+import { readEngineDrawCalls } from "@haptic/render/editor-proofs";
+import { ownedVisualTexturePreparation } from "@haptic/render/editor-proofs";
+import { encodeRgbaPng } from "@haptic/render/editor-proofs";
+import { ResourceCache } from "@haptic/render/editor-proofs";
+import { setSceneRenderSettings } from "@haptic/render/editor-proofs";
+import { applyAssignMesh, applySnapshotToScene, createSnapshotSceneBinding, disposeSnapshotBinding } from "@haptic/render/editor-proofs";
+import { setSceneWorldSpriteBatching, worldSpriteBatchStats } from "@haptic/render/editor-proofs";
 
 const WIDTH = 320;
 const HEIGHT = 200;

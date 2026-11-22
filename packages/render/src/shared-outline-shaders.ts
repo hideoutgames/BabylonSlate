@@ -23,33 +23,33 @@ function maskVertex(source: string): string {
 #ifdef VERTEXALPHA
 attribute vec4 color;
 #endif
-#ifdef SLATE_VERTEX_ALPHA
+#ifdef HAPTIC_VERTEX_ALPHA
 varying float vOutlineAlpha;
 #endif
-#ifdef SLATE_OPACITY
+#ifdef HAPTIC_OPACITY
 uniform mat4 opacityMatrix;
 varying vec2 vOutlineOpacityUV;
 #endif
 `;
   return declarations + source.replaceAll("instanceSelectionId", SHARED_OUTLINE_ATTRIBUTE)
     .replaceAll("#ifdef INSTANCES", "#if defined(INSTANCES) && !defined(THIN_INSTANCES)")
-    .replace("#ifdef UV1\nvUV=", "#ifdef SLATE_DIFFUSE_UV1\nvUV=")
-    .replace("#ifdef UV2\nvUV=", "#ifdef SLATE_DIFFUSE_UV2\nvUV=")
+    .replace("#ifdef UV1\nvUV=", "#ifdef HAPTIC_DIFFUSE_UV1\nvUV=")
+    .replace("#ifdef UV2\nvUV=", "#ifdef HAPTIC_DIFFUSE_UV2\nvUV=")
     .replace("#include<morphTargetsVertexGlobal>", "#ifdef VERTEXALPHA\nvec4 colorUpdated=color;\n#endif\n#include<morphTargetsVertexGlobal>")
     // World materials use zero for a missing requested UV set. Stock selection
     // instead substitutes UV2, which can invent cutout holes in the mask.
-    .replace("#include<clipPlaneVertex>", `#if defined(ALPHATEST) && !defined(SLATE_DIFFUSE_UV1) && !defined(SLATE_DIFFUSE_UV2)\nvUV=vec2(diffuseMatrix*vec4(0.0,0.0,1.0,0.0));
+    .replace("#include<clipPlaneVertex>", `#if defined(ALPHATEST) && !defined(HAPTIC_DIFFUSE_UV1) && !defined(HAPTIC_DIFFUSE_UV2)\nvUV=vec2(diffuseMatrix*vec4(0.0,0.0,1.0,0.0));
 #endif
-#ifdef SLATE_OPACITY
-#ifdef SLATE_OPACITY_UV1
+#ifdef HAPTIC_OPACITY
+#ifdef HAPTIC_OPACITY_UV1
 vOutlineOpacityUV=(opacityMatrix*vec4(uvUpdated,1.0,0.0)).xy;
-#elif defined(SLATE_OPACITY_UV2)
+#elif defined(HAPTIC_OPACITY_UV2)
 vOutlineOpacityUV=(opacityMatrix*vec4(uv2Updated,1.0,0.0)).xy;
 #else
 vOutlineOpacityUV=(opacityMatrix*vec4(vec2(0.0),1.0,0.0)).xy;
 #endif
 #endif
-#ifdef SLATE_VERTEX_ALPHA
+#ifdef HAPTIC_VERTEX_ALPHA
 vOutlineAlpha=1.0;
 #ifdef VERTEXALPHA
 vOutlineAlpha*=colorUpdated.a;
@@ -85,28 +85,28 @@ uniform float alphaCutoff;
 uniform float coverageAlpha;
 uniform vec3 coverageMode;
 uniform float coverageDiffuse;
-#ifdef SLATE_DIFFUSE
+#ifdef HAPTIC_DIFFUSE
 varying vec2 vUV;
 uniform sampler2D diffuseSampler;
 #endif
-#ifdef SLATE_OPACITY
+#ifdef HAPTIC_OPACITY
 varying vec2 vOutlineOpacityUV;
 uniform sampler2D opacitySampler;
 uniform vec3 opacityOptions;
 #endif
-#ifdef SLATE_VERTEX_ALPHA
+#ifdef HAPTIC_VERTEX_ALPHA
 varying float vOutlineAlpha;
 #endif
 #include<clipPlaneFragmentDeclaration>
 void main(void) {
   #include<clipPlaneFragment>
   float coverage = coverageAlpha;
-  #ifdef SLATE_DIFFUSE
+  #ifdef HAPTIC_DIFFUSE
   float diffuseAlpha = texture2D(diffuseSampler, vUV).a;
   if (coverageMode.x > 0.5 && diffuseAlpha < alphaCutoff) discard;
   if (coverageDiffuse > 0.5) coverage *= diffuseAlpha;
   #endif
-  #ifdef SLATE_OPACITY
+  #ifdef HAPTIC_OPACITY
   vec4 opacityMap = texture2D(opacitySampler, vOutlineOpacityUV);
   if (opacityOptions.y > 0.5) {
     if (opacityOptions.z > 0.5) coverage = clamp(dot(opacityMap.rgb, vec3(0.2126,0.7152,0.0722)),0.0,1.0);
@@ -114,7 +114,7 @@ void main(void) {
   } else coverage *= opacityMap.a;
   coverage *= opacityOptions.x;
   #endif
-  #ifdef SLATE_VERTEX_ALPHA
+  #ifdef HAPTIC_VERTEX_ALPHA
   coverage *= vOutlineAlpha;
   #endif
   if ((coverageMode.z > 0.5 && coverage <= 0.0) || (coverageMode.y > 0.5 && coverage < alphaCutoff)) discard;

@@ -21,13 +21,13 @@ import {
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { setSceneInstancing } from "../../../../packages/render/src/instance-pool";
-import { sceneShadowController } from "../../../../packages/render/src/shadow-controller";
-import { createPooledPrimitiveVisual } from "../../../../packages/render/src/pooled-primitive-visual";
-import { setActorMeshMaterial } from "../../../../packages/render/src/pooled-visuals";
-import { allowSceneScreenShadows } from "../../../../packages/render/src/render-settings";
-import { applyWorldVisualGroup } from "../../../../packages/render/src/sorting";
-import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
+import { setSceneInstancing } from "@haptic/render/editor-proofs";
+import { sceneShadowController } from "@haptic/render/editor-proofs";
+import { createPooledPrimitiveVisual } from "@haptic/render/editor-proofs";
+import { setActorMeshMaterial } from "@haptic/render/editor-proofs";
+import { allowSceneScreenShadows } from "@haptic/render/render-settings";
+import { applyWorldVisualGroup } from "@haptic/render/editor-proofs";
+import { setSceneBindsPreviousEffects } from "@haptic/render/editor-proofs";
 
 const WIDTH = 160;
 const HEIGHT = 120;

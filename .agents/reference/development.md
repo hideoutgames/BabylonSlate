@@ -42,6 +42,17 @@ A plain-HTTP LAN origin is not a secure context: service workers and the cross-o
 6. Long-press a tab header to drag panels.
 7. Two-finger pan/orbit in the viewport; pan/pinch on a graph.
 
+## Native storage checks (device or simulator)
+
+CI compiles the storage plugins but runs no native code; check these by hand after changing them ([binary storage transport](architecture/vfs.md#binary-storage-transport)):
+
+1. Create, save, close and reopen a project with a large asset (tens of MB): it round-trips, and Safari or Chrome remote inspection shows `haptic-storage://` (iOS) or `/_haptic_storage/` (Android) requests rather than base64 plugin calls.
+2. iOS Files app, On My iPad > Haptic: projects appear; `__haptic_derived__` does not. In the app container, `Library/Application Support/Haptic` exists and is excluded from backup.
+3. A project in a chosen iCloud Drive folder with an evicted file: opening it downloads the file without a stall of several seconds per file.
+4. Open a chosen folder, return to the Homepage, open another: both work, and repeated switching never ends in **Reconnect Project**.
+5. Kill the app during a save: the file holds the old or the new contents, never a truncated one, and no `.haptic-<uuid>.tmp` appears in the Content Browser.
+6. Peak memory while opening and saving the large asset (Xcode memory gauge, Android Studio profiler) stays near twice the file size.
+
 ## Native shells (Capacitor)
 
 ```bash

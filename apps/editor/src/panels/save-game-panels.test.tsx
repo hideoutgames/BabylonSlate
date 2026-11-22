@@ -5,7 +5,7 @@ import type { SaveGameDefinition } from "@haptic/core";
 import { ENGINE_ENUMS } from "@haptic/scripting";
 import { SaveGameFieldsPanel, SaveGameDefinitionPanel } from "./save-game-panels";
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 
 // Base UI forwards native checkbox/switch activation through PointerEvent.
 if (typeof window.PointerEvent === "undefined") {

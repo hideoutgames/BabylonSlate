@@ -39,7 +39,7 @@ function bounded(value: number | undefined, fallback: number, minimum: number, m
 }
 
 // The production adapter intentionally does not attach to named custom material
-// subclasses. Keep genuine stock UBO declarations isolated from Slate's adapter.
+// subclasses. Keep genuine stock UBO declarations isolated from Haptic's adapter.
 class StockLatticeReferenceMaterial extends StandardMaterial {
   override getClassName(): string { return "StockLatticeReferenceMaterial"; }
 }

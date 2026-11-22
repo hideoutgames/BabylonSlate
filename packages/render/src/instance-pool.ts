@@ -372,7 +372,7 @@ function configureSource(source: Mesh, key: InstanceGroupKey): void {
   source.scaling.set(1, 1, key.mirrored ? -1 : 1);
   source.freezeWorldMatrix();
   const participation: SourceShadowParticipation = { castShadows: false, receiveShadows: key.receiveShadows };
-  source.metadata = { ...(source.metadata as object | null), slateShadowParticipation: participation, hapticInstanceSource: true };
+  source.metadata = { ...(source.metadata as object | null), hapticShadowParticipation: participation, hapticInstanceSource: true };
   markInstanceSource(source);
 }
 

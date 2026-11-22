@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { build, type Plugin } from "vite";
 import { havokHostedWasmVitePlugin } from "./vite-havok-wasm";
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const HAVOK_GLUE = join(
   dirname(createRequire(join(REPO_ROOT, "packages/physics/package.json")).resolve("@babylonjs/havok/lib/esm/HavokPhysics.wasm")),
   "HavokPhysics_es.js",

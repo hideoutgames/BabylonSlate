@@ -10,7 +10,7 @@ import {
   engineDefaultSkyboxVitePlugin,
 } from "./vite-engine-skybox";
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 describe("copyEngineDefaultSkyboxFaces", () => {
   it("copies the six cubemap PNGs into public/engine-content/skybox", { timeout: 20_000 }, () => {

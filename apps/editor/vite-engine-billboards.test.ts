@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ENGINE_BILLBOARD_FILES } from "../../packages/render/src/default-billboard/urls";
+import { ENGINE_BILLBOARD_FILES } from "@haptic/render/default-billboard-files";
 import {
   copyEngineBillboards,
   engineBillboardsVitePlugin,

@@ -18,7 +18,7 @@ beforeEach(() => {
   // The boot intro index.html paints outside React for the first transition.
   document.body.insertAdjacentHTML(
     "afterbegin",
-    '<div id="haptic-intro" class="slate-loading" role="status"><span class="haptic-intro-status"></span></div>',
+    '<div id="haptic-intro" class="haptic-loading" role="status"><span class="haptic-intro-status"></span></div>',
   );
   setReducedMotion(false);
 });
@@ -52,7 +52,7 @@ function renderTransition(route = "home") {
 
 /** The project card's status line. */
 function status() {
-  return document.querySelector(".slate-splash-status")?.textContent ?? null;
+  return document.querySelector(".haptic-splash-status")?.textContent ?? null;
 }
 
 function advance(milliseconds: number) {

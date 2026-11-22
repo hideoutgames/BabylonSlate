@@ -19,7 +19,7 @@ def rectangle(width, height, corner):
     ]
 
 
-scene = bpy.data.scenes.new("Slate Standard Camera")
+scene = bpy.data.scenes.new("Haptic Standard Camera")
 bpy.context.window.scene = scene
 # One closed silhouette: low tapered body with a directly attached solid lens.
 rings = [

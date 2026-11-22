@@ -27,7 +27,7 @@ it("attaches the texture-quality plugin to native materials created after every 
     const scene = new Scene(engine);
     try {
       for (const material of [new StandardMaterial("standard", scene), new PBRMaterial("pbr", scene)]) {
-        expect(material.pluginManager?.getPlugin("SlateTextureQuality"), `${material.name} after close ${cycle + 1}`).toBeInstanceOf(TextureQualityPlugin);
+        expect(material.pluginManager?.getPlugin("HapticTextureQuality"), `${material.name} after close ${cycle + 1}`).toBeInstanceOf(TextureQualityPlugin);
       }
     } finally { scene.dispose(); engine.dispose(); }
   }

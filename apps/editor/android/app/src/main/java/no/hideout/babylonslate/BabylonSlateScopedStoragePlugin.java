@@ -16,16 +16,24 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import android.provider.DocumentsContract;
 import android.util.Base64;
+import android.webkit.ServiceWorkerClient;
+import android.webkit.ServiceWorkerController;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import androidx.activity.result.ActivityResult;
+import com.getcapacitor.Bridge;
+import com.getcapacitor.BridgeWebViewClient;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginHandle;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.WebViewListener;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -41,16 +49,21 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @CapacitorPlugin(name = "BabylonSlateScopedStorage")
 public class BabylonSlateScopedStoragePlugin extends Plugin {
@@ -61,13 +74,31 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     private static final int MAX_TRANSFER_BYTES = 512 * 1024 * 1024;
     private boolean pickPending;
     private boolean readScopeLifecycleAttached;
-    private final Map<String, FolderAccess> readScopes = new HashMap<>();
+    private final Map<String, FolderAccess> readScopes = new ConcurrentHashMap<>();
     private final WebViewListener readScopeLifecycle = new WebViewListener() {
         @Override
         public void onPageStarted(WebView view) {
-            clearReadScopesAsync();
+            readScopes.clear();
         }
     };
+
+    /**
+     * File operations run here, never on Capacitor's single plugin thread, which every plugin shares:
+     * four threads, so reads of one folder run in parallel while a long write or scan blocks no other plugin.
+     */
+    private static final int IO_THREADS = 4;
+    private final ExecutorService ioExecutor = Executors.newFixedThreadPool(IO_THREADS, work -> new Thread(work, "BabylonSlate storage"));
+    /** Per chosen folder (tree URI): reads share it, a mutation holds it alone, so no listing outlives a change. */
+    private final Map<String, ReentrantReadWriteLock> folderLocks = new ConcurrentHashMap<>();
+
+    @Override
+    public void load() {
+        // A killed app can leave chunked writes staged for chosen folders; nothing reads them.
+        ioExecutor.execute(() -> {
+            File[] leftovers = new File(getContext().getCacheDir(), WRITE_STAGING_FOLDER).listFiles();
+            if (leftovers != null) for (File leftover : leftovers) leftover.delete();
+        });
+    }
 
     @Override
     protected void handleOnStart() {
@@ -77,11 +108,6 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             readScopeLifecycleAttached = true;
         }
         super.handleOnStart();
-    }
-
-    private void clearReadScopesAsync() {
-        // Provider I/O runs on Capacitor's task thread; never wait for it on UI callbacks.
-        execute(() -> { synchronized (readScopes) { readScopes.clear(); } });
     }
 
     private static class PluginFailure extends Exception {
@@ -215,46 +241,90 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     @PluginMethod
     public void readFileRange(PluginCall call) {
-        executeFileOperation(call, () -> {
-            FolderAccess folder = folder(call, true);
-            Uri target = resolve(folder, path(call, false)).uri;
-            // A read-scope directory cache is not a snapshot. Fetch live metadata.
-            DocumentMetadata before = metadata(target);
-            try (ParcelFileDescriptor descriptor = getContext().getContentResolver().openFileDescriptor(target, "r")) {
-                if (descriptor == null) throw new FileNotFoundException(target.toString());
-                String providerRevision = before.uri + ":" + before.size + ":" + before.modified;
-                JSObject result = readRange(descriptor.getFileDescriptor(), providerRevision, call);
-                try {
-                    DocumentMetadata after = metadata(target);
-                    if (!(after.uri + ":" + after.size + ":" + after.modified).equals(providerRevision)) {
-                        throw new PluginFailure("Source revision changed during read", "REVISION_CHANGED");
-                    }
-                } catch (Exception error) { throw rangeFailure(error, result.getInteger("actualBytesRead", 0)); }
-                call.resolve(result);
-            }
-        });
+        executeFolderOperation(call, false, folder ->
+            call.resolve(rangeObject(readFolderRange(folder, path(call, false), number(call, "offset"), number(call, "length"), call.getString("expectedRevision"))))
+        );
     }
 
     @PluginMethod
     public void readDocumentsRange(PluginCall call) {
         executeFileOperation(call, () -> {
-            // Android Documents projects use Capacitor Directory.Data (filesDir).
-            if (!"DATA".equals(call.getString("directory"))) throw new PluginFailure("Invalid Documents directory", "UNREACHABLE");
-            String path = path(call, false);
-            if (!path.startsWith("BabylonSlate/projects/")) throw new PluginFailure("Invalid Documents path", "UNREACHABLE");
-            File root = getContext().getFilesDir().getCanonicalFile();
-            File target = new File(root, path).getCanonicalFile();
-            if (!target.getPath().startsWith(root.getPath() + File.separator)) throw new PluginFailure("Path escapes project root", "UNREACHABLE");
-            try (FileInputStream input = new FileInputStream(target)) {
-                String identity = target.getPath() + ":" + target.lastModified();
-                JSObject result = readRange(input.getFD(), identity, call);
-                try (FileInputStream current = new FileInputStream(target)) {
-                    String revision = target.getPath() + ":" + target.lastModified() + ":" + descriptorRevision(Os.fstat(current.getFD()));
-                    if (!revision.equals(result.getString("revision"))) throw new PluginFailure("Source revision changed during read", "REVISION_CHANGED");
-                } catch (Exception error) { throw rangeFailure(error, result.getInteger("actualBytesRead", 0)); }
-                call.resolve(result);
-            }
+            File target = appStorageFile(call.getString("directory"), call.getString("path"));
+            call.resolve(rangeObject(readAppStorageRange(target, number(call, "offset"), number(call, "length"), call.getString("expectedRevision"))));
         });
+    }
+
+    /** Bytes of a bounded read with the revision they were read at. */
+    private static final class RangeRead {
+        final byte[] bytes;
+        final long totalSize;
+        final String revision;
+
+        RangeRead(byte[] bytes, long totalSize, String revision) {
+            this.bytes = bytes;
+            this.totalSize = totalSize;
+            this.revision = revision;
+        }
+    }
+
+    private static JSObject rangeObject(RangeRead read) {
+        JSObject result = new JSObject();
+        result.put("data", Base64.encodeToString(read.bytes, Base64.NO_WRAP));
+        result.put("totalSize", read.totalSize);
+        result.put("revision", read.revision);
+        result.put("actualBytesRead", read.bytes.length);
+        return result;
+    }
+
+    private static Double number(PluginCall call, String name) {
+        Object raw = call.getData().opt(name);
+        return raw instanceof Number ? ((Number) raw).doubleValue() : null;
+    }
+
+    private RangeRead readFolderRange(FolderAccess folder, String path, Double offset, Double length, String expectedRevision) throws Exception {
+        Uri target = resolve(folder, path).uri;
+        // A read-scope directory cache is not a snapshot. Fetch live metadata.
+        DocumentMetadata before = metadata(target);
+        try (ParcelFileDescriptor descriptor = getContext().getContentResolver().openFileDescriptor(target, "r")) {
+            if (descriptor == null) throw new FileNotFoundException(target.toString());
+            String providerRevision = before.uri + ":" + before.size + ":" + before.modified;
+            RangeRead result = readRange(descriptor.getFileDescriptor(), providerRevision, offset, length, expectedRevision);
+            try {
+                DocumentMetadata after = metadata(target);
+                if (!(after.uri + ":" + after.size + ":" + after.modified).equals(providerRevision)) {
+                    throw new PluginFailure("Source revision changed during read", "REVISION_CHANGED");
+                }
+            } catch (Exception error) { throw rangeFailure(error, result.bytes.length); }
+            return result;
+        }
+    }
+
+    private RangeRead readAppStorageRange(File target, Double offset, Double length, String expectedRevision) throws Exception {
+        try (FileInputStream input = new FileInputStream(target)) {
+            String identity = target.getPath() + ":" + target.lastModified();
+            RangeRead result = readRange(input.getFD(), identity, offset, length, expectedRevision);
+            try (FileInputStream current = new FileInputStream(target)) {
+                String revision = target.getPath() + ":" + target.lastModified() + ":" + descriptorRevision(Os.fstat(current.getFD()));
+                if (!revision.equals(result.revision)) throw new PluginFailure("Source revision changed during read", "REVISION_CHANGED");
+            } catch (Exception error) { throw rangeFailure(error, result.bytes.length); }
+            return result;
+        }
+    }
+
+    /**
+     * A file in app storage as `documents-adapter.ts` names it, in Capacitor's directory for it:
+     * `DATA` projects under `BabylonSlate/projects/`, `LIBRARY` app data under `Haptic/`; both in
+     * filesDir, never outside it after resolving links.
+     */
+    private File appStorageFile(String directory, String rawPath) throws Exception {
+        String prefix = "DATA".equals(directory) ? "BabylonSlate/projects/" : "LIBRARY".equals(directory) ? "Haptic/" : null;
+        if (prefix == null) throw new PluginFailure("Invalid app storage directory", "UNREACHABLE");
+        String path = validatePath(rawPath, false);
+        if (!path.startsWith(prefix)) throw new PluginFailure("Invalid app storage path", "UNREACHABLE");
+        File root = getContext().getFilesDir().getCanonicalFile();
+        File target = new File(root, path).getCanonicalFile();
+        if (!target.getPath().startsWith(root.getPath() + File.separator)) throw new PluginFailure("Path escapes project root", "UNREACHABLE");
+        return target;
     }
 
     private String descriptorRevision(StructStat value) {
@@ -263,11 +333,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         return identity + value.st_mtime + ":" + value.st_ctime;
     }
 
-    private JSObject readRange(FileDescriptor descriptor, String identity, PluginCall call) throws Exception {
-        Object rawOffset = call.getData().opt("offset");
-        Object rawLength = call.getData().opt("length");
-        Double offsetValue = rawOffset instanceof Number ? ((Number) rawOffset).doubleValue() : null;
-        Double lengthValue = rawLength instanceof Number ? ((Number) rawLength).doubleValue() : null;
+    private RangeRead readRange(FileDescriptor descriptor, String identity, Double offsetValue, Double lengthValue, String expected) throws Exception {
         if (offsetValue == null || lengthValue == null || !Double.isFinite(offsetValue) || !Double.isFinite(lengthValue) ||
             offsetValue < 0 || lengthValue < 0 || offsetValue != Math.floor(offsetValue) || lengthValue != Math.floor(lengthValue) ||
             offsetValue + lengthValue > 9007199254740991d || lengthValue > MAX_TRANSFER_BYTES) {
@@ -278,7 +344,6 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         StructStat before = Os.fstat(descriptor);
         if (!OsConstants.S_ISREG(before.st_mode)) throw new PluginFailure("Provider does not support bounded file reads", "RANGE_UNSUPPORTED");
         String revision = identity + ":" + descriptorRevision(before);
-        String expected = call.getString("expectedRevision");
         if (expected != null && !expected.equals(revision)) throw new PluginFailure("Source revision changed", "REVISION_CHANGED");
         if (offset + length > before.st_size) throw new PluginFailure("Storage byte range exceeds file size", "INVALID_RANGE");
         byte[] bytes = new byte[length];
@@ -292,12 +357,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             if (!descriptorRevision(Os.fstat(descriptor)).equals(descriptorRevision(before))) {
                 throw new PluginFailure("Source revision changed during read", "REVISION_CHANGED");
             }
-            JSObject result = new JSObject();
-            result.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
-            result.put("totalSize", before.st_size);
-            result.put("revision", revision);
-            result.put("actualBytesRead", count);
-            return result;
+            return new RangeRead(bytes, before.st_size, revision);
         } catch (Exception error) {
             throw rangeFailure(error, count);
         }
@@ -311,8 +371,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     @PluginMethod
     public void readFile(PluginCall call) {
-        executeFileOperation(call, () -> {
-            FolderAccess folder = folder(call, true);
+        executeFolderOperation(call, false, folder -> {
             String path = path(call, false);
             DocumentMetadata target = resolve(folder, path);
             if (target.size > MAX_TRANSFER_BYTES) throw tooLarge();
@@ -337,46 +396,63 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             call.reject("folder, path and data are required");
             return;
         }
-        final byte[] payload;
-        try {
-            payload = "base64".equals(call.getString("encoding", "utf8"))
-                ? Base64.decode(data, Base64.DEFAULT)
-                : data.getBytes(StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException error) {
-            call.reject("data is not valid base64");
-            return;
-        }
-        executeFileOperation(call, true, () -> {
-            FolderAccess folder = folder(call);
-            String path = path(call, false);
-            String[] parts = path.split("/", -1);
-            Uri parent = folder.rootUri;
-            for (int index = 0; index < parts.length - 1; index++) {
-                parent = ensureDirectory(folder, parent, parts[index]);
+        final boolean base64 = "base64".equals(call.getString("encoding", "utf8"));
+        executeFolderOperation(call, true, folder -> {
+            final byte[] payload;
+            try {
+                // Decoded here, on the storage threads, not on Capacitor's plugin thread.
+                payload = base64 ? Base64.decode(data, Base64.DEFAULT) : data.getBytes(StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException error) {
+                throw new PluginFailure("data is not valid base64", null);
             }
-            String name = parts[parts.length - 1];
-            DocumentMetadata existing = findChild(folder, parent, name);
-            if (existing != null && existing.directory) throw new PluginFailure("File not found", "NOT_FOUND");
-            if (existing == null) {
-                Uri created = createChild(folder, parent, "application/octet-stream", name);
-                try {
-                    writeDocument(created, payload);
-                } catch (Exception error) {
-                    deleteQuietly(created);
-                    throw error;
-                }
-            } else {
-                replaceDocument(folder, parent, existing, name, payload);
-            }
+            writeFolderFile(folder, path(call, false), output -> output.write(payload));
             call.resolve();
         });
     }
 
+    /** Bytes for a document, written to the stream a provider opens for it. */
+    private interface Payload {
+        void writeTo(OutputStream output) throws Exception;
+    }
+
+    private static Payload filePayload(File source) {
+        return output -> {
+            byte[] buffer = new byte[TRANSFER_CHUNK];
+            try (FileInputStream input = new FileInputStream(source)) {
+                for (int read; (read = input.read(buffer)) != -1; ) output.write(buffer, 0, read);
+            }
+        };
+    }
+
+    /** Creates or replaces a file of a chosen folder, creating its parent folders. Call under the folder's write lock. */
+    private void writeFolderFile(FolderAccess folder, String path, Payload payload) throws Exception {
+        String[] parts = path.split("/", -1);
+        Uri parent = folder.rootUri;
+        for (int index = 0; index < parts.length - 1; index++) {
+            parent = ensureDirectory(folder, parent, parts[index]);
+        }
+        String name = parts[parts.length - 1];
+        DocumentMetadata existing = findChild(folder, parent, name);
+        if (existing != null && existing.directory) throw new PluginFailure("File not found", "NOT_FOUND");
+        if (existing == null) {
+            Uri created = createChild(folder, parent, "application/octet-stream", name);
+            try {
+                writeDocument(created, payload);
+            } catch (Exception error) {
+                deleteQuietly(created);
+                throw error;
+            }
+        } else {
+            replaceDocument(folder, parent, existing, name, payload);
+        }
+    }
+
     /**
      * SAF has no atomic replace. Stage the payload beside the file first, so a
-     * failed write leaves the previous contents intact, then swap names.
+     * failed write leaves the previous contents intact, then swap names. The
+     * staged name is the one listings hide (`staged-write.ts`).
      */
-    private void replaceDocument(FolderAccess folder, Uri parent, DocumentMetadata existing, String name, byte[] payload)
+    private void replaceDocument(FolderAccess folder, Uri parent, DocumentMetadata existing, String name, Payload payload)
         throws Exception {
         int swapFlags = DocumentsContract.Document.FLAG_SUPPORTS_DELETE | DocumentsContract.Document.FLAG_SUPPORTS_RENAME;
         if ((documentFlags(existing.uri) & swapFlags) != swapFlags) {
@@ -384,7 +460,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
             writeDocument(existing.uri, payload);
             return;
         }
-        Uri staged = createChild(folder, parent, "application/octet-stream", ".babylonslate-" + UUID.randomUUID() + ".tmp");
+        Uri staged = createChild(folder, parent, "application/octet-stream", ".haptic-" + UUID.randomUUID() + ".tmp");
         try {
             // Only the staged file's own flags say whether it can take the old name.
             if ((documentFlags(staged) & DocumentsContract.Document.FLAG_SUPPORTS_RENAME) == 0) {
@@ -406,10 +482,10 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         }
     }
 
-    private void writeDocument(Uri target, byte[] payload) throws Exception {
+    private void writeDocument(Uri target, Payload payload) throws Exception {
         try (OutputStream output = getContext().getContentResolver().openOutputStream(target, "wt")) {
             if (output == null) throw new FileNotFoundException(target.toString());
-            output.write(payload);
+            payload.writeTo(output);
         }
     }
 
@@ -431,8 +507,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     @PluginMethod
     public void mkdir(PluginCall call) {
-        executeFileOperation(call, true, () -> {
-            FolderAccess folder = folder(call);
+        executeFolderOperation(call, true, folder -> {
             String path = path(call, false);
             boolean recursive = call.getBoolean("recursive", false);
             String[] parts = path.split("/", -1);
@@ -467,8 +542,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     }
 
     private void delete(PluginCall call) {
-        executeFileOperation(call, true, () -> {
-            FolderAccess folder = folder(call);
+        executeFolderOperation(call, true, folder -> {
             String path = path(call, false);
             DocumentMetadata target = resolve(folder, path);
             // The entry was just resolved, so a refused delete is a failure, not a missing file.
@@ -481,8 +555,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     @PluginMethod
     public void readdir(PluginCall call) {
-        executeFileOperation(call, () -> {
-            FolderAccess folder = folder(call, true);
+        executeFolderOperation(call, false, folder -> {
             String path = path(call, true);
             DocumentMetadata target = path.isEmpty() ? metadata(folder.rootUri) : resolve(folder, path);
             if (!target.directory) throw new PluginFailure("Path is not a directory", "NOT_FOUND");
@@ -496,8 +569,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     @PluginMethod
     public void stat(PluginCall call) {
-        executeFileOperation(call, () -> {
-            FolderAccess folder = folder(call, true);
+        executeFolderOperation(call, false, folder -> {
             String path = path(call, true);
             call.resolve(statObject(path.isEmpty() ? metadata(folder.rootUri) : resolve(folder, path)));
         });
@@ -505,8 +577,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     @PluginMethod
     public void exists(PluginCall call) {
-        executeFileOperation(call, () -> {
-            FolderAccess folder = folder(call, true);
+        executeFolderOperation(call, false, folder -> {
             String path = path(call, true);
             JSObject result = new JSObject();
             try {
@@ -526,45 +597,78 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         void run() throws Exception;
     }
 
-    private void executeFileOperation(PluginCall call, FileOperation operation) {
-        executeFileOperation(call, false, operation);
+    private interface FolderOperation {
+        void run(FolderAccess folder) throws Exception;
     }
 
     private void invalidateReadScopes() {
         for (FolderAccess folder : readScopes.values()) folder.directories.clear();
     }
 
-    private void executeFileOperation(PluginCall call, boolean mutation, FileOperation operation) {
-        execute(() -> {
-            // Do not let a directory query publish an old listing after a mutation.
-            synchronized (readScopes) {
+    /** Runs on the storage threads and rejects the call with the failure's code. */
+    private void executeFileOperation(PluginCall call, FileOperation operation) {
+        try {
+            ioExecutor.execute(() -> {
                 try {
-                    if (mutation) invalidateReadScopes();
                     operation.run();
-                } catch (PluginFailure error) {
-                    JSObject data = new JSObject();
-                    data.put("actualBytesRead", error.actualBytesRead);
-                    call.reject(error.getMessage(), error.code, error, data);
-                } catch (SecurityException error) {
-                    call.reject("Folder access has been revoked", "ACCESS_REVOKED", error);
-                } catch (FileNotFoundException error) {
-                    call.reject("File not found", "NOT_FOUND", error);
                 } catch (Exception error) {
-                    call.reject(error.getMessage() == null ? "Scoped storage operation failed" : error.getMessage(), null, error);
-                } finally {
-                    if (mutation) invalidateReadScopes();
+                    reject(call, error);
                 }
-            }
+            });
+        } catch (RejectedExecutionException error) {
+            call.reject("Storage is unavailable", "UNREACHABLE", error);
+        }
+    }
+
+    /** An operation on the call's chosen folder: reads (which may use a read scope) share its lock, a mutation holds it alone. */
+    private void executeFolderOperation(PluginCall call, boolean mutation, FolderOperation operation) {
+        executeFileOperation(call, () -> {
+            FolderAccess folder = folder(call.getString("folder"), call.getString("readScope"), !mutation);
+            underFolderLock(folder, mutation, () -> {
+                operation.run(folder);
+                return null;
+            });
         });
+    }
+
+    /** A mutation also clears read-scope listings before and after, so no directory query publishes an old listing. */
+    private <T> T underFolderLock(FolderAccess folder, boolean mutation, Callable<T> operation) throws Exception {
+        ReentrantReadWriteLock lock = folderLocks.computeIfAbsent(folder.treeUri.toString(), key -> new ReentrantReadWriteLock());
+        Lock held = mutation ? lock.writeLock() : lock.readLock();
+        held.lock();
+        try {
+            if (mutation) invalidateReadScopes();
+            return operation.call();
+        } finally {
+            if (mutation) invalidateReadScopes();
+            held.unlock();
+        }
+    }
+
+    private static void reject(PluginCall call, Exception error) {
+        if (error instanceof PluginFailure) {
+            PluginFailure failure = (PluginFailure) error;
+            JSObject data = new JSObject();
+            data.put("actualBytesRead", failure.actualBytesRead);
+            call.reject(failure.getMessage(), failure.code, failure, data);
+        } else if (error instanceof SecurityException) {
+            call.reject("Folder access has been revoked", "ACCESS_REVOKED", error);
+        } else if (error instanceof FileNotFoundException) {
+            call.reject("File not found", "NOT_FOUND", error);
+        } else {
+            call.reject(error.getMessage() == null ? "Scoped storage operation failed" : error.getMessage(), null, error);
+        }
     }
 
     @PluginMethod
     public void beginReadScope(PluginCall call) {
         executeFileOperation(call, () -> {
-            FolderAccess folder = folder(call);
-            if (readScopes.size() >= 8) throw new PluginFailure("Too many folder scans", "UNREACHABLE");
+            FolderAccess folder = folder(call.getString("folder"), null, false);
             String id = UUID.randomUUID().toString();
-            readScopes.put(id, new FolderAccess(folder.treeUri, true));
+            synchronized (readScopes) {
+                if (readScopes.size() >= 8) throw new PluginFailure("Too many folder scans", "UNREACHABLE");
+                readScopes.put(id, new FolderAccess(folder.treeUri, true));
+            }
             JSObject result = new JSObject();
             result.put("readScope", id);
             call.resolve(result);
@@ -573,22 +677,377 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     @PluginMethod
     public void endReadScope(PluginCall call) {
-        executeFileOperation(call, () -> {
-            readScopes.remove(call.getString("readScope"));
-            call.resolve();
-        });
+        String id = call.getString("readScope");
+        if (id != null) readScopes.remove(id);
+        call.resolve();
+    }
+
+    /** Android keeps a chosen folder's persisted permission for its next opening; this session holds nothing more. */
+    @PluginMethod
+    public void releaseFolder(PluginCall call) {
+        call.resolve();
     }
 
     @Override
     protected void handleOnDestroy() {
         getBridge().removeWebViewListener(readScopeLifecycle);
         readScopeLifecycleAttached = false;
-        clearReadScopesAsync();
+        readScopes.clear();
         // Disconnecting does network I/O, which the main thread (where this runs) may not.
         transferExecutor.execute(() -> {
             for (Transfer transfer : transfers.values()) transfer.cancel();
         });
+        // Queued operations still finish; staged writes nobody can commit any more are removed.
+        ioExecutor.execute(() -> {
+            for (String id : writes.keySet()) discardWrite(id);
+        });
+        ioExecutor.shutdown();
         super.handleOnDestroy();
+    }
+
+    // Binary transport (`packages/vfs/src/native-binary-bridge.ts`, the source of these names): the web
+    // view fetches file bytes from this plugin through `shouldInterceptRequest`, and writes them in
+    // chunks, since Android WebView never exposes a request's body.
+
+    static final String BINARY_PATH = "/_haptic_storage";
+    static final String BINARY_REVISION_HEADER = "X-Haptic-Revision";
+    static final String BINARY_TOTAL_BYTES_HEADER = "X-Haptic-Total-Bytes";
+    static final String BINARY_ACTUAL_BYTES_HEADER = "X-Haptic-Actual-Bytes";
+    static final String BINARY_ERROR_HEADER = "X-Haptic-Error";
+    /** Random per launch; only the page that asks `getBinaryBridgeConfig` learns it. */
+    private final String bridgeToken = randomToken();
+    private volatile boolean storageRequestsInstalled;
+
+    private static String randomToken() {
+        byte[] bytes = new byte[24];
+        new SecureRandom().nextBytes(bytes);
+        return hex(bytes);
+    }
+
+    /**
+     * Serves the binary transport from the WebView's own request hooks, in front of Capacitor's: the
+     * page's fetches go to the WebView client, and those the editor's service worker repeats go to
+     * the service-worker client, so both answer storage requests and pass everything else to
+     * Capacitor's local server as before. Called from `MainActivity` once the bridge exists.
+     */
+    static void installStorageRequests(Bridge bridge) {
+        PluginHandle handle = bridge.getPlugin("BabylonSlateScopedStorage");
+        if (handle == null || !(handle.getInstance() instanceof BabylonSlateScopedStoragePlugin)) return;
+        final BabylonSlateScopedStoragePlugin plugin = (BabylonSlateScopedStoragePlugin) handle.getInstance();
+        bridge.setWebViewClient(new BridgeWebViewClient(bridge) {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                WebResourceResponse storage = plugin.interceptStorageRequest(request);
+                return storage != null ? storage : super.shouldInterceptRequest(view, request);
+            }
+        });
+        final boolean resolveServiceWorker = bridge.getConfig().isResolveServiceWorkerRequests();
+        ServiceWorkerController.getInstance().setServiceWorkerClient(new ServiceWorkerClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebResourceRequest request) {
+                WebResourceResponse storage = plugin.interceptStorageRequest(request);
+                if (storage != null) return storage;
+                return resolveServiceWorker ? bridge.getLocalServer().shouldInterceptRequest(request) : null;
+            }
+        });
+        plugin.storageRequestsInstalled = true;
+    }
+
+    @PluginMethod
+    public void getBinaryBridgeConfig(PluginCall call) {
+        JSObject result = new JSObject();
+        if (storageRequestsInstalled) {
+            result.put("baseUrl", getBridge().getLocalUrl() + BINARY_PATH);
+            result.put("token", bridgeToken);
+            result.put("writes", "chunks");
+        }
+        call.resolve(result);
+    }
+
+    /** The answer to a binary-transport request, or null for any other URL. Runs on a WebView thread. */
+    WebResourceResponse interceptStorageRequest(WebResourceRequest request) {
+        Uri url = request.getUrl();
+        String path = url.getPath();
+        if (path == null || !path.startsWith(BINARY_PATH + "/")) return null;
+        Uri local = Uri.parse(getBridge().getLocalUrl());
+        if (!String.valueOf(local.getHost()).equals(url.getHost()) || !String.valueOf(local.getScheme()).equals(url.getScheme())) return null;
+        String expected = BINARY_PATH + "/" + bridgeToken + "/file";
+        if (!MessageDigest.isEqual(path.getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8))) {
+            return bridgeFailure(new PluginFailure("Refused", "UNREACHABLE"));
+        }
+        if ("OPTIONS".equals(request.getMethod())) return bridgeAnswer(204, "No Content", bridgeHeaders(), null, null);
+        if (!"GET".equals(request.getMethod())) return bridgeFailure(new PluginFailure("Writes go through beginWrite", "UNREACHABLE"));
+        try {
+            String filePath = url.getQueryParameter("path");
+            String offset = url.getQueryParameter("offset");
+            String directory = url.getQueryParameter("directory");
+            if (offset != null) {
+                Double start = parseNumber(offset);
+                Double length = parseNumber(url.getQueryParameter("length"));
+                String revision = url.getQueryParameter("revision");
+                RangeRead read;
+                if (directory != null) {
+                    read = readAppStorageRange(appStorageFile(directory, filePath), start, length, revision);
+                } else {
+                    FolderAccess folder = folder(url.getQueryParameter("folder"), url.getQueryParameter("readScope"), true);
+                    String confined = validatePath(filePath, false);
+                    read = underFolderLock(folder, false, () -> readFolderRange(folder, confined, start, length, revision));
+                }
+                Map<String, String> headers = bridgeHeaders();
+                headers.put(BINARY_REVISION_HEADER, read.revision);
+                headers.put(BINARY_TOTAL_BYTES_HEADER, String.valueOf(read.totalSize));
+                headers.put(BINARY_ACTUAL_BYTES_HEADER, String.valueOf(read.bytes.length));
+                return bridgeAnswer(200, "OK", headers, new ByteArrayInputStream(read.bytes), "application/octet-stream");
+            }
+            // A whole file streams from its descriptor; its bytes are never held here at once.
+            InputStream input;
+            Map<String, String> headers = bridgeHeaders();
+            if (directory != null) {
+                File target = appStorageFile(directory, filePath);
+                FileInputStream file = new FileInputStream(target);
+                long size = Os.fstat(file.getFD()).st_size;
+                if (size > MAX_TRANSFER_BYTES) {
+                    file.close();
+                    throw tooLarge();
+                }
+                headers.put("Content-Length", String.valueOf(size));
+                input = file;
+            } else {
+                FolderAccess folder = folder(url.getQueryParameter("folder"), url.getQueryParameter("readScope"), true);
+                String confined = validatePath(filePath, false);
+                input = underFolderLock(folder, false, () -> {
+                    DocumentMetadata target = resolve(folder, confined);
+                    if (target.directory) throw new PluginFailure("File not found", "NOT_FOUND");
+                    if (target.size > MAX_TRANSFER_BYTES) throw tooLarge();
+                    InputStream opened = getContext().getContentResolver().openInputStream(target.uri);
+                    if (opened == null) throw new FileNotFoundException(confined);
+                    return opened;
+                });
+            }
+            return bridgeAnswer(200, "OK", headers, input, "application/octet-stream");
+        } catch (Exception error) {
+            return bridgeFailure(error);
+        }
+    }
+
+    private static Double parseNumber(String value) {
+        if (value == null) return null;
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException error) {
+            return null;
+        }
+    }
+
+    /** No caching; readable cross-origin (a dev server page) and under the service worker's isolation headers. */
+    private static Map<String, String> bridgeHeaders() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Cache-Control", "no-store");
+        headers.put("Access-Control-Allow-Origin", "*");
+        headers.put("Access-Control-Expose-Headers",
+            BINARY_REVISION_HEADER + ", " + BINARY_TOTAL_BYTES_HEADER + ", " + BINARY_ACTUAL_BYTES_HEADER + ", " + BINARY_ERROR_HEADER);
+        headers.put("Cross-Origin-Resource-Policy", "cross-origin");
+        return headers;
+    }
+
+    private static WebResourceResponse bridgeAnswer(int status, String reason, Map<String, String> headers, InputStream body, String mimeType) {
+        return new WebResourceResponse(mimeType == null ? "text/plain" : mimeType, mimeType == null ? "utf-8" : null, status, reason, headers, body);
+    }
+
+    private static WebResourceResponse bridgeFailure(Exception error) {
+        String code;
+        int actualBytesRead = 0;
+        String message;
+        if (error instanceof PluginFailure) {
+            code = ((PluginFailure) error).code;
+            actualBytesRead = ((PluginFailure) error).actualBytesRead;
+            message = error.getMessage();
+        } else if (error instanceof SecurityException) {
+            code = "ACCESS_REVOKED";
+            message = "Folder access has been revoked";
+        } else if (error instanceof FileNotFoundException) {
+            code = "NOT_FOUND";
+            message = "File not found";
+        } else {
+            code = null;
+            message = error.getMessage();
+        }
+        int status;
+        String reason;
+        if ("NOT_FOUND".equals(code)) {
+            status = 404;
+            reason = "Not Found";
+        } else if ("REVISION_CHANGED".equals(code)) {
+            status = 409;
+            reason = "Conflict";
+        } else if ("STALE".equals(code) || "ACCESS_REVOKED".equals(code)) {
+            status = 403;
+            reason = "Forbidden";
+        } else if ("UNREACHABLE".equals(code) || "INVALID_RANGE".equals(code) || "RANGE_UNSUPPORTED".equals(code)) {
+            status = 400;
+            reason = "Bad Request";
+        } else {
+            status = 500;
+            reason = "Internal Server Error";
+        }
+        Map<String, String> headers = bridgeHeaders();
+        if (code != null) headers.put(BINARY_ERROR_HEADER, code);
+        headers.put(BINARY_ACTUAL_BYTES_HEADER, String.valueOf(actualBytesRead));
+        byte[] body = (message == null ? "Storage request failed" : message).getBytes(StandardCharsets.UTF_8);
+        return bridgeAnswer(status, reason, headers, new ByteArrayInputStream(body), null);
+    }
+
+    // Chunked writes: base64 chunks decoded on the storage threads into a staged file, which replaces
+    // the target only on commit. App storage stages beside the file and renames it over it (atomic);
+    // a chosen folder stages in the app's cache, then replaces the document as `writeFile` does, the
+    // best SAF allows (it has no atomic replace). Sessions idle for two minutes are aborted.
+
+    private static final String WRITE_STAGING_FOLDER = "haptic-writes";
+    private static final int MAX_WRITES = 16;
+    private static final long WRITE_IDLE_NANOS = 120_000_000_000L;
+
+    private static final class WriteSession {
+        final File staged;
+        /** App storage target, renamed over on commit; null for a chosen folder. */
+        final File target;
+        final String folderId;
+        final String path;
+        FileOutputStream output;
+        long written;
+        volatile long touched = System.nanoTime();
+
+        WriteSession(File staged, File target, String folderId, String path) {
+            this.staged = staged;
+            this.target = target;
+            this.folderId = folderId;
+            this.path = path;
+        }
+    }
+
+    private final Map<String, WriteSession> writes = new ConcurrentHashMap<>();
+
+    @PluginMethod
+    public void beginWrite(PluginCall call) {
+        executeFileOperation(call, () -> {
+            long now = System.nanoTime();
+            for (Map.Entry<String, WriteSession> entry : writes.entrySet()) {
+                if (now - entry.getValue().touched > WRITE_IDLE_NANOS) discardWrite(entry.getKey());
+            }
+            if (writes.size() >= MAX_WRITES) throw new PluginFailure("Too many writes in progress", "UNREACHABLE");
+            String directory = call.getString("directory");
+            WriteSession session;
+            if (directory != null) {
+                File target = appStorageFile(directory, call.getString("path"));
+                File parent = target.getParentFile();
+                if (parent == null || (!parent.isDirectory() && !parent.mkdirs())) throw new PluginFailure("Could not create the file's folder", "UNREACHABLE");
+                if (target.isDirectory()) throw new PluginFailure("File not found", "NOT_FOUND");
+                session = new WriteSession(new File(parent, ".haptic-" + UUID.randomUUID() + ".tmp"), target, null, null);
+            } else {
+                String folderId = call.getString("folder");
+                folder(folderId, null, false);
+                String path = validatePath(call.getString("path"), false);
+                File staging = new File(getContext().getCacheDir(), WRITE_STAGING_FOLDER);
+                if (!staging.isDirectory() && !staging.mkdirs()) throw new PluginFailure("Could not stage the write", "UNREACHABLE");
+                session = new WriteSession(new File(staging, UUID.randomUUID() + ".tmp"), null, folderId, path);
+            }
+            session.output = new FileOutputStream(session.staged);
+            String id = UUID.randomUUID().toString();
+            writes.put(id, session);
+            JSObject result = new JSObject();
+            result.put("writeId", id);
+            call.resolve(result);
+        });
+    }
+
+    @PluginMethod
+    public void appendWriteChunk(PluginCall call) {
+        executeFileOperation(call, () -> {
+            String id = call.getString("writeId", "");
+            WriteSession session = writes.get(id);
+            if (session == null) throw new PluginFailure("The write is no longer open", "UNREACHABLE");
+            try {
+                append(session, call.getString("data"));
+            } catch (Exception error) {
+                discardWrite(id);
+                throw error;
+            }
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void commitWrite(PluginCall call) {
+        executeFileOperation(call, () -> {
+            WriteSession session = writes.remove(call.getString("writeId", ""));
+            if (session == null) throw new PluginFailure("The write is no longer open", "UNREACHABLE");
+            try {
+                Double size = number(call, "size");
+                synchronized (session) {
+                    append(session, call.getString("data"));
+                    if (size == null || session.written != size) throw new PluginFailure("The write arrived incomplete", "UNREACHABLE");
+                    session.output.getFD().sync();
+                    session.output.close();
+                    session.output = null;
+                }
+                if (session.target != null) {
+                    if (!session.staged.renameTo(session.target)) throw new PluginFailure("Could not move the file into place", "UNREACHABLE");
+                } else {
+                    FolderAccess folder = folder(session.folderId, null, false);
+                    underFolderLock(folder, true, () -> {
+                        writeFolderFile(folder, session.path, filePayload(session.staged));
+                        return null;
+                    });
+                }
+                call.resolve();
+            } finally {
+                close(session);
+                session.staged.delete();
+            }
+        });
+    }
+
+    @PluginMethod
+    public void abortWrite(PluginCall call) {
+        executeFileOperation(call, () -> {
+            discardWrite(call.getString("writeId", ""));
+            call.resolve();
+        });
+    }
+
+    private void discardWrite(String id) {
+        WriteSession session = writes.remove(id);
+        if (session == null) return;
+        close(session);
+        session.staged.delete();
+    }
+
+    private static void append(WriteSession session, String data) throws Exception {
+        if (data == null) throw new PluginFailure("data is required", "UNREACHABLE");
+        final byte[] bytes;
+        try {
+            bytes = Base64.decode(data, Base64.DEFAULT);
+        } catch (IllegalArgumentException error) {
+            throw new PluginFailure("data is not valid base64", "UNREACHABLE");
+        }
+        synchronized (session) {
+            if (session.output == null) throw new PluginFailure("The write is no longer open", "UNREACHABLE");
+            if (session.written + bytes.length > MAX_TRANSFER_BYTES) throw tooLarge();
+            session.output.write(bytes);
+            session.written += bytes.length;
+            session.touched = System.nanoTime();
+        }
+    }
+
+    private static void close(WriteSession session) {
+        synchronized (session) {
+            if (session.output == null) return;
+            try {
+                session.output.close();
+            } catch (IOException ignored) {
+                // The staged file is removed next; nothing was committed.
+            }
+            session.output = null;
+        }
     }
 
     // Git LFS objects streamed between a URL and a file in app storage, so their bytes never cross the bridge.
@@ -912,18 +1371,13 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         return text.toString();
     }
 
-    private FolderAccess folder(PluginCall call) throws PluginFailure {
-        return folder(call, false);
-    }
-
-    private FolderAccess folder(PluginCall call, boolean allowReadScope) throws PluginFailure {
-        String id = call.getString("folder");
+    /** A chosen folder by id, or its open read scope `scopeId` when given (reads only). */
+    private FolderAccess folder(String id, String scopeId, boolean allowReadScope) throws PluginFailure {
         if (id == null || id.isEmpty()) throw new PluginFailure("folder is required", "NOT_FOUND");
         String stored = preferences().getString(URI_PREFIX + id, null);
         if (stored == null) throw new PluginFailure("Project folder is no longer available; reconnect required", "STALE");
         Uri uri = Uri.parse(stored);
         if (!hasPersistedAccess(uri)) throw new PluginFailure("Folder access has been revoked", "ACCESS_REVOKED");
-        String scopeId = call.getString("readScope");
         if (scopeId != null) {
             FolderAccess scope = readScopes.get(scopeId);
             if (!allowReadScope || scope == null || !scope.treeUri.equals(uri)) {
@@ -941,7 +1395,11 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     }
 
     private String path(PluginCall call, boolean allowRoot) throws PluginFailure {
-        String value = call.getString("path");
+        return validatePath(call.getString("path"), allowRoot);
+    }
+
+    /** A project-relative path: no root, empty, `.` or `..` segment and no backslash or NUL. */
+    private static String validatePath(String value, boolean allowRoot) throws PluginFailure {
         if (value == null && allowRoot) return "";
         if (value == null) throw new PluginFailure("path is required", null);
         if (value.isEmpty() && allowRoot) return value;
