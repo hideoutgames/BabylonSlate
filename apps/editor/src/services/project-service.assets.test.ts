@@ -1428,7 +1428,7 @@ describe("project documents as .hasset", () => {
     expect(encode).toHaveBeenCalledTimes(3);
   });
 
-  it("saves Model slots onto the header without replacing the source GLB", async () => {
+  it("saves Model slots into its document and header summary without replacing the source GLB", async () => {
     const { storage, service } = await scaffolded();
     const source = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3, 4]);
     const path = "assets/hero.hasset";
@@ -1480,9 +1480,12 @@ describe("project documents as .hasset", () => {
     ]);
     expect(saved.header.dependencies).toEqual(["mat-new"]);
     expect(saved.chunks.get("source")).toEqual(source);
-    expect(saved.header.chunks.some((chunk) => chunk.id === "document")).toBe(
-      false,
-    );
+    // The full payload moves into the document chunk; the header keeps a summary without collision shapes.
+    expect(saved.header.payload).not.toHaveProperty("simpleColliders");
+    expect(saved.header.payload.simpleColliderCount).toBe(0);
+    expect(JSON.parse(new TextDecoder().decode(saved.chunks.get("document")))).toMatchObject({
+      importScale: 3, materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-new" }],
+    });
   });
 
   it("reports a copied asset file hidden because its guid duplicates another asset, once", async () => {

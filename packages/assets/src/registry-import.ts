@@ -6,6 +6,7 @@ import type { ContentRoot } from "./content-root";
 import { mergeFontAttachPayload } from "./font-payload";
 import { normalizeSkeletonPayload } from "./skeleton-payload";
 import { decodeHasset, encodeHasset, readHassetHeader, type ChunkInput } from "./hasset";
+import { modelHeaderSummary } from "./model-payload";
 import { remapImportResultGuids, type ImportOptions, type ImportResult } from "./importers";
 import { joinRelative, joinRootPath, parentPath, sanitizeFileName } from "./registry-paths";
 import { alignCreatedTextures, maybeEnqueueTextureEncode } from "./registry-texture-encoding";
@@ -56,6 +57,8 @@ async function writeCreatedAsset(host: RegistryHost, root: ContentRoot, path: st
     dependencies.dependencies = [...new Set([...dependencies.dependencies, ...result.requiredDependencies])].sort();
   }
 
+  // A Model's collision hulls and an imported Material's graph go into the document chunk; the header keeps a summary.
+  const split = !body ? importedHeaderSplit(result.type, result.payload) : null;
   const bytes = await encodeHasset({
     header: {
       guid: result.guid,
@@ -66,9 +69,9 @@ async function writeCreatedAsset(host: RegistryHost, root: ContentRoot, path: st
       mode: "thin",
       ...dependencies,
       parentClass: result.parentClass ?? null,
-      payload: result.payload,
+      payload: split ? split.header : result.payload,
     },
-    chunks: result.chunks,
+    chunks: split ? [split.document, ...result.chunks] : result.chunks,
     writeBlob: (sha256, data) => host.blobsOf(root).writeBlob(sha256, data),
   });
   await storage.writeBinary(path, bytes);
@@ -256,4 +259,19 @@ async function attachToExistingAssetUnlocked(host: RegistryHost, guid: string, r
   await storage.writeBinary(asset.path, bytes);
   const header = readHassetHeader(bytes);
   host.indexHeader(asset.rootId, asset.path, header, false, await host.statMtime(storage, asset.path));
+}
+
+/**
+ * The header summary and document chunk of an imported asset whose full payload is too heavy to hold in every
+ * scanned header, or null for a type that keeps its payload in the header.
+ */
+function importedHeaderSplit(type: string, payload: Record<string, unknown>): { header: Record<string, unknown>; document: ChunkInput } | null {
+  let header: Record<string, unknown>;
+  if (type === "Model") header = modelHeaderSummary(payload);
+  else if (type === "Material") header = { domain: typeof payload.domain === "string" ? payload.domain : "surface" };
+  else return null;
+  return {
+    header,
+    document: { id: DOCUMENT_CHUNK_ID, kind: "document", mime: "application/json", data: textEncoder.encode(stableStringify(payload)) },
+  };
 }

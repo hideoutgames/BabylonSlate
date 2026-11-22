@@ -118,6 +118,24 @@ export function modelMaterialGuids(payload: unknown): string[] {
   return [...guids].sort();
 }
 
+/**
+ * The Model's `.hasset` header payload: every field but its Simple Collision
+ * shapes (convex hulls hold many points), which stay in the document chunk;
+ * `simpleColliderCount` says how many there are. Readers that need the shapes
+ * load the document.
+ */
+export function modelHeaderSummary(payload: unknown): Record<string, unknown> {
+  const { simpleColliders, ...rest } = normalizeModelPayload(payload);
+  return { ...rest, simpleColliderCount: simpleColliders.length };
+}
+
+/** Simple Collision shapes a Model header summary counts, or the shapes of a full payload. */
+export function modelSimpleColliderCount(payload: unknown): number {
+  const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  if (typeof record.simpleColliderCount === "number") return record.simpleColliderCount;
+  return normalizeModelPayload(payload).simpleColliders.length;
+}
+
 /** Skeleton + slot Material guids on a Model header. */
 export function modelAssetGuids(payload: unknown): string[] {
   const model = normalizeModelPayload(payload);
