@@ -1,4 +1,4 @@
-import type { FeatureTestCheckReport, FeatureTestCheckResources, FrameStats } from "../services/feature-test-check";
+import type { FeatureTestCheckReport, FeatureTestCheckResources } from "../services/feature-test-check";
 import { forgetSessionTrails, unclosedSessionTrails } from "./session-trail-record";
 
 /**
@@ -23,6 +23,29 @@ interface FinishedCheck {
   report: FeatureTestCheckReport;
 }
 
+/** What is stored: the check, with the build that wrote it (`checkRecordBuild`). */
+type StoredCheck = (UnfinishedCheck | FinishedCheck) & { build: string };
+
+/** A deploy's hashed entry scripts (`assets/index-<hash>.js`); a dev server's `/src/main.tsx` is none. */
+const BUILD_ENTRY = /(?:^|\/)assets\/[^/]+-[\w-]{6,}\.js$/;
+
+/**
+ * The build this page runs, as the stored Check records name it: its hashed entry scripts, whose names change with
+ * every deploy that changes any code (a chunk's hash covers the hashes of the chunks it imports), so a change of the
+ * report's shape needs no one to remember a format number. A page without them (a dev server, tests) is one build.
+ */
+export function checkRecordBuild(): string {
+  try {
+    const entries = [...document.querySelectorAll<HTMLScriptElement>('script[type="module"][src]')]
+      .map((script) => script.getAttribute("src") ?? "").filter((src) => BUILD_ENTRY.test(src))
+      .map((src) => src.slice(src.lastIndexOf("/") + 1));
+    if (entries.length) return entries.join(" ");
+  } catch {
+    // No document: one build, as on a dev server.
+  }
+  return "development";
+}
+
 function write(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
@@ -44,12 +67,12 @@ export function withStoppedSessions(report: FeatureTestCheckReport, forget = fal
 }
 
 export function saveUnfinishedCheck(check: UnfinishedCheck): void {
-  write(KEY, JSON.stringify(check));
+  write(KEY, JSON.stringify({ ...check, build: checkRecordBuild() } satisfies StoredCheck));
 }
 
 /** Keeps a finished report for the dialog to show when it next opens. */
 export function saveFinishedCheck(report: FeatureTestCheckReport): void {
-  write(KEY, JSON.stringify({ finished: true, report } satisfies FinishedCheck));
+  write(KEY, JSON.stringify({ finished: true, report, build: checkRecordBuild() } satisfies StoredCheck));
 }
 
 export function clearUnfinishedCheck(): void {
@@ -60,54 +83,44 @@ export function clearUnfinishedCheck(): void {
   }
 }
 
-/** Whether `stats` is null (no frames sampled) or holds every frame statistic a report reads. */
-function completeFrames(stats: unknown): boolean {
-  if (stats === null) return true;
-  const frames = stats as Partial<FrameStats> | undefined;
-  return typeof frames?.medianMs === "number" && typeof frames.meanMs === "number" && Array.isArray(frames.vsync);
-}
-
-/**
- * Whether every scene of a stored report holds complete frame statistics and readiness probe causes, so formatting it
- * reads no missing field.
- */
-function completeReport(report: FeatureTestCheckReport): boolean {
-  return report.scenes.every((scene) => {
-    const { editor, play } = scene as Partial<typeof scene>;
-    return completeFrames(editor?.frames) && completeFrames(play?.frames) &&
-      (!play?.work || typeof play.work.work?.readinessProbeReasons === "object") &&
-      Array.isArray(play?.benchmark) && play.benchmark.every((sample) => completeFrames(sample.frames));
-  });
-}
-
 /**
  * The report kept here: a check the app stopped during (with its last step and samples in `unfinished`), or a
- * finished one waiting to be shown; null when none was left. A stored report this build cannot read is discarded.
+ * finished one waiting to be shown; null when none was left. A record another build wrote, or one this build cannot
+ * read, is discarded: the report's shape changes between builds, and this build's formatter would misread an older one.
  */
 export function loadSavedCheck(): FeatureTestCheckReport | null {
+  let raw: string | null;
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const check = JSON.parse(raw) as Partial<UnfinishedCheck> & Partial<FinishedCheck>;
-    if (!check.report || !Array.isArray(check.report.scenes)) return null;
-    if (!completeReport(check.report)) {
-      clearUnfinishedCheck();
-      return null;
-    }
-    if (check.finished === true) return withStoppedSessions(check.report);
-    if (typeof check.step !== "string") return null;
-    return withStoppedSessions({ ...check.report, unfinished: { step: check.step, resources: Array.isArray(check.resources) ? check.resources : [] } });
+    raw = localStorage.getItem(KEY);
   } catch {
     return null;
   }
+  if (!raw) return null;
+  try {
+    const check = JSON.parse(raw) as Partial<UnfinishedCheck & FinishedCheck & { build: unknown }>;
+    if (check.build === checkRecordBuild() && check.report && Array.isArray(check.report.scenes)) {
+      if (check.finished === true) return withStoppedSessions(check.report);
+      if (typeof check.step === "string") {
+        return withStoppedSessions({ ...check.report, unfinished: { step: check.step, resources: Array.isArray(check.resources) ? check.resources : [] } });
+      }
+    }
+  } catch {
+    // Unreadable: discarded below.
+  }
+  clearUnfinishedCheck();
+  return null;
 }
 
-/** Adds `note` to the kept report's Breakdown notes, keeping it unfinished or finished as it was; false when none is kept. */
+/**
+ * Adds `note` to the kept report's Breakdown notes, keeping it unfinished or finished as it was; false when none of
+ * this build is kept.
+ */
 export function annotateSavedCheck(note: string): boolean {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return false;
-    const check = JSON.parse(raw) as { report?: FeatureTestCheckReport };
+    const check = JSON.parse(raw) as { build?: unknown; report?: FeatureTestCheckReport };
+    if (check.build !== checkRecordBuild()) return false;
     const breakdown = check.report?.breakdown;
     if (!breakdown || !Array.isArray(breakdown.notes)) return false;
     breakdown.notes.push(note);

@@ -136,10 +136,20 @@ describe("the Breakdown's preserveDrawingBuffer A/B", () => {
     expect(resumeAfterLoad([PROJECT], deps)).toEqual({ kind: "abandoned", reason: "its saved state was unreadable", reported: false });
     expect(store.has(KEY)).toBe(false);
     expect(stored).toBe(false);
-    store.set(KEY, JSON.stringify({ version: 99, originalPreserve: true }));
+    store.set(KEY, JSON.stringify({ originalPreserve: true }));
     expect(resumeAfterLoad([PROJECT], deps)).toMatchObject({ kind: "abandoned", reported: false });
     expect(stored).toBe(true);
     expect(resumeAfterLoad([PROJECT], deps)).toEqual({ kind: "none" });
+  });
+
+  it("drops the first pass of a reload that landed on another deploy, storing the user's setting again", () => {
+    planSecondPass(pass(firstInfo, [scene(1, "true")]), { project: PROJECT, scenes: SCENES }, deps);
+    expect(stored).toBe(false);
+    store.set(KEY, JSON.stringify({ ...JSON.parse(store.get(KEY)!), build: "index-0ld8u1ld.js" }));
+    expect(resumeAfterLoad([PROJECT], deps)).toEqual({ kind: "abandoned", reason: "the editor was updated before it ran", reported: false });
+    expect(stored).toBe(true);
+    expect(store.has(KEY)).toBe(false);
+    expect(loadSavedCheck()).toBeNull();
   });
 
   it("abandons the second pass when its project left the project list", () => {
