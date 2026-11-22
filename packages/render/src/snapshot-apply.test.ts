@@ -42,6 +42,7 @@ import {
   createSnapshotSceneBinding,
   disposeWorldOverlayLeftovers,
   isPlayHelperMeshKind,
+  rebuildSlotForLoadedClip,
   retirePlaySlot,
   type AssignMeshCommand,
 } from "./snapshot-apply";
@@ -845,6 +846,30 @@ describe("createPlayMesh", () => {
       return entry.name === "Idle" && entry.clipAssetGuid === "hero-idle-anim";
     });
     expect(group).toBeDefined();
+  });
+
+  it("builds a slot's Model again to bind a clip whose Animation loaded after it was built, once per install", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["hero-model", encodeAnimatedTriangleGlb()]]);
+    binding.modelSources = installModelSources(binding);
+    binding.modelClipAnimationGuids = new Map();
+    applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 2, meshKind: "box", meshAssetGuid: "hero-model" });
+    const clipGuids = () => (binding.slotPoseClips?.get(2) ?? []).map((clip) => clip.clipAssetGuid);
+    await vi.waitFor(() => expect(clipGuids()).toEqual(["hero-model"]));
+    // Nothing names the clip yet: it is missing, not loading.
+    expect(rebuildSlotForLoadedClip(binding, 2, "hero-idle-anim")).toBe(false);
+    // The Animation's sources install (Play Slot Animation loaded it): the Model's Idle is that Animation now.
+    binding.modelClipAnimationGuids = new Map([["hero-model", new Map([["Idle", "hero-idle-anim"]])]]);
+    binding.modelSources = installModelSources({ modelBytes: binding.modelBytes });
+    expect(rebuildSlotForLoadedClip(binding, 2, "hero-idle-anim")).toBe(true);
+    await vi.waitFor(() => expect(clipGuids()).toEqual(["hero-idle-anim"]));
+    const rebuilt = binding.meshes.get(2);
+    // Built for this install already: no second rebuild, and no longer waiting.
+    expect(rebuildSlotForLoadedClip(binding, 2, "hero-idle-anim")).toBe(false);
+    expect(binding.meshes.get(2)).toBe(rebuilt);
   });
 
   it("stamps retargeted AnimationGroups with the retargeted Animation guid", async () => {

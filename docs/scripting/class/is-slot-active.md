@@ -21,4 +21,4 @@ Whether a slot is playing an Animation, blending out included.
 
 ## Notes
 
-- True from the moment [Play Slot Animation](play-slot-animation.md) runs, before the next animation update starts it.
+- True from the moment [Play Slot Animation](play-slot-animation.md) runs, before the next animation update starts it, and while its Animation loads. False again if that load fails or the play is cancelled before it starts.

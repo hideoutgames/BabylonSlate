@@ -136,6 +136,39 @@ export function applyAssignMesh(
   assignVisual(scene, binding, command);
 }
 
+/** The slots and clips each install of the clip maps (`modelClipAnimationGuids`) rebuilt a visual for. */
+const clipRebuilds = new WeakMap<object, Set<string>>();
+
+/** Whether the installed sources give Model `model` the clip `clipAssetGuid`: its own, or one it binds from another file. */
+function modelOffersClip(binding: SnapshotSceneBinding, model: string, clipAssetGuid: string): boolean {
+  for (const animation of binding.modelClipAnimationGuids?.get(model)?.values() ?? []) if (animation === clipAssetGuid) return true;
+  return binding.retargetAnimationLoads?.get(model)?.some((load) =>
+    load.animationGuid === clipAssetGuid && binding.modelSources?.has(load.sourceModelGuid) === true) === true;
+}
+
+/**
+ * A slot's animation names `clipAssetGuid`, which its Model lacks but the installed sources now give it: an Animation
+ * loaded after the visual was built (a Play Slot Animation loads its clip on demand). Builds the slot's visual again
+ * from its assignment, so its Model binds the clip, the current visual drawing until the new one adopts; once per
+ * slot, clip and install. True while that rebuild runs, so the clip is not reported missing meanwhile.
+ */
+export function rebuildSlotForLoadedClip(binding: SnapshotSceneBinding, slotId: number, clipAssetGuid: string | undefined): boolean {
+  const clipMaps = binding.modelClipAnimationGuids;
+  const command = visualAssignmentOf(binding, slotId);
+  const visual = binding.meshes.get(slotId);
+  if (!clipAssetGuid || !clipMaps || !command || !visual || visual.isDisposed()) return false;
+  const rebuilding = () => hasPendingVisualReplacement(binding, slotId) || materialPreparationRestarts(binding).has(slotId);
+  let rebuilt = clipRebuilds.get(clipMaps);
+  const key = `${slotId}\0${clipAssetGuid}`;
+  if (rebuilt?.has(key)) return rebuilding();
+  const models = [command.meshAssetGuid, ...(command.parts ?? []).map((part) => part.meshAssetGuid)];
+  if (!models.some((model) => model && binding.modelSources?.has(model) && modelOffersClip(binding, model, clipAssetGuid))) return false;
+  if (!rebuilt) clipRebuilds.set(clipMaps, rebuilt = new Set());
+  rebuilt.add(key);
+  assignVisual(visual.getScene(), binding, command);
+  return rebuilding();
+}
+
 /**
  * Whether `command` is the assignment the slot's visual in `scene` was built for, and that visual is still the one the
  * slot shows or is preparing: equal, as later commands left that assignment (style, control state, painter and text

@@ -104,7 +104,7 @@ export {
   applyPainter2DCommand,
 } from "./snapshot-component-commands";
 export { createPlayMesh, isPlayHelperMeshKind } from "./snapshot-visual-factory";
-export { applyAssignMesh } from "./snapshot-assign-mesh";
+export { applyAssignMesh, rebuildSlotForLoadedClip } from "./snapshot-assign-mesh";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
