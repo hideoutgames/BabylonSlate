@@ -74,7 +74,7 @@ If the edits the last session recorded can't be read, the project still opens an
 
 Recovered edits are unsaved until you choose **Save All**, and they cannot be undone.
 
-If the device runs out of storage space, Haptic stops recording edits for recovery and the status bar shows **Crash Recovery Paused — Use Save All**. Edits made from then on can't be recovered after a crash. Free some space and choose **Save All**: once everything is saved, recording starts again.
+If the device runs out of storage space, Haptic stops recording edits for recovery: a **Crash Recovery Paused — Use Save All** notice appears (on phones too), and the status bar keeps showing it. Edits made from then on can't be recovered after a crash. Free some space and choose **Save All**: once everything is saved, recording starts again.
 
 ## Files changed outside Haptic
 

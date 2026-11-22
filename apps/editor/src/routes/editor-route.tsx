@@ -16,6 +16,7 @@ import { EditorStatusBar } from "../components/editor-status-bar";
 import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import { SaveFailedDialog } from "../components/save-failed-dialog";
+import { JournalPausedNotice } from "../components/journal-paused-notice";
 import { SourceControlActionsProvider } from "../components/source-control-actions";
 import {
   useDocumentActions,
@@ -517,6 +518,7 @@ function EditorLayout() {
       <SourceControlActionsProvider>
         <EditorChromeAndPrompts />
         <RecoveryDialog />
+        <JournalPausedNotice />
         <main className="flex min-h-0 flex-1 flex-col">
           {profileRegion("document-workspace", <DocumentWorkspace />)}
         </main>
