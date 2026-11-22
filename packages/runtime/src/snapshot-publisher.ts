@@ -72,7 +72,8 @@ export class SnapshotPublisher {
   private readonly rowByActor = new Map<Actor, { row: number; slotId: number }>();
   private readonly dirtyPoses = new Set<Actor>();
   private readonly dirtySlotFrames = new Map<Actor, number>();
-  private readonly walkVisited = new Set<Actor>();
+  /** Reused by every descendant walk. */
+  private readonly walkStack: Actor[] = [];
   private readonly unsubscribeWorld: () => void;
   /** Actors whose sheared world pose has been reported to the Output Log. */
   private readonly shearedActors = new WeakSet<Actor>();
@@ -134,7 +135,7 @@ export class SnapshotPublisher {
     this.dirtyPoses.clear();
     this.dirtySlotFrames.clear();
     this.rowByActor.clear();
-    this.walkVisited.clear();
+    this.walkStack.length = 0;
   }
 
   get capacity(): number { return this.snapshots.maxActors; }
@@ -299,33 +300,35 @@ export class SnapshotPublisher {
     if (removedActors) this.host.removedActors();
   }
 
+  /**
+   * Every actor in `dirtyPoses` entered it with its whole subtree, and a structure change (a spawn or reparent
+   * under it) recomposes everything, so an actor already there needs no walk and a walk stops at one: each
+   * coordinate write after the first costs one lookup. This also ends a walk around a parent cycle.
+   */
   private markPoseDirtyWithDescendants(root: Actor): void {
-    this.dirtyPoses.add(root);
+    const dirty = this.dirtyPoses;
+    if (dirty.has(root)) return;
+    dirty.add(root);
     const direct = this.world.getChildren(root.guid);
     if (!direct || direct.size === 0) return;
-    const visited = this.walkVisited;
-    visited.clear();
-    visited.add(root);
-    const stack: Actor[] = [];
+    const stack = this.walkStack;
+    stack.length = 0;
     for (const child of direct) {
-      if (!child.destroyed && !visited.has(child)) {
-        visited.add(child);
+      if (!child.destroyed && !dirty.has(child)) {
+        dirty.add(child);
         stack.push(child);
       }
     }
     while (stack.length > 0) {
-      const current = stack.pop()!;
-      this.dirtyPoses.add(current);
-      const next = this.world.getChildren(current.guid);
+      const next = this.world.getChildren(stack.pop()!.guid);
       if (!next) continue;
       for (const child of next) {
-        if (!child.destroyed && !visited.has(child)) {
-          visited.add(child);
+        if (!child.destroyed && !dirty.has(child)) {
+          dirty.add(child);
           stack.push(child);
         }
       }
     }
-    visited.clear();
   }
 
   private write(frameId: number, tickIndex: number, scriptMs: number, physicsMs: number): void {
