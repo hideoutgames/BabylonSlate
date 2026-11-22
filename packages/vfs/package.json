@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/opfs-storage.worker.ts"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./node": "./src/node-adapter.ts",

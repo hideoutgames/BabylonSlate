@@ -6,6 +6,7 @@
   "sideEffects": [
     "./src/alpha-to-coverage.ts",
     "./src/babylon-registrations.ts",
+    "./src/color-encoding-block.ts",
     "./src/decal-projection-block.ts",
     "./src/draw-batch-world-block.ts",
     "./src/environment-base-radiance.ts",
@@ -37,7 +38,9 @@
     "./src/texture-quality.ts",
     "./src/unlit-lighting-blocks.ts",
     "./src/unlit-material-blocks.ts",
+    "./src/user-interface-blocks.ts",
     "./src/voronoi-noise-block.ts",
+    "./src/water-contact.worker.ts",
     "./src/water-fft.ts",
     "./src/water-node-blocks.ts",
     "./src/water-surface-block.ts",
