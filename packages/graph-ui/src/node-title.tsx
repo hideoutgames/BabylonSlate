@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MouseEvent } from "react";
 import { doubleTapWindowMs, InlineRenameInput } from "@haptic/editor-kit";
 import { useGraphEditorContext } from "./graph-editor-context";
+import { useNodeRename } from "./graph-node-state";
 
 /** How long a new rename field keeps claiming focus from a closing dialog (Add Node) that hands it back. */
 const RENAME_FOCUS_CLAIM_MS = 1500;
@@ -104,8 +105,7 @@ export function useNodeTitleGestures(nodeId: string):
   };
 }
 
-/** The rename field's starting text: the host's `renamingNodeValue`, else the shown title. */
-export function useRenameValue(title: string): string {
-  const { renamingNodeValue } = useGraphEditorContext();
-  return renamingNodeValue ?? title;
+/** The rename field's starting text: the host's `renamingNodeValue` while the node is renamed, else the shown title. */
+export function useRenameValue(nodeId: string, title: string): string {
+  return useNodeRename(nodeId).value ?? title;
 }

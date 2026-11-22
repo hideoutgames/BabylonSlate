@@ -30,6 +30,7 @@ import { isDevelopmentOnlyNode } from "@haptic/scripting";
 import { Badge } from "@haptic/ui/components/badge";
 import { cn } from "@haptic/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
+import { GraphNodeBodyContext, useNodeErrorCount, useNodeRename, usePendingPinId, usePinErrors, usePreviewedNode } from "./graph-node-state";
 import { nodeCanBreak, useNodeBreakpoint } from "./graph-breakpoints";
 import { useNodeMenu } from "./use-node-menu";
 import { hasSerializedPins, isRerouteNodeData, type SerializedPin } from "./graph-types";
@@ -47,7 +48,7 @@ import {
   type PinTypeRef,
 } from "./node-theme";
 import { NodeKindIcon } from "./node-icons";
-import { NodeRenameField, useNodeTitleGestures, useRenameValue } from "./node-title";
+import { NodeRenameField, useNodeTitleGestures } from "./node-title";
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
 import { PinDefaultEditor } from "./pin-default-editor";
@@ -271,6 +272,15 @@ function PinHandle({
   );
 }
 
+/**
+ * The host's body under a node's pins (`GraphEditor.renderNodeBody`). It reads the body renderer on
+ * its own, so a host whose renderer changes with every edit renders only these, not every node.
+ */
+function NodeBody({ nodeId, data }: { nodeId: string; data: Record<string, unknown> }) {
+  const renderNodeBody = useContext(GraphNodeBodyContext);
+  return <>{renderNodeBody?.(nodeId, data)}</>;
+}
+
 /** A pin that reads whether it is wired itself, so a wire elsewhere renders only the pins it changes. */
 function WiredPinHandle(props: Omit<Parameters<typeof PinHandle>[0], "connected">) {
   const connected = useStore((state) => isPinWired(state.edges, props.nodeId, props.pin));
@@ -315,7 +325,8 @@ function HeaderPin({
   pin: SerializedPin;
   disabled: boolean;
 }) {
-  const { pendingPin, pinHasError } = useGraphEditorContext();
+  const pendingPinId = usePendingPinId(nodeId);
+  const pinHasError = usePinErrors(nodeId);
   const connected = useStore((state) => isPinWired(state.edges, nodeId, pin));
   const label = humanizePropertyLabel(pin.name);
   return (
@@ -329,8 +340,8 @@ function HeaderPin({
         nodeId={nodeId}
         pin={pin}
         label={label}
-        pending={pendingPin?.nodeId === nodeId && pendingPin.pinId === pin.id}
-        hasError={pinHasError(nodeId, pin.id)}
+        pending={pendingPinId === pin.id}
+        hasError={pinHasError(pin.id)}
         connected={connected}
         disabled={disabled}
       />
@@ -349,7 +360,9 @@ function PinRow({
   incoming?: SerializedPin;
   outgoing?: SerializedPin;
 }) {
-  const { pendingPin, pinHasError, pinTypeNames, pinDisplayType, onPinDefaultChange, renderPinDefaultEditor, connectedInputs } = useGraphEditorContext();
+  const { pinTypeNames, pinDisplayType, onPinDefaultChange, renderPinDefaultEditor, connectedInputs } = useGraphEditorContext();
+  const pendingPinId = usePendingPinId(nodeId);
+  const pinHasError = usePinErrors(nodeId);
   const { entries: tags } = useTags();
   const outgoingTag = data.__nodeType === "tags.switch" && outgoing?.id.startsWith("case:")
     ? Number(outgoing.id.slice(5)) : undefined;
@@ -372,10 +385,7 @@ function PinRow({
     ? pinDefaultPreview(displayedIncoming, data, incomingConnected, pinTypeNames)
     : null;
 
-  const isPending = (pin: SerializedPin | undefined) =>
-    Boolean(
-      pin && pendingPin?.nodeId === nodeId && pendingPin.pinId === pin.id,
-    );
+  const isPending = (pin: SerializedPin | undefined) => Boolean(pin && pendingPinId === pin.id);
 
   const disabled = data.__disabled === true;
 
@@ -397,7 +407,7 @@ function PinRow({
               pin={incoming}
               label={incomingHandleLabel}
               pending={isPending(incoming)}
-              hasError={pinHasError(nodeId, incoming.id)}
+              hasError={pinHasError(incoming.id)}
               connected={incomingConnected}
               disabled={disabled}
             />
@@ -444,7 +454,7 @@ function PinRow({
               pin={outgoing}
               label={outgoingLabel}
               pending={isPending(outgoing)}
-              hasError={pinHasError(nodeId, outgoing.id)}
+              hasError={pinHasError(outgoing.id)}
               connected={outgoingConnected}
               disabled={disabled}
             />
@@ -624,11 +634,13 @@ export function BlueprintNodeShell({
   /** Fixed-width flat card without the role title bar; children render their own header. */
   card?: boolean;
 }) {
-  const { nodeErrorCount, describeNode, previewedNode, renamingNodeId, onNodeRenameCommit, onNodeRenameCancel } = useGraphEditorContext();
-  const previewed = previewedNode?.nodeId === nodeId ? previewedNode : null;
-  const renaming = !card && renamingNodeId === nodeId;
+  const { describeNode, onNodeRenameCommit, onNodeRenameCancel } = useGraphEditorContext();
+  const errorCount = useNodeErrorCount(nodeId);
+  const previewed = usePreviewedNode(nodeId);
+  const rename = useNodeRename(nodeId);
+  const renaming = !card && rename.renaming;
   const titleGestures = useNodeTitleGestures(nodeId);
-  const renameValue = useRenameValue(title);
+  const renameValue = rename.value ?? title;
   const headerColor = typeof data?.__headerColor === "string" && data.__headerColor ? data.__headerColor : undefined;
   const description = data ? describeNode?.(String(data.__nodeType ?? ""), data) : undefined;
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
@@ -638,7 +650,7 @@ export function BlueprintNodeShell({
 
   return (
     <div className={cn("group/node relative", card && "group/title")}>
-      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={headerPins.length > 0} />
+      <NodeErrorBadge nodeId={nodeId} count={errorCount} leading={headerPins.length > 0} />
       {previewed ? <NodePreviewTag label={previewed.label} /> : null}
       {/* Outside the shell, which clips its body to the rounded corners. */}
       <NodeBreakpointTab nodeId={nodeId} data={data} placement={card ? "cardTop" : "titleBar"} />
@@ -713,7 +725,6 @@ export function BlueprintNodeShell({
 }
 
 function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
-  const { renderNodeBody } = useGraphEditorContext();
   const nodeMenu = useNodeMenu(id);
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const { title, role, kind } = visualFromData(data, type);
@@ -780,7 +791,7 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
           ))}
           <NodeAddPinButton nodeId={id} data={data} />
         </div>
-        {renderNodeBody?.(id, data)}
+        <NodeBody nodeId={id} data={data} />
       </BlueprintNodeShell>
       {nodeMenu.overlay}
     </div>
@@ -793,8 +804,10 @@ function VariableGetNode({
   selected,
 }: NodeProps<CanvasNode>) {
   const pins = hasSerializedPins(data) ? data.__pins : [];
-  const { pendingPin, pinHasError, pinDisplayType, nodeErrorCount } =
-    useGraphEditorContext();
+  const { pinDisplayType } = useGraphEditorContext();
+  const pendingPinId = usePendingPinId(id);
+  const pinHasError = usePinErrors(id);
+  const errorCount = useNodeErrorCount(id);
   const dataPins = pins.filter((pin) => pin.kind !== "exec");
   const incoming = dataPins.filter((pin) => pin.direction === "in");
   const outgoing = dataPins.find((pin) => pin.direction === "out");
@@ -804,12 +817,11 @@ function VariableGetNode({
   const disabled = data.__disabled === true;
   const nodeMenu = useNodeMenu(id);
 
-  const isPending = (pin: SerializedPin) =>
-    Boolean(pendingPin?.nodeId === id && pendingPin.pinId === pin.id);
+  const isPending = (pin: SerializedPin) => pendingPinId === pin.id;
 
   return (
     <div className="relative" {...nodeMenu.bind}>
-      <NodeErrorBadge nodeId={id} count={nodeErrorCount(id)} />
+      <NodeErrorBadge nodeId={id} count={errorCount} />
       <div
         data-node-role="variable"
         data-node-kind="variable-get"
@@ -827,7 +839,7 @@ function VariableGetNode({
             nodeId={id}
             pin={pin}
             pending={isPending(pin)}
-            hasError={pinHasError(id, pin.id)}
+            hasError={pinHasError(pin.id)}
             disabled={disabled}
           />
         ))}
@@ -843,7 +855,7 @@ function VariableGetNode({
               nodeId={id}
               pin={outgoing}
               pending={isPending(outgoing)}
-              hasError={pinHasError(id, outgoing.id)}
+              hasError={pinHasError(outgoing.id)}
               disabled={disabled}
             />
           </>
@@ -859,14 +871,16 @@ function VariableGetNode({
  * at the right, both drawn in the type the knot carries. The space between them drags the knot.
  */
 function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
-  const { pendingPin, pinHasError, pinDisplayType } = useGraphEditorContext();
+  const { pinDisplayType } = useGraphEditorContext();
+  const pendingPinId = usePendingPinId(id);
+  const pinHasError = usePinErrors(id);
   const nodeMenu = useNodeMenu(id);
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const input = pins.find((pin) => pin.direction === "in");
   const output = pins.find((pin) => pin.direction === "out");
   const inputWired = useStore((state) => (input ? isPinWired(state.edges, id, input) : false));
   const outputWired = useStore((state) => (output ? isPinWired(state.edges, id, output) : false));
-  const isPending = (pin: SerializedPin) => pendingPin?.nodeId === id && pendingPin.pinId === pin.id;
+  const isPending = (pin: SerializedPin) => pendingPinId === pin.id;
   // The outline takes the colour of what the knot carries, as its pins do (the input's, should they differ).
   const carried = input ?? output;
   const outline = pinCssVar((carried && pinDisplayType(id, carried.id)) ?? carried?.type ?? { kind: "wildcard" });
@@ -876,7 +890,7 @@ function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
         nodeId={id}
         pin={pin}
         pending={isPending(pin)}
-        hasError={pinHasError(id, pin.id)}
+        hasError={pinHasError(pin.id)}
         connected={connected}
         circle
       />

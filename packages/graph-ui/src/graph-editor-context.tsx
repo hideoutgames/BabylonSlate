@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { GraphNodeStateStore } from "./graph-node-state";
 import type { GraphPinDragSource, NavigateRequest } from "./graph-types";
 import type { PinTypeRef } from "./node-theme";
 import type { NestedMenuItem } from "@haptic/editor-kit";
@@ -17,12 +18,13 @@ export interface GraphPreviewedNode {
 export type GraphEditorContextValue = {
   renderPinDefaultEditor?: PinDefaultEditorRenderer;
   connectedInputs?: ReadonlyMap<string, readonly string[]>;
-  renderNodeBody?: (nodeId: string, data: Record<string, unknown>) => React.ReactNode;
-  pendingPin: { nodeId: string; pinId: string } | null;
+  /**
+   * The pin chosen to connect, error diagnostics, the renamed and the previewed node: each node
+   * reads its own part through the `graph-node-state` hooks. Unset outside a canvas.
+   */
+  nodeState?: GraphNodeStateStore;
   onPinDefaultChange?: (nodeId: string, pinId: string, value: unknown) => void;
   onPinTap: (nodeId: string, pinId: string, direction: "in" | "out") => void;
-  nodeErrorCount: (nodeId: string) => number;
-  pinHasError: (nodeId: string, pinId: string) => boolean;
   pinDisplayType: (nodeId: string, pinId: string) => PinTypeRef | undefined;
   pinTypeNames?: PinTypeNames;
   connectEndMode: ConnectEndMode;
@@ -44,8 +46,6 @@ export type GraphEditorContextValue = {
   breakpoints?: GraphBreakpoints;
   /** What a node does, shown as its title's tooltip; undefined shows none. */
   describeNode?: (nodeType: string, data: Record<string, unknown>) => string | undefined;
-  /** The node whose output the host previews. */
-  previewedNode?: GraphPreviewedNode | null;
   /**
    * Context menu of script-style nodes: Copy, Paste, Duplicate, Delete and
    * Break Links plus the host's items. `resolve` is given the element the gesture
@@ -78,14 +78,10 @@ export type GraphEditorContextValue = {
   ) => string | null;
   /** Whether a node's body takes the dragged wire as a new pin (`GraphPinDrop.accepts`). */
   acceptsPinDrop?: (targetNodeId: string, source: GraphPinDragSource) => boolean;
-  /** The node whose header title is an inline rename field. */
-  renamingNodeId?: string | null;
   /** Enter or a click away with a changed name. */
   onNodeRenameCommit?: (nodeId: string, name: string) => void;
   /** Escape, or Enter or a click away with the name unchanged or empty. */
   onNodeRenameCancel?: () => void;
-  /** The rename field's starting text when it differs from the title (`Foo` for `Event Foo`). */
-  renamingNodeValue?: string;
   /**
    * A double-click (`dblclick`) or second tap (`tap`) on a node's title, present only when the host
    * renames titles (`GraphEditor.onNodeTitleDoubleClick`). True when the canvas took it.
