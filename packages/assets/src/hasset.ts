@@ -335,8 +335,29 @@ export async function decodeHassetChunk(
 }
 
 /**
+ * The writer lays inline chunks end to end, so no two share a byte. A file
+ * whose chunks overlap is refused: it could name one nested asset many times
+ * over and multiply the work of reading it with every level of nesting.
+ */
+function assertDisjointInlineChunks(entries: readonly ChunkEntry[]): void {
+  const ranges: Array<{ offset: number; end: number; id: string }> = [];
+  for (const entry of entries) {
+    if (!("inline" in entry.locator) || entry.locator.inline.length === 0) continue;
+    const { offset, length } = entry.locator.inline;
+    ranges.push({ offset, end: offset + length, id: entry.id });
+  }
+  ranges.sort((a, b) => a.offset - b.offset);
+  for (let index = 1; index < ranges.length; index++) {
+    if (ranges[index]!.offset < ranges[index - 1]!.end) {
+      throw new Error(`Chunks ${ranges[index - 1]!.id} and ${ranges[index]!.id} overlap in .hasset`);
+    }
+  }
+}
+
+/**
  * Decode every chunk. Each one must have its recorded length and sha256, so a
- * truncated file or a torn blob is rejected rather than returned as the chunk.
+ * truncated file or a torn blob is rejected rather than returned as the chunk,
+ * and no two inline chunks may share bytes.
  */
 export async function decodeHasset(
   bytes: Uint8Array,
@@ -345,6 +366,7 @@ export async function decodeHasset(
   const header = readHassetHeader(bytes);
   const headerLen = readU32LE(bytes, 8);
   const payloadStart = HASSET_PREFIX_BYTES + headerLen;
+  assertDisjointInlineChunks(header.chunks);
   const chunks = new Map<string, Uint8Array>();
   const nestedAssets = new Map<string, Uint8Array>();
 
