@@ -126,8 +126,10 @@ test("a budget for an unmeasured directory, matching no file, or malformed fails
   assert.match(report(dir, "--budgets").stderr, /needs a budget file/);
 });
 
-test("the committed Pages budgets are well formed and name the directories Preview measures", async () => {
+test("the committed Pages and test-build budgets are well formed and name the directories their workflows measure", async () => {
   const { readBudgets } = await import("./bundle-report.mjs");
-  const budgets = readBudgets(join(import.meta.dirname, "bundle-budgets.json"));
-  assert.deepEqual([...new Set(budgets.map((budget) => budget.root))].sort(), ["apps/editor/dist", "apps/player/dist"]);
+  for (const file of ["bundle-budgets.json", "bundle-budgets-test-build.json"]) {
+    const budgets = readBudgets(join(import.meta.dirname, file));
+    assert.deepEqual([...new Set(budgets.map((budget) => budget.root))].sort(), ["apps/editor/dist", "apps/player/dist"], file);
+  }
 });
