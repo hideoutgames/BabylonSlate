@@ -144,6 +144,227 @@ describe("ObjectCollector cost", () => {
   });
 });
 
+describe("ObjectCollector incremental cycles", () => {
+  it("keeps an object moved in place from a container not yet scanned into one already scanned", () => {
+    const gc = collector();
+    const moved = object();
+    gc.register(moved);
+    const scanned = object({ List: [] as unknown[] });
+    const later = object({ Hold: [moved] });
+
+    gc.begin([scanned, later]);
+    // Take `scanned` (1) and scan its one variable holding an empty array (1): `later` is not reached yet.
+    expect(gc.step(2)).toBe(false);
+    // A script moves the object between arrays in place: no variable write records it.
+    (later.getVariable("Hold") as unknown[]).splice(0, 1);
+    (scanned.getVariable("List") as unknown[]).push(moved);
+    while (!gc.step(2)) { /* mark */ }
+
+    expect(gc.finish([scanned, later]).collected).toBe(0);
+    expect(moved.destroyed).toBe(false);
+  });
+
+  it("keeps an object written into a variable already scanned, and one held by a root that appeared", () => {
+    const gc = collector();
+    const moved = object();
+    const created = object();
+    gc.register(moved);
+    const scanned = object({ Score: 1 });
+    const later = object({ Hold: moved });
+
+    gc.begin([scanned, later]);
+    expect(gc.step(2)).toBe(false);
+    later.setVariable("Hold", null);
+    scanned.setVariable("Slot", moved);
+    // Created during the cycle and held only by an owned object spawned during it.
+    gc.register(created);
+    const spawned = object({ Held: created });
+    while (!gc.step(2)) { /* mark */ }
+
+    expect(gc.finish([scanned, later, spawned]).collected).toBe(0);
+    expect([moved.destroyed, created.destroyed]).toEqual([false, false]);
+  });
+
+  it("never collects what an atomic pass at the same moment keeps, under random script changes between steps", () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const run = randomGraph(seed);
+      for (let cycle = 0; cycle < 12; cycle++) {
+        run.gc.begin(run.roots);
+        for (let done = false; !done;) {
+          run.mutate(run.random.int(4));
+          done = run.gc.step(1 + run.random.int(40));
+        }
+        run.mutate(run.random.int(4));
+        const kept = reachableFrom(run.roots, run.sourceValues);
+        run.gc.finish(run.roots);
+        const lost = run.collectables.filter((entry) => kept.has(entry) && entry.destroyed);
+        expect(lost.map((entry) => entry.guid), `seed ${seed}, cycle ${cycle}`).toEqual([]);
+      }
+      // Bound: once the graph stops changing, the next cycle collects every unreachable object.
+      const kept = reachableFrom(run.roots, run.sourceValues);
+      run.gc.begin(run.roots);
+      while (!run.gc.step(1 + run.random.int(40))) { /* mark */ }
+      run.gc.finish(run.roots);
+      const alive = run.collectables.filter((entry) => !entry.destroyed);
+      expect(alive.map((entry) => entry.guid), `seed ${seed}`).toEqual(run.collectables.filter((entry) => kept.has(entry)).map((entry) => entry.guid));
+    }
+  });
+
+  it("collects as an atomic pass does when nothing changes during the cycle", () => {
+    const gc = collector();
+    const held = object();
+    const orphan = object();
+    gc.register(held);
+    gc.register(orphan);
+    const roots = Array.from({ length: 40 }, (_, index) => object({ Index: index, Tags: ["a", "b"], Hit: { Actor: index === 7 ? held : null } }));
+
+    gc.begin(roots);
+    let steps = 0;
+    while (!gc.step(16)) steps++;
+
+    expect(steps).toBeGreaterThan(3);
+    expect(gc.finish(roots)).toEqual({ marked: roots.length + 1, collected: 1, cleared: 0 });
+    expect([held.destroyed, orphan.destroyed]).toEqual([false, true]);
+  });
+});
+
+/** Deterministic random numbers for the differential test. */
+function randomSource(seed: number) {
+  let state = seed;
+  const next = () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  return { next, int: (n: number) => Math.floor(next() * n) };
+}
+
+/** Objects an atomic pass keeps, found independently: everything reached through variables, arrays, maps and records. */
+function reachableFrom(roots: readonly EngineObject[], sourceValues: readonly unknown[]): Set<EngineObject> {
+  const reached = new Set<EngineObject>();
+  const stack: unknown[] = [...roots, ...sourceValues];
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (value === null || typeof value !== "object") continue;
+    if (value instanceof EngineObject) {
+      if (value.destroyed || reached.has(value)) continue;
+      reached.add(value);
+      stack.push(...value.variables.values());
+    } else if (Array.isArray(value)) {
+      stack.push(...value);
+    } else if (value instanceof Map) {
+      for (const [key, entry] of value) stack.push(key, entry);
+    } else if (Object.getPrototypeOf(value) === Object.prototype) {
+      stack.push(...Object.values(value));
+    }
+  }
+  return reached;
+}
+
+/**
+ * Owned roots, collectable objects and a root source, and the changes scripts
+ * make between collector steps: variable writes and deletes, in-place array,
+ * structure and map edits, aliasing a container into a second variable, moving
+ * a reference between owners, Create Object, destroying an owned object and
+ * spawning one. Writes reach unreachable objects too, as delegates and the
+ * Objects tick list let scripts do. In-place edits store leaves only, so
+ * containers never contain themselves.
+ */
+function randomGraph(seed: number) {
+  const random = randomSource(seed);
+  const gc = collector();
+  const roots: EngineObject[] = [];
+  const collectables: EngineObject[] = [];
+  let sourceValues: unknown[] = [];
+  gc.addRootSource((visit) => sourceValues.forEach(visit));
+  const names = ["A", "B", "C"];
+  const pick = <T>(list: readonly T[]): T | undefined => list[random.int(list.length)];
+  const live = () => [...roots, ...collectables].filter((entry) => !entry.destroyed);
+  const leaf = (): unknown => {
+    switch (random.int(6)) {
+      case 0: return null;
+      case 1: return random.int(10);
+      case 2: return [pick(live()) ?? null, 1];
+      case 3: return { Actor: pick(live()) ?? null, Distance: 2 };
+      case 4: return new Map<unknown, unknown>([[pick(live()) ?? "k", pick(live()) ?? null]]);
+      default: return pick(live()) ?? null;
+    }
+  };
+  const containersOf = (owner: EngineObject): object[] => {
+    const found: object[] = [];
+    const walk = (value: unknown): void => {
+      if (value === null || typeof value !== "object" || value instanceof EngineObject) return;
+      found.push(value);
+      if (Array.isArray(value)) value.forEach(walk);
+      else if (value instanceof Map) value.forEach((entry, key) => { walk(key); walk(entry); });
+      else Object.values(value).forEach(walk);
+    };
+    owner.variables.forEach(walk);
+    return found;
+  };
+  const create = () => {
+    const created = object({ [pick(names)!]: leaf() });
+    gc.register(created);
+    collectables.push(created);
+    return created;
+  };
+  for (let index = 0; index < 4; index++) roots.push(object({ A: leaf() }));
+  for (let index = 0; index < 12; index++) {
+    const created = create();
+    pick(live())!.setVariable(pick(names)!, random.int(2) ? created : [created]);
+  }
+
+  const mutate = (count: number) => {
+    for (let change = 0; change < count; change++) {
+      const owner = pick(live())!;
+      const container = pick(containersOf(owner));
+      switch (random.int(12)) {
+        case 0: owner.setVariable(pick(names)!, leaf()); break;
+        case 1: owner.variables.delete(pick(names)!); break;
+        case 2: if (Array.isArray(container)) container.push(leaf()); break;
+        case 3: if (Array.isArray(container) && container.length > 0) container.splice(random.int(container.length), 1); break;
+        case 4: if (Array.isArray(container) && container.length > 0) container[random.int(container.length)] = leaf(); break;
+        case 5:
+          if (container instanceof Map) container.set(pick(live()) ?? "k", leaf());
+          else if (container && !Array.isArray(container)) (container as Record<string, unknown>)[pick(["Actor", "Other"])!] = leaf();
+          break;
+        case 6: if (container instanceof Map) container.delete(pick([...container.keys()])); break;
+        case 7: {
+          // Alias: a script reads a container from one object and stores it on another.
+          const alias = pick(containersOf(pick(live())!));
+          if (alias) owner.setVariable(pick(names)!, alias);
+          break;
+        }
+        case 8: {
+          // Move a reference from one owner to another (a reparent).
+          const name = pick(names)!;
+          const moved = owner.getVariable(name);
+          owner.setVariable(name, null);
+          pick(live())!.setVariable(pick(names)!, moved);
+          break;
+        }
+        case 9: {
+          const created = create();
+          if (random.int(2)) owner.setVariable(pick(names)!, created);
+          break;
+        }
+        case 10:
+          if (roots.length > 1 && random.int(2)) {
+            const [gone] = roots.splice(random.int(roots.length), 1);
+            gone!.destroyed = true;
+            gone!.releaseState();
+          } else {
+            roots.push(object({ A: leaf(), B: leaf() }));
+          }
+          break;
+        default: sourceValues = random.int(2) ? [leaf()] : []; break;
+      }
+    }
+  };
+  return { gc, roots, collectables, random, mutate, get sourceValues() { return sourceValues; } };
+}
+
 describe("canHoldReference", () => {
   it.each([
     [{ type: "object" }, true],
