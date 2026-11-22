@@ -8,7 +8,7 @@ import type {
   SerializedSceneLayer,
 } from "@haptic/core";
 import { isAssetDocumentKind } from "@haptic/core";
-import { truncateJournal, type MigrationPending } from "@haptic/assets";
+import { truncateJournal } from "@haptic/assets";
 import { journalDiscardLine } from "@haptic/edit";
 import type { FileLock } from "@haptic/source-control";
 import type { JournalBuffer } from "../lib/journal-buffer";
@@ -55,7 +55,6 @@ export interface ProjectSaveDeps {
   captureMtimeSnapshot: () => Promise<void>;
   playContent: PlayContentService;
   setLastCompiledSignature: (signature: string | null) => void;
-  setMigrationPending: (pending: MigrationPending[]) => void;
   /** Someone else's lock refuses a document's write; it stays unsaved. */
   sourceControlRef: RefObject<SourceControlService>;
   /** Re-derives the document context value. */
@@ -78,7 +77,6 @@ export function useProjectSave({
   captureMtimeSnapshot,
   playContent,
   setLastCompiledSignature,
-  setMigrationPending,
   sourceControlRef,
   bump,
 }: ProjectSaveDeps) {
@@ -99,22 +97,15 @@ export function useProjectSave({
     return pending;
   }, []);
   const [autoSaveStatus, setAutoSaveStatus] = useState<DocumentContextValue["autoSaveStatus"]>(null);
-  const [migrationPromptRequest, setMigrationPromptRequest] = useState(0);
   const [saveFailed, setSaveFailed] = useState<SaveFailed | null>(null);
   const dismissSaveFailed = useCallback(() => setSaveFailed(null), []);
 
   /**
-   * The one Save All path: auto-save, Save All, Play's save and Migrate On
-   * Save. Pending schema migrations refuse it until the user approves them
-   * (`approveMigrations`, kept for the rest of the project session); a refused
-   * Save All the user asked for (`promptMigrations`) opens the migration prompt.
-   * A document someone else has locked is not written and stays unsaved
+   * The one Save All path: auto-save, Save All and Play's save. A document someone else has locked is not written and stays unsaved
    * (`locked`); a Save All the user asked for (`reportLocked`) lists them in
    * the Save Failed prompt, while Auto-Save skips them quietly.
    */
   const runSaveAll = useCallback((options: {
-    approveMigrations?: boolean;
-    promptMigrations?: boolean;
     reportLocked?: SaveFailedPurpose;
   } = {}): Promise<SaveAllOutcome> => {
     // Keep the immutable authored document as the only save source. A session
@@ -146,21 +137,6 @@ export function useProjectSave({
         progress.finish();
         return "no-document";
       }
-      const migrate = options.approveMigrations === true || projectService.migrationsApproved;
-      if (!migrate && projectService.pendingMigrations.length > 0) {
-        setMigrationPending(projectService.pendingMigrations);
-        if (options.promptMigrations) setMigrationPromptRequest((request) => request + 1);
-        recordSaveAllTrace({
-          ok: false,
-          reason: "migrations",
-          dirtyBefore,
-          dirtyAfter: dirtyBefore,
-        });
-        progress.finish();
-        // Never silently rewrite: the user approves through the migration prompt.
-        return "migrations";
-      }
-      if (options.approveMigrations) projectService.approveMigrateOnSave();
       cancelDebouncedSave();
       // Buffered journal records start writing as Save begins, so a Save that
       // fails part-way leaves them recoverable. The clear below awaits them.
@@ -223,7 +199,6 @@ export function useProjectSave({
         progress.phase("project");
         await writer.saveProject(document, layouts);
         documentService.markAllClean(saved);
-        setMigrationPending([]);
         if (guid && documentService.getDirtyDocuments().length > 0) {
           // The journal is cleared only once nothing is unsaved: until then it
           // must not replay what this save wrote onto the saved files.
@@ -320,7 +295,6 @@ export function useProjectSave({
     projectDocumentRef,
     projectSaveState,
     setLastCompiledSignature,
-    setMigrationPending,
     sourceControlRef,
   ]);
   /**
@@ -328,15 +302,9 @@ export function useProjectSave({
    * documents someone else has locked are skipped quietly.
    */
   const saveProject = useCallback(() => runSaveAll(), [runSaveAll]);
-  /**
-   * Save All the user asked for: a refusal for pending migrations opens the
-   * prompt, and documents someone else has locked are listed in Save Failed.
-   */
+  /** Save All the user asked for: documents someone else has locked are listed in Save Failed. */
   const saveAll = useCallback((purpose: SaveFailedPurpose = "save") =>
-    runSaveAll({ promptMigrations: true, reportLocked: purpose }), [runSaveAll]);
-  /** Migrate On Save: approve the pending migrations and run the complete Save All. */
-  const approveMigrationsAndSave = useCallback((purpose: SaveFailedPurpose = "save") =>
-    runSaveAll({ approveMigrations: true, reportLocked: purpose }), [runSaveAll]);
+    runSaveAll({ reportLocked: purpose }), [runSaveAll]);
 
   const scheduleDebouncedSave = useCallback(() => {
     // Auto-Save off: nothing saves on its own, and an interval already waiting
@@ -420,20 +388,17 @@ export function useProjectSave({
       DocumentActions,
       | "saveProject"
       | "saveAll"
-      | "approveMigrationsAndSave"
       | "setAutoSavePaused"
       | "dismissSaveFailed"
     > => ({
       saveProject,
       saveAll,
-      approveMigrationsAndSave,
       setAutoSavePaused,
       dismissSaveFailed,
     }),
     [
       saveProject,
       saveAll,
-      approveMigrationsAndSave,
       setAutoSavePaused,
       dismissSaveFailed,
     ],
@@ -444,7 +409,6 @@ export function useProjectSave({
     setAutoSaveStatus,
     saveFailed,
     dismissSaveFailed,
-    migrationPromptRequest,
     cancelDebouncedSave,
     enqueueProjectWrite,
     scheduleDebouncedSave,

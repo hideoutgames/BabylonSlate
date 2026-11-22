@@ -14,7 +14,6 @@ import type { OpenDocument } from "../services/document-service";
 import type {
   ActiveDocumentState,
   CompileState,
-  EditorShellState,
   ProjectState,
   RegistryState,
   SaveState,
@@ -41,7 +40,6 @@ export interface PlayContextValue {
   registerSimulationViewport: (viewport: SimulationViewport) => () => void;
   playing: boolean;
   preparing: boolean;
-  playAwaitingMigration: boolean;
   requestPlay: (options?: PlayOptions) => Promise<void>;
   canPlay: boolean;
   previewBuild: boolean;
@@ -59,8 +57,6 @@ export interface PlayContextValue {
   setOverlayProfiler: (value: boolean) => void;
   setPauseOnPlay: (value: boolean) => void;
   launchPlay: (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => void;
-  resumePlayAfterMigration: () => Promise<void>;
-  cancelPlayMigration: () => void;
   registerSharedEngine: (engine: AbstractEngine | null) => void;
   ensureSharedEngine: () => AbstractEngine | null;
   sharedEngineGeneration: number;
@@ -87,7 +83,6 @@ export type PlayRequestInputs = Pick<ActiveDocumentState, "activeDocumentId">
   & Pick<RegistryState, "assetRegistry" | "extensionService" | "projectGuid">
   & Pick<SaveState, "dirtyDocuments" | "projectDirty">
   & Pick<CompileState, "graphsNeedCompile">
-  & Pick<EditorShellState, "migrationPending">
   & {
     /** The open Scene documents in tab order. */
     sceneDocuments: readonly OpenDocument[];

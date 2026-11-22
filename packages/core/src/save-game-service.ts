@@ -20,7 +20,7 @@ import {
 } from "./save-game";
 
 /** The only save file format version the service writes and reads. */
-const FORMAT_VERSION = 2;
+const FORMAT_VERSION = 1;
 const MAX_SAVE_BYTES = 16 * 1024 * 1024;
 const generationNames = ["generation-a.save", "generation-b.save"] as const;
 interface SaveBody extends SaveGameMigrationData {

@@ -351,7 +351,7 @@ describe("ProjectService lifecycle", () => {
     const service = new ProjectService(storage);
     await service.loadCurrentProject();
     const path = "assets/Racing.scene.hasset";
-    const bytes = (name: string) => encodeAssetDocument({ type: "Scene", name, guid: "racing", version: 4, payload: { name, actors: [] } });
+    const bytes = (name: string) => encodeAssetDocument({ type: "Scene", name, guid: "racing", version: 1, payload: { name, actors: [] } });
     await storage.writeBinary(path, await bytes("Before"));
     await service.registry!.reindexPath(path);
     const after = await bytes("After saving");
@@ -382,7 +382,7 @@ describe("ProjectService lifecycle", () => {
     const path = "assets/Growing.scene.hasset";
     const before = { name: "Before", actors: [] };
     const after = { name: "After saving", actors: [], notes: "x".repeat(8192) };
-    const bytes = (payload: Record<string, unknown>) => encodeAssetDocument({ type: "Scene", name: "Growing", guid: "growing", version: 4, payload });
+    const bytes = (payload: Record<string, unknown>) => encodeAssetDocument({ type: "Scene", name: "Growing", guid: "growing", version: 1, payload });
     await storage.writeBinary(path, await bytes(before));
     const registry = service.registry!;
     await registry.reindexPath(path);
@@ -426,7 +426,7 @@ describe("ProjectService lifecycle", () => {
     const service = new ProjectService(storage);
     await service.loadCurrentProject();
     const path = "assets/Racing.scene.hasset";
-    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Racing", guid: "racing", version: 4, payload: { actors: [] } }));
+    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Racing", guid: "racing", version: 1, payload: { actors: [] } }));
     await service.registry!.reindexPath(path);
     const read = storage.readBinaryRange.bind(storage);
     const controller = new AbortController();
@@ -454,7 +454,7 @@ describe("ProjectService lifecycle", () => {
     const service = new ProjectService(storage);
     await service.loadCurrentProject();
     const path = "assets/Pending.scene.hasset";
-    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Pending", guid: "pending", version: 4, payload: { actors: [] } }));
+    await storage.writeBinary(path, await encodeAssetDocument({ type: "Scene", name: "Pending", guid: "pending", version: 1, payload: { actors: [] } }));
     await service.registry!.reindexPath(path);
     const port: ProjectStorage = storage;
     const read = port.readBinaryRange.bind(port);
@@ -489,7 +489,7 @@ describe("ProjectService lifecycle", () => {
     const service = new ProjectService(storage);
     await service.loadCurrentProject();
     await storage.writeBinary("assets/unused.scene.hasset", await encodeAssetDocument({
-      type: "Scene", name: "Unused", guid: "unused-scene", version: 4,
+      type: "Scene", name: "Unused", guid: "unused-scene", version: 1,
       payload: { name: "Unused", actors: [], notes: "x".repeat(256 * 1024) },
     }, { extraChunks: [{ id: "unused-source", kind: "source", mime: "application/octet-stream", data: new Uint8Array(1024 * 1024) }] }));
     const before = storage.getReadMetrics().actualBytesRead;

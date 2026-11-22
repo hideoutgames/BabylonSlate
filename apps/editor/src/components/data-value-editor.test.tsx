@@ -21,7 +21,7 @@ it("stops mutually recursive Definition branches without suppressing editable si
     assets: [], byGuid: new Map(), schemas, enumMembers: {}, pickerAssets: [], propertyAssets: [], classEntries: [],
     types: { structures: [], enums: [], dataDefinitions: [] },
   };
-  render(<DataValueEditor field={{ name: "Root", typeId: "struct", typeClassId: "a" }}
+  render(<DataValueEditor field={{ id: "Root", name: "Root", typeId: "struct", typeClassId: "a" }}
     value={{ First: { Amount: 1 }, Second: { Amount: 2 } }} defaultValue={{}}
     onChange={() => undefined} label="Root" path="root" disabled={false} catalog={catalog} issues={[]} />);
   expect(screen.getAllByRole("alert")).toHaveLength(2);

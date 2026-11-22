@@ -43,8 +43,7 @@ async function writeCreatedAsset(host: RegistryHost, root: ContentRoot, path: st
         : classIdForAssetPath(asset.path),
       parentClassId: asset.header.parentClass,
       requiredVariableNames: asset.header.requiredVariableNames,
-      members: Array.isArray(asset.header.payload.members) ? asset.header.payload.members as AssetDependencyClass["members"]
-        : Array.isArray(asset.header.payload.variables) ? asset.header.payload.variables.map((variable) => ({ ...(variable as Record<string, unknown>), kind: "variable" })) as unknown as AssetDependencyClass["members"] : undefined,
+      members: Array.isArray(asset.header.payload.members) ? asset.header.payload.members as AssetDependencyClass["members"] : undefined,
     }));
   const dependencies = collectAssetDependencyMetadata(result.type, dependencyPayload, {
     dependencies: result.dependencies, parentClass: result.parentClass, classes,

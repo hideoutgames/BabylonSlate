@@ -1,5 +1,4 @@
-import { DOCUMENT_CHUNK_ID } from "./asset-document";
-import { ATLAS_REFERRER_TYPES, atlasTextureGuids, headerAtlasTextureGuids } from "./atlas-textures";
+import { ATLAS_REFERRER_TYPES, headerAtlasTextureGuids } from "./atlas-textures";
 import type { HassetHeader } from "./hasset";
 
 /**
@@ -36,14 +35,8 @@ export class AtlasReferrerIndex {
   /** Record the textures a header just indexed (not a placeholder) samples, if its type is an atlas referrer. */
   indexReferrer(header: HassetHeader): void {
     if (!ATLAS_REFERRER_TYPES.has(header.type)) return;
-    // Every document save lists the atlases in the header. A referrer whose
-    // payload is still its header (created or imported, not yet saved as a
-    // document) names them in that payload.
-    const inHeader = !header.chunks.some((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
-    this.setReferrer(
-      header.guid,
-      headerAtlasTextureGuids(header.payload) ?? (inHeader ? atlasTextureGuids(header.type, header.payload) : []),
-    );
+    // Every write of a referrer lists its atlases in the header.
+    this.setReferrer(header.guid, headerAtlasTextureGuids(header.payload));
   }
 
   setReferrer(referrer: string, textures: readonly string[]): void {

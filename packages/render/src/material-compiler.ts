@@ -1679,7 +1679,7 @@ RegisterClass(
 );
 
 // Particle and Text outputs write display color: Particle Color and glyph span
-// colors are display-space, and Legacy Display shows the output unchanged. Like
+// colors are display-space, and Display Space shows the output unchanged. Like
 // Babylon's own particle and Standard shaders, they decode to linear when a
 // Scene Linear display stage (applyByPostProcess) encodes the frame once.
 class DisplayFragmentOutputBlock extends FragmentOutputBlock {

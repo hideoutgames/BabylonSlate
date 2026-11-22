@@ -299,7 +299,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     stored: ReadonlyMap<string, StoredPlayDocument> | undefined,
   ) => {
     const document = guid ? stored?.get(guid) : undefined;
-    return document ? projectService.documentContentFromStored(kind, path, document) : projectService.loadDocument(kind, path);
+    return document ? projectService.documentContentFromStored(kind, document) : projectService.loadDocument(kind, path);
   };
 
   /** `strict` fails on an unreadable Class instead of compiling without it. */

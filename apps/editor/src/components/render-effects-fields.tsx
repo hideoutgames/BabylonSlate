@@ -38,13 +38,13 @@ type EffectRowSpec = {
   shownWhen?: EffectsPath;
   /** Indented under the switch that shows it. */
   dependent?: boolean;
-  /** Applies in the Scene Linear Color Pipeline only, so it is disabled in Legacy Display. */
+  /** Applies in the Scene Linear Color Pipeline only, so it is disabled in Display Space. */
   sceneLinear?: boolean;
   /** Softens the frame, so it never applies under Upscaling Pixelated. */
   smooths?: boolean;
 };
 
-const PIPELINE_LABELS = { legacyDisplay: "Legacy Display", sceneLinear: "Scene Linear" } as const;
+const PIPELINE_LABELS = { displaySpace: "Display Space", sceneLinear: "Scene Linear" } as const;
 const TONE_MAPPING_LABELS = { none: "None", standard: "Standard", aces: "ACES", neutral: "Neutral" } as const;
 const SPATIAL_SCALE_HINT = "Multiplies Post Processing Resolution Scale, with a quarter-resolution minimum.";
 

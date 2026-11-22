@@ -33,9 +33,9 @@ describe("default Save Game field catalog", () => {
 
   it("offers only Structures without object references, nested ones included", () => {
     const schemas = mergeEngineTypeSchemas({ structs: {
-      loadout: { name: "Loadout", fields: [{ name: "Spread", typeId: "struct", typeClassId: "engine:FloatRange" }, { name: "Icon", typeId: "asset" }] },
-      squad: { name: "Squad", fields: [{ name: "Leader", typeId: "struct", typeClassId: "member" }] },
-      member: { name: "Member", fields: [{ name: "Actor", typeId: "object", typeClassId: "Actor" }] },
+      loadout: { id: "Loadout", name: "Loadout", fields: [{ id: "Spread", name: "Spread", typeId: "struct", typeClassId: "engine:FloatRange" }, { id: "Icon", name: "Icon", typeId: "asset" }] },
+      squad: { id: "Squad", name: "Squad", fields: [{ id: "Leader", name: "Leader", typeId: "struct", typeClassId: "member" }] },
+      member: { id: "Member", name: "Member", fields: [{ id: "Actor", name: "Actor", typeId: "object", typeClassId: "Actor" }] },
     } });
     const structures = [
       ...ENGINE_STRUCTS.map((entry) => ({ guid: entry.id, name: entry.name })),
@@ -52,7 +52,7 @@ describe("default Save Game field catalog", () => {
 describe("Save Games linked to a Data Definition", () => {
   const dataDefinition = (fields: object[]) => mergeEngineTypeSchemas({
     enums: { difficulty: { name: "Difficulty", members: [{ name: "Easy", value: 0 }, { name: "Hard", value: 1 }] } },
-    structs: { squad: { name: "Squad", fields: [{ name: "Leader", typeId: "object", typeClassId: "Actor" }] } },
+    structs: { squad: { id: "Squad", name: "Squad", fields: [{ id: "Leader", name: "Leader", typeId: "object", typeClassId: "Actor" }] } },
     dataDefinitions: { progress: { name: "ProgressFields", fields } as never },
   });
   const linked = { id: "save", schemaVersion: 1, fields: [], dataDefinitionId: "progress", defaults: { "coins-id": 50, "spawn-id": "not a vector" } };

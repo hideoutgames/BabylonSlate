@@ -70,13 +70,13 @@ describe("asset settings payloads", () => {
     expect(asset.fields).toEqual([]);
   });
 
-  it("retains legacy identity across repeated renames and creates distinct fields", () => {
+  it("retains field identity across repeated renames and creates distinct fields", () => {
     let asset = patchStructureField({
       kind: "structure", guid: "stats", name: "Stats",
-      fields: [{ name: "Health", typeId: "int" }],
+      fields: [{ id: "Health", name: "Health", typeId: "int" }],
     }, 0, { name: "HitPoints" });
     asset = patchStructureField(asset, 0, { name: "HP" });
-    expect(asset.fields[0]).toEqual({ id: "legacy:Health", name: "HP", typeId: "int" });
+    expect(asset.fields[0]).toEqual({ id: "Health", name: "HP", typeId: "int" });
     asset = addStructureField(addStructureField(asset));
     expect(asset.fields.map((field) => field.name)).toEqual(["HP", "NewField", "NewField2"]);
     expect(new Set(asset.fields.map((field) => field.id)).size).toBe(3);

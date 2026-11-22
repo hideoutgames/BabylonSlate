@@ -352,7 +352,7 @@ describe("EditorDebugOverlay", () => {
     expect(stages()).toHaveLength(1);
     expect(stages()[0]).not.toBe(neutral);
     expect(stages()[0]!.imageProcessingConfiguration.toneMappingType).toBe(ImageProcessingConfiguration.TONEMAPPING_ACES);
-    // Legacy Display has no display stage: materials encode display colour themselves.
+    // Display Space has no display stage: materials encode display colour themselves.
     updateSceneRenderingSettings(scene, { mode: "pbr", effects: DEFAULT_RENDER_EFFECTS });
     overlay.tick(3000);
     expect(stages()).toHaveLength(0);

@@ -158,7 +158,7 @@ describe("asset documents", () => {
         type: "Material",
         name: "Rock",
         guid: "mat-1",
-        version: 2,
+        version: 1,
         payload: { domain: "surface", nodes: [], edges: [] },
       },
       { dependencies: ["tex-albedo", "fn-tint", "tex-albedo"] },

@@ -269,7 +269,7 @@ export interface SerializedScene {
   timelineClips?: SerializedTimelineClip[];
 }
 
-export const SCENE_SCHEMA_VERSION = 4;
+export const SCENE_SCHEMA_VERSION = 1;
 
 /**
  * Keep an authored embedded script (SceneScript, SceneLayerScript) as a graph

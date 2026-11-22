@@ -10,7 +10,7 @@ import {
 } from "./hasset";
 import { concatBytes, sha256Hex, writeU32LE } from "./bytes";
 import { bytesEqual } from "./test-support/bytes";
-import { AssetFormatVersionError, createDefaultMigrationRegistry } from "./migration";
+import { AssetFormatVersionError } from "./migration";
 
 /** A file with an arbitrary header, as another writer could have stored it. */
 function rawHasset(header: object, body: Uint8Array): Uint8Array {
@@ -262,20 +262,5 @@ describe("hasset codec", () => {
     expect(header.mode).toBe("bundled");
     const decoded = await decodeHasset(bundled);
     expect(decoded.nestedAssets.get("dep-1")).toEqual(nested);
-  });
-});
-
-describe("schema migration", () => {
-  it("refuses future versions", () => {
-    const registry = createDefaultMigrationRegistry();
-    expect(() => registry.migrate("Class", 99, {})).toThrow(/newer engine version/);
-  });
-
-  it("passes through types that have no migration chain", () => {
-    const registry = createDefaultMigrationRegistry();
-    const result = registry.migrate("Texture", 1, { name: "Icon" });
-    expect(result.migrated).toBe(false);
-    expect(result.version).toBe(1);
-    expect(result.payload).toEqual({ name: "Icon" });
   });
 });

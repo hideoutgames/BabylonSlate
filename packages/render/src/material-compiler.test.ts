@@ -349,7 +349,7 @@ describe("material compiler", () => {
       }
       return defines.match(/^#define CONVERTTOLINEAR\d*$/gm) ?? [];
     };
-    // Legacy Display shows Particle Color and glyph span colors unchanged.
+    // Display Space shows Particle Color and glyph span colors unchanged.
     expect(await linearDecodes()).toEqual([]);
     // Scene Linear: decoded once so the Display Color stage encodes them once.
     scene.imageProcessingConfiguration.applyByPostProcess = true;

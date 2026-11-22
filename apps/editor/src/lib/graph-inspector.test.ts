@@ -40,7 +40,7 @@ describe("Value units", () => {
 
 describe("Range Structure rows", () => {
   const schemas = mergeEngineTypeSchemas({ structs: {
-    tuning: { name: "Tuning", fields: [{ name: "SpawnCount", typeId: "struct", typeClassId: "engine:IntRange" }, { name: "Label", typeId: "string" }] },
+    tuning: { id: "Tuning", name: "Tuning", fields: [{ id: "SpawnCount", name: "SpawnCount", typeId: "struct", typeClassId: "engine:IntRange" }, { id: "Label", name: "Label", typeId: "string" }] },
   } });
 
   it("edits a range variable as one Min – Max row and reads crossing ends as swapped", () => {
@@ -69,7 +69,7 @@ describe("Range Structure rows", () => {
     const [row, ...rest] = variableDefaultPropertyRows("struct", curve, onChange, { typeClassId: "engine:FloatCurve", schemas });
     expect(rest).toEqual([]);
     expect(row).toMatchObject({ kind: "value-curve", curveKind: "float", value: curve });
-    const curveSchemas = mergeEngineTypeSchemas({ structs: { fx: { name: "Fx", fields: [{ name: "Tint", typeId: "struct", typeClassId: "engine:ColorCurve" }] } } });
+    const curveSchemas = mergeEngineTypeSchemas({ structs: { fx: { id: "Fx", name: "Fx", fields: [{ id: "Tint", name: "Tint", typeId: "struct", typeClassId: "engine:ColorCurve" }] } } });
     const [tint] = variableDefaultPropertyRows("struct", {}, onChange, { typeClassId: "fx", schemas: curveSchemas });
     expect(tint).toMatchObject({ kind: "value-curve", curveKind: "color", label: "Tint" });
   });
@@ -121,9 +121,9 @@ describe("Tag property rows", () => {
       schemas: {
         enums: {},
         structs: { rules: { name: "Rules", fields: [
-          { name: "State", typeId: "tag" },
-          { name: "Allowed", typeId: "struct", typeClassId: "engine:TagContainer" },
-          { name: "Score", typeId: "float" },
+          { id: "State", name: "State", typeId: "tag" },
+          { id: "Allowed", name: "Allowed", typeId: "struct", typeClassId: "engine:TagContainer" },
+          { id: "Score", name: "Score", typeId: "float" },
         ] } },
       },
     });
@@ -176,13 +176,13 @@ describe("structNodePropertyRows", () => {
     const patch = vi.fn();
     const rows = structNodePropertyRows("struct.make", {
       structGuid: "old", "default:Health": 99,
-    }, patch, [{ guid: "stats", name: "Stats", fields: [{ name: "Health", typeId: "float", defaultValue: 10 }] }]);
+    }, patch, [{ guid: "stats", name: "Stats", fields: [{ id: "Health", name: "Health", typeId: "float", defaultValue: 10 }] }]);
     const row = rows[0]!;
     if (row.kind !== "enum") throw new Error("Expected type selector");
     row.onChange("stats");
     expect(patch).toHaveBeenCalledWith({
       structGuid: "stats", title: "Make Stats", "default:Health": undefined,
-      fields: [{ name: "Health", typeId: "float", defaultValue: 10 }],
+      fields: [{ id: "Health", name: "Health", typeId: "float", defaultValue: 10 }],
     });
   });
 });
@@ -721,14 +721,14 @@ describe("variableDefaultPropertyRows structs and enums", () => {
       structs: {
         "struct-inner": {
           name: "Inner",
-          fields: [{ name: "armor", typeId: "int" }],
+          fields: [{ id: "armor", name: "armor", typeId: "int" }],
         },
         "struct-stats": {
           name: "Stats",
           fields: [
-            { name: "health", typeId: "int" },
-            { name: "team", typeId: "enum", typeClassId: "enum-team" },
-            { name: "inner", typeId: "struct", typeClassId: "struct-inner" },
+            { id: "health", name: "health", typeId: "int" },
+            { id: "team", name: "team", typeId: "enum", typeClassId: "enum-team" },
+            { id: "inner", name: "inner", typeId: "struct", typeClassId: "struct-inner" },
           ],
         },
       },
@@ -758,13 +758,13 @@ describe("variableDefaultPropertyRows structs and enums", () => {
   it("stops expanding a Structure field that re-enters a Structure already shown", () => {
     const schemas = { enums: {}, structs: {
       node: { name: "Node", fields: [
-        { name: "value", typeId: "int" },
-        { name: "next", typeId: "struct", typeClassId: "node" },
-        { name: "link", typeId: "struct", typeClassId: "link" },
+        { id: "value", name: "value", typeId: "int" },
+        { id: "next", name: "next", typeId: "struct", typeClassId: "node" },
+        { id: "link", name: "link", typeId: "struct", typeClassId: "link" },
       ] },
       link: { name: "Link", fields: [
-        { name: "weight", typeId: "float" },
-        { name: "back", typeId: "struct", typeClassId: "node" },
+        { id: "weight", name: "weight", typeId: "float" },
+        { id: "back", name: "back", typeId: "struct", typeClassId: "node" },
       ] },
     } };
     const rows = variableDefaultPropertyRows("struct", { value: 1 }, vi.fn(), { typeClassId: "node", schemas });
@@ -777,9 +777,9 @@ describe("variableDefaultPropertyRows structs and enums", () => {
     const rows = variableDefaultPropertyRows("struct", value, onChange, {
       typeClassId: "stats",
       schemas: { enums: {}, structs: { stats: { name: "Stats", fields: [
-        { name: "health", typeId: "float" },
-        { name: "prices", typeId: "float", container: "array" },
-        { name: "labels", typeId: "string", container: "map", keyTypeId: "int" },
+        { id: "health", name: "health", typeId: "float" },
+        { id: "prices", name: "prices", typeId: "float", container: "array" },
+        { id: "labels", name: "labels", typeId: "string", container: "map", keyTypeId: "int" },
       ] } } },
     });
     expect(rows.map((row) => row.label)).toEqual(["Health"]);

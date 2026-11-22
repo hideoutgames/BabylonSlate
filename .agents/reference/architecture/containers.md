@@ -51,7 +51,7 @@ Locked on-disk formats: `.hasset`, `.htrace`, the project / `.hplugin` tree, der
 - Import types (Font, Texture, Model, …) store settings on `header.payload` with binary chunks and no `document` chunk; `decodeAssetDocument` falls back to the header payload. Saves for those types write `headerPayload` so binary chunks survive, and document saves carry extra chunks.
 - A re-save keeps the guid read from the existing header.
 - Readers that pair a document with chunks (export, Texture variants) use `ProjectService.loadDocumentWithChunks`: one file revision, retried if a save lands in between.
-- Scene payloads are `SCENE_SCHEMA_VERSION` = 4; additive fields are filled by `normalizeScene`. Documents are `.hasset` only; `.json` scenes/classes are never read or discovered.
+- Scene payloads are `SCENE_SCHEMA_VERSION` = 1; additive fields are filled by `normalizeScene`. Documents are `.hasset` only; `.json` scenes/classes are never read or discovered.
 
 ## .htrace
 
@@ -84,8 +84,6 @@ App-private storage keyed by project guid (`derived/{projectGuid}/…`): compile
 
 ## Schema versions
 
-- Each registered type declares `currentVersion` and may own ordered `N → N+1` steps (`MigrationRegistry`, `loadPayloadWithMigration`). `createDefaultMigrationRegistry()` registers **no steps**: older versions are refused as an unsupported old format. Before the first release formats change in place without raising versions; add a step (with a committed golden) only when a released format must be read again.
-- Unregistered types pass through (so Font / Sprite / AnimationGraph3D version 1 is not "newer than 0"); registered future versions are refused. `project.json` migrates as type `Project`.
-- Migration is opt-in per session: opening a project that needs it prompts once; `saveDocument`, `saveProject`, NavMesh bakes and Audio clip writes refuse pending paths until `approveMigrateOnSave()`. Untouched files are never silently rewritten; autosave never prompts.
-- Play, Simulate, Preview Build and Export Game never migrate: `MigrationRegistry.requireCurrent` refuses any reached asset whose stored version is not current (open working documents are exempt). The packaged player trusts its export.
+- `RELEASED_VERSIONS` / `CURRENT_VERSIONS` in `migration.ts` are exhaustive over `AssetType | "Project"` (`satisfies Record<VersionedAssetType, number>`): a new asset type does not compile until it has a version. Every type is at 1 until the first release. Extension asset types (`extension.<guid>.<typeId>`) are at `EXTENSION_ASSET_FORMAT_VERSION` (1).
+- Reads are strict: `MigrationRegistry.requireCurrent` refuses any stored version other than the current one (older: "unsupported old format", newer: "made with a newer engine version") and any unknown type. There are no upgrade steps and no migration prompt; opening a document, `project.json` (type `Project`), Play, Simulate, Preview Build and Export Game all refuse (open working documents are exempt from the Play check). `currentVersion` throws for an unknown type, so no save writes version 0. The packaged player trusts its export.
 - `AssetFormatVersionError` messages are user-facing (Scene Loading Failed, Could Not Open Asset, Play/Preview/Export failures).

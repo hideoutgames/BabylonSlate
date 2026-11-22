@@ -83,8 +83,7 @@ import {
   type ClassAssetReplacement,
   isAssetDocumentPath,
   isTracePath,
-  loadPayloadWithMigration,
-  defaultRegistry,
+  createDefaultMigrationRegistry,
   projectContentRoot,
   readAssetDocumentHeader,
   readTraceDocument,
@@ -96,7 +95,6 @@ import {
   type ChunkInput,
   type EncodableChunk,
   type BlobStore,
-  type MigrationPending,
   type MigrationRegistry,
   type PluginDescriptor,
   type PluginDiagnostic,
@@ -164,7 +162,6 @@ import {
 export interface ProjectLoadResult {
   document: ProjectDocument;
   layouts: ProjectLayouts;
-  migrationPending: MigrationPending[];
 }
 
 export type { PluginImportResult } from "./project-plugins";
@@ -190,8 +187,6 @@ export class ProjectService {
   private readonly registryViews = new WeakMap<AssetRegistry, AssetRegistry>();
   readonly extensions: EditorExtensionService;
   private projectGuid: string | null = null;
-  private migrationPending: MigrationPending[] = [];
-  private migrateOnSaveApproved = false;
   private readonly migrations: MigrationRegistry;
   private readonly blobs: BlobStore;
   private assetRegistry: AssetRegistry | null = null;
@@ -233,11 +228,11 @@ export class ProjectService {
   constructor(
     storage: ProjectStorage,
     options: TextureEncodingOptions & {
-      /** Schema versions and migration steps; tests inject steps to exercise the approval flow. */
+      /** Schema versions; tests inject other versions to exercise strict version checks. */
       migrations?: MigrationRegistry;
     } = {},
   ) {
-    this.migrations = options.migrations ?? defaultRegistry();
+    this.migrations = options.migrations ?? createDefaultMigrationRegistry();
     this.unguardedStorage = storage;
     storage = guardProjectStorage(storage, this.writeAdmission, true);
     this.storage = storage;
@@ -593,31 +588,6 @@ export class ProjectService {
     return this.projectGuid;
   }
 
-  get pendingMigrations(): MigrationPending[] {
-    return [...this.migrationPending];
-  }
-
-  approveMigrateOnSave(): void {
-    this.migrateOnSaveApproved = true;
-  }
-
-  /** The user approved Migrate On Save for this project session. */
-  get migrationsApproved(): boolean {
-    return this.migrateOnSaveApproved;
-  }
-
-  /** A write stamps the current schema version, so a pending migration needs approval first. */
-  private assertMigrationApproved(path: string): void {
-    if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
-      throw new Error("Asset schema migration requires user approval before save");
-    }
-  }
-
-  /** The file at `path` was written at the current schema version. */
-  private noteMigrated(path: string): void {
-    this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
-  }
-
   async listProjects(): Promise<ProjectFolderHandle[]> {
     return (await this.storage.listProjects()).filter((folder) => !isAppOwnedFolder(folder.name));
   }
@@ -830,8 +800,6 @@ export class ProjectService {
     await this.textures.settle();
     await this.storage.releaseFolder();
     this.projectGuid = null;
-    this.migrationPending = [];
-    this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
     this.sceneAudioReverb.clear();
     this.assetRegistry = null;
@@ -905,8 +873,6 @@ export class ProjectService {
 
     this.resetAssetLoading();
 
-    this.migrationPending = [];
-    this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
     this.sceneAudioReverb.clear();
     this.textures.forgetSessionEncodes();
@@ -933,20 +899,11 @@ export class ProjectService {
     this.textures.setSourceControlEnabled((document.settings.sourceControl?.mode ?? "off") !== "off");
     this.projectPlugins.setOverrides(document.settings.pluginOverrides ?? {});
 
-    // Project manifest schema migration (type Project).
-    const projectVersion =
-      typeof raw.version === "number"
-        ? raw.version
-        : this.migrations.currentVersion("Project");
-    const migrated = loadPayloadWithMigration(this.migrations, {
-      type: "Project",
-      version: projectVersion,
-      payload: raw as unknown as Record<string, unknown>,
-      path: PROJECT_FILE,
-    });
-    if (migrated.pending) {
-      this.migrationPending.push(migrated.pending);
-    }
+    // The manifest is read as stored, so it must be at the current Project version.
+    this.migrations.requireCurrent(
+      "Project",
+      typeof raw.version === "number" ? raw.version : this.migrations.currentVersion("Project"),
+    );
 
     const withDocuments = await this.ensureDocuments(document);
     const layouts = await this.loadLayouts();
@@ -954,7 +911,6 @@ export class ProjectService {
     return {
       document: withDocuments,
       layouts,
-      migrationPending: this.pendingMigrations,
     };
   }
 
@@ -1175,7 +1131,7 @@ export class ProjectService {
       saveDocument: this.saveDocument.bind(this),
       remountRegistry: this.remountRegistry.bind(this),
       readStoredAssetDocument: (kind, path) => this.readStoredAssetDocument(kind, path),
-      documentContent: (kind, path, raw) => this.documentContent(kind, path, raw),
+      documentContent: (kind, raw) => this.documentContent(kind, raw),
     };
   }
 
@@ -1295,7 +1251,6 @@ export class ProjectService {
     return {
       document,
       layouts: createEmptyLayouts(),
-      migrationPending: [],
     };
   }
 
@@ -1333,7 +1288,7 @@ export class ProjectService {
       return decoded.payload;
     }
     const raw = await this.readStoredAssetDocument(kind, path, options);
-    return this.documentContent(kind, path, raw);
+    return this.documentContent(kind, raw);
   }
 
   /**
@@ -1342,10 +1297,9 @@ export class ProjectService {
    */
   documentContentFromStored(
     kind: Exclude<DocumentKind, "content-browser" | "source-control" | "trace">,
-    path: string,
     stored: { type: string; version: number; payload: Record<string, unknown> },
   ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
-    return this.documentContent(kind, path, stored);
+    return this.documentContent(kind, stored);
   }
 
   /**
@@ -1386,7 +1340,7 @@ export class ProjectService {
     const { document } = snapshot;
     this.assetGuids.set(path, document.guid);
     return {
-      document: this.documentContent(kind, path, {
+      document: this.documentContent(kind, {
         type: document.type || fallbackDocumentType(kind),
         version: document.version,
         payload: document.payload,
@@ -1456,24 +1410,12 @@ export class ProjectService {
 
   private documentContent(
     kind: Exclude<DocumentKind, "content-browser" | "source-control">,
-    path: string,
     raw: { type: string; version: number; payload: Record<string, unknown> },
   ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
-    const migrated = loadPayloadWithMigration(this.migrations, {
-      type: raw.type,
-      version: raw.version,
-      payload: raw.payload,
-      path,
-    });
-    if (migrated.pending) {
-      // Loading an unmigrated asset again keeps one entry for its path.
-      const existing = this.migrationPending.findIndex((entry) => entry.path === path);
-      if (existing === -1) this.migrationPending.push(migrated.pending);
-      else this.migrationPending[existing] = migrated.pending;
-    }
+    this.migrations.requireCurrent(raw.type, raw.version);
     // PluginSettings.version is an author label, separate from the asset header schema version.
-    if (raw.type === "PluginSettings") return migrated.payload;
-    const { version: _v, ...content } = migrated.payload as Record<
+    if (raw.type === "PluginSettings") return raw.payload;
+    const { version: _v, ...content } = raw.payload as Record<
       string,
       unknown
     > & { version?: number };
@@ -1622,7 +1564,6 @@ export class ProjectService {
       if (diagnostic) throw new Error(diagnostic.message);
     }
     if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .hasset document.`);
-    this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const blobs = this.blobsForPath(path);
     if (isPluginDocumentReadOnly(this.projectPlugins.descriptors, path)) {
@@ -1727,7 +1668,6 @@ export class ProjectService {
       },
     );
     await storeDocumentBytes(this.files, path, stored, bytes, this.assetRegistry, suppliedChunkIds(extraChunks));
-    this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
       // In the settings file's own write queue, so a PluginSettings save is
       // read here rather than replaced by the copy read before it, and is not
@@ -1854,7 +1794,6 @@ export class ProjectService {
     if (isPluginDocumentReadOnly(this.projectPlugins.descriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
-    this.assertMigrationApproved(path);
     const guid = await this.guidForAsset(path);
     const existing = await readExistingAssetMeta(this.files, path);
     const stored = existing?.catalog ?? null;
@@ -1886,7 +1825,6 @@ export class ProjectService {
       },
     );
     await storeDocumentBytes(this.files, path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
-    this.noteMigrated(path);
   }
 
   /** Update only derived bytes; unsaved geometry waits for an explicit Scene save. */
@@ -2002,7 +1940,6 @@ export class ProjectService {
     if (isPluginDocumentReadOnly(this.projectPlugins.descriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
-    this.assertMigrationApproved(path);
     const existing = await readExistingAssetMeta(this.files, path);
     const stored = existing?.catalog ?? null;
     const kept = await keptChunksFor(this.files, path, stored, new Set(omit));
@@ -2027,7 +1964,6 @@ export class ProjectService {
       },
     );
     await storeDocumentBytes(this.files, path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
-    this.noteMigrated(path);
   }
 
   guidForPath(path: string): string | null {
@@ -2063,7 +1999,6 @@ export class ProjectService {
     document: ProjectDocument,
     layouts: ProjectLayouts,
   ): Promise<void> {
-    this.assertMigrationApproved(PROJECT_FILE);
     const guid = this.projectGuid ?? newGuid();
     const text = (updatedAt: string) => JSON.stringify({
       ...document,
@@ -2087,7 +2022,6 @@ export class ProjectService {
       await this.storage.writeText(PROJECT_FILE, text(new Date().toISOString()));
     }
     await this.saveLayouts(layouts);
-    this.noteMigrated(PROJECT_FILE);
   }
 
   /** Write only `layout.json` (tabs, dock layouts and panel placements), which holds no project content. */

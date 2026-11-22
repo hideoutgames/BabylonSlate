@@ -25,7 +25,7 @@ export const AUDIO_MUFFLE_LOWPASS_HZ = 700;
 
 const MAGIC = new TextEncoder().encode("BSAR");
 /** The word after the magic; decode reads no field from a chunk with any other value. */
-const FORMAT = 2;
+const FORMAT = 1;
 const FLAG_DRY = 1;
 
 export type AudioReverbProbe = {

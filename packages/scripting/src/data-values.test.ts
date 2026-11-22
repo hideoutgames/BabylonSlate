@@ -21,8 +21,8 @@ const schemasFor = (fields: StructField[]): TypeSchemas => ({ structs: { stats: 
 describe("authored Data Tree entries", () => {
   it("copies nested defaults at creation and never inherits later edits to defaults", () => {
     const fields: StructField[] = [
-      { name: "Offset", typeId: "vec3", defaultValue: { x: 1, y: 2, z: 3 } },
-      { name: "Pose", typeId: "transform" },
+      { id: "Offset", name: "Offset", typeId: "vec3", defaultValue: { x: 1, y: 2, z: 3 } },
+      { id: "Pose", name: "Pose", typeId: "transform" },
     ];
     const schemas = schemasFor(fields);
     const first = createDataEntryForDefinition("stats", fields, schemas);
@@ -162,8 +162,8 @@ describe("authored Data Tree entries", () => {
   });
 
   it("preserves incompatible values on type changes and blocks typed runtime reads", () => {
-    const asset = createDataEntryForDefinition("stats", [{ name: "Health", typeId: "string", defaultValue: "twenty" }]);
-    const fields: StructField[] = [{ id: "legacy:Health", name: "Health", typeId: "int", defaultValue: 20 }];
+    const asset = createDataEntryForDefinition("stats", [{ id: "Health", name: "Health", typeId: "string", defaultValue: "twenty" }]);
+    const fields: StructField[] = [{ id: "Health", name: "Health", typeId: "int", defaultValue: 20 }];
     const schemas = schemasFor(fields);
     const migrated = reconcileDataEntry(asset, "stats", fields, schemas);
     expect(migrated.entry.values.Health).toBe("twenty");
@@ -193,11 +193,11 @@ describe("authored Data Tree entries", () => {
 
   it("checks enum membership, finite numbers, reference kinds and live-instance values", () => {
     const fields: StructField[] = [
-      { name: "Team", typeId: "enum", typeClassId: "team" },
-      { name: "Health", typeId: "int" },
-      { name: "Texture", typeId: "asset", typeClassId: "Texture" },
-      { name: "Sound", typeId: "asset", typeClassId: "Audio" },
-      { name: "Target", typeId: "object" },
+      { id: "Team", name: "Team", typeId: "enum", typeClassId: "team" },
+      { id: "Health", name: "Health", typeId: "int" },
+      { id: "Texture", name: "Texture", typeId: "asset", typeClassId: "Texture" },
+      { id: "Sound", name: "Sound", typeId: "asset", typeClassId: "Audio" },
+      { id: "Target", name: "Target", typeId: "object" },
     ];
     const schemas = schemasFor(fields);
     schemas.enums = { team: { name: "Team", members: [{ name: "Blue", value: 1 }] } };
@@ -210,8 +210,8 @@ describe("authored Data Tree entries", () => {
 
   it("accepts a custom easing curve only in a curve enum field, registered or not", () => {
     const fields: StructField[] = [
-      { name: "Ease", typeId: "enum", typeClassId: "engine:EasingCurve" },
-      { name: "Team", typeId: "enum", typeClassId: "team" },
+      { id: "Ease", name: "Ease", typeId: "enum", typeClassId: "engine:EasingCurve" },
+      { id: "Team", name: "Team", typeId: "enum", typeClassId: "team" },
     ];
     const schemas = schemasFor(fields);
     schemas.enums = {
@@ -240,7 +240,7 @@ describe("authored Data Tree entries", () => {
   });
 
   it("treats prototype-like field names as data and does not mutate object prototypes", () => {
-    const fields: StructField[] = [{ name: "__proto__", typeId: "string", defaultValue: "authored" }];
+    const fields: StructField[] = [{ id: "__proto__", name: "__proto__", typeId: "string", defaultValue: "authored" }];
     const asset = createDataEntryForDefinition("stats", fields);
     expect(Object.getPrototypeOf(asset.values)).toBe(Object.prototype);
     expect(Object.keys(asset.values)).toEqual(["__proto__"]);
@@ -286,10 +286,10 @@ describe("Data Tree entry tags and typed collections", () => {
 
   it("creates portable detached defaults and round-trips native Maps through authoring", () => {
     const fields: StructField[] = [
-      { name: "Category", typeId: "tag" },
-      { name: "Labels", typeId: "struct", typeClassId: "engine:TagContainer" },
-      { name: "Scores", typeId: "float", container: "map", keyTypeId: "tag" },
-      { name: "Points", typeId: "vec3", container: "array", defaultValue: [{ x: 1, y: 2, z: 3 }] },
+      { id: "Category", name: "Category", typeId: "tag" },
+      { id: "Labels", name: "Labels", typeId: "struct", typeClassId: "engine:TagContainer" },
+      { id: "Scores", name: "Scores", typeId: "float", container: "map", keyTypeId: "tag" },
+      { id: "Points", name: "Points", typeId: "vec3", container: "array", defaultValue: [{ x: 1, y: 2, z: 3 }] },
     ];
     const schemas = schemasFor(fields);
     const first = createDataEntryForDefinition("stats", fields, schemas);
@@ -310,8 +310,8 @@ describe("Data Tree entry tags and typed collections", () => {
 
   it("validates every collection value and key and rejects destructive duplicate primitive keys", () => {
     const fields: StructField[] = [
-      { name: "Tags", typeId: "tag", container: "array" },
-      { name: "Icons", typeId: "asset", typeClassId: "Texture", container: "map", keyTypeId: "tag" },
+      { id: "Tags", name: "Tags", typeId: "tag", container: "array" },
+      { id: "Icons", name: "Icons", typeId: "asset", typeClassId: "Texture", container: "map", keyTypeId: "tag" },
     ];
     const asset = createDataEntryForDefinition("stats", fields);
     asset.values = { Tags: [0, 0xffff_ffff, -1, 0x1_0000_0000], Icons: [
@@ -350,8 +350,8 @@ describe("Data Tree entry tags and typed collections", () => {
 
   it("migrates nested array/map key and value renames while retaining removed values and reference metadata", () => {
     const fields: StructField[] = [
-      { name: "Rows", typeId: "struct", typeClassId: "inner", container: "array" },
-      { name: "Lookup", typeId: "struct", typeClassId: "inner", container: "map", keyTypeId: "struct", keyTypeClassId: "key" },
+      { id: "Rows", name: "Rows", typeId: "struct", typeClassId: "inner", container: "array" },
+      { id: "Lookup", name: "Lookup", typeId: "struct", typeClassId: "inner", container: "map", keyTypeId: "struct", keyTypeClassId: "key" },
     ];
     const initial = schemasFor(fields);
     initial.structs = { ...initial.structs,
@@ -404,13 +404,13 @@ describe("Data Tree entry tags and typed collections", () => {
 
   it("preserves incompatible container/key types and their reference metadata until repaired", () => {
     const oldFields: StructField[] = [
-      { name: "Icons", typeId: "asset", typeClassId: "Texture", container: "array", defaultValue: ["texture"] },
-      { name: "Lookup", typeId: "float", container: "map", keyTypeId: "asset", keyTypeClassId: "Texture", defaultValue: [{ key: "texture", value: 4 }] },
+      { id: "Icons", name: "Icons", typeId: "asset", typeClassId: "Texture", container: "array", defaultValue: ["texture"] },
+      { id: "Lookup", name: "Lookup", typeId: "float", container: "map", keyTypeId: "asset", keyTypeClassId: "Texture", defaultValue: [{ key: "texture", value: 4 }] },
     ];
     const asset = createDataEntryForDefinition("stats", oldFields);
     const fields: StructField[] = [
-      { name: "Icons", typeId: "int", container: "map", keyTypeId: "tag" },
-      { name: "Lookup", typeId: "float", container: "map", keyTypeId: "tag" },
+      { id: "Icons", name: "Icons", typeId: "int", container: "map", keyTypeId: "tag" },
+      { id: "Lookup", name: "Lookup", typeId: "float", container: "map", keyTypeId: "tag" },
     ];
     const migrated = reconcileDataEntry(asset, "stats", fields, schemasFor(fields));
     expect(migrated.entry.values).toEqual({ Icons: ["texture"], Lookup: [{ key: "texture", value: 4 }] });
@@ -420,7 +420,7 @@ describe("Data Tree entry tags and typed collections", () => {
   });
 
   it("serializes nested native Map defaults when explicitly adding a field", () => {
-    const fields: StructField[] = [{ name: "Lookup", typeId: "vec3", container: "map", defaultValue: new Map([["first", { x: 1, y: 2, z: 3 }]]) }];
+    const fields: StructField[] = [{ id: "Lookup", name: "Lookup", typeId: "vec3", container: "map", defaultValue: new Map([["first", { x: 1, y: 2, z: 3 }]]) }];
     const migrated = reconcileDataEntry(createEntry("Entry"), "stats", fields, schemasFor(fields));
     expect(migrated.entry.values).toEqual({ Lookup: [{ key: "first", value: { x: 1, y: 2, z: 3 } }] });
     expect(validateDataEntry(migrated.entry, "stats", schemasFor(fields))).toEqual([]);
@@ -521,7 +521,7 @@ describe("independent Data Definitions", () => {
   });
 
   it("rejects invalid defaults, ranges and actual Structure assets as root or nested definitions", () => {
-    const structure = { name: "Legacy", fields: [{ name: "Health", typeId: "int" }] };
+    const structure = { name: "Legacy", fields: [{ id: "health", name: "Health", typeId: "int" }] };
     const schemas: TypeSchemas = { enums: {}, structs: { legacy: structure }, dataDefinitions: {} };
     expect(validateDataEntry(createEntry("Row", { Health: 1 }), "legacy", schemas)).toContainEqual(expect.objectContaining({ code: "missing-definition" }));
     const definition = createDataDefinitionAsset([
