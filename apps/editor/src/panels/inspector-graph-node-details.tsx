@@ -74,6 +74,9 @@ import {
 } from "./inspector-node-rows";
 import type { InspectorCatalogs } from "./use-inspector-catalogs";
 import { wiredTargets } from "../lib/reroute-wires";
+import { MATH_EXPRESSION_NODE_ID } from "@haptic/scripting";
+import { commitMathExpressionFormula } from "../lib/math-expression-edit";
+import { MathExpressionDetails } from "./inspector-math-expression";
 
 
 /** Command parameter row ids from the last commit, as for member pins. */
@@ -114,6 +117,10 @@ export interface GraphNodeDetailsProps {
   delegateSignatures?: readonly DelegateSignatureEntry[];
   /** In an Animation Graph's state graph: the graph, so a clip row offers only the assets it can play. */
   animClipGraph?: AnimClipPickGraph | null;
+}
+
+function pickWiredInputTypes(data: Record<string, unknown> | undefined): Record<string, unknown> {
+  return data && data.wiredInputTypes !== undefined ? { wiredInputTypes: data.wiredInputTypes } : {};
 }
 
 /** The selected graph node's property rows, pin defaults and pin pickers. */
@@ -243,6 +250,11 @@ export function GraphNodeDetails({
       : patchInspectedGraphNode(graph, selectedNode.id, patch, activeFunctionId));
   };
 
+  // A Math Expression's input types follow its wires on the canvas before the saved node holds them.
+  const mathExpressionData = selectedNode.type === MATH_EXPRESSION_NODE_ID
+    ? { ...selectedNode.data, ...pickWiredInputTypes(hydratedInspectGraph?.nodes.find((node) => node.id === selectedNode.id)?.data) }
+    : selectedNode.data;
+
   const nodeRows = graphNodeInspectorRows(selectedNode, {
     graph,
     inspectGraph,
@@ -266,6 +278,14 @@ export function GraphNodeDetails({
       <div className="flex flex-col gap-3 p-3">
         <div className="text-sm font-medium">{title}</div>
         <GraphNodeRowSections sections={sections} />
+        {selectedNode.type === MATH_EXPRESSION_NODE_ID ? (
+          <MathExpressionDetails
+            data={mathExpressionData}
+            onFormula={(formula) => persistGraph(commitMathExpressionFormula(
+              graph, selectedNode.id, formula, activeFunctionId, mathExpressionData.wiredInputTypes))}
+            onPatch={(patch) => updateNodeData({ wiredInputTypes: mathExpressionData.wiredInputTypes, ...patch })}
+          />
+        ) : null}
         {selectedNode.type === ANIM_POSE_LAYERED_BLEND_TYPE ? (
           <LayeredBlendBranchFilters data={selectedNode.data} bones={animPose?.bones ?? []} onPatch={updateNodeData} />
         ) : null}

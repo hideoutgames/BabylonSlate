@@ -16,7 +16,7 @@ Double-tap the asset to open it. The window has an **Inspector** only. A plot at
 | --- | --- |
 | Inner Radius | Within this distance the sound plays at full volume. Default 10. |
 | Max Radius | Beyond this distance the sound is silent. Default 250. |
-| Distance Model | **Linear** (default), **Inverse** or **Exponential**. |
+| Distance Model | **Linear** (default), **Inverse** or **Exponential**. Every model reaches silence at **Max Radius**. |
 | Rolloff | How steeply volume falls with Inverse and Exponential. Default 1. |
 | Spatialisation | **Equal Power** (default) or **HRTF**, which works best on headphones. |
 | Cone | Makes the sound directional. Off by default. |

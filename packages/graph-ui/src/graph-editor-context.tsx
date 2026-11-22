@@ -17,13 +17,14 @@ export interface GraphPreviewedNode {
 
 export type GraphEditorContextValue = {
   renderPinDefaultEditor?: PinDefaultEditorRenderer;
-  connectedInputs?: ReadonlyMap<string, readonly string[]>;
   /**
    * The pin chosen to connect, error diagnostics, the renamed and the previewed node: each node
    * reads its own part through the `graph-node-state` hooks. Unset outside a canvas.
    */
   nodeState?: GraphNodeStateStore;
   onPinDefaultChange?: (nodeId: string, pinId: string, value: unknown) => void;
+  /** A Math Expression node's formula typed on the canvas; unset when the graph is read-only. */
+  onFormulaCommit?: (nodeId: string, formula: string) => void;
   onPinTap: (nodeId: string, pinId: string, direction: "in" | "out") => void;
   pinDisplayType: (nodeId: string, pinId: string) => PinTypeRef | undefined;
   pinTypeNames?: PinTypeNames;

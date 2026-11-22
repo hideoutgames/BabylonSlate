@@ -14,7 +14,7 @@ import {
   pickerImportAccept,
 } from "./index";
 import { buildBoxGlbFixture } from "../glb-geometry";
-import { buildMinimalGlbFixture } from "./glb-parse";
+import { buildMinimalGlbFixture, encodeGlbJsonBin } from "./glb-parse";
 import { gifHeader, webpHeader } from "../test-support/image-headers";
 import { ImportLimitError } from "../import-limits";
 
@@ -149,6 +149,21 @@ describe("importers", () => {
     const colliders = model.payload.simpleColliders as Array<{ kind: string }>;
     expect(colliders).toHaveLength(1);
     expect(colliders[0]!.kind).toBe("generated");
+  });
+
+  it("imports a Draco-compressed model with a placeholder collider and no occluder instead of reading its compressed bytes", async () => {
+    // 1000 vertices compressed into 2 KB: reading them as floats runs past the binary chunk.
+    const draco = "KHR_draco_mesh_compression";
+    const bytes = encodeGlbJsonBin({
+      asset: { version: "2.0" }, extensionsUsed: [draco], extensionsRequired: [draco],
+      buffers: [{ byteLength: 2000 }], bufferViews: [{ buffer: 0, byteLength: 2000 }],
+      accessors: [{ componentType: 5126, count: 1000, type: "VEC3", min: [-1, -1, -1], max: [1, 1, 1] }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, extensions: { [draco]: { bufferView: 0, attributes: { POSITION: 0 } } } }] }],
+      nodes: [{ mesh: 0 }], scenes: [{ nodes: [0] }], scene: 0,
+    }, new Uint8Array(2000).fill(0x41));
+    const model = (await importModel(bytes, { fileName: "statue.glb", existingGuids: new Set() })).find((result) => result.type === "Model")!;
+    expect(model.payload.simpleColliders).toEqual([expect.objectContaining({ kind: "box", position: [0, 0, 0], halfExtents: { x: 0.5, y: 0.5, z: 0.5 } })]);
+    expect(model.payload.occluder).toBeNull();
   });
 
   it("gives a model whose file has no materials a plain Material, not one sampling an empty Texture", async () => {
