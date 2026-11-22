@@ -916,3 +916,21 @@ describe("planSceneChange", () => {
     expect(applied.actors[2]!.transform).toEqual(before.actors[2]!.transform);
   });
 });
+
+describe("Foliage undo accounting", () => {
+  const bytesOf = (commands: readonly object[]) => commands.reduce((total: number, command) => total + ((command as { byteSize?: number }).byteSize ?? 0), 0);
+  it("counts the painted stroke's base64 instance data in the undo entry's byte size", () => {
+    const data = "A".repeat(200_000);
+    const before = createDefaultScene();
+    const after = { ...before, actors: [...before.actors, createActor("stroke", "Stroke", { components: [
+      { id: "foliage", classId: "FoliageComponent", properties: { groupId: "g", batches: [{ modelGuid: "oak" }], data } },
+    ] })] };
+    const commands = diffSceneCommands(before, after);
+    expect(commands).toHaveLength(1);
+    expect(bytesOf(commands)).toBeGreaterThanOrEqual(data.length);
+    const stroke = after.actors.at(-1)!;
+    const erased = { ...after, actors: [...before.actors, { ...stroke, components: [{ ...stroke.components[0]!, properties: { groupId: "g", batches: [{ modelGuid: "oak" }], data: "B".repeat(100_000) } }] }] };
+    const erase = diffSceneCommands(after, erased);
+    expect(bytesOf(erase)).toBeGreaterThanOrEqual(300_000);
+  });
+});

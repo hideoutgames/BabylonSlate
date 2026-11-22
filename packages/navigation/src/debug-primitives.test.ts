@@ -31,7 +31,7 @@ describe("navMeshDebugPrimitives", () => {
     expect(tris?.vertices.length).toBeGreaterThan(2);
   });
 
-  it("draws BSNT tile-cache navmeshes repeatedly when dynamic obstacles are enabled", async () => {
+  it("draws HPNT tile-cache navmeshes repeatedly when dynamic obstacles are enabled", async () => {
     const handles = trackRecastHandles(["NavMeshExport"]);
     try {
       const tiled = await generateNavMesh({ ...groundPrism(), settings: { supportDynamicObstacles: true } });

@@ -1,7 +1,7 @@
 /**
  * Test-build-only check that the engine's unlit Material (`unlit-material.ts`) draws what the Standard materials (and
  * Text2D's MSDF shader) it replaces drew. Each quad is drawn twice in the same view: once with a frozen copy of the Standard setup the engine
- * used before the migration, once with the unlit binding, in Legacy Display (PBR and CEL) and Scene Linear (no tone
+ * used before the migration, once with the unlit binding, in Display Space (PBR and CEL) and Scene Linear (no tone
  * mapping and ACES), without fog and with linear and exponential fog. The two images are compared channel by channel.
  */
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
@@ -213,15 +213,15 @@ const CASES: Case[] = [
 ];
 
 type Mode = {
-  name: string; mode: RenderMode; pipeline: "legacyDisplay" | "sceneLinear"; toneMapping: "none" | "aces";
+  name: string; mode: RenderMode; pipeline: "displaySpace" | "sceneLinear"; toneMapping: "none" | "aces";
   /**
    * Ambient occlusion and reflections: they read the geometry pass's depth, normal and reflectivity.
    */
   spatial?: boolean;
 };
 const MODES: Mode[] = [
-  { name: "legacy", mode: "pbr", pipeline: "legacyDisplay", toneMapping: "none" },
-  { name: "cel", mode: "cel", pipeline: "legacyDisplay", toneMapping: "none" },
+  { name: "legacy", mode: "pbr", pipeline: "displaySpace", toneMapping: "none" },
+  { name: "cel", mode: "cel", pipeline: "displaySpace", toneMapping: "none" },
   { name: "linear", mode: "pbr", pipeline: "sceneLinear", toneMapping: "none" },
   { name: "linearAces", mode: "pbr", pipeline: "sceneLinear", toneMapping: "aces" },
   { name: "spatial", mode: "pbr", pipeline: "sceneLinear", toneMapping: "none", spatial: true },

@@ -12,6 +12,7 @@ import {
 } from "@haptic/assets";
 import {
   applyTexturePixelSizeToSprite,
+  compactTilemapPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpritePayload,
@@ -253,7 +254,7 @@ export function materialAssetGuidsFromScene(
     ...componentGuidsFromScene(scene, "MirrorComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "DecalComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "LandscapeComponent", ["materialGuid"]),
-    ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
+    ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? foliageBatchInfos(component.properties).flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
     ...UI_CONTROL_2D_CLASS_IDS.flatMap(classId => componentGuidsFromScene(scene, classId, ["backgroundMaterialGuid", "trackMaterialGuid", "fillMaterialGuid", "thumbMaterialGuid", "indicatorMaterialGuid"])),
     ...componentGuidsFromScene(scene, "2DJoystickComponent", ["backgroundMaterialGuid", "joystickMaterialGuid"]),
     ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),
@@ -410,7 +411,7 @@ export function modelAssetGuidsFromScene(
 ): string[] {
   return [...new Set([
     ...componentGuidsFromScene(scene, "MeshComponent", ["assetGuid"]),
-    ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.map((batch) => batch.modelGuid) : [])) ?? []),
+    ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? foliageBatchInfos(component.properties).map((batch) => batch.modelGuid) : [])) ?? []),
   ])];
 }
 
@@ -565,11 +566,12 @@ export function playLoadTilemapsControl(
   }
   return {
     type: "loadTilemaps",
-    tilemaps: guidDocuments(tilemaps),
+    // Chunks cross to the game worker run-length encoded; the worker decodes each once.
+    tilemaps: [...(tilemaps ?? new Map()).entries()].map(([guid, map]) => ({ guid, document: compactTilemapPayload(map) })),
     tilesets: guidDocuments(tilesets),
     ...(typeof pixelsPerUnit === "number" && pixelsPerUnit > 0
       ? { pixelsPerUnit }
       : {}),
   };
 }
-import { parseFoliageProperties } from "@haptic/core";
+import { foliageBatchInfos } from "@haptic/core";

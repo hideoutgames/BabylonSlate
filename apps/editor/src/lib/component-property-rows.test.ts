@@ -1626,7 +1626,7 @@ it("edits a Landscape's size, cells, collisions and landscape Material without e
   const cells = rows.find((row) => row.label === "Cells");
   if (cells?.kind !== "number") throw new Error("Missing Cells row");
   cells.onChange(8);
-  // The height and weight grids are resampled and serialized into compact BSLD data in the same edit.
+  // The height and weight grids are resampled and serialized into compact HPLD data in the same edit.
   expect(update).toHaveBeenLastCalledWith("subdivisions", 8, {
     data: expect.any(String),
   });

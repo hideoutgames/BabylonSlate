@@ -26,14 +26,14 @@ describe("type defaults", () => {
       "struct-stats": {
         name: "Stats",
         fields: [
-          { name: "Health", typeId: "int", defaultValue: 100 },
-          { name: "Team", typeId: "enum", typeClassId: "enum-team" },
-          { name: "Nested", typeId: "struct", typeClassId: "struct-inner" },
+          { id: "Health", name: "Health", typeId: "int", defaultValue: 100 },
+          { id: "Team", name: "Team", typeId: "enum", typeClassId: "enum-team" },
+          { id: "Nested", name: "Nested", typeId: "struct", typeClassId: "struct-inner" },
         ],
       },
       "struct-inner": {
         name: "Inner",
-        fields: [{ name: "Label", typeId: "string", defaultValue: "ok" }],
+        fields: [{ id: "Label", name: "Label", typeId: "string", defaultValue: "ok" }],
       },
     },
   });
@@ -66,8 +66,8 @@ describe("type defaults", () => {
     expect(defaultValueForMember("struct", "engine:TagContainer", schemas)).toEqual({ Tags: [] });
     expect(defaultValueForMember("tag", undefined, schemas)).toBe(0);
     expect(structInstanceDefault([
-      { name: "Selected", typeId: "tag", container: "array" },
-      { name: "Nested", typeId: "struct", typeClassId: "engine:TagContainer" },
+      { id: "Selected", name: "Selected", typeId: "tag", container: "array" },
+      { id: "Nested", name: "Nested", typeId: "struct", typeClassId: "engine:TagContainer" },
     ])).toEqual({ Selected: [], Nested: { Tags: [] } });
   });
 
@@ -102,8 +102,8 @@ describe("type defaults", () => {
 
   it("hydrates structures inside array elements and map keys and values", () => {
     const fields: StructField[] = [
-      { name: "List", typeId: "struct", typeClassId: "struct-inner", container: "array" },
-      { name: "Lookup", typeId: "struct", typeClassId: "struct-inner", container: "map", keyTypeId: "struct", keyTypeClassId: "struct-inner" },
+      { id: "List", name: "List", typeId: "struct", typeClassId: "struct-inner", container: "array" },
+      { id: "Lookup", name: "Lookup", typeId: "struct", typeClassId: "struct-inner", container: "map", keyTypeId: "struct", keyTypeClassId: "struct-inner" },
     ];
     expect(
       hydrateStructInstance(

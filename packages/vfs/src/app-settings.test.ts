@@ -114,22 +114,21 @@ describe("app settings", () => {
       expect(engineSettingsSchema.safeParse({ viewportDropDistance }).success).toBe(false);
     }
   });
-  it("round-trips recent project badges and tolerates legacy recents", async () => {
+  it("round-trips recent project badges without their pictures and tolerates recents without badges", async () => {
     const store = new MemoryAppSettingsStore();
     await store.update((settings) => {
       settings.recents = [
         {
           id: "new", name: "New", tier: "opfs", lastOpenedAt: "2026-09-09",
-          appearance: { icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA" },
+          appearance: { icon: "rocket", color: "lilac", coverFile: "cover.png", image: "data:image/png;base64,AAAA" },
           sourceControl: true,
         },
         { id: "old", name: "Old", tier: "documents", lastOpenedAt: "2026-09-08" },
       ];
     });
     const loaded = await store.load();
-    expect(loaded.recents[0]?.appearance).toEqual({
-      icon: "rocket", color: "lilac", image: "data:image/png;base64,AAAA",
-    });
+    // The picture lives in derived storage; settings keep only which cover file it came from.
+    expect(loaded.recents[0]?.appearance).toEqual({ icon: "rocket", color: "lilac", coverFile: "cover.png" });
     expect(loaded.recents[1]?.appearance).toBeUndefined();
     expect(loaded.recents.map((recent) => recent.sourceControl)).toEqual([true, undefined]);
   });

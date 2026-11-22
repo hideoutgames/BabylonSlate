@@ -4,8 +4,8 @@ export const SNAPSHOT_HEADER_FLOATS = 16;
 export const SNAPSHOT_ACTOR_STRIDE = 16;
 export const SNAPSHOT_LAYOUT_VERSION = 2;
 
-/** ASCII "BSNP" as big-endian u32, reinterpreted as f32 bits. */
-export const SNAPSHOT_MAGIC_U32 = 0x42534e50;
+/** ASCII "HPNP" as big-endian u32, reinterpreted as f32 bits. */
+export const SNAPSHOT_MAGIC_U32 = 0x48504e50;
 
 export const SNAPSHOT_MAGIC_F32 = (() => {
   const buf = new ArrayBuffer(4);

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createActor, identitySerializedTransform, type FoliageGroup, type SerializedScene } from "@haptic/core";
+import { createActor, identitySerializedTransform, packFoliageTransforms, type FoliageGroup, type SerializedScene } from "@haptic/core";
 import { FoliageGroupsPanel, LandscapeOutlinerPanel } from "./scene-environment-panels";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -77,7 +77,7 @@ describe("Foliage Groups", () => {
     const model = { modelGuid: MODEL, materialGuid: null, weight: 1, minScale: 0.8, maxScale: 1.2, cullDistance: 120, fadeRange: 15, shadowDistance: 45 };
     harness.groups = [{ id: "g", name: "Trees", models: [model] }];
     harness.actors = [createActor("stroke", "Trees Stroke", { components: [{ id: "foliage", classId: "FoliageComponent", properties: {
-      groupId: "g", batches: [{ modelGuid: MODEL, materialGuid: null, cullDistance: 120, fadeRange: 15, shadowDistance: 45, transforms: [identitySerializedTransform()] }],
+      groupId: "g", batches: [{ modelGuid: MODEL, materialGuid: null, cullDistance: 120, fadeRange: 15, shadowDistance: 45, transforms: packFoliageTransforms([identitySerializedTransform()]) }],
     } }] })];
     setTools({ groupId: "g" });
     const view = render(<FoliageGroupsPanel {...panel} />);

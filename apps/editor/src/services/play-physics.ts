@@ -215,7 +215,7 @@ export function playLoadControl(options: {
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
-  sceneLandscapeBytes?: Record<string, Uint8Array>;
+  sceneComponentChunks?: Record<string, Uint8Array>;
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   infiniteLoopDetection?: boolean;
   /** Simulation's Pause On Errors. */
@@ -279,7 +279,7 @@ export function playLoadControl(options: {
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
     sceneNavmeshBytes: options.sceneNavmeshBytes,
-    ...(options.sceneLandscapeBytes ? { sceneLandscapeBytes: options.sceneLandscapeBytes } : {}),
+    ...(options.sceneComponentChunks ? { sceneComponentChunks: options.sceneComponentChunks } : {}),
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     ...(options.pauseOnErrors ? { pauseOnErrors: true } : {}),

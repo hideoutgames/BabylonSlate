@@ -19,7 +19,7 @@ import { ProjectService } from "./project-service";
 import { loadExportDocuments } from "./export-game-inputs";
 
 describe("Landscape binary .hasset persistence and export sidecars", () => {
-  it("stores sculpted terrain as raw BSLD chunks on disk, hydrates on reload, drops orphans on delete, and exports raw sidecars", async () => {
+  it("stores sculpted terrain as raw HPLD chunks on disk, hydrates on reload, drops orphans on delete, and exports raw sidecars", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("LandscapeTest.hproject");
     await installMinimalProject(storage);
@@ -79,7 +79,7 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
     expect(parsed.weights[12 * 4]).toBe(80);
     expect(parsed.weights[12 * 4 + 2]).toBe(175);
 
-    // 3. Export loader collects raw BSLD sidecar bytes and keeps Scene JSON free of base64.
+    // 3. Export loader collects raw HPLD sidecar bytes and keeps Scene JSON free of base64.
     const registry = service.registry!;
     const sceneGuid = service.guidForPath(scenePath)!;
     const exportInputs = await loadExportDocuments({
@@ -88,7 +88,7 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
       loadDocumentWithChunks: (kind, path, chunks) => service.loadDocumentWithChunks(kind as never, path, chunks),
       readAssetChunk: (path, chunkId) => service.readAssetChunk(path, chunkId),
     });
-    const exportedChunks = exportInputs.landscapeChunksByGuid(sceneGuid);
+    const exportedChunks = exportInputs.componentChunksByGuid(sceneGuid);
     expect(exportedChunks).toHaveLength(1);
     expect(exportedChunks[0]!.chunkId).toBe(expectedChunkId);
     expect(decodeLandscapeChunk(exportedChunks[0]!.bytes)?.heights[12]).toBeCloseTo(5.75, 5);

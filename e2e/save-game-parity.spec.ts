@@ -83,19 +83,23 @@ async function savedGenerations(page: Page, projectId: string, corruptNewest = f
     }
     const generations = await Promise.all(["generation-a.save", "generation-b.save"].map(async name => {
       const text = await (await (await directory.getFileHandle(encode(name))).getFile()).text();
-      const envelope = JSON.parse(text) as { checksum: string; payload: string };
-      const body = JSON.parse(envelope.payload) as { sequence: number; fields: Record<string, number> };
-      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(envelope.payload));
+      // `haptic-save <format> <sha256>`, a newline, then the JSON body.
+      const newline = text.indexOf("\n");
+      const stored = text.slice(0, newline).split(" ")[2];
+      const payload = text.slice(newline + 1);
+      const body = JSON.parse(payload) as { sequence: number; fields: Record<string, number> };
+      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
       const checksum = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("");
-      return { name, text, sequence: body.sequence, visits: body.fields["visits-id"], checksumValid: envelope.checksum === checksum };
+      return { name, text, sequence: body.sequence, visits: body.fields["visits-id"], checksumValid: stored === checksum };
     }));
     generations.sort((left, right) => left.sequence - right.sequence);
     if (corruptNewest) {
       const newest = generations[1]!;
-      const envelope = JSON.parse(newest.text) as { checksum: string; payload: string };
-      envelope.checksum = (envelope.checksum[0] === "0" ? "1" : "0") + envelope.checksum.slice(1);
+      const prefix = "haptic-save 1 ";
+      const flipped = newest.text[prefix.length] === "0" ? "1" : "0";
+      const damaged = prefix + flipped + newest.text.slice(prefix.length + 1);
       const writer = await (await directory.getFileHandle(encode(newest.name))).createWritable();
-      try { await writer.write(JSON.stringify(envelope)); await writer.close(); }
+      try { await writer.write(damaged); await writer.close(); }
       catch (error) { await writer.abort().catch(() => {}); throw error; }
     }
     return generations;

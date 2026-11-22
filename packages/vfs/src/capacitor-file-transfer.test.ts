@@ -83,7 +83,7 @@ describe("capacitorFileTransfer", () => {
     const request = { method: "GET" as const, url: "https://lfs.example/objects/1", headers: {}, path: "assets/.blobs/x" };
     for (const [folder, path] of [
       [{ id: "external-1", name: "Chosen", tier: "external" }, "assets/.blobs/x"],
-      [{ id: "documents:__slate_templates__", name: "__slate_templates__", tier: "documents" }, "assets/.blobs/x"],
+      [{ id: "documents:__haptic_templates__", name: "__haptic_templates__", tier: "documents" }, "assets/.blobs/x"],
       [GAME, "../Other/assets/.blobs/x"],
       [GAME, ""],
     ] as Array<[ProjectFolderHandle, string]>) {

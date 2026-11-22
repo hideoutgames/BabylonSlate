@@ -15,7 +15,7 @@ import type { MovementWorldSync } from "./movement";
 import type { RenderTargetPayload, RenderTargetTexturePayload } from "@haptic/core";
 import type { WaterDefinition } from "@haptic/core";
 import type { ScalabilitySession, ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, ScalabilityAcknowledgement } from "@haptic/core";
-import { parseLandscapeProperties, type CollisionTriangleMesh } from "@haptic/core";
+import { parseFoliageProperties, parseLandscapeProperties, type CollisionTriangleMesh } from "@haptic/core";
 import { inputMappingsFromAssets } from "@haptic/input";
 import type {
   CommandMessage,
@@ -399,8 +399,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly cameraShakeCatalog = new Map<string, CameraShakeCatalogEntry>();
   /** 2D and 3D Timeline Clip assets of the current sources, by guid, for Create. */
   readonly timelineClipCatalog = new Map<string, TimelineClipAssetCatalogEntry>();
-  /** Binary BSLD landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
-  readonly sceneLandscapeBytes = new Map<string, Uint8Array>();
+  /** Binary Landscape (HPLD) and Foliage (HPFG) component chunks keyed by `<ownerGuid>:<chunkId>`. */
+  readonly sceneComponentChunks = new Map<string, Uint8Array>();
   readonly scriptHost: ScriptHost;
   readonly objectLifetime: RuntimeObjectLifetime;
   readonly scriptDebug: ScriptDebugObserver;
@@ -489,7 +489,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.acquireScene = options.acquireScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
     this.navigation.replaceSceneNavMeshes(options.sceneNavmeshBytes ?? {});
-    this.replaceSceneLandscapes(options.sceneLandscapeBytes ?? {});
+    this.replaceSceneComponentChunks(options.sceneComponentChunks ?? {});
     this.deferSceneModelsReady = options.deferSceneModelsReady === true;
     this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
     this.cooperativeSceneLoading = options.cooperativeSceneLoading
@@ -968,16 +968,48 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.behaviourTrees.registerBlackboard(guid, document);
   }
 
-  replaceSceneLandscapes(bytes: Readonly<Record<string, Uint8Array>>): void {
-    this.sceneLandscapeBytes.clear();
+  replaceSceneComponentChunks(bytes: Readonly<Record<string, Uint8Array>>): void {
+    this.sceneComponentChunks.clear();
     for (const [key, value] of Object.entries(bytes)) {
-      this.sceneLandscapeBytes.set(key, value);
+      this.sceneComponentChunks.set(key, value);
     }
   }
 
-  hydrateActorLandscapes(actor: Actor | null, sceneGuid?: string): Actor | null {
+  /** The chunk `chunkId` names for a component of scene `sceneGuid` (`<sceneGuid>:<chunkId>`), else any owner's. */
+  private componentChunk(chunkId: unknown, sceneGuid: string | undefined): Uint8Array | undefined {
+    if (typeof chunkId !== "string" || chunkId.length === 0) return undefined;
+    let binaryBytes = sceneGuid ? this.sceneComponentChunks.get(`${sceneGuid}:${chunkId}`) : undefined;
+    if (!binaryBytes) binaryBytes = this.sceneComponentChunks.get(chunkId);
+    if (!binaryBytes) {
+      const suffix = `:${chunkId}`;
+      for (const [key, bytes] of this.sceneComponentChunks) {
+        if (key.endsWith(suffix)) return bytes;
+      }
+    }
+    return binaryBytes;
+  }
+
+  /** Decodes each Landscape and Foliage component's binary chunk into typed variables once, as the actor is created. */
+  hydrateActorComponentChunks(actor: Actor | null, sceneGuid?: string): Actor | null {
     if (!actor) return null;
     for (const component of actor.components) {
+      if (component.classId === "FoliageComponent") {
+        if (!component.variables.has("chunkId") && !component.variables.has("data")) continue;
+        // Play and exports name each chunk's owner, so the lookup is exact; Prefab and Class templates carry `data`.
+        const chunkId = component.getVariable("chunkId");
+        const owner = component.getVariable("chunkOwner");
+        const bytes = typeof chunkId === "string" && typeof owner === "string" ? this.sceneComponentChunks.get(`${owner}:${chunkId}`) : undefined;
+        const parsed = parseFoliageProperties(Object.fromEntries(component.variables), bytes);
+        if (parsed.unreadable || (typeof chunkId === "string" && !bytes)) {
+          console.warn(`[runtime] Foliage component ${component.guid} has instance data that could not be read; it draws nothing.`);
+        }
+        component.setVariable("groupId", parsed.groupId);
+        component.setVariable("batches", parsed.batches);
+        component.variables.delete("data");
+        component.variables.delete("chunkId");
+        component.variables.delete("chunkOwner");
+        continue;
+      }
       if (component.classId !== "LandscapeComponent") continue;
       if (
         component.getVariable("heights") instanceof Float32Array &&
@@ -985,22 +1017,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       ) {
         continue;
       }
-      const chunkId = component.getVariable("chunkId");
-      let binaryBytes: Uint8Array | undefined;
-      if (typeof chunkId === "string" && chunkId.length > 0) {
-        if (sceneGuid) binaryBytes = this.sceneLandscapeBytes.get(`${sceneGuid}:${chunkId}`);
-        if (!binaryBytes) binaryBytes = this.sceneLandscapeBytes.get(chunkId);
-        if (!binaryBytes) {
-          const suffix = `:${chunkId}`;
-          for (const [key, bytes] of this.sceneLandscapeBytes) {
-            if (key.endsWith(suffix)) {
-              binaryBytes = bytes;
-              break;
-            }
-          }
-        }
-      }
-      const parsed = parseLandscapeProperties(Object.fromEntries(component.variables), binaryBytes);
+      const parsed = parseLandscapeProperties(Object.fromEntries(component.variables), this.componentChunk(component.getVariable("chunkId"), sceneGuid));
       component.setVariable("width", parsed.width);
       component.setVariable("depth", parsed.depth);
       component.setVariable("subdivisions", parsed.subdivisions);
@@ -1022,7 +1039,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.sceneLayerLibrary.clear();
     for (const entry of content.sceneLayers ?? []) this.sceneLayerLibrary.set(entry.guid, entry.layer);
     this.navigation.replaceSceneNavMeshes(content.sceneNavmeshBytes ?? {});
-    this.replaceSceneLandscapes(content.sceneLandscapeBytes ?? {});
+    this.replaceSceneComponentChunks(content.sceneComponentChunks ?? {});
     this.behaviourTrees.replaceAnimClipCatalog(content.animClipCatalog ?? []);
     this.animGraphs.replaceAnimClipCatalog(content.animClipCatalog ?? []);
     this.behaviourTrees.replaceAudioAssets(content.audioAssetGuids ?? []);
@@ -1230,7 +1247,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.sceneLayerLibrary.clear();
     this.sourceRenderTargets.clear();
     this.sourceRenderTargetTextures.clear();
-    this.sceneLandscapeBytes.clear();
+    this.sceneComponentChunks.clear();
     this.navFrameActors = null;
     this.guidIndexCache = null;
     // Dispose.

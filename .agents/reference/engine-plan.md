@@ -186,12 +186,11 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 
 ### Schema versioning
 
-- Every header carries `version`; each type can own ordered N → N+1 migration steps applied on load. None exist yet.
-- Haptic is not released yet: formats change in place. Do not raise versions, add migration steps or keep readers for old data; projects made with an earlier build are not expected to open.
-- From the first release, `RELEASED_VERSIONS` in `packages/assets/src/migration.ts` is set to each type's version at that release, and every released version stays readable: a format change raises the type's current version and adds a step from the previous one to `MIGRATIONS`, and a normalizer may fill the default of a new optional field without one. Until then its values equal the current versions. A type added later joins `RELEASED_VERSIONS` at its first version.
-- Each step is tested with a committed golden of the version it reads (`packages/assets/src/__fixtures__/migrations/<Type>-v<N>.hasset`, written before the format changes); `migration.test.ts` fails without it.
-- Versions older than the oldest readable one are refused as "unsupported old format"; newer versions are refused as "made with a newer engine version". Never silently accept, upgrade or drop fields.
-- Migration prompts once and never rewrites untouched files without saying so.
+- Every header carries `version`, and every asset type is registered (the version tables in `packages/assets/src/migration.ts` are exhaustive over `AssetType`). Reads are strict: any other stored version is refused with `AssetFormatVersionError`.
+- Haptic is not released yet: formats change in place and every type stays at version 1. Do not raise versions, add upgrade steps or keep readers for old data; projects made with an earlier build are not expected to open.
+- From the first release, `RELEASED_VERSIONS` is set to each type's version at that release, and every released version stays readable: a format change raises the type's current version and adds an upgrade step from the previous one (the step mechanism and its user prompt are added with the first such change), and a normalizer may fill the default of a new optional field without one. A type added later joins `RELEASED_VERSIONS` at its first version.
+- Each upgrade step is tested with a committed golden of the version it reads, written before the format changes.
+- Older versions are refused as "unsupported old format"; newer versions are refused as "made with a newer engine version". Never silently accept, upgrade or drop fields.
 
 ### Texture compression decision
 

@@ -184,7 +184,7 @@ async function captureAmbientOcclusion(
   const on = await draw();
   effects.colorPipeline.mode = "sceneLinear";
   const linear = await draw();
-  effects.colorPipeline.mode = "legacyDisplay";
+  effects.colorPipeline.mode = "displaySpace";
   camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
   camera.orthoLeft = -4;
   camera.orthoRight = 4;
@@ -571,7 +571,7 @@ export async function runSpatialEffectsProof(
         effects.colorPipeline.mode = "sceneLinear";
         effects.toneMapping = "none";
         const linear = await draw();
-        effects.colorPipeline.mode = "legacyDisplay";
+        effects.colorPipeline.mode = "displaySpace";
         if (!light) throw new Error("The combined capture has no spot light");
         applyAuthoredLightProperties(light, {
           intensity: 20,

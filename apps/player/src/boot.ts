@@ -556,7 +556,7 @@ function initializePlayer(
     ...(game.acquireScene ? { sceneCatalog: manifest.assets.filter(entry => entry.type === "Scene").map(entry => ({ guid: entry.guid, name: entry.name ?? entry.guid })) } : {}),
     sceneLayers,
     sceneNavmeshBytes: Object.fromEntries(content.navmeshByScene),
-    ...(content.landscapeBytes.size > 0 ? { sceneLandscapeBytes: Object.fromEntries(content.landscapeBytes) } : {}),
+    ...(content.componentChunks.size > 0 ? { sceneComponentChunks: Object.fromEntries(content.componentChunks) } : {}),
     ...loopGuardLoadFields(manifest),
     // Export compiles with stripDevelopmentOnly exactly when bundleDebugger is false: trace and cursor debug lines go with it.
     traceDebugDraw: manifest.bundleDebugger,

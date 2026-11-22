@@ -5,9 +5,9 @@
  * uses the same names on every host. Dependency-free so the Electron main
  * bundle can import it without the renderer's platform code.
  */
-export const TEMPLATE_LIBRARY_FOLDER = "__slate_templates__";
-export const ENGINE_PLUGIN_LIBRARY_FOLDER = "__slate_engine_plugins__";
-export const ENGINE_EXTENSION_LIBRARY_FOLDER = "__slate_engine_extensions__";
+export const TEMPLATE_LIBRARY_FOLDER = "__haptic_templates__";
+export const ENGINE_PLUGIN_LIBRARY_FOLDER = "__haptic_engine_plugins__";
+export const ENGINE_EXTENSION_LIBRARY_FOLDER = "__haptic_engine_extensions__";
 
 export const LIBRARY_FOLDERS = [
   TEMPLATE_LIBRARY_FOLDER,
