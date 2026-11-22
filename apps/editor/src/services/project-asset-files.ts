@@ -151,14 +151,30 @@ export async function storeDocumentBytes(
   await registry?.reindexPath(path);
 }
 
-export async function readUnindexedAssetDocument(files: AssetFileAccess, path: string, signal?: AbortSignal): Promise<AssetDocument> {
+/**
+ * A file the registry does not index: its document and the chunks `selectChunks`
+ * names from its header, each read once, all from the version whose header was read.
+ */
+export async function readUnindexedAssetDocument(
+  files: AssetFileAccess,
+  path: string,
+  signal?: AbortSignal,
+  selectChunks?: (header: AssetCatalogRead["header"]) => readonly string[],
+): Promise<{ document: AssetDocument; chunks: Map<string, Uint8Array> }> {
   const storage = files.storageFor(path);
   const blobs = files.blobsFor(path);
   const { header, locator } = await readAssetCatalog(storage, path, { signal });
+  const loader = new AccountedPayloadLoader(storage, { blobs });
   const body = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
   const payload = body
-    ? JSON.parse(new TextDecoder().decode(await new AccountedPayloadLoader(storage, { blobs }).loadChunk(locator, body, blobs, storage, { signal }))) as Record<string, unknown>
+    ? JSON.parse(new TextDecoder().decode(await loader.loadChunk(locator, body, blobs, storage, { signal }))) as Record<string, unknown>
     : header.payload;
-  if (!body) await validateAssetSourceLocator(storage, locator, { signal });
-  return { guid: header.guid, type: header.type, name: header.name, version: header.version, payload };
+  const chunks = new Map<string, Uint8Array>();
+  const wanted = new Set(selectChunks?.(header) ?? []);
+  for (const entry of header.chunks) {
+    if (entry.id === DOCUMENT_CHUNK_ID || !wanted.has(entry.id)) continue;
+    chunks.set(entry.id, await loader.loadChunk(locator, entry, blobs, storage, { signal }));
+  }
+  if (!body && chunks.size === 0) await validateAssetSourceLocator(storage, locator, { signal });
+  return { document: { guid: header.guid, type: header.type, name: header.name, version: header.version, payload }, chunks };
 }
