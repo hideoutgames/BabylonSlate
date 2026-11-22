@@ -164,8 +164,6 @@ jobs:
       # Playwright's extra CJK/cyrillic font apt packages (~21MB) time out
       # when several shards hit the Ubuntu archive together. The suite has no
       # screenshot baselines that need those fonts.
-      # Bundle on this runner; static remains independently required for merge.
-      # The immutable build is verified before this shard executes its tests.
       # Shard 1 builds first so the player's bundle budget fails before its tests run; its test:e2e then finds that
       # build by its identity and reuses it (or builds again if it does not match).
       - name: Build the browser test bundle
@@ -176,6 +174,8 @@ jobs:
       - name: Check the player bundle budget
         if: matrix.shard == 1
         run: node scripts/bundle-report.mjs --budget scripts/bundle-budget.json
+      # Bundle on this runner; static remains independently required for merge.
+      # The immutable build is verified before this shard executes its tests.
       - run: pnpm test:e2e --partition=${{ matrix.shard }}/5
         env:
           HAPTIC_TEST_BUILD_MODE: ci-bundle
