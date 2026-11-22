@@ -174,7 +174,9 @@ describe("packaged renderer boundary", () => {
     });
     // The notices the editor shows, read as a file: an app does not import another app.
     const { packages } = JSON.parse(readFileSync(join(editor, "lib/third-party-notices.json"), "utf8")) as { packages: { source: string }[] };
-    const sources = packages.map(({ source }) => source).filter((source) => source.startsWith("https://"));
+    const sources = packages.map(({ source }) => source).filter(Boolean);
+    // Every source link is a web page: one in another form (an SSH remote) could not open.
+    expect(sources.filter((source) => !source.startsWith("https://"))).toEqual([]);
     expect(sources.length).toBeGreaterThan(100);
     for (const url of [...offered, ...sources]) expect(externalOpenUrl(url), url).toBe(new URL(url).href);
   });

@@ -27,11 +27,13 @@ class NetRequest extends EventEmitter implements TransferClientRequest {
   private refused = false;
   private aborted = false;
 
-  constructor(
-    private readonly options: TransferRequestOptions,
-    private readonly target: string,
-  ) {
+  private readonly options: TransferRequestOptions;
+  private readonly target: string;
+
+  constructor(options: TransferRequestOptions, target: string) {
     super();
+    this.options = options;
+    this.target = target;
   }
 
   /** Electron's listeners are typed per event; this stand-in takes them as the transfer declares them. */

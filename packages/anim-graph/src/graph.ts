@@ -517,7 +517,10 @@ export interface AnimClipCatalogEntry {
   events?: readonly AnimClipEvent[];
   /** An additive Animation's settings; absent for one that is not additive. */
   additive?: AnimClipAdditive;
-  /** An Animation's root motion, in the actor's units; absent when it plays in place. */
+  /**
+   * An Animation's root motion, in the actor's units; absent when it plays in place. A catalog built from asset headers
+   * has only its bone; one built from documents (Play, export) has its track too.
+   */
   rootMotion?: AnimClipRootMotion;
   /** A Blend Space's or Sprite Blend Space's axes and samples, which a Blend Space Player plays. */
   blendSpace?: {

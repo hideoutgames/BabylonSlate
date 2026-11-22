@@ -52,6 +52,13 @@ async function showSubscription(view: RenderResult) {
   return dialog;
 }
 
+/** The Haptic Pro card's text: the store's prices, or what stands in for them, and never a placeholder price. */
+function proCard(dialog: HTMLElement): string {
+  const text = dialog.querySelector('[data-plan="pro"]')?.textContent ?? "";
+  expect(text).not.toMatch(/coming soon/i);
+  return text;
+}
+
 async function openSubscription() {
   return showSubscription(render(<SubscriptionPage />));
 }
@@ -100,6 +107,7 @@ describe("useSubscriptionBilling", () => {
     const annual = within(choice).getByRole("button", { name: "Annual, 99,99 €" });
     expect(monthly.getAttribute("aria-pressed")).toBe("true");
     expect(annual.getAttribute("aria-pressed")).toBe("false");
+    expect(proCard(dialog)).toContain("9,99 €");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Subscribe" }));
     await waitFor(() => expect(port.purchase).toHaveBeenCalledTimes(1));
@@ -123,6 +131,7 @@ describe("useSubscriptionBilling", () => {
 
     expect((await within(dialog).findByTestId("billing-plan")).textContent).toBe("Annual99,99 €");
     expect(within(dialog).queryByRole("group", { name: "Billing Period" })).toBeNull();
+    expect(proCard(dialog)).toContain("99,99 €");
     fireEvent.click(within(dialog).getByRole("button", { name: "Subscribe" }));
     await waitFor(() => expect(port.purchase.mock.calls[0]?.[1]).toMatchObject({ packageId: "$rc_annual" }));
   });
@@ -136,6 +145,22 @@ describe("useSubscriptionBilling", () => {
     );
     expect(within(dialog).getByRole("button", { name: "Subscribe" })).toHaveProperty("disabled", true);
     expect(within(dialog).queryByRole("group", { name: "Billing Period" })).toBeNull();
+    expect(proCard(dialog)).not.toMatch(/€|Loading/);
+  });
+
+  it("says the prices are loading until the store answers, then shows them", async () => {
+    let answer!: (plans: unknown[]) => void;
+    port.plans.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    const dialog = await openSubscription();
+
+    expect((await within(dialog).findByRole("status")).textContent).toBe("Loading Prices…");
+    expect(proCard(dialog)).not.toContain("€");
+    expect(within(dialog).getByRole("button", { name: "Subscribe" })).toHaveProperty("disabled", true);
+
+    await act(async () => answer([monthlyPlan, annualPlan]));
+    expect(await within(dialog).findByRole("group", { name: "Billing Period" })).toBeTruthy();
+    expect(within(dialog).queryByRole("status")).toBeNull();
+    expect(proCard(dialog)).toContain("9,99 €");
   });
 
   it("shows a subscriber no plan choice or Subscribe, and no error for an offering without plans", async () => {
@@ -148,6 +173,7 @@ describe("useSubscriptionBilling", () => {
     expect(within(dialog).queryByRole("group", { name: "Billing Period" })).toBeNull();
     expect(within(dialog).queryByRole("alert")).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Manage Billing" })).toHaveProperty("disabled", false);
+    expect(proCard(dialog)).toContain("Current Plan");
   });
 
   it("loads the plans again when the Subscription page shows after an offline launch", async () => {

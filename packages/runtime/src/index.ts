@@ -59,3 +59,9 @@ export { captureSimulationScene, type SimulationSceneCaptureInput, type Simulati
 export { createSceneSourceHost, type AcquireRuntimeScene, type RuntimeSceneSource } from "./scene-source";
 
 export { applyRuntimeSourceControl } from "./source-content-control";
+export {
+  resetSnapshotPublishVerification,
+  snapshotPublishVerification,
+  verifySnapshotPublishes,
+  type SnapshotPublishVerification,
+} from "./snapshot-verification";
