@@ -1,4 +1,4 @@
-﻿import { useEffect, type ReactNode } from "react";
+﻿import { useEffect, useRef, type ReactNode } from "react";
 import {
   ClerkFailed,
   ClerkLoaded,
@@ -9,7 +9,10 @@ import {
 import { HomepageAccountReport } from "./homepage-account-report";
 import { HomepageClerkProvider } from "./homepage-account-provider";
 import { HomepageProfileMenu } from "./homepage-profile-menu";
-import { useSubscriptionBilling } from "../services/subscription-billing";
+import {
+  endSubscriptionBilling,
+  useSubscriptionBilling,
+} from "../services/subscription-billing";
 
 function titleCase(value: string): string {
   return value
@@ -43,6 +46,13 @@ function AccountButton({ onOverlayChange, onAccountChange, ...props }: Props) {
     };
   }, [onOverlayChange]);
   const signedIn = Boolean(isSignedIn && user);
+  // The signed-in billing hook unmounts with its account, so this owner logs
+  // RevenueCat out however Clerk signed the user out.
+  const wasSignedIn = useRef(signedIn);
+  useEffect(() => {
+    if (wasSignedIn.current && !signedIn) void endSubscriptionBilling();
+    wasSignedIn.current = signedIn;
+  }, [signedIn]);
   return (
     <>
       <HomepageAccountReport

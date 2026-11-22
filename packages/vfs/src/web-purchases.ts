@@ -1,12 +1,16 @@
 import {
   INACTIVE_ENTITLEMENT,
   type EntitlementStatus,
+  type PurchaseRequest,
+  type PurchasesAccount,
   type PurchasesPort,
 } from "./purchases-port";
+import { SerialQueue, offeringPackage } from "./purchases-shared";
 
 type WebSdk = typeof import("@revenuecat/purchases-js");
 type WebPurchasesInstance = ReturnType<WebSdk["Purchases"]["configure"]>;
 type CustomerInfo = Awaited<ReturnType<WebPurchasesInstance["getCustomerInfo"]>>;
+type Bound = { sdk: WebSdk; instance: WebPurchasesInstance };
 
 function entitlementStatus(info: CustomerInfo, entitlementId: string): EntitlementStatus {
   const entitlement = info.entitlements.active[entitlementId];
@@ -25,51 +29,68 @@ function entitlementStatus(info: CustomerInfo, entitlementId: string): Entitleme
  */
 export class WebPurchases implements PurchasesPort {
   readonly store = "web" as const;
-  private sdk: Promise<{ sdk: WebSdk; instance: WebPurchasesInstance }> | null = null;
+  private readonly queue = new SerialQueue();
+  private bound: Bound | null = null;
 
-  async configure({ apiKey, appUserId }: { apiKey: string; appUserId: string }): Promise<void> {
-    if (!this.sdk) {
-      this.sdk = import("@revenuecat/purchases-js").then((sdk) => ({
-        sdk,
-        instance: sdk.Purchases.configure({ apiKey, appUserId }),
-      }));
-      this.sdk.catch(() => {
-        this.sdk = null;
-      });
-      await this.sdk;
-      return;
+  /** Runs inside the queue only; a failed load or configure leaves nothing behind. */
+  private async bind({ apiKey, appUserId }: PurchasesAccount): Promise<Bound> {
+    if (!this.bound) {
+      const sdk = await import("@revenuecat/purchases-js");
+      this.bound = { sdk, instance: sdk.Purchases.configure({ apiKey, appUserId }) };
+      return this.bound;
     }
-    const { instance } = await this.sdk;
+    const { instance } = this.bound;
     if (instance.getAppUserId() !== appUserId) await instance.changeUser(appUserId);
+    return this.bound;
   }
 
-  private async instance(): Promise<{ sdk: WebSdk; instance: WebPurchasesInstance }> {
-    if (!this.sdk) throw new Error("Billing is not configured.");
-    return this.sdk;
+  private withAccount<T>(account: PurchasesAccount, operation: (bound: Bound) => Promise<T>): Promise<T> {
+    return this.queue.run(async () => operation(await this.bind(account)));
   }
 
-  async status(entitlementId: string): Promise<EntitlementStatus> {
-    const { instance } = await this.instance();
-    return entitlementStatus(await instance.getCustomerInfo(), entitlementId);
+  async ensureConfigured(account: PurchasesAccount): Promise<void> {
+    await this.withAccount(account, async () => {});
   }
 
-  async purchase(entitlementId: string, options?: { email?: string }): Promise<boolean> {
-    const { sdk, instance } = await this.instance();
-    const pkg = (await instance.getOfferings()).current?.availablePackages[0];
-    if (!pkg) throw new Error("No subscription is available to buy right now.");
-    try {
-      const { customerInfo } = await instance.purchase({
-        rcPackage: pkg,
-        customerEmail: options?.email,
-      });
-      return entitlementStatus(customerInfo, entitlementId).active;
-    } catch (error) {
-      if (
-        error instanceof sdk.PurchasesError &&
-        error.errorCode === sdk.ErrorCode.UserCancelledError
-      )
-        return false;
-      throw error;
-    }
+  status(account: PurchasesAccount, entitlementId: string): Promise<EntitlementStatus> {
+    return this.withAccount(account, async ({ instance }) =>
+      entitlementStatus(await instance.getCustomerInfo(), entitlementId),
+    );
+  }
+
+  purchase(account: PurchasesAccount, { entitlementId, packageId, email }: PurchaseRequest): Promise<boolean> {
+    return this.withAccount(account, async ({ sdk, instance }) => {
+      const pkg = offeringPackage((await instance.getOfferings()).current, packageId);
+      try {
+        const { customerInfo } = await instance.purchase({
+          rcPackage: pkg,
+          ...(email ? { customerEmail: email } : {}),
+        });
+        return entitlementStatus(customerInfo, entitlementId).active;
+      } catch (error) {
+        if (
+          error instanceof sdk.PurchasesError &&
+          error.errorCode === sdk.ErrorCode.UserCancelledError
+        )
+          return false;
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Web Billing has no anonymous customer to fall back to, so the SDK instance
+   * is closed (no network needed) and the next account configures afresh.
+   */
+  logOut(): Promise<void> {
+    return this.queue.run(async () => {
+      const bound = this.bound;
+      this.bound = null;
+      try {
+        bound?.instance.close();
+      } catch {
+        /* Signing out never fails on billing. */
+      }
+    });
   }
 }

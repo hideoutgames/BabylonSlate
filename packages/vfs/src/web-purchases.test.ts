@@ -48,6 +48,7 @@ function sdkInstance(appUserId: string) {
     getCustomerInfo: vi.fn(),
     getOfferings: vi.fn(),
     purchase: vi.fn(),
+    close: vi.fn(),
   };
 }
 
@@ -56,10 +57,11 @@ let instance: ReturnType<typeof sdkInstance>;
 const monthly = { identifier: "$rc_monthly" };
 const annual = { identifier: "$rc_annual" };
 const options = { apiKey: "rcb_key", appUserId: "user_1" };
+const monthlyPro = { entitlementId: "pro", packageId: "$rc_monthly" };
 
 async function configured() {
   const purchases = new WebPurchases();
-  await purchases.configure(options);
+  await purchases.ensureConfigured(options);
   return purchases;
 }
 
@@ -69,9 +71,9 @@ describe("Web purchases", () => {
     configure.mockImplementation(({ appUserId }: { appUserId: string }) => (instance = sdkInstance(appUserId)));
   });
 
-  describe("configure", () => {
+  describe("ensureConfigured", () => {
     it("configures RevenueCat Web Billing with the API key and the account's app user id", async () => {
-      await new WebPurchases().configure(options);
+      await new WebPurchases().ensureConfigured(options);
 
       expect(configure.mock.calls).toEqual([[{ apiKey: "rcb_key", appUserId: "user_1" }]]);
       expect(instance.changeUser).not.toHaveBeenCalled();
@@ -80,8 +82,8 @@ describe("Web purchases", () => {
     it("configures the SDK once for repeated and concurrent calls for the same account", async () => {
       const purchases = new WebPurchases();
 
-      await Promise.all([purchases.configure(options), purchases.configure(options)]);
-      await purchases.configure(options);
+      await Promise.all([purchases.ensureConfigured(options), purchases.ensureConfigured(options)]);
+      await purchases.ensureConfigured(options);
 
       expect(configure).toHaveBeenCalledTimes(1);
       expect(instance.changeUser).not.toHaveBeenCalled();
@@ -90,9 +92,9 @@ describe("Web purchases", () => {
     it("switches the customer when another account signs in, once per change", async () => {
       const purchases = new WebPurchases();
 
-      await purchases.configure(options);
-      await purchases.configure({ ...options, appUserId: "user_2" });
-      await purchases.configure({ ...options, appUserId: "user_2" });
+      await purchases.ensureConfigured(options);
+      await purchases.ensureConfigured({ ...options, appUserId: "user_2" });
+      await purchases.ensureConfigured({ ...options, appUserId: "user_2" });
 
       expect(configure).toHaveBeenCalledTimes(1);
       expect(instance.changeUser.mock.calls).toEqual([["user_2"]]);
@@ -101,33 +103,40 @@ describe("Web purchases", () => {
     it("switches the customer when another account signs in during the first configure", async () => {
       const purchases = new WebPurchases();
 
-      await Promise.all([purchases.configure(options), purchases.configure({ ...options, appUserId: "user_2" })]);
+      await Promise.all([purchases.ensureConfigured(options), purchases.ensureConfigured({ ...options, appUserId: "user_2" })]);
 
       expect(configure.mock.calls).toEqual([[{ apiKey: "rcb_key", appUserId: "user_1" }]]);
       expect(instance.changeUser.mock.calls).toEqual([["user_2"]]);
     });
 
-    it("leaves billing unconfigured after a failed configure and configures again on the next attempt", async () => {
+    it("configures again on the next call after a failed configure", async () => {
       configure.mockImplementationOnce(() => {
         throw new Error("Invalid API key");
       });
       const purchases = new WebPurchases();
 
-      await expect(purchases.configure(options)).rejects.toThrow("Invalid API key");
-      await expect(purchases.status("pro")).rejects.toThrow("Billing is not configured.");
-      await purchases.configure(options);
+      await expect(purchases.ensureConfigured(options)).rejects.toThrow("Invalid API key");
+      configure.mockImplementationOnce(({ appUserId }: { appUserId: string }) => {
+        instance = sdkInstance(appUserId);
+        instance.getCustomerInfo.mockResolvedValue(customerInfo({ active: { pro: entitlement("pro") } }));
+        return instance;
+      });
 
+      expect((await purchases.status(options, "pro")).active).toBe(true);
       expect(configure).toHaveBeenCalledTimes(2);
-      instance.getCustomerInfo.mockResolvedValue(customerInfo({ active: { pro: entitlement("pro") } }));
-      expect((await purchases.status("pro")).active).toBe(true);
     });
 
-    it("refuses to read the status or buy before billing is configured", async () => {
+    it("reads another account's status only after switching to it", async () => {
       const purchases = new WebPurchases();
 
-      await expect(purchases.status("pro")).rejects.toThrow("Billing is not configured.");
-      await expect(purchases.purchase("pro")).rejects.toThrow("Billing is not configured.");
-      expect(configure).not.toHaveBeenCalled();
+      const first = purchases.ensureConfigured(options);
+      const status = purchases.status({ ...options, appUserId: "user_2" }, "pro").catch(() => undefined);
+      await Promise.all([first, status]);
+
+      expect(instance.changeUser.mock.calls).toEqual([["user_2"]]);
+      expect(instance.changeUser.mock.invocationCallOrder[0]).toBeLessThan(
+        instance.getCustomerInfo.mock.invocationCallOrder[0]!,
+      );
     });
   });
 
@@ -181,36 +190,46 @@ describe("Web purchases", () => {
       const purchases = await configured();
       instance.getCustomerInfo.mockResolvedValue(info);
 
-      expect(await purchases.status(entitlementId)).toEqual(expected);
+      expect(await purchases.status(options, entitlementId)).toEqual(expected);
     });
 
     it("surfaces a failure to load the customer", async () => {
       const purchases = await configured();
       instance.getCustomerInfo.mockRejectedValue(new Error("offline"));
 
-      await expect(purchases.status("pro")).rejects.toThrow("offline");
+      await expect(purchases.status(options, "pro")).rejects.toThrow("offline");
     });
   });
 
   describe("purchase", () => {
     it.each([
-      { name: "no current offering", offerings: { current: null, all: {} } },
-      { name: "an offering without packages", offerings: { current: { availablePackages: [] }, all: {} } },
-    ])("refuses to buy when there is $name", async ({ offerings }) => {
+      {
+        name: "no current offering",
+        offerings: { current: null, all: {} },
+        message: "No subscription is available to buy right now.",
+      },
+      {
+        name: "an offering without the requested package",
+        offerings: { current: { availablePackages: [annual] }, all: {} },
+        message: 'The subscription package "$rc_monthly" is not available right now.',
+      },
+    ])("refuses to buy when there is $name", async ({ offerings, message }) => {
       const purchases = await configured();
       instance.getOfferings.mockResolvedValue(offerings);
 
-      await expect(purchases.purchase("pro")).rejects.toThrow("No subscription is available to buy right now.");
+      await expect(purchases.purchase(options, monthlyPro)).rejects.toThrow(message);
       expect(instance.purchase).not.toHaveBeenCalled();
     });
 
-    it("buys the first package of the current offering for the account's email and reports the entitlement as granted", async () => {
+    it("buys the requested package for the account's email and reports the entitlement as granted", async () => {
       const purchases = await configured();
       instance.getOfferings.mockResolvedValue({ current: { availablePackages: [monthly, annual] }, all: {} });
       instance.purchase.mockResolvedValue({ customerInfo: customerInfo({ active: { pro: entitlement("pro") } }) });
 
-      expect(await purchases.purchase("pro", { email: "person@example.com" })).toBe(true);
-      expect(instance.purchase.mock.calls).toEqual([[{ rcPackage: monthly, customerEmail: "person@example.com" }]]);
+      expect(
+        await purchases.purchase(options, { entitlementId: "pro", packageId: "$rc_annual", email: "person@example.com" }),
+      ).toBe(true);
+      expect(instance.purchase.mock.calls).toEqual([[{ rcPackage: annual, customerEmail: "person@example.com" }]]);
     });
 
     it("sends no customer email when the account has none, so the checkout asks for it", async () => {
@@ -218,8 +237,26 @@ describe("Web purchases", () => {
       instance.getOfferings.mockResolvedValue({ current: { availablePackages: [monthly] }, all: {} });
       instance.purchase.mockResolvedValue({ customerInfo: customerInfo({ active: { pro: entitlement("pro") } }) });
 
-      expect(await purchases.purchase("pro")).toBe(true);
+      expect(await purchases.purchase(options, monthlyPro)).toBe(true);
       expect(instance.purchase.mock.calls).toEqual([[{ rcPackage: monthly }]]);
+      expect(Object.keys(instance.purchase.mock.calls[0]![0] as object)).toEqual(["rcPackage"]);
+    });
+
+    it("configures billing before buying when the first configure failed offline", async () => {
+      configure.mockImplementationOnce(() => {
+        throw new Error("offline");
+      });
+      const purchases = new WebPurchases();
+      await expect(purchases.ensureConfigured(options)).rejects.toThrow("offline");
+      configure.mockImplementationOnce(({ appUserId }: { appUserId: string }) => {
+        instance = sdkInstance(appUserId);
+        instance.getOfferings.mockResolvedValue({ current: { availablePackages: [monthly] }, all: {} });
+        instance.purchase.mockResolvedValue({ customerInfo: customerInfo({ active: { pro: entitlement("pro") } }) });
+        return instance;
+      });
+
+      expect(await purchases.purchase(options, monthlyPro)).toBe(true);
+      expect(configure).toHaveBeenCalledTimes(2);
     });
 
     it("resolves false when the user closes the checkout", async () => {
@@ -227,7 +264,7 @@ describe("Web purchases", () => {
       instance.getOfferings.mockResolvedValue({ current: { availablePackages: [monthly] }, all: {} });
       instance.purchase.mockRejectedValue(new PurchasesError(ErrorCode.UserCancelledError, "Purchase cancelled"));
 
-      expect(await purchases.purchase("pro")).toBe(false);
+      expect(await purchases.purchase(options, monthlyPro)).toBe(false);
     });
 
     it.each([
@@ -238,7 +275,29 @@ describe("Web purchases", () => {
       instance.getOfferings.mockResolvedValue({ current: { availablePackages: [monthly] }, all: {} });
       instance.purchase.mockRejectedValue(failure);
 
-      await expect(purchases.purchase("pro")).rejects.toBe(failure);
+      await expect(purchases.purchase(options, monthlyPro)).rejects.toBe(failure);
+    });
+  });
+
+  describe("logOut", () => {
+    it("closes the signed-out account's SDK instance and configures afresh for the next account", async () => {
+      const purchases = await configured();
+      const signedOut = instance;
+
+      await purchases.logOut();
+      await purchases.ensureConfigured({ ...options, appUserId: "user_2" });
+
+      expect(signedOut.close).toHaveBeenCalledTimes(1);
+      expect(configure.mock.calls).toEqual([
+        [{ apiKey: "rcb_key", appUserId: "user_1" }],
+        [{ apiKey: "rcb_key", appUserId: "user_2" }],
+      ]);
+      expect(signedOut.changeUser).not.toHaveBeenCalled();
+    });
+
+    it("does nothing before billing was configured", async () => {
+      await expect(new WebPurchases().logOut()).resolves.toBeUndefined();
+      expect(configure).not.toHaveBeenCalled();
     });
   });
 });
