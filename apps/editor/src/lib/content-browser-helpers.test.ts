@@ -62,7 +62,7 @@ import {
   runWithContentBrowserImportBusy,
   type ContentBrowserTreeRow,
 } from "./content-browser-helpers";
-import { assetHeaderDependencies } from "./asset-header-dependencies";
+import { assetHeaderDependencies, assetHeaderDependencyMetadata } from "./asset-header-dependencies";
 import { ENGINE_BASE_CLASSES, registryClassParentLookup } from "./class-asset-lookup";
 import { contentBrowserMoveFromDrop, isValidMoveDestination } from "./content-browser-moves";
 import { exclusiveSelectAsset, exclusiveSelectFolder } from "./content-browser-selection";
@@ -1424,7 +1424,7 @@ describe("content-browser-helpers", () => {
     expect(atten.payload).toMatchObject({
       innerRadius: 10,
       maxRadius: 250,
-      distanceModel: "linear",
+      falloff: "natural",
     });
   });
 
@@ -2078,6 +2078,15 @@ describe("content-browser-helpers", () => {
       { id: "audio", kind: "variable", name: "Clip", typeId: "asset", typeClassId: "Audio", defaultValue: "clip" },
       { id: "name", kind: "variable", name: "Name", typeId: "string", defaultValue: "unused" },
     ] })).toEqual(["clip"]);
+  });
+
+  it("ships the clip a Play Slot Animation names by literal without loading it with its owner", () => {
+    const metadata = assetHeaderDependencyMetadata("Class", {
+      nodes: [{ id: "attack", type: "anim.actor.playSlotAnimation", data: { "default:animation": "throw-anim", "default:slotName": "UpperBody" } }],
+      edges: [],
+    });
+    expect(metadata.dependencies).toEqual(["throw-anim"]);
+    expect(metadata.requiredDependencies).toEqual([]);
   });
 
   it.each(["Scene", "Class"])("retains cable material dependencies in %s assets", (type) => {

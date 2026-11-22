@@ -10,13 +10,18 @@ const harness = vi.hoisted(() => ({
   trusted: [] as string[],
   updates: [] as string[][],
   utilities: [] as string[],
+  executeJavaScript: [] as string[],
+  refusals: 0,
 }));
 
 /** One snapshot object per held-back list, as the service keeps its snapshot until it changes. */
-const snapshots = new Map<string[], object>();
-function snapshotFor(untrusted: string[]): object {
-  if (!snapshots.has(untrusted)) snapshots.set(untrusted, { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted });
-  return snapshots.get(untrusted)!;
+const snapshots = new Map<string, object>();
+function snapshotFor(untrusted: string[], untrustedExecuteJavaScript: string[], executeJavaScriptRefusals: number): object {
+  const key = JSON.stringify([untrusted, untrustedExecuteJavaScript, executeJavaScriptRefusals]);
+  if (!snapshots.has(key)) {
+    snapshots.set(key, { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted, untrustedExecuteJavaScript, executeJavaScriptRefusals });
+  }
+  return snapshots.get(key)!;
 }
 
 vi.mock("../context/document-context", async () =>
@@ -25,10 +30,12 @@ vi.mock("../context/document-context", async () =>
     projectDocument: { settings: { editorUtilityObjects: harness.utilities } },
     extensionService: {
       subscribe: () => () => {},
-      getSnapshot: () => snapshotFor(harness.untrusted),
+      getSnapshot: () => snapshotFor(harness.untrusted, harness.executeJavaScript, harness.refusals),
       projectTrustKey: (guid: string) => JSON.stringify(["opfs:Game", guid]),
       createdHere: () => false,
       forgetCreatedProject: () => {},
+      revokeTrust: () => {},
+      clearRevocation: () => {},
     },
   })),
 );
@@ -56,6 +63,8 @@ afterEach(() => {
   harness.trusted = [];
   harness.updates = [];
   harness.utilities = [];
+  harness.executeJavaScript = [];
+  harness.refusals = 0;
 });
 
 it("names the held-back Project Extensions and trusts the project on this computer when asked", async () => {
@@ -90,4 +99,25 @@ it("asks for trust when only registered Editor Utilities are held back", () => {
   const banner = screen.getByTestId("project-trust-banner");
   expect(banner.textContent).toContain("Editor Utilities");
   expect(banner.textContent).not.toContain("Extensions (");
+});
+
+it("names the assets whose Execute JavaScript was refused, and shows again after Not Now when more are refused", () => {
+  harness.untrusted = [];
+  harness.executeJavaScript = ["Hero"];
+  harness.refusals = 1;
+  const { rerender } = render(<ProjectTrustBanner />);
+  const banner = screen.getByTestId("project-trust-banner");
+  expect(banner.textContent).toContain("Execute JavaScript (Hero)");
+  expect(banner.textContent).not.toContain("Extensions (");
+  fireEvent.click(screen.getByRole("button", { name: "Not Now" }));
+  expect(screen.queryByTestId("project-trust-banner")).toBeNull();
+  harness.executeJavaScript = ["Hero", "Level 1"];
+  harness.refusals = 2;
+  rerender(<ProjectTrustBanner />);
+  expect(screen.getByTestId("project-trust-banner").textContent).toContain("Execute JavaScript (Hero, Level 1)");
+  // Refused again for the same asset after Not Now: it shows again.
+  fireEvent.click(screen.getByRole("button", { name: "Not Now" }));
+  harness.refusals = 3;
+  rerender(<ProjectTrustBanner />);
+  expect(screen.getByTestId("project-trust-banner").textContent).toContain("Execute JavaScript (Hero, Level 1)");
 });

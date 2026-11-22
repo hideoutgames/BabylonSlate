@@ -1,3 +1,4 @@
+import { EXECUTE_JAVASCRIPT_NODE_TYPE, executeJavaScriptBodyText } from "@haptic/core";
 import {
   pin,
   type NodeDefinition,
@@ -222,7 +223,7 @@ export const debugNodes: NodeDefinition[] = [
     },
   },
   {
-    id: "debug.executeJavaScript",
+    id: EXECUTE_JAVASCRIPT_NODE_TYPE,
     title: "Execute JavaScript",
     category: "debug",
     latent: false,
@@ -253,7 +254,8 @@ export const debugNodes: NodeDefinition[] = [
       }
       const fnName = `execJs_${ctx.node.id.replace(/[^A-Za-z0-9_$]/g, "_")}`;
       const isAsync = Boolean(ctx.node.properties.async);
-      const body = String(ctx.node.properties.body ?? "");
+      // The text every Workspace Trust scan judges (`executeJavaScriptBodyText`), so they cannot disagree.
+      const body = executeJavaScriptBodyText(ctx.node.properties.body);
       const outDecls = outputs
         .map((o) => `  let ${o.name} = ${defaultValueLiteral(o.type)};`)
         .join("\n");

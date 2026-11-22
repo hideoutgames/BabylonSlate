@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ANIM_POSE_OUTPUT_NODE_ID, createDefaultAnimGraph } from "@haptic/anim-graph";
 import type { CommandMessage } from "@haptic/bridge";
 import { createActor, createDefaultScene, createDefaultSceneLayer, type RuntimeAssetCatalogEntry, type SerializedComponent } from "@haptic/core";
 import { Actor, ActorComponent } from "@haptic/object-model";
@@ -182,6 +183,133 @@ describe("component asset properties a script sets before their asset loads", ()
         'Material missing-guid is not included in this game, so Material on 2D Post Processing Panel of actor "Frame" keeps its current value. ' +
         "Reference it from a Class, Scene or Data asset the game ships, or add its folder to Always Package Folders.",
       ]);
+    } finally { runtime.stop(); }
+  });
+});
+
+/**
+ * A demand-driven session whose actor runs a graph with a Slot; its Class plays (or stops) a clip there with Play
+ * Slot Animation. `swing` and `kick` ship with the game but nothing loaded them.
+ */
+async function slotRuntime() {
+  const commands: CommandMessage[] = [];
+  const graph = createDefaultAnimGraph();
+  const stateGraph = graph.stateMachine.states[0]!.stateGraph;
+  stateGraph.nodes.push({ id: "slot", type: "anim.pose.slot", position: { x: 0, y: 0 }, data: {} });
+  stateGraph.edges = [
+    { id: "player->slot", source: "player", sourceHandle: "pose", target: "slot", targetHandle: "source" },
+    { id: "slot->output", source: "slot", sourceHandle: "pose", target: ANIM_POSE_OUTPUT_NODE_ID, targetHandle: "pose" },
+  ];
+  const clip = (guid: string, name: string) => ({ guid, type: "Animation", name, clipName: name, durationMs: 300 });
+  const runtime = createInProcessRuntime({
+    seed: 1,
+    dt: 0.1,
+    preferSoftwarePhysics: true,
+    sessionGeneration: 1,
+    playScene: { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero",
+      components: [{ id: "anim", classId: "AnimationGraphComponent", properties: { graphGuid: "graph" } }] })] },
+    playSceneGuid: "root",
+    classAssetGuids: { Hero: "hero-class" },
+    animGraphs: { graph },
+    animClipCatalog: [clip("swing", "Swing"), clip("kick", "Kick")],
+    assetCatalog: [catalogEntry("swing", "Swing", "Animation"), catalogEntry("kick", "Kick", "Animation"), catalogEntry("graph", "Graph", "AnimationGraph3D")],
+    onCommand: (command) => commands.push(command),
+  });
+  await runtime.loadScripts([{
+    assetGuid: "hero-class", classId: "Hero", parentClassId: "Actor", anchors: [],
+    source: [
+      'const graph = (ctx) => ctx.getComponentById(ctx.self, "anim");',
+      'export function play(ctx) { ctx.setVariable("handle", ctx.playSlotAnimation(graph(ctx), ctx.args.clip, "", 0, 0.1, 1, 1, 0)); }',
+      'export function stop(ctx) { ctx.stopSlotAnimation(graph(ctx), "", 0); }',
+    ].join("\n"),
+    entryPoints: ["play", "stop"].map((name) => ({ name, event: name, isAsync: false })),
+  }]);
+  await runtime.realizePlayWorld();
+  runtime.start();
+  runtime.tick();
+  const hero = runtime.getWorld().findActor("hero")!;
+  const play = (clipGuid: string) => { runtime.invokeScriptEvent("Hero", "play", hero, { clip: clipGuid }); return hero.getVariable("handle"); };
+  const stop = () => runtime.invokeScriptEvent("Hero", "stop", hero);
+  const preloads = () => commands.flatMap((command) => command.type === "assetPreload" ? [command.assetGuids] : []);
+  /** The clips the graph's last evaluation showed. */
+  const shown = () => {
+    const state = commands.filter((command) => command.type === "animState").at(-1) as Extract<CommandMessage, { type: "animState" }> | undefined;
+    return (state?.layers ?? []).map((layer) => layer.clipAssetGuid).filter(Boolean);
+  };
+  const logs = (severity: string) => commands.flatMap((command) => command.type === "log" && command.severity === severity ? [command.message] : []);
+  /** The host reports the clip's preload settled: its states first, then the result, as Play's host sends them. */
+  const load = (guid: string, success = true) => {
+    const request = commands.find((command) => command.type === "assetPreload" && command.assetGuids.includes(guid)) as
+      Extract<CommandMessage, { type: "assetPreload" }>;
+    if (success) runtime.setAssetLoadStates([{ guid, state: "ready" }]);
+    runtime.notifyAssetPreloadResult({ preloadId: request.preloadId, success, error: success ? undefined : `${guid} is damaged` });
+  };
+  return { runtime, play, stop, preloads, shown, logs, load };
+}
+
+describe("Play Slot Animation with a clip its owner did not load", () => {
+  it("loads the clip, warning once, and plays it once it has loaded", async () => {
+    const { runtime, play, preloads, shown, logs, load } = await slotRuntime();
+    try {
+      expect(play("swing")).toBeGreaterThan(0);
+      expect(preloads()).toEqual([["swing"]]);
+      expect(logs("warning")).toEqual([
+        'Animation "Swing" was not loaded with its owner; it plays on Animation Graph of actor "Hero" once loaded. ' +
+        "Set the variable to Hard (Load With Owner), or load it first with Load Asset (Async), to have it ready at once.",
+      ]);
+      runtime.tick();
+      runtime.tick();
+      expect(shown()).toEqual([]);
+      load("swing");
+      await flush();
+      runtime.tick();
+      expect(shown()).toEqual(["swing"]);
+      // Loaded now: the next play starts at once, loading and warning no more.
+      play("swing");
+      runtime.tick();
+      expect(shown()).toContain("swing");
+      expect(preloads()).toHaveLength(1);
+      expect(logs("warning")).toHaveLength(1);
+      expect(logs("error")).toEqual([]);
+    } finally { runtime.stop(); }
+  });
+
+  it("plays only the latest request when an earlier clip loads after a Stop or a later play", async () => {
+    const { runtime, play, stop, shown, load } = await slotRuntime();
+    try {
+      play("swing");
+      stop();
+      load("swing");
+      await flush();
+      runtime.tick();
+      expect(shown()).toEqual([]);
+      play("kick");
+      // Swing unloaded again, so it loads once more (its owner's earlier load answers at once).
+      runtime.setAssetLoadStates([{ guid: "swing", state: "unloaded" }]);
+      play("swing");
+      load("kick");
+      await flush();
+      runtime.tick();
+      expect(shown()).toEqual(["swing"]);
+    } finally { runtime.stop(); }
+  });
+
+  it("reports a clip that fails to load, or that the game does not include, and plays nothing", async () => {
+    const { runtime, play, preloads, shown, logs, load } = await slotRuntime();
+    try {
+      play("swing");
+      load("swing", false);
+      await flush();
+      runtime.tick();
+      expect(shown()).toEqual([]);
+      play("not-shipped");
+      expect(preloads()).toEqual([["swing"]]);
+      expect(logs("error")).toEqual([
+        expect.stringContaining('Animation "Swing" failed to load, so Play Slot Animation on Animation Graph of actor "Hero" plays nothing'),
+        'Animation not-shipped is not included in this game, so Play Slot Animation on Animation Graph of actor "Hero" plays nothing. ' +
+        "Reference it from a Class, Scene or Data asset the game ships, or add its folder to Always Package Folders.",
+      ]);
+      expect(logs("error")[0]).toContain("swing is damaged");
     } finally { runtime.stop(); }
   });
 });

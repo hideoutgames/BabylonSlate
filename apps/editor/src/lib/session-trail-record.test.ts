@@ -100,6 +100,13 @@ describe("the trails of pages that stopped without closing", () => {
     });
   });
 
+  it("keep only the marks this build can read from a record another build wrote", () => {
+    const browser = fakeHost(1_000_000);
+    browser.items.set(PREFIX + "older", JSON.stringify({ alive: 940_000, marks: [{ at: 939_000, stage: "play: stopping" }, { at: 939_500 }, null, { stage: "x" }] }));
+    stop = startSessionTrail(browser.host);
+    expect(unclosedSessionTrails()).toEqual([{ page: "older", alive: 940_000, marks: [{ at: 939_000, stage: "play: stopping" }] }]);
+  });
+
   it("include a page once it has missed three renewals", () => {
     const browser = fakeHost(1_000_000);
     browser.otherPage("other", 5_000, ["app: started", "play: running"]);

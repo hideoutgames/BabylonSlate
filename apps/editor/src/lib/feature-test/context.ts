@@ -170,6 +170,8 @@ export interface FeatureTestAssets {
   audio: {
     loop: string | null;
     oneShot: string | null;
+    /** The one-shot slot again, on the Custom-falloff `FT_AudioShaped` attenuation. */
+    shapedCue: string | null;
     mixer: string | null;
     channel: string | null;
     attenuation: string | null;
@@ -385,7 +387,7 @@ function emptyAssets(): FeatureTestAssets {
     },
     velociraptor: { model: "", skeleton: "", animations: {} },
     fonts: { facetype: "", onest: "", arkPixel: "" },
-    audio: { loop: null, oneShot: null, mixer: null, channel: null, attenuation: null },
+    audio: { loop: null, oneShot: null, shapedCue: null, mixer: null, channel: null, attenuation: null },
     materials: {},
     timeline: "",
     doorSwing: "",

@@ -247,28 +247,6 @@ describe("typed asset dependencies", () => {
     expect(variable.requiredVariableNames).toEqual(["tint"]);
   });
 
-  it("loads the Animation a Play Slot Animation plays with its owner, through a literal or a variable", () => {
-    const literal = collectAssetDependencyMetadata("Class", {
-      nodes: [
-        { id: "play", type: "anim.actor.playSlotAnimation", data: { "default:animation": "throw", "default:slotName": "UpperBody" } },
-        { id: "unused", type: "literal.makeAsset", data: { "default:in": "spare-clip" } },
-      ],
-      edges: [],
-    });
-    expect(literal.dependencies).toEqual(["spare-clip", "throw"]);
-    expect(literal.requiredDependencies).toEqual(["throw"]);
-    const variable = collectAssetDependencyMetadata("Class", {
-      nodes: [
-        { id: "value", type: "variables.get", data: { variableName: "Attack", propertyKey: "attack" } },
-        { id: "play", type: "anim.actor.playSlotAnimation", data: {} },
-      ],
-      edges: [{ source: "value", target: "play", targetHandle: "animation" }],
-      members: [{ kind: "variable", name: "Attack", propertyKey: "attack", typeId: "asset", typeClassId: "Animation", defaultValue: "slash" }],
-    });
-    expect(variable.requiredDependencies).toEqual(["slash"]);
-    expect(variable.requiredVariableNames).toEqual(["attack"]);
-  });
-
   it("loads the Render Target a Get Render Target Mode or Get Texture Target reads with its owner, through a literal or a variable", () => {
     const literal = collectAssetDependencyMetadata("Class", {
       nodes: [
@@ -286,6 +264,19 @@ describe("typed asset dependencies", () => {
       edges: [{ source: "value", target: "mode", targetHandle: "target" }],
     });
     expect(variable.requiredVariableNames).toEqual(["screen"]);
+  });
+
+  it("loads the assets a Behaviour Tree's built-in tasks play with the tree", () => {
+    const metadata = collectAssetDependencyMetadata("BehaviourTree", {
+      blackboardGuid: "board",
+      nodes: [
+        { id: "wave", kind: "task", classId: "bt.task.playAnimation", properties: { clipKind: "animation", clipAssetGuid: "wave-anim" } },
+        { id: "hop", kind: "task", classId: "bt.task.playAnimation", properties: { clipKind: "sprite", clipAssetGuid: "hop-sprite" } },
+        { id: "shout", kind: "task", classId: "bt.task.playSound", properties: { audioAssetGuid: "shout-audio", volume: 1 } },
+        { id: "rest", kind: "task", classId: "bt.task.wait", properties: { durationMs: 500 } },
+      ],
+    });
+    expect(metadata.requiredDependencies).toEqual(["board", "hop-sprite", "shout-audio", "wave-anim"]);
   });
 
   it("ships a Timeline Asset a node names or a clip is bound to, without loading it with its owner", () => {

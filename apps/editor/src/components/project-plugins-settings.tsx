@@ -24,7 +24,7 @@ import {
   AlertDialogMedia,
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
-import { documentKindForAssetType } from "@haptic/core";
+import { documentKindForAssetType, type ExecuteJavaScriptAsset } from "@haptic/core";
 import {
   useDocumentActions,
   useProjectState,
@@ -40,6 +40,7 @@ import {
 import { resolvePluginEnabled } from "@haptic/assets";
 import { resolvePluginIcon } from "../lib/plugin-icons";
 import { PluginExportDialog } from "./plugin-export-dialog";
+import { ExecuteJavaScriptImportDialog } from "./execute-javascript-import-dialog";
 import { SettingsSection } from "./settings-section";
 
 const SHOW_PLUGIN_CONTENT_HINT = "Hiding plugin folders in the Content Browser keeps their assets available.";
@@ -84,6 +85,12 @@ export function ProjectPluginsSettings() {
   const [importConflict, setImportConflict] = useState<{
     displayName: string;
     bytes: Uint8Array;
+  } | null>(null);
+  /** A plugin whose Execute JavaScript waits for the user, with the Keep / Replace choice already made. */
+  const [importReview, setImportReview] = useState<{
+    assets: ExecuteJavaScriptAsset[];
+    bytes: Uint8Array;
+    decision?: "keep" | "replace";
   } | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -158,8 +165,9 @@ export function ProjectPluginsSettings() {
   const runImport = async (
     bytes: Uint8Array,
     decision?: "keep" | "replace",
+    allowExecuteJavaScript = false,
   ) => {
-    const result = await importPlugin(bytes, decision);
+    const result = await importPlugin(bytes, decision, { allowExecuteJavaScript });
     if (result.status === "conflict") {
       setImportConflict({
         displayName: result.incoming.settings.displayName,
@@ -168,6 +176,8 @@ export function ProjectPluginsSettings() {
       return;
     }
     setImportConflict(null);
+    // Nothing was written: the plugin installs only once its Execute JavaScript is confirmed.
+    if (result.status === "executeJavaScript") setImportReview({ assets: result.assets, bytes, decision });
   };
 
   const handleImportClick = async () => {
@@ -518,6 +528,16 @@ export function ProjectPluginsSettings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ExecuteJavaScriptImportDialog
+        assets={importReview?.assets ?? null}
+        onCancel={() => setImportReview(null)}
+        onConfirm={() => {
+          if (!importReview) return;
+          const { bytes, decision } = importReview;
+          setImportReview(null);
+          void run("Importing Plugin", () => runImport(bytes, decision, true));
+        }}
+      />
     </FieldGroup>
   );
 }

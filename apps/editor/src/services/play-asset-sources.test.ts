@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import v8 from "node:v8";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDefaultSceneSettings, createDocumentRef, createEmptyProject, documentId, normalizeSceneLayer, SCENE_SCHEMA_VERSION } from "@haptic/core";
+import { createActor, createDocumentRef, createEmptyProject, documentId, normalizeSceneLayer, SCENE_SCHEMA_VERSION } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { applyRuntimeSourceControl, createInProcessRuntime } from "@haptic/runtime";
+import { createInProcessRuntime } from "@haptic/runtime";
 import type { CommandMessage, ScriptBundleEntry } from "@haptic/bridge";
 import {
   AssetFormatVersionError,
@@ -861,7 +861,7 @@ describe("Play source ownership", () => {
     loading.dispose();
   });
 
-  it("prepares an Animation a script plays only through Play Slot Animation, with its clip bound and its root motion, reading it once", async () => {
+  it("loads an Animation a slot plays on demand after a streamed Scene, with its clip bound and its root motion track", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();
     await storage.mkdir("assets");
@@ -880,6 +880,9 @@ describe("Play source ownership", () => {
       payload: { ...normalizeAnimationPayload({ clipName: "Throw", modelGuid: "model", durationMs: 50, rootMotion }) },
     });
     // The Scene's script names the Animation only on Play Slot Animation's pin, as the Feature Test's Knight plays Throw.
+    await registry.createAsset("project", "room.hasset", {
+      type: "Scene", name: "Room", guid: "room", version: currentFormat("Scene"), dependencies: [], chunks: [], payload: { name: "Room", actors: [] },
+    });
     await registry.createAsset("project", "scene.hasset", {
       type: "Scene", name: "Scene", guid: "scene", version: currentFormat("Scene"), dependencies: [], chunks: [],
       payload: { name: "Scene", actors: [], script: { nodes: [
@@ -903,17 +906,24 @@ describe("Play source ownership", () => {
       compile: async () => ({ bundles: [], diagnostics: [] }),
     };
     const signal = new AbortController().signal;
-    const prepared = await acquirePlayAssetSources(host, ["scene"], { consumer: "Play", signal });
-    const catalog = playAnimClipCatalog(registry.list(), await playRootMotionTracks(host, prepared.content.animClipCatalog, signal));
+    // Play's startup: the Scene's closure (the Soft clip stays out) and the session catalog's root motion tracks.
+    const startup = await acquirePlayAssetSources(host, ["scene"], { consumer: "Play", signal });
+    expect(startup.required.has("throw")).toBe(false);
+    await playRootMotionTracks(host, startup.content.animClipCatalog, signal);
+    // A streamed Scene joins, then Play Slot Animation loads its clip on demand (the runtime's `prepareAssets`).
+    const room = await acquirePlayAssetSources(host, ["room"], { consumer: "Stream", signal });
+    const clip = await acquirePlayAssetSources(host, ["throw"], { consumer: "Play Slot Animation", signal });
+    const content = mergePreparedPlaySources([startup, room, clip])!.controls.find((control) => control.type === "loadSceneContent");
 
-    // The renderer binds the Model's Throw group to the Animation a slot names.
-    expect(prepared.sources.assets?.modelClipAnimationGuids?.get("model")?.get("Throw")).toBe("throw");
-    expect(prepared.game.modelBytes.has("model")).toBe(true);
-    // Travel in the Model's units (import scale 2), from the one read of the Animation's document.
-    expect(catalog.find((entry) => entry.guid === "throw")?.rootMotion).toEqual(
+    // The source union the runtime then takes holds the clip with its track, in the Model's units (import scale 2).
+    expect(content?.type === "loadSceneContent" ? content.animClipCatalog?.find((entry) => entry.guid === "throw")?.rootMotion : null).toEqual(
       { bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 1], z: [0, -2], yaw: [0, 0] } });
-    expect(Object.fromEntries(documentReads)).toEqual({ throw: 1 });
-    prepared.release();
+    // The renderer binds the Model's Throw group to the Animation a slot names.
+    expect(clip.sources.assets?.modelClipAnimationGuids?.get("model")?.get("Throw")).toBe("throw");
+    expect(clip.game.modelBytes.has("model")).toBe(true);
+    // Once for the session catalog's track at Play start, once for the on-demand load.
+    expect(Object.fromEntries(documentReads)).toEqual({ throw: 2 });
+    for (const set of [startup, room, clip]) set.release();
     loading.dispose();
   });
 
@@ -1011,59 +1021,6 @@ describe("Play source ownership", () => {
     expect(content?.type === "loadSceneContent" ? content.audioAssetGuids : null).toEqual(["audio"]);
     expect(systems.game.manifest.assets.map((entry) => entry.guid)).toEqual(["system"]);
     systems.release(); scene.release(); loading.dispose();
-  });
-
-  it("keeps the session's clips, with their root motion, playable after a later acquisition publishes its content", async () => {
-    const storage = new MemoryStorageAdapter();
-    await storage.pickProjectFolder();
-    await storage.mkdir("assets");
-    const registry = new AssetRegistry(storage);
-    await registry.mountRoot(projectContentRoot());
-    const rootMotion = { bone: "hips", track: { durationMs: 1000, stepMs: 500, x: [0, 0.5, 1], z: [0, 0, 0], yaw: [0, 0, 0] } };
-    // A clip no closure holds: the session catalog lists it from its header, with the track read from its document.
-    await registry.createAsset("project", "walk.hasset", {
-      type: "Animation", name: "Walk", guid: "walk", version: currentFormat("Animation"), dependencies: [], chunks: [],
-      payload: { ...normalizeAnimationPayload({ clipName: "Walk", durationMs: 1000, rootMotion }) },
-    });
-    const tree = { name: "Guard", rootId: "anim", blackboardGuid: null, nodes: [{ id: "anim", kind: "task",
-      classId: "bt.task.playAnimation", children: [], decorators: [], services: [], properties: { clipKind: "animation", clipAssetGuid: "walk" } }] };
-    await registry.createAsset("project", "tree.hasset", {
-      type: "BehaviourTree", name: "Guard", guid: "tree", version: currentFormat("BehaviourTree"), dependencies: [], chunks: [], payload: tree,
-    });
-    const scene = { name: "Scene", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [],
-      actors: [createActor("guard", "Guard", { components: [{ id: "bt", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree" } }] })] };
-    await registry.createAsset("project", "scene.hasset", {
-      type: "Scene", name: "Scene", guid: "scene", version: currentFormat("Scene"), dependencies: [], chunks: [], payload: scene,
-    });
-    await registry.createAsset("project", "room.hasset", {
-      type: "Scene", name: "Room", guid: "room", version: currentFormat("Scene"), dependencies: [], chunks: [],
-      payload: { name: "Room", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [] },
-    });
-    const loading = createRegistryAssetLoadingService(registry, { projectId: "session-clips" });
-    const host = { registry, project: createEmptyProject("Session Clips"), createScope: (owner: string) => loading.createScope(owner),
-      compile: async () => ({ bundles: [], diagnostics: [] }) };
-    const signal = new AbortController().signal;
-    const startup = await acquirePlayAssetSources(host, ["scene"], { consumer: "Play", signal });
-    expect(startup.required.has("walk")).toBe(false);
-    const session = playAnimClipCatalog(registry.list(), await playRootMotionTracks(host, startup.content.animClipCatalog, signal));
-    const commands: CommandMessage[] = [];
-    const runtime = createInProcessRuntime({ seed: 1, maxActors: 4, dt: 0.1, preferSoftwarePhysics: true,
-      playScene: startup.game.scenes.get("scene")!, animClipCatalog: session, onCommand: (command) => commands.push(command) });
-    try {
-      for (const control of startup.controls) await applyRuntimeSourceControl(runtime, control);
-      // A streamed Scene's set joins the session, and the merged content reaches the runtime.
-      const live = new Set([startup, await acquirePlayAssetSources(host, ["room"], { consumer: "Stream", signal })]);
-      const controls = createMergedPlaySourceControls(() => live, () => session);
-      const content = controls().find((control) => control.type === "loadSceneContent");
-      expect(content?.type === "loadSceneContent" ? content.animClipCatalog?.find((entry) => entry.guid === "walk") : null)
-        .toMatchObject({ clipName: "Walk", rootMotion });
-      for (const control of controls()) await applyRuntimeSourceControl(runtime, control);
-      runtime.start();
-      runtime.realizePlayWorld();
-      runtime.tick();
-      expect(commands.filter((command) => command.type === "animState").at(-1)).toMatchObject({ clipAssetGuid: "walk", clipName: "Walk" });
-      for (const set of live) set.release();
-    } finally { runtime.stop(); loading.dispose(); }
   });
 
   it("merges overlapping acquisitions once per GUID and rebuilds controls only when the live sets change", async () => {
@@ -1512,5 +1469,69 @@ describe("Play Scene Layer documents", () => {
       expect(runtime.getWorld().getSceneLayers()).toHaveLength(2);
       expect(normalizeSceneLayer).toHaveBeenCalledTimes(1);
     } finally { runtime.stop(); prepared.release(); loading.dispose(); }
+  });
+});
+
+describe("Workspace Trust for Execute JavaScript", () => {
+  /** Two Scenes, each requiring its own Class; `Danger`'s compiled script carries an Execute JavaScript body. */
+  async function trustFixture() {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const scenes = { "scene-safe": "safe", "scene-danger": "danger" } as const;
+    for (const [scene, script] of Object.entries(scenes)) {
+      await storage.writeBinary(`assets/${scene}.hasset`, await encodeHasset({ header: {
+        guid: scene, name: scene, type: "Scene", version: SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin",
+        dependencies: [script], requiredDependencies: [script], dependencyMetadataVersion: 1, requiredVariableNames: [], payload: { actors: [] },
+      }, chunks: [] }));
+      await storage.writeBinary(`assets/${script}.hasset`, await encodeHasset({ header: {
+        guid: script, name: script === "danger" ? "Danger" : "Safe", type: "Class", version: 1, engineVersion: "0.0.0", mode: "thin",
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [], payload: { nodes: [], edges: [], members: [] },
+      }, chunks: [] }));
+    }
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "trust" });
+    const compile = vi.fn(async (required: ReadonlySet<string>) => ({
+      bundles: [...required].filter((guid) => guid === "safe" || guid === "danger").map((guid): ScriptBundleEntry => ({
+        assetGuid: guid, classId: guid, source: "export function start() {}", anchors: [], entryPoints: [],
+        ...(guid === "danger" ? { executeJavaScriptNodes: ["js"] } : {}),
+      })),
+      diagnostics: [],
+    }));
+    const host = (assertExecuteJavaScriptAllowed?: PlayAssetSourceHost["assertExecuteJavaScriptAllowed"]): PlayAssetSourceHost => ({
+      registry, project: createEmptyProject("Trust"), createScope: (owner: string) => loading.createScope(owner), compile,
+      ...(assertExecuteJavaScriptAllowed ? { assertExecuteJavaScriptAllowed } : {}),
+    });
+    return { host, loading };
+  }
+  const acquire = (host: PlayAssetSourceHost, guid: string) =>
+    acquirePlayAssetSources(host, [guid], { consumer: guid, signal: new AbortController().signal });
+
+  it("refuses every acquisition whose scripts carry Execute JavaScript, startup and later slots alike, and nothing else", async () => {
+    const { host, loading } = await trustFixture();
+    const asked: string[][] = [];
+    const untrusted = host((names) => {
+      asked.push([...names]);
+      throw new Error("not trusted");
+    });
+    const safe = await acquire(untrusted, "scene-safe");
+    expect(safe.game.scripts.map((script) => script.classId)).toEqual(["safe"]);
+    expect(asked).toEqual([]);
+    // A slot of the running session that brings Execute JavaScript in (a streamed Scene, a spawn) is refused too.
+    await expect(acquire(untrusted, "scene-danger")).rejects.toThrow("not trusted");
+    expect(asked).toEqual([["Danger"]]);
+    safe.release();
+    loading.dispose();
+  });
+
+  it("refuses Execute JavaScript when the host makes no trust decision, and runs it once trusted", async () => {
+    const { host, loading } = await trustFixture();
+    await expect(acquire(host(), "scene-danger")).rejects.toThrow(
+      "This project is not trusted on this computer, so the Execute JavaScript in Danger cannot run.");
+    const trusted = await acquire(host(() => {}), "scene-danger");
+    expect(trusted.game.scripts[0]?.executeJavaScriptNodes).toEqual(["js"]);
+    trusted.release();
+    loading.dispose();
   });
 });

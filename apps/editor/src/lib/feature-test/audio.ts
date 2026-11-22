@@ -16,8 +16,9 @@ import { actor, comp, meshComp, tf, type FeatureTestContext, type Vec3 } from ".
 import { FEATURE_TEST_OPTIONAL_SLOTS } from "./engine-content-files";
 
 /**
- * Audio area: a three-level Audio Channel hierarchy, two Sound Attenuations,
- * the project Audio Mixer, the optional CC0 loop / one-shot Audio assets and
+ * Audio area: a three-level Audio Channel hierarchy, three Sound Attenuations
+ * (two built-in falloffs and a Custom one following a Float Curve), the
+ * project Audio Mixer, the optional CC0 loop / one-shot Audio assets and
  * Audio Component emitters. No audio is generated: an empty slot leaves its
  * Audio ref null and the matching emitters silent.
  */
@@ -37,16 +38,34 @@ const FEATURE_TEST_AUDIO_NAMES = {
   nearAttenuation: "FT_AudioNear",
   /** Linear falloff, 20–150 m, HRTF panning. */
   wideAttenuation: "FT_AudioWide",
+  /** Custom falloff following `FT_AudioFalloffCurve`, 4–24 m; the curve ends above 0, so it cuts off at Max Radius. */
+  shapedAttenuation: "FT_AudioShaped",
+  /** Float Curve `FT_AudioShaped` falls off along: a held shelf, then a drop to 0.2. */
+  falloffCurve: "FT_AudioFalloffCurve",
   /** Selected in Project Settings → Audio. */
   mixer: "FT_AudioMixer",
   /** Optional slot `FT_Loop.*` imported as a looping, spatial World sound. */
   loop: "FT_AudioLoop",
   /** Optional slot `FT_OneShot.*` imported as a Cues sound. */
   oneShot: "FT_AudioOneShot",
+  /** Optional slot `FT_OneShot.*` imported again as a Cues sound on `FT_AudioShaped`. */
+  shapedCue: "FT_AudioShapedCue",
 } as const;
 
 const NAMES = FEATURE_TEST_AUDIO_NAMES;
 const FOLDER = FEATURE_TEST_AUDIO_FOLDER;
+
+/** `FT_AudioFalloffCurve`: full volume held through the first half, then a drop that ends at 0.2 (a cut at Max Radius). */
+const FALLOFF_CURVE = {
+  Keys: [
+    { Time: 0, Value: 1, Interpolation: "auto", ArriveTangent: 0, LeaveTangent: 0 },
+    { Time: 0.45, Value: 0.85, Interpolation: "auto", ArriveTangent: 0, LeaveTangent: 0 },
+    { Time: 0.8, Value: 0.35, Interpolation: "auto", ArriveTangent: 0, LeaveTangent: 0 },
+    { Time: 1, Value: 0.2, Interpolation: "auto", ArriveTangent: 0, LeaveTangent: 0 },
+  ],
+  Before: "constant",
+  After: "constant",
+};
 
 /** Mixer table: per-channel default gains (the gain chain multiplies them). */
 const MIXER_GLOBAL_VOLUME = 0.8;
@@ -76,8 +95,7 @@ export async function buildFeatureTestAudio(ctx: FeatureTestContext): Promise<vo
     ...createDefaultSoundAttenuationPayload(),
     innerRadius: 2,
     maxRadius: 20,
-    distanceModel: "inverse",
-    rolloff: 1,
+    falloff: "inverse",
     spatialisation: "equalPower",
     cone: { innerAngle: 120, outerAngle: 260, outerGain: 0.3 },
     doppler: { enabled: true, factor: 1 },
@@ -86,9 +104,18 @@ export async function buildFeatureTestAudio(ctx: FeatureTestContext): Promise<vo
     ...createDefaultSoundAttenuationPayload(),
     innerRadius: 20,
     maxRadius: 150,
-    distanceModel: "linear",
-    rolloff: 1,
+    falloff: "linear",
     spatialisation: "hrtf",
+  });
+  const falloffCurve = (await ctx.createAsset("FloatCurve", FOLDER, NAMES.falloffCurve, {
+    payload: () => ({ curve: FALLOFF_CURVE }),
+  })).guid;
+  const shaped = await createAttenuation(ctx, NAMES.shapedAttenuation, {
+    ...createDefaultSoundAttenuationPayload(),
+    innerRadius: 4,
+    maxRadius: 24,
+    falloff: "custom",
+    falloffCurveGuid: falloffCurve,
   });
 
   // Deterministic playback: one clip per asset and no random pitch.
@@ -107,6 +134,13 @@ export async function buildFeatureTestAudio(ctx: FeatureTestContext): Promise<vo
     audioChannelGuid: cues,
     soundAttenuationGuid: wide,
   });
+  const shapedCue = await importOptionalAudio(ctx, FEATURE_TEST_OPTIONAL_SLOTS.oneShotAudio, NAMES.shapedCue, {
+    playbackMode: "decoded",
+    loop: false,
+    volume: 0.8,
+    audioChannelGuid: cues,
+    soundAttenuationGuid: shaped,
+  });
 
   const mixerPayload: AudioMixerPayload = {
     ...createDefaultAudioMixerPayload(),
@@ -121,7 +155,7 @@ export async function buildFeatureTestAudio(ctx: FeatureTestContext): Promise<vo
   if (!mixerCheck.ok) throw new Error(mixerCheck.diagnostics.map((entry) => entry.message).join("; "));
   const mixer = (await ctx.createAsset("AudioMixer", FOLDER, NAMES.mixer, { payload: record(mixerPayload) })).guid;
 
-  Object.assign(ctx.assets.audio, { loop, oneShot, mixer, channel: world, attenuation: near });
+  Object.assign(ctx.assets.audio, { loop, oneShot, shapedCue, mixer, channel: world, attenuation: near });
   ctx.patchSettings((settings) => ({
     ...settings,
     audio: { ...settings.audio, audioMixerGuid: mixer, occlusionEnabled: true },
@@ -138,7 +172,7 @@ export async function placeFeatureTestAudio(ctx: FeatureTestContext): Promise<vo
   const zone = ctx.zone("audio");
   const add = (next: SerializedActor) => ctx.addActor(next, { zone: "audio" });
   zone.floor();
-  const { loop, oneShot } = ctx.assets.audio;
+  const { loop, oneShot, shapedCue } = ctx.assets.audio;
   const surface = ctx.assets.materials.surface ?? null;
   const emissive = ctx.assets.materials.emissive ?? null;
   const font = ctx.assets.fonts.facetype || null;
@@ -153,8 +187,9 @@ export async function placeFeatureTestAudio(ctx: FeatureTestContext): Promise<vo
     loop: false,
     volume: 0.8,
   }));
+  // The shaped cue (Custom falloff) forced to loop, so its curve is heard the whole time.
   add(emitter("ft-audio-cue-loop", "Looping Cue Emitter", zone.at(7, 1, 2), "sphere", emissive, {
-    audioAssetGuid: oneShot,
+    audioAssetGuid: shapedCue,
     loop: true,
     volume: 0.5,
   }));
@@ -172,7 +207,7 @@ export async function placeFeatureTestAudio(ctx: FeatureTestContext): Promise<vo
 
   const slotLabel = (guid: string | null, label: string) => (guid ? label : `${label} (Empty Slot)`);
   add(caption("ft-audio-caption-loop", "Loop Caption", zone.at(-5, 0.3, -5), slotLabel(loop, "Spatial Loop"), font));
-  add(caption("ft-audio-caption-cues", "Cue Caption", zone.at(4.5, 0.3, -5), slotLabel(oneShot, "Cue One Shot And Loop"), font));
+  add(caption("ft-audio-caption-cues", "Cue Caption", zone.at(4.5, 0.3, -5), slotLabel(oneShot, "Cue One Shot And Shaped Loop"), font));
 }
 
 // ---------------------------------------------------------------------------

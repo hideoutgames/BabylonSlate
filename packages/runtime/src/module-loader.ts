@@ -1,4 +1,4 @@
-import type { ExtensionLibraries } from "@haptic/core";
+import { sourceUrlComment, type ExtensionLibraries } from "@haptic/core";
 
 /** Function constructor wrapper (two lines), then the strict directive. */
 export const COMPILED_MODULE_LINE_OFFSET = 3;
@@ -66,6 +66,6 @@ function loadViaFunctionShim({ source, entryPoints }: CompiledModuleSource, labe
   // A final real directive supersedes previous source labels without rewriting
   // authored text that happens to contain a sourceURL-looking template line.
   // The parameter list stays on the wrapper's first line, so COMPILED_MODULE_LINE_OFFSET holds.
-  const fn = new Function("extensions", `"use strict";\n${body}\nreturn {${members}};\n//# sourceURL=haptic:///${label}.js\n`);
+  const fn = new Function("extensions", `"use strict";\n${body}\nreturn {${members}};\n${sourceUrlComment(label)}\n`);
   return fn(extensions) as CompiledModuleExports;
 }

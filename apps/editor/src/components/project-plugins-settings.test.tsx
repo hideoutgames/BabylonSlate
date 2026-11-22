@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createEmptyProject, type PluginEnableOverride } from "@haptic/core";
 import { createDefaultPluginSettings, resolvePluginGraph, type PluginDescriptor } from "@haptic/assets";
 import { ProjectPluginsSettings } from "./project-plugins-settings";
@@ -7,6 +7,7 @@ import { ProjectPluginsSettings } from "./project-plugins-settings";
 const harness = vi.hoisted(() => ({
   plugins: [] as PluginDescriptor[],
   overrides: {} as Record<string, PluginEnableOverride>,
+  importPlugin: (async () => ({ status: "kept" })) as (bytes: unknown, decision?: unknown, options?: { allowExecuteJavaScript?: boolean }) => Promise<unknown>,
 }));
 
 vi.mock("../context/document-context", async () => {
@@ -26,6 +27,7 @@ vi.mock("../context/document-context", async () => {
       assetRegistry: null,
       showPluginContent: false,
       applyPluginOverrides: async () => {},
+      importPlugin: (bytes: unknown, decision?: unknown, options?: { allowExecuteJavaScript?: boolean }) => harness.importPlugin(bytes, decision, options),
       updateProjectSettings: (patch: { pluginOverrides: Record<string, PluginEnableOverride> }) => {
         harness.overrides = patch.pluginOverrides;
         setProject((current) => ({ ...current, settings: { ...current.settings, ...patch } }));
@@ -90,5 +92,44 @@ describe("Plugin version warnings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(harness.overrides.pack).toEqual({ enabled: false });
+  });
+});
+
+describe("Plugin import Execute JavaScript disclosure", () => {
+  const pick = () => {
+    const bytes = new Uint8Array([7]);
+    const file = new File([bytes], "Scripted.hplugin");
+    Object.defineProperty(file, "arrayBuffer", { value: async () => bytes.buffer });
+    fireEvent.change(screen.getByTestId("import-plugin-input"), { target: { files: [file] } });
+  };
+  const disclosed = { status: "executeJavaScript", incoming: {}, assets: [{ guid: "hero", name: "Hero", type: "Class", nodes: [{ nodeId: "a", body: "x" }, { nodeId: "b", body: "y" }] }] };
+
+  it("installs nothing until the dialog is confirmed, keeping the Keep / Replace choice", async () => {
+    const importPlugin = vi.fn(async (_bytes: unknown, decision?: unknown, options?: { allowExecuteJavaScript?: boolean }) =>
+      options?.allowExecuteJavaScript ? { status: "imported", descriptor: plugin("scripted") } : decision === "replace" ? disclosed : { status: "conflict", incoming: { settings: { displayName: "Scripted" } } });
+    harness.importPlugin = importPlugin;
+    render(<ProjectPluginsSettings />);
+    pick();
+    fireEvent.click(await screen.findByTestId("settings-plugin-import-replace"));
+    const dialog = await screen.findByTestId("execute-javascript-import-dialog");
+    expect(dialog.textContent).toContain("Hero (Class)2 nodes");
+    fireEvent.click(screen.getByTestId("execute-javascript-import-confirm"));
+    await waitFor(() => expect(importPlugin).toHaveBeenCalledTimes(3));
+    expect(importPlugin.mock.calls.map(([, decision, options]) => [decision, options])).toEqual([
+      [undefined, { allowExecuteJavaScript: false }],
+      ["replace", { allowExecuteJavaScript: false }],
+      ["replace", { allowExecuteJavaScript: true }],
+    ]);
+    await waitFor(() => expect(screen.queryByTestId("execute-javascript-import-dialog")).toBeNull());
+  });
+
+  it("Cancel leaves the plugin uninstalled", async () => {
+    const importPlugin = vi.fn(async () => disclosed);
+    harness.importPlugin = importPlugin;
+    render(<ProjectPluginsSettings />);
+    pick();
+    fireEvent.click(within(await screen.findByTestId("execute-javascript-import-dialog")).getByTestId("execute-javascript-import-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("execute-javascript-import-dialog")).toBeNull());
+    expect(importPlugin).toHaveBeenCalledTimes(1);
   });
 });

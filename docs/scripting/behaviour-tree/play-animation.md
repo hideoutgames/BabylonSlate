@@ -17,3 +17,4 @@ Plays an Animation or Sprite Animation asset once, then succeeds.
 
 - The task stays running for the length of the clip, and replaces the actor's Animation Graph output while it runs.
 - It fails if no clip is chosen or the asset is missing.
+- The **Clip Asset** loads with the tree, so it is ready the moment the task runs.

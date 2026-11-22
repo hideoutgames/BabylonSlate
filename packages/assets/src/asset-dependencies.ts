@@ -29,6 +29,7 @@ import {
   normalizeMaterialFunctionDocument,
   normalizeMaterialInstanceDocument,
 } from "@haptic/shader-graph";
+import { propertyFieldsForClassId } from "@haptic/behaviour-tree/catalog";
 import { animationAssetGuids } from "./animation-payload";
 import { blendSpaceAssetGuids, spriteBlendSpaceAssetGuids } from "./blend-space-payload";
 import { audioAssetDependencies } from "./audio-payload";
@@ -108,7 +109,6 @@ const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
   "camera.playShake": "shake",
   "camera.playShakeOnSceneLayer": "shake",
   "camera.playWorldShake": "shake",
-  "anim.actor.playSlotAnimation": "animation",
   "particles.spawnAtLocation": "system",
   "particles.spawnAttached": "system",
   "decals.spawn": "material",
@@ -419,9 +419,6 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         entry.nodeType.startsWith("curveObject.get") ||
         // Play Camera Shake reads its Camera Shake (and the shake's curves) from the session catalog.
         ["camera.playShake", "camera.playShakeOnSceneLayer", "camera.playWorldShake"].includes(entry.nodeType) ||
-        // Play Slot Animation starts its clip at once: the runtime times it from the clip catalog and the renderer
-        // poses it from the clip bound to the actor's Model, so its Animation (and that Model) loads with the owner.
-        entry.nodeType === "anim.actor.playSlotAnimation" ||
         // Set and Get Global Parameter resolve their collection from the session catalog the owner loads with.
         entry.nodeType.startsWith("globalParameters.") ||
         // Get Render Target Mode and Get Texture Target read the asset's settings at once, from the assets loaded.
@@ -576,7 +573,13 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   } else if (assetType === "BehaviourTree") {
     add(payload.blackboardGuid);
     for (const node of rows(payload.nodes)) for (const entry of [node, ...rows(node.decorators), ...rows(node.services)]) {
-      addClass(entry.classId); instanceProperties(entry.classId, row(entry.properties));
+      const properties = row(entry.properties);
+      addClass(entry.classId); instanceProperties(entry.classId, properties);
+      // A built-in node's assets (Play Animation's clip, Play Sound's Audio) are authored on the tree and played the
+      // moment the node runs, so they load with the tree, as an Animation Graph's clips do.
+      if (typeof entry.classId === "string") {
+        for (const field of propertyFieldsForClassId(entry.classId, properties)) if (field.kind === "asset") add(properties[field.key]);
+      }
     }
   } else if (assetType === "Blackboard") for (const key of rows(payload.keys)) typeValue(key.type, key.defaultValue);
   else if (assetType === "SaveGame") {

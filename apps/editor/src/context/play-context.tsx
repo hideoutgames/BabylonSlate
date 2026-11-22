@@ -294,7 +294,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     playSourceLifetimeRef,
     playSourceSetsRef,
     initialPlaySourceRef,
-    sessionClipCatalogRef,
     mergedSourceControls,
     sessionSources,
     setSessionSources,
@@ -886,6 +885,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           // each a null check per node while nothing is set or followed. Preview Build and exports compile neither.
           traceExecution: true,
           compile: (required, storedDocuments) => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: true, storedDocuments }),
+          // Workspace Trust, read at each acquisition: Play, Simulate and every Scene, Class or preload slot of the session.
+          assertExecuteJavaScriptAllowed: (names) => extensionService.assertExecuteJavaScriptAllowed(names),
         };
         playSourceHostRef.current = sourceHost;
         // The extension libraries and the Save Game configuration need none of the content, so they prepare beside it.
@@ -938,14 +939,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setExtensionLibraries(await current(libraries));
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
-        const preparedContent = preparedPlayContent(prepared, {
+        playContentActions.setPrepared(preparedPlayContent(prepared, {
           registry: assetRegistry,
           settings: projectDocument.settings,
           sceneGuid: effectiveGuid,
-        }, await current(rootMotionTracks));
-        // The runtime boots with this catalog, and every source union it is sent later keeps it.
-        sessionClipCatalogRef.current = preparedContent.animClipCatalog;
-        playContentActions.setPrepared(preparedContent);
+        }, await current(rootMotionTracks)));
         setPlayInputAssets(await current(collectPlayInputAssets(prepared.required, prepared.game.decodedPayloads)));
         playContentActions.setAudioAndNavigation(playAudioAndNavigation(prepared, effectiveGuid));
         setPlayAudioSourceLoader(() => async ({ assetGuid, chunkId }: Parameters<PlayAudioSourceLoader>[0]) => {
@@ -1020,7 +1018,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       playSourceHostRef,
       playSourceSetsRef,
       initialPlaySourceRef,
-      sessionClipCatalogRef,
       setSessionSources,
       beginSimulationDocument,
       collectPlayInputAssets,

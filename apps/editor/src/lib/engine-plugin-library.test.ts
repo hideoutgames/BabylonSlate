@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDefaultPluginSettings,
   discoverEnginePlugins,
+  encodeAssetDocument,
   exportPluginZip,
   inspectHplugin,
   writeProjectPlugin,
@@ -39,13 +40,19 @@ async function storage(name: string) {
   return result;
 }
 
-async function archive(guid: string, displayName: string, content = "original") {
+async function archive(guid: string, displayName: string, content = "original", executeJavaScript = false) {
   const source = await storage("source");
   const settings = createDefaultPluginSettings({ pluginGuid: guid, displayName });
   settings.iconKey = "Box";
   settings.beta = true;
   const plugin = await writeProjectPlugin(source, "pack", settings);
   await source.writeText("plugins/pack/assets/data.txt", content);
+  if (executeJavaScript) {
+    await source.writeBinary("plugins/pack/assets/Hero.class.hasset", await encodeAssetDocument({
+      type: "Class", name: "Hero", guid: `${guid}-hero`, version: 1,
+      payload: { nodes: [{ id: "js", type: "debug.executeJavaScript", position: { x: 0, y: 0 }, data: { body: "ctx.log(1)" } }], edges: [] },
+    }, { parentClass: "Actor" }));
+  }
   return exportPluginZip(source, plugin);
 }
 
@@ -168,6 +175,20 @@ describe("EnginePluginLibrary", () => {
     expect(bundledRead.mock.calls.some(([path]) => path.startsWith("bundled/assets/"))).toBe(false);
     expect(await snapshot.readText("user-pack/assets/data.txt")).toBe("original");
     expect(savedRead.mock.calls.some(([path]) => path.endsWith("/assets/data.txt"))).toBe(true);
+  });
+
+  it("leaves a non-bundled entry holding Execute JavaScript out of a new project's copy, and keeps bundled ones", async () => {
+    const bundled = await storage("bundled");
+    const saved = await storage("library");
+    await unpackEnginePluginZip(bundled, await archive("bundled-guid", "Bundled Pack", "original", true), "bundled");
+    const store = new EnginePluginLibrary(bundled, saved);
+    await store.import(await archive("scripted-guid", "Scripted Pack", "original", true));
+    await store.import(await archive("plain-guid", "Plain Pack"));
+    const guids = async (snapshot: Awaited<ReturnType<typeof store.createStorageSnapshot>>) =>
+      (await discoverEnginePlugins(snapshot)).map((entry) => entry.pluginGuid).sort();
+    expect(await guids(await store.createStorageSnapshot({ forNewProject: true }))).toEqual(["bundled-guid", "plain-guid"]);
+    // An open project's library view still lists it, to be enabled through the disclosure.
+    expect(await guids(await store.createStorageSnapshot())).toEqual(["bundled-guid", "plain-guid", "scripted-guid"]);
   });
 
   it("keeps the old snapshot usable after a replacement publishes a new generation", async () => {

@@ -1,6 +1,7 @@
 import { classIdForAssetPath, ENGINE_VERSION } from "@haptic/core";
 import { collectAssetDependencyMetadata, type AssetDependencyClass } from "./asset-dependencies";
 import { DOCUMENT_CHUNK_ID } from "./asset-document";
+import { executeJavaScriptInImportResults, UnconfirmedExecuteJavaScriptError } from "./execute-javascript-scan";
 import { stableStringify } from "./bytes";
 import type { ContentRoot } from "./content-root";
 import { mergeFontAttachPayload } from "./font-payload";
@@ -91,6 +92,11 @@ export type ImportFileExtras = AssetImportControl & {
   hdrFaceSize?: number;
   /** The project's Nearest Texture Filtering (`ImportOptions.nearestTextures`). */
   nearestTextures?: boolean;
+  /**
+   * The user confirmed this file's Execute JavaScript (the Content Browser's disclosure). Without it, a
+   * file whose assets hold an Execute JavaScript body imports nothing (`UnconfirmedExecuteJavaScriptError`).
+   */
+  allowExecuteJavaScript?: boolean;
 };
 
 export async function importFile(
@@ -126,6 +132,11 @@ export async function importFile(
         ? { ...result, attachToGuid: extras.attachToGuid, guid: extras.attachToGuid }
         : result,
   );
+  // Foreign code is disclosed before it is written: an unconfirmed file writes nothing.
+  if (!extras?.allowExecuteJavaScript) {
+    const executeJavaScript = executeJavaScriptInImportResults(results, joinRelative(folderRelative, fileName));
+    if (executeJavaScript.length > 0) throw new UnconfirmedExecuteJavaScriptError(executeJavaScript);
+  }
 
   const created: Array<{ asset: IndexedAsset; result: ImportResult }> = [];
   try {

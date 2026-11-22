@@ -73,13 +73,31 @@ function publishedState(worker: TestWorker, guid: string) {
   return state;
 }
 
-/** `withAudio` adds a "jump" Audio asset outside the startup closure. */
-async function fixture(withWater = false, saveGame?: SaveGameConfiguration, withAudio = false) {
+/**
+ * `withAudio` adds a "jump" Audio asset outside the startup closure; `"attenuated"` gives it the "near" Sound
+ * Attenuation, whose Custom falloff follows the "fade" Float Curve.
+ */
+const FADE_CURVE = {
+  Keys: [
+    { Time: 0, Value: 0.5, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
+    { Time: 1, Value: 0.25, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
+  ],
+  Before: "constant",
+  After: "constant",
+};
+
+async function fixture(withWater = false, saveGame?: SaveGameConfiguration, withAudio: boolean | "attenuated" = false) {
+  const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
   const scene = { ...createDefaultScene(), actors: [] };
   const packed = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "world", scripts: [], renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
     ...(saveGame ? { saveGame, physicsWorld: "2d" as const } : {}),
     assets: [{ guid: "world", type: "Scene", sceneGuid: "world", name: "World", assetPath: "assets/Levels/World.scene.hasset", requiredDependencies: withWater ? ["water"] : [], bytes: new TextEncoder().encode(JSON.stringify(scene)) }, ...(withWater ? [{ guid: "water", type: "Water", sceneGuid: "world", bytes: new TextEncoder().encode(JSON.stringify(createDefaultWaterDefinition())) }] : []),
-      ...(withAudio ? [{ guid: "jump", type: "Audio", sceneGuid: "world", bytes: encodePackedAudioAsset({ volume: 1 }, new Uint8Array([1, 2, 3, 4])) }] : [])] });
+      ...(withAudio === true ? [{ guid: "jump", type: "Audio", sceneGuid: "world", bytes: encodePackedAudioAsset({ volume: 1 }, new Uint8Array([1, 2, 3, 4])) }] : []),
+      ...(withAudio === "attenuated" ? [
+        { guid: "jump", type: "Audio", sceneGuid: "world", requiredDependencies: ["near"], bytes: encodePackedAudioAsset({ volume: 1, soundAttenuationGuid: "near" }, new Uint8Array([1, 2, 3, 4])) },
+        { guid: "near", type: "SoundAttenuation", sceneGuid: "world", requiredDependencies: ["fade"], bytes: encode({ innerRadius: 1, maxRadius: 10, falloff: "custom", falloffCurveGuid: "fade" }) },
+        { guid: "fade", type: "FloatCurve", sceneGuid: "world", requiredDependencies: [], bytes: encode({ curve: FADE_CURVE }) },
+      ] : [])] });
   if (!packed.ok) throw new Error("Fixture export failed");
   const game = await loadGameFromFiles(packed.value.files);
   const root = document.createElement("div");
@@ -665,6 +683,19 @@ describe("player startup and Stop ownership", () => {
     const releaseSecond = await load();
     expect(stateMessages()).toBe(published);
     releaseSecond();
+    release();
+  });
+  it("brings a Custom falloff's Float Curve into the audio library the renderer holds when an Audio load refreshes content", async () => {
+    const { game, canvas } = await fixture(false, undefined, "attenuated");
+    sessions.push(startPlayer({ game, canvas }));
+    const worker = TestWorker.instances[0]!;
+    await vi.waitFor(() => expect(publishedState(worker, "jump")).toBe("unloaded"));
+    const options = vi.mocked(rendering.createGameEngine).mock.calls.at(-1)![1]!;
+    // Outside the startup closure: nothing of it is loaded before the Audio is.
+    expect(options.audioLibrary?.attenuations.has("near")).toBe(false);
+    const release = await options.prepareAudioAsset!("jump", { consumer: "test", signal: new AbortController().signal });
+    // The renderer's audio service reads this library object; the refresh fills it in place.
+    expect(options.audioLibrary?.attenuations.get("near")).toMatchObject({ falloff: "custom", customCurve: FADE_CURVE });
     release();
   });
   it.each(["gameplay", "preload", "background"] as const)("schedules a %s priority asset load that way in the loader and the renderer", async priority => {

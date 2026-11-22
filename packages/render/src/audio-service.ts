@@ -23,7 +23,8 @@ import {
   type AudioPayload,
   type AudioReverbField,
   type AudioReverbOccupancy,
-  type SoundAttenuationPayload,
+  type ResolvedSoundAttenuation,
+  type SoundAttenuationLibraryEntry,
 } from "@haptic/assets";
 import type { CommandMessage } from "@haptic/bridge";
 import type { AudioDebugVoiceSnapshot } from "./audio-debug";
@@ -64,9 +65,16 @@ export type AudioLibrary = {
   mixers: ReadonlyMap<string, AudioMixerPayload>;
   channels: ReadonlyMap<string, AudioChannelPayload>;
   audio: ReadonlyMap<string, AudioPayload>;
-  attenuations: ReadonlyMap<string, SoundAttenuationPayload>;
+  /** Each Sound Attenuation with its Custom falloff curve resolved when the library was built. */
+  attenuations: ReadonlyMap<string, SoundAttenuationLibraryEntry>;
   /** Registry/container revision, including the clip hashes. Live voices keep their generation. */
   sourceRevisions?: ReadonlyMap<string, string>;
+};
+
+/** What selection helpers (attenuation rings) read from an audio library: Audio routing and the radii. */
+export type AudioSelectionLibrary = {
+  audio: AudioLibrary["audio"];
+  attenuations: ReadonlyMap<string, Pick<SoundAttenuationLibraryEntry, "innerRadius" | "maxRadius">>;
 };
 
 type AudioStats = {
@@ -172,6 +180,28 @@ function emptyLibrary(): AudioLibrary {
   };
 }
 
+/** What a spatial voice plays with from a resolved Sound Attenuation. */
+function spatialPlayOptions(attenuation: ResolvedSoundAttenuation): AudioSpatialPlayOptions {
+  return {
+    enabled: true,
+    innerRadius: attenuation.innerRadius,
+    maxRadius: attenuation.maxRadius,
+    curve: attenuation.curve,
+    spatialisation: attenuation.spatialisation,
+    cone: attenuation.cone,
+    doppler: attenuation.doppler,
+  };
+}
+
+/** Whether a live voice's panner needs `setVoiceSpatial`: its spatialisation or cone changed. */
+function pannerChanged(a: AudioSpatialPlayOptions, b: AudioSpatialPlayOptions): boolean {
+  if (a.spatialisation !== b.spatialisation) return true;
+  const ca = a.cone ?? null;
+  const cb = b.cone ?? null;
+  if (ca === null || cb === null) return ca !== cb;
+  return ca.innerAngle !== cb.innerAngle || ca.outerAngle !== cb.outerAngle || ca.outerGain !== cb.outerGain;
+}
+
 function isAudioCommand(command: CommandMessage): command is QueuedCommand {
   return (
     command.type === "playSound" ||
@@ -253,6 +283,8 @@ export class AudioService {
   private readonly pendingPlays = new Map<string, number>();
   private maxVoices: number;
   private library: AudioLibrary = emptyLibrary();
+  /** The library's attenuations with their falloff curves resolved (`sanitizeAudioLibrary`). */
+  private attenuations: ReadonlyMap<string, ResolvedSoundAttenuation> = new Map();
   private readonly sourceBytes = new Map<string, Uint8Array>();
   /** Ref-counted Blob URLs for streamed clips when no direct stream URL was provided. */
   private readonly streamedUrls = new Map<string, { url: string; mimeType: string; refs: number; bytes: number }>();
@@ -278,6 +310,11 @@ export class AudioService {
   private wet = 0;
   private voiceSeq = 0;
   private listener: AudioPose = { x: 0, y: 0, z: 0 };
+  /**
+   * Whether a listener pose has arrived. Until one has, `listener` is only a placeholder, so spatial voices are
+   * silent rather than attenuated from the world origin; the first sync gives them their true gain.
+   */
+  private listenerKnown = false;
   private reverbField: AudioReverbField | null = null;
   /** The listener pose the backend last took (null: none landed yet), in a store reused between writes. */
   private sentListener: AudioPose | null = null;
@@ -368,12 +405,40 @@ export class AudioService {
       audio: sanitized.audio,
       channels: sanitized.channels,
     };
+    this.attenuations = sanitized.attenuations;
     for (const [guid, audio] of this.library.audio) for (const clip of normalizeAudioPayload(audio).clips)
       this.retiredClipKeys.delete(this.clipKey(guid, clip.chunkId));
     if (!preserveSession) {
       this.sessionChannelVolumes.clear();
       this.sessionGlobalVolume = null;
     }
+    if (this.voices.size > 0) this.refreshLiveVoicesFromLibrary();
+  }
+
+  /**
+   * Live voices take the replaced library's settings: each spatial voice re-resolves its Sound Attenuation (radii,
+   * falloff, cone, spatialisation, Doppler), and every voice's gain and distance gain are recomputed. A voice keeps
+   * whether it is spatial (a panner is fixed when the voice starts), so a spatial voice whose Audio no longer names
+   * an attenuation the library holds keeps the settings it had.
+   */
+  private refreshLiveVoicesFromLibrary(): void {
+    for (const voice of this.voices.values()) {
+      if (!voice.spatial) continue;
+      const guid = this.library.audio.get(voice.assetGuid)?.soundAttenuationGuid;
+      const attenuation = guid ? this.attenuations.get(guid) : undefined;
+      if (!attenuation) continue;
+      const previous = voice.spatial;
+      const next = spatialPlayOptions(attenuation);
+      voice.spatial = next;
+      if (pannerChanged(previous, next)) this.backend.setVoiceSpatial(voice.voiceId, next);
+      // Doppler turned off: back to the voice's own pitch, without waiting for a snapshot.
+      if (previous.doppler?.enabled && !next.doppler?.enabled) {
+        voice.previousPose = null;
+        this.sendVoiceRate(voice, voice.pitch);
+      }
+    }
+    this.refreshVoiceGains();
+    this.refreshSpatialVoices(false);
   }
 
   private clipKey(guid: string, chunkId: string): string {
@@ -614,6 +679,7 @@ export class AudioService {
 
   private applyListener(pose: AudioPose): void {
     this.listener = pose;
+    this.listenerKnown = true;
     if (this.sentListener && samePose(this.sentListener, pose)) return;
     const landed = this.backend.setListenerPose(pose);
     this.sentListener = landed ? copyPose(pose, this.sentListener ?? this.sentListenerStore) : null;
@@ -642,13 +708,22 @@ export class AudioService {
     voice.sentAttenuation = this.backend.setVoiceAttenuation(voice.voiceId, gain) ? gain : null;
   }
 
-  /** `computeAttenuationGain` from `position` to the listener: the one distance falloff playback has. */
+  /**
+   * `computeAttenuationGain` from `position` to the listener: the one distance falloff playback has. Silent until a
+   * listener pose has arrived.
+   */
   private distanceGain(spatial: AudioSpatialPlayOptions, position: AudioPose): number {
+    if (!this.listenerKnown) return 0;
     const listener = this.listener;
     return computeAttenuationGain(
       Math.hypot(position.x - listener.x, position.y - listener.y, position.z - listener.z),
       spatial,
     );
+  }
+
+  /** Whether a listener pose has arrived; until one has, spatial voices are silent. */
+  hasListener(): boolean {
+    return this.listenerKnown;
   }
 
   syncListener(pose: AudioPose): void {
@@ -772,6 +847,8 @@ export class AudioService {
     this.emitterPoseSource = null;
     this.backend.dispose();
     this.sentListener = null;
+    this.listenerKnown = false;
+    this.attenuations = new Map();
     this.sentReverb.landed = false;
     this.cache.flushUnreferenced();
     this.cache.removeEvictListener(this.evictListener);
@@ -1049,21 +1126,10 @@ export class AudioService {
     const voiceId = command.voiceId?.trim() || `voice-${++this.voiceSeq}`;
     this.stopVoice(voiceId);
     const attenuation = payload.soundAttenuationGuid
-      ? (this.library.attenuations.get(payload.soundAttenuationGuid) ?? null)
+      ? (this.attenuations.get(payload.soundAttenuationGuid) ?? null)
       : null;
     const emitter = command.emitterActorGuid?.trim() || null;
-    let spatial: AudioSpatialPlayOptions | null = attenuation
-      ? {
-          enabled: true,
-          innerRadius: attenuation.innerRadius,
-          maxRadius: attenuation.maxRadius,
-          distanceModel: attenuation.distanceModel,
-          rolloff: attenuation.rolloff,
-          spatialisation: attenuation.spatialisation,
-          cone: attenuation.cone,
-          doppler: attenuation.doppler,
-        }
-      : null;
+    let spatial: AudioSpatialPlayOptions | null = attenuation ? spatialPlayOptions(attenuation) : null;
     if (attenuation && !emitter && !fixedPose) {
       spatial = null;
       this.onDiagnostic?.({
@@ -1100,8 +1166,10 @@ export class AudioService {
       occlusion: null,
     };
     this.adoptEmitterPose(voice);
-    // The voice starts at the distance gain its first placement gives it, never at full volume for a frame.
-    if (spatial) voice.attenuation = this.distanceGain(spatial, this.voiceEmitterPose(voice) ?? ORIGIN_POSE);
+    // The voice starts where its first placement puts it and at the distance gain that gives it, never panned from
+    // the origin or at full volume for a frame.
+    const startPose = spatial ? this.voiceEmitterPose(voice) : undefined;
+    if (spatial) voice.attenuation = this.distanceGain(spatial, startPose ?? ORIGIN_POSE);
     const request: AudioPlayRequest = {
       voiceId,
       assetGuid,
@@ -1114,6 +1182,7 @@ export class AudioService {
       ...(spatial ? { attenuation: voice.attenuation } : {}),
       loop,
       spatial,
+      ...(startPose ? { pose: { ...startPose } } : {}),
       reverbSend: resolved.environmentReverb,
       clipChunkId: clip.chunkId,
     };
@@ -1415,7 +1484,8 @@ export class AudioService {
     const snapshots: AudioDebugVoiceSnapshot[] = [];
     for (const voice of this.voices.values()) {
       const spatial = voice.spatial !== null;
-      const pose = spatial ? this.voiceEmitterPose(voice) : undefined;
+      // Where the distance gain is measured from: the emitter, else where its panner last landed.
+      const pose = spatial ? (this.voiceEmitterPose(voice) ?? voice.sentPose ?? undefined) : undefined;
       let distance: number | null = null;
       let innerRadius: number | null = null;
       let maxRadius: number | null = null;
@@ -1425,14 +1495,14 @@ export class AudioService {
         attenuation = voice.attenuation;
         innerRadius = voice.spatial.innerRadius;
         maxRadius = voice.spatial.maxRadius;
-        if (pose) {
+        if (pose && this.listenerKnown) {
           distance = Math.hypot(
             pose.x - this.listener.x,
             pose.y - this.listener.y,
             pose.z - this.listener.z,
           );
-          // Max Radius itself is silent.
-          insideRadius = distance < maxRadius;
+          // Within Max Radius the falloff curve applies; beyond it the voice is silent.
+          insideRadius = distance <= maxRadius;
         }
       }
       snapshots.push({

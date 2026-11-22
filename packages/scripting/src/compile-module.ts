@@ -1,3 +1,4 @@
+import { sourceUrlComment } from "@haptic/core";
 import { isPureNode } from "./node-registry";
 import type { GraphNode, LogicGraph } from "./ir";
 import { tagRuntimeSource } from "./tags";
@@ -37,7 +38,7 @@ function exportIdent(name: string): string {
 
 /** The module's first lines: its source URL, the probe helpers and the Tag runtime. */
 export function modulePreamble(graph: LogicGraph, options: CompileOptions): string[] {
-  const preamble = [`//# sourceURL=haptic:///${options.assetGuid}.js`];
+  const preamble = [sourceUrlComment(options.assetGuid)];
   // `var` stays valid when a document concatenates its graphs' modules.
   if (options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true) {
     preamble.push("var __dv = (t, node, pin, value) => (t === null ? value : t.read(node, pin, value));");
@@ -199,6 +200,7 @@ export function assembleModule(
     exportName: compiledEntries[0]?.entry.name ?? exportName,
     isAsync: compiledEntries.some((c) => c.entry.isAsync),
     entryPoints: compiledEntries.map((c) => c.entry),
+    executeJavaScriptNodes: [...s.executeJavaScriptNodes],
   };
 }
 

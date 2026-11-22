@@ -1,3 +1,4 @@
+import { sourceUrlComment } from "@haptic/core";
 import { isPureNode } from "./node-registry";
 import type { LogicGraph, GraphNode, GraphPin } from "./ir";
 import { findPin } from "./ir";
@@ -69,7 +70,7 @@ export function compileTransitionRuleGraph(
   const hoistedLines = s.hoisted.flatMap((chunk) => chunk.source.split("\n"));
   emitBody(s, `  return { enter: (${results.enter}), exit: (${results.exit}) };`);
   const source = [
-    `//# sourceURL=haptic:///${options.assetGuid}.js`,
+    sourceUrlComment(options.assetGuid),
     ...tagPreamble,
     ...hoistedLines,
     `export function evaluate(ctx) {`,
@@ -109,5 +110,6 @@ export function compileTransitionRuleGraph(
         )?.id,
       },
     ],
+    executeJavaScriptNodes: [...s.executeJavaScriptNodes],
   };
 }

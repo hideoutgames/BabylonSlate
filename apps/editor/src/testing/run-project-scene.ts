@@ -6,7 +6,7 @@ import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import { playRegistryViews } from "../lib/play-registry-views";
 import { playAssetCatalog } from "../services/asset-catalog";
 import { DocumentService } from "../services/document-service";
-import { acquirePlayAssetSources, createMergedPlaySourceControls, playRootMotionTracks, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
+import { acquirePlayAssetSources, mergePreparedPlaySources, playRootMotionTracks, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import { createPlayContentService } from "../services/play-content-service";
 import { playLoadControl, playPhysicsFromSceneSettings } from "../services/play-physics";
 import type { ProjectService } from "../services/project-service";
@@ -74,9 +74,6 @@ export async function runProjectScene(options: {
     const scene = game.scenes.get(sceneGuid)!;
     const physics = playPhysicsFromSceneSettings(scene.settings);
     const views = playRegistryViews(registry.list());
-    const sessionClips = playAnimClipCatalog(registry.list(), await playRootMotionTracks(host, content.animClipCatalog, lifetime.signal));
-    // Every source union the runtime takes keeps the session's clips, as in Play.
-    const sourceControls = createMergedPlaySourceControls(() => sets, () => sessionClips);
     const load = playLoadControl({
       sessionMode: "play",
       seed: 1,
@@ -109,7 +106,7 @@ export async function runProjectScene(options: {
       texturePixelSizes: Object.fromEntries(content.texturePixelSizes ?? []),
       audioAssetGuids: views.audioAssetGuids,
       particleParameterCatalog: buildParticleParameterCatalog(content.particleLibrary),
-      animClipCatalog: sessionClips,
+      animClipCatalog: playAnimClipCatalog(registry.list(), await playRootMotionTracks(host, content.animClipCatalog, lifetime.signal)),
     });
     load.havokWasmUrl = undefined;
     load.sceneCatalog = views.sceneCatalog;
@@ -120,7 +117,7 @@ export async function runProjectScene(options: {
     const acquire = async (guids: readonly string[], consumer: string, signal: AbortSignal) => {
       const next = await acquirePlayAssetSources(host, guids, { consumer, signal: AbortSignal.any([signal, lifetime.signal]) });
       sets.push(next);
-      for (const control of sourceControls()) await applyRuntimeSourceControl(runtime!, control);
+      for (const control of mergePreparedPlaySources(sets)!.controls) await applyRuntimeSourceControl(runtime!, control);
       return next;
     };
     const answer = (command: CommandMessage) => {

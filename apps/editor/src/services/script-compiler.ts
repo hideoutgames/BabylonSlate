@@ -281,7 +281,13 @@ export function compileGraphDocument(
     command: consoleCommandFromGraph(logic, classId),
     ...metadata,
     ...(components ? { components } : {}),
+    ...executeJavaScriptField(compiledPieces.flatMap((piece) => piece.executeJavaScriptNodes)),
   };
+}
+
+/** The bundle's `executeJavaScriptNodes`, left out when the module carries none. */
+function executeJavaScriptField(nodeIds: readonly string[]): Pick<ScriptBundleEntry, "executeJavaScriptNodes"> {
+  return nodeIds.length > 0 ? { executeJavaScriptNodes: [...new Set(nodeIds)] } : {};
 }
 
 /**
@@ -957,6 +963,7 @@ function compileAnimGraphDocument(
         title: "Transition Rule",
       })),
       parentClassId: "Object",
+      ...executeJavaScriptField(compiled.executeJavaScriptNodes),
     });
   }
   // Each pose graph's wired data inputs (Play Rate, Alpha, Active) compile into one module; its pose wires do not,
@@ -984,6 +991,7 @@ function compileAnimGraphDocument(
         title: "Pose Data",
       })),
       parentClassId: "Object",
+      ...executeJavaScriptField(compiled.executeJavaScriptNodes),
     });
   }
   return scripts;

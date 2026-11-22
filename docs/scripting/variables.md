@@ -54,7 +54,7 @@ When a script gives a component an asset that has not loaded, such as a Material
 - If the actor is destroyed first, nothing changes. If the asset fails to load, or the game does not include it, the component keeps its current asset and an error names the asset.
 - The first time a node does this for an asset, a warning in the **Output Log** names the asset and the component. Set the variable to **Hard (Load With Owner)**, or load the asset first with [Load Asset (Async)](class/load-asset-async.md), to have it ready at once.
 
-[Spawn Decal](class/spawn-decal.md) and [Spawn Particles At Location](class/spawn-particles-at-location.md) wait the same way. A Save Game saves the asset the component shows.
+[Spawn Decal](class/spawn-decal.md) and [Spawn Particles At Location](class/spawn-particles-at-location.md) wait the same way, and [Play Slot Animation](class/play-slot-animation.md) starts its play once its Animation has loaded. A Save Game saves the asset the component shows.
 
 ## Arrays and maps
 

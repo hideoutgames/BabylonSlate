@@ -37,6 +37,7 @@ import {
   packedSourceControls,
 } from "@haptic/exporter";
 import { resolveAudioPlayback } from "@haptic/assets";
+import { AudioService, FakeAudioPlaybackBackend } from "@haptic/render";
 import { RuntimeDataCatalog } from "@haptic/runtime";
 import { loadGameAudioClipBytes, loadGameFromFiles } from "./artifact";
 
@@ -671,8 +672,17 @@ describe("packedContentFromGame", () => {
     });
   });
 
-  it("hydrates Audio mixer, channel, attenuation, and packed source", async () => {
+  it("hydrates Audio mixer, channel, attenuation with its Custom falloff curve, and packed source", async () => {
     const { encodePackedAudioAsset } = await import("@haptic/assets");
+    // Half volume at Inner Radius down to a quarter at Max Radius.
+    const fade = {
+      Keys: [
+        { Time: 0, Value: 0.5, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
+        { Time: 1, Value: 0.25, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
+      ],
+      Before: "constant",
+      After: "constant",
+    };
     const packedAudio = encodePackedAudioAsset(
       { volume: 0.5, audioChannelGuid: "sfx", soundAttenuationGuid: "near" },
       new Uint8Array([1, 2, 3, 4]),
@@ -717,7 +727,13 @@ describe("packedContentFromGame", () => {
           guid: "near",
           type: "SoundAttenuation",
           sceneGuid: "scene-1",
-          bytes: encoder.encode(JSON.stringify({ innerRadius: 2, maxRadius: 20 })),
+          bytes: encoder.encode(JSON.stringify({ innerRadius: 2, maxRadius: 20, falloff: "custom", falloffCurveGuid: "fade" })),
+        },
+        {
+          guid: "fade",
+          type: "FloatCurve",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify({ curve: fade })),
         },
         {
           guid: "jump",
@@ -740,7 +756,21 @@ describe("packedContentFromGame", () => {
     expect(content.audioLibrary.mixerGuid).toBe("mixer-1");
     expect(content.audioLibrary.audio.get("jump")?.volume).toBe(0.5);
     expect(content.audioLibrary.channels.has("sfx")).toBe(true);
-    expect(content.audioLibrary.attenuations.get("near")?.innerRadius).toBe(2);
+    expect(content.audioLibrary.attenuations.get("near")).toMatchObject({ innerRadius: 2, customCurve: fade });
+    // The audio service plays the packaged curve: halfway between the radii, 0.5 - 0.25 × 0.5.
+    const backend = new FakeAudioPlaybackBackend();
+    const diagnostics: string[] = [];
+    const service = new AudioService({ backend, onDiagnostic: (entry) => diagnostics.push(entry.code) });
+    try {
+      service.setLibrary(content.audioLibrary);
+      service.setSourceBytes("jump", new Uint8Array([1]));
+      await service.unlockAsync();
+      service.syncListener({ x: 0, y: 0, z: 0 });
+      service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "v", location: { x: 11, y: 0, z: 0 } });
+      await service.flush();
+      expect(backend.attenuations.get("v")).toBeCloseTo(0.375, 9);
+      expect(diagnostics).toEqual([]);
+    } finally { service.dispose(); }
     expect(
       resolveAudioPlayback({
         audio: content.audioLibrary.audio.get("jump")!,

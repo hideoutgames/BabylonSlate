@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  attenuationCurveGuids,
   createPlayAudioSourceLoader,
   playAudioLibraryFromAssets,
 } from "./play-audio";
@@ -24,6 +25,31 @@ describe("playAudioLibraryFromAssets", () => {
     expect(library.channels.get("sfx")?.parentChannelGuid).toBeNull();
     expect(library.audio.get("jump")?.volume).toBe(0.5);
     expect(library.attenuations.get("near")?.innerRadius).toBe(2);
+  });
+
+  it("resolves a Custom falloff from the Float Curve among the assets, and only that one", () => {
+    const curve = { Keys: [{ Time: 0, Value: 0.5, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 }], Before: "constant", After: "constant" };
+    const library = playAudioLibraryFromAssets({
+      mixerGuid: null,
+      assets: [
+        { guid: "fade", type: "FloatCurve", payload: { curve } },
+        { guid: "push", type: "VectorCurve", payload: { curve } },
+        { guid: "near", type: "SoundAttenuation", payload: { falloff: "custom", falloffCurveGuid: "fade" } },
+        { guid: "wrong-kind", type: "SoundAttenuation", payload: { falloff: "custom", falloffCurveGuid: "push" } },
+        { guid: "built-in", type: "SoundAttenuation", payload: { falloff: "inverse", falloffCurveGuid: "fade" } },
+      ],
+    });
+    expect(library.attenuations.get("near")?.customCurve).toEqual(curve);
+    expect(library.attenuations.get("wrong-kind")?.customCurve).toBeNull();
+    expect(library.attenuations.get("built-in")?.customCurve).toBeNull();
+  });
+
+  it("lists the Float Curves Custom falloffs name", () => {
+    expect([...attenuationCurveGuids([
+      { falloff: "custom", falloffCurveGuid: "fade" },
+      { falloff: "natural", falloffCurveGuid: "kept" },
+      { falloff: "custom", falloffCurveGuid: null },
+    ])]).toEqual(["fade"]);
   });
 });
 

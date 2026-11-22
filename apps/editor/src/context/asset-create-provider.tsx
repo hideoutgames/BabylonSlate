@@ -47,6 +47,7 @@ export function AssetCreateDocumentsProvider({
       materialDomain?: MaterialDomain;
       waterMaterial?: boolean;
       defaultDefinitionGuid?: string | null;
+      curve?: unknown;
       ownerPath?: string | null;
     }) => {
       if (!assetRegistry) throw new Error("Open a project to create assets.");
@@ -68,6 +69,7 @@ export function AssetCreateDocumentsProvider({
         materialDomain: request.materialDomain,
         waterMaterial: request.waterMaterial,
         defaultDefinitionGuid: request.defaultDefinitionGuid,
+        curve: request.curve,
       });
       // The mounted registry indexed the new asset on write; a full remount
       // would rescan every root while the picker waits.

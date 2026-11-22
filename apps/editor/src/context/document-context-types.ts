@@ -46,7 +46,7 @@ import type { AssetThumbnailWriteIdentity } from "../lib/asset-thumbnail-revisio
 import type { DocumentAuthoringLock, DocumentService, DocumentIdentityListener, OpenDocument } from "../services/document-service";
 import type { DocumentTransitionGate } from "../services/document-transition-gate";
 import type { PlayScriptCompileOptions } from "../services/play-content-service";
-import type { BlobReclaimResult, PluginImportResult, ProjectService } from "../services/project-service";
+import type { BlobReclaimResult, PluginImportOptions, PluginImportResult, ProjectService } from "../services/project-service";
 import type { SimulationDocumentTransaction } from "../services/simulation-document";
 import type { SourceControlService } from "../services/source-control-service";
 import type { SourceControlSyncService, TransferMonitor } from "../services/source-control-sync";
@@ -169,9 +169,11 @@ export interface DocumentContextValue {
   createProjectPlugin: (displayName: string) => Promise<PluginDescriptor>;
   deleteProjectPlugin: (guid: string) => Promise<void>;
   exportPlugin: (guid: string) => Promise<Uint8Array>;
+  /** Returns `executeJavaScript` without writing unless `options.allowExecuteJavaScript` confirms the plugin's Execute JavaScript. */
   importPlugin: (
     bytes: Uint8Array,
     decision?: "keep" | "replace",
+    options?: PluginImportOptions,
   ) => Promise<PluginImportResult>;
   /**
    * Retarget open tabs after a file move or rename. Undo history, dock Focus

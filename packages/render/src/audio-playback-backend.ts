@@ -1,4 +1,5 @@
 import type { AudioPlaybackMode } from "@haptic/assets";
+import type { Curve } from "@haptic/core";
 
 export type AudioPose = {
   x: number;
@@ -14,8 +15,8 @@ export type AudioSpatialPlayOptions = {
   enabled: boolean;
   innerRadius: number;
   maxRadius: number;
-  distanceModel: "linear" | "inverse" | "exponential";
-  rolloff: number;
+  /** The falloff curve between the radii (`computeAttenuationGain`); the service applies it, never the panner. */
+  curve: Curve<number>;
   spatialisation: "equalPower" | "hrtf";
   cone?: { innerAngle: number; outerAngle: number; outerGain: number } | null;
   doppler?: { enabled: boolean; factor: number } | null;
@@ -39,6 +40,8 @@ export type AudioPlayRequest = {
   loop: boolean;
   /** Pans the voice; its distance falloff is `attenuation`, never the browser panner's distance model. */
   spatial?: AudioSpatialPlayOptions | null;
+  /** A spatial voice's pose when it starts, so its first sample is panned from there rather than from the origin. */
+  pose?: AudioPose;
   reverbSend: boolean;
   clipChunkId?: string;
   /** Exact decoded source generation; asset identity stays available for diagnostics. */
@@ -71,6 +74,11 @@ export interface AudioPlaybackBackend {
   setVoiceMuffle(voiceId: string, factor: number): boolean;
   /** A spatial voice's distance gain (0..1), multiplied with its gain; false when there is no such voice yet. */
   setVoiceAttenuation(voiceId: string, gain: number): boolean;
+  /**
+   * A live spatial voice's panner settings changed (a Sound Attenuation edit reached the library): apply its
+   * spatialisation and cone. False when there is no such spatial voice.
+   */
+  setVoiceSpatial(voiceId: string, spatial: AudioSpatialPlayOptions): boolean;
   /** Pause or resume live voices without stopping them. */
   setPaused(paused: boolean): void;
   /**
@@ -100,6 +108,10 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   muffles = new Map<string, number>();
   /** Each voice's distance gain: its play request's, then each `setVoiceAttenuation`. */
   attenuations = new Map<string, number>();
+  /** Every distance gain each voice took, in order: its play request's, then each `setVoiceAttenuation`. */
+  attenuationHistory = new Map<string, number[]>();
+  /** Each voice's last `setVoiceSpatial`. */
+  spatialUpdates = new Map<string, AudioSpatialPlayOptions>();
   listener: AudioPose = { x: 0, y: 0, z: 0 };
   wet = 0;
   decay = 0.4;
@@ -125,7 +137,7 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
 
   async play(request: AudioPlayRequest): Promise<void> {
     this.plays.push(request);
-    if (request.attenuation !== undefined) this.attenuations.set(request.voiceId, request.attenuation);
+    if (request.attenuation !== undefined) this.recordAttenuation(request.voiceId, request.attenuation);
   }
 
   stop(voiceId: string): void {
@@ -172,7 +184,19 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   setVoiceAttenuation(voiceId: string, gain: number): boolean {
+    this.recordAttenuation(voiceId, gain);
+    return true;
+  }
+
+  private recordAttenuation(voiceId: string, gain: number): void {
     this.attenuations.set(voiceId, gain);
+    const history = this.attenuationHistory.get(voiceId) ?? [];
+    history.push(gain);
+    this.attenuationHistory.set(voiceId, history);
+  }
+
+  setVoiceSpatial(voiceId: string, spatial: AudioSpatialPlayOptions): boolean {
+    this.spatialUpdates.set(voiceId, spatial);
     return true;
   }
 

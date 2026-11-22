@@ -1,3 +1,4 @@
+import { EXECUTE_JAVASCRIPT_NODE_TYPE, hasExecuteJavaScriptBody } from "@haptic/core";
 import { instrumentJsLoops } from "@haptic/debugger";
 import type { GraphNode, GraphPin } from "./ir";
 import { findPin } from "./ir";
@@ -133,6 +134,10 @@ export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expres
   bound?: ReadonlyMap<string, string>,
   runOutput?: (expression: string, pinId: string) => void,
   boundArgs?: ReadonlyMap<string, string>): CodegenContext {
+  // Every node's code generation starts here, so whatever reaches the module is recorded.
+  if (node.typeId === EXECUTE_JAVASCRIPT_NODE_TYPE && hasExecuteJavaScriptBody(node.properties.body)) {
+    s.executeJavaScriptNodes.add(node.id);
+  }
   return {
     graph: s.graph,
     node,

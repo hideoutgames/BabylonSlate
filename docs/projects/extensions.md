@@ -31,12 +31,13 @@ Rows also show **Experimental**, **Beta** and **Gameplay** badges, the version, 
 
 ## Trust project extensions
 
-A project's own extensions, and its [Editor Utility Objects](../scripting/editor-scripting.md), are code that came with the project, for example from a repository you cloned or a folder someone sent you. Haptic does not run them until you trust the project on this computer.
+A project's own extensions, its [Editor Utility Objects](../scripting/editor-scripting.md) and its [Execute JavaScript](../scripting/javascript.md#trusted-projects) nodes are code that came with the project, for example from a repository you cloned or a folder someone sent you. Haptic does not run them until you trust the project on this computer.
 
-- When you open a project whose enabled extensions or registered Editor Utility Objects are not trusted, a banner says what is held back. Choose **Trust Project** to run them, or **Not Now** to keep working without them.
-- You can trust a project, or take trust back, with **Trust This Project** in **Project Settings > Project Extensions** or under **Editor Utility Objects** in **Project Settings > General**. It is one switch for both. Taking trust back stops them straight away.
-- Until you trust the project, its extensions add no commands, its Editor Utility Objects do not start (the **Output Log** says why), and Play, Preview Build and packaging stop with a message if a gameplay extension is enabled.
+- When you open a project whose enabled extensions or registered Editor Utility Objects are not trusted, a banner says what is held back. It also appears, naming the assets, when Play, Preview Build or packaging stops because of Execute JavaScript. Choose **Trust Project** to run them, or **Not Now** to keep working without them.
+- You can trust a project, or take trust back, with **Trust This Project** in **Project Settings > Project Extensions** or under **Editor Utility Objects** in **Project Settings > General**. It is one switch for all three. Taking trust back stops extensions and Editor Utility Objects straight away.
+- Until you trust the project, its extensions add no commands, its Editor Utility Objects do not start (the **Output Log** says why), and Play, Simulate, Preview Build and packaging stop with a message if a gameplay extension is enabled or what they would run contains Execute JavaScript.
 - Trust belongs to this computer and to the project's folder. A copy of the project in another folder, or a different project in the same folder, asks again. Projects you create from scratch in Haptic are trusted. Projects made from a template, cloned or opened from a folder are not.
+- Pulling changes into a trusted project keeps it trusted, including any new extension code or Execute JavaScript the changes bring. Review what you pull from people you do not know.
 - Engine extensions always run: they come with Haptic or you added them to this computer yourself.
 
 Trust a project only if you trust where it came from.

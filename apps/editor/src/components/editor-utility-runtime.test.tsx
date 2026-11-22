@@ -18,6 +18,8 @@ const { invokeEvent, load, hostServices, docs, trust } = vi.hoisted(() => ({
       projectTrustKey: (guid: string) => `key:${guid}`,
       createdHere: () => false,
       forgetCreatedProject: () => {},
+      revokeTrust: () => {},
+      clearRevocation: () => {},
     },
     projectDocument: {
       settings: { editorUtilityObjects: ["Tools"] },

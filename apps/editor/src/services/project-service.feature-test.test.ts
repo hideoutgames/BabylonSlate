@@ -496,30 +496,38 @@ describe("FeatureTest starter", () => {
     }
   });
 
-  it("prepares the Animations FT_Animation's scripts play, as an exported game loads them with the Scene", async () => {
+  it("loads the Knight's Throw on demand in Play, as an exported game does, with the clip its Models bind", async () => {
     const registry = reopened.registry!;
     const sceneGuid = registry.list().find((asset) => asset.path === FEATURE_TEST_CHECK_SCENES.find((scene) => scene.name === "FT_Animation")!.path)!.header.guid;
     const host = { registry, project: document, createScope: (owner: string) => reopened.createAssetLoadScope(owner),
       compile: async () => ({ bundles: [], diagnostics: [] }) };
-    const prepared = await acquirePlayAssetSources(host, [sceneGuid], { consumer: "FT_Animation", signal: new AbortController().signal });
+    const signal = new AbortController().signal;
+    const prepared = await acquirePlayAssetSources(host, [sceneGuid], { consumer: "FT_Animation", signal });
     try {
       const animations = (guids: Iterable<string>) => [...guids].filter((guid) => registry.getByGuid(guid)?.header.type === "Animation").sort();
       // The exported player loads a Scene with the closure of its required edges, which Play's closure follows too.
       const exported = requiredGameAssets({ assets: assetsFromIndexed(registry.list()) } as unknown as GameManifest, [sceneGuid]);
       expect(animations(prepared.required)).toEqual(animations(exported));
-      // The Knight plays Throw only through Play Slot Animation's pin; the renderer binds it to the Knight's slot.
+      // The Knight plays Throw only through Play Slot Animation's pin, a Soft reference: it ships but loads on demand.
       const knight = registry.list().find((asset) => asset.header.type === "Class" && asset.header.name === "FT_AnimKnight")!;
       const throwGuid = registry.dependenciesFor(knight.header.guid).find((guid) => {
         const header = registry.getByGuid(guid)?.header;
         return header?.type === "Animation" && normalizeAnimationPayload(header.payload).clipName === "Throw";
-      });
+      })!;
       expect(throwGuid).toBeDefined();
-      const assets = prepared.sources.assets;
-      const bound = new Set([
-        ...[...assets?.modelClipAnimationGuids?.values() ?? []].flatMap((clips) => [...clips.values()]),
-        ...[...assets?.retargetAnimationLoads?.values() ?? []].flatMap((rows) => rows.map((row) => row.animationGuid)),
-      ]);
-      expect(bound.has(throwGuid!)).toBe(true);
+      expect(prepared.required.has(throwGuid)).toBe(false);
+      const clip = await acquirePlayAssetSources(host, [throwGuid], { consumer: "Play Slot Animation", signal });
+      try {
+        // Its load brings the clip on its library Model, which shares a Skeleton with a Model the Scene holds, so the
+        // render's source union binds it to that Model by name (`mergeSceneSourceAssets`).
+        const owner = [...clip.sources.assets?.modelClipAnimationGuids ?? []].find(([, clips]) => clips.get("Throw") === throwGuid)?.[0];
+        expect(owner).toBeDefined();
+        const skeleton = clip.game.modelPayloads.get(owner!)?.skeletonGuid;
+        expect(skeleton).toBeTruthy();
+        expect([...prepared.game.modelPayloads].some(([guid, model]) => guid !== owner && model.skeletonGuid === skeleton)).toBe(true);
+      } finally {
+        clip.release();
+      }
     } finally {
       prepared.release();
     }

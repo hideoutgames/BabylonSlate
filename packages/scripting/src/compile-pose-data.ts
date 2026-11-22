@@ -1,3 +1,4 @@
+import { sourceUrlComment } from "@haptic/core";
 import { isPureNode } from "./node-registry";
 import type { GraphNode, GraphPin, LogicGraph } from "./ir";
 import { findPin } from "./ir";
@@ -54,7 +55,7 @@ export function compilePoseDataGraph(graph: LogicGraph, options: CompileOptions)
   const hoistedLines = s.hoisted.flatMap((chunk) => chunk.source.split("\n"));
   emitBody(s, `  return { ${entries.join(", ")} };`);
   const source = [
-    `//# sourceURL=haptic:///${options.assetGuid}.js`,
+    sourceUrlComment(options.assetGuid),
     ...tagPreamble,
     ...hoistedLines,
     `export function evaluate(ctx) {`,
@@ -77,5 +78,6 @@ export function compilePoseDataGraph(graph: LogicGraph, options: CompileOptions)
     exportName: "evaluate",
     isAsync: false,
     entryPoints: [{ name: "evaluate", event: "onAnimPose", isAsync: false, nodeId: output?.id }],
+    executeJavaScriptNodes: [...s.executeJavaScriptNodes],
   };
 }
