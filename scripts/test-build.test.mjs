@@ -41,6 +41,7 @@ async function fixture(t) {
       "shared-test-artifacts.mjs",
       "execution-location.mjs",
       "worker-arguments.mjs",
+      "chunk-cycles.mjs",
     ]) {
       try {
         await cp(join(scripts, script), join(directory, "scripts", script));
@@ -49,7 +50,18 @@ async function fixture(t) {
           throw error;
       }
     }
-    await writeFile(join(directory, ".gitignore"), ".cache/\ndist/\n.env*\n");
+    await writeFile(
+      join(directory, ".gitignore"),
+      ".cache/\ndist/\n.env*\nnode_modules\n",
+    );
+    // The chunk graph check parses with the repository's TypeScript. Only that package is linked: tests write
+    // their own files under the fixture's node_modules.
+    await mkdir(join(directory, "node_modules"));
+    await symlink(
+      await realpath(join(scripts, "..", "node_modules", "typescript")),
+      join(directory, "node_modules", "typescript"),
+      "junction",
+    );
     await writeFile(
       join(directory, "apps/editor/src/main.js"),
       "export const fixture = 1;\n",
@@ -114,6 +126,11 @@ export async function runPnpm(profile, args, options) {
   await appendFile(join(repoRoot, '.cache/build-commands.jsonl'), JSON.stringify(args)+'\\n');
   await writeFile(join(dist, 'index.html'), '<script type="module" src="/assets/main.js"></script>');
   await writeFile(join(dist, 'assets/main.js'), await readFile(join(repoRoot, 'apps/editor/src/main.js')));
+  if (process.env.FIXTURE_CHUNK_CYCLE) {
+    // Two chunks in an import cycle, one extending a class the other defines, as a broken bundle splits them.
+    await writeFile(join(dist, 'assets/render-a.js'), 'import{t as e}from"./editor-a.js";var n=class{};export{n as a,e as b};');
+    await writeFile(join(dist, 'assets/editor-a.js'), 'import{a as Vn}from"./render-a.js";var Ms=class extends Vn{};export{Ms as t};');
+  }
   if (process.env.FIXTURE_BUILD_CHANGE)
     await writeFile(join(repoRoot, 'apps/editor/src/main.js'), 'changed during compile');
   if (process.env.FIXTURE_TERMINATE_AFTER_BUILD) {
@@ -721,3 +738,19 @@ for (const app of ["player", "editor"]) {
     assert.equal((await publishedArtifacts(f.cache)).length, 0);
   });
 }
+
+test("a test build whose chunks read a binding across an import cycle publishes nothing", async (t) => {
+  const f = await fixture(t);
+  const directory = await f.worktree("chunk-cycle");
+  const result = await f.run(directory, { FIXTURE_CHUNK_CYCLE: "1" });
+  assert.match(result.error ?? "", /test build cannot boot/);
+  assert.match(
+    result.error ?? "",
+    /assets\/editor-a\.js:1:\d+ extends `Vn` \(export `a` of assets\/render-a\.js/,
+  );
+  assert.equal(
+    (await publishedArtifacts(join(directory, ".cache/test-build"))).length,
+    0,
+  );
+  assert.equal((await publishedArtifacts(f.cache)).length, 0);
+});
