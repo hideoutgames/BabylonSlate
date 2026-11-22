@@ -67,7 +67,7 @@ function rowsFor(
   return { rows, update, onPickAsset };
 }
 
-it("edits the joystick's two material references independently using the existing material picker", () => {
+it("edits the joystick's two material references independently with User Interface Material pickers", () => {
   const { rows, update, onPickAsset } = rowsFor({ id: "stick", classId: "2DJoystickComponent",
     properties: { ...defaultPropertiesFor("2DJoystickComponent"), backgroundMaterialGuid: "base", joystickMaterialGuid: "thumb" } });
   const background = rows.find(row => row.label === "Background Material");
@@ -75,15 +75,31 @@ it("edits the joystick's two material references independently using the existin
   if (background?.kind !== "asset" || joystick?.kind !== "asset") throw new Error("Missing joystick material controls");
   expect([background.value, joystick.value]).toEqual(["base", "thumb"]);
   background.onPick();
-  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "backgroundMaterialGuid", allowedTypes: ["Material", "MaterialInstance"] }));
+  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "backgroundMaterialGuid", allowedTypes: ["Material", "MaterialInstance"], materialDomain: "ui" }));
   joystick.onPick();
-  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "joystickMaterialGuid", allowedTypes: ["Material", "MaterialInstance"] }));
+  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "joystickMaterialGuid", allowedTypes: ["Material", "MaterialInstance"], materialDomain: "ui" }));
   joystick.onChange(null);
   expect(update).toHaveBeenLastCalledWith("joystickMaterialGuid", null);
   const axis = rows.find(row => row.label === "Horizontal Axis");
   if (axis?.kind !== "enum") throw new Error("Missing joystick axis control");
   axis.onChange("dpad-x");
   expect(update).toHaveBeenLastCalledWith("horizontalControl", "dpad-x");
+});
+
+it("asks for User Interface Materials on 2D Material, Material Panel and control parts, never for Textures", () => {
+  const picks = (classId: string, properties: Record<string, unknown> = {}) => {
+    const { rows, onPickAsset } = rowsFor({ id: "widget", classId, properties: { ...defaultPropertiesFor(classId), ...properties } });
+    for (const row of rows) if (row.kind === "asset") row.onPick();
+    return onPickAsset.mock.calls.map(([request]) => [request.property, request.materialDomain]);
+  };
+  expect(picks("2DMaterialComponent")).toEqual([["materialGuid", "ui"]]);
+  expect(picks("2DPanelComponent", { source: "material" })).toEqual([["materialGuid", "ui"]]);
+  expect(picks("2DPanelComponent", { source: "texture" })).toEqual([["textureGuid", undefined]]);
+  expect(picks("2DProgressBarComponent")).toEqual([
+    ["backgroundMaterialGuid", "ui"], ["backgroundTextureGuid", undefined],
+    ["trackMaterialGuid", "ui"], ["trackTextureGuid", undefined],
+    ["fillMaterialGuid", "ui"], ["fillTextureGuid", undefined],
+  ]);
 });
 
 it("edits capture settings through typed controls and keeps actor filtering opt-in", () => {

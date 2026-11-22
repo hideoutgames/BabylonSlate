@@ -1,10 +1,10 @@
 import { parseUIControl2DProperties, UI_TEXT_INPUT_TYPES, UI_TEXT_INPUT_TYPE_LABELS, type SerializedComponent } from "@haptic/core";
 import { colorFromHex, colorToHex, humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
-import type { ComponentPropertyContext } from "./component-property-rows";
+import type { AssetPickRequest, ComponentPropertyContext } from "./component-property-rows";
 import { focusPropertyRows } from "./focus-property-rows";
 
 /** Shared, typed control authoring for placed actors and Class prefabs. */
-export function uiControlPropertyRows(actorId: string, component: SerializedComponent, update: (key: string, value: unknown) => void, context: ComponentPropertyContext, asset: (key: string, label: string, types: string[]) => PropertyRow): PropertyRow[] {
+export function uiControlPropertyRows(actorId: string, component: SerializedComponent, update: (key: string, value: unknown) => void, context: ComponentPropertyContext, asset: (key: string, label: string, types: string[], materialDomain?: AssetPickRequest["materialDomain"]) => PropertyRow): PropertyRow[] {
   const p = parseUIControl2DProperties(component.classId, component.properties);
   const id = (key: string) => `${actorId}-${component.id}-${key}`;
   const number = (key: keyof typeof p, min?: number, max?: number): PropertyRow => ({ kind: "number", id: id(key), label: humanizePropertyLabel(key), value: Number(p[key]), min, max, onChange: value => update(key, value) });
@@ -37,7 +37,7 @@ export function uiControlPropertyRows(actorId: string, component: SerializedComp
   }
   rows.push(number("opacity", 0, 1), { kind: "color4", id: id("tint"), label: "Tint", value: p.tint, onChange: value => update("tint", value) });
   const parts = ["background", ...(slider || progress || kind === "2DToggleComponent" ? ["track", "fill"] : []), ...(slider || kind === "2DToggleComponent" ? ["thumb"] : []), ...(["2DCheckboxComponent", "2DRadioButtonComponent", "2DDropdownComponent", "2DTextInputComponent", "2DNumericInputComponent"].includes(kind) ? ["indicator"] : [])];
-  for (const part of parts) rows.push(asset(`${part}MaterialGuid`, `${humanizePropertyLabel(part)} Material`, ["Material", "MaterialInstance"]), asset(`${part}TextureGuid`, `${humanizePropertyLabel(part)} Texture`, ["Texture"]));
+  for (const part of parts) rows.push(asset(`${part}MaterialGuid`, `${humanizePropertyLabel(part)} Material`, ["Material", "MaterialInstance"], "ui"), asset(`${part}TextureGuid`, `${humanizePropertyLabel(part)} Texture`, ["Texture"]));
   if (!progress) rows.push(...focusPropertyRows(actorId, component, update, context.focusTargets));
   return rows;
 }

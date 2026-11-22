@@ -12,7 +12,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { RefreshCwIcon } from "lucide-react";
 import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { ActionFeedbackButton } from "../components/action-feedback-button";
-import { createDefaultMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
+import { createDefaultMaterialDocument, setMaterialDomain, type MaterialDocument } from "@haptic/shader-graph";
 import {
   MaterialEditingProvider,
   MANUAL_RENDER_COOLDOWN_MS,
@@ -507,6 +507,35 @@ describe("MaterialEditingProvider preview isolation", () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
     expect(screen.getByTestId("previewed").textContent).toBe("none");
     expect(harness.acquiredDocuments.at(-1)!.shadingModel).toBe("pbr");
+  });
+
+  it("re-applies a Material switched to User Interface in its open tab as a Material, then back", async () => {
+    const tree = () => materialTree(true, <AttachCanvas />);
+    const view = render(tree());
+    await waitFor(() => expect(harness.acquireCalls).toBeGreaterThan(0));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    harness.host.applyMaterial.mockClear();
+    harness.host.applyPostProcess.mockClear();
+
+    harness.content = setMaterialDomain(createDefaultMaterialDocument("Rock"), "ui");
+    view.rerender(tree());
+    await waitFor(() => expect(harness.acquiredDocuments.at(-1)!.domain).toBe("ui"));
+    // The render host swaps to its flat quad inside applyMaterial; a post-process pass never takes it.
+    await waitFor(() => expect(harness.host.applyMaterial).toHaveBeenLastCalledWith(harness.acquireResult.ok ? harness.acquireResult.material : null));
+    expect(harness.host.applyPostProcess).not.toHaveBeenCalledWith(expect.anything());
+
+    harness.host.applyMaterial.mockClear();
+    harness.content = createDefaultMaterialDocument("Rock");
+    view.rerender(tree());
+    await waitFor(() => expect(harness.acquiredDocuments.at(-1)!.domain).toBe("surface"));
+    await waitFor(() => expect(harness.host.applyMaterial).toHaveBeenCalled());
+  });
+
+  it("presents a User Interface Material without time-driven nodes only on change", async () => {
+    harness.content = createDefaultMaterialDocument("Badge", "ui");
+    mount();
+    await waitFor(() => expect(harness.presenter.setStaticContent).toHaveBeenCalled());
+    expect(harness.presenter.setStaticContent).toHaveBeenLastCalledWith(true);
   });
 
   it("presents a plain Material only on change", async () => {

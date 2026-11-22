@@ -72,7 +72,7 @@ function uiControlComponentRows(
   update: ComponentPropertyUpdate,
   context: ComponentPropertyContext,
 ): PropertyRow[] {
-  return uiControlPropertyRows(actorId, component, update, context, (key, label, types) => assetRow(actorId, component, key, label, types, update, context, `Pick ${label}`));
+  return uiControlPropertyRows(actorId, component, update, context, (key, label, types, materialDomain) => assetRow(actorId, component, key, label, types, update, context, `Pick ${label}`, undefined, materialDomain));
 }
 
 function overlayLayoutComponentRows(

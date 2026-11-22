@@ -942,6 +942,37 @@ describe("SceneDetailsPanel authoring", () => {
     expect(saved.actors[0]!.components[0]!.properties.materialGuid).toBe("mat-glyph");
   });
 
+  it("lists only User Interface Materials and Instances for a 2D Material, and creates one in that domain", async () => {
+    harness.createdAssets.push(
+      { header: { guid: "ui-badge", name: "Badge", type: "Material", parentClass: null, payload: { domain: "ui" } }, path: "assets/Badge.material.hasset" },
+      { header: { guid: "ui-badge-red", name: "Badge Red", type: "MaterialInstance", parentClass: null, payload: { domain: "ui", parentGuid: "ui-badge" } }, path: "assets/BadgeRed.materialinstance.hasset" },
+      { header: { guid: "mat-glyph", name: "Glyph", type: "Material", parentClass: null, payload: { domain: "text" } }, path: "assets/Glyph.material.hasset" },
+    );
+    const createAsset = vi.fn(async () => "ui-new");
+    scene().actors = [
+      createActor("badge", "Badge", {
+        components: [{
+          id: "quad", classId: "2DMaterialComponent", properties: { materialGuid: null, hitTest: "ignore" },
+          parentId: null, transform: identitySerializedTransform(),
+        }],
+      }),
+    ];
+    harness.selectedActorIds = ["badge"];
+    render(
+      <AssetCreateProvider value={{ canCreate: (type) => type === "Material" || type === "MaterialInstance", typeLabel: (type) => type, createAsset }}>
+        <SceneDetailsPanel {...({} as IDockviewPanelProps)} />
+      </AssetCreateProvider>,
+    );
+    fireEvent.click(screen.getByTestId("property-badge-quad-materialGuid"));
+    expect(await screen.findByTestId("search-item-ui-badge")).toBeTruthy();
+    expect(screen.getByTestId("search-item-ui-badge-red")).toBeTruthy();
+    for (const other of ["mat-rock", "pp-blur", "mat-glyph"]) expect(screen.queryByTestId(`search-item-${other}`)).toBeNull();
+    // A parentless Material Instance has no domain, so Create New offers only a Material.
+    expect(screen.queryByTestId("search-item-__create__MaterialInstance")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-__create__Material"));
+    await waitFor(() => expect(createAsset).toHaveBeenCalledWith({ type: "Material", materialDomain: "ui" }));
+  });
+
   it("selects and clears a streaming scene and its read-only name in one document edit", async () => {
     scene().actors = [createSceneStreamingActor("stream")];
     harness.selectedActorIds = ["stream"];

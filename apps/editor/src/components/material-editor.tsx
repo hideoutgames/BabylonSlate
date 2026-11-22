@@ -794,7 +794,7 @@ export function MaterialPreviewSurface({
       <div className="relative flex h-full min-h-0 flex-col">
         {/* Frames the canvas so a node's value is never taken for the Material. */}
         {previewedNode ? <div className="pointer-events-none absolute inset-0 z-10 ring-2 ring-inset ring-(--warning)" aria-hidden="true" /> : null}
-        {domain !== "particle" && domain !== "text" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+        {domain !== "particle" && domain !== "text" && domain !== "ui" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto toolbar-island flex-wrap"
             data-testid="material-preview-overlay"
@@ -846,9 +846,12 @@ export function MaterialPreviewSurface({
         />
         {/* The zoom buttons sit in the corner, above the error line while one shows. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col items-end">
-          <div className="mb-3 mr-3">
-            <ViewportZoomControls drive={editing.previewZoomDrive} testId="material-preview-zoom-controls" />
-          </div>
+          {/* A User Interface Material fills the view on a flat quad that cannot zoom. */}
+          {domain !== "ui" ? (
+            <div className="mb-3 mr-3">
+              <ViewportZoomControls drive={editing.previewZoomDrive} testId="material-preview-zoom-controls" />
+            </div>
+          ) : null}
           {editing.previewState.lastError ? (
             <p
               className="pointer-events-auto w-full px-3 py-1 text-xs text-destructive"
@@ -906,6 +909,7 @@ function MaterialDocumentDetails() {
         { value: "postProcess", label: "Post Process" },
         { value: "particle", label: "Particle" },
         { value: "text", label: "Text" },
+        { value: "ui", label: "User Interface" },
       ],
       onChange: (value) =>
         commit(setMaterialDomain(document, parseMaterialDomain(value))),
@@ -931,8 +935,10 @@ function MaterialDocumentDetails() {
       label: "Blend Mode",
       value: document.blendMode,
       options: [
-        { value: "opaque", label: "Opaque" },
-        { value: "masked", label: "Masked" },
+        ...(document.domain === "ui" ? [] : [
+          { value: "opaque", label: "Opaque" },
+          { value: "masked", label: "Masked" },
+        ]),
         { value: "translucent", label: "Translucent" },
         { value: "additive", label: "Additive" },
       ],

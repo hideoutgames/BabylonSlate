@@ -176,6 +176,9 @@ function PrefabAssetPicker({
         ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
         : pickerAssets}
       allowedTypes={assetPick?.allowedTypes}
+      // A domain row's Create New makes a Material of that domain; a parentless Instance would be refused.
+      createTypes={assetPick?.materialDomain ? ["Material"] : undefined}
+      createOptions={assetPick?.materialDomain ? { materialDomain: assetPick.materialDomain } : undefined}
       title={assetPick?.title ?? "Pick Asset"}
       allowNone
       onPick={(guid) => {
