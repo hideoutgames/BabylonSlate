@@ -59,7 +59,7 @@ export interface HavokCharacterHost {
   readonly worldId: HP_WorldId;
   readonly bodies: ReadonlyMap<string, BodyRecord>;
   readonly bodyIdByHpId: ReadonlyMap<number, string>;
-  flushMutations(): void;
+  assertUsable(): void;
   failMutation(record: BodyRecord, failure: Error): Error;
   setBodyPoseBeforeStep(record: BodyRecord): void;
   getBodyTransform(bodyId: string): PhysicsTransform | null;
@@ -163,7 +163,7 @@ export class HavokCharacters {
     dt: number,
     startPose?: PhysicsTransform,
   ): CharacterMovementResult | null {
-    this.host.flushMutations();
+    this.host.assertUsable();
     const character = this.characters.get(id);
     if (!character) return null;
     const body = this.host.bodies.get(character.desc.bodyId);

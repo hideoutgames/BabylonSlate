@@ -39,7 +39,7 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 
 `PhysicsWorldSync` keeps the whole public API and builds each collaborator once in its constructor. Collaborators read its state through their `*Host` interfaces, reassigned state (`worldTransforms`, the hosting map) through getters, and never import `physics-sync.ts`.
 
-`HavokPhysicsBackend` owns the world (bodies, colliders, constraints, the mutation queue and `step`) and composes `HavokQueries`, `HavokContacts` and `HavokCharacters` through host interfaces that read its live maps and call back through closures. The parts stay internal to the lazily loaded Havok chunk; never export them from `index.ts`.
+`HavokPhysicsBackend` owns the world (bodies, colliders, constraints and `step`) and composes `HavokQueries`, `HavokContacts` and `HavokCharacters` through host interfaces that read its live maps and call back through closures. The parts stay internal to the lazily loaded Havok chunk; never export them from `index.ts`.
 
 `packages/physics` may import `@babylonjs/havok`, never `@babylonjs/core`, React, Capacitor or other Babylon packages. `packages/runtime` never imports Babylon.
 
@@ -116,4 +116,4 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 
 - `@babylonjs/havok` 1.3.14 is driven directly via its WASM C-API: detaching the last shape calls `HP_Body_SetShape(hpBodyId, [0n])` directly.
 - Attachment changes and teleports remove and reinsert the same native body handle (`HP_World_RemoveBody` / `HP_World_AddBody`) to refresh world/query membership without a solver step and avoid Havok 1.3.14 hangs when replacing overlapping compounds in-world; native removal sends no trigger exit, so the backend ends pair generations explicitly.
-- `applyColliderChanges` prepares all upserts/removals before attaching; failed preparation keeps the working set, failed attachment rolls back. Native bodies retire before their shapes. Requests during contact callbacks queue until the step finishes.
+- `applyColliderChanges` prepares all upserts/removals before attaching; failed preparation keeps the working set, failed attachment rolls back. Native bodies retire before their shapes. No caller code runs inside `step` (contacts are drained from native buffers and returned by `pollContacts`), so mutations never interleave with a native step and need no queue.

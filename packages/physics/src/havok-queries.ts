@@ -117,7 +117,7 @@ export interface HavokQueryHost {
   readonly collidersByOwner: ReadonlyMap<string, ReadonlySet<ColliderRecord>>;
   readonly triggerColliders: ReadonlySet<ColliderRecord>;
   isDisposed(): boolean;
-  flushMutations(): void;
+  assertUsable(): void;
 }
 
 /**
@@ -166,7 +166,7 @@ export class HavokQueries {
   }
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
-    this.host.flushMutations();
+    this.host.assertUsable();
     if (this.host.isDisposed()) return miss();
     const havok = this.host.havok;
     const worldId = this.host.worldId;
@@ -308,7 +308,7 @@ export class HavokQueries {
   }
 
   sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
-    this.host.flushMutations();
+    this.host.assertUsable();
     const found = new Map<BodyRecord, Set<string>>();
     if (!this.host.isDisposed() && [center.x, center.y, center.z, radius].every(Number.isFinite) && radius >= 0) {
       const havok = this.host.havok;
@@ -385,7 +385,7 @@ export class HavokQueries {
     end: PhysicsTransform,
     options?: LineTraceOptions,
   ): HitResult {
-    this.host.flushMutations();
+    this.host.assertUsable();
     if (this.host.isDisposed()) return miss();
     const sweep = linearSweepPoses(start, end);
     if (!sweep || !isShape3D(shape)) return miss();
@@ -505,7 +505,7 @@ export class HavokQueries {
   }
 
   createSphereSweep(radius: number): SphereSweepQuery {
-    this.host.flushMutations();
+    this.host.assertUsable();
     if (this.host.isDisposed()) throw new Error("Cannot create a sphere sweep on a disposed physics backend");
     if (!Number.isFinite(radius) || radius <= 0) throw new Error("Sphere sweep radius must be finite and positive");
     const havok = this.host.havok;
@@ -548,7 +548,7 @@ export class HavokQueries {
     const query: SphereSweepQuery = {
       sweep: (sx, sy, sz, ex, ey, ez) => {
         if (disposed || this.host.isDisposed()) return clear();
-        this.host.flushMutations();
+        this.host.assertUsable();
         if (
           disposed ||
           this.host.isDisposed() ||
