@@ -71,7 +71,9 @@ describe("createTemplateStorage", () => {
     const storage = await createTemplateStorage("__haptic_engine_plugins__");
     expect(storage).toBeInstanceOf(ElectronLibraryStorageAdapter);
     await storage.writeText("catalog.json", "{}");
-    expect(writes).toEqual([["__haptic_engine_plugins__", "catalog.json", expect.any(ArrayBuffer)]]);
+    expect(writes.map(([scope, path]) => [scope, path])).toEqual([["__haptic_engine_plugins__", "catalog.json"]]);
+    // Node's TextEncoder makes the bytes, so their buffer is not jsdom's ArrayBuffer; compare the text.
+    expect(new TextDecoder().decode(writes[0]![2] as ArrayBuffer)).toBe("{}");
     expect(project.writeBinary).not.toHaveBeenCalled();
   });
 

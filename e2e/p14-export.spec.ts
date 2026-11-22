@@ -5,9 +5,10 @@ import {
   exportGame,
   GAME_MANIFEST_FILE,
   parseGameManifest,
-  unzipExport,
+  stripEditorOnlyFields,
   zipExport,
 } from "../packages/exporter/src/index.ts";
+import { unzipExport } from "../packages/exporter/src/test-support/unzip-export";
 import { serveExportFiles } from "./export-static-server";
 import { WEBKIT_SMOKE_TAG } from "./ipad-tag";
 import {
@@ -50,7 +51,10 @@ async function packTinyGame(playerBaseURL: string) {
   expect(packed.value.files.has("index.html")).toBe(true);
   const source = packed.value.manifest.assets.find(asset => asset.guid === "scene-guid-export");
   expect(source?.path).toBeTruthy();
-  expect(packed.value.files.get(source!.path!)).toEqual(new TextEncoder().encode(JSON.stringify(scene)));
+  // The Scene ships as the game reads it: without its editor-only fields.
+  const shipped = stripEditorOnlyFields("Scene", scene);
+  expect(JSON.stringify(shipped)).not.toBe(JSON.stringify(scene));
+  expect(packed.value.files.get(source!.path!)).toEqual(new TextEncoder().encode(JSON.stringify(shipped)));
   expect(packed.value.manifest.startupSceneGuid).toBe("scene-guid-export");
   expect(packed.value.fileCount).toBeLessThan(800);
   expect(

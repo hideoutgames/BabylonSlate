@@ -1,3 +1,5 @@
+// Its FrameGraph work needs Babylon's engine extensions on any Engine, including one a caller made without createEngine.
+import "./babylon-registrations";
 import type { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Constants } from "@babylonjs/core/Engines/constants";

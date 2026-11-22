@@ -3,7 +3,7 @@ import {
   MemoryStorageAdapter,
   createReadOnlyProjectStorage,
 } from "@haptic/vfs";
-import { createMemoryOpfsRoot } from "../../../../packages/vfs/src/test-support/memory-opfs";
+import { createMemoryOpfsRoot } from "@haptic/vfs/test-support/memory-opfs";
 
 /*
  * Shared setup for tests that mount the real DocumentProvider. `vi.mock` is

@@ -3,12 +3,21 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": [
+    "./src/area-emission-worker.ts",
+    "./src/asset-diff-worker.ts",
+    "./src/audio-reverb-worker.ts",
+    "./src/import-worker.ts"
+  ],
   "exports": {
     ".": "./src/index.ts",
+    "./hasset": "./src/hasset.ts",
     "./area-emission-client": "./src/area-emission-client.ts",
     "./asset-diff": "./src/asset-diff.ts",
     "./asset-diff-client": "./src/asset-diff-client.ts",
-    "./import-worker-client": "./src/import-worker-client.ts"
+    "./import-worker-client": "./src/import-worker-client.ts",
+    "./test-support/*": "./src/test-support/*.ts",
+    "./audio-reverb-worker": "./src/audio-reverb-worker.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -20,14 +29,15 @@
     "@haptic/object-model": "workspace:*",
     "@haptic/particle-graph": "workspace:*",
     "@haptic/shader-graph": "workspace:*",
-    "@noble/hashes": "2.4.0",
     "fflate": "^0.8.3",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@haptic/test-kit": "workspace:*",
     "@haptic/vfs": "workspace:*",
+    "fast-check": "^4.3.0",
     "ktx-parse": "^1.1.0",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
   }
 }

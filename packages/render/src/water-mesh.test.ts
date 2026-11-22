@@ -42,7 +42,7 @@ function centreVertex(mesh: Mesh): number {
  * shader's spectrum also carries): the static rest grid with its uploaded bank distance.
  */
 function gpuVertex(mesh: Mesh, water: WaterDefinition, body: WaterBodyProperties, index: number, time: number): Vector3 {
-  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, data = mesh.getVerticesData("slateWaterData")!;
+  const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, data = mesh.getVerticesData("hapticWaterData")!;
   const rest = Vector3.TransformCoordinates(Vector3.FromArray(positions, index * 3), mesh.computeWorldMatrix(true));
   if (body.kind === "global") rest.addInPlace(gridOffset(mesh));
   const out = createWaterWaveOutput(), fade = body.kind === "global" ? 0 : waterBankFadeLength(water, body.waveScale);
@@ -82,7 +82,7 @@ const noBlending = (scene: Scene) => {
 };
 
 /**
- * World translation the vertex shader adds to the uploaded positions (`slateWaterGridOffset`): a Global grid is uploaded
+ * World translation the vertex shader adds to the uploaded positions (`hapticWaterGridOffset`): a Global grid is uploaded
  * relative to its snapped centre, so its rest points are the positions plus this (the tests' Global meshes are untransformed).
  */
 const gridOffset = (mesh: Mesh) => Vector3.FromArray(waterGridOffset(mesh));
@@ -138,7 +138,7 @@ describe("Water rendering", () => {
       mesh.rotationQuaternion = Quaternion.RotationYawPitchRoll(0.2, 0.12, -0.05);
       updateSceneWater(scene);
       expect(mesh.getTotalVertices()).toBeGreaterThan(initialVertices * 3);
-      const count = mesh.getTotalVertices(), waterData = mesh.getVerticesData("slateWaterData")!;
+      const count = mesh.getTotalVertices(), waterData = mesh.getVerticesData("hapticWaterData")!;
       const transform = { position: mesh.position, rotation: mesh.rotationQuaternion, scale: mesh.scaling };
       // The built-in shader displaces a static rest grid: its uploaded inputs, through the shared CPU reference, must
       // reproduce the public physics query (not a duplicate wave formula), including the bank fade near the edges.
@@ -191,10 +191,10 @@ describe("Water rendering", () => {
         widest = Math.max(widest, Math.abs(vertex.x));
       }
       expect(widest).toBeCloseTo(30, 4);
-      const lakeGrid = [VertexBuffer.PositionKind, "slateWaterData"].map((kind) => Array.from(lake.getVerticesData(kind)!));
+      const lakeGrid = [VertexBuffer.PositionKind, "hapticWaterData"].map((kind) => Array.from(lake.getVerticesData(kind)!));
       camera.position.set(10000, 4, -5000); updateSceneWater(scene);
       // Finite water is anchored to the world: the camera neither reshapes its grid nor changes what the shader filters.
-      expect([VertexBuffer.PositionKind, "slateWaterData"].map((kind) => Array.from(lake.getVerticesData(kind)!))).toEqual(lakeGrid);
+      expect([VertexBuffer.PositionKind, "hapticWaterData"].map((kind) => Array.from(lake.getVerticesData(kind)!))).toEqual(lakeGrid);
       // Neither the camera nor animated waves change those bounds.
       setSceneWaterTime(scene, 5.5); updateSceneWater(scene);
       const after = ocean.getBoundingInfo().boundingBox;
@@ -267,7 +267,7 @@ describe("Water rendering", () => {
       expect(nodesOf(mesh).water).toMatchObject({ shallowColor: [1, 0, 0], roughness: 0.5, reflectionStrength: 0.25 });
       // The edited Crest Foam moves the whitecap threshold with it.
       const { fftSize, fftCascades } = sceneWaterQualityDeviceClamp(scene).quality;
-      expect(bindWaves(mesh).get("slateWaterNodeFoam")!.slice(0, 3)).toEqual([0.8, 0.2, waterFoamThresholdOf(edited, 1, fftSize, fftCascades)]);
+      expect(bindWaves(mesh).get("hapticWaterNodeFoam")!.slice(0, 3)).toEqual([0.8, 0.2, waterFoamThresholdOf(edited, 1, fftSize, fftCascades)]);
       expect(waterFoamThresholdOf(edited)).toBeLessThan(waterFoamThresholdOf(water));
       expect(nodesOf(mesh).contacts!.range).toBe(7.5);
       // A Custom Material replaces the shader: that edit changes nothing here.
@@ -284,7 +284,7 @@ describe("Water rendering", () => {
     try {
       setSceneWaterTime(scene, 0);
       const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10 }), undefined, builtInWaterMaterial(scene));
-      const drawnTime = () => { updateSceneWater(scene); return bindWaves(mesh).get("slateWaterClock")![0]; };
+      const drawnTime = () => { updateSceneWater(scene); return bindWaves(mesh).get("hapticWaterClock")![0]; };
       // The worker stepped frame 4's water at 0.15 s and frame 5's at 0.2 s (slomo 0.5 with a 0.1 s step).
       setSceneWaterTime(scene, 0.15, 4); setSceneWaterTime(scene, 0.2, 5);
       apply(5);
@@ -303,7 +303,7 @@ describe("Water rendering", () => {
     try {
       const water = createDefaultWaterDefinition();
       const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 10, length: 10 }), water, builtInWaterMaterial(scene));
-      const drift = () => { const [, x, z] = bindWaves(mesh).get("slateWaterClock")!; return { x, z, heading: Math.atan2(z, x) * 180 / Math.PI }; };
+      const drift = () => { const [, x, z] = bindWaves(mesh).get("hapticWaterClock")!; return { x, z, heading: Math.atan2(z, x) * 180 / Math.PI }; };
       expect(drift().heading).toBeCloseTo(water.waveDirection, 6);
       expect(Math.hypot(drift().x, drift().z)).toBeGreaterThan(0);
       updateWaterMeshDefinition(mesh, { ...water, waveDirection: -120 });
@@ -374,7 +374,7 @@ describe("Water rendering", () => {
         await vi.waitFor(() => expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true));
         return subMesh.effect!.defines;
       };
-      const shaderInputs = ["slateWaterFft", "slateWaterSwellInfo", "slateWaterClock", "slateWaterNodeFoam", "slateWaterNodeWaveSun"];
+      const shaderInputs = ["hapticWaterFft", "hapticWaterSwellInfo", "hapticWaterClock", "hapticWaterNodeFoam", "hapticWaterNodeWaveSun"];
       // The starter's Water Scene Color refracts through the scene copy; without Object Reflections nothing marches it.
       let definition: WaterDefinition = { ...createDefaultWaterDefinition(), refraction: 0, objectReflections: false };
       const lake = createWaterMesh(scene, "lake", body, definition, builtInWaterMaterial(scene));
@@ -403,7 +403,7 @@ describe("Water rendering", () => {
         expect(bounds(lake)).toEqual(bounds(rebuilt).map((value) => expect.closeTo(value, 6)));
         rebuilt.dispose();
       }
-      expect(await compiled(lake)).toContain("#define SLATE_WATER_NODE_PLANAR\n");
+      expect(await compiled(lake)).toContain("#define HAPTIC_WATER_NODE_PLANAR\n");
       // Object Reflections now ask for the scene copy too; the count leaves with the surface.
       expect(sceneWaterSamplesSceneCopy(scene, true, false)).toBe(true);
       expect(sceneWaterSamplesSceneCopy(scene, false, true)).toBe(true);
@@ -440,7 +440,7 @@ describe("Water rendering", () => {
       expect(gapAtOrigin()).toBeCloseTo(cell, 4);
       // Each new rest vertex sits at its own world X/Z with the new cell size (the spectrum's mip) and the body's depth
       // and open-water edge, so its waves are the queried surface's.
-      const positions = ocean.getVerticesData(VertexBuffer.PositionKind)!, data = ocean.getVerticesData("slateWaterData")!, offset = gridOffset(ocean);
+      const positions = ocean.getVerticesData(VertexBuffer.PositionKind)!, data = ocean.getVerticesData("hapticWaterData")!, offset = gridOffset(ocean);
       let checked = 0;
       for (let i = 0; i < positions.length; i += 3) {
         const x = positions[i]! + offset.x, z = positions[i + 2]! + offset.z;
@@ -465,7 +465,7 @@ describe("Water rendering", () => {
       assign(12);
       const root = binding.meshes.get(1)!;
       const surface = root.getChildMeshes()[0]!;
-      expect(surface.isVerticesDataPresent("slateWaterData")).toBe(true);
+      expect(surface.isVerticesDataPresent("hapticWaterData")).toBe(true);
       expect(surface.getBoundingInfo().boundingBox.maximum.x).toBeCloseTo(6);
       assign(20);
       expect(root.isDisposed()).toBe(true);
@@ -486,11 +486,11 @@ describe("Water rendering", () => {
       expect(await result.ready).toEqual([]);
       const mesh = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), { ...createDefaultWaterDefinition(), waveHeight: 0 }, result.material);
       await prewarmMaterial(result.material, mesh);
-      const data = mesh.getVerticesData("slateWaterData")!;
+      const data = mesh.getVerticesData("hapticWaterData")!;
       expect(data[1]).toBeCloseTo(0);
       expect(data[centreVertex(mesh) * 4 + 1]).toBeCloseTo(15);
       setSceneWaterTime(scene, 2.5); updateSceneWater(scene);
-      expect(mesh.getVerticesData("slateWaterData")![centreVertex(mesh) * 4 + 3]).toBeCloseTo(2.5);
+      expect(mesh.getVerticesData("hapticWaterData")![centreVertex(mesh) * 4 + 3]).toBeCloseTo(2.5);
       mesh.dispose();
       expect(scene.materials).toContain(result.material);
       result.dispose();
@@ -506,14 +506,14 @@ describe("Water rendering", () => {
       const builtIn = createWaterMesh(scene, "builtIn", body, water, builtInWaterMaterial(scene));
       setSceneWaterTime(scene, 2); updateSceneWater(scene);
       const middle = centreVertex(gpu);
-      // The Water Waves graph keeps the static rest grid, like built-in water: spacing in `slateWaterData.x`, and no clock in the data.
+      // The Water Waves graph keeps the static rest grid, like built-in water: spacing in `hapticWaterData.x`, and no clock in the data.
       expect(Vector3.FromArray(gpu.getVerticesData(VertexBuffer.PositionKind)!, middle * 3).length()).toBeCloseTo(0, 6);
-      const data = gpu.getVerticesData("slateWaterData")!;
+      const data = gpu.getVerticesData("hapticWaterData")!;
       expect(data[middle * 4]).toBeGreaterThan(0);
       expect(data[middle * 4 + 3]).toBe(0);
       // The same graph without the node is the CPU path it always was: displaced vertices, the clock in the data.
       expect(Math.hypot(...Vector3.FromArray(cpu.getVerticesData(VertexBuffer.PositionKind)!, middle * 3).asArray())).toBeGreaterThan(0.01);
-      expect(cpu.getVerticesData("slateWaterData")![middle * 4 + 3]).toBe(2);
+      expect(cpu.getVerticesData("hapticWaterData")![middle * 4 + 3]).toBe(2);
       // A frame uploads nothing for the GPU surface; the clock is a uniform.
       const uploads = vi.spyOn(gpu, "updateVerticesData"), cpuUploads = vi.spyOn(cpu, "updateVerticesData");
       setSceneWaterTime(scene, 3); updateSceneWater(scene);
@@ -526,15 +526,15 @@ describe("Water rendering", () => {
       waves.bindForSubMesh(gpu.computeWorldMatrix(true), gpu, gpu.subMeshes[0]!);
       const reference = bindWaves(builtIn);
       // The clock carries the foam drift too, so the Water Foam node's foam drifts in step.
-      const [, driftX, driftZ] = reference.get("slateWaterClock")!;
+      const [, driftX, driftZ] = reference.get("hapticWaterClock")!;
       expect(Math.hypot(driftX!, driftZ!)).toBeGreaterThan(0);
-      expect(bound.get("slateWaterClock")).toEqual([3, driftX, driftZ, 0]);
-      for (const name of ["slateWaterFft", "slateWaterFftCascade0", "slateWaterSwellInfo", "slateWaterGridOffset"]) {
+      expect(bound.get("hapticWaterClock")).toEqual([3, driftX, driftZ, 0]);
+      for (const name of ["hapticWaterFft", "hapticWaterFftCascade0", "hapticWaterSwellInfo", "hapticWaterGridOffset"]) {
         expect(reference.get(name), name).toBeDefined();
         expect(bound.get(name), name).toEqual(reference.get(name));
       }
       // λ = 2 × Steepness moves the water sideways.
-      expect(bound.get("slateWaterFft")![1]).toBeGreaterThan(0);
+      expect(bound.get("hapticWaterFft")![1]).toBeGreaterThan(0);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
   it("chooses Custom Material water's path again when its material is replaced, displacing the surface exactly once", async () => {
@@ -551,7 +551,7 @@ describe("Water rendering", () => {
       // A recompiled Material is rebound under the mesh (`MaterialLibrary`): the next water update lays the vertices out for it.
       lake.material = waves; updateSceneWater(scene);
       expect(Vector3.FromArray(positions(lake), middle * 3).length()).toBeCloseTo(0, 6);
-      expect(lake.getVerticesData("slateWaterData")![middle * 4 + 3]).toBe(0);
+      expect(lake.getVerticesData("hapticWaterData")![middle * 4 + 3]).toBe(0);
       const uploads = vi.spyOn(lake, "updateVerticesData");
       setSceneWaterTime(scene, 3); updateSceneWater(scene);
       expect(uploads).not.toHaveBeenCalled();
@@ -559,7 +559,7 @@ describe("Water rendering", () => {
       // Without the node again, the vertices are those a mesh that never left the CPU path has: displaced once, at the current time.
       lake.material = plain; updateSceneWater(scene);
       expect(positions(lake)).toEqual(positions(reference));
-      expect(lake.getVerticesData("slateWaterData")![middle * 4 + 3]).toBe(3);
+      expect(lake.getVerticesData("hapticWaterData")![middle * 4 + 3]).toBe(3);
       expect(Vector3.FromArray(positions(lake), middle * 3).asArray()).not.toEqual(rest);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
@@ -583,7 +583,7 @@ describe("Water rendering", () => {
       vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
       waves.bindForSubMesh(global.computeWorldMatrix(true), global, global.subMeshes[0]!);
       const cell = globalCell("medium");
-      expect(Math.abs(bound.get("slateWaterGridOffset")![0]! - 400)).toBeLessThanOrEqual(cell);
+      expect(Math.abs(bound.get("hapticWaterGridOffset")![0]! - 400)).toBeLessThanOrEqual(cell);
       // Picks test the rest grid where the camera put it, not where the uploaded lines are.
       const hit = scene.pickWithRay(new Ray(new Vector3(440.3, 20, -17.7), Vector3.Down()), (candidate) => candidate === global)!;
       expect(hit.hit).toBe(true);
@@ -601,12 +601,12 @@ describe("Water rendering", () => {
       const drawn = async () => {
         scene.incrementRenderId(); updateSceneWater(scene);
         await vi.waitFor(() => expect(waves.isReadyForSubMesh(lake, lake.subMeshes[0]!)).toBe(true));
-        return { blended: lake.isVerticesDataPresent("slateWaterBlend"), effect: lake.subMeshes[0]!.effect!, defines: lake.subMeshes[0]!.effect!.defines as string };
+        return { blended: lake.isVerticesDataPresent("hapticWaterBlend"), effect: lake.subMeshes[0]!.effect!, defines: lake.subMeshes[0]!.effect!.defines as string };
       };
       const alone = await drawn();
       waves.freeze();
       expect(alone.blended).toBe(false);
-      expect(alone.defines).not.toContain("SLATE_WATER_BLEND");
+      expect(alone.defines).not.toContain("HAPTIC_WATER_BLEND");
       // Frozen, the material answers from the effect it has: this is the state the rest of the test must get out of.
       expect(waves.isFrozen).toBe(true);
       expect((await drawn()).effect).toBe(alone.effect);
@@ -615,17 +615,17 @@ describe("Water rendering", () => {
       neighbour.position.set(16, 0.5, 0);
       const blending = await drawn();
       expect(blending.blended).toBe(true);
-      expect(blending.defines).toMatch(/^#define SLATE_WATER_BLEND$/m);
+      expect(blending.defines).toMatch(/^#define HAPTIC_WATER_BLEND$/m);
       expect(blending.effect).not.toBe(alone.effect);
       // It leaves: the attribute is gone and no effect that reads it is still in use.
       neighbour.dispose();
       const apart = await drawn();
       expect(apart.blended).toBe(false);
-      expect(apart.defines).not.toContain("SLATE_WATER_BLEND");
+      expect(apart.defines).not.toContain("HAPTIC_WATER_BLEND");
       // Blending again compiles it back in: the frozen material is not stuck on either answer.
       const returning = createWaterMesh(scene, "returning", normalizeWaterBody({ width: 24, length: 24, waveScale: 0.9, resolution: 24 }), undefined, builtInWaterMaterial(scene));
       returning.position.set(16, 0.5, 0);
-      expect((await drawn()).defines).toMatch(/^#define SLATE_WATER_BLEND$/m);
+      expect((await drawn()).defines).toMatch(/^#define HAPTIC_WATER_BLEND$/m);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("animates built-in water on the GPU from the clock alone, keeps the CPU path for parity, and releases owned resources", () => {
@@ -735,7 +735,7 @@ describe("Water rendering", () => {
     try {
       const global = createWaterMesh(scene, "global", normalizeWaterBody({}, "global"), undefined, builtInWaterMaterial(scene));
       updateSceneWater(scene);
-      const kinds = [VertexBuffer.PositionKind, VertexBuffer.NormalKind, "slateWaterData", "slateWaterFlow", "slateWaterBaseNormal"];
+      const kinds = [VertexBuffer.PositionKind, VertexBuffer.NormalKind, "hapticWaterData", "hapticWaterFlow", "hapticWaterBaseNormal"];
       const buffers = kinds.map((kind) => global.getVertexBuffer(kind)!.getBuffer());
       const count = global.getTotalVertices(), before = Array.from(global.getVerticesData(VertexBuffer.PositionKind)!), offsetBefore = gridOffset(global);
       const created = [vi.spyOn(engine, "createVertexBuffer"), vi.spyOn(engine, "createDynamicVertexBuffer"), vi.spyOn(engine, "createIndexBuffer")];
@@ -868,7 +868,7 @@ describe("Water rendering", () => {
       camera.setTarget(Vector3.Zero());
       updateSceneWater(scene);
       expect(uploads).toHaveBeenCalled();
-      expect(lake.getVerticesData("slateWaterData")![centreVertex(lake) * 4 + 3]).toBe(3);
+      expect(lake.getVerticesData("hapticWaterData")![centreVertex(lake) * 4 + 3]).toBe(3);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
   it("gives back a disabled body's terrain and contact textures after a while and rebuilds them when it returns", () => {
@@ -942,7 +942,7 @@ describe("Water rendering", () => {
       const far = createWaterMesh(scene, "far", normalizeWaterBody({ width: 10, length: 10, resolution: 8 }), undefined, builtInWaterMaterial(scene));
       b.position.set(16, 0.5, 0); far.position.set(200, 0, 0);
       updateSceneWater(scene);
-      expect([a, b, far].map((mesh) => mesh.isVerticesDataPresent("slateWaterBlend"))).toEqual([true, true, false]);
+      expect([a, b, far].map((mesh) => mesh.isVerticesDataPresent("hapticWaterBlend"))).toEqual([true, true, false]);
       // Each vertex carries the shared kernel's blended surface: rest height, union shoreline and ownership.
       const bodies = [a, b].map((mesh) => ({ definition: createDefaultWaterDefinition(), body: waterMeshBody(mesh)! as WaterBodyProperties, transform: {
         position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
@@ -952,7 +952,7 @@ describe("Water rendering", () => {
       const sample = createWaterBlendSample();
       let owned = 0, seam = 0;
       for (const [self, mesh] of [a, b].entries()) {
-        const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, data = mesh.getVerticesData("slateWaterData")!, blend = mesh.getVerticesData("slateWaterBlend")!;
+        const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, data = mesh.getVerticesData("hapticWaterData")!, blend = mesh.getVerticesData("hapticWaterBlend")!;
         const world = mesh.computeWorldMatrix(true);
         for (let v = 0; v < positions.length / 3; v++) {
           const point = Vector3.TransformCoordinates(Vector3.FromArray(positions, v * 3), world);
@@ -972,7 +972,7 @@ describe("Water rendering", () => {
       expect(seam).toBeGreaterThan(4);
       expect(owned).toBeGreaterThan(0);
       updateSceneRenderingSettings(scene, { water: { blendDistance: 0 } }); updateSceneWater(scene);
-      expect([a, b].map((mesh) => mesh.isVerticesDataPresent("slateWaterBlend"))).toEqual([false, false]);
+      expect([a, b].map((mesh) => mesh.isVerticesDataPresent("hapticWaterBlend"))).toEqual([false, false]);
     } finally { scene.dispose(); engine.dispose(); }
   });
   it("mixes a lake's colours toward each differently coloured neighbour where that one meets it", () => {
@@ -989,9 +989,9 @@ describe("Water rendering", () => {
       const partners = nodesOf(lake).partners.map((partner) => partner?.shallowColor[0] ?? null);
       const slotOf = (color: number) => partners.indexOf(color);
       expect([slotOf(1), slotOf(0.1)].every((slot) => slot >= 0)).toBe(true);
-      // Per vertex: partner 0's share in slateWaterBlend.w, partners 1 and 2's in slateWaterBlendColors.
-      const positions = lake.getVerticesData(VertexBuffer.PositionKind)!, blend = lake.getVerticesData("slateWaterBlend")!;
-      const colors = lake.getVerticesData("slateWaterBlendColors")!;
+      // Per vertex: partner 0's share in hapticWaterBlend.w, partners 1 and 2's in hapticWaterBlendColors.
+      const positions = lake.getVerticesData(VertexBuffer.PositionKind)!, blend = lake.getVerticesData("hapticWaterBlend")!;
+      const colors = lake.getVerticesData("hapticWaterBlendColors")!;
       const share = (v: number, slot: number) => slot === 0 ? blend[v * 4 + 3]! : colors[v * 2 + slot - 1]!;
       let eastSide = 0, westSide = 0;
       for (let v = 0; v < positions.length / 3; v++) {
@@ -1019,7 +1019,7 @@ describe("Water rendering", () => {
         position: { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 },
       } })), DEFAULT_WATER_BLEND_DISTANCE);
       const check = () => {
-        const positions = sea.getVerticesData(VertexBuffer.PositionKind)!, blend = sea.getVerticesData("slateWaterBlend")!, offset = gridOffset(sea);
+        const positions = sea.getVerticesData(VertexBuffer.PositionKind)!, blend = sea.getVerticesData("hapticWaterBlend")!, offset = gridOffset(sea);
         let inside = 0;
         for (let v = 0; v < positions.length / 3; v++) {
           const x = positions[v * 3]! + offset.x, y = positions[v * 3 + 1]!, z = positions[v * 3 + 2]! + offset.z;
@@ -1069,7 +1069,7 @@ describe("Water rendering", () => {
       const inside = () => {
         updateSceneWater(scene);
         const positions = sea.getVerticesData(VertexBuffer.PositionKind)!, indices = sea.getIndices()!;
-        const blend = sea.getVerticesData("slateWaterBlend")!, data = sea.getVerticesData("slateWaterData")!;
+        const blend = sea.getVerticesData("hapticWaterBlend")!, data = sea.getVerticesData("hapticWaterData")!;
         let checked = 0;
         for (let t = 0; t < indices.length; t += 3) {
           const corners = [indices[t]!, indices[t + 1]!, indices[t + 2]!];
@@ -1107,7 +1107,7 @@ describe("Water rendering", () => {
    */
   function owningTrianglesKept(mesh: Mesh) {
     const positions = mesh.getVerticesData(VertexBuffer.PositionKind)!, indices = mesh.getIndices()!, offset = gridOffset(mesh);
-    const blend = mesh.getVerticesData("slateWaterBlend")!, data = mesh.getVerticesData("slateWaterData")!;
+    const blend = mesh.getVerticesData("hapticWaterBlend")!, data = mesh.getVerticesData("hapticWaterData")!;
     const at = (v: number) => [positions[v * 3]! + offset.x + mesh.position.x, positions[v * 3 + 2]! + offset.z + mesh.position.z] as const;
     const cullable = (v: number) => Math.min(data[v * 4 + 1]!, blend[v * 4 + 2]!) < -(2 * data[v * 4]! + 1);
     let owning = 0;
@@ -1186,7 +1186,7 @@ describe("Water rendering", () => {
       b.position.set(18, 0.1, 0);
       updateSceneWater(scene);
       const refreshes = vi.spyOn(a, "updateVerticesData");
-      const blendUploads = () => refreshes.mock.calls.filter(([kind]) => kind === "slateWaterBlend").length;
+      const blendUploads = () => refreshes.mock.calls.filter(([kind]) => kind === "hapticWaterBlend").length;
       // Dragged every frame for half a second at 60 frames per second: a few refreshes, not thirty.
       for (let frame = 0; frame < 30; frame++) { clock += 1000 / 60; b.position.x -= 0.02; updateSceneWater(scene); }
       expect(blendUploads()).toBeGreaterThan(0);
@@ -1195,15 +1195,15 @@ describe("Water rendering", () => {
       const settled = blendUploads();
       for (let frame = 0; frame < 20; frame++) { clock += 1000 / 60; updateSceneWater(scene); }
       expect(blendUploads()).toBe(settled + 1);
-      const current = Array.from(a.getVerticesData("slateWaterBlend")!);
+      const current = Array.from(a.getVerticesData("hapticWaterBlend")!);
       updateWaterMeshBody(a, waterMeshBody(a)!);
       updateSceneWater(scene);
-      const fresh = a.getVerticesData("slateWaterBlend")!;
+      const fresh = a.getVerticesData("hapticWaterBlend")!;
       expect(current.every((value, i) => Math.abs(value - fresh[i]!) < 1e-5)).toBe(true);
     } finally { scene.dispose(); engine.dispose(); vi.restoreAllMocks(); }
   });
   describe("budgeted blend refresh", () => {
-    const KINDS = [VertexBuffer.PositionKind, VertexBuffer.NormalKind, "slateWaterData", "slateWaterFlow", "slateWaterBaseNormal", "slateWaterBlend"];
+    const KINDS = [VertexBuffer.PositionKind, VertexBuffer.NormalKind, "hapticWaterData", "hapticWaterFlow", "hapticWaterBaseNormal", "hapticWaterBlend"];
     const attributes = (mesh: Mesh) => KINDS.map((kind) => Array.from(mesh.getVerticesData(kind)!));
     const near = (actual: number[][], expected: number[][]) =>
       actual.every((values, k) => values.length === expected[k]!.length && values.every((value, i) => Math.abs(value - expected[k]![i]!) < 1e-5));
@@ -1230,7 +1230,7 @@ describe("Water rendering", () => {
       updateSceneWater(scene);
       const blendUploads = vi.spyOn(a, "updateVerticesData");
       const frame = () => { clock.now += 4; updateSceneWater(scene); };
-      const landed = () => blendUploads.mock.calls.filter(([kind]) => kind === "slateWaterBlend").length;
+      const landed = () => blendUploads.mock.calls.filter(([kind]) => kind === "hapticWaterBlend").length;
       return { engine, scene, a, b, clock, frame, landed };
     };
 
@@ -1281,8 +1281,8 @@ describe("Water rendering", () => {
       const { engine, scene, a, b, clock, frame } = setup();
       try {
         // The first blend of both lakes happened in the first frame of `setup`.
-        expect(Math.max(...a.getVerticesData("slateWaterBlend")!)).toBeGreaterThan(0);
-        expect(a.getVerticesData("slateWaterBlend")!.some((value, i) => i % 4 === 2 && value < 0)).toBe(true);
+        expect(Math.max(...a.getVerticesData("hapticWaterBlend")!)).toBeGreaterThan(0);
+        expect(a.getVerticesData("hapticWaterBlend")!.some((value, i) => i % 4 === 2 && value < 0)).toBe(true);
         clock.now += WATER_BLEND_REFRESH_MS + 100;
         b.rotation.x = 0.1;
         frame();
@@ -1343,16 +1343,16 @@ describe("Water rendering", () => {
       b.position.x = 50;
       for (let frame = 0; frame < 5; frame++) { setSceneWaterTime(scene, frame); updateSceneWater(scene); }
       expect(update).toHaveBeenCalledTimes(1);
-      expect(a.isVerticesDataPresent("slateWaterBlend")).toBe(false);
+      expect(a.isVerticesDataPresent("hapticWaterBlend")).toBe(false);
       // Moving a body into range rebuilds once; still frames rebuild nothing.
       b.position.x = 22;
       for (let frame = 0; frame < 5; frame++) { setSceneWaterTime(scene, 5 + frame); updateSceneWater(scene); }
       expect(update).toHaveBeenCalledTimes(2);
-      expect([a, b].map((mesh) => mesh.isVerticesDataPresent("slateWaterBlend"))).toEqual([true, true]);
+      expect([a, b].map((mesh) => mesh.isVerticesDataPresent("hapticWaterBlend"))).toEqual([true, true]);
       updateWaterMeshBody(b, { ...waterMeshBody(b)!, width: 4, length: 4 });
       updateSceneWater(scene);
       expect(update).toHaveBeenCalledTimes(3);
-      expect([a, b].map((mesh) => mesh.isVerticesDataPresent("slateWaterBlend"))).toEqual([false, false]);
+      expect([a, b].map((mesh) => mesh.isVerticesDataPresent("hapticWaterBlend"))).toEqual([false, false]);
     } finally { update.mockRestore(); scene.dispose(); engine.dispose(); }
   });
   it("constructs a bounded river from a Play component without a model asset", () => {

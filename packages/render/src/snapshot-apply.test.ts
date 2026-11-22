@@ -18,7 +18,8 @@ import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
-import { createDefaultSpritePayload, createDefaultTilemapPayload, decodeHasset, embedGlbExternalImages, encodeHasset, normalizeTilesetPayload, setTile } from "@haptic/assets";
+import { createDefaultSpritePayload, createDefaultTilemapPayload, embedGlbExternalImages, normalizeTilesetPayload, setTile } from "@haptic/assets";
+import { decodeHasset, encodeHasset } from "@haptic/assets/hasset";
 import { createDefaultWaterDefinition, DEFAULT_SORTING_LAYERS, identityTransform, normalizeWaterBody, parseText2DProperties } from "@haptic/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./test-support/test-engine";
@@ -408,7 +409,7 @@ describe("createPlayMesh", () => {
         rotation: [0, 0, 0, 1], scale: [1, 1, 1], water: normalizeWaterBody({ width: 4, length: 4, resolution: 8 }) }],
     });
     const surface = binding.meshes.get(3)!.getChildMeshes()[0]!;
-    expect(surface.isVerticesDataPresent("slateWaterData")).toBe(true);
+    expect(surface.isVerticesDataPresent("hapticWaterData")).toBe(true);
     expect(surface.renderingGroupId).toBe(box.renderingGroupId);
   });
 

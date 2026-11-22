@@ -1,10 +1,10 @@
 import { ENGINE_VERSION } from "@haptic/core";
-import { encodeAssetDocument } from "./asset-document";
-import type { ProjectTreeFile } from "./hproject";
+import { encodeAssetDocument } from "../asset-document";
+import type { ProjectTreeFile } from "../hproject";
 import {
   createDefaultPluginSettings,
   encodePluginSettingsDocument,
-} from "./plugin-settings";
+} from "../plugin-settings";
 
 export const STARTER_CONTENT_DISPLAY_NAME = "Starter Content";
 export const STARTER_CONTENT_PLUGIN_GUID =

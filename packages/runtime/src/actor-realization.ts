@@ -1,5 +1,5 @@
 import type { CommandMessage } from "@haptic/bridge";
-import { createDefaultRenderTargetCaptureProperties, resolveActorDefaults, type SerializedComponent, type Transform } from "@haptic/core";
+import { actorTickStride, createDefaultRenderTargetCaptureProperties, resolveActorDefaults, type SerializedComponent, type Transform } from "@haptic/core";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import {
   attachSerializedComponents,
@@ -38,6 +38,8 @@ interface ActorRealizationHost {
   boundaries(): Pick<SessionBoundaries, "markSpawned" | "trackRealized">;
   /** The main Scene's physics world kind; Scene Layer actors always validate as 2D. */
   physicsKind(): PhysicsWorldKind;
+  /** The undilated fixed step, which turns an actor's Tick Interval into whole steps. */
+  fixedStepSeconds(): number;
   renderSlots(): RenderSlots;
   renderEmitter(): Pick<RenderCommandEmitter, "emitMeshAssignment">;
   audioParticles(): Pick<AudioParticleEmitter, "emitAudio" | "emitParticles" | "stopAudio" | "stopParticles">;
@@ -224,6 +226,8 @@ export class ActorRealization {
     actor.generateHitEvents = resolved.generateHitEvents;
     actor.generateOverlapEvents = resolved.generateOverlapEvents;
     actor.tickEnabled = resolved.eventTick;
+    actor.tickInterval = resolved.tickInterval;
+    actor.tickStride = actorTickStride(resolved.tickInterval, this.host.fixedStepSeconds());
     actor.tickOnPause = resolved.tickOnPause;
   }
 

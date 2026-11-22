@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import { STAT_GROUPS } from "@haptic/debugger";
 import type { RenderDiagnostics } from "@haptic/render";
-import { mountPlayerHud } from "../../../player/src/hud";
+import { mountPlayerHud } from "player/hud";
 import { StatsHud } from "./stats-hud";
 
 beforeEach(() => {

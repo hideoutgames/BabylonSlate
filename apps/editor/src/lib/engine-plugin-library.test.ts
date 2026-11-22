@@ -9,7 +9,7 @@ import {
   inspectHplugin,
   writeProjectPlugin,
 } from "@haptic/assets";
-import { unpackEnginePluginZip } from "../../../../packages/assets/src/test-support/engine-plugins";
+import { unpackEnginePluginZip } from "@haptic/assets/test-support/engine-plugins";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { enginePluginsVitePlugin } from "../../vite-engine-plugins";
 import { EnginePluginLibrary } from "./engine-plugin-library";

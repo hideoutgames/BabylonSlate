@@ -51,11 +51,12 @@ export type {
 export {
   exportGame,
   zipExport,
-  unzipExport,
   parseGameManifest,
   defaultPlayerIndexHtml,
   SAFE_ZIP_MTIME,
 } from "./export-game";
+export { COMPLEX_COLLISION_EXPORT_TYPE, complexCollisionExportGuid, decodeComplexCollisionMesh, encodeComplexCollisionMesh, modelGuidFromComplexCollisionExport } from "./complex-collision";
+export { EXPORT_ASSET_FORMS, exportAssetForm, stripEditorOnlyFields, type ExportAssetForm } from "./export-asset-forms";
 export type {
   ExportIndexedAsset,
   ExportClosureInput,
@@ -84,7 +85,7 @@ export { createPreviewAssetClient, createPreviewAssetServer } from "./preview-as
 
 export { packedContentFromGame, packedPlayControls, packedBootControls, packedSourceControls, type PackedAudioLibrary, type PackedGameContent } from "./hydrate";
 export { gameSourceSubset, requiredGameAssets, type GameSourceContent } from "./source-content";
-export { DESKTOP_GAME_TARGETS, desktopGameNames, packageDesktopGame, type DesktopGameNames, type DesktopGamePackageInput, type DesktopGameTarget } from "./native-desktop";
+export { desktopGameNames, packageDesktopGame, type DesktopGameNames, type DesktopGamePackageInput, type DesktopGameTarget } from "./native-desktop";
 export { readZipEntries, writeZip, type ZipCopy, type ZipEntry } from "./zip-merge";
 export { APP_ICON_FILE, APP_ICON_SIZES, appIconPng, brandPlayerIndexHtml, encodeIcns, encodeIco, type AppIconImages } from "./app-icon";
 export { debianPackageName, debianVersion, packageLinuxDeb } from "./native-deb";

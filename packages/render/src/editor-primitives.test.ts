@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
-import { buildEditorPrimitivesFiles, decodeHassetChunk, readHassetHeader } from "@haptic/assets";
+import { buildEditorPrimitivesFiles } from "@haptic/assets/test-support/editor-primitives";
+import { decodeHassetChunk, readHassetHeader } from "@haptic/assets/hasset";
 import { createTestEngine } from "./test-support/test-engine";
 import { loadModelContainer, modelMaterialIndexOf } from "./model-container";
 

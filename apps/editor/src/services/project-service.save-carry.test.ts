@@ -5,16 +5,14 @@ import {
   BLOBS_DIR,
   createVfsBlobStore,
   decodeAssetDocument,
-  decodeHasset,
-  DEFAULT_BLOB_THRESHOLD,
-  encodeHasset,
   readAssetDocumentHeader,
   sha256Hex,
   type ChunkInput,
 } from "@haptic/assets";
+import { decodeHasset, DEFAULT_BLOB_THRESHOLD, encodeHasset } from "@haptic/assets/hasset";
 import { NAVMESH_CHUNK_ID } from "@haptic/navigation";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
+import { installMinimalProject } from "@haptic/assets/test-support/minimal-project";
 import { ProjectService } from "./project-service";
 
 async function scaffolded() {

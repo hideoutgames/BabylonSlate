@@ -715,9 +715,13 @@ export function computeAudioOutputGain(options: {
   return clampAudioGain(gain);
 }
 
+/**
+ * Distance gain of a spatial sound: 1 within Inner Radius, falling by the distance model to exactly 0 at Max Radius
+ * and silent beyond. Playback applies this gain itself (the browser panner only pans), so it is what players hear.
+ */
 export function computeAttenuationGain(
   distance: number,
-  attenuation: SoundAttenuationPayload,
+  attenuation: Pick<SoundAttenuationPayload, "innerRadius" | "maxRadius" | "distanceModel" | "rolloff">,
 ): number {
   const d = typeof distance === "number" && Number.isFinite(distance) ? distance : 0;
   const inner = attenuation.innerRadius;

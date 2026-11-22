@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
-import { createMemoryOpfsRoot, opfsProjectFolder } from "../../../../packages/vfs/src/test-support/memory-opfs";
+import { createFakeWebLocks } from "@haptic/vfs/test-support/fake-web-locks";
+import { createMemoryOpfsRoot, opfsProjectFolder } from "@haptic/vfs/test-support/memory-opfs";
 import { createEmptyProject, isProjectOpenElsewhere, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@haptic/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter, pickImportFiles } from "@haptic/vfs";
-import { encodeAssetDocument, encodeHasset, decodeHasset } from "@haptic/assets";
+import { encodeAssetDocument } from "@haptic/assets";
+import { encodeHasset, decodeHasset } from "@haptic/assets/hasset";
 import { convertHdrEnvironmentOffMainThread } from "@haptic/assets/import-worker-client";
 import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";

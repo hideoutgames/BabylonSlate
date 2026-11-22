@@ -10,22 +10,47 @@ const BABYLON_PATTERNS = ["@babylonjs/*", "@babylonjs/**"];
 const CAPACITOR_PATTERNS = ["@capacitor/*", "@capacitor/**"];
 
 /**
+ * A workspace reaches another only through that package's name and declared exports, never by a relative path into
+ * its `src` or into another app: such a path skips the dependency declaration and the export list.
+ */
+const CROSS_WORKSPACE_PATTERNS = [
+  {
+    regex: "^(\\.\\./)+((packages|apps)/)?[^./][^/]*/src(/|$)",
+    message:
+      "Import another workspace through its package name and a declared export, not a relative path into its src.",
+  },
+  {
+    regex: "^(\\.\\./)+(editor|player|desktop|docs)/",
+    message: "Import another app through its package name and a declared export, not a relative path.",
+  },
+];
+
+/**
  * Import-boundary rules from engineplan section 2.2. Patterns are used rather
  * than exact paths because Babylon and Capacitor are normally imported by
- * subpath, which an exact-name rule would not catch.
+ * subpath, which an exact-name rule would not catch. Every boundary keeps the
+ * cross-workspace patterns, because a later `no-restricted-imports` block replaces an earlier one's options.
  */
 function boundary(name, files, groups, paths = []) {
+  const patterns = [...groups, ...CROSS_WORKSPACE_PATTERNS];
   return {
     name,
     files,
     rules: {
       "no-restricted-imports": [
         "error",
-        paths.length ? { patterns: groups, paths } : { patterns: groups },
+        paths.length ? { patterns, paths } : { patterns },
       ],
     },
   };
 }
+
+/** Workspace files no narrower boundary covers still keep the cross-workspace patterns. */
+const workspaceImports = boundary(
+  "boundary/workspaces",
+  ["apps/**/*.{ts,tsx,mjs,js}", "packages/**/*.{ts,tsx,mjs,js}"],
+  [],
+);
 
 /**
  * Babylon marks every index barrel side-effectful, so one value import from the `@babylonjs/core` root bundles
@@ -257,6 +282,13 @@ const playerNoReactNoCapacitor = babylonBoundary(
       group: CAPACITOR_PATTERNS,
       message: "apps/player must not import Capacitor (engineplan section 15).",
     },
+    {
+      group: [
+        "@haptic/assets/hasset", "@haptic/navigation/bake", "@haptic/render/convert-obj-to-glb", "@haptic/render/convert-stl-to-glb",
+        "@recast-navigation/generators", "@babylonjs/serializers", "@babylonjs/serializers/**", "zod", "@noble/hashes", "@noble/hashes/**",
+      ],
+      message: "Editor-only code (asset files, navmesh baking, model conversion) must stay out of exported games.",
+    },
   ],
 );
 
@@ -323,6 +355,7 @@ export default defineConfig(
       ],
     },
   },
+  workspaceImports,
   pureNoReactNoBabylon,
   debuggerTypesFromBridge,
   physicsNoReactNoCapacitor,
@@ -334,7 +367,7 @@ export default defineConfig(
   appNoCapacitor,
   playerNoReactNoCapacitor,
   {
-    files: ["apps/desktop/**/*.ts", "apps/player/vite.config.ts", "apps/editor/vite-player-host.ts"],
+    files: ["apps/desktop/**/*.ts", "apps/player/vite.config.ts", "apps/editor/vite-player-host.ts", "packages/build-config/**/*.ts"],
     languageOptions: { globals: globals.node },
   },
 );

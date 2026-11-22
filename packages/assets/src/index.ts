@@ -3,7 +3,8 @@ export * from "./asset-dependencies";
 export * from "./asset-loading-service";
 export * from "./registry-asset-loading";
 export * from "./atlas-textures";
-export * from "./hasset";
+// `.hasset` parsing and writing (zod schemas) is editor-only: `@haptic/assets/hasset`. Its types stay here.
+export type { CarriedChunkInput, ChunkEntry, ChunkInput, DecodedHasset, EncodableChunk, EncodeHassetOptions, HassetHeader } from "./hasset";
 export * from "./hasset-carry";
 export * from "./hproject";
 export * from "./blob-store";
@@ -67,8 +68,6 @@ export * from "./extension-fields";
 export * from "./extension-settings";
 export * from "./extension-host";
 export * from "./extension-package";
-export * from "./starter-content";
-export * from "./editor-primitives";
 export * from "./registry";
 export * from "./catalog-class-dependencies";
 export * from "./mtime-diff";

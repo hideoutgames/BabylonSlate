@@ -10,7 +10,7 @@ import {
   applyProjectQualityPatch, createDefaultScene, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeRenderProjectSettings,
   qualityPresetPatch, QUALITY_GROUPS, ScalabilitySession, type QualityGroup, type RenderProjectSettings,
 } from "@haptic/core";
-import { createEngine } from "./create-engine";
+import { createEngine } from "./editor-engine";
 import { releaseKeptEffects } from "./effect-bridge";
 import { estimateTextureBytes } from "./texture-memory-estimate";
 
@@ -205,7 +205,7 @@ describe("Play quality changes", () => {
     const after = compiled();
     // Every program drawn before is the same Effect again: none compiled a second time.
     const compiledAgain = [...before].filter(([key, effect]) => after.get(key) !== effect).length;
-    expect({ programs: before.size, compiledAgain }).toEqual({ programs: 18, compiledAgain: 0 });
+    expect({ programs: before.size, compiledAgain }).toEqual({ programs: 17, compiledAgain: 0 });
     // The hold ends once the view draws with post-processing on again: back at Medium shadows, the programs only High
     // draws go with the keep.
     run("postprocessing off");
@@ -243,7 +243,7 @@ describe("Play quality changes", () => {
     await step("shadows restore", ["quality reset"]);
     await step("MSAA and post off", ["quality postprocessing antialiasing off", "postprocessing off"]);
     await step("MSAA and post restore", ["quality reset", "postprocessing on"]);
-    // 23 at High: the 14 the view's graph allocates (multisampled scene colour and depth, geometry buffers, the spatial
+    // 22 at High: the 13 the view's graph allocates (multisampled scene colour and depth, geometry buffers, the spatial
     // stages' and bloom's targets, of which ambient occlusion's single-channel march and blurs take a pair of their own
     // beside the reflection and volumetric stages' half-scale RGBA pair) and 9 the session holds besides (the sun's
     // shadow atlas among them, and the 1 × 1 cube lit programs bind while no environment lights the Scene). Post off
@@ -251,18 +251,18 @@ describe("Play quality changes", () => {
     // shadows draw no Screen-Space Shadows, whose half-size RGBA target the graph shares with a spatial stage's, so the
     // count is the same. The peak is the larger state, with no allowance above it.
     // Two counts differ from that. Until the view first draws with post-processing off the session holds 8, not 9:
-    // the 1 × 1 RGBA placeholder bound where a sampler has no texture is made then and stays (22 before, 23 after).
+    // the 1 × 1 RGBA placeholder bound where a sampler has no texture is made then and stays (21 before, 22 after).
     // And without MSAA the scene depth takes the texture of the spatial geometry pass's depth, which that pass
-    // discards before the objects pass starts and clears it: one texture fewer (21).
+    // discards before the objects pass starts and clears it: one texture fewer (20).
     expect(counts).toEqual({
-      "MSAA off": { before: 22, peak: 22, after: 21 },
-      "MSAA restore": { before: 21, peak: 22, after: 22 },
-      "post off": { before: 22, peak: 11, after: 11 },
-      "post restore": { before: 11, peak: 23, after: 23 },
-      "shadows medium": { before: 23, peak: 23, after: 23 },
-      "shadows restore": { before: 23, peak: 23, after: 23 },
-      "MSAA and post off": { before: 23, peak: 9, after: 9 },
-      "MSAA and post restore": { before: 9, peak: 23, after: 23 },
+      "MSAA off": { before: 21, peak: 21, after: 20 },
+      "MSAA restore": { before: 20, peak: 21, after: 21 },
+      "post off": { before: 21, peak: 11, after: 11 },
+      "post restore": { before: 11, peak: 22, after: 22 },
+      "shadows medium": { before: 22, peak: 22, after: 22 },
+      "shadows restore": { before: 22, peak: 22, after: 22 },
+      "MSAA and post off": { before: 22, peak: 9, after: 9 },
+      "MSAA and post restore": { before: 9, peak: 22, after: 22 },
     });
   });
 });

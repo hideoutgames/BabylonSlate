@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./native-desktop": "./src/native-desktop.ts",
@@ -10,7 +11,9 @@
     "./native-windows": "./src/native-windows.ts",
     "./app-icon": "./src/app-icon.ts",
     "./native-android": "./src/native-android.ts",
-    "./native-ios": "./src/native-ios.ts"
+    "./native-ios": "./src/native-ios.ts",
+    "./zip-merge": "./src/zip-merge.ts",
+    "./test-support/*": "./src/test-support/*.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -28,6 +31,7 @@
     "@haptic/shader-graph": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
   }
 }

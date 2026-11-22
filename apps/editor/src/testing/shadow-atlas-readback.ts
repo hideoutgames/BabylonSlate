@@ -9,7 +9,7 @@
  */
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
-import { shadowAtlasRenderTarget } from "../../../../packages/render/src/shadow-atlas";
+import { shadowAtlasRenderTarget } from "@haptic/render/editor-proofs";
 
 export type ShadowAtlasPageDigest = {
   /** SHA-256 of the page's depth bits, row by row from the bottom. */

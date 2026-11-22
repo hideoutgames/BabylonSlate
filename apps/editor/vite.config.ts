@@ -5,17 +5,19 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import {
+  engineDefaultSkyboxVitePlugin,
+  havokHostedWasmVitePlugin,
+  leaveOutUnusedBabylonModules,
+  rapierHostedWasmVitePlugin,
+  recastHostedWasmVitePlugin,
+} from "@haptic/build-config";
 import { enginePluginsVitePlugin } from "./vite-engine-plugins.ts";
 import { kenneyMannequinVitePlugin } from "./vite-kenney-mannequin.ts";
-import { engineDefaultSkyboxVitePlugin } from "./vite-engine-skybox.ts";
 import { engineBillboardsVitePlugin } from "./vite-engine-billboards.ts";
 import { featureTestEngineContentVitePlugin } from "./vite-engine-content.ts";
 import { playerHostVitePlugin } from "./vite-player-host.ts";
-import { havokHostedWasmVitePlugin } from "./vite-havok-wasm.ts";
-import { rapierHostedWasmVitePlugin } from "./vite-rapier-wasm.ts";
-import { recastHostedWasmVitePlugin } from "./vite-recast-wasm.ts";
 import { hostLoadedModulePreload } from "./vite-module-preload.ts";
-import { leaveOutUnusedBabylonModules } from "./vite-unused-babylon-modules.ts";
 import { validateChangelog, validatePatchNotes } from "../../scripts/distribution/changelog.mjs";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
@@ -80,7 +82,7 @@ export default defineConfig({
     {
       // Only a distribution build, which refuses test-mode storage, may ship the generated
       // manifest: native packaging and signing require it as proof of a production bundle.
-      name: "slate-distribution-manifest",
+      name: "haptic-distribution-manifest",
       apply: "build",
       async writeBundle(options) {
         if (!distributionBuild && options.dir) {

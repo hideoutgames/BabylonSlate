@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Plugin } from "vite";
-import { embeddedWasm, hostedWasmUrl, isWasmBinary } from "./vite-hosted-wasm";
+import { embeddedWasm, hostedWasmUrl, isWasmBinary } from "./vite-hosted-wasm.ts";
 
 /** What `@recast-navigation/core`'s `init()` imports when given no implementation: the package's compat build. */
 const RECAST_WASM_PACKAGE = /^@recast-navigation\/wasm$/;

@@ -54,7 +54,7 @@ const plugins = [
   },
   {
     className: "BabylonSlateMemoryPlugin",
-    typescript: "device-memory.ts",
+    typescript: "device-memory-mobile.ts",
   },
   {
     className: "BabylonSlateFileExportPlugin",
@@ -157,7 +157,8 @@ describe("Capacitor 8 Android host", () => {
     )?.[1];
     expect(body).toBeDefined();
     const methods = [...body!.matchAll(/^\s{2}(\w+)(\?)?\(/gm)]
-      .filter((match) => match[2] !== "?" || ["beginReadScope", "endReadScope"].includes(match[1]!))
+      .filter((match) => match[2] !== "?" ||
+        ["beginReadScope", "endReadScope", "beginWrite", "appendWriteChunk", "commitWrite", "abortWrite"].includes(match[1]!))
       .map((match) => match[1])
       .sort();
     const java = readFileSync(
@@ -180,6 +181,25 @@ describe("Capacitor 8 Android host", () => {
     expect(java).toMatch(/public void transferFile\(PluginCall call\)[\s\S]*?transferExecutor\.execute\(/);
     expect(java).not.toMatch(/public void transferFile\(PluginCall call\)[\s\S]*?executeFileOperation\([\s\S]*?public void cancelTransfer/);
     expect(java).toMatch(/private File documentsFile[\s\S]*?startsWith\("BabylonSlate\/projects\/"\)/);
+  });
+
+  // The Java cannot be compiled here; these are the wiring contracts a device would show only at runtime.
+  it("serves the binary transport in front of Capacitor's own request handling, off the plugin thread", () => {
+    const java = readFileSync(join(javaRoot, "BabylonSlateScopedStoragePlugin.java"), "utf8");
+    const transport = readFileSync(join(vfsDir, "native-binary-bridge.ts"), "utf8");
+    // Installed once the bridge exists, so Capacitor's constructor does not replace either client.
+    expect(mainActivity).toMatch(/super\.onCreate\(savedInstanceState\);[\s\S]*installStorageRequests\(bridge\)/);
+    // Other requests still reach Capacitor's local server, from the page and from the service worker.
+    expect(java).toMatch(/storage != null \? storage : super\.shouldInterceptRequest\(view, request\)/);
+    expect(java).toContain("bridge.getLocalServer().shouldInterceptRequest(request)");
+    // The header names are the TypeScript client's.
+    for (const header of ["X-Haptic-Revision", "X-Haptic-Total-Bytes", "X-Haptic-Actual-Bytes", "X-Haptic-Error"]) {
+      expect(transport).toContain(`"${header}"`);
+      expect(java).toContain(`"${header}"`);
+    }
+    // File operations run on the plugin's own pool, never Capacitor's single plugin thread or one global monitor.
+    expect(java).toMatch(/private void executeFileOperation\(PluginCall call, FileOperation operation\) \{\s*try \{\s*ioExecutor\.execute\(/);
+    expect(java).toContain("ioExecutor.shutdown()");
   });
 
   it("keeps tracked Android text sources free of credential material", () => {

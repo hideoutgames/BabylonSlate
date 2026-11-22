@@ -34,14 +34,14 @@ export async function warmSpawnables(
     mesh.isPickable = false;
     mesh.receiveShadows = true;
     // A receiver, as a spawn is, but never a caster: a render-once map drawn while it is shown would keep it.
-    mesh.metadata = { ...(mesh.metadata as object | null), slateShadowParticipation: { castShadows: false } };
+    mesh.metadata = { ...(mesh.metadata as object | null), hapticShadowParticipation: { castShadows: false } };
     staged.push(mesh);
   };
   /** A pool member receives as its group does (its own setter warns), and stays in the spawn's group; else staged alike. */
   const stagePooled = (member: AbstractMesh) => {
     member.isVisible = false;
     member.isPickable = false;
-    member.metadata = { ...(member.metadata as object | null), slateShadowParticipation: { castShadows: false, spawnStandIn: true } };
+    member.metadata = { ...(member.metadata as object | null), hapticShadowParticipation: { castShadows: false, spawnStandIn: true } };
     staged.push(member);
   };
   try {

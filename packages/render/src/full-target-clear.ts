@@ -6,7 +6,6 @@ import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
-import { FrameGraphBloomTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/bloomTask";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
@@ -73,18 +72,12 @@ export function fragmentDiscards(effect: Effect | null | undefined): boolean {
   return discards;
 }
 
-function postProcessCover(task: FrameGraphPostProcessTask): FullTargetCover {
+/** A post-process task's one full-screen draw into its target. */
+export function postProcessCover(task: FrameGraphPostProcessTask): FullTargetCover {
   return (context) => task.isReady() && task.alphaMode === Constants.ALPHA_DISABLE && task.viewport === undefined &&
     task.stencilState === undefined && !task.disableColorWrite &&
     (!task.depthTest || (task.depthAttachmentTexture === undefined && !context.isBackbuffer(task.outputTexture))) &&
     !fragmentDiscards(task.drawWrapper.effect);
-}
-
-/** Babylon's bloom: four full-screen passes (downscale, two blurs, merge) into offscreen targets of their own. */
-function bloomCover(task: FrameGraphBloomTask): FullTargetCover {
-  const { _downscale, _blurX, _blurY, _merge } = task.bloom;
-  return () => task.isReady() && task.alphaMode === Constants.ALPHA_DISABLE &&
-    [_downscale, _blurX, _blurY, _merge].every((stage) => !fragmentDiscards(stage.drawWrapper.effect));
 }
 
 /**
@@ -92,7 +85,6 @@ function bloomCover(task: FrameGraphBloomTask): FullTargetCover {
  * graph's copy effects are ready whenever it draws (`ForwardSceneFrameGraph.graphReady`).
  */
 export function fullTargetCover(task: FrameGraphTask): FullTargetCover | null {
-  if (task instanceof FrameGraphBloomTask) return bloomCover(task);
   if (task instanceof FrameGraphPostProcessTask) return postProcessCover(task);
   if (task instanceof FrameGraphCopyToBackbufferColorTask) {
     // It copies nothing from the backbuffer itself.

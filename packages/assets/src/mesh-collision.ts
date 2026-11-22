@@ -1,6 +1,6 @@
 import { packCollisionTriangleMesh, type CollisionTriangleMesh } from "@haptic/core";
 import type { ModelPayload } from "./model-payload";
-import { extractGltfCollisionMesh } from "./glb-geometry";
+import { readGltfCollisionMesh } from "./glb-geometry";
 import {
   createDefaultSimpleCollider,
   simpleColliderToPhysicsShape,
@@ -215,13 +215,25 @@ export function meshCollisionFingerprint(
   return `simple:${typeof properties.meshKind === "string" ? properties.meshKind : "box"}`;
 }
 
-/** Cook one Model's rest-pose triangles; `null` when the source has fewer than three vertices. */
+/**
+ * Cook one Model's rest-pose triangles. `mesh` is null when the source has fewer than three vertices or geometry
+ * collision cooking cannot read (Draco or meshopt compression, malformed accessors); `problem` names the latter, as a
+ * clause to follow "Model X uses Use Complex Collision, but".
+ */
+export function cookComplexCollision(
+  source: Uint8Array,
+  modelPayload?: ModelPayload | null,
+): { mesh: CollisionTriangleMesh | null; problem: string | null } {
+  const { mesh, problem } = readGltfCollisionMesh(source, modelPayload?.importScale ?? 1);
+  return { mesh: mesh && mesh.positions.length >= 9 ? mesh : null, problem };
+}
+
+/** `cookComplexCollision`'s mesh: `null` when the Model has no collision mesh. */
 export function cookComplexCollisionMesh(
   source: Uint8Array,
   modelPayload?: ModelPayload | null,
 ): CollisionTriangleMesh | null {
-  const mesh = extractGltfCollisionMesh(source, modelPayload?.importScale ?? 1);
-  return mesh && mesh.positions.length >= 9 ? mesh : null;
+  return cookComplexCollision(source, modelPayload).mesh;
 }
 
 /**

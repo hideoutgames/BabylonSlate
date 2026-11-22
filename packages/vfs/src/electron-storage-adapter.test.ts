@@ -69,6 +69,21 @@ describe("ElectronStorageAdapter", () => {
     expect(storage.getCurrentFolder()).toBeNull();
   });
 
+  it("hands IPC a whole array's own buffer and copies only a slice of a larger one", async () => {
+    const bridge = fakeProjectBridge();
+    const storage = new ElectronStorageAdapter(bridge);
+    await storage.openDocumentsProject("Game");
+    const whole = new Uint8Array([1, 2, 3]);
+    await storage.writeBinary("whole.bin", whole);
+    expect(vi.mocked(bridge.writeBinary).mock.calls[0]![1]).toBe(whole.buffer);
+
+    const backing = new Uint8Array([9, 4, 5, 9]);
+    await storage.writeBinary("slice.bin", backing.subarray(1, 3));
+    const sent = vi.mocked(bridge.writeBinary).mock.calls[1]![1];
+    expect(sent).not.toBe(backing.buffer);
+    expect(new Uint8Array(sent)).toEqual(new Uint8Array([4, 5]));
+  });
+
   it("deletes through main and forgets only a deleted bound folder", async () => {
     const bridge = fakeProjectBridge();
     const storage = new ElectronStorageAdapter(bridge);

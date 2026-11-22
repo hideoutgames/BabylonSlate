@@ -5,18 +5,18 @@ import type { CelShadingSettings } from "@haptic/core";
 import { sceneRenderingSettings } from "./render-settings";
 
 const CEL_ROTATION_UNIFORMS = [
-  "slateCelEnvironmentRotation0",
-  "slateCelEnvironmentRotation1",
-  "slateCelEnvironmentRotation2",
+  "hapticCelEnvironmentRotation0",
+  "hapticCelEnvironmentRotation1",
+  "hapticCelEnvironmentRotation2",
 ] as const;
 const CEL_IRRADIANCE_KEYS = ["x", "y", "z", "xx", "yy", "zz", "xy", "yz", "zx"] as const;
-const CEL_IRRADIANCE_UNIFORMS = CEL_IRRADIANCE_KEYS.map((key) => `slateCelIrradiance_${key}`);
+const CEL_IRRADIANCE_UNIFORMS = CEL_IRRADIANCE_KEYS.map((key) => `hapticCelIrradiance_${key}`);
 
 export const CEL_UNIFORMS = [
-  "slateCelBands",
-  "slateCelSpecular",
-  "slateCelLight",
-  "slateCelEnvironment",
+  "hapticCelBands",
+  "hapticCelSpecular",
+  "hapticCelParams",
+  "hapticCelEnvironment",
   ...CEL_ROTATION_UNIFORMS,
   ...CEL_IRRADIANCE_UNIFORMS,
 ];
@@ -28,29 +28,29 @@ export const CEL_UNIFORMS = [
  */
 export function celFunctions(): string {
   return `
-vec3 slateCelTextureToDisplay(vec3 color) {
+vec3 hapticCelTextureToDisplay(vec3 color) {
   return mix(12.92 * color, 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - vec3(0.055), step(vec3(0.0031308), color));
 }
-vec3 slateCelEnvironmentLight(vec3 normal) {
-  vec3 n = vec3(dot(slateCelEnvironmentRotation0.xyz,normal),dot(slateCelEnvironmentRotation1.xyz,normal),dot(slateCelEnvironmentRotation2.xyz,normal));
-  vec3 color = slateCelIrradiance_x.xyz*n.x+slateCelIrradiance_y.xyz*n.y+slateCelIrradiance_z.xyz*n.z+
-    slateCelIrradiance_xx.xyz*n.x*n.x+slateCelIrradiance_yy.xyz*n.y*n.y+slateCelIrradiance_zz.xyz*n.z*n.z+
-    slateCelIrradiance_xy.xyz*n.x*n.y+slateCelIrradiance_yz.xyz*n.y*n.z+slateCelIrradiance_zx.xyz*n.z*n.x;
-  return max(color,vec3(0.0))*slateCelEnvironment.x;
+vec3 hapticCelEnvironmentLight(vec3 normal) {
+  vec3 n = vec3(dot(hapticCelEnvironmentRotation0.xyz,normal),dot(hapticCelEnvironmentRotation1.xyz,normal),dot(hapticCelEnvironmentRotation2.xyz,normal));
+  vec3 color = hapticCelIrradiance_x.xyz*n.x+hapticCelIrradiance_y.xyz*n.y+hapticCelIrradiance_z.xyz*n.z+
+    hapticCelIrradiance_xx.xyz*n.x*n.x+hapticCelIrradiance_yy.xyz*n.y*n.y+hapticCelIrradiance_zz.xyz*n.z*n.z+
+    hapticCelIrradiance_xy.xyz*n.x*n.y+hapticCelIrradiance_yz.xyz*n.y*n.z+hapticCelIrradiance_zx.xyz*n.z*n.x;
+  return max(color,vec3(0.0))*hapticCelEnvironment.x;
 }
 // A step at zero, one pixel wide whatever the zoom. Only in uniform control flow.
-float slateCelStep(float x) {
+float hapticCelStep(float x) {
   return clamp(x / max(fwidth(x), 0.000001) + 0.5, 0.0, 1.0);
 }
 // A brightness on the ramp's scale: band i spans (i - 0.5, i + 0.5].
-float slateCelShift(float value) {
-  return pow(clamp(value, 0.0, 1.0), slateCelBands.y) * slateCelBands.x;
+float hapticCelShift(float value) {
+  return pow(clamp(value, 0.0, 1.0), hapticCelBands.y) * hapticCelBands.x;
 }
-// The ramp: \`s\` (\`slateCelShift\`) to one of \`levels + 1\` flat bands (exactly i / levels), each edge \`w\` wide in
+// The ramp: \`s\` (\`hapticCelShift\`) to one of \`levels + 1\` flat bands (exactly i / levels), each edge \`w\` wide in
 // the ramp's units (its change across a pixel, so one pixel). The bias resolves round-off at exact thresholds
 // consistently.
-float slateCelRamp(float s, float w) {
-  float levels = slateCelBands.x;
+float hapticCelRamp(float s, float w) {
+  float levels = hapticCelBands.x;
   float e = s + 0.5001;
   float f = floor(e);
   float r = e - f;
@@ -60,29 +60,29 @@ float slateCelRamp(float s, float w) {
   return clamp((near - 1.0 + clamp(t / w + 0.5, 0.0, 1.0)) / levels, 0.0, 1.0);
 }
 // The width of a ramp edge for \`s\`: its change across the pixel, up to half a band. Only in uniform control flow.
-float slateCelEdge(float s) {
+float hapticCelEdge(float s) {
   return clamp(fwidth(s), 0.000001, 0.5);
 }
 // \`value\` on the ramp, each edge one pixel wide whatever the zoom. Only in uniform control flow.
-float slateCelBand(float value) {
-  float s = slateCelShift(value);
-  return slateCelRamp(s, slateCelEdge(s));
+float hapticCelBand(float value) {
+  float s = hapticCelShift(value);
+  return hapticCelRamp(s, hapticCelEdge(s));
 }
-float slateCelStrength(vec3 color) {
+float hapticCelStrength(vec3 color) {
   return max(color.r, max(color.g, color.b));
 }
-vec3 slateCelAccumulate(vec3 previous, vec3 incoming, float wins) {
-  if (slateCelLight.y < 0.5) { return mix(previous, incoming, wins); }
+vec3 hapticCelMixDiffuse(vec3 previous, vec3 incoming, float wins) {
+  if (hapticCelParams.y < 0.5) { return mix(previous, incoming, wins); }
   return previous + incoming;
 }
-vec3 slateCelTint(vec3 color) {
+vec3 hapticCelTint(vec3 color) {
   float strength = max(color.r, max(color.g, color.b));
-  return mix(vec3(strength), color, slateCelLight.x);
+  return mix(vec3(strength), color, hapticCelParams.x);
 }
 `;
 }
 
-/** The CEL settings as the shader reads them (`slateCelBands`, `slateCelSpecular`), derived once on the CPU. */
+/** The CEL settings as the shader reads them (`hapticCelBands`, `hapticCelSpecular`), derived once on the CPU. */
 function celShadingUniforms(cel: CelShadingSettings): { bands: [number, number, number, number]; specular: [number, number, number, number] } {
   const levels = cel.shadowBands - 1;
   // The threshold is where the ramp's half way lands: value^exponent = 0.5 at value = threshold.
@@ -132,10 +132,10 @@ export function bindCelSettings(effect: Effect, scene: Scene): void {
     iblIntensity: scene.iblIntensity,
   });
   const { bands, specular } = celShadingUniforms(cel);
-  effect.setFloat4("slateCelBands", bands[0], bands[1], bands[2], bands[3]);
-  effect.setFloat4("slateCelSpecular", specular[0], specular[1], specular[2], specular[3]);
+  effect.setFloat4("hapticCelBands", bands[0], bands[1], bands[2], bands[3]);
+  effect.setFloat4("hapticCelSpecular", specular[0], specular[1], specular[2], specular[3]);
   effect.setFloat4(
-    "slateCelLight",
+    "hapticCelParams",
     cel.lightColorInfluence,
     cel.lightMixing === "strongest"
       ? 0
@@ -148,7 +148,7 @@ export function bindCelSettings(effect: Effect, scene: Scene): void {
   const strength = scene.lightsEnabled && environmentLighting.enabled && polynomial
     ? scene.iblIntensity * environmentLighting.celStrength
     : 0;
-  effect.setFloat4("slateCelEnvironment", strength, 0, 0, 0);
+  effect.setFloat4("hapticCelEnvironment", strength, 0, 0, 0);
   // The shader reads the rotation and the irradiance only at a strength above zero.
   if (strength <= 0) return;
   const matrix = environment!.getReflectionTextureMatrix().m;

@@ -106,11 +106,11 @@ describe("CEL render mode", () => {
     material.freeze();
     setSceneRenderSettings(scene, settings);
     material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
-    expect(uniforms.mock.calls.filter(([name]) => name === "slateCelEnvironment").at(-1)).toEqual(["slateCelEnvironment", 0, 0, 0, 0]);
+    expect(uniforms.mock.calls.filter(([name]) => name === "hapticCelEnvironment").at(-1)).toEqual(["hapticCelEnvironment", 0, 0, 0, 0]);
     setSceneRenderSettings(scene, { ...settings, environmentLighting: { ...settings.environmentLighting, celStrength: 0.5 } });
     material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
-    expect(uniforms.mock.calls.filter(([name]) => name === "slateCelEnvironment").at(-1)).toEqual(["slateCelEnvironment", 2, 0, 0, 0]);
-    expect(uniforms.mock.calls.filter(([name]) => name === "slateCelIrradiance_yy").at(-1)).toEqual(["slateCelIrradiance_yy", 0.2, 0.7, 0.4, 0]);
+    expect(uniforms.mock.calls.filter(([name]) => name === "hapticCelEnvironment").at(-1)).toEqual(["hapticCelEnvironment", 2, 0, 0, 0]);
+    expect(uniforms.mock.calls.filter(([name]) => name === "hapticCelIrradiance_yy").at(-1)).toEqual(["hapticCelIrradiance_yy", 0.2, 0.7, 0.4, 0]);
     expect(material.isFrozen).toBe(true);
     compiled.dispose();
   });
@@ -139,13 +139,13 @@ describe("CEL render mode", () => {
       expected.forEach((value, index) => expect(actual[index], `${index}`).toBeCloseTo(value, 6));
     material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
     // Three levels above the darkest; ln 0.5 / ln 0.4; 1 - 0.7; (0.5 / 3) ^ (1 / 0.75647), where the first lit band starts.
-    expectClose(last("slateCelBands"), [3, 0.7564708, 0.3, 0.0936138]);
+    expectClose(last("hapticCelBands"), [3, 0.7564708, 0.3, 0.0936138]);
     // Strength; the cosine of the highlight's half angle, sqrt(1 - 0.25²); a rect light's form factor threshold.
-    expectClose(last("slateCelSpecular"), [0.3, 0.9682458, 0.75, 0]);
+    expectClose(last("hapticCelSpecular"), [0.3, 0.9682458, 0.75, 0]);
     // Highlights off bind a zero strength, which skips them in the shader.
     setSceneRenderSettings(scene, { mode: "cel", cel: normalizeCelShadingSettings({ ...cel, specularEnabled: false }) });
     material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
-    expect(last("slateCelSpecular")[0]).toBe(0);
+    expect(last("hapticCelSpecular")[0]).toBe(0);
     compiled.dispose();
   });
 
@@ -199,7 +199,7 @@ describe("CEL render mode", () => {
     // One program serves both Scenes, each with its own settings.
     expect(effectB).toBe(effect);
     const uniforms = vi.spyOn(effect, "setFloat4");
-    const bands = () => uniforms.mock.calls.filter(([name]) => name === "slateCelBands").map(([, levels]) => levels);
+    const bands = () => uniforms.mock.calls.filter(([name]) => name === "hapticCelBands").map(([, levels]) => levels);
     drawA();
     drawA();
     expect(bands()).toEqual([2]);

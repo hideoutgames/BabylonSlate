@@ -54,13 +54,14 @@ import {
 } from "@haptic/core";
 import { parseColliderProperties, parseConstraintProperties } from "@haptic/physics";
 import { engineScriptApiFor } from "@haptic/object-model";
-import { classGraph, gChain, gNode, gWire, printString } from "./graph";
+import { classGraph, gChain, gExec, getVar, gNode, gWire, printString, varMember } from "./graph";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
 import { OWNED_COMPONENT_GET_NODE_ID, ownedGetNodeProperties } from "@haptic/scripting-nodes";
 import { animationObjectHearing, playerNode, playerState, poseGraph, stateMachineGraph } from "./anim-pose-graphs";
 import {
   actor,
   comp,
+  instanceComponents,
   requireRef,
   SCENE_SAVE_ORDER,
   tf,
@@ -91,6 +92,7 @@ const FEATURE_TEST_TWO_D_NAMES = {
   torchAnimation: "FT_2DTorchSheetAnim",
   torchGraph: "FT_2DTorchGraph",
   cameraProbe: "FT_2DCameraProbe",
+  orbitLight: "FT_2DOrbitLight",
   tiles: "FT_2DTiles",
   decorTiles: "FT_2DDecorTiles",
   worldMap: "FT_2DWorldMap",
@@ -227,7 +229,8 @@ export async function buildFeatureTestTwoD(ctx: FeatureTestContext): Promise<voi
   const torchGraph = await buildTorchGraph(ctx);
   const { tilemap, skyIsland } = await buildTilemap(ctx);
   const cameraProbe = (await saveCameraProbe(ctx)).classId;
-  const scene = buildScene(ctx, { sprites, graph, slotAnimation, torchGraph, tilemap, skyIsland, cameraProbe });
+  const orbitLight = await saveOrbitLight(ctx);
+  const scene = buildScene(ctx, { sprites, graph, slotAnimation, torchGraph, tilemap, skyIsland, cameraProbe, orbitLight });
   placeThreeDShadedSprite(ctx, sprites);
   await ctx.addSceneDocument({
     kind: "scene",
@@ -1045,6 +1048,49 @@ async function saveCameraProbe(ctx: FeatureTestContext) {
   return ctx.saveClass({ folder: FOLDER, name: NAMES.cameraProbe, parentClass: "Actor", graph });
 }
 
+/** How far `FT_2DOrbitLight` holds its light from the actor it turns about. */
+const ORBIT_LIGHT_REACH = 2.2;
+
+/**
+ * `FT_2DOrbitLight`: a shadow-casting Point 2D Light held `ORBIT_LIGHT_REACH` out along the actor's +X, which Tick turns
+ * about Z at Spin Rate degrees a second, so the light circles the actor and its shadows are drawn again every frame.
+ */
+async function saveOrbitLight(ctx: FeatureTestContext): Promise<{ classId: string; components: SerializedComponent[] }> {
+  const spinRate = varMember("ft-2d-var-spin-rate", "SpinRate", "float", 40, { category: "Orbit" });
+  const components = [
+    comp("prefab-light", "Light2DComponent", {
+      ...parseLight2DProperties({ lightKind: "point", color: [0.6, 1, 0.75], intensity: 1.3, radius: 4, innerRadius: 0.3 }),
+    }, tf([ORBIT_LIGHT_REACH, 0, 0])),
+  ];
+  const graph = classGraph({
+    members: [spinRate],
+    components,
+    nodes: [
+      gNode("tick", "flow.event.tick", 0, 0),
+      getVar("get-spin-rate", spinRate, 0, 160),
+      gNode("degrees", "math.mul", 240, 120),
+      gNode("roll", "struct.makeRotator", 460, 120, { "default:pitch": 0, "default:yaw": 0 }),
+      gNode("self", "actor.getSelf", 240, 300),
+      gNode("current", "transform.getRotation", 460, 300),
+      gNode("combine", "rotator.combine", 700, 200),
+      gNode("turn", "transform.setRotation", 940, 0),
+    ],
+    edges: [
+      gExec("tick", "turn"),
+      gWire("tick", "deltaSeconds", "degrees", "a"),
+      gWire("get-spin-rate", "value", "degrees", "b"),
+      gWire("degrees", "out", "roll", "roll"),
+      gWire("self", "out", "current", "target"),
+      gWire("self", "out", "turn", "target"),
+      gWire("current", "out", "combine", "a"),
+      gWire("roll", "out", "combine", "b"),
+      gWire("combine", "out", "turn", "rotation"),
+    ],
+  });
+  const { classId } = await ctx.saveClass({ folder: FOLDER, name: NAMES.orbitLight, parentClass: "Actor", graph });
+  return { classId, components };
+}
+
 /**
  * `FT_2D`: its Layer Camera framing the whole map over a sky clear color (no camera actor),
  * the Tilemap (Background), falling robot bodies (Characters) of every 2D
@@ -1054,7 +1100,10 @@ async function saveCameraProbe(ctx: FeatureTestContext) {
  */
 function buildScene(
   ctx: FeatureTestContext,
-  refs: { sprites: SpriteGuids; graph: string; slotAnimation: string; torchGraph: string; tilemap: string; skyIsland: string; cameraProbe: string },
+  refs: {
+    sprites: SpriteGuids; graph: string; slotAnimation: string; torchGraph: string; tilemap: string; skyIsland: string; cameraProbe: string;
+    orbitLight: { classId: string; components: SerializedComponent[] };
+  },
 ): SerializedScene {
   const scene = createDefaultScene("2d");
   scene.name = FEATURE_TEST_TWO_D_SCENE_NAME;
@@ -1159,9 +1208,9 @@ function buildScene(
     comp("ft-2d-anim-torch-graph", "AnimationGraphComponent", { graphGuid: refs.torchGraph }),
   ]);
 
-  // 2D lighting: a dim blue Global light keeps the map readable, a warm Point light glows around the sheet torch, and
-  // a cone lamp above the pendulum points down (+Y turned 180 degrees). Their Shading Mode 2D Sprites and Tilemaps
-  // draw lit; the mascot is Unlit.
+  // 2D lighting: a dim blue Global light keeps the map readable, a warm Point light glows around the sheet torch, a
+  // cone lamp above the pendulum points down (+Y turned 180 degrees), and a green Point light circles the Sky Island,
+  // its shadows redrawn as it moves. Their Shading Mode 2D Sprites and Tilemaps draw lit; the mascot is Unlit.
   ctx.addActor(light2D("ft-2d-light-ambient", "Ambient 2D Light", [0, 0, 0], {
     lightKind: "global", color: [0.7, 0.78, 1], intensity: 0.65,
   }), { scene });
@@ -1171,6 +1220,10 @@ function buildScene(
   ctx.addActor(light2D("ft-2d-light-lamp", "Lamp 2D Light", [7.9, 6.2, 0], {
     lightKind: "point", color: [0.75, 0.9, 1], intensity: 1.2, radius: 6, innerRadius: 1, outerAngle: 70, innerAngle: 40,
   }, [0, 0, 180]), { scene });
+  // Turns about the Sky Island's pivot, so the island's shadow sweeps round it.
+  ctx.addActor(actor("ft-2d-light-orbit", "Orbiting 2D Light", tf([0.4, 3.4, 0]), instanceComponents("ft-2d-light-orbit", refs.orbitLight.components), {
+    folderId: FOLDERS.lights.id, classId: refs.orbitLight.classId,
+  }), { scene });
 
   // Released horizontally above the plateau, the bob swings under the pivot without touching it or the walker.
   const pivot: Vec3 = [7.9, 3.6, 0];

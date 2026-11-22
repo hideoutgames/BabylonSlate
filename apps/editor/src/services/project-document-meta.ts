@@ -31,7 +31,6 @@ import {
   ATLAS_TEXTURES_META,
   atlasTextureGuids,
   DOCUMENT_CHUNK_ID,
-  isCarriedChunk,
   isEnvironmentTexturePayload,
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
@@ -42,6 +41,7 @@ import {
   normalizeBlendSpacePayload,
   normalizeSpriteBlendSpacePayload,
 } from "@haptic/assets";
+import { isCarriedChunk } from "@haptic/assets/hasset";
 import { materialHeaderMeta } from "../lib/material-asset-filters";
 import { asEnumAsset, asStructureAsset } from "../lib/type-asset-payload";
 

@@ -91,6 +91,8 @@ test("non-default settings reach the standalone player", async ({ page, baseURL 
   const secondPath = entry("second").path!;
   const commandClass = exported.value.manifest.assets.find(asset => asset.classId === "qual_pbr" && asset.type === "Class")!;
   const commandCode = exported.value.manifest.assets.find(asset => asset.ownerGuid === commandClass.guid && asset.type === "CompiledScript")!;
+  // A Class ships as a catalog entry with no file: its command runs from its compiled script alone.
+  expect(commandClass.path).toBeUndefined();
   const requestsFor = (path: string) => server.requests.filter(request => request.path === path);
   try {
     await page.goto(server.url);
@@ -118,7 +120,6 @@ test("non-default settings reach the standalone player", async ({ page, baseURL 
     };
     const boot = await ready(1.25);
     expect(requestsFor(secondPath), "deferred Scene document stays unread at startup").toEqual([]);
-    expect(requestsFor(commandClass.path!), "available console Class stays unread at startup").toEqual([]);
     expect(requestsFor(commandCode.path!), "available compiled command code stays unread at startup").toEqual([]);
     const startupRequests = server.requests.map(request => ({ ...request }));
     // Graph surfaces keep their names when switching mode: compare actual
@@ -126,7 +127,6 @@ test("non-default settings reach the standalone player", async ({ page, baseURL 
     const celPixels = await pixels(page);
     await testInfo.attach("authored-cel", { body: Buffer.from(celPixels, "base64"), contentType: "image/png" });
     expect(await command(page, "qual_pbr")).toMatchObject({ success: true });
-    expect(requestsFor(commandClass.path!)).toEqual([{ path: commandClass.path!, status: 200, range: null, bytes: commandClass.byteLength! }]);
     expect(requestsFor(commandCode.path!)).toEqual([{ path: commandCode.path!, status: 200, range: null, bytes: commandCode.byteLength! }]);
     await expect.poll(async () => (await read(page)).scalability?.effective?.render.mode).toBe("pbr");
     await expect.poll(async () => await pixels(page) !== celPixels).toBe(true);
@@ -167,7 +167,7 @@ test("non-default settings reach the standalone player", async ({ page, baseURL 
     await testInfo.attach("standalone-settings", { body: JSON.stringify({
       evidence: renderingEvidence("e2e/render-settings-export.spec.ts", SOFTWARE_GL ? SOFTWARE_GL_ARGS : undefined), environment,
       boot, transitioned, stored, startupRequests,
-      deferredLoading: { secondPath, commandClassPath: commandClass.path, commandCodePath: commandCode.path, requests: server.requests, blockedOrigins },
+      deferredLoading: { secondPath, commandCodePath: commandCode.path, requests: server.requests, blockedOrigins },
     }), contentType: "application/json" });
     await testInfo.attach("standalone-settings-canvas", { body: await page.getByTestId("player-canvas").screenshot(), contentType: "image/png" });
     expect(await command(page, "qual_reset")).toMatchObject({ success: true });

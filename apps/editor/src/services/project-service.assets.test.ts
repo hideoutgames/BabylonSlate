@@ -1,4 +1,4 @@
-import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
+import { installMinimalProject } from "@haptic/assets/test-support/minimal-project";
 import { describe, expect, it, vi } from "vitest";
 import {
   createDefaultScene,
@@ -15,9 +15,7 @@ import {
 } from "@haptic/core";
 import {
   decodeAssetDocument,
-  decodeHasset,
   encodeAssetDocument,
-  encodeHasset,
   normalizeAnimationPayload,
   normalizeSkeletonPayload,
   readAssetDocumentHeader,
@@ -35,6 +33,7 @@ import {
   type EncodeFn,
   AssetRegistry,
 } from "@haptic/assets";
+import { decodeHasset, encodeHasset } from "@haptic/assets/hasset";
 import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
 import {
   AREA_EMISSION_CHUNK_KIND,

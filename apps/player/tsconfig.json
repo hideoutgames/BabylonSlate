@@ -11,7 +11,9 @@
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    // @haptic/build-config imports its own modules with .ts extensions, which Node needs to load it.
+    "allowImportingTsExtensions": true
   },
   "include": ["src", "vite.config.ts"]
 }

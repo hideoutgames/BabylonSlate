@@ -133,19 +133,19 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    this.sampler = state._getFreeVariableName("slateMirrorSampler");
-    this.define = state._getFreeDefineName("SLATE_MIRROR_REFLECTION");
-    this.matrix = state._getFreeVariableName("slateMirrorViewProjection");
-    this.parameters = state._getFreeVariableName("slateMirrorParameters");
-    this.environmentDefine = state._getFreeDefineName("SLATE_MIRROR_ENVIRONMENT");
-    this.environmentSampler = state._getFreeVariableName("slateMirrorEnvironmentSampler");
-    this.environmentMatrix = state._getFreeVariableName("slateMirrorEnvironmentMatrix");
-    this.environmentForm = state._getFreeVariableName("slateMirrorEnvironmentForm");
-    this.environmentBoxPosition = state._getFreeVariableName("slateMirrorEnvironmentBoxPosition");
-    this.environmentBoxSize = state._getFreeVariableName("slateMirrorEnvironmentBoxSize");
-    this.eye = state._getFreeVariableName("slateMirrorEye");
-    this.normal = state._getFreeVariableName("slateMirrorNormal");
-    this.backdrop = state._getFreeVariableName("slateMirrorBackdrop");
+    this.sampler = state._getFreeVariableName("hapticMirrorSampler");
+    this.define = state._getFreeDefineName("HAPTIC_MIRROR_REFLECTION");
+    this.matrix = state._getFreeVariableName("hapticMirrorViewProjection");
+    this.parameters = state._getFreeVariableName("hapticMirrorParameters");
+    this.environmentDefine = state._getFreeDefineName("HAPTIC_MIRROR_ENVIRONMENT");
+    this.environmentSampler = state._getFreeVariableName("hapticMirrorEnvironmentSampler");
+    this.environmentMatrix = state._getFreeVariableName("hapticMirrorEnvironmentMatrix");
+    this.environmentForm = state._getFreeVariableName("hapticMirrorEnvironmentForm");
+    this.environmentBoxPosition = state._getFreeVariableName("hapticMirrorEnvironmentBoxPosition");
+    this.environmentBoxSize = state._getFreeVariableName("hapticMirrorEnvironmentBoxSize");
+    this.eye = state._getFreeVariableName("hapticMirrorEye");
+    this.normal = state._getFreeVariableName("hapticMirrorNormal");
+    this.backdrop = state._getFreeVariableName("hapticMirrorBackdrop");
     state.sharedData.blocksWithDefines.push(this);
     state.sharedData.bindableBlocks.push(this);
     state._emit2DSampler(this.sampler, this.define);
@@ -160,16 +160,16 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
     state._emitUniformFromString(this.normal, Types.Vector3);
     state._emitUniformFromString(this.backdrop, Types.Vector3);
     if (this.builtIn) {
-      this.tint = state._getFreeVariableName("slateMirrorTint");
+      this.tint = state._getFreeVariableName("hapticMirrorTint");
       state._emitUniformFromString(this.tint, Types.Vector3);
     }
     state._emitFunctionFromInclude("helperFunctions", "Mirror reflection decoding");
     state._emitExtension("shaderTextureLod", "#extension GL_EXT_shader_texture_lod : enable");
     const vec2 = "vec2", vec3 = "vec3", vec4 = "vec4";
     const toLinear = "toLinearSpace", toGamma = "toGammaSpace";
-    const clip = state._getFreeVariableName("slateMirrorClip");
-    const uv = state._getFreeVariableName("slateMirrorUv");
-    const sampled = state._getFreeVariableName("slateMirrorSample");
+    const clip = state._getFreeVariableName("hapticMirrorClip");
+    const uv = state._getFreeVariableName("hapticMirrorUv");
+    const sampled = state._getFreeVariableName("hapticMirrorSample");
     const output = this.color.associatedVariableName;
     const position = `${this.worldPosition.associatedVariableName}.xyz`;
     const parameters = this.parameters;
@@ -180,10 +180,10 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
     code += `${state._declareLocalVar(sampled, Types.Vector4)} = ${state._generateTextureSample(uv, this.sampler)};\n`;
     code += `#ifdef ${this.environmentDefine}\n`;
     // The environment along the view ray mirrored across the surface, in linear colour.
-    const ray = state._getFreeVariableName("slateMirrorRay");
-    const environment = state._getFreeVariableName("slateMirrorEnvironment");
-    const farthest = state._getFreeVariableName("slateMirrorFarthest");
-    const radiance = state._getFreeVariableName("slateMirrorRadiance");
+    const ray = state._getFreeVariableName("hapticMirrorRay");
+    const environment = state._getFreeVariableName("hapticMirrorEnvironment");
+    const farthest = state._getFreeVariableName("hapticMirrorFarthest");
+    const radiance = state._getFreeVariableName("hapticMirrorRadiance");
     const form = this.environmentForm, box = this.environmentBoxPosition, half = `(${this.environmentBoxSize} * 0.5)`;
     const lookup = `textureCubeLodEXT(${this.environmentSampler}, ${ray}, ${box}.w)`;
     code += `${state._declareLocalVar(ray, Types.Vector3)} = reflect(normalize(${position} - ${this.eye}.xyz), ${this.normal});\n`;
@@ -199,13 +199,13 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
     code += `if (${form}.w > 1.5) { ${environment} = fromRGBD(${radiance}); } else if (${form}.w > 0.5) { ${environment} = ${toLinear}(${environment}); }\n}\n`;
     if (this.builtIn) {
       // In the reflection's own colour space: a display-encoded one holds what a draw clamps and encodes.
-      const open = state._getFreeVariableName("slateMirrorOpen");
+      const open = state._getFreeVariableName("hapticMirrorOpen");
       code += `if (${parameters}.y > 0.5) { ${environment} = ${toGamma}(clamp(${environment}, ${vec3}(0.0), ${vec3}(1.0))); }\n`;
       code += `${state._declareLocalVar(open, Types.Float)} = mix(1.0, ${sampled}.a, ${parameters}.x);\n`;
       code += `${output} = (${sampled}.rgb * ${parameters}.x + ${environment} * ${open}) * ${this.tint};\n`;
     } else {
       // Linear, as graph colours are: the drawn part is decoded as its own colour, not as its coverage-weighted one.
-      const cover = state._getFreeVariableName("slateMirrorCover");
+      const cover = state._getFreeVariableName("hapticMirrorCover");
       code += `${state._declareLocalVar(cover, Types.Float)} = (1.0 - ${sampled}.a) * ${parameters}.x;\n`;
       code += `${output} = ${sampled}.rgb / max(${cover}, 1e-4);\n`;
       code += `if (${parameters}.y > 0.5) { ${output} = ${toLinear}(${output}); ${environment} = min(${environment}, ${vec3}(1.0)); }\n`;

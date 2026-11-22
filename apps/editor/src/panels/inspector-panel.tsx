@@ -67,6 +67,7 @@ import {
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
 import { isDataGraphNode } from "../lib/data-graph";
 import { isNumericOperatorNode } from "@haptic/scripting-nodes";
+import { MATH_EXPRESSION_NODE_ID } from "@haptic/scripting";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { useCustomEventRename } from "./use-custom-event-rename";
 import { useClassGraphs } from "../lib/use-class-graphs";
@@ -278,6 +279,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
       node.type === "tags.select" ||
       // Operand types follow the wires, which the saved node may not hold yet.
       isNumericOperatorNode(node.type) ||
+      node.type === MATH_EXPRESSION_NODE_ID ||
       !Array.isArray(node.data.__pins) ||
       node.data.__pins.length === 0);
   // Reuse editor metadata when present. Loaded graphs without pins share one

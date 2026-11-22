@@ -144,7 +144,7 @@ export function enableOverlayVisualMaterial(mesh: AbstractMesh): void {
 /** Shared Standard materials bind component multipliers per draw, without editing their color or alpha. */
 class OverlayVisualStylePlugin extends MaterialPluginBase {
   constructor(material: StandardMaterial) {
-    super(material, "SlateOverlayVisualStyle", 220, { SLATE_OVERLAY_STYLE: false }, true, false);
+    super(material, "HapticOverlayVisualStyle", 220, { HAPTIC_OVERLAY_STYLE: false }, true, false);
     this.registerForExtraEvents = true;
     this._enable(true);
     const needAlphaBlending = material.needAlphaBlendingForMesh.bind(material);
@@ -155,20 +155,20 @@ class OverlayVisualStylePlugin extends MaterialPluginBase {
   }
   override isCompatible(): boolean { return true; }
   override prepareDefines(defines: MaterialDefines, _scene: Scene, mesh: AbstractMesh): void {
-    defines.SLATE_OVERLAY_STYLE = bindings.has(mesh);
+    defines.HAPTIC_OVERLAY_STYLE = bindings.has(mesh);
   }
   override hardBindForSubMesh(buffer: UniformBuffer, _scene: Scene, _engine: unknown, subMesh: SubMesh): void {
     const { opacity, tint } = overlayVisualStyle(subMesh.getMesh());
-    buffer.updateFloat4("slateOverlayTint", tint[0], tint[1], tint[2], tint[3] * opacity);
+    buffer.updateFloat4("hapticOverlayTint", tint[0], tint[1], tint[2], tint[3] * opacity);
   }
   override getUniforms() {
     return {
-      ubo: [{ name: "slateOverlayTint", size: 4, type: "vec4" }],
-      fragment: this._material.getScene().getEngine().supportsUniformBuffers ? undefined : "uniform vec4 slateOverlayTint;",
+      ubo: [{ name: "hapticOverlayTint", size: 4, type: "vec4" }],
+      fragment: this._material.getScene().getEngine().supportsUniformBuffers ? undefined : "uniform vec4 hapticOverlayTint;",
     };
   }
   override getCustomCode(type: string) {
     if (type !== "fragment") return null;
-    return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: "\n#ifdef SLATE_OVERLAY_STYLE\ncolor *= slateOverlayTint;\n#ifdef PREMULTIPLYALPHA\ncolor.rgb *= slateOverlayTint.a;\n#endif\n#endif\n" };
+    return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: "\n#ifdef HAPTIC_OVERLAY_STYLE\ncolor *= hapticOverlayTint;\n#ifdef PREMULTIPLYALPHA\ncolor.rgb *= hapticOverlayTint.a;\n#endif\n#endif\n" };
   }
 }

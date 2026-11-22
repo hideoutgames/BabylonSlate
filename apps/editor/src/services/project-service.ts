@@ -74,11 +74,8 @@ import {
   encodePluginSettingsDocument,
   normalizePluginSettings,
   stableStringify,
-  decodeHasset,
-  encodeHasset,
   carryStoredChunks,
   audioReverbChunk,
-  isCarriedChunk,
   AUDIO_REVERB_CHUNK_ID,
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   DOCUMENT_CHUNK_ID,
@@ -115,6 +112,7 @@ import {
   type ProjectTreeFile,
   type OwnAssetWrite,
 } from "@haptic/assets";
+import { decodeHasset, encodeHasset, isCarriedChunk } from "@haptic/assets/hasset";
 import { runImportOffMainThread } from "@haptic/assets/import-worker-client";
 import { isTestModeEnabled, TEST_PROJECT_NAME } from "@haptic/vfs";
 import { NAVMESH_CHUNK_ID, navmeshChunk } from "@haptic/navigation/chunk";

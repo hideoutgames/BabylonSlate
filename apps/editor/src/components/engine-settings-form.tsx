@@ -758,7 +758,7 @@ export function EngineSettingsForm({
             />
           </Field>
           <Field className="settings-field">
-            <LabelHint hint="Stops the oldest voice when the limit is reached.">
+            <LabelHint hint="At the limit the least audible sound stops; 3D sounds go before music and UI.">
               <FieldLabel htmlFor="setting-audio-max-voices">
                 Max Concurrent Voices
               </FieldLabel>

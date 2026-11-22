@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, createDefaultSceneLayer, createDefaultSceneSettings } from "@haptic/core";
-import { generateNavMesh } from "@haptic/navigation";
+import { generateNavMesh } from "@haptic/navigation/bake";
 import * as physics from "@haptic/physics";
 import { createInProcessRuntime } from "./driver";
 import { runtimeOptionsFromLoadControl } from "./play-load";

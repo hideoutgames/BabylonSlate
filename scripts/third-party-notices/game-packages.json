@@ -2,16 +2,12 @@
   "@babylonjs/core",
   "@babylonjs/havok",
   "@babylonjs/loaders",
-  "@babylonjs/serializers",
   "@capacitor/core",
   "@capacitor/filesystem",
   "@capacitor/synapse",
   "@dimforge/rapier2d-deterministic-compat",
-  "@noble/hashes",
   "@recast-navigation/core",
-  "@recast-navigation/generators",
   "@recast-navigation/wasm",
   "earcut",
-  "meshoptimizer",
-  "zod"
+  "meshoptimizer"
 ]

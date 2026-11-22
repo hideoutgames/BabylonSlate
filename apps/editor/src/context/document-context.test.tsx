@@ -26,7 +26,7 @@ import {
 } from "@haptic/vfs";
 import { MANUAL_SOURCE_CONTROL, signedInHosts } from "../testing/source-control-hosts";
 import { FakeLockProvider } from "@haptic/source-control";
-import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
+import { createFakeWebLocks } from "@haptic/vfs/test-support/fake-web-locks";
 import { AUDIO_REVERB_CHUNK_ID, appendJournalLines, readJournalLines, sealJournalForRecovery } from "@haptic/assets";
 import { SetActorTransformCommand, SetSceneNameCommand, commandToJournalPayload, resolveJournalLines, serializeJournalLine } from "@haptic/edit";
 import { UndoHistoryNotice } from "../components/undo-history-notice";

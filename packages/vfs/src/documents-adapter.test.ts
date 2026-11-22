@@ -3,6 +3,7 @@ import { SourceRevisionChangedError } from "@haptic/core";
 import { DocumentsStorageAdapter } from "./documents-adapter";
 import { DERIVED_STORAGE_ROOT, LIBRARY_FOLDERS } from "./library-folders";
 import { createMountedProjectStorage } from "./mounted-storage";
+import type { NativeBinaryBridge } from "./native-binary-bridge";
 import {
   createFakeDocumentsFs,
   type FakeDocumentsFs,
@@ -14,7 +15,7 @@ describe("DocumentsStorageAdapter", () => {
 
   beforeEach(() => {
     fs = createFakeDocumentsFs();
-    storage = new DocumentsStorageAdapter(fs);
+    storage = new DocumentsStorageAdapter({ fs });
   });
 
   it("does not recreate a deleted project when opening a recent handle", async () => {
@@ -46,7 +47,7 @@ describe("DocumentsStorageAdapter", () => {
     await storage.writeBinary("blob.bin", new Uint8Array([1, 2, 3]));
     await storage.releaseFolder();
 
-    const reopened = new DocumentsStorageAdapter(fs);
+    const reopened = new DocumentsStorageAdapter({ fs });
     await reopened.openKnownFolder({
       id: "documents:A.hproject",
       name: "A.hproject",
@@ -74,19 +75,27 @@ describe("DocumentsStorageAdapter", () => {
     expect(write).toHaveBeenCalledTimes(3);
   });
 
-  it.each(["writeText", "writeBinary"] as const)("keeps the old file whole and leaves no staged file when %s fails part way", async (method) => {
-    await storage.openDocumentsProject("Atomic.hproject");
-    await storage.writeText("project.json", "old");
-    const write = fs.writeFile.bind(fs);
-    // A full disk: the first bytes land, then the write fails.
-    vi.spyOn(fs, "writeFile").mockImplementation(async (options) => {
-      await write({ ...options, data: options.encoding ? options.data.slice(0, 1) : btoa("n") });
-      throw Object.assign(new Error("No space left on device"), { code: "OS-PLUG-FILE-0013" });
-    });
-    const replacement = method === "writeText" ? storage.writeText("project.json", "new contents") : storage.writeBinary("project.json", new TextEncoder().encode("new contents"));
-    await expect(replacement).rejects.toThrow(/space/);
-    expect(await storage.readText("project.json")).toBe("old");
-    expect([...fs.tree.keys()].filter((key) => key.startsWith("BabylonSlate/projects/Atomic.hproject/"))).toEqual(["BabylonSlate/projects/Atomic.hproject/project.json"]);
+  it.each([
+    ["the staged write fails", "writeFile"],
+    ["the move into place fails", "rename"],
+  ] as const)("keeps the previous file and leaves no staged file when %s", async (_case, step) => {
+    await storage.openDocumentsProject("Game");
+    await storage.writeText("project.json", "saved");
+    await storage.writeBinary("asset.bin", new Uint8Array([1, 2]));
+    const failure = new Error("Device storage full");
+    const original = fs[step].bind(fs) as (options: never) => Promise<unknown>;
+    fs[step] = vi.fn(async (options: never) => {
+      // A partial staged file exists when the native write fails part-way.
+      if (step === "writeFile") await original(options);
+      throw failure;
+    }) as never;
+
+    await expect(storage.writeText("project.json", "half")).rejects.toBe(failure);
+    await expect(storage.writeBinary("asset.bin", new Uint8Array([9]))).rejects.toBe(failure);
+
+    expect(await storage.readText("project.json")).toBe("saved");
+    expect(await storage.readBinary("asset.bin")).toEqual(new Uint8Array([1, 2]));
+    expect([...fs.tree.keys()].filter((path) => path.endsWith(".tmp"))).toEqual([]);
   });
 
   describe("a project.json replacement a killed app left half done", () => {
@@ -95,14 +104,14 @@ describe("DocumentsStorageAdapter", () => {
     const MARKER = ".haptic-7c9e6679-7425-40de-944b-e07fc1f90ae7.tmp";
     const text = (value: string) => new TextEncoder().encode(value);
 
-    /** The state a kill leaves between iOS's rename removing project.json and moving the staged file: the new bytes and their marker. */
+    /** Without the binary transport: the state a kill leaves between Capacitor's iOS rename removing project.json and moving the staged file. */
     async function killedMidRename(projectJson: string | null) {
       await storage.openDocumentsProject("Killed.hproject");
       await storage.writeText("project.json", "old");
       fs.tree.set(`${ROOT}/${STAGED}`, { kind: "file", data: text("new") });
       fs.tree.set(`${ROOT}/${MARKER}`, { kind: "file", data: text(JSON.stringify({ target: "project.json", staged: STAGED })) });
       if (projectJson === null) fs.tree.delete(`${ROOT}/project.json`);
-      const reopened = new DocumentsStorageAdapter(fs);
+      const reopened = new DocumentsStorageAdapter({ fs });
       await reopened.openKnownFolder({ id: "documents:Killed.hproject", name: "Killed.hproject", tier: "documents" });
       return reopened;
     }
@@ -127,17 +136,16 @@ describe("DocumentsStorageAdapter", () => {
       expect(write).toHaveBeenCalledTimes(2);
       expect([...fs.tree.keys()].filter((key) => key.startsWith("BabylonSlate/projects/Clean.hproject/"))).toEqual(["BabylonSlate/projects/Clean.hproject/project.json"]);
     });
-  });
 
-  it("replaces a file through a staged sibling it renames into place", async () => {
-    await storage.openDocumentsProject("Staged.hproject");
-    await storage.writeText("project.json", "old");
-    const rename = vi.spyOn(fs, "rename");
-    await storage.writeBinary("project.json", new TextEncoder().encode("new"));
-    expect(await storage.readText("project.json")).toBe("new");
-    expect(rename).toHaveBeenCalledTimes(1);
-    expect(rename.mock.calls[0]![0].from).toMatch(/^BabylonSlate\/projects\/Staged\.hproject\/\.haptic-[0-9a-f-]{36}\.tmp$/);
-    expect((await storage.readdir("")).map((entry) => entry.name)).toEqual(["project.json"]);
+    it("writes no marker through the binary transport, whose native commit is one rename with no gap", async () => {
+      const bridgeWrite = vi.fn(async () => true);
+      const bridged = new DocumentsStorageAdapter({ fs, bridge: { write: bridgeWrite } as unknown as NativeBinaryBridge });
+      await bridged.openDocumentsProject("Bridged.hproject");
+      const write = vi.spyOn(fs, "writeFile");
+      await bridged.writeText("project.json", "saved");
+      expect(bridgeWrite).toHaveBeenCalledOnce();
+      expect(write).not.toHaveBeenCalled();
+    });
   });
 
   it("round-trips a payload larger than one base64 encoding chunk", async () => {

@@ -19,12 +19,12 @@ import type { WaterNodeSurface } from "./water-node-blocks";
 
 /** Flags `mesh` as a water surface (`createWaterMesh`). */
 export function markWaterSurfaceMesh(mesh: AbstractMesh): void {
-  mesh.metadata = { ...(mesh.metadata ?? {}), slateWater: true };
+  mesh.metadata = { ...(mesh.metadata ?? {}), hapticWater: true };
 }
 
 /** Whether `mesh` is a water surface (`markWaterSurfaceMesh`), built-in or drawn by a Custom Material. */
 export function isWaterSurfaceMesh(mesh: AbstractMesh): boolean {
-  return (mesh.metadata as { slateWater?: unknown } | null)?.slateWater === true;
+  return (mesh.metadata as { hapticWater?: unknown } | null)?.hapticWater === true;
 }
 
 /**
@@ -61,7 +61,7 @@ export type Surface = {
   /** Local X/Z by which the last recentre moved the grid (shifts sub-mesh bounds). */
   shift: Float64Array;
   /**
-   * Local X/Z the vertex shader adds to the uploaded `positions` (`slateWaterGridOffset`): a Global grid on the GPU path
+   * Local X/Z the vertex shader adds to the uploaded `positions` (`hapticWaterGridOffset`): a Global grid on the GPU path
    * uploads its lines relative to the snapped centre and this is the centre, so a recentre uploads no vertex data. Zero
    * for every other surface, whose `positions` are the rest points themselves.
    */
@@ -113,7 +113,7 @@ export type Surface = {
   blend: SurfaceBlend | null;
   /**
    * Per vertex while blending: (swell height scale, Gerstner offset scale, ownership margin, colour share of partner 0)
-   * as the `slateWaterBlend` attribute, the colour shares of partners 1 and 2 (`slateWaterBlendColors`), and the
+   * as the `hapticWaterBlend` attribute, the colour shares of partners 1 and 2 (`hapticWaterBlendColors`), and the
    * blended union bank distance, depth, current (x, y, z) and world rest height.
    */
   blendData: Float32Array; blendColors: Float32Array; blendRest: Float32Array;

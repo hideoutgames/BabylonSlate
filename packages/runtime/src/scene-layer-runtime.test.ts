@@ -14,12 +14,27 @@ import {
   createDefaultSceneLayer,
   createText2DComponent,
   eulerDegreesToQuaternion,
+  normalizeSceneLayer,
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@haptic/core";
 import type { Actor } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
 import { createPlayBootCoordinator } from "./play-boot";
+
+// Counts the passes over Scene Layer documents; the real normalization still runs.
+vi.mock("@haptic/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/core")>();
+  return { ...actual, normalizeSceneLayer: vi.fn(actual.normalizeSceneLayer) };
+});
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
 
 /** A Custom canvas of `width` × `height` layer units at 100 Pixels Per Unit, Root Center, fitted to the screen. */
 function customCanvas(width: number, height: number): SceneLayerCanvasDesign {
@@ -92,6 +107,31 @@ function softwareLayerRuntime(sceneLayerLibrary: Record<string, SerializedSceneL
   runtime.realizePlayWorld();
   return runtime;
 }
+
+describe("Scene Layer library documents", () => {
+  it("creates every instance from the shared normalized document without normalizing or changing it", () => {
+    const authored = normalizeSceneLayer(physicsLayer("Falling", [0, -9.81, 0], [fallingChip("chip", 2)]));
+    const pristine = structuredClone(authored);
+    // A write to the shared document throws: every instance only reads it.
+    const hud = deepFreeze(authored);
+    vi.mocked(normalizeSceneLayer).mockClear();
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
+      playScene: worldScene("A", [{ assetGuid: "hud", zOrder: 0, enabled: true }]), sceneLayerLibrary: { hud } });
+    runtime.realizePlayWorld();
+    const scripted = runtime.createSceneLayer("hud", 1);
+    const world = runtime.getWorld();
+    expect(world.getSceneLayers().map((layer) => layer.ownerSceneGuid === null)).toEqual([false, true]);
+    runtime.start();
+    for (let i = 0; i < 30; i++) runtime.tick();
+    expect(world.findActor(inLayer(scripted, "chip"))!.transform.position.y).toBeLessThan(1.5);
+    runtime.removeSceneLayer(scripted!.guid);
+    const again = runtime.createSceneLayer("hud", 2);
+    expect(world.findActor(inLayer(again, "chip"))!.transform.position.y).toBeCloseTo(2);
+    expect(normalizeSceneLayer).not.toHaveBeenCalled();
+    expect(hud).toEqual(pristine);
+    runtime.stop();
+  });
+});
 
 describe("Scene Layer physics worlds", () => {
   it("simulates two layers with different gravity independently", () => {
