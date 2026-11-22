@@ -129,6 +129,32 @@ describe("the retained frustum cull", () => {
     expect(work()).toMatchObject({ retainedFrames: 1, stockFrames: stock, listed: RETAINED_CULL_MIN_MESHES });
   });
 
+  it("hands a list most of which moves every frame to Babylon's loop, and takes it back once it is calm", async () => {
+    verifyRetainedFrustumCull(false);
+    const { box, fill, frame, settle, work } = await world();
+    fill();
+    // 300 of the 812 meshes, over `BUSY_SHARE` of the list, move each frame.
+    const movers = Array.from({ length: 300 }, (_, index) => box(`mover ${index}`, (index % 20) - 10, 0, 10 + Math.floor(index / 20), 0.2));
+    await settle();
+    const before = work();
+    for (let step = 0; step < 3; step++) {
+      for (const mover of movers) mover.position.y = step % 2 ? 0.1 : 0;
+      await frame();
+    }
+    expect(work().busyReleases).toBe(before.busyReleases + 1);
+    const released = work().retainedFrames;
+    for (let step = 0; step < 8; step++) {
+      for (const mover of movers) mover.position.y = step % 2 ? 0.1 : 0;
+      await frame();
+    }
+    // Babylon's loop culled the waiting frames.
+    expect(work().retainedFrames).toBe(released);
+    for (let step = 0; step < 12; step++) await frame();
+    // The look after the wait found it calm: kept again.
+    expect(work().retainedFrames).toBe(released + 12);
+    expect(work().busyReleases).toBe(before.busyReleases + 1);
+  });
+
   it("follows a frozen mesh moved by a new frozen matrix and by a re-freeze, as Play's snapshots move it", async () => {
     const { box, frame, settle } = await world();
     const mover = box("mover", 0);

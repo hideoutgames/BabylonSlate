@@ -164,6 +164,8 @@ export interface RenderChangeReader {
    * (visiting none) when the reader fell too far behind and lost some: it must read the state it follows in full.
    */
   drain(visit: (node: Node, kinds: number) => void): boolean;
+  /** Whether a drain would visit anything (or start over). */
+  pending(): boolean;
   dispose(): void;
 }
 
@@ -179,6 +181,10 @@ class Reader implements RenderChangeReader {
     this.journal = journal;
     this.kinds = kinds;
     this.cursor = journal.end;
+  }
+
+  pending(): boolean {
+    return this.overflowed || this.cursor < this.journal.end;
   }
 
   drain(visit: (node: Node, kinds: number) => void): boolean {

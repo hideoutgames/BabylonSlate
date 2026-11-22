@@ -57,6 +57,17 @@ import { followBounds, journalFollows, openRenderChangeReader, readBounds, Rende
  */
 export const RETAINED_CULL_MIN_MESHES = 512;
 
+/**
+ * A frame whose drain finds more than this share of the list's bounds changed (most meshes moving each frame) costs more
+ * kept than Babylon's loop costs: after `BUSY_FRAMES` such frames in a row the copies are released (the journal stops
+ * recording for them) and Babylon's loop culls for `FIRST_BACK_OFF` frames, then the copies are read again to look;
+ * each look that finds the list still busy doubles the wait, up to `MAX_BACK_OFF`.
+ */
+export const BUSY_SHARE = 0.35;
+const BUSY_FRAMES = 3;
+const FIRST_BACK_OFF = 8;
+const MAX_BACK_OFF = 256;
+
 /** One list place in this many is read again in full each pass (power of two). */
 const HEAL_INTERVAL = 32;
 
@@ -152,6 +163,8 @@ export interface RetainedFrustumCullWork {
   fieldReads: number;
   /** Membership or order changes matched (`sync`), and full reads after a journal the reader fell behind on. */
   resyncs: number;
+  /** Times the copies were released because the list's bounds changed for most of it (`BUSY_SHARE`). */
+  busyReleases: number;
   fullReads: number;
   /** List places read again by the rotating check, and copies it found stale (missed notifications; must stay 0). */
   checks: number;
@@ -187,7 +200,7 @@ const ALL_OUT = 0;
 export class RetainedFrustumCull {
   readonly work: RetainedFrustumCullWork = {
     retainedFrames: 0, stockFrames: 0, listed: 0, tested: 0, live: 0, flagReads: 0, boundsReads: 0, fieldReads: 0,
-    resyncs: 0, fullReads: 0, checks: 0, heals: 0,
+    resyncs: 0, busyReleases: 0, fullReads: 0, checks: 0, heals: 0,
   };
   private readonly scene: Scene;
   private reader: RenderChangeReader | null = null;
@@ -223,6 +236,11 @@ export class RetainedFrustumCull {
   readonly output: AbstractMesh[] = [];
   private readonly planes = new Float64Array(24);
   private healPhase = 0;
+  /** Bounds marked stale by this frame's drains; busy frames in a row; the current wait and the frames left of it. */
+  private changed = 0;
+  private busyFrames = 0;
+  private backOff = 0;
+  private waitLeft = 0;
   private readonly removed: Observer<AbstractMesh>;
   private readonly disposed: Observer<Scene>;
 
@@ -299,8 +317,14 @@ export class RetainedFrustumCull {
       else this.drain();
       return false;
     }
+    if (!verifying && this.waitLeft > 0) {
+      this.waitLeft -= 1;
+      return false;
+    }
     if (!this.reader) this.open();
+    this.changed = 0;
     this.drain();
+    if (!verifying && this.busy(input.length)) return false;
     if (!this.sync(input) || scene._activeMeshesFrozen) return false;
     task.outputObjectList.particleSystems = task.objectList.particleSystems;
     task.outputObjectList.spriteManagers = task.objectList.spriteManagers;
@@ -379,7 +403,7 @@ export class RetainedFrustumCull {
       if (mesh.alwaysSelectAsActiveMesh) return true;
       const shows = mesh.isInFrustum(frustum);
       // Its lazy update rewrote a bounding info other meshes hold: what that noted is read in this same pass.
-      this.drain();
+      if (this.reader?.pending()) this.drain();
       return shows;
     }
     if (state & BOUNDS_STALE || checked) {
@@ -394,7 +418,7 @@ export class RetainedFrustumCull {
       } else this.checkBounds(slot, mesh, info);
       // The read may have rewritten, or newly shared, a bounding info other meshes hold: Babylon's loop reads their new
       // values later in this same pass, so what that noted is read now, not at the next frame.
-      this.drain();
+      if (this.reader?.pending()) this.drain();
       work.tested += 1;
       // The copy is the mesh's values at this instant, shared or not.
       return this.answer(this.verdict(slot), mesh.cullingStrategy);
@@ -545,11 +569,36 @@ export class RetainedFrustumCull {
     }
   }
 
+  /**
+   * Counts a frame whose drain found more than `BUSY_SHARE` of the list's bounds changed; after `BUSY_FRAMES` in a row,
+   * releases the copies and waits (doubling while each look finds the list still busy). True when released.
+   */
+  private busy(length: number): boolean {
+    if (this.changed <= length * BUSY_SHARE) {
+      this.busyFrames = 0;
+      // A look that found the list calm ends the waiting.
+      if (this.backOff > 0 && this.work.retainedFrames > this.lookedAt + BUSY_FRAMES) this.backOff = 0;
+      return false;
+    }
+    if (++this.busyFrames < BUSY_FRAMES) return false;
+    this.busyFrames = 0;
+    this.backOff = this.backOff === 0 ? FIRST_BACK_OFF : Math.min(this.backOff * 2, MAX_BACK_OFF);
+    this.waitLeft = this.backOff;
+    this.lookedAt = this.work.retainedFrames;
+    this.work.busyReleases += 1;
+    this.release();
+    return true;
+  }
+  private lookedAt = 0;
+
   private readonly visit = (node: Node, kinds: number): void => {
     const slot = this.slotOf.get(node as AbstractMesh);
     if (slot === undefined) return;
     let marks = 0;
-    if (kinds & (RenderChange.Transform | RenderChange.Bounds)) marks |= BOUNDS_STALE;
+    if (kinds & (RenderChange.Transform | RenderChange.Bounds)) {
+      marks |= BOUNDS_STALE;
+      if (!(this.states[slot]! & BOUNDS_STALE)) this.changed += 1;
+    }
     if (kinds & (RenderChange.Transform | RenderChange.Visibility | RenderChange.Dispatch | RenderChange.Ready)) marks |= FLAGS_STALE;
     // A re-parent can change what `isVisible` inherits from, and a new geometry what the test would load.
     if (kinds & (RenderChange.Enabled | RenderChange.Geometry)) marks |= NEW | FLAGS_STALE;
