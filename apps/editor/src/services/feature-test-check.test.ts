@@ -154,6 +154,9 @@ function fakeEditor(
 
 const scene = (name: string) => ({ name, path: `assets/${name}.scene.hasset` });
 
+/** The `worlddebug` parts off by default, as `worldDebugFingerprint` lists them when switched (`<part> on`). */
+const WORLD_DEFAULT_OFF: ReadonlySet<string> = new Set(["mergedmarches", "pairedblurs"]);
+
 const REMOVE_ONE: FeatureTestBreakdownInfo = { method: "remove-one", tier: "medium", ab: false, warmMinutes: null, passes: [], notes: [] };
 
 /**
@@ -179,7 +182,7 @@ function fingerprintAfter(
   let backbufferDepth = "kept";
   const waterOff = new Set<string>();
   const shadowOff = new Set<string>();
-  const worldOff = new Set<string>();
+  const worldSwitched = new Set<string>();
   for (const line of commands) {
     const [name, first, second, third] = line.split(" ");
     if (name === "quality") {
@@ -196,7 +199,10 @@ function fingerprintAfter(
     else if (name === "backbufferdiscard") backbufferDepth = first === "on" ? "discarded" : "kept";
     else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
     else if (name === "shadowdebug") { if (second === "off") shadowOff.add(first!); else shadowOff.delete(first!); }
-    else if (name === "worlddebug") { if (second === "off") worldOff.add(first!); else worldOff.delete(first!); }
+    else if (name === "worlddebug") {
+      // Switched from its default: off for most parts, on for those off by default.
+      if (second === (WORLD_DEFAULT_OFF.has(first!) ? "on" : "off")) worldSwitched.add(first!); else worldSwitched.delete(first!);
+    }
   }
   const quality = session.effective();
   return {
@@ -206,7 +212,8 @@ function fingerprintAfter(
     captures: captures ? "on" : "suspended",
     "water.debug": WATER_DEBUG_PARTS.filter((part) => waterOff.has(part)).join(",") || "none",
     "shadows.debug": SHADOW_DEBUG_PARTS.filter((part) => shadowOff.has(part)).join(",") || "none",
-    "world.debug": WORLD_DEBUG_PARTS.filter((part) => worldOff.has(part)).join(",") || "none",
+    "world.debug": WORLD_DEBUG_PARTS.filter((part) => worldSwitched.has(part))
+      .map((part) => WORLD_DEFAULT_OFF.has(part) ? `${part} on` : part).join(",") || "none",
     "presentation.framesInFlight": framesInFlight,
     "msaa.discard": discard ? "on" : "off",
     layers: layers ? "shown" : "hidden",
@@ -1205,8 +1212,9 @@ describe("Profile", { timeout: 30_000 }, () => {
     const plan = featureTestProfilePlan(SESSION);
     const splits = ["sun shadow passes off", "local shadow passes off", "shadow tiles half"];
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["samplers off", "world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once"]],
-      ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "geometry pass drawn twice", "geometry pass drawn twice, scissored", "world drawn once"]],
+      ["light", ['possess "Profile Light Camera"'], ["samplers off", "world hidden", "shadow passes off", ...splits, "geometry effects off", "world drawn once", "paired blurs on"]],
+      ["heavy", ['possess "Profile Heavy Camera"'], ["world hidden", "shadow passes off", "geometry effects off", "geometry pass drawn twice", "geometry pass drawn twice, scissored", "world drawn once",
+        "merged marches on", "paired blurs on", "merged marches + paired blurs on"]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["captures off", "mirrors environment", "world drawn once"]],
     ]);
     const step = (view: string, label: string) => plan.views.find((entry) => entry.name === view)!.steps.find((entry) => entry.label === label)!;
@@ -1225,6 +1233,17 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(plan.views.flatMap((view) => view.steps).filter((entry) => entry.adds).map((entry) => entry.label))
       .toEqual(["geometry pass drawn twice", "geometry pass drawn twice, scissored"]);
     expect(step("heavy", "geometry effects off").commands).toHaveLength(4);
+    // The pass-joining switches, off by default, turned on for their windows and off again after: a saving each, the
+    // pair a share of both.
+    expect(["merged marches on", "paired blurs on", "merged marches + paired blurs on"].map((label) => step("heavy", label))).toMatchObject([
+      { commands: ["worlddebug mergedmarches on"], restore: ["worlddebug mergedmarches off"], fields: ["world.debug"], overlaps: true },
+      { commands: ["worlddebug pairedblurs on"], restore: ["worlddebug pairedblurs off"], fields: ["world.debug"], overlaps: true },
+      {
+        commands: ["worlddebug mergedmarches on", "worlddebug pairedblurs on"], restore: ["worlddebug mergedmarches off", "worlddebug pairedblurs off"],
+        fields: ["world.debug"], overlaps: true,
+      },
+    ]);
+    expect(step("light", "paired blurs on")).toBe(step("heavy", "paired blurs on"));
     expect(step("light", "world hidden")).toMatchObject({
       commands: ["worlddebug world off", "shadowdebug passes off", "rendertargets off", "postprocessing off"],
       restore: ["worlddebug world on", "shadowdebug passes on", "rendertargets on", "postprocessing on"],
@@ -1256,8 +1275,8 @@ describe("Profile", { timeout: 30_000 }, () => {
       "light baseline 1", "light samplers off", "light baseline 2", "light world hidden", "light baseline 3", "light world hidden",
       "light baseline 4", "light shadow passes off", "light baseline 5", "light shadow passes off", "light baseline 6",
     ]);
-    // The 70 rows the reference states: light 16 baselines and 15 steps, heavy 13 and 12, mirror 7 and 6, and the drift.
-    expect(sequence).toHaveLength(70);
+    // The 86 rows the reference states: light 18 baselines and 17 steps, heavy 19 and 18, mirror 7 and 6, and the drift.
+    expect(sequence).toHaveLength(86);
     // Only a view's first baseline moves the camera; every step sits between two baselines of its own view.
     expect(sequence.filter((entry) => entry.commands.some((line) => line.startsWith("possess"))).map((entry) => entry.label))
       .toEqual(["light baseline 1", "heavy baseline 1", "mirror baseline 1", "heavy drift"]);
