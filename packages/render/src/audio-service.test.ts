@@ -507,6 +507,28 @@ describe("AudioService", () => {
     expect(AUDIO_MAX_CONCURRENT_VOICES).toBe(32);
   });
 
+  it("stops hearing a shared cache's evictions once disposed", async () => {
+    const cache = new AudioBufferCache({ byteCeiling: 50 });
+    const earlier = new FakeAudioPlaybackBackend();
+    new AudioService({ backend: earlier, cache }).dispose();
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend, cache });
+    service.setLibrary(library({ audio: { a: createDefaultAudioPayload(), b: createDefaultAudioPayload() } }));
+    service.setSourceBytes("a", new Uint8Array(30));
+    service.setSourceBytes("b", new Uint8Array(30));
+    await service.unlockAsync();
+    service.handleCommand({ type: "playSound", assetGuid: "a", volume: 1, frameId: 1, voiceId: "va" });
+    await service.flush();
+    service.handleCommand({ type: "stopSound", voiceId: "va" });
+    await service.flush();
+    service.handleCommand({ type: "playSound", assetGuid: "b", volume: 1, frameId: 2, voiceId: "vb" });
+    await service.flush();
+    // The live session releases the evicted clip; the disposed one is no longer reachable from the cache.
+    expect(backend.disposedBuffers).toContain(audioClipCacheKey("a", "source"));
+    expect(earlier.disposedBuffers).toEqual([]);
+    service.dispose();
+  });
+
   it("disposes the backend buffer when LRU evicts an unpinned clip", async () => {
     const cache = new AudioBufferCache({ byteCeiling: 50 });
     const backend = new FakeAudioPlaybackBackend();

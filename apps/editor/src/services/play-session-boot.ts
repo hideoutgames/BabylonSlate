@@ -139,6 +139,9 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
     sceneNavmeshBytes: Object.fromEntries(options.sceneNavmeshBytes ?? []),
+    ...(options.sceneComponentChunks && options.sceneComponentChunks.size > 0
+      ? { sceneComponentChunks: Object.fromEntries(options.sceneComponentChunks) }
+      : {}),
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,

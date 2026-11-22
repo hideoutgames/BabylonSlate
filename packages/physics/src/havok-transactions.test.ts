@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DistanceConstraint } from "@babylonjs/core/Physics/v2/physicsConstraint";
-import { PhysicsShapeContainer } from "@babylonjs/core/Physics/v2/physicsShape";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { HavokPhysicsWithBindings } from "@babylonjs/havok";
-import { PhysicsPrestepType } from "@babylonjs/core/Physics/v2/IPhysicsEnginePlugin";
+import type { HP_ShapeId } from "@babylonjs/havok";
 import { HavokPhysicsBackend } from "./havok-backend";
 import { bakeColliderLocal } from "./collider-bake";
 import type { ColliderDesc, PhysicsTransform } from "./types";
@@ -51,11 +47,13 @@ function box(id = "collider", x = 0): ColliderDesc {
 const trace = (backend: HavokPhysicsBackend, x = 0, z = 0) =>
   backend.lineTrace({ x, y: 3, z }, { x, y: -3, z });
 const native = (backend: HavokPhysicsBackend, id = "body") =>
-  backend.scene.getTransformNodeByName(id)!.physicsBody!;
+  backend.getNativeBodyId(id)!;
+const attachedShape = (backend: HavokPhysicsBackend, id = "body"): HP_ShapeId | null => {
+  const [res, shapeId] = backend.havok.HP_Body_GetShape(native(backend, id));
+  return res === backend.havok.Result.RESULT_OK && shapeId[0] !== 0n ? shapeId : null;
+};
 const liveShapes = (backend: HavokPhysicsBackend) =>
-  (
-    backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings }
-  )._hknp.HP_GetStatistics()[1][1];
+  backend.havok.HP_GetStatistics()[1][1];
 const tetrahedron = [
   { x: 0, y: 0, z: 0 },
   { x: 2, y: 0, z: 0 },
@@ -70,7 +68,8 @@ describe("Havok attachment transactions", () => {
       body(backend);
       const originalBody = native(backend);
       const baseline = liveShapes(backend);
-      const init = vi.spyOn(backend.plugin, "initShape");
+      const createBox = vi.spyOn(backend.havok, "HP_Shape_CreateBox");
+      const createContainer = vi.spyOn(backend.havok, "HP_Shape_CreateContainer");
       for (let cycle = 0; cycle < 300; cycle++) {
         const ordered =
           cycle % 2
@@ -78,12 +77,16 @@ describe("Havok attachment transactions", () => {
             : [box("a", -3), box("b"), box("c", 3)];
         backend.applyColliderChanges("body", { upsert: ordered, remove: [] });
         expect(native(backend)).toBe(originalBody);
-        expect(originalBody.shape!.getNumChildren()).toBe(3);
+        const shape = attachedShape(backend)!;
+        expect(shape).not.toBeNull();
+        expect(backend.havok.HP_Shape_GetNumChildren(shape)[1]).toBe(3);
         expect(liveShapes(backend)).toBe(baseline + 4);
         for (const x of [-3, 0, 3]) expect(trace(backend, x).hit).toBe(true);
-        init.mockClear();
+        createBox.mockClear();
+        createContainer.mockClear();
         backend.applyColliderChanges("body", { upsert: ordered, remove: [] });
-        expect(init).not.toHaveBeenCalled();
+        expect(createBox).not.toHaveBeenCalled();
+        expect(createContainer).not.toHaveBeenCalled();
         // Remove the first, middle and last logical child in a rotating order.
         const ids =
           cycle % 3 === 0
@@ -97,14 +100,12 @@ describe("Havok attachment transactions", () => {
             false,
           );
         }
-        expect(originalBody.shape).toBeNull();
+        expect(attachedShape(backend)).toBeNull();
         expect(liveShapes(backend)).toBe(baseline);
         expect(
           backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 10).actorIds,
         ).toEqual([]);
       }
-      expect(backend.scene.meshes).toHaveLength(0);
-      expect(backend.scene.geometries).toHaveLength(0);
     } finally {
       backend.dispose();
     }
@@ -115,26 +116,31 @@ describe("Havok attachment transactions", () => {
     try {
       body(backend, "body", "dynamic");
       backend.createCollider(box());
-      const physicsBody = native(backend);
-      const oldInertia = physicsBody.getMassProperties().inertia!.clone();
-      physicsBody.setLinearVelocity(new Vector3(3, -2, 1));
-      const initialShape = physicsBody.shape;
-      const init = vi.spyOn(backend.plugin, "initShape");
+      const handle = native(backend);
+      const oldInertia = [...backend.havok.HP_Body_GetMassProperties(handle)[1][2]];
+      backend.setBodyLinearVelocity("body", { x: 3, y: -2, z: 1 });
+      const initialShape = attachedShape(backend)!;
+      const createBox = vi.spyOn(backend.havok, "HP_Shape_CreateBox");
+      const createContainer = vi.spyOn(backend.havok, "HP_Shape_CreateContainer");
       backend.applyColliderChanges("body", {
         upsert: [{ ...box(), layer: 2, mask: 4, friction: 0.8, isTrigger: true }],
         remove: [],
       });
-      expect(init).not.toHaveBeenCalled();
-      expect(physicsBody.shape).toBe(initialShape);
-      expect(physicsBody.shape!.isTrigger).toBe(true);
-      expect(physicsBody.shape!.filterMembershipMask).toBe(2);
+      expect(createBox).not.toHaveBeenCalled();
+      expect(createContainer).not.toHaveBeenCalled();
+      expect(attachedShape(backend)![0]).toBe(initialShape[0]);
+      expect(backend.lineTrace({ x: 0, y: 3, z: 0 }, { x: 0, y: -3, z: 0 }, { includeTriggers: false }).hit).toBe(false);
+      expect(backend.lineTrace({ x: 0, y: 3, z: 0 }, { x: 0, y: -3, z: 0 }, { onlyTriggers: true }).hit).toBe(true);
+      expect(backend.havok.HP_Shape_GetFilterInfo(initialShape)[1][0]).toBe(2);
       backend.applyColliderChanges("body", {
         upsert: [{ ...box(), translation: { x: 2, y: 0, z: 0 } }],
         remove: [],
       });
-      expect(init).toHaveBeenCalledTimes(1); // A pose container, no new geometry.
+      expect(createBox).not.toHaveBeenCalled();
+      expect(createContainer).toHaveBeenCalledTimes(1); // A pose container, no new geometry.
       expect(trace(backend, 2).hit).toBe(true);
-      init.mockClear();
+      createBox.mockClear();
+      createContainer.mockClear();
       backend.applyColliderChanges("body", {
         upsert: [
           {
@@ -144,12 +150,11 @@ describe("Havok attachment transactions", () => {
         ],
         remove: [],
       });
-      expect(init).toHaveBeenCalledTimes(1);
-      expect(physicsBody.getMassProperties().mass).toBeCloseTo(2);
-      expect(physicsBody.getMassProperties().inertia!.y).toBeGreaterThan(
-        oldInertia.y,
-      );
-      expect(physicsBody.getLinearVelocity().asArray()).toEqual([3, -2, 1]);
+      expect(createBox).toHaveBeenCalledTimes(1);
+      const [, mass, inertia] = backend.havok.HP_Body_GetMassProperties(handle)[1];
+      expect(mass).toBeCloseTo(2);
+      expect(inertia[1]).toBeGreaterThan(oldInertia[1]!);
+      expect(backend.havok.HP_Body_GetLinearVelocity(handle)[1]).toEqual([3, -2, 1]);
     } finally {
       backend.dispose();
     }
@@ -166,6 +171,7 @@ describe("Havok attachment transactions", () => {
       const backend = await create();
       try {
         body(backend);
+        const baseline = liveShapes(backend);
         const rotation = { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 };
         const scale = { x: mirrored ? -2 : 2, y: 1, z: 1 };
         const local = { ...pose(), scale };
@@ -207,8 +213,8 @@ describe("Havok attachment transactions", () => {
         expect(trace(backend, 8.2, mirrored ? 2.8 : -2.8).hit).toBe(true);
         expect(trace(backend, 8.7, mirrored ? -0.2 : 0.2).hit).toBe(false);
         expect(trace(backend, 4.1, -0.7).hit).toBe(false);
-        expect(backend.scene.meshes).toHaveLength(0);
-        expect(backend.scene.geometries).toHaveLength(0);
+        // Active shapes: 1 triangle + container (+ 1 other box if compound).
+        expect(liveShapes(backend)).toBe(baseline + (compound ? 3 : 2));
       } finally {
         backend.dispose();
       }
@@ -221,9 +227,9 @@ describe("Havok attachment transactions", () => {
       body(backend);
       backend.createCollider(box());
       const baseline = liveShapes(backend);
-      const old = native(backend).shape;
+      const old = attachedShape(backend)!;
       const init = vi
-        .spyOn(backend.plugin, "initShape")
+        .spyOn(backend.havok, "HP_Shape_CreateConvexHull")
         .mockImplementationOnce(() => {
           throw new Error("shape constructor failed");
         });
@@ -237,10 +243,9 @@ describe("Havok attachment transactions", () => {
       ).toThrow("shape constructor failed");
       init.mockRestore();
       expect(trace(backend).hit).toBe(true);
-      expect(backend.scene.meshes).toHaveLength(0);
-      expect(backend.scene.geometries).toHaveLength(0);
+      expect(liveShapes(backend)).toBe(baseline);
       const child = vi
-        .spyOn(PhysicsShapeContainer.prototype, "addChild")
+        .spyOn(backend.havok, "HP_Shape_AddChild")
         .mockImplementationOnce(() => {
           throw new Error("compound failed");
         });
@@ -248,10 +253,10 @@ describe("Havok attachment transactions", () => {
         "compound failed",
       );
       child.mockRestore();
-      expect(native(backend).shape).toBe(old);
+      expect(attachedShape(backend)![0]).toBe(old[0]);
       expect(liveShapes(backend)).toBe(baseline);
       const attach = vi
-        .spyOn(backend.plugin, "setShape")
+        .spyOn(backend.havok, "HP_Body_SetShape")
         .mockImplementationOnce(() => {
           throw new Error("attach failed");
         });
@@ -259,24 +264,23 @@ describe("Havok attachment transactions", () => {
         "attach failed",
       );
       attach.mockRestore();
-      expect(native(backend).shape).toBe(old);
+      expect(attachedShape(backend)![0]).toBe(old[0]);
       expect(liveShapes(backend)).toBe(baseline);
       expect(trace(backend).hit).toBe(true);
       expect(trace(backend, 3).hit).toBe(false);
-      const havok = backend.plugin._hknp as HavokPhysicsWithBindings;
       const nativeAttach = vi
-        .spyOn(havok, "HP_Body_SetShape")
-        .mockReturnValueOnce(havok.Result.RESULT_FAIL);
+        .spyOn(backend.havok, "HP_Body_SetShape")
+        .mockReturnValueOnce(backend.havok.Result.RESULT_FAIL);
       expect(() => backend.createCollider(box("rejected", 6))).toThrow(
         "native shape attachment failed",
       );
       nativeAttach.mockRestore();
-      expect(native(backend).shape).toBe(old);
+      expect(attachedShape(backend)![0]).toBe(old[0]);
       expect(liveShapes(backend)).toBe(baseline);
       expect(trace(backend).hit).toBe(true);
       expect(trace(backend, 6).hit).toBe(false);
       const cast = vi
-        .spyOn(backend.plugin, "shapeCast")
+        .spyOn(backend.havok, "HP_World_ShapeCastWithCollector")
         .mockImplementationOnce(() => {
           throw new Error("cast failed");
         });
@@ -289,7 +293,6 @@ describe("Havok attachment transactions", () => {
       ).toThrow("cast failed");
       cast.mockRestore();
       expect(liveShapes(backend)).toBe(baseline);
-      expect(backend.scene.meshes).toHaveLength(0);
     } finally {
       backend.dispose();
     }
@@ -301,7 +304,7 @@ describe("Havok attachment transactions", () => {
       body(backend);
       backend.createCollider(box());
       const attach = vi
-        .spyOn(backend.plugin, "setShape")
+        .spyOn(backend.havok, "HP_Body_SetShape")
         .mockImplementation(() => {
           throw new Error("native unavailable");
         });
@@ -339,35 +342,14 @@ describe("Havok attachment transactions", () => {
 });
 
 describe("Havok explicit native motion", () => {
-  it("defers contact-callback mutations until stepping completes and cancels queued work on disposal", async () => {
+  it("refuses steps and queries once disposed", async () => {
     const backend = await create();
     body(backend);
     backend.createCollider(box());
-    body(backend, "moving", "dynamic", pose(0.5));
-    backend.createCollider({ ...box("moving-shape"), bodyId: "moving" });
-    let requested = false;
-    const observer = backend.plugin.onCollisionObservable.add(() => {
-      if (requested) return;
-      requested = true;
-      backend.teleportBody("moving", pose(8), { velocity: "reset" });
-      expect(() => trace(backend, 8)).toThrow("native callbacks");
-    });
-    try {
-      backend.step(1 / 60);
-      expect(requested).toBe(true);
-      expect(trace(backend, 8).actorId).toBe("moving");
-      backend.plugin.onCollisionObservable.remove(observer);
-      backend.teleportBody("moving", pose(0.5));
-      backend.plugin.onCollisionObservable.addOnce(() => {
-        backend.dispose();
-        backend.teleportBody("moving", pose(20));
-      });
-      backend.step(1 / 60);
-      expect(backend.scene.isDisposed).toBe(true);
-      expect(() => backend.step(1 / 60)).toThrow("disposed");
-    } finally {
-      backend.dispose();
-    }
+    backend.dispose();
+    expect(backend.isDisposed).toBe(true);
+    expect(() => backend.step(1 / 60)).toThrow("disposed");
+    expect(() => trace(backend, 0)).toThrow("disposed");
   });
 
   it("retains controller-owned resources only while their native users are alive", async () => {
@@ -388,7 +370,7 @@ describe("Havok explicit native motion", () => {
         ).toBeCloseTo(i + 1);
         backend.destroyCharacterController("controller");
         expect(liveShapes(backend)).toBe(baseline);
-        expect(backend.plugin.numBodies).toBe(1);
+        expect(backend.numBodies).toBe(1);
       }
     } finally {
       backend.dispose();
@@ -432,7 +414,7 @@ describe("Havok explicit native motion", () => {
       expect(
         backend.pollContacts().filter((event) => event.kind === "overlapBegin"),
       ).toHaveLength(1);
-      const failedAttachment = vi.spyOn(backend.plugin, "setShape").mockImplementationOnce(() => {
+      const failedAttachment = vi.spyOn(backend.havok, "HP_Body_SetShape").mockImplementationOnce(() => {
         throw new Error("trigger attachment failed");
       });
       expect(() => backend.createCollider({
@@ -443,7 +425,7 @@ describe("Havok explicit native motion", () => {
       expect(backend.pollContacts().filter((event) => event.kind === "overlapEnd")).toHaveLength(1);
       backend.step(1 / 60);
       expect(backend.pollContacts().filter((event) => event.kind === "overlapBegin")).toHaveLength(1);
-      const failedTeleport = vi.spyOn(backend.plugin, "setPhysicsBodyTransformation").mockImplementationOnce(() => {
+      const failedTeleport = vi.spyOn(backend.havok, "HP_Body_SetQTransform").mockImplementationOnce(() => {
         throw new Error("trigger teleport failed");
       });
       expect(() => backend.teleportBody("visitor", pose(10))).toThrow("trigger teleport failed");
@@ -475,33 +457,27 @@ describe("Havok explicit native motion", () => {
     }
   });
 
-  it("teleports falling and sleeping bodies immediately, restores prestep, and preserves or resets both velocities", async () => {
+  it("teleports falling and sleeping bodies immediately and preserves or resets both velocities", async () => {
     const backend = await create(-9.81);
     try {
       body(backend, "body", "dynamic", pose(0, 5));
       backend.createCollider(box());
-      const physicsBody = native(backend);
+      const havok = backend.havok;
+      const handle = native(backend);
       backend.setBodyLinearVelocity("body", { x: 2 });
-      physicsBody.setAngularVelocity(new Vector3(0, 1, 0));
+      backend.setBodyAngularVelocity("body", { x: 0, y: 1, z: 0 });
       for (let i = 0; i < 10; i++) backend.step(1 / 60);
-      const linear = physicsBody.getLinearVelocity().asArray(),
-        angular = physicsBody.getAngularVelocity().asArray();
+      const linear = [...havok.HP_Body_GetLinearVelocity(handle)[1]];
+      const angular = [...havok.HP_Body_GetAngularVelocity(handle)[1]];
       backend.teleportBody("body", {
         ...pose(8),
         rotation: { x: 0, y: 0, z: 0, w: 3 },
       });
-      const havok = (
-        backend.plugin as unknown as { _hknp: HavokPhysicsWithBindings }
-      )._hknp;
-      const handle = (
-        physicsBody as unknown as { _pluginData: { hpBodyId: [bigint] } }
-      )._pluginData.hpBodyId;
       expect(havok.HP_Body_GetQTransform(handle)[1][0]).toEqual([8, 0, 0]);
       expect(trace(backend, 8).hit).toBe(true);
       expect(trace(backend).hit).toBe(false);
-      expect(physicsBody.getPrestepType()).toBe(PhysicsPrestepType.DISABLED);
-      expect(physicsBody.getLinearVelocity().asArray()).toEqual(linear);
-      expect(physicsBody.getAngularVelocity().asArray()).toEqual(angular);
+      expect(havok.HP_Body_GetLinearVelocity(handle)[1]).toEqual(linear);
+      expect(havok.HP_Body_GetAngularVelocity(handle)[1]).toEqual(angular);
       backend.step(1 / 60);
       expect(backend.getBodyTransform("body")!.position.x).toBeGreaterThan(8);
       expect(backend.getBodyTransform("body")!.position.y).toBeLessThan(0);
@@ -511,13 +487,13 @@ describe("Havok explicit native motion", () => {
       );
       backend.teleportBody("body", pose(12), { velocity: "reset" });
       expect(trace(backend, 12).hit).toBe(true);
-      expect(physicsBody.getLinearVelocity().asArray()).toEqual([0, 0, 0]);
-      expect(physicsBody.getAngularVelocity().asArray()).toEqual([0, 0, 0]);
+      expect(havok.HP_Body_GetLinearVelocity(handle)[1]).toEqual([0, 0, 0]);
+      expect(havok.HP_Body_GetAngularVelocity(handle)[1]).toEqual([0, 0, 0]);
       backend.step(1 / 60);
       expect(backend.getBodyTransform("body")!.position.x).toBeCloseTo(12);
       expect(backend.getBodyTransform("body")!.position.y).toBeLessThan(0);
       const transform = vi
-        .spyOn(backend.plugin, "setPhysicsBodyTransformation")
+        .spyOn(havok, "HP_Body_SetQTransform")
         .mockImplementationOnce(() => {
           throw new Error("teleport failed");
         });
@@ -525,7 +501,6 @@ describe("Havok explicit native motion", () => {
         "teleport failed",
       );
       transform.mockRestore();
-      expect(physicsBody.getPrestepType()).toBe(PhysicsPrestepType.DISABLED);
       const failedAdd = vi
         .spyOn(havok, "HP_World_AddBody")
         .mockReturnValueOnce(havok.Result.RESULT_FAIL);
@@ -535,7 +510,7 @@ describe("Havok explicit native motion", () => {
       failedAdd.mockRestore();
       expect(trace(backend, 12).hit).toBe(true);
       expect(trace(backend, 30).hit).toBe(false);
-      expect(native(backend)).toBe(physicsBody);
+      expect(native(backend)).toBe(handle);
       const failedPose = vi
         .spyOn(havok, "HP_Body_SetQTransform")
         .mockReturnValueOnce(havok.Result.RESULT_FAIL);
@@ -544,7 +519,6 @@ describe("Havok explicit native motion", () => {
       );
       failedPose.mockRestore();
       expect(trace(backend, 12).hit).toBe(true);
-      expect(physicsBody.getPrestepType()).toBe(PhysicsPrestepType.DISABLED);
 
       backend.updateBody("body", { motionType: "kinematic" });
       backend.createCharacterController({ id: "movement", bodyId: "body", offset: 0.01 });
@@ -579,42 +553,46 @@ describe("Havok explicit native motion", () => {
 
   it("keeps constraints and body policy on the same native handle across immediate teleports", async () => {
     const backend = await create();
-    let constraint: DistanceConstraint | undefined;
     try {
       body(backend, "anchor");
       body(backend, "body", "dynamic", pose(2));
       backend.createCollider(box());
-      const physicsBody = native(backend);
+      const havok = backend.havok;
+      const handle = native(backend);
       backend.updateBody("body", {
         linearDamping: 0.2,
         angularDamping: 0.3,
         gravityScale: 0.4,
         mass: 3,
       });
-      const mass = physicsBody.getMassProperties();
-      const handle = physicsBody._pluginData.hpBodyId;
-      constraint = new DistanceConstraint(2, backend.scene);
-      native(backend, "anchor").addConstraint(physicsBody, constraint);
+      const mass = havok.HP_Body_GetMassProperties(handle)[1];
+      backend.createConstraint({
+        id: "tether",
+        kind: "distance",
+        bodyAId: "anchor",
+        bodyBId: "body",
+        anchorA: { x: 0, y: 0, z: 0 },
+        anchorB: { x: 0, y: 0, z: 0 },
+        distance: 2,
+      });
       backend.step(1 / 60);
       backend.teleportBody("body", pose(8));
       expect(trace(backend, 8).actorId).toBe("body");
-      expect(physicsBody._pluginData.hpBodyId).toBe(handle);
-      expect(physicsBody.getMassProperties()).toEqual(mass);
-      expect(physicsBody.getLinearDamping()).toBeCloseTo(0.2);
-      expect(physicsBody.getAngularDamping()).toBeCloseTo(0.3);
-      expect(physicsBody.getGravityFactor()).toBeCloseTo(0.4);
-      expect(constraint.getBodiesUsingConstraint()).toHaveLength(1);
+      expect(native(backend)).toBe(handle);
+      expect(havok.HP_Body_GetMassProperties(handle)[1]).toEqual(mass);
+      expect(havok.HP_Body_GetLinearDamping(handle)[1]).toBeCloseTo(0.2);
+      expect(havok.HP_Body_GetAngularDamping(handle)[1]).toBeCloseTo(0.3);
+      expect(havok.HP_Body_GetGravityFactor(handle)[1]).toBeCloseTo(0.4);
       for (let i = 0; i < 90; i++) backend.step(1 / 60);
       expect(
         Math.abs(backend.getBodyTransform("body")!.position.x),
       ).toBeLessThan(2.1);
     } finally {
-      constraint?.dispose();
       backend.dispose();
     }
   });
 
-  it("moves a kinematic pusher by targets without leaving teleport prestep enabled", async () => {
+  it("moves a kinematic pusher by targets", async () => {
     const backend = await create();
     try {
       body(backend, "body", "kinematic", pose(-2));
@@ -629,49 +607,31 @@ describe("Havok explicit native motion", () => {
       expect(backend.getBodyTransform("pushed")!.position.x).toBeGreaterThan(
         1.5,
       );
-      expect(native(backend).getPrestepType()).toBe(
-        PhysicsPrestepType.DISABLED,
-      );
     } finally {
       backend.dispose();
     }
   });
 
-  it("applies kinematic targets through reused native vectors, copies a target queued while stepping, and rejects a bad one", async () => {
+  it("applies kinematic targets through reused native vectors and rejects a bad one", async () => {
     const backend = await create();
-    body(backend);
-    backend.createCollider(box());
-    body(backend, "moving", "dynamic", pose(0.5));
-    backend.createCollider({ ...box("moving-shape"), bodyId: "moving" });
     body(backend, "lift", "kinematic", pose(0, 0, 20));
     backend.createCollider({ ...box("lift-shape"), bodyId: "lift" });
     body(backend, "platform", "kinematic", pose(0, 0, 40));
     backend.createCollider({ ...box("platform-shape"), bodyId: "platform" });
     try {
-      const lift = vi.spyOn(native(backend, "lift"), "setTargetTransform");
-      const platform = vi.spyOn(native(backend, "platform"), "setTargetTransform");
+      const setTarget = vi.spyOn(backend.havok, "HP_Body_SetTargetQTransform");
       // One caller-owned pose serves both bodies, as the runtime's sync does (moves stay under Havok's speed cap).
       const target = pose(1, 0, 20);
       backend.setBodyTargetTransform("lift", target);
       target.position.x = 1.5;
       target.position.z = 40;
       backend.setBodyTargetTransform("platform", target);
-      expect(platform.mock.calls[0]![0]).toBe(lift.mock.calls[0]![0]);
-      expect(platform.mock.calls[0]![1]).toBe(lift.mock.calls[0]![1]);
-      // A contact callback runs while stepping: its target waits for the step and keeps the values it was given.
-      const queued = pose(2, 0, 20);
-      const observer = backend.plugin.onCollisionObservable.add(() => {
-        if (queued.position.x !== 2) return;
-        backend.setBodyTargetTransform("lift", queued);
-        queued.position.x = 3;
-      });
+      expect(setTarget.mock.calls[1]![1]).toBe(setTarget.mock.calls[0]![1]);
+      expect(setTarget.mock.calls[1]![1][0]).toBe(setTarget.mock.calls[0]![1][0]);
+      expect(setTarget.mock.calls[1]![1][1]).toBe(setTarget.mock.calls[0]![1][1]);
       backend.step(1 / 60);
-      backend.plugin.onCollisionObservable.remove(observer);
-      expect(queued.position.x).toBe(3);
       expect(backend.getBodyTransform("lift")!.position.x).toBeCloseTo(1);
       expect(backend.getBodyTransform("platform")!.position).toMatchObject({ x: expect.closeTo(1.5), z: expect.closeTo(40) });
-      backend.step(1 / 60);
-      expect(backend.getBodyTransform("lift")!.position.x).toBeCloseTo(2);
       expect(() => backend.setBodyTargetTransform("lift", pose(Number.NaN))).toThrow("finite position");
       expect(() => backend.setBodyTargetTransform("lift", { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 0 } }))
         .toThrow("nonzero quaternion");

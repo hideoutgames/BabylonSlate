@@ -27,6 +27,7 @@ export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
 export { DRAW_PASSES, type DrawPass, type DrawPassCounts } from "./draw-passes";
 export type { OverlayAloneReason, OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
+export type { LayerFrameStats } from "./layer-frame-stats";
 export { verifyRetainedOverlayBatches } from "./overlay-draw-batcher";
 export { drawLayersFullPath, verifyLayerDrawLists } from "./layer-draw-list";
 export type { InstancePoolDiagnostics, InstancingIneligibility } from "./instance-pool";
@@ -70,6 +71,7 @@ export { nearestTexturesEnabled, observeNearestTextures, setNearestTextures } fr
 export * from "./flip-read-pixels";
 export * from "./font-registry";
 export * from "./sprite-quad";
+export type { WorldSpriteBatchStats } from "./world-sprite-batcher";
 export * from "./overlay-texture-quad";
 export * from "./overlay-panel-mesh";
 export * from "./tilemap-mesh";
@@ -199,4 +201,5 @@ export {
 } from "./decal-pass";
 export { createDecalGuide } from "./decal-guide";
 export { updateFoliageDistances, attachFoliageLodSet } from "./foliage-mesh";
+export { updateLandscapeLods, LANDSCAPE_LOD_DISTANCES } from "./landscape-mesh";
 

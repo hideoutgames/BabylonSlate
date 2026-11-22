@@ -1,6 +1,7 @@
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { PickingInfo } from "@babylonjs/core/Collisions/pickingInfo";
 import { Scene } from "@babylonjs/core/scene";
@@ -23,6 +24,9 @@ import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
 import { isTargetedLayerScene } from "./layer-composite";
 import { Constants } from "@babylonjs/core/Engines/constants";
+import { sceneGlyphAtlas } from "./text2d-glyph-atlas";
+import { LayerImageAtlas } from "./layer-image-atlas";
+import type { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 
 
 describe("SceneLayerCompositor", () => {
@@ -1218,5 +1222,136 @@ describe("SceneLayerCompositor", () => {
     compositor.isReady("hud");
     expect(probe).toHaveBeenCalled();
     compositor.dispose();
+  });
+
+  describe("a frame's layer work", () => {
+    /**
+     * A NullEngine that runs the real graph and binds framebuffers as a WebGL Engine does: every bind goes through
+     * `_bindUnboundFramebuffer`, each target its own framebuffer, and binding a target never unbinds the last one first.
+     */
+    function webGlBinding(): NullEngine {
+      const engine = adaptNullEngineFrameGraph(new NullEngine({
+        renderWidth: 640, renderHeight: 360, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 1,
+      }));
+      engines.push(engine);
+      const binding = engine as unknown as { _currentFramebuffer: unknown; _bindUnboundFramebuffer(framebuffer: unknown): void };
+      binding._bindUnboundFramebuffer = (framebuffer) => { binding._currentFramebuffer = framebuffer; };
+      const framebuffers = new WeakMap<object, object>();
+      const framebufferOf = (wrapper: object) => {
+        let framebuffer = framebuffers.get(wrapper);
+        if (!framebuffer) framebuffers.set(wrapper, framebuffer = {});
+        return framebuffer;
+      };
+      const bind = engine.bindFramebuffer.bind(engine);
+      engine.bindFramebuffer = (wrapper, ...rest) => {
+        const current = binding._currentFramebuffer;
+        engine._currentRenderTarget = null;
+        bind(wrapper, ...rest);
+        binding._currentFramebuffer = current;
+        binding._bindUnboundFramebuffer(framebufferOf(wrapper));
+      };
+      const unbind = engine.unBindFramebuffer.bind(engine);
+      engine.unBindFramebuffer = (wrapper, ...rest) => {
+        const current = binding._currentFramebuffer;
+        unbind(wrapper, ...rest);
+        binding._currentFramebuffer = current;
+        binding._bindUnboundFramebuffer(null);
+      };
+      return engine;
+    }
+
+    /** Prepared layers of one quad each over the world, by id and z-order. */
+    async function layersOver(engine: NullEngine, compositor: SceneLayerCompositor, ids: string[]) {
+      const views = ids.map((layerId, zOrder) => {
+        const view = compositor.create({ type: "sceneLayerCreate", layerId, assetGuid: layerId, zOrder, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
+        applyOverlayUnlitMaterial(MeshBuilder.CreatePlane(`${layerId}-quad`, { size: 1 }, view.scene));
+        return view;
+      });
+      for (const layerId of ids) await compositor.prepare(layerId, () => {});
+      return views;
+    }
+
+    function frame(engine: NullEngine, compositor: SceneLayerCompositor, world: () => void = () => {}) {
+      engine.beginFrame();
+      compositor.beforeWorld();
+      world();
+      compositor.render();
+      engine.endFrame();
+      return { ...compositor.frameStats, beforeWorld: { ...compositor.frameStats.beforeWorld } };
+    }
+
+    it("counts each layer Scene rendered over the world and its depth-stencil clear, with no framebuffer change", async () => {
+      const engine = webGlBinding();
+      const compositor = new SceneLayerCompositor({ engine });
+      await layersOver(engine, compositor, ["hud", "menu", "toast"]);
+      frame(engine, compositor);
+      const stats = frame(engine, compositor);
+      expect(stats).toMatchObject({ scenes: 3, clears: 3, depthClears: 3, targetSwitches: 0, uploads: 0, beforeWorld: { uploads: 0, targetSwitches: 0 } });
+      // The batched passes are part of the layer pass's time.
+      expect(stats.batchMs).toBeGreaterThan(0);
+      expect(stats.batchMs).toBeLessThanOrEqual(stats.ms);
+      // A clear the world issues is not the layers'.
+      const world = frame(engine, compositor, () => engine.clear(new Color4(0, 0, 0, 1), false, true, true));
+      expect(world).toMatchObject({ clears: 3, depthClears: 3 });
+      await compositor.dispose();
+    });
+
+    it("draws every layer into the shared target and back while the stack has a pass", async () => {
+      const engine = webGlBinding();
+      const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: () => ({ dispose: () => {} }) });
+      compositor.setPostProcess([{ id: "glow", materialGuid: "glow", enabled: true }]);
+      await layersOver(engine, compositor, ["hud", "menu"]);
+      frame(engine, compositor);
+      const stats = frame(engine, compositor);
+      // Two layer Scenes into the shared target; the passes' Scene, and the blit over the world, are not layer Scenes.
+      expect(stats.scenes).toBe(2);
+      expect(stats.targetSwitches).toBeGreaterThanOrEqual(2);
+      expect(stats.beforeWorld).toMatchObject({ uploads: 0, targetSwitches: 0 });
+      await compositor.dispose();
+    });
+
+    it("uploads a layer's written glyph pages before the world draws, with the pixels its draws then sample", async () => {
+      const engine = webGlBinding();
+      const compositor = new SceneLayerCompositor({ engine });
+      const [hud] = await layersOver(engine, compositor, ["hud", "menu"]);
+      frame(engine, compositor);
+      const glyph = (value: number) => ({ key: `glyph ${value}`, width: 4, height: 4, pixels: new Uint8ClampedArray(64).fill(value) });
+      const written = sceneGlyphAtlas(hud!.scene, false).acquire(glyph(200));
+      const order: string[] = [];
+      const update = vi.spyOn(written.page.texture, "update").mockImplementation(function (this: RawTexture, pixels) {
+        order.push(`upload ${(pixels as Uint8Array).filter((value) => value === 200).length}`);
+      });
+      hud!.scene.onBeforeRenderObservable.add(() => order.push("hud renders"));
+      const stats = frame(engine, compositor, () => order.push("world"));
+      // Before the world, once: the layer's own before-render work finds the page uploaded.
+      expect(order).toEqual(["upload 64", "world", "hud renders"]);
+      expect(stats.beforeWorld.uploads).toBe(1);
+      expect(stats.uploads).toBe(0);
+      // A page written while the layer renders (a text built by its observers) still uploads before its draws.
+      hud!.scene.onBeforeRenderObservable.add(() => { sceneGlyphAtlas(hud!.scene, false).acquire(glyph(90)); }, undefined, true);
+      order.length = 0;
+      const late = frame(engine, compositor, () => order.push("world"));
+      expect(order).toEqual(["world", "upload 64", "hud renders"]);
+      expect(late).toMatchObject({ uploads: 1, beforeWorld: { uploads: 0 } });
+      update.mockRestore();
+      await compositor.dispose();
+    });
+
+    it("copies the images a layer's shared page was asked for before the world draws, and none again in its frame", async () => {
+      const engine = webGlBinding();
+      const compositor = new SceneLayerCompositor({ engine, isLayerReady: (layerId) => layerId !== "waiting" });
+      await layersOver(engine, compositor, ["hud", "waiting"]);
+      frame(engine, compositor);
+      const flushed: string[] = [];
+      const flush = vi.spyOn(LayerImageAtlas.prototype, "flush").mockImplementation(function (this: LayerImageAtlas) {
+        const scene = (this as unknown as { scene: Scene }).scene;
+        flushed.push(compositor.layers().find((view) => view.scene === scene)?.layerId ?? "another Scene");
+      });
+      frame(engine, compositor, () => flushed.push("world"));
+      // The drawn layer's page before the world, then its before-render work's (which finds nothing); the waiting one's never.
+      expect(flushed).toEqual(["hud", "world", "hud"]);
+      flush.mockRestore();
+      await compositor.dispose();
+    });
   });
 });

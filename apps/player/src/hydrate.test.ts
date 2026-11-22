@@ -835,6 +835,77 @@ describe("packedContentFromGame", () => {
     expect(content.audioReverbByScene.get("scene-2")).toEqual(new Uint8Array([7, 8]));
   });
 
+  it("hydrates packed binary HPLD landscape sidecars without base64", async () => {
+    const { encodeLandscapeChunk, landscapeChunkId, parseLandscapeProperties } = await import("@haptic/core");
+    const { LANDSCAPE_EXPORT_TYPE, landscapeExportGuid, componentChunkKey } = await import("@haptic/exporter");
+    const terrain = parseLandscapeProperties({
+      width: 32,
+      depth: 32,
+      subdivisions: 4,
+      heights: Float32Array.from({ length: 25 }, (_, i) => (i === 12 ? 7.5 : 0)),
+    });
+    const chunkId = landscapeChunkId("terrain-1");
+    const chunkBytes = encodeLandscapeChunk(terrain);
+    const packed = await exportGame({
+      platform: "web",
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: landscapeExportGuid("scene-1", chunkId),
+          ownerGuid: "scene-1",
+          type: LANDSCAPE_EXPORT_TYPE,
+          sceneGuid: "scene-1",
+          bytes: chunkBytes,
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    const key = componentChunkKey("scene-1", chunkId);
+    expect(game.componentChunks.get(key)).toEqual(chunkBytes);
+    const content = packedContentFromGame(game);
+    expect(content.componentChunks.get(key)).toEqual(chunkBytes);
+  });
+
+  it("hydrates packed binary HPFG foliage sidecars owned by their Scene and keeps them with that Scene", async () => {
+    const { encodeFoliageChunk, foliageChunkId } = await import("@haptic/core");
+    const { FOLIAGE_EXPORT_TYPE, foliageExportGuid, componentChunkKey, gameSourceSubset } = await import("@haptic/exporter");
+    const chunkId = foliageChunkId("plants-1");
+    const chunkBytes = encodeFoliageChunk([{ transforms: new Float32Array([1, 0, 2, 0, 0, 0, 1, 1, 1, 1]) }]);
+    const packed = await exportGame({
+      platform: "web",
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        { guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+        { guid: "scene-2", type: "Scene", sceneGuid: "scene-2", bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+        { guid: foliageExportGuid("scene-1", chunkId), ownerGuid: "scene-1", type: FOLIAGE_EXPORT_TYPE, sceneGuid: "scene-1", bytes: chunkBytes },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const entry = packed.value.manifest.assets.find((asset) => asset.type === FOLIAGE_EXPORT_TYPE);
+    expect(entry).toMatchObject({ guid: `foliage:scene-1:${chunkId}`, ownerGuid: "scene-1" });
+    const game = await loadGameFromFiles(packed.value.files);
+    const key = componentChunkKey("scene-1", chunkId);
+    expect(game.componentChunks.get(key)).toEqual(chunkBytes);
+    expect(packedContentFromGame(game).componentChunks.get(key)).toEqual(chunkBytes);
+    expect(gameSourceSubset(game, new Set(["scene-1"])).componentChunks?.get(key)).toEqual(chunkBytes);
+    expect(gameSourceSubset(game, new Set(["scene-2"])).componentChunks?.has(key)).toBe(false);
+  });
+
   it("loads lifecycle classes without spawning unplaced actors", async () => {
     const packed = await exportGame({
       platform: "web",

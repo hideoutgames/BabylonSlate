@@ -20,12 +20,14 @@ import {
   SceneStreamingActor,
   SceneLayerActorSwitcher,
   SceneSubsystem,
+  type ComponentChangeKind,
   type GameInstanceHooks,
   type GameSubsystemHooks,
   type LifecycleHooks,
   type SceneSubsystemHooks,
   type Subsystem,
   type TickContext,
+  type TransformChangeSource,
 } from "./objects";
 import {
   compareClassIds,
@@ -33,6 +35,21 @@ import {
   sceneSubsystemGuid,
 } from "./subsystems";
 import { TICK_PHASES, TickClock, type PhaseHook, type TickPhase } from "./tick";
+
+/**
+ * Passive observer notified of live-world actor mutations so multiple runtime
+ * consumers (each PhysicsWorldSync, SnapshotPublisher, etc.) can maintain
+ * independent dirty sets without mutating shared flags on World.
+ */
+export interface WorldChangeObserver {
+  onActorSpawned?(actor: Actor): void;
+  onActorDestroyed?(actor: Actor): void;
+  onActorParentChanged?(actor: Actor, previousParentGuid: Guid | null, nextParentGuid: Guid | null): void;
+  onActorTransformChanged?(actor: Actor, source: TransformChangeSource): void;
+  onActorVariableChanged?(actor: Actor, name: string | null): void;
+  onActorComponentChanged?(actor: Actor, component: ActorComponent, kind: ComponentChangeKind): void;
+  onActorLayerChanged?(actor: Actor, previousLayerId: Guid | null, nextLayerId: Guid | null): void;
+}
 
 export type WorldInputProvider = Pick<
   TickContext,
@@ -115,6 +132,15 @@ export class World {
   structuralRevision = 0;
   markStructureChanged(): void { this.structuralRevision++; }
   /**
+   * Advances when a live actor's `name` variable changes (written, deleted or
+   * cleared). Names are not structure: caches of what the World holds stay valid.
+   */
+  actorNameRevision = 0;
+  /** Advances with the structure and with actor names: what an identity listing (guid, class, name, parent) shows. */
+  get identityRevision(): number {
+    return this.structuralRevision + this.actorNameRevision;
+  }
+  /**
    * Advances each time an actor or Scene Layer is destroyed. A collection pass
    * runs when it moved, to clear stored references to the destroyed objects.
    */
@@ -169,11 +195,23 @@ export class World {
   private readonly actors: Actor[] = [];
   /** Live actors by guid, including ones queued for destruction. Guids are unique. */
   private readonly actorsByGuid = new Map<Guid, Actor>();
+  /** Live actors indexed by their current `parentId` variable for O(descendants) invalidation. */
+  private readonly childrenByParentGuid = new Map<Guid, Set<Actor>>();
+  /** Multi-consumer change observers (each PhysicsWorldSync, SnapshotPublisher, etc.). */
+  private readonly changeObservers: WorldChangeObserver[] = [];
   /** Guids reserved by queued spawns until each commits or is cancelled. */
   private readonly pendingSpawnGuids = new Set<Guid>();
   private readonly sceneLayers: SceneLayer[] = [];
-  /** Earliest `actors` position whose spawnIndex a removal shifted and has not yet reassigned. */
-  private staleSpawnIndexFrom = Number.POSITIVE_INFINITY;
+  /**
+   * Destroyed actors still holding their `actors` slot. Removal leaves the slot
+   * in place so spawn indices stay valid, and the next reader of the list drops
+   * them all in one pass: tearing down N actors costs O(N), not O(N^2).
+   */
+  private readonly removedActors = new Set<Actor>();
+  /** Actors spawned this session; numbers `Actor.spawnOrder`. */
+  private spawnCount = 0;
+  /** Earliest `actors` position a removed actor still holds. */
+  private firstRemovedIndex = Number.POSITIVE_INFINITY;
   /** Phase views by re-entrancy depth; reused so ticking allocates no actor/component copies. */
   private readonly actorIterations: ActorIteration[] = [];
   private actorIterationDepth = 0;
@@ -544,7 +582,30 @@ export class World {
   }
 
   getActors(): readonly Actor[] {
+    return this.liveActors();
+  }
+
+  /** The actor list without removed actors; reassigns dense spawn indices after a removal. */
+  private liveActors(): Actor[] {
+    if (this.removedActors.size > 0) this.compactActors();
     return this.actors;
+  }
+
+  private compactActors(): void {
+    // A running phase keeps reading the positions it started with.
+    this.detachActorIterations();
+    const actors = this.actors;
+    const removed = this.removedActors;
+    let kept = this.firstRemovedIndex;
+    for (let i = kept; i < actors.length; i++) {
+      const actor = actors[i]!;
+      if (removed.has(actor)) continue;
+      actor.spawnIndex = kept;
+      actors[kept++] = actor;
+    }
+    actors.length = kept;
+    removed.clear();
+    this.firstRemovedIndex = Number.POSITIVE_INFINITY;
   }
 
   getSceneLayers(): readonly SceneLayer[] {
@@ -598,7 +659,7 @@ export class World {
     for (const subsystem of this.takeSceneSubsystemAudience(layer)) {
       subsystem.callOnSceneLayerRemoved(layer);
     }
-    for (const actor of [...this.actors]) {
+    for (const actor of [...this.liveActors()]) {
       if (actor.sceneLayerId === guid) {
         this.commitDestroy(actor);
       }
@@ -695,6 +756,98 @@ export class World {
     return this.actorsByGuid.get(guid);
   }
 
+  /**
+   * Every live actor by guid, as `findActor` answers, kept current by spawn and
+   * destroy commits and iterating in spawn order. A live view: never copy it per call.
+   */
+  liveActorsByGuid(): ReadonlyMap<Guid, Actor> {
+    return this.actorsByGuid;
+  }
+
+  /** Live direct children whose `parentId` variable points to `parentGuid`. */
+  getChildren(parentGuid: Guid): ReadonlySet<Actor> | undefined {
+    return this.childrenByParentGuid.get(parentGuid);
+  }
+
+  /** Register a passive change observer; returns an unsubscribe callback. */
+  addChangeObserver(observer: WorldChangeObserver): () => void {
+    if (!this.changeObservers.includes(observer)) {
+      this.changeObservers.push(observer);
+    }
+    return () => {
+      const index = this.changeObservers.indexOf(observer);
+      if (index >= 0) this.changeObservers.splice(index, 1);
+    };
+  }
+
+  private parentGuidOf(actor: Actor): Guid | null {
+    const raw = actor.variables.get("parentId");
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  }
+
+  private linkChild(parentGuid: Guid, child: Actor): void {
+    let children = this.childrenByParentGuid.get(parentGuid);
+    if (!children) {
+      children = new Set();
+      this.childrenByParentGuid.set(parentGuid, children);
+    }
+    children.add(child);
+  }
+
+  private unlinkChild(parentGuid: Guid, child: Actor): void {
+    const children = this.childrenByParentGuid.get(parentGuid);
+    if (!children) return;
+    children.delete(child);
+    if (children.size === 0) this.childrenByParentGuid.delete(parentGuid);
+  }
+
+  noteActorParentChanged(
+    actor: Actor,
+    previousParentGuid: Guid | null,
+    nextParentGuid: Guid | null,
+  ): void {
+    if (previousParentGuid !== null) this.unlinkChild(previousParentGuid, actor);
+    if (nextParentGuid !== null) this.linkChild(nextParentGuid, actor);
+    this.markStructureChanged();
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorParentChanged?.(actor, previousParentGuid, nextParentGuid);
+    }
+  }
+
+  noteActorTransformChanged(actor: Actor, source: TransformChangeSource): void {
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorTransformChanged?.(actor, source);
+    }
+  }
+
+  noteActorVariableChanged(actor: Actor, name: string | null): void {
+    if (name === "name" || name === null) this.actorNameRevision++;
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorVariableChanged?.(actor, name);
+    }
+  }
+
+  noteActorComponentChanged(
+    actor: Actor,
+    component: ActorComponent,
+    kind: ComponentChangeKind,
+  ): void {
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorComponentChanged?.(actor, component, kind);
+    }
+  }
+
+  noteActorLayerChanged(
+    actor: Actor,
+    previousLayerId: Guid | null,
+    nextLayerId: Guid | null,
+  ): void {
+    this.markStructureChanged();
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorLayerChanged?.(actor, previousLayerId, nextLayerId);
+    }
+  }
+
   private commitSpawn(actor: Actor): void {
     if (actor.destroyed) return;
     // Nothing begins play once the session ended: the spawn is cancelled.
@@ -703,10 +856,17 @@ export class World {
       return;
     }
     actor.world = this;
-    actor.spawnIndex = this.actors.length;
-    this.actors.push(actor);
+    const actors = this.liveActors();
+    actor.spawnIndex = actors.length;
+    actor.spawnOrder = this.spawnCount++;
+    actors.push(actor);
     this.markStructureChanged();
     this.actorsByGuid.set(actor.guid, actor);
+    const parentGuid = this.parentGuidOf(actor);
+    if (parentGuid !== null) this.linkChild(parentGuid, actor);
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorSpawned?.(actor);
+    }
     this.announceSceneActor(actor);
     // A Spawned hook may have destroyed it already; it then never begins play.
     if (actor.destroyed) return;
@@ -739,8 +899,9 @@ export class World {
     }
   }
 
-  /** O(1) while spawn indices are dense; scans only while a removal is still settling. */
+  /** O(1): removals keep positions until the next compaction reassigns every spawn index. */
   private actorIndex(actor: Actor): number {
+    if (this.removedActors.has(actor)) return -1;
     const index = actor.spawnIndex;
     return this.actors[index] === actor ? index : this.actors.indexOf(actor);
   }
@@ -750,17 +911,19 @@ export class World {
     if (!actor) return;
     const index = this.actorIndex(actor);
     if (index < 0) return;
-    this.detachActorIterations();
-    this.actors.splice(index, 1);
-    this.staleSpawnIndexFrom = Math.min(this.staleSpawnIndexFrom, index);
+    this.removedActors.add(actor);
+    if (index < this.firstRemovedIndex) this.firstRemovedIndex = index;
     this.markStructureChanged();
     this.actorsByGuid.delete(actor.guid);
+    const parentGuid = this.parentGuidOf(actor);
+    if (parentGuid !== null) this.unlinkChild(parentGuid, actor);
     // Unlinked but intact, before its own teardown; only to subsystems that heard it spawn.
     for (const subsystem of this.takeSceneSubsystemAudience(actor)) {
       subsystem.callOnSceneActorDestroyed(actor);
     }
     actor.destroyed = true;
-    for (const component of [...actor.components].reverse()) {
+    const components = [...actor.components].reverse();
+    for (const component of components) {
       if (!component.destroyed) {
         component.destroyed = true;
         component.callOnDestroyed();
@@ -772,13 +935,12 @@ export class World {
     this.destroyCount++;
     actor.callOnDestroyed();
     actor.world = null;
-    // Reassign dense spawn indices so order stays contiguous after removal.
-    // Hooks above still saw the shifted indices, as before; positions ahead of
-    // the earliest unsettled removal (including a re-entrant one) never moved.
-    for (let i = this.staleSpawnIndexFrom; i < this.actors.length; i++) {
-      this.actors[i]!.spawnIndex = i;
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorDestroyed?.(actor);
     }
-    this.staleSpawnIndexFrom = Number.POSITIVE_INFINITY;
+    // Every hook and observer has run: a stale reference now keeps none of their state alive.
+    for (const component of components) component.releaseState();
+    actor.releaseState();
   }
 
   /**
@@ -787,6 +949,7 @@ export class World {
    * its starting prefix only when an actor is removed mid-phase.
    */
   private beginActorIteration(): ActorIteration {
+    this.liveActors();
     const depth = this.actorIterationDepth++;
     const iteration = (this.actorIterations[depth] ??= { list: this.actors, length: 0 });
     iteration.list = this.actors;

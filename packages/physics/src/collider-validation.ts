@@ -226,6 +226,25 @@ export function validateColliderShape(shape: ColliderShape): void {
       }
       break;
     }
+    case "heightfield": {
+      const { numXSamples, numZSamples, width, depth, heights } = shape;
+      if (
+        !Number.isInteger(numXSamples) ||
+        !Number.isInteger(numZSamples) ||
+        numXSamples < 2 ||
+        numZSamples < 2 ||
+        !Number.isFinite(width) ||
+        !Number.isFinite(depth) ||
+        width <= 0 ||
+        depth <= 0 ||
+        !(heights instanceof Float32Array) ||
+        heights.length !== numXSamples * numZSamples ||
+        !heights.every(Number.isFinite)
+      ) {
+        throw new Error("Invalid heightfield collider");
+      }
+      break;
+    }
     case "polygon":
     case "chain":
       if (
@@ -285,6 +304,23 @@ export function sameColliderGeometry(
         a.positions.every((v, i) => v === other.positions[i]) &&
         a.indices.every((v, i) => v === other.indices[i])
       );
+    }
+    case "heightfield": {
+      const other = b as typeof a;
+      if (
+        a.numXSamples !== other.numXSamples ||
+        a.numZSamples !== other.numZSamples ||
+        a.width !== other.width ||
+        a.depth !== other.depth ||
+        a.heights.length !== other.heights.length
+      ) {
+        return false;
+      }
+      if (a.heights === other.heights) return true;
+      for (let i = 0; i < a.heights.length; i++) {
+        if (a.heights[i] !== other.heights[i]) return false;
+      }
+      return true;
     }
     case "polygon":
     case "chain": {

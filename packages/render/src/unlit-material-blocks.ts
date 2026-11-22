@@ -18,6 +18,7 @@ import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { ALPHA_COVERAGE_UNIFORM, coverageClip, drawsAlphaCoverage } from "./alpha-to-coverage";
 import { geometryOutputWrite } from "./geometry-surface-output-block";
 import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TEXEL_KIND, DRAW_BATCH_TINT_KIND, drawBatchValue } from "./draw-batch-world-block";
+import { SPRITE_BATCH_FINISH_KIND, SPRITE_BATCH_TEXEL_KIND, spriteBatchValue, spriteBatchVarying } from "./sprite-batch-block";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import { noteRenderChange } from "./render-change-journal";
 
@@ -298,7 +299,12 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
       // sampled texture (a page), whose origin the last two then are; they are negative where the image is the whole
       // texture, whose size is the sampler's.
       state._emitUniformFromString(U.texel, Types.Vector4);
-      const grid = drawBatchValue(state, DRAW_BATCH_TEXEL_KIND, U.texel);
+      const grid = drawBatchValue(
+        state,
+        DRAW_BATCH_TEXEL_KIND,
+        U.texel,
+        this.msdf ? undefined : { define: "HAPTIC_SPRITE_BATCH", varying: spriteBatchVarying(state, SPRITE_BATCH_TEXEL_KIND) },
+      );
       const sampled = state._getFreeVariableName("unlitSampledSize"), size = state._getFreeVariableName("unlitGridSize");
       const texel = state._getFreeVariableName("unlitTexelIndex"), lookup = state._getFreeVariableName("unlitLookup");
       const dimensions = `vec2(textureSize(${U.sampler}, 0))`;
@@ -371,9 +377,10 @@ export class UnlitFinishBlock extends NodeMaterialBlock {
     state._emitUniformFromString(U.tint, Types.Vector4);
     // The overlay style's tint: bound, or a draw batch's own per vertex.
     const tint = drawBatchValue(state, DRAW_BATCH_TINT_KIND, U.tint);
+    const finish = spriteBatchValue(state, SPRITE_BATCH_FINISH_KIND, U.finish);
     const output = this.output.associatedVariableName;
     state.compilationString += `${state._declareOutput(this.output)} = ${this.input.associatedVariableName};\n`;
-    state.compilationString += `${output}.a *= ${U.finish}.x;\n${output} *= ${tint};\n`;
+    state.compilationString += `${output}.a *= ${finish}.x;\n${output} *= ${tint};\n`;
     return this;
   }
 }

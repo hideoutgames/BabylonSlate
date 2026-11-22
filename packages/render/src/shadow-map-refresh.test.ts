@@ -186,7 +186,7 @@ describe("local shadow refresh", () => {
 
   it("caches landscape chunks and refreshes once when sculpting rewrites their heights", async () => {
     const { scene, material, controller, render } = await fixture();
-    const properties = { width: 4, depth: 4, subdivisions: 2, heights: Array.from({ length: 9 }, () => 0) };
+    const properties = { width: 4, depth: 4, subdivisions: 4, heights: new Float32Array(25) };
     const root = createLandscapeMesh(scene, "land", properties);
     const chunks = root.getChildMeshes() as Mesh[];
     expect(chunks.length).toBeGreaterThan(0);
@@ -198,7 +198,7 @@ describe("local shadow refresh", () => {
     }
     expect(render()).toBe(6);
     expect(render()).toBe(0);
-    updateLandscapeMesh(root, { ...properties, heights: properties.heights.map((_, index) => (index === 4 ? 1 : 0)) });
+    updateLandscapeMesh(root, { ...properties, heights: Float32Array.from(properties.heights, (_, index) => (index === 12 ? 1 : 0)) });
     for (const chunk of chunks) chunk.material = material;
     expect(render()).toBe(6);
     expect(render()).toBe(0);

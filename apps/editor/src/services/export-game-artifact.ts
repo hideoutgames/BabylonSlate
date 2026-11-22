@@ -155,6 +155,7 @@ export async function exportProjectGameArtifact(
     fontMsdfPngByGuid: loaded.fontMsdfPngByGuid,
     navmeshByGuid: loaded.navmeshByGuid,
     audioReverbByGuid: loaded.audioReverbByGuid,
+    componentChunksByGuid: loaded.componentChunksByGuid,
     renderSettings:
       exportDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
     playFrameCap:

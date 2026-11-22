@@ -326,6 +326,18 @@ describe("runtime graph debugging", () => {
     expect(traces(mark).filter((trace) => trace.tickIndex > 3)).toEqual([]);
   });
 
+  it("relabels a class roster entry when its actor is renamed", async () => {
+    const { runtime, commands, rosters } = await startSimulation(doors, scripts());
+    runtime.applyDebugObserve(DOOR, null);
+    runtime.tick();
+    const mark = commands.length;
+    runtime.getWorld().findActor("d1")!.setVariable("name", "Main");
+    runtime.tick();
+    const [change, ...later] = rosters(mark);
+    expect(later).toEqual([]);
+    expect(change).toMatchObject({ reset: false, removed: [], added: [{ id: "d1", kind: "actor", label: "Main" }] });
+  });
+
   it("starts a fresh roster when the target changes", async () => {
     const { runtime, commands, rosters } = await startSimulation(
       [...doors, createActor("s1", "Slider", { classId: "SlidingDoor" })], scripts());

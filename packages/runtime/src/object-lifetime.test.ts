@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor } from "@haptic/core";
-import { EngineObject } from "@haptic/object-model";
+import { ClassRegistry, EngineObject, World } from "@haptic/object-model";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { compileClassScript, graphNode, startGraphScenario, wire, type GraphScenario } from "./testing/graph-scenario";
-import type { RuntimeObjectLifetime } from "./object-lifetime";
+import { RuntimeObjectLifetime } from "./object-lifetime";
 
 const registry = createDefaultNodeRegistry();
 const variable = (name: string) => ({ variableName: name, typeId: "object", typeClassId: "Object", implicitSelf: true });
@@ -139,3 +139,25 @@ describe("object lifetime controls", () => {
   });
 });
 
+describe("object lifetime across script hot reload", () => {
+  it("scans a variable that a reloaded class now declares as an object", () => {
+    const classRegistry = new ClassRegistry();
+    const holderClass = (type: string) => ({ id: "Holder", parentClassId: "Actor", kind: "actor" as const,
+      variables: [{ name: "Slot", type }], implementedInterfaces: [] });
+    classRegistry.register(holderClass("number"));
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry });
+    const holder = world.spawnActorNow(world.createActor({ classId: "Holder" }));
+    const lifetime = new RuntimeObjectLifetime({ world: () => world, roots: () => [holder], intervalTicks: () => 1, now: () => 0 });
+    lifetime.request();
+    lifetime.afterTick(0);
+
+    classRegistry.unregister("Holder");
+    classRegistry.register(holderClass("object"));
+    const held = new EngineObject({ classId: "Object" });
+    lifetime.collector.register(held);
+    holder.setVariable("Slot", held);
+    lifetime.request();
+    lifetime.afterTick(1);
+    expect(held.destroyed).toBe(false);
+  });
+});

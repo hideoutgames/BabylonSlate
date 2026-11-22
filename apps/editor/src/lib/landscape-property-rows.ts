@@ -1,4 +1,4 @@
-import { parseLandscapeProperties, resizeLandscape, type LandscapeProperties, type SerializedComponent } from "@haptic/core";
+import { parseLandscapeProperties, resizeLandscape, serializeLandscapeProperties, type LandscapeProperties, type SerializedComponent } from "@haptic/core";
 import type { PropertyRow } from "@haptic/editor-kit";
 import { assetRow, rowId, type ComponentPropertyContext, type ComponentPropertyUpdate } from "./component-property-row-helpers";
 
@@ -29,8 +29,8 @@ export function landscapePropertyRows(
       kind: "number", id: rowId(actorId, component.id, "subdivisions"), label: "Cells", value: data.subdivisions, min: 4, max: 256, sensitivity: 1, description: landscapeCellSizeDescription(data),
       // Resampling keeps the sculpted shape and paint at the new resolution.
       onChange: (value) => {
-        const resized = resizeLandscape(data, value);
-        update("subdivisions", resized.subdivisions, { heights: resized.heights, weights: resized.weights });
+        const resized = serializeLandscapeProperties(resizeLandscape(data, value));
+        update("subdivisions", resized.subdivisions, { data: resized.data });
       },
     },
     { kind: "boolean", id: rowId(actorId, component.id, "collisionsEnabled"), label: "Landscape Collisions", value: data.collisionsEnabled, onChange: (value) => update("collisionsEnabled", value) },

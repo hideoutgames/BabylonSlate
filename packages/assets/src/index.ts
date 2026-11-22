@@ -56,7 +56,6 @@ export * from "./tilemap-chains";
 export * from "./tilemap-paint";
 export * from "./tilemap-selection";
 export * from "./importers";
-export * from "./migrate-on-load";
 export * from "./migration";
 export * from "./payload-loader";
 export { STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
@@ -96,3 +95,5 @@ export {
 
 export { materialParameterTextureAssetGuids } from "./material-parameter-textures";
 export * from "./area-emission";
+export * from "./landscape-chunks";
+export * from "./foliage-chunks";

@@ -22,6 +22,7 @@ import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node
 import { CoverageClipBlock } from "./alpha-to-coverage";
 import { createDefaultMaterialDocument, lowerMaterialDocument, newCustomGlslProperties, type MaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";
 
@@ -72,7 +73,7 @@ describe("material node contracts", () => {
     node(doc, "trig", type, { "default:value": [0.5] });
     wire(doc, "trig", "out", "output", "roughness");
     const result = await compile(doc);
-    const chain = trigChain(result.material.getBlockByName("trig"));
+    const chain = trigChain(result.material.getBlockByName(nodeBlockName(doc, "trig")));
     expect(chain.operations).toEqual(expected);
     expect(chain.source).toBeInstanceOf(InputBlock);
   });
@@ -119,14 +120,14 @@ describe("material node contracts", () => {
     wire(doc, "invert", "out", "output", "emissive");
     const result = await compile(doc);
     const block = result.material.attachedBlocks.find((entry) => entry.getClassName() === "OneMinusBlock")!;
-    expect(block.inputs[0]!.connectedPoint?.ownerBlock.name).toBe("time");
+    expect(block.inputs[0]!.connectedPoint?.ownerBlock.name).toBe(nodeBlockName(doc, "time"));
   });
   it("writes Gradient stop colours in linear space, as a Color node of the same picked colour is", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "ramp", "color.gradient", { stops: [{ position: 0, color: [0.5, 0.5, 0.5] }, { position: 1, color: [1, 0, 0] }] });
     wire(doc, "ramp", "out", "output", "emissive");
     const result = await compile(doc);
-    const block = result.material.getBlockByName("ramp") as unknown as { colorSteps: Array<{ step: number; color: { r: number; g: number; b: number } }> };
+    const block = result.material.getBlockByName(nodeBlockName(doc, "ramp")) as unknown as { colorSteps: Array<{ step: number; color: { r: number; g: number; b: number } }> };
 
     // sRGB 0.5 is about 0.214 linear; the ends of the range are unchanged.
     expect(block.colorSteps.map((stop) => stop.step)).toEqual([0, 1]);
@@ -139,7 +140,7 @@ describe("material node contracts", () => {
     node(doc, "noise", type);
     wire(doc, "noise", type === "noise.perlin" ? "out" : "f1", "output", "emissive");
     const result = await compile(doc);
-    const noise = result.material.getBlockByName("noise")!;
+    const noise = result.material.getBlockByName(nodeBlockName(doc, "noise"))!;
     const seed = noise.getInputByName("seed")!.connectedPoint!.ownerBlock as VectorMergerBlock;
     expect(seed).toBeInstanceOf(VectorMergerBlock);
     // The compiler wired its UV into the pair of channels the noise reads.
@@ -204,7 +205,7 @@ describe("material node contracts", () => {
       // displacement and color must not break Babylon's stage realization.
       if (domain === "surface") wire(doc, "channels", "xyz", "output", "worldPositionOffset");
       const result = await compile(doc);
-      const block = result.material.getBlockByName("noise")!;
+      const block = result.material.getBlockByName(nodeBlockName(doc, "noise"))!;
       expect(block.getInputByName("seed")?.isConnected).toBe(true);
       if (kind === "voronoi") {
         expect(block.getInputByName("density")?.connectedPoint?.ownerBlock).toHaveProperty("value", 5);
@@ -345,7 +346,7 @@ describe("material node contracts", () => {
     dispose.push(result.dispose);
     expect(await result.ready).toEqual([]);
     expect(result.material.compiledShaders).toContain("sampler2D Albedo");
-    const sampler = result.material.getBlockByName("custom")!.inputs[0]!.connectedPoint!.ownerBlock as ImageSourceBlock;
+    const sampler = result.material.getBlockByName(nodeBlockName(doc, "custom"))!.inputs[0]!.connectedPoint!.ownerBlock as ImageSourceBlock;
     expect(sampler.texture).toBe(texture);
     if (source !== "inline") {
       expect(result.setParameter("Image", { kind: "texture", textureAssetGuid: null })).toBe(true);
@@ -374,7 +375,7 @@ describe("material node contracts", () => {
       if (block instanceof MultiplyBlock) return scalar(block.left.connectedPoint!) * scalar(block.right.connectedPoint!);
       throw new Error(`Unexpected Time producer: ${block.getClassName()}`);
     }
-    const time = result.material.getBlockByName("sine")!.getInputByName("input")!.connectedPoint!;
+    const time = result.material.getBlockByName(nodeBlockName(doc, "sine"))!.getInputByName("input")!.connectedPoint!;
     clock.mockReturnValue(engine.startTime + 250);
     scene.render();
     const before = scalar(time);
@@ -453,7 +454,7 @@ describe("material node contracts", () => {
     wire(doc, "mask", "out", "split-mask", "value");
     wire(doc, "split-mask", "y", "output", "roughness");
     const result = await compile(doc);
-    const merge = result.material.getBlockByName("mask_merge");
+    const merge = result.material.getBlockByName(`${nodeBlockName(doc, "mask")}_merge`);
     expect(merge?.getInputByName("x")?.connectedPoint?.name).toBe("x");
     expect(merge?.getInputByName("y")?.connectedPoint?.name).toBe("z");
   });
@@ -480,7 +481,7 @@ describe("material node contracts", () => {
     wire(doc, "clamp", "out", "output", "roughness");
     const result = await compile(doc);
     for (const id of ["minimum", "maximum"]) {
-      const input = result.material.getInputBlockByPredicate((block) => block.name === id);
+      const input = result.material.getInputBlockByPredicate((block) => block.name === nodeBlockName(doc, id));
       expect(input?.output.hasEndpoints).toBe(true);
     }
     expect(result.setParameter("Minimum", { kind: "float", value: 0.2 })).toBe(true);
@@ -506,11 +507,78 @@ describe("material node contracts", () => {
     wire(doc, "mask", "out", "output", "alphaClip");
     const result = await compile(doc);
     const discard = result.material.getBlockByPredicate((block) => block instanceof CoverageClipBlock) as CoverageClipBlock;
-    expect(discard?.value.connectedPoint?.ownerBlock.name).toContain("mask");
+    expect(discard?.value.connectedPoint?.ownerBlock.name).toBe(nodeBlockName(doc, "mask"));
     expect(result.material.getInputBlockByPredicate((block) => block.name.endsWith("_alphaCutoff"))?.value).toBe(0.23);
     const fragment = result.material.getBlockByPredicate((block) => block instanceof FragmentOutputBlock) as FragmentOutputBlock;
     expect(fragment.a.isConnected).toBe(true);
     doc.blendMode = "additive";
     expect((await compile(doc)).material.alphaMode).toBe(Constants.ALPHA_ADD);
+  });
+
+  describe("User Interface nodes", () => {
+    const uiDocument = () => createDefaultMaterialDocument("Widget", "ui");
+    const replaceInto = (doc: MaterialDocument, source: string, sourcePin: string, targetPin: string) => {
+      doc.edges = doc.edges.filter((edge) => !(edge.targetNodeId === "output" && edge.targetPinId === targetPin));
+      wire(doc, source, sourcePin, "output", targetPin);
+    };
+    it.each(["elementUv", "elementSize", "elementPosition", "screenUv", "screenSize", "screenPosition"])(
+      "compiles User Interface Input with only %s wired, building nothing for the others",
+      async (pin) => {
+        const doc = uiDocument();
+        node(doc, "element", "input.ui");
+        replaceInto(doc, "element", pin, "color");
+        const shaders = (await compile(doc)).material.compiledShaders;
+        // Element Size and Position derive from the UV's screen derivatives; the screen's size is a bound uniform.
+        expect(shaders.includes("dFdx(")).toBe(pin === "elementSize" || pin === "elementPosition");
+        expect(/uniform vec2 \w*screenSize/.test(shaders)).toBe(pin === "screenSize" || pin === "screenUv");
+        expect(shaders.includes("gl_FragCoord")).toBe(pin === "screenUv" || pin === "screenPosition");
+      },
+    );
+    it.each([
+      ["ui.roundedRectangle", "hapticUiRoundedRectangleDistance("],
+      ["ui.ellipse", "hapticUiEllipseDistance("],
+    ])("compiles %s unwired on the element's position and size, and wired, for each output", async (type, call) => {
+      for (const output of ["fill", "borderMask", "distance"]) {
+        const unwired = uiDocument();
+        node(unwired, "shape", type);
+        replaceInto(unwired, "shape", output, "opacity");
+        const shaders = (await compile(unwired)).material.compiledShaders;
+        expect(shaders).toContain(call);
+        expect(shaders).toContain("dFdx(");
+        const wired = uiDocument();
+        node(wired, "element", "input.ui");
+        node(wired, "shape", type);
+        node(wired, "size", "const.vec2", { value: [120, 40] });
+        node(wired, "width", "param.float", { name: "Border", value: [2] });
+        wire(wired, "element", "elementPosition", "shape", "position");
+        wire(wired, "size", "out", "shape", "size");
+        wire(wired, "width", "out", "shape", "border");
+        if (type === "ui.roundedRectangle") {
+          node(wired, "radius", "const.vec4", { value: [4, 8, 12, 16] });
+          wire(wired, "radius", "out", "shape", "radius");
+        }
+        replaceInto(wired, "shape", output, "opacity");
+        expect((await compile(wired)).material.compiledShaders).toContain(call);
+      }
+    });
+    it.each([
+      ["ui.linearProgress", "direction", "const.vec2", [0, 1], "hapticUiLinearProgress("],
+      ["ui.radialProgress", "startAngle", "const.float", [90], "hapticUiRadialProgress("],
+    ] as const)("compiles %s unwired on the element's UV, and wired", async (type, shaping, constant, value, call) => {
+      const unwired = uiDocument();
+      node(unwired, "progress", type);
+      replaceInto(unwired, "progress", "mask", "opacity");
+      expect((await compile(unwired)).material.compiledShaders).toContain(call);
+      const wired = uiDocument();
+      node(wired, "element", "input.ui");
+      node(wired, "progress", type);
+      node(wired, "amount", "param.float", { name: "Progress", value: [0.25] });
+      node(wired, "shaping", constant, { value });
+      wire(wired, "element", "screenUv", "progress", "uv");
+      wire(wired, "amount", "out", "progress", "progress");
+      wire(wired, "shaping", "out", "progress", shaping);
+      replaceInto(wired, "progress", "mask", "opacity");
+      expect((await compile(wired)).material.compiledShaders).toContain(call);
+    });
   });
 });

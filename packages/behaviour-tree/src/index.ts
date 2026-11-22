@@ -27,7 +27,7 @@ export {
   parseBlackboardDocument,
 } from "./tree";
 export { validateBehaviourTree, type BehaviourTreeValidateContext } from "./validate";
-export { evaluateBehaviourTree } from "./evaluate";
+export { evaluateBehaviourTree, initialBehaviourTreeState, stepBehaviourTree } from "./evaluate";
 export { btNodeStatuses, type BtNodeStatus } from "./status";
 export { builtinClassId, BT_CLASS_ALIASES } from "./builtins";
 export {

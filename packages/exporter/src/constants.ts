@@ -14,6 +14,10 @@ export const NAVMESH_EXPORT_TYPE = "NavMesh";
 const NAVMESH_EXPORT_GUID_PREFIX = "navmesh:";
 export const AUDIO_REVERB_EXPORT_TYPE = "AudioReverb";
 const AUDIO_REVERB_EXPORT_GUID_PREFIX = "audioReverb:";
+export const LANDSCAPE_EXPORT_TYPE = "Landscape";
+const LANDSCAPE_EXPORT_GUID_PREFIX = "landscape:";
+export const FOLIAGE_EXPORT_TYPE = "Foliage";
+const FOLIAGE_EXPORT_GUID_PREFIX = "foliage:";
 export const FONT_FACETYPE_EXPORT_TYPE = "FontFacetype";
 export const AREA_EMISSION_EXPORT_TYPE = "AreaEmission";
 const AREA_EMISSION_EXPORT_PREFIX = "area-emission:";
@@ -43,6 +47,31 @@ export function sceneGuidFromAudioReverbExport(guid: string): string | null {
   return guid.startsWith(AUDIO_REVERB_EXPORT_GUID_PREFIX)
     ? guid.slice(AUDIO_REVERB_EXPORT_GUID_PREFIX.length)
     : null;
+}
+
+/**
+ * Key of a Scene's binary component chunk (Landscape `HPLD`, Foliage `HPFG`) inside
+ * `GameSourceContent.componentChunks` and `sceneComponentChunks`: `<ownerGuid>:<chunkId>`.
+ */
+export function componentChunkKey(ownerGuid: string, chunkId: string): string {
+  return `${ownerGuid}:${chunkId}`;
+}
+
+/** Manifest sidecar asset guid for a binary `HPLD` landscape chunk (`landscape:<ownerGuid>:<chunkId>`). */
+export function landscapeExportGuid(ownerGuid: string, chunkId: string): string {
+  return `${LANDSCAPE_EXPORT_GUID_PREFIX}${componentChunkKey(ownerGuid, chunkId)}`;
+}
+
+/** Manifest sidecar asset guid for a binary `HPFG` foliage chunk (`foliage:<ownerGuid>:<chunkId>`). */
+export function foliageExportGuid(ownerGuid: string, chunkId: string): string {
+  return `${FOLIAGE_EXPORT_GUID_PREFIX}${componentChunkKey(ownerGuid, chunkId)}`;
+}
+
+/** Returns `<ownerGuid>:<chunkId>` for a `Landscape` or `Foliage` export sidecar guid, or null. */
+export function componentChunkKeyFromExport(guid: string): string | null {
+  if (guid.startsWith(LANDSCAPE_EXPORT_GUID_PREFIX)) return guid.slice(LANDSCAPE_EXPORT_GUID_PREFIX.length);
+  if (guid.startsWith(FOLIAGE_EXPORT_GUID_PREFIX)) return guid.slice(FOLIAGE_EXPORT_GUID_PREFIX.length);
+  return null;
 }
 
 export function fontFacetypeExportGuid(fontGuid: string): string {

@@ -133,7 +133,12 @@ export function drawBatchWorld(name: string, instances: InstancesBlock, blocks: 
  * varying gives the fragment stage exactly it, where an interpolated one could round. Every other draw reads `bound`,
  * the expression of the value as it binds it. Returns a local that holds the value, for the block's code to use.
  */
-export function drawBatchValue(state: NodeMaterialBuildState, kind: string, bound: string): string {
+export function drawBatchValue(
+  state: NodeMaterialBuildState,
+  kind: string,
+  bound: string,
+  alternate?: { define: string; varying: string },
+): string {
   const vertex = state._vertexState;
   const varying = `v_${kind}`;
   if (!vertex.attributes.includes(kind)) {
@@ -149,6 +154,8 @@ export function drawBatchValue(state: NodeMaterialBuildState, kind: string, boun
   }
   const local = state._getFreeVariableName(`${kind}Value`);
   const declared = state._declareLocalVar(local, Types.Vector4);
-  state.compilationString += `#ifdef HAPTIC_BATCH\n${declared} = ${varying};\n#else\n${declared} = ${bound};\n#endif\n`;
+  state.compilationString += `#ifdef HAPTIC_BATCH\n${declared} = ${varying};\n`
+    + (alternate ? `#elif defined(${alternate.define})\n${declared} = ${alternate.varying};\n` : "")
+    + `#else\n${declared} = ${bound};\n#endif\n`;
   return local;
 }

@@ -15,8 +15,7 @@ test("SceneLayer compiled Tweens fade, tint and move rendered components after o
   const layerGuid = "00000000-0000-4000-8000-000000000031";
   const materialGuid = "00000000-0000-4000-8000-000000000032";
   const classGuid = "00000000-0000-4000-8000-000000000002";
-  const material = createDefaultMaterialDocument("Tween White");
-  material.shadingModel = "unlit";
+  const material = createDefaultMaterialDocument("Tween White", "ui");
   material.nodes[0]!.properties.value = [1, 1, 1];
   files.set("assets/TweenWhite.material.hasset", await encodeAssetDocument({
     guid: materialGuid, type: "Material", name: "Tween White", version: versions.currentVersion("Material"), payload: material as unknown as Record<string, unknown>,

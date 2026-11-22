@@ -1,7 +1,6 @@
 import {
   createDataTreeEntry,
   buildDataTreeIndex,
-  dataFieldIdentity,
   hardLoadingProperty,
   type DataFieldSnapshot,
   type DataTreeEntry,
@@ -75,7 +74,7 @@ function structureSchema(schemas: TypeSchemas | undefined, guid: string | null |
 }
 
 function mapKeyField(field: StructField): StructField {
-  return { name: "key", typeId: field.keyTypeId || "string", typeClassId: field.keyTypeClassId };
+  return { id: `${field.id}.key`, name: "key", typeId: field.keyTypeId || "string", typeClassId: field.keyTypeClassId };
 }
 
 /** JSON with sorted keys: equal vector/struct keys share one text. */
@@ -130,7 +129,7 @@ function snapshotFieldRecords(
     const keyNested = keys.length > 0 && field.container === "map" && field.keyTypeId === "struct" && field.keyTypeClassId &&
       !visiting.has(field.keyTypeClassId) ? structureSchema(schemas, field.keyTypeClassId) : undefined;
     return {
-      id: dataFieldIdentity(field),
+      id: field.id,
       name: field.name,
       typeId: field.typeId,
       ...(field.typeClassId ? { typeClassId: field.typeClassId } : {}),
@@ -224,12 +223,12 @@ function fieldSources(
 ): FieldSource[] {
   const names = new Set<string>();
   const ids = new Set<string>();
-  const previousById = new Map(snapshot.map((field) => [dataFieldIdentity(field), field]));
+  const previousById = new Map(snapshot.map((field) => [field.id, field]));
   const previousByName = new Map(snapshot.map((field) => [field.name, field]));
   const seenSnapshotIds = new Set<string>();
   const seenSnapshotNames = new Set<string>();
   for (const field of snapshot) {
-    const id = dataFieldIdentity(field);
+    const id = field.id;
     if (seenSnapshotIds.has(id) || seenSnapshotNames.has(field.name)) {
       issue(issues, "ambiguous-schema", path, "Stored field identities are ambiguous; repair the schema before reconciling.");
     }
@@ -237,7 +236,7 @@ function fieldSources(
     seenSnapshotNames.add(field.name);
   }
   return fields.map((field) => {
-    const id = dataFieldIdentity(field);
+    const id = field.id;
     const at = fieldPath(path, field.name);
     if (!field.name.trim() || names.has(field.name) || ids.has(id)) {
       issue(issues, "invalid-schema", at, "Definition fields need unique, non-empty names and identities.");
@@ -248,7 +247,7 @@ function fieldSources(
     const sameName = previousByName.get(field.name);
     // Never assign an old field's value to a new field which reused its name.
     const source = previous && own(values, previous.name) ? previous.name :
-      (!sameName || dataFieldIdentity(sameName) === id) && own(values, field.name) ? field.name : undefined;
+      (!sameName || sameName.id === id) && own(values, field.name) ? field.name : undefined;
     return { field, previous, source };
   });
 }
@@ -490,7 +489,7 @@ export function validateDataDefinition(
       if (field.container !== undefined && !["single", "array", "map"].includes(field.container)) issue(issues, "invalid-schema", at, "Unknown field container.");
       validateFieldRules(field, issues, at);
       const checkType = (spec: StructField, typePath: string): void => {
-        const unconstrained = { name: spec.name, typeId: spec.typeId, typeClassId: spec.typeClassId };
+        const unconstrained = { id: spec.id, name: spec.name, typeId: spec.typeId, typeClassId: spec.typeClassId };
         validateFieldValue(unconstrained, spec.typeId === "struct" ? {} : defaultValueForMember(spec.typeId, spec.typeClassId, available), available, issues, typePath, { allowEmptyRequired: true });
         if (spec.typeId !== "struct") return;
         const nested = structureSchema(available, spec.typeClassId);
@@ -559,10 +558,10 @@ export function resolveDataEntryValues(row: DataTreeEntry, definitionGuid: strin
 function mergeSnapshots(
   left: readonly DataFieldSnapshot[], right: readonly DataFieldSnapshot[], previous: readonly DataFieldSnapshot[],
 ): DataFieldSnapshot[] {
-  const result = new Map(left.map((field) => [dataFieldIdentity(field), field]));
-  const old = new Map(previous.map((field) => [dataFieldIdentity(field), field]));
+  const result = new Map(left.map((field) => [field.id, field]));
+  const old = new Map(previous.map((field) => [field.id, field]));
   for (const field of right) {
-    const id = dataFieldIdentity(field);
+    const id = field.id;
     const existing = result.get(id);
     if (!existing) { result.set(id, field); continue; }
     const retained = !sameFieldType(existing, field) ? old.get(id) ?? existing : existing;
@@ -688,7 +687,7 @@ function reconcileFields(
       if (validation.some((entry) => entry.severity === "error")) {
         // Until repaired, retain the authored type so reference tracking still sees
         // assets inside an incompatible value. Renames still update its storage key.
-        schema[index] = { ...previous, name: field.name, id: dataFieldIdentity(field) };
+        schema[index] = { ...previous, name: field.name, id: field.id };
       }
     }
     Object.defineProperty(result, field.name, { value, enumerable: true, configurable: true, writable: true });
@@ -696,7 +695,7 @@ function reconcileFields(
   }
   const previousByName = new Map(snapshot.map((field) => [field.name, field]));
   const snapshotNames = new Set(schema.map((field) => field.name));
-  const snapshotIds = new Set(schema.map(dataFieldIdentity));
+  const snapshotIds = new Set(schema.map((field) => field.id));
   for (const key of Object.keys(values)) {
     if (consumed.has(key)) continue;
     changes.push({ kind: "removed", path: fieldPath(path, key) });
@@ -706,10 +705,10 @@ function reconcileFields(
       continue;
     }
     const old = previousByName.get(key);
-    if (old && !snapshotNames.has(key) && !snapshotIds.has(dataFieldIdentity(old))) {
+    if (old && !snapshotNames.has(key) && !snapshotIds.has(old.id)) {
       schema.push(old);
       snapshotNames.add(key);
-      snapshotIds.add(dataFieldIdentity(old));
+      snapshotIds.add(old.id);
     }
   }
   return { values: result, schema };

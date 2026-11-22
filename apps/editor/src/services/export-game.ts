@@ -2,7 +2,7 @@ import type { SaveGameConfiguration } from "@haptic/core";
 import { subsystemBaseClassIdOf } from "@haptic/object-model";
 import { dataTypeSchemas } from "@haptic/scripting";
 import type { DataAssetCatalogEntry } from "@haptic/core";
-import { areaEmissionTextureGuids, buildDataTreeIndex, isAnimGraphAssetType, classIdForAssetPath, isDataTreeAsset, isInputAssetType, normalizeEmbeddedScript, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@haptic/core";
+import { areaEmissionTextureGuids, buildDataTreeIndex, isAnimGraphAssetType, classIdForAssetPath, isDataTreeAsset, isFoliageChunkId, isInputAssetType, normalizeEmbeddedScript, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@haptic/core";
 import {
   collectExportReachability,
   exportGame,
@@ -11,6 +11,10 @@ import {
   navmeshExportGuid,
   AUDIO_REVERB_EXPORT_TYPE,
   audioReverbExportGuid,
+  FOLIAGE_EXPORT_TYPE,
+  LANDSCAPE_EXPORT_TYPE,
+  foliageExportGuid,
+  landscapeExportGuid,
   FONT_FACETYPE_EXPORT_TYPE,
   AREA_EMISSION_EXPORT_TYPE,
   areaEmissionExportGuid,
@@ -132,6 +136,8 @@ export type CollectExportGameParams = {
   fontMsdfPngByGuid?: (guid: string) => Uint8Array | null;
   /** Throws for a Scene whose reverb could not be baked or saved; a reached one fails the export. */
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
+  /** Raw binary Landscape (`HPLD`) and Foliage (`HPFG`) chunks owned by a Scene. */
+  componentChunksByGuid?: (guid: string) => ReadonlyArray<{ chunkId: string; bytes: Uint8Array }>;
   renderSettings: RenderProjectSettings;
   defaultFontGuid?: string | null;
   /** Project Global Fallback, written to game.json for the player's font stacks. */
@@ -505,6 +511,23 @@ export async function collectAndExportGame(
       encoding: "bytes",
       name: `${asset.name} AudioReverb`,
     });
+  }
+  for (const guid of closure.value.guids) {
+    const asset = params.assets.find((entry) => entry.guid === guid);
+    if (!asset || asset.type !== "Scene") continue;
+    for (const { chunkId, bytes } of params.componentChunksByGuid?.(guid) ?? []) {
+      if (!bytes || bytes.byteLength === 0) continue;
+      const foliage = isFoliageChunkId(chunkId);
+      exportAssets.push({
+        guid: foliage ? foliageExportGuid(guid, chunkId) : landscapeExportGuid(guid, chunkId),
+        ownerGuid: guid,
+        type: foliage ? FOLIAGE_EXPORT_TYPE : LANDSCAPE_EXPORT_TYPE,
+        sceneGuid: guid,
+        bytes,
+        encoding: "bytes",
+        name: `${asset.name} ${chunkId}`,
+      });
+    }
   }
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);

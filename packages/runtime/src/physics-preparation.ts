@@ -249,6 +249,52 @@ export class PhysicsCompositionScratch {
   end(): void {
     for (const guid of this.poses.keys()) if (!this.resolved.has(guid)) this.poses.delete(guid);
   }
+
+  /** Releases `guid`'s pose and resolution between whole passes, once nothing composes it any more. */
+  release(guid: string): void {
+    this.poses.delete(guid);
+    this.resolved.delete(guid);
+  }
+}
+
+/** The slots a chain resolution composes into: the actors being resolved, and one pose per resolved actor. */
+interface CompositionSlots {
+  readonly resolving: Actor[];
+  pose(guid: string): Transform;
+}
+
+/**
+ * `physicsChainTransforms` for a per-tick caller: one resolver, map and pose pool reused by every call, so a
+ * resolution allocates nothing once the pool holds its largest chain set. A result and its poses are valid only
+ * until the next `compose`; callers copy what they keep.
+ */
+export class PhysicsChainComposer implements CompositionSlots {
+  readonly resolving: Actor[] = [];
+  private readonly resolved = new Map<string, Transform>();
+  private readonly pool: Transform[] = [];
+  private used = 0;
+  private readonly resolve: (actor: Actor) => Transform;
+
+  constructor(lookup: (guid: string) => Actor | undefined, kind: "2d" | "3d") {
+    this.resolve = physicsTransformResolver(lookup, kind, this.resolved, undefined, this);
+  }
+
+  pose(): Transform {
+    return (this.pool[this.used++] ??= {
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+    });
+  }
+
+  /** Current world poses of `actors` and their ancestor chains; throws on a parent cycle or unsupported shear. */
+  compose(actors: readonly Actor[]): ReadonlyMap<string, Transform> {
+    this.resolved.clear();
+    this.resolving.length = 0;
+    this.used = 0;
+    for (let index = 0; index < actors.length; index++) this.resolve(actors[index]!);
+    return this.resolved;
+  }
 }
 
 /**
@@ -263,7 +309,7 @@ function physicsTransformResolver(
   kind: "2d" | "3d",
   resolved: Map<string, Transform>,
   bodyPoses?: ReadonlyMap<string, PhysicsTransform>,
-  scratch?: PhysicsCompositionScratch,
+  scratch?: CompositionSlots,
 ): (actor: Actor) => Transform {
   const resolving = scratch?.resolving ?? [];
   const resolve = (actor: Actor): Transform => {
@@ -360,7 +406,7 @@ export function physicsWorldTransforms(
 }
 
 /** Whether `actor` owns a live component that makes it a physics participant in a `kind` world. */
-function hasParticipantComponent(actor: Actor, kind: "2d" | "3d"): boolean {
+export function hasParticipantComponent(actor: Actor, kind: "2d" | "3d"): boolean {
   const components = actor.components;
   for (let index = 0; index < components.length; index++) {
     const component = components[index]!;

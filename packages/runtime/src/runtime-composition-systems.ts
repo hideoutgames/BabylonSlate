@@ -128,7 +128,6 @@ function applyAnimRootMotion(rt: RuntimeComposition, actor: Actor, motion: AnimR
 export function createBehaviourTrees(rt: RuntimeComposition): BehaviourTreeRuntime {
   return new BehaviourTreeRuntime({
     world: () => rt.world,
-    frameActors: () => rt.navFrameActors ?? undefined,
     stopped: () => rt.stopped,
     canTick: (actor) => rt.admission.canTickActor(actor),
     slot: (actor) => rt.actorSlot(actor),
@@ -274,7 +273,10 @@ export function createPhysics(
     stopped: () => rt.stopped,
     lifecycleId: () => rt.lifecycleId,
     mainActorReady: (actor) => rt.streams.actorReady(actor),
+    mainEligibilityRevision: () => rt.streams.readinessRevision,
     overlayActorReady: (actor) => rt.admission.canTickActor(actor, true),
+    overlayEligibilityRevision: () =>
+      (rt.streams.readinessRevision + rt.layers.readinessRevision + rt.blocks.revision) * 2 + (rt.stopped ? 1 : 0),
     hasPhysicsSceneLayers: () => [...rt.sceneLayerLibrary.values()].some((layer) => layer.settings?.physicsEnabled === true),
     canTickActor: (actor) => rt.admission.canTickActor(actor),
     scripts: () => rt.scriptHost,

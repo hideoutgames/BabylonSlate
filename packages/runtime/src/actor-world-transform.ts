@@ -137,6 +137,27 @@ export class WorldTransformComposer {
     composeInto(lookup, selected, this.store, this.resolving, onShear);
     return this.store.end();
   }
+
+  /**
+   * Incrementally recompose only `dirtyActors` (which must include any moved actor and its
+   * descendants) while reusing cached world poses and sheared matrices for untouched ancestors.
+   * Returns null if a parent cycle is encountered so the caller can fall back to full `compose`.
+   */
+  composeDirty(
+    lookup: (guid: string) => Actor | undefined,
+    dirtyActors: Iterable<Actor>,
+    onShear?: (actor: Actor) => void,
+  ): ActorTransformMap | null {
+    for (const actor of dirtyActors) this.store.invalidate(actor.guid);
+    this.resolving.length = 0;
+    const cyclic = composeInto(lookup, dirtyActors, this.store, this.resolving, onShear);
+    return cyclic ? null : this.store.current();
+  }
+
+  /** The currently cached world-pose map from the latest full or incremental pass. */
+  current(): ActorTransformMap {
+    return this.store.current();
+  }
 }
 
 /** Guid-keyed pose storage that one composition pass reads and writes. */
@@ -204,6 +225,15 @@ class ReusablePoseStore implements PoseStore {
   end(): ActorTransformMap {
     // `forEach` rather than `for...of` over entries: no [guid, entry] pair per entry and pass.
     this.entries.forEach(this.release);
+    return this.poses;
+  }
+
+  invalidate(guid: string): void {
+    const entry = this.entries.get(guid);
+    if (entry) entry.pass = 0;
+  }
+
+  current(): ActorTransformMap {
     return this.poses;
   }
 

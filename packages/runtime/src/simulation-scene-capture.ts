@@ -1,4 +1,4 @@
-import { normalizeScene } from "@haptic/core";
+import { normalizeScene, parseFoliageProperties, parseLandscapeProperties, serializeFoliageProperties, serializeLandscapeProperties } from "@haptic/core";
 import type { MaterialParameterValue, SceneSettings, SerializedActor, SerializedComponent, SerializedScene, SerializedTransform, Transform } from "@haptic/core";
 import { Actor, ActorComponent, EngineObject, engineScriptApiFor, sceneActorProvenance, sceneComponentProvenance, type VariableDef, type World } from "@haptic/object-model";
 import { defaultComponentAuthoringProperties } from "./component-authoring";
@@ -331,7 +331,11 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
         if (component.sourceId && !previous && !template) fail("reference", componentId, "The source prefab component is unavailable for instance override capture.");
         const row: SerializedComponent = {
           id: componentId, classId: component.classId,
-          properties: properties(component, previous?.properties ?? {}, defaultComponentAuthoringProperties(component.classId, input.baseline.settings.physicsWorld, input.baseline.viewportMode), `${id}.${componentId}`),
+          properties: component.classId === "LandscapeComponent"
+            ? { ...serializeLandscapeProperties(parseLandscapeProperties(Object.fromEntries(component.variables))) }
+            : component.classId === "FoliageComponent"
+            ? { ...serializeFoliageProperties(parseFoliageProperties(Object.fromEntries(component.variables))) }
+            : properties(component, previous?.properties ?? {}, defaultComponentAuthoringProperties(component.classId, input.baseline.settings.physicsWorld, input.baseline.viewportMode), `${id}.${componentId}`),
           parentId: null,
           ...(component.classId === "2DAnchorComponent" ? {} : { transform: transform(component.transform, `${id}.${componentId}.transform`) }),
         };

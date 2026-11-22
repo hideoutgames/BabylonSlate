@@ -66,7 +66,7 @@ describe("Definition collection literals in the graph Inspector", () => {
     expect(authored.nodes[1]!.data["default:values"]).toEqual(expected);
     expect(authored.nodes[1]!.data.dataSchema).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "Prices", container: "array", typeId: "float" }),
-      expect.objectContaining({ name: "Lookup", container: "map", keyTypeId: "struct", keyTypeClassId: "key", keyFields: [expect.objectContaining({ name: "Code", typeId: "string" })] }),
+      expect.objectContaining({ name: "Lookup", container: "map", keyTypeId: "struct", keyTypeClassId: "key", keyFields: [expect.objectContaining({ id: "code", name: "Code", typeId: "string" })] }),
     ]));
     expect(validateSerializedGraph(authored, { assetGuid: "tools", graphId: "graph", classId: "EditorUtilityObject", ...schemas })
       .filter((issue) => issue.severity === "error")).toEqual([]);

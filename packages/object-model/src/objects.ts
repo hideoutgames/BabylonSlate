@@ -1,5 +1,4 @@
 import {
-  identityTransform,
   newGuid,
   normalizeScenePostProcessStack,
   normalizeMaterialInstanceOverrides,
@@ -20,6 +19,11 @@ import {
   type Transform,
 } from "@haptic/core";
 import { sceneAssetClassId } from "./ids";
+import {
+  createObservedTransform,
+  writeObservedPoseSilent,
+  writeObservedTransform,
+} from "./observed-transform";
 
 export type TickContext = {
   dt: number;
@@ -56,8 +60,16 @@ export type TickContext = {
   }>;
 };
 
+export type TransformChangeSource = "script" | "physics";
+export type ComponentChangeKind = "attached" | "destroyed" | "variable" | "transform" | "meta";
+
 export interface WorldLike {
   markStructureChanged?(): void;
+  noteActorParentChanged?(actor: Actor, previousParentGuid: Guid | null, nextParentGuid: Guid | null): void;
+  noteActorTransformChanged?(actor: Actor, source: TransformChangeSource): void;
+  noteActorVariableChanged?(actor: Actor, name: string | null): void;
+  noteActorComponentChanged?(actor: Actor, component: ActorComponent, kind: ComponentChangeKind): void;
+  noteActorLayerChanged?(actor: Actor, previousLayerId: Guid | null, nextLayerId: Guid | null): void;
   rngNextFloat(): number;
 }
 
@@ -75,6 +87,9 @@ export type LifecycleHooks<T extends EngineObject = EngineObject> = {
 const isPrimitive = (value: unknown): boolean =>
   value === null || (typeof value !== "object" && typeof value !== "function");
 
+const normalizeParentGuid = (value: unknown): Guid | null =>
+  typeof value === "string" && value.length > 0 ? value : null;
+
 /**
  * Variables that count their writes. `revision` advances on every set, delete or
  * clear that can change what a reader sees, so a consumer that remembers it can
@@ -91,40 +106,70 @@ class VersionedVariables extends Map<string, unknown> {
     for (const [name, value] of entries) this.set(name, value);
   }
 
+  protected onChanged(name: string | null): void { void name; }
+
   override set(name: string, value: unknown): this {
     // An object value always counts, so it skips the lookup; a primitive costs one `get`, and `has`
     // only when the write is `undefined`, which a missing key also reads as.
     const unchanged = isPrimitive(value) && Object.is(super.get(name), value) && (value !== undefined || super.has(name));
     super.set(name, value);
-    if (!unchanged) this.revision++;
+    if (!unchanged) {
+      this.revision++;
+      this.onChanged(name);
+    }
     return this;
   }
 
   override delete(name: string): boolean {
     const deleted = super.delete(name);
-    if (deleted) this.revision++;
+    if (deleted) {
+      this.revision++;
+      this.onChanged(name);
+    }
     return deleted;
   }
 
   override clear(): void {
-    if (this.size > 0) this.revision++;
+    if (this.size > 0) {
+      this.revision++;
+      super.clear();
+      this.onChanged(null);
+      return;
+    }
     super.clear();
+  }
+}
+
+/** Component variables notify the owning actor's World on any write, delete or clear. */
+class ComponentVariables extends VersionedVariables {
+  private readonly component: ActorComponent;
+
+  constructor(component: ActorComponent, entries: Iterable<readonly [string, unknown]>) {
+    super();
+    this.component = component;
+    for (const [name, value] of entries) super.set(name, value);
+  }
+
+  protected override onChanged(): void {
+    const owner = this.component?.owner;
+    owner?.world?.noteActorComponentChanged?.(owner, this.component, "variable");
   }
 }
 
 /** Collider geometry enters through replacement, never in-place vertex mutation.
  * Copy at this existing authoring boundary; direct variables.set uses it too. */
-class ColliderVariables extends VersionedVariables {
+class ColliderVariables extends ComponentVariables {
+  constructor(component: ActorComponent, entries: Iterable<readonly [string, unknown]>) {
+    super(component, []);
+    for (const [name, value] of entries) this.set(name, value);
+  }
+
   override set(name: string, value: unknown): this {
     return super.set(name, name === "shape" ? freezeCollisionValue(structuredClone(value)) : value);
   }
 }
 
-/** Variables that change actor identity/hierarchy and so the World's structural revision. */
-const isStructuralActorVariable = (name: string): boolean =>
-  name === "parentId" || name === "name";
-
-/** Every write path, including direct `variables` map writes, marks structural changes. */
+/** Every write path, including direct `variables` map writes, marks structural and variable changes. */
 class ActorVariables extends VersionedVariables {
   private readonly actor: Actor;
 
@@ -135,23 +180,56 @@ class ActorVariables extends VersionedVariables {
     for (const [name, value] of entries) super.set(name, value);
   }
 
+  protected override onChanged(name: string | null): void {
+    this.actor?.world?.noteActorVariableChanged?.(this.actor, name);
+  }
+
+  // `parentId` changes the hierarchy and so the World's structural revision. A
+  // `name` write reaches the World as a variable change (`World.actorNameRevision`).
   override set(name: string, value: unknown): this {
-    if (isStructuralActorVariable(name) && value !== this.get(name)) this.markStructureChanged();
-    return super.set(name, value);
+    if (name !== "parentId") return super.set(name, value);
+    const previous = this.get(name);
+    const prevParent = normalizeParentGuid(previous);
+    const nextParent = normalizeParentGuid(value);
+    super.set(name, value);
+    if (value !== previous) {
+      if (prevParent !== nextParent && this.actor?.world?.noteActorParentChanged) {
+        this.actor.world.noteActorParentChanged(this.actor, prevParent, nextParent);
+      } else {
+        this.markStructureChanged();
+      }
+    }
+    return this;
   }
 
   override delete(name: string): boolean {
-    if (isStructuralActorVariable(name) && this.get(name) !== undefined) this.markStructureChanged();
-    return super.delete(name);
+    if (name !== "parentId") return super.delete(name);
+    const previous = this.get(name);
+    const prevParent = normalizeParentGuid(previous);
+    const deleted = super.delete(name);
+    if (previous !== undefined) {
+      if (prevParent !== null && this.actor?.world?.noteActorParentChanged) {
+        this.actor.world.noteActorParentChanged(this.actor, prevParent, null);
+      } else {
+        this.markStructureChanged();
+      }
+    }
+    return deleted;
   }
 
   override clear(): void {
-    if (this.get("parentId") !== undefined || this.get("name") !== undefined) this.markStructureChanged();
+    const prevParentVal = this.get("parentId");
+    const prevParent = normalizeParentGuid(prevParentVal);
     super.clear();
+    if (prevParent !== null && this.actor?.world?.noteActorParentChanged) {
+      this.actor.world.noteActorParentChanged(this.actor, prevParent, null);
+    } else if (prevParentVal !== undefined) {
+      this.markStructureChanged();
+    }
   }
 
   private markStructureChanged(): void {
-    this.actor.world?.markStructureChanged?.();
+    this.actor?.world?.markStructureChanged?.();
   }
 }
 
@@ -164,17 +242,42 @@ function freezeCollisionValue(value: unknown, seen = new WeakSet<object>()): unk
   return value;
 }
 
+/** Shared by every object built without hooks; never written. */
+const NO_HOOKS: LifecycleHooks = Object.freeze({});
+
 export class EngineObject {
   readonly guid: Guid;
   readonly classId: string;
   readonly variables: Map<string, unknown>;
   implementedInterfaces: string[] = [];
-  interfaceHandlers = new Map<
+  /** Per-instance interface handlers keyed by `interfaceGuid:methodName`; null until the first is bound. */
+  interfaceHandlers: Map<
     string,
     (args: Record<string, unknown>) => Record<string, unknown>
-  >();
+  > | null = null;
   private readonly hooks: LifecycleHooks;
-  destroyed = false;
+  private _destroyed = false;
+  private _stateReleased = false;
+
+  /**
+   * Destruction finished and `releaseState` dropped the object's state. Unlike `destroyed`, which its own
+   * destruction hooks already see, a script touching such an object is touching nothing.
+   */
+  get stateReleased(): boolean {
+    return this._stateReleased;
+  }
+
+  get destroyed(): boolean {
+    return this._destroyed;
+  }
+
+  set destroyed(value: boolean) {
+    if (this._destroyed === value) return;
+    this._destroyed = value;
+    this.onDestroyedFlagChanged();
+  }
+
+  protected onDestroyedFlagChanged(): void {}
 
   constructor(options: {
     classId: string;
@@ -187,13 +290,13 @@ export class EngineObject {
     this.guid = options.guid ?? newGuid(options.guidFactory);
     this.classId = options.classId;
     this.variables = this.createVariables(Object.entries(options.variables ?? {}));
-    this.hooks = options.hooks ?? {};
+    this.hooks = options.hooks ?? NO_HOOKS;
     this.implementedInterfaces = [...(options.implementedInterfaces ?? [])];
   }
 
   /** Runs during construction, before subclass fields are initialized. */
   protected createVariables(entries: Array<[string, unknown]>): Map<string, unknown> {
-    return this.classId === "ColliderComponent" ? new ColliderVariables(entries) : new VersionedVariables(entries);
+    return new VersionedVariables(entries);
   }
 
   /**
@@ -225,6 +328,19 @@ export class EngineObject {
     this.hooks.onDestroyed?.(this);
   }
 
+  /**
+   * Once destruction has finished (its hooks and engine teardown ran): drops the variables, except `name`,
+   * which debug labels and messages still show, and the interface handlers. Reads then answer nothing.
+   */
+  releaseState(): void {
+    this._stateReleased = true;
+    const variables = this.variables;
+    const name = variables.get("name");
+    variables.clear();
+    if (name !== undefined) variables.set("name", name);
+    this.interfaceHandlers = null;
+  }
+
   getVariable(name: string): unknown {
     return this.variables.get(name);
   }
@@ -235,22 +351,77 @@ export class EngineObject {
 }
 
 export class Actor extends EngineObject {
-  transform: Transform;
+  private readonly _transform: Transform;
+  private _transformRevision = 0;
   readonly components: ActorComponent[] = [];
   world: WorldLike | null = null;
-  /** Stable spawn index assigned by World. */
+  /** Dense position in the World's actor list, reassigned after removals. */
   spawnIndex = -1;
-  /** When false, skip script `onHit` for this actor. Physics still simulates. */
-  generateHitEvents = true;
-  /** When false, skip script begin/end overlap for this actor. */
-  generateOverlapEvents = true;
+  /**
+   * The World's spawn count when this actor spawned: never reassigned, so it
+   * orders actors across removals (the actor list is ascending in it).
+   */
+  spawnOrder = -1;
+  private _generateHitEvents = true;
+  private _generateOverlapEvents = true;
   /** When false, World skips this actor's Event Tick (`onTick`). Components still tick. */
   tickEnabled = true;
   /** Keeps the actor and its components ticking while the game is paused (`World.gamePaused`). */
   tickOnPause = false;
-  /** Owning overlay instance; null for world-scene actors. */
-  sceneLayerId: Guid | null = null;
+  private _sceneLayerId: Guid | null = null;
   readonly suppressedComponentSourceIds: readonly string[];
+
+  get transform(): Transform {
+    return this._transform;
+  }
+
+  set transform(value: Transform) {
+    writeObservedTransform(this._transform, value);
+  }
+
+  /**
+   * Advances whenever any coordinate of `transform` changes (from scripts,
+   * runtime writers, or physics readback); writing the same coordinate value
+   * (`Object.is`) does not advance it.
+   */
+  get transformRevision(): number {
+    return this._transformRevision;
+  }
+
+  /** When false, skip script `onHit` for this actor. Physics still simulates. */
+  get generateHitEvents(): boolean {
+    return this._generateHitEvents;
+  }
+
+  set generateHitEvents(value: boolean) {
+    if (this._generateHitEvents === value) return;
+    this._generateHitEvents = value;
+    this.world?.noteActorVariableChanged?.(this, "generateHitEvents");
+  }
+
+  /** When false, skip script begin/end overlap for this actor. */
+  get generateOverlapEvents(): boolean {
+    return this._generateOverlapEvents;
+  }
+
+  set generateOverlapEvents(value: boolean) {
+    if (this._generateOverlapEvents === value) return;
+    this._generateOverlapEvents = value;
+    this.world?.noteActorVariableChanged?.(this, "generateOverlapEvents");
+  }
+
+  /** Owning overlay instance; null for world-scene actors. */
+  get sceneLayerId(): Guid | null {
+    return this._sceneLayerId;
+  }
+
+  set sceneLayerId(value: Guid | null) {
+    const next = value ?? null;
+    if (this._sceneLayerId === next) return;
+    const previous = this._sceneLayerId;
+    this._sceneLayerId = next;
+    this.world?.noteActorLayerChanged?.(this, previous, next);
+  }
 
   constructor(
     options: {
@@ -269,19 +440,34 @@ export class Actor extends EngineObject {
       ...options,
       hooks: options.hooks as LifecycleHooks | undefined,
     });
-    this.transform = options.transform
-      ? {
-          position: { ...options.transform.position },
-          rotation: { ...options.transform.rotation },
-          scale: { ...options.transform.scale },
-        }
-      : identityTransform();
-    this.sceneLayerId = options.sceneLayerId ?? null;
+    this._transform = createObservedTransform(options.transform, this);
+    this._sceneLayerId = options.sceneLayerId ?? null;
     this.suppressedComponentSourceIds = Object.freeze(normalizeSuppressedComponentSourceIds(options.suppressedComponentSourceIds));
   }
 
   protected override createVariables(entries: Array<[string, unknown]>): Map<string, unknown> {
     return new ActorVariables(this, entries);
+  }
+
+  /** Called by observed transform accessors on any script/runtime coordinate write. */
+  noteTransformChanged(): void {
+    this._transformRevision++;
+    this.world?.noteActorTransformChanged?.(this, "script");
+  }
+
+  /**
+   * Apply a stepped physics pose directly without emitting a `"script"`
+   * transform writeback. Advances `transformRevision` and emits `"physics"`
+   * iff at least one position/rotation coordinate changed.
+   */
+  writeTransformPoseFromPhysics(
+    position: Transform["position"],
+    rotation: Transform["rotation"],
+  ): boolean {
+    if (!writeObservedPoseSilent(this._transform, position, rotation)) return false;
+    this._transformRevision++;
+    this.world?.noteActorTransformChanged?.(this, "physics");
+    return true;
   }
 
   attachComponent(component: ActorComponent): void {
@@ -295,6 +481,7 @@ export class Actor extends EngineObject {
     component.owner = this;
     this.components.push(component);
     this.world?.markStructureChanged?.();
+    this.world?.noteActorComponentChanged?.(this, component, "attached");
     if (this.world) component.callOnCreation();
   }
 }
@@ -348,6 +535,20 @@ export class ActorComponent extends EngineObject {
   override callOnDestroyed(): void {
     this.owner?.world?.markStructureChanged?.();
     super.callOnDestroyed();
+    // A script holding the component's Material object sees it destroyed, and the component lets go of it.
+    if (this.materialObject) this.materialObject.destroyed = true;
+    this.materialObject = null;
+  }
+
+  protected override onDestroyedFlagChanged(): void {
+    const owner = this.owner;
+    owner?.world?.noteActorComponentChanged?.(owner, this, "destroyed");
+  }
+
+  protected override createVariables(entries: Array<[string, unknown]>): Map<string, unknown> {
+    return this.classId === "ColliderComponent"
+      ? new ColliderVariables(this, entries)
+      : new ComponentVariables(this, entries);
   }
 
   private materialObject: MaterialObject | null = null;
@@ -367,14 +568,57 @@ export class ActorComponent extends EngineObject {
   }
   private materialRevision = 0;
   owner: Actor | null = null;
-  /** Optional asset reference stub for engine components. */
-  assetGuid: Guid | null = null;
+  private _assetGuid: Guid | null = null;
   /** Prefab component id when Place Actors remapped `guid`. */
   sourceId: string | null = null;
-  transform: Transform;
-  parentId: string | null;
+  private readonly _transform: Transform;
+  private _transformRevision = 0;
+  private _parentId: string | null;
   /** Authored seed only; current values belong to RuntimeMaterialParameters. */
   materialInstance?: MaterialInstanceOverrides;
+
+  /** Optional asset reference stub for engine components. */
+  get assetGuid(): Guid | null {
+    return this._assetGuid;
+  }
+
+  set assetGuid(value: Guid | null) {
+    const next = value ?? null;
+    if (this._assetGuid === next) return;
+    this._assetGuid = next;
+    const owner = this.owner;
+    owner?.world?.noteActorComponentChanged?.(owner, this, "meta");
+  }
+
+  get parentId(): string | null {
+    return this._parentId;
+  }
+
+  set parentId(value: string | null) {
+    const next = value ?? null;
+    if (this._parentId === next) return;
+    this._parentId = next;
+    const owner = this.owner;
+    owner?.world?.noteActorComponentChanged?.(owner, this, "meta");
+  }
+
+  get transform(): Transform {
+    return this._transform;
+  }
+
+  set transform(value: Transform) {
+    writeObservedTransform(this._transform, value);
+  }
+
+  get transformRevision(): number {
+    return this._transformRevision;
+  }
+
+  noteTransformChanged(): void {
+    this._transformRevision++;
+    const owner = this.owner;
+    owner?.world?.noteActorComponentChanged?.(owner, this, "transform");
+  }
 
   constructor(
     options: {
@@ -395,21 +639,15 @@ export class ActorComponent extends EngineObject {
       ...options,
       hooks: options.hooks as LifecycleHooks | undefined,
     });
-    this.assetGuid = options.assetGuid ?? null;
+    this._assetGuid = options.assetGuid ?? null;
     this.sourceId =
       typeof options.sourceId === "string" && options.sourceId.trim()
         ? options.sourceId.trim()
         : null;
-    this.parentId = options.parentId ?? null;
+    this._parentId = options.parentId ?? null;
     const materialInstance = normalizeMaterialInstanceOverrides(options.materialInstance);
     if (materialInstance?.materialGuid === this.getVariable("materialGuid")) this.materialInstance = materialInstance;
-    this.transform = options.transform
-      ? {
-          position: { ...options.transform.position },
-          rotation: { ...options.transform.rotation },
-          scale: { ...options.transform.scale },
-        }
-      : identityTransform();
+    this._transform = createObservedTransform(options.transform, this);
   }
 
   override getVariable(name: string): unknown {

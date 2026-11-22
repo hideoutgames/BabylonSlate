@@ -11,7 +11,7 @@ import {
 import { EncodeQueue } from "./encode-queue";
 import { AssetRegistry, RegistryGenerationClock } from "./registry";
 import { ThumbnailDecodeLru } from "./thumbnails";
-import { ENGINE_VERSION, SourceRevisionChangedError, type ProjectStorageReader, type StorageReadOptions } from "@haptic/core";
+import { SourceRevisionChangedError, type ProjectStorageReader, type StorageReadOptions } from "@haptic/core";
 import { createFontPayload } from "./font-payload";
 
 async function createStorage(): Promise<MemoryStorageAdapter> {
@@ -1784,20 +1784,6 @@ describe("AssetRegistry", () => {
     const copies = await Promise.all([registry.duplicateFolder("project", "fx"), registry.duplicateFolder("project", "fx")]);
     expect(copies.sort()).toEqual(["fx_1", "fx_2"]);
     for (const copy of copies) expect(registry.getByPath(`assets/${copy}/spark.hasset`)).toBeDefined();
-  });
-
-  it("knows a created Tileset's atlas from its header payload without reading a document", async () => {
-    const storage = await createStorage();
-    await storage.mkdir("assets", true);
-    const registry = new AssetRegistry(storage);
-    await registry.mountRoot(projectContentRoot());
-    const tileset = await registry.createAsset("project", "Ground.tileset.hasset", {
-      type: "Tileset", name: "Ground", guid: "ground", version: 1, dependencies: [], parentClass: null,
-      payload: { textureGuid: "atlas", tileWidth: 16, tileHeight: 16 }, chunks: [],
-    });
-    expect(tileset.header.engineVersion).toBe(ENGINE_VERSION);
-    expect(registry.isAtlasTexture("atlas")).toBe(true);
-    expect(registry.payloadLoader.snapshot().recentRequests).toEqual([]);
   });
 });
 

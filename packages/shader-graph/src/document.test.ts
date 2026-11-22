@@ -65,6 +65,28 @@ describe("material document", () => {
     );
   });
 
+  it("creates a User Interface Material with a Color constant wired into its output, unlit, two-sided and translucent", () => {
+    const doc = createDefaultMaterialDocument("Panel", "ui");
+    expect(doc).toMatchObject({ domain: "ui", shadingModel: "unlit", blendMode: "translucent", twoSided: true, preview: { mesh: "plane" } });
+    expect(doc.nodes.map((node) => node.type).sort()).toEqual(["const.color", "output.ui"]);
+    expect(doc.edges).toEqual([
+      expect.objectContaining({ sourceNodeId: "color", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" }),
+    ]);
+  });
+
+  it("keeps a User Interface domain on normalization and forces its settings", () => {
+    const doc = normalizeMaterialDocument({ domain: "ui", shadingModel: "pbr", blendMode: "opaque", twoSided: false, nodes: [], edges: [] });
+    expect(doc).toMatchObject({ domain: "ui", shadingModel: "unlit", blendMode: "translucent", twoSided: true });
+    expect(doc.nodes.map((node) => node.type)).toEqual(["output.ui"]);
+    expect(normalizeMaterialDocument({ domain: "ui", blendMode: "additive" }).blendMode).toBe("additive");
+    expect(normalizeMaterialDocument({ domain: "ui", blendMode: "multiply" }).blendMode).toBe("multiply");
+    expect(materialBlendModesFor("ui")).toEqual(["translucent", "additive", "multiply"]);
+    expect(normalizeMaterialDocument({ domain: "ui", blendMode: "masked" }).blendMode).toBe("translucent");
+    expect(normalizeMaterialDocument(JSON.parse(JSON.stringify(createDefaultMaterialDocument("Panel", "ui"))))).toEqual(
+      createDefaultMaterialDocument("Panel", "ui"),
+    );
+  });
+
   it("treats leftover interface domain strings as surface", () => {
     const doc = normalizeMaterialDocument({
       name: "HudGlow",
@@ -331,6 +353,35 @@ describe("switching material domain", () => {
   it("drops the Text-forced unlit, translucent and two-sided settings when leaving Text", () => {
     const surface = setMaterialDomain(createDefaultMaterialDocument("Label", "text"), "surface");
     expect(surface).toMatchObject({ shadingModel: "pbr", blendMode: "opaque", twoSided: false });
+  });
+
+  it("takes the User Interface settings and terminal when entering User Interface", () => {
+    const doc = { ...createDefaultMaterialDocument("Rock"), blendMode: "masked" as const };
+    doc.nodes.push(
+      { id: "world", type: "input.worldPosition", position: { x: 0, y: 200 }, properties: {} },
+      { id: "uv", type: "input.uv", position: { x: 0, y: 400 }, properties: {} },
+    );
+    const ui = setMaterialDomain(doc, "ui");
+    expect(ui).toMatchObject({ domain: "ui", shadingModel: "unlit", blendMode: "translucent", twoSided: true });
+    // The Surface terminal and the surface-only World Position go; UV is legal in both.
+    expect(ui.nodes.map((node) => node.type).sort()).toEqual(["const.color", "input.uv", "output.ui"]);
+    expect(ui.edges).toEqual([]);
+  });
+
+  it("drops User Interface nodes and the forced settings when leaving User Interface", () => {
+    const doc = createDefaultMaterialDocument("Panel", "ui");
+    doc.nodes.push(
+      { id: "shape", type: "ui.roundedRectangle", position: { x: 0, y: 200 }, properties: {} },
+      { id: "element", type: "input.ui", position: { x: 0, y: 400 }, properties: {} },
+    );
+    doc.edges.push({ id: "fill", sourceNodeId: "shape", sourcePinId: "fill", targetNodeId: "output", targetPinId: "opacity" });
+    const surface = setMaterialDomain(doc, "surface");
+    expect(surface).toMatchObject({ shadingModel: "pbr", blendMode: "opaque", twoSided: false });
+    expect(surface.nodes.map((node) => node.type).sort()).toEqual(["const.color", "output.surface"]);
+    expect(surface.edges).toEqual([]);
+    const text = setMaterialDomain(doc, "text");
+    expect(text).toMatchObject({ shadingModel: "unlit", blendMode: "translucent", twoSided: true });
+    expect(text.nodes.map((node) => node.type).sort()).toEqual(["const.color", "output.text"]);
   });
 
   it("keeps an edited Base Color constant when switching to Particle", () => {

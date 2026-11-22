@@ -10,15 +10,17 @@ import {
 } from "@haptic/assets";
 import {
   identitySerializedTransform,
-  landscapeCollisionMesh,
+  landscapeHeightField,
   springArmChildOffset,
   type SerializedScene,
   type SerializedTransform,
 } from "@haptic/core";
 import {
+  foldHeightFieldMirror,
   parseColliderProperties,
   scaleColliderShape,
   type ColliderShape,
+  type HeightFieldColliderShape,
 } from "@haptic/physics";
 import type { MeshAssetContext } from "./mesh-assets";
 
@@ -99,10 +101,15 @@ export function collisionSurfaces(
       )
     )
       return;
+    // A heightfield mirrored on one of X and Z is posed as physics poses it, so Drop meets the triangles drawn.
+    const folded = shape.kind === "heightfield"
+      ? foldHeightFieldMirror({ x: scale.x, y: scale.y, z: scale.z }, { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w })
+      : null;
     // Physics bakes dimensions (sphere=max axis, capsule/cylinder=max XZ),
     // rather than allowing inverse TRS to turn round shapes into ellipsoids.
-    const baked = scaleColliderShape(shape, scale);
-    const pose = Matrix.Compose(Vector3.One(), rotation, position);
+    const baked = scaleColliderShape(shape, folded?.scale ?? scale);
+    const turn = folded?.rotation;
+    const pose = Matrix.Compose(Vector3.One(), turn ? new Quaternion(turn.x, turn.y, turn.z, turn.w) : rotation, position);
     const triangles =
       baked.kind === "convex"
         ? convexHullMesh(baked.points)
@@ -210,7 +217,7 @@ export function collisionSurfaces(
           );
         } else add(actor.id, collider.shape, world);
       } else if (component.classId === "LandscapeComponent" && worldKind === "3d") {
-        const shape = landscapeCollisionMesh(properties);
+        const shape = landscapeHeightField(properties);
         if (shape) add(actor.id, shape, world);
       } else if (component.classId === "BlockingVolumeComponent") {
         add(
@@ -314,7 +321,21 @@ export function collisionBounds(
     const shape = surface.shape;
     let points: Vector3[];
     if (shape.kind === "mesh") points = shape.vertices;
-    else if (shape.kind === "polygon" || shape.kind === "chain")
+    else if (shape.kind === "heightfield") {
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (let i = 0; i < shape.heights.length; i++) {
+        const y = shape.heights[i]!;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      if (!Number.isFinite(minY)) continue;
+      const hx = shape.width * 0.5;
+      const hz = shape.depth * 0.5;
+      points = [-hx, hx].flatMap((px) =>
+        [minY, maxY].flatMap((py) => [-hz, hz].map((pz) => new Vector3(px, py, pz))),
+      );
+    } else if (shape.kind === "polygon" || shape.kind === "chain")
       points = shape.points.map((p) => new Vector3(p.x, p.y, 0));
     else {
       let x: number, y: number, z: number;
@@ -481,6 +502,8 @@ function shapeHit(
         ...sphereHits(origin, direction, shape.radius, -shape.halfHeight, true),
       ]);
     }
+    case "heightfield":
+      return heightFieldHit(shape, origin, direction);
     case "mesh": {
       if (shape.convex && shape.indices.length > 0) {
         let inside = true;
@@ -557,4 +580,140 @@ function shapeHit(
       return nearest(values);
     }
   }
+}
+
+function heightFieldHit(
+  shape: HeightFieldColliderShape,
+  origin: Vector3,
+  direction: Vector3,
+): number | null {
+  const { numXSamples, numZSamples, width, depth, heights } = shape;
+  const cellsX = numXSamples - 1;
+  const cellsZ = numZSamples - 1;
+  const hx = width * 0.5;
+  const hz = depth * 0.5;
+  const stepX = width / cellsX;
+  const stepZ = depth / cellsZ;
+
+  // Fast O(1) vertical drop when the landscape is horizontal.
+  if (Math.abs(direction.x) < EPS && Math.abs(direction.z) < EPS) {
+    if (
+      Math.abs(direction.y) < EPS ||
+      origin.x < -hx - EPS ||
+      origin.x > hx + EPS ||
+      origin.z < -hz - EPS ||
+      origin.z > hz + EPS
+    ) {
+      return null;
+    }
+    const fx = (origin.x + hx) / stepX;
+    const fz = (origin.z + hz) / stepZ;
+    const ix = Math.min(cellsX - 1, Math.max(0, Math.floor(fx)));
+    const iz = Math.min(cellsZ - 1, Math.max(0, Math.floor(fz)));
+    const u = Math.min(1, Math.max(0, fx - ix));
+    const v = Math.min(1, Math.max(0, fz - iz));
+    const a = iz * numXSamples + ix;
+    const b = a + numXSamples;
+    const h00 = heights[a]!;
+    const h10 = heights[a + 1]!;
+    const h01 = heights[b]!;
+    const h11 = heights[b + 1]!;
+    // Diagonal split (1,0)-(0,1): u + v <= 1 uses (h00, h10, h01), else (h10, h11, h01).
+    const surfaceY =
+      u + v <= 1
+        ? h00 + u * (h10 - h00) + v * (h01 - h00)
+        : h11 + (1 - u) * (h01 - h11) + (1 - v) * (h10 - h11);
+    const t = (surfaceY - origin.y) / direction.y;
+    return t >= -EPS ? Math.max(0, t) : null;
+  }
+
+  // General case (tilted/rotated landscape): clip [0, 10_000] to X/Z footprint and traverse cells via 2D DDA.
+  let tMin = 0;
+  let tMax = 10_000;
+  if (Math.abs(direction.x) < EPS) {
+    if (origin.x < -hx || origin.x > hx) return null;
+  } else {
+    let t1 = (-hx - origin.x) / direction.x;
+    let t2 = (hx - origin.x) / direction.x;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return null;
+  }
+  if (Math.abs(direction.z) < EPS) {
+    if (origin.z < -hz || origin.z > hz) return null;
+  } else {
+    let t1 = (-hz - origin.z) / direction.z;
+    let t2 = (hz - origin.z) / direction.z;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) return null;
+  }
+
+  const entryX = origin.x + direction.x * tMin;
+  const entryZ = origin.z + direction.z * tMin;
+  let ix = Math.min(cellsX - 1, Math.max(0, Math.floor((entryX + hx) / stepX)));
+  let iz = Math.min(cellsZ - 1, Math.max(0, Math.floor((entryZ + hz) / stepZ)));
+
+  const exitX = origin.x + direction.x * tMax;
+  const exitZ = origin.z + direction.z * tMax;
+  const endIx = Math.min(cellsX - 1, Math.max(0, Math.floor((exitX + hx) / stepX)));
+  const endIz = Math.min(cellsZ - 1, Math.max(0, Math.floor((exitZ + hz) / stepZ)));
+
+  const dirIx = direction.x > 0 ? 1 : direction.x < 0 ? -1 : 0;
+  const dirIz = direction.z > 0 ? 1 : direction.z < 0 ? -1 : 0;
+  const tDeltaX = dirIx !== 0 ? Math.abs(stepX / direction.x) : Infinity;
+  const tDeltaZ = dirIz !== 0 ? Math.abs(stepZ / direction.z) : Infinity;
+  let tNextX = dirIx > 0
+    ? (-hx + (ix + 1) * stepX - origin.x) / direction.x
+    : dirIx < 0
+      ? (-hx + ix * stepX - origin.x) / direction.x
+      : Infinity;
+  let tNextZ = dirIz > 0
+    ? (-hz + (iz + 1) * stepZ - origin.z) / direction.z
+    : dirIz < 0
+      ? (-hz + iz * stepZ - origin.z) / direction.z
+      : Infinity;
+
+  const ray = new Ray(origin, direction, 10_000);
+  const v00 = new Vector3();
+  const v10 = new Vector3();
+  const v01 = new Vector3();
+  const v11 = new Vector3();
+  let closest: number | null = null;
+  const maxSteps = cellsX + cellsZ + 4;
+  for (let step = 0; step < maxSteps; step++) {
+    const x0 = -hx + ix * stepX;
+    const x1 = x0 + stepX;
+    const z0 = -hz + iz * stepZ;
+    const z1 = z0 + stepZ;
+    const a = iz * numXSamples + ix;
+    const b = a + numXSamples;
+    v00.set(x0, heights[a]!, z0);
+    v10.set(x1, heights[a + 1]!, z0);
+    v01.set(x0, heights[b]!, z1);
+    v11.set(x1, heights[b + 1]!, z1);
+
+    const h1 = ray.intersectsTriangle(v00, v10, v01);
+    if (h1 && h1.distance >= -EPS && (closest === null || h1.distance < closest)) {
+      closest = Math.max(0, h1.distance);
+    }
+    const h2 = ray.intersectsTriangle(v10, v11, v01);
+    if (h2 && h2.distance >= -EPS && (closest === null || h2.distance < closest)) {
+      closest = Math.max(0, h2.distance);
+    }
+    if (ix === endIx && iz === endIz) break;
+    const nextT = Math.min(tNextX, tNextZ);
+    if (closest !== null && closest <= nextT + EPS) break;
+    if (tNextX < tNextZ) {
+      ix += dirIx;
+      tNextX += tDeltaX;
+    } else {
+      iz += dirIz;
+      tNextZ += tDeltaZ;
+    }
+    if (ix < 0 || ix >= cellsX || iz < 0 || iz >= cellsZ) break;
+  }
+  return closest;
 }

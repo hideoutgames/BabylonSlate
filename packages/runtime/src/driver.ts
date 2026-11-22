@@ -15,7 +15,7 @@ import type { MovementWorldSync } from "./movement";
 import type { RenderTargetPayload, RenderTargetTexturePayload } from "@haptic/core";
 import type { WaterDefinition } from "@haptic/core";
 import type { ScalabilitySession, ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, ScalabilityAcknowledgement } from "@haptic/core";
-import type { CollisionTriangleMesh } from "@haptic/core";
+import { decodeLandscapeField, parseFoliageProperties, parseLandscapeProperties, type CollisionTriangleMesh } from "@haptic/core";
 import { inputMappingsFromAssets } from "@haptic/input";
 import type {
   CommandMessage,
@@ -101,6 +101,7 @@ import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { RuntimeConsole } from "./runtime-console";
 import type { ActorRealization, ScriptedActorSpawn } from "./actor-realization";
+import { actorLabel } from "./actor-world-transform";
 import type { OverlaySafeAreaInsets } from "@haptic/core";
 import { refreshStaleTilemaps, type ModelPayload, type SpriteAnimationPayload, type SpritePayload, type TilemapPayload, type TilesetPayload } from "@haptic/assets";
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@haptic/navigation";
@@ -241,14 +242,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   hasAnimatedTiles = false;
   /** Simulated water time: physics, buoyancy, script queries and Play water rendering share it. */
   readonly waterClock = new WaterClock();
-  /** Frame index (live actor per guid) the BT and crowd ticks share. */
-  navFrameActors: Map<string, Actor> | null = null;
-  /**
-   * The guid index built at `revision`. The live actor behind a guid changes only when an actor spawns or is destroyed,
-   * both of which bump `structuralRevision`, so ticks without such a change reuse one index. Entries an actor joins
-   * the frame index with (`ActorRealization.realize`) follow a spawn, which already outdates it.
-   */
-  guidIndexCache: { revision: number; index: Map<string, Actor> } | null = null;
 
   // Scene documents and render target sources.
   playScene: SerializedScene | undefined;
@@ -399,6 +392,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly cameraShakeCatalog = new Map<string, CameraShakeCatalogEntry>();
   /** 2D and 3D Timeline Clip assets of the current sources, by guid, for Create. */
   readonly timelineClipCatalog = new Map<string, TimelineClipAssetCatalogEntry>();
+  /** Binary Landscape (HPLD) and Foliage (HPFG) component chunks keyed by `<ownerGuid>:<chunkId>`. */
+  readonly sceneComponentChunks = new Map<string, Uint8Array>();
   readonly scriptHost: ScriptHost;
   readonly objectLifetime: RuntimeObjectLifetime;
   readonly scriptDebug: ScriptDebugObserver;
@@ -487,6 +482,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.acquireScene = options.acquireScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
     this.navigation.replaceSceneNavMeshes(options.sceneNavmeshBytes ?? {});
+    this.replaceSceneComponentChunks(options.sceneComponentChunks ?? {});
     this.deferSceneModelsReady = options.deferSceneModelsReady === true;
     this.deferSceneLoadingPaint = options.deferSceneLoadingPaint === true;
     this.cooperativeSceneLoading = options.cooperativeSceneLoading
@@ -755,8 +751,9 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     if (!voiceId) return;
     this.voices.ended(voiceId);
     if (message.dropped) return;
-    // Only AudioComponent owners can match, in the world order a walk over every actor meets them in; a script or
-    // Behaviour Tree voice id matches none of them.
+    // A script or Behaviour Tree voice id names no component: nothing to look for.
+    if (voiceId.startsWith("script:") || voiceId.startsWith("bt:")) return;
+    // Only AudioComponent owners can match, in the world order a walk over every actor meets them in.
     for (const actor of componentOwners(this.world, "AudioComponent")) {
       if (actor.destroyed) continue;
       const component = actor.components.find(
@@ -964,6 +961,60 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.behaviourTrees.registerBlackboard(guid, document);
   }
 
+  replaceSceneComponentChunks(bytes: Readonly<Record<string, Uint8Array>>): void {
+    this.sceneComponentChunks.clear();
+    for (const [key, value] of Object.entries(bytes)) {
+      this.sceneComponentChunks.set(key, value);
+    }
+  }
+
+  /**
+   * Decodes each Landscape and Foliage component's instance data onto the actor once, at realization: the binary
+   * chunk of the Scene document it was created from (`sceneGuid`, looked up exactly at `<sceneGuid>:<chunkId>` since
+   * duplicated Scenes share chunk ids), or inline `data` copied from a Prefab or Class. Missing or damaged data warns.
+   */
+  hydrateActorComponentChunks(actor: Actor, sceneGuid: string | null): void {
+    const chunkFor = (chunkId: unknown) => typeof chunkId === "string" && chunkId.length > 0 && sceneGuid
+      ? this.sceneComponentChunks.get(`${sceneGuid}:${chunkId}`)
+      : undefined;
+    for (const component of actor.components) {
+      if (component.classId === "FoliageComponent") {
+        if (!component.variables.has("chunkId") && !component.variables.has("data")) continue;
+        const parsed = parseFoliageProperties(Object.fromEntries(component.variables), chunkFor(component.getVariable("chunkId")));
+        if (parsed.unreadable) {
+          this.reportLog(`${actorLabel(actor)}: its Foliage instance data is missing or damaged, so it draws nothing.`, "warning", "Foliage");
+        }
+        component.setVariable("groupId", parsed.groupId);
+        component.setVariable("batches", parsed.batches);
+        component.variables.delete("data");
+        component.variables.delete("chunkId");
+        continue;
+      }
+      if (component.classId !== "LandscapeComponent") continue;
+      if (
+        component.getVariable("heights") instanceof Float32Array &&
+        component.getVariable("weights") instanceof Uint8Array
+      ) {
+        continue;
+      }
+      const binaryBytes = chunkFor(component.getVariable("chunkId"));
+      const variables = Object.fromEntries(component.variables);
+      if (!decodeLandscapeField(variables, binaryBytes)) {
+        this.reportLog(`${actorLabel(actor)}: its Landscape terrain data is missing or damaged, so it plays flat.`, "warning", "Landscape");
+      }
+      const parsed = parseLandscapeProperties(variables, binaryBytes);
+      component.setVariable("width", parsed.width);
+      component.setVariable("depth", parsed.depth);
+      component.setVariable("subdivisions", parsed.subdivisions);
+      component.setVariable("heights", parsed.heights);
+      component.setVariable("weights", parsed.weights);
+      component.setVariable("materialGuid", parsed.materialGuid);
+      component.setVariable("collisionsEnabled", parsed.collisionsEnabled);
+      component.variables.delete("data");
+      component.variables.delete("chunkId");
+    }
+  }
+
   registerSceneContent(content: RuntimeSceneContent): void {
     const retained = new Set(content.assetGuids);
     this.simulation.retainSceneContent(retained, content.dataAssets);
@@ -972,6 +1023,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.sceneLayerLibrary.clear();
     for (const entry of content.sceneLayers ?? []) this.sceneLayerLibrary.set(entry.guid, entry.layer);
     this.navigation.replaceSceneNavMeshes(content.sceneNavmeshBytes ?? {});
+    this.replaceSceneComponentChunks(content.sceneComponentChunks ?? {});
     this.behaviourTrees.replaceAnimClipCatalog(content.animClipCatalog ?? []);
     this.animGraphs.replaceAnimClipCatalog(content.animClipCatalog ?? []);
     this.behaviourTrees.replaceAudioAssets(content.audioAssetGuids ?? []);
@@ -1047,7 +1099,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     if (bytes) this.navigation.setSceneNavMesh(sceneGuid, bytes);
     await initNavigation();
     if (this.stopped || lifecycleId !== this.lifecycleId) throw sceneRealizationCancelled();
-    this.navigation.markInitialized();
     if (sceneGuid !== this.playSceneGuid) return;
     this.navigation.importNavMesh(sceneGuid, navmesh);
     if (this.sceneRealizer.realized) {
@@ -1128,7 +1179,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
    *   subsystem's `cancelPending` (`RuntimeSubsystem` Stop phase 1; the Scene
    *   realizer last).
    * - Finalize the trace.
-   * - End the World: destroy live components, then `World.end`.
+   * - End the World: destroy live components, then `World.end`, then detach
+   *   the snapshot publisher's World observer.
    * - Release scripts: dispose ScriptHost, unregister script Classes, drop
    *   anchors, release Scene sources and forget the Play Scene and library.
    * - Dispose: clear owner queues and the Scene Layer table, then every
@@ -1168,6 +1220,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       }
     }
     this.world.end();
+    this.snapshots.dispose();
     // Release scripts.
     this.scriptDebug.dispose();
     this.scriptHost.dispose();
@@ -1176,9 +1229,15 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.sceneRealizer.releaseSceneSources();
     this.playScene = undefined;
     this.sceneLibrary.clear();
+    this.sceneGuidByKey.clear();
+    this.sceneLayerLibrary.clear();
+    this.sourceRenderTargets.clear();
+    this.sourceRenderTargetTextures.clear();
+    this.sceneComponentChunks.clear();
     // Dispose.
     this.admission.clear();
     this.layers.clear();
+    this.boundaries.dispose();
     this.subsystems.dispose();
   }
 

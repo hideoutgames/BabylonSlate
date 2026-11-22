@@ -83,7 +83,7 @@ describe("Water graph queries", () => {
     const island = new Actor({ guid: "island", classId: "Actor" });
     island.transform.position.x = 40;
     island.attachComponent(new ActorComponent({ classId: "LandscapeComponent", variables: {
-      width: 20, depth: 20, subdivisions: 4, heights: Array.from({ length: 25 }, (_, i) => i === 12 ? 5 : -3),
+      width: 20, depth: 20, subdivisions: 4, heights: Float32Array.from({ length: 25 }, (_, i) => i === 12 ? 5 : -3),
     } }));
     const boat = new Actor({ guid: "boat", classId: "Actor" });
     boat.transform.position.x = -20;

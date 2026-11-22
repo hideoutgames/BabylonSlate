@@ -142,7 +142,7 @@ describe("tilemap rendering", () => {
       expect(material.isReadyForSubMesh(tile, subMesh)).toBe(true);
       return subMesh.effect!.defines.match(/^#define (IMAGEPROCESSING(POSTPROCESS)?|EXPOSURE|TONEMAPPING [1-9])$/gm) ?? [];
     };
-    // Legacy Display writes the atlas's display colors unchanged.
+    // Display Space writes the atlas's display colors unchanged.
     expect(await displayStages()).toEqual([]);
     // Scene Linear: the linear decode Standard's was, so the Display Color stage
     // encodes the tile once.

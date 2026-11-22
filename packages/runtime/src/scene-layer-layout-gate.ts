@@ -37,8 +37,9 @@ interface Recorded {
   actorItems: Array<VirtualizedItem | undefined>;
   /** The owners derived from that list (an owner actor, then its live components). */
   owners: readonly Owner[];
-  /** Per owner: variables revision and, for a component, its parent id and the variables the layout read. */
+  /** Per owner: variables revision, transform revision and, for a component, its parent id and the variables the layout read. */
   revisions: number[];
+  transformRevisions: number[];
   parentIds: Array<string | null>;
   properties: Array<Readonly<Record<string, unknown>> | undefined>;
   /** Per owner: position, rotation and scale as the layout left them. */
@@ -54,16 +55,15 @@ interface Recorded {
 /**
  * Recognises a Scene Layer whose layout inputs cannot have changed, without
  * building them. After each layout it records the listed actors, owners,
- * variables revisions, component parent ids, the live transforms the layout left
- * behind, pixels per unit, safe area and the texture sizes it measured.
- * `unchanged` re-reads exactly those and allocates nothing. Variables change only
- * through writes that advance their revision; transforms are plain objects that
- * scripts, physics and anchors mutate in place, hence the compared numbers. An
- * owner whose revision advanced is compared by the variables the layout reads
- * from it, so a write to any other variable (an opacity a Timeline animates, a
- * script's own counter) costs that one owner's reads and leaves the layer
- * unchanged. A layer that cannot be recorded exactly (a non-number in a
- * transform) is never reported unchanged.
+ * variables revisions, transform revisions, component parent ids, the live
+ * transforms the layout left behind, pixels per unit, safe area and the texture
+ * sizes it measured. `unchanged` re-reads those revisions in O(1) per owner and
+ * allocates nothing. An owner whose variables or transform revision advanced is
+ * compared by the exact values the layout reads from it, so a write to an
+ * unrelated variable (an opacity a Timeline animates, a script's own counter)
+ * or a round-trip transform write leaves the layer unchanged. A layer that
+ * cannot be recorded exactly (a non-number in a transform) is never reported
+ * unchanged.
  */
 export class SceneLayerLayoutGate {
   private readonly layers = new Map<string, Recorded>();
@@ -79,7 +79,7 @@ export class SceneLayerLayoutGate {
       const size = texturePixelSizes[recorded.textureGuids[index]!];
       if (!same(size?.width, recorded.textureWidths[index]) || !same(size?.height, recorded.textureHeights[index])) return false;
     }
-    const { poses, revisions, parentIds, properties } = recorded;
+    const { poses, revisions, transformRevisions, parentIds, properties } = recorded;
     let cursor = 0;
     for (let index = 0; index < actors.length; index++) {
       const actor = actors[index]!;
@@ -95,12 +95,19 @@ export class SceneLayerLayoutGate {
         recorded.actorRevisions[index] = actor.variablesRevision;
       }
       if (role === 1) continue;
-      if (owners[cursor] !== actor || !samePose(actor.transform, poses, cursor * POSE_LENGTH)) return false;
+      if (owners[cursor] !== actor) return false;
+      if (actor.transformRevision !== transformRevisions[cursor]) {
+        if (!samePose(actor.transform, poses, cursor * POSE_LENGTH)) return false;
+        transformRevisions[cursor] = actor.transformRevision;
+      }
       cursor++;
       for (const component of actor.components) {
         if (component.destroyed) continue;
-        if (owners[cursor] !== component || component.parentId !== parentIds[cursor] ||
-          !samePose(component.transform, poses, cursor * POSE_LENGTH)) return false;
+        if (owners[cursor] !== component || component.parentId !== parentIds[cursor]) return false;
+        if (component.transformRevision !== transformRevisions[cursor]) {
+          if (!samePose(component.transform, poses, cursor * POSE_LENGTH)) return false;
+          transformRevisions[cursor] = component.transformRevision;
+        }
         if (component.variablesRevision !== revisions[cursor]) {
           const read = properties[cursor];
           if (!read || !sameLayoutProperties(component, read)) return false;
@@ -123,7 +130,7 @@ export class SceneLayerLayoutGate {
     const poses = previous?.poses.length === owners.length * POSE_LENGTH ? previous.poses : new Float64Array(owners.length * POSE_LENGTH);
     const recorded: Recorded = previous ?? {
       actors: [], roles: [], actorRevisions: [], actorNames: [], actorParentIds: [], actorVisible: [], actorItems: [],
-      owners, revisions: [], parentIds: [], properties: [], poses,
+      owners, revisions: [], transformRevisions: [], parentIds: [], properties: [], poses,
       pixelsPerUnit, safeArea: [], textureGuids: [], textureWidths: [], textureHeights: [],
     };
     recorded.actors.length = recorded.roles.length = recorded.actorRevisions.length = actors.length;
@@ -151,12 +158,13 @@ export class SceneLayerLayoutGate {
     recorded.pixelsPerUnit = pixelsPerUnit;
     recorded.safeArea.length = 0;
     recorded.safeArea.push(safeAreaInsets.left, safeAreaInsets.right, safeAreaInsets.top, safeAreaInsets.bottom);
-    recorded.revisions.length = recorded.parentIds.length = owners.length;
+    recorded.revisions.length = recorded.transformRevisions.length = recorded.parentIds.length = owners.length;
     recorded.textureGuids.length = recorded.textureWidths.length = recorded.textureHeights.length = 0;
     let exact = true;
     for (let cursor = 0; cursor < owners.length; cursor++) {
       const owner = owners[cursor]!;
       recorded.revisions[cursor] = owner.variablesRevision;
+      recorded.transformRevisions[cursor] = owner.transformRevision;
       writePose(owner.transform, poses, cursor * POSE_LENGTH);
       // A Float64Array coerces; an owner whose transform is not made of numbers cannot be compared exactly.
       if (!samePose(owner.transform, poses, cursor * POSE_LENGTH)) exact = false;

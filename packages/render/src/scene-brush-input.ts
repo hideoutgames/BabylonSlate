@@ -5,9 +5,10 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
-import { appendFoliageInstance, chooseFoliageModel, createActor, identitySerializedTransform, LandscapeSculptSession, parseFoliageProperties, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedActor, type SerializedComponent, type SerializedScene } from "@haptic/core";
+import { appendFoliageInstance, chooseFoliageModel, createActor, FOLIAGE_FLOATS_PER_INSTANCE, identitySerializedTransform, LandscapeSculptSession, parseFoliageProperties, serializeFoliageProperties, type FoliageGroup, type FoliageProperties, type LandscapeBrush, type SerializedActor, type SerializedComponent, type SerializedScene } from "@haptic/core";
 import type { EngineHandle } from "./create-engine";
 import { FoliageEraseSession } from "./foliage-erase";
+import { updateLandscapeMesh } from "./landscape-mesh";
 import { RENDERING_GROUP } from "./sorting";
 
 export interface SceneBrushState {
@@ -142,7 +143,11 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     for (const actor of current.before.actors) for (const component of actor.components) {
       if (component.classId !== "FoliageComponent") continue;
       const world = handle.editor?.sync.meshForComponent(actor.id, component.id)?.computeWorldMatrix(true); if (!world) continue;
-      for (const batch of parseFoliageProperties(component.properties).batches) for (const transform of batch.transforms) occupy(occupied, current.state.foliageBrush.spacing, Vector3.TransformCoordinates(Vector3.FromArray(transform.position), world));
+      for (const { transforms } of parseFoliageProperties(component.properties).batches) {
+        for (let at = 0; at < transforms.length; at += FOLIAGE_FLOATS_PER_INSTANCE) {
+          occupy(occupied, current.state.foliageBrush.spacing, Vector3.TransformCoordinates(new Vector3(transforms[at]!, transforms[at + 1]!, transforms[at + 2]!), world));
+        }
+      }
     }
     return occupied;
   };
@@ -182,7 +187,9 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
           let session = erasing.get(component);
           if (session === undefined) {
             const root = handle.editor?.sync.meshForComponent(actor.id, component.id);
-            session = root ? new FoliageEraseSession(component.properties, root.computeWorldMatrix(true)) : null;
+            // A component whose stored instances could not be read is never rewritten from its empty result.
+            session = root && !parseFoliageProperties(component.properties).unreadable
+              ? new FoliageEraseSession(component.properties, root.computeWorldMatrix(true)) : null;
             erasing.set(component, session);
           }
           if (!session) return [component];
@@ -223,17 +230,33 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     const scale = new Vector3(); world.decompose(scale);
     return { inverse: Matrix.Invert(world), scale: Math.max(0.001, Math.abs(scale.x), Math.abs(scale.z)) };
   };
-  /** Publishes the sculpted landscape once per pointer event: a drag interpolates many dabs, and building and applying the scene per dab would only be overwritten by the next. */
+  /** Uploads the sculpted typed arrays straight into the viewport chunks once per pointer event (zero base64 or full scene sync during a drag). */
   const show = (current: Stroke) => {
     if (!current.unshown) return;
     current.unshown = false;
     const sculpts = current.sculpts ?? [];
-    current.next = { ...current.next, actors: current.next.actors.map((actor, actorIndex) => ({ ...actor, components: actor.components.map((component, componentIndex) => {
-      const session = sculpts.find((sculpt) => sculpt.actorIndex === actorIndex && sculpt.componentIndex === componentIndex)?.session;
-      return session ? { ...component, properties: { ...session.snapshot() } } : component;
-    }) })) };
-    for (const sculpt of sculpts) sculpt.frame = undefined;
-    handle.editor?.sync.apply(current.next);
+    for (const sculpt of sculpts) {
+      sculpt.frame = undefined;
+      if (!sculpt.session) continue;
+      const root = handle.editor?.sync.meshForComponent(sculpt.actorId, sculpt.componentId);
+      if (root) updateLandscapeMesh(root, sculpt.session.liveProperties(), undefined, { dirtyRegion: sculpt.session.takeDirtyRegion() });
+    }
+    handle.scheduler.invalidate("manual");
+  };
+  /** Encodes each sculpted landscape into compact HPLD serialized properties once on pointer-up. */
+  const settleSculpt = (current: Stroke) => {
+    const sculpts = current.sculpts;
+    if (!sculpts || !sculpts.some((sculpt) => sculpt.session?.hasChanges)) return;
+    current.next = {
+      ...current.next,
+      actors: current.next.actors.map((actor, actorIndex) => ({
+        ...actor,
+        components: actor.components.map((component, componentIndex) => {
+          const session = sculpts.find((sculpt) => sculpt.actorIndex === actorIndex && sculpt.componentIndex === componentIndex)?.session;
+          return session?.hasChanges ? { ...component, properties: { ...session.toSerializedProperties() } } : component;
+        }),
+      })),
+    };
   };
   /** Gives the components that survived an erase stroke their remaining instances: nothing reads them while the stroke runs. */
   const settleErase = (current: Stroke) => {
@@ -241,8 +264,17 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
     if (!erasing) return;
     current.next = { ...current.next, actors: current.next.actors.map((actor) => ({ ...actor, components: actor.components.map((component) => {
       const session = erasing.get(component);
-      return session ? { ...component, properties: { ...session.snapshot() } } : component;
+      return session ? { ...component, properties: { ...serializeFoliageProperties(session.snapshot()) } } : component;
     }) })) };
+  };
+  /** Encodes the painted stroke's instances into its component's `HPFG` data once on pointer-up. */
+  const settlePaint = (current: Stroke) => {
+    if (current.state.mode !== "foliage" || current.state.foliageTool !== "paint" || !current.foliage.batches.length) return;
+    current.next = { ...current.next, actors: current.next.actors.map((actor) => actor.id !== current.actorId ? actor : {
+      ...actor,
+      components: actor.components.map((component) => component.id === current.componentId
+        ? { ...component, properties: { ...serializeFoliageProperties(current.foliage) } } : component),
+    }) };
   };
   const finish = (cancel: boolean) => {
     const current = stroke; stroke = null;
@@ -253,8 +285,10 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
       if (latest.scene) handle.editor?.sync.apply(latest.scene);
       return;
     }
+    settleSculpt(current);
     if (current.next === current.before) return;
     settleErase(current);
+    settlePaint(current);
     pending = true;
     void options.commit(current.next, current.before).then((ok) => {
       if (!ok && options.getState().scene) handle.editor?.sync.apply(options.getState().scene!);

@@ -196,6 +196,7 @@ type RapierRigidBody = {
   setAdditionalMass(mass: number, wakeUp: boolean): void;
   lockRotations(locked: boolean, wakeUp: boolean): void;
   recomputeMassPropertiesFromColliders(): void;
+  isSleeping(): boolean;
 };
 
 type RapierCollider = {
@@ -227,6 +228,8 @@ type RapierCharacterController = {
 type BodyRecord = {
   desc: RigidBodyDesc;
   body: RapierRigidBody;
+  wasSleeping: boolean;
+  movedLastStep: boolean;
 };
 
 type ColliderRecord = {
@@ -259,6 +262,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   private readonly RAPIER: RapierApi;
   private readonly world: InstanceType<RapierApi["World"]>;
   private readonly bodies = new Map<string, BodyRecord>();
+  /** Dynamic bodies tracked for sleep transitions so static bodies cost O(0) on step(). */
+  private readonly dynamicBodies = new Set<BodyRecord>();
   private readonly colliders = new Map<string, ColliderRecord>();
   private readonly characters = new Map<string, CharacterRecord>();
   private readonly constraints = new Map<string, { desc: ConstraintDesc; joint: ImpulseJoint }>();
@@ -316,6 +321,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.constraints.clear();
     this.colliders.clear();
     this.bodies.clear();
+    this.dynamicBodies.clear();
     this.colliderIdByHandle.clear();
     this.blockingPairs.clear();
     this.triggerPairs.clear();
@@ -356,7 +362,14 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       .setGravityScale(desc.gravityScale);
     if (desc.lockRotation) bodyDesc.lockRotations();
     const body = this.world.createRigidBody(bodyDesc);
-    this.bodies.set(desc.id, { desc: { ...desc }, body });
+    const record: BodyRecord = {
+      desc: { ...desc },
+      body,
+      wasSleeping: false,
+      movedLastStep: desc.motionType !== "static",
+    };
+    this.bodies.set(desc.id, record);
+    if (desc.motionType === "dynamic") this.dynamicBodies.add(record);
     this.bodyIdByHandle.set(body.handle, desc.id);
     this.queriesDirty = true;
   }
@@ -376,6 +389,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.bodyIdByHandle.delete(record.body.handle);
     this.world.removeRigidBody(record.body);
     this.bodies.delete(bodyId);
+    this.dynamicBodies.delete(record);
     this.queriesDirty = true;
   }
 
@@ -407,6 +421,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       const previous = this.constraints.get(desc.id);
       if (previous) this.world.removeImpulseJoint(previous.joint, true);
       this.constraints.set(desc.id, { desc, joint });
+      this.markBodyAwake(a);
+      this.markBodyAwake(b);
     } catch (error) {
       if (joint?.isValid()) this.world.removeImpulseJoint(joint, true);
       throw error;
@@ -418,6 +434,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (!record) return;
     this.world.removeImpulseJoint(record.joint, true);
     this.constraints.delete(id);
+    const a = this.bodies.get(record.desc.bodyAId);
+    const b = this.bodies.get(record.desc.bodyBId);
+    if (a) this.markBodyAwake(a);
+    if (b) this.markBodyAwake(b);
   }
 
   teleportBody(
@@ -442,6 +462,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       record.body.setLinvel({ x: 0, y: 0 }, true);
       record.body.setAngvel(0, true);
     }
+    this.markBodyAwake(record);
   }
 
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void {
@@ -452,6 +473,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const pose = normalizedPhysicsPose(transform);
     record.body.setNextKinematicTranslation(pose.position);
     record.body.setNextKinematicRotation(quatToPlanarAngle(pose.rotation));
+    this.markBodyAwake(record);
   }
 
   getBodyTransform(bodyId: string): PhysicsTransform | null {
@@ -474,6 +496,16 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     return true;
   }
 
+  didBodyMoveLastStep(bodyId: string): boolean {
+    const record = this.bodies.get(bodyId);
+    return record !== undefined && record.desc.motionType !== "static" && record.movedLastStep;
+  }
+
+  private markBodyAwake(record: BodyRecord): void {
+    record.wasSleeping = false;
+    record.movedLastStep = record.desc.motionType !== "static";
+  }
+
   private setBodyMotionType(
     bodyId: string,
     motionType: RigidBodyDesc["motionType"],
@@ -484,15 +516,19 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const R = this.RAPIER;
     switch (motionType) {
       case "static":
+        this.dynamicBodies.delete(record);
         record.body.setBodyType(R.RigidBodyType.Fixed, true);
         break;
       case "kinematic":
+        this.dynamicBodies.delete(record);
         record.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
         break;
       default:
+        this.dynamicBodies.add(record);
         record.body.setBodyType(R.RigidBodyType.Dynamic, true);
         break;
     }
+    this.markBodyAwake(record);
   }
 
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void {
@@ -506,6 +542,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         next[axis] = value;
     }
     record.body.setLinvel(next, true);
+    this.markBodyAwake(record);
   }
 
   getBodyVelocity(bodyId: string): BodyVelocity | null {
@@ -523,6 +560,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const record = this.bodies.get(bodyId);
     if (!record || record.desc.motionType !== "dynamic") return;
     record.body.setAngvel(velocity.z, true);
+    this.markBodyAwake(record);
   }
 
   addImpulse(bodyId: string, impulse: Vec3, strength = 1): void {
@@ -532,6 +570,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       { x: impulse.x * strength, y: impulse.y * strength },
       true,
     );
+    this.markBodyAwake(record);
   }
 
   addImpulseAtPoint(bodyId: string, impulse: Vec3, point: Vec3): void {
@@ -539,6 +578,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (!record || record.desc.motionType !== "dynamic") return;
     if (![impulse.x, impulse.y, point.x, point.y].every(Number.isFinite)) return;
     record.body.applyImpulseAtPoint({ x: impulse.x, y: impulse.y }, { x: point.x, y: point.y }, true);
+    this.markBodyAwake(record);
   }
 
   updateBody(bodyId: string, tuning: RigidBodyTuning): void {
@@ -577,6 +617,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       record.desc.gravityScale = tuning.gravityScale;
       record.body.setGravityScale(tuning.gravityScale, true);
     }
+    this.markBodyAwake(record);
   }
 
   createCollider(desc: ColliderDesc): void {
@@ -644,6 +685,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       this.colliderIdByHandle.set(record.collider.handle, record.desc.id);
     }
     this.distributeMass(body);
+    this.markBodyAwake(body);
     this.queriesDirty = true;
   }
 
@@ -675,7 +717,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const body = this.bodies.get(this.colliders.get(colliderId)?.desc.bodyId ?? "");
     this.removeCollider(colliderId, false);
     // The remaining colliders take over the authored mass.
-    if (body) this.distributeMass(body);
+    if (body) {
+      this.distributeMass(body);
+      this.markBodyAwake(body);
+    }
   }
 
   private removeCollider(colliderId: string, refresh: boolean): void {
@@ -716,6 +761,15 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.world.timestep = dt;
     this.world.step(this.eventQueue, this.collisionHooks);
     this.queriesDirty = false;
+    for (const record of this.dynamicBodies) {
+      const sleeping = record.body.isSleeping();
+      if (sleeping && record.wasSleeping) {
+        record.movedLastStep = false;
+      } else {
+        record.movedLastStep = true;
+        record.wasSleeping = sleeping;
+      }
+    }
     this.drainCollisionEvents();
     // A replaced collider's overlap that this step did not start again ended.
     for (const key of this.refreshingTriggerKeys) {
@@ -931,6 +985,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (bodyRecord.desc.motionType === "kinematic") {
       bodyRecord.body.setNextKinematicTranslation(pose.position);
       bodyRecord.body.setNextKinematicRotation(rotation);
+      this.markBodyAwake(bodyRecord);
     } else this.teleportBody(character.desc.bodyId, pose);
     return {
       ...pose,

@@ -244,3 +244,75 @@ it.each(["havok", "rapier", "software3d", "software2d"] as const)(
     }
   },
 );
+
+it("Havok stays grounded when standing still pressed against a wall and snaps down a ledge beside a side wall", async () => {
+  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+  try {
+    body(backend, "floor", { x: 0, y: -0.5, z: 0 });
+    box(backend, "floor", { x: 8, y: 0.5, z: 8 });
+    body(backend, "ledge", { x: -2, y: 0.1, z: 0 });
+    box(backend, "ledge", { x: 2, y: 0.1, z: 8 });
+    // Side wall running along X at z = 0.91 (face at z = 0.41, right at capsule radius 0.4 + offset 0.01).
+    body(backend, "side-wall", { x: 0, y: 1.5, z: 0.91 });
+    box(backend, "side-wall", { x: 8, y: 2, z: 0.5 });
+    body(backend, "player", { x: -1, y: 1.11, z: 0 }, true);
+    capsule(backend, "player");
+    backend.createCharacterController({ id: "motor", bodyId: "player", offset: 0.01, groundSnapDistance: 0.3 });
+    const move = (x: number, y: number, z = 0) => {
+      const result = backend.moveCharacter("motor", { x, y, z }, 1 / 60)!;
+      backend.step(1 / 60);
+      return result;
+    };
+    // Press firmly against both the ledge floor and the side wall, then stop completely.
+    for (let i = 0; i < 6; i++) move(0, -0.01, 0.05);
+    const standing = move(0, 0, 0);
+    expect(standing.grounded).toBe(true);
+    expect(standing.position.y).toBeCloseTo(1.11, 2);
+    // Step off the ledge while continuing to hug the side wall: ground snap must not be masked by the wall.
+    let result = standing;
+    for (let i = 0; i < 18; i++) result = move(0.1, 0, 0.05);
+    expect(result.grounded).toBe(true);
+    expect(result.position.y).toBeCloseTo(0.91, 2);
+    // Standing still on the lower floor while pressed against the wall stays grounded.
+    const stillAtBottom = move(0, 0, 0);
+    expect(stillAtBottom.grounded).toBe(true);
+  } finally {
+    backend.dispose();
+  }
+});
+
+it.each([
+  // Babylon's PhysicsCharacterController, which the Havok backend used before, left the 1 kg crate at x 6.50 with the
+  // character at 5.55, and the 10 kg crate at 6.32 with the character at 5.35.
+  { mass: 1, crate: 6.5, character: 5.55 },
+  { mass: 10, crate: 6.32, character: 5.35 },
+])("Havok character pushes a $mass kg crate it walks into and follows it", async ({ mass, crate, character }) => {
+  const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+  try {
+    body(backend, "floor", { x: 0, y: -0.5, z: 0 });
+    backend.createCollider({ id: "floor:shape", bodyId: "floor", shape: { kind: "box", halfExtents: { x: 20, y: 0.5, z: 20 } },
+      friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+    backend.createBody({ id: "crate", actorId: "crate", motionType: "dynamic", mass, linearDamping: 0, angularDamping: 0,
+      gravityScale: 1, transform: { position: { x: 2, y: 0.5, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } } });
+    backend.createCollider({ id: "crate:shape", bodyId: "crate", shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+      friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff });
+    body(backend, "player", { x: 0, y: 0.91, z: 0 }, true);
+    capsule(backend, "player");
+    backend.createCharacterController({ id: "motor", bodyId: "player", offset: 0.01, radius: 0.4, height: 1.8 });
+    const dt = 1 / 60;
+    let result;
+    // Walk at 3 m/s for two seconds.
+    for (let i = 0; i < 120; i++) {
+      result = backend.moveCharacter("motor", { x: 3 * dt, y: -0.01, z: 0 }, dt)!;
+      backend.step(dt);
+    }
+    const pushed = backend.getBodyTransform("crate")!.position;
+    expect(Math.abs(pushed.x - crate)).toBeLessThan(0.4);
+    expect(Math.abs(result!.position.x - character)).toBeLessThan(0.4);
+    // The character stays behind the crate: a capsule radius and half a crate away.
+    expect(pushed.x - result!.position.x).toBeGreaterThan(0.89);
+    expect(Math.abs(pushed.z)).toBeLessThan(0.05);
+  } finally {
+    backend.dispose();
+  }
+});

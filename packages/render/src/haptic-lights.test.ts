@@ -330,8 +330,10 @@ describe("HapticLightingBlock and the HapticLights block", () => {
       createSampler: () => { const sampler = {}; created.push(sampler); return sampler; },
       samplerParameteri: (_sampler: object, name: number, value: number) => parameters.set(name, value),
       bindSampler: (unit: number, sampler: object | null) => bound.set(unit, sampler),
+      deleteSampler: (sampler: object) => deleted.push(sampler),
       texParameteri: () => {},
     };
+    const deleted: object[] = [];
     Object.assign(engine, { _webGLVersion: 2, _gl: gl });
     // A draw's bind sets the engine up; its Effect binds the atlas to two units by name, as NullEngine's Effects, which
     // hold no sampler locations, cannot.
@@ -349,6 +351,10 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     // Another texture on that unit samples with its own state.
     engine.setTexture(plain, null, shadowAtlasTexture(scene), "anything");
     expect(bound.get(plain)).toBeNull();
+    // The context can outlive the Engine: its sampler goes with the Engine.
+    expect(deleted).toEqual([]);
+    engine.onDisposeObservable.notifyObservers(engine);
+    expect(deleted).toEqual(created);
   });
 
   it("writes the Scene's lights as records, the first hemispheric light as the fill and rect lights by their half extents", async () => {

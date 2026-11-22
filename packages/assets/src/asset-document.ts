@@ -13,6 +13,7 @@ import { AccountedPayloadLoader, readAssetCatalog } from "./payload-loader";
 import { stableStringify } from "./bytes";
 import { collectAssetDependencyMetadata, type AssetDependencyContext, type AssetDependencyMetadata } from "./asset-dependencies";
 import { ATLAS_REFERRER_TYPES, ATLAS_TEXTURES_META, atlasTextureGuids } from "./atlas-textures";
+import { compactTilemapPayload, normalizeTilemapPayload } from "./tilemap-payload";
 
 import { DOCUMENT_CHUNK_ID } from "./document-chunk";
 
@@ -66,7 +67,9 @@ export async function encodeAssetDocument(
     dependencyMetadata?: AssetDependencyMetadata;
   } = {},
 ): Promise<Uint8Array> {
-  const body = new TextEncoder().encode(stableStringify(document.payload));
+  // A Tilemap's chunks are stored run-length encoded (`compactTilemapPayload`).
+  const stored = document.type === "Tilemap" ? compactTilemapPayload(normalizeTilemapPayload(document.payload)) : document.payload;
+  const body = new TextEncoder().encode(stableStringify(stored));
   const extra = options.extraChunks ?? [];
   const storeInHeader = options.headerPayload !== undefined;
   return encodeHasset({

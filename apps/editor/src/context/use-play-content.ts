@@ -76,6 +76,7 @@ export interface PlayContent {
   spawnableLights: ReadonlyMap<string, SpawnableLight>;
   navmeshBytes: Uint8Array | null;
   sceneNavmeshBytes: ReadonlyMap<string, Uint8Array>;
+  sceneComponentChunks: ReadonlyMap<string, Uint8Array>;
   audioReverbByScene: ReadonlyMap<string, Uint8Array>;
   audioReverbBytes: Uint8Array | null;
 }
@@ -83,7 +84,7 @@ export interface PlayContent {
 /** The audio and navigation content, which Play commits once it has collected the Input assets. */
 export type PlayAudioAndNavigation = Pick<
   PlayContent,
-  "audioLibrary" | "sceneNavmeshBytes" | "audioReverbByScene" | "navmeshBytes" | "audioReverbBytes"
+  "audioLibrary" | "sceneNavmeshBytes" | "sceneComponentChunks" | "audioReverbByScene" | "navmeshBytes" | "audioReverbBytes"
 >;
 
 /** The rest of the content, which Play commits as soon as the startup sources are prepared. */
@@ -142,6 +143,7 @@ function emptyPlayContent(fontCssStack = "sans-serif"): PlayContent {
     spawnableLights: new Map(),
     navmeshBytes: null,
     sceneNavmeshBytes: new Map(),
+    sceneComponentChunks: new Map(),
     audioReverbByScene: new Map(),
     audioReverbBytes: null,
   };
@@ -210,6 +212,7 @@ export function playAudioAndNavigation(prepared: PreparedPlaySources, sceneGuid:
   return {
     audioLibrary: content.audioLibrary,
     sceneNavmeshBytes: game.navmeshBytes,
+    sceneComponentChunks: game.componentChunks ?? new Map(),
     audioReverbByScene: game.audioReverbBytes,
     navmeshBytes: game.navmeshBytes.get(sceneGuid) ?? null,
     audioReverbBytes: game.audioReverbBytes.get(sceneGuid) ?? null,

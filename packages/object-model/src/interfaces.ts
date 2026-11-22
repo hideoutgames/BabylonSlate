@@ -24,7 +24,7 @@ export interface InterfaceDispatchTarget {
   /** Interface guids this instance's class declares. */
   implementedInterfaces: readonly string[];
   /** Optional per-instance handlers keyed by `interfaceGuid:methodName`. */
-  interfaceHandlers?: ReadonlyMap<string, InterfaceHandler>;
+  interfaceHandlers?: ReadonlyMap<string, InterfaceHandler> | null;
 }
 
 /** Deep copy of pin defaults, so no caller shares (or edits) a registered value. */

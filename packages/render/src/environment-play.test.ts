@@ -15,13 +15,13 @@ it("realizes terrain heights and instanced foliage from Play parts before publis
   try {
     const transform = identitySerializedTransform();
     applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 0, meshKind: "landscape", meshAssetGuid: null, parts: [
-      { componentId: "ground", meshKind: "landscape", meshAssetGuid: null, ...transform, landscape: parseLandscapeProperties({ subdivisions: 4, heights: Array(25).fill(2) }) },
-      { componentId: "plants", meshKind: "foliage", meshAssetGuid: null, ...transform, foliage: { groupId: "trees", batches: [{ modelGuid: "tree", materialGuid: null, cullDistance: 120, fadeRange: 15, shadowDistance: 45, transforms: [transform, { ...transform, position: [3, 0, 0] }] }] } },
+      { componentId: "ground", meshKind: "landscape", meshAssetGuid: null, ...transform, landscape: parseLandscapeProperties({ subdivisions: 4, heights: new Float32Array(25).fill(2) }) },
+      { componentId: "plants", meshKind: "foliage", meshAssetGuid: null, ...transform, foliage: { groupId: "trees", batches: [{ modelGuid: "tree", materialGuid: null, cullDistance: 120, fadeRange: 15, shadowDistance: 45, transforms: new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1]) }] } },
     ] });
     await binding.slotAnimLoads?.get(0);
     const root = binding.meshes.get(0)!;
     const ground = root.getChildMeshes().find((mesh) => mesh.metadata?.landscapeRoot)!;
-    expect(Array.from(ground.getVerticesData(VertexBuffer.PositionKind)!).filter((_, index) => index % 3 === 1)).toEqual(Array(25).fill(2));
+    expect(Array.from(ground.getVerticesData(VertexBuffer.PositionKind)!.slice(0, 25 * 3)).filter((_, index) => index % 3 === 1)).toEqual(Array(25).fill(2));
     const plants = root.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)!;
     expect(plants.thinInstanceCount).toBe(2);
     expect(plants.isVisible).toBe(true);

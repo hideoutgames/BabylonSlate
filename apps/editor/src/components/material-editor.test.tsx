@@ -274,6 +274,22 @@ describe("Material preview panel", () => {
       receiveActiveAppSettingsUpdate({ viewportZoomButtons: false });
     }
   });
+
+  it("shows a User Interface Material on its flat quad with no mesh choice or zoom buttons", () => {
+    receiveActiveAppSettingsUpdate({ viewportZoomButtons: true });
+    try {
+      const { rerender } = render(<MaterialPreviewPanel {...panelProps} />);
+      expect(screen.getByTestId("material-preview-mesh")).toBeTruthy();
+      expect(screen.getByTestId("material-preview-zoom-controls")).toBeTruthy();
+      harness.content = createDefaultMaterialDocument("Badge", "ui") as unknown as Record<string, unknown>;
+      rerender(<MaterialPreviewPanel {...panelProps} />);
+      expect(screen.queryByTestId("material-preview-overlay")).toBeNull();
+      expect(screen.queryByTestId("material-preview-zoom-controls")).toBeNull();
+      expect(screen.getByTestId("material-preview-canvas")).toBeTruthy();
+    } finally {
+      receiveActiveAppSettingsUpdate({ viewportZoomButtons: false });
+    }
+  });
 });
 
 describe("Material details panel", () => {
@@ -349,6 +365,34 @@ describe("Material details panel", () => {
     expect(lastCommit().blendMode).toBe("multiply");
   });
 
+  it("shows only Domain and Blend Mode for a User Interface Material, blending Translucent, Additive or Multiply", async () => {
+    harness.content = createDefaultMaterialDocument("Badge", "ui") as unknown as Record<string, unknown>;
+    render(<MaterialDetailsPanel {...panelProps} />);
+    const rows = [...screen.getByTestId("material-settings").querySelectorAll("[data-testid^='property-']")]
+      .map((row) => row.getAttribute("data-testid"))
+      .filter((id) => id === "property-domain" || id === "property-blendMode" || id === "property-shadingModel" ||
+        id === "property-twoSided" || id === "property-defaultNormals" || id === "property-boundsPadding" || id === "property-alphaCutoff");
+    expect(rows).toEqual(["property-domain", "property-blendMode"]);
+    expect(screen.getByTestId("property-domain").textContent).toContain("User Interface");
+    fireEvent.click(screen.getByTestId("property-blendMode"));
+    const additive = await screen.findByRole("option", { name: "Additive" });
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["Translucent", "Additive", "Multiply"]);
+    fireEvent.pointerDown(additive, { pointerType: "mouse" });
+    fireEvent.click(additive);
+    expect(lastCommit().blendMode).toBe("additive");
+  });
+
+  it("switches a Surface Material to User Interface with its output and forced settings", async () => {
+    render(<MaterialDetailsPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("property-domain"));
+    const option = await screen.findByRole("option", { name: "User Interface" });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.click(option);
+    const committed = lastCommit();
+    expect(committed).toMatchObject({ domain: "ui", shadingModel: "unlit", blendMode: "translucent", twoSided: true });
+    expect(committed.nodes.filter((node) => node.type.startsWith("output."))).toEqual([expect.objectContaining({ type: "output.ui" })]);
+  });
+
   it("hides material settings and shows node details when a node is selected", () => {
     harness.selectedNodeId = "output";
     render(<MaterialDetailsPanel {...panelProps} />);
@@ -374,7 +418,7 @@ describe("Material details panel", () => {
     ]);
   });
 
-  it("offers Surface, Post Process, and Particle without Interface", async () => {
+  it("offers Surface, Post Process, Particle and User Interface without Interface", async () => {
     render(<MaterialDetailsPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("property-domain"));
     await waitFor(() => {
@@ -382,6 +426,7 @@ describe("Material details panel", () => {
     });
     expect(screen.getByRole("option", { name: "Post Process" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Particle" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "User Interface" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Interface" })).toBeNull();
   });
 

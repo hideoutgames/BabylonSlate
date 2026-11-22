@@ -25,6 +25,7 @@ export type {
   InspectControlRuntime,
 } from "./inspect-control";
 export { PhysicsWorldSync } from "./physics-sync";
+export { DESTROYED_ACCESS_DIAGNOSTIC_CODE } from "./destroyed-access";
 export type { LogEntry, LogSeverity } from "./log-ring";
 export { captureConsoleLogs } from "./console-capture";
 export {

@@ -9,7 +9,7 @@ export interface SpatialComposeTerms {
   /** Real-Time Reflections, with the camera's projection kind and the scene's handedness. */
   reflections: { orthographic: boolean; rightHanded: boolean } | null;
   volumetricLighting: boolean;
-  /** Scene Linear colour; Legacy Display decodes and encodes it with the 2.2 power. */
+  /** Scene Linear colour; Display Space decodes and encodes it with the 2.2 power. */
   linear: boolean;
 }
 
@@ -31,7 +31,7 @@ function upsampleTaps(texel: string, read: (at: string) => string, tapDepth: (at
  * applied before the passes merged: the occlusion's and fog's depth-weighted four-tap upsamples of their
  * reduced-resolution results (`aoSampler`, `fogSampler`) and Babylon's reflection combiner (`reflectionSampler`, its
  * blurred trace of the scene colour before occlusion). Only the colour between them no longer passes through a
- * half-float target, nor, in Legacy Display, through the 2.2 power between each term.
+ * half-float target, nor, in Display Space, through the 2.2 power between each term.
  *
  * Uniforms: `aoTexelSize`; `reflectionTerms` (strength, specular falloff exponent, reflectivity threshold),
  * `projection`, `invProjectionMatrix`, `view`; `fogTexelSize`, `cameraFar`, `fogActive` (0 while the march idles: its
@@ -51,7 +51,7 @@ export function spatialComposeShader(terms: SpatialComposeTerms): string {
       "#include<helperFunctions>", "#include<pbrBRDFFunctions>", "#include<screenSpaceRayTrace>",
     );
   }
-  // Legacy Display reflections alone leave a pixel that does not reflect as it was, unconverted (Babylon's combiner).
+  // Display Space reflections alone leave a pixel that does not reflect as it was, unconverted (Babylon's combiner).
   const reflectionsAlone = !!reflections && !ao && !fog;
   const body: string[] = ["vec4 base = texture2D(textureSampler, vUV);"];
   if (reflections)

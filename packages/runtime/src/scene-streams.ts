@@ -17,7 +17,7 @@ import {
   type World,
 } from "@haptic/object-model";
 import type { PhysicsWorldKind } from "@haptic/physics";
-import { composeParentChildTransform } from "./actor-world-transform";
+import { composeParentChildTransform, copyTransform } from "./actor-world-transform";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
@@ -92,6 +92,7 @@ interface SceneStreamsHost {
  */
 export class SceneStreams implements RuntimeSubsystem {
   private loadId = 0;
+  private _readinessRevision = 0;
   private readonly streams = new Map<string, SceneStream>();
   private readonly actorStream = new WeakMap<Actor, SceneStream>();
   private readonly streamScenes = new WeakMap<Scene, SceneStream>();
@@ -103,6 +104,11 @@ export class SceneStreams implements RuntimeSubsystem {
   constructor(admission: OwnerAdmission, host: SceneStreamsHost) {
     this.admission = admission;
     this.host = host;
+  }
+
+  /** Monotonic revision advancing whenever any stream's actor readiness can change. */
+  get readinessRevision(): number {
+    return this._readinessRevision;
   }
 
   /** Stop, phase 1: every stream is retired. */
@@ -161,7 +167,10 @@ export class SceneStreams implements RuntimeSubsystem {
     return !(stream && (owner?.destroyed || !this.ready(stream)));
   }
 
-  /** A script-spawned actor joins the stream of the owner that spawned it. */
+  /**
+   * A script-spawned actor joins the stream of the owner that spawned it. Adoption happens before the actor enters
+   * the World and only into a ready stream, so no actor's readiness changes: physics meets the actor as a spawn.
+   */
   adoptSpawned(owner: EngineObject | null | undefined, actor: Actor): void {
     const stream = this.streamFor(owner);
     if (!stream) return;
@@ -278,6 +287,7 @@ export class SceneStreams implements RuntimeSubsystem {
     if (this.host.stopped() || !stream || stream.loadId !== streamLoadId || stream.state !== "Loading" || !stream.notified || !this.actorReady(stream.actor)) return;
     try {
       stream.state = "Loaded";
+      this._readinessRevision++;
       this.host.syncPhysics();
       this.host.navigation().registerAgents();
       this.host.navigation().registerObstacles([...stream.actors], stream.navObstacles);
@@ -311,6 +321,7 @@ export class SceneStreams implements RuntimeSubsystem {
     if (!stream) return Promise.resolve();
     if (stream.unloadPromise) return this.withBlock(stream.unloadPromise, blocking);
     stream.state = "Unloading";
+    this._readinessRevision++;
     stream.progress = 0;
     stream.controller.abort(sceneRealizationCancelled());
     const controller = new AbortController();
@@ -386,7 +397,8 @@ export class SceneStreams implements RuntimeSubsystem {
     checkpoint();
     const cloned = yield* cloneSceneStreamingActorsSteps(document.actors, { instanceId: stream.scene.guid, parentActorId: stream.actor.guid });
     stream.idMap = cloned.idMap;
-    let origin = component.transform;
+    // The load-time pose: a copy, since the component's live transform changes in place.
+    let origin = copyTransform(component.transform);
     let parentId = component.parentId;
     const visited = new Set([component.guid]);
     while (parentId && !visited.has(parentId)) {
@@ -446,6 +458,7 @@ export class SceneStreams implements RuntimeSubsystem {
       const nested = this.streams.get(child.guid);
       if (nested) {
         nested.state = "Unloading";
+        this._readinessRevision++;
         nested.progress = 0;
         nested.controller.abort(sceneRealizationCancelled());
         yield* this.removeActors(nested);
@@ -473,6 +486,7 @@ export class SceneStreams implements RuntimeSubsystem {
     this.host.releaseAssets(stream.scene.guid);
     const wasLoaded = stream.state === "Loaded";
     stream.state = "Unloading";
+    this._readinessRevision++;
     stream.progress = 0;
     stream.controller.abort(sceneRealizationCancelled());
     this.streams.delete(stream.actor.guid);

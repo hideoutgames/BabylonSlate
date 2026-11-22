@@ -36,16 +36,17 @@ RegisterClass("BABYLON.MultiplyBlendFactorBlock", MultiplyBlendFactorBlock);
 
 /**
  * A Scene Layer Multiply visual's output, for its layer's blend (`layerMultiplyAlphaMode`). The factor is
- * f = mix(1, color, alpha) in display values (`encode`: `color` is linear and f is encoded by the Engine's sRGB curve,
- * as every other overlay colour is; otherwise `color` is already display colour, a Text Material's). A direct layer
- * writes (f, 0): destination × f, its alpha kept. A targeted layer writes (0, 0, 0, 1 − g), g the Rec. 709 luma of f,
- * clamped to 0..1: its premultiplied over multiplies the target's colour, and what shows through it, by g. One program
- * serves both: `layerTargeted` is a uniform, bound from the Scene at each draw (`isTargetedLayerScene`). The code sits
- * inline in main and has no helper of its own, so it has a single exit (ANGLE's D3D11 translator).
+ * f = mix(1, color, alpha). A direct layer writes (f, 0): destination × f, its alpha kept; the fragment output encodes
+ * f's colour as it does every overlay colour (`linearInput`: `color` is linear, a User Interface or Surface Material's),
+ * or passes it on (a Text Material's, already display colour). A targeted layer writes (0, 0, 0, 1 − g), g the Rec. 709
+ * luma of the displayed factor (encoded here by the Engine's curve, `toGammaSpace`, for a linear one), clamped to 0..1:
+ * its premultiplied over multiplies the target's colour, and what shows through it, by g. One program serves both:
+ * `layerTargeted` is a uniform, bound from the Scene at each draw (`isTargetedLayerScene`). The code sits inline in
+ * main and has no helper of its own, so it has a single exit (ANGLE's D3D11 translator).
  */
 export class LayerMultiplyBlock extends NodeMaterialBlock {
-  /** Build-time: `color` is linear and encoded here (a Surface Material); false for display colour (Text). */
-  encode = true;
+  /** Build-time: `color` is linear (User Interface, Surface); false for display colour (Text). */
+  linearInput = true;
   private targetedUniform = "";
   constructor(name: string) {
     super(name, NodeMaterialBlockTargets.Fragment);
@@ -65,20 +66,19 @@ export class LayerMultiplyBlock extends NodeMaterialBlock {
     this.targetedUniform = state._getFreeVariableName("layerTargeted");
     state._emitUniformFromString(this.targetedUniform, Types.Float);
     state.sharedData.forcedBindableBlocks.push(this);
-    if (this.encode) state._emitFunctionFromInclude("helperFunctions", `//${this.name}`);
+    if (this.linearInput) state._emitFunctionFromInclude("helperFunctions", `//${this.name}`);
     const factor = state._getFreeVariableName("layerMultiplyFactor");
     const grey = state._getFreeVariableName("layerMultiplyGrey");
-    const linear = `max(mix(vec3(1.0), ${this.color.associatedVariableName}.rgb, clamp(${this.alpha.associatedVariableName}, 0.0, 1.0)), vec3(0.0))`;
-    state.compilationString += `vec3 ${factor} = ${this.encode ? `toGammaSpace(${linear})` : linear};\n`;
-    state.compilationString += `float ${grey} = clamp(dot(${factor}, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);\n`;
+    state.compilationString += `vec3 ${factor} = max(mix(vec3(1.0), ${this.color.associatedVariableName}.rgb, clamp(${this.alpha.associatedVariableName}, 0.0, 1.0)), vec3(0.0));\n`;
+    const shown = this.linearInput ? `toGammaSpace(${factor})` : factor;
+    state.compilationString += `float ${grey} = clamp(dot(${shown}, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);\n`;
     state.compilationString += `${state._declareOutput(this.rgba)} = mix(vec4(${factor}, 0.0), vec4(0.0, 0.0, 0.0, 1.0 - ${grey}), ${this.targetedUniform});\n`;
     return this;
   }
   protected override _dumpPropertiesCode(): string {
-    return `${super._dumpPropertiesCode()}${this._codeVariableName}.encode = ${this.encode};\n`;
+    return `${super._dumpPropertiesCode()}${this._codeVariableName}.linearInput = ${this.linearInput};\n`;
   }
-}
-RegisterClass("BABYLON.LayerMultiplyBlock", LayerMultiplyBlock);
+}RegisterClass("BABYLON.LayerMultiplyBlock", LayerMultiplyBlock);
 
 /**
  * The output of a Multiply blend's linear factor: encoded for display (gamma only) unless a Scene Linear display stage

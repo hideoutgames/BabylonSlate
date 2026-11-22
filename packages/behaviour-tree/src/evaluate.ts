@@ -868,22 +868,52 @@ function reportFailures(
   });
 }
 
+/** A state that has not run yet: an empty stack, so the first step starts at the root. */
+export function initialBehaviourTreeState(blackboard: BlackboardValues = {}): BtEvalState {
+  return { stack: [], status: "running", lastResults: {}, btNodeId: null, blackboard, nodeMemory: {} };
+}
+
+/**
+ * Pure `(tree, previous, dt) → next`: copies `previous` (and the Blackboard `options.blackboard` gives in place of
+ * its own) and steps the copy, so `previous` is never changed.
+ */
 export function evaluateBehaviourTree(
   tree: BehaviourTreeDocument,
   previous: BtEvalState | null,
   dtSeconds: number,
   options?: EvaluateBehaviourTreeOptions,
 ): BtEvalState {
-  const { nodes, parents, childIndexUnder, cooldowns, observers } = evaluationTree(tree);
-  const blackboard: BlackboardValues =
-    options?.blackboard !== undefined
+  const state: BtEvalState = {
+    stack: (previous?.stack ?? []).map((frame) => ({ ...frame })),
+    status: previous?.status ?? "running",
+    lastResults: { ...(previous?.lastResults ?? {}) },
+    btNodeId: previous?.btNodeId ?? null,
+    blackboard: options?.blackboard !== undefined
       ? { ...options.blackboard }
-      : { ...(previous?.blackboard ?? {}) };
-  const results: Record<string, BtResult> = { ...(previous?.lastResults ?? {}) };
+      : { ...(previous?.blackboard ?? {}) },
+    nodeMemory: cloneMemory(previous?.nodeMemory),
+  };
+  return stepBehaviourTree(tree, state, dtSeconds, options);
+}
+
+/**
+ * One tick of `tree` on `state`, in place: its stack, results, node memory and Blackboard change and its status and
+ * running leaf are rewritten; returns `state`. `options.blackboard` is ignored (the state's Blackboard is the one
+ * stepped). A caller that keeps an earlier state, or publishes one, copies it first.
+ */
+export function stepBehaviourTree(
+  tree: BehaviourTreeDocument,
+  state: BtEvalState,
+  dtSeconds: number,
+  options?: EvaluateBehaviourTreeOptions,
+): BtEvalState {
+  const { nodes, parents, childIndexUnder, cooldowns, observers } = evaluationTree(tree);
+  const blackboard = state.blackboard;
+  const results = state.lastResults;
   const breakpoints = options?.breakpoints;
   const lastResults = breakpoints ? reportFailures(results, breakpoints) : results;
-  const nodeMemory = cloneMemory(previous?.nodeMemory);
-  const stack: BtStackFrame[] = (previous?.stack ?? []).map((frame) => ({ ...frame }));
+  const nodeMemory = state.nodeMemory;
+  const stack = state.stack;
   const seed = options?.seed ?? 0;
   const trace = options?.trace;
 
@@ -1149,12 +1179,7 @@ export function evaluateBehaviourTree(
     status = lastResults[tree.rootId] ?? "failure";
   }
 
-  return {
-    stack,
-    status,
-    lastResults: results,
-    btNodeId: status === "running" ? runningLeaf(stack, nodes, results) : null,
-    blackboard,
-    nodeMemory,
-  };
+  state.status = status;
+  state.btNodeId = status === "running" ? runningLeaf(stack, nodes, results) : null;
+  return state;
 }

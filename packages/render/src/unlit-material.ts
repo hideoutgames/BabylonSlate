@@ -46,6 +46,7 @@ import {
 import { Light2DBlock, UnlitLinearColorBlock } from "./unlit-lighting-blocks";
 import { registerAlphaToCoverage, samplesSteppedAlpha } from "./alpha-to-coverage";
 import { drawBatchWorld } from "./draw-batch-world-block";
+import { SpriteBatchVertexBlock } from "./sprite-batch-block";
 
 export type { UnlitBinding } from "./unlit-material-blocks";
 
@@ -152,6 +153,8 @@ function buildSurface(material: NodeMaterial, { textured, msdf, lighting }: Surf
   const scene = material.getScene();
   const position = new InputBlock(`${NAME}_position`, undefined, Types.Vector3);
   position.setAsAttribute("position");
+  const spriteBatch = textured && !msdf ? new SpriteBatchVertexBlock(`${NAME}_spriteBatch`) : null;
+  if (spriteBatch) position.output.connectTo(spriteBatch.position);
   const color = new InputBlock(`${NAME}_color`, undefined, Types.Color4);
   color.setAsAttribute("color");
   const world = matrixInput(`${NAME}_world`, NodeMaterialSystemValues.World, blocks);
@@ -162,12 +165,13 @@ function buildSurface(material: NodeMaterial, { textured, msdf, lighting }: Surf
   const view = matrixInput(`${NAME}_view`, NodeMaterialSystemValues.View, blocks);
   const viewProjection = matrixInput(`${NAME}_viewProjection`, NodeMaterialSystemValues.ViewProjection, blocks);
   const worldPosition = new TransformBlock(`${NAME}_worldPos`);
-  position.output.connectTo(worldPosition.vector);
+  (spriteBatch ? spriteBatch.positionOutput : position.output).connectTo(worldPosition.vector);
   drawWorld.connectTo(worldPosition.transform);
   // The lattice deformer moves positions; unlit has no normal, so it deforms a constant one nothing reads.
   const normal = new InputBlock(`${NAME}_normal`, undefined, Types.Vector4);
   normal.value = new Vector4(0, 1, 0, 0);
   blocks.push(position, color, instancesBlock, worldPosition, normal);
+  if (spriteBatch) blocks.push(spriteBatch);
   const plumbing: MaterialPlumbing = { worldPosition: worldPosition.output, worldNormal4: normal.output };
   if (lighting === "3d") {
     const meshNormal = new InputBlock(`${NAME}_meshNormal`, undefined, Types.Vector3);
@@ -196,7 +200,12 @@ function buildSurface(material: NodeMaterial, { textured, msdf, lighting }: Surf
     const uv = new InputBlock(`${NAME}_uv`, undefined, Types.Vector2);
     uv.setAsAttribute("uv");
     const transformed = new UnlitUvBlock(`${NAME}_uvTransform`);
-    uv.output.connectTo(transformed.uv);
+    if (spriteBatch) {
+      uv.output.connectTo(spriteBatch.uv);
+      spriteBatch.uvOutput.connectTo(transformed.uv);
+    } else {
+      uv.output.connectTo(transformed.uv);
+    }
     transformed.output.connectTo(surface.uv);
     blocks.push(uv, transformed);
   }
@@ -285,7 +294,7 @@ function buildVariant(material: NodeMaterial, { textured, msdf }: SurfaceKind, k
   const scene = material.getScene();
   const name = `${NAME}_${kind}`;
   const plumbing: MaterialPlumbing = {};
-  const outputs = createSurfacePlumbing(name, blocks, plumbing);
+  const outputs = createSurfacePlumbing(name, blocks, plumbing, { spriteBatch: textured && !msdf });
   applyLatticeDeformerPlumbing(name, blocks, plumbing, scene);
   plumbing.worldPosition!.connectTo(plumbing.clipPosition!);
   const surface = new UnlitSurfaceBlock(`${name}_surface`);

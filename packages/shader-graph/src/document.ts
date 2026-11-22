@@ -15,11 +15,12 @@ export type MaterialBlendMode =
   | "multiply";
 
 /**
- * The Blend Modes a domain offers. Text always blends (Translucent, Additive or Multiply); Particle and Post Process
- * have none (emitters own blending, a pass replaces the image, and a Post Process Material always stores Opaque).
+ * The Blend Modes a domain offers. Text and User Interface always blend (Translucent, Additive or Multiply); Particle and
+ * Post Process have none (emitters own blending, a pass replaces the image, and a Post Process Material always stores
+ * Opaque).
  */
 export function materialBlendModesFor(domain: MaterialDomain): readonly MaterialBlendMode[] {
-  if (domain === "text") return ["translucent", "additive", "multiply"];
+  if (domain === "text" || domain === "ui") return ["translucent", "additive", "multiply"];
   if (domain === "particle" || domain === "postProcess") return [];
   return ["opaque", "masked", "translucent", "additive", "multiply"];
 }
@@ -315,6 +316,45 @@ function defaultParticleGraph(): {
   };
 }
 
+/** A Color constant wired into User Interface Output's Color, as the Surface default feeds Base Color. */
+function defaultUserInterfaceGraph(): {
+  nodes: MaterialGraphNode[];
+  edges: MaterialGraphEdge[];
+} {
+  return {
+    nodes: [
+      {
+        id: "color",
+        type: "const.color",
+        position: { x: 0, y: 0 },
+        properties: { value: [1, 1, 1] },
+      },
+      {
+        id: "output",
+        type: "output.ui",
+        position: { x: 400, y: 0 },
+        properties: {},
+      },
+    ],
+    edges: [
+      {
+        id: "e-color-output",
+        sourceNodeId: "color",
+        sourcePinId: "out",
+        targetNodeId: "output",
+        targetPinId: "color",
+      },
+    ],
+  };
+}
+
+/**
+ * Text and User Interface Materials draw on 2D quads blended over what is behind them: always unlit,
+ * two-sided and translucent, additive or multiply.
+ */
+function isOverlayDomain(domain: MaterialDomain): boolean {
+  return domain === "text" || domain === "ui";
+}
 const RETYPED_TERMINALS: ReadonlySet<string> = new Set(["output.surface", "output.decal"]);
 
 export function createDefaultMaterialDocument(
@@ -324,6 +364,8 @@ export function createDefaultMaterialDocument(
   const graph =
     domain === "text"
       ? { nodes: [{ id: "output", type: "output.text", position: { x: 300, y: 0 }, properties: {} }], edges: [] }
+      : domain === "ui"
+      ? defaultUserInterfaceGraph()
       : domain === "postProcess"
       ? defaultPostProcessGraph()
       : domain === "particle"
@@ -334,13 +376,13 @@ export function createDefaultMaterialDocument(
   return {
     name,
     domain,
-    shadingModel: domain === "particle" || domain === "text" ? "unlit" : "pbr",
+    shadingModel: domain === "particle" || isOverlayDomain(domain) ? "unlit" : "pbr",
     // A decal blends over the surface it lands on.
-    blendMode: domain === "text" || domain === "decal" ? "translucent" : domain === "particle" ? "additive" : "opaque",
-    twoSided: domain === "text",
+    blendMode: isOverlayDomain(domain) || domain === "decal" ? "translucent" : domain === "particle" ? "additive" : "opaque",
+    twoSided: isOverlayDomain(domain),
     defaultNormals: "model",
     alphaCutoff: 0.5,
-    preview: { mesh: domain === "text" ? "plane" : "cube", customMeshGuid: null },
+    preview: { mesh: isOverlayDomain(domain) ? "plane" : "cube", customMeshGuid: null },
     nodes: graph.nodes,
     edges: graph.edges,
   };
@@ -382,15 +424,16 @@ export function setMaterialDomain(
   });
   const keptIds = new Set(kept.map((node) => node.id));
   const retyped = new Set(retypesTerminal ? kept.filter((node) => node.type === terminalType).map((node) => node.id) : []);
-  // Text forces unlit, translucent and two-sided, so those values were never
-  // authored. Leaving Text takes the new domain's defaults instead.
-  const target = doc.domain === "text" ? createDefaultMaterialDocument(doc.name, domain) : null;
-  const leavingText = target
+  // Text and User Interface force unlit, translucent and two-sided, so those
+  // values were never authored. Leaving either, or entering User Interface,
+  // takes the new domain's defaults instead.
+  const target = isOverlayDomain(doc.domain) || domain === "ui" ? createDefaultMaterialDocument(doc.name, domain) : null;
+  const forcedSettings = target
     ? { shadingModel: target.shadingModel, blendMode: target.blendMode, twoSided: target.twoSided }
     : {};
   const switched = normalizeMaterialDocument({
     ...doc,
-    ...leavingText,
+    ...forcedSettings,
     domain,
     nodes: kept,
     edges: doc.edges.filter(
@@ -489,16 +532,16 @@ export function normalizeMaterialDocument(
   return {
     name: asString(record.name, fallbackName),
     domain,
-    shadingModel: domain === "text" || record.shadingModel === "unlit" ? "unlit" : "pbr",
+    shadingModel: isOverlayDomain(domain) || record.shadingModel === "unlit" ? "unlit" : "pbr",
     // A post-process pass replaces the image, so it has no Blend Mode: always Opaque.
     blendMode:
-      domain === "text" ? (record.blendMode === "additive" || record.blendMode === "multiply" ? record.blendMode : "translucent") : domain === "postProcess" ? "opaque" : record.blendMode === "masked" ||
+      isOverlayDomain(domain) ? (record.blendMode === "additive" || record.blendMode === "multiply" ? record.blendMode : "translucent") : domain === "postProcess" ? "opaque" : record.blendMode === "masked" ||
       record.blendMode === "translucent" ||
       record.blendMode === "additive" ||
       record.blendMode === "multiply"
         ? record.blendMode
         : "opaque",
-    twoSided: domain === "text" || record.twoSided === true,
+    twoSided: isOverlayDomain(domain) || record.twoSided === true,
     defaultNormals: record.defaultNormals === "flat" ? "flat" : "model",
     alphaCutoff: asNumber(record.alphaCutoff, 0.5),
     ...(asNumber(record.boundsPadding, 0) > 0 ? { boundsPadding: asNumber(record.boundsPadding, 0) } : {}),

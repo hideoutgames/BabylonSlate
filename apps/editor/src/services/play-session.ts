@@ -5,6 +5,7 @@ import {
   type createPlayPauseGate,
   createRuntimeFromLoad,
   captureConsoleLogs,
+  DESTROYED_ACCESS_DIAGNOSTIC_CODE,
   SessionDiagnosticAggregator,
   type RuntimeDriver,
   type SessionReportEntry,
@@ -547,11 +548,14 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     reportConsoleLog?.(command.message, severity);
     reportOutputLog?.({ category: command.category, severity, message: command.message });
   };
-  // A script error log or failed assert already reached the Output Log as its log line.
+  // A script error log, failed assert or destroyed-object access already reached the Output Log as its log line.
   const reportDiagnosticLog = (command: Extract<CommandMessage, { type: "diagnostic" }>) => {
     const severity = command.severity ?? "error";
-    if (command.code === "runtime.log" || command.code === "runtime.assert") reportConsoleLog?.(command.message, severity);
-    else options.onLog?.(command.message, severity);
+    if (command.code === "runtime.log" || command.code === "runtime.assert" || command.code === DESTROYED_ACCESS_DIAGNOSTIC_CODE) {
+      reportConsoleLog?.(command.message, severity);
+    } else {
+      options.onLog?.(command.message, severity);
+    }
   };
   const onCommand = (command: CommandMessage) => {
     // Diagnostics finish their final recording while the session stops.

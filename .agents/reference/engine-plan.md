@@ -74,13 +74,13 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 
 - Pure packages (core, assets, edit, object-model, scripting, debugger, graph IRs, input, exporter, source-control, …) import neither React nor Babylon; they hold most engine logic and test fast.
 - `assets` owns texture **encoding** (Basis wasm, no Babylon); `render` owns **decoding** (`KhronosTextureContainer2`).
-- `physics` hosts Babylon Physics V2 on a worker-local `NullEngine` Scene so `runtime` stays Babylon-free. `navigation` may load Recast wasm but not Babylon.
+- `physics` talks directly to `@babylonjs/havok` WASM (3D) and Rapier2D WASM (2D) with zero `@babylonjs/core`, so the game worker stays completely Babylon-free. `navigation` may load Recast wasm but not Babylon.
 - Only `vfs` adapters touch Capacitor; platform detection is `getHostPlatform()`.
 
 ### Babylon integration constraints
 
 - Babylon is left-handed (X right, Y up, Z into the screen). `scene.useRightHandedSystem` stays `false`; 2D conventions derive from it.
-- 3D physics: `HavokPlugin` + `PhysicsAggregate` on a never-rendered worker-local `NullEngine` Scene, stepped through its physics engine, Havok wasm loaded with `locateFile`. `runtime` talks only to `PhysicsBackend`. Bodies never cross threads. 2D uses Rapier (Babylon has no Rapier plugin).
+- 3D physics: direct `@babylonjs/havok` WASM C-API (`HP_World_*`, `HP_Body_*`, `HP_Shape_*`, `HP_Constraint_*`, `HP_QueryCollector_*`), Havok wasm loaded with `locateFile`, zero `@babylonjs/core` in the worker. `runtime` talks only to `PhysicsBackend`. Bodies never cross threads. 2D uses Rapier.
 - Movement beside a dynamic Rigid Body steers that body's horizontal velocity and leaves gravity, collisions and impulses to physics (rotation locked); without a Rigid Body, or beside a kinematic one, a character controller moves a kinematic capsule. A static Rigid Body, Nav Agent, Ragdoll, Water Buoyancy or a second Movement stops it.
 - Gameplay owns animation time: evaluators run in the worker and send state, normalised time and weights; the main thread poses clips with its own pose evaluator and never lets Babylon play gameplay animation (replay would break).
 - The game HUD / UserInterface system is removed. Editor chrome and debug overlays (Print, Stats) are DOM. SceneLayers are 2D actor documents on a session compositor, not a HUD revival.
@@ -90,7 +90,7 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 - The KTX2 transcoder is self-hosted via `KhronosTextureContainer2.URLConfig` and must ship in the editor, player and every export.
 - WebGL context loss is normal on iPad: restore keeps the hardware scaling level, Babylon rebuilds retained resources (the ResourceCache is not flushed), materials invalidate and the Output Log reports it.
 - iOS blocks audio until a gesture: both hosts unlock on the first touch, never at load.
-- `NullEngine` is the `render` test seam and the production host for worker physics.
+- `NullEngine` is the `render` test seam (and headless model-import converter); worker physics no longer uses it.
 - Babylon is pinned to an exact version with a repository patch ([patches/](../../patches/), [pnpm-workspace.yaml](../../pnpm-workspace.yaml)); upgrades re-validate the patch.
 
 ### iPad memory and thermal architecture
@@ -186,12 +186,11 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 
 ### Schema versioning
 
-- Every header carries `version`; each type can own ordered N → N+1 migration steps applied on load. None exist yet.
-- Haptic is not released yet: formats change in place. Do not raise versions, add migration steps or keep readers for old data; projects made with an earlier build are not expected to open.
-- From the first release, `RELEASED_VERSIONS` in `packages/assets/src/migration.ts` is set to each type's version at that release, and every released version stays readable: a format change raises the type's current version and adds a step from the previous one to `MIGRATIONS`, and a normalizer may fill the default of a new optional field without one. Until then its values equal the current versions. A type added later joins `RELEASED_VERSIONS` at its first version.
-- Each step is tested with a committed golden of the version it reads (`packages/assets/src/__fixtures__/migrations/<Type>-v<N>.hasset`, written before the format changes); `migration.test.ts` fails without it.
-- Versions older than the oldest readable one are refused as "unsupported old format"; newer versions are refused as "made with a newer engine version". Never silently accept, upgrade or drop fields.
-- Migration prompts once and never rewrites untouched files without saying so.
+- Every header carries `version`, and every asset type is registered (the version tables in `packages/assets/src/migration.ts` are exhaustive over `AssetType`). Reads are strict: any other stored version is refused with `AssetFormatVersionError`.
+- Haptic is not released yet: formats change in place and every type stays at version 1. Do not raise versions, add upgrade steps or keep readers for old data; projects made with an earlier build are not expected to open.
+- From the first release, `RELEASED_VERSIONS` is set to each type's version at that release, and every released version stays readable: a format change raises the type's current version and adds an upgrade step from the previous one (the step mechanism and its user prompt are added with the first such change), and a normalizer may fill the default of a new optional field without one. A type added later joins `RELEASED_VERSIONS` at its first version.
+- Each upgrade step is tested with a committed golden of the version it reads, written before the format changes.
+- Older versions are refused as "unsupported old format"; newer versions are refused as "made with a newer engine version". Never silently accept, upgrade or drop fields.
 
 ### Texture compression decision
 
@@ -222,7 +221,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - **Class parents, not file types**: Object, Actor, ActorComponent, GameInstance, GameSubsystem, SceneSubsystem (hidden abstract `Subsystem` is never offered), FunctionLibrary, EditorFunctionLibrary, EditorUtilityObject, DebugCommand, BTTask, BTDecorator, BTService, BTComposite, plus scene/streaming/capture actor bases ([ids.ts](../../packages/object-model/src/ids.ts)).
 - Every creatable class picks a parent at creation; re-parenting is supported with cycle detection and a diff of broken inherited members.
 - EditorUtilityObject and EditorFunctionLibrary are editor-only and stripped from Play and export; leftover `EditorUtilityInterface` strings stay editor-only.
-- **UserInterface / game HUD is removed and must not be re-added**: no UserInterface asset, no `@haptic/ui-runtime`, no WidgetComponent, no `ui.*` nodes, no Interface-domain materials, no Play/player Babylon GUI (`AdvancedDynamicTexture`), no `.ui.hasset` migration. `documentKindForAssetType("UserInterface")` is `null`.
+- **UserInterface / game HUD is removed and must not be re-added**: no UserInterface asset, no `@haptic/ui-runtime`, no WidgetComponent, no `ui.*` script nodes, no Play/player Babylon GUI (`AdvancedDynamicTexture`), no `.ui.hasset` migration. `documentKindForAssetType("UserInterface")` is `null`. In-game UI is Scene Layers, and the **User Interface** Material domain (`ui`, its `output.ui` / `input.ui` and `ui.*` Material nodes) is the supported way to shade their 2D components ([shader-graph.md](architecture/shader-graph.md), [scene-layers.md](architecture/scene-layers.md)).
 
 ## Object model
 
@@ -336,7 +335,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Same scene graph, actors, scripting and physics slot as 3D, viewed through an orthographic camera.
 - Convention: XY plane, +Y up, +X right, camera at negative Z looking +Z (forced by Babylon's left-handedness). Depth ordering is a sorting concern.
 - The viewport 2D/3D toggle switches camera, navigation (pan/zoom only), gizmos (XY translate, Z rotate, XY scale), grid and camera-bounds overlay. `viewportMode` is an authored, saved and undoable scene setting.
-- **Sprites are quad meshes, not Babylon Sprites**: a Babylon `Sprite` cannot parent, take custom materials, carry physics shapes or join normal picking. One quad per sprite with the frame baked into UVs; batching and thin instances are measured escape hatches only.
+- **Sprites are quad meshes, not Babylon Sprites**: a Babylon `Sprite` cannot parent, take custom materials, carry physics shapes or join normal picking. Editor viewports use pickable quads; Play world sprites batch into persistent thin-instanced unit quads (`WorldSpriteBatcher`, with `LayerImageAtlas` auto-atlasing and automatic promotion to standalone quads for custom Materials, Deformers, Outlines, shadow casting and picking), and Scene Layer sprites batch through `OverlayDrawBatcher`.
 - Sprites alpha-test by default (opaque pass, no sort); blending is opt-in. Pixel art uses nearest sampling, no mips, anisotropy 1, set at creation.
 - Sprite holds atlas frames, look, pivot and collision AABB; SpriteAnimation is the separate pickable clip for Animation Graph.
 - Tilemaps render as chunked `VertexData` from a pure golden-tested function (one draw per chunk per atlas, only affected chunks rebuilt), not `SpriteMap`. Painting is one undo entry per stroke. Autotile terrains live on the Tileset with a per-terrain style (4-side, 16 variants, or 8-neighbour blob, 47) and resolve at paint time into plain GIDs through a pure resolver with a deterministic closest match, so incomplete sheets still paint and nothing downstream reads terrain data ([tilemaps](architecture/tilemaps.md#terrains-autotile)).
@@ -436,7 +435,7 @@ Deliberate product decisions that can look like bugs. Do not "fix" them without 
 - Print is HUD output; the console and log history are a separate sink. Development Only nodes run in editor Play and Preview Build and are stripped from release export.
 - The Play Inspector is a read-only snapshot (plus Use Camera and Destroy Actor); runtime changes never write back to authored content.
 - Play and Preview launch the open Scene tab (Start In Open Scene) or the startup scene, not the active asset tab.
-- Spawning every Tick is allowed: there is no actor cap, throttle or kill-Z. An empty class reference spawns nothing (safe null); Destroy Actor on null no-ops. An Actor or Target pin left unwired means Self only where the node says so (a pin showing a `Self` field: every Actor Target except Attach To Bone's bone owner, Destroy Actor, Get/Has/Add Component, Attach To Bone's Actor, and the Target of Call Function, Call Custom Event, Call Interface Function and Get Component Ref on the graph's own class); a wired reference that is null never falls back to Self: the node does nothing and the runtime logs "<Class>: <Node> (<Pin>) tried to access null." on every occurrence. A reference to a destroyed object is treated the same way ("…tried to access a destroyed object."), and Is Valid, Validated Get, Assert Is Valid, Cast and breakpoint conditions report it as not valid. The collector's next pass (about once a second) sets stored references to destroyed objects to None.
+- Spawning every Tick is allowed: there is no actor cap, throttle or kill-Z. An empty class reference spawns nothing (safe null); Destroy Actor on null no-ops. An Actor or Target pin left unwired means Self only where the node says so (a pin showing a `Self` field: every Actor Target except Attach To Bone's bone owner, Destroy Actor, Get/Has/Add Component, Attach To Bone's Actor, and the Target of Call Function, Call Custom Event, Call Interface Function and Get Component Ref on the graph's own class); a wired reference that is null never falls back to Self: the node does nothing and the runtime logs "<Class>: <Node> (<Pin>) tried to access null." on every occurrence. A reference to a destroyed object is skipped the same way but reports `runtime.destroyedAccess` once per node and member ("Tried to access "<variable>" from null of type "<Class>"", or set / call), and Is Valid, Validated Get, Assert Is Valid, Cast and breakpoint conditions report it as not valid. The collector's next pass (about once a second) sets stored references to destroyed objects to None.
 - Class references and actor references are distinct pin kinds; a wrong-type wire is rejected.
 - Map and Array nodes are immutable values: Set/Append return new containers and need a write-back to the variable; value-type keys compare by value. Unwired impure nodes do not execute.
 - Releasing a dragged pin in the empty-canvas safe zone breaks its wires; a data input takes one wire (a new wire replaces it).

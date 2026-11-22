@@ -94,6 +94,7 @@ interface SceneLayersHost {
  */
 export class SceneLayers implements RuntimeSubsystem {
   private loadId = 0;
+  private _readinessRevision = 0;
   private readonly loads = new Map<string, SceneLayerLoad>();
   private readonly independentWork = new Map<string, IndependentLayerWork>();
   private readonly readinessWaiters = new Map<string, { resolve: () => void; reject: (error: unknown) => void }>();
@@ -103,6 +104,11 @@ export class SceneLayers implements RuntimeSubsystem {
   /** The World's shared stack once it holds the Project Setting's passes, and once the host has been sent it. */
   private stackStarted: SceneLayerPostProcessing | null = null;
   private stackSent: SceneLayerPostProcessing | null = null;
+
+  /** Monotonic revision advancing whenever any Scene Layer's readiness changes. */
+  get readinessRevision(): number {
+    return this._readinessRevision;
+  }
 
   constructor(admission: OwnerAdmission, overlay: Pick<SceneLayerOverlay, "realizeActors" | "forget" | "canvasRect">, host: SceneLayersHost) {
     this.admission = admission;
@@ -301,6 +307,7 @@ export class SceneLayers implements RuntimeSubsystem {
     load.presented = true;
     if (this.host.bootLoading()) return;
     load.ready = true;
+    this._readinessRevision++;
     this.readinessWaiters.get(layerId)?.resolve();
     this.readinessWaiters.delete(layerId);
     this.host.syncOverlayPhysics();
@@ -317,6 +324,7 @@ export class SceneLayers implements RuntimeSubsystem {
     if (!layer) return;
     const load = this.loads.get(layerGuid);
     this.loads.delete(layerGuid);
+    this._readinessRevision++;
     this.host.removeLayerPhysics(layerGuid);
     this.overlay.forget(layerGuid);
     const work = this.independentWork.get(layerGuid);

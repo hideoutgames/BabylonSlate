@@ -41,8 +41,12 @@ interface RuntimePhysicsWorldsHost {
   lifecycleId(): number;
   /** Main-Scene physics simulates root actors whose streamed Scene, if any, is ready. */
   mainActorReady(actor: Actor): boolean;
+  /** Optional monotonic revision advancing whenever `mainActorReady` can flip for any actor. */
+  mainEligibilityRevision?(): number;
   /** Scene Layer physics simulates layer actors their layer admits early. */
   overlayActorReady(actor: Actor): boolean;
+  /** Optional monotonic revision advancing whenever `overlayActorReady` can flip for any actor. */
+  overlayEligibilityRevision?(): number;
   /** Some loaded Scene Layer document enables physics; otherwise no layer world can exist. */
   hasPhysicsSceneLayers(): boolean;
   canTickActor(actor: Actor): boolean;
@@ -136,6 +140,8 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
   };
   /** Per class id: whether a loaded script on it or an ancestor handles Hit or Overlap events. */
   private readonly contactHandlers = new Map<string, boolean>();
+  private contactHandlersRevision = 0;
+  private readonly getContactHandlersRevision = (): number => this.contactHandlersRevision;
   /**
    * Whether a contact event naming `actor` could reach a script. Only scripts consume contacts, and
    * `invokeEvent` runs the nearest handler up the actor's class lineage; ancestors are all counted here,
@@ -171,7 +177,10 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       createSoftwarePhysicsBackend(this.worldKind, vec3(this.currentGravity)),
       {
         actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
+        eligibilityRevision: this.host.mainEligibilityRevision,
+        sceneLayerId: null,
         observesContacts: this.observesContacts,
+        contactReportingRevision: this.getContactHandlersRevision,
         collisionPresets: this.collisionPresets,
         onCollidersPublished: this.occludersChanged,
         deferUnsupportedConstraints: !this.preferSoftwarePhysics,
@@ -332,7 +341,10 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     const world = this.host.world();
     const physicsSync = new PhysicsWorldSync(backend, {
       actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
+      eligibilityRevision: this.host.mainEligibilityRevision,
+      sceneLayerId: null,
       observesContacts: this.observesContacts,
+      contactReportingRevision: this.getContactHandlersRevision,
       collisionPresets: this.collisionPresets,
       onCollidersPublished: this.occludersChanged,
     });
@@ -383,7 +395,10 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
       check();
       sync = new PhysicsWorldSync(backend, {
         actorFilter: (actor) => actor.sceneLayerId == null && this.host.mainActorReady(actor),
+        eligibilityRevision: this.host.mainEligibilityRevision,
+        sceneLayerId: null,
         observesContacts: this.observesContacts,
+        contactReportingRevision: this.getContactHandlersRevision,
         collisionPresets: this.collisionPresets,
         onCollidersPublished: this.occludersChanged,
         deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
@@ -565,6 +580,7 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
    */
   scriptsChanged(): void {
     this.contactHandlers.clear();
+    this.contactHandlersRevision++;
   }
 
   private classHandlesContacts(classId: string): boolean {
@@ -627,8 +643,11 @@ export class RuntimePhysicsWorlds implements RuntimeSubsystem {
     const backend = this.nativeLayerBackend?.(vec3(gravity)) ?? createSoftwarePhysicsBackend("2d", vec3(gravity));
     const sync = new PhysicsWorldSync(backend, {
       actorFilter: (actor) => actor.sceneLayerId === layerGuid && this.host.overlayActorReady(actor),
+      eligibilityRevision: this.host.overlayEligibilityRevision,
+      sceneLayerId: layerGuid,
       actorsOf: (world) => sceneLayerActors(world, layerGuid),
       observesContacts: this.observesContacts,
+      contactReportingRevision: this.getContactHandlersRevision,
       collisionPresets: this.collisionPresets,
       deferUnsupportedConstraints: !this.preferSoftwarePhysics && backend instanceof SoftwarePhysicsBackend,
       skipEmptySteps: true,

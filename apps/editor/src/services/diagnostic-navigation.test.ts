@@ -166,6 +166,17 @@ describe("navigateToSessionReportEntry", () => {
     ]);
   });
 
+  it("opens the Class a destroyed-object access came from and focuses the node that made it", async () => {
+    const { host, calls, focusedNodes } = fakeHost();
+    const result = await navigateToSessionReportEntry(entry({
+      code: "runtime.destroyedAccess", message: 'Tried to access "Health" from null of type "Enemy"',
+      assetGuid: "hero-guid", graphId: "event-graph", nodeId: "read-health",
+    }), host);
+    expect(result).toEqual({ opened: true });
+    expect(focusedNodes).toEqual(["read-health"]);
+    expect(calls).toContain("open graph:assets/Hero.class.hasset");
+  });
+
   it("says why when the document cannot be opened, and leaves nothing focused", async () => {
     const { host, calls } = fakeHost({
       openDocument: async () => {

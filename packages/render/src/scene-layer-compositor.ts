@@ -35,7 +35,9 @@ import {
   type MaterialParameterValue,
 } from "@haptic/core";
 import { installEngineDefaultMaterial } from "./default-material";
-import { sceneDrawBatchWork, setSceneDrawBatching, type OverlayBatchWork } from "./overlay-draw-batcher";
+import { flushSceneImagePages, sceneDrawBatchWork, setSceneDrawBatching, type OverlayBatchWork } from "./overlay-draw-batcher";
+import { uploadSceneGlyphPages } from "./text2d-glyph-atlas";
+import { countLayerPhase, emptyLayerFrameStats, installLayerFrameCounters, type LayerFrameStats } from "./layer-frame-stats";
 import { keepLayerDrawableMeshes, layerDrawableMeshWork, type LayerDrawableMeshWork } from "./layer-drawable-meshes";
 import { keepLayerDrawList, layerDrawListWork, type LayerDrawListWork } from "./layer-draw-list";
 import { isSceneFrameReady } from "./scene-perf";
@@ -209,6 +211,11 @@ export class SceneLayerCompositor {
    */
   private held: { scene: Scene; release(): void } | null = null;
   private heldDrawn = false;
+  /**
+   * The current frame's layer work (`LayerFrameStats`): `beforeWorld` rewrites its `beforeWorld` part and `render` the
+   * rest, so after both it describes the frame they drew.
+   */
+  readonly frameStats: LayerFrameStats = emptyLayerFrameStats();
 
   constructor(options: SceneLayerCompositorOptions) {
     this.engine = options.engine;
@@ -219,6 +226,7 @@ export class SceneLayerCompositor {
     this.screen = options.screen ?? (() => null);
     this.onLayerView = options.onLayerView;
     this.slotRoot = options.slotRoot ?? (() => null);
+    installLayerFrameCounters(this.engine);
   }
 
   create(command: SceneLayerCreateCommand): SceneLayerView {
@@ -609,13 +617,47 @@ export class SceneLayerCompositor {
     }
   }
 
+  /**
+   * The layers' work that changes the bound framebuffer or uploads textures, done before the world draws so none of it
+   * falls inside the backbuffer's pass after the world's output: each layer that may draw this frame (ready, or
+   * presenting) copies the images its shared page was asked for into their cells and uploads its written glyph pages.
+   * Both are what the layer Scene's before-render work does first, which then finds nothing left; what a layer draws
+   * does not change, since only its own draws sample its pages. Post Processing Panel views and the shared stack's
+   * target stay in the layer pass: they draw the layer Scene's content, which its own frame steps first.
+   */
+  beforeWorld(presentingLayers: ReadonlySet<string> = new Set()): void {
+    const counts = this.frameStats.beforeWorld;
+    const start = performance.now();
+    counts.uploads = 0;
+    counts.targetSwitches = 0;
+    countLayerPhase(this.engine, counts, () => {
+      for (const record of this.orderedLayers()) {
+        if (!this.isLayerReady(record.layerId) && !presentingLayers.has(record.layerId)) continue;
+        flushSceneImagePages(record.scene);
+        uploadSceneGlyphPages(record.scene);
+      }
+    });
+    counts.ms = performance.now() - start;
+  }
+
   render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {
-    this.resize();
-    this.heldDrawn = false;
-    // With no layer left, an ended stack's last composite has nothing to stand in for.
-    if (this.byId.size === 0) this.releaseHeld();
-    if (this.stack) this.renderThroughStack(this.stack, presentingLayers, draw);
-    else this.renderDirect(presentingLayers, draw);
+    const stats = this.frameStats;
+    const start = performance.now();
+    stats.scenes = 0;
+    stats.batchMs = 0;
+    stats.clears = 0;
+    stats.depthClears = 0;
+    stats.targetSwitches = 0;
+    stats.uploads = 0;
+    countLayerPhase(this.engine, stats, () => {
+      this.resize();
+      this.heldDrawn = false;
+      // With no layer left, an ended stack's last composite has nothing to stand in for.
+      if (this.byId.size === 0) this.releaseHeld();
+      if (this.stack) this.renderThroughStack(this.stack, presentingLayers, draw);
+      else this.renderDirect(presentingLayers, draw);
+    });
+    stats.ms = performance.now() - start;
   }
 
   /** No passes: each layer draws straight over the world, clearing only depth and stencil. */
@@ -698,6 +740,7 @@ export class SceneLayerCompositor {
   private renderLayer(record: LayerRecord): ReturnType<SceneRenderCoordinator["render"]> {
     // Its panels frame themselves with the camera as bound for this frame, before the layer's cull reads the masks.
     record.panels?.beforeRender(record.camera, this.outputWidth, this.outputHeight, this.postProcessingEnabled());
+    this.frameStats.scenes += 1;
     const frameCapture = activeRenderFrameCapture(this.engine);
     return frameCapture
       ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },

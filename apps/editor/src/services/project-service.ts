@@ -27,6 +27,10 @@ import {
   createEmptyProject,
   normalizeProjectSettings,
   normalizeProjectAppearance,
+  PROJECT_COVER_FILES,
+  projectCoverDataUrl,
+  projectCoverFromDataUrl,
+  storedProjectAppearance,
   normalizeScene,
   normalizeSceneLayer,
   normalizePrefab,
@@ -43,6 +47,8 @@ import {
   type ProjectMetadata,
   type ProjectAppearance,
   type RenderProjectSettings,
+  isFoliageChunkId,
+  isLandscapeChunkId,
 } from "@haptic/core";
 import type { ProjectFolderHandle, ProjectStorage, SourceControlProjectSettings } from "@haptic/core";
 import {
@@ -59,6 +65,7 @@ import {
   RegistryGenerationClock,
   type AreaEmissionProgress,
   createProjectFromTemplate,
+  normalizeTilemapPayload,
   createVfsBlobStore,
   decodeAssetDocument,
   encodePluginSettingsDocument,
@@ -75,12 +82,18 @@ import {
   encodeAssetDocument,
   audioClipChunk,
   audioClipChunkToDrop,
+  extractFoliageChunks,
+  extractLandscapeChunks,
+  foliageChunkIdsInHeader,
+  hydrateFoliageChunksToEditor,
+  hydrateLandscapeChunksToEditor,
+  landscapeChunkIdsInHeader,
+  unreadableComponentChunks,
   exportProjectZip,
   type ClassAssetReplacement,
   isAssetDocumentPath,
   isTracePath,
-  loadPayloadWithMigration,
-  defaultRegistry,
+  createDefaultMigrationRegistry,
   projectContentRoot,
   readAssetDocumentHeader,
   readTraceDocument,
@@ -92,7 +105,6 @@ import {
   type ChunkInput,
   type EncodableChunk,
   type BlobStore,
-  type MigrationPending,
   type MigrationRegistry,
   type PluginDescriptor,
   type PluginDiagnostic,
@@ -160,7 +172,6 @@ import {
 export interface ProjectLoadResult {
   document: ProjectDocument;
   layouts: ProjectLayouts;
-  migrationPending: MigrationPending[];
 }
 
 export type { PluginImportResult } from "./project-plugins";
@@ -186,8 +197,6 @@ export class ProjectService {
   private readonly registryViews = new WeakMap<AssetRegistry, AssetRegistry>();
   readonly extensions: EditorExtensionService;
   private projectGuid: string | null = null;
-  private migrationPending: MigrationPending[] = [];
-  private migrateOnSaveApproved = false;
   private readonly migrations: MigrationRegistry;
   private readonly blobs: BlobStore;
   private assetRegistry: AssetRegistry | null = null;
@@ -219,6 +228,8 @@ export class ProjectService {
   private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
+  /** `<path>\n<componentId>` of each unreadable Landscape already reported. */
+  private readonly reportedUnreadableComponentChunks = new Set<string>();
   /** Change counter shared by every project registry, so remounts never rewind it. */
   private readonly registryClock = new RegistryGenerationClock();
   private readonly files: AssetFileAccess = {
@@ -229,11 +240,11 @@ export class ProjectService {
   constructor(
     storage: ProjectStorage,
     options: TextureEncodingOptions & {
-      /** Schema versions and migration steps; tests inject steps to exercise the approval flow. */
+      /** Schema versions; tests inject other versions to exercise strict version checks. */
       migrations?: MigrationRegistry;
     } = {},
   ) {
-    this.migrations = options.migrations ?? defaultRegistry();
+    this.migrations = options.migrations ?? createDefaultMigrationRegistry();
     this.unguardedStorage = storage;
     storage = guardProjectStorage(storage, this.writeAdmission, true);
     this.storage = storage;
@@ -589,31 +600,6 @@ export class ProjectService {
     return this.projectGuid;
   }
 
-  get pendingMigrations(): MigrationPending[] {
-    return [...this.migrationPending];
-  }
-
-  approveMigrateOnSave(): void {
-    this.migrateOnSaveApproved = true;
-  }
-
-  /** The user approved Migrate On Save for this project session. */
-  get migrationsApproved(): boolean {
-    return this.migrateOnSaveApproved;
-  }
-
-  /** A write stamps the current schema version, so a pending migration needs approval first. */
-  private assertMigrationApproved(path: string): void {
-    if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
-      throw new Error("Asset schema migration requires user approval before save");
-    }
-  }
-
-  /** The file at `path` was written at the current schema version. */
-  private noteMigrated(path: string): void {
-    this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
-  }
-
   async listProjects(): Promise<ProjectFolderHandle[]> {
     return (await this.storage.listProjects()).filter((folder) => !isAppOwnedFolder(folder.name));
   }
@@ -758,7 +744,7 @@ export class ProjectService {
           };
           // A manifest without metadata stays as it is, so the load below refuses it.
           if (manifest.metadata) {
-            manifest.metadata.appearance = appearance;
+            manifest.metadata.appearance = await writeProjectCover(this.storage, appearance);
             await this.storage.writeText(
               PROJECT_FILE,
               JSON.stringify(manifest, null, 2),
@@ -826,8 +812,6 @@ export class ProjectService {
     await this.textures.settle();
     await this.storage.releaseFolder();
     this.projectGuid = null;
-    this.migrationPending = [];
-    this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
     this.sceneAudioReverb.clear();
     this.assetRegistry = null;
@@ -842,9 +826,9 @@ export class ProjectService {
   async updateListedProject(
     handle: ProjectFolderHandle,
     details: UpdateListedProjectOptions,
-  ): Promise<void> {
+  ): Promise<ProjectAppearance | undefined> {
     const name = details.name.trim();
-    if (!name) return;
+    if (!name) return undefined;
     await this.storage.openKnownFolder(handle);
     try {
       if (!(await this.storage.exists(PROJECT_FILE))) {
@@ -855,9 +839,11 @@ export class ProjectService {
       raw.metadata.name = name;
       raw.metadata.updatedAt = new Date().toISOString();
       if (details.appearance !== undefined) {
-        raw.metadata.appearance = normalizeProjectAppearance(details.appearance);
+        const appearance = normalizeProjectAppearance(details.appearance);
+        raw.metadata.appearance = appearance ? await writeProjectCover(this.storage, appearance) : undefined;
       }
       await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+      return raw.metadata.appearance;
     } finally {
       await this.storage.releaseFolder();
     }
@@ -901,8 +887,6 @@ export class ProjectService {
 
     this.resetAssetLoading();
 
-    this.migrationPending = [];
-    this.migrateOnSaveApproved = false;
     this.assetGuids.clear();
     this.sceneAudioReverb.clear();
     this.textures.forgetSessionEncodes();
@@ -920,6 +904,7 @@ export class ProjectService {
       await this.storage.readText(PROJECT_FILE),
     ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
     const document = normalizeProjectDocument(raw);
+    document.metadata.appearance = await readProjectCover(this.storage, document.metadata.appearance);
     // Every project is created with its guid, the namespace of its player saves.
     if (typeof raw.guid !== "string" || !raw.guid) {
       throw new Error("Invalid project manifest: project.json has no project guid.");
@@ -929,20 +914,11 @@ export class ProjectService {
     this.textures.setSourceControlEnabled((document.settings.sourceControl?.mode ?? "off") !== "off");
     this.projectPlugins.setOverrides(document.settings.pluginOverrides ?? {});
 
-    // Project manifest schema migration (type Project).
-    const projectVersion =
-      typeof raw.version === "number"
-        ? raw.version
-        : this.migrations.currentVersion("Project");
-    const migrated = loadPayloadWithMigration(this.migrations, {
-      type: "Project",
-      version: projectVersion,
-      payload: raw as unknown as Record<string, unknown>,
-      path: PROJECT_FILE,
-    });
-    if (migrated.pending) {
-      this.migrationPending.push(migrated.pending);
-    }
+    // The manifest is read as stored, so it must be at the current Project version.
+    this.migrations.requireCurrent(
+      "Project",
+      typeof raw.version === "number" ? raw.version : this.migrations.currentVersion("Project"),
+    );
 
     const withDocuments = await this.ensureDocuments(document);
     const layouts = await this.loadLayouts();
@@ -950,7 +926,6 @@ export class ProjectService {
     return {
       document: withDocuments,
       layouts,
-      migrationPending: this.pendingMigrations,
     };
   }
 
@@ -1171,7 +1146,7 @@ export class ProjectService {
       saveDocument: this.saveDocument.bind(this),
       remountRegistry: this.remountRegistry.bind(this),
       readStoredAssetDocument: (kind, path) => this.readStoredAssetDocument(kind, path),
-      documentContent: (kind, path, raw) => this.documentContent(kind, path, raw),
+      documentContent: (kind, raw) => this.documentContent(kind, raw),
     };
   }
 
@@ -1247,7 +1222,11 @@ export class ProjectService {
       pixelArt: renderOptions?.pixelArt === true,
     });
     const appearance = normalizeProjectAppearance(renderOptions?.appearance);
-    if (appearance) document.metadata.appearance = appearance;
+    if (appearance) {
+      // The picture's bytes go to its cover file; the document keeps the picture in memory for the editor.
+      const stored = await writeProjectCover(this.storage, appearance);
+      document.metadata.appearance = appearance.image && stored.coverFile ? { ...stored, image: appearance.image } : stored;
+    }
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
     this.textures.setSourceControlEnabled((document.settings.sourceControl?.mode ?? "off") !== "off");
@@ -1291,7 +1270,6 @@ export class ProjectService {
     return {
       document,
       layouts: createEmptyLayouts(),
-      migrationPending: [],
     };
   }
 
@@ -1329,7 +1307,7 @@ export class ProjectService {
       return decoded.payload;
     }
     const raw = await this.readStoredAssetDocument(kind, path, options);
-    return this.documentContent(kind, path, raw);
+    return this.documentContent(kind, raw);
   }
 
   /**
@@ -1338,10 +1316,9 @@ export class ProjectService {
    */
   documentContentFromStored(
     kind: Exclude<DocumentKind, "content-browser" | "source-control" | "trace">,
-    path: string,
     stored: { type: string; version: number; payload: Record<string, unknown> },
   ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
-    return this.documentContent(kind, path, stored);
+    return this.documentContent(kind, stored);
   }
 
   /**
@@ -1382,7 +1359,7 @@ export class ProjectService {
     const { document } = snapshot;
     this.assetGuids.set(path, document.guid);
     return {
-      document: this.documentContent(kind, path, {
+      document: this.documentContent(kind, {
         type: document.type || fallbackDocumentType(kind),
         version: document.version,
         payload: document.payload,
@@ -1452,30 +1429,20 @@ export class ProjectService {
 
   private documentContent(
     kind: Exclude<DocumentKind, "content-browser" | "source-control">,
-    path: string,
     raw: { type: string; version: number; payload: Record<string, unknown> },
   ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
-    const migrated = loadPayloadWithMigration(this.migrations, {
-      type: raw.type,
-      version: raw.version,
-      payload: raw.payload,
-      path,
-    });
-    if (migrated.pending) {
-      // Loading an unmigrated asset again keeps one entry for its path.
-      const existing = this.migrationPending.findIndex((entry) => entry.path === path);
-      if (existing === -1) this.migrationPending.push(migrated.pending);
-      else this.migrationPending[existing] = migrated.pending;
-    }
+    this.migrations.requireCurrent(raw.type, raw.version);
     // PluginSettings.version is an author label, separate from the asset header schema version.
-    if (raw.type === "PluginSettings") return migrated.payload;
-    const { version: _v, ...content } = migrated.payload as Record<
+    if (raw.type === "PluginSettings") return raw.payload;
+    const { version: _v, ...content } = raw.payload as Record<
       string,
       unknown
     > & { version?: number };
     void _v;
     if (kind === "data-definition") return { ...normalizeDataDefinitionAsset(content) };
     if (kind === "data-tree") return { ...normalizeDataTreeAsset(content) };
+    // A stored Tilemap holds run-length chunks; editor documents hold dense cells.
+    if (kind === "tilemap") return { ...normalizeTilemapPayload(content) };
     if (kind === "scene") {
       return normalizeScene(content);
     }
@@ -1544,8 +1511,51 @@ export class ProjectService {
       } finally {
         if (!options.scope) scope.dispose();
       }
-    } else decoded = await readUnindexedAssetDocument(this.files, path, options.signal);
+      // Only Scenes store component chunks; Prefab and Class documents keep Landscape and Foliage data inline.
+      if (decoded.type === "Scene") {
+        decoded = await this.hydrateComponentChunks(path, decoded, indexed.header.chunks, options.signal);
+      }
+    } else {
+      decoded = await readUnindexedAssetDocument(this.files, path, options.signal);
+      if (decoded.type === "Scene") {
+        const header = readAssetDocumentHeader(await this.storageForPath(path).readBinary(path));
+        decoded = await this.hydrateComponentChunks(path, decoded, header.chunks, options.signal);
+      }
+    }
+    if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
+      this.reportUnreadableComponentChunks(path, decoded.payload);
+    }
     return decoded;
+  }
+
+  /** Restores a Scene's binary Landscape and Foliage chunks into the base64 `data` editor documents hold. */
+  private async hydrateComponentChunks(
+    path: string,
+    decoded: AssetDocument,
+    chunks: ReadonlyArray<{ id: string }>,
+    signal: AbortSignal | undefined,
+  ): Promise<AssetDocument> {
+    const ids = [...landscapeChunkIdsInHeader(chunks), ...foliageChunkIdsInHeader(chunks)];
+    if (ids.length === 0) return decoded;
+    const read = (await this.readAssetDocumentWithChunksAttempt(path, ids, signal)).chunks;
+    // A component whose chunk cannot be read keeps its `chunkId`, so saving carries the stored chunk unchanged.
+    return { ...decoded, payload: hydrateFoliageChunksToEditor(hydrateLandscapeChunksToEditor(decoded.payload, read), read) };
+  }
+
+  /**
+   * Tells the user, once per component and file, about Landscape or Foliage data the document names but cannot
+   * supply. A Landscape shows and plays flat, Foliage draws nothing; a save keeps the stored data untouched until the
+   * component is sculpted or painted again.
+   */
+  private reportUnreadableComponentChunks(path: string, payload: unknown): void {
+    for (const { actorName, componentId, kind } of unreadableComponentChunks(payload)) {
+      const key = `${path}\n${componentId}`;
+      if (this.reportedUnreadableComponentChunks.has(key)) continue;
+      this.reportedUnreadableComponentChunks.add(key);
+      const owner = actorName ? `the ${kind} on "${actorName}"` : `a ${kind}`;
+      const effect = kind === "Landscape" ? "it shows and plays flat" : "it draws nothing";
+      this.pushDiagnostic(`${path}: the ${kind === "Landscape" ? "terrain" : "instance"} data of ${owner} is missing or damaged, so ${effect}. Saving keeps the stored data; ${kind === "Landscape" ? "sculpting" : "painting"} replaces it.`);
+    }
   }
 
   /** Writes a `.hasset` document in its asset's write queue. */
@@ -1601,7 +1611,6 @@ export class ProjectService {
       if (diagnostic) throw new Error(diagnostic.message);
     }
     if (!isAssetDocumentPath(path)) throw new Error(`${path} is not a .hasset document.`);
-    this.assertMigrationApproved(path);
     const storage = this.storageForPath(path);
     const blobs = this.blobsForPath(path);
     if (isPluginDocumentReadOnly(this.projectPlugins.descriptors, path)) {
@@ -1650,10 +1659,10 @@ export class ProjectService {
         : existing?.parentClass ?? (type === "Class" ? "Actor" : null);
     // Imported assets keep their settings in the header beside their binary
     // chunks; a Font's MSDF attach merges into that header payload.
+    // A Model keeps its payload in the document chunk and a summary in the header (`modelHeaderSummary`).
     const storeInHeader =
       (kind === "texture" ||
         kind === "font" ||
-        kind === "model" ||
         kind === "skeleton" ||
         kind === "animation") &&
       existing !== null &&
@@ -1664,9 +1673,15 @@ export class ProjectService {
 
     const guid = await this.guidForAsset(path);
     const stored = existing?.catalog ?? null;
-    const extraChunks = type === "Scene"
+    const componentChunkSave = prepareComponentChunksForSave(type, content as unknown as Record<string, unknown>);
+    const payloadToSave = componentChunkSave.payload;
+    const baseChunks = type === "Scene"
       ? await this.sceneChunksForSave(path, content as SerializedScene, guid, stored)
       : await keptChunksFor(this.files, path, stored);
+    const extraChunks: EncodableChunk[] = [
+      ...baseChunks.filter((chunk) => componentChunkSave.keepStoredChunk(chunk.id)),
+      ...componentChunkSave.chunks,
+    ];
     const bytes = await encodeAssetDocument(
       {
         type,
@@ -1681,26 +1696,25 @@ export class ProjectService {
               : assetName(path),
         guid,
         version,
-        payload: content as unknown as Record<string, unknown>,
+        payload: payloadToSave,
       },
       {
         blobs,
         extraChunks,
         parentClass,
         headerPayload: storeInHeader
-          ? (content as unknown as Record<string, unknown>)
+          ? payloadToSave
           : undefined,
         headerMeta: headerMetaForSave(type, content),
         dependencyMetadata: assetHeaderDependencyMetadata(
           type,
-          content as unknown as Record<string, unknown>,
+          payloadToSave,
           this.assetRegistry?.list(),
           parentClass,
         ),
       },
     );
     await storeDocumentBytes(this.files, path, stored, bytes, this.assetRegistry, suppliedChunkIds(extraChunks));
-    this.noteMigrated(path);
     if (pluginContentChanged && ownerPlugin) {
       // In the settings file's own write queue, so a PluginSettings save is
       // read here rather than replaced by the copy read before it, and is not
@@ -1827,20 +1841,26 @@ export class ProjectService {
     if (isPluginDocumentReadOnly(this.projectPlugins.descriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
-    this.assertMigrationApproved(path);
     const guid = await this.guidForAsset(path);
     const existing = await readExistingAssetMeta(this.files, path);
     const stored = existing?.catalog ?? null;
     const type = existing?.type ?? "Scene";
     // The stored chunks are carried over, not read; the navmesh it replaces is not read at all.
-    const chunks = [...await this.sceneChunksForSave(path, payload, guid, stored, [NAVMESH_CHUNK_ID]), navmeshChunk(bytes)];
+    const componentChunkSave = prepareComponentChunksForSave(type, payload);
+    const payloadToSave = componentChunkSave.payload;
+    const baseChunks = await this.sceneChunksForSave(path, payload, guid, stored, [NAVMESH_CHUNK_ID]);
+    const chunks: EncodableChunk[] = [
+      ...baseChunks.filter((chunk) => componentChunkSave.keepStoredChunk(chunk.id)),
+      ...componentChunkSave.chunks,
+      navmeshChunk(bytes),
+    ];
     const encoded = await encodeAssetDocument(
       {
         type,
         name: assetName(path),
         guid,
         version: this.migrations.currentVersion(type),
-        payload,
+        payload: payloadToSave,
       },
       {
         blobs: this.blobsForPath(path),
@@ -1848,11 +1868,10 @@ export class ProjectService {
         parentClass: existing?.parentClass ?? null,
         // The header's index of the scene's Timeline Clips survives a bake.
         headerMeta: headerMetaForSave(type, payload),
-        dependencyMetadata: assetHeaderDependencyMetadata(type, payload, this.assetRegistry?.list()),
+        dependencyMetadata: assetHeaderDependencyMetadata(type, payloadToSave, this.assetRegistry?.list()),
       },
     );
     await storeDocumentBytes(this.files, path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
-    this.noteMigrated(path);
   }
 
   /** Update only derived bytes; unsaved geometry waits for an explicit Scene save. */
@@ -1968,7 +1987,6 @@ export class ProjectService {
     if (isPluginDocumentReadOnly(this.projectPlugins.descriptors, path)) {
       throw new Error("Engine plugin assets are read-only");
     }
-    this.assertMigrationApproved(path);
     const existing = await readExistingAssetMeta(this.files, path);
     const stored = existing?.catalog ?? null;
     const kept = await keptChunksFor(this.files, path, stored, new Set(omit));
@@ -1993,7 +2011,6 @@ export class ProjectService {
       },
     );
     await storeDocumentBytes(this.files, path, stored, encoded, this.assetRegistry, suppliedChunkIds(chunks));
-    this.noteMigrated(path);
   }
 
   guidForPath(path: string): string | null {
@@ -2029,11 +2046,11 @@ export class ProjectService {
     document: ProjectDocument,
     layouts: ProjectLayouts,
   ): Promise<void> {
-    this.assertMigrationApproved(PROJECT_FILE);
     const guid = this.projectGuid ?? newGuid();
+    const appearance = document.metadata.appearance;
     const text = (updatedAt: string) => JSON.stringify({
       ...document,
-      metadata: { ...document.metadata, updatedAt },
+      metadata: { ...document.metadata, updatedAt, ...(appearance ? { appearance: storedProjectAppearance(appearance) } : {}) },
       guid,
       kind: "project",
       version: this.migrations.currentVersion("Project"),
@@ -2053,7 +2070,6 @@ export class ProjectService {
       await this.storage.writeText(PROJECT_FILE, text(new Date().toISOString()));
     }
     await this.saveLayouts(layouts);
-    this.noteMigrated(PROJECT_FILE);
   }
 
   /** Write only `layout.json` (tabs, dock layouts and panel placements), which holds no project content. */
@@ -2146,5 +2162,71 @@ function storedProjectUpdatedAt(text: string): string | null {
     return typeof raw.metadata?.updatedAt === "string" ? raw.metadata.updatedAt : null;
   } catch {
     return null;
+  }
+}
+
+function prepareComponentChunksForSave(
+  type: string,
+  content: Record<string, unknown>,
+): {
+  payload: Record<string, unknown>;
+  chunks: ChunkInput[];
+  keepStoredChunk: (chunkId: string) => boolean;
+} {
+  // Prefab and Class Landscape and Foliage data stays inline: placing one copies its components into the Scene, which
+  // saves its own chunks, and runtime spawns read the data from the document itself.
+  if (type === "Prefab" || type === "Class") {
+    return { payload: content, chunks: [], keepStoredChunk: (chunkId) => !isLandscapeChunkId(chunkId) && !isFoliageChunkId(chunkId) };
+  }
+  if (type !== "Scene") {
+    return { payload: content, chunks: [], keepStoredChunk: () => true };
+  }
+  const landscape = extractLandscapeChunks(content);
+  const foliage = extractFoliageChunks(landscape.payload);
+  const payload = foliage.payload;
+  const chunks = [...landscape.chunks, ...foliage.chunks];
+  const referencedChunkIds = new Set<string>();
+  const visit = (components: unknown) => {
+    if (!Array.isArray(components)) return;
+    for (const component of components as Array<{ classId?: string; properties?: Record<string, unknown> }>) {
+      if (component?.classId !== "LandscapeComponent" && component?.classId !== "FoliageComponent") continue;
+      const cid = component.properties?.chunkId;
+      if (typeof cid === "string" && (isLandscapeChunkId(cid) || isFoliageChunkId(cid))) referencedChunkIds.add(cid);
+    }
+  };
+  const record = payload as { actors?: Array<{ components?: unknown }>; components?: unknown };
+  if (Array.isArray(record.actors)) for (const actor of record.actors) visit(actor.components);
+  visit(record.components);
+  const extractedIds = new Set(chunks.map((chunk) => chunk.id));
+  return {
+    payload,
+    chunks,
+    keepStoredChunk: (chunkId: string) =>
+      (!isLandscapeChunkId(chunkId) && !isFoliageChunkId(chunkId)) || (referencedChunkIds.has(chunkId) && !extractedIds.has(chunkId)),
+  };
+}
+/**
+ * Writes the picture of `appearance` (its in-memory `image`) to its project-root cover file, removing any other cover
+ * file, and returns the appearance as `project.json` stores it. Without a picture every cover file is removed.
+ */
+async function writeProjectCover(storage: ProjectStorage, appearance: ProjectAppearance): Promise<ProjectAppearance> {
+  const cover = appearance.image ? projectCoverFromDataUrl(appearance.image) : null;
+  if (cover) await storage.writeBinary(cover.file, cover.bytes);
+  for (const file of PROJECT_COVER_FILES) {
+    if (file !== cover?.file && await storage.exists(file)) await storage.remove(file);
+  }
+  const stored = storedProjectAppearance(appearance);
+  delete stored.coverFile;
+  return cover ? { ...stored, coverFile: cover.file } : stored;
+}
+
+/** The appearance with its cover file's picture loaded into `image`; a missing or unreadable file shows the icon. */
+async function readProjectCover(storage: ProjectStorage, appearance: ProjectAppearance | undefined): Promise<ProjectAppearance | undefined> {
+  if (!appearance?.coverFile) return appearance;
+  try {
+    return { ...appearance, image: projectCoverDataUrl(appearance.coverFile, await storage.readBinary(appearance.coverFile)) };
+  } catch (error) {
+    if (!isStorageNotFound(error)) throw error;
+    return storedProjectAppearance(appearance);
   }
 }
