@@ -363,7 +363,9 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   private occlude(): void {
     const occlusion = this.occlusion, meshes = this.outputObjectList.meshes;
     if (!occlusion || !meshes) return;
-    this.outputObjectList.meshes = occlusion.view.filter(meshes, this.camera, occlusion.colourPass()) as AbstractMesh[];
+    // The retained cull's list comes with the world boxes it holds of its meshes, so the filter need not ask them.
+    const bounds = meshes === this.retained?.output ? this.retained.outputBounds() : undefined;
+    this.outputObjectList.meshes = occlusion.view.filter(meshes, this.camera, occlusion.colourPass(), bounds) as AbstractMesh[];
   }
 
   private publishWorld(): void {
@@ -392,6 +394,11 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
     if (output === this.objectList.meshes) {
       // The object passes observe the list they drew last frame, which this one is while a reveal lasts.
       this.outputObjectList.meshes = rewriteRenderList(this.shown, output, isShown);
+      return;
+    }
+    // The retained cull's list keeps the boxes of the meshes it keeps beside them.
+    if (output === this.retained?.output) {
+      this.retained.keepOutput(isShown);
       return;
     }
     let kept = 0;

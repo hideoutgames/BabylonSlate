@@ -44,6 +44,8 @@ import { followBounds, journalFollows, openRenderChangeReader, readBounds, Rende
  * matches the two in order, and a new or moved mesh takes a fresh slot (`sync`). A list holding a mesh twice is culled
  * by Babylon's loop.
  *
+ * The view's occlusion filter tests the kept meshes' world boxes from the copies too (`outputBounds`).
+ *
  * Healing: each pass reads one list place in `HEAL_INTERVAL` (rotating) again in full and compares it with its copies;
  * a difference is a missed notification, counted (`heals`, which must stay 0) and healed. A missed notification
  * therefore lasts at most `HEAL_INTERVAL` frames.
@@ -161,6 +163,10 @@ export function verifyRetainedFrustumCull(enabled: boolean): void {
   verifying = enabled;
 }
 
+export function verifiesRetainedFrustumCull(): boolean {
+  return verifying;
+}
+
 type CullScene = Scene & { _activeMeshesFrozen: boolean };
 type CullCamera = Camera & { _frustumPlanes: Plane[]; _updateFrustumPlanes(): void };
 
@@ -188,11 +194,18 @@ export class RetainedFrustumCull {
   private readonly slotOf = new Map<AbstractMesh, number>();
   private readonly freeSlots: number[] = [];
   private slotCount = 0;
-  /** Per slot: the state bits; the layer mask; the sphere's world centre and radius; the box's eight world corners. */
+  /**
+   * Per slot: the state bits; the layer mask; the sphere's world centre and radius; the box's eight world corners; the
+   * box's world minimum and maximum (which the view's occlusion filter reads, `outputBounds`).
+   */
   private states = new Uint8Array(0);
   private layerMasks = new Int32Array(0);
   private spheres = new Float64Array(0);
   private corners = new Float64Array(0);
+  private boxes = new Float64Array(0);
+  /** Per entry of `output`, the slot whose box copy is the mesh's this frame, or -1 (`outputBounds`). */
+  private outputSlots = new Int32Array(0);
+  private readonly bounds: { slots: Int32Array; boxes: Float64Array } = { slots: this.outputSlots, boxes: this.boxes };
   /** Per slot: the scaling vector and the bounding info the copies came from. */
   private scalings: (Vector3 | null)[] = [];
   private infos: (BoundingInfo | null)[] = [];
@@ -289,6 +302,9 @@ export class RetainedFrustumCull {
     work.tested = work.live = work.flagReads = work.boundsReads = work.fieldReads = 0;
     const phase = this.healPhase = (this.healPhase + 1) & (HEAL_INTERVAL - 1);
     const slotAt = this.slotAt, layerMasks = this.layerMasks, scalings = this.scalings;
+    if (this.outputSlots.length < input.length)
+      this.bounds.slots = this.outputSlots = new Int32Array(Math.max(64, 2 ** Math.ceil(Math.log2(input.length))));
+    const outputSlots = this.outputSlots;
     let count = 0;
     for (let index = 0; index < input.length; index++) {
       const mesh = input[index]!, slot = slotAt[index]!, checked = (index & (HEAL_INTERVAL - 1)) === phase;
@@ -311,12 +327,19 @@ export class RetainedFrustumCull {
             work.fieldReads += 1;
             if (!mesh.alwaysSelectAsActiveMesh && (verdict === ALL_OUT || !this.answer(verdict, mesh.cullingStrategy))) continue;
           }
-          if (!scalings[slot]!.hasAZeroComponent) output[count++] = mesh;
+          if (!scalings[slot]!.hasAZeroComponent) {
+            outputSlots[count] = slot;
+            output[count++] = mesh;
+          }
           continue;
         }
         if (scalings[slot]!.hasAZeroComponent) continue;
       }
-      if (skip || this.shows(slot, mesh, state, checked, frustum)) output[count++] = mesh;
+      if (skip || this.shows(slot, mesh, state, checked, frustum)) {
+        // A copy no change has marked since it was read is what `getBoundingInfo()` returns now, with no update pending.
+        outputSlots[count] = this.states[slot]! & (BOUNDS_STALE | BOUNDS_LIVE) ? -1 : slot;
+        output[count++] = mesh;
+      }
     }
     output.length = count;
     work.listed = input.length;
@@ -441,11 +464,14 @@ export class RetainedFrustumCull {
     }
     const sphere = info.boundingSphere, centre = sphere.centerWorld, spheres = this.spheres, at = slot * 4;
     spheres[at] = centre.x; spheres[at + 1] = centre.y; spheres[at + 2] = centre.z; spheres[at + 3] = sphere.radiusWorld;
-    const vectors = info.boundingBox.vectorsWorld, corners = this.corners, base = slot * 24;
+    const box = info.boundingBox, vectors = box.vectorsWorld, corners = this.corners, base = slot * 24;
     for (let corner = 0; corner < 8; corner++) {
       const vector = vectors[corner]!, at = base + corner * 3;
       corners[at] = vector.x; corners[at + 1] = vector.y; corners[at + 2] = vector.z;
     }
+    const min = box.minimumWorld, max = box.maximumWorld, boxes = this.boxes, edge = slot * 6;
+    boxes[edge] = min.x; boxes[edge + 1] = min.y; boxes[edge + 2] = min.z;
+    boxes[edge + 3] = max.x; boxes[edge + 4] = max.y; boxes[edge + 5] = max.z;
   }
 
   /** Compares a bounds copy no change named with `info`, the bounding info the test just asked for. */
@@ -466,11 +492,14 @@ export class RetainedFrustumCull {
     const sphere = info.boundingSphere, centre = sphere.centerWorld, spheres = this.spheres, at = slot * 4;
     if (!Object.is(spheres[at], centre.x) || !Object.is(spheres[at + 1], centre.y) || !Object.is(spheres[at + 2], centre.z) ||
       !Object.is(spheres[at + 3], sphere.radiusWorld)) return false;
-    const vectors = info.boundingBox.vectorsWorld, corners = this.corners, base = slot * 24;
+    const box = info.boundingBox, vectors = box.vectorsWorld, corners = this.corners, base = slot * 24;
     for (let corner = 0; corner < 8; corner++) {
       const vector = vectors[corner]!, at = base + corner * 3;
       if (!Object.is(corners[at], vector.x) || !Object.is(corners[at + 1], vector.y) || !Object.is(corners[at + 2], vector.z)) return false;
     }
+    const min = box.minimumWorld, max = box.maximumWorld, boxes = this.boxes, edge = slot * 6;
+    if (!Object.is(boxes[edge], min.x) || !Object.is(boxes[edge + 1], min.y) || !Object.is(boxes[edge + 2], min.z) ||
+      !Object.is(boxes[edge + 3], max.x) || !Object.is(boxes[edge + 4], max.y) || !Object.is(boxes[edge + 5], max.z)) return false;
     return true;
   }
 
@@ -578,17 +607,42 @@ export class RetainedFrustumCull {
 
   private grow(room: number): void {
     const states = new Uint8Array(room), layerMasks = new Int32Array(room), claimed = new Uint32Array(room);
-    const spheres = new Float64Array(room * 4), corners = new Float64Array(room * 24);
+    const spheres = new Float64Array(room * 4), corners = new Float64Array(room * 24), boxes = new Float64Array(room * 6);
     states.set(this.states);
     layerMasks.set(this.layerMasks);
     claimed.set(this.claimed);
     spheres.set(this.spheres);
     corners.set(this.corners);
+    boxes.set(this.boxes);
     this.states = states;
     this.layerMasks = layerMasks;
     this.claimed = claimed;
     this.spheres = spheres;
     this.corners = corners;
+    this.bounds.boxes = this.boxes = boxes;
+  }
+
+  /**
+   * The world box of each entry of `output` as the cull last wrote it, for a reader that would otherwise ask the mesh
+   * (`ViewOcclusion.filter`): per entry, the slot whose six numbers (minimum x, y, z, maximum x, y, z) at `slot * 6` of
+   * `boxes` are what its `getBoundingInfo().boundingBox` holds now, or -1 for one to ask itself. Valid until the next
+   * cull, as long as `output` changes only through `keepOutput`.
+   */
+  outputBounds(): { readonly slots: Int32Array; readonly boxes: Float64Array } {
+    return this.bounds;
+  }
+
+  /** Leaves out of `output`, in place, the meshes `keep` refuses, with their `outputBounds` entries. */
+  keepOutput(keep: (mesh: AbstractMesh) => boolean): void {
+    const output = this.output, slots = this.outputSlots;
+    let kept = 0;
+    for (let index = 0; index < output.length; index++) {
+      const mesh = output[index]!;
+      if (!keep(mesh)) continue;
+      slots[kept] = slots[index]!;
+      output[kept++] = mesh;
+    }
+    output.length = kept;
   }
 
   /** A mesh left the Scene: its place keeps no reference to it, and its slot is free. */
@@ -628,6 +682,8 @@ export class RetainedFrustumCull {
     this.layerMasks = new Int32Array(0);
     this.spheres = new Float64Array(0);
     this.corners = new Float64Array(0);
+    this.bounds.boxes = this.boxes = new Float64Array(0);
+    this.bounds.slots = this.outputSlots = new Int32Array(0);
     this.claimed = new Uint32Array(0);
     this.slotAt = new Int32Array(0);
     this.matched = new Int32Array(0);

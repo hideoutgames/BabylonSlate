@@ -14,6 +14,9 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { cullSceneByWhatShows } from "./cull-accuracy";
+import { createPrimitiveMesh } from "./scene-component-mesh";
+import { RENDERING_GROUP } from "./sorting";
+import { allowSceneOcclusionCulling, forceOcclusionEveryFrame } from "./view-occlusion";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { setMeshRenderingGroup, setSceneInstancing } from "./instance-pool";
@@ -44,7 +47,7 @@ function nullEngine(): NullEngine {
  * shows as every view does. While verifying (every test unless it says otherwise), each frame's retained cull also runs
  * Babylon's own loop and reads every copy again: a list or copy that differs throws from `frame`.
  */
-async function world() {
+async function world({ occlusion = false } = {}) {
   const engine = nullEngine();
   const scene = new Scene(engine);
   const camera = new UniversalCamera("camera", Vector3.Zero(), scene);
@@ -53,7 +56,7 @@ async function world() {
   camera.setTarget(new Vector3(0, 0, 1));
   scene.activeCamera = camera;
   cullSceneByWhatShows(scene);
-  const graph = new ForwardSceneFrameGraph(scene);
+  const graph = new ForwardSceneFrameGraph(scene, { occlusion });
   disposers.push(() => { graph.dispose(); scene.dispose(); engine.dispose(); });
   const cull = () => (graph as unknown as { cull: { outputObjectList: { meshes: AbstractMesh[] | null } } }).cull;
   const box = (name: string, x: number, y = 0, z = 10, size = 1) => {
@@ -333,6 +336,34 @@ describe("the retained frustum cull", () => {
       await frame();
     }
   }, 60_000);
+});
+
+describe("its occlusion boxes", () => {
+  it("hands the view's occlusion filter the world boxes it holds, each the mesh's own", async () => {
+    forceOcclusionEveryFrame(true);
+    disposers.push(() => forceOcclusionEveryFrame(false));
+    const { scene, graph, frame, settle } = await world({ occlusion: true });
+    allowSceneOcclusionCulling(scene, "always");
+    const place = (name: string, x: number, z: number) => {
+      const mesh = createPrimitiveMesh(scene, name, "box");
+      mesh.renderingGroupId = RENDERING_GROUP.world;
+      mesh.position.set(x, 0, z);
+      return mesh;
+    };
+    // A wall 6 wide 5 ahead hides what stands behind it out to x = ±7.2 at z = 12.
+    place("wall", 0, 5).scaling.set(6, 4, 0.2);
+    const hidden = place("hidden", 0, 12), beside = place("beside", 8.3, 12);
+    const occluded = () => [...graph.occludedMeshes()].map((mesh) => mesh.name);
+    await settle();
+    expect(occluded()).toEqual(["hidden"]);
+    hidden.position.x = -8.3;
+    beside.position.x = 2;
+    // While verifying, each box the filter reads from the copies is compared with the mesh's (`checkBoundsCopy`).
+    expect(await frame()).toEqual(["wall", "hidden"]);
+    expect(occluded()).toEqual(["beside"]);
+    expect(await frame()).toEqual(["wall", "hidden"]);
+    expect(occluded()).toEqual(["beside"]);
+  });
 });
 
 describe("its healing", () => {
