@@ -150,8 +150,13 @@ it.each(["pointercancel", "second-touch", "escape"])("restores the landscape wit
 
 it("paints mixed Models as one component per stroke and erases them together with undo", async () => {
   const f = fixture("foliage");
-  f.pointer("pointerdown"); f.pointer("pointermove", 3); f.pointer("pointerup", 3);
+  // Instances are encoded once, on release, and the stroke is one history entry however many dabs it makes.
+  const encode = vi.spyOn(globalThis, "btoa");
+  f.pointer("pointerdown"); f.pointer("pointermove", 1); f.pointer("pointermove", 2); f.pointer("pointermove", 3); f.pointer("pointerup", 3);
   await Promise.resolve();
+  expect(encode).toHaveBeenCalledTimes(1);
+  encode.mockRestore();
+  expect(f.committed).toHaveLength(1);
   const painted = f.state.scene!;
   expect(painted.actors).toHaveLength(2);
   const components = painted.actors[1]!.components;
