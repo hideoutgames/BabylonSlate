@@ -20,9 +20,10 @@ export const DISPLAY_COLOR_SHADER = "hapticDisplayColor";
 
 /**
  * One full-screen pass, its stages in the order the separate passes they replace ran, each behind its define:
- * - `BLOOM`: Babylon's bloom merge (`bloomMerge.fragment`), the blurred highlights added at `bloomWeight`. Under
- *   `BLOOM_UNORM8` the merged colour is then rounded as the RGBA8 target the merge wrote into held it (clamped, in 1/255
- *   steps); a half-float source's merge target held it in half floats, which keep every value the next stage needs.
+ * - `BLOOM`: Babylon's bloom merge (`bloomMerge.fragment`), the blurred highlights added at `bloomWeight`, then held as
+ *   the merge's own target, of the source's type, held it: clamped and in 1/255 steps for RGBA8 (`BLOOM_UNORM8`), rounded
+ *   to half floats for half-float (`BLOOM_HALF_FLOAT`). The next stage reads the merged colour the separate merge pass
+ *   stored, bit for bit; the RGBA8 clamp is also what keeps a Display Space vignette from darkening bloom past white.
  * - `DISPLAY_COLOR`: Babylon's image processing (`imageProcessing.fragment`) with its own includes and defines.
  * The result is written last, so a stage that follows image processing goes before that write.
  */
@@ -44,7 +45,10 @@ void main(void) {
   vec3 blurred = texture2D(bloomBlur, vUV).rgb;
   result.rgb = result.rgb + (blurred.rgb * bloomWeight);
 #ifdef BLOOM_UNORM8
-  result = floor(clamp(result, 0.0, 1.0) * 255.0 + 0.5) / 255.0;
+  result = roundEven(clamp(result, 0.0, 1.0) * 255.0) / 255.0;
+#endif
+#ifdef BLOOM_HALF_FLOAT
+  result = vec4(unpackHalf2x16(packHalf2x16(result.rg)), unpackHalf2x16(packHalf2x16(result.ba)));
 #endif
 #endif
 #ifdef DISPLAY_COLOR
@@ -131,6 +135,7 @@ export class ThinDisplayColorPostProcess extends EffectWrapper {
     if (this.bloom) {
       defines += "#define BLOOM\n";
       if (this.sourceType === Constants.TEXTURETYPE_UNSIGNED_BYTE) defines += "#define BLOOM_UNORM8\n";
+      else if (this.sourceType === Constants.TEXTURETYPE_HALF_FLOAT) defines += "#define BLOOM_HALF_FLOAT\n";
       uniforms.push("bloomWeight");
       samplers.push("bloomBlur");
     }

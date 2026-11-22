@@ -47,13 +47,15 @@ function host() {
   const scene = new Scene(engine);
   scene.activeCamera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
   const graph = new FrameGraph(scene);
-  /** Every Effect the Engine is asked for, by fragment shader. */
-  const created: Array<{ fragment: string; effect: Effect }> = [];
+  /** Every Effect the Engine is asked for, by fragment shader, with the uniforms and samplers it was asked with. */
+  const created: Array<{ fragment: string; effect: Effect; uniforms: string[]; samplers: string[] }> = [];
   const createEffect = engine.createEffect.bind(engine);
   vi.spyOn(engine, "createEffect").mockImplementation((...args: Parameters<typeof engine.createEffect>) => {
     const effect = createEffect(...args);
     const path = args[0] as { fragment?: string; fragmentElement?: string };
-    created.push({ fragment: path.fragment ?? path.fragmentElement ?? "", effect });
+    const options = args[1] as { uniformsNames?: string[]; samplers?: string[] };
+    created.push({ fragment: path.fragment ?? path.fragmentElement ?? "", effect,
+      uniforms: [...options.uniformsNames ?? []], samplers: [...options.samplers ?? []] });
     return effect;
   });
   dispose.push(() => { graph.dispose(); scene.dispose(); engine.dispose(); });
@@ -66,11 +68,12 @@ function host() {
     for (const task of chain.tasks) graph.addTask(task);
     return { plan, chain };
   };
-  const fragments = (name: string) => created.filter((entry) => entry.fragment === name).map((entry) => entry.effect);
+  const requests = (name: string) => created.filter((entry) => entry.fragment === name);
+  const fragments = (name: string) => requests(name).map((entry) => entry.effect);
   /** The names of the textures the graph created (not imported or aliased). */
   const textureNames = () => [...graph.textureManager._textures.values()]
     .filter((entry) => entry && !entry.refHandle).map((entry) => entry!.name);
-  return { engine, scene, graph, build, fragments, textureNames };
+  return { engine, scene, graph, build, fragments, requests, textureNames };
 }
 
 const blend = (graph: FrameGraph) => {
@@ -117,7 +120,7 @@ it.each([
     ...LINEAR, ...VIGNETTE, whiteBalance: { enabled: true, temperature: 4000, tint: 0.2 },
   }, true],
 ] as const)("compiles image processing alone (%s) once, with Babylon's image-processing defines, uniforms and samplers", async (_, settings, linear) => {
-  const { engine, graph, build, fragments } = host();
+  const { engine, graph, build, fragments, requests } = host();
   const { plan, chain } = build(settings);
   expect(fragments(DISPLAY_COLOR_SHADER)).toEqual([]);
   await graph.buildAsync();
@@ -132,8 +135,10 @@ it.each([
   });
   stock.fromLinearSpace = linear;
   expect(effect!.defines).toBe(`#define DISPLAY_COLOR\n${stock.effect.defines}`);
-  expect(effect!.getUniformNames()).toEqual(stock.effect.getUniformNames());
-  expect(effect!.getSamplers()).toEqual(stock.effect.getSamplers());
+  const [own] = requests(DISPLAY_COLOR_SHADER);
+  const reference = requests("imageProcessing").at(-1)!;
+  expect(reference.effect).toBe(stock.effect);
+  expect([own!.uniforms, own!.samplers]).toEqual([reference.uniforms, reference.samplers]);
   // A second build (a resize) records again without compiling again.
   await graph.buildAsync();
   expect(fragments(DISPLAY_COLOR_SHADER)).toHaveLength(1);
@@ -142,17 +147,17 @@ it.each([
 });
 
 it.each([
-  ["Display Space bloom alone", { bloom: BLOOM }, "Scene Effects Bloom Merge", true, false],
-  ["Display Space bloom and vignette", { ...VIGNETTE, bloom: BLOOM }, "Scene Effects Display Color", true, true],
-  ["Scene Linear bloom", { ...LINEAR, bloom: BLOOM }, "Scene Effects Display Color", false, true],
-] as const)("keeps %s's merged colour as the merge's target of the source's type held it", async (_, settings, name, unorm8, image) => {
+  ["Display Space bloom alone", { bloom: BLOOM }, "Scene Effects Bloom Merge", "BLOOM_UNORM8", false],
+  ["Display Space bloom and vignette", { ...VIGNETTE, bloom: BLOOM }, "Scene Effects Display Color", "BLOOM_UNORM8", true],
+  ["Scene Linear bloom", { ...LINEAR, bloom: BLOOM }, "Scene Effects Display Color", "BLOOM_HALF_FLOAT", true],
+] as const)("keeps %s's merged colour as the merge's target of the source's type held it", async (_, settings, name, held, image) => {
   const { graph, build, fragments } = host();
   const { chain } = build(settings);
   await graph.buildAsync();
   expect(chain.tasks.map((task) => task.name)).toEqual(["Scene Effects Bloom", name]);
   const [effect] = fragments(DISPLAY_COLOR_SHADER);
-  // An RGBA8 source's merge target clamped and rounded the merged colour; a half-float one kept it.
-  expect(effect!.defines.includes("#define BLOOM_UNORM8\n")).toBe(unorm8);
+  // An RGBA8 source's merge target clamped and rounded the merged colour; a half-float one rounded it to half floats.
+  expect(effect!.defines.match(/BLOOM_(UNORM8|HALF_FLOAT)/g)).toEqual([held]);
   expect(effect!.defines.includes("#define DISPLAY_COLOR\n")).toBe(image);
   chain.disposeTasks();
 });
