@@ -604,6 +604,111 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  describe("at the voice cap", () => {
+    /** The voices the backend is playing, in start order. */
+    class LiveBackend extends FakeAudioPlaybackBackend {
+      readonly live = new Set<string>();
+      override async play(request: Parameters<FakeAudioPlaybackBackend["play"]>[0]): Promise<void> {
+        this.live.add(request.voiceId);
+        await super.play(request);
+      }
+      override stop(voiceId: string): void {
+        this.live.delete(voiceId);
+        super.stop(voiceId);
+      }
+    }
+
+    /** Music (quiet, non-spatial, looping) and Linear 2..20 spatial sounds, started at fixed places around a listener at the origin. */
+    async function capped(maxVoices: number) {
+      const backend = new LiveBackend();
+      const ended: Array<[string, boolean | undefined]> = [];
+      const evicted: string[] = [];
+      const cache = new AudioBufferCache({ byteCeiling: 40, onEvict: (key) => evicted.push(key) });
+      const service = new AudioService({
+        backend, cache, maxVoices, onVoiceEnded: (voiceId, dropped) => ended.push([voiceId, dropped]),
+      });
+      service.setLibrary(library({
+        audio: {
+          music: { ...createDefaultAudioPayload(), volume: 0.2, loop: true },
+          ui: { ...createDefaultAudioPayload(), volume: 0.2 },
+          ambience: { ...createDefaultAudioPayload(), loop: true, soundAttenuationGuid: "room" },
+          shot: { ...createDefaultAudioPayload(), soundAttenuationGuid: "room" },
+        },
+        attenuations: {
+          room: { innerRadius: 2, maxRadius: 20, distanceModel: "linear", rolloff: 1, spatialisation: "equalPower", cone: null, doppler: null },
+        },
+      }));
+      for (const guid of ["music", "ui", "ambience"]) service.setSourceBytes(guid, new Uint8Array([1]));
+      service.setSourceBytes("shot", new Uint8Array(30));
+      await service.unlockAsync();
+      const play = async (assetGuid: string, voiceId: string, x?: number) => {
+        service.handleCommand({
+          type: "playSound", assetGuid, volume: 1, frameId: 1, voiceId, ...(x === undefined ? {} : { location: { x, y: 0, z: 0 } }),
+        });
+        await service.flush();
+      };
+      const playing = () => service.stats().debugVoices?.map((voice) => voice.assetGuid);
+      service.setShowAudioDebug(true);
+      return { backend, cache, evicted, service, ended, play, live: () => backend.live, playing };
+    }
+
+    it("cuts the least audible spatial voice and keeps the music that started first", async () => {
+      const { backend, service, ended, play, live } = await capped(3);
+      await play("music", "music");
+      await play("ambience", "beyond", 25); // past Max Radius: silent
+      await play("ambience", "mid", 11); // 0.5
+      await play("ambience", "near", 1); // 1, over the cap
+      expect([...live().keys()]).toEqual(["music", "mid", "near"]);
+      expect(ended).toEqual([["beyond", true]]);
+      expect(backend.stopped).toEqual(["beyond"]);
+      // Lowering the cap ranks the same way, at the listener's current place: moving to x = 11 makes "near" the quieter.
+      service.syncListener({ x: 11, y: 0, z: 0 });
+      service.setMaxVoices(2);
+      expect([...live().keys()]).toEqual(["music", "mid"]);
+      service.setMaxVoices(1);
+      expect([...live().keys()]).toEqual(["music"]);
+      expect(ended.map(([voiceId]) => voiceId)).toEqual(["beyond", "near", "mid"]);
+      service.dispose();
+    });
+
+    it("drops an incoming sound that is the least audible, reporting it once as dropped", async () => {
+      const { backend, cache, evicted, service, ended, play, live } = await capped(2);
+      await play("music", "music");
+      await play("ambience", "near", 1);
+      await play("shot", "far shot", 19);
+      expect(backend.plays.map((request) => request.voiceId)).toEqual(["music", "near"]);
+      expect([...live().keys()]).toEqual(["music", "near"]);
+      expect(ended).toEqual([["far shot", true]]);
+      expect(service.stats().voices).toBe(2);
+      // It released its clip: the next clip over the budget evicts it.
+      cache.put("other", new Uint8Array(30), 30);
+      expect(evicted).toEqual([audioClipCacheKey("shot", "source")]);
+      // With room, the same sound plays.
+      service.setMaxVoices(3);
+      await play("shot", "far shot", 19);
+      expect([...live().keys()]).toEqual(["music", "near", "far shot"]);
+      service.dispose();
+    });
+
+    it("breaks ties by keeping looping voices, then the newest, and cuts spatial before non-spatial", async () => {
+      const { service, ended, play, playing } = await capped(3);
+      // Equally loud: the one-shot goes before the older loop.
+      await play("ambience", "loop", 1);
+      await play("shot", "one-shot", 1);
+      await play("ambience", "loop 2", 1);
+      await play("ambience", "loop 3", 1);
+      expect(ended).toEqual([["one-shot", true]]);
+      // Equally loud loops: the oldest goes, so the incoming one plays.
+      await play("ambience", "loop 4", 1);
+      expect(ended.at(-1)).toEqual(["loop", true]);
+      // Quiet UI sound against full-volume spatial loops: the spatial loops go first.
+      await play("ui", "click");
+      expect(playing()).toEqual(["ambience", "ambience", "ui"]);
+      expect(ended.at(-1)).toEqual(["loop 2", true]);
+      service.dispose();
+    });
+  });
+
   it("plays attenuated sounds without an actor as non-spatial and diagnoses once", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const diagnostics: Array<{ code: string }> = [];

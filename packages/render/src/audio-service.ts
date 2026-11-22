@@ -198,6 +198,18 @@ function finitePose(location: PlaySoundCommand["location"]): AudioPose | null {
   return { x: location.x, y: location.y, z: location.z };
 }
 
+/**
+ * Whether the voice cap cuts `newer` before `older` (`newer` started later): spatial before non-spatial, then lower
+ * gain × distance gain, then a one-shot before a looping voice. A full tie keeps `older` as the one cut.
+ */
+function cutsBefore(newer: LiveVoice, older: LiveVoice): boolean {
+  if ((newer.spatial === null) !== (older.spatial === null)) return newer.spatial !== null;
+  const newerLevel = newer.gain * newer.attenuation;
+  const olderLevel = older.gain * older.attenuation;
+  if (newerLevel !== olderLevel) return newerLevel < olderLevel;
+  return !newer.loop && older.loop;
+}
+
 /** A runtime draw as the random source of one choice; without one the host draws. */
 function drawOr(roll: number | undefined, random: () => number): () => number {
   return typeof roll === "number" && Number.isFinite(roll) ? () => roll : random;
@@ -551,10 +563,24 @@ export class AudioService {
 
   private stealToCap(): void {
     while (this.voices.size > this.maxVoices) {
-      const oldest = this.voices.keys().next().value;
-      if (!oldest) break;
-      this.stealVoice(oldest);
+      const victim = this.leastAudibleVoice();
+      if (!victim) break;
+      this.stealVoice(victim.voiceId);
     }
+  }
+
+  /**
+   * The voice the voice cap cuts first. Every spatial voice goes before any non-spatial one (music, UI and other 2D
+   * sound are kept); within each group the lowest gain × distance gain (the attenuation playback applies at the
+   * current listener) goes first, then a one-shot before a looping voice (a stolen loop never comes back), then the
+   * oldest (the voices map is in start order, so the newest, an incoming voice included, wins a full tie).
+   */
+  private leastAudibleVoice(): LiveVoice | null {
+    let victim: LiveVoice | null = null;
+    for (const voice of this.voices.values()) {
+      if (!victim || cutsBefore(voice, victim)) victim = voice;
+    }
+    return victim;
   }
 
   /** Wait until in-flight play/stop work has settled (tests). */
@@ -1022,10 +1048,6 @@ export class AudioService {
 
     const voiceId = command.voiceId?.trim() || `voice-${++this.voiceSeq}`;
     this.stopVoice(voiceId);
-    if (this.voices.size >= this.maxVoices) {
-      const oldest = this.voices.keys().next().value;
-      if (oldest) this.stealVoice(oldest);
-    }
     const attenuation = payload.soundAttenuationGuid
       ? (this.library.attenuations.get(payload.soundAttenuationGuid) ?? null)
       : null;
@@ -1097,6 +1119,17 @@ export class AudioService {
     };
     this.voices.set(voiceId, voice);
     if (sourceOwner) sourceOwner.transferred = true;
+    // Over the cap the least audible voice goes, the incoming one included: dropped before it starts, it releases
+    // what it holds, and `settlePlay` reports a named voice as dropped, as for any voice that never starts.
+    while (this.voices.size > this.maxVoices) {
+      const victim = this.leastAudibleVoice();
+      if (!victim) break;
+      if (victim === voice) {
+        this.stopVoice(voiceId);
+        return;
+      }
+      this.stealVoice(victim.voiceId);
+    }
     this.lastGain = resolved.gain;
     try {
       await this.backend.play(request);

@@ -39,6 +39,7 @@ Previewing in the Audio asset editor is never spatial.
 
 - Distances are in world units, and actor scale does not change them.
 - A spatial sound with no actor to play from plays without position, and a warning is logged.
+- A looping sound beyond **Max Radius** keeps playing silently and still counts toward **Max Concurrent Voices**; it is among the first to stop when the limit is reached. See [Audio budget](index.md#audio-budget).
 - To muffle sounds behind walls, enable **Muffle Through Walls** on their channel. See [Mixing](mixing.md).
 
 ## Related
