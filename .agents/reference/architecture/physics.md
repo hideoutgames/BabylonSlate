@@ -97,7 +97,7 @@ Simulation in the game worker: the `PhysicsBackend` port, Havok / Rapier / softw
 
 ## Contacts
 
-- `pollContacts()` returns `hit` (with location and normal A → B), `overlapBegin`, `overlapEnd` since the last poll. A blocking pair emits `hit` every poll while touching; a pair with any trigger emits only begin/end overlap.
+- `pollContacts()` returns `hit` (with location and normal A → B), `overlapBegin`, `overlapEnd` since the last poll. A blocking pair emits `hit` every poll while touching; a pair with any trigger emits only begin/end overlap. Havok drains a step's collision events before its trigger events, so a step's hits precede its overlaps.
 - Havok is asked for native contact events only while a script on the actor's class (or a hosted child's) handles On Hit / Begin / End Overlap. `generateHitEvents` / `generateOverlapEvents` skip script dispatch only.
 - Compound shapes share one actor-pair overlap lifetime. Teleports and same-ID collider changes keep surviving overlaps open (no repeated Begin Overlap); adding/removing colliders re-establishes them.
 - Collider ids encode `[actorGuid, componentGuid]` or `[actorGuid, componentGuid, shapeId]` (Mesh); dispatch restores the authored component id.

@@ -111,4 +111,20 @@ describe("Havok contact reporting", () => {
       expect(seen).toEqual(["overlapBegin", "overlapEnd"]);
     } finally { backend.dispose(); }
   });
+
+  it("reports a step's hits before its overlaps", async () => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: 0, z: 0 } });
+    try {
+      spawn(backend, "ground", "static", { x: 0, y: -0.5, z: 0 }, { kind: "box", halfExtents: { x: 5, y: 0.5, z: 5 } });
+      spawn(backend, "zone", "static", { x: 0, y: 0.5, z: 0 }, { kind: "box", halfExtents: { x: 2, y: 2, z: 2 } }, { isTrigger: true });
+      spawn(backend, "box", "dynamic", { x: 0, y: 0.5, z: 0 }, { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } });
+      backend.setBodyLinearVelocity("box", { y: -1 });
+      backend.step(1 / 60);
+      // The order Babylon's HavokPlugin reported a step's events in.
+      expect(backend.pollContacts().map((event) => `${event.kind}:${event.actorAId}/${event.actorBId}`)).toEqual([
+        "hit:actor-box/actor-ground",
+        "overlapBegin:actor-box/actor-zone",
+      ]);
+    } finally { backend.dispose(); }
+  });
 });
