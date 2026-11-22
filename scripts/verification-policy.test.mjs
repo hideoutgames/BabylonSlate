@@ -149,5 +149,9 @@ test("static restores tsc's build info before the workspace typecheck and saves 
   assert.equal(steps[save].with.key, steps[restore].with.key);
   // A pull request never writes build info that later runs trust.
   assert.equal(steps[save].if, "github.event_name == 'push'");
-  assert.equal(steps[restore].if, undefined);
+  // Nor does a fork's pull request read build info from its own scope, which a workflow its author changed could fill.
+  assert.equal(
+    steps[restore].if,
+    "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository",
+  );
 });

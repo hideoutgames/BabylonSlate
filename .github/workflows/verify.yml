@@ -53,9 +53,11 @@ jobs:
       - run: pnpm test:tooling
       - run: pnpm test:distribution
       # tsc's incremental build info (scripts/typecheck-incremental.mjs): tsc compares every source file's content hash
-      # with it and rechecks whatever changed, so an older entry costs time, never a missed error. Build info decides
-      # which diagnostics are reused, so only main saves it.
+      # with it and rechecks whatever changed, so an older or corrupt entry costs time, never a missed error. Build info
+      # decides which diagnostics are reused, so only main saves it. A pull request also restores from its own scope,
+      # which only a workflow its author changed could have written, so a fork's pull request checks without it.
       - name: Restore the typecheck cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cache/typecheck
