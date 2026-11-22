@@ -125,14 +125,11 @@ export class SlateMeshShapeBlock extends NodeParticleBlock {
 
   override _build(state: NodeParticleBuildState): void {
     const system = this.particle.getConnectedValue(state) as CreationSystem;
-    const vertex = [new Vector3(), new Vector3(), new Vector3()] as const;
     const point = new Vector3();
     const normal = new Vector3();
     let hasNormal = false;
-    const corner = (values: ArrayLike<number>, index: number, width: number, out: Vector3, w?: { value: number }) => {
-      out.set(values[index * width]!, values[index * width + 1]!, values[index * width + 2]!);
-      if (w) w.value = values[index * width + 3] ?? 1;
-    };
+    // Per particle, nothing is allocated: corners are read as scalars, in the order and with the arithmetic of
+    // `bu * a + bv * b + bw * c`, so a spawn lands where it did for the same random draws.
     system._positionCreation.process = (particle) => {
       state.particleContext = particle;
       state.systemContext = system;
@@ -143,44 +140,45 @@ export class SlateMeshShapeBlock extends NodeParticleBlock {
       if (!geometry || geometry.indices.length < 3) {
         point.set(0, 0, 0);
       } else {
-        const face = 3 * Math.floor(Math.random() * Math.floor(geometry.indices.length / 3));
-        const corners = [geometry.indices[face]!, geometry.indices[face + 1]!, geometry.indices[face + 2]!] as const;
+        const indices = geometry.indices;
+        const face = 3 * Math.floor(Math.random() * Math.floor(indices.length / 3));
+        const c0 = indices[face]!, c1 = indices[face + 1]!, c2 = indices[face + 2]!;
         const bu = Math.random();
         const bv = Math.random() * (1 - bu);
         const bw = 1 - bu - bv;
-        const blend = (values: ArrayLike<number>, width: number, out: Vector3) => {
-          corner(values, corners[0], width, vertex[0]);
-          corner(values, corners[1], width, vertex[1]);
-          corner(values, corners[2], width, vertex[2]);
-          out.set(
-            bu * vertex[0].x + bv * vertex[1].x + bw * vertex[2].x,
-            bu * vertex[0].y + bv * vertex[1].y + bw * vertex[2].y,
-            bu * vertex[0].z + bv * vertex[1].z + bw * vertex[2].z,
-          );
-        };
-        blend(geometry.positions, 3, point);
+        const positions = geometry.positions;
+        const p0 = c0 * 3, p1 = c1 * 3, p2 = c2 * 3;
+        point.set(
+          bu * positions[p0]! + bv * positions[p1]! + bw * positions[p2]!,
+          bu * positions[p0 + 1]! + bv * positions[p1 + 1]! + bw * positions[p2 + 1]!,
+          bu * positions[p0 + 2]! + bv * positions[p1 + 2]! + bw * positions[p2 + 2]!,
+        );
         if (this.useMeshNormals) {
-          if (geometry.normals?.length) blend(geometry.normals, 3, normal);
-          else {
-            // No normals: the triangle's own face normal.
-            corner(geometry.positions, corners[0], 3, vertex[0]);
-            corner(geometry.positions, corners[1], 3, vertex[1]);
-            corner(geometry.positions, corners[2], 3, vertex[2]);
-            Vector3.CrossToRef(vertex[1].subtract(vertex[0]), vertex[2].subtract(vertex[0]), normal);
+          const normals = geometry.normals;
+          if (normals?.length) {
+            normal.set(
+              bu * normals[p0]! + bv * normals[p1]! + bw * normals[p2]!,
+              bu * normals[p0 + 1]! + bv * normals[p1 + 1]! + bw * normals[p2 + 1]!,
+              bu * normals[p0 + 2]! + bv * normals[p1 + 2]! + bw * normals[p2 + 2]!,
+            );
+          } else {
+            // No normals: the triangle's own face normal, (v1 - v0) x (v2 - v0).
+            const x0 = positions[p0]!, y0 = positions[p0 + 1]!, z0 = positions[p0 + 2]!;
+            const ex = positions[p1]! - x0, ey = positions[p1 + 1]! - y0, ez = positions[p1 + 2]! - z0;
+            const fx = positions[p2]! - x0, fy = positions[p2 + 1]! - y0, fz = positions[p2 + 2]! - z0;
+            normal.set(ey * fz - ez * fy, ez * fx - ex * fz, ex * fy - ey * fx);
           }
           hasNormal = normal.lengthSquared() > 0;
           if (hasNormal) normal.normalize();
         }
-        if (this.useMeshColor && geometry.colors?.length) {
-          const alpha = [{ value: 1 }, { value: 1 }, { value: 1 }] as const;
-          corner(geometry.colors, corners[0], 4, vertex[0], alpha[0]);
-          corner(geometry.colors, corners[1], 4, vertex[1], alpha[1]);
-          corner(geometry.colors, corners[2], 4, vertex[2], alpha[2]);
+        const colors = geometry.colors;
+        if (this.useMeshColor && colors?.length) {
+          const q0 = c0 * 4, q1 = c1 * 4, q2 = c2 * 4;
           particle.color.set(
-            bu * vertex[0].x + bv * vertex[1].x + bw * vertex[2].x,
-            bu * vertex[0].y + bv * vertex[1].y + bw * vertex[2].y,
-            bu * vertex[0].z + bv * vertex[1].z + bw * vertex[2].z,
-            bu * alpha[0].value + bv * alpha[1].value + bw * alpha[2].value,
+            bu * colors[q0]! + bv * colors[q1]! + bw * colors[q2]!,
+            bu * colors[q0 + 1]! + bv * colors[q1 + 1]! + bw * colors[q2 + 1]!,
+            bu * colors[q0 + 2]! + bv * colors[q1 + 2]! + bw * colors[q2 + 2]!,
+            bu * (colors[q0 + 3] ?? 1) + bv * (colors[q1 + 3] ?? 1) + bw * (colors[q2 + 3] ?? 1),
           );
           properties.slateMeshColor = true;
         }
@@ -206,7 +204,11 @@ export class SlateMeshShapeBlock extends NodeParticleBlock {
         if (system.isLocal) particle.direction.set(x, y, z);
         else Vector3.TransformNormalFromFloatsToRef(x, y, z, state.emitterWorldMatrix!, particle.direction);
       }
-      (particle as ShapeParticle)._properties.initialDirection = particle.direction.clone();
+      // A recycled particle keeps its vector, as Babylon's own direction creation does.
+      const properties = (particle as ShapeParticle)._properties;
+      const initial = properties.initialDirection as Vector3 | null | undefined;
+      if (initial) initial.copyFrom(particle.direction);
+      else properties.initialDirection = particle.direction.clone();
     };
     if (this.useMeshColor) {
       // A particle that took the mesh's colour keeps it; others get their authored colour.
