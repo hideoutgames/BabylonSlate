@@ -1301,8 +1301,15 @@ function GraphEditorCanvas({
     [errorDiagnostics],
   );
   const lastEmittedRef = useRef<GraphDocument | null>(null);
-  // Signature of `lastEmittedRef.current`, so an emit hashes only its new graph.
-  const lastEmittedSignatureRef = useRef<{ graph: GraphDocument; signature: string } | null>(null);
+  // Signatures by graph object: an emitted graph and the host graph that replaced it are each
+  // hashed once, by the emit that compares against them and by the refresh that reconciles them.
+  // Both are handed over and never changed in place.
+  const [signatures] = useState(() => new WeakMap<GraphDocument, string>());
+  const signatureOf = useCallback((graph: GraphDocument) => {
+    let signature = signatures.get(graph);
+    if (signature === undefined) signatures.set(graph, (signature = canonicalGraphSignature(graph)));
+    return signature;
+  }, [signatures]);
   const dragTransactionRef = useRef<string | null>(null);
 
   const emitChange = useCallback(
@@ -1324,20 +1331,11 @@ function GraphEditorCanvas({
         { members: membersRef.current, components: componentsRef.current },
       );
       const last = lastEmittedRef.current;
-      if (last) {
-        const signature = canonicalGraphSignature(graph);
-        let previous = lastEmittedSignatureRef.current;
-        if (previous?.graph !== last) {
-          previous = { graph: last, signature: canonicalGraphSignature(last) };
-          lastEmittedSignatureRef.current = previous;
-        }
-        if (signature === previous.signature) return;
-        lastEmittedSignatureRef.current = { graph, signature };
-      }
+      if (last && signatureOf(graph) === signatureOf(last)) return;
       lastEmittedRef.current = graph;
       onChange?.(graph, meta);
     },
-    [onChange],
+    [onChange, signatureOf],
   );
 
   useEffect(() => {
@@ -1346,6 +1344,7 @@ function GraphEditorCanvas({
       localEdges: graphStateRef.current.edges,
       incoming: initialGraph,
       lastEmitted: lastEmittedRef.current,
+      signatureOf,
     });
     if (!next) return;
     // Host refreshes can arrive during a drag. Discard the old suggestions,
@@ -1390,7 +1389,7 @@ function GraphEditorCanvas({
         })),
       ),
     );
-  }, [initialGraph, knownTypes, nodeDragHandle]);
+  }, [initialGraph, knownTypes, nodeDragHandle, signatureOf]);
 
   // Re-apply a changed drag handle selector while rendering.
   const [appliedDragHandle, setAppliedDragHandle] = useState(nodeDragHandle);
