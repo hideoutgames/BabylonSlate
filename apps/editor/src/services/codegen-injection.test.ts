@@ -200,8 +200,11 @@ describe("asset payloads that ran code without Execute JavaScript", () => {
     // A crafted header guid names the module at load, in the loader's last line.
     delete (globalThis as Pwned).__pwned;
     const module = { source: "export function run(ctx) {}\n", entryPoints: [{ name: "run" }] };
-    await loadCompiledModule(module, "guid\nglobalThis.__pwned = true;\n//");
-    await loadCompiledModule(module, "guid\u2028globalThis.__pwned = true;\u2028//");
+    // The label ends the loader's wrapper, after its return: text that left the comment there would
+    // either never run or stop the module from loading. Both must load and run nothing.
+    for (const label of ["guid\nglobalThis.__pwned = true;\n//", "guid\u2028globalThis.__pwned = true;\u2028//", "guid\n}; globalThis.__pwned = true; {"]) {
+      await expect(loadCompiledModule(module, label)).resolves.toHaveProperty("run");
+    }
     expect((globalThis as Pwned).__pwned).toBeUndefined();
   });
 });
