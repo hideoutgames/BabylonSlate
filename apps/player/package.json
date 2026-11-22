@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node ../../scripts/typecheck-incremental.mjs tsconfig.json",
     "test": "node ../../scripts/run-tests.mjs unit apps/player"
   },
   "dependencies": {
