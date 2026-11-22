@@ -37,23 +37,27 @@ class SpatialTask extends FrameGraphPostProcessTask {
   private readonly buffers: Record<string, FrameGraphTextureHandle>;
   /** Earlier stages' outputs it samples, by sampler name. */
   private readonly reads: Record<string, FrameGraphTextureHandle>;
+  /** The targets it also writes, colour attachments 1 on beside its own (`stage.attachments`, `paired-blurs.ts`). */
+  private readonly attachments: FrameGraphTextureHandle[];
   constructor(
     graph: FrameGraph,
     stage: SpatialStage,
     buffers: Record<string, FrameGraphTextureHandle>,
     reads: Record<string, FrameGraphTextureHandle>,
+    attachments: FrameGraphTextureHandle[] = [],
   ) {
-    if (!stage.wrapper) throw new Error(`${stage.name} draws in the merged march pass, not a pass of its own.`);
+    if (!stage.wrapper) throw new Error(`${stage.name} draws in a merged or paired pass, not a pass of its own.`);
     super(stage.wrapper.name, graph, stage.wrapper);
     this.stage = stage;
     this.buffers = buffers;
     this.reads = reads;
+    this.attachments = attachments;
     this.depthTest = false;
   }
   override record() {
     // Babylon's own disabled pass copies the source, which only a colour stage passes through.
     const idleCapable = this.stage.idle !== undefined;
-    const pass = super.record(idleCapable, undefined, (context) => {
+    const pass = super.record(idleCapable || this.attachments.length > 0, undefined, (context) => {
       const effect = this.drawWrapper.effect!;
       if (this.stage.geometry)
         for (const [name, handle] of Object.entries(this.buffers)) {
@@ -71,6 +75,15 @@ class SpatialTask extends FrameGraphPostProcessTask {
     });
     if (this.stage.geometry) pass.addDependencies(Object.values(this.buffers));
     pass.addDependencies(Object.values(this.reads));
+    if (this.attachments.length) {
+      const targets = [this.outputTexture, ...this.attachments];
+      pass.setRenderTarget(targets);
+      // Babylon requires a disabled pass of the same targets; a paired pass has no idle stage, so it never runs.
+      const disabled = this._frameGraph.addRenderPass(`${this.name}_disabled`, true);
+      disabled.setRenderTarget(targets);
+      disabled.setExecuteFunc(() => {});
+      return pass;
+    }
     if (idleCapable) {
       const skipped = this._frameGraph.addRenderPass(`${this.name}_disabled`, true);
       skipped.setRenderTarget(this.outputTexture);
@@ -263,6 +276,9 @@ export class SpatialEffectsGraph {
       const marchSize = plan.screenShadows && !worldDebugOff(graph.scene, "mergedmarches")
         ? { width: Math.ceil(width / SCREEN_SHADOW_SCALE), height: Math.ceil(height / SCREEN_SHADOW_SCALE) }
         : undefined;
+      // With `worlddebug pairedblurs on` (a temporary measurement switch, off by default until a native GPU proves the
+      // pairing and the device Profile its saving), the ambient occlusion and reflection blurs of each axis of one target
+      // size draw in one pass (`paired-blurs.ts`).
       const stages = createSpatialStages(
         graph.scene,
         camera,
@@ -271,6 +287,7 @@ export class SpatialEffectsGraph {
         height,
         this.compileFailure,
         marchSize,
+        !worldDebugOff(graph.scene, "pairedblurs"),
       );
       this.stages = stages;
       for (const stage of stages) unattached.add(stage);
@@ -300,13 +317,23 @@ export class SpatialEffectsGraph {
           source = output;
           continue;
         }
-        const task = new SpatialTask(graph, stage, buffers, reads);
+        if (stage.paired) {
+          // Written by a later stage's pass as one of its attachments (`paired-blurs.ts`); its readers follow as they did.
+          const output = target(stage.name, stage.scale, false, stage.format);
+          unattached.delete(stage);
+          outputs.push(output);
+          writers.push(undefined);
+          source = output;
+          continue;
+        }
+        const task = new SpatialTask(graph, stage, buffers, reads, (stage.attachments ?? []).map((index) => outputs[index]!));
         this.tasks.push(task);
         unattached.delete(stage);
         task.sourceTexture = stage.source === "scene" ? sceneColor : source;
         task.targetTexture = target(stage.name, stage.scale, false, stage.format);
         outputs.push(task.outputTexture);
         writers.push(task);
+        for (const index of stage.attachments ?? []) writers[index] = task;
         source = task.outputTexture;
       }
       this.merged = merged;
@@ -354,6 +381,8 @@ export class SpatialEffectsGraph {
         this.merged[march++]!.running = running;
         continue;
       }
+      // A paired blur runs with the pass that draws it, which has a stage of its own; neither idles.
+      if (stage.paired) continue;
       const own = this.tasks[task++]!;
       own.disabled = !running;
       if (running && stage.geometry) geometryRead = true;

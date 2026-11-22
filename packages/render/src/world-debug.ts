@@ -18,15 +18,17 @@ const NONE: ReadonlySet<WorldDebugPart> = new Set();
 
 /**
  * The parts off by default: `mergedmarches`, the merged half-resolution march pass, an opt-in until a native GPU proves
- * it (`merged-marches.ts`).
+ * it (`merged-marches.ts`), and `pairedblurs`, the paired blur passes (`paired-blurs.ts`), a temporary measurement switch
+ * until a native GPU proves them and the device Profile sizes them.
  */
-const DEFAULT_OFF: ReadonlySet<WorldDebugPart> = new Set(["mergedmarches"]);
+const DEFAULT_OFF: ReadonlySet<WorldDebugPart> = new Set(["mergedmarches", "pairedblurs"]);
 
 /**
  * The parts that change no Material's program: those of the view's graph (`liveSceneEffectsKey`), and
  * `spritebatching`, which the Play view applies itself (`syncWorldSpriteBatching` in `create-engine.ts`).
  */
-const PROGRAM_FREE_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "mergedmarches", "spritebatching"]);
+const PROGRAM_FREE_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "mergedmarches", "pairedblurs",
+  "spritebatching"]);
 
 /** Whether `part` of the world is switched off for `scene`. */
 export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
@@ -36,9 +38,10 @@ export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
 /**
  * Switches `part` on or off for `scene`; true when that changed it. A part a shader reads has every Material of the
  * Scene re-prepare its defines on its next draw (a part off compiles its variant; back on, the Material draws its own
- * program again). The geometry repeat parts and `mergedmarches` change no Material's program: they change the view's
- * graph (`liveSceneEffectsKey`), which builds again with or without the repeat pass (`geometryRepeat`), or with the
- * half-resolution marches in one pass or in their own (`SpatialEffectsGraph`).
+ * program again). The geometry repeat parts, `mergedmarches` and `pairedblurs` change no Material's program: they change
+ * the view's graph (`liveSceneEffectsKey`), which builds again with or without the repeat pass (`geometryRepeat`), with
+ * the half-resolution marches in one pass or in their own, or with each axis's blurs in one pass or two
+ * (`SpatialEffectsGraph`).
  */
 export function setSceneWorldDebug(scene: Scene, part: WorldDebugPart, enabled: boolean): boolean {
   if (worldDebugOff(scene, part) === !enabled) return false;

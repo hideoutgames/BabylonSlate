@@ -9,10 +9,12 @@
  * occlusion and volumetric marches draw in the Screen-Space Shadows pass instead of passes of their own, an opt-in that
  * awaits a native-GPU proof that the picture is unchanged. `spritebatching` off ejects every Play world sprite from its
  * thin-instanced batch to a quad of its own and batches none built after (the picture unchanged, to size what batching
- * saves); back on, sprites built afterwards batch again. Debug only, never saved.
+ * saves); back on, sprites built afterwards batch again. `pairedblurs` is off by default too: on, the ambient occlusion
+ * and reflection blurs of each axis draw in one pass instead of two, a temporary measurement switch that awaits a
+ * native-GPU proof and the device Profile, after which it becomes the only path or is removed. Debug only, never saved.
  */
 export const WORLD_DEBUG_PARTS = [
   "world", "lighting", "shadowtaps", "locallights", "shading", "geometryonce", "geometryoncescissor", "mergedmarches",
-  "spritebatching",
+  "spritebatching", "pairedblurs",
 ] as const;
 export type WorldDebugPart = (typeof WORLD_DEBUG_PARTS)[number];
