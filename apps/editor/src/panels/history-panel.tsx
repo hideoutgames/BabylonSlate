@@ -19,7 +19,7 @@ import { useIntegratedSync, useIntegratedSyncState, useRegistryState } from "../
 import { useSourceControlActions } from "../components/source-control-actions";
 import { IconActionButton } from "../components/icon-action-button";
 import { StatusMarker } from "../components/source-control-markers";
-import { groupChanges, isAssetPath, registryChangeLookup, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
+import { groupChanges, hasVersionHistory, registryChangeLookup, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
 import { agoLabel, branchLabel } from "../lib/source-control-labels";
 import { shortId, WORKING_COPY } from "../services/source-control-diff";
 
@@ -219,8 +219,8 @@ export function HistoryPanelContents() {
   const [scope, setScope] = useState<Scope>("asset");
   const [selected, setSelected] = useState<string | null>(null);
   const lookup = useMemo(() => registryChangeLookup(assetRegistry), [assetRegistry]);
-  // Compare and Revert act on an asset's `.hasset` only: never Project Settings or a folder marker.
-  const asset = useMemo(() => (historyPath && isAssetPath(historyPath) ? describe(historyPath, lookup) : null), [historyPath, lookup]);
+  // Compare and Revert act on an asset's `.hasset` or on Project Settings, never on a folder marker.
+  const asset = useMemo(() => (historyPath && hasVersionHistory(historyPath) ? describe(historyPath, lookup) : null), [historyPath, lookup]);
   const path = scope === "asset" && asset ? historyPath : null;
   const { active, branch, head } = snapshot;
   // The list the Diff's version pickers share; a commit, pull or switch moves the branch or its commit, and it is read again.

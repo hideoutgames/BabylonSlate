@@ -1,15 +1,18 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { PROJECT_FILE } from "@haptic/core";
 import type { SaveAllOutcome } from "../context/document-context-types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenDocument } from "../services/document-service";
 import type { SourceControlSyncService } from "../services/source-control-sync";
 import { sceneActor, sceneAsset } from "../testing/diff-assets";
-import { integratedSync } from "../testing/integrated-sync";
+import { integratedProjectJson, integratedSync } from "../testing/integrated-sync";
 import SourceControlRevertFlow from "./source-control-revert-flow";
 
 const state = vi.hoisted(() => ({
   sync: null as SourceControlSyncService | null,
   dirty: [] as OpenDocument[],
+  projectDirty: false,
+  reloadProject: vi.fn<() => Promise<void>>(async () => {}),
   saveAll: vi.fn(async (): Promise<SaveAllOutcome> => "saved"),
   reloadDocs: vi.fn<(paths: string[]) => Promise<void>>(async () => {}),
   applyPulledChanges: vi.fn<(paths: readonly string[], hold?: { release: () => void }) => Promise<void>>(async () => {}),
@@ -22,9 +25,10 @@ vi.mock("../context/document-context", async () =>
   (await import("../testing/document-context-mock")).documentContextMock(() => ({
     ...(state.sync ? { sourceControlSync: state.sync } : {}),
     dirtyDocuments: state.dirty,
-    projectDirty: false,
+    projectDirty: state.projectDirty,
     saveAll: state.saveAll,
     confirmExternalChangeReloadDocs: state.reloadDocs,
+    confirmExternalChangeReloadProject: state.reloadProject,
     applyPulledChanges: state.applyPulledChanges,
     lockAuthoring: state.lockAuthoring,
     ...(state.lock ? { getAuthoringLock: () => state.lock! } : {}),
@@ -44,6 +48,8 @@ afterEach(() => {
   state.sync?.dispose();
   state.sync = null;
   state.dirty = [];
+  state.projectDirty = false;
+  state.reloadProject.mockClear();
   state.lock = null;
   state.saveAll.mockClear();
   state.reloadDocs.mockClear();
@@ -146,6 +152,67 @@ describe("Revert Asset", () => {
     expect(failed.textContent).toContain("Could Not Revert Forest");
     expect(failed.textContent).toContain("The server has no LFS object.");
     expect(release).toHaveBeenCalled();
+    expect(state.applyPulledChanges).not.toHaveBeenCalled();
+  });
+});
+
+describe("Revert Project Settings", () => {
+  /** HEAD's Project Settings save automatically; the working copy's turned Auto-Save off. */
+  async function editedSettings() {
+    const committed = integratedProjectJson({ autoSave: true });
+    const sync = await integratedSync({ files: { [PROJECT_FILE]: committed } });
+    state.sync = sync.service;
+    await sync.storage.writeText(PROJECT_FILE, integratedProjectJson({ autoSave: false }));
+    await sync.service.refreshStatus();
+    return { ...sync, committed };
+  }
+
+  it("asks about every unsaved document and Project Settings, says the project reloads, then writes the version's project.json and reloads it", async () => {
+    const { service, storage, committed } = await editedSettings();
+    state.dirty = [dirtyForest];
+    state.projectDirty = true;
+    const events: string[] = [];
+    state.applyPulledChanges.mockImplementation(async (paths) => {
+      events.push(`reload ${paths.join(", ")}${state.writing ? " in the write queue" : ""}`);
+    });
+    const onDone = vi.fn();
+    render(<SourceControlRevertFlow request={{ path: PROJECT_FILE, name: "Project Settings", ref: { kind: "head" } }} onDone={onDone} />);
+    // The project reloads, so every unsaved document counts, Project Settings included.
+    const unsaved = screen.getByTestId("source-control-revert-unsaved");
+    expect(unsaved.textContent).toContain("Forest");
+    expect(unsaved.textContent).toContain("Project Settings");
+    expect(unsaved.textContent).toContain("the project reloads afterwards");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("source-control-revert-discard"));
+    });
+    expect(state.reloadProject).toHaveBeenCalled();
+    const confirm = await screen.findByTestId("source-control-revert-confirm");
+    expect(confirm.textContent).toContain("Revert Project Settings?");
+    expect(confirm.textContent).toContain(`Reverting replaces Project Settings with their version from main · ${service.getSnapshot().head!.slice(0, 7)}, then the project reloads. It cannot be undone.`);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("source-control-revert-confirm-action"));
+    });
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(await storage.readText(PROJECT_FILE)).toBe(committed);
+    expect(events).toEqual([`reload ${PROJECT_FILE} in the write queue`]);
+    expect(service.getSnapshot().rows).toEqual([]);
+  });
+
+  it("refuses a version whose Project Settings would stop Haptic's Git here, before anything is saved, and writes nothing", async () => {
+    const { service, storage } = await editedSettings();
+    await storage.writeText(PROJECT_FILE, integratedProjectJson({ sourceControl: { mode: "off" } }));
+    await service.refreshStatus();
+    await service.commit({ rowIds: new Set([PROJECT_FILE]), message: "Turn source control off", push: false });
+    await storage.writeText(PROJECT_FILE, integratedProjectJson({ autoSave: false }));
+    await service.refreshStatus();
+    state.dirty = [dirtyForest];
+    const before = await storage.readText(PROJECT_FILE);
+    render(<SourceControlRevertFlow request={{ path: PROJECT_FILE, name: "Project Settings", ref: { kind: "head" } }} onDone={() => {}} />);
+    const blocked = await screen.findByTestId("source-control-revert-blocked");
+    expect(blocked.textContent).toContain("set Source Control to Off, so reverting to them would stop Haptic's Git in this folder.");
+    expect(screen.queryByTestId("source-control-revert-unsaved")).toBeNull();
+    expect(screen.queryByTestId("source-control-revert-confirm")).toBeNull();
+    expect(await storage.readText(PROJECT_FILE)).toBe(before);
     expect(state.applyPulledChanges).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { enableHeadlessCascades } from "./shadow-test-fixtures";
+import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import type { Effect } from "@babylonjs/core/Materials/effect";
@@ -11,7 +11,9 @@ import {
   qualityPresetPatch, QUALITY_GROUPS, ScalabilitySession, type QualityGroup, type RenderProjectSettings,
 } from "@haptic/core";
 import { createEngine } from "./editor-engine";
-import { releaseKeptEffects } from "./effect-bridge";
+import { keptEffectCount, releaseBridgedEffects, releaseKeptEffects } from "./effect-bridge";
+import { managedRenderReservations } from "./managed-render-resources";
+import { parkedShadowAtlasTextures } from "./shadow-atlas";
 import { estimateTextureBytes } from "./texture-memory-estimate";
 
 class FakeCanvas {
@@ -91,8 +93,7 @@ describe("Play quality changes", () => {
   };
 
   /** A Play session at High: a lit crate under a shadowed sun, its view prepared and drawing. */
-  async function startPlay() {
-    const engine = sharedEngine();
+  async function startPlay(engine = sharedEngine()) {
     // The session submits to the view and the view acknowledges to the session, as Play wires them.
     const session = new ScalabilitySession(HIGH, FRAME_CAP, {}, (transaction) => play.applyCommand({ type: "setScalability", transaction }));
     const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -264,5 +265,39 @@ describe("Play quality changes", () => {
       "MSAA and post off": { before: 22, peak: 9, after: 9 },
       "MSAA and post restore": { before: 9, peak: 22, after: 22 },
     });
+  });
+
+  it("returns to the same textures, managed reservations and programs after every Play stop", async () => {
+    const engine = sharedEngine();
+    // NullEngine leaves a cube render target's texture detached, so disposing the target cannot release it; a WebGL
+    // Engine binds its own empty cube where no environment lights a Scene and allocates none.
+    enableHeadlessCubeTargets(engine);
+    const programs = () => new Set(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects));
+    const before = memory(engine);
+    const stops: Array<{ memory: Memory; reservations: ReturnType<typeof managedRenderReservations>; programs: Set<Effect>; kept: number }> = [];
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const { play } = await startPlay(engine);
+      const playing = managedRenderReservations(engine).reservedBytes;
+      play.dispose();
+      await play.whenReleased();
+      // As the next world view's first frame ends the bridge to it.
+      releaseBridgedEffects(engine);
+      const stop = { memory: memory(engine), reservations: managedRenderReservations(engine), programs: programs(), kept: keptEffectCount(engine) };
+      stops.push(stop);
+      // Of the session's textures only the shadow atlas, parked for the next Scene, outlives it.
+      const parked = parkedShadowAtlasTextures(engine);
+      expect({ textures: stop.memory.textures - parked.length,
+        bytes: stop.memory.bytes - parked.reduce((sum, texture) => sum + estimateTextureBytes(texture), 0) }, `cycle ${cycle}`).toEqual(before);
+      expect(stop.reservations.reservedBytes, `cycle ${cycle}`).toBeLessThan(playing);
+      // Only the Play keep holds programs past the stop.
+      expect(stop.programs.size, `cycle ${cycle}`).toBe(stop.kept);
+    }
+    expect(stops[0].kept).toBeGreaterThan(0);
+    // Each later Play draws the programs the first kept, links none of its own, and stops where the first stopped.
+    const [first, ...later] = stops;
+    for (const stop of later) {
+      const linked = [...stop.programs].filter((effect) => !first.programs.has(effect)).length;
+      expect({ ...stop, programs: stop.programs.size, linked }).toEqual({ ...first, programs: first.programs.size, linked: 0 });
+    }
   });
 });

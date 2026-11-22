@@ -1,13 +1,14 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
-import { SOURCE_CONTROL_ID } from "@haptic/core";
+import { PROJECT_FILE, SOURCE_CONTROL_ID } from "@haptic/core";
+import { ProjectSettingsOpenerProvider, useProvideProjectSettingsOpener } from "../components/project-settings-opener";
 import { SourceControlActionsProvider, useSourceControlActions, useSourceControlDiff, type SourceControlActions } from "../components/source-control-actions";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { SourceControlDiffPickers } from "../components/source-control-diff-pickers";
 import type { SourceControlSyncService } from "../services/source-control-sync";
 import { sceneActor, sceneAsset, testAsset } from "../testing/diff-assets";
-import { integratedSync } from "../testing/integrated-sync";
+import { integratedProjectJson, integratedSync } from "../testing/integrated-sync";
 import { ChangesPanelContents } from "./changes-panel";
 import { DiffActorsContents, DiffActorsPanel } from "./diff-actors-panel";
 import { DiffContents, DiffPanel } from "./diff-panel";
@@ -579,6 +580,70 @@ describe("Source Control diff windows", () => {
     expect(await screen.findByTestId(`diff-base-${second}`)).toBeTruthy();
     expect(screen.getByTestId(`diff-base-${first}`)).toBeTruthy();
     expect(screen.queryByText("Reading History…")).toBeNull();
+  });
+
+  it("shows Project Settings by the dialog's categories, with no asset summary, and opens Project Settings on the chosen category", async () => {
+    const sync = await integratedSync({ files: { [PROJECT_FILE]: integratedProjectJson({ autoSave: true }) } });
+    state.sync = sync.service;
+    await sync.storage.writeText(PROJECT_FILE, integratedProjectJson({ autoSave: false, audio: { reverbWetScale: 1.5 } }));
+    await sync.service.refreshStatus();
+    const openSettings = vi.fn();
+    function SettingsOwner() {
+      useProvideProjectSettingsOpener(openSettings);
+      return null;
+    }
+    render(
+      <ProjectSettingsOpenerProvider>
+        <SettingsOwner />
+        <SourceControlActionsProvider>
+          <ChangesPanelContents />
+          <DiffActorsContents />
+          <DiffContents />
+        </SourceControlActionsProvider>
+      </ProjectSettingsOpenerProvider>,
+    );
+    fireEvent.click(await screen.findByTestId(`changes-open-${PROJECT_FILE}`));
+    const tree = await screen.findByTestId("diff-actors-tree");
+    // The categories, changed ones tinted; Project Settings are no asset, so there is no asset row or summary.
+    expect(within(tree).getByText("General").dataset.tone).toBe("warning");
+    expect(within(tree).getByText("Audio").dataset.tone).toBe("warning");
+    expect(within(tree).getByText("Rendering").className).toContain("text-muted-foreground");
+    expect(screen.queryByTestId("tree-row-asset")).toBeNull();
+    expect(screen.queryByTestId("diff-group-asset")).toBeNull();
+    expect(screen.getByTestId("diff-item-name").textContent).toBe("Project Settings");
+    expect(screen.getByTestId("diff-row-autoSave").textContent).toBe("Auto-SaveOnOff");
+    expect(screen.getByTestId("diff-row-audio.reverbWetScale").textContent).toBe("Reverb Wet Scale11.5");
+    expect(screen.getByTestId("diff-row-autoSave").dataset.changed).toBe("true");
+
+    // Open Project Settings in place of Open Asset: on the first changed category, then on the one chosen.
+    expect(screen.queryByTestId("diff-open-asset")).toBeNull();
+    fireEvent.click(screen.getByTestId("diff-open-project-settings"));
+    expect(openSettings).toHaveBeenLastCalledWith("general");
+    act(() => tap(screen.getByTestId("tree-row-group:audio")));
+    fireEvent.click(screen.getByTestId("diff-open-project-settings"));
+    expect(openSettings).toHaveBeenLastCalledWith("audio");
+  });
+
+  it("offers Revert Project Settings unless the base is the working copy, and confirms that the project reloads", async () => {
+    const sync = await integratedSync({ files: { [PROJECT_FILE]: integratedProjectJson({ autoSave: true }) } });
+    state.sync = sync.service;
+    await sync.storage.writeText(PROJECT_FILE, integratedProjectJson({ autoSave: false }));
+    await sync.service.refreshStatus();
+    renderTab();
+    act(() => diffService!.open({ path: PROJECT_FILE, name: "Project Settings", type: "Project" }));
+    const revert = await screen.findByTestId("diff-revert");
+    expect(revert.textContent).toBe("Revert Project Settings");
+    expect((revert as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(revert);
+    const confirm = await screen.findByTestId("source-control-revert-confirm");
+    expect(confirm.textContent).toContain("Revert Project Settings?");
+    expect(confirm.textContent).toContain("then the project reloads. It cannot be undone.");
+    fireEvent.click(screen.getByTestId("source-control-revert-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("source-control-revert-confirm")).toBeNull());
+
+    act(() => diffService!.setRefs({ base: { kind: "working" }, compare: { kind: "head" } }));
+    await waitFor(() => expect(screen.getByTestId("diff-row-autoSave").textContent).toBe("Auto-SaveOffOn"));
+    expect((screen.getByTestId("diff-revert") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("shows why a version cannot be compared", async () => {

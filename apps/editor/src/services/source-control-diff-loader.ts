@@ -1,7 +1,9 @@
+import { PROJECT_FILE } from "@haptic/core";
 import type { AssetVersionSource } from "@haptic/assets/asset-diff";
 import { AssetDiffClient } from "@haptic/assets/asset-diff-client";
+import { diffProjectVersions, EMPTY_PROJECT_DIFF_LOOKUP, type ProjectDiffLookup } from "@haptic/assets/project-settings-diff";
 import { assetBlobFolder } from "../lib/source-control-changes";
-import type { DiffLoader, DiffTarget } from "./source-control-diff";
+import { refLabel, type DiffLoader, type DiffRef, type DiffTarget } from "./source-control-diff";
 import type { SourceControlSyncService } from "./source-control-sync";
 
 /**
@@ -37,12 +39,35 @@ function versionSource(sync: SourceControlSyncService, path: string, commit: str
   };
 }
 
-/** Diffs on one long-lived worker (`AssetDiffClient`), reading through the project's sync. */
-export function createDiffLoader(sync: SourceControlSyncService): DiffLoader {
+/** One version of `project.json`: the working copy's file, or a commit's (none for a side with no commit). */
+function readProjectFile(sync: SourceControlSyncService, ref: DiffRef, commit: string | null): Promise<Uint8Array | null> {
+  if (ref.kind === "working") return sync.readWorking(PROJECT_FILE);
+  return commit ? sync.readFileAt(PROJECT_FILE, commit) : Promise.resolve(null);
+}
+
+/**
+ * Asset diffs on one long-lived worker (`AssetDiffClient`), reading through
+ * the project's sync. Project Settings (`project.json`) are compared on the
+ * main thread (one small JSON file), with the names `lookup` knows now.
+ */
+export function createDiffLoader(sync: SourceControlSyncService, lookup: () => ProjectDiffLookup = () => EMPTY_PROJECT_DIFF_LOOKUP): DiffLoader {
   const client = new AssetDiffClient();
   return {
     async load(target: DiffTarget, commits, signal) {
-      // Project settings and folder markers are plain files: only assets are decoded and compared.
+      if (target.path === PROJECT_FILE) {
+        const snapshot = sync.getSnapshot();
+        const [base, compare] = await Promise.all([
+          readProjectFile(sync, target.base, commits.base),
+          readProjectFile(sync, target.compare, commits.compare),
+        ]);
+        signal.throwIfAborted();
+        return diffProjectVersions(
+          { bytes: base, label: refLabel(target.base, snapshot) },
+          { bytes: compare, label: refLabel(target.compare, snapshot) },
+          lookup(),
+        );
+      }
+      // Folder markers and other files are plain files: only assets and Project Settings are compared.
       if (!target.path.endsWith(".hasset")) throw new Error(`${target.name} is not an asset, so it has no diff.`);
       return client.diff({
         path: target.path,
