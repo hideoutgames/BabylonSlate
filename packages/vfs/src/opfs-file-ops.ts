@@ -18,6 +18,11 @@ const STALE_HANDLE_ERRORS = new Set(["NotFoundError", "InvalidStateError", "Type
 const DIRECTORY_CACHE_LIMIT = 256;
 const FILE_CACHE_LIMIT = 1024;
 const LISTING_CONCURRENCY = 16;
+/**
+ * A SyncAccessHandle write blocks the worker's event loop; between chunks of
+ * this size it yields, so the client's liveness pings are still answered.
+ */
+const STAGED_WRITE_CHUNK = 16 * 1024 * 1024;
 
 export type OpfsFailureKind =
   /** The path (or, with `project`, the project folder) does not exist. */
@@ -219,6 +224,18 @@ type FileHandle = FileSystemFileHandle & {
   move?: (parent: FileSystemDirectoryHandle, name: string) => Promise<void>;
 };
 
+interface StagedFile {
+  name: string;
+  handle: FileHandle;
+}
+
+/** Where a write goes: the target itself (`createWritable`), or a staged file moved over it. */
+interface WriteTarget {
+  parent: FileSystemDirectoryHandle;
+  handle?: FileHandle;
+  staged?: StagedFile;
+}
+
 /** Insertion-ordered map evicting the least recently used entry; holds handles only, never locks. */
 class HandleCache<T> {
   private readonly entries = new Map<string, T>();
@@ -413,27 +430,75 @@ export function createOpfsFileOps(getRoot: () => Promise<FileSystemDirectoryHand
     }
   }
 
-  async function stagedWrite(parent: FileSystemDirectoryHandle, name: string, path: string, data: Uint8Array): Promise<void> {
-    const tempName = stagedWriteName();
-    const temp = await parent.getFileHandle(tempName, { create: true }) as FileHandle;
+  /**
+   * Whether this realm's file handles have `createWritable`, learned from the
+   * first file handle a write sees. Where they do not, writes stage the bytes
+   * and never create the target before moving them into place.
+   */
+  let canCreateWritable: boolean | undefined;
+
+  async function createStaged(dir: FileSystemDirectoryHandle): Promise<StagedFile> {
+    const name = stagedWriteName();
+    return { name, handle: await dir.getFileHandle(name, { create: true }) as FileHandle };
+  }
+
+  /**
+   * The target's handle for a `createWritable` write, or a staged file to move
+   * into place. Repeatable after a stale-handle failure: it only looks up or
+   * creates entries, and removes a staged file it created for nothing.
+   */
+  async function openTarget(dir: FileSystemDirectoryHandle, name: string): Promise<WriteTarget> {
+    if (canCreateWritable === true) return { parent: dir, handle: await dir.getFileHandle(name, { create: true }) as FileHandle };
+    if (canCreateWritable === false) return { parent: dir, staged: await createStaged(dir) };
+    // Learn from the target if it exists, else from a staged file: creating the
+    // target only to find no createWritable on it would leave an empty file.
+    let probe: FileHandle;
+    let staged: StagedFile | undefined;
     try {
+      probe = await dir.getFileHandle(name) as FileHandle;
+    } catch (error) {
+      if (errorName(error) !== "NotFoundError") throw error;
+      staged = await createStaged(dir);
+      probe = staged.handle;
+    }
+    canCreateWritable = typeof probe.createWritable === "function";
+    if (!canCreateWritable) return { parent: dir, staged };
+    if (!staged) return { parent: dir, handle: probe };
+    await dir.removeEntry(staged.name).catch(() => {});
+    return { parent: dir, handle: await dir.getFileHandle(name, { create: true }) as FileHandle };
+  }
+
+  async function stagedWrite(
+    parent: FileSystemDirectoryHandle, name: string, path: string, data: Uint8Array, staged?: StagedFile,
+  ): Promise<void> {
+    const temp = staged ?? await createStaged(parent);
+    try {
+      if (typeof temp.handle.createSyncAccessHandle !== "function" || typeof temp.handle.move !== "function") {
+        throw new OpfsFailure({ kind: "failed", path, message: `Could not write ${path}: this browser cannot replace files safely` });
+      }
       // The handle locks only the staged file and only for this one write; reads never take one,
       // and the target is never opened, so a failure leaves its bytes untouched.
-      const access = await temp.createSyncAccessHandle!();
+      const access = await temp.handle.createSyncAccessHandle();
       try {
         let written = 0;
+        let nextYield = STAGED_WRITE_CHUNK;
         while (written < data.byteLength) {
-          const count = await access.write(data.subarray(written) as Uint8Array<ArrayBuffer>, { at: written });
+          const end = Math.min(data.byteLength, written + STAGED_WRITE_CHUNK);
+          const count = await access.write(data.subarray(written, end) as Uint8Array<ArrayBuffer>, { at: written });
           if (!(count > 0)) throw new Error(`Could not write ${path}: the file accepted no bytes`);
           written += count;
+          if (written >= nextYield && written < data.byteLength) {
+            nextYield = written + STAGED_WRITE_CHUNK;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
         }
         await access.flush();
       } finally {
         await access.close();
       }
-      await temp.move!(parent, name);
+      await temp.handle.move(parent, name);
     } catch (error) {
-      await parent.removeEntry(tempName).catch(() => {});
+      await parent.removeEntry(temp.name).catch(() => {});
       throw error;
     }
   }
@@ -531,10 +596,9 @@ export function createOpfsFileOps(getRoot: () => Promise<FileSystemDirectoryHand
       const walk = creating(path, true);
       const { parents, name } = await entry(dirName, path, walk);
       try {
-        const { parent, handle } = await withDirectory(dirName, parents, path, walk,
-          async (dir) => ({ parent: dir, handle: await dir.getFileHandle(name, { create: true }) as FileHandle }));
-        if (typeof handle.createWritable === "function") {
-          const writable = await handle.createWritable();
+        const target = await withDirectory(dirName, parents, path, walk, (dir) => openTarget(dir, name));
+        if (target.handle) {
+          const writable = await target.handle.createWritable();
           try {
             // Storage bytes are never SharedArrayBuffer-backed; DOM BufferSource
             // requires an ArrayBuffer-backed view.
@@ -544,10 +608,8 @@ export function createOpfsFileOps(getRoot: () => Promise<FileSystemDirectoryHand
             await writable.abort().catch(() => {});
             throw error;
           }
-        } else if (typeof handle.createSyncAccessHandle === "function" && typeof handle.move === "function") {
-          await stagedWrite(parent, name, path, data);
         } else {
-          throw new OpfsFailure({ kind: "failed", path, message: `Could not write ${path}: this browser cannot replace files safely` });
+          await stagedWrite(target.parent, name, path, data, target.staged);
         }
       } catch (error) {
         throw asFailure(error, (raw) => own(raw, path));

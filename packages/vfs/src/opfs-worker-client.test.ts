@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpfsFileOps, OpfsFailure, type OpfsFileOps } from "./opfs-file-ops";
-import { createOpfsWorkerClient } from "./opfs-worker-client";
+import { createOpfsWorkerClient, opfsWorkerSupported } from "./opfs-worker-client";
+import { OpfsStorageAdapter } from "./web-adapter";
 import { createMemoryOpfsRoot } from "./test-support/memory-opfs";
 import { createMemoryOpfsWorker, type MemoryOpfsWorker } from "./test-support/memory-opfs-worker";
 
@@ -122,7 +123,7 @@ describe("OPFS storage worker client", () => {
 
     const interrupted = await write.catch((error: unknown) => error);
     expect(interrupted).toMatchObject({ kind: "interrupted", path: "asset.bin" });
-    expect((interrupted as OpfsFailure).message).toMatch(/may or may not have completed/);
+    expect((interrupted as OpfsFailure).message).toBe("Storage stopped while writing asset.bin; the change may or may not have been made");
     await expect(remove).rejects.toMatchObject({ kind: "interrupted", path: "kept.bin" });
     expect(await read).toEqual(bytes(1));
     // The worker never ran them, and nothing repeated them.
@@ -133,5 +134,85 @@ describe("OPFS storage worker client", () => {
     expect(await direct.readBinary(PROJECT, "asset.bin")).toEqual(bytes(7));
     expect(workers).toHaveLength(1);
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("finds a worker that stopped answering during a write, interrupts the write and moves later calls to the main thread", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let blocked!: ReturnType<typeof gated>;
+    const { files, workers, direct } = await client({
+      workerOps: (root) => (blocked = gated(createOpfsFileOps(async () => root), ["writeBinary"])).ops,
+    });
+    let settled = false;
+    const write = files.writeBinary(PROJECT, "asset.bin", bytes(9)).finally(() => { settled = true; });
+    write.catch(() => {});
+    await vi.advanceTimersByTimeAsync(10);
+    expect(blocked.entered).toEqual(["writeBinary"]);
+    workers[0]!.stall();
+    // A ping goes out after 5 s; it may stay unanswered for 10 s more.
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_100);
+    await expect(write).rejects.toMatchObject({ kind: "interrupted", path: "asset.bin" });
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    await files.writeBinary(PROJECT, "after.bin", bytes(3));
+    expect(await direct.readBinary(PROJECT, "after.bin")).toEqual(bytes(3));
+    expect(workers).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps a slow worker that still answers pings, and arms no timer once nothing is in flight", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let blocked!: ReturnType<typeof gated>;
+    const { files, workers, direct, mainThread } = await client({
+      workerOps: (root) => (blocked = gated(createOpfsFileOps(async () => root), ["writeBinary"])).ops,
+    });
+    const write = files.writeBinary(PROJECT, "slow.bin", bytes(5));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(workers[0]!.pings).toBeGreaterThanOrEqual(10);
+    blocked.release();
+    await vi.advanceTimersByTimeAsync(10);
+    await write;
+    expect(await direct.readBinary(PROJECT, "slow.bin")).toEqual(bytes(5));
+    expect(vi.getTimerCount()).toBe(0);
+    const pings = workers[0]!.pings;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(workers[0]!.pings).toBe(pings);
+    expect(warn).not.toHaveBeenCalled();
+    expect(mainThread).not.toHaveBeenCalled();
+  });
+
+  it("hands the caller's own bytes to the main-thread operations once the worker is disabled", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const root = createMemoryOpfsRoot();
+    const local = createOpfsFileOps(async () => root);
+    const write = vi.spyOn(local, "writeBinary");
+    const files = createOpfsWorkerClient(() => { throw new Error("module workers are unsupported"); }, () => local);
+    await files.ensureProjectDir(PROJECT);
+    const data = bytes(1, 2);
+    await files.writeBinary(PROJECT, "a.bin", data);
+    expect(write.mock.calls[0]![2]).toBe(data);
+  });
+
+  it("spawns a storage worker only from a window, never from code already in a worker", async () => {
+    const root = createMemoryOpfsRoot();
+    const spawn = vi.fn();
+    vi.stubGlobal("Worker", spawn);
+    vi.stubGlobal("navigator", { storage: { getDirectory: async () => root } });
+    try {
+      // A worker realm: Worker and OPFS exist, document does not.
+      expect(opfsWorkerSupported()).toBe(false);
+      const storage = new OpfsStorageAdapter({ library: true });
+      await storage.openDocumentsProject("__haptic_derived__");
+      await storage.writeText("cache.json", "{}");
+      expect(await storage.readText("cache.json")).toBe("{}");
+      expect(spawn).not.toHaveBeenCalled();
+      vi.stubGlobal("document", {});
+      expect(opfsWorkerSupported()).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

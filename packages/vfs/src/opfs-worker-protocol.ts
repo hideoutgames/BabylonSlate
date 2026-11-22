@@ -9,14 +9,20 @@ export interface OpfsRequest {
   args: unknown[];
 }
 
+/** A liveness check; the worker answers `pong` at once, even while operations are awaiting I/O. */
+export interface OpfsPing {
+  type: "ping";
+}
+
 export type OpfsReply =
   | { type: "ready" }
+  | { type: "pong" }
   | { id: number; ok: true; value: unknown }
   | { id: number; ok: false; failure: OpfsFailureData };
 
 /** The worker's side of the channel (`self` in the worker, an in-memory double in tests). */
 export interface OpfsWorkerEndpoint {
-  onmessage: ((event: { data: OpfsRequest }) => void) | null;
+  onmessage: ((event: { data: OpfsRequest | OpfsPing }) => void) | null;
   postMessage(message: OpfsReply, transfer?: Transferable[]): void;
 }
 
@@ -31,7 +37,11 @@ export function resultTransfer(value: unknown): Transferable[] {
  * the main thread's calls did), after announcing that the script evaluated.
  */
 export function serveOpfsFileOps(endpoint: OpfsWorkerEndpoint, ops: OpfsFileOps): void {
-  endpoint.onmessage = (event) => { void answer(endpoint, ops, event.data); };
+  endpoint.onmessage = (event) => {
+    const message = event.data;
+    if ("type" in message) endpoint.postMessage({ type: "pong" });
+    else void answer(endpoint, ops, message);
+  };
   endpoint.postMessage({ type: "ready" });
 }
 

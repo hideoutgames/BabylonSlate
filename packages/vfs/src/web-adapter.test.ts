@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { createFakeWebLocks } from "./test-support/fake-web-locks";
-import { createMemoryOpfsRoot, opfsProjectFolder } from "./test-support/memory-opfs";
+import { createMemoryOpfsRoot, opfsDirectoryName, opfsProjectFolder } from "./test-support/memory-opfs";
 import { webcrypto } from "node:crypto";
 import { createStorage } from "./create-storage";
 import { TEST_PROJECT_NAME } from "./test-mode";
@@ -875,6 +875,71 @@ describe("OPFS adapter over the storage worker", () => {
     await write;
   });
 
+  /** An adapter whose worker never finishes `op`; `stop()` waits until it started, then crashes the worker. */
+  function stoppingDuring(op: keyof OpfsFileOps) {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const started = deferred();
+    const { storage, workers } = workerAdapter(root, (ops) => ({
+      ...ops,
+      [op]: async () => {
+        started.resolve();
+        await new Promise(() => {});
+      },
+    }));
+    const stop = async () => {
+      await started.promise;
+      workers[0]!.crash();
+    };
+    return { storage, stop };
+  }
+
+  it.each([
+    ["writeBinary", (storage: OpfsStorageAdapter) => storage.writeText("asset.hasset", "x"), "writing asset.hasset"],
+    ["mkdir", (storage: OpfsStorageAdapter) => storage.mkdir("dir"), "creating the folder dir"],
+    ["remove", (storage: OpfsStorageAdapter) => storage.remove("asset.hasset"), "removing asset.hasset"],
+  ] as const)("reports %s interrupted by a failed worker as an unknown outcome", async (op, run, work) => {
+    const { storage, stop } = stoppingDuring(op);
+    await storage.openDocumentsProject(`Stopped ${op}`);
+    await createOpfsFileOps(async () => root).writeBinary(
+      await opfsDirectoryName(storage.getCurrentFolder()!.id), "asset.hasset", new Uint8Array([1, 2, 3, 4]));
+    const before = await storage.readBinaryRange("asset.hasset", 0, 2);
+    const failure = run(storage).catch((error: unknown) => error);
+    await stop();
+    const error = await failure;
+    expect((error as Error).message).toBe(`Storage stopped while ${work}; the change may or may not have been made`);
+    expect(isStorageNotFound(error)).toBe(false);
+    // Only a write may have changed the bytes; a removal that may have happened keeps the counter.
+    const again = storage.readBinaryRange("asset.hasset", 0, 2, before.revision);
+    if (op === "writeBinary") await expect(again).rejects.toBeInstanceOf(SourceRevisionChangedError);
+    else expect((await again).bytes).toEqual(new Uint8Array([1, 2]));
+  });
+
+  it("releases a newly claimed session and registers nothing when binding is interrupted", async () => {
+    vi.stubGlobal("navigator", { storage: { getDirectory: async () => root }, locks: createFakeWebLocks() });
+    const { storage, stop } = stoppingDuring("ensureProjectDir");
+    const bind = storage.openDocumentsProject("Interrupted").catch((error: unknown) => error);
+    await stop();
+    expect((await bind as Error).message).toBe("Storage stopped while opening the project folder; the change may or may not have been made");
+    expect(storage.getCurrentFolder()).toBeNull();
+    expect(await storage.listProjects()).toEqual([]);
+    await new OpfsStorageAdapter().openDocumentsProject("Interrupted");
+  });
+
+  it("keeps a project registered, bound and at its revisions when its deletion is interrupted", async () => {
+    vi.stubGlobal("navigator", { storage: { getDirectory: async () => root }, locks: createFakeWebLocks() });
+    const { storage, stop } = stoppingDuring("removeProjectDir");
+    const handle = await storage.openDocumentsProject("Kept");
+    await storage.writeBinary("asset.hasset", new Uint8Array([1, 2, 3, 4]));
+    const before = await storage.readBinaryRange("asset.hasset", 0, 2);
+    const deletion = storage.deleteProject(handle).catch((error: unknown) => error);
+    await stop();
+    expect((await deletion as Error).message).toBe("Storage stopped while deleting the project folder; the change may or may not have been made");
+    expect(await storage.listProjects()).toEqual([handle]);
+    expect(storage.getCurrentFolder()).toEqual(handle);
+    expect((await storage.readBinaryRange("asset.hasset", 0, 2, before.revision)).bytes).toEqual(new Uint8Array([1, 2]));
+    await expect(new OpfsStorageAdapter().openKnownFolder(handle)).rejects.toSatisfy(isProjectOpenElsewhere);
+  });
+
   it("never lets a revision read before a write match the bytes of a write whose outcome was lost", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const landed = deferred();
@@ -901,7 +966,7 @@ describe("OPFS adapter over the storage worker", () => {
     const write = storage.writeBinary("asset.hasset", new Uint8Array([5, 6, 7, 8]));
     await landed.promise;
     workers[0]!.crash();
-    await expect(write).rejects.toThrow(/may or may not have completed/);
+    await expect(write).rejects.toThrow("Storage stopped while writing asset.hasset; the change may or may not have been made");
     await expect(storage.readBinaryRange("asset.hasset", 0, 2, before.revision)).rejects.toBeInstanceOf(SourceRevisionChangedError);
     expect((await storage.readBinaryRange("asset.hasset", 0, 2)).bytes).toEqual(new Uint8Array([5, 6]));
   });

@@ -1,12 +1,16 @@
 import type { OpfsFileOps } from "../opfs-file-ops";
 import type { OpfsWorkerLike } from "../opfs-worker-client";
-import { serveOpfsFileOps, type OpfsReply, type OpfsRequest, type OpfsWorkerEndpoint } from "../opfs-worker-protocol";
+import { serveOpfsFileOps, type OpfsPing, type OpfsReply, type OpfsRequest, type OpfsWorkerEndpoint } from "../opfs-worker-protocol";
 
 export interface MemoryOpfsWorker extends OpfsWorkerLike {
-  /** Requests the worker has received. */
+  /** Requests the worker has received (pings left out). */
   readonly received: OpfsRequest[];
+  /** Pings the worker has received. */
+  readonly pings: number;
   /** Fail the worker as a script error or crash would. */
   crash(message?: string): void;
+  /** Stop all messages both ways without an error event, as a worker the browser killed silently. */
+  stall(): void;
 }
 
 /**
@@ -16,7 +20,9 @@ export interface MemoryOpfsWorker extends OpfsWorkerLike {
  */
 export function createMemoryOpfsWorker(ops: OpfsFileOps, options: { start?: boolean } = {}): MemoryOpfsWorker {
   let terminated = false;
-  const later = (deliver: () => void) => setTimeout(() => { if (!terminated) deliver(); }, 0);
+  let stalled = false;
+  let pings = 0;
+  const later = (deliver: () => void) => setTimeout(() => { if (!terminated && !stalled) deliver(); }, 0);
   const endpoint: OpfsWorkerEndpoint = {
     onmessage: null,
     postMessage(message: OpfsReply, transfer: Transferable[] = []) {
@@ -26,13 +32,15 @@ export function createMemoryOpfsWorker(ops: OpfsFileOps, options: { start?: bool
   };
   const worker: MemoryOpfsWorker = {
     received: [],
+    get pings() { return pings; },
     onmessage: null,
     onerror: null,
     onmessageerror: null,
-    postMessage(message: OpfsRequest, transfer: Transferable[]) {
+    postMessage(message: OpfsRequest | OpfsPing, transfer: Transferable[]) {
       const data = structuredClone(message, { transfer });
       later(() => {
-        worker.received.push(data);
+        if ("type" in data) pings++;
+        else worker.received.push(data);
         endpoint.onmessage?.({ data });
       });
     },
@@ -40,6 +48,7 @@ export function createMemoryOpfsWorker(ops: OpfsFileOps, options: { start?: bool
     crash(message = "worker crashed") {
       if (!terminated) worker.onerror?.({ message });
     },
+    stall() { stalled = true; },
   };
   if (options.start !== false) serveOpfsFileOps(endpoint, ops);
   return worker;

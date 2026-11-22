@@ -243,9 +243,44 @@ describe("OPFS writes without createWritable", () => {
     expect(await entryNames(project)).toEqual(["asset.bin"]);
   });
 
+  it.each([
+    ["the first write, which learns that createWritable is absent", false],
+    ["a write once that is known", true],
+  ])("creates a new file only by moving its staged bytes into place: %s", async (_case, known) => {
+    const { ops, folder } = await setup(syncOnly);
+    if (known) await ops.writeBinary(PROJECT, "other.bin", bytes(1));
+    const project = await folder();
+    interceptStaged(project, (handle) => {
+      const open = handle.createSyncAccessHandle as () => Promise<{ write(): number }>;
+      handle.createSyncAccessHandle = async () => {
+        const access = await open();
+        access.write = () => { throw new DOMException("Storage is full", "QuotaExceededError"); };
+        return access;
+      };
+    });
+    expect((await failureOf(ops.writeBinary(PROJECT, "new.bin", bytes(1, 2)))).cause?.name).toBe("QuotaExceededError");
+    expect(await entryNames(project)).toEqual(known ? ["other.bin"] : []);
+    vi.mocked(project.getFileHandle).mockRestore();
+
+    await ops.writeBinary(PROJECT, "new.bin", bytes(3, 4));
+    expect(await ops.readBinary(PROJECT, "new.bin")).toEqual(bytes(3, 4));
+    await ops.writeBinary(PROJECT, "new.bin", bytes(5));
+    expect(await ops.readBinary(PROJECT, "new.bin")).toEqual(bytes(5));
+    expect(await entryNames(project)).toEqual(known ? ["other.bin", "new.bin"] : ["new.bin"]);
+  });
+
+  it("learns that createWritable exists without leaving a staged file behind", async () => {
+    const { ops, folder } = await setup();
+    await ops.writeBinary(PROJECT, "first.bin", bytes(1));
+    await ops.writeBinary(PROJECT, "second.bin", bytes(2));
+    expect(await entryNames(await folder())).toEqual(["first.bin", "second.bin"]);
+    expect(await ops.readBinary(PROJECT, "first.bin")).toEqual(bytes(1));
+  });
+
   it("refuses to write where neither createWritable nor a staged SyncAccessHandle write is possible", async () => {
-    const { ops } = await setup({ withoutWritable: true });
+    const { ops, folder } = await setup({ withoutWritable: true });
     const failure = await failureOf(ops.writeBinary(PROJECT, "asset.bin", bytes(1)));
     expect(failure).toMatchObject({ kind: "failed", message: "Could not write asset.bin: this browser cannot replace files safely" });
+    expect(await entryNames(await folder())).toEqual([]);
   });
 });
