@@ -134,6 +134,7 @@ describe("createPlayMesh", () => {
     const world = createTestEngine();
     handles.push(overlay, world);
     const overlayMat = new StandardMaterial("overlay-mat", overlay.scene);
+    overlayMat.metadata = { materialDomain: "ui" };
     const worldMat = new StandardMaterial("world-mat", world.scene);
     const binding = createSnapshotSceneBinding();
     const calls: Array<{ guid: string; unlit?: boolean; scene?: Scene }> = [];
@@ -152,6 +153,9 @@ describe("createPlayMesh", () => {
     expect(calls).toEqual([
       { guid: "mat-1", unlit: true, scene: overlay.scene },
     ]);
+    // Only a User Interface Material: a Surface one leaves the plane's unlit look.
+    overlayMat.metadata = { materialDomain: "surface" };
+    expect(isUnlitMaterial(createPlayMesh(overlay.scene, 3, "2dmaterial", "mat-1", binding).material)).toBe(true);
   });
 
   it("keeps overlay 2DMaterial on the overlay unlit compile after assignMaterial", () => {
@@ -159,6 +163,7 @@ describe("createPlayMesh", () => {
     const world = createTestEngine();
     handles.push(overlay, world);
     const overlayMat = new StandardMaterial("overlay-mat", overlay.scene);
+    overlayMat.metadata = { materialDomain: "ui" };
     const worldMat = new StandardMaterial("world-mat", world.scene);
     const binding = createSnapshotSceneBinding();
     binding.isOverlaySlot = () => true;

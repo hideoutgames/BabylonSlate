@@ -1,4 +1,4 @@
-import type { Actor, World } from "@haptic/object-model";
+import type { Actor, ActorComponent, World } from "@haptic/object-model";
 
 /**
  * Actors owning at least one component of each class, and actors of each class themselves, in world order, for one
@@ -7,8 +7,11 @@ import type { Actor, World } from "@haptic/object-model";
 export class WorldComponentIndex {
   private readonly byClass = new Map<string, Actor[]>();
   private readonly byActorClass = new Map<string, Actor[]>();
+  private byComponentId: Map<string, ActorComponent> | null = null;
+  private readonly actorList: readonly Actor[];
 
   constructor(actors: readonly Actor[]) {
+    this.actorList = actors;
     for (const actor of actors) {
       if (actor.classId) {
         const sameClass = this.byActorClass.get(actor.classId);
@@ -41,6 +44,27 @@ export class WorldComponentIndex {
   actorClassIds(): IterableIterator<string> {
     return this.byActorClass.keys();
   }
+
+  /**
+   * The component a world-wide search by id reaches first: the first live actor in world order with a live
+   * component whose guid or prefab `sourceId` is `componentId`, and that actor's first such component. Built on
+   * first use; ids are only unique per actor (instances of one prefab share a `sourceId`), so the earliest wins.
+   */
+  componentById(componentId: string): ActorComponent | undefined {
+    let byId = this.byComponentId;
+    if (!byId) {
+      byId = this.byComponentId = new Map();
+      for (const actor of this.actorList) {
+        if (actor.destroyed) continue;
+        for (const component of actor.components) {
+          if (component.destroyed) continue;
+          if (!byId.has(component.guid)) byId.set(component.guid, component);
+          if (component.sourceId && !byId.has(component.sourceId)) byId.set(component.sourceId, component);
+        }
+      }
+    }
+    return byId.get(componentId);
+  }
 }
 
 const NO_OWNERS: readonly Actor[] = [];
@@ -70,12 +94,6 @@ export function componentOwners(world: World, classId: string): readonly Actor[]
   return worldComponentIndex(world).owners(classId);
 }
 
-/** `componentOwners` while the cached index matches the world structure; undefined, without a rebuild, once it is stale. */
-export function currentComponentOwners(world: World, classId: string): readonly Actor[] | undefined {
-  const entry = indexes.get(world);
-  return entry?.revision === world.structuralRevision ? entry.index.owners(classId) : undefined;
-}
-
 /**
  * `visit` for each actor owning a `classId` component, in world order, as
  * `for (const actor of world.getActors())` would reach them. For a visit that
@@ -92,19 +110,50 @@ export function walkComponentOwners(
   stopped: () => boolean,
   visit: (actor: Actor) => void,
 ): boolean {
-  const actors = world.getActors();
   const revision = world.structuralRevision;
   for (const actor of componentOwners(world, classId)) {
     if (stopped()) return false;
-    // Positions are dense while the structure is unchanged, so `indexOf` is a safeguard.
-    const position = actors[actor.spawnIndex] === actor ? actor.spawnIndex : actors.indexOf(actor);
     visit(actor);
     if (world.structuralRevision === revision && !stopped()) continue;
-    for (let index = position + 1; index < actors.length; index++) {
-      if (stopped()) return false;
-      visit(actors[index]!);
-    }
-    return true;
+    return walkLiveActorsAfter(world, actor, stopped, visit);
   }
   return true;
+}
+
+/**
+ * Visits each live actor after `last` in world order, including ones spawned
+ * meanwhile. A synchronous removal can shift the live list left, so the walk
+ * resumes after the last visited actor by spawn order, not by position.
+ */
+function walkLiveActorsAfter(
+  world: World,
+  last: Actor,
+  stopped: () => boolean,
+  visit: (actor: Actor) => void,
+): boolean {
+  let destroys = Number.NaN;
+  let index = 0;
+  for (;;) {
+    const actors = world.getActors();
+    if (world.destroyCount !== destroys) {
+      destroys = world.destroyCount;
+      index = firstAfterSpawnOrder(actors, last.spawnOrder);
+    }
+    if (index >= actors.length) return true;
+    if (stopped()) return false;
+    last = actors[index++]!;
+    visit(last);
+  }
+}
+
+/** The first position whose actor spawned after `spawnOrder`; the list is ascending in spawn order. */
+function firstAfterSpawnOrder(actors: readonly Actor[], spawnOrder: number): number {
+  let low = 0;
+  let high = actors.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (actors[middle]!.spawnOrder <= spawnOrder) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }

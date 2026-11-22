@@ -6,7 +6,7 @@ import type { RuntimeInspectionAction } from "./runtime-inspector-client";
 
 const actor: RuntimeObjectIdentity = { sceneInstanceId: "root", actorGuid: "actor", actorToken: 1 };
 function result(payload: RuntimeInspectorResult["payload"], commandRevision = 0): RuntimeInspectorResult {
-  return { sessionGeneration: 1, requestId: 1, success: true, tickIndex: 1, frameId: 1, commandRevision, structuralRevision: 1, payload };
+  return { sessionGeneration: 1, requestId: 1, success: true, tickIndex: 1, frameId: 1, commandRevision, identityRevision: 1, payload };
 }
 const identities = () => result({ kind: "identities", rows: [{ identity: actor, name: "Actor", classId: "Actor", kind: "actor", parent: null }], unchanged: false });
 const selection = (target = actor, value = "Before", revision = 0) => result({ kind: "selection", target, classId: "Actor", transform: identitySerializedTransform(), transformCapability: "live",

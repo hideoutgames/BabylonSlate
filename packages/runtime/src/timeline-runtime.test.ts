@@ -179,6 +179,21 @@ describe("TimelineRuntime", () => {
     expect(runtime.clip(owner, "intro")).toBeNull();
   });
 
+  it("drops an ended owner's clips without stepping any while the game is paused", () => {
+    const { runtime, owner, clip, release } = setup();
+    runtime.play(clip);
+    runtime.advance(0.5, [owner], () => true);
+    // A paused tick only prunes: a live owner's clip holds where it is.
+    runtime.pruneEnded();
+    expect(clip.playback.time).toBe(0.5);
+    expect(clip.destroyed).toBe(false);
+    owner.destroyed = true;
+    runtime.pruneEnded();
+    expect(clip.destroyed).toBe(true);
+    expect(release).toHaveBeenCalledWith(clip);
+    expect(runtime.clip(owner, "intro")).toBeNull();
+  });
+
   it("starts at the clip's Play Rate and Loop Mode and changes them per copy", () => {
     const { runtime, owner, clip } = setup({ playRate: 2, loopMode: "loop" });
     expect(timelineClipState(clip, "playRate")).toBe(2);

@@ -15,16 +15,17 @@ import {
   type MaterialFunctionDocument,
   type MaterialLowerResult,
   type MaterialTextureFilter,
+  lowerMaterialDocumentCached,
 } from "@haptic/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import { validMaterialParameterValue } from "./material-parameters";
 import { applyMaterialBounds } from "./material-bounds";
 import { isInstancePoolSource } from "./instance-pool";
 import { setDrawnMaterial } from "./pooled-visuals";
+import { acceptsUserInterfaceMaterial, restoreUserInterfaceFallback } from "./user-interface-material";
 import { rebindWaterMeshMaterial } from "./water-mesh";
 import { markSceneReadinessDirty, onSceneReceiversChanged } from "./scene-readiness-signal";
 import { shaderLinkLog } from "./material-glsl-diagnostics";
-import { sharedMaterialPlan } from "./material-plan-cache";
 import {
   compileMaterialPlan,
   MaterialCompileStalled,
@@ -100,6 +101,8 @@ function cacheKey(
  * Material's water variant (`acquireWaterVariant`), so it moves to the next generation's water variant.
  */
 function rebindMaterial(scene: Scene, from: Material, to: Material): void {
+  // A Material edited out of the User Interface domain: a 2D component's surface takes its fallback look instead.
+  const leavesUserInterface = acceptsUserInterfaceMaterial(from) && !acceptsUserInterfaceMaterial(to);
   const replaceSubmaterials = (material: Material) => {
     if (!(material instanceof MultiMaterial)) return;
     material.subMaterials = material.subMaterials.map((child) => {
@@ -111,15 +114,15 @@ function rebindMaterial(scene: Scene, from: Material, to: Material): void {
   for (const mesh of [...scene.meshes]) {
     // A group source follows its members, which move to the group drawn with `to` (`setDrawnMaterial`).
     if (mesh instanceof Mesh && isInstancePoolSource(mesh)) continue;
-    if (mesh.material === from) { applyMaterialBounds(setDrawnMaterial(mesh, to)); }
+    if (mesh.material === from) {
+      if (!leavesUserInterface || !restoreUserInterfaceFallback(mesh)) applyMaterialBounds(setDrawnMaterial(mesh, to));
+    }
     else if (mesh.material && waterVariantBase(mesh.material) === from && rebindWaterMeshMaterial(mesh, to)) applyMaterialBounds(mesh);
     else if (mesh.material) replaceSubmaterials(mesh.material);
   }
 }
 
 const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = Object.freeze({});
-
-type PlanSlot = { functions: Record<string, MaterialFunctionDocument>; content: string; result: MaterialLowerResult };
 
 /**
  * A failure that follows from the plan itself, so the same plan fails again: not a cancellation, not a texture that
@@ -137,8 +140,8 @@ interface MaterialLibraryOptions {
   acquireTexture?: (guid: string, scene: Scene, filter?: MaterialTextureFilter) => ResourceLease<Texture> | null;
   textureIdentity?: (guid: string) => string | undefined;
   resolveTexture?: (guid: string) => Texture | null;
-  /** Return a new record whenever a function document changes; lowering is
-   * memoized on the record's identity, so in-place mutation is not observed. */
+  /** The Material Functions by guid. Replace a function document to change it: lowering is memoized on the
+   * identity of each function a document reaches, so in-place mutation is not observed. */
   functions?: () => Record<string, MaterialFunctionDocument>;
   onTextureError?: (diagnostic: MaterialDiagnostic) => void;
   onMaterialReady?: (scene: Scene, assetGuid: string) => void;
@@ -190,10 +193,6 @@ export class MaterialLibrary {
   private readonly tracked = new Set<Scene>();
   private readonly disposeObservers = new WeakMap<Scene, Observer<Scene>>();
   private readonly receiverSubscriptions = new WeakMap<Scene, () => void>();
-  // Reuse one lowering per document, shading variant and functions record
-  // while the document content is unchanged (hosts may edit documents in place).
-  // A miss asks the realm's content-keyed cache (`material-plan-cache.ts`) before lowering.
-  private readonly plans = new WeakMap<MaterialDocument, { lit?: PlanSlot; unlit?: PlanSlot }>();
   private readonly options: MaterialLibraryOptions;
 
   constructor(options: MaterialLibraryOptions = {}) {
@@ -222,21 +221,11 @@ export class MaterialLibrary {
     return created;
   }
 
-  /** Resolve the same function-aware plan as acquire, without taking GPU ownership.
-   * The lowering is memoized per document content and functions-record identity, then shared
-   * by content with every other library. Callers must not change the result. */
+  /** Resolve the same function-aware plan as acquire, without taking GPU ownership, through the realm's shared
+   * lowering memo (`lowerMaterialDocumentCached`): documents are replaced, never edited in place. Callers must not
+   * change the result. */
   planFor(doc: MaterialDocument, unlit?: boolean): MaterialLowerResult {
-    const functions = this.options.functions?.() ?? NO_FUNCTIONS;
-    let slots = this.plans.get(doc);
-    if (!slots) this.plans.set(doc, (slots = {}));
-    const variant = unlit ? "unlit" : "lit";
-    const cached = slots[variant];
-    // Serializing is far cheaper than lowering and catches in-place edits.
-    const content = JSON.stringify(doc);
-    if (cached?.functions === functions && cached.content === content) return cached.result;
-    const result = sharedMaterialPlan(doc, content, variant === "unlit", functions);
-    slots[variant] = { functions, content, result };
-    return result;
+    return lowerMaterialDocumentCached(doc, this.options.functions?.() ?? NO_FUNCTIONS, unlit === true);
   }
 
   isCompiled(
@@ -279,7 +268,7 @@ export class MaterialLibrary {
     return this.acquirePlan(scene, assetGuid, doc, this.planFor(doc, options?.unlit === true), options);
   }
 
-  /** `acquire` with the document's plan already resolved (`planFor` serializes the whole document). */
+  /** `acquire` with the document's plan already resolved. */
   private acquirePlan(
     scene: Scene,
     assetGuid: string,
@@ -330,8 +319,9 @@ export class MaterialLibrary {
 
     const textures = materialTextureBindings(this.options.acquireTexture ? (guid, filter) => this.options.acquireTexture!(guid, scene, filter) : undefined, this.options.textureIdentity);
     let compiled: ReturnType<typeof compileMaterialPlan>;
-    // Instances compile under their root Material's name so generated block
-    // names, and therefore the shader text, match and the GPU program is shared.
+    // Any two Materials of one graph shape and values share a GPU program (the compiler names no block after its
+    // Material). Instances still compile under their root Material's name: a particle build shares its program only
+    // with builds of the same name (`shareParticleProgram`).
     const programGuid = doc.instanceOf ?? assetGuid;
     const materialName = unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`;
     let retireUnlinkable: (diagnostic: MaterialDiagnostic) => void = () => {};

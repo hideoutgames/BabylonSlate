@@ -176,6 +176,19 @@ describe("snapshot publishing", () => {
     }
   });
 
+  it("stops observing the World when the session ends", async () => {
+    const dispose = vi.spyOn(SnapshotPublisher.prototype, "dispose");
+    const { runtime } = await launch(scene([createActor("still", "Still")]));
+    try {
+      expect(dispose).not.toHaveBeenCalled();
+      runtime.stop();
+      expect(dispose).toHaveBeenCalledOnce();
+    } finally {
+      runtime.stop();
+      dispose.mockRestore();
+    }
+  });
+
   it("steers the crowd from NavAgent actors and their ancestors only", async () => {
     // The agent starts at world (-4, 0, -4) under a parent that a script moves
     // every tick; the crowd owns its world pose, so it must follow the path of
@@ -434,7 +447,7 @@ describe("snapshot removal pass", () => {
       slots.allocate(created);
       return created;
     };
-    return { world, snapshots, despawns, actor };
+    return { world, slots, snapshots, despawns, actor };
   }
 
   it("checks no slot while neither the World structure nor the slot table changed", () => {
@@ -456,6 +469,36 @@ describe("snapshot removal pass", () => {
     lookups.mockClear();
     snapshots.publish();
     expect(lookups).not.toHaveBeenCalled();
+  });
+
+  it("walks a moved actor's subtree once per publish, not once per coordinate write", () => {
+    const { world, slots, snapshots, actor } = publisher();
+    const root = world.spawnActorNow(actor("root"));
+    const middle = actor("middle");
+    middle.setVariable("parentId", root.guid);
+    world.spawnActorNow(middle);
+    const leaf = actor("leaf");
+    leaf.setVariable("parentId", middle.guid);
+    world.spawnActorNow(leaf);
+    snapshots.publish();
+
+    const children = vi.spyOn(world, "getChildren");
+    root.transform.position.x = 1;
+    const firstWalk = children.mock.calls.length;
+    expect(firstWalk).toBeGreaterThan(0);
+    root.transform.position.y = 2;
+    root.transform.position.z = 3;
+    middle.transform.position.x = 1;
+    expect(children).toHaveBeenCalledTimes(firstWalk);
+
+    snapshots.publish();
+    const buf = new Float32Array(snapshotFloatCount(snapshots.capacity));
+    expect(snapshots.copy(buf)).toBe(true);
+    const poses = Array.from({ length: readSnapshotHeader(buf).actorCount }, (_, index) => readActorSlot(buf, index));
+    expect(poses.find((entry) => entry.slotId === slots.recordedSlot(leaf))?.position).toEqual({ x: 2, y: 2, z: 3 });
+    // The next publish cycle walks again.
+    root.transform.position.x = 5;
+    expect(children.mock.calls.length).toBeGreaterThan(firstWalk);
   });
 
   it("reports the mean publish time since it was last read, and the last publish's when none happened since", () => {

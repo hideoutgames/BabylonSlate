@@ -113,6 +113,8 @@ interface LayerRefs {
   pixelFont: string;
   textMaterial: string;
   overlayMaterial: string;
+  /** The User Interface showcase Materials, and the Instance the Progress Bar's track draws. */
+  uiMaterials: Record<"roundedPanel" | "roundedPanelInstance" | "healthBar" | "cooldown", string>;
   /** The post-process grade, which the Texture Icon's Post Processing Panel names, switched off. */
   postProcessMaterial: string;
   panelTexture: string;
@@ -150,6 +152,12 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     pixelFont: requireRef(ctx.assets.fonts.arkPixel, "the Ark Pixel Font"),
     textMaterial: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.text),
     overlayMaterial,
+    uiMaterials: {
+      roundedPanel: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.uiRoundedPanel),
+      roundedPanelInstance: featureTestMaterialAssetGuid(ctx, "MaterialInstance", FEATURE_TEST_MATERIAL_NAMES.uiRoundedPanelInstance),
+      healthBar: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.uiHealthBar),
+      cooldown: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.uiCooldown),
+    },
     postProcessMaterial: requireRef(ctx.assets.materials.postProcess, "the post-process Material"),
     panelTexture: requireRef(ctx.assets.textures.colormapPixelArt, "the pixel art colormap Texture"),
     sound: ctx.assets.audio.oneShot,
@@ -249,9 +257,9 @@ type Rgba = [number, number, number, number];
 
 /**
  * Every overlay widget, kept to the screen edges so the 3D view stays
- * visible: title bar on top, form controls on the left, containers on the
- * right, a widget row and a Class row at the bottom, joystick and painter in
- * the bottom corners.
+ * visible: title bar on top, form controls on the left with the User Interface
+ * Material showcase under them, containers on the right, a widget row and a
+ * Class row at the bottom, joystick and painter in the bottom corners.
  */
 function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   const layer: SerializedSceneLayer = { ...createDefaultSceneLayer(), name: NAMES.hud };
@@ -264,6 +272,7 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
     { id: "ft-ui-folder-widgets", name: "Widget Row", parentFolderId: null },
     { id: "ft-ui-folder-classes", name: "Class Row", parentFolderId: null },
     { id: "ft-ui-folder-input", name: "Joystick And Painter", parentFolderId: null },
+    { id: "ft-ui-folder-ui-materials", name: "User Interface Materials", parentFolderId: null },
   ];
   const add = (actor: SerializedActor) => addLayerActor(layer, actor);
   addHeader(refs, add);
@@ -272,6 +281,7 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   addWidgetRow(refs, add);
   addClassRow(refs, add);
   addJoystickAndPainter(add);
+  addUserInterfaceMaterials(refs, add);
   // The SceneLayerScript of every FT_HUD instance probes its own title.
   const title = layer.actors.find((actor) => actor.id === "ft-ui-title");
   if (!title) throw new Error("FT_HUD has no title for its Scene Layer Script.");
@@ -627,7 +637,8 @@ function addForms(refs: LayerRefs, add: AddActor): void {
     options: ["Low", "Medium", "High", "Epic"],
     selectedIndex: 2,
   });
-  // The fill part uses the scrolling overlay Material instead of the native mesh.
+  // The fill part uses the scrolling overlay Material and the track an Instance of the rounded panel Material,
+  // instead of the native mesh.
   control("ft-ui-progress-bar", "Progress Bar", "2DProgressBarComponent", {
     width: 2.46,
     height: 0.21,
@@ -635,6 +646,7 @@ function addForms(refs: LayerRefs, add: AddActor): void {
     max: 1,
     value: 0.65,
     fillMaterialGuid: refs.overlayMaterial,
+    trackMaterialGuid: refs.uiMaterials.roundedPanelInstance,
   });
 }
 
@@ -821,6 +833,23 @@ function addClassRow(refs: LayerRefs, add: AddActor): void {
   }));
   add(classInstance(classes.cardA, "ft-ui-sample-card-a", "Card A Sample", { parentId: row, scale: [0.36, 0.36] }));
   add(classInstance(classes.cardB, "ft-ui-sample-card-b", "Card B Sample", { parentId: row, scale: [0.36, 0.36] }));
+}
+
+/**
+ * Under the form controls: User Interface Materials on 2D Material components. A rounded, bordered panel behind a
+ * health bar (Linear Progress at its Progress parameter) and a radial cooldown that sweeps with Time.
+ */
+function addUserInterfaceMaterials(refs: LayerRefs, add: AddActor): void {
+  const folderId = "ft-ui-folder-ui-materials";
+  const { uiMaterials } = refs;
+  add(layerActor("ft-ui-materials-panel", "User Interface Panel", [
+    ui("ft-ui-materials-panel-quad", "2DMaterialComponent", { materialGuid: uiMaterials.roundedPanel }),
+  ], { position: [-8.07, -1.74, BACK_Z], scale: [2.82, 2.7], folderId }));
+  add(layerActor("ft-ui-materials", "User Interface Materials", [
+    ui("ft-ui-materials-header", "2DTextComponent", { ...header(refs, "User Interface Materials"), alignment: "center" }, at(0, 1.08)),
+    ui("ft-ui-materials-health-bar", "2DMaterialComponent", { materialGuid: uiMaterials.healthBar }, at(0, 0.6, 0, 2.34, 0.24)),
+    ui("ft-ui-materials-cooldown", "2DMaterialComponent", { materialGuid: uiMaterials.cooldown }, at(0, -0.42, 0, 1.2, 1.2)),
+  ], { position: [-8.07, -1.74], folderId }));
 }
 
 /** Joystick (own bottom-left Anchor) and a persistent Painter (anchored by a child anchor-only helper). */

@@ -15,6 +15,7 @@ import type {
   WaterSample,
 } from "@haptic/core";
 import type { MaterialParameterValue } from "@haptic/bridge";
+import type { DestroyedAccess } from "./destroyed-access";
 import type {
   Actor,
   ActorComponent,
@@ -201,6 +202,11 @@ export interface ScriptHostServices {
   /** Scene load progress in 0..1. */
   getSceneLoadingProgress?(): number;
   log(severity: LogSeverity, category: string, message: string): void;
+  /**
+   * A script read, wrote or called a destroyed object and got nothing: the host reports it once per location and
+   * member. A host without it logs the message as an error.
+   */
+  reportDestroyedAccess?(access: DestroyedAccess): void;
   /** A failed Assert node: an error for the node that ran it. Without it, the failure is an Error log. */
   assertFailed?(message: string): void;
   addComponent?(

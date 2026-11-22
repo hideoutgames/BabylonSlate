@@ -1,9 +1,14 @@
 import type { SerializedGraph } from "@haptic/core";
 import type { EditCommand } from "../command";
-import { snapshotBytes } from "../snapshot-bytes";
+import { retainedFieldBytes, snapshotBytes } from "../snapshot-bytes";
 
 export class MoveNodeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.moveNode";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly mergeKey: string;
   readonly nodeId: string;
   readonly from: { x: number; y: number };
@@ -36,6 +41,11 @@ export class MoveNodeCommand implements EditCommand<SerializedGraph> {
 
 export class AddEdgeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.addEdge";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly edge: SerializedGraph["edges"][number];
   readonly index?: number;
 
@@ -68,6 +78,11 @@ export class AddEdgeCommand implements EditCommand<SerializedGraph> {
 
 export class RemoveEdgeCommand implements EditCommand<SerializedGraph> {
   readonly type = "graph.removeEdge";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly edge: SerializedGraph["edges"][number];
   readonly index?: number;
 
@@ -97,13 +112,18 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
   readonly nodeId: string;
   readonly from: Record<string, unknown>;
   readonly to: Record<string, unknown>;
-  #byteSize?: number;
+  #fromBytes?: number;
+  #toBytes?: number;
   /**
    * Captured payload size so snapshot-style data edits count toward the byte
-   * budget; measured on first read and memoised.
+   * budget. Each side is measured on first read and memoised, and inverting
+   * or coalescing carries the measured sides, so each sample of a scrub
+   * measures only its new `to`.
    */
   get byteSize(): number {
-    return (this.#byteSize ??= snapshotBytes({ from: this.from, to: this.to }));
+    this.#fromBytes ??= snapshotBytes(this.from);
+    this.#toBytes ??= snapshotBytes(this.to);
+    return this.#fromBytes + this.#toBytes;
   }
 
   constructor(
@@ -134,8 +154,8 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
       this.from,
       this.mergeKey,
     );
-    // Swapping `from` and `to` keeps the measured size.
-    inverse.#byteSize = this.#byteSize;
+    inverse.#fromBytes = this.#toBytes;
+    inverse.#toBytes = this.#fromBytes;
     return inverse;
   }
 
@@ -148,7 +168,10 @@ export class SetNodeDataCommand implements EditCommand<SerializedGraph> {
     ) {
       return undefined;
     }
-    return new SetNodeDataCommand(this.nodeId, this.from, next.to, this.mergeKey);
+    const merged = new SetNodeDataCommand(this.nodeId, this.from, next.to, this.mergeKey);
+    merged.#fromBytes = this.#fromBytes;
+    merged.#toBytes = next.#toBytes;
+    return merged;
   }
 }
 

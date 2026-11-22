@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Animation } from "@babylonjs/core/Animations/animation";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Camera } from "@babylonjs/core/Cameras/camera";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
@@ -156,6 +157,58 @@ describe("material preview scene", () => {
     expect(root.isDisposed()).toBe(true);
     expect(host.mesh.isEnabled()).toBe(true);
     expect(host.scene.textures.some((texture) => texture.name.includes("bitmap-atlas"))).toBe(false);
+  });
+  it("previews a User Interface Material on one quad filling an orthographic view, inert, and restores the orbit after", () => {
+    const created = engine();
+    const host = createMaterialPreviewScene(created as never);
+    disposers.push(host.dispose);
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    host.camera.alpha = 1.2;
+    host.camera.beta = 0.8;
+    host.camera.radius = 5;
+    const orbit = { alpha: 1.2, beta: 0.8, radius: 5, target: host.camera.target.asArray() };
+    const material = library.resolve(host.scene, "widget", createDefaultMaterialDocument("Widget", "ui"))!;
+    host.applyMaterial(material);
+    expect(host.flat).toBe(true);
+    expect(host.mesh.isEnabled()).toBe(false);
+    expect(host.camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    const quad = host.scene.getMeshByName("materialPreviewUserInterface")!;
+    expect(quad.material).toBe(material);
+    // Every vertex lands on the view's edge its UV names (UV 0 at the bottom left), whatever the buffer's shape.
+    const filled = () => {
+      const transform = host.camera.getViewMatrix(true).multiply(host.camera.getProjectionMatrix(true));
+      const positions = quad.getVerticesData(VertexBuffer.PositionKind)!;
+      const uvs = quad.getVerticesData(VertexBuffer.UVKind)!;
+      return Array.from({ length: uvs.length / 2 }, (_, index) => {
+        const clip = Vector3.TransformCoordinates(Vector3.FromArray(positions, index * 3), transform);
+        return [clip.x, clip.y].map((value, axis) => Math.abs(value - (uvs[index * 2 + axis]! * 2 - 1)) < 1e-5);
+      }).flat().every(Boolean);
+    };
+    expect(filled()).toBe(true);
+    vi.spyOn(created, "getRenderWidth").mockReturnValue(1600);
+    vi.spyOn(created, "getRenderHeight").mockReturnValue(200);
+    expect(filled()).toBe(true);
+    vi.restoreAllMocks();
+    // Orbit, pinch, wheel and the zoom buttons do nothing.
+    const canvas = new FakeCanvas();
+    const gestures = attachMaterialPreviewGestures(canvas as unknown as HTMLCanvasElement, host.camera);
+    disposers.push(() => gestures.dispose());
+    const flatCamera = [host.camera.alpha, host.camera.beta, host.camera.radius];
+    canvas.emit("pointerdown", pointer(1, 160, 90));
+    canvas.emit("pointermove", pointer(1, 240, 130));
+    canvas.emit("pointerup", pointer(1, 240, 130));
+    canvas.emit("wheel", { deltaY: -240 });
+    gestures.zoomDrive.step(1);
+    expect([host.camera.alpha, host.camera.beta, host.camera.radius]).toEqual(flatCamera);
+    // A material of another domain restores the orbit camera and the mesh; the mesh choice applies again.
+    host.applyMaterial(new StandardMaterial("surface", host.scene));
+    expect(host.flat).toBe(false);
+    expect(quad.isDisposed()).toBe(true);
+    expect(host.mesh.isEnabled()).toBe(true);
+    expect(host.camera.mode).toBe(Camera.PERSPECTIVE_CAMERA);
+    expect([host.camera.orthoLeft, host.camera.orthoRight, host.camera.orthoBottom, host.camera.orthoTop]).toEqual([null, null, null, null]);
+    expect({ alpha: host.camera.alpha, beta: host.camera.beta, radius: host.camera.radius, target: host.camera.target.asArray() }).toEqual(orbit);
   });
   it("previews one particle plane and removes it when leaving the domain", () => {
     const host = createMaterialPreviewScene(engine() as never);
@@ -671,14 +724,15 @@ describe("material preview presenter", () => {
     expect(onError).toHaveBeenLastCalledWith(null);
   });
 
-  it.each(["surface", "text"] as const)("waits for %s shader readiness without consuming the static preview frame interval", async (domain) => {
+  it.each(["surface", "text", "ui"] as const)("waits for %s shader readiness without consuming the static preview frame interval", async (domain) => {
     const host = await previewHost();
-    if (domain === "text") {
+    if (domain !== "surface") {
       const library = new MaterialLibrary();
       disposers.push(() => library.dispose());
-      host.applyMaterial(library.resolve(host.scene, "text", createDefaultMaterialDocument("Letters", "text"))!);
+      host.applyMaterial(library.resolve(host.scene, domain, createDefaultMaterialDocument("Preview", domain))!);
     }
-    const drawn = domain === "text" ? host.scene.getMeshByName("materialPreviewText")!.getChildMeshes() : [host.mesh];
+    const drawn = domain === "text" ? host.scene.getMeshByName("materialPreviewText")!.getChildMeshes()
+      : domain === "ui" ? [host.scene.getMeshByName("materialPreviewUserInterface")!] : [host.mesh];
     const readiness = drawn.map(mesh => vi.spyOn(mesh, "isReady").mockReturnValue(true));
     const ready = readiness[0]!.mockReturnValue(false);
     const render = vi.spyOn(host.scene, "render");
@@ -746,6 +800,27 @@ describe("material preview presenter", () => {
     expect(registerView).not.toHaveBeenCalled();
     expect(resize).not.toHaveBeenCalled();
     expect(host.camera.inputs.attachedToElement).toBeFalsy();
+  });
+
+  it("draws a User Interface preview at the canvas's device pixels, up to 2048 on the longest side", async () => {
+    const host = await previewHost();
+    const canvas = Object.assign(new FakeCanvas(), { ownerDocument: { defaultView: { devicePixelRatio: 2 } } });
+    const presenter = createMaterialPreviewPresenter(host, canvas as unknown as HTMLCanvasElement);
+    disposers.push(() => presenter.dispose());
+    const buffer = () => {
+      presenter.present({ force: true });
+      const size = host.camera.outputRenderTarget!.getSize();
+      return [size.width, size.height];
+    };
+    // Any other domain keeps CSS pixels.
+    expect(buffer()).toEqual([320, 180]);
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    host.applyMaterial(library.resolve(host.scene, "widget", createDefaultMaterialDocument("Widget", "ui"))!);
+    expect(buffer()).toEqual([640, 360]);
+    canvas.clientWidth = 1600;
+    canvas.clientHeight = 900;
+    expect(buffer()).toEqual([2048, 1152]);
   });
 
   it("clears the preview RTT on every scene render", async () => {

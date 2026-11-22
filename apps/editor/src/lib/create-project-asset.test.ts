@@ -111,6 +111,13 @@ describe("createPickerAsset", () => {
       type: "Material",
       materialDomain: "particle",
     });
+    const userInterface = await createPickerAsset({
+      registry,
+      ownerPath: null,
+      openDocuments: [],
+      type: "Material",
+      materialDomain: "ui",
+    });
     const surface = await createPickerAsset({
       registry,
       ownerPath: null,
@@ -119,6 +126,7 @@ describe("createPickerAsset", () => {
     });
 
     expect(particle.header.payload.domain).toBe("particle");
+    expect(userInterface.header.payload.domain).toBe("ui");
     expect(surface.header.payload.domain).toBe("surface");
   });
 

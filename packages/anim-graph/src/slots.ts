@@ -138,6 +138,17 @@ function advance(playback: AnimSlotPlayback, dtMs: number, events: AnimSlotEvent
   return { ...next, weight: weightOf(next) };
 }
 
+const NO_SLOT_TICK = Object.freeze({
+  slots: Object.freeze({}) as Readonly<Record<string, AnimSlotState>>,
+  events: Object.freeze([]) as readonly AnimSlotEvent[],
+  sweeps: Object.freeze([]) as readonly AnimSlotSweep[],
+});
+
+function hasSlots(slots: Readonly<Record<string, AnimSlotState>> | undefined): boolean {
+  for (const name in slots) if (Object.hasOwn(slots, name)) return true;
+  return false;
+}
+
 /**
  * One tick of every slot: the scripts' requests in order (a play replaces the slot's playing one, which blends out
  * under it over the new one's blend in; a stop starts the blend out), then each play advanced by `dtMs`. Returns the
@@ -147,7 +158,9 @@ export function advanceAnimSlots(
   previous: Readonly<Record<string, AnimSlotState>> | undefined,
   requests: readonly AnimSlotRequest[] | undefined,
   dtMs: number,
-): { slots: Record<string, AnimSlotState>; events: AnimSlotEvent[]; sweeps: AnimSlotSweep[] } {
+): { slots: Readonly<Record<string, AnimSlotState>>; events: readonly AnimSlotEvent[]; sweeps: readonly AnimSlotSweep[] } {
+  // Most graphs never play a slot: with nothing playing and nothing asked, a tick allocates nothing.
+  if ((requests === undefined || requests.length === 0) && !hasSlots(previous)) return NO_SLOT_TICK;
   const events: AnimSlotEvent[] = [];
   const slots: Record<string, AnimSlotState> = {};
   for (const [name, state] of Object.entries(previous ?? {})) slots[name] = { ...state };

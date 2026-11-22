@@ -3,6 +3,7 @@ import { createActor, createDefaultScene, createDefaultSceneLayer, type SaveGame
 import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";
+import { variablesAtRelease } from "./testing/released-variables";
 
 class MemoryStorage implements SaveGameStorage {
   readonly files = new Map<string, string>();
@@ -93,12 +94,13 @@ describe("runtime Save Game", () => {
       expect(component.getVariable("beganCoins")).toBe(7);
       expect(row.getVariable("beganWhenLoaded")).toBe(7);
       expect(component.getVariable("beganWhenLoaded")).toBe(7);
+      const [releasedRow, releasedComponent] = [variablesAtRelease(row), variablesAtRelease(component)];
       list.setVariable("itemCount", 0);
       expect((await service.loadGame()).ok).toBe(true);
       runtime.tick();
       expect(row.destroyed).toBe(true);
-      expect(row.getVariable("ended")).toBe(true);
-      expect(component.getVariable("ended")).toBe(true);
+      expect(releasedRow.get("ended")).toBe(true);
+      expect(releasedComponent.get("ended")).toBe(true);
     } finally { runtime.stop(); }
   });
 

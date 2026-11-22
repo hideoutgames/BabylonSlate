@@ -134,8 +134,14 @@ export class SlateLocalVariableBlock extends ParticleLocalVariableBlock {
         return value;
       }
       const frame = current.systemContext?.getScene()?.getFrameId() ?? -1;
-      if (this.loopValue?.frame !== frame) this.loopValue = { frame, value: snapshot(this.input.getConnectedValue(current)) };
-      return this.loopValue.value;
+      // The frame's value is a new snapshot, never the last one changed in place: a consumer may keep what it read
+      // (a System block keeps the Texture Mask and Translation Pivot it reads when built).
+      const loop = this.loopValue ??= { frame: Number.NaN, value: null };
+      if (loop.frame !== frame) {
+        loop.value = snapshot(this.input.getConnectedValue(current));
+        loop.frame = frame;
+      }
+      return loop.value;
     };
     if (this.output.isConnected) this.output._storedFunction = read;
     else this.output._storedValue = read(state);

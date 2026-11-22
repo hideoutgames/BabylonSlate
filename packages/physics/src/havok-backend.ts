@@ -69,6 +69,11 @@ function needsOverlapProxy(desc: ColliderDesc): boolean {
   return !desc.isTrigger && (desc.overlapMask ?? 0) !== 0;
 }
 
+/** The longest native step: a longer `dt` (a hitch, or a large time dilation) simulates only this much, as Babylon's physics engine did. */
+const MAX_STEP_SECONDS = 0.1;
+/** The ideal step time a new world starts with. */
+const INITIAL_IDEAL_STEP_SECONDS = 1 / 60;
+
 function havokMotionType(havok: HavokPhysicsWithBindings, motion: MotionType): HavokMotionType {
   switch (motion) {
     case "static":
@@ -96,13 +101,13 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   /** Each actor's live bodies, so `setContactReporting` reaches them without scanning every body. */
   private readonly bodiesByActor = new Map<string, Set<BodyRecord>>();
   private bodySeq = 0;
-  /** Bodies with a `mutationFailure`, so `flushMutations` scans `bodies` only when one exists. */
+  /** Bodies with a `mutationFailure`, so `assertUsable` scans `bodies` only when one exists. */
   private readonly failedBodies = new Set<BodyRecord>();
   private readonly colliders = new Map<string, ColliderRecord>();
   private readonly collidersByOwner = new Map<string, Set<ColliderRecord>>();
   private readonly triggerColliders = new Set<ColliderRecord>();
   private readonly constraints = new Map<string, { desc: ConstraintDesc; jointId: HP_ConstraintId }>();
-  private readonly bodyIdByHpId = new Map<bigint, string>();
+  private readonly bodyIdByHpId = new Map<number, string>();
   /** A kinematic target normalized in place before writing to Havok. */
   private readonly targetPose: PhysicsTransform = {
     position: { x: 0, y: 0, z: 0 },
@@ -115,14 +120,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   /** Cached Float32Array view over `havok.HEAPU8.buffer` (recreated only if WASM memory grows). */
   private heapFloat32: Float32Array | null = null;
   private disposed = false;
-  private stepping = false;
-  private pendingMutations: Array<() => void> = [];
   private colliderSeq = 0;
+  /** The ideal step time last given to Havok; every step's length becomes the ideal before the step runs. */
+  private idealStepTime = INITIAL_IDEAL_STEP_SECONDS;
   private readonly queries: HavokQueries;
   private readonly contacts: HavokContacts;
   private readonly characterControllers: HavokCharacters;
-  /** Optional hook invoked during native collision draining (used by tests to verify callback-deferred mutations). */
-  onStepCollision?: () => void;
 
   private constructor(havok: HavokPhysicsWithBindings, worldId: HP_WorldId) {
     this.havok = havok;
@@ -135,13 +138,14 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       collidersByOwner: this.collidersByOwner,
       triggerColliders: this.triggerColliders,
       isDisposed: () => this.disposed,
-      flushMutations: () => this.flushMutations(),
+      assertUsable: () => this.assertUsable(),
     });
     this.characterControllers = new HavokCharacters({
       havok,
       worldId,
       bodies: this.bodies,
-      flushMutations: () => this.flushMutations(),
+      bodyIdByHpId: this.bodyIdByHpId,
+      assertUsable: () => this.assertUsable(),
       failMutation: (record, failure) => this.failMutation(record, failure),
       setBodyPoseBeforeStep: (record) => this.setBodyPoseBeforeStep(record),
       getBodyTransform: (bodyId) => this.getBodyTransform(bodyId),
@@ -167,7 +171,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     const worldId = checkedValue(havok, havok.HP_World_Create(), "world creation");
     try {
       checked(havok, havok.HP_World_SetGravity(worldId, toHavokVec3(options.gravity)), "world gravity");
-      checked(havok, havok.HP_World_SetIdealStepTime(worldId, 1 / 60), "world ideal step time");
+      checked(havok, havok.HP_World_SetIdealStepTime(worldId, INITIAL_IDEAL_STEP_SECONDS), "world ideal step time");
       return new HavokPhysicsBackend(havok, worldId);
     } catch (error) {
       havok.HP_World_Release(worldId);
@@ -193,13 +197,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   dispose(): void {
     if (this.disposed) return;
-    if (this.stepping) {
-      this.pendingMutations.push(() => this.dispose());
-      return;
-    }
     this.disposed = true;
     this.queries.dispose();
-    this.contacts.dispose();
     this.characterControllers.dispose();
     for (const record of this.constraints.values()) {
       disposeHavokConstraint(this.havok, record.jointId);
@@ -216,7 +215,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     this.triggerColliders.clear();
     this.failedBodies.clear();
     this.bodyIdByHpId.clear();
-    this.pendingMutations = [];
     this.contacts.clear();
     this.havok.HP_World_Release(this.worldId);
   }
@@ -228,8 +226,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   createBody(desc: RigidBodyDesc): void {
     this.assertLive();
-    if (this.stepping)
-      throw new Error("Cannot create a physics body during native stepping");
     if (this.bodies.has(desc.id))
       throw new Error(`Physics body already exists: ${desc.id}`);
     const transform = normalizedPhysicsPose(desc.transform);
@@ -283,7 +279,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       this.contacts.applyEventMask(record);
       this.bodies.set(desc.id, record);
       if (desc.motionType !== "static") this.activeMotionBodies.add(record);
-      this.bodyIdByHpId.set(hpBodyId[0], desc.id);
+      this.bodyIdByHpId.set(Number(hpBodyId[0]), desc.id);
       let owned = this.bodiesByActor.get(desc.actorId);
       if (!owned) this.bodiesByActor.set(desc.actorId, (owned = new Set()));
       owned.add(record);
@@ -295,10 +291,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   destroyBody(bodyId: string): void {
-    if (this.stepping) {
-      this.pendingMutations.push(() => this.destroyBody(bodyId));
-      return;
-    }
     const record = this.bodies.get(bodyId);
     if (!record) return;
     for (const [id, constraint] of this.constraints) {
@@ -319,10 +311,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   setContactReporting(actorId: string, enabled: boolean): void {
-    if (this.stepping) {
-      this.pendingMutations.push(() => this.setContactReporting(actorId, enabled));
-      return;
-    }
     for (const record of this.bodiesByActor.get(actorId) ?? []) {
       this.contacts.requestReporting(record, enabled);
     }
@@ -330,7 +318,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   createConstraint(input: ConstraintDesc): void {
     this.assertLive();
-    if (this.stepping) throw new Error("Cannot create a constraint during native stepping");
     const desc = copyConstraintDesc(input, this.kind);
     const a = this.bodies.get(desc.bodyAId);
     const b = this.bodies.get(desc.bodyBId);
@@ -346,10 +333,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   destroyConstraint(id: string): void {
-    if (this.stepping) {
-      this.pendingMutations.push(() => this.destroyConstraint(id));
-      return;
-    }
     const record = this.constraints.get(id);
     if (!record) return;
     disposeHavokConstraint(this.havok, record.jointId);
@@ -367,10 +350,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   ): void {
     const pose = normalizedPhysicsPose(transform);
     const velocity = options.velocity;
-    if (this.stepping) {
-      this.pendingMutations.push(() => this.teleportBody(bodyId, pose, { velocity }));
-      return;
-    }
     const record = this.bodies.get(bodyId);
     if (!record) return;
     this.assertHealthy(record);
@@ -441,11 +420,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   setBodyTargetTransform(bodyId: string, transform: PhysicsTransform): void {
-    if (this.stepping) {
-      const pose = normalizedPhysicsPose(transform);
-      this.pendingMutations.push(() => this.setBodyTargetTransform(bodyId, pose));
-      return;
-    }
     const { position, rotation } = normalizePhysicsPoseInto(transform, this.targetPose);
     const record = this.bodies.get(bodyId);
     if (!record) return;
@@ -516,11 +490,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   setBodyAngularVelocity(bodyId: string, velocity: Vec3): void {
     if (![velocity.x, velocity.y, velocity.z].every(Number.isFinite)) {
       throw new Error("Angular velocity must be finite");
-    }
-    if (this.stepping) {
-      const owned = { ...velocity };
-      this.pendingMutations.push(() => this.setBodyAngularVelocity(bodyId, owned));
-      return;
     }
     const record = this.bodies.get(bodyId);
     if (!record || record.desc.motionType !== "dynamic") return;
@@ -666,10 +635,6 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       throw new Error("Duplicate collider ID in transaction");
     }
     const remove = [...changes.remove];
-    if (this.stepping) {
-      this.pendingMutations.push(() => this.applyColliderChanges(bodyId, { upsert, remove }));
-      return;
-    }
     const record = this.bodies.get(bodyId);
     if (!record) return;
     this.assertHealthy(record);
@@ -845,21 +810,24 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   step(dt: number): void {
-    this.flushMutations();
+    this.assertUsable();
     if (dt <= 0) return;
-    this.stepping = true;
+    const stepTime = Math.min(dt, MAX_STEP_SECONDS);
+    // Havok tunes its solver to the ideal step time, so a step of another length (time dilation) must announce it.
+    if (stepTime !== this.idealStepTime) {
+      checked(this.havok, this.havok.HP_World_SetIdealStepTime(this.worldId, stepTime), "world ideal step time");
+      this.idealStepTime = stepTime;
+    }
+    // No caller code runs until `step` returns, so no mutation interleaves with the native step.
     try {
-      checked(this.havok, this.havok.HP_World_Step(this.worldId, dt), "world step");
+      checked(this.havok, this.havok.HP_World_Step(this.worldId, stepTime), "world step");
       this.syncSteppedBodyTransforms();
-      this.contacts.drainNativeEvents(this.onStepCollision);
+      this.contacts.drainNativeEvents();
     } finally {
-      this.stepping = false;
       this.contacts.nativeStepEnded();
     }
-    // Before queued callback mutations, whose teleports await the next step.
     this.contacts.endUnconfirmedTriggerPairs();
     this.contacts.applyPendingReporting();
-    this.flushMutations();
   }
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
@@ -1073,7 +1041,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   }
 
   private disposeBodyRecord(record: BodyRecord): void {
-    this.bodyIdByHpId.delete(record.hpBodyId[0]);
+    this.bodyIdByHpId.delete(Number(record.hpBodyId[0]));
     if (record.inWorld) {
       this.havok.HP_World_RemoveBody(this.worldId, record.hpBodyId);
       record.inWorld = false;
@@ -1111,15 +1079,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     return failure;
   }
 
-  private flushMutations(): void {
+  /** Throws when the backend is disposed or a failed rollback left a body unusable. */
+  private assertUsable(): void {
     this.assertLive();
-    if (this.stepping && this.pendingMutations.length) {
-      throw new Error("Queued physics mutations cannot be queried from native callbacks");
-    }
-    if (this.stepping) return;
-    while (this.pendingMutations.length && !this.disposed) {
-      this.pendingMutations.shift()!();
-    }
     if (this.failedBodies.size > 0) {
       for (const record of this.bodies.values()) this.assertHealthy(record);
     }

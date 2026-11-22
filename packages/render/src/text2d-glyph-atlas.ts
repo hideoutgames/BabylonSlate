@@ -1,7 +1,11 @@
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Scene } from "@babylonjs/core/scene";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { ThinEngine } from "@babylonjs/core/Engines/thinEngine";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { glyphCellIdentity, type BitmapGlyphCell } from "./text2d-bitmap";
+import { noteLayerUpload } from "./layer-frame-stats";
 
 /**
  * The bitmap glyphs of every 2D Text in a Scene, on shared atlas pages. A text of its own atlas texture could never
@@ -43,17 +47,20 @@ class Page implements GlyphAtlasPage {
   readonly pixels: Uint8Array;
   readonly texture: RawTexture;
   readonly entries = new Set<Entry>();
-  /** Pixels written since the last upload. */
-  dirty = false;
+  /** The rows written since the last upload, [dirtyFrom, dirtyTo); empty when dirtyTo <= dirtyFrom. */
+  private dirtyFrom = 0;
+  private dirtyTo = 0;
   private readonly free: Slot[] = [];
   private x = 1;
   private y = 1;
   private rowHeight = 0;
+  private readonly scene: Scene;
 
   constructor(id: number, width: number, height: number, scene: Scene, nearest: boolean) {
     this.id = id;
     this.width = width;
     this.height = height;
+    this.scene = scene;
     this.pixels = new Uint8Array(width * height * 4);
     this.texture = RawTexture.CreateRGBATexture(
       this.pixels, width, height, scene, false, true,
@@ -99,7 +106,7 @@ class Page implements GlyphAtlasPage {
       const source = row * cell.width * 4;
       pixels.set(cell.pixels.subarray(source, source + cell.width * 4), ((slot.y + row) * width + slot.x) * 4);
     }
-    this.dirty = true;
+    this.markDirty(slot.y, slot.y + slot.height);
     const entry: Entry = {
       identity, slot, page: this, references: 0,
       glyph: {
@@ -116,16 +123,53 @@ class Page implements GlyphAtlasPage {
     return entry;
   }
 
-  /** Gives a cell no text holds back to the page. Its pixels stay until the slot is written again. */
+  /**
+   * Gives a cell no text holds back to the page. Its pixels stay until the slot is written again, unless it was the
+   * page's last cell: an empty page clears what its shelves covered and starts them again from its origin, so the
+   * gaps between new cells are as transparent as on a new page.
+   */
   remove(entry: Entry): void {
     this.entries.delete(entry);
-    this.free.push(entry.slot);
+    if (this.entries.size > 0) {
+      this.free.push(entry.slot);
+      return;
+    }
+    this.free.length = 0;
+    const used = Math.min(this.height, this.y + this.rowHeight + 1);
+    this.pixels.fill(0, 0, used * this.width * 4);
+    this.markDirty(0, used);
+    this.x = 1;
+    this.y = 1;
+    this.rowHeight = 0;
   }
 
+  private markDirty(from: number, to: number): void {
+    if (this.dirtyTo <= this.dirtyFrom) {
+      this.dirtyFrom = from;
+      this.dirtyTo = to;
+      return;
+    }
+    this.dirtyFrom = Math.min(this.dirtyFrom, from);
+    this.dirtyTo = Math.max(this.dirtyTo, to);
+  }
+
+  /**
+   * Uploads the rows written since the last upload as one full-width band: a band of a page's rows is contiguous in
+   * `pixels`, so it goes up as a view, without copying or a row length. The texture was created from `pixels` (which
+   * the Engine keeps for a lost context), so the rows outside the band already hold the same values. The page is
+   * stored top row first and uploaded flipped (`invertY`), so the band's rows land `height - dirtyTo` from the
+   * texture's first row, as a whole-page upload would put them.
+   */
   upload(): void {
-    if (!this.dirty) return;
-    this.dirty = false;
-    this.texture.update(this.pixels);
+    const from = this.dirtyFrom, to = this.dirtyTo;
+    if (to <= from) return;
+    this.dirtyFrom = this.dirtyTo = 0;
+    const engine = this.scene.getEngine() as AbstractEngine & Partial<Pick<ThinEngine, "updateTextureData">>;
+    const internal = this.texture.getInternalTexture();
+    // A NullEngine has no GL context to update a region of; its whole-texture update keeps only the data.
+    if (!internal || !engine.updateTextureData || engine instanceof NullEngine) this.texture.update(this.pixels);
+    else engine.updateTextureData(internal, this.pixels.subarray(from * this.width * 4, to * this.width * 4), 0, this.height - to, this.width, to - from);
+    noteLayerUpload();
   }
 }
 
@@ -235,11 +279,9 @@ export function sceneGlyphAtlas(scene: Scene, nearest: boolean): SceneGlyphAtlas
     const created: { nearest?: SceneGlyphAtlas; bilinear?: SceneGlyphAtlas } = owned = {};
     atlases.set(scene, created);
     // A frame draws what the texts built since the last one hold. First of the Scene's before-render work: a render
-    // target capture draws the Scene from there.
-    const upload = scene.onBeforeRenderObservable.add(() => {
-      created.nearest?.upload();
-      created.bilinear?.upload();
-    }, undefined, true);
+    // target capture draws the Scene from there. A Play layer's pages are uploaded before the world draws
+    // (`uploadSceneGlyphPages`); this one then finds nothing written since.
+    const upload = scene.onBeforeRenderObservable.add(() => uploadSceneGlyphPages(scene), undefined, true);
     scene.onDisposeObservable.addOnce(() => {
       scene.onBeforeRenderObservable.remove(upload);
       created.nearest?.dispose();
@@ -249,4 +291,15 @@ export function sceneGlyphAtlas(scene: Scene, nearest: boolean): SceneGlyphAtlas
   }
   const key = nearest ? "nearest" : "bilinear";
   return owned[key] ??= new SceneGlyphAtlas(scene, nearest);
+}
+
+/**
+ * Uploads the glyph pages of `scene` written since their last upload: what the Scene's before-render work does, called
+ * early by a Scene Layer's work before the world draws (`SceneLayerCompositor.beforeWorld`), so no upload falls inside
+ * the backbuffer's pass. A page holds the same pixels whenever it is uploaded before the Scene's draws.
+ */
+export function uploadSceneGlyphPages(scene: Scene): void {
+  const owned = atlases.get(scene);
+  owned?.nearest?.upload();
+  owned?.bilinear?.upload();
 }

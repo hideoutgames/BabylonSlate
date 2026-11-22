@@ -25,6 +25,7 @@ import { createPrimitiveMesh } from "./scene-loader";
 import { applySceneEnvironment } from "./scene-illumination";
 import { createDefaultScene } from "@haptic/core";
 import { isUnlitMaterial } from "./unlit-material";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
   [];
@@ -163,7 +164,8 @@ describe("engine default material", () => {
     const scene = rawScene();
     const material = installEngineDefaultMaterial(scene) as NodeMaterial;
     material.freeze();
-    const emission = () => material.getInputBlocks().find((block) => block.name === "emission")?.value;
+    const emissionBlock = nodeBlockName(engineDefaultMaterialDocument(), "emission");
+    const emission = () => material.getInputBlocks().find((block) => block.name === emissionBlock)?.value;
     applySceneEnvironment(scene, createDefaultScene("2d"));
     expect(emission()).toBe(1);
     expect(material.isFrozen).toBe(true);

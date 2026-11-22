@@ -12,6 +12,7 @@ import type { Nullable } from "@babylonjs/core/types";
 import { createEngineDrawingState, restoreEngineDrawingState, saveEngineDrawingState } from "./engine-drawing-state";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { renderTargetAllocationBytes } from "./render-target-resource-cost";
+import { noteLayerUpload } from "./layer-frame-stats";
 
 /**
  * A Scene's small layer images on one shared page, so a batch can draw visuals that differ in image alone
@@ -329,8 +330,12 @@ export class LayerImageAtlas {
     }
   }
 
-  /** Copies the images asked for since the last frame into their cells; those whose texture is not ready wait. */
-  private flush(): void {
+  /**
+   * Copies the images asked for since the last frame into their cells; those whose texture is not ready wait. The
+   * Scene's before-render work runs it, and a Play layer's work before the world draws runs it first
+   * (`flushSceneImagePages`), so its framebuffer changes fall outside the backbuffer's pass.
+   */
+  flush(): void {
     const pending = this.pending;
     if (!pending.length) return;
     const effect = this.effect!, renderer = this.renderer!, target = this.target!, engine = this.engine;
@@ -363,6 +368,7 @@ export class LayerImageAtlas {
         effect.effect.setTexture("atlasSource", image.texture);
         effect.effect.setFloat4("atlasCell", cell.x, cell.y, 0, 0);
         renderer.draw();
+        noteLayerUpload();
         image.drawn = true;
         this.revision += 1;
       }

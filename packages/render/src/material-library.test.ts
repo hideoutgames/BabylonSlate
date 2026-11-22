@@ -17,7 +17,6 @@ import {
   type MaterialFunctionDocument,
 } from "@haptic/shader-graph";
 import { MaterialLibrary } from "./material-library";
-import { MATERIAL_PLAN_CACHE_ENTRIES, resetMaterialPlanCacheForTests } from "./material-plan-cache";
 import { acquireAuthoredMaterialVariant, MaterialCompileStalled, waterVariantBase } from "./material-compiler";
 import { createWaterMesh } from "./water-mesh";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@haptic/core";
@@ -26,12 +25,9 @@ import { invalidateShadowReceiverHandoffs } from "./shadow-receiver-handoff";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { acquireMaterialTexture, materialTextureSampling, ResourceCache, type ResourceLease } from "./resource-cache";
 import { setTestTextureBudget } from "./test-support/resource-cache-budget";
-
-// The real lowering, observed: the shared plan cache must call it once per distinct content.
-vi.mock("@haptic/shader-graph", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@haptic/shader-graph")>();
-  return { ...actual, lowerMaterialDocument: vi.fn(actual.lowerMaterialDocument) };
-});
+import { applyUserInterfaceFallback } from "./overlay-texture-quad";
+import { isUnlitMaterial } from "./unlit-material";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 const disposers: Array<() => void> = [];
 
@@ -129,7 +125,7 @@ describe("material library", () => {
     initial.finish();
     expect(await acquired.ready).toEqual([]);
     expect(f.library.isReady(f.scene, "material", textureDocument("first"))).toBe(true);
-    expect((acquired.material.getBlockByName("sample") as TextureBlock).texture).toBe(f.leases.get("next")!.resource);
+    expect((acquired.material.getBlockByName(nodeBlockName(textureDocument("tex"), "sample")) as TextureBlock).texture).toBe(f.leases.get("next")!.resource);
     expect(f.onTextureError).not.toHaveBeenCalled();
   });
 
@@ -148,7 +144,7 @@ describe("material library", () => {
     expect(await acquired.ready).toEqual([]);
     expect(f.library.materialFor(f.scene, "material")).toBe(acquired.material);
     expect(f.scene.materials).toContain(acquired.material);
-    expect((acquired.material.getBlockByName("sample") as TextureBlock).texture).toBe(f.leases.get("winner")!.resource);
+    expect((acquired.material.getBlockByName(nodeBlockName(textureDocument("tex"), "sample")) as TextureBlock).texture).toBe(f.leases.get("winner")!.resource);
     expect(f.onTextureError).not.toHaveBeenCalled();
   });
 
@@ -158,7 +154,7 @@ describe("material library", () => {
     const material = f.library.acquire(f.scene, "material", textureDocument("first"));
     if (!material.ok) throw new Error("Material did not compile");
     await material.ready;
-    const sample = material.material.getBlockByName("sample") as TextureBlock;
+    const sample = material.material.getBlockByName(nodeBlockName(textureDocument("tex"), "sample")) as TextureBlock;
     const working = sample.texture;
     f.sources.set("next", deferred.source);
     setTestTextureBudget(f.cache, f.cache.accountedBytes() + 1);
@@ -184,7 +180,7 @@ describe("material library", () => {
     const material = f.library.acquire(f.scene, "material", textureDocument("first"));
     if (!material.ok) throw new Error("Material did not compile");
     await material.ready;
-    const sample = material.material.getBlockByName("sample") as TextureBlock;
+    const sample = material.material.getBlockByName(nodeBlockName(textureDocument("tex"), "sample")) as TextureBlock;
     f.sources.set("next", new Uint8Array([4, 5, 6]));
     expect(f.library.setParameter(f.scene, "material", "Albedo", { kind: "texture", textureAssetGuid: "next" })).toBe(true);
     await f.leases.get("next")!.ready;
@@ -211,7 +207,7 @@ describe("material library", () => {
     const material = f.library.acquire(f.scene, "material", textureDocument("first"));
     if (!material.ok) throw new Error("Material did not compile");
     await material.ready;
-    const sample = material.material.getBlockByName("sample") as TextureBlock;
+    const sample = material.material.getBlockByName(nodeBlockName(textureDocument("tex"), "sample")) as TextureBlock;
     f.sources.set("obsolete", deferred.source);
     f.sources.set("winner", new Uint8Array([8, 9, 10]));
     f.library.setParameter(f.scene, "material", "Albedo", { kind: "texture", textureAssetGuid: "obsolete" });
@@ -627,6 +623,25 @@ describe("material library", () => {
     expect(mesh.material).toBe(next.material);
   });
 
+  it("gives a 2D component its fallback look when its Material is edited out of the User Interface domain", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "material", createDefaultMaterialDocument("Widget", "ui"));
+    if (!first.ok) throw new Error("Expected a compiled material");
+    await first.ready;
+    const component = MeshBuilder.CreatePlane("2d-material", {}, scene);
+    applyUserInterfaceFallback(component);
+    component.material = first.material;
+    const other = MeshBuilder.CreatePlane("other", {}, scene);
+    other.material = first.material;
+    const next = library.acquire(scene, "material", createDefaultMaterialDocument("Widget"));
+    if (!next.ok) throw new Error("Expected the replacement material");
+    expect(await next.ready).toEqual([]);
+    expect(isUnlitMaterial(component.material)).toBe(true);
+    expect(other.material).toBe(next.material);
+  });
+
   it("retains the displayed material while dependencies are marked dirty", async () => {
     const scene = host();
     const library = new MaterialLibrary();
@@ -831,7 +846,7 @@ describe("material library", () => {
     expect(second.material).not.toBe(first.material);
   });
 
-  it("recompiles a material document that was edited in place", () => {
+  it("recompiles a material document its host replaced with an edited one", () => {
     const scene = host();
     const library = new MaterialLibrary();
     disposers.push(() => library.dispose());
@@ -840,17 +855,20 @@ describe("material library", () => {
     const first = library.acquire(scene, "mat-1", doc);
     if (!first.ok) throw new Error("Expected a compiled material");
     expect(library.isCompiled(scene, "mat-1", doc)).toBe(true);
-    doc.edges = [
+    const edited: MaterialDocument = { ...doc, edges: [
       ...doc.edges.filter((edge) => !(edge.targetNodeId === "output" && edge.targetPinId === "baseColor")),
       { id: "e-tint-out", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
-    ];
-    expect(library.isCompiled(scene, "mat-1", doc)).toBe(false);
-    const second = library.acquire(scene, "mat-1", doc);
+    ] };
+    const plan = library.planFor(edited);
+    expect(plan.ok && first.ok && plan.plan.hash !== first.plan.hash).toBe(true);
+    expect(library.isCompiled(scene, "mat-1", edited)).toBe(false);
+    const second = library.acquire(scene, "mat-1", edited);
     if (!second.ok) throw new Error("Expected a compiled material");
     expect(second.material).not.toBe(first.material);
+    expect(second.plan).toBe(plan.ok && plan.plan);
   });
 
-  it("resolves the last published generation while an in-place edit recompiles", async () => {
+  it("resolves the last published generation while an edit recompiles", async () => {
     const scene = host();
     const library = new MaterialLibrary();
     disposers.push(() => library.dispose());
@@ -864,20 +882,20 @@ describe("material library", () => {
     await acquired.ready;
     expect(library.resolve(scene, "mat-1", doc)).toBe(pending);
     expect(library.isReady(scene, "mat-1", doc)).toBe(true);
-    doc.edges = [
+    const edited: MaterialDocument = { ...doc, edges: [
       ...doc.edges.filter((edge) => !(edge.targetNodeId === "output" && edge.targetPinId === "baseColor")),
       { id: "e-tint-out", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
-    ];
+    ] };
     // The edit recompiles; the last published generation stays bound but is no longer ready.
-    expect(library.resolve(scene, "mat-1", doc)).toBe(pending);
-    expect(library.isReady(scene, "mat-1", doc)).toBe(false);
-    const replacement = library.acquire(scene, "mat-1", doc);
+    expect(library.resolve(scene, "mat-1", edited)).toBe(pending);
+    expect(library.isReady(scene, "mat-1", edited)).toBe(false);
+    const replacement = library.acquire(scene, "mat-1", edited);
     if (!replacement.ok) throw new Error("Expected the edited material to compile");
     await replacement.ready;
-    const settled = library.resolve(scene, "mat-1", doc);
+    const settled = library.resolve(scene, "mat-1", edited);
     expect(settled).toBe(replacement.material);
     expect(settled).not.toBe(pending);
-    expect(library.isReady(scene, "mat-1", doc)).toBe(true);
+    expect(library.isReady(scene, "mat-1", edited)).toBe(true);
     expect(library.resolve(scene, "missing", { ...doc, nodes: [], edges: [] })).toBeNull();
   });
 
@@ -898,6 +916,34 @@ describe("material library", () => {
     expect(child.material.buildId).toBe(parent.material.buildId);
     expect(library.getParameter(scene, "inst", "Tint")).toEqual({ kind: "color", value: [1, 0, 0, 1] });
     expect(library.getParameter(scene, "root", "Tint")).toEqual({ kind: "color", value: [1, 1, 1, 1] });
+  });
+
+  it("draws two Material assets of one graph with one GPU program, each with its own values", async () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const asset = (ids: string, tint: number[]) => {
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push({ id: `${ids}tint`, type: "param.color", position: { x: 0, y: 0 }, properties: { name: "Tint", value: tint } });
+      doc.nodes = doc.nodes.map((node) => node.type === "output.surface" ? { ...node, id: `${ids}output` } : node);
+      doc.edges = [{ id: "tint-base", sourceNodeId: `${ids}tint`, sourcePinId: "rgb", targetNodeId: `${ids}output`, targetPinId: "baseColor" }];
+      return doc;
+    };
+    const [brick, moss] = [library.acquire(scene, "brick", asset("", [0.6, 0.2, 0.1, 1])), library.acquire(scene, "moss", asset("imported_", [0.1, 0.5, 0.2, 1]))];
+    if (!brick.ok || !moss.ok) throw new Error("acquire failed");
+    expect([await brick.ready, await moss.ready]).toEqual([[], []]);
+    expect([brick.material.name, moss.material.name]).toEqual(["material:brick", "material:moss"]);
+    expect(moss.material.buildId).toBe(brick.material.buildId);
+    const meshes = [brick, moss].map((acquired, index) => {
+      const mesh = MeshBuilder.CreateBox(`wall-${index}`, {}, scene);
+      mesh.material = acquired.material;
+      return mesh;
+    });
+    await brick.material.forceCompilationAsync(meshes[0]!);
+    await moss.material.forceCompilationAsync(meshes[1]!);
+    expect(meshes[1]!.subMeshes[0]!.effect).toBe(meshes[0]!.subMeshes[0]!.effect);
+    expect(library.getParameter(scene, "moss", "Tint")).toEqual({ kind: "color", value: [0.1, 0.5, 0.2, 1] });
+    expect(library.getParameter(scene, "brick", "Tint")).toEqual({ kind: "color", value: [0.6, 0.2, 0.1, 1] });
   });
 
   it("never shares one material instance across two scenes", () => {
@@ -1037,7 +1083,7 @@ describe("material library", () => {
     const sampled = (guid: string, doc: MaterialDocument) => {
       const result = library.acquire(scene, guid, doc);
       if (!result.ok) throw new Error(result.diagnostics[0]?.message);
-      return (result.material.getBlockByName("sample") as TextureBlock).texture!;
+      return (result.material.getBlockByName(nodeBlockName(doc, "sample")) as TextureBlock).texture!;
     };
     const [pixel, smooth] = [sampled("pixel", nearest), sampled("smooth", linear)];
     expect([pixel.samplingMode, pixel.noMipmap]).toEqual([Texture.NEAREST_SAMPLINGMODE, true]);
@@ -1153,10 +1199,7 @@ describe("material library", () => {
   });
 });
 
-describe("shared material plan cache", () => {
-  const lowerings = (name: string) =>
-    vi.mocked(lowerMaterialDocument).mock.calls.filter(([doc]) => doc.name === name).length;
-
+describe("shared material plans", () => {
   /** A Material named `name` whose Base Color goes through Material Function `tint`, with a colour parameter. */
   function callingDocument(name: string, value = 1): MaterialDocument {
     const doc = createDefaultMaterialDocument(name);
@@ -1187,62 +1230,35 @@ describe("shared material plan cache", () => {
     return library;
   }
 
-  it("lowers equal content once across libraries, documents and functions records", () => {
+  it("shares one lowering of equal content across libraries, documents and functions records", () => {
     const editor = libraryWith(() => ({ tint: createDefaultMaterialFunctionDocument("Tint") }));
     const play = libraryWith(() => ({ tint: createDefaultMaterialFunctionDocument("Tint") }));
     const first = editor.planFor(callingDocument("shared-equal"));
-    const second = play.planFor(callingDocument("shared-equal"));
-    expect(lowerings("shared-equal")).toBe(1);
-    expect(second).toBe(first);
     expect(first.ok).toBe(true);
+    expect(play.planFor(callingDocument("shared-equal"))).toBe(first);
   });
 
-  it("lowers again when the document, the shading variant or a function it calls changes", () => {
-    let functions: Record<string, MaterialFunctionDocument> = { tint: createDefaultMaterialFunctionDocument("Tint") };
-    const library = libraryWith(() => functions);
-    const lit = library.planFor(callingDocument("shared-miss"));
-    expect(lowerings("shared-miss")).toBe(1);
-
-    const edited = libraryWith(() => functions).planFor(callingDocument("shared-miss", 0.5));
-    expect(lowerings("shared-miss")).toBe(2);
-    expect(edited.ok && lit.ok && edited.plan.hash !== lit.plan.hash).toBe(true);
-
-    const unlit = libraryWith(() => functions).planFor(callingDocument("shared-miss"), true);
-    expect(lowerings("shared-miss")).toBe(3);
-    expect(unlit.ok && unlit.plan.shadingModel).toBe("unlit");
-
-    // A function the document does not call is not part of its key.
-    functions = { ...functions, unused: boostedTint() };
-    expect(libraryWith(() => functions).planFor(callingDocument("shared-miss"))).toBe(lit);
-    expect(lowerings("shared-miss")).toBe(3);
-
-    functions = { ...functions, tint: boostedTint() };
-    const boosted = libraryWith(() => functions).planFor(callingDocument("shared-miss"));
-    expect(lowerings("shared-miss")).toBe(4);
-    expect(boosted.ok && boosted.plan.operations.map((operation) => operation.nodeType)).toContain("math.multiply");
-  });
-
-  it("keeps the least recently used plans up to its bound", () => {
-    resetMaterialPlanCacheForTests();
-    const library = libraryWith(() => ({}));
-    const plan = (name: string) => library.planFor(createDefaultMaterialDocument(name));
-    plan("lru-kept");
-    plan("lru-evicted");
-    for (let index = 2; index < MATERIAL_PLAN_CACHE_ENTRIES; index++) plan(`lru-filler-${index}`);
-    // A fresh library and document: only the shared cache can answer.
-    const fresh = libraryWith(() => ({}));
-    fresh.planFor(createDefaultMaterialDocument("lru-kept"));
-    plan("lru-overflow");
-    fresh.planFor(createDefaultMaterialDocument("lru-kept"));
-    fresh.planFor(createDefaultMaterialDocument("lru-evicted"));
-    expect(lowerings("lru-kept")).toBe(1);
-    expect(lowerings("lru-evicted")).toBe(2);
+  it("looks up an unchanged document without serializing it, though its host builds a new functions record each time", () => {
+    const tint = boostedTint();
+    const library = libraryWith(() => ({ tint }));
+    const doc = callingDocument("shared-steady");
+    const first = library.planFor(doc);
+    const stringify = vi.spyOn(JSON, "stringify");
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      expect(library.planFor(doc)).toBe(first);
+      expect(library.planFor(doc)).toBe(first);
+      expect(stringify).not.toHaveBeenCalled();
+      expect(parse).not.toHaveBeenCalled();
+    } finally {
+      stringify.mockRestore();
+      parse.mockRestore();
+    }
   });
 
   it("reports a failed lowering's diagnostics to every library that shares it", () => {
     const first = libraryWith(() => ({})).acquire(host(), "missing", callingDocument("shared-failure"));
     const second = libraryWith(() => ({})).acquire(host(), "missing", callingDocument("shared-failure"));
-    expect(lowerings("shared-failure")).toBe(1);
     for (const result of [first, second]) {
       expect(result).toEqual({ ok: false, diagnostics: expect.arrayContaining([
         expect.objectContaining({ code: "material.function.missing", nodeId: "call" }),
@@ -1250,18 +1266,14 @@ describe("shared material plan cache", () => {
     }
   });
 
-  it("hands out plans that building materials and editing documents in place leave unchanged", async () => {
+  it("hands out plans that building materials leaves unchanged", async () => {
     const functions = { tint: boostedTint() };
     const pristine = lowerMaterialDocument(callingDocument("shared-pristine"), { functions: { tint: boostedTint() } });
-    const editorDoc = callingDocument("shared-pristine");
-    const editor = libraryWith(() => functions).acquire(host(), "material", editorDoc);
+    const editor = libraryWith(() => functions).acquire(host(), "material", callingDocument("shared-pristine"));
     const play = libraryWith(() => functions).acquire(host(), "material", callingDocument("shared-pristine"));
     if (!editor.ok || !play.ok) throw new Error("Expected compiled materials");
     expect(play.plan).toBe(editor.plan);
     await Promise.all([editor.ready, play.ready]);
-    // The editor edits its document in place after lowering it: the shared plan keeps the content it was keyed by.
-    (editorDoc.nodes[3]!.properties.value as number[])[0] = 0;
-    (editorDoc.nodes[3]!.properties as { name: string }).name = "Renamed";
     expect(editor.plan).toEqual(pristine.ok && pristine.plan);
   });
 });

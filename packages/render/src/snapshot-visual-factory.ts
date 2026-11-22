@@ -16,9 +16,12 @@ import {
   emptySkyboxFaces,
   parseMirrorProperties,
   parseOverlayPanelProperties,
+  type SurfaceShadingMode,
   type Text2DProperties,
   type Text3DProperties,
 } from "@haptic/core";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { ejectPlaySprite } from "./anim-apply";
 import { parseColliderProperties, type ColliderShape } from "@haptic/physics";
 import {
   applyAlbedoTexture,
@@ -27,7 +30,9 @@ import {
 import {
   createOverlayTextureQuad,
   applyOverlayUnlitMaterial,
+  applyUserInterfaceFallback,
 } from "./overlay-texture-quad";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 import { createOverlayPanelMesh } from "./overlay-panel-mesh";
 import {
   beginSlotModelAnimLoad,
@@ -102,35 +107,33 @@ export function applyPlayVisualSorting(root: Mesh, slotId: number, binding: Snap
   const primary = binding.meshSorting.get(slotId);
   const parts = binding.meshParts.get(slotId);
   const shadows = sceneShadowController(root.getScene());
+  // A batched sprite that casts shadows leaves its batch: the shadow depth pass would draw the batch's raw unit quad.
+  const sortSprite = (target: AbstractMesh, casts: boolean, receiveShadows: boolean, shadingMode: SurfaceShadingMode) => {
+    const batched = batchedSpriteOf(target);
+    if (!batched) return;
+    if (casts) ejectPlaySprite(binding, slotId, target);
+    else batched.setSorting({ receiveShadows, shadingMode });
+  };
   if (partsNeedOrigin(parts)) {
     for (const part of parts ?? []) {
       const target = root.getChildMeshes().find((mesh) => mesh.name === playComponentMeshName(slotId, part.componentId));
       if (target) {
         shadows.setParticipation(target, part);
         applyOccluderProperty(target, part.occluder);
-        batchedSpriteOf(target)?.setSorting({
-          castShadows: part.castShadows === true,
-          receiveShadows: part.receiveShadows !== false,
-          shadingMode: part.shadingMode ?? "2d",
-        });
+        sortSprite(target, part.castShadows !== false, part.receiveShadows !== false, part.shadingMode ?? "2d");
       }
     }
   } else if (parts?.[0]) {
     shadows.setParticipation(root, parts[0]);
     applyOccluderProperty(root, parts[0].occluder);
-    batchedSpriteOf(root)?.setSorting({
-      castShadows: parts[0].castShadows === true,
-      receiveShadows: parts[0].receiveShadows !== false,
-      shadingMode: parts[0].shadingMode ?? primary?.shadingMode ?? "2d",
-    });
+    sortSprite(root, parts[0].castShadows !== false, parts[0].receiveShadows !== false, parts[0].shadingMode ?? primary?.shadingMode ?? "2d");
   } else if (primary?.castShadows !== undefined) {
     // The optimized actor mesh draws its one component: an unlit visual's class default casts none.
     shadows.setParticipation(root, { castShadows: primary.castShadows, receiveShadows: primary.receiveShadows });
-    batchedSpriteOf(root)?.setSorting({
-      castShadows: primary.castShadows === true,
-      receiveShadows: primary.receiveShadows !== false,
-      shadingMode: primary.shadingMode ?? "2d",
-    });
+    sortSprite(root, primary.castShadows, primary.receiveShadows !== false, primary.shadingMode ?? "2d");
+  } else {
+    // No participation: a mesh casts by default.
+    sortSprite(root, true, true, primary?.shadingMode ?? "2d");
   }
   const layers = binding.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const actorId = primary?.actorGuid ?? `actor-${slotId}`;
@@ -365,7 +368,6 @@ export function createPlayMesh(
       const { width, height } = spriteWorldSize({ pixelsPerUnit: ppu, width: payload?.width, height: payload?.height });
       const pivot = payload?.pivot ?? { x: 0.5, y: 0.5 };
       const root = new Mesh(name, scene);
-      root.isPickable = false;
       attachBatchedSprite(root, {
         width,
         height,
@@ -374,7 +376,6 @@ export function createPlayMesh(
         textureGuid: payload?.textureGuid ?? null,
         assets: binding,
         shadingMode,
-        visible: true,
       });
       return root;
     }
@@ -426,14 +427,15 @@ export function createPlayMesh(
       return mesh;
     }
     const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
-    applyOverlayUnlitMaterial(mesh);
+    if (meshKind === "2dmaterial") applyUserInterfaceFallback(mesh);
+    else applyOverlayUnlitMaterial(mesh);
     mesh.isPickable = meshKind === "2dbutton";
     if (meshKind === "2dmaterial" && assetGuid && binding?.resolveMaterial) {
       const compiled = binding.resolveMaterial(assetGuid, {
         scene,
         unlit: true,
       });
-      if (compiled) mesh.material = compiled;
+      if (acceptsUserInterfaceMaterial(compiled)) mesh.material = compiled;
     }
     return mesh;
   }
@@ -533,7 +535,8 @@ function poolsPlayPrimitive(binding: SnapshotSceneBinding | undefined, slotId: n
 
 /**
  * Whether a Play world `SpriteComponent` draws through `WorldSpriteBatcher`: enabled on `scene`, not in a Scene Layer
- * (Scene Layers use `OverlayDrawBatcher`), and no custom Material override, deformer, or active outline.
+ * (Scene Layers use `OverlayDrawBatcher`), not casting shadows (the shadow depth pass would draw a batch's raw unit
+ * quad; a mesh casts unless told not to), and no custom Material override, deformer, or active outline.
  */
 function batchesPlaySprite(
   scene: Scene,
@@ -541,9 +544,11 @@ function batchesPlaySprite(
   slotId: number,
   componentId: string | undefined,
 ): boolean {
-  if (!sceneWorldSpriteBatching(scene)) return false;
-  if (!binding) return true;
+  if (!sceneWorldSpriteBatching(scene) || !binding) return false;
   if (binding.isOverlaySlot?.(slotId) === true) return false;
+  const parts = binding.meshParts.get(slotId);
+  const part = (componentId ? parts?.find((entry) => entry.componentId === componentId) : undefined) ?? parts?.[0];
+  if ((part ? part.castShadows : binding.meshSorting.get(slotId)?.castShadows) !== false) return false;
   if (binding.deformers.get(slotId)) return false;
   if (binding.outlines.get(slotId)?.bindings.length) return false;
   if (binding.materialAssetGuids.get(slotId)) return false;

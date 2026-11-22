@@ -139,7 +139,9 @@ describe("Text Materials", () => {
 
   it("updates editor text assignments and keeps Play glyph masks out of generic assignments", () => {
     const { scene, assets } = host();
-    const surface = new StandardMaterial("Background Surface", scene);
+    const surface = new StandardMaterial("Background", scene);
+    // A 2D Material draws only a User Interface Material.
+    surface.metadata = { materialDomain: "ui" };
     const resolveMaterial = (guid: string) => guid === "background" ? surface : assets.resolveMaterial(guid);
     const component = createText2DComponent("label");
     component.properties = { ...component.properties, materialGuid: "letters" };

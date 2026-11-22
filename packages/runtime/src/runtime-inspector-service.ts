@@ -8,6 +8,7 @@ import type {
 } from "@haptic/bridge";
 import type { MaterialParameterValue } from "@haptic/core";
 import { Actor, ActorComponent, MaterialObject, type World } from "@haptic/object-model";
+import { copyTransform } from "./actor-world-transform";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { RenderCommandEmitter } from "./render-command-emitter";
@@ -176,7 +177,7 @@ export class RuntimeInspectorService {
         return `scene:${this.host.playSceneGuid()}:${this.host.sceneRealizer().loadId}:${this.host.world().currentScene?.guid ?? ""}`;
       },
       boundary: () => ({ tickIndex: this.host.world().clock.tickIndex, frameId: this.host.frameId(),
-        commandRevision: this.host.commandRevision(), structuralRevision: this.host.world().structuralRevision }),
+        commandRevision: this.host.commandRevision(), identityRevision: this.host.world().identityRevision }),
       applyProperty: (target, key, value) => {
         const materialAssignment = target instanceof ActorComponent && key === "materialGuid";
         const priorSourcePresent = materialAssignment && target.variables.has("materialSource");
@@ -204,7 +205,8 @@ export class RuntimeInspectorService {
       },
       applyTransform: (target, transform, space) => {
         const world = this.host.world();
-        const prior = target.transform;
+        // A copy: `transform` is the live object and assigning to it copies in place.
+        const prior = copyTransform(target.transform);
         const actor = target instanceof Actor ? target : target.owner!;
         const affected = [actor];
         if (target instanceof Actor) {
@@ -227,7 +229,12 @@ export class RuntimeInspectorService {
           }
         };
         target.transform = runtimeEditLocalTransform(world, target, transform, space);
-        try { apply(); } catch (error) { target.transform = prior; apply(); throw error; }
+        try { apply(); } catch (error) {
+          target.transform = prior;
+          // Bodies follow the restored pose; the edit's own failure is the one reported.
+          try { apply(); } catch { /* the original error is rethrown below */ }
+          throw error;
+        }
         if (target instanceof ActorComponent) {
           const slotId = this.host.renderSlots().recordedSlot(actor);
           if (slotId !== undefined) this.host.renderEmitter().emitComponentTransforms(actor, slotId);

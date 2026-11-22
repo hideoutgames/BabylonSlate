@@ -55,7 +55,8 @@ A collected object runs no events. Its waiting nodes stop, and every reference t
 A reference to an object that was destroyed or collected counts as empty straight away:
 
 - [Is Valid](class/is-valid.md) returns false, and [Validated Get](class/validated-get.md) and [Cast To](class/cast-to.md) take their not-valid paths.
-- A node that acts on the object does nothing and logs an error ending `tried to access a destroyed object.`; see [Pin types](pin-types.md#empty-references).
+- A node that acts on the object does nothing and reports an error such as `Tried to access "Health" from null of type "Enemy"`, once per node; see [Pin types](pin-types.md#empty-references).
+- A destroyed actor or component, or a collected object, keeps none of its variables once its own **Event Destroyed** and **Event End** have run, so a reference you still hold keeps nothing else alive. Those events still read the object's variables as usual.
 - At the next check, variables, array entries and map values that still hold it are set to empty, and map entries whose key is that object are removed.
 
 [Save games](save-games.md) store actor and component references only: saving a variable that holds a created object fails with an error.

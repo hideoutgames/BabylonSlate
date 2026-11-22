@@ -662,12 +662,12 @@ export class ScriptDebugObserver {
     const world = this.host.world();
     const previous = this.sent;
     if (target.kind === "class") {
-      // A class never changes, so the world's structure decides whether its roster can have changed.
+      // A class never changes, so the world's structure and actor names (the labels) decide whether its roster changed.
       const subsystems = world.getGameSubsystems().length + world.getSceneSubsystems().length;
       const basis = this.basis;
-      if (basis && basis.revision === world.structuralRevision && basis.gameInstance === world.gameInstance &&
+      if (basis && basis.revision === world.identityRevision && basis.gameInstance === world.gameInstance &&
         basis.subsystems === subsystems) return;
-      this.basis = { revision: world.structuralRevision, gameInstance: world.gameInstance, subsystems };
+      this.basis = { revision: world.identityRevision, gameInstance: world.gameInstance, subsystems };
     } else if (previous && sameComponentRoster(world, target, previous)) {
       // The asset a component runs is a variable a script can set, so a component target is walked each tick
       // (only the actors owning such a component), allocating nothing while the roster holds.

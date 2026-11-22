@@ -210,7 +210,7 @@ function validateAction(action: RuntimeInspectorAction): void {
     throw error("invalid", "The runtime field identity is invalid.");
 }
 function validateResult(request: RuntimeInspectorRequest, result: RuntimeInspectorResult): void {
-  if (typeof result.success !== "boolean" || ![result.tickIndex, result.frameId, result.commandRevision, result.structuralRevision]
+  if (typeof result.success !== "boolean" || ![result.tickIndex, result.frameId, result.commandRevision, result.identityRevision]
     .every(value => Number.isSafeInteger(value) && value >= 0)) throw error("invalid", "Invalid runtime Inspector acknowledgment.");
   if (!result.success) return;
   const action = request.action, payload = result.payload;

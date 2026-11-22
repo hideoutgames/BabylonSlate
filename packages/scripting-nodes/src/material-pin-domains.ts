@@ -31,6 +31,7 @@ const DOMAIN_LABELS: Readonly<Record<string, string>> = {
   particle: "Particle",
   text: "Text",
   decal: "Decal",
+  ui: "User Interface",
 };
 
 const label = (domain: string) => DOMAIN_LABELS[domain] ?? domain;

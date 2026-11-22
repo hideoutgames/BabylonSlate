@@ -28,11 +28,14 @@ import {
   materialPinDefaultPropertyKey,
   createImportedMaterialDocument,
   newCustomGlslProperties,
+  setMaterialDomain,
   type MaterialDocument,
 } from "@haptic/shader-graph";
 import { isBoundedMaterial, isDrawBatchMaterial, isDrawBatchTextMaterial } from "./draw-batch-world-block";
-import { compileMaterialPlan, isGpuTextureSampleReady, PARTICLE_PROGRAM_CACHE_SIZE, prewarmMaterial } from "./material-compiler";
+import { acquireAuthoredMaterialVariant, compileMaterialPlan, isGpuTextureSampleReady, MATERIAL_BLOCK_PREFIX, PARTICLE_PROGRAM_CACHE_SIZE, prewarmMaterial } from "./material-compiler";
 import { fnv1a } from "@haptic/core";
+import { nodeBlockName } from "./test-support/material-node-blocks";
+import { materialProgramCensus } from "./material-program-census";
 import { blockAdapterFor } from "./material-block-registry";
 import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
 import { HapticLightingBlock } from "./haptic-lighting-block";
@@ -43,6 +46,12 @@ import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { setTestTextureBudget } from "./test-support/resource-cache-budget";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { installTimerClock, installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
+import { Constants } from "@babylonjs/core/Engines/constants";
+import { ImageProcessingBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/imageProcessingBlock";
+import { MultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/multiplyBlock";
+import { OverlayStyleBlock } from "./overlay-style-block";
+import { SceneFogBlock } from "./scene-fog-block";
+import { ColorEncodingBlock } from "./color-encoding-block";
 import { fragmentCanDiscard } from "./test-support/preprocessed-glsl";
 
 vi.mock("@haptic/core", async (importOriginal) => {
@@ -210,10 +219,10 @@ it("scales only indirect surface lighting with a live Environment Influence para
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   expect(await result.ready).toEqual([]);
   // The light block scales its environment terms by the input; its direct terms leave it out.
-  const lighting = result.material.getBlockByName("influence_lighting") as HapticLightingBlock;
-  expect(lighting.environmentInfluence.connectedPoint?.ownerBlock.name).toBe("environmentWeight");
+  const lighting = result.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_lighting`) as HapticLightingBlock;
+  expect(lighting.environmentInfluence.connectedPoint?.ownerBlock.name).toBe(nodeBlockName(doc, "environmentWeight"));
   expect(result.setParameter("Environment Weight", { kind: "float", value: 0.6 })).toBe(true);
-  expect(result.material.getBlockByName("environmentWeight")).toHaveProperty("value", 0.6);
+  expect(result.material.getBlockByName(nodeBlockName(doc, "environmentWeight"))).toHaveProperty("value", 0.6);
   result.dispose();
 });
 
@@ -225,7 +234,7 @@ it("gives the light block a Specular other than the default, constant or not", a
   const result = compileMaterialPlan(planFor(doc), { scene, name: "water" });
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   expect(await result.ready).toEqual([]);
-  const specular = (result.material.getBlockByName("water_lighting") as HapticLightingBlock).specular.connectedPoint?.ownerBlock as InputBlock;
+  const specular = (result.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_lighting`) as HapticLightingBlock).specular.connectedPoint?.ownerBlock as InputBlock;
   expect(specular.value).toBeCloseTo(0.255, 6);
   result.dispose();
 
@@ -236,14 +245,23 @@ it("gives the light block a Specular other than the default, constant or not", a
   expect(lowered.diagnostics).toEqual([]);
   const live = compileMaterialPlan(lowered.plan, { scene, name: "shiny" });
   if (!live.ok) throw new Error(JSON.stringify(live.diagnostics));
-  expect((live.material.getBlockByName("shiny_lighting") as HapticLightingBlock).specular.connectedPoint?.ownerBlock.name).toBe("shine");
+  expect((live.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_lighting`) as HapticLightingBlock).specular.connectedPoint?.ownerBlock.name).toBe(nodeBlockName(doc, "shine"));
   live.dispose();
   // The default reflectance is the block's own: no input.
   const plain = compileMaterialPlan(planFor(createDefaultMaterialDocument()), { scene, name: "plain" });
   if (!plain.ok) throw new Error(JSON.stringify(plain.diagnostics));
-  expect((plain.material.getBlockByName("plain_lighting") as HapticLightingBlock).specular.isConnected).toBe(false);
+  expect((plain.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_lighting`) as HapticLightingBlock).specular.isConnected).toBe(false);
   plain.dispose();
 });
+
+/** `doc` with every node and edge id prefixed, as another Material's (an imported one's) ids would differ. */
+function renamedNodes(doc: MaterialDocument, prefix: string): MaterialDocument {
+  if (!prefix) return doc;
+  const id = (value: string) => `${prefix}${value}`;
+  doc.nodes = doc.nodes.map((node) => ({ ...node, id: id(node.id) }));
+  doc.edges = doc.edges.map((edge) => ({ ...edge, id: id(edge.id), sourceNodeId: id(edge.sourceNodeId), targetNodeId: id(edge.targetNodeId) }));
+  return doc;
+}
 
 /** Base Color driven by a Multiply so the graph is not a bare constant. */
 function multiplyMaterial(): MaterialDocument {
@@ -393,6 +411,26 @@ describe("material compiler", () => {
     // Scene Linear: decoded once so the Display Color stage encodes them once.
     scene.imageProcessingConfiguration.applyByPostProcess = true;
     expect(await linearDecodes()).toHaveLength(1);
+  });
+
+  it("encodes a Text graph's linear colour for display once, before the display-space glyph colour multiplies it", async () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument("Letters", "text");
+    doc.nodes.push({ id: "pick", type: "const.color", position: { x: 0, y: 0 }, properties: { value: [0.5, 0.25, 0.75] } });
+    doc.edges.push({ id: "pick-output", sourceNodeId: "pick", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" });
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "letters" });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.dispose());
+    expect(await result.ready).toEqual([]);
+    // The constant is the decoded pick; written as is, a picked mid grey showed at its linear value (128 as 55 of 255).
+    const fill = result.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_textFill`) as MultiplyBlock;
+    const encode = fill.left.connectedPoint!.ownerBlock;
+    expect(encode).toBeInstanceOf(ColorEncodingBlock);
+    expect((encode as ColorEncodingBlock).to).toBe("display");
+    expect(encode.inputs[0]!.connectedPoint!.ownerBlock.getClassName()).not.toBe("TextMaterialBlock");
+    expect(fill.right.connectedPoint!.ownerBlock.getClassName()).toBe("TextMaterialBlock");
+    const fragment = result.material.compiledShaders.split("// Fragment shader")[1]!;
+    expect(fragment).toMatch(/vec4 \w+ = toGammaSpace\(/);
   });
 
   it("keeps screen overlays independent of world fog", async () => {
@@ -731,8 +769,44 @@ describe("material compiler", () => {
     ) as FragmentOutputBlock;
     const blend = fragment.rgba.connectedPoint?.ownerBlock;
     expect(blend).toBeInstanceOf(ParticleBlendMultiplyBlock);
-    expect((blend as ParticleBlendMultiplyBlock).color.connectedPoint).toBe(sample.rgba);
+    // The linear sample is encoded for display once, before the blend that works on display colours.
+    const encode = (blend as ParticleBlendMultiplyBlock).color.connectedPoint?.ownerBlock;
+    expect(encode).toBeInstanceOf(ColorEncodingBlock);
+    expect((encode as ColorEncodingBlock).to).toBe("display");
+    expect((encode as ColorEncodingBlock).input.connectedPoint).toBe(sample.rgba);
     expect((blend as ParticleBlendMultiplyBlock).alphaTexture.isConnected).toBe(true);
+  });
+
+  it.each([false, true])("keeps a particle graph linear, Particle Color decoded where it enters, encoded once at the output (preview %s)", async (particlePreview) => {
+    // Particle Color is a display colour and the rest of a graph is linear: written as they were, a picked mid grey
+    // Color showed at its linear value (128 as 55 of 255) while the emitter's colour showed as set.
+    const scene = host();
+    const doc = createDefaultMaterialDocument("Sparks", "particle");
+    const particle = doc.nodes.find((node) => node.type === "input.particleColor")!.id;
+    doc.nodes.push(
+      { id: "pick", type: "const.color", position: { x: 0, y: 0 }, properties: { value: [0.5, 0.5, 0.5] } },
+      { id: "tint", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+    );
+    doc.edges = [
+      { id: "pick-tint", sourceNodeId: "pick", sourcePinId: "out", targetNodeId: "tint", targetPinId: "a" },
+      { id: "particle-tint", sourceNodeId: particle, sourcePinId: "color", targetNodeId: "tint", targetPinId: "b" },
+      { id: "tint-output", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" },
+    ];
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "sparks", particlePreview });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(result.dispose);
+    expect(await result.ready).toEqual([]);
+    const encodings = result.material.attachedBlocks.filter((block): block is ColorEncodingBlock => block instanceof ColorEncodingBlock);
+    const decode = encodings.find((block) => block.to === "linear")!;
+    const encode = encodings.find((block) => block.to === "display")!;
+    expect(encodings).toHaveLength(2);
+    // Decoded from the emitter's colour (the preview's white constant), encoded from the graph's result.
+    const decoded = decode.input.connectedPoint!.ownerBlock as InputBlock;
+    expect(decoded.isAttribute ? decoded.name : "constant").toBe(particlePreview ? "constant" : "particle_color");
+    expect(encode.input.connectedPoint!.ownerBlock.name).toBe(nodeBlockName(doc, "tint"));
+    const fragment = result.material.attachedBlocks.find((block): block is FragmentOutputBlock => block instanceof FragmentOutputBlock)!;
+    const fed = fragment.rgba.connectedPoint!.ownerBlock;
+    expect(particlePreview ? fed : (fed as ParticleBlendMultiplyBlock).color.connectedPoint!.ownerBlock).toBe(encode);
   });
 
   it("connects the graph so the output block is actually fed", () => {
@@ -751,18 +825,19 @@ describe("material compiler", () => {
     expect(multiply?.outputs[0]?.isConnected).toBe(true);
   });
 
-  it("shares one GPU program between materials that differ only in parameter values", async () => {
+  it("shares one GPU program between Materials of one graph shape, whatever their names, node ids and parameter values", async () => {
     const scene = host();
-    const variant = (roughness: number) => {
-      const doc = createDefaultMaterialDocument();
-      doc.nodes.push({ id: "rough", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Roughness", value: [roughness] } });
-      doc.edges.push({ id: "rough-out", sourceNodeId: "rough", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
-      const result = compileMaterialPlan(planFor(doc), { scene, name: "material:parent" });
+    const variant = (roughness: number, name: string, ids = "") => {
+      const doc = renamedNodes(createDefaultMaterialDocument(), ids);
+      doc.nodes.push({ id: `${ids}rough`, type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Roughness", value: [roughness] } });
+      doc.edges.push({ id: "rough-out", sourceNodeId: `${ids}rough`, sourcePinId: "out", targetNodeId: `${ids}output`, targetPinId: "roughness" });
+      const result = compileMaterialPlan(planFor(doc), { scene, name });
       if (!result.ok) throw new Error("compile failed");
       disposers.push(() => result.dispose());
       return result;
     };
-    const [parent, instance] = [variant(0.2), variant(0.9)];
+    // Another Material asset (another name), imported with other node ids.
+    const [parent, instance] = [variant(0.2, "material:parent"), variant(0.9, "material:imported", "glb-3_")];
     const other = compileMaterialPlan(planFor(multiplyMaterial()), { scene, name: "material:parent" });
     if (!other.ok) throw new Error("compile failed");
     disposers.push(() => other.dispose());
@@ -781,6 +856,30 @@ describe("material compiler", () => {
     expect(meshes[1]!.subMeshes[0]!.effect).toBe(meshes[0]!.subMeshes[0]!.effect);
     expect(instance.getParameter("Roughness")).toEqual({ kind: "float", value: 0.9 });
     expect(parent.getParameter("Roughness")).toEqual({ kind: "float", value: 0.2 });
+  });
+
+  it.each([
+    ["Surface", () => createDefaultMaterialDocument(), false],
+    ["Scene Layer surface", () => createDefaultMaterialDocument(), true],
+    ["Decal", () => setMaterialDomain(createDefaultMaterialDocument(), "decal"), false],
+    ["Text", () => setMaterialDomain(createDefaultMaterialDocument(), "text"), true],
+  ] as const)("names no block after its Material, so a %s Material's twin elsewhere shares its program", async (kind, make, overlay) => {
+    const scene = host();
+    const [first, second] = [["material:first", ""], ["material:second", "other-"]].map(([name, ids]) => {
+      const result = compileMaterialPlan(planFor(renamedNodes(make(), ids!)), { scene, name: name!, overlay });
+      if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+      disposers.push(() => result.dispose());
+      return result;
+    });
+    await Promise.all([first!.ready, second!.ready]);
+    expect(second!.material.compiledShaders).toBe(first!.material.compiledShaders);
+    expect(second!.material.buildId).toBe(first!.material.buildId);
+    expect(materialProgramCensus(scene.getEngine())).toMatchObject({ builds: 2, programs: 1, adopted: 1 });
+    if (kind !== "Surface") return;
+    // Its auxiliary passes' programs too.
+    const [mine, twins] = [first!, second!].map((compiled) => acquireAuthoredMaterialVariant(compiled.material, "outlineMask")!);
+    await Promise.all([mine!.compiled.ready, twins!.compiled.ready]);
+    expect(twins!.compiled.material.buildId).toBe(mine!.compiled.material.buildId);
   });
 
   it("forgets a shared program once every material on it is disposed", async () => {
@@ -802,6 +901,38 @@ describe("material compiler", () => {
     const afterRelease = compile();
     await afterRelease.ready;
     expect(afterRelease.material.buildId).not.toBe(first.material.buildId);
+  });
+
+  it("counts an Engine's Material builds against the programs they share, the builds that adopted one and the rebuilds that compiled theirs again", async () => {
+    const scene = host();
+    const engine = scene.getEngine();
+    const compile = (doc: MaterialDocument, name: string) => {
+      const result = compileMaterialPlan(planFor(doc), { scene, name });
+      if (!result.ok) throw new Error("compile failed");
+      disposers.push(() => result.dispose());
+      return result;
+    };
+    const [first, sharer, other] = [compile(multiplyMaterial(), "material:census"), compile(multiplyMaterial(), "material:census"), compile(createDefaultMaterialDocument(), "material:other")];
+    await Promise.all([first.ready, sharer.ready, other.ready]);
+    expect(materialProgramCensus(engine)).toEqual({ builds: 3, programs: 2, adopted: 1, sameShaderRebuilds: 0 });
+    sharer.dispose();
+    other.dispose();
+    expect(materialProgramCensus(engine)).toMatchObject({ builds: 1, programs: 1, adopted: 1 });
+
+    // A texture that arrives rebuilds the Material under a new build id, though nothing in its shader text changed.
+    const texture = new Texture(null, scene, true, false);
+    disposers.push(() => texture.dispose());
+    let loaded = false;
+    vi.spyOn(texture, "isReady").mockImplementation(() => loaded);
+    const imported = compileMaterialPlan(planFor(createImportedMaterialDocument({ textureGuid: "albedo" })), { scene, name: "imported", resolveTexture: () => texture });
+    if (!imported.ok) throw new Error("compile failed");
+    disposers.push(() => imported.dispose());
+    await imported.ready;
+    const builtAs = imported.material.buildId;
+    loaded = true;
+    texture.onLoadObservable.notifyObservers(texture);
+    await vi.waitFor(() => expect(imported.material.buildId).not.toBe(builtAs));
+    expect(materialProgramCensus(engine)).toMatchObject({ builds: 2, programs: 2, sameShaderRebuilds: 1 });
   });
 
   it("carries a constant value onto its input block", () => {
@@ -2618,7 +2749,7 @@ describe("material compiler", () => {
       block.name.endsWith("_worldPosDisplaced"),
     );
     const splitter = result.material.attachedBlocks.find(
-      (block) => block.name === "worldPos_xyz",
+      (block) => block.name === `${nodeBlockName(doc, "worldPos")}_xyz`,
     );
     expect(displaced).toBeDefined();
     expect(splitter).toBeDefined();
@@ -2656,4 +2787,122 @@ it("gates optional vertex streams behind defines so meshes without them still dr
       new RegExp(`#ifdef INSTANCES\\nattribute vec4 ${attribute};`),
     );
   }
+});
+
+describe("User Interface Materials", () => {
+  function uiDocument(edit: (doc: MaterialDocument) => void = () => {}): MaterialDocument {
+    const doc = createDefaultMaterialDocument("Widget", "ui");
+    edit(doc);
+    return doc;
+  }
+  async function compileUi(doc: MaterialDocument, overlay = false, scene = host(), name = "widget") {
+    const result = compileMaterialPlan(planFor(doc), { scene, name, overlay });
+    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+    disposers.push(() => result.dispose());
+    expect(await result.ready).toEqual([]);
+    return result.material;
+  }
+  const wireUi = (doc: MaterialDocument, source: string, sourcePin: string, target: string, targetPin: string) => {
+    doc.edges = doc.edges.filter((edge) => !(edge.targetNodeId === target && edge.targetPinId === targetPin));
+    doc.edges.push({ id: `${source}-${sourcePin}-${target}-${targetPin}`, sourceNodeId: source, sourcePinId: sourcePin, targetNodeId: target, targetPinId: targetPin });
+  };
+
+  it.each([["translucent", Constants.ALPHA_COMBINE], ["additive", Constants.ALPHA_ADD]] as const)(
+    "draws a %s one blended from both sides, unlit and unfogged, times its component's tint",
+    async (blendMode, alphaMode) => {
+      const scene = host();
+      scene.fogMode = Scene.FOGMODE_LINEAR;
+      const material = await compileUi(uiDocument((doc) => { doc.blendMode = blendMode; }), false, scene);
+      expect(material.metadata.materialDomain).toBe("ui");
+      expect({ alphaMode: material.alphaMode, transparency: material.transparencyMode, culling: material.backFaceCulling, prePass: material.needDepthPrePass })
+        .toEqual({ alphaMode, transparency: Material.MATERIAL_ALPHABLEND, culling: false, prePass: false });
+      const blocks = material.attachedBlocks;
+      expect(blocks.some((block) => block instanceof HapticLightingBlock || block instanceof SceneFogBlock || block instanceof ImageProcessingBlock)).toBe(false);
+      expect(material.compiledShaders).not.toContain("CalcFogFactor(");
+      // Colour and Opacity each times the style's, on the fragment output.
+      const style = blocks.find((block): block is OverlayStyleBlock => block instanceof OverlayStyleBlock)!;
+      const output = blocks.find((block): block is FragmentOutputBlock => block instanceof FragmentOutputBlock)!;
+      const styledBy = (point: NodeMaterialConnectionPoint) => {
+        const multiply = point.connectedPoint?.ownerBlock;
+        return multiply instanceof MultiplyBlock ? multiply.right.connectedPoint : null;
+      };
+      expect([styledBy(output.rgb), styledBy(output.a)]).toEqual([style.rgb, style.alpha]);
+    },
+  );
+
+  it("compiles the same with or without the library's overlay option", async () => {
+    const doc = uiDocument((doc) => {
+      doc.nodes.push({ id: "panel", type: "ui.roundedRectangle", position: { x: 0, y: 0 }, properties: {} });
+      wireUi(doc, "panel", "fill", "output", "opacity");
+    });
+    const [plain, overlay] = [await compileUi(doc, false), await compileUi(doc, true)];
+    expect(overlay.compiledShaders).toBe(plain.compiledShaders);
+    expect([overlay.alphaMode, overlay.transparencyMode, overlay.backFaceCulling, isDrawBatchMaterial(overlay)])
+      .toEqual([plain.alphaMode, plain.transparencyMode, plain.backFaceCulling, isDrawBatchMaterial(plain)]);
+  });
+
+  it("shows a picked Color as a Scene Layer's unlit surface does, and leaves it linear for a Scene Linear display stage", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    const picked = [0.5, 0.25, 0.75];
+    const ui = await compileUi(uiDocument((doc) => { doc.nodes.find((node) => node.id === "color")!.properties.value = picked; }), true, scene);
+    const surfaceDoc = createDefaultMaterialDocument("Overlay surface");
+    surfaceDoc.shadingModel = "unlit";
+    surfaceDoc.nodes.find((node) => node.id === "baseColor")!.properties.value = picked;
+    const surface = await compileUi(surfaceDoc, true, scene, "surface");
+    const encodings = async (material: Material) => {
+      const mesh = MeshBuilder.CreatePlane(`${material.name}-plane`, {}, scene);
+      mesh.material = material;
+      // A new frame: readiness is cached per render id.
+      scene.incrementRenderId();
+      await material.forceCompilationAsync(mesh);
+      const subMesh = mesh.subMeshes![0]!;
+      expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+      const defines = subMesh.effect!.defines;
+      mesh.dispose();
+      return (defines.match(/^#define (IMAGEPROCESSING|CONVERTTOGAMMA|CONVERTTOLINEAR)\d*$/gm) ?? []).map((define) => define.replace(/\d+$/, ""));
+    };
+    // Both write the colour's linear value (the Color node's sRGB pick, decoded) and encode it once with the same
+    // conversion: the screen shows the pick.
+    const literal = /vec3\((0\.\d+), (0\.\d+), (0\.\d+)\)/;
+    const linear = ui.compiledShaders.split("// Fragment shader")[1]!.match(literal)![0];
+    expect(linear).not.toBe("vec3(0.5, 0.25, 0.75)");
+    expect(surface.compiledShaders).toContain(linear);
+    expect(await encodings(ui)).toEqual(["#define CONVERTTOGAMMA"]);
+    expect(await encodings(ui)).toEqual(await encodings(surface));
+    // The editor's Scene Layer tab and the Material preview may have a Scene Linear display stage, which encodes once.
+    scene.imageProcessingConfiguration.applyByPostProcess = true;
+    expect(await encodings(ui)).toEqual([]);
+  });
+
+  it("batches one that reads its element and the screen, and keeps one with Custom GLSL out", async () => {
+    const elementAndScreen = uiDocument((doc) => {
+      doc.nodes.push(
+        { id: "element", type: "input.ui", position: { x: 0, y: 0 }, properties: {} },
+        { id: "sum", type: "math.add", position: { x: 0, y: 0 }, properties: {} },
+        { id: "total", type: "math.add", position: { x: 0, y: 0 }, properties: {} },
+        { id: "panel", type: "ui.roundedRectangle", position: { x: 0, y: 0 }, properties: {} },
+      );
+      wireUi(doc, "element", "screenSize", "sum", "a");
+      wireUi(doc, "element", "screenPosition", "sum", "b");
+      wireUi(doc, "sum", "out", "total", "a");
+      wireUi(doc, "element", "screenUv", "total", "b");
+      wireUi(doc, "total", "out", "output", "color");
+      wireUi(doc, "panel", "fill", "output", "opacity");
+    });
+    for (const overlay of [false, true]) {
+      const material = await compileUi(elementAndScreen, overlay);
+      // The screen size is bound (the render target's, the same for every member); the element's size is derived.
+      expect(material.compiledShaders).toMatch(/uniform vec2 \w*screenSize\w*;/);
+      expect(material.compiledShaders).toContain("dFdx(");
+      expect({ bounded: isBoundedMaterial(material), batches: isDrawBatchMaterial(material), text: isDrawBatchTextMaterial(material) })
+        .toEqual({ bounded: true, batches: true, text: false });
+    }
+    const custom = await compileUi(uiDocument((doc) => {
+      doc.nodes.push({ id: "glsl", type: "custom.glsl", position: { x: 0, y: 0 }, properties: newCustomGlslProperties() });
+      wireUi(doc, "color", "out", "glsl", "a");
+      wireUi(doc, "glsl", "out", "output", "color");
+    }), true);
+    expect([isBoundedMaterial(custom), isDrawBatchMaterial(custom)]).toEqual([false, false]);
+  });
 });

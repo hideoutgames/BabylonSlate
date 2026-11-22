@@ -36,7 +36,7 @@ import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isFoliageDistanceOnlySceneEdit } from "./foliage-mesh";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
-import { setSceneWorldDebug, worldDebugFingerprint } from "./world-debug";
+import { setSceneWorldDebug, worldDebugFingerprint, worldDebugOff } from "./world-debug";
 import { shadowDebugFingerprint } from "./shadow-debug";
 import { discardsSamples, setDiscardSamples } from "./sample-discard";
 import { RuntimeScalability } from "./runtime-scalability";
@@ -219,7 +219,7 @@ import {
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { nearestTexturesEnabled, observeNearestTextures, setNearestTextures } from "./nearest-textures";
 import { FontRegistry } from "./font-registry";
-import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
+import { applyAnimStateToScene, ejectAllPlaySprites, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { AnimVisibilityGate } from "./anim-visibility";
 import { shareFootPlacementBounds } from "./anim-foot-placement";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
@@ -247,6 +247,7 @@ import {
   beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, enterDrawPass, leaveDrawPass, publishDrawPassFrame,
 } from "./draw-passes";
 import { copyOverlayBatchStats, countOverlayBatches, emptyOverlayBatchStats } from "./overlay-draw-batcher";
+import { copyLayerFrameStats, emptyLayerFrameStats } from "./layer-frame-stats";
 import { GlobalParameterSession, globalParameterDefaults } from "./global-parameter-values";
 import { MaterialLibrary } from "./material-library";
 import { refreshText2DMaterials } from "./text2d-mesh";
@@ -407,6 +408,7 @@ function projectEngineOptions(largeWorldRendering: boolean): EngineOptions {
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
 /** A frame whose Scene Layers have drawn nothing yet. */
 const NO_LAYER_BATCHES = emptyOverlayBatchStats();
+const NO_LAYER_FRAME = emptyLayerFrameStats();
 
 function initializeEngine(
   canvas: HTMLCanvasElement,
@@ -1172,7 +1174,20 @@ function initializeEngine(
   const animVisibility = new AnimVisibilityGate(scene, binding, (command) => applyAnimStateToScene(animHostReportingMissing, command));
   scene.onBeforeRenderObservable.add(() => animVisibility.flush());
   // Play world sprites batch into persistent thin-instanced quads, flushed after animVisibility and LayerImageAtlas.
-  if (options.playMode) setSceneWorldSpriteBatching(scene, true);
+  // Simulation Edit's transform tools pick and outline meshes, which a batch's sprites are not, and
+  // `worlddebug spritebatching off` sizes what batching saves: both eject every sprite to a quad of its own (the
+  // picture unchanged) and batch none built while they last.
+  let spriteBatching = false;
+  const syncWorldSpriteBatching = () => {
+    const batch = !!options.playMode && !worldDebugOff(scene, "spritebatching") &&
+      !(runtimeTransformTools && runtimeTransformToolsEnabled && simulationEditMode);
+    if (batch === spriteBatching) return;
+    spriteBatching = batch;
+    if (!batch) ejectAllPlaySprites(binding);
+    setSceneWorldSpriteBatching(scene, batch);
+    scheduler.invalidate("asset");
+  };
+  syncWorldSpriteBatching();
   // Many actors place their feet each frame: they share one snapshot of the meshes' world bounds, dropped before each
   // render (after the flush above).
   shareFootPlacementBounds(scene);
@@ -2054,6 +2069,8 @@ function initializeEngine(
   const drawPasses = new DrawPassFrame(engine);
   /** How the view's Scene Layers drew (`RenderDiagnostics.layerBatches`): the frame being drawn, and the last one drawn. */
   const layerBatches = { current: emptyOverlayBatchStats(), last: emptyOverlayBatchStats() };
+  /** The Scene Layer work of the last frame the view drew (`RenderDiagnostics.layerFrame`). */
+  const layerFrame = emptyLayerFrameStats();
   /** `showocclusion`: hosts draw the world view's occlusion buffer over the view. */
   let occlusionOverlay = false;
   let lastRenderCpuMs = 0;
@@ -2110,7 +2127,7 @@ function initializeEngine(
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}),
       cpuMeanMs: renderCpuMean.mean(),
       backbuffer: { width: engine.getRenderWidth(true), height: engine.getRenderHeight(true) }, firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
-      drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last),
+      drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last), layerFrame: copyLayerFrameStats(layerFrame),
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, gpuProbe: existingGpuProbe(engine)?.snapshot() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       layerWork: sceneLayerCompositor?.diagnostics() ?? [],
       frameAdmission: { ...scheduler.gateState(), worldLoading,
@@ -2505,6 +2522,15 @@ function initializeEngine(
           if (pendingPresentations.get(key) === pending) cancelPresentation(error instanceof Error ? error : new Error(String(error)), key);
         });
       };
+      // The layers' atlas uploads and cell copies, before the world, so none falls in the backbuffer's pass after it.
+      if (sceneLayerCompositor && !layersHidden) {
+        enterDrawPass(engine, "layers", true);
+        try {
+          sceneLayerCompositor.beforeWorld(presentingLayers);
+        } finally {
+          leaveDrawPass(engine);
+        }
+      }
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
         const result = frameScope
           ? frameScope.capture.stage(scene, { name: "World output", kind: "composition", sceneId: lastSceneAssetGuid },
@@ -2590,6 +2616,7 @@ function initializeEngine(
     publishDrawPassFrame(drawPasses);
     existingGpuProbe(engine)?.frameDrawn();
     copyOverlayBatchStats(layerBatches.current, layerBatches.last);
+    copyLayerFrameStats(sceneLayerCompositor && !layersHidden ? sceneLayerCompositor.frameStats : NO_LAYER_FRAME, layerFrame);
     scheduler.noteRendered(frameStart, performance.now());
     // After `noteRendered`, so camera motion counts as activity (Half Rate When Idle) though the frame drew it.
     if (cameraMoved?.(scene.frameGraph?.findMainCamera() ?? scene.activeCamera)) scheduler.noteActivity();
@@ -3464,7 +3491,10 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "setWaterDebug" && setSceneWaterDebug(scene, command.part, command.enabled)) scheduler.invalidate("asset");
-      if (command.type === "setWorldDebug" && setSceneWorldDebug(scene, command.part, command.enabled)) scheduler.invalidate("asset");
+      if (command.type === "setWorldDebug" && setSceneWorldDebug(scene, command.part, command.enabled)) {
+        syncWorldSpriteBatching();
+        scheduler.invalidate("asset");
+      }
       if (command.type === "setShadowDebug" && findSceneShadowController(scene)?.setDebug(command.part, command.enabled)) scheduler.invalidate("asset");
       if (command.type === "tilemapAnimationTime") {
         binding.tilemapAnimationTimeMs = command.elapsedMs;
@@ -3516,6 +3546,7 @@ function initializeEngine(
       resetJoysticks();
       playFreeCamInput?.reset();
       simulationEditMode = enabled;
+      syncWorldSpriteBatching();
       runtimeTransformTools?.setEnabled(enabled && runtimeTransformToolsEnabled);
       const previous = scene.activeCamera;
       playFreeCam.setEnabled(enabled);
@@ -3642,11 +3673,13 @@ function initializeEngine(
         setEnabled: (enabled) => {
           if (runtimeTransformTools !== owner) return;
           runtimeTransformToolsEnabled = enabled;
+          syncWorldSpriteBatching();
           owner.setEnabled(enabled && simulationEditMode);
         },
         dispose: () => {
           if (runtimeTransformTools !== owner) return;
           owner.dispose(); runtimeTransformTools = null; runtimeTransformToolsEnabled = false;
+          syncWorldSpriteBatching();
         },
       };
     },

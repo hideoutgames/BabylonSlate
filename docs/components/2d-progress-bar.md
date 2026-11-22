@@ -17,7 +17,7 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Pro
 | Orientation | Horizontal or Vertical. A vertical bar fills upward. Default Horizontal. |
 | Opacity | Fades the whole control, from 0 to 1. Default 1. |
 | Tint | Colour and alpha multiplied into every part. Default white. |
-| Background, Track and Fill Material | Replace the default look of the body, the rail and the filled part. A Material or Material Instance. |
+| Background, Track and Fill Material | Replace the default look of the body, the rail and the filled part. A [User Interface](../graphics/materials.md#user-interface-materials) Material or an Instance of one. Materials of other domains are not listed, and are not drawn if a script sets one. |
 | Background, Track and Fill Texture | The same, using a Texture. A Material wins when both are set. |
 
 ## Notes

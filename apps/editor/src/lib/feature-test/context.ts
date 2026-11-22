@@ -86,7 +86,7 @@ type FeatureTestMaterialKey =
   | "postProcess"
   /** Landscape domain with paint layers. */
   | "landscape"
-  /** Unlit surface for overlays (2D Material widget, sprites). */
+  /** User Interface domain for the HUD's 2D Material widgets, Material panels and control parts. */
   | "overlayUnlit"
   /** Decal domain, lit and Translucent: the colormap through a round mask, normal-mapped, with a Tint parameter. */
   | "decalLit"

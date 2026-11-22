@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 import type { SerializedGraph } from "@haptic/core";
 import { DocumentEditStack } from "../stack";
@@ -51,6 +51,33 @@ describe("graph commands", () => {
     const result = stack.apply(doc, command);
     expect(stack.undo(result.doc)).toBeNull();
     expect(stack.undoBytes).toBe(0);
+  });
+
+  it("measures a scrubbed node's large starting data once, however many samples the scrub folds", () => {
+    const node = { ...largeNode, data: { "default:message": "x".repeat(100_000) } };
+    const stack = new DocumentEditStack<SerializedGraph>({ maxEntries: 10, maxBytes: 10_000_000 });
+    let doc: SerializedGraph = { nodes: [node], edges: [] };
+    let from: Record<string, unknown> = node.data;
+    const stringify = JSON.stringify;
+    let serialized = 0;
+    const spy = vi.spyOn(JSON, "stringify").mockImplementation((...args: Parameters<typeof JSON.stringify>) => {
+      const text = stringify(...args);
+      serialized += text?.length ?? 0;
+      return text;
+    });
+    try {
+      for (let sample = 0; sample < 50; sample++) {
+        const to = { "default:message": `sample ${sample}` };
+        doc = stack.apply(doc, new SetNodeDataCommand("large", from, to, "scrub:large")).doc;
+        from = to;
+      }
+    } finally {
+      spy.mockRestore();
+    }
+    expect(stack.undoDepth).toBe(1);
+    expect(stack.undoBytes).toBeGreaterThan(100_000);
+    expect(serialized).toBeLessThan(3 * 100_000);
+    expect(stack.undo(doc)!.doc.nodes[0]!.data).toEqual(node.data);
   });
 
   it("MoveNodeCommand apply-then-invert restores the document", () => {

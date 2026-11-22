@@ -12,6 +12,7 @@ import {
   subjectPinsOf,
 } from "./compile-pin-values";
 import {
+  accessLocation,
   emitBody,
   loopCheck,
   memoExpression,
@@ -225,7 +226,7 @@ export function ensurePure(s: CodegenState, node: GraphNode) {
       const outPin = pinForCodegen(node, name, "out");
       if (!outPin) continue;
       const guarded = subjects.length > 0
-        ? guardPureExpression(subjects, subjectArgs, expr, defaultValueLiteral(outPin.type))
+        ? guardPureExpression(subjects, subjectArgs, expr, defaultValueLiteral(outPin.type), accessLocation(s, node))
         : expr;
       // An output several wires read is evaluated once per statement, as the inputs of a node
       // with several outputs are: every reader of one exec node sees one value (a Random Float

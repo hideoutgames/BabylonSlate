@@ -53,7 +53,7 @@ export interface FoliageProperties {
 
 /**
  * The JSON form stored in `SerializedComponent.properties`. Instances live in one binary `HPFG` chunk: base64 `data`
- * in editor documents (undo, journal, copy and paste), `chunkId` (`foliage:<componentId>`) in a saved `.hasset` and in
+ * in editor documents (undo, journal, copy and paste), `chunkId` (`foliage:<actorId>/<componentId>`) in a saved `.hasset` and in
  * Play and exported games, which carry the raw chunk beside the Scene. Neither when nothing is painted.
  */
 export interface SerializedFoliageProperties {
@@ -61,8 +61,6 @@ export interface SerializedFoliageProperties {
   batches: FoliageBatchInfo[];
   data?: string | null;
   chunkId?: string;
-  /** Play and exported games: the asset whose chunks hold `chunkId`, so the runtime looks up `<chunkOwner>:<chunkId>`. */
-  chunkOwner?: string;
 }
 
 export const MAX_FOLIAGE_INSTANCES = 20000;
@@ -348,7 +346,7 @@ export function normalizeSerializedFoliageProperties(value: unknown): Serialized
   return {
     groupId: guid(p.groupId) ?? "",
     batches: foliageBatchInfos(p),
-    ...(data ? { data } : chunkId ? { chunkId, ...(guid(p.chunkOwner) ? { chunkOwner: p.chunkOwner as string } : {}) } : { data: null }),
+    ...(data ? { data } : chunkId ? { chunkId } : { data: null }),
   };
 }
 

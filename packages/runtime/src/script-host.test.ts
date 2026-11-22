@@ -1872,7 +1872,7 @@ describe("script host runs compiled graphs", () => {
     runtime.start();
     runtime.tick();
     expect(
-      actor!.interfaceHandlers.has(
+      actor!.interfaceHandlers?.has(
         interfaceHandlerKey("iface-damageable", "ApplyDamage"),
       ),
     ).toBe(true);
@@ -1932,7 +1932,7 @@ describe("script host runs compiled graphs", () => {
     expect(actor).not.toBeNull();
     expect(actor!.implementedInterfaces).toEqual(["iface-damageable"]);
     expect(
-      actor!.interfaceHandlers.has(
+      actor!.interfaceHandlers?.has(
         interfaceHandlerKey("iface-damageable", "ApplyDamage"),
       ),
     ).toBe(true);

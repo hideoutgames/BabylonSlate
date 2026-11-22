@@ -19,7 +19,7 @@ class IncrementCommand implements EditCommand<TestDoc> {
 
   constructor(
     readonly amount = 1,
-    readonly byteSize?: number,
+    readonly byteSize = 0,
   ) {}
 
   apply(doc: TestDoc): TestDoc {
@@ -155,6 +155,42 @@ describe("EditSession", () => {
     session.getStack("scene").endGesture();
     session.applyBatch("scene", other.doc, diffSceneCommands(before, placed), { mergeKey: "place:other" });
     expect(session.getStack("scene").undoDepth).toBe(3);
+  });
+
+  it("folds a long keyed gesture measuring and inverting each edit a bounded number of times, and Undo and Redo replay all of it", () => {
+    const counts = { measured: 0, inverted: 0 };
+    class CountedCommand implements EditCommand<TestDoc> {
+      readonly type = "test.counted";
+      constructor(readonly amount: number) {}
+      get byteSize(): number {
+        counts.measured += 1;
+        return 8;
+      }
+      apply(doc: TestDoc): TestDoc {
+        return { value: doc.value + this.amount };
+      }
+      invert(): EditCommand<TestDoc> {
+        counts.inverted += 1;
+        return new CountedCommand(-this.amount);
+      }
+    }
+    const session = new EditSession();
+    const samples = 300;
+    let doc: TestDoc = { value: 0 };
+    for (let sample = 0; sample < samples; sample++) {
+      doc = session.applyBatch("drag", doc, [new CountedCommand(1), new CountedCommand(2)], { mergeKey: "drag" })!.doc;
+    }
+    expect(doc).toEqual({ value: 3 * samples });
+    const stack = session.getStack<TestDoc>("drag");
+    expect(stack.undoDepth).toBe(1);
+    // Every part of the gesture stays in history and is counted once.
+    expect(stack.undoBytes).toBe(2 * samples * 8);
+    const undone = session.undo("drag", doc)!;
+    expect(undone.doc).toEqual({ value: 0 });
+    expect(session.redo("drag", undone.doc)?.doc).toEqual({ value: 3 * samples });
+    // Linear in the gesture's edits, not quadratic (600 parts would cost about 90,000 re-measures).
+    expect(counts.measured).toBeLessThanOrEqual(2 * 2 * samples);
+    expect(counts.inverted).toBeLessThanOrEqual(2 * 2 * samples);
   });
 
   it("budgets a multi-command deletion as one whole history entry", () => {

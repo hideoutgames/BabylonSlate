@@ -27,7 +27,7 @@ import {
   ReorderTimelineClipCommand,
   SetTimelineClipCommand,
 } from "./scene-timeline";
-import { snapshotBytes } from "../snapshot-bytes";
+import { retainedFieldBytes, snapshotBytes } from "../snapshot-bytes";
 import { replaceActor, replaceComponent } from "./scene-actor";
 
 /** `undefined` clears the key, as saving to JSON would. */
@@ -111,6 +111,11 @@ export class RemoveActorCommand implements EditCommand<SerializedScene> {
 
 export class SetActorTransformCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setActorTransform";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly mergeKey: string;
   readonly actorId: string;
   readonly from: SerializedTransform;
@@ -152,6 +157,11 @@ export interface ActorTransformEntry {
 /** One undo step for a multi-select gizmo drag. */
 export class SetActorsTransformsCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setActorsTransforms";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly mergeKey: string;
   readonly entries: ActorTransformEntry[];
 
@@ -206,6 +216,11 @@ export class SetActorsTransformsCommand implements EditCommand<SerializedScene> 
 
 export class RenameActorCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.renameActor";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly mergeKey: string;
   readonly actorId: string;
   readonly from: string;
@@ -232,6 +247,11 @@ export class RenameActorCommand implements EditCommand<SerializedScene> {
 
 export class ReparentActorCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.reparentActor";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly actorId: string;
   readonly from: string | null;
   readonly to: string | null;
@@ -256,6 +276,11 @@ export class ReparentActorCommand implements EditCommand<SerializedScene> {
 
 export class ReorderActorCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.reorderActor";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly actorId: string;
   readonly from: number;
   readonly to: number;
@@ -291,6 +316,11 @@ export interface ActorFlags {
 
 export class SetActorFlagsCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setActorFlags";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly actorId: string;
   readonly from: ActorFlags;
   readonly to: ActorFlags;
@@ -392,6 +422,11 @@ export class RemoveComponentCommand implements EditCommand<SerializedScene> {
 
 export class ReorderComponentCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.reorderComponent";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly actorId: string;
   readonly componentId: string;
   readonly from: number;
@@ -437,6 +472,11 @@ export class ReorderComponentCommand implements EditCommand<SerializedScene> {
 
 export class ReparentComponentCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.reparentComponent";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly actorId: string;
   readonly componentId: string;
   readonly from: string | null;
@@ -487,6 +527,11 @@ function withComponentLinkage(component: SerializedComponent, linkage?: Componen
 /** Prefab inheritance is document state and must travel with Undo and recovery. */
 export class SetComponentLinkageCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setComponentLinkage";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly actorId: string;
   readonly componentId: string;
   readonly from: ComponentLinkage;
@@ -579,6 +624,11 @@ export class SetComponentTransformCommand
   implements EditCommand<SerializedScene>
 {
   readonly type = "scene.setComponentTransform";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly mergeKey: string;
   readonly actorId: string;
   readonly componentId: string;
@@ -669,6 +719,11 @@ export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
 
 export class SetViewportModeCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setViewportMode";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly from: ViewportMode;
   readonly to: ViewportMode;
 
@@ -752,6 +807,11 @@ export class RemoveFolderCommand implements EditCommand<SerializedScene> {
 
 export class RenameFolderCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.renameFolder";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly mergeKey: string;
   readonly folderId: string;
   readonly from: string;
@@ -780,6 +840,11 @@ export class RenameFolderCommand implements EditCommand<SerializedScene> {
 
 export class ReparentFolderCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.reparentFolder";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly folderId: string;
   readonly from: string | null;
   readonly to: string | null;
@@ -808,6 +873,11 @@ export class ReparentFolderCommand implements EditCommand<SerializedScene> {
 
 export class SetActorFolderCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setActorFolder";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly actorId: string;
   readonly from: string | null;
   readonly to: string | null;
@@ -832,6 +902,11 @@ export class SetActorFolderCommand implements EditCommand<SerializedScene> {
 
 export class SetSceneNameCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setSceneName";
+
+  /** What it retains, its own fields (`retainedFieldBytes`). */
+  get byteSize(): number {
+    return retainedFieldBytes(this);
+  }
   readonly from: string;
   readonly to: string;
 

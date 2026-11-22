@@ -40,7 +40,7 @@ export function createStreams(rt: RuntimeComposition): SceneStreams {
     deferModelsReady: () => rt.deferSceneModelsReady,
     scripts: () => rt.scriptHost,
     embeddedScriptHooks: () => rt.scriptRuntime.embeddedScriptHooks(),
-    createActor: (serialized) => rt.hydrateActorComponentChunks(createActorFromSerialized(rt.world, serialized, rt.actors.sceneActorHooks)),
+    createActor: (serialized) => createActorFromSerialized(rt.world, serialized, rt.actors.sceneActorHooks),
     realizeActor: (actor, checkpoint) => rt.actors.realize(actor, checkpoint),
     breakParentCycles: (actors, detach) => rt.actors.breakLoadedParentCycles(actors, detach),
     publishSnapshot: () => rt.snapshots.publish(),
@@ -90,7 +90,7 @@ export function createSceneRealizer(rt: RuntimeComposition): SceneRealizer {
     setWorldGravity: (gravity) => setWorldGravity(rt, gravity),
     recordSimulationStart: (start) => rt.simulation.recordStart(start),
     markSceneTransition: () => rt.simulation.markSceneTransition(),
-    createActor: (serialized) => rt.hydrateActorComponentChunks(createActorFromSerialized(rt.world, serialized, rt.actors.sceneActorHooks), rt.playSceneGuid),
+    createActor: (serialized) => createActorFromSerialized(rt.world, serialized, rt.actors.sceneActorHooks),
     realizeActor: (actor, checkpoint) => rt.actors.realize(actor, checkpoint),
     breakParentCycles: (actors) => rt.actors.breakLoadedParentCycles(actors),
     possessStartCamera: () => rt.camera.possessStartCamera(),
@@ -165,7 +165,9 @@ export function createActorRealization(rt: RuntimeComposition): ActorRealization
     textAppear: () => rt.textAppear,
     subsystems: () => rt.subsystems,
     cancelInvalidTweens: () => rt.tweens.cancelInvalid(),
-    frameActors: () => rt.navFrameActors,
+    // Every actor is realized once, however it was created (Scene load, stream, spawn, Save Game restore): its terrain
+    // decodes from the chunks of the Scene it belongs to, a streamed instance's own Scene before the played one.
+    hydrateComponentChunks: (actor) => rt.hydrateActorComponentChunks(actor, rt.streams.sceneFor(actor)?.assetGuid ?? (rt.playSceneGuid || null)),
     reportLog: (message, severity, category) => rt.reportLog(message, severity, category),
     emit: (command) => rt.emit(command),
   });

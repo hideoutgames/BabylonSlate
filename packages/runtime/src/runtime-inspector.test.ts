@@ -104,16 +104,27 @@ describe("bounded runtime Inspector", () => {
     try {
       const world = runtime.getWorld(); const old = world.findActor("hero")!;
       const before = await request({ kind: "identities" });
-      expect((await request({ kind: "identities", knownRevision: before.structuralRevision })).payload).toMatchObject({ kind: "identities", unchanged: true, rows: [] });
+      expect((await request({ kind: "identities", knownRevision: before.identityRevision })).payload).toMatchObject({ kind: "identities", unchanged: true, rows: [] });
       world.destroyActor("hero"); runtime.tick();
       world.spawnActorNow(world.createActor({ guid: "hero", classId: "Hero" }));
       expect(old.destroyed).toBe(true);
       expect((await request(mutation(actor, 1, 20))).success).toBe(false);
       expect((await request({ kind: "selection", target: component })).success).toBe(false);
-      const tree = await request({ kind: "identities", knownRevision: before.structuralRevision });
-      expect(tree.structuralRevision).toBeGreaterThan(before.structuralRevision);
+      const tree = await request({ kind: "identities", knownRevision: before.identityRevision });
+      expect(tree.identityRevision).toBeGreaterThan(before.identityRevision);
       expect(tree.payload).toMatchObject({ kind: "identities", rows: [expect.objectContaining({ identity: expect.objectContaining({ actorGuid: "hero" }) })] });
       if (tree.payload?.kind === "identities") expect(tree.payload.rows[0]!.identity.actorToken).not.toBe(actor.actorToken);
+    } finally { runtime.stop(); }
+  });
+
+  it("lists an actor again under its new name after a rename", async () => {
+    const { runtime, request } = await fixture();
+    try {
+      const before = await request({ kind: "identities" });
+      runtime.getWorld().findActor("hero")!.setVariable("name", "Renamed Hero");
+      const after = await request({ kind: "identities", knownRevision: before.identityRevision });
+      expect(after.payload).toMatchObject({ kind: "identities", unchanged: false,
+        rows: expect.arrayContaining([expect.objectContaining({ kind: "actor", name: "Renamed Hero" })]) });
     } finally { runtime.stop(); }
   });
 
@@ -283,6 +294,33 @@ describe("bounded runtime Inspector", () => {
       ragdolls[0]!.setVariable("enabled", true);
       expect((await request({ kind: "selection", target: actor })).payload).toMatchObject({ transformCapability: "restart" });
       expect(hero.transform.position.x).toBe(7);
+    } finally { runtime.stop(); }
+  });
+
+  it("rolls back a transform edit that physics rejects, reports its error, and keeps ticking", async () => {
+    const { runtime, commands, request, actor } = await fixture();
+    try {
+      const world = runtime.getWorld(); const hero = world.findActor("hero")!;
+      // An oblique static child: a nonuniform scale on its parent would shear it, which physics rejects.
+      const rider = world.createActor({ classId: "Actor", guid: "rider", transform: { position: { x: 0, y: 2, z: 0 },
+        rotation: { x: 0, y: 0, z: Math.sin(Math.PI / 8), w: Math.cos(Math.PI / 8) }, scale: { x: 1, y: 1, z: 1 } } });
+      rider.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static" } }));
+      rider.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: {
+        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } }));
+      world.spawnActorNow(rider); rider.setVariable("parentId", hero.guid);
+      runtime.getPhysicsSync()!.syncFromWorld(world);
+      runtime.pause();
+
+      const transform = identitySerializedTransform(); transform.position = [3, 0, 0]; transform.scale = [2, 1, 1];
+      const result = await request({ kind: "setTransform", target: actor, sequence: 1, transform });
+      expect(result).toMatchObject({ success: false, reason: "Collider transform contains unsupported shear" });
+      expect(hero.transform).toEqual({ position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } });
+      expect(runtime.getPhysicsSync()!.getBackend().getBodyTransform("body:rider")!.position).toEqual({ x: 0, y: 2, z: 0 });
+
+      runtime.resume();
+      runtime.tick(); runtime.tick();
+      expect(world.clock.tickIndex).toBe(2);
+      expect(commands.filter(command => command.type === "diagnostic")).toEqual([]);
     } finally { runtime.stop(); }
   });
 

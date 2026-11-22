@@ -16,7 +16,7 @@ import type { MovementWorldSync } from "./movement";
 import type { RenderTargetPayload, RenderTargetTexturePayload } from "@haptic/core";
 import type { WaterDefinition } from "@haptic/core";
 import type { ScalabilitySession, ScalabilityRequest, ScalabilityResult, ScalabilitySnapshot, ScalabilityAcknowledgement } from "@haptic/core";
-import { parseFoliageProperties, parseLandscapeProperties, type CollisionTriangleMesh } from "@haptic/core";
+import { decodeLandscapeField, parseFoliageProperties, parseLandscapeProperties, type CollisionTriangleMesh } from "@haptic/core";
 import { inputMappingsFromAssets } from "@haptic/input";
 import type {
   CommandMessage,
@@ -102,6 +102,7 @@ import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import type { RagdollWorldSync } from "./ragdoll-sync";
 import type { RuntimeConsole } from "./runtime-console";
 import type { ActorRealization, ScriptedActorSpawn } from "./actor-realization";
+import { actorLabel } from "./actor-world-transform";
 import type { OverlaySafeAreaInsets } from "@haptic/core";
 import { refreshStaleTilemaps, type ModelPayload, type SpriteAnimationPayload, type SpritePayload, type TilemapPayload, type TilesetPayload } from "@haptic/assets";
 import { initNavigation, type NavObstacleKind, type NavPoint } from "@haptic/navigation";
@@ -251,14 +252,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   hasAnimatedTiles = false;
   /** Simulated water time: physics, buoyancy, script queries and Play water rendering share it. */
   readonly waterClock = new WaterClock();
-  /** Frame index (live actor per guid) the BT and crowd ticks share. */
-  navFrameActors: Map<string, Actor> | null = null;
-  /**
-   * The guid index built at `revision`. The live actor behind a guid changes only when an actor spawns or is destroyed,
-   * both of which bump `structuralRevision`, so ticks without such a change reuse one index. Entries an actor joins
-   * the frame index with (`ActorRealization.realize`) follow a spawn, which already outdates it.
-   */
-  guidIndexCache: { revision: number; index: Map<string, Actor> } | null = null;
 
   // Scene documents and render target sources.
   playScene: SerializedScene | undefined;
@@ -985,39 +978,26 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     }
   }
 
-  /** The chunk `chunkId` names for a component of scene `sceneGuid` (`<sceneGuid>:<chunkId>`), else any owner's. */
-  private componentChunk(chunkId: unknown, sceneGuid: string | undefined): Uint8Array | undefined {
-    if (typeof chunkId !== "string" || chunkId.length === 0) return undefined;
-    let binaryBytes = sceneGuid ? this.sceneComponentChunks.get(`${sceneGuid}:${chunkId}`) : undefined;
-    if (!binaryBytes) binaryBytes = this.sceneComponentChunks.get(chunkId);
-    if (!binaryBytes) {
-      const suffix = `:${chunkId}`;
-      for (const [key, bytes] of this.sceneComponentChunks) {
-        if (key.endsWith(suffix)) return bytes;
-      }
-    }
-    return binaryBytes;
-  }
-
-  /** Decodes each Landscape and Foliage component's binary chunk into typed variables once, as the actor is created. */
-  hydrateActorComponentChunks(actor: Actor | null, sceneGuid?: string): Actor | null {
-    if (!actor) return null;
+  /**
+   * Decodes each Landscape and Foliage component's instance data onto the actor once, at realization: the binary
+   * chunk of the Scene document it was created from (`sceneGuid`, looked up exactly at `<sceneGuid>:<chunkId>` since
+   * duplicated Scenes share chunk ids), or inline `data` copied from a Prefab or Class. Missing or damaged data warns.
+   */
+  hydrateActorComponentChunks(actor: Actor, sceneGuid: string | null): void {
+    const chunkFor = (chunkId: unknown) => typeof chunkId === "string" && chunkId.length > 0 && sceneGuid
+      ? this.sceneComponentChunks.get(`${sceneGuid}:${chunkId}`)
+      : undefined;
     for (const component of actor.components) {
       if (component.classId === "FoliageComponent") {
         if (!component.variables.has("chunkId") && !component.variables.has("data")) continue;
-        // Play and exports name each chunk's owner, so the lookup is exact; Prefab and Class templates carry `data`.
-        const chunkId = component.getVariable("chunkId");
-        const owner = component.getVariable("chunkOwner");
-        const bytes = typeof chunkId === "string" && typeof owner === "string" ? this.sceneComponentChunks.get(`${owner}:${chunkId}`) : undefined;
-        const parsed = parseFoliageProperties(Object.fromEntries(component.variables), bytes);
-        if (parsed.unreadable || (typeof chunkId === "string" && !bytes)) {
-          console.warn(`[runtime] Foliage component ${component.guid} has instance data that could not be read; it draws nothing.`);
+        const parsed = parseFoliageProperties(Object.fromEntries(component.variables), chunkFor(component.getVariable("chunkId")));
+        if (parsed.unreadable) {
+          this.reportLog(`${actorLabel(actor)}: its Foliage instance data is missing or damaged, so it draws nothing.`, "warning", "Foliage");
         }
         component.setVariable("groupId", parsed.groupId);
         component.setVariable("batches", parsed.batches);
         component.variables.delete("data");
         component.variables.delete("chunkId");
-        component.variables.delete("chunkOwner");
         continue;
       }
       if (component.classId !== "LandscapeComponent") continue;
@@ -1027,7 +1007,12 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       ) {
         continue;
       }
-      const parsed = parseLandscapeProperties(Object.fromEntries(component.variables), this.componentChunk(component.getVariable("chunkId"), sceneGuid));
+      const binaryBytes = chunkFor(component.getVariable("chunkId"));
+      const variables = Object.fromEntries(component.variables);
+      if (!decodeLandscapeField(variables, binaryBytes)) {
+        this.reportLog(`${actorLabel(actor)}: its Landscape terrain data is missing or damaged, so it plays flat.`, "warning", "Landscape");
+      }
+      const parsed = parseLandscapeProperties(variables, binaryBytes);
       component.setVariable("width", parsed.width);
       component.setVariable("depth", parsed.depth);
       component.setVariable("subdivisions", parsed.subdivisions);
@@ -1038,7 +1023,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       component.variables.delete("data");
       component.variables.delete("chunkId");
     }
-    return actor;
   }
 
   registerSceneContent(content: RuntimeSceneContent): void {
@@ -1205,7 +1189,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
    *   subsystem's `cancelPending` (`RuntimeSubsystem` Stop phase 1; the Scene
    *   realizer last).
    * - Finalize the trace.
-   * - End the World: destroy live components, then `World.end`.
+   * - End the World: destroy live components, then `World.end`, then detach
+   *   the snapshot publisher's World observer.
    * - Release scripts: dispose ScriptHost, unregister script Classes, drop
    *   anchors, release Scene sources and forget the Play Scene and library.
    * - Dispose: clear owner queues and the Scene Layer table, then every
@@ -1245,6 +1230,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       }
     }
     this.world.end();
+    this.snapshots.dispose();
     // Release scripts.
     this.scriptDebug.dispose();
     this.scriptHost.dispose();
@@ -1258,8 +1244,6 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.sourceRenderTargets.clear();
     this.sourceRenderTargetTextures.clear();
     this.sceneComponentChunks.clear();
-    this.navFrameActors = null;
-    this.guidIndexCache = null;
     // Dispose.
     this.admission.clear();
     this.layers.clear();
