@@ -113,6 +113,7 @@ import { modelSimpleColliderCounter, physicsPairingDiagnostics } from "../lib/ph
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
 import { PackagingDialog } from "./packaging-dialog";
+import { useProvideProjectSettingsOpener } from "./project-settings-opener";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { useIsFeatureTestProject } from "../lib/use-is-feature-test-project";
 import { gitBenchmarkAvailable } from "../lib/git-benchmark-hook";
@@ -547,6 +548,12 @@ export function EditorChromeBar({
     setSettingsCategory(categoryId);
     setSettingsScope(scope);
   };
+  // Other windows (the Source Control Diff) open Project Settings through this dialog too.
+  useProvideProjectSettingsOpener(useCallback((categoryId?: string) => {
+    setToolsOpen(false);
+    setSettingsCategory(categoryId);
+    setSettingsScope("project");
+  }, []));
   const openPackaging = () => {
     setToolsOpen(false);
     setPackagingOpen(true);
