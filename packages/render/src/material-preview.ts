@@ -1,6 +1,6 @@
 import "./gltf-loader";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
-import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { Camera } from "@babylonjs/core/Cameras/camera";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
@@ -39,6 +39,8 @@ import { createViewportZoomDrive, type ViewportZoomDirection, type ViewportZoomD
 import type { HeldThreadBudget } from "./stall-deadline";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
+/** The quad a User Interface Material previews on, filling the view (`MaterialPreviewScene.flat`). */
+export const MATERIAL_PREVIEW_USER_INTERFACE_NAME = "materialPreviewUserInterface";
 
 /** Keep orbit/pinch pivoted on the mesh, including custom Models that are off-origin. */
 export function aimPreviewCameraAtMesh(
@@ -125,6 +127,13 @@ export interface MaterialPreviewScene {
   /** Sets a parameter on the previewed post-process pass; null restores its default. */
   setPostProcessParameter: (name: string, value: MaterialParameterValue | null) => boolean;
   applyParticleMaterial: (material: NodeMaterial | null) => void;
+  /**
+   * True while a User Interface Material previews: one quad that exactly fills the view under an orthographic,
+   * front-on camera, so Element UV spans the view and Element Size is the preview buffer's size. Orbit and zoom do
+   * nothing then (`attachMaterialPreviewGestures`), the mesh choice is not shown, and the presenter draws at the
+   * canvas's device pixels. Applying another domain's Material restores the orbit camera as it was.
+   */
+  readonly flat: boolean;
   dispose: () => void;
   /** Disposes, then resolves once the renderer's native resources are released
    * and the Scene is disposed; rejects if release failed. */
@@ -180,6 +189,44 @@ export function createMaterialPreviewScene(
   let textPreview: Mesh | null = null;
   const disposeTextPreview = () => { textPreview?.dispose(); textPreview = null; mesh.setEnabled(true); };
   const disposeParticles = () => { particlePlane?.dispose(); particlePlane = null; mesh.setEnabled(true); };
+  // The User Interface state: its quad, and the orbit camera it replaced.
+  let flatQuad: Mesh | null = null;
+  let orbit: { alpha: number; beta: number; radius: number; target: Vector3 } | null = null;
+  const showFlat = (material: Material) => {
+    mesh.setEnabled(false);
+    if (!flatQuad) {
+      orbit = { alpha: camera.alpha, beta: camera.beta, radius: camera.radius, target: camera.target.clone() };
+      // A unit quad under a unit orthographic window fills the view at any aspect: the projection stretches the
+      // window to the buffer, so UV 0 to 1 spans its pixels exactly.
+      flatQuad = MeshBuilder.CreatePlane(MATERIAL_PREVIEW_USER_INTERFACE_NAME, { size: 1 }, scene);
+      camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+      camera.orthoLeft = -0.5;
+      camera.orthoRight = 0.5;
+      camera.orthoBottom = -0.5;
+      camera.orthoTop = 0.5;
+      // The target first: setting it recomputes the angles from the camera's position.
+      camera.setTarget(Vector3.Zero());
+      camera.alpha = -Math.PI / 2;
+      camera.beta = Math.PI / 2;
+      camera.radius = 4;
+    }
+    flatQuad.material = material;
+  };
+  const disposeFlat = () => {
+    if (!flatQuad) return;
+    flatQuad.dispose();
+    flatQuad = null;
+    camera.mode = Camera.PERSPECTIVE_CAMERA;
+    camera.orthoLeft = camera.orthoRight = camera.orthoBottom = camera.orthoTop = null;
+    if (orbit) {
+      camera.setTarget(orbit.target);
+      camera.alpha = orbit.alpha;
+      camera.beta = orbit.beta;
+      camera.radius = orbit.radius;
+      orbit = null;
+    }
+    mesh.setEnabled(true);
+  };
   let customContainer: AssetContainer | null = null;
   let meshGeneration = 0;
 
@@ -212,6 +259,9 @@ export function createMaterialPreviewScene(
     get mesh() {
       return mesh;
     },
+    get flat() {
+      return flatQuad !== null;
+    },
     setMesh: async (kind, customMeshBytes) => {
       const generation = ++meshGeneration;
       disposeCustomContainer();
@@ -240,7 +290,7 @@ export function createMaterialPreviewScene(
       }
       if (generation !== meshGeneration) return mesh;
       applyMaterialToVisualMeshes(mesh, currentMaterial);
-      if (particlePlane || textPreview) mesh.setEnabled(false);
+      if (particlePlane || textPreview || flatQuad) mesh.setEnabled(false);
       else aimPreviewCameraAtMesh(camera, mesh);
       return mesh;
     },
@@ -248,6 +298,11 @@ export function createMaterialPreviewScene(
       if (material) disposeParticles();
       disposeTextPreview();
       currentMaterial = material;
+      if (material?.metadata?.materialDomain === "ui") {
+        showFlat(material);
+        return;
+      }
+      disposeFlat();
       if (material?.metadata?.materialDomain === "text") {
         mesh.setEnabled(false);
         textPreview = createText2DMesh(scene, "materialPreviewText", {
@@ -265,6 +320,7 @@ export function createMaterialPreviewScene(
       if (!source) return;
       disposeTextPreview();
       disposeParticles();
+      disposeFlat();
       postProcess = renderer.attachPostProcess({
         scene,
         camera,
@@ -284,6 +340,7 @@ export function createMaterialPreviewScene(
       disposeParticles();
       if (!material) return;
       disposeTextPreview();
+      disposeFlat();
       mesh.setEnabled(false);
       particlePlane = MeshBuilder.CreatePlane("materialPreviewParticlePlane", { size: 1.6 }, scene);
       particlePlane.material = material;
@@ -295,6 +352,7 @@ export function createMaterialPreviewScene(
       meshGeneration += 1;
       disposeTextPreview();
       disposeParticles();
+      disposeFlat();
       disposePostProcess();
       disposeCustomContainer();
       void releasePreview().catch((error: unknown) => {
@@ -346,6 +404,8 @@ export function createPreviewRenderTarget(name: string, size: { width: number; h
 const TAP_TOLERANCE_PX = 8;
 const ORBIT_SCALE = 0.005;
 const MATERIAL_PREVIEW_MAX_SIZE = 512;
+/** A flat preview's longest side: it draws at the canvas's device pixels, since its nodes measure in pixels. */
+const MATERIAL_PREVIEW_FLAT_MAX_SIZE = 2048;
 
 interface PointerSample {
   x: number;
@@ -400,6 +460,9 @@ export function attachMaterialPreviewGestures(
     scheduler?: Pick<RenderScheduler, "acquireContinuous">;
   },
 ): { dispose: () => void; zoomDrive: ViewportZoomDrive } {
+  // A flat preview (a User Interface Material, `MaterialPreviewScene.flat`) is the only orthographic one: it neither
+  // orbits nor zooms.
+  const flat = () => camera.mode === Camera.ORTHOGRAPHIC_CAMERA;
   // Zoom buttons: the same clamped zoom as pinch and wheel, ending a press at the radius limit.
   const zoomDrive = createViewportZoomDrive(
     {
@@ -410,6 +473,7 @@ export function attachMaterialPreviewGestures(
     },
     {
       scheduler: options?.scheduler,
+      isEnabled: () => !flat(),
       instantStep: () => options?.zoomInstant?.() === true,
       atLimit: (direction: ViewportZoomDirection) =>
         direction === 1 ? camera.radius <= previewRadiusLower(camera) : camera.radius >= previewRadiusUpper(camera),
@@ -458,7 +522,7 @@ export function attachMaterialPreviewGestures(
     const point = toCanvas(event);
     options?.onPointer?.("move", point.x, point.y, event.pointerId);
     pointers.set(event.pointerId, point);
-    if (stealing) return;
+    if (stealing || flat()) return;
     const samples = [...pointers.values()];
     if (samples.length === 1 && lastPoint) {
       const sample = samples[0]!;
@@ -532,6 +596,7 @@ export function attachMaterialPreviewGestures(
 
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
+    if (flat()) return;
     zoomPreviewCamera(camera, event.deltaY < 0 ? 1.1 : 1 / 1.1);
     options?.onChange?.();
   };
@@ -582,9 +647,10 @@ export interface MaterialPreviewPresenter {
 function previewBufferSize(
   canvas: HTMLCanvasElement,
   maxSize: number,
+  pixelRatio = 1,
 ): { width: number; height: number } | null {
-  const width = Math.floor(canvas.clientWidth || 0);
-  const height = Math.floor(canvas.clientHeight || 0);
+  const width = Math.floor((canvas.clientWidth || 0) * pixelRatio);
+  const height = Math.floor((canvas.clientHeight || 0) * pixelRatio);
   if (width <= 0 || height <= 0) return null;
   const longest = Math.max(width, height);
   const scale = longest > maxSize ? maxSize / longest : 1;
@@ -612,7 +678,7 @@ function previewBufferSize(
  * waits for before the first frame. Material previews pass their whole host; other previews (Camera Shake) build
  * their own Scene.
  */
-export type PreviewPresenterHost = Pick<MaterialPreviewScene, "scene" | "renderer" | "mesh"> & {
+export type PreviewPresenterHost = Pick<MaterialPreviewScene, "scene" | "renderer" | "mesh"> & Partial<Pick<MaterialPreviewScene, "flat">> & {
   camera: Camera & { radius?: number };
 };
 
@@ -657,6 +723,10 @@ export function createMaterialPreviewPresenter(
   let renderError: string | null = null;
   let readbackError: string | null = null;
   const blitter = createRttCanvasBlitter();
+  // A flat preview draws at the canvas's device pixels (up to MATERIAL_PREVIEW_FLAT_MAX_SIZE), any other at CSS pixels.
+  const bufferSize = () => host.flat === true
+    ? previewBufferSize(canvas, MATERIAL_PREVIEW_FLAT_MAX_SIZE, canvas.ownerDocument?.defaultView?.devicePixelRatio || 1)
+    : previewBufferSize(canvas, maxSize);
 
   const releaseRtt = () => {
     rttGeneration += 1;
@@ -695,7 +765,7 @@ export function createMaterialPreviewPresenter(
 
   const changedSinceSettled = (): boolean => {
     if (pendingForce) return true;
-    const size = previewBufferSize(canvas, maxSize);
+    const size = bufferSize();
     // A hidden canvas keeps its last frame.
     if (size && (size.width !== settledSize.width || size.height !== settledSize.height)) return true;
     return (
@@ -757,13 +827,14 @@ export function createMaterialPreviewPresenter(
       if (!pendingForce && at - lastPresentMs < minIntervalMs) return;
       // e2e telemetry: refreshed per presentation attempt, not per requested frame.
       if (host.camera.radius !== undefined) canvas.dataset.cameraRadius = String(host.camera.radius);
-      const size = previewBufferSize(canvas, maxSize);
+      const size = bufferSize();
       if (!size) return;
       try {
         const scale = resolveSceneRenderingQuality(host.scene).resolution.scale;
         const texture = ensureRtt(Math.max(1, Math.round(size.width * scale)), Math.max(1, Math.round(size.height * scale)));
         // Shader warm-up must not consume a static preview's presentation interval.
-        const preview = host.scene.getMeshByName("materialPreviewText") ?? host.scene.getMeshByName("materialPreviewParticlePlane") ?? host.mesh;
+        const preview = host.scene.getMeshByName("materialPreviewText") ?? host.scene.getMeshByName("materialPreviewParticlePlane") ??
+          host.scene.getMeshByName(MATERIAL_PREVIEW_USER_INTERFACE_NAME) ?? host.mesh;
         if (!previewMeshesReady(preview)) return;
         const frame = host.renderer.render();
         if (!frame.rendered || !frame.readyForPresentation) {
