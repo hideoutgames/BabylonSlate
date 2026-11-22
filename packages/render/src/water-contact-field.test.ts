@@ -13,8 +13,10 @@ import "@babylonjs/core/Meshes/thinInstanceMesh";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody, qualityPresetPatch, type QualityLevel } from "@haptic/core";
 import { createEditorGrid } from "./editor-grid";
 import { updateSceneRenderingSettings } from "./render-settings";
-import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
+import { createWaterMesh, setSceneWaterTime, settleSceneWater, updateSceneWater } from "./water-mesh";
 import { minimumFilter, WATER_CONTACT_FRAME_BUDGET_MS, WATER_CONTACT_LAYER_OFFSETS, WaterContactField } from "./water-contact-field";
+import { rasterContactWindow, type ContactRasterJob } from "./water-contact-raster";
+import { ContactRasterClient } from "./water-contact-worker-client";
 import type { WaterFieldSurface } from "./water-field";
 import { builtInWaterMaterial } from "./water-template";
 import { meshWaterNodeSurface } from "./water-node-blocks";
@@ -31,6 +33,24 @@ function layers(field: WaterContactField, x: number, z: number): number[] {
   if (u < 0 || v < 0 || u >= f.width || v >= f.height) return WATER_CONTACT_LAYER_OFFSETS.map(() => f.range);
   const i = (v * f.width + u) * 4;
   return WATER_CONTACT_LAYER_OFFSETS.map((_, k) => (f.data![i + k]! / 255 * 2 - 1) * f.range);
+}
+
+/**
+ * Texels of `field` that differ from `reference`'s, cell by cell in the world (both lay their cells on one lattice); a
+ * cell only one of them covers counts unless the other side reads far (255) there.
+ */
+function differing(field: WaterContactField, reference: WaterContactField): number {
+  const a = view(field), b = view(reference);
+  if (!a.data || !b.data) throw new Error("Both fields must be allocated.");
+  const cell = 1 / (a.bounds[2]! * a.width);
+  expect(1 / (b.bounds[2]! * b.width)).toBeCloseTo(cell, 9);
+  const dx = Math.round((b.bounds[0]! - a.bounds[0]!) / cell), dz = Math.round((b.bounds[1]! - a.bounds[1]!) / cell);
+  const texel = (f: ContactView, u: number, v: number, k: number) => u < 0 || v < 0 || u >= f.width || v >= f.height ? 255 : f.data![(v * f.width + u) * 4 + k]!;
+  let count = 0;
+  for (let v = Math.min(0, dz); v < Math.max(a.height, dz + b.height); v++) for (let u = Math.min(0, dx); u < Math.max(a.width, dx + b.width); u++) {
+    for (let k = 0; k < 4; k++) if (texel(a, u, v, k) !== texel(b, u - dx, v - dz, k)) { count++; break; }
+  }
+  return count;
 }
 
 /** The shader's blend: the two layers around a rendered wave height (relative to rest). */
@@ -123,16 +143,17 @@ describe("Water contact field", () => {
       const { box, fields } = sixSurfaces();
       let clock = 0;
       vi.spyOn(performance, "now").mockImplementation(() => clock++);
-      // One texture upload per window built.
-      const uploads = fields.map((field) => vi.spyOn(field.texture!, "update"));
-      const counted = uploads.map(() => 0), built: number[][] = fields.map(() => []);
+      // One texture upload per window built (a NullEngine uploads every change whole), told apart by each surface's texture.
+      const upload = vi.spyOn(engine, "updateRawTexture"), textures = fields.map((field) => field.texture!.getInternalTexture());
+      const uploadsOf = (i: number) => upload.mock.calls.filter(([texture]) => texture === textures[i]).length;
+      const counted = fields.map(() => 0), built: number[][] = fields.map(() => []);
       // The box shuttles 0.2 m every frame at 60 frames per second: every surface has a window to rebuild every other frame
       // (its own interval), three times what the budget builds.
       for (let step = 1; step <= 48; step++) {
         box.position.x = step % 2 ? 0.2 : 0;
         frame();
         for (const field of fields) field.update(step * 16);
-        uploads.forEach((upload, i) => { if (upload.mock.calls.length > counted[i]!) built[i]!.push(step); counted[i] = upload.mock.calls.length; });
+        fields.forEach((_, i) => { const calls = uploadsOf(i); if (calls > counted[i]!) built[i]!.push(step); counted[i] = calls; });
       }
       for (const frames of built) {
         expect(frames.length).toBeGreaterThanOrEqual(6);
@@ -153,7 +174,8 @@ describe("Water contact field", () => {
         return { box, field: new WaterContactField(scene, flatSurface(scene, 0.3, () => 0, 1, x, z)) };
       });
       frame();
-      for (const { field } of fields) field.update(0);
+      // Built whole at once: a first build without `force` would wait like any window (the far and unseen ones longer).
+      for (const { field } of fields) field.update(0, true);
       const shows = fields.map(({ field }, i) => () => showsMove(field, spots[i]![0], spots[i]![1]));
       // One window fills the frame's budget.
       let clock = 0;
@@ -224,7 +246,7 @@ describe("Water contact field", () => {
        */
       const unlike = () => {
         const whole = new WaterContactField(scene, flatSurface(scene, 0.3, () => 0, 1));
-        whole.update(0);
+        whole.update(0, true);
         let worst = 0;
         for (let i = -100; i <= 150; i++) for (let j = -85; j <= 85; j++) {
           const a = layers(field, (i + 0.5) * 0.06, (j + 0.5) * 0.06), b = layers(whole, (i + 0.5) * 0.06, (j + 0.5) * 0.06);
@@ -256,6 +278,378 @@ describe("Water contact field", () => {
       expect(field.queued).toBe(0);
       expect(unlike()).toBeLessThan(0.01);
       field.dispose();
+    });
+  });
+
+  describe("progressive rebuilds", () => {
+    /** Posts spread along X (12 m apart) and across Z, on a surface whose envelope and range the test changes. */
+    const posts = () => {
+      for (let i = 0; i < 6; i++) MeshBuilder.CreateBox(`post ${i}`, { width: 0.8, height: 4, depth: 0.8 }, scene).position.set(-30 + i * 12, 0, (i % 3) * 2);
+      frame();
+    };
+    const same = (surface: WaterFieldSurface) => ({ ...surface, mesh: flatSurface(scene, surface.amplitude).mesh });
+
+    for (const [name, change] of [
+      ["wave envelope", (surface: WaterFieldSurface) => { surface.amplitude = 0.6; }],
+      ["contact range", (surface: WaterFieldSurface) => { surface.contactRange = 3; }],
+      // The posts need 1024 cells at the finest size: 256 doubles the cells, so nothing carries over.
+      ["Contact Resolution", (surface: WaterFieldSurface) => { surface.contactCells = 256; }],
+    ] as const) {
+      it(`spreads a changed ${name} over frames, keeping a texture bound, and ends exactly where a forced rebuild does`, () => {
+        setup();
+        posts();
+        const surface = flatSurface(scene, 0.3), field = new WaterContactField(scene, surface);
+        field.update(0, true);
+        const textures = scene.textures.length;
+        // Each window, and the update's own work, takes a millisecond of the frame's two.
+        let clock = 0;
+        vi.spyOn(performance, "now").mockImplementation(() => clock++);
+        change(surface);
+        frame();
+        field.update(50);
+        expect(field.queued).toBeGreaterThan(0);
+        expect(field.texture).not.toBeNull();
+        let frames = 0;
+        for (; frames < 400 && field.queued > 0; frames++) {
+          frame(); field.update(66 + frames * 16);
+          expect(field.texture).not.toBeNull();
+        }
+        expect(field.queued).toBe(0);
+        expect(frames).toBeGreaterThan(1);
+        const forced = new WaterContactField(scene, same(surface));
+        forced.update(0, true);
+        expect(differing(field, forced)).toBe(0);
+        expect(scene.textures.length).toBe(textures);
+        forced.dispose(); field.dispose();
+      });
+    }
+
+    it("builds a new surface without force over frames, and a settle finishes everything in one call", () => {
+      setup();
+      posts();
+      let clock = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => clock++);
+      const surface = flatSurface(scene, 0.3), field = new WaterContactField(scene, surface);
+      field.update(0);
+      // Allocated and bound at once, far everywhere until its windows are built.
+      expect(field.texture).not.toBeNull();
+      expect(field.queued).toBeGreaterThan(0);
+      const forced = new WaterContactField(scene, same(surface));
+      forced.update(0, true);
+      expect(differing(field, forced)).toBeGreaterThan(0);
+      frame();
+      expect(field.settle(16)).toBe(true);
+      expect(field.queued).toBe(0);
+      expect(differing(field, forced)).toBe(0);
+      // Nothing left to do: a second settle changes nothing.
+      frame();
+      expect(field.settle(32)).toBe(false);
+      forced.dispose(); field.dispose();
+    });
+
+    it("leaves a created body's contacts to the frame budget, and a load's settle finishes them at once, seen or not", () => {
+      setup();
+      // The camera looks away from both lakes: no contact update runs for them in a frame of their own.
+      const camera = new FreeCamera("camera", new Vector3(0, 5, 200), scene);
+      camera.setTarget(new Vector3(0, 5, 400));
+      for (const x of [-6, -2, 2, 6]) MeshBuilder.CreateBox(`post ${x}`, { width: 0.6, height: 4, depth: 0.6 }, scene).position.x = x;
+      frame();
+      let clock = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => clock++);
+      const lakes = [0, 1].map((i) => createWaterMesh(scene, `lake ${i}`, normalizeWaterBody({ width: 20, length: 10 }), createDefaultWaterDefinition(), builtInWaterMaterial(scene)));
+      const contacts = lakes.map(contactsOf);
+      expect(contacts.every((field) => field.texture !== null && field.queued > 0)).toBe(true);
+      // A new body counts as drawn for its first frame; after it, nothing draws these and no camera sees them.
+      frame(); updateSceneWater(scene);
+      expect(contacts.every((field) => field.queued > 0)).toBe(true);
+      frame();
+      settleSceneWater(scene, true);
+      expect(contacts.map((field) => field.queued)).toEqual([0, 0]);
+      for (const field of contacts) for (const x of [-6, 6]) expect(Math.abs(contactAt(field, x + 0.32, 0, 0))).toBeLessThan(0.15);
+    });
+
+    it("slices a backlog of moved objects over frames within the budget, least recently sliced first, so none starves", () => {
+      setup();
+      const boxes = Array.from({ length: 24 }, (_, i) => {
+        const box = MeshBuilder.CreateBox(`float ${i}`, { width: 0.5, height: 1, depth: 0.5 }, scene);
+        box.position.set(-12 + i, 0, 0);
+        return box;
+      });
+      frame();
+      const field = new WaterContactField(scene, flatSurface(scene, 0.3, () => 0, 1), { raster: null });
+      field.update(0, true);
+      // Each clock read is a millisecond: an update slices two objects before the frame's two are spent.
+      let clock = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => clock++);
+      const slices = boxes.map((box) => vi.spyOn(box, "getVerticesData"));
+      for (const box of boxes) box.position.z = 0.3;
+      const firstSliced: number[] = boxes.map(() => -1);
+      for (let step = 1; step <= 30 && firstSliced.includes(-1); step++) {
+        // The first four keep moving every frame, and come first in the scene.
+        for (let i = 0; i < 4; i++) boxes[i]!.position.z = 0.3 + (step % 2) * 0.2;
+        frame();
+        field.update(step * 16);
+        slices.forEach((slice, i) => { if (firstSliced[i]! < 0 && slice.mock.calls.length > 0) firstSliced[i] = step; });
+      }
+      // Never the whole backlog in one frame: the first frame that slices takes two.
+      const first = Math.min(...firstSliced);
+      expect(firstSliced.filter((at) => at === first)).toHaveLength(2);
+      // Every object was cut again, the last within about a frame per two objects, though four kept moving throughout.
+      expect(firstSliced.every((at) => at > 0)).toBe(true);
+      expect(Math.max(...firstSliced)).toBeLessThanOrEqual(16);
+      field.dispose();
+    });
+
+    it("rebuilds the cells along the old allocation's edges when a move grows it, so carried cells end as a whole build does", () => {
+      setup();
+      // A 3 m range: 12.5 cm cells and a 2-cell smoothing radius, whose rounding reaches 4 cells past the distances.
+      // The static post's allocation ends exactly 3.25 m from it (x = -4, on a 2 m block), so its rounding ran into
+      // that edge, which the other post's move far to the left turns into the middle of the field.
+      const post = MeshBuilder.CreateBox("post", { width: 1, height: 4, depth: 1 }, scene);
+      post.position.x = -0.25;
+      const mover = MeshBuilder.CreateBox("mover", { width: 1, height: 4, depth: 1 }, scene);
+      mover.position.x = 1;
+      frame();
+      const surface = flatSurface(scene, 0.3, () => 0, 3), field = new WaterContactField(scene, surface);
+      field.update(0, true);
+      expect(view(field).bounds[0]).toBeCloseTo(-4, 9);
+      mover.position.x = -10;
+      frame(); field.update(50);
+      for (let step = 1; step < 40 && field.queued > 0; step++) { frame(); field.update(50 + step * 16); }
+      expect(field.queued).toBe(0);
+      const forced = new WaterContactField(scene, same(surface));
+      forced.update(0, true);
+      expect(differing(field, forced)).toBe(0);
+      forced.dispose(); field.dispose();
+    });
+
+    it("keeps the contact texture out of the Scene's textures while it is allocated, grown, released and restored", () => {
+      setup();
+      const box = MeshBuilder.CreateBox("float", { width: 1, height: 1, depth: 1 }, scene);
+      frame();
+      const count = scene.textures.length;
+      const field = new WaterContactField(scene, flatSurface(scene, 0.3, () => 0, 1));
+      field.update(0, true);
+      expect(field.texture).not.toBeNull();
+      const first = field.texture;
+      // Far beyond the allocation: a larger texture replaces it.
+      box.position.x = 9;
+      frame(); field.update(100, true);
+      expect(field.texture).not.toBe(first);
+      field.releaseTexture();
+      expect(field.texture).toBeNull();
+      field.restore(200);
+      expect(field.texture).not.toBeNull();
+      expect(scene.textures.length).toBe(count);
+      field.dispose();
+      expect(scene.textures.length).toBe(count);
+    });
+  });
+
+  describe("contact worker", () => {
+    /**
+     * A worker stand-in the test answers by hand, in any order: each job is copied when it is sent (as `postMessage`
+     * does) and answered with the real rasteriser's texels, or with `texels` given.
+     */
+    const manualWorker = () => {
+      const jobs: { job: ContactRasterJob; resolve: (texels: Uint8Array) => void; reject: (error: Error) => void }[] = [];
+      const client = new ContactRasterClient(() => ({
+        post: (job) => new Promise<Uint8Array>((resolve, reject) => { jobs.push({ job: structuredClone(job), resolve, reject }); }),
+        close: () => { for (const job of jobs.splice(0)) job.reject(new Error("closed")); },
+      }));
+      const answer = (index = 0, texels?: Uint8Array) => {
+        const [{ job, resolve }] = jobs.splice(index, 1) as [typeof jobs[number]];
+        const out = new Uint8Array((job.write.x1 - job.write.x0) * (job.write.z1 - job.write.z0) * 4);
+        if (texels) out.set(texels.subarray(0, out.length)); else rasterContactWindow(job, out);
+        resolve(out);
+      };
+      return { client, jobs, answer };
+    };
+    /** Lets the answered jobs' callbacks run. */
+    const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    it("builds a full rebuild at the worker in blocks of up to 256 cells, two at a time, applied on later updates", async () => {
+      setup();
+      for (const x of [-9, 9]) for (const z of [-9, 9]) MeshBuilder.CreateBox(`post ${x} ${z}`, { width: 1, height: 4, depth: 1 }, scene).position.set(x, 0, z);
+      frame();
+      const worker = manualWorker(), surface = flatSurface(scene, 0.3, () => 0, 1);
+      const field = new WaterContactField(scene, surface, { raster: worker.client });
+      field.update(0);
+      // About 350 cells a side, four blocks: two of more than the main thread's 64 cells a side are out, two queued.
+      expect(worker.jobs).toHaveLength(2);
+      expect(field.queued).toBe(4);
+      for (const { job } of worker.jobs) {
+        expect(job.write.x1 - job.write.x0).toBeGreaterThan(64);
+        expect(job.write.x1 - job.write.x0).toBeLessThanOrEqual(256);
+      }
+      const forced = new WaterContactField(scene, { ...surface, mesh: flatSurface(scene, 0.3).mesh }, { raster: null });
+      forced.update(0, true);
+      const before = differing(field, forced);
+      worker.answer();
+      await flush();
+      // Nothing lands until the next update.
+      expect(differing(field, forced)).toBe(before);
+      for (let step = 1; step < 20 && field.queued > 0; step++) {
+        frame(); expect(field.update(step * 16)).toBe(true);
+        expect(worker.jobs.length).toBeLessThanOrEqual(2);
+        while (worker.jobs.length > 0) worker.answer();
+        await flush();
+      }
+      expect(field.queued).toBe(0);
+      expect(differing(field, forced)).toBe(0);
+      forced.dispose(); field.dispose();
+    });
+
+    it("drops a result sent before a forced rebuild or settle, which builds those cells itself", async () => {
+      setup();
+      const box = MeshBuilder.CreateBox("float", { width: 1, height: 1, depth: 1 }, scene);
+      frame();
+      const worker = manualWorker(), surface = flatSurface(scene, 0.3, () => 0, 1);
+      const field = new WaterContactField(scene, surface, { raster: worker.client });
+      field.update(0, true);
+      for (const [now, finish] of [[50, () => field.update(60, true)], [100, () => field.settle(110)]] as const) {
+        box.position.x += 0.4;
+        frame(); field.update(now);
+        expect(worker.jobs.length).toBeGreaterThan(0);
+        frame(); finish();
+        expect(field.queued).toBe(0);
+        // The late answer says "inside" everywhere; it must not land.
+        while (worker.jobs.length > 0) worker.answer(0, new Uint8Array(1 << 20));
+        await flush();
+        frame(); field.update(now + 30);
+        const forced = new WaterContactField(scene, { ...surface, mesh: flatSurface(scene, 0.3).mesh }, { raster: null });
+        forced.update(0, true);
+        expect(differing(field, forced)).toBe(0);
+        forced.dispose();
+      }
+      field.dispose();
+    });
+
+    it("queues the windows at the worker again in the new cells when the allocation grows, so none is lost", async () => {
+      setup();
+      const near = MeshBuilder.CreateBox("near", { width: 1, height: 1, depth: 1 }, scene);
+      const far = MeshBuilder.CreateBox("far", { width: 1, height: 1, depth: 1 }, scene);
+      far.position.x = 2;
+      frame();
+      const worker = manualWorker(), surface = flatSurface(scene, 0.3, () => 0, 1);
+      const field = new WaterContactField(scene, surface, { raster: worker.client });
+      field.update(0, true);
+      // The near box moves: its window goes to the worker.
+      near.position.z = 0.4;
+      frame(); field.update(50);
+      expect(worker.jobs).toHaveLength(1);
+      // The other leaves the allocation: it grows on the same lattice, carrying its cells over.
+      far.position.x = 8;
+      frame(); field.update(100);
+      // The answer computed for the old cells is dropped; the near box's window comes back for the new ones.
+      for (let step = 1; step < 20 && field.queued > 0; step++) {
+        while (worker.jobs.length > 0) worker.answer();
+        await flush();
+        frame(); field.update(100 + step * 16);
+      }
+      expect(field.queued).toBe(0);
+      const forced = new WaterContactField(scene, { ...surface, mesh: flatSurface(scene, 0.3).mesh }, { raster: null });
+      forced.update(0, true);
+      expect(differing(field, forced)).toBe(0);
+      forced.dispose(); field.dispose();
+    });
+
+    it("never lets an older result land over newer cells, whatever order the worker answers in", async () => {
+      setup();
+      const box = MeshBuilder.CreateBox("float", { width: 1, height: 1, depth: 1 }, scene);
+      frame();
+      const worker = manualWorker(), surface = flatSurface(scene, 0.3, () => 0, 1);
+      const field = new WaterContactField(scene, surface, { raster: worker.client });
+      field.update(0, true);
+      // Two moves in a row: two overlapping windows at the worker, the second from the newer pose.
+      box.position.x = 0.4;
+      frame(); field.update(50);
+      box.position.x = 0.8;
+      frame(); field.update(100);
+      expect(worker.jobs).toHaveLength(2);
+      // The newer answer first: the far face's waterline is at x = 1.3 now, and nothing stands at x = 0.9 any more.
+      worker.answer(1);
+      await flush();
+      frame(); field.update(116);
+      expect(Math.abs(contactAt(field, 1.3, 0, 0))).toBeLessThan(0.1);
+      // The older one arrives late: it would put the waterline back at x = 0.9. It is dropped and its window rebuilt.
+      worker.answer(0);
+      await flush();
+      frame(); field.update(132);
+      expect(Math.abs(contactAt(field, 1.3, 0, 0))).toBeLessThan(0.1);
+      expect(contactAt(field, 0.9, 0, 0)).toBeLessThan(-0.1);
+      for (let step = 1; step < 20 && field.queued > 0; step++) {
+        while (worker.jobs.length > 0) worker.answer();
+        await flush();
+        frame(); field.update(132 + step * 16);
+      }
+      const forced = new WaterContactField(scene, { ...surface, mesh: flatSurface(scene, 0.3).mesh }, { raster: null });
+      forced.update(0, true);
+      expect(differing(field, forced)).toBe(0);
+      forced.dispose(); field.dispose();
+    });
+
+    it("ends exactly where a forced rebuild does after an envelope change whose re-slicing spans frames while the worker answers", async () => {
+      setup();
+      // Cones and slanted boxes, whose sections differ at every envelope, so a cell built from a section cut for the
+      // old envelope differs from the final one.
+      const meshes = Array.from({ length: 10 }, (_, i) => {
+        const mesh = i % 2
+          ? MeshBuilder.CreateCylinder(`cone ${i}`, { height: 3, diameterBottom: 2.4, diameterTop: 0.2, tessellation: 24 }, scene)
+          : MeshBuilder.CreateBox(`slab ${i}`, { width: 1.4, height: 0.5, depth: 0.8 }, scene);
+        mesh.position.set(-9 + i * 2, i % 2 ? 0 : 0.1, (i % 3) - 1);
+        mesh.rotation.z = i % 2 ? 0 : 0.35;
+        return mesh;
+      });
+      frame();
+      const worker = manualWorker(), surface = flatSurface(scene, 0.3, () => 0, 1);
+      const field = new WaterContactField(scene, surface, { raster: worker.client });
+      field.update(0, true);
+      // Each clock read is a millisecond: an update re-slices two placements, so the backlog spans five frames.
+      let clock = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => clock++);
+      const slices = meshes.map((mesh) => vi.spyOn(mesh, "getVerticesData"));
+      surface.amplitude = 0.8;
+      const slicedAt: number[] = meshes.map(() => -1);
+      let answeredBeforeLastSlice = 0;
+      for (let step = 1; step < 60 && field.queued + slicedAt.filter((at) => at < 0).length > 0; step++) {
+        frame(); field.update(step * 16);
+        slices.forEach((slice, i) => { if (slicedAt[i]! < 0 && slice.mock.calls.length > 0) slicedAt[i] = step; });
+        // The worker answers between frames, while placements still wait to be cut again.
+        if (worker.jobs.length > 0 && slicedAt.includes(-1)) answeredBeforeLastSlice += worker.jobs.length;
+        while (worker.jobs.length > 0) worker.answer();
+        await flush();
+      }
+      expect(new Set(slicedAt).size).toBeGreaterThanOrEqual(4);
+      expect(answeredBeforeLastSlice).toBeGreaterThan(0);
+      expect(field.queued).toBe(0);
+      const forced = new WaterContactField(scene, { ...surface, mesh: flatSurface(scene, 0.8).mesh }, { raster: null });
+      forced.update(0, true);
+      expect(differing(field, forced)).toBe(0);
+      forced.dispose(); field.dispose();
+    });
+
+    it("falls back to the main thread when the worker fails, warning once, and still ends where a forced rebuild does", async () => {
+      setup();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      for (const x of [-9, 9]) MeshBuilder.CreateBox(`post ${x}`, { width: 1, height: 4, depth: 1 }, scene).position.x = x;
+      frame();
+      const worker = manualWorker(), surface = flatSurface(scene, 0.3, () => 0, 1);
+      const field = new WaterContactField(scene, surface, { raster: worker.client });
+      field.update(0);
+      expect(worker.jobs).toHaveLength(2);
+      // One job fails: the worker is done for, and every job still out comes back to the queue.
+      worker.jobs.shift()!.reject(new Error("worker crashed"));
+      await flush();
+      expect(worker.client.available).toBe(false);
+      expect(worker.jobs).toHaveLength(0);
+      for (let step = 1; step < 40 && field.queued > 0; step++) { frame(); field.update(step * 16); }
+      expect(field.queued).toBe(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const forced = new WaterContactField(scene, { ...surface, mesh: flatSurface(scene, 0.3).mesh }, { raster: null });
+      forced.update(0, true);
+      expect(differing(field, forced)).toBe(0);
+      forced.dispose(); field.dispose();
     });
   });
 
@@ -602,7 +996,10 @@ describe("Water contact field", () => {
     const contacts = contactsOf(ocean);
     const side = (level: QualityLevel) => {
       updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality(qualityPresetPatch(level)) });
+      // The new cells come in over frames, within the contact budget.
       updateSceneWater(scene);
+      for (let i = 0; i < 20 && contacts.queued > 0; i++) { frame(); updateSceneWater(scene); }
+      expect(contacts.queued).toBe(0);
       return Math.max(view(contacts).width, view(contacts).height);
     };
     // High allows 1024 cells per side; Low's 256 coarsens the cells instead of growing the texture.
