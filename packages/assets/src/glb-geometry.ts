@@ -1,8 +1,11 @@
 import { encodeGlbJsonBin, splitGlbJsonBin } from "./importers/glb-parse";
 import type { CollisionTriangleMesh } from "@haptic/core";
 import type { HullVec3 } from "./convex-hull";
+import { readyGltfMeshoptDecoder } from "./gltf-geometry-decoders";
 import {
+  formatImportBytes,
   formatImportCount,
+  GLTF_MAX_MESHOPT_DECODED_BYTES,
   GLTF_MAX_NODE_DEPTH,
   GLTF_MAX_PRIMITIVE_INDICES,
   GLTF_MAX_PRIMITIVE_VERTICES,
@@ -172,10 +175,13 @@ export class GltfGeometryUnreadableError extends Error {
 
 const DRACO = "KHR_draco_mesh_compression";
 const MESHOPT = "EXT_meshopt_compression";
+const KHR_MESHOPT = "KHR_meshopt_compression";
 const DRACO_UNREADABLE =
   "its geometry is Draco-compressed (KHR_draco_mesh_compression), which collision cooking cannot decode; export the model without mesh compression and import it again";
-const MESHOPT_UNREADABLE =
-  "its geometry is meshopt-compressed (EXT_meshopt_compression), which collision cooking cannot decode; export the model without mesh compression and import it again";
+const KHR_MESHOPT_UNREADABLE =
+  "its geometry is compressed with KHR_meshopt_compression, which collision cooking cannot decode yet; export the model with EXT_meshopt_compression or without mesh compression and import it again";
+const MESHOPT_NOT_LOADED =
+  "its geometry is meshopt-compressed (EXT_meshopt_compression) and the meshopt decoder has not loaded";
 const MALFORMED_GEOMETRY = "its geometry is malformed: an accessor reads outside its buffer";
 
 /** Malformed geometry, saying what is wrong. */
@@ -190,11 +196,131 @@ function gltfIndexField(value: unknown, fallback: number, describe: () => string
   throw malformed(`${describe()} must be a whole number of at least 0, not ${String(value)}`);
 }
 
+/** One read pass's decoded meshopt buffer views (by view index) and the bytes they decoded to, together. */
+interface MeshoptDecodeCache {
+  views: Map<number, Uint8Array>;
+  decodedBytes: number;
+}
+
+/**
+ * Decoded meshopt views per parsed glTF JSON: a parse is one read pass, so each compressed view decodes once however
+ * many accessors (positions, indices, sparse parts, animation keys) read it, and the pass's decoded bytes are charged
+ * together against {@link GLTF_MAX_MESHOPT_DECODED_BYTES}.
+ */
+const meshoptDecodeCaches = new WeakMap<object, MeshoptDecodeCache>();
+
+const MESHOPT_MODES = new Set(["ATTRIBUTES", "TRIANGLES", "INDICES"]);
+const MESHOPT_FILTERS = new Set(["NONE", "OCTAHEDRAL", "QUATERNION", "EXPONENTIAL"]);
+
+/**
+ * The bytes `EXT_meshopt_compression` stores for buffer view `viewIndex`, decoded: `count × byteStride` bytes, as the
+ * uncompressed view would hold them. The compressed stream must lie in the GLB's binary chunk (buffer 0). The
+ * extension's shape is checked against the spec before the decoder runs (a stride or count the codec cannot take
+ * would trap inside it); a stream the decoder rejects, or a decoder that has not loaded, makes the geometry unreadable.
+ */
+function decodedMeshoptView(
+  json: Record<string, unknown>,
+  bin: Uint8Array,
+  viewIndex: number,
+  extension: Record<string, unknown>,
+): Uint8Array {
+  let cache = meshoptDecodeCaches.get(json);
+  const cached = cache?.views.get(viewIndex);
+  if (cached) return cached;
+  const label = `glTF buffer view ${viewIndex}'s ${MESHOPT}`;
+  if ((extension.buffer ?? 0) !== 0) {
+    throw malformed(`${label} reads buffer ${String(extension.buffer)}, not the binary chunk`);
+  }
+  const offset = gltfIndexField(extension.byteOffset, 0, () => `${label} byteOffset`);
+  const length = gltfIndexField(extension.byteLength, 0, () => `${label} byteLength`);
+  const stride = gltfIndexField(extension.byteStride, 0, () => `${label} byteStride`);
+  const count = gltfIndexField(extension.count, 0, () => `${label} count`);
+  const mode = extension.mode;
+  const filter = extension.filter ?? "NONE";
+  if (typeof mode !== "string" || !MESHOPT_MODES.has(mode)) {
+    throw malformed(`${label} mode ${String(mode)} is not one the extension defines`);
+  }
+  if (typeof filter !== "string" || !MESHOPT_FILTERS.has(filter)) {
+    throw malformed(`${label} filter ${String(filter)} is not one the extension defines`);
+  }
+  // The extension's own constraints, which the codec asserts.
+  const strideFits = mode === "ATTRIBUTES"
+    ? stride > 0 && stride <= 256 && stride % 4 === 0
+    : stride === 2 || stride === 4;
+  const filterFits = filter === "NONE" || (mode === "ATTRIBUTES" && (
+    filter === "OCTAHEDRAL" ? stride === 4 || stride === 8
+      : filter === "QUATERNION" ? stride === 8
+        : stride % 4 === 0));
+  if (!strideFits || !filterFits || (mode === "TRIANGLES" && count % 3 !== 0)) {
+    throw malformed(`${label} has a byteStride of ${stride} and a count of ${count}, which mode ${mode} with filter ${filter} cannot hold`);
+  }
+  if (offset + length > bin.byteLength) {
+    throw malformed(
+      `${label} data ends at byte ${formatImportCount(offset + length)}, past the end of the ${formatImportCount(bin.byteLength)}-byte binary buffer`,
+    );
+  }
+  const decodedBytes = (cache?.decodedBytes ?? 0) + count * stride;
+  if (decodedBytes > GLTF_MAX_MESHOPT_DECODED_BYTES) {
+    throw importLimitError(
+      "The mesh data the model's meshopt-compressed buffer views decode to",
+      formatImportBytes(decodedBytes),
+      formatImportBytes(GLTF_MAX_MESHOPT_DECODED_BYTES),
+      "Split the model into smaller files before importing.",
+    );
+  }
+  const decoder = readyGltfMeshoptDecoder();
+  if (!decoder) throw new GltfGeometryUnreadableError(MESHOPT_NOT_LOADED);
+  const target = new Uint8Array(count * stride);
+  try {
+    decoder.decodeGltfBuffer(target, count, stride, bin.subarray(offset, offset + length), mode, filter);
+  } catch {
+    throw malformed(`${label} data cannot be decoded`);
+  }
+  if (!cache) {
+    cache = { views: new Map(), decodedBytes: 0 };
+    meshoptDecodeCaches.set(json, cache);
+  }
+  cache.views.set(viewIndex, target);
+  cache.decodedBytes = decodedBytes;
+  return target;
+}
+
+/**
+ * Buffer view `viewIndex`'s bytes. A meshopt view is decoded ({@link decodedMeshoptView}) unless the extension is
+ * optional and the view's own buffer is the binary chunk, whose bytes are then the uncompressed fallback. Otherwise
+ * only buffer 0, the GLB's binary chunk, holds data, and the view must lie inside it.
+ */
+function bufferViewBytes(json: Record<string, unknown>, bin: Uint8Array, viewIndex: number): Uint8Array {
+  const bufferViews = Array.isArray(json.bufferViews) ? json.bufferViews : [];
+  const view = bufferViews[viewIndex];
+  if (!view || typeof view !== "object") throw new GltfGeometryUnreadableError(MALFORMED_GEOMETRY);
+  const record = view as Record<string, unknown>;
+  const extensions = asRecord(record.extensions);
+  const required: unknown[] = Array.isArray(json.extensionsRequired) ? json.extensionsRequired : [];
+  const ownData = (record.buffer ?? 0) === 0;
+  if (extensions[KHR_MESHOPT] && (!ownData || required.includes(KHR_MESHOPT))) {
+    throw new GltfGeometryUnreadableError(KHR_MESHOPT_UNREADABLE);
+  }
+  if (extensions[MESHOPT] && (!ownData || required.includes(MESHOPT))) {
+    return decodedMeshoptView(json, bin, viewIndex, asRecord(extensions[MESHOPT]));
+  }
+  if (!ownData) throw new GltfGeometryUnreadableError(MALFORMED_GEOMETRY);
+  const viewLabel = `glTF buffer view ${viewIndex}`;
+  const viewOffset = gltfIndexField(record.byteOffset, 0, () => `${viewLabel}'s byteOffset`);
+  const viewLength = gltfIndexField(record.byteLength, 0, () => `${viewLabel}'s byteLength`);
+  if (viewOffset + viewLength > bin.byteLength) {
+    throw malformed(
+      `${viewLabel} ends at byte ${formatImportCount(viewOffset + viewLength)}, past the end of the ${formatImportCount(bin.byteLength)}-byte binary buffer`,
+    );
+  }
+  return bin.subarray(viewOffset, viewOffset + viewLength);
+}
+
 /**
  * `count` elements of `components` values from a buffer view, tightly packed or (`strided`) `byteStride` apart.
  * Everything that sizes the loop is checked first: offsets are whole and non-negative, a stride is whole and at
- * least one element long, and the last element ends inside the view and the view inside the BIN. So a malformed
- * file fails at once instead of reading past its data or looping over a count its bytes do not hold.
+ * least one element long, and the last element ends inside the view (the BIN's bytes or its decoded meshopt data).
+ * So a malformed file fails at once instead of reading past its data or looping over a count its bytes do not hold.
  */
 function readElements(
   json: Record<string, unknown>,
@@ -206,23 +332,11 @@ function readElements(
   componentType: number,
   strided: boolean,
 ): number[] {
-  const bufferViews = Array.isArray(json.bufferViews) ? json.bufferViews : [];
-  const view = bufferViews[viewIndex];
   const size = componentBytes(componentType);
-  if (!view || typeof view !== "object" || size === 0) throw new GltfGeometryUnreadableError(MALFORMED_GEOMETRY);
-  const record = view as Record<string, unknown>;
-  // Only buffer 0, the GLB's binary chunk, holds data. A meshopt view names its fallback buffer, which holds none.
-  if ((record.buffer ?? 0) !== 0) {
-    throw new GltfGeometryUnreadableError(asRecord(record.extensions)[MESHOPT] ? MESHOPT_UNREADABLE : MALFORMED_GEOMETRY);
-  }
+  if (size === 0) throw new GltfGeometryUnreadableError(MALFORMED_GEOMETRY);
+  const viewBytes = bufferViewBytes(json, bin, viewIndex);
+  const record = asRecord((json.bufferViews as unknown[])[viewIndex]);
   const viewLabel = `glTF buffer view ${viewIndex}`;
-  const viewOffset = gltfIndexField(record.byteOffset, 0, () => `${viewLabel}'s byteOffset`);
-  const viewLength = gltfIndexField(record.byteLength, 0, () => `${viewLabel}'s byteLength`);
-  if (viewOffset + viewLength > bin.byteLength) {
-    throw malformed(
-      `${viewLabel} ends at byte ${formatImportCount(viewOffset + viewLength)}, past the end of the ${formatImportCount(bin.byteLength)}-byte binary buffer`,
-    );
-  }
   const offset = gltfIndexField(byteOffset, 0, () => "an accessor's byteOffset");
   const elementBytes = size * components;
   // No stride (or 0) packs elements tightly; a stride shorter than an element would overlap them.
@@ -232,14 +346,13 @@ function readElements(
     throw malformed(`${viewLabel}'s byteStride must be a whole number of at least ${elementBytes} bytes, not ${String(declaredStride)}`);
   }
   // Checked once, before the loop: the last element ends inside the view.
-  if (count > 0 && offset + (count - 1) * stride + elementBytes > viewLength) {
+  if (count > 0 && offset + (count - 1) * stride + elementBytes > viewBytes.byteLength) {
     throw malformed(`an accessor reads ${formatImportCount(count)} elements, which run past the end of ${viewLabel}`);
   }
-  const start = viewOffset + offset;
-  const data = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
+  const data = new DataView(viewBytes.buffer, viewBytes.byteOffset, viewBytes.byteLength);
   const out = new Array<number>(count * components);
   for (let i = 0, at = 0; i < count; i++) {
-    const element = start + i * stride;
+    const element = offset + i * stride;
     for (let c = 0; c < components; c++) out[at++] = readComponent(data, element + c * size, componentType);
   }
   return out;
@@ -248,8 +361,9 @@ function readElements(
 /**
  * An accessor's values, `components` per element, as glTF defines them: `byteStride` honoured, sparse substitutions
  * applied, zeros without a buffer view, and `normalized` integer components mapped to [0, 1] or [-1, 1]
- * (KHR_mesh_quantization). Throws `GltfGeometryUnreadableError` for compressed or malformed data (`readElements`),
- * and `ImportLimitError` for a count or sparse count above `maxCount`, before anything is read or allocated.
+ * (KHR_mesh_quantization); meshopt-compressed views are decoded first. Throws `GltfGeometryUnreadableError` for data
+ * it cannot decode or that is malformed (`readElements`), and `ImportLimitError` for a count or sparse count above
+ * `maxCount`, before anything is read or allocated.
  */
 export function accessorValues(
   json: Record<string, unknown>,
@@ -468,8 +582,8 @@ export interface GltfTriangles {
 
 /**
  * A glTF or GLB file's rest-pose triangles with node transforms and Import Scale baked, or null when it has none or
- * its geometry cannot be read (compressed or malformed). Parse once and share the result when both a collider and
- * an occluder are cooked from it.
+ * its geometry cannot be read (Draco-compressed, meshopt before the decoder loaded, or malformed). Parse once and
+ * share the result when both a collider and an occluder are cooked from it.
  */
 export function readGltfTriangles(
   bytes: Uint8Array,
@@ -480,7 +594,7 @@ export function readGltfTriangles(
 
 /**
  * Every triangle of the default scene, or none with the reason when any of its geometry cannot be read: part of a
- * model would collide wrongly, so a compressed or malformed model yields nothing. Import limits (vertex and index
+ * model would collide wrongly, so an undecodable or malformed model yields nothing. Import limits (vertex and index
  * caps, node depth) are not caught: they fail the import by name.
  */
 function collectGltfTriangles(
@@ -492,7 +606,7 @@ function collectGltfTriangles(
   const { json, bin } = parsed;
   const required: unknown[] = Array.isArray(json.extensionsRequired) ? json.extensionsRequired : [];
   if (required.includes(DRACO)) return { triangles: null, problem: DRACO_UNREADABLE };
-  if (required.includes(MESHOPT)) return { triangles: null, problem: MESHOPT_UNREADABLE };
+  if (required.includes(KHR_MESHOPT)) return { triangles: null, problem: KHR_MESHOPT_UNREADABLE };
   try {
     return { triangles: collectSceneTriangles(json, bin, importScale), problem: null };
   } catch (error) {

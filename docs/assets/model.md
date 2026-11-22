@@ -6,7 +6,7 @@ An imported 3D mesh, with a Material for each slot, simple collision shapes and 
 
 Models are not created from **New Asset**. In the **Content Browser**, choose **Import** and pick a GLB, glTF, FBX, OBJ or STL file. Importing also creates the file's Materials and Textures, a [Skeleton](skeleton.md) for a rigged model, and one [Animation](animation.md) for each clip. See [Importing Assets](../editor/importing.md).
 
-A file with Draco- or meshopt-compressed meshes draws normally, but Haptic cannot read its triangles for collision: its **Generated Collision** is a 1 m placeholder box and **Use Complex Collision** gives it no collision. For collision from the mesh, export the model from your 3D tool without mesh compression and import it again. Quantized meshes are read in full.
+A file with Draco-compressed meshes draws normally, but Haptic cannot read its triangles for collision: its **Generated Collision** is a 1 m placeholder box and **Use Complex Collision** gives it no collision. For collision from the mesh, export the model from your 3D tool without Draco compression and import it again. Meshopt-compressed and quantized meshes are read in full.
 
 ## Editor
 

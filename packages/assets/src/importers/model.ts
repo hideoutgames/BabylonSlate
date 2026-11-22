@@ -1,5 +1,6 @@
 import { bakeOccluderFromMesh } from "../occluder-bake";
 import { packGltfTriangles, readGltfTriangles } from "../glb-geometry";
+import { gltfGeometryDecodersReady } from "../gltf-geometry-decoders";
 import { createDefaultMaterialDocument, createImportedMaterialDocument } from "@haptic/shader-graph";
 import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
@@ -75,6 +76,9 @@ export async function importModel(
   if (!browse) {
     throw new Error(UNSUPPORTED_MODEL_FORMAT);
   }
+  // The collider and occluder read the geometry synchronously and decode meshopt data, so the import waits for the
+  // decoder first.
+  await gltfGeometryDecodersReady();
   return importFromBrowse(
     name,
     mime,

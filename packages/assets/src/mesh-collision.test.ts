@@ -209,7 +209,7 @@ describe("cookComplexCollisionMeshes", () => {
 });
 
 const FLOAT = 5126, BYTE = 5120, UNSIGNED_BYTE = 5121, SHORT = 5122, UNSIGNED_SHORT = 5123;
-const DRACO = "KHR_draco_mesh_compression", MESHOPT = "EXT_meshopt_compression";
+const DRACO = "KHR_draco_mesh_compression";
 
 /** The parts' bytes end to end; each part is a multiple of four bytes, so every view stays aligned. */
 function binOf(...parts: ArrayBufferView[]): Uint8Array {
@@ -317,22 +317,6 @@ describe("cookComplexCollision reads glTF geometry as the spec defines it", () =
       bufferViews: [{ buffer: 0, byteLength: 40 }],
       accessors: [{ componentType: FLOAT, count: 3, type: "VEC3" }],
     }, compressed), /Draco-compressed/],
-    ["meshopt, required", glbOf({
-      ...singlePrimitive({}),
-      extensionsUsed: [MESHOPT], extensionsRequired: [MESHOPT],
-      buffers: [{ byteLength: 40 }, { byteLength: 36, extensions: { [MESHOPT]: { fallback: true } } }],
-      bufferViews: [{ buffer: 1, byteLength: 36, byteStride: 12,
-        extensions: { [MESHOPT]: { buffer: 0, byteLength: 40, byteStride: 12, count: 3, mode: "ATTRIBUTES" } } }],
-      accessors: [{ bufferView: 0, componentType: FLOAT, count: 3, type: "VEC3" }],
-    }, compressed), /meshopt-compressed/],
-    ["meshopt, optional with an empty fallback buffer", glbOf({
-      ...singlePrimitive({}),
-      extensionsUsed: [MESHOPT],
-      buffers: [{ byteLength: 40 }, { byteLength: 36, extensions: { [MESHOPT]: { fallback: true } } }],
-      bufferViews: [{ buffer: 1, byteLength: 36, byteStride: 12,
-        extensions: { [MESHOPT]: { buffer: 0, byteLength: 40, byteStride: 12, count: 3, mode: "ATTRIBUTES" } } }],
-      accessors: [{ bufferView: 0, componentType: FLOAT, count: 3, type: "VEC3" }],
-    }, compressed), /meshopt-compressed/],
     ["an accessor past the end of its buffer", glbOf({
       ...singlePrimitive({}),
       bufferViews: [{ buffer: 0, byteLength: 36 }],

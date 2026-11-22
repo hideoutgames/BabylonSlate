@@ -15,6 +15,7 @@ import {
 } from "./index";
 import { buildBoxGlbFixture } from "../glb-geometry";
 import { buildMinimalGlbFixture } from "../test-support/glb-fixtures";
+import { meshoptBoxGlb } from "../test-support/meshopt-gltf";
 import { encodeGlbJsonBin } from "./glb-parse";
 import { gifHeader, webpHeader } from "../test-support/image-headers";
 import { ImportLimitError } from "../import-limits";
@@ -150,6 +151,22 @@ describe("importers", () => {
     const colliders = model.payload.simpleColliders as Array<{ kind: string }>;
     expect(colliders).toHaveLength(1);
     expect(colliders[0]!.kind).toBe("generated");
+  });
+
+  it("reads a meshopt-compressed model's geometry for its generated collider and occluder as it reads the uncompressed file", async () => {
+    // No test step loads the decoder: the import waits for it.
+    const modelOf = async (bytes: Uint8Array) =>
+      (await importModel(bytes, { fileName: "crate.glb", existingGuids: new Set() })).find((result) => result.type === "Model")!.payload;
+    const shapes = (payload: Record<string, unknown>) => ({
+      colliders: (payload.simpleColliders as Array<{ kind: string; points?: Array<{ x: number; y: number; z: number }> }>)
+        .map(({ kind, points }) => ({ kind, points: points?.map(({ x, y, z }) => [x, y, z]).sort() })),
+      occluder: payload.occluder,
+    });
+    const plain = shapes(await modelOf(await meshoptBoxGlb("none", 2)));
+    const corners = [-1, 1].flatMap((x) => [-1, 1].flatMap((y) => [-1, 1].map((z) => [x, y, z]))).sort();
+    expect(plain.colliders).toEqual([{ kind: "generated", points: corners }]);
+    expect(plain.occluder).not.toBeNull();
+    expect(shapes(await modelOf(await meshoptBoxGlb("required", 2)))).toEqual(plain);
   });
 
   it("imports a Draco-compressed model with a placeholder collider and no occluder instead of reading its compressed bytes", async () => {
