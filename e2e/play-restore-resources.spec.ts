@@ -116,10 +116,9 @@ test("Play links nothing and holds its WebGL objects across a Profile's step and
   const [first, ...later] = rounds;
   // The first round compiles each step's programs; every later one draws them from the Effect cache.
   for (const [index, round] of later.entries()) {
-    const { links: _links, relinks, ...objects } = round.gl;
-    const { links: _firstLinks, relinks: firstRelinks, ...firstObjects } = first!.gl;
-    expect({ programs: round.programs, relinks: relinks! - firstRelinks!, objects }, `round ${index + 2}`)
-      .toEqual({ programs: first!.programs, relinks: 0, objects: firstObjects });
+    const objects = (gl: GlCounts) => Object.fromEntries(Object.entries(gl).filter(([kind]) => kind !== "links" && kind !== "relinks"));
+    expect({ programs: round.programs, relinks: round.gl.relinks! - first!.gl.relinks!, objects: objects(round.gl) }, `round ${index + 2}`)
+      .toEqual({ programs: first!.programs, relinks: 0, objects: objects(first!.gl) });
   }
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
