@@ -61,6 +61,7 @@ import {
   RegistryGenerationClock,
   type AreaEmissionProgress,
   createProjectFromTemplate,
+  normalizeTilemapPayload,
   createVfsBlobStore,
   decodeAssetDocument,
   encodePluginSettingsDocument,
@@ -1426,6 +1427,8 @@ export class ProjectService {
     void _v;
     if (kind === "data-definition") return { ...normalizeDataDefinitionAsset(content) };
     if (kind === "data-tree") return { ...normalizeDataTreeAsset(content) };
+    // A stored Tilemap holds run-length chunks; editor documents hold dense cells.
+    if (kind === "tilemap") return { ...normalizeTilemapPayload(content) };
     if (kind === "scene") {
       return normalizeScene(content);
     }

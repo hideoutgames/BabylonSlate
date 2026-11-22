@@ -10,6 +10,8 @@ import {
   AUDIO_DEFAULT_SOURCE_CHUNK,
   AUDIO_REVERB_CHUNK_ID,
   collectFoliageChunksForPlay,
+  compactTilemapPayload,
+  normalizeTilemapPayload,
   collectLandscapeChunksForPlay,
   currentAreaEmissionChunk,
   decodeAreaEmission,
@@ -247,6 +249,10 @@ async function bytesForAsset(
   // A Timeline Clip asset ships its keys, events and proxies; its Editor Preview never leaves the editor.
   if (isTimelineClipAssetType(asset.header.type) && document) {
     return encoder.encode(JSON.stringify(stripTimelineClipAssetEditorData(normalizeTimelineClipAsset(document))));
+  }
+  // A Tilemap ships its chunks run-length encoded, as its .hasset stores them.
+  if (asset.header.type === "Tilemap" && document) {
+    return encoder.encode(JSON.stringify(compactTilemapPayload(normalizeTilemapPayload(document))));
   }
   if (JSON_TYPES.has(asset.header.type) && document) {
     return encoder.encode(JSON.stringify(document));
