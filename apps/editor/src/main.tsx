@@ -131,8 +131,10 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
     );
   if (isTestModeEnabled()) {
     // Pixel probes read view canvases; a directly presented view writes its image into its canvas first.
-    // Loaded on demand so the render package stays out of the entry chunk, and installed before mount.
-    void import("@haptic/render").then(({ installDirectViewReadSync }) => installDirectViewReadSync()).finally(mount);
+    // Loaded on demand so the render package stays out of the entry chunk, and installed before mount. Through its
+    // own entry point: a dynamic import of the package's main entry makes the bundler keep that whole barrel as one
+    // chunk, which ties render modules into editor chunks and creates chunk cycles (development.md, production build).
+    void import("@haptic/render/direct-view-presentation").then(({ installDirectViewReadSync }) => installDirectViewReadSync()).finally(mount);
   } else {
     mount();
   }
