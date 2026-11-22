@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import {
   isMissingFile,
+  secureEncryption,
   type SafeStorage,
   type SecretStoreFiles,
 } from "./desktop-secret-store";
@@ -11,24 +12,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-type AccountSafeStorage = SafeStorage & {
-  getSelectedStorageBackend?(): string;
-};
-
-function secureEncryption(storage: AccountSafeStorage): boolean {
-  return (
-    storage.isEncryptionAvailable() &&
-    !["basic_text", "unknown"].includes(
-      storage.getSelectedStorageBackend?.() ?? "",
-    )
-  );
-}
+type AccountSafeStorage = SafeStorage;
 
 function unavailable(): Error {
   return new Error("Account credentials are temporarily unavailable");
 }
 
-/** Account tokens never use the source-control plaintext fallback. */
+/** Account tokens: safeStorage ciphertext with secure OS encryption, otherwise memory for this run only. */
 export class DesktopAccountSecretStore {
   private readonly persistent: boolean;
   private readonly memory = new Map<string, string>();

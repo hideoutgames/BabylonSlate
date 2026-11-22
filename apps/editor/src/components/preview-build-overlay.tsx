@@ -19,6 +19,8 @@ import {
 } from "@haptic/debugger";
 import {
   isExpectedPreviewMessage,
+  PREVIEW_FRAME_ALLOW,
+  previewFrameSandbox,
   previewTargetFromSrc,
 } from "../lib/preview-build-handoff";
 import { DebugConsole } from "./debug-console";
@@ -328,6 +330,8 @@ export function PreviewBuildOverlay({
         ref={iframeRef}
         title="Preview Build"
         src={src}
+        sandbox={previewFrameSandbox(origin !== window.location.origin)}
+        allow={PREVIEW_FRAME_ALLOW}
         className="absolute inset-0 h-full w-full border-0 bg-black outline-none focus-visible:outline-none"
         data-testid="preview-build-iframe"
       />

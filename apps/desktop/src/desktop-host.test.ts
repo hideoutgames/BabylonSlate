@@ -6,7 +6,7 @@ import {
   type SecretStoreFiles,
 } from "./desktop-secret-store";
 
-function createHarness(initial = ""): {
+function createHarness(initial = "", backend?: string): {
   files: SecretStoreFiles;
   safeStorage: SafeStorage;
   setEncryptionAvailable(value: boolean): void;
@@ -32,6 +32,7 @@ function createHarness(initial = ""): {
       decryptString: vi.fn((value) =>
         value.toString().replace(/^encrypted:/, ""),
       ),
+      ...(backend ? { getSelectedStorageBackend: () => backend } : {}),
     },
     setEncryptionAvailable(value) {
       encryptionAvailable = value;
@@ -40,31 +41,47 @@ function createHarness(initial = ""): {
   };
 }
 
+const ciphertext = (value: string) => Buffer.from(`encrypted:${value}`).toString("base64");
+
 describe("desktop secret store", () => {
-  it("decodes each record by its storage tag when capability changes", async () => {
-    const harness = createHarness();
+  it("stores only safeStorage ciphertext", async () => {
+    const harness = createHarness("", "gnome_libsecret");
     const store = new DesktopSecretStore(harness.files, harness.safeStorage);
+    expect(store.persistent).toBe(true);
+    await store.set("token", "credential");
+    expect(await store.get("token")).toBe("credential");
+    expect(JSON.parse(harness.contents())).toEqual({ version: 1, secrets: { token: ciphertext("credential") } });
+    expect(harness.contents()).not.toContain("credential\"");
+  });
 
-    harness.setEncryptionAvailable(false);
-    await store.set("plain", "plain-token");
-    harness.setEncryptionAvailable(true);
-    expect(await store.get("plain")).toBe("plain-token");
-    expect(harness.safeStorage.decryptString).not.toHaveBeenCalled();
+  it("keeps secrets in memory and writes nothing without secure OS encryption", async () => {
+    for (const harness of [createHarness("", "basic_text"), createHarness("", "unknown"), (() => {
+      const unavailable = createHarness();
+      unavailable.setEncryptionAvailable(false);
+      return unavailable;
+    })()]) {
+      const store = new DesktopSecretStore(harness.files, harness.safeStorage);
+      expect(store.persistent).toBe(false);
+      await store.set("token", "credential");
+      expect(await store.get("token")).toBe("credential");
+      await store.delete("token");
+      expect(await store.get("token")).toBeNull();
+      expect(harness.files.write).not.toHaveBeenCalled();
+      expect(harness.safeStorage.encryptString).not.toHaveBeenCalled();
+    }
+  });
 
-    await store.set("encrypted", "encrypted-token");
-    expect(await store.get("encrypted")).toBe("encrypted-token");
-    expect(JSON.parse(harness.contents())).toEqual({
-      version: 1,
-      secrets: {
-        plain: { storage: "plaintext", value: "plain-token" },
-        encrypted: {
-          storage: "safeStorage",
-          ciphertext: Buffer.from("encrypted:encrypted-token").toString(
-            "base64",
-          ),
-        },
-      },
-    });
+  it("never reads a plaintext record back as a secret, and drops it on the next write", async () => {
+    const harness = createHarness(JSON.stringify({ version: 1, secrets: {
+      old: { storage: "plaintext", value: "leaked-token" },
+      tagged: { storage: "safeStorage", ciphertext: ciphertext("tagged") },
+    } }));
+    const store = new DesktopSecretStore(harness.files, harness.safeStorage);
+    expect(await store.get("old")).toBeNull();
+    expect(await store.get("tagged")).toBeNull();
+    await store.set("token", "new");
+    expect(JSON.parse(harness.contents())).toEqual({ version: 1, secrets: { token: ciphertext("new") } });
+    expect(harness.contents()).not.toContain("leaked-token");
   });
 
   it("rejects encrypted reads when decryption is temporarily unavailable", async () => {
@@ -76,7 +93,9 @@ describe("desktop secret store", () => {
     await expect(store.get("token")).rejects.toBeInstanceOf(
       SecretDecryptionUnavailableError,
     );
+    await expect(store.set("token", "other")).rejects.toBeInstanceOf(SecretDecryptionUnavailableError);
     expect(harness.safeStorage.decryptString).not.toHaveBeenCalled();
+    expect(JSON.parse(harness.contents()).secrets.token).toBe(ciphertext("credential"));
   });
 
   it("serializes concurrent sets and deletes without losing updates", async () => {

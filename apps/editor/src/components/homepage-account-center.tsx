@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   CheckIcon,
   CircleUserRoundIcon,
@@ -15,6 +15,7 @@ import { CatalogDialog } from "@haptic/editor-kit";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Badge } from "@haptic/ui/components/badge";
 import { Button } from "@haptic/ui/components/button";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import {
   Empty,
   EmptyHeader,
@@ -166,6 +167,49 @@ function AccountSection({
   );
 }
 
+/**
+ * Monthly or Annual, each with the store's own price string. A single plan
+ * shows as text; nothing shows while the plans load or when there are none.
+ */
+function BillingPlanChoice({ billing }: { billing: BillingController }) {
+  const plans = billing.plans ?? [];
+  if (plans.length === 0) return null;
+  if (plans.length === 1) {
+    const plan = plans[0]!;
+    return (
+      <p className="homepage-plan-option" data-testid="billing-plan">
+        <span>{plan.period}</span>
+        <span>{plan.price}</span>
+      </p>
+    );
+  }
+  return (
+    <ToggleGroup
+      variant="outline"
+      size="sm"
+      spacing={0}
+      aria-label="Billing Period"
+      value={billing.selectedPlan ? [billing.selectedPlan] : []}
+      onValueChange={(value) => {
+        const next = value[0];
+        if (typeof next === "string") billing.onSelectPlan?.(next);
+      }}
+    >
+      {plans.map((plan) => (
+        <ToggleGroupItem
+          key={plan.id}
+          value={plan.id}
+          className="homepage-plan-option"
+          aria-label={`${plan.period}, ${plan.price}`}
+        >
+          <span>{plan.period}</span>
+          <span>{plan.price}</span>
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+  );
+}
+
 function SubscriptionSection({
   billing,
   signedIn,
@@ -174,6 +218,11 @@ function SubscriptionSection({
   signedIn: boolean;
 }) {
   const current = HAPTIC_PLANS.find((plan) => plan.id === billing.currentPlan);
+  const { onShow } = billing;
+  // A load that failed (offline when the launcher opened) is retried here.
+  useEffect(() => {
+    onShow?.();
+  }, [onShow]);
   const blocked = billing.unavailableReason ?? (signedIn ? null : "Sign in to subscribe.");
   const manageButton = (
     <Button variant="outline" size="sm" disabled={Boolean(blocked) || billing.currentPlan === "free"}>
@@ -227,7 +276,12 @@ function SubscriptionSection({
                 Subscribe
               </Button>
             );
-            action = billing.renderSubscribe && !blocked ? billing.renderSubscribe(subscribe) : subscribe;
+            action = (
+              <div className="homepage-plan-choice">
+                {!blocked && <BillingPlanChoice billing={billing} />}
+                {billing.renderSubscribe && !blocked ? billing.renderSubscribe(subscribe) : subscribe}
+              </div>
+            );
           } else if (plan.id === "enterprise") {
             action = (
               <Button

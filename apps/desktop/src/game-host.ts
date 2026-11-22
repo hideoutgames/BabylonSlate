@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { app, BrowserWindow, Menu, net, protocol, session, shell } from "electron";
 import { createDiscordPresence, DISCORD_PRESENCE_PATH, handleDiscordPresenceRequest, type DiscordPresence } from "./discord-presence";
 import { allowsGamePermission, gameExternalUrl, gameFile, GAME_HOST, isGameUrl } from "./packaged-security";
+import { playerContentSecurityPolicy } from "./content-security-policy";
 
 /**
  * The main process of an exported desktop game: one sandboxed window that
@@ -66,6 +67,8 @@ void app.whenReady().then(async () => {
     callback(allowsGamePermission(permission, details.requestingUrl)));
   session.defaultSession.setPermissionCheckHandler((_contents, permission, _origin, details) =>
     allowsGamePermission(permission, details.requestingUrl ?? ""));
+  // Built once: the player page's policy (HTTPS and secure WebSocket connections only, no remote scripts, never embedded).
+  const policy = playerContentSecurityPolicy("'none'");
   protocol.handle("app", async request => {
     try {
       const url = new URL(request.url);
@@ -79,6 +82,7 @@ void app.whenReady().then(async () => {
       // The same isolation the editor and Preview Build give the player.
       headers.set("Cross-Origin-Opener-Policy", "same-origin");
       headers.set("Cross-Origin-Embedder-Policy", "require-corp");
+      headers.set("Content-Security-Policy", policy);
       headers.set("X-Content-Type-Options", "nosniff");
       return new Response(response.body, { status: response.status, headers });
     } catch { return new Response(null, { status: 404 }); }

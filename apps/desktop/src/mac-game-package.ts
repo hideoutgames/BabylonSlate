@@ -59,14 +59,18 @@ export interface MacGamePackage {
   notarized: boolean;
 }
 
-/** Hardened-runtime exceptions Electron's V8 and helpers need (as electron-builder grants). */
+/**
+ * Hardened-runtime exceptions Electron's V8 needs, as the editor's own
+ * `build/entitlements.mac.plist`. Library validation stays on: a game loads
+ * no native modules, and every framework and helper in it is signed here with
+ * the game's own identity.
+ */
 const ENTITLEMENTS = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>com.apple.security.cs.allow-jit</key><true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
-  <key>com.apple.security.cs.disable-library-validation</key><true/>
 </dict>
 </plist>
 `;
