@@ -77,6 +77,13 @@ describe("TextEditorWorkspace", () => {
     expect(commit).not.toHaveBeenCalled();
   });
 
+  it("offers the markup tag list for a 2D Rich Text session", () => {
+    upsertTextEditorSession(session({ mode: "markup", title: "Text", value: "" }));
+    render(<TextEditorWorkspace documentId={TAB} sessionId={ID} active />);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    expect(screen.getByTestId("search-item-tag:b")).toBeTruthy();
+  });
+
   it("closes a tab whose session is gone", () => {
     render(<TextEditorWorkspace documentId={TAB} sessionId={ID} active />);
     expect(screen.queryByRole("textbox")).toBeNull();

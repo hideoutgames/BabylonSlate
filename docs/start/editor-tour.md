@@ -70,7 +70,7 @@ Right-click or hold a property, or its name, in any **Inspector** for **Copy** a
 
 ### Long text and code
 
-Multi-line properties, such as a text component's **Text**, a Math Expression's **Formula**, a **Function Body** or a plugin's **Description**, are edited right in the **Inspector**. The field keeps a fixed height and scrolls when the text is longer. Your change applies when you leave the field.
+Multi-line properties, such as a text component's **Text**, a Math Expression's **Formula**, a **Function Body** or a plugin's **Description**, are edited right in the **Inspector**. The field keeps a fixed height and scrolls when the text is longer. Your change applies when you leave the field, and **Save All** includes text you are still typing.
 
 To edit with more room, tap the button next to the property name (**Open … in Tab**). The text opens full size in a new document tab named after the property and its asset, such as **Formula: Player Class**. Changes apply when you leave the editor or switch tabs, and the **Inspector** shows them. Closing the tab returns to the asset. The tab belongs to the property: it closes when you select something else, delete the item or close its asset.
 

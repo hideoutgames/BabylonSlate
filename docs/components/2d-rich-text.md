@@ -6,7 +6,7 @@ Draws text with inline formatting, images and animated letters, and can reveal i
 
 Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Rich Text**. You can also place a ready-made actor from **Place Actors > Overlay > 2D Rich Text**.
 
-Type the words and tags in the **Text** field below the other settings, or open it in its own tab with the button next to **Text** ([Long text and code](../start/editor-tour.md#long-text-and-code)). A new component starts with an example of [tags](#tags) and letter effects. It has no image: add one with `[img=…]` and a Texture of your own.
+Type the words and tags in the **Text** field below the other settings. For the list of tags, open the text in its own tab with the button next to **Text**: the tab shows every tag above the text and inserts the one you pick ([Long text and code](../start/editor-tour.md#long-text-and-code)). A new component starts with an example of [tags](#tags) and letter effects. It has no image: add one with `[img=…]` and a Texture of your own.
 
 ## Settings
 
