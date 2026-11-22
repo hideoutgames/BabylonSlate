@@ -22,9 +22,10 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { setMeshRenderingGroup, setSceneInstancing } from "./instance-pool";
 import { applyMaterialBounds } from "./material-bounds";
 import { joinPooledPrimitiveGroup } from "./pooled-primitive-visual";
-import { openRenderChangeReader, RenderChange } from "./render-change-journal";
+import { noteRenderChange, openRenderChangeReader, RenderChange } from "./render-change-journal";
 import { RETAINED_CULL_MIN_MESHES, RetainedFrustumCull, verifyRetainedFrustumCull, type RetainedFrustumCullWork } from "./retained-frustum-cull";
 import { skinnedRig, skinnedStrip } from "./skinned-test-fixtures";
+import { hideUntilReady, noteRevealProbe } from "./reveal-pending";
 
 const disposers: Array<() => void> = [];
 beforeEach(() => verifyRetainedFrustumCull(true));
@@ -364,6 +365,104 @@ describe("its occlusion boxes", () => {
     expect(await frame()).toEqual(["wall", "hidden"]);
     expect(occluded()).toEqual(["beside"]);
   });
+
+  it("leaves a mesh hidden until ready out of a long list with its box, and lets it in once revealed", async () => {
+    verifyRetainedFrustumCull(false);
+    forceOcclusionEveryFrame(true);
+    disposers.push(() => forceOcclusionEveryFrame(false));
+    const { scene, graph, fill, frame, settle, work } = await world({ occlusion: true });
+    allowSceneOcclusionCulling(scene, "always");
+    fill();
+    const place = (name: string, x: number, z: number) => {
+      const mesh = createPrimitiveMesh(scene, name, "box");
+      mesh.renderingGroupId = RENDERING_GROUP.world;
+      mesh.position.set(x, 0, z);
+      return mesh;
+    };
+    place("wall", 0, 5).scaling.set(6, 4, 0.2);
+    const pending = place("pending", -6, 10);
+    place("behind", 0, 12);
+    place("beside", 8.3, 12);
+    const occluded = () => [...graph.occludedMeshes()].map((mesh) => mesh.name);
+    expect(await settle()).toEqual(["wall", "pending", "beside"]);
+    expect(work().retainedFrames).toBeGreaterThan(0);
+    hideUntilReady(pending);
+    // Left out before occlusion, whose boxes for the meshes after it must move up with them.
+    expect(await frame()).toEqual(["wall", "beside"]);
+    expect(occluded()).toEqual(["behind"]);
+    noteRevealProbe(pending, true);
+    expect(await frame()).toEqual(["wall", "pending", "beside"]);
+    expect(occluded()).toEqual(["behind"]);
+  });
+});
+
+describe("meshes moved without a setter", () => {
+  it("are exact on the next cull: in place, frozen and re-frozen, under a parent moved in place", async () => {
+    const { scene, box, frame, settle } = await world();
+    const loose = box("loose", 0), frozen = box("frozen", 1);
+    frozen.freezeWorldMatrix();
+    const parent = new TransformNode("parent", scene);
+    const child = box("child", -1), frozenChild = box("frozen child", -2);
+    child.parent = frozenChild.parent = parent;
+    frozenChild.freezeWorldMatrix();
+    expect(await settle()).toEqual(["loose", "frozen", "child", "frozen child"]);
+    loose.position.x = 30;
+    frozen.position.x = 30;
+    parent.position.x = 30;
+    // A frozen matrix is not computed again: Babylon keeps culling the frozen meshes where they were frozen.
+    expect(await frame()).toEqual(["frozen", "frozen child"]);
+    // The snapshot path's re-freeze computes it once.
+    frozen.freezeWorldMatrix();
+    frozenChild.freezeWorldMatrix();
+    expect(await frame()).toEqual([]);
+  });
+
+  it("are exact on the next cull: a billboard and an infinitely distant mesh while the camera moves", async () => {
+    const { camera, box, frame, settle } = await world();
+    const board = box("board", 6);
+    board.scaling.set(12, 1, 0.1);
+    board.billboardMode = TransformNode.BILLBOARDMODE_ALL;
+    const sky = box("sky", 0, 0, 10);
+    sky.infiniteDistance = true;
+    await settle();
+    for (let step = 0; step < 12; step++) {
+      camera.position.set(step * 1.5, 0, -step);
+      // Babylon computes both matrices from the camera, and only the copies of what it computed may answer.
+      expect(await frame()).toContain("sky");
+    }
+  });
+
+  it("are exact on the next cull: a mesh attached to a bone that moves", async () => {
+    const { scene, box, frame, settle } = await world();
+    const rig = skinnedRig(scene);
+    const strip = skinnedStrip(scene, rig.skeleton, "strip");
+    strip.position.set(0, 0, 10);
+    const held = box("held", 0, 0, 0, 0.5);
+    held.attachToBone(rig.arm, strip);
+    expect((await settle()).filter((name) => name === "held")).toEqual(["held"]);
+    rig.root.position = new Vector3(30, 0, 0);
+    await frame();
+    expect((await frame()).filter((name) => name === "held")).toEqual([]);
+  });
+});
+
+describe("a bounding info shared by two meshes", () => {
+  it("is tested by Babylon's own reads, in its order: each owner's lazy update rewrites it for the owners after it", async () => {
+    const { box, frame, settle } = await world();
+    const first = box("first", 0), second = box("second", 3);
+    second.setBoundingInfo(first.getBoundingInfo());
+    // `second`'s update ran last: both read its world values (x = 3).
+    expect(await settle()).toEqual(["first", "second"]);
+    first.position.x = 30;
+    // `first`'s update, at x = 30, comes first in the pass: both read it.
+    expect(await frame()).toEqual([]);
+    first.position.x = 1;
+    expect(await frame()).toEqual(["first", "second"]);
+    second.position.x = 20;
+    // `first` is tested before `second`'s update moves the shared values to x = 20, which the next frame reads for both.
+    expect(await frame()).toEqual(["first"]);
+    expect(await frame()).toEqual([]);
+  });
 });
 
 describe("its healing", () => {
@@ -421,6 +520,107 @@ describe("the render change journal it reads", () => {
     expect(stalled.drain(() => {})).toBe(false);
     stalled.dispose();
     active.dispose();
+  });
+
+  it("holds at most the entries a reader may fall behind by while one never drains, and that reader then starts over", () => {
+    const engine = nullEngine();
+    const scene = new Scene(engine);
+    disposers.push(() => { scene.dispose(); engine.dispose(); });
+    const meshes = Array.from({ length: 4 }, (_, index) => MeshBuilder.CreateBox(`box ${index}`, {}, scene));
+    const journal = () => (scene as unknown as { _hapticRenderChanges: { nodes: unknown[]; last: Map<unknown, number> } })._hapticRenderChanges;
+    const hidden = openRenderChangeReader(scene, RenderChange.Visibility), shown = openRenderChangeReader(scene, RenderChange.Visibility);
+    let most = 0;
+    for (let round = 0; round < 200_000; round++) {
+      meshes[round % 4]!.visibility = round % 8 < 4 ? 0.5 : 0.25;
+      expect(shown.drain(() => {})).toBe(true);
+      most = Math.max(most, journal().nodes.length, journal().last.size);
+    }
+    expect(most).toBeLessThanOrEqual(65_536);
+    expect(hidden.drain(() => {})).toBe(false);
+    meshes[0]!.visibility = 1;
+    const seen: string[] = [];
+    expect(hidden.drain((node) => seen.push(node.name))).toBe(true);
+    expect(seen).toEqual(["box 0"]);
+    hidden.dispose();
+    shown.dispose();
+  });
+
+  it("keeps no node it dropped every entry of, while readers drain at different points and it never empties", () => {
+    const engine = nullEngine();
+    const scene = new Scene(engine);
+    disposers.push(() => { scene.dispose(); engine.dispose(); });
+    const nodes = Array.from({ length: 3000 }, (_, index) => new TransformNode(`node ${index}`, scene));
+    const journal = () => (scene as unknown as { _hapticRenderChanges: { nodes: unknown[]; last: Map<unknown, number> } })._hapticRenderChanges;
+    const early = openRenderChangeReader(scene, RenderChange.Other), late = openRenderChangeReader(scene, RenderChange.Other);
+    for (let round = 0; round < 12_000; round++) {
+      noteRenderChange(nodes[round % nodes.length]!);
+      early.drain(() => {});
+      noteRenderChange(nodes[(round * 7) % nodes.length]!);
+      late.drain(() => {});
+      // Every node `last` names has an entry still in the log.
+      expect(journal().last.size).toBeLessThanOrEqual(journal().nodes.length);
+    }
+    early.dispose();
+    late.dispose();
+  });
+
+  it("reports a node noted again after the entries before it were dropped, with every kind noted since the reader's last drain", () => {
+    const engine = nullEngine();
+    const scene = new Scene(engine);
+    disposers.push(() => { scene.dispose(); engine.dispose(); });
+    const [node, ...others] = Array.from({ length: 3 }, (_, index) => MeshBuilder.CreateBox(`box ${index}`, {}, scene));
+    const early = openRenderChangeReader(scene, RenderChange.Visibility | RenderChange.Enabled);
+    const late = openRenderChangeReader(scene, RenderChange.Visibility | RenderChange.Enabled);
+    const read = (reader: typeof early) => {
+      const seen = new Map<string, number>();
+      reader.drain((target, kinds) => seen.set(target.name, (seen.get(target.name) ?? 0) | kinds));
+      return seen;
+    };
+    node!.visibility = 0.5;
+    read(early); read(late);
+    // Enough entries, read by both, to drop those before them, the node's included.
+    for (let round = 0; round < 3000; round++) {
+      others[round % 2]!.visibility = round % 4 < 2 ? 0.5 : 0.25;
+      read(early); read(late);
+    }
+    node!.visibility = 0.25;
+    expect(read(early).get("box 0")).toBe(RenderChange.Visibility);
+    node!.setEnabled(false);
+    expect(read(late).get("box 0")).toBe(RenderChange.Visibility | RenderChange.Enabled);
+    expect(read(early).get("box 0")).toBe(RenderChange.Visibility | RenderChange.Enabled);
+    early.dispose();
+    late.dispose();
+  });
+
+  it("gives the shadow walk's and the drawable follower's kinds the same entries whether a cull reader drains between them or not", () => {
+    /** One scripted run of changes; each frame drains `readers` at its points, the cull reader (if any) in between. */
+    const run = (withCull: boolean) => {
+      const engine = nullEngine();
+      const scene = new Scene(engine);
+      disposers.push(() => { scene.dispose(); engine.dispose(); });
+      const meshes = Array.from({ length: 8 }, (_, index) => MeshBuilder.CreateBox(`box ${index}`, {}, scene));
+      const walk = openRenderChangeReader(scene, RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material | RenderChange.Other | RenderChange.Style);
+      const drawable = openRenderChangeReader(scene, RenderChange.Enabled | RenderChange.Visibility | RenderChange.Geometry);
+      const cull = withCull ? openRenderChangeReader(scene, RenderChange.Transform | RenderChange.Bounds | RenderChange.Geometry |
+        RenderChange.Enabled | RenderChange.Visibility | RenderChange.Dispatch | RenderChange.Ready) : null;
+      const log: string[] = [];
+      const record = (label: string) => (node: { name: string }, kinds: number) => log.push(`${label}:${node.name}:${kinds}`);
+      for (let frame = 0; frame < 3000; frame++) {
+        const mesh = meshes[frame % meshes.length]!;
+        mesh.position.x = frame;
+        mesh.computeWorldMatrix(true);
+        if (frame % 3 === 0) mesh.visibility = (frame % 7) / 7;
+        if (frame % 5 === 0) mesh.setEnabled(frame % 10 !== 0);
+        drawable.drain(record("drawable"));
+        mesh.getBoundingInfo().scale(1);
+        cull?.drain(() => {});
+        if (frame % 11 === 0) mesh.isVisible = !mesh.isVisible;
+        walk.drain(record("walk"));
+        log.push("|");
+      }
+      return log;
+    };
+    expect(run(true)).toEqual(run(false));
   });
 });
 

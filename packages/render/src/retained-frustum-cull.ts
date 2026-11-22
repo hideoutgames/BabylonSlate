@@ -72,6 +72,11 @@ const FLAGS_LIVE = 8;
 const OUT = 16;
 /** Per slot: how the mesh is followed is to be decided (`classify`). */
 const NEW = 32;
+/**
+ * Per slot: its bounding info is followed by another mesh too, so its world values are whichever owner's lazy update ran
+ * last: the mesh is asked itself (`isInFrustum`) until a read finds it its own again.
+ */
+const SHARED = 64;
 
 /** Babylon's own classes: members they define are the ones the copies follow. */
 const STOCK_PROTOTYPES = new Set<object>([Node.prototype, TransformNode.prototype, AbstractMesh.prototype, Mesh.prototype, InstancedMesh.prototype]);
@@ -244,12 +249,25 @@ export class RetainedFrustumCull {
     stock();
     const expected = task.outputObjectList.meshes ?? [];
     task.outputObjectList.meshes = kept;
-    let at = 0;
-    while (at < kept.length && at < expected.length && kept[at] === expected[at]) at++;
-    if (at < kept.length || at < expected.length)
+    // A mesh on a shared bounding info is left out of the comparison: the pass asked it itself, in Babylon's order, and
+    // Babylon's second loop reads that info after every owner's lazy update of this frame, not as one loop alone would.
+    let at = 0, from = 0;
+    for (;;) {
+      while (at < kept.length && this.sharedMesh(kept[at]!)) at++;
+      while (from < expected.length && this.sharedMesh(expected[from]!)) from++;
+      if (at >= kept.length || from >= expected.length || kept[at] !== expected[from]) break;
+      at++;
+      from++;
+    }
+    if (at < kept.length || from < expected.length)
       throw new Error(`Retained frustum cull differs from Babylon's at ${at}: kept ${kept.length} (${kept[at]?.name ?? "end"}), ` +
-        `Babylon kept ${expected.length} (${expected[at]?.name ?? "end"}).`);
+        `Babylon kept ${expected.length} (${expected[from]?.name ?? "end"}).`);
     this.verifyCopies(task);
+  }
+
+  private sharedMesh(mesh: AbstractMesh): boolean {
+    const slot = this.slotOf.get(mesh);
+    return slot !== undefined && (this.states[slot]! & SHARED) !== 0;
   }
 
   /**
@@ -266,7 +284,7 @@ export class RetainedFrustumCull {
         this.heal(mesh, "gate");
       const asked = !out && (mesh.layerMask & layerMask) !== 0 && !mesh.scaling.hasAZeroComponent && !this.scene.skipFrustumClipping &&
         !mesh.alwaysSelectAsActiveMesh;
-      if (!asked || state & (BOUNDS_LIVE | BOUNDS_STALE)) continue;
+      if (!asked || state & (BOUNDS_LIVE | BOUNDS_STALE | SHARED)) continue;
       const info = mesh.getBoundingInfo();
       if (this.infos[slot] !== info || !this.holds(slot, info)) this.heal(mesh, "bounds");
     }
@@ -318,7 +336,7 @@ export class RetainedFrustumCull {
         if (!mesh.isVisible || !(mesh.visibility > 0) || (mesh.layerMask & layerMask) === 0) continue;
       } else {
         if (state & OUT || (layerMasks[slot]! & layerMask) === 0) continue;
-        if (!(skip || state & (BOUNDS_STALE | BOUNDS_LIVE) || checked)) {
+        if (!(skip || state & (BOUNDS_STALE | BOUNDS_LIVE | SHARED) || checked)) {
           // A copy wholly in or out of the frustum needs one of the two live reads: the scale where it is in, whatever
           // `alwaysSelectAsActiveMesh` says; `alwaysSelectAsActiveMesh` where it is out, whatever the scale.
           work.tested += 1;
@@ -327,6 +345,8 @@ export class RetainedFrustumCull {
             work.fieldReads += 1;
             if (!mesh.alwaysSelectAsActiveMesh && (verdict === ALL_OUT || !this.answer(verdict, mesh.cullingStrategy))) continue;
           }
+          // Read live, never kept as a bit: a component written to zero in place leaves no note (Babylon's frame skips
+          // computing a zero-scaled mesh's world matrix, and a frozen one computes none), yet Babylon's gate reads it.
           if (!scalings[slot]!.hasAZeroComponent) {
             outputSlots[count] = slot;
             output[count++] = mesh;
@@ -337,7 +357,7 @@ export class RetainedFrustumCull {
       }
       if (skip || this.shows(slot, mesh, state, checked, frustum)) {
         // A copy no change has marked since it was read is what `getBoundingInfo()` returns now, with no update pending.
-        outputSlots[count] = this.states[slot]! & (BOUNDS_STALE | BOUNDS_LIVE) ? -1 : slot;
+        outputSlots[count] = this.states[slot]! & (BOUNDS_STALE | BOUNDS_LIVE | SHARED) ? -1 : slot;
         output[count++] = mesh;
       }
     }
@@ -354,17 +374,29 @@ export class RetainedFrustumCull {
       work.live += 1;
       return mesh.alwaysSelectAsActiveMesh || mesh.isInFrustum(frustum);
     }
+    if (state & SHARED && !(state & BOUNDS_STALE)) {
+      work.live += 1;
+      if (mesh.alwaysSelectAsActiveMesh) return true;
+      const shows = mesh.isInFrustum(frustum);
+      // Its lazy update rewrote a bounding info other meshes hold: what that noted is read in this same pass.
+      this.drain();
+      return shows;
+    }
     if (state & BOUNDS_STALE || checked) {
       // `getBoundingInfo()` can update the bounds (Babylon's lazy update): only where Babylon's test would call it.
       work.fieldReads += 1;
       if (mesh.alwaysSelectAsActiveMesh) return true;
       const info = readBounds(mesh);
       if (state & BOUNDS_STALE) {
-        this.copy(slot, mesh, info);
-        this.states[slot] = state & ~BOUNDS_STALE;
+        const shared = this.copy(slot, mesh, info);
+        this.states[slot] = (state & ~(BOUNDS_STALE | SHARED)) | (shared ? SHARED : 0);
         work.boundsReads += 1;
       } else this.checkBounds(slot, mesh, info);
+      // The read may have rewritten, or newly shared, a bounding info other meshes hold: Babylon's loop reads their new
+      // values later in this same pass, so what that noted is read now, not at the next frame.
+      this.drain();
       work.tested += 1;
+      // The copy is the mesh's values at this instant, shared or not.
       return this.answer(this.verdict(slot), mesh.cullingStrategy);
     }
     // A FLAGS_LIVE mesh's copy (the pass tests the others itself).
@@ -457,11 +489,10 @@ export class RetainedFrustumCull {
     return (state & ~(FLAGS_STALE | OUT)) | (out ? OUT : 0);
   }
 
-  private copy(slot: number, mesh: AbstractMesh, info: BoundingInfo): void {
-    if (this.infos[slot] !== info) {
-      followBounds(mesh, info);
-      this.infos[slot] = info;
-    }
+  /** Copies `info`'s world values into `slot`; true when another mesh follows the same bounding info. */
+  private copy(slot: number, mesh: AbstractMesh, info: BoundingInfo): boolean {
+    const shared = followBounds(mesh, info);
+    this.infos[slot] = info;
     const sphere = info.boundingSphere, centre = sphere.centerWorld, spheres = this.spheres, at = slot * 4;
     spheres[at] = centre.x; spheres[at + 1] = centre.y; spheres[at + 2] = centre.z; spheres[at + 3] = sphere.radiusWorld;
     const box = info.boundingBox, vectors = box.vectorsWorld, corners = this.corners, base = slot * 24;
@@ -472,13 +503,14 @@ export class RetainedFrustumCull {
     const min = box.minimumWorld, max = box.maximumWorld, boxes = this.boxes, edge = slot * 6;
     boxes[edge] = min.x; boxes[edge + 1] = min.y; boxes[edge + 2] = min.z;
     boxes[edge + 3] = max.x; boxes[edge + 4] = max.y; boxes[edge + 5] = max.z;
+    return shared;
   }
 
   /** Compares a bounds copy no change named with `info`, the bounding info the test just asked for. */
   private checkBounds(slot: number, mesh: AbstractMesh, info: BoundingInfo): void {
     if (this.infos[slot] === info && this.holds(slot, info)) return;
     this.heal(mesh, "bounds");
-    this.copy(slot, mesh, info);
+    if (this.copy(slot, mesh, info)) this.states[slot] = this.states[slot]! | SHARED;
   }
 
   /** A copy no notification marked differed from the mesh: counted, and fatal while verifying. */

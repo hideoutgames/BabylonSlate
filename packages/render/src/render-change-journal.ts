@@ -202,6 +202,7 @@ class Reader implements RenderChangeReader {
   dispose(): void {
     const journal = this.journal;
     if (!journal.readers.delete(this)) return;
+    if (this.kinds & RenderChange.Bounds) boundsReaders -= 1;
     if (journal.readers.size === 0) {
       journal.clear();
       if (this.scene._hapticRenderChanges === journal) delete this.scene._hapticRenderChanges;
@@ -225,6 +226,7 @@ export function openRenderChangeReader(scene: Scene, kinds: number = DEFAULT_KIN
     journal = target._hapticRenderChanges = new Journal();
     const owned = journal;
     scene.onDisposeObservable.addOnce(() => {
+      for (const reader of owned.readers) if (reader.kinds & RenderChange.Bounds) boundsReaders -= 1;
       owned.readers.clear();
       owned.clear();
       if (target._hapticRenderChanges === owned) delete target._hapticRenderChanges;
@@ -232,6 +234,7 @@ export function openRenderChangeReader(scene: Scene, kinds: number = DEFAULT_KIN
   }
   const reader = new Reader(target, journal, kinds);
   journal.readers.add(reader);
+  if (kinds & RenderChange.Bounds) boundsReaders += 1;
   journal.frontier = journal.end;
   journal.wanted |= kinds;
   return reader;
@@ -247,8 +250,8 @@ export function noteRenderChange(node: Node, kinds: number = RenderChange.Other)
  * (`RenderChange.Bounds`). Weak both ways: a bounding info another holder keeps alive keeps no disposed mesh with it.
  */
 const boundsOwners = new WeakMap<object, WeakRef<AbstractMesh> | WeakRef<AbstractMesh>[]>();
-/** Whether any bounds are followed: until then a bounds write costs one branch. */
-let followingBounds = false;
+/** Open readers of `Bounds`, in every Scene: with none, a bounds write costs one branch. */
+let boundsReaders = 0;
 
 /**
  * Has every later write of `info`'s world values note `mesh` (`RenderChange.Bounds`) in its Scene's journal, while a
@@ -256,64 +259,85 @@ let followingBounds = false;
  * each of them. A replaced bounding info is noted by itself (`setBoundingInfo`, `buildBoundingInfo`), and the reader then
  * follows the new one.
  */
-export function followBounds(mesh: AbstractMesh, info: BoundingInfo): void {
+export function followBounds(mesh: AbstractMesh, info: BoundingInfo): boolean {
   install();
-  followingBounds = true;
-  own(info.boundingBox, mesh);
-  own(info.boundingSphere, mesh);
+  const box = own(info.boundingBox, mesh), sphere = own(info.boundingSphere, mesh);
+  return box || sphere;
 }
 
-function own(target: object, mesh: AbstractMesh): void {
+/**
+ * Has `mesh` follow `target`; true when another live mesh follows it too (a shared bounding info, whose world values
+ * are whichever owner's lazy update ran last). The owners already there need no note: their copies hold the values as
+ * they are, and every later write notes them.
+ */
+function own(target: object, mesh: AbstractMesh): boolean {
   const owners = boundsOwners.get(target);
   if (!owners) {
     boundsOwners.set(target, new WeakRef(mesh));
-    return;
+    return false;
   }
   if (!Array.isArray(owners)) {
     const owner = owners.deref();
-    if (owner === mesh) return;
-    boundsOwners.set(target, owner ? [owners, new WeakRef(mesh)] : new WeakRef(mesh));
-    return;
+    if (owner === mesh) return false;
+    if (!owner) {
+      boundsOwners.set(target, new WeakRef(mesh));
+      return false;
+    }
+    boundsOwners.set(target, [owners, new WeakRef(mesh)]);
+    return true;
   }
-  let live = 0;
+  let live = 0, known = false;
   for (const owner of owners) {
     const held = owner.deref();
-    if (held === mesh) return;
-    if (held) owners[live++] = owner;
+    if (!held) continue;
+    owners[live++] = owner;
+    if (held === mesh) known = true;
   }
   owners.length = live;
-  owners.push(new WeakRef(mesh));
+  if (!known) owners.push(new WeakRef(mesh));
+  return owners.length > 1;
 }
 
-let readingBounds = false;
+/** The mesh `readBounds` is reading, whose own lazy update notes nothing. */
+let readingMesh: AbstractMesh | null = null;
 
 /**
- * `mesh.getBoundingInfo()` for a reader that follows its bounds, noting nothing for Babylon's lazy update it may run:
- * that update follows a world matrix computed since the last read, which the journal named (`Transform`), so every
- * reader of the mesh's bounds reads them again anyway.
+ * `mesh.getBoundingInfo()` for a reader that follows its bounds, noting nothing for `mesh` from Babylon's lazy update it
+ * may run: that update follows a world matrix computed since the last read, which the journal named (`Transform`), so
+ * every reader of the mesh's bounds reads them again anyway. Another mesh the write reaches (one sharing the bounding
+ * info) is noted as ever.
  */
 export function readBounds(mesh: AbstractMesh): BoundingInfo {
-  readingBounds = true;
+  const reading = readingMesh;
+  readingMesh = mesh;
   try {
     return mesh.getBoundingInfo();
   } finally {
-    readingBounds = false;
+    readingMesh = reading;
   }
 }
 
-/** Notes the meshes that follow `target` (a bounding box or sphere whose world values were just written). */
+/**
+ * Notes the meshes that follow `target` (a bounding box or sphere whose world values were just written), but the one
+ * being read. Owners that were collected are dropped here, where a shared box's writes land.
+ */
 function noteBoundsWrite(target: object): void {
   const owners = boundsOwners.get(target);
   if (!owners) return;
   if (!Array.isArray(owners)) {
     const mesh = owners.deref();
-    if (mesh) journalOf(mesh)?.note(mesh, RenderChange.Bounds);
+    if (!mesh) boundsOwners.delete(target);
+    else if (mesh !== readingMesh) journalOf(mesh)?.note(mesh, RenderChange.Bounds);
     return;
   }
+  let live = 0;
   for (const owner of owners) {
     const mesh = owner.deref();
-    if (mesh) journalOf(mesh)?.note(mesh, RenderChange.Bounds);
+    if (!mesh) continue;
+    owners[live++] = owner;
+    if (mesh !== readingMesh) journalOf(mesh)?.note(mesh, RenderChange.Bounds);
   }
+  owners.length = live;
 }
 
 let verifying = false;
@@ -560,7 +584,7 @@ function hook(): void {
     if (typeof update !== "function") throw new Error("Babylon 9.29 bounding _update not found");
     prototype._update = function (this: object, world: unknown) {
       update.call(this, world);
-      if (followingBounds && !readingBounds) noteBoundsWrite(this);
+      if (boundsReaders > 0) noteBoundsWrite(this);
     };
   }
 
