@@ -61,6 +61,9 @@ import type { ScriptBundleEntry } from "@haptic/bridge";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
 import { embeddedScriptHost } from "../lib/embedded-script";
 import { executeJavaScriptAssetNames, untrustedExecuteJavaScriptMessage } from "./execute-javascript-trust";
+
+/** The pack entry type the player loads as compiled script code (`packages/exporter` `export-game.ts`, `apps/player` `artifact.ts`). */
+const COMPILED_SCRIPT_EXPORT_TYPE = "CompiledScript";
 import { requireSaveGameDefinition } from "../lib/save-game-catalog";
 
 export function assetsFromIndexed(
@@ -407,6 +410,11 @@ export async function collectAndExportGame(
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset) continue;
+    // The player runs every packed entry of this type as code. Only this compile makes them (below), never a
+    // project file: one whose header claims the type is refused, as it would ship code no gate has seen.
+    if (asset.type === COMPILED_SCRIPT_EXPORT_TYPE) {
+      return { ok: false, error: `${asset.name} (${asset.path ?? asset.guid}) claims to be compiled script code, which only Haptic's compiler makes. Remove it from the project to package.` };
+    }
     if (asset.type === "Class") {
       const graph = params.graphByGuid(guid);
       if (graph) {

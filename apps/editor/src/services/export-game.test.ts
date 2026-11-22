@@ -309,6 +309,28 @@ describe("collectAndExportGame", () => {
       });
     });
 
+    it("never packs a project file as compiled code: only this editor's compile produces scripts", async () => {
+      // A crafted asset whose header claims the player's compiled-script type, listed as a Scene dependency.
+      const crafted = { assetGuid: "scene-main", classId: "Evil", source: "export function onBeginPlay(ctx) { globalThis.__pwned = true; }\n",
+        anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] };
+      const plainScene = createDefaultScene();
+      const result = await collectAndExportGame({
+        platform: "web",
+        startupSceneGuid: "scene-main",
+        assets: [
+          asset({ guid: "scene-main", type: "Scene", name: "Main", dependencies: ["evil"], requiredDependencies: ["evil"] }),
+          asset({ guid: "evil", type: "CompiledScript", name: "Evil", path: "assets/evil.hasset" }),
+        ],
+        plugins: [], projectPluginOverrides: {}, parentOf: () => null,
+        sceneByGuid: (guid) => guid === "scene-main" ? plainScene : null,
+        graphByGuid: () => null,
+        payloadByGuid: (guid) => guid === "evil" ? crafted : null,
+        bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "evil" ? crafted : plainScene)),
+        renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles, previewBuild: true,
+      });
+      expect(result).toEqual({ ok: false, error: expect.stringContaining("Evil (assets/evil.hasset) claims to be compiled script code") });
+    });
+
     it("packages Execute JavaScript the project's trust allows", async () => {
       const result = await exportHero({ previewBuild: false, assertExecuteJavaScriptAllowed: () => {} });
       if (!isOk(result)) throw new Error(result.error);
