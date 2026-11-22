@@ -453,7 +453,9 @@ describe("material validation", () => {
 
     const fn = createDefaultMaterialFunctionDocument("Tint");
     fn.nodes.push({ id: "surface", type: "output.surface", position: { x: 0, y: 0 }, properties: {} });
-    expect(validateMaterialFunctionDocument(fn)).toContainEqual(expect.objectContaining({ code: "material.function.misplaced", nodeId: "surface" }));
+    fn.nodes.push({ id: "decal", type: "output.decal", position: { x: 0, y: 0 }, properties: {} });
+    const misplaced = validateMaterialFunctionDocument(fn).filter((row) => row.code === "material.function.misplaced").map((row) => row.nodeId);
+    expect(misplaced).toEqual(["surface", "decal"]);
     // Each graph's own plumbing is not flagged.
     expect(validateMaterialDocument(createDefaultMaterialDocument()).map((row) => row.code)).not.toContain("material.function.misplaced");
     expect(validateMaterialFunctionDocument(createDefaultMaterialFunctionDocument("Tint")).map((row) => row.code)).not.toContain("material.function.misplaced");

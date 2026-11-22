@@ -31,7 +31,8 @@ import {
   type MaterialDocument,
 } from "@haptic/shader-graph";
 import { isBoundedMaterial, isDrawBatchMaterial, isDrawBatchTextMaterial } from "./draw-batch-world-block";
-import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
+import { compileMaterialPlan, isGpuTextureSampleReady, PARTICLE_PROGRAM_CACHE_SIZE, prewarmMaterial } from "./material-compiler";
+import { fnv1a } from "@haptic/core";
 import { blockAdapterFor } from "./material-block-registry";
 import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
 import { HapticLightingBlock } from "./haptic-lighting-block";
@@ -43,6 +44,11 @@ import { setTestTextureBudget } from "./test-support/resource-cache-budget";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { installTimerClock, installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
 import { fragmentCanDiscard } from "./test-support/preprocessed-glsl";
+
+vi.mock("@haptic/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/core")>();
+  return { ...actual, fnv1a: vi.fn(actual.fnv1a) };
+});
 
 const disposers: Array<() => void> = [];
 
@@ -610,6 +616,49 @@ describe("material compiler", () => {
     expect(glass.material.transparencyMode).toBe(Material.MATERIAL_ALPHABLEND);
     expect(glass.material.needDepthPrePass).toBe(true);
     expect(glass.material.backFaceCulling).toBe(false);
+  });
+
+  describe("particle program sharing", () => {
+    /** A particle Material whose colour is the particle's times `scale`, a literal in its code. */
+    const particle = async (scene: Scene, scale: number) => {
+      const doc = createDefaultMaterialDocument("Sparks", "particle");
+      doc.nodes.push({ id: "scale", type: "math.multiply", position: { x: 200, y: 0 }, properties: { [materialPinDefaultPropertyKey("b")]: [scale] } });
+      doc.edges = [
+        { id: "e-color-scale", sourceNodeId: "particleColor", sourcePinId: "color", targetNodeId: "scale", targetPinId: "a" },
+        { id: "e-scale-output", sourceNodeId: "scale", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" },
+      ];
+      const result = compileMaterialPlan(planFor(doc), { scene, name: "sparks" });
+      if (!result.ok) throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+      disposers.push(result.dispose);
+      expect(await result.ready).toEqual([]);
+      return result.material;
+    };
+
+    afterEach(() => vi.mocked(fnv1a).mockReset());
+
+    it("shares one program between particle Materials with the same code, never one whose digest only matches", async () => {
+      const scene = host();
+      const first = await particle(scene, 2);
+      expect((await particle(scene, 2)).buildId).toBe(first.buildId);
+      // Every program's digest the same: other code under it is not the same program.
+      vi.mocked(fnv1a).mockReturnValue("00000000");
+      const other = await particle(scene, 3);
+      expect(other.compiledShaders).not.toBe(first.compiledShaders);
+      expect(other.buildId).not.toBe(first.buildId);
+      expect((await particle(scene, 3)).buildId).toBe(other.buildId);
+    });
+
+    it("remembers only the most recently used particle programs", async () => {
+      const scene = host();
+      const first = await particle(scene, 2);
+      const second = await particle(scene, 4);
+      for (let index = 0; index < PARTICLE_PROGRAM_CACHE_SIZE - 2; index++) await particle(scene, 10 + index);
+      // Adopting the first program makes the second the least recently used: the next new program pushes it out.
+      expect((await particle(scene, 2)).buildId).toBe(first.buildId);
+      await particle(scene, 9);
+      expect((await particle(scene, 2)).buildId).toBe(first.buildId);
+      expect((await particle(scene, 4)).buildId).not.toBe(second.buildId);
+    });
   });
 
   it("compiles a particle-domain graph in Particle mode for createEffectForParticles", () => {
