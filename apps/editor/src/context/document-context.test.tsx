@@ -1030,7 +1030,7 @@ describe("DocumentProvider actions and route", () => {
     let closing!: Promise<boolean>;
     act(() => { closing = actions.forceCloseProject(); });
     await act(async () => { resolve(false); expect(await closing).toBe(false); });
-    expect(documents().route).toBe("editor");
+    expect(seen.route).toBe("editor");
     expect(openScene(MAIN_SCENE_ID)).toBe(original);
     act(() => actions.closeDocument(MAIN_SCENE_ID));
     await act(async () => { resolve(true); await Promise.resolve(); });
@@ -1169,21 +1169,60 @@ describe("DocumentProvider actions and route", () => {
     await reopen();
     expect(documents().recoveryAvailable).toBe(true);
 
-    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 2)));
+    // The last session's rename is never replayed onto an edit made since this open: Recover asks first.
+    const saved = openScene(MAIN_SCENE_ID);
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(saved, 2)));
     act(() => actions.keepRecovery());
+    await waitFor(() => expect(documents().recoveryNotice).toEqual({ kind: "changed", documents: [openSceneLabel()] }));
+    expect(documents().recoveryAvailable).toBe(true);
+    expect(openScene(MAIN_SCENE_ID).actors[0]!.transform.position[0]).toBe(saved.actors[0]!.transform.position[0] + 2);
+
+    // Confirmed, the rename replays onto the saved file (with the saved +5), and the unsaved +2 is replaced.
+    act(() => actions.keepRecovery({ replaceChanged: true }));
     await waitFor(() => expect(documents().recoveryAvailable).toBe(false));
+    expect(documents().recoveryNotice).toBeNull();
     const recovered = openScene(MAIN_SCENE_ID);
     expect(recovered.name).toBe("Recovered Name");
-    // The saved +5 and the unsaved +2 each count once.
-    expect(recovered.actors[0]!.transform.position[0]).toBe(original.actors[0]!.transform.position[0] + 7);
+    expect(recovered.actors[0]!.transform.position[0]).toBe(original.actors[0]!.transform.position[0] + 5);
     expect(documents().dirtyDocuments.map(doc => doc.id)).toContain(MAIN_SCENE_ID);
 
-    // The replayed edits stay journaled until saved, each exactly once.
+    // One checkpoint of the recovered Scene stands for the sealed records until saved.
     await settleJournal();
-    expect(await readJournalLines(derived, guid)).toHaveLength(2);
+    const kept = resolveJournalLines(await readJournalLines(derived, guid));
+    expect(kept.map((line) => [line.docId, line.command.type])).toEqual([[MAIN_SCENE_ID, "document.checkpoint"]]);
     expect(await act(() => actions.saveAll())).toBe("saved");
     await settleJournal();
     expect(await readJournalLines(derived, guid)).toEqual([]);
+  });
+
+  it("opens a project whose recovery journal cannot be read, discards it and says so", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.saveAll());
+    const guid = documents().projectGuid!;
+    const listed = documents().listedProjects.find(project => project.label === "Stable")!;
+    await act(() => actions.forceCloseProject());
+    const derived = await createDerivedStorage();
+    // Unreadable: the seal marker's path holds a folder, so sealing the journal fails.
+    await appendJournalLines(derived, guid, ["{}"]);
+    await derived.mkdir(`derived/${guid}/journal/sealed.json`, true);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await act(() => actions.openListedProject(listed));
+    } finally {
+      error.mockRestore();
+    }
+    expect(seen.route).toBe("editor");
+    expect(documents().recoveryAvailable).toBe(false);
+    expect(documents().recoveryNotice).toEqual({ kind: "unreadable" });
+    expect(await derived.exists(`derived/${guid}/journal`)).toBe(false);
+    // The session journals again from the files it opened.
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 1)));
+    await settleJournal();
+    expect(await readJournalLines(derived, guid)).toHaveLength(1);
+    act(() => actions.dismissRecoveryNotice());
+    expect(documents().recoveryNotice).toBeNull();
   });
 
   it("discards only the edits of the last session and keeps the ones made since the reopen", async () => {
@@ -1461,7 +1500,7 @@ describe("DocumentProvider actions and route", () => {
       expect(gate).not.toHaveBeenCalled();
       expect(await act(() => actions.forceCloseProject())).toBe(false);
       expect(gate).toHaveBeenCalledWith({ kind: "close-project" });
-      expect(documents().route).toBe("editor");
+      expect(seen.route).toBe("editor");
     } finally {
       unregister();
     }
@@ -1487,7 +1526,7 @@ describe("DocumentProvider actions and route", () => {
       expect(await act(() => actions.closeProject())).toMatchObject({
         outcome: "unsaved", dirty: [expect.objectContaining({ id: MAIN_SCENE_ID })], projectDirty: false,
       });
-      expect(documents().route).toBe("editor");
+      expect(seen.route).toBe("editor");
       expect(openScene(MAIN_SCENE_ID)).toEqual(session.kept());
     } finally {
       session.unregister();
@@ -1535,7 +1574,7 @@ describe("DocumentProvider actions and route", () => {
       await waitFor(() => expect(write).toHaveBeenCalled());
       act(() => { closing = actions.forceCloseProject(); });
       await act(async () => { await Promise.resolve(); });
-      expect(documents().route).toBe("editor");
+      expect(seen.route).toBe("editor");
       await act(async () => {
         releaseWrite();
         expect(await saving).toBe("saved");

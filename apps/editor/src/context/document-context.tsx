@@ -67,6 +67,7 @@ import type {
   DocumentContextValue,
   EditorShellState,
   ProjectState,
+  RecoveryNotice,
   RegistryState,
   SaveState,
   AppRoute,
@@ -189,6 +190,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [projectDocument, setProjectDocument] = useRefState(projectDocumentRef);
   const projectSaveState = useRef(new ProjectSaveState());
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  const [recoveryNotice, setRecoveryNotice] = useState<RecoveryNotice | null>(null);
   /** Re-renders the provider after service state its slices read changed (edits, tabs, saves). */
   const [, setContextTick] = useState(0);
   /** Registry-adjacent changes outside the registry itself; part of `registryEpoch`. */
@@ -573,6 +575,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setProjectDocument,
     setRoute,
     setRecoveryAvailable,
+    setRecoveryNotice,
     setDocumentOpenError,
     setPublishNotice,
     sceneDocumentLoad,
@@ -1056,6 +1059,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       listedProjects,
       needsReconnect,
       recoveryAvailable,
+      recoveryNotice,
       saveFailed,
       templates,
       homepageReady,
@@ -1065,7 +1069,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       publishNotice,
       thumbnailsEnabled,
     }),
-    [listedProjects, needsReconnect, recoveryAvailable, saveFailed, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, publishNotice, thumbnailsEnabled],
+    [listedProjects, needsReconnect, recoveryAvailable, recoveryNotice, saveFailed, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, publishNotice, thumbnailsEnabled],
   );
 
   return (

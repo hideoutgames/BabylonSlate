@@ -9,6 +9,7 @@ import type {
 import {
   discardSealedJournal,
   readSealedJournalLines,
+  removeJournal,
   sealJournalForRecovery,
   truncateJournal,
   type ProjectTemplateCatalogEntry,
@@ -39,6 +40,7 @@ import type {
   CloseProjectResult,
   DocumentActions,
   DocumentContextValue,
+  RecoveryNotice,
 } from "./document-context-types";
 import type { SourceControlSyncService, TransferMonitor } from "../services/source-control-sync";
 import { isTestModeEnabled } from "@haptic/vfs";
@@ -67,6 +69,7 @@ export interface ProjectLifecycleDeps {
   setProjectDocument: (document: ProjectDocument | null) => void;
   setRoute: (route: AppRoute) => void;
   setRecoveryAvailable: (available: boolean) => void;
+  setRecoveryNotice: (notice: RecoveryNotice | null) => void;
   setDocumentOpenError: (error: string | null) => void;
   /** A Remote New Project's notice belongs to the project it opened. */
   setPublishNotice: (notice: DocumentContextValue["publishNotice"]) => void;
@@ -125,6 +128,7 @@ export function useProjectLifecycle({
   setProjectDocument,
   setRoute,
   setRecoveryAvailable,
+  setRecoveryNotice,
   setDocumentOpenError,
   setPublishNotice,
   sceneDocumentLoad,
@@ -148,7 +152,8 @@ export function useProjectLifecycle({
   enqueueProjectWrite,
   cancelExclusiveSceneOpen,
 }: ProjectLifecycleDeps) {
-  const [recoveryRequested, setRecoveryRequested] = useState(false);
+  /** Recover Edits was chosen, with whether it goes ahead over documents changed since the project opened. */
+  const [recoveryRequested, setRecoveryRequested] = useState<{ replaceChanged: boolean } | null>(null);
 
   const enterEditor = useCallback(
     async (
@@ -198,12 +203,28 @@ export function useProjectLifecycle({
       const derived = await ensureDerived();
       const guid = projectService.guid;
       if (guid) {
-        await sealJournalForRecovery(derived, guid);
-        // Everything written so far is sealed: this session journals from the files it just opened.
+        setRecoveryNotice(null);
+        try {
+          await sealJournalForRecovery(derived, guid);
+          const sealed = await readSealedJournalLines(derived, guid);
+          const unreplayed = resolveJournalLines(sealed);
+          if (unreplayed.length === 0) await discardSealedJournal(derived, guid);
+          // The saved files the offer replays onto: Recover refuses to replay onto one written since.
+          editing.noteRecoveryBase(sealed);
+          setRecoveryAvailable(unreplayed.length > 0);
+        } catch (error) {
+          // A journal that cannot be read must not keep the project closed. Its records are lost either way
+          // (storage has no rename to set them aside), so it is removed and the user is told.
+          console.error("[editor] The recovery journal could not be read; it was discarded", error);
+          await removeJournal(derived, guid).catch((removal: unknown) => {
+            console.error("[editor] The unreadable recovery journal could not be removed", removal);
+          });
+          editing.noteRecoveryBase([]);
+          setRecoveryAvailable(false);
+          setRecoveryNotice({ kind: "unreadable" });
+        }
+        // Everything written so far is sealed or gone: this session journals from the files it just opened.
         journalBuffer.resume(guid);
-        const unreplayed = resolveJournalLines(await readSealedJournalLines(derived, guid));
-        if (unreplayed.length === 0) await discardSealedJournal(derived, guid);
-        setRecoveryAvailable(unreplayed.length > 0);
       }
       setRoute("editor");
       projectService.setDerivedStorage(derived);
@@ -222,6 +243,7 @@ export function useProjectLifecycle({
       refreshProjectList,
       captureMtimeSnapshot,
       cancelSceneDocumentLoad,
+      editing,
       playContent,
           setProjectDocument,
       editSessionRef,
@@ -230,6 +252,7 @@ export function useProjectLifecycle({
       sceneDocumentLoadRef,
       setLastCompiledSignature,
       setRecoveryAvailable,
+      setRecoveryNotice,
       setRoute,
       setSceneDocumentLoad,
     ],
@@ -464,20 +487,33 @@ export function useProjectLifecycle({
       await discardSealedJournal(await ensureDerived(), guid);
     }
     // The banner belongs to the project open now; another may have opened meanwhile.
-    if (projectService.guid === guid) setRecoveryAvailable(false);
-  }, [ensureDerived, projectService, setRecoveryAvailable]);
+    if (projectService.guid === guid) {
+      setRecoveryAvailable(false);
+      setRecoveryNotice(null);
+    }
+  }, [ensureDerived, projectService, setRecoveryAvailable, setRecoveryNotice]);
 
-  const keepRecovery = useCallback(() => {
-    setRecoveryRequested(true);
-  }, []);
+  const keepRecovery = useCallback((options?: { replaceChanged?: boolean }) => {
+    setRecoveryNotice(null);
+    setRecoveryRequested({ replaceChanged: options?.replaceChanged === true });
+  }, [setRecoveryNotice]);
+
+  const dismissRecoveryNotice = useCallback(() => setRecoveryNotice(null), [setRecoveryNotice]);
 
   // A scene read replaces the current scene at commit. Replay only after that
   // read settles, so it cannot close the scene we have just recovered.
   useEffect(() => {
     if (!recoveryRequested || sceneDocumentLoad) return;
-    setRecoveryRequested(false);
-    void editing.replayRecoveryJournal();
-  }, [editing, recoveryRequested, sceneDocumentLoad]);
+    setRecoveryRequested(null);
+    const guid = projectService.guid;
+    void editing.replayRecoveryJournal(recoveryRequested).then(
+      (result) => {
+        // Nothing was replayed: the prompt asks before replacing what changed since the project opened.
+        if (result.outcome === "changed" && projectService.guid === guid) setRecoveryNotice({ kind: "changed", documents: result.documents });
+      },
+      (error: unknown) => console.error("[editor] Could not recover the unsaved edits", error),
+    );
+  }, [editing, projectService, recoveryRequested, sceneDocumentLoad, setRecoveryNotice]);
 
   const actions = useMemo(
     (): Pick<
@@ -491,6 +527,7 @@ export function useProjectLifecycle({
       | "forceCloseProject"
       | "dismissRecovery"
       | "keepRecovery"
+      | "dismissRecoveryNotice"
     > => ({
       openProject,
       openListedProject,
@@ -501,6 +538,7 @@ export function useProjectLifecycle({
       forceCloseProject,
       dismissRecovery,
       keepRecovery,
+      dismissRecoveryNotice,
     }),
     [
       openProject,
@@ -512,6 +550,7 @@ export function useProjectLifecycle({
       forceCloseProject,
       dismissRecovery,
       keepRecovery,
+      dismissRecoveryNotice,
     ],
   );
 

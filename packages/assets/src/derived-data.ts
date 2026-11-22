@@ -281,6 +281,18 @@ export async function discardSealedJournal(
 }
 
 /**
+ * Remove the whole journal, sealed records included, in its write order: for
+ * a journal that cannot be read, which would otherwise stop the project
+ * opening every time.
+ */
+export async function removeJournal(
+  derivedStorage: ProjectStorage,
+  projectGuid: string,
+): Promise<void> {
+  return journalOperation(derivedStorage, projectGuid, () => removeJournalFiles(derivedStorage, projectGuid));
+}
+
+/**
  * Return the sealed segments to the live journal (Recover): the next save that
  * writes the replayed edits truncates them with the rest.
  */

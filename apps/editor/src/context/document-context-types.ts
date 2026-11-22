@@ -101,6 +101,9 @@ export type SaveAllOutcome = "saved" | "locked" | "authoring-locked" | "no-docum
 /** What a Save All the user asked for was for: Play and Preview Build cannot start while documents stay unsaved. */
 export type SaveFailedPurpose = "save" | "play" | "preview";
 
+/** `recoveryNotice`: documents changed since the project opened (by label), or a journal that could not be read. */
+export type RecoveryNotice = { kind: "changed"; documents: string[] } | { kind: "unreadable" };
+
 /** The documents a Save All left unsaved because someone else has locked them, each with its lock's holder. */
 export interface SaveFailed {
   documents: readonly { id: string; path: string; label: string; holder: string }[];
@@ -228,6 +231,13 @@ export interface DocumentContextValue {
   needsReconnect: boolean;
   recoveryAvailable: boolean;
   /**
+   * What the recovery prompt must say besides its offer: Recover found
+   * documents edited or saved since the project opened (`changed`, nothing
+   * replayed yet), or the last session's records could not be read when the
+   * project opened (`unreadable`, they were discarded).
+   */
+  recoveryNotice: RecoveryNotice | null;
+  /**
    * Crash recovery stopped recording edits (storage stayed full, or too many
    * records failed to write): a crash now loses the edits since, until a Save
    * All leaves nothing unsaved.
@@ -303,7 +313,14 @@ export interface DocumentContextValue {
   }) => Promise<Result<ExportArtifact, string>>;
   zipExportedGame: (artifact: ExportArtifact) => Promise<Uint8Array>;
   dismissRecovery: () => Promise<void>;
-  keepRecovery: () => void;
+  /**
+   * Recover Edits. With `replaceChanged` it goes ahead over documents edited
+   * or saved since the project opened, after the user confirmed
+   * (`recoveryNotice` `changed`).
+   */
+  keepRecovery: (options?: { replaceChanged?: boolean }) => void;
+  /** Closes `recoveryNotice` (its Cancel or OK). */
+  dismissRecoveryNotice: () => void;
   openDocument: (ref: DocumentRef) => Promise<void>;
   /** Loads a canonical working document without creating or activating a tab. */
   ensureAssetDocument: (ref: DocumentRef) => Promise<string>;
@@ -635,6 +652,7 @@ export type EditorShellState = Pick<
   | "listedProjects"
   | "needsReconnect"
   | "recoveryAvailable"
+  | "recoveryNotice"
   | "saveFailed"
   | "templates"
   | "homepageReady"
