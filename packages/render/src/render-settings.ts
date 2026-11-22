@@ -102,6 +102,12 @@ type SceneRendering = {
    * no ambient occlusion, reflections, volumetric lighting, Fog Volume pass or Screen-Space Shadows, so no geometry pass.
    */
   spatialEffects: boolean;
+  /**
+   * False for a Scene that draws as Play draws a Scene Layer (`excludeSceneWorldPostEffects`: a Scene Layer's editor
+   * view): the default effects whatever the project or Scene sets (no bloom, display stage, vignette, LUT or upscale)
+   * and no Anti-Aliasing.
+   */
+  worldPostEffects: boolean;
   /** Screen-space effects the resolved quality tier can afford. */
   effectAllowances: Pick<PostProcessingQuality, PostProcessingEffectField>;
   /** The quality tier's Anti-Aliasing; a world view's alone (`sceneMultisampleCount`, the plan's FXAA). */
@@ -188,6 +194,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       effectsEnabled: true,
       fogVolumesPresent: false,
       spatialEffects: true,
+      worldPostEffects: true,
       effectAllowances: {
         ambientOcclusion: quality.postprocessing.ambientOcclusion,
         reflections: quality.postprocessing.reflections,
@@ -260,11 +267,14 @@ export function updateSceneRenderingSettings(
     ...normalizeCelShadingOverrides(state.overrides),
     ...normalizeCelShadingOverrides(state.runtimeOverrides.cel),
   });
-  // Project, then the Scene's Post Processing overrides, then the session's.
-  const effects = resolveRenderEffectsSettings(
-    resolveRenderEffectsSettings(state.project.effects, state.effectsOverrides),
-    state.runtimeOverrides.effects,
-  );
+  // Project, then the Scene's Post Processing overrides, then the session's; a Scene drawn as a Play layer keeps the
+  // defaults Play's layer Scenes hold, which no project setting reaches.
+  const effects = state.worldPostEffects
+    ? resolveRenderEffectsSettings(
+      resolveRenderEffectsSettings(state.project.effects, state.effectsOverrides),
+      state.runtimeOverrides.effects,
+    )
+    : LAYER_EFFECTS;
   // Nor does an FSR upscale soften it.
   state.effects = pixelated && effects.upscaling.enabled ? { ...effects, upscaling: { ...effects.upscaling, enabled: false } } : effects;
   state.mode = mode;
@@ -313,8 +323,7 @@ export function sceneReadsScreenShadows(scene: Scene): boolean {
 /**
  * Never plan the spatial effects for `scene` (a Scene Layer's editor view): ambient occlusion, reflections, volumetric
  * lighting and Fog Volumes, and Screen-Space Shadows, whatever the project, tier or Scene says. Its graph then builds
- * no spatial geometry pass, effect passes or their targets. Everything else (bloom, display colour, FXAA, the authored
- * stack) plans as before, and the Scene stays a world view for Anti-Aliasing.
+ * no spatial geometry pass, effect passes or their targets. The screen effects are `excludeSceneWorldPostEffects`'.
  */
 export function excludeSceneSpatialEffects(scene: Scene): void {
   const state = sceneRenderingSettings(scene);
@@ -323,9 +332,28 @@ export function excludeSceneSpatialEffects(scene: Scene): void {
   replanSceneEffects(state);
 }
 
-/** A world view's Scene (`allowSceneScreenShadows`): only it follows the tier's Anti-Aliasing. */
+/**
+ * Draw `scene` (a Scene Layer's editor view) as Play draws a Scene Layer: with the default effects Play's layer Scenes
+ * keep, whatever the project, Scene or session sets (no bloom, Scene Linear display stage, tone mapping, white balance,
+ * vignette, LUT or upscale), and without Anti-Aliasing (Play's layers draw single-sampled, with no FXAA, onto a
+ * backbuffer without antialiasing). Its graph then builds no effect chain of its own. Updates as settings change.
+ */
+export function excludeSceneWorldPostEffects(scene: Scene): void {
+  const state = sceneRenderingSettings(scene);
+  if (!state.worldPostEffects) return;
+  state.worldPostEffects = false;
+  updateSceneRenderingSettings(scene);
+}
+
+/** The effects of a Scene drawn as a Play layer (`excludeSceneWorldPostEffects`): every default, as a layer's Scene holds. */
+const LAYER_EFFECTS = normalizeRenderEffectsSettings(undefined);
+
+/**
+ * A world view's Scene (`allowSceneScreenShadows`): only it follows the tier's Anti-Aliasing, unless it draws as a Play
+ * layer (`excludeSceneWorldPostEffects`).
+ */
 function worldView(state: SceneRendering): boolean {
-  return state.screenShadowsSupported !== null;
+  return state.screenShadowsSupported !== null && state.worldPostEffects;
 }
 
 /** The device's MSAA limit, read at each settings update and when the Scene becomes a world view's. */

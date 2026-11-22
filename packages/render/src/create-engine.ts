@@ -105,7 +105,7 @@ import { engineCommandBus, markSessionTrail } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
-import { applyMaterialTextureAnisotropy, excludeSceneSpatialEffects, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, setSceneFsrOutputDebug, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
+import { applyMaterialTextureAnisotropy, excludeSceneSpatialEffects, excludeSceneWorldPostEffects, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, setSceneFsrOutputDebug, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
 import { cookComplexCollisionMesh, environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -757,9 +757,9 @@ function initializeEngine(
   const fullQuality = options.fullQuality === true && !options.playMode && !presentRtt;
   if (fullQuality) {
     pinFullRenderQuality(scene);
-    // Nor does it plan the world-only effects (ambient occlusion, reflections, volumetrics, Screen-Space Shadows): a
-    // layer has no world for them, and Play's layers never draw them.
+    // Nor does it plan the world's effects or Anti-Aliasing: it draws as Play draws a layer, which neither reaches.
     excludeSceneSpatialEffects(scene);
+    excludeSceneWorldPostEffects(scene);
   }
   /**
    * A 2D editor view with Pixel-Perfect Mode (`EditorTools.setPixelPerfect`) draws at device pixels too, so the
