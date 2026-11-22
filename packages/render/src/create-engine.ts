@@ -105,7 +105,7 @@ import { engineCommandBus, markSessionTrail } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
-import { applyMaterialTextureAnisotropy, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, setSceneFsrOutputDebug, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
+import { applyMaterialTextureAnisotropy, excludeSceneSpatialEffects, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, setSceneFsrOutputDebug, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
 import { cookComplexCollisionMesh, environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -755,7 +755,12 @@ function initializeEngine(
    * level, and its scaling controller never writes the Engine's.
    */
   const fullQuality = options.fullQuality === true && !options.playMode && !presentRtt;
-  if (fullQuality) pinFullRenderQuality(scene);
+  if (fullQuality) {
+    pinFullRenderQuality(scene);
+    // Nor does it plan the world-only effects (ambient occlusion, reflections, volumetrics, Screen-Space Shadows): a
+    // layer has no world for them, and Play's layers never draw them.
+    excludeSceneSpatialEffects(scene);
+  }
   /**
    * A 2D editor view with Pixel-Perfect Mode (`EditorTools.setPixelPerfect`) draws at device pixels too, so the
    * browser never resamples it, at its own level only: quality and the other views of the Engine are unchanged.

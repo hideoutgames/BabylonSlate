@@ -95,7 +95,7 @@ import { hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import { DEFAULT_CAMERA_PREVIEW_FRAME_RATE } from "./editor-debug-overlay";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isSceneStaticMesh } from "./scene-static-meshes";
-import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
+import { sceneRenderingSettings, setSceneEffectsEnabled, updateSceneRenderingSettings } from "./render-settings";
 import { setNearestTextures } from "./nearest-textures";
 import { managedRenderReservations } from "./managed-render-resources";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
@@ -6143,6 +6143,28 @@ describe("Play createEngine view", () => {
     handles.push(plain);
     plain.setLocalQualityOverrides({ textures: { anisotropy: 2 } });
     expect(RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, plain.scene).anisotropicFilteringLevel).toBe(2);
+  });
+
+  it("plans none of the world-only effects for a Scene Layer's editor view, while an ordinary editor view plans them", () => {
+    const engine = sharedEngine();
+    Object.assign(engine.getCaps(), { texelFetch: true });
+    const project = {
+      effects: {
+        ...DEFAULT_RENDER_EFFECTS,
+        ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+        reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
+        bloom: { ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true },
+      },
+    };
+    const plan = (fullQuality: boolean) => {
+      const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, fullQuality });
+      handles.push(handle);
+      handle.setRenderSettings(project);
+      updateSceneRenderingSettings(handle.scene, undefined, undefined, { screenShadows: "high" });
+      return sceneRenderingSettings(handle.scene).effectsPlan;
+    };
+    expect(plan(false)).toMatchObject({ ambientOcclusion: { enabled: true }, reflections: { enabled: true }, screenShadows: "high", bloom: { enabled: true } });
+    expect(plan(true)).toMatchObject({ ambientOcclusion: null, reflections: null, volumetricLighting: null, screenShadows: null, bloom: { enabled: true } });
   });
 
   it("draws a Pixel-Perfect 2D editor view at device pixels, at its own level, in whole device pixels per texel", () => {
