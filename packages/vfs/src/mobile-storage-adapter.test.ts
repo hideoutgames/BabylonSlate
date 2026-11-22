@@ -37,7 +37,7 @@ describe("mobile project binding", () => {
     await storage.writeBinary("assets/music.wav", new Uint8Array([0, 128, 255]));
     expect(storage.getCurrentFolder()?.id).toBe("documents:New Game");
     expect(await storage.readBinary("assets/music.wav")).toEqual(new Uint8Array([0, 128, 255]));
-    expect(fs.tree.has("BabylonSlate/projects/New Game/assets/music.wav")).toBe(true);
+    expect(fs.tree.has("Projects/New Game/assets/music.wav")).toBe(true);
   });
 
   it("restores expired folder access for reconnect without an explicit init call", async () => {
@@ -65,7 +65,7 @@ describe("mobile project binding", () => {
     await storage.writeText("project.json", "local");
     await expect(storage.deleteProject({ id: "external-old", name: "Old Game", tier: "external" })).rejects.toThrow(/chosen folder/);
     await storage.deleteProject({ id: "documents:Local", name: "Local", tier: "documents" });
-    expect(fs.tree.has("BabylonSlate/projects/Local")).toBe(false);
+    expect(fs.tree.has("Projects/Local")).toBe(false);
     expect((await storage.listProjects()).map((folder) => folder.id)).toEqual(["external-old"]);
   });
 });

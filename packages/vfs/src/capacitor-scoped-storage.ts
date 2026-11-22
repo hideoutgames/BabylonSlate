@@ -39,7 +39,7 @@ export interface NativeRangeOptions {
 
 /**
  * One streamed transfer between a URL and a file in app storage (`path`
- * under `BabylonSlate/projects/` in `directory`, as `readDocumentsRange`
+ * under `Projects/` in `directory`, as `readDocumentsRange`
  * names it): see `NativeFileTransferRequest`. `id` names it for
  * `cancelTransfer` and its `transferProgress` events.
  */

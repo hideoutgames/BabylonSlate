@@ -111,8 +111,8 @@ describe("binary storage transport", () => {
     expect(await storage.readBinary("assets/a b+c.bin")).toEqual(bytes);
 
     expect(host.requests.map((request) => request.url)).toEqual([
-      "haptic-storage://bridge/launch-token/file?directory=DOCUMENTS&path=BabylonSlate%2Fprojects%2FMy%20Game%2Fassets%2Fa%20b%2Bc.bin&size=300",
-      "haptic-storage://bridge/launch-token/file?directory=DOCUMENTS&path=BabylonSlate%2Fprojects%2FMy%20Game%2Fassets%2Fa%20b%2Bc.bin",
+      "haptic-storage://bridge/launch-token/file?directory=DOCUMENTS&path=Projects%2FMy%20Game%2Fassets%2Fa%20b%2Bc.bin&size=300",
+      "haptic-storage://bridge/launch-token/file?directory=DOCUMENTS&path=Projects%2FMy%20Game%2Fassets%2Fa%20b%2Bc.bin",
     ]);
     expect(host.requests.map((request) => request.method)).toEqual(["POST", "GET"]);
     expect(readFile).not.toHaveBeenCalled();
@@ -124,8 +124,8 @@ describe("binary storage transport", () => {
     const { fs, storage } = documents(host);
     await storage.openDocumentsProject("Game");
     await storage.writeText("project.json", "{\"name\":\"Ünïcode\"}");
-    expect(new TextDecoder().decode(host.files.get("DOCUMENTS|BabylonSlate/projects/Game/project.json")!.bytes)).toBe("{\"name\":\"Ünïcode\"}");
-    expect(fs.tree.has("BabylonSlate/projects/Game/project.json")).toBe(false);
+    expect(new TextDecoder().decode(host.files.get("DOCUMENTS|Projects/Game/project.json")!.bytes)).toBe("{\"name\":\"Ünïcode\"}");
+    expect(fs.tree.has("Projects/Game/project.json")).toBe(false);
   });
 
   it("maps range answers to revisions and statuses to the port's errors", async () => {
@@ -166,8 +166,8 @@ describe("binary storage transport", () => {
     await storage.writeBinary("b.bin", new Uint8Array([3]));
 
     expect(host.fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
-    expect(fs.tree.get("BabylonSlate/projects/Game/a.bin")?.data).toEqual(new Uint8Array([1, 2]));
-    expect(fs.tree.get("BabylonSlate/projects/Game/b.bin")?.data).toEqual(new Uint8Array([3]));
+    expect(fs.tree.get("Projects/Game/a.bin")?.data).toEqual(new Uint8Array([1, 2]));
+    expect(fs.tree.get("Projects/Game/b.bin")?.data).toEqual(new Uint8Array([3]));
     expect(rename).toHaveBeenCalledTimes(2);
   });
 
@@ -180,13 +180,13 @@ describe("binary storage transport", () => {
 
     await storage.writeBinary("big.bin", bytes);
 
-    expect(host.plugin.beginWrite).toHaveBeenCalledWith({ directory: "DOCUMENTS", path: "BabylonSlate/projects/Game/big.bin" });
+    expect(host.plugin.beginWrite).toHaveBeenCalledWith({ directory: "DOCUMENTS", path: "Projects/Game/big.bin" });
     expect(host.plugin.appendWriteChunk).toHaveBeenCalledTimes(2);
     expect(host.plugin.appendWriteChunk.mock.calls.map(([call]) => atob(call.data).length)).toEqual([MiB, MiB]);
     expect(host.plugin.commitWrite).toHaveBeenCalledWith(expect.objectContaining({ writeId: "w1", size: 2 * MiB + 5 }));
     expect(atob(host.plugin.commitWrite.mock.calls[0]![0].data).length).toBe(5);
     // Element-wise equality of megabytes is slow; compare the bytes directly.
-    expect(Buffer.compare(host.files.get("DOCUMENTS|BabylonSlate/projects/Game/big.bin")!.bytes, bytes)).toBe(0);
+    expect(Buffer.compare(host.files.get("DOCUMENTS|Projects/Game/big.bin")!.bytes, bytes)).toBe(0);
     expect(host.requests).toEqual([]);
   });
 
@@ -203,7 +203,7 @@ describe("binary storage transport", () => {
     expect(host.plugin.abortWrite).toHaveBeenCalledWith({ writeId: "w2" });
     expect(host.plugin.commitWrite).toHaveBeenCalledTimes(1);
     expect(host.sessions.size).toBe(0);
-    expect(host.files.get("DOCUMENTS|BabylonSlate/projects/Game/big.bin")!.bytes).toEqual(new Uint8Array([1, 2, 3]));
+    expect(host.files.get("DOCUMENTS|Projects/Game/big.bin")!.bytes).toEqual(new Uint8Array([1, 2, 3]));
   });
 
   it("addresses chosen folders by id and read scope, and maps their errors", async () => {

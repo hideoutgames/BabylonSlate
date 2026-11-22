@@ -135,11 +135,6 @@ export interface SceneDecalStats {
 const IDENTITY = Matrix.Identity();
 const DECAL_PROXY_PREFIX = "haptic:decal-unit-cube";
 
-/** Whether `mesh` is a decal pass's box (the light block keeps Screen-Space Shadows out of it). */
-export function isDecalProxyMesh(mesh: AbstractMesh | null | undefined): boolean {
-  return !!mesh && mesh.name.startsWith(DECAL_PROXY_PREFIX);
-}
-
 function encloseDecal(entry: AuthoredDecalEntry, world: Matrix): void {
   const center = entry.center.copyFromFloats(world.m[12]!, world.m[13]!, world.m[14]!);
   let farthest = 0;

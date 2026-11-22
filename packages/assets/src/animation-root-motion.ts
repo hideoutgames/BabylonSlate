@@ -179,7 +179,8 @@ export function extractAnimationRootMotion(
       if (target.path === "rotation") rotation = readSampler(json, bin, sampler, 4);
     }
   } catch (error) {
-    // Meshopt-compressed or malformed keys: no root motion rather than a track sampled from the wrong bytes.
+    // Malformed keys, or meshopt keys read before the decoder loaded: no root motion rather than a track sampled from
+    // the wrong bytes.
     if (error instanceof GltfGeometryUnreadableError) return null;
     throw error;
   }

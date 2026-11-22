@@ -1,6 +1,8 @@
 /**
  * Pin glyphs for every node reference page, and the node itself drawn with the
- * editor's own graph components for Class and Material nodes.
+ * editor's own graph components for Class, Animation Graph, Material and Particle
+ * Graph nodes and Behaviour Tree composites and tasks. Behaviour Tree decorators and
+ * services are rows on another node in the editor, not nodes, so their pages have none.
  * `scripts/node-previews.mjs` bundles this file and runs it at docs build time;
  * nothing here ships to the browser.
  */
@@ -13,6 +15,7 @@ import {
   pinCssVar,
   pinVisualShape,
   resolveNodeType,
+  treeNodeTypes,
   type PinTypeRef,
 } from "@haptic/graph-ui";
 import { humanizePropertyLabel, PinShapeGlyph } from "@haptic/editor-kit";
@@ -27,12 +30,15 @@ import {
   pinsForMaterialNode,
   type MaterialDomain,
 } from "@haptic/shader-graph";
-import { PARTICLE_CATALOG } from "@haptic/particle-graph";
+import { hydrateParticleGraphForEditor, newParticleNodeProperties, PARTICLE_CATALOG } from "@haptic/particle-graph";
 import {
   BT_COMPOSITE_CATALOG,
   BT_DECORATOR_CATALOG,
+  BT_NODE_TYPE,
   BT_SERVICE_CATALOG,
   BT_TASK_CATALOG,
+  kindForCatalogClassId,
+  pinsForBtKind,
 } from "@haptic/behaviour-tree";
 import { scriptGraphFolder } from "./catalog";
 import type { DocsPin, NodePreviews } from "./types";
@@ -51,7 +57,7 @@ const context: GraphEditorContextValue = {
 };
 
 type NodeComponent = ComponentType<Record<string, unknown>>;
-const nodeComponents = graphNodeTypes as unknown as Record<string, NodeComponent>;
+const nodeComponents = { ...graphNodeTypes, ...treeNodeTypes } as unknown as Record<string, NodeComponent>;
 
 function renderNode(id: string, type: string, data: Record<string, unknown>): string {
   const Node = nodeComponents[type];
@@ -89,8 +95,8 @@ function scriptPreviews(previews: NodePreviews): void {
     const pins = def.pins({});
     const graph = scriptGraphFolder(def.id);
     previews[`${graph}/${def.id}`] = {
-      // Animation Graph pages list pins without a node preview.
-      html: graph === "class" ? renderScriptNode(def, pins) : undefined,
+      // Animation Graph event and rule graphs draw these nodes with the Class graph's components.
+      html: renderScriptNode(def, pins),
       inputs: docsPins(pins, "in", scriptPinLabel),
       outputs: docsPins(pins, "out", scriptPinLabel),
     };
@@ -146,6 +152,16 @@ function materialPreviews(previews: NodePreviews): void {
   }
 }
 
+/** A new node of `type` as the Particle Graph canvas draws it: its default properties, hydrated like an opened graph. */
+function renderParticleNode(type: string): string {
+  const [node] = hydrateParticleGraphForEditor({
+    nodes: [{ id: type, type, position: { x: 0, y: 0 }, data: newParticleNodeProperties(type) }],
+    edges: [],
+  }).nodes;
+  const data = node!.data as Record<string, unknown>;
+  return renderNode(type, resolveNodeType(type, data), data);
+}
+
 function particlePreviews(previews: NodePreviews): void {
   for (const def of PARTICLE_CATALOG) {
     const pins = [
@@ -153,15 +169,33 @@ function particlePreviews(previews: NodePreviews): void {
       ...(def.outputs ?? []).map((pin) => ({ ...pin, direction: "out" })),
     ] as CatalogPin[];
     previews[`particle/${def.type}`] = {
+      html: renderParticleNode(def.type),
       inputs: docsPins(pins, "in", (pin) => pin.name),
       outputs: docsPins(pins, "out", (pin) => pin.name),
     };
   }
 }
 
-/** Behaviour Tree pages have no pin tables; the entries let the build check their `node:`. */
+/**
+ * Behaviour Tree pages have no pin tables; the entries let the build check their `node:`. Composites and tasks are
+ * drawn as a node under a parent, as the tree editor shows them, with no decorators or services attached.
+ */
 function behaviourTreePreviews(previews: NodePreviews): void {
-  for (const entry of [...BT_COMPOSITE_CATALOG, ...BT_TASK_CATALOG, ...BT_DECORATOR_CATALOG, ...BT_SERVICE_CATALOG]) {
+  for (const entry of [...BT_COMPOSITE_CATALOG, ...BT_TASK_CATALOG]) {
+    const kind = kindForCatalogClassId(entry.classId);
+    const data = {
+      title: entry.title,
+      kind,
+      classId: entry.classId,
+      sortIndex: 0,
+      decorators: [],
+      services: [],
+      properties: {},
+      __pins: pinsForBtKind(kind),
+    };
+    previews[`behaviour-tree/${entry.classId}`] = { html: renderNode(entry.classId, BT_NODE_TYPE, data), inputs: [], outputs: [] };
+  }
+  for (const entry of [...BT_DECORATOR_CATALOG, ...BT_SERVICE_CATALOG]) {
     previews[`behaviour-tree/${entry.classId}`] = { inputs: [], outputs: [] };
   }
 }

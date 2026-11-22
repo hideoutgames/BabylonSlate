@@ -582,8 +582,9 @@ describe("exportGame", () => {
     expect(result.error).toBe("Export file count 4 exceeds the limit of 3.");
   });
 
-  it("warns about and ships no Complex Collision for a Model whose geometry is Draco-compressed", async () => {
+  it("cooks Complex Collision for a meshopt-compressed Model, and warns about and ships none for a Draco-compressed one", async () => {
     const { buildBoxGlbFixture, encodeGlbJsonBin, encodePackedModelAsset } = await import("@haptic/assets");
+    const { meshoptBoxGlb } = await import("@haptic/assets/test-support/meshopt-gltf");
     const payload = { importScale: 1, materialSlots: [], skeletonGuid: null, simpleColliders: [] };
     const draco = "KHR_draco_mesh_compression";
     const dracoGlb = encodeGlbJsonBin({
@@ -594,7 +595,7 @@ describe("exportGame", () => {
       nodes: [{ mesh: 0 }], scenes: [{ nodes: [0] }], scene: 0,
     }, new Uint8Array(40).fill(0xab));
     const scene = createDefaultScene();
-    for (const guid of ["rock-model", "statue-model"]) {
+    for (const guid of ["rock-model", "crate-model", "statue-model"]) {
       scene.actors.push(createActor(guid, guid, { components: [{
         id: "mesh", classId: "MeshComponent", properties: { assetGuid: guid, collisionMode: "complex" },
       }] }));
@@ -608,14 +609,16 @@ describe("exportGame", () => {
       assets: [
         { guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: new TextEncoder().encode(JSON.stringify(scene)) },
         { guid: "rock-model", type: "Model", sceneGuid: "scene-1", name: "Rock", bytes: encodePackedModelAsset(payload, buildBoxGlbFixture(1)) },
+        // Nothing in this test loads the meshopt decoder: the export waits for it.
+        { guid: "crate-model", type: "Model", sceneGuid: "scene-1", name: "Crate", bytes: encodePackedModelAsset(payload, await meshoptBoxGlb("required")) },
         { guid: "statue-model", type: "Model", sceneGuid: "scene-1", name: "Statue", bytes: encodePackedModelAsset(payload, dracoGlb) },
       ],
       playerFiles: stubPlayer(),
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.manifest.assets.filter((entry) => entry.type === COMPLEX_COLLISION_EXPORT_TYPE).map((entry) => entry.ownerGuid))
-      .toEqual(["rock-model"]);
+    expect(result.value.manifest.assets.filter((entry) => entry.type === COMPLEX_COLLISION_EXPORT_TYPE).map((entry) => entry.ownerGuid).sort())
+      .toEqual(["crate-model", "rock-model"]);
     expect(result.value.warnings).toEqual([
       expect.stringMatching(/^Model Statue uses Use Complex Collision, but its geometry is Draco-compressed .*It has no collision in the game\.$/),
     ]);

@@ -140,6 +140,65 @@ describe("cookGeneratedCollisionFromGltf", () => {
   });
 });
 
+describe("the placeholder Generated Collision of geometry that cannot be read", () => {
+  const DRACO = "KHR_draco_mesh_compression";
+  /** A Draco-only GLB (no uncompressed data) whose one primitive's POSITION accessor is `accessor`, on `node`. */
+  function dracoGlb(accessor: Record<string, unknown>, node: Record<string, unknown> = {}, mode?: number): Uint8Array {
+    return encodeGlbJsonBin({
+      asset: { version: "2.0" }, extensionsUsed: [DRACO, "KHR_mesh_quantization"], extensionsRequired: [DRACO],
+      buffers: [{ byteLength: 64 }], bufferViews: [{ buffer: 0, byteLength: 64 }],
+      accessors: [{ componentType: 5126, count: 100, type: "VEC3", ...accessor }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, ...(mode === undefined ? {} : { mode }),
+        extensions: { [DRACO]: { bufferView: 0, attributes: { POSITION: 0 } } } }] }],
+      nodes: [{ mesh: 0, ...node }], scenes: [{ nodes: [0] }], scene: 0,
+    }, new Uint8Array(64).fill(0x41));
+  }
+  const shape = ({ kind, position, rotation, halfExtents }: ReturnType<typeof cookGeneratedCollisionFromGltf>) =>
+    ({ kind, position: position.map((value) => +value.toFixed(9)), rotation, halfExtents });
+
+  it("boxes the declared POSITION bounds moved by the node and Import Scale, X mirrored", () => {
+    // Local x in [-1, 3], y in [0, 2], z in [-2, 4]; the node scales X by 2 to [-2, 6], turns a quarter about Y
+    // ((x, y, z) -> (z, y, -x): x in [-2, 4], z in [-6, 2]) and moves +10 along X (x in [8, 14]). Import Scale 0.5
+    // gives x in [4, 7], y in [0, 1], z in [-3, 1], and the loader's X mirror x in [-7, -4].
+    const glb = dracoGlb({ min: [-1, 0, -2], max: [3, 2, 4] },
+      { translation: [10, 0, 0], rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2], scale: [2, 1, 1] });
+    const cooked = cookGeneratedCollisionFromGltf(glb, { importScale: 0.5 });
+    expect(shape(cooked)).toEqual({ kind: "box", position: [-5.5, 0.5, -1], rotation: [0, 0, 0, 1], halfExtents: {
+      x: expect.closeTo(1.5, 9), y: expect.closeTo(0.5, 9), z: expect.closeTo(2, 9),
+    } });
+    expect(cooked.name).toBe("Generated Collision");
+  });
+
+  it("normalizes the raw integer bounds of a normalized (quantized) accessor before the node dequantizes them", () => {
+    // glTF 2.0: "The normalized property has no effect on array values: they always correspond to the actual values
+    // stored in the buffer", so min and max hold shorts; normalized they span [0, 1] x [0, 1] x [-1, 0], and the
+    // node's scale of 4 dequantizes that to [0, 4] x [0, 4] x [-4, 0].
+    const glb = dracoGlb({ componentType: 5122, normalized: true, min: [0, 0, -32767], max: [32767, 32767, 0] }, { scale: [4, 4, 4] });
+    expect(shape(cookGeneratedCollisionFromGltf(glb))).toEqual({
+      kind: "box", position: [-2, 2, -2], rotation: [0, 0, 0, 1], halfExtents: { x: 2, y: 2, z: 2 },
+    });
+  });
+
+  it.each([
+    ["missing bounds", dracoGlb({ max: [1, 1, 1] })],
+    ["bounds that are not numbers", dracoGlb({ min: [-1, -1, -1], max: [1, "1", 1] })],
+  ])("keeps the 1 m box at the origin for %s", (_name, glb) => {
+    expect(shape(cookGeneratedCollisionFromGltf(glb))).toEqual({
+      kind: "box", position: [0, 0, 0], rotation: [0, 0, 0, 1], halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
+    });
+  });
+
+  it("keeps the 1 m box for a readable model with no triangles, whatever bounds it declares", () => {
+    // Its triangle primitive has no vertices, yet declares the box's bounds: the read succeeds with nothing, and bounds
+    // only stand in for geometry the cook could not read.
+    const { json, bin } = splitGlbJsonBin(buildBoxGlbFixture(4))!;
+    for (const accessor of json.accessors as Record<string, unknown>[]) accessor.count = 0;
+    expect(shape(cookGeneratedCollisionFromGltf(encodeGlbJsonBin(json, bin)))).toEqual({
+      kind: "box", position: [0, 0, 0], rotation: [0, 0, 0, 1], halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
+    });
+  });
+});
+
 describe("simpleColliderToPhysicsShape", () => {
   it("bakes cone to a convex prism and keeps cylinder as a cylinder", () => {
     const cone = simpleColliderToPhysicsShape({

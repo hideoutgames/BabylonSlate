@@ -1,0 +1,28 @@
+{
+  "$comment": "Gzip size budgets for the Pages build (production editor and player), checked by `node scripts/bundle-report.mjs --budgets scripts/bundle-budgets.json apps/player/dist apps/editor/dist` in preview.yml. Each limit is the measured size plus about 10%. When a change grows a bundle on purpose, build as preview.yml does (`pnpm build:pages`), rerun the report with --json, and set the limit to the new size plus about 10% in the same change.",
+  "budgets": [
+    {
+      "name": "Player JavaScript",
+      "root": "apps/player/dist",
+      "extension": ".js",
+      "measure": "total",
+      "maxGzipBytes": 2850000
+    },
+    {
+      "name": "Editor JavaScript",
+      "root": "apps/editor/dist",
+      "prefix": "assets/",
+      "extension": ".js",
+      "measure": "total",
+      "maxGzipBytes": 6900000
+    },
+    {
+      "name": "Largest editor chunk",
+      "root": "apps/editor/dist",
+      "prefix": "assets/",
+      "extension": ".js",
+      "measure": "largest",
+      "maxGzipBytes": 675000
+    }
+  ]
+}

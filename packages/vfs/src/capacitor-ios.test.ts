@@ -315,7 +315,7 @@ describe("Capacitor 8 iOS host", () => {
     expect(scopedStoragePlugin).toContain("uploadTask(with: request, fromFile: file)");
     expect(scopedStoragePlugin).toContain("downloadTask(with: request)");
     // App storage only: a chosen folder never gets a transfer.
-    expect(scopedStoragePlugin).toMatch(/func documentsFile[\s\S]*?hasPrefix\("BabylonSlate\/projects\/"\)/);
+    expect(scopedStoragePlugin).toMatch(/func documentsFile[\s\S]*?hasPrefix\("Projects\/"\)/);
   });
 
   it("exports through the share sheet with an iPad popover source and a bounded temporary file", () => {

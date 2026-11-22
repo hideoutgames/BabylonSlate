@@ -16,7 +16,7 @@ import { isStagedWrite, stagedWriteName } from "./staged-write";
 import { nativeBinaryBridge, type NativeBinaryBridge, type NativeBinaryBridgePlugin, type NativeBinaryRange } from "./native-binary-bridge";
 
 /** Where projects live in app storage; the native plugin accepts app-storage paths under this root only. */
-export const PROJECTS_ROOT = "BabylonSlate/projects";
+export const PROJECTS_ROOT = "Projects";
 
 /**
  * Where app-private data (derived data) lives in Capacitor `Directory.Library`.
@@ -130,7 +130,7 @@ const textEncoder = new TextEncoder();
 
 /**
  * Durable mobile default tier via Capacitor Filesystem: iPad Documents or
- * Android app-private Data under BabylonSlate/projects/, or app-private
+ * Android app-private Data under Projects/, or app-private
  * Library data. No picker. Bytes cross the binary transport where the host
  * has one, else the plugin calls; every write replaces its file atomically.
  */

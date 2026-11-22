@@ -217,7 +217,8 @@ export function meshCollisionFingerprint(
 
 /**
  * Cook one Model's rest-pose triangles. `mesh` is null when the source has fewer than three vertices or geometry
- * collision cooking cannot read (Draco or meshopt compression, malformed accessors); `problem` names the latter, as a
+ * collision cooking cannot read (Draco compression, malformed accessors or meshopt data, meshopt before
+ * `gltfGeometryDecodersReady` resolved); `problem` names the latter, as a
  * clause to follow "Model X uses Use Complex Collision, but".
  */
 export function cookComplexCollision(

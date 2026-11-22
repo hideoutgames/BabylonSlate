@@ -8,7 +8,7 @@
 
 ## Node reference pages
 
-Every page under `scripting/<graph>/` except `index.md` starts with frontmatter naming its catalog node, such as `node: flow.branch`, and its Inputs and Outputs rows are exactly that node's pins: the editor's pin names, with Class and Animation flow pins named `exec` and `then` listed as **In** and **Out**. The build draws Class and Material nodes with the editor's own graph components and puts each pin's glyph before its type ([`apps/docs/scripts/node-previews.mjs`](../../apps/docs/scripts/node-previews.mjs), which the `dev` and `build` scripts run first). It fails on an unknown `node:` or a row that is not a pin, and `node-pages.test.ts` fails when a catalog node has no page.
+Every page under `scripting/<graph>/` except `index.md` starts with frontmatter naming its catalog node, such as `node: flow.branch`, and its Inputs and Outputs rows are exactly that node's pins: the editor's pin names, with Class and Animation flow pins named `exec` and `then` listed as **In** and **Out**. The build draws every node with the editor's own graph components (Behaviour Tree decorators and services excepted: the editor shows them as rows on another node), keeps the drawing out of the search index, and puts each pin's glyph before its type ([`apps/docs/scripts/node-previews.mjs`](../../apps/docs/scripts/node-previews.mjs), which the `dev` and `build` scripts run first, and which keeps its last output while its recorded inputs are unchanged). It fails on an unknown `node:` or a row that is not a pin, and `node-pages.test.ts` fails when a catalog node has no page.
 
 ## Checks
 

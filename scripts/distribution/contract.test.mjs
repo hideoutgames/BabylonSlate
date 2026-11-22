@@ -82,14 +82,14 @@ test("an untagged draft cannot publish a different or mutable source reference",
 
 test("platform and merged release assets are exact public allowlists", () => {
   const testVersion = "1.2.3-indev.417.1";
-  assert.deepEqual(artifactNames("windows", testVersion), [`BabylonSlate-${testVersion}-x64.exe`]);
-  assert.deepEqual(artifactNames("android", testVersion), [`BabylonSlate-${testVersion}-android.apk`]);
+  assert.deepEqual(artifactNames("windows", testVersion), [`Haptic-${testVersion}-x64.exe`]);
+  assert.deepEqual(artifactNames("android", testVersion), [`Haptic-${testVersion}-android.apk`]);
   const releaseVersion = "1.2.3-release";
   assert.deepEqual(artifactNames("macos", releaseVersion), [
-    `BabylonSlate-${releaseVersion}-arm64.dmg`,
-    `BabylonSlate-${releaseVersion}-arm64.zip`,
-    `BabylonSlate-${releaseVersion}-x64.dmg`,
-    `BabylonSlate-${releaseVersion}-x64.zip`,
+    `Haptic-${releaseVersion}-arm64.dmg`,
+    `Haptic-${releaseVersion}-arm64.zip`,
+    `Haptic-${releaseVersion}-x64.dmg`,
+    `Haptic-${releaseVersion}-x64.zip`,
     "latest-mac.yml",
   ]);
   assert.ok(artifactNames("linux", releaseVersion).includes("latest-linux.yml"));
@@ -100,5 +100,5 @@ test("platform and merged release assets are exact public allowlists", () => {
   assert.throws(() => validateArtifacts(files, [...files.slice(1), files[1]]), /allowlist/);
   const release = releaseAssetNames(["windows", "android"], releaseVersion);
   assert.ok(release.includes("build-manifest.json") && release.includes("SHA256SUMS.txt"));
-  assert.ok(release.includes(`BabylonSlate-${releaseVersion}-android.apk`));
+  assert.ok(release.includes(`Haptic-${releaseVersion}-android.apk`));
 });

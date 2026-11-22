@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm --filter player exec vite build && vite",
-    "build": "pnpm --filter player build && tsc -b && vite build && node ../desktop/scripts/build-game-shells.mjs --out dist/game-shells",
+    "build": "pnpm --filter player build && node scripts/typecheck.mjs app && vite build && node ../desktop/scripts/build-game-shells.mjs --out dist/game-shells",
     "test": "node ../../scripts/run-tests.mjs unit apps/editor",
-    "typecheck": "tsc -b --noEmit",
+    "typecheck": "node scripts/typecheck.mjs",
     "preview": "vite preview",
     "ios:sync": "node scripts/ios-sync.mjs",
     "ios:build": "pnpm run ios:sync && node scripts/ios-build.mjs",

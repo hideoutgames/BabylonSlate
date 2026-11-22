@@ -43,6 +43,7 @@ Haptic checks each file before it reads it in full. A file over a limit, or one 
 | Image size (PNG, JPEG, WebP, GIF, and images inside a model) | 8,192 pixels on each side (8,192 × 8,192) |
 | Vertices in one part of a model's mesh | 16,777,216 |
 | Indices in one part of a model's mesh | 50,331,648 |
+| Mesh data a model's meshopt-compressed parts decode to | 1 GiB |
 | Depth of a model's node hierarchy | 256 levels |
 | Data embedded in a glTF's `data:` URIs | 256 MiB |
 | OBJ or STL file size | 256 MiB |

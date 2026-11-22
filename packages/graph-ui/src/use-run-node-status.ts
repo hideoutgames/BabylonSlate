@@ -15,5 +15,7 @@ export function useRunNodeStatus(nodeId: string): string | undefined {
     [runTrace, nodeId],
   );
   const status = runTrace?.status;
-  return useSyncExternalStore(subscribe, status ? () => status.call(runTrace, nodeId) : noStatus);
+  const snapshot = status ? () => status.call(runTrace, nodeId) : noStatus;
+  // The same snapshot when rendered to static markup (the docs' node previews), which has no run.
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
